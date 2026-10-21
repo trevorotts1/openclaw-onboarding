@@ -58,7 +58,7 @@ def check(name, cond, detail=""):
         FAILS.append(name)
 
 ANSWERS = {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
-           "length": 120, "video_model": "MiniMax H3 768P"}
+           "length": 120, "video_model": "Hailuo 02 Standard 768P"}
 
 # ------------------------------------------------------------- gate --------
 
@@ -265,7 +265,7 @@ def test_price_menu_has_2minute_section():
           or "New (F15, owner order 2026-10-08)" in text, "")
     data = CG.parse_price_menu(text)
     rows = data.get("2 minutes") or []
-    check("2-minute table parsed with 18 model rows", len(rows) == 18,
+    check("2-minute table parsed with 17 model rows", len(rows) == 17,
           str(len(rows)))
 
 # ------------------------------------- 2-minute rows derive from 90 s rate --
@@ -291,14 +291,14 @@ def test_2min_rows_equal_90s_rate_derivation():
     rates = {"Veo 3.1 Fast 720p": ("veo", 0.30), "Veo 3.1 Fast 1080p": ("veo", 0.325),
              "Veo 3.1 Quality 720p": ("veo", 1.25), "Veo 3.1 Quality 1080p": ("veo", 1.275),
              "HappyHorse 1.1 720p": ("ps", 0.1125), "HappyHorse 1.1 1080p": ("ps", 0.145),
-             "MiniMax H3 768P": ("ps", 0.04), "MiniMax H3 2K": ("ps", 0.065),
+             "Hailuo 02 Standard 768P": ("ps", 0.025),
              "Kling 3.0 Omni 720p": ("ps", 0.07), "Kling 3.0 Omni 1080p": ("ps", 0.09),
              "Gemini Omni Flash 1.1": ("gemi", 0.63),
              "Seedance 2.5 720p": ("ps", 0.315), "Seedance 2.5 1080p": ("ps", 0.79),
              "Wan 3.0 720p": ("ps", 0.08), "Wan 3.0 1080p": ("ps", 0.16),
              "Kling 3.0 720p": ("ps", 0.07), "Kling 3.0 1080p": ("ps", 0.09),
              "Seedance 2.0 Mini 720p": ("ps", 0.041)}
-    resmap = {"MiniMax H3 768P": "768P (no 720p)", "MiniMax H3 2K": "2K (no 1080p)",
+    resmap = {"Hailuo 02 Standard 768P": "768P (no 720p)",
               "Gemini Omni Flash 1.1": "720p and 1080p (same price)",
               "Seedance 2.5 720p": "720p", "Seedance 2.5 1080p": "1080p",
               "Veo 3.1 Fast 720p": "720p", "Veo 3.1 Fast 1080p": "1080p",
@@ -331,16 +331,16 @@ def test_2min_rows_equal_90s_rate_derivation():
     # spot proof against the 90-second table itself: 90 s MiniMax = $3.78
     # derives from the same $0.04/s: 90*0.04 + 6*0.02 + 0.06 = 3.78
     mm90 = [r for r in data["90 seconds"]
-            if r["model"] == "MiniMax H3" and r["resolution"].startswith("768P")][0]
-    derived90 = round(90 * 0.04 + 6 * 0.02 + 0.06, 2)
-    check("90 s rate rule reproduced ($3.78 from $0.04/s)",
-          mm90["one_shape"] == derived90 == 3.78,
+            if r["model"] == "Hailuo 02 Standard" and r["resolution"].startswith("768P")][0]
+    derived90 = round(90 * 0.025 + 6 * 0.02 + 0.06, 2)
+    check("90 s rate rule reproduced ($2.43 from $0.025/s)",
+          mm90["one_shape"] == derived90 == 2.43,
           "%s vs %.2f" % (mm90["one_shape"], derived90))
     mm2 = [r for r in data["2 minutes"]
-           if r["model"] == "MiniMax H3" and r["resolution"].startswith("768P")][0]
-    derived2 = round(120 * 0.04 + 8 * 0.02 + 0.06, 2)
-    check("2-minute MiniMax row derives from the SAME $0.04/s rate ($5.02)",
-          mm2["one_shape"] == derived2 == 5.02,
+           if r["model"] == "Hailuo 02 Standard" and r["resolution"].startswith("768P")][0]
+    derived2 = round(120 * 0.025 + 8 * 0.02 + 0.06, 2)
+    check("2-minute MiniMax row derives from the SAME $0.025/s rate ($3.22)",
+          mm2["one_shape"] == derived2 == 3.22,
           "%s vs %.2f" % (mm2["one_shape"], derived2))
     check("2-minute and 90-second MiniMax share one rate (120/90 x base)",
           abs(mm2["one_shape"] - derived2) < 0.005
@@ -367,9 +367,9 @@ def test_card_renders_plain_sentences_and_recommended():
           au[0].startswith("Soul Ballad (RECOMMENDED) = "), repr(au[0]))
     vm = card["video_model"]
     check("video-model menu lists every approved model for 60 seconds",
-          len(vm) == 18, repr(vm))
-    check("MiniMax H3 768P line marked RECOMMENDED",
-          any(l.startswith("MiniMax H3") and "(RECOMMENDED)" in l
+          len(vm) == 17, repr(vm))
+    check("Hailuo 02 Standard 768P line marked RECOMMENDED",
+          any(l.startswith("Hailuo 02 Standard") and "(RECOMMENDED)" in l
               and "768P" in l for l in vm), repr(vm[6]))
     check("every model line carries a price and one plain sentence",
           all("$" in l and l.rstrip().endswith(".") for l in vm), repr(vm[:2]))

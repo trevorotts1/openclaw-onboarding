@@ -145,7 +145,7 @@ def test_cli_done_when():
         with open(auth, "w", encoding="utf-8") as fh:
             json.dump({"scope": "campaign"}, fh)
         answers = {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
-                   "length": 300, "video_model": "MiniMax H3 768P"}
+                   "length": 300, "video_model": "Hailuo 02 Standard 768P"}
         receipt_path = os.path.join(tmp, "card.json")
         try:
             core = os.path.join(HERE, "..", "style_defaults")

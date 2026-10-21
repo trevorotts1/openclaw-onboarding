@@ -37,7 +37,8 @@ ALLOWED_VIDEO_MODELS = (
     "veo-3-1",
     "veo3",
     "happyhorse-1-1/*",
-    "minimax-h3/*",
+    "hailuo/02-image-to-video-standard",
+    "hailuo/02-image-to-video-*",
     "kling-3.0-omni/*",
     "google/gemini-omni-flash-1-1",
     "bytedance/seedance-2-5",
@@ -48,7 +49,7 @@ ALLOWED_VIDEO_MODELS = (
 
 # Decision 5 default: MiniMax H3 768P - the id price-menu.md names for the
 # family ("minimax-h3/*"); the card's per-member picks stay in the family.
-DEFAULT_VIDEO_MODEL = "minimax-h3/*"
+DEFAULT_VIDEO_MODEL = "hailuo/02-image-to-video-*"
 
 # Lip-sync is not a menu video model: Trevor locked the lip-sync model. The F14
 # video lock (menu + card choice) does not apply to it; kie_dispatch lets this
@@ -158,10 +159,11 @@ def _allowed():
 def matches_family(model, pattern):
     """True when model fits a menu pattern: exact, or 'fam/*' family member."""
     model, pattern = (model or "").strip(), (pattern or "").strip()
-    if pattern.endswith("/*"):
-        base = pattern[:-2]
+    if pattern.endswith("*"):
+        # "fam/*" and "fam-*" are both families: the prefix before the star
+        base = pattern[:-2] if pattern.endswith("/*") else pattern[:-1]
         return model == pattern or model == base or \
-            model.startswith(base + "/")
+            model.startswith(pattern[:-1])
     return model == pattern
 
 

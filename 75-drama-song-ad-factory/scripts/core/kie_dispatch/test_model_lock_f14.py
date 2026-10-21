@@ -53,7 +53,7 @@ BASE_SCRIPT = {
     "preflight": PREFLIGHT_OK,
     "prompt-budget": BUDGET_OK,
 }
-DEFAULT = ML.DEFAULT_VIDEO_MODEL            # minimax-h3/*
+DEFAULT = ML.DEFAULT_VIDEO_MODEL            # hailuo/02-image-to-video-*
 
 
 class Fake74:
@@ -104,7 +104,7 @@ def disp(script, label, model, lock=None, state_db=None, tmp=None,
                                       "video_style": "Lifelike 3D",
                                       "audio_style": "Soul Ballad",
                                       "length": 60,
-                                      "video_model": "MiniMax H3 768P"},
+                                      "video_model": "Hailuo 02 Standard 768P"},
                                   "who": "F14 lock test",
                                   "at": "2026-10-08T09:00:00Z"}},
         save_dir=os.path.join(tmp, "out"), ledger_db=db, run_id="run-f14",
@@ -158,8 +158,8 @@ def test_locked_model_passes():
         "save": (0, {"state": "success", "task_id": "t-h3",
                      "saved_paths": ["/tmp/h3.mp4"], "credits_consumed": 30}),
     })
-    # member of the locked family: minimax-h3/image-to-video
-    env, fake, db = disp(script, "h3ok", "minimax-h3/image-to-video",
+    # member of the locked family: hailuo/02-image-to-video-standard
+    env, fake, db = disp(script, "h3ok", "hailuo/02-image-to-video-standard",
                          lock=DEFAULT, tmp=tmp)
     check("f14: locked family member accepted", env["outcome"] == "ok",
           str(env))
@@ -186,7 +186,7 @@ def test_drift():
 
 def test_no_lock_fail_closed():
     tmp = tempfile.mkdtemp(prefix="f14-")
-    env, fake, _ = disp(BASE_SCRIPT, "nolock", "minimax-h3/image-to-video",
+    env, fake, _ = disp(BASE_SCRIPT, "nolock", "hailuo/02-image-to-video-standard",
                         lock=None, tmp=tmp)
     check("f14: un-locked video job refused", env["outcome"] == "rejected",
           str(env["outcome"]))
@@ -203,9 +203,9 @@ def test_model_down_no_fallback():
     script.update({
         "submit": (0, {"state": "fail",
                        "error": {"code": "provider_unavailable",
-                                 "msg": "minimax-h3 down"}}),
+                                 "msg": "hailuo down"}}),
     })
-    env, fake, db = disp(script, "down", "minimax-h3/text-to-video",
+    env, fake, db = disp(script, "down", "hailuo/02-image-to-video-pro",
                          lock=DEFAULT, tmp=tmp,
                          submit=script["submit"])
     check("f14: down model -> waiting outcome", env["outcome"] == "waiting",
@@ -231,11 +231,11 @@ def test_model_down_no_fallback():
 def test_delivery_gate():
     locked = DEFAULT
     ok = ML.check_video_model_delivery(
-        {"clips": [{"model": "minimax-h3/text-to-video"},
-                   {"model": "minimax-h3/image-to-video"}]}, locked)
+        {"clips": [{"model": "hailuo/02-image-to-video-pro"},
+                   {"model": "hailuo/02-image-to-video-standard"}]}, locked)
     check("f14: delivery gate accepts locked-family clips", ok == [], str(ok))
     bad = ML.check_video_model_delivery(
-        {"clips": [{"model": "minimax-h3/text-to-video"},
+        {"clips": [{"model": "hailuo/02-image-to-video-pro"},
                    {"model": "bytedance/seedance-2-mini"}]}, locked)
     check("f14: delivery gate fails one mismatched clip", len(bad) == 1
           and "VIDEO_MODEL_MISMATCH" in bad[0], str(bad))

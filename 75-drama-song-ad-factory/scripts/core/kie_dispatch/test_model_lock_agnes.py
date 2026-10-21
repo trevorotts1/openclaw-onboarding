@@ -68,12 +68,12 @@ def test_flash_rejected_without_the_agnes_choice():
 
 def test_default_gate_unchanged():
     """Plain-F14 verdict, byte for byte, with and without the keyword."""
-    locked_ok = [{"model": "minimax-h3/text-to-video"},
-                 {"model": "minimax-h3/image-to-video"}]
+    locked_ok = [{"model": "hailuo/02-image-to-video-pro"},
+                 {"model": "hailuo/02-image-to-video-standard"}]
     assert ML.check_video_model_delivery({"clips": locked_ok}, BACKUP) == []
     assert ML.check_video_model_delivery({"clips": locked_ok}, BACKUP,
                                          agnes_chosen=False) == []
-    mismatch = [{"model": "minimax-h3/text-to-video"},
+    mismatch = [{"model": "hailuo/02-image-to-video-pro"},
                 {"model": "bytedance/seedance-2-mini"}]
     plain = ML.check_video_model_delivery({"clips": mismatch}, BACKUP)
     agnes = ML.check_video_model_delivery({"clips": mismatch}, BACKUP,

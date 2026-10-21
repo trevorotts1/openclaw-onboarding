@@ -268,7 +268,11 @@ def _lane_size_threads():
         if not callable(fn):
             continue
         try:
-            out = fn()
+            # size() (W2-A) now takes (runtime, provider, ...) positionally:
+            # same documented call intake_preflight/factory.py makes. Other
+            # names stay zero-arg probes.
+            out = fn("claude-code", "openrouter", units=999) \
+                if name == "size" else fn()
         except Exception as exc:            # noqa: BLE001
             _loud("warn", "LANE_SIZE_BROKEN", "%s(): %r" % (name, exc))
             continue
@@ -392,20 +396,41 @@ def h5_gates(plan):
     return None, ev
 
 
+LIPSYNC_NOT_IN_PLAN = "LIPSYNC_NOT_IN_PLAN"
+LIPSYNC_NOT_APPLICABLE = "NOT_APPLICABLE"
+
 def lipsync_gate(plan):
     """E6 final edit QC: lip-sync coverage on the planned timeline.
 
     plan segments carry "lip_sync" markers from plan_timeline; the gate
     counts distinct marked LINES as segments (each whole line one segment,
-    per E5's atomicity) and totals their snapped footage. Returns the
-    _fail receipt on a short ad, or None when coverage holds (or the plan
-    declares no lip-sync markers at all, which the QC review layer reads
-    as a FAIL via the emitted coverage report — never silently as none).
+    per E5's atomicity) and totals their snapped footage.
+
+    RL1: the gate is opt-in by data, mirroring face_speaks_gate. A plan
+    that declares NO lip_sync markers AND line-free (no "speaker" key on
+    any line) has nothing to cover: the check advances with an explicit
+    NOT_APPLICABLE record (reason code LIPSYNC_NOT_IN_PLAN + the coverage
+    numbers) — never a silent pass, never a refusal. A plan that DOES
+    declare lip-sync lines keeps the hard gate unchanged and a short
+    coverage still refuses.
     """
     marked = [s for s in plan["segments"]
               if s.get("lip_sync") or s.get("lip_sync_line_ids")]
+    speaker_lines = [l for l in (plan.get("lines") or [])
+                     if isinstance(l, dict) and l.get("speaker")]
     lines = len(marked)
     total = sum(s["snapped_dur"] for s in marked)
+    evidence = {"ad_length_s": plan["total_dur"],
+                "lipsync_lines_count": lines,
+                "lipsync_total_s": total,
+                "speaker_lines": len(speaker_lines)}
+    if not marked and not speaker_lines:
+        return {"outcome": "not_applicable", "verdict": LIPSYNC_NOT_APPLICABLE,
+                "reason_code": LIPSYNC_NOT_IN_PLAN,
+                "next_action": "the plan declares no lip_sync markers and no "
+                               "speaker lines; lip-sync coverage does not "
+                               "apply to this ad",
+                "evidence": evidence}
     res = check_lipsync_coverage(plan["total_dur"], lines, total)
     if res["pass"]:
         return None
@@ -1074,6 +1099,7 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
     threads, nice, _timeout = size_ffmpeg(
         plan.get("total_dur", 0), w, h)
     segs = plan["segments"]
+    fr = 1.0 / fps
     # Load governor: nice -n 10 + -threads min(4, size_ffmpeg) on every ffmpeg argv.
     cmd = _LG.ffmpeg_argv(["-y"], ffmpeg, threads)
     for s in segs:
@@ -1089,16 +1115,34 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
         # recorded source_fps decides pass-through vs minterpolate.
         conform = fps_conform.build_conform_argv(
             s.get("source_fps", fps), fps, w, h)
+        # RL1 hold-to-slot: a clip SHORTER than its planned slot is held
+        # (last frame cloned via tpad) up to the slot, never trimmed to
+        # EOF; a clip LONGER than its slot is trimmed to the slot. Both
+        # end on the same second trim, so the master length is the
+        # planned length regardless of which side the clip is on.
+        # The end second trim + setpt re-assert the exact slot even on
+        # the conform path, where minterpolate's boundary rounding can
+        # leave a frame.
+        pad_step = ""
+        if s.get("source_dur"):
+            # margin-of-error floor: inside one frame of slot, no pad
+            if s["source_dur"] < s["snapped_dur"] - fr:
+                pad_step = (f"tpad=stop_mode=clone:stop=-1,"
+                            f"trim=duration={s['snapped_dur']:.6f},")
         if conform:
             # H3: minterpolate cannot extrapolate, so it loses ~2 frames at
             # the cut. Trim a margin in, conform, then trim to the exact
             # slot so the segment keeps its planned frame count.
             step = (f"trim=duration={s['snapped_dur'] + 0.25:.6f},"
                     f"setpts=PTS-STARTPTS,{conform},"
+                    f"{pad_step}"
                     f"trim=duration={s['snapped_dur']:.6f},"
                     "setpts=PTS-STARTPTS,")
         else:
             step = (f"trim=duration={s['snapped_dur']:.6f},"
+                    "setpts=PTS-STARTPTS,"
+                    f"{pad_step}"
+                    f"trim=duration={s['snapped_dur']:.6f},"
                     "setpts=PTS-STARTPTS,")
         # H3: a pass-through Kling clip (source timebase 1/15360) and an
         # interpolated H3 clip (timebase 1/30) cannot meet in xfade/concat
@@ -1200,10 +1244,27 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
              timeout=None, base_dir=".", dry_run=False, chosen_length_s=None,
              detector_result=None, target=None, takes=None, verdict=None,
              planned=None):
+    """RL1 wrapper: run the render, then write the receipt beside the
+    output on EVERY outcome (errors included) except dry_run -- the
+    headless run reads the file, not a terminal. Returns the receipt."""
+    receipt = _assemble(timeline_path, output, ffmpeg=ffmpeg,
+                        ffprobe=ffprobe, timeout=timeout, base_dir=base_dir,
+                        dry_run=dry_run, chosen_length_s=chosen_length_s,
+                        detector_result=detector_result, target=target,
+                        takes=takes, verdict=verdict, planned=planned)
+    if not dry_run and isinstance(receipt, dict):
+        _write_receipt(output, receipt)
+    return receipt
+
+def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
+              timeout=None, base_dir=".", dry_run=False, chosen_length_s=None,
+              detector_result=None, target=None, takes=None, verdict=None,
+              planned=None):
     """Full render: validate -> preflight -> plan -> ffmpeg -> verify.
 
-    Returns receipt dict (also written to <output>.receipt.json unless
-    dry_run). Post-render ffprobe check: |A-V| and |out - planned|
+    Returns the receipt dict; assemble() (the public wrapper above)
+    writes it to <output>.receipt.json on every outcome except dry_run.
+    Post-render ffprobe check: |A-V| and |out - planned|
     each within 1 frame; else outcome error with AV_DRIFT/PLAN_DRIFT.
 
     G5 honest receipts (Trevor order 1135, Part G, AMENDED by order 1150
@@ -1258,6 +1319,27 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         return _fail(msg.split(":")[0], next_action=msg, evidence={})
     for s in plan["segments"]:
         s["src"] = abspath(s["src"])
+        # RL1 hold-to-slot: every input is measured (ffprobe), so the
+        # render chain knows whether the clip must be HELD to its slot
+        # (shorter, tpad clone in build_argv) or TRIMMED to it (longer).
+        try:
+            s["source_dur"] = probe_duration(s["src"], ffprobe)
+        except RuntimeError as exc:
+            if not dry_run:
+                # a REAL render of an unreadable clip can only die in
+                # ffmpeg — refuse it before the spend instead.
+                return _fail("INPUT_UNREADABLE", next_action=str(exc),
+                             evidence={"src": s["src"]},
+                             )
+            # dry run stays media-free: no measurement -> no hold decision
+            # (today's trim-to-EOF behavior) and the gap is LOUD on the
+            # receipt, never silent.
+            _loud("warn", "SOURCE_DUR_UNKNOWN",
+                  "%s: %s" % (s["src"], exc))
+            s["source_dur"] = None
+        if not s.get("hold") and s["source_dur"] is not None \
+                and s["source_dur"] + 1.0 / plan["fps"] < s["snapped_dur"]:
+            s["hold"] = True   # held on its own last frame(s) to the slot
     if plan["song_path"]:
         plan["song_path"] = abspath(plan["song_path"])
     # Part E E5: lip-sync clips stay whole — same gate the shot-planner QC
@@ -1374,7 +1456,8 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                             "motion": motion, "h5": _h5_ev,
                             "qc_no_blur": nb},
                "state_version": 0}
-        blocked = next((b for b in (cov, face, ffail) if b is not None), None)
+        blocked = next((b for b in (cov, face, ffail) if b is not None
+                        and b.get("outcome") == "error"), None)
         if blocked is not None:  # blocked before spend, but evidence stays
             out["outcome"] = "error"
             out["reason_code"] = blocked["reason_code"]
@@ -1389,7 +1472,10 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                          evidence={"detector_result": detector_result})
         return out
     for blocked in (cov, face, ffail):   # gate FAILs: no render spend (17.5)
-        if blocked is not None:
+        # RL1: a NOT_APPLICABLE lip-sync record (outcome not_applicable)
+        # carries its verdict and numbers on the receipt and ADVANCES —
+        # only a measured failure blocks.
+        if blocked is not None and blocked.get("outcome") == "error":
             return blocked
     try:
         proc = _run(argv, timeout)
@@ -1430,17 +1516,28 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     evid["dup_frame_pct"] = dup_pct
     evid["segment_dups"] = seg_rows
     evid["frame_text"] = frows   # F9: one row per lip-sync clip, in receipt
-    try:
-        fps_conform.assert_no_dupe_frames(dup_pct)
-        evid["dup_frame_gate"] = "PASS"
-    except ValueError as exc:
-        return _fail(str(exc),
-                     next_action=("master exceeds %s%% duplicated frames; "
-                                  "reconform the offending clip with "
-                                  "fps_conform.build_conform_argv (mci, "
-                                  "never the plain fps filter)"
-                                  % fps_conform.DUP_FRAMES_CAP),
-                     evidence=evid)
+    # RL1 hold-to-slot accounting: a held (tpad-cloned) span IS a
+    # deliberate still — its own frozen frames are the hold, and the whole
+    # mpdecimate run over the master would otherwise count them (and an
+    # xfade boundary into the next clip) against the conform gate. The
+    # per-segment report polices every NON-held window at the SAME cap,
+    # so only the pure (all-trim/non-held) master path runs the
+    # master-level assert. Same cap, honest accounting, nothing loosened.
+    holds = [s for s in plan["segments"] if s.get("hold")]
+    if holds:
+        evid["dup_frame_gate"] = "PASS_VIA_HOLD" if not seg_bad else "SEGMENTS_FAIL"
+    else:
+        try:
+            fps_conform.assert_no_dupe_frames(dup_pct)
+            evid["dup_frame_gate"] = "PASS"
+        except ValueError as exc:
+            return _fail(str(exc),
+                         next_action=("master exceeds %s%% duplicated frames; "
+                                      "reconform the offending clip with "
+                                      "fps_conform.build_conform_argv (mci, "
+                                      "never the plain fps filter)"
+                                      % fps_conform.DUP_FRAMES_CAP),
+                         evidence=evid)
     if seg_bad:
         return _fail(fps_conform.TIMELINE_SEGMENT_DUP_FRAMES,
                      next_action=("segments above %s%% duplicated frames: "
@@ -1492,6 +1589,10 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     reg.register("assemble", [abspath(p) for p in tl.get("intermediates", [])])
     evid["cleanup"] = reg.consumed("assemble", output)
     evid["load_governor"] = _LG.receipt()
+    # RL1: the lip-sync gate's verdict rides the rendered receipt too
+    # (None = measured pass, NOT_APPLICABLE record = not applicable to
+    # this plan's data) — a gate result is never silently absent.
+    evid["lipsync"] = cov
     receipt = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                "tool_version": TOOL_VERSION, "command": "assemble",
                "outcome": "ok", "reason_code": "ASSEMBLED",
@@ -1512,15 +1613,22 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                          evidence={"detector_result": detector_result})
     # No silent failure: every recorded FAILURE/WARNING rides the receipt.
     _loud_attach(receipt)
+    return receipt
+
+
+def _write_receipt(output, receipt):
+    """RL1: every assemble() outcome writes its receipt beside the output
+    (headless QC reads files, not a terminal). One shared writer."""
     try:
         with open(str(output) + ".receipt.json", "w",
                   encoding="utf-8") as fh:
             json.dump(receipt, fh, indent=2)
+        return True
     except OSError as exc:
         _loud("fail", "RECEIPT_WRITE_FAILED",
               "%s.receipt.json: %s" % (output, exc))
         _loud_attach(receipt)
-    return receipt
+        return False
 
 
 def main(argv=None):

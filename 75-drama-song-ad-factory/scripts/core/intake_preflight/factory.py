@@ -534,16 +534,28 @@ def _music_audio(run_dir):
 
 
 def _song_hold(run_dir):
-    """The existing song-pick / acceptance / constituent gate; fail closed."""
+    """The existing song-pick / acceptance / constituent gate; fail closed.
+    L2 (WW-21): a recorded, well-formed OPERATOR DECISION does not open the
+    WW-21 acceptance hold by ITSELF — the decision is recorded at complete
+    time (before the hold), and the hold is still evaluated on the take
+    records; only a relabel-shaped MANUAL_RELABEL refusal stays absolute."""
     try:
         sc = _core_mod("song_choices")
-        return sc.refusal(str(run_dir)) or sc.constituent_hold(str(run_dir))
+        ref = sc.refusal(str(run_dir))
+        if ref is not None and ref.get("reason_code") == "ACCEPTANCE_NOT_PROVEN":
+            sd = _core_mod("song_dispatch")
+            dec = sd.read_operator_decision(str(run_dir))
+            if dec is not None:
+                dec, rs = sd.decision_applies(str(run_dir), dec=dec)
+                if dec is not None and not rs:
+                    return None            # recorded decision + honest record; the hold opens
+        return ref or sc.constituent_hold(str(run_dir))
     except Exception as exc:  # noqa: BLE001 - a broken gate never opens
         return {"reason_code": "SONG_GATE_BROKEN", "detail": repr(exc)[:200]}
 
 
 def music_stage(run_dir, owner, action, run_id=None, reason=None,
-                retryable=False, qc=None, lease_s=3600):
+                retryable=False, qc=None, lease_s=3600, operator_decision=None):
     """One guarded lifecycle step on the music row. Returns _mres(...).
 
     Idempotent: COMPLETE answers with the existing row; the live owner calling
@@ -551,6 +563,11 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
     refused; an expired RUNNING lease is reclaimed by state_store.claim. Every
     write is a version-predicated state_store call, so TRANSITIONS is the law.
     qc = {"records": [...], "makers": {...}, "required": [...]} for complete.
+    operator_decision = the L2 (WW-21) recorded operator-decision doc for
+    complete: NEVER a PASS for a measured gate -- the WW-21 boundary still
+    applies and the stage holds at ACCEPTANCE_NOT_PROVEN until every gate is
+    proven OR the operator has explicitly accepted the named gates as NOT
+    proven (a decision is not a relabel; `_MANUAL_SOURCES` refusals stand).
     """
     core = str(Path(__file__).resolve().parent.parent)
     if core not in sys.path:
@@ -626,6 +643,22 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
                               expected_version=row["version"], reason="%s: %s" % (code, why)[:500])
             return _mres("rejected", code, why, r)
 
+        # L2 (WW-21): the operator decision, when supplied, is validated and
+        # recorded BEFORE the hold, so `_song_hold` can honour it. It never
+        # opens the WW-21 boundary by itself (a measured gate is never
+        # re-labelled PASS) and never rewrites a take record; it says the run
+        # may advance with the named gates NOT PROVEN -- and a relabel-shaped
+        # MANUAL_RELABEL refusal is never decided around.
+        if operator_decision is not None:
+            sd = _core_mod("song_dispatch")
+            try:
+                sd.record_operator_decision(str(run_dir), operator_decision,
+                                            required=None)
+            except Exception as e:  # noqa: BLE001 - a bad decision writes nothing
+                why = str(e)
+                return block("OPERATOR_DECISION_REJECTED",
+                             why[why.find("OPERATOR_DECISION_REJECTED:"):]
+                             if "OPERATOR_DECISION_REJECTED:" in why else why[:500])
         hold = _song_hold(run_dir)
         if hold:
             code, why = hold["reason_code"], hold.get("detail") or hold.get("next_action", "")
@@ -667,6 +700,7 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
 def cmd_music(a):
     run_dir = Path(a.run_dir).expanduser().resolve()
     qc = None
+    od = None
     if a.action == "complete":
         try:
             qc = {"records": _load(a.records) if a.records else [],
@@ -674,8 +708,18 @@ def cmd_music(a):
                   "required": [c.strip() for c in (a.required or "").split(",") if c.strip()]}
         except (OSError, ValueError) as e:
             return envelope("music", run_dir.name or "run", "error", "qc-input-unreadable", str(e)[:200])
+        # L2 (WW-21): the documented operator decision rides `complete`. Missing
+        # file = None; unreadable file = a loud refusal (never a silent pass).
+        if a.operator_decision:
+            try:
+                od = _load(a.operator_decision)
+            except (OSError, ValueError) as e:
+                return envelope("music", run_dir.name or "run", "error",
+                                "OPERATOR_DECISION_UNREADABLE",
+                                "%s: %s" % (a.operator_decision, str(e)[:200]))
     r = music_stage(run_dir, a.owner, a.action, run_id=a.run_id, reason=a.reason,
-                    retryable=a.retryable, qc=qc, lease_s=a.lease_s)
+                    retryable=a.retryable, qc=qc, lease_s=a.lease_s,
+                    operator_decision=od)
     return envelope("music", run_dir.name or "run", r["outcome"], r["reason_code"],
                     r["detail"], data={"stage": MUSIC, "row": r["row"]})
 
@@ -690,7 +734,12 @@ def _music_lifecycle():
             "complete": base + "complete --records \"$RUN/music/qc-records.json\" "
                         "--makers \"$RUN/music/makers.json\" --required <required-checks>",
             "note": "Claim music BEFORE any generation, complete it after the pick and "
-                    "independent QC; continuity-bible is never eligible until then."}
+                    "independent QC; continuity-bible is never eligible until then. "
+                    "When the WW-21 gates fail on MEASURED evidence and the run owner "
+                    "accepts them unproven, complete with --operator-decision <path> "
+                    "(music/acceptance/operator-decision.json: decision ACCEPTED_RISK, "
+                    "operator, at_utc, gates_not_proven, measured_evidence_digest, "
+                    "reason) -- it never writes a PASS for a measured gate."}
 
 
 # ── W2-wiring-U1: purpose routing, method gates, Agnes routing ──────────────
@@ -736,6 +785,334 @@ def _read_json(path, default=None):
     except (OSError, ValueError):
         return default
     return doc if isinstance(doc, dict) else default
+
+# ── L4-RL4 (v2.9.73 reliability): reconcile / stale-session / forks ─────────
+#
+# Live proof (Voyage To Virtue, 2026-10-20/21): storyboard gate.json was
+# approved with shots and stills on disk while the stages row read
+# NOT_STARTED, so `next` kept handing back the music command; a money
+# question sat for hours with no safe default; long-lived sessions ran code
+# older than the installed skill, so three merged fixes could not reach
+# them; and 65 identical lip-sync failures had no early abort.
+
+#: L4.2: the skill version this PROCESS started on, read once at import.
+#: `next` (and every other subcommand's run) compares it with the version
+#: installed on disk and refuses to continue a run when the installed one is
+#: newer — the process would otherwise silently keep running stale code.
+def _skill_version_at_boot():
+    # an explicit launcher override wins (documented: the process records
+    # what it booted on when the file layout makes a plain read ambiguous)
+    env = os.environ.get("DSAF_BOOT_SKILL_VERSION")
+    if env:
+        return env.strip()
+    try:
+        return (Path(__file__).resolve().parents[3] / "skill-version.txt") \
+            .read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+_BOOT_SKILL_VERSION = _skill_version_at_boot()
+
+def _skill_version_on_disk():
+    try:
+        return (Path(__file__).resolve().parents[3] / "skill-version.txt") \
+            .read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+def _stale_session():
+    """(stale, boot_version, disk_version): L4.2 — the installed skill is
+    NEWER than the version this process recorded at start. An equal or older
+    disk version, or a version this process could not read at boot (a run
+    inside a bare install where skill-version.txt sits elsewhere), is never
+    stale. Restart is the remedy; no stage command is ever handed out by a
+    process on obsolete code."""
+    boot, disk = _BOOT_SKILL_VERSION, _skill_version_on_disk()
+    if not boot or not disk or disk == boot:
+        return False, boot, disk
+
+    def parts(v):
+        try:
+            return tuple(int(x) for x in v.lstrip("v").split(".")[:4])
+        except ValueError:
+            return ()
+    try:
+        pb, pd = parts(boot), parts(disk)
+    except Exception:                                # noqa: BLE001
+        return False, boot, disk
+    if not pb or not pd:
+        return False, boot, disk
+    return pd > pb, boot, disk
+
+_MUSIC = "music"
+_RECON_OWNER = "reconcile"
+
+def _proven_storyboard(run_dir, run_id=""):
+    """(proven, evidence): the storyboard's OWN approval artifacts, all on
+    disk — gate.json's approved shots, approval.json state "approved", and
+    every stills.json path a non-empty file. No shot is approved that is not
+    in the approved set."""
+    sb = Path(run_dir) / "storyboard"
+    gate = _read_json(sb / "gate.json")
+    appr = _read_json(sb / "approval.json")
+    shots = gate.get("shots") if isinstance(gate, dict) else None
+    if not (isinstance(shots, list) and shots
+            and isinstance(appr, dict) and appr.get("state") == "approved"):
+        return False, {"missing": "gate.json shots or approval.json approved"}
+    stills = _read_json(sb / "stills.json")
+    paths = [v for v in (stills or {}).values() if isinstance(v, (str, Path))]
+    missing = []
+    for p in paths:
+        try:
+            q = Path(p) if Path(p).is_absolute() else Path(run_dir, p)
+            if not (q.is_file() and q.stat().st_size > 0):
+                missing.append(str(p))
+        except OSError:
+            missing.append(str(p))
+    ev = {"artifacts": ["storyboard/gate.json", "storyboard/approval.json",
+                        "storyboard/stills.json"],
+          "approved_shots": len(shots), "stills": len(paths),
+          "stills_missing": missing}
+    return (not missing), ev
+
+def _proven_music(run_dir, run_id=""):
+    """(proven, evidence): the music stage's OWN documented complete
+    condition, all on disk — the picked file matches pick.json's sha256, the
+    pick is the recorded pick (the gate's own refusal is None), and the
+    independent QC records written beside it evaluate to PASS via qc_gate.
+    Without the QC records the row is never reconciled: no gate is invented."""
+    pick = _read_json(Path(run_dir) / "song-choices" / "pick.json")
+    picked = Path(run_dir) / "music" / "picked-song.mp3"
+    if not (isinstance(pick, dict) and pick.get("sha256")
+            and picked.is_file() and picked.stat().st_size > 0):
+        return False, {"missing": ["song-choices/pick.json",
+                                   "music/picked-song.mp3"]}
+    try:
+        import hashlib
+        h = hashlib.sha256(picked.read_bytes()).hexdigest()
+    except OSError:
+        return False, {"pick": "unreadable"}
+    if h != pick["sha256"]:
+        return False, {"sha_mismatch": True}
+    ev = {"artifacts": ["song-choices/pick.json", "music/picked-song.mp3"],
+          "picked_sha256": h[:12], "qc": None}
+    rec_path = Path(run_dir) / "music" / "qc-records.json"
+    if not rec_path.is_file():
+        ev["qc"] = "records-missing"
+        return False, ev
+    qg = _core_mod("qc_gate")
+    if qg is None:
+        ev["qc"] = "qc_gate-unavailable"
+        return False, ev
+    try:
+        with open(rec_path, encoding="utf-8") as f:
+            recs = json.load(f)
+    except (OSError, ValueError):
+        recs = None
+    if not isinstance(recs, list) or not recs:
+        ev["qc"] = "records-empty"
+        return False, ev
+    makers = _read_json(Path(run_dir) / "music" / "makers.json", {}) or {}
+    # the required checks the record set itself names (same read the CLI's
+    # complete step takes); an empty required list is a refusal here too.
+    required = sorted({str(r.get("check_id")) for r in recs
+                       if isinstance(r, dict) and r.get("check_id")})
+    try:
+        res = qg.evaluate(run_id or "reconcile", _MUSIC, recs, makers,
+                          required)
+    except Exception:                                # noqa: BLE001
+        ev["qc"] = "records-unreadable"
+        return False, ev
+    ev["qc"] = {"gate": res.get("gate"), "reason_code": res.get("reason_code")}
+    return res.get("gate") == "PASS", ev
+
+#: stage -> proven-artifact predicate. The ONLY reconciled stages: each
+#: predicate reads exactly the artifacts its OWN stage gate writes.
+_RECONCILIERS = {"storyboard": _proven_storyboard, "music": _proven_music}
+
+def _reconcile_stages(run_dir, got):
+    """L4.1: reconcile stage rows from proven artifacts through state_store.
+
+    Returns (reconciled_rows, fresh_states). Proven: the runbook's own
+    artifact set for a stage exists and its own gate evaluates PASS. Only
+    non-terminal rows move, every write is a guarded state_store transition /
+    claim under owner "reconcile" (version CAS + event trail) — never a
+    hand-written sqlite UPDATE — and a live foreign lease is never seized.
+    A stage whose artifacts do not prove completion is untouched.
+    """
+    out = []
+    db = Path(run_dir) / "control" / "state.sqlite3"
+    if not db.exists():
+        return out, got
+    try:
+        import state_store as ss  # noqa: PLC0415
+        st = ss.Store(db)
+    except Exception:                                # noqa: BLE001
+        return out, got
+    try:
+        ids = [r[0] for r in st.con.execute("SELECT DISTINCT run_id FROM stages")]
+        if len(ids) == 1:
+            rid = ids[0]
+        else:
+            rid = run_dir.name or "run"
+            if rid not in ids:
+                return out, got
+        for stage, probe in _RECONCILIERS.items():
+            try:
+                row = st.get(rid, stage)
+            except ss.StoreError:
+                continue
+            if row["state"] not in ("NOT_STARTED", "WAITING_APPROVAL",
+                                    "WAITING_PROVIDER", "READY", "RUNNING",
+                                    "PARKED"):
+                continue
+            proven, ev = probe(run_dir, run_id=rid)
+            if not proven:
+                continue
+            from_state = row["state"]
+            now = time.time()
+            if row["owner"] and now < (row["lease_expires"] or 0) \
+                    and row["owner"] != _RECON_OWNER:
+                out.append({"stage": stage, "from_state": from_state,
+                            "to_state": from_state,
+                            "skipped": "live lease held by %s" % row["owner"]})
+                continue
+            try:
+                if from_state == "NOT_STARTED":
+                    row = st.transition(rid, stage, "READY", _RECON_OWNER,
+                                        expected_version=row["version"])
+                if row["state"] in ("READY", "PARKED", "FAILED_RETRYABLE",
+                                    "WAITING_APPROVAL", "WAITING_PROVIDER"):
+                    row = st.claim(rid, stage, _RECON_OWNER, lease_s=60,
+                                   expected_version=row["version"])
+                targets = ("QC", "COMPLETE") if stage == _MUSIC else ("COMPLETE",)
+                for to in targets:
+                    if row["state"] == to:
+                        break
+                    row = st.transition(rid, stage, to, _RECON_OWNER,
+                                        expected_version=row["version"],
+                                        reason="reconciled from proven "
+                                               "artifacts on disk")
+            except ss.StoreError as e:
+                out.append({"stage": stage, "from_state": from_state,
+                            "to_state": from_state, "error": e.code,
+                            "detail": str(e)[:160]})
+                continue
+            out.append({"stage": stage, "from_state": from_state,
+                        "to_state": row["state"], "evidence": ev})
+        fresh = {r[0]: r[1] for r in st.con.execute(
+            "SELECT stage, state FROM stages WHERE run_id=?", (rid,))}
+        got.update(fresh)
+        return out, got
+    finally:
+        st.close()
+
+# ── L4.5: the cost/approval fork and its safe default ──────────────────────
+#
+# A run must not sit for hours on a small money question. When `next` meets a
+# fork whose paid branch is bigger than the remaining ledger balance, the
+# recorded decision is the FREE branch — never a spend above the balance or
+# above the run's declared budget. A fork whose paid branch fits is recorded
+# as "proceed" and the paid command stays in the envelope; the decision, the
+# remaining balance and the fork's two costs are written to
+# control/fork-decisions.json (append, never clobber) and returned on the
+# envelope. No balance readable -> WAIT (the only safe default), never spend.
+
+_FORK_DECISIONS = "fork-decisions.json"
+
+def _remaining_ledger_balance(run_dir):
+    """Minor units left on this run's own spend ledger, or None (never a
+    guess: a ledger that is unreachable or holds no such run is None — and
+    None means WAIT below, the safe default)."""
+    db = Path(run_dir) / "spend.sqlite3"
+    if not db.exists():
+        return None
+    rid = (run_dir.name or "run")
+    try:
+        import spend_ledger as sl  # noqa: PLC0415
+    except Exception:                                # noqa: BLE001
+        return None
+    # the run's id: exactly one on the ledger answers for it; anything else
+    # must be the run dir's own name (a run folder named for its run id).
+    try:
+        import sqlite3
+        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        try:
+            ids = [r[0] for r in con.execute("SELECT run_id FROM runs")]
+        finally:
+            con.close()
+    except Exception:                                # noqa: BLE001
+        return None
+    if len(ids) == 1:
+        rid = ids[0]
+    elif rid not in ids:
+        return None
+    s = sl.summary(str(db), rid)
+    if s.get("outcome") != "ok" \
+            or (s.get("evidence") or {}).get("run_status") != "active":
+        return None
+    try:
+        rem = int(s["evidence"]["remaining_budget"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return rem
+
+def cost_fork(run_dir, fork_id, paid_cost_minor, label="",
+              budget_minor=None, now=None):
+    """One cost fork, decided. Returns the decision dict.
+
+    paid_cost_minor: what the paid branch costs (None = unknown — unknown
+    is never auto-spent; the decision is WAIT). budget_minor: the run's
+    declared ceiling (optional; a fork is never auto-passed above it even
+    when the ledger could). The recorded decision is "proceed" ONLY when the
+    cost is a number > 0 and it fits BOTH the remaining ledger balance and
+    the declared budget; every other case records the safe default "wait",
+    which spends nothing and leaves the client question standing.
+    Writes/merges $RUN/control/fork-decisions.json (one line appended inside
+    the JSON doc) and never answers above budget.
+    """
+    now = now or time.time()
+    at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+    rem = _remaining_ledger_balance(run_dir)
+    cost = paid_cost_minor
+    fits_balance = (isinstance(cost, int) and not isinstance(cost, bool)
+                    and cost > 0 and rem is not None and cost <= rem)
+    fits_budget = (not isinstance(budget_minor, int) or isinstance(budget_minor, bool)
+                   or budget_minor < 0 or
+                   (isinstance(cost, int) and not isinstance(cost, bool)
+                    and cost <= budget_minor))
+    cost_known = (isinstance(cost, int) and not isinstance(cost, bool)
+                  and cost > 0)
+    if cost_known and fits_balance and fits_budget:
+        decision, why = "proceed", "cost fits the remaining ledger balance"
+    else:
+        decision = "wait"
+        if not cost_known:
+            why = "unknown cost: never auto-spent"
+        elif rem is None:
+            why = "no readable ledger balance: the safe default is wait"
+        elif not fits_balance:
+            why = ("cost %d over the remaining ledger balance %s"
+                   % (cost, rem))
+        else:
+            why = ("cost %d over the run's declared budget %s"
+                   % (cost, budget_minor))
+    rec = {"fork_id": str(fork_id), "decision": decision, "label": str(label),
+           "cost_minor": cost, "remaining_balance_minor": rem,
+           "budget_minor": budget_minor, "at_utc": at, "reason": why}
+    p = Path(run_dir) / "control" / _FORK_DECISIONS
+    doc = _read_json(p, {}) or {}
+    log = doc.get("forks")
+    log = log if isinstance(log, list) else []
+    log.append(rec)
+    out = dict(doc, forks=log)
+    try:
+        _write_json(p, out)
+        rec["recorded"] = True
+        rec["path"] = str(p)
+    except OSError:
+        rec["recorded"] = False          # the decision still rides the envelope
+    return rec
 
 def _write_json(path, doc):
     """Atomic write beside the target (never a copy anywhere else)."""
@@ -962,6 +1339,21 @@ def _agnes_admission(remaining):
 
 def cmd_next(a):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
+    # L4.2: a process whose skill was updated since it started refuses to
+    # continue ANY run — silently running stale code is how merged fixes
+    # missed 17-20 h sessions. Both versions are named; restart is the remedy.
+    stale, boot_v, disk_v = _stale_session()
+    if stale:
+        env = envelope("next", "",
+                       "error", "SKILL_UPDATED",
+                       "The installed skill (%s) is newer than the version "
+                       "this process started on (%s). Restart the run "
+                       "process so the fixes apply; this process answers no "
+                       "stage command." % (disk_v, boot_v),
+                       data={"installed_version": disk_v,
+                             "boot_version": boot_v})
+        env["run_id"] = ""
+        return env
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
     db = run_dir / "control" / "state.sqlite3"
     sid = run_dir.name or "run"
@@ -990,6 +1382,11 @@ def cmd_next(a):
     except sqlite3.DatabaseError as e:
         return envelope("next", str(sid), "error", "state-unreadable",
                         "state file unreadable (%s): %s" % (db, str(e)[:120]))
+    # L4.1: reconcile the rows from proven artifacts on disk BEFORE the
+    # answer — through state_store's guarded transitions only; rows the
+    # artifacts do not prove are never touched, and every move it made is
+    # carried on the envelope under data.reconciled.
+    reconciled, got = _reconcile_stages(run_dir, got)
     blocked = ("COMPLETE", "FAILED_BLOCKED", "PARKED")
     next_stage = None
     for s in stages:
@@ -1003,7 +1400,8 @@ def cmd_next(a):
     if next_stage is None:
         return envelope("next", str(sid), "ok", "run-complete",
                         "Every stage is COMPLETE; the run is delivered. "
-                        "Nothing left to run.")
+                        "Nothing left to run.",
+                        data={"reconciled": reconciled} if reconciled else {})
     # W2-wiring-U1: what this run is for, and whether Agnes makes its media.
     method = _method_record(run_dir)
     if isinstance(method, dict):
@@ -1244,6 +1642,28 @@ def cmd_next(a):
         nxt["music_request"] = music_request
     if next_stage == "music":
         nxt["lifecycle"] = _music_lifecycle()
+        # L4.5: the SONG PICK / next paid step is a cost fork. Record the
+        # decision with the safe default BEFORE the run can sit on it: a
+        # three-version pick whose paid redo exceeds the remaining ledger
+        # balance records "wait", never a spend above the balance. The
+        # umbrella's cost is read off the run's own request when one exists.
+        try:
+            reqdoc = _read_json(Path(run_dir) / "music" / "req.json", {}) or {}
+            est = reqdoc.get("estimated_cost")
+            est_int = int(est) if isinstance(est, int) and not isinstance(est, bool) else None
+            method_doc = _read_json(Path(run_dir) / "control" / "method.json",
+                                    {}) or {}
+            ceiling = method_doc.get("budget_minor")
+            ceiling_int = (int(ceiling) if isinstance(ceiling, int)
+                           and not isinstance(ceiling, bool) else None)
+            nxt["cost_fork"] = cost_fork(
+                run_dir, "music-umbrella-%s" % sid, est_int,
+                label="music stage next paid step",
+                budget_minor=ceiling_int)
+        except Exception:                                # noqa: BLE001
+            pass
+    if reconciled:
+        nxt["reconciled"] = reconciled
     return envelope("next", str(sid), "ok", "next-stage",
                     "Run this command for stage %r; after it passes its QC "
                     "gate, run `next` again." % present_id,
@@ -1332,6 +1752,10 @@ def main(argv=None):
     m.add_argument("--records", default=None, help="complete: qc-schema records JSON.")
     m.add_argument("--makers", default=None, help="complete: check_id -> maker JSON.")
     m.add_argument("--required", default=None, help="complete: required checks, comma list.")
+    m.add_argument("--operator-decision", default=None,
+                   help="complete (L2/WW-21): operator-decision JSON -- {decision, operator, "
+                        "at_utc, gates_not_proven, measured_evidence_digest, reason}; never a "
+                        "PASS for a measured gate, never a relabel.")
     sr = sub.add_parser("script-reply", help="The client's reply to the script message "
                                              "(SCRIPT APPROVAL): approve, or an edit.")
     sr.add_argument("--run-dir", required=True)
