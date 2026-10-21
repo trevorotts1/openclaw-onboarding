@@ -664,6 +664,45 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
             code, why = hold["reason_code"], hold.get("detail") or hold.get("next_action", "")
             if code == "SONG_GATE_BROKEN":
                 return _mres("error", code, why, row)
+            # SONG-FAILURE VERDICT BELONGS TO THE CLIENT (order 2026-10-21).
+            # When the song judge failed a take this command NEVER regenerates
+            # and never loops: the stage waits on the client's ONE answer,
+            # recorded in song-choices/fork-decision.json. That answer is
+            # authoritative -- redo_all / new_three send the run back to READY
+            # for a fresh round the CLIENT asked for; keep_one is recorded but
+            # the measured gates below still decide (a decision never writes a
+            # PASS for a measured gate).
+            if code in ("SONG_CONSTITUENT_EVIDENCE_MISSING",
+                        "ACCEPTANCE_NOT_PROVEN") and operator_decision is None:
+                sc = _core_mod("song_choices")
+                try:
+                    dec = sc.fork_decision(str(run_dir))
+                except Exception as e:  # noqa: BLE001 - unreadable fork is no answer
+                    return _mres("error", "SONG_FORK_UNREADABLE", repr(e)[:200], row)
+                if dec is None:
+                    if state != "WAITING_APPROVAL":
+                        row = st.transition(rid, MUSIC, "WAITING_APPROVAL", owner,
+                                            expected_version=row["version"],
+                                            reason="song judge failed: client fork")
+                    row = st.heartbeat(rid, MUSIC, owner,
+                                       lease_s=max(lease_s, _APPROVAL_LEASE_S))
+                    return _mres("waiting", "SONG_FAILURE_AWAITING_CLIENT",
+                                 "%s. My notes: %s" % (sc.FAILURE_FORK, why), row)
+                if dec.get("answer") in ("redo_all", "new_three"):
+                    # The client ASKED for a fresh round. The row goes back to
+                    # RUNNING under the live owner (the one transition
+                    # state_store allows from a waiting state) and the worker
+                    # may buy the next round -- a client-authorized retry,
+                    # never an automatic one.
+                    row = st.transition(rid, MUSIC, "RUNNING", owner,
+                                        expected_version=row["version"],
+                                        reason="client chose %s" % dec.get("answer"))
+                    row = st.heartbeat(rid, MUSIC, owner, lease_s=lease_s)
+                    return _mres("ok", "music-client-redo",
+                                 "client chose %r; run the next round with "
+                                 "`music --action start` (same owner)" % dec.get("answer"), row)
+                why = "client kept a take (%r), but the measured gates still " \
+                      "hold: %s" % (dec.get("answer"), why)
             if code != "SONG_PICK_MISSING":
                 return block(code, why)
             if state == "QC":

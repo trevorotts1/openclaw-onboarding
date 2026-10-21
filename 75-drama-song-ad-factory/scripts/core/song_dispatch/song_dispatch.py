@@ -42,6 +42,7 @@ if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
 import load_governor as _LG   # noqa: E402
+import master_length as _ML   # noqa: E402  QC duration rule (order 2026-10-21)
 import music_qc as _QC       # noqa: E402  WW-08: the total verdict vocabulary + the receipt
 import song_contract as _SC  # noqa: E402
 import script_approval as _SA   # noqa: E402
@@ -581,10 +582,19 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
     dur = take.get("duration_s")
     if not isinstance(dur, (int, float)):
         put("length", "FAIL", "unmeasured")
-    elif dur > D + 0.05:
-        put("length", "FAIL", "%.1f s over the %.0f s limit" % (dur, D))
     else:
-        put("length", _SS.judge_seconds(dur, D, D)["verdict"], "%.1f s" % dur)
+        # Order 2026-10-21: an overshoot is a FLAG, never a stop. Up to 10 s
+        # over records QC_DURATION_OVERSHOOT; past it, QC_DURATION_OVERSHOOT_
+        # SEVERE with the exact seconds over. Both keep the take moving; the
+        # client decides whether to redo. A shortfall keeps today's band.
+        lv = _ML.judge_duration(dur, D, short="band")
+        if lv.get("warning"):
+            try:
+                import loud_failure  # noqa: PLC0415 - same core dir
+                loud_failure.warn(lv["warning"]["code"], lv["warning"]["detail"])
+            except Exception:  # noqa: BLE001 - the warning also rides the gate
+                pass
+        put("length", lv["verdict"], lv["detail"])
     ratio = take.get("music_under_speech_ratio")
     put("music_under_speech", "PASS" if isinstance(ratio, (int, float)) and ratio >= MUSIC_UNDER_SPEECH_MIN
         else "FAIL", "ratio %r" % (ratio,))

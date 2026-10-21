@@ -4,6 +4,34 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.78 - 2026-10-21 - an overshoot flags, the client decides the song
+
+1. QC DURATION OVERSHOOT = FLAG, NOT STOP (master_length, song_dispatch,
+   qc_gate, final_assembler). The one rule is `master_length.judge_duration`,
+   used by the video master check and the song `length` gate. At or under the
+   target passes clean; an overshoot of up to 10 seconds PASSES and records the
+   named warning `QC_DURATION_OVERSHOOT` ("62s of 60s — within the 10-second
+   allowance"); an overshoot past 10 seconds ALSO passes and records
+   `QC_DURATION_OVERSHOOT_SEVERE` with the exact seconds over. Neither stops
+   the run; `qc_gate.evaluate` and the assembler emit the warning through
+   `loud_failure.warn` and carry it on the receipt. An undershoot is unchanged:
+   the song gate keeps the 5/10 band (past 10 points is still FAIL) and the
+   video master stays free on the short side.
+
+2. SONG-FAILURE VERDICT BELONGS TO THE CLIENT (song_choices, intake_preflight).
+   `one_variant` no longer regenerates a failed take: ONE generation per
+   variant, the judge's named concerns on the result, and the paid take kept.
+   `deliver_choices` presents every take — accepted ones on the offer surface,
+   failed ones in `SONG-CHOICES/FOR-LISTENING/` — and asks the ONE fork
+   "Want me to redo all of them, keep one of these three, or generate three new
+   options?". The answer is recorded in `song-choices/fork-decision.json`
+   (`song_choices.py fork`, or `pick --reply` with words). `factory.py music
+   --action complete` WAITS on that answer instead of blocking
+   (`SONG_FAILURE_AWAITING_CLIENT`, row WAITING_APPROVAL); `redo_all` /
+   `new_three` reopen the row for a client-authorized round, and `keep_one`
+   never writes a PASS — the WW-18 / WW-21 measured gates still hold and the
+   documented `--operator-decision` route stays the only way to close them.
+
 ## v2.9.73 - 2026-10-21 - reliability fixes proven by the Voyage To Virtue run
 
 Every fix below is proven by measured evidence from the Voyage To Virtue run

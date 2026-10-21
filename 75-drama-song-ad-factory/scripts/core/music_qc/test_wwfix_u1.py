@@ -205,14 +205,13 @@ def test_d2_per_unit_selector_dispatches_one_and_the_umbrella_three():
 def test_d2_cmd_generate_reports_the_dispatch_count_it_actually_made():
     """The canonical entry point reports a MEASURED count.
 
-    WWFIXGAPS U1 (defect 3): the report used to carry the literals 1 and 3. A
-    take that never lands is regenerated ONCE, so the unit path makes TWO
-    provider jobs and the umbrella SIX -- the literal was wrong the moment a
-    retry happened, which is the case this test drives. The pin is the
-    generator's OWN call count (the ground truth of provider jobs), so no
-    constant can satisfy it in both modes.
+    WWFIXGAPS U1 (defect 3): the report used to carry the literals 1 and 3.
+    ORDER 2026-10-21: a failed take is NEVER regenerated, so the unit path
+    makes ONE provider job and the umbrella THREE -- the count is the
+    generator's OWN call count (the ground truth of provider jobs), so the
+    report stays honest with no autonomous retry in the worker.
     """
-    for flag, want in (("WW-001", 2), ("", 6)):
+    for flag, want in (("WW-001", 1), ("", 3)):
         with tempfile.TemporaryDirectory() as tmp:
             a = argparse.Namespace(run_dir=tmp, request=_spec_file(tmp), ledger="",
                                    run_id="R", variant="", unit_id=flag)
