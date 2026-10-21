@@ -7,12 +7,16 @@ EXPERIMENTAL: Gated behind --experimental flag in CLI.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
 from cli_anything.gohighlevel.utils.ghl_internal_client import InternalGHLClient
@@ -539,6 +543,559 @@ def validate_campaign(campaign: dict) -> list[str]:
     return errors
 
 
+# ── Launch-build compiler (L07 / UL-010) ─────────────────────────────────
+#
+# The launch-c plan reader emits one automation-build document carrying the
+# launch plan's calendar, schedule nodes, eligibility/lifecycle/sender metadata
+# and stable unit keys.  This layer compiles that document into the
+# provider-native shape the private rail already sends: trigger conditions,
+# per-email guard conditions and workflow settings.  It never calls a provider
+# and never activates anything — every workflow it produces is a draft.
+#
+# Purchase suppression is scoped to this campaign only: a verified purchase
+# stops the remaining PROMOTIONAL emails, never the entitled access email.
+# Unsubscribe suppresses every remaining send.  Close-time and past-time nodes
+# arrive already suppressed by the plan reader; a suppressed node is never
+# compiled into a sendable step.
+
+class WorkflowCompileError(ValueError):
+    """A launch build cannot be compiled without guessing. Fail closed."""
+
+    def __init__(self, code: str, message: str, detail: Optional[dict] = None):
+        super().__init__("%s: %s" % (code, message))
+        self.code = code
+        self.message = message
+        self.detail = detail or {}
+
+
+GUARD_UNSUBSCRIBED = "guard-unsubscribed"
+GUARD_PURCHASE = "guard-purchase-suppression"
+GUARD_CLOSE = "guard-close-time"
+REQUIRED_OUTPUTS = ("workflow_id", "steps_saved", "trigger_created", "readback_verified")
+
+
+def _canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _sha256(value: Any) -> str:
+    return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _graph_projection(templates: list) -> list:
+    """Identity-bearing projection of a step graph (layout/meta excluded)."""
+    projection = []
+    for step in templates or []:
+        if not isinstance(step, dict):
+            projection.append(step)
+            continue
+        projection.append({
+            "id": step.get("id"),
+            "type": step.get("type"),
+            "name": step.get("name"),
+            "order": step.get("order"),
+            "parentKey": step.get("parentKey"),
+            "next": step.get("next"),
+            "attributes": step.get("attributes"),
+        })
+    return projection
+
+
+def graph_hash(templates: list) -> str:
+    """Deterministic hash of the saved execution graph."""
+    return _sha256(_graph_projection(templates))
+
+
+def _rule_names(lifecycle: Mapping[str, Any], key: str) -> set:
+    rules = lifecycle.get(key) if isinstance(lifecycle, Mapping) else None
+    return {rule.get("rule") for rule in rules or [] if isinstance(rule, Mapping)}
+
+
+def _missing_guards(lifecycle: Mapping[str, Any], *, promotional: bool) -> list:
+    if not promotional:
+        return []
+    stops = _rule_names(lifecycle, "stop_rules")
+    suppressions = _rule_names(lifecycle, "suppression_rules")
+    missing = []
+    if "stop_on_unsubscribe" not in stops:
+        missing.append("stop_on_unsubscribe")
+    if "stop_on_verified_purchase" not in stops:
+        missing.append("stop_on_verified_purchase")
+    if "suppress_promotion_after_verified_purchase" not in suppressions:
+        missing.append("suppress_promotion_after_verified_purchase")
+    if "recheck_eligibility_immediately_before_send" not in suppressions:
+        missing.append("recheck_eligibility_immediately_before_send")
+    return missing
+
+
+def compile_guard_conditions(*, promotional: bool, close_at: Optional[str] = None) -> list[dict]:
+    """Provider-native conditions placed on every email step.
+
+    ID-unsubscribed: legal suppression, every email.
+    contact.verified_purchase: promotional emails only, this campaign only.
+    schedule_window: keeps a promotional CTA strictly before doors close.
+    """
+    conditions = [{
+        "id": GUARD_UNSUBSCRIBED,
+        "type": "contact_field",
+        "field": "contact.unsubscribed",
+        "operator": "is",
+        "value": False,
+        "title": "Not unsubscribed",
+        "action": "continue",
+    }]
+    if promotional:
+        conditions.append({
+            "id": GUARD_PURCHASE,
+            "type": "contact_field",
+            "field": "contact.verified_purchase",
+            "operator": "is",
+            "value": False,
+            "title": "No verified purchase in this campaign",
+            "scope": "this_campaign_only",
+            "action": "continue",
+        })
+        if close_at:
+            conditions.append({
+                "id": GUARD_CLOSE,
+                "type": "schedule_window",
+                "field": "send_at",
+                "operator": "before",
+                "value": close_at,
+                "title": "Before doors close",
+                "action": "continue",
+            })
+    return conditions
+
+
+def compile_settings(*, sender: Mapping[str, Any], lifecycle: Mapping[str, Any],
+                     phase: Optional[str], close_at: Optional[str],
+                     promotional: bool) -> dict:
+    settings: dict[str, Any] = {
+        "phase": phase,
+        "marketing": not promotional,
+        "suppression": {
+            "stopOnUnsubscribe": True,
+            "stopOnVerifiedPurchase": bool(promotional),
+            "scope": "this_campaign_only",
+            "recheckBeforeEachSend": list(
+                _rule_names(lifecycle, "suppression_rules")),
+        },
+    }
+    sender_profile = sender.get("sender_profile_ref")
+    reply_to = sender.get("reply_to_ref")
+    if isinstance(sender_profile, str) and sender_profile:
+        settings["senderProfileRef"] = sender_profile
+    if isinstance(reply_to, str) and reply_to:
+        settings["replyToRef"] = reply_to
+    if close_at:
+        settings["closeAt"] = close_at
+    return settings
+
+
+def compile_trigger_conditions(tag: Optional[str], eligibility: list) -> list[dict]:
+    conditions = []
+    if tag:
+        conditions.append({
+            "operator": "index-of-true",
+            "field": "tagsAdded",
+            "value": tag,
+            "title": "Tag Added",
+            "type": "select",
+            "id": "tag-added",
+        })
+    for rule in eligibility or []:
+        if not isinstance(rule, Mapping):
+            continue
+        rule_id = str(rule.get("rule") or "").strip()
+        if not rule_id:
+            continue
+        condition = {
+            "operator": "is-true",
+            "field": rule_id,
+            "title": rule_id.replace("_", " ").title(),
+            "type": "eligibility",
+            "id": "elig-" + re.sub(r"[^a-z0-9]+", "-", rule_id.lower()).strip("-"),
+        }
+        for key in ("source_ref", "policy_ref", "check", "timing"):
+            if rule.get(key):
+                condition[key] = rule[key]
+        conditions.append(condition)
+    return conditions
+
+
+def _guarded_templates(templates: list, *, promotional: bool,
+                       close_at: Optional[str]) -> list:
+    guarded = []
+    for step in templates or []:
+        step = {**step}
+        if step.get("type") == "email":
+            attrs = dict(step.get("attributes") or {})
+            conditions = list(attrs.get("conditions") or [])
+            known = {item.get("id") for item in conditions if isinstance(item, dict)}
+            for condition in compile_guard_conditions(
+                    promotional=promotional, close_at=close_at):
+                if condition["id"] not in known:
+                    conditions.append(condition)
+            attrs["conditions"] = conditions
+            attrs["marketing"] = promotional
+            step["attributes"] = attrs
+        guarded.append(step)
+    return guarded
+
+
+def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optional[list] = None,
+                             depends_on: Optional[list] = None) -> dict:
+    """Compile ONE launch-c build entry into one or more provider workflow defs."""
+    if not isinstance(build, Mapping):
+        raise WorkflowCompileError("BUILD-SHAPE", "build entry is not an object")
+    if build.get("draft_only") is not True:
+        raise WorkflowCompileError("BUILD-NOT-DRAFT",
+                                   "only a draft_only build may be compiled")
+    if build.get("state") != "ready" or build.get("blocked_by"):
+        raise WorkflowCompileError(
+            "BUILD-BLOCKED",
+            "build %r is blocked: %s" % (build.get("id"), build.get("blocked_by")),
+            detail={"unit_key": build.get("unit_key"),
+                    "blocked_by": build.get("blocked_by")})
+
+    workflows = build.get("workflows") or []
+    if not workflows:
+        raise WorkflowCompileError("BUILD-NO-WORKFLOWS",
+                                   "build %r carries no workflows" % build.get("id"))
+    schedule = build.get("schedule") or {}
+    sequences = schedule.get("sequences") or {}
+    lifecycle = build.get("lifecycle") or {}
+    eligibility = build.get("eligibility") or []
+    sender = build.get("sender") or {}
+    unit_key = build.get("unit_key") or str(build.get("id"))
+    phase = build.get("phase") or build.get("family")
+
+    compiled = {}
+    previous_keys = []
+    for workflow in workflows:
+        email_steps = [step for step in (workflow.get("steps") or [])
+                       if isinstance(step, Mapping) and step.get("type") == "email"]
+        if not email_steps:
+            raise WorkflowCompileError(
+                "BUILD-NO-EMAIL",
+                "workflow %r in build %r has no email step"
+                % (workflow.get("key"), build.get("id")))
+        seq_id = None
+        for candidate, seq_schedule in sequences.items():
+            if seq_schedule.get("workflow_key") == workflow.get("key"):
+                seq_id = candidate
+                break
+            if workflow.get("key") in {
+                    node.get("workflow_key") for node in seq_schedule.get("nodes", [])}:
+                seq_id = candidate
+                break
+        seq_schedule = sequences.get(seq_id or "", {})
+        close_at = seq_schedule.get("close_at")
+        promotional = seq_schedule.get("promotional")
+        if promotional is None:
+            promotional = (seq_id or phase) != "welcome_access"
+        missing = _missing_guards(lifecycle, promotional=promotional)
+        if missing:
+            raise WorkflowCompileError(
+                "MISSING-GUARDS",
+                "build %r promotional workflow %r has no suppression guards: %s"
+                % (build.get("id"), workflow.get("key"), ", ".join(missing)),
+                detail={"unit_key": unit_key, "missing": missing})
+
+        templates = _guarded_templates(workflow.get("steps") or [],
+                                       promotional=promotional, close_at=close_at)
+        wf_key = "%s__%s" % (build.get("id"), workflow.get("key"))
+        required = ["workflow_id", "steps_saved", "readback_verified"]
+        if workflow.get("tag"):
+            required.append("trigger_created")
+        compiled[wf_key] = {
+            "name": workflow.get("name"),
+            "tag": workflow.get("tag"),
+            "status": "draft",
+            "templates": templates,
+            "unit_key": "%s/%s" % (unit_key, workflow.get("key")),
+            "source_unit": build.get("id"),
+            "phase": seq_id or phase,
+            "promotional": promotional,
+            "close_at": close_at,
+            "eligibility": list(eligibility),
+            "lifecycle": dict(lifecycle),
+            "sender": dict(sender),
+            "settings": compile_settings(
+                sender=sender, lifecycle=lifecycle, phase=seq_id or phase,
+                close_at=close_at, promotional=promotional),
+            "trigger_conditions": compile_trigger_conditions(
+                workflow.get("tag"), list(eligibility)),
+            "expected_source_hash": build.get("expected_graph_hash"),
+            "depends_on": list(depends_on or []) + list(previous_keys),
+            "external_depends_on": list(external_deps or []),
+            "requires": required,
+        }
+        previous_keys.append(wf_key)
+    return compiled
+
+
+def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = True) -> dict:
+    """Compile a whole launch-c automation-build document into a campaign dict.
+
+    Refuses (WorkflowCompileError) on a blocked/invalid build, a missing
+    required output, or a missing suppression guard. Never sends and never
+    publishes.
+    """
+    if not isinstance(document, Mapping):
+        raise WorkflowCompileError("DOCUMENT-SHAPE", "automation-build document is not an object")
+    if document.get("draft_only") is not True:
+        raise WorkflowCompileError("DOCUMENT-NOT-DRAFT",
+                                   "automation-build document must be draft_only")
+    builds = document.get("builds")
+    if not isinstance(builds, list):
+        raise WorkflowCompileError("DOCUMENT-SHAPE", "builds must be a list")
+
+    campaign: dict[str, Any] = {}
+    for build in builds:
+        if not isinstance(build, Mapping):
+            raise WorkflowCompileError("BUILD-SHAPE", "build entry is not an object")
+        if require_ready and (build.get("state") != "ready" or build.get("blocked_by")):
+            raise WorkflowCompileError(
+                "BUILD-BLOCKED",
+                "build %r is blocked: %s" % (build.get("id"), build.get("blocked_by")),
+                detail={"unit_key": build.get("unit_key"),
+                        "blocked_by": build.get("blocked_by")})
+        required_outputs = build.get("required_outputs") or []
+        for output in required_outputs:
+            if output == "workflows" and not build.get("workflows"):
+                raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
+                                           "build %r has no workflows" % build.get("id"))
+            if output == "schedule" and not (build.get("schedule") or {}).get("nodes"):
+                raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
+                                           "build %r has no schedule nodes" % build.get("id"))
+            if output == "guards" and build.get("lifecycle") is None:
+                raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
+                                           "build %r has no lifecycle guards" % build.get("id"))
+
+        # Provider-visible dependencies: the workflows bound to dependency
+        # email sequences. External unit dependencies were enforced by the
+        # plan reader (a missing page URL / text set / count blocks the build).
+        dependency_keys = []
+        for dep in build.get("depends_on") or []:
+            for candidate_key, wf_def in campaign.items():
+                if wf_def.get("source_unit") == dep:
+                    dependency_keys.append(candidate_key)
+        external = [dep for dep in (build.get("depends_on") or [])
+                    if not any(wf.get("source_unit") == dep for wf in campaign.values())]
+        compiled = compile_automation_build(
+            build, external_deps=external, depends_on=dependency_keys)
+        for key, wf_def in compiled.items():
+            if key in campaign:
+                raise WorkflowCompileError("DUPLICATE-WORKFLOW-KEY", key)
+            campaign[key] = wf_def
+    return campaign
+
+
+# ── Build journal (stable unit keys, remote ids, phases, hashes, readback) ──
+
+class BuildJournal:
+    """Append-only JSONL receipt journal for a compiled launch build.
+
+    Entries carry NO credentials and no message bodies: unit key, workflow
+    name, phase, remote id, expected hash, readback hash and status only.
+    """
+
+    def __init__(self, path: Union[str, Path]):
+        self.path = Path(path)
+        self._lock = threading.Lock()
+
+    def entries(self) -> list[dict]:
+        if not self.path.exists():
+            return []
+        out = []
+        with self._lock:
+            lines = self.path.read_text(encoding="utf-8").splitlines()
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except ValueError as exc:
+                raise ValueError("build journal %s is corrupt: %s" % (self.path, exc))
+        return out
+
+    def latest(self, unit_key: str) -> Optional[dict]:
+        found = None
+        for entry in self.entries():
+            if entry.get("unit_key") == unit_key:
+                found = entry
+        return found
+
+    def latest_phase(self, unit_key: str, phase: str) -> Optional[dict]:
+        found = None
+        for entry in self.entries():
+            if entry.get("unit_key") == unit_key and entry.get("phase") == phase:
+                found = entry
+        return found
+
+    def append(self, **entry: Any) -> dict:
+        record = dict(entry)
+        record.setdefault("recorded_at", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        line = _canonical(record) + "\n"
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(line)
+        return record
+
+
+def _journal_for(journal: Any) -> Optional[BuildJournal]:
+    if journal is None:
+        env_path = os.environ.get("CAF_BUILD_JOURNAL", "").strip()
+        return BuildJournal(env_path) if env_path else None
+    if isinstance(journal, BuildJournal):
+        return journal
+    return BuildJournal(journal)
+
+
+def _readback_templates(client: Any, location_id: str,
+                        workflow_id: str) -> Optional[list]:
+    """Read the saved workflow graph back, or None when it cannot be read."""
+    try:
+        data = client.request("GET", "/workflow/%s/%s" % (location_id, workflow_id))
+    except Exception:  # noqa: BLE001 - an unreadable readback is an explicit unknown
+        return None
+    if not isinstance(data, dict) or data.get("_error"):
+        return None
+    workflow_data = data.get("workflowData")
+    if isinstance(workflow_data, dict) and isinstance(workflow_data.get("templates"), list):
+        return workflow_data["templates"]
+    if isinstance(data.get("templates"), list):
+        return data["templates"]
+    return None
+
+
+def verify_saved_graph(client: Any, location_id: str, workflow_id: str,
+                       expected_hash: str) -> tuple:
+    """Return ``(ok, observed_hash, templates)``; unknown readback is not ok."""
+    templates = _readback_templates(client, location_id, workflow_id)
+    if templates is None:
+        return False, None, None
+    observed = graph_hash(templates)
+    return observed == expected_hash, observed, templates
+
+
+def reconcile_journal(client: Any, journal: BuildJournal, location_id: str) -> dict:
+    """Reconcile uncertain prior attempts BEFORE any retry.
+
+    Never retries a create. For each unresolved entry: read the remote graph;
+    adopt it when it matches the journalled expected hash, flag a human edit
+    when it differs, and keep it unknown when the read fails.
+    """
+    report = {"adopted": [], "human_edit": [], "unknown": [], "clean": []}
+    for entry in journal.entries():
+        unit_key = entry.get("unit_key")
+        remote_id = entry.get("remote_id")
+        if not unit_key or not remote_id:
+            continue
+        if entry.get("phase") != "create" or entry.get("status") != "unknown_outcome":
+            continue
+        ok, observed, templates = verify_saved_graph(
+            client, location_id, remote_id, entry.get("expected_hash") or "")
+        if templates is None:
+            report["unknown"].append({"unit_key": unit_key, "remote_id": remote_id})
+        elif ok:
+            journal.append(unit_key=unit_key, remote_id=remote_id, phase="reconcile",
+                           status="adopted", expected_hash=entry.get("expected_hash"),
+                           readback_hash=observed)
+            report["adopted"].append({"unit_key": unit_key, "remote_id": remote_id})
+        else:
+            journal.append(unit_key=unit_key, remote_id=remote_id, phase="reconcile",
+                           status="human_edit", expected_hash=entry.get("expected_hash"),
+                           readback_hash=observed)
+            report["human_edit"].append({"unit_key": unit_key, "remote_id": remote_id})
+    return report
+
+
+def _journal_trigger_ok(journal: Optional[BuildJournal], unit_key: Optional[str],
+                        wf_def: Mapping[str, Any]) -> bool:
+    """Adoption proves outputs only from the journal's own prior receipts."""
+    if not wf_def.get("tag"):
+        return True
+    if not journal or not unit_key:
+        return False
+    entry = journal.latest_phase(unit_key, "trigger")
+    return bool(entry and entry.get("status") == "ok")
+
+
+def _contract_errors(campaign: Mapping[str, Any]) -> list[str]:
+    """Validate declared dependencies and required outputs for compiled plans.
+
+    Plans without compiled markers keep the legacy behaviour unchanged.
+    """
+    errors: list[str] = []
+    graph: dict[str, list] = {}
+    for key, wf_def in campaign.items():
+        if not isinstance(wf_def, Mapping):
+            continue
+        compiled = any(field in wf_def for field in (
+            "unit_key", "expected_source_hash", "lifecycle", "depends_on", "requires"))
+        if not compiled:
+            continue
+        templates = wf_def.get("templates")
+        if not isinstance(templates, list) or not templates:
+            errors.append(f"{key}: compiled workflow has no templates")
+            continue
+        ids = [step.get("id") for step in templates if isinstance(step, Mapping)]
+        if len(ids) != len(set(ids)):
+            errors.append(f"{key}: compiled workflow has duplicate step ids")
+        if not all(isinstance(step_id, str) and step_id for step_id in ids):
+            errors.append(f"{key}: compiled step is missing an id")
+        lifecycle = wf_def.get("lifecycle")
+        promotional = bool(wf_def.get("promotional"))
+        if promotional:
+            if not isinstance(lifecycle, Mapping):
+                errors.append(f"{key}: promotional workflow has no lifecycle guards")
+            else:
+                missing = _missing_guards(lifecycle, promotional=True)
+                if missing:
+                    errors.append(
+                        f"{key}: missing suppression guard(s): {', '.join(missing)}")
+        requires = wf_def.get("requires") or []
+        if not isinstance(requires, list):
+            errors.append(f"{key}: requires must be a list")
+            requires = []
+        for output in requires:
+            if output not in REQUIRED_OUTPUTS:
+                errors.append(f"{key}: unknown required output {output!r}")
+        depends_on = wf_def.get("depends_on") or []
+        if not isinstance(depends_on, list):
+            errors.append(f"{key}: depends_on must be a list")
+            depends_on = []
+        for dep in depends_on:
+            if dep == key:
+                errors.append(f"{key}: depends on itself")
+            elif dep not in campaign:
+                errors.append(f"{key}: depends on unknown workflow {dep!r}")
+        graph[key] = [dep for dep in depends_on if dep in campaign]
+
+    # Cycle check over declared provider dependencies.
+    state: dict[str, str] = {}
+
+    def visit(node: str, trail: list) -> None:
+        if state.get(node) == "done":
+            return
+        if state.get(node) == "open":
+            errors.append("workflow dependency cycle: %s" % " -> ".join(trail + [node]))
+            return
+        state[node] = "open"
+        for dep in graph.get(node, []):
+            visit(dep, trail + [node])
+        state[node] = "done"
+
+    for node in sorted(graph):
+        visit(node, [])
+    return errors
+
+
 # ── Existing-state indexing (idempotency) ──────────────────────────────────
 
 def _index_existing(
@@ -743,11 +1300,17 @@ class CampaignBuilder:
         campaign: dict,
         folder_name: Optional[str] = None,
         folder_id: Optional[str] = None,
+        *,
+        journal: Any = None,
     ) -> dict:
         """Build an entire campaign. Returns stats dict.
 
         Pass `folder_id` to drop the campaign into an existing folder; pass
         `folder_name` to create a new folder. Exactly one is required.
+
+        `journal` (path or ``BuildJournal``) opts a compiled launch build into
+        the receipt journal + readback verification; plans without a compiled
+        unit key keep the unchanged private-rail behaviour.
 
         Idempotent: a repeated call reuses an existing folder with the same
         name instead of creating a duplicate, and refuses (via stats["errors"])
@@ -760,16 +1323,27 @@ class CampaignBuilder:
         starting any internal-API writes (AC 21).
         """
         with WriteLock(self.loc):
-            return self._build_locked(campaign, folder_name=folder_name, folder_id=folder_id)
+            return self._build_locked(
+                campaign, folder_name=folder_name, folder_id=folder_id,
+                journal=_journal_for(journal),
+            )
 
     def _build_locked(
         self,
         campaign: dict,
         folder_name: Optional[str] = None,
         folder_id: Optional[str] = None,
+        *,
+        journal: Optional[BuildJournal] = None,
     ) -> dict:
         """Internal build implementation (called under WriteLock)."""
         self.stats["start_time"] = time.time()
+        self.stats.setdefault("journal_entries", [])
+        self.stats.setdefault("readback", {})
+        self.stats.setdefault("adopted", [])
+        self.stats.setdefault("needs_reconcile", [])
+        if journal is not None:
+            self.stats["journal_path"] = str(journal.path)
         # Remember whether the caller pinned an explicit folder id: the V4
         # create contract has no folder-id field, so that request keeps the
         # named private fallback (a name-based folder can be passed instead).
@@ -777,6 +1351,9 @@ class CampaignBuilder:
 
         # Pre-flight validation
         errors = validate_campaign(campaign)
+        contract_errors = _contract_errors(campaign)
+        if contract_errors:
+            errors = list(errors) + contract_errors
         if errors:
             self.stats["errors"].extend(errors)
             self.stats["end_time"] = time.time()
@@ -895,9 +1472,51 @@ class CampaignBuilder:
         # ThreadPoolExecutor starts, so no create POST ever fires for a
         # colliding name.
         to_build: dict[str, dict] = {}
+        adopted_ids: dict[str, str] = {}
+        adopted_trigger: dict[str, bool] = {}
         for key, wf_def in campaign.items():
             wf_name = wf_def.get("name") if isinstance(wf_def, dict) else None
             existing_wf_id = existing_workflow_ids.get(wf_name) if wf_name else None
+            unit_key = wf_def.get("unit_key") if isinstance(wf_def, dict) else None
+            prior = journal.latest(unit_key) if (journal and unit_key) else None
+
+            # Journal-first reconciliation: a prior attempt that may have
+            # created this workflow is verified by READBACK before anything
+            # else. Never create a second copy and never overwrite a human edit.
+            if journal and unit_key and prior and prior.get("remote_id"):
+                remote_id = str(prior["remote_id"])
+                expected = prior.get("expected_hash") or ""
+                ok, observed, templates = verify_saved_graph(
+                    self.client, self.loc, remote_id, expected)
+                if templates is None:
+                    self.stats["needs_reconcile"].append(unit_key)
+                    self.stats["errors"].append(
+                        f"{wf_name}: prior attempt {remote_id} exists but the "
+                        "saved graph cannot be read — reconcile before retry; "
+                        "NO create or overwrite was attempted."
+                    )
+                    continue
+                if ok:
+                    adopted_ids[key] = remote_id
+                    adopted_trigger[key] = _journal_trigger_ok(journal, unit_key, wf_def)
+                    self.stats["adopted"].append(wf_name)
+                    self.stats.setdefault("notes", []).append(
+                        f"{wf_name}: adopted existing workflow {remote_id} from "
+                        "the build journal; saved graph matches the expected "
+                        "hash and was NOT overwritten."
+                    )
+                    continue
+                self.stats["errors"].append(
+                    f"{wf_name}: existing workflow {remote_id} differs from the "
+                    "journalled graph (expected %s, observed %s) — a human edit "
+                    "is preserved; NO overwrite was attempted."
+                    % (expected[:12], (observed or "unreadable")[:12])
+                )
+                journal.append(unit_key=unit_key, remote_id=remote_id,
+                               phase="reconcile", status="human_edit",
+                               expected_hash=expected, readback_hash=observed)
+                continue
+
             if existing_wf_id:
                 self.stats["errors"].append(
                     f"{wf_name}: a workflow with this name already exists "
@@ -909,7 +1528,7 @@ class CampaignBuilder:
                 continue
             to_build[key] = wf_def
 
-        wf_ids: dict[str, str] = {}
+        wf_ids: dict[str, str] = dict(adopted_ids)
 
         def _create_workflow(key: str, wf_def: dict) -> tuple:
             """Full pipeline: create → tag → trigger → save steps → sync."""
@@ -932,6 +1551,44 @@ class CampaignBuilder:
             # references (next/parentKey) to the same mints.
             templates = normalize_action_ids(templates, self.loc)
 
+            unit_key = wf_def.get("unit_key")
+            expected_hash = graph_hash(templates)
+            declared_hash = wf_def.get("expected_hash")
+            if declared_hash and declared_hash != expected_hash:
+                return (key, None, False, False, None,
+                        f"{wf_name}: compiled graph hash {expected_hash} does not "
+                        f"match the declared expected hash {declared_hash} — "
+                        "refusing to build a plan that drifted after compile.")
+
+            # Reconcile-before-retry: a journalled remote id is authoritative.
+            # Read it back; adopt only when it matches, never retry a create.
+            prior = journal.latest(unit_key) if (journal and unit_key) else None
+            if prior and prior.get("remote_id"):
+                remote_id = str(prior["remote_id"])
+                ok, observed, prior_templates = verify_saved_graph(
+                    self.client, self.loc, remote_id, prior.get("expected_hash") or expected_hash)
+                if prior_templates is None:
+                    self.stats["needs_reconcile"].append(unit_key)
+                    return (key, None, False, False, None,
+                            f"{wf_name}: prior attempt {remote_id} cannot be read "
+                            "back — reconcile before any retry; no create fired.")
+                if not ok:
+                    journal.append(unit_key=unit_key, remote_id=remote_id,
+                                   phase="reconcile", status="human_edit",
+                                   expected_hash=prior.get("expected_hash"),
+                                   readback_hash=observed)
+                    return (key, None, False, False, None,
+                            f"{wf_name}: existing workflow {remote_id} differs from "
+                            "the journalled graph — human edit preserved; no "
+                            "overwrite fired.")
+                journal.append(unit_key=unit_key, remote_id=remote_id,
+                               phase="reconcile", status="adopted",
+                               expected_hash=prior.get("expected_hash"),
+                               readback_hash=observed)
+                self.stats["adopted"].append(wf_name)
+                return (key, remote_id, True,
+                        _journal_trigger_ok(journal, unit_key, wf_def), None, True)
+
             # GU-013 route decision — made BEFORE any transport call and never
             # switched after one.  Public V4 is used only when its capability
             # row is enabled AND the plan maps onto the documented V4 create
@@ -949,23 +1606,41 @@ class CampaignBuilder:
                     )
                     self.stats.setdefault("route", {})["create"] = route.as_evidence()
                 else:
-                    return self._create_workflow_public(
+                    public_result = self._create_workflow_public(
                         key, wf_name, templates, folder_name
                     )
+                    return tuple(public_result) + (None,)
 
             # Named private fallback (unchanged behaviour): public capability is
             # disabled, or this plan cannot be expressed by the V4 contract.
 
             # Step 1: Create workflow
+            create_body: dict[str, Any] = {"name": wf_name, "parentId": folder_id}
+            if wf_def.get("settings"):
+                create_body["settings"] = wf_def["settings"]
             result = self.client.request(
                 "POST", f"/workflow/{self.loc}",
-                {"name": wf_name, "parentId": folder_id},
+                create_body,
                 workflow_name=wf_name,
             )
             if not result or not result.get("id"):
-                return key, None, False, False, None
+                # An absent/unknown create response is UNCERTAIN, not a failure:
+                # the workflow may exist. Journal it so the next run reconciles
+                # instead of POSTing a duplicate.
+                if journal and unit_key:
+                    journal.append(unit_key=unit_key, name=wf_name, phase="create",
+                                   status="unknown_outcome", remote_id=None,
+                                   expected_hash=expected_hash)
+                self.stats["needs_reconcile"].append(unit_key or wf_name)
+                return (key, None, False, False, None,
+                        f"{wf_name}: create returned no id — outcome uncertain; "
+                        "reconcile before retry; no duplicate create was attempted.")
 
             wf_id = result["id"]
+            if journal and unit_key:
+                journal.append(unit_key=unit_key, name=wf_name, remote_id=str(wf_id),
+                               phase="create", status="ok",
+                               expected_hash=expected_hash)
 
             # Step 2: Create tag + trigger if specified
             tag = wf_def.get("tag")
@@ -983,14 +1658,14 @@ class CampaignBuilder:
                     "status": "draft",
                     "workflowId": wf_id,
                     "schedule_config": {},
-                    "conditions": [{
+                    "conditions": list(wf_def.get("trigger_conditions") or [{
                         "operator": "index-of-true",
                         "field": "tagsAdded",
                         "value": tag,
                         "title": "Tag Added",
                         "type": "select",
                         "id": "tag-added",
-                    }],
+                    }]),
                     "type": "contact_tag",
                     "masterType": "highlevel",
                     "name": tag.replace("-", " ").title(),
@@ -999,6 +1674,8 @@ class CampaignBuilder:
                     "triggersChanged": True,
                     "location_id": self.loc,
                 }
+                if wf_def.get("settings"):
+                    trigger_body["settings"] = wf_def["settings"]
                 tr = self.client.request(
                     "POST", f"/workflow/{self.loc}/trigger", trigger_body,
                     workflow_name=wf_name,
@@ -1017,6 +1694,11 @@ class CampaignBuilder:
                              "advanceCanvasMeta": {"position": {"x": 57.5, "y": -73}}},
                             workflow_name=wf_name,
                         )
+                if journal and unit_key:
+                    journal.append(unit_key=unit_key, name=wf_name,
+                                   remote_id=str(wf_id), phase="trigger",
+                                   status="ok" if trigger_ok else "failed",
+                                   expected_hash=expected_hash)
 
             # Step 3: Save steps via PUT (linked templates carry order/next/parentKey)
             put_body = {
@@ -1024,11 +1706,17 @@ class CampaignBuilder:
                 "version": 1,
                 "workflowData": {"templates": templates},
             }
+            if wf_def.get("settings"):
+                put_body["settings"] = wf_def["settings"]
             put_result = self.client.request(
                 "PUT", f"/workflow/{self.loc}/{wf_id}", put_body,
                 workflow_name=wf_name,
             )
             steps_ok = bool(put_result and not put_result.get("_error"))
+            if journal and unit_key:
+                journal.append(unit_key=unit_key, name=wf_name, remote_id=str(wf_id),
+                               phase="save", status="ok" if steps_ok else "failed",
+                               expected_hash=expected_hash)
 
             # Bug 1b — FAIL LOUD on a non-2xx save.  The transport returns
             # {"_error": True, "http_code": <code>, ...} on a rejected PUT; the
@@ -1090,11 +1778,58 @@ class CampaignBuilder:
                         workflow_name=wf_name,
                     )
 
-            return key, wf_id, steps_ok, trigger_ok, step_err
+            # Step 5: Read the saved graph back. A compiled launch build is not
+            # "saved" until the provider returns the graph we expected.
+            readback_ok = None
+            requires = wf_def.get("requires") or []
+            if steps_ok and (wf_def.get("unit_key") or "readback_verified" in requires):
+                ok, observed, read_templates = verify_saved_graph(
+                    self.client, self.loc, str(wf_id), expected_hash)
+                readback_ok = bool(ok)
+                self.stats["readback"][key] = {
+                    "workflow_id": str(wf_id),
+                    "expected_hash": expected_hash,
+                    "readback_hash": observed,
+                    "ok": readback_ok,
+                    "readable": read_templates is not None,
+                }
+                if read_templates is None:
+                    step_err = (f"{wf_name}: saved graph readback failed — "
+                                "outcome uncertain; reconcile before retry.")
+                    if unit_key:
+                        self.stats["needs_reconcile"].append(unit_key)
+                    if journal and unit_key:
+                        journal.append(unit_key=unit_key, name=wf_name,
+                                       remote_id=str(wf_id), phase="readback",
+                                       status="unreadable",
+                                       expected_hash=expected_hash,
+                                       readback_hash=None)
+                elif not ok:
+                    step_err = (f"{wf_name}: saved graph readback mismatch "
+                                f"(expected {expected_hash[:12]}, observed "
+                                f"{(observed or '')[:12]}) — workflow was saved "
+                                "but does not match the compiled graph.")
+                    if journal and unit_key:
+                        journal.append(unit_key=unit_key, name=wf_name,
+                                       remote_id=str(wf_id), phase="readback",
+                                       status="mismatch",
+                                       expected_hash=expected_hash,
+                                       readback_hash=observed)
+                elif journal and unit_key:
+                    journal.append(unit_key=unit_key, name=wf_name,
+                                   remote_id=str(wf_id), phase="readback",
+                                   status="ok", expected_hash=expected_hash,
+                                   readback_hash=observed)
+
+            return key, wf_id, steps_ok, trigger_ok, step_err, readback_ok
 
         # Run all (non-colliding) workflows in parallel (burst-capped;
         # CAF_INTERNAL_MAX_WORKERS). `to_build` excludes any name already
         # caught by the collision check above.
+        results: dict[str, tuple] = {
+            key: (remote_id, True, adopted_trigger.get(key, False), None, True)
+            for key, remote_id in adopted_ids.items()
+        }
         with ThreadPoolExecutor(max_workers=_build_max_workers()) as pool:
             futures = [
                 pool.submit(_create_workflow, key, wf_def)
@@ -1102,7 +1837,8 @@ class CampaignBuilder:
             ]
 
             for future in as_completed(futures):
-                key, wf_id, steps_ok, trigger_ok, step_err = future.result()
+                key, wf_id, steps_ok, trigger_ok, step_err, readback_ok = future.result()
+                results[key] = (wf_id, steps_ok, trigger_ok, step_err, readback_ok)
                 # Surface a rejected step-save regardless of whether the shell
                 # workflow was created — an empty workflow shell with a failed
                 # save is a FAILURE, not a silent success (Bug 1b).
@@ -1118,6 +1854,37 @@ class CampaignBuilder:
                 else:
                     self.stats["errors"].append(f"Failed: {campaign[key]['name']}")
 
+        # Every declared dependency and required output is enforced after the
+        # build: a workflow that was skipped/blocked cannot satisfy a dependent.
+        for key, wf_def in campaign.items():
+            if not isinstance(wf_def, Mapping):
+                continue
+            for dep in wf_def.get("depends_on") or []:
+                if dep in campaign and dep not in wf_ids:
+                    self.stats["errors"].append(
+                        f"{wf_def.get('name') or key}: declared dependency "
+                        f"{dep!r} was not built — refusing to report success.")
+            requires = wf_def.get("requires") or []
+            if not requires:
+                continue
+            built = results.get(key)
+            wf_id, steps_ok, trigger_ok, _step_err, readback_ok = built or (
+                wf_ids.get(key), True, True, None, None)
+            if "workflow_id" in requires and not wf_id:
+                self.stats["errors"].append(
+                    f"{wf_def.get('name') or key}: required output 'workflow_id' missing")
+            if "steps_saved" in requires and not steps_ok:
+                self.stats["errors"].append(
+                    f"{wf_def.get('name') or key}: required output 'steps_saved' missing")
+            if "trigger_created" in requires and not trigger_ok:
+                self.stats["errors"].append(
+                    f"{wf_def.get('name') or key}: required output 'trigger_created' missing")
+            if "readback_verified" in requires and readback_ok is not True:
+                self.stats["errors"].append(
+                    f"{wf_def.get('name') or key}: required output "
+                    "'readback_verified' missing")
+
+        self.stats["workflows_reused"] = len(adopted_ids)
         self.stats["end_time"] = time.time()
         self.stats["api_calls"] = self.client.call_count
         self.stats["workflow_ids"] = wf_ids
