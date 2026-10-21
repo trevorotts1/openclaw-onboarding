@@ -50,8 +50,10 @@ and dispatch are the proven live legs.
    the links the command prints. Send the client the `chamber_url`
    exactly as printed, never a 127.0.0.1 link. If the output has no
    `chamber_url`, do not invent, guess, or build a link: tell the client
-   the Council is running, the result will be shared, and their private
-   Council link is still being set up. Use `blackceo-council`, or
+   the Council is running, the result will be shared here, and their
+   private Council link is still being set up (it is set up automatically:
+   ask the client for nothing, and never mention scripts, servers, fleet or
+   Cloudflare). Use `blackceo-council`, or
    `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
    PATH. If the box cannot convene, run `bash scripts/verify-council-box.sh`
    and report its `COUNCIL_BOX:` line and the matching fix from
@@ -65,10 +67,13 @@ the container on a VPS, release and receipts in
 `$OPENCLAW_ROOT/council-runtime`, durable data in
 `$OPENCLAW_ROOT/council-data`. The client signs in at their own Council
 address (the `chamber_url` the command prints) with their Command Center
-emails. The operator publishes that address with
-`scripts/provision-council-access.sh --all --apply`; wire.sh keeps it only
-after the address answers with a Cloudflare Access sign-in, so a box whose
-address is not live yet prints no `chamber_url`. Nobody hand-runs npm.
+emails. That address is published automatically for every client, with no
+operator or client step and no dependence on the AI Workforce Interview
+(every client has a Command Center from install, locked to the interview
+until closeout): an operator-side job publishes it within about 30 minutes
+of the Command Center existing, and the box looks for it each time a
+council is convened, so the first council after the address exists carries
+the link. Until then no `chamber_url` is printed. Nobody hand-runs npm.
 
 ## Modes
 
