@@ -1,0 +1,13 @@
+{
+  "_note": "Synthetic local fixture for audit lane L03 (UL-009). AI not requested and no reply unit: absence is not a failure and never blocks the launch.",
+  "launch_id": "l03-ai-off",
+  "conversation_ai": {"requested": false, "mode": "none"},
+  "pages": [
+    {"id": "page_landing", "kind": "landing", "url": "https://example.invalid/landing", "waits_for": []}
+  ],
+  "email_sequences": [
+    {"id": "email_pre_launch", "kind": "pre_launch", "waits_for": ["page_landing"]}
+  ],
+  "text_sets": [],
+  "automations": []
+}
