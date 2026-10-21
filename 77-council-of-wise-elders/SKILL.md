@@ -52,7 +52,7 @@ PATH). The client opens the Roast Room chamber at their own Council
 address and signs in with their Command Center emails. That address is
 set up automatically for every client, finished AI Workforce Interview or
 not, and the command looks for it every time a council is convened, so
-nobody (client or operator) does anything. If the command prints a
+the client does nothing and nobody re-runs anything on the box. If the command prints a
 `chamber_url`, send the client exactly that link. If it prints no
 `chamber_url`, the address is not ready yet and the first council after it
 is ready carries the link: do not invent, guess, or build a link, and never

@@ -68,10 +68,10 @@ the container on a VPS, release and receipts in
 `$OPENCLAW_ROOT/council-data`. The client signs in at their own Council
 address (the `chamber_url` the command prints) with their Command Center
 emails. That address is published automatically for every client, with no
-operator or client step and no dependence on the AI Workforce Interview
-(every client has a Command Center from install, locked to the interview
-until closeout): an operator-side job publishes it within about 30 minutes
-of the Command Center existing, and the box looks for it each time a
+client step and no dependence on the AI Workforce Interview (every client
+has a Command Center from install, locked to the interview until closeout):
+an operator-side job publishes it within about 30 minutes of the Command
+Center's own public sign-in being live, and the box looks for it each time a
 council is convened, so the first council after the address exists carries
 the link. Until then no `chamber_url` is printed. Nobody hand-runs npm.
 

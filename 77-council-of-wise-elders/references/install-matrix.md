@@ -13,8 +13,9 @@ not-ready states when they do not.
 - **Client access:** the client's own address
   `https://<slug>-council.zerohumanworkforce.com` published behind
   Cloudflare Access automatically, by the operator-side job
-  `scripts/council-access-autoprovision.sh` (every 30 minutes). No client
-  or operator step, and no dependence on the AI Workforce Interview.
+  `scripts/council-access-autoprovision.sh` (every 30 minutes once enabled
+  on the operator Mac with `scripts/install-council-access-job.sh --enable`).
+  No client step, and no dependence on the AI Workforce Interview.
 - **Managed visual mode (optional):** compatible Command Center,
   authenticated pairing and scope, council migration applied through the
   Command Center, job and event integration, UI assets. The standalone
@@ -84,7 +85,7 @@ read-only and checks, in this order:
 | `NO_USABLE_ROUTE` | NOT_READY | `GET /api/council/routes` lists at least one usable route (ids and usable flags are printed) | The client's own model route is not usable (for example claude-nine or claude-configured is not set up). The client or operator fixes the route; never change client credentials, models or sovereignty to get past it |
 | `ACCESS_GATE_OPEN` | NOT_READY | `GET <public_origin>/status` without following redirects answered 2xx, or redirected to its own host | Security failure: the address works with no sign-in. Do not send any chamber link. The operator removes the council hostname route or repairs its Access app, then re-runs `provision-council-access.sh --apply` |
 | `CLI_SHIM_MISSING` | DEGRADED | `blackceo-council` on PATH, else `council-runtime/bin/blackceo-council` | Re-roll; meanwhile call the absolute path |
-| `PUBLIC_ORIGIN_UNSET` | DEGRADED | `public_origin` in `service.json` is not null | Nothing to run: the address is published automatically within about 30 minutes of the Command Center existing, and the next council carries the link (no re-roll). Until then tell the client the private Council link is still being set up; never send a 127.0.0.1 link. If it is still unset more than an hour after the Command Center existed, report the `COUNCIL_BOX:` line to the operator |
+| `PUBLIC_ORIGIN_UNSET` | DEGRADED | `public_origin` in `service.json` is not null | Nothing to run on the box: the address is published automatically within about 30 minutes of the Command Center's own public sign-in being live, and the next council carries the link (no re-roll). Until then tell the client the private Council link is still being set up; never send a 127.0.0.1 link. If it is still unset more than an hour after the Command Center existed, report the `COUNCIL_BOX:` line to the operator |
 | `ACCESS_GATE_MISSING` | DEGRADED | `GET <public_origin>/status` is a 3xx to `*.cloudflareaccess.com` | The address did not answer or redirects elsewhere: operator checks the tunnel route and Access app, re-runs `provision-council-access.sh --apply` |
 | `TUNNEL_NOT_IN_CONTAINER` | DEGRADED | VPS only: `pm2 jlist` lists a cloudflared app | A host-side connector cannot reach the container's loopback. Run the connector inside the container as a pm2 app named cloudflared (Contabo: pending) |
 

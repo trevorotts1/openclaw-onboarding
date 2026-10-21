@@ -295,19 +295,25 @@ email addresses that sign in to their Command Center. The address rides the
 box's one existing Cloudflare tunnel behind a Cloudflare Access application
 that copies the Command Center's allow-list.
 
-Nobody does anything to get it, for existing clients and for every client
-added later:
+The client does nothing to get it, for existing clients and for every
+client added later:
 
 - Every client has a Command Center from install (it ships first, locked to
   the interview until closeout), so every client gets an address whether or
-  not the AI Workforce Interview is finished. Nothing in this path reads the
-  interview or `.workforce-build-state.json`.
+  not the AI Workforce Interview is finished. Nothing in this path waits for
+  the interview or its closeout: the box reads its Command Center address
+  from install-time sources (service env, launch state, install identity).
 - An operator-side job, `scripts/council-access-autoprovision.sh`, runs every
-  30 minutes on the operator Mac. It finds every Command Center from the
-  Cloudflare zone and publishes any missing Council address, so a new
-  client has one within about 30 minutes of their Command Center existing.
-  It is idempotent, writes nothing on any client box, and is never run on
-  a client box or by a client.
+  30 minutes on the operator Mac once the operator enables it with
+  `bash scripts/install-council-access-job.sh --enable` (nothing enables it
+  by itself; with no flag the installer only prints its plan). It finds every
+  Command Center from the Cloudflare zone and publishes any missing Council
+  address, so a client has one within about 30 minutes of their Command
+  Center's own public sign-in being live (its tunnel address and its Access
+  sign-in). The job never creates the Command Center's own address or
+  sign-in: a Command Center without them is listed in the job receipt as
+  NOT_PROVISIONED and retried every run. It is idempotent, writes nothing on
+  any client box, and is never run on a client box or by a client.
 - The box resolves its address each time `blackceo-council convene` runs and
   uses it only when it answers with a Cloudflare Access sign-in. The first
   council after the address exists prints `chamber_url =
