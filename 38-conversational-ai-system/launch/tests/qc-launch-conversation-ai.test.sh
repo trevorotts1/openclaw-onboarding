@@ -220,7 +220,25 @@ m["staging"]["result"] = "pass"
 ')"
 run_gate "$p"; assert_verdict FAIL "staging-bypass"; assert_code STAGING_BYPASS "staging-bypass"
 
-# 21. --dir scans every bundle and fails if any one is incomplete.
+# 21. A failed booking outcome never passes — regression for the shipped defect.
+p="$(mutant booking-failed '
+m["scenarios"]["booking_success"]["outcome"] = "failed"
+')"
+run_gate "$p"; assert_verdict FAIL "booking-failed"; assert_code SCENARIO_OUTCOME "booking-failed"
+
+# 22. Free-text outcomes are rejected even when nonempty.
+p="$(mutant booking-prose '
+m["scenarios"]["booking_success"]["outcome"] = "synthetic appointment created on a free slot"
+')"
+run_gate "$p"; assert_verdict FAIL "booking-prose"; assert_code SCENARIO_OUTCOME "booking-prose"
+
+# 23. A scenario trace must point at this bundle's targeted evidence.
+p="$(mutant scenario-dangling-ref '
+m["scenarios"]["booking_success"]["evidence_ref"] = "sha256:no-such-digest"
+')"
+run_gate "$p"; assert_verdict FAIL "scenario-dangling-ref"; assert_code SCENARIO_EVIDENCE "scenario-dangling-ref"
+
+# 24. --dir scans every bundle and fails if any one is incomplete.
 mkdir -p "$TMP/dirscan"
 cp "$BASE" "$TMP/dirscan/pass-a.json"
 cp "$TMP/live-effects.json" "$TMP/dirscan/fail-b.json"
@@ -228,7 +246,7 @@ DIR_OUT="$(bash "$GATE" --dir "$TMP/dirscan" --json 2>/dev/null)"
 DIR_VERDICT="$(printf '%s' "$DIR_OUT" | python3 -c "import json,sys; print(json.load(sys.stdin)['verdict'])" 2>/dev/null)"
 [ "$DIR_VERDICT" = "FAIL" ] && ok "--dir: any failing bundle fails the run" || bad "--dir: expected FAIL, got '${DIR_VERDICT:-<empty>}'"
 
-# 22. A malformed bundle is a loud failure, not a pass.
+# 25. A malformed bundle is a loud failure, not a pass.
 printf '{not json' > "$TMP/malformed.json"
 run_gate "$TMP/malformed.json"
 assert_verdict FAIL "malformed"; assert_code IO "malformed"
