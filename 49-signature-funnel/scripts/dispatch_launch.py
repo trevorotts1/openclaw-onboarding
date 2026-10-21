@@ -38,6 +38,25 @@ state read, the emitted schema_version, the evidence_ref behind
 "ready") so receipts prove after the fact which roles ran 1.1 and on
 what evidence. validate_request is unchanged: it already dual-accepts.
 
+MODES (explicit, never inferred):
+  * ``page_only`` (default, byte-identical to the pre-mode behaviour): the
+    approved plan's page requests are emitted and, when an executor is
+    supplied, the page lanes run. A full launch plan supplied in this mode
+    is NOT dispatched; the manifest records that fact so nothing is
+    silently dropped.
+  * ``turnkey_launch``: the FULL approved launch plan (pages, email
+    sequences, text sets, automations and the requested Conversation AI)
+    must be supplied. Every unit must have a registered lane adapter
+    (page units use the existing page-role adapters; a non-page unit uses
+    the adapter registered under its own plan unit id). Dispatch refuses
+    by name when one is missing. It writes a durable progress file before
+    and after every unit, resumes a re-dispatch without rebuilding units
+    whose input hash has not changed, and accepts a lane result only after
+    collect_launch_receipts.validate_result echoes the lane request. Page
+    lanes still run through the existing page_swarm scheduler with its
+    spend ledger, KIE limiter and worker profile; lane units run in
+    waits_for order, independent ones side by side.
+
 FAIL-CLOSED, in this order:
   1. The launch record must validate (validate_launch_plan) and its status
      must be approved/building.
@@ -76,9 +95,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compile_launch_route as clr  # noqa: E402
@@ -91,6 +113,17 @@ EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
 
 WRITE_TARGETS = ("local_only", "approved_test_location", "approved_live_publication")
+
+MODE_PAGE_ONLY = "page_only"
+MODE_TURNKEY_LAUNCH = "turnkey_launch"
+DISPATCH_MODES = (MODE_PAGE_ONLY, MODE_TURNKEY_LAUNCH)
+# Non-page plan sections whose units a lane adapter must build. The page
+# section is served by the existing page-role adapters, never by a lane id.
+LANE_SECTIONS = ("email_sequences", "text_sets", "automations")
+PLAN_SECTIONS = ("pages",) + LANE_SECTIONS
+CONVERSATION_AI_UNIT = "conversation_ai"
+PLAN_SCHEMA_VERSION = "1.0.0"
+PROGRESS_SCHEMA = "signature-launch-dispatch-progress/v1"
 
 ADOPTION_SCHEMA = "signature-launch-prompt-policy-adoption/v1"
 ADOPTION_STATES = ("not_ready", "ready", "never_by_design",
@@ -325,6 +358,260 @@ def validate_request(req: Dict[str, Any]) -> List[str]:
     return fails
 
 
+# ---------------------------------------------------------------------------
+# turnkey_launch — the full plan, its lane adapters, durable progress, receipts
+# ---------------------------------------------------------------------------
+def plan_units(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Every unit of a full launch plan in contract order, with its section.
+
+    The Conversation AI is one unit when the client requested it; a plan that
+    does not request it has no such unit (a lane is never invented)."""
+    units: List[Dict[str, Any]] = []
+    for section in PLAN_SECTIONS:
+        for unit in plan.get(section) or []:
+            units.append({"section": section, "id": unit["id"], "unit": unit})
+    ai = plan.get(CONVERSATION_AI_UNIT) or {}
+    if ai.get("requested"):
+        units.append({"section": CONVERSATION_AI_UNIT, "id": CONVERSATION_AI_UNIT,
+                      "unit": {"id": CONVERSATION_AI_UNIT, "waits_for": [],
+                               "conversation_ai": ai}})
+    return units
+
+
+def validate_turnkey_plan(plan: Any, launch: Dict[str, Any],
+                          page_keys: Sequence[str]) -> List[str]:
+    """Fail-closed checks for a FULL plan before a turnkey run starts.
+
+    A missing section, a duplicate unit id, a dangling wait, a non-draft unit,
+    a page the plan does not account for, or a Conversation AI that requests
+    without a mode all block by name. Nothing here builds or defaults a unit."""
+    if not isinstance(plan, dict):
+        return ["the launch plan is not an object"]
+    fails: List[str] = []
+    if plan.get("state") not in (None, "ready"):
+        fails.append(f"the launch plan state is {plan.get('state')!r}, not ready")
+    if plan.get("schema_version") != PLAN_SCHEMA_VERSION:
+        fails.append(f"the launch plan schema_version is {plan.get('schema_version')!r}, "
+                     f"expected {PLAN_SCHEMA_VERSION!r}")
+    if plan.get("launch_id") != launch["launch_id"]:
+        fails.append("the launch plan launch_id does not match the launch record")
+    for section in PLAN_SECTIONS:
+        value = plan.get(section)
+        if not isinstance(value, list):
+            fails.append(f"the launch plan carries no {section} list")
+    ai = plan.get(CONVERSATION_AI_UNIT)
+    if not isinstance(ai, dict):
+        fails.append("the launch plan carries no conversation_ai block")
+    elif bool(ai.get("requested")) != (ai.get("mode") not in (None, "none")):
+        fails.append("conversation_ai requested and mode disagree")
+    if fails:
+        return fails
+    ids: List[str] = []
+    for item in plan_units(plan):
+        ids.append(item["id"])
+        if item["section"] != CONVERSATION_AI_UNIT:
+            unit = item["unit"]
+            if not isinstance(unit.get("id"), str) or not unit["id"].strip():
+                fails.append(f"a {item['section']} unit has no id")
+            waits = unit.get("waits_for", [])
+            if not isinstance(waits, list):
+                fails.append(f"{item['id']}: waits_for is not a list")
+            elif item["section"] in LANE_SECTIONS and unit.get("draft_only") is not True:
+                fails.append(f"{item['id']}: is not draft_only")
+    if len(set(ids)) != len(ids):
+        fails.append("the launch plan has duplicate unit ids")
+    known = set(ids)
+    for item in plan_units(plan):
+        for wait in (item["unit"].get("waits_for") or []):
+            if wait not in known:
+                fails.append(f"{item['id']}: waits_for unknown unit {wait!r}")
+            elif wait == item["id"]:
+                fails.append(f"{item['id']}: waits_for itself")
+    planned_pages = {u["id"] for u in plan.get("pages") or []}
+    expected_pages = {f"page_{key}" for key in page_keys}
+    for missing in sorted(expected_pages - planned_pages):
+        fails.append(f"the launch plan does not account for page unit {missing!r}")
+    for extra in sorted(planned_pages - expected_pages):
+        fails.append(f"the launch plan names page unit {extra!r} that this page set "
+                     "does not build")
+    return fails
+
+
+def _unit_input_hash(launch: Dict[str, Any], unit_id: str, unit: Any) -> str:
+    return hashlib.sha256(_canonical({
+        "plan_document_hash": vlp.plan_document_hash(launch),
+        "launch_id": launch["launch_id"], "revision": launch["revision"],
+        "unit_id": unit_id, "unit": unit})).hexdigest()
+
+
+def _lane_request(launch: Dict[str, Any], item: Dict[str, Any],
+                  input_hash: str) -> Dict[str, Any]:
+    """The request a lane adapter answers. It echoes page-result identity so
+    collect_launch_receipts can bind the result to this exact unit and plan."""
+    return {
+        "schema_version": "1.0",
+        "tenant_id": launch["tenant_id"], "location_id": launch["location_id"],
+        "launch_id": launch["launch_id"], "revision": launch["revision"],
+        "request_id": (f"{launch['tenant_id']}:{launch['launch_id']}:"
+                       f"rev{launch['revision']}:{item['id']}:{input_hash[:16]}"),
+        "input_hash": input_hash, "page_id": item["id"],
+        "section": item["section"], "unit": item["unit"],
+        "test_only": bool(launch["test_only"]),
+        "allowed_write_target": "local_only",
+    }
+
+
+class Progress:
+    """Durable per-unit progress: written after every state change, atomically.
+
+    A unit is skipped only when it is ``done`` AND its recorded input hash
+    still matches the plan, so a changed plan rebuilds the changed units and
+    nothing else. A corrupt or absent file starts empty; it never blocks."""
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self._lock = threading.Lock()
+        self.doc: Dict[str, Any] = {"schema": PROGRESS_SCHEMA, "units": {}}
+        if self.path.is_file():
+            try:
+                loaded = json.loads(self.path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict) and loaded.get("schema") == PROGRESS_SCHEMA \
+                        and isinstance(loaded.get("units"), dict):
+                    self.doc = loaded
+            except (OSError, ValueError):
+                pass
+
+    def state(self, unit_id: str) -> Dict[str, Any]:
+        entry = self.doc["units"].get(unit_id)
+        return entry if isinstance(entry, dict) else {}
+
+    def should_skip(self, unit_id: str, input_hash: str) -> bool:
+        entry = self.state(unit_id)
+        result_path = entry.get("result_path")
+        if entry.get("status") != "done" or entry.get("input_hash") != input_hash:
+            return False
+        if not result_path:
+            return False
+        path = Path(result_path)
+        if not path.is_file():
+            return False
+        try:
+            return hashlib.sha256(path.read_bytes()).hexdigest() == \
+                entry.get("result_sha256")
+        except OSError:
+            return False
+
+    def _write(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        tmp.write_text(json.dumps(self.doc, indent=2, sort_keys=True) + "\n",
+                       encoding="utf-8")
+        os.replace(tmp, self.path)
+
+    def mark(self, unit_id: str, *, status: str, input_hash: str,
+             section: str, result_path: Optional[Path] = None,
+             error: Optional[str] = None) -> None:
+        with self._lock:
+            entry = {"status": status, "input_hash": input_hash,
+                     "section": section}
+            if result_path is not None and Path(result_path).is_file():
+                entry["result_path"] = str(result_path)
+                entry["result_sha256"] = hashlib.sha256(
+                    Path(result_path).read_bytes()).hexdigest()
+            if error:
+                entry["error"] = error
+            self.doc["units"][unit_id] = entry
+            self._write()
+
+
+def _adapter_command(command: Sequence[Any], *, request_path: Path,
+                     result_path: Path, work_dir: Path, unit_id: str) -> List[str]:
+    return [str(part).replace("{request}", str(request_path))
+                    .replace("{result}", str(result_path))
+                    .replace("{work_dir}", str(work_dir))
+                    .replace("{unit}", unit_id)
+            for part in command]
+
+
+def _run_lane(item: Dict[str, Any], *, launch: Dict[str, Any],
+              adapter: Dict[str, Any], work_dir: Path, progress: Progress,
+              receipts) -> Dict[str, Any]:
+    """Run one lane adapter, accept only a receipt-valid echo, record progress."""
+    import subprocess
+    unit_id = item["id"]
+    ih = _unit_input_hash(launch, unit_id, item["unit"])
+    request = _lane_request(launch, item, ih)
+    request_path = work_dir / f"lane-request-{unit_id}.json"
+    result_path = work_dir / f"lane-result-{unit_id}.json"
+    if result_path.is_file():  # never answer a unit over an older answer's bytes
+        result_path.unlink()
+    request_path.write_text(json.dumps(request, indent=2) + "\n", encoding="utf-8")
+    progress.mark(unit_id, status="running", input_hash=ih, section=item["section"])
+    cmd = _adapter_command(adapter["command"], request_path=request_path,
+                           result_path=result_path, work_dir=work_dir,
+                           unit_id=unit_id)
+    proc = subprocess.run(cmd, capture_output=True, text=True,
+                          timeout=float(adapter.get("timeout_s", 600)))
+    if proc.returncode != 0:
+        error = f"lane adapter exited {proc.returncode}: {proc.stderr.strip()[:400]}"
+        progress.mark(unit_id, status="failed", input_hash=ih,
+                      section=item["section"], error=error)
+        raise DispatchError(f"{unit_id}: {error}")
+    if not result_path.is_file():
+        error = f"lane adapter produced no result file at {result_path}"
+        progress.mark(unit_id, status="failed", input_hash=ih,
+                      section=item["section"], error=error)
+        raise DispatchError(f"{unit_id}: {error}")
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        error = f"lane result is not JSON: {exc}"
+        progress.mark(unit_id, status="failed", input_hash=ih,
+                      section=item["section"], error=error)
+        raise DispatchError(f"{unit_id}: {error}")
+    fails = receipts.validate_result(result, request)
+    if fails:
+        error = "lane result failed receipt validation: " + "; ".join(fails)
+        progress.mark(unit_id, status="failed", input_hash=ih,
+                      section=item["section"], error=error)
+        raise DispatchError(f"{unit_id}: {error}")
+    progress.mark(unit_id, status="done", input_hash=ih,
+                  section=item["section"], result_path=result_path)
+    return {"unit_id": unit_id, "section": item["section"],
+            "request_id": request["request_id"], "input_hash": ih,
+            "status": result["status"], "proof_class": result["proof_class"],
+            "result_path": str(result_path), "result": result}
+
+
+def _run_lane_waves(items: List[Dict[str, Any]], *, launch: Dict[str, Any],
+                    adapters: Dict[str, Dict[str, Any]], work_dir: Path,
+                    progress: Progress, receipts, workers: int) -> List[Dict[str, Any]]:
+    """Execute lane units in waits_for order; independent units side by side.
+
+    Every unit in one wave has all its prerequisites done, so a native binding
+    never starts before the unit it waits for. A cycle blocks by name."""
+    done: set = set()
+    by_id = {item["id"]: item for item in items}
+    waits = {item["id"]: set(item["unit"].get("waits_for") or []) & set(by_id)
+             for item in items}
+    outcomes: List[Dict[str, Any]] = []
+    remaining = set(by_id)
+    while remaining:
+        ready = sorted(uid for uid in remaining if not (waits[uid] - done))
+        if not ready:
+            raise DispatchError("the launch plan's waits_for edges form a cycle: "
+                                + ", ".join(sorted(remaining)))
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+            futures = [pool.submit(_run_lane, by_id[uid], launch=launch,
+                                   adapter=adapters[uid], work_dir=work_dir,
+                                   progress=progress, receipts=receipts)
+                       for uid in ready]
+            for future in futures:
+                outcomes.append(future.result())
+        done.update(ready)
+        remaining.difference_update(ready)
+    return outcomes
+
+
 def _check_scoped_approvals(launch: Dict[str, Any],
                               approvals: List[Dict[str, Any]],
                               target: str, *,
@@ -378,15 +665,28 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
              landing_pages: Optional[List[str]] = None,
              extra_pages: Tuple[str, ...] = (),
              limiter: Any = None,
+             mode: str = MODE_PAGE_ONLY,
+             launch_plan: Optional[Dict[str, Any]] = None,
+             lane_adapters: Optional[Dict[str, Any]] = None,
+             progress_path: Optional[Path] = None,
              ) -> Dict[str, Any]:
     """Full dispatch. Returns the manifest dict; writes requests (+ results
     when an executor ran) under out_dir when given.
+
+    mode: explicit ``page_only`` (default) or ``turnkey_launch``. turnkey
+    additionally requires the full approved launch plan (``launch_plan``),
+    a registered lane adapter for every non-page unit (``lane_adapters``),
+    a durable progress file (``progress_path`` or ``out_dir/progress.json``)
+    and a page executor, because a turnkey run promises every unit.
 
     parallel: pages built side by side (1 = the sequential fallback, same
     results). Every page, the landing page too, runs side by side. image_inputs: the shared
     image inputs (page_set.load_image_inputs); with the paid provider the
     spend cap and the KIE limiter apply (page_swarm). extra_pages: opted-in
     design pages that ride on a route request (today downsell_2)."""
+    if mode not in DISPATCH_MODES:
+        raise DispatchError(f"mode {mode!r} is not one of {DISPATCH_MODES!r}; "
+                            "the mode is explicit and never inferred")
     fails = vlp.validate_launch(launch)
     if fails:
         raise DispatchError("launch record fails validation: " + "; ".join(fails))
@@ -404,6 +704,8 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
     _check_scoped_approvals(launch, scoped_approvals or [], allowed_write_target,
                             client_identity_ref=client_identity_ref,
                             worker_identity_ref=worker_identity_ref)
+    page_set = pset.build_page_set(launch, landing_pages=landing_pages,
+                                   extra_pages=extra_pages)
     requests = build_requests(launch, graph, copy_profile=copy_profile,
                               allowed_write_target=allowed_write_target)
     for r in requests:
@@ -411,6 +713,61 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         if rf:
             raise DispatchError("built request failed schema discipline: " +
                                 "; ".join(rf))
+    # ---- turnkey gate: every promise checked BEFORE anything runs ----------
+    turnkey_block: Dict[str, Any] = {"mode": mode}
+    lane_items: List[Dict[str, Any]] = []
+    lane_adapters_by_id: Dict[str, Dict[str, Any]] = {}
+    progress: Optional[Progress] = None
+    if mode == MODE_TURNKEY_LAUNCH:
+        if launch_plan is None:
+            raise DispatchError(
+                "turnkey_launch requires the FULL approved launch plan "
+                "(--launch-plan); page_only is the explicit mode for pages alone")
+        plan_fails = validate_turnkey_plan(
+            launch_plan, launch, [p["page_key"] for p in page_set["pages"]])
+        if plan_fails:
+            raise DispatchError("launch plan cannot be dispatched turnkey: "
+                                + "; ".join(plan_fails))
+        if executor is None:
+            raise DispatchError(
+                "turnkey_launch requires a page executor; without one the page "
+                "units would only be emitted, and turnkey promises every unit")
+        if out_dir is None:
+            raise DispatchError(
+                "turnkey_launch requires --out: durable progress is written there")
+        progress = Progress(progress_path or (Path(out_dir) / "progress.json"))
+        units = plan_units(launch_plan)
+        lane_items = [u for u in units if u["section"] != "pages"]
+        registered = (lane_adapters or {}).get("adapters")
+        if not isinstance(registered, dict):
+            raise DispatchError(
+                "turnkey_launch requires a lane adapter registry "
+                "({adapters: {<unit id>: {command: [...]}}}); none supplied")
+        lane_ids = [u["id"] for u in lane_items]
+        unknown = sorted(str(k) for k in registered if k not in set(lane_ids))
+        if unknown:
+            raise DispatchError(
+                "lane adapter registry names unit(s) outside the approved plan: "
+                + ", ".join(unknown))
+        missing = [uid for uid in lane_ids
+                   if not (registered.get(uid) or {}).get("command")]
+        if missing:
+            raise DispatchError(
+                "no registered lane adapter for plan unit(s): " + ", ".join(missing)
+                + " — turnkey never skips a promised unit")
+        lane_adapters_by_id = {uid: registered[uid] for uid in lane_ids}
+        turnkey_block.update({
+            "plan_schema_version": launch_plan.get("schema_version"),
+            "plan_units": len(units),
+            "lane_units": len(lane_items),
+            "progress_path": str(progress.path),
+        })
+    elif launch_plan is not None:
+        # Explicit, never silent: page_only does not dispatch non-page units.
+        turnkey_block = {"mode": mode, "plan_state": "not_dispatched",
+                         "reason": ("page_only dispatches page units only; the "
+                                    "supplied launch plan's email, text, automation "
+                                    "and Conversation AI units were NOT run")}
     # PP-T2 manifest block (adoption map section 2.1 rule 5): per role,
     # the state read, the schema_version actually emitted (taken from the
     # request itself, never inferred from the decision), and the
@@ -424,16 +781,16 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
             "state": d["state"],
             "emitted_schema_version": r["schema_version"],
             "evidence_ref": d["evidence_ref"]}
-    page_set = pset.build_page_set(launch, landing_pages=landing_pages,
-                                   extra_pages=extra_pages)
     manifest: Dict[str, Any] = {
         "schema": "signature-launch-dispatch/v1",
+        "mode": mode,
         "launch_id": launch["launch_id"], "revision": launch["revision"],
         "plan_document_hash": vlp.plan_document_hash(launch),
         "route_graph_hash": launch["route_graph_hash"],
         "allowed_write_target": allowed_write_target,
         "prompt_policy_adoption": adoption_block,
         "execution": "executed" if executor else "emitted_not_executed",
+        "launch_plan": turnkey_block,
         "requests": [{"request_id": r["request_id"], "page_id": r["page_id"],
                       "page_role": r["page_role"],
                       "assigned_skill": r["assigned_skill"],
@@ -451,8 +808,32 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         for r in requests:
             (out_dir / f"request-{r['page_role']}.json").write_text(
                 json.dumps(r, indent=2) + "\n", encoding="utf-8")
+    # turnkey page-unit bookkeeping: a page request is skipped only when every
+    # page unit it answers is already done at the same input hash.
+    page_units_by_id: Dict[str, Dict[str, Any]] = {}
+    role_page_units: Dict[str, List[str]] = {}
+    if progress is not None and launch_plan is not None:
+        page_key_role = {p["page_key"]: p["role"] for p in page_set["pages"]}
+        for u in plan_units(launch_plan):
+            if u["section"] != "pages":
+                continue
+            page_units_by_id[u["id"]] = u
+            page_key = u["id"].removeprefix("page_")
+            role = page_key_role.get(page_key, page_key)
+            role_page_units.setdefault(role, []).append(u["id"])
+    requests_to_run = requests
+    if progress is not None:
+        done_units = {uid for uid, u in page_units_by_id.items()
+                      if progress.should_skip(uid, _unit_input_hash(
+                          launch, uid, u["unit"]))}
+        requests_to_run = [r for r in requests
+                           if not all(uid in done_units
+                                      for uid in role_page_units.get(r["page_role"], []))]
+        if not requests_to_run:
+            manifest["page_resume"] = {"skipped_roles": [r["page_role"]
+                                                         for r in requests]}
     if executor:
-        run = swarm.execute(requests, executor, page_set=page_set,
+        run = swarm.execute(requests_to_run, executor, page_set=page_set,
                             out_dir=out_dir, launch_id=launch["launch_id"],
                             workers=parallel, image_inputs=image_inputs,
                             limiter=limiter)
@@ -471,13 +852,55 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
                         else f"result-{o['lane']}.json")
                 (out_dir / name).write_text(
                     json.dumps(o["result"], indent=2) + "\n", encoding="utf-8")
+            if progress is not None:
+                for uid in role_page_units.get(o["lane"], []):
+                    progress.mark(uid, status="done",
+                                  input_hash=_unit_input_hash(
+                                      launch, uid, page_units_by_id[uid]["unit"]),
+                                  section="pages",
+                                  result_path=(out_dir / name) if out_dir else None)
         if failed:
+            if progress is not None:
+                for o in failed:
+                    for uid in role_page_units.get(o["lane"], []):
+                        progress.mark(uid, status="failed",
+                                      input_hash=_unit_input_hash(
+                                          launch, uid, page_units_by_id[uid]["unit"]),
+                                      section="pages", error=str(o.get("error")))
             if out_dir:  # the pages that did finish are kept and named
                 (out_dir / "dispatch-manifest.json").write_text(
                     json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
             raise DispatchError(
                 "page(s) did not complete (every other page was still built): "
                 + "; ".join(f"{o['lane']} {o['status']}: {o['error']}" for o in failed))
+    if mode == MODE_TURNKEY_LAUNCH:
+        import collect_launch_receipts as receipts
+        lane_results: List[Dict[str, Any]] = []
+        pending: List[Dict[str, Any]] = []
+        for item in lane_items:
+            ih = _unit_input_hash(launch, item["id"], item["unit"])
+            if progress.should_skip(item["id"], ih):
+                lane_results.append({"unit_id": item["id"],
+                                     "section": item["section"],
+                                     "input_hash": ih,
+                                     "status": "skipped_done",
+                                     "result_path": progress.state(item["id"]).get("result_path")})
+            else:
+                pending.append(item)
+        try:
+            lane_results += _run_lane_waves(
+                pending, launch=launch, adapters=lane_adapters_by_id,
+                work_dir=Path(out_dir), progress=progress, receipts=receipts,
+                workers=max(1, parallel))
+        except DispatchError:
+            manifest["lane_results"] = lane_results
+            manifest["progress_path"] = str(progress.path)
+            if out_dir:
+                (out_dir / "dispatch-manifest.json").write_text(
+                    json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            raise
+        manifest["lane_results"] = lane_results
+        manifest["progress_path"] = str(progress.path)
     if out_dir:
         (out_dir / "dispatch-manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -826,6 +1249,17 @@ def main(argv: List[str]) -> int:
                          "landing,sales (default: the recommended set, flagged to confirm)")
     ap.add_argument("--extra-page", action="append", default=[],
                     help="an extra design page to add (downsell_2)")
+    ap.add_argument("--mode", choices=DISPATCH_MODES, default=MODE_PAGE_ONLY,
+                    help="explicit dispatch mode: page_only (default: page units "
+                         "only) or turnkey_launch (the full approved plan: every "
+                         "email, text, automation and requested AI unit too)")
+    ap.add_argument("--launch-plan",
+                    help="the FULL launch plan JSON (required for turnkey_launch)")
+    ap.add_argument("--lane-adapters",
+                    help="lane adapter registry JSON for turnkey_launch: "
+                         "{adapters: {<plan unit id>: {command: [...], timeout_s: N}}}")
+    ap.add_argument("--progress",
+                    help="durable progress file (default: <out>/progress.json)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
     if args.self_test:
@@ -851,6 +1285,9 @@ def main(argv: List[str]) -> int:
         args.worker = args.worker or cfg.get("worker_identity_ref")
         args.copy_profile = cfg.get("copy_profile", args.copy_profile)
         args.write_target = cfg.get("allowed_write_target", args.write_target)
+        args.mode = cfg.get("dispatch_mode", args.mode)
+        args.launch_plan = args.launch_plan or cfg.get("launch_plan")
+        args.lane_adapters = args.lane_adapters or cfg.get("lane_adapters")
         args.out = args.out or str(rd / "dispatch")
     if not (args.launch and args.approval and args.client and args.worker):
         print("USAGE ERROR: --launch --approval --client --worker are required.")
@@ -890,14 +1327,20 @@ def main(argv: List[str]) -> int:
                      image_inputs=inputs,
                      landing_pages=args.landing_pages.split(",")
                      if args.landing_pages else None,
-                     extra_pages=tuple(args.extra_page), limiter=limiter)
+                     extra_pages=tuple(args.extra_page), limiter=limiter,
+                     mode=args.mode,
+                     launch_plan=_load(args.launch_plan) if args.launch_plan else None,
+                     lane_adapters=_load(args.lane_adapters) if args.lane_adapters else None,
+                     progress_path=Path(args.progress) if args.progress else None)
     except (DispatchError, pset.PageSetError, swarm.SwarmError,
             vlp.ApprovalError, clr.RouteError, OSError, ValueError) as exc:
         print(f"FAIL: {exc}")
         return EXIT_VIOLATION
-    print(json.dumps({"execution": m["execution"],
+    print(json.dumps({"mode": m["mode"],
+                      "execution": m["execution"],
                       "requests": len(m["requests"]),
                       "results": len(m["results"]),
+                      "lane_units": len(m.get("lane_results") or []),
                       "pages": [p["page_key"] for p in m["page_set"]["pages"]],
                       "to_confirm": m["page_set"]["to_confirm"]}, indent=2))
     return EXIT_OK

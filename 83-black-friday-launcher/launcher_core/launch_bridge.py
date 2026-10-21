@@ -37,6 +37,16 @@ from . import image_plan, intake as intake_module, page_designs, route  # noqa: 
 LAUNCH_SCHEMA_VERSION = "1.2"
 FIRST_ROLE = "landing"  # first when pages are built one at a time (side by side, Skill 49 starts every page together)
 
+# Billing conversion (requested by audit lane L02, UL-005). The launch record's
+# price_choice contract carries the billing facts; this bridge must CONVERT a
+# supplied billing fact, never collapse every package onto one one-time price.
+# A price that supplies none of these keys keeps the historical one_time shape
+# byte for byte, so existing intakes and fixtures are unchanged.
+BILLING_TYPES = ("one_time", "recurring", "installment", "trial")
+APPROVAL_STATUSES = ("provided", "recommended_unapproved", "approved", "unknown")
+BILLING_PRICE_KEYS = ("price_choice_id", "billing_type", "native_price_id",
+                      "schedule", "terms_source", "approval_status")
+
 
 class BridgeError(Exception):
     """A dispatch that cannot start. Carries a stable code and a plain-English detail."""
@@ -47,14 +57,115 @@ class BridgeError(Exception):
         self.detail = detail
 
 
-def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str, str]) -> Dict[str, Any]:
+def _billing_schedule(value: Any, offer_id: str) -> List[Dict[str, Any]]:
+    """A supplied billing schedule, preserved row for row, or refused by name.
+
+    Rows are exactly the launch contract's schedule row ({amount_minor, due}).
+    An unknown row shape is a BridgeError, never a silently dropped payment."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                          f"offer {offer_id!r} carries a billing schedule that is not a list. "
+                          "Nothing was dispatched and nothing was spent.")
+    rows: List[Dict[str, Any]] = []
+    for index, row in enumerate(value):
+        if not isinstance(row, dict) or set(row) - {"amount_minor", "due"}:
+            raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                              f"offer {offer_id!r} schedule row {index} is not "
+                              "{amount_minor, due}. Nothing was dispatched.")
+        amount = row.get("amount_minor")
+        if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
+            raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                              f"offer {offer_id!r} schedule row {index} needs integer "
+                              "minor units >= 0. Nothing was dispatched.")
+        due = row.get("due")
+        if not isinstance(due, str) or not due.strip():
+            raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                              f"offer {offer_id!r} schedule row {index} needs a non-empty "
+                              "'due'. Nothing was dispatched.")
+        rows.append({"amount_minor": amount, "due": due.strip()})
+    return rows
+
+
+def _billing_price(raw_price: Dict[str, Any], normalized_price: Dict[str, Any],
+                   offer_id: str, test_only: bool) -> Dict[str, Any]:
+    """Convert one launch offer's price facts, preserving every supplied billing field.
+
+    ``raw_price`` is the intake price object as supplied (the intake validates
+    the money fields and normalizes them); ``normalized_price`` is the validated
+    amount_minor/currency. A price that supplies no billing key produces the
+    historical one_time/empty-schedule shape. A supplied billing_type,
+    price_choice_id, native_price_id, schedule, terms_source or approval_status
+    is carried verbatim (schedule rows shape-checked). Contradictions are
+    refused, never "fixed": an unknown billing_type, a one_time price with a
+    schedule, or an installment with no schedule all raise BridgeError."""
+    supplied = {key: raw_price[key] for key in BILLING_PRICE_KEYS if key in raw_price}
+    choice_id = supplied.get("price_choice_id")
+    if choice_id is not None and (not isinstance(choice_id, str) or not choice_id.strip()):
+        raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                          f"offer {offer_id!r} price_choice_id must be a non-empty string. "
+                          "Nothing was dispatched.")
+    billing_type = supplied.get("billing_type", "one_time")
+    if billing_type not in BILLING_TYPES:
+        raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                          f"offer {offer_id!r} billing_type {billing_type!r} is not one of "
+                          f"{BILLING_TYPES!r}. Nothing was dispatched.")
+    schedule = _billing_schedule(supplied.get("schedule"), offer_id)
+    if billing_type == "one_time" and schedule:
+        raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                          f"offer {offer_id!r} is one_time but carries a billing schedule; "
+                          "a one-time charge and a payment schedule contradict each other. "
+                          "Nothing was dispatched.")
+    if billing_type == "installment" and not schedule:
+        raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                          f"offer {offer_id!r} is an installment price with no schedule; "
+                          "the installments are never invented. Nothing was dispatched.")
+    native_price_id = supplied.get("native_price_id")
+    if native_price_id is not None and not isinstance(native_price_id, str):
+        raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                          f"offer {offer_id!r} native_price_id must be a string or null. "
+                          "Nothing was dispatched.")
+    terms_source = supplied.get("terms_source")
+    if terms_source is not None and not isinstance(terms_source, str):
+        raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                          f"offer {offer_id!r} terms_source must be a string or null. "
+                          "Nothing was dispatched.")
+    approval_status = supplied.get("approval_status", "approved")
+    if approval_status not in APPROVAL_STATUSES:
+        raise BridgeError("AF-LAUNCH-BRIDGE-BILLING",
+                          f"offer {offer_id!r} approval_status {approval_status!r} is not one "
+                          f"of {APPROVAL_STATUSES!r}. Nothing was dispatched.")
+    price = {
+        "price_choice_id": (choice_id.strip() if isinstance(choice_id, str)
+                            else f"{offer_id}-{normalized_price['currency']}"),
+        "currency": normalized_price["currency"],
+        "amount_minor": normalized_price["amount_minor"],
+        "billing_type": billing_type,
+        "native_price_id": native_price_id if native_price_id is not None else None,
+        "schedule": schedule,
+        "approval_status": approval_status,
+    }
+    if terms_source is not None:
+        price["terms_source"] = terms_source
+    return price
+
+
+def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str, str],
+           raw_offer: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     test_only = bool(normalized.get("test_only", True))
+    raw_offer = raw_offer or {}
     excludes: List[str] = []
     if offer["role"] == "upsell_1" and "downsell_1" in by_role:
         excludes = [by_role["downsell_1"]]
     if offer["role"] == "downsell_1" and "upsell_1" in by_role:
         excludes = [by_role["upsell_1"]]
     level = offer.get("level") or {}
+    raw_price = raw_offer.get("price") if isinstance(raw_offer.get("price"), dict) else {}
+    source_kind = raw_offer.get("source_kind", "test_fixture" if test_only else "owner")
+    source_ref = raw_offer.get("source_ref",
+                               f"launcher-intake:{normalized['launch_id']}:r{normalized['revision']}")
+    native_product_id = raw_offer.get("native_product_id")
     return {
         "offer_id": offer["offer_id"],
         "slot": offer["role"],
@@ -64,30 +175,31 @@ def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str,
         "entitlement_ids": [offer["offer_id"].lower()],
         "requires": [],
         "excludes": excludes,
-        "native_product_id": None,
-        "prices": [{
-            "price_choice_id": f"{offer['offer_id']}-{offer['price']['currency']}",
-            "currency": offer["price"]["currency"],
-            "amount_minor": offer["price"]["amount_minor"],
-            "billing_type": "one_time",
-            "native_price_id": None,
-            "schedule": [],
-            "approval_status": "approved",
-        }],
-        "source_kind": "test_fixture" if test_only else "owner",
-        "source_ref": f"launcher-intake:{normalized['launch_id']}:r{normalized['revision']}",
+        "native_product_id": native_product_id,
+        "prices": [_billing_price(raw_price, offer["price"], offer["offer_id"], test_only)],
+        "source_kind": source_kind,
+        "source_ref": source_ref,
         "test_only": test_only,
     }
 
 
 def to_launch_record(normalized: Dict[str, Any], graph: Dict[str, Any],
-                     inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """The Skill 49 launch record for a validated intake. Schema-valid; proven by check_launch_record."""
+                     inputs: Dict[str, Any],
+                     raw_offers: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """The Skill 49 launch record for a validated intake. Schema-valid; proven by check_launch_record.
+
+    raw_offers are the intake's own price objects (already validated for money
+    and shape by intake.validate). They carry the optional billing facts the
+    normalized record keeps only as amount/currency; the conversion below
+    preserves them instead of collapsing every price onto one_time."""
     roles = {o["role"] for o in normalized["offers"]}
     by_role: Dict[str, str] = {o["role"]: o["offer_id"] for o in normalized["offers"]
                                if o["role"] in ("upsell_1", "downsell_1")}
+    raw_by_id = {o.get("offer_id"): o for o in (raw_offers or [])
+                 if isinstance(o, dict) and isinstance(o.get("offer_id"), str)}
     compiler = substrate.compiler()
-    offers = [_offer(normalized, o, by_role) for o in normalized["offers"]]
+    offers = [_offer(normalized, o, by_role, raw_by_id.get(o["offer_id"]))
+              for o in normalized["offers"]]
     launch_id, revision = normalized["launch_id"], normalized["revision"]
     return {
         "schema_version": LAUNCH_SCHEMA_VERSION,
@@ -210,7 +322,11 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         parallel: Optional[int] = None,
         scoped_approvals: Optional[List[Dict[str, Any]]] = None,
         extra_pages: Sequence[str] = (),
-        landing_pages: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+        landing_pages: Optional[Sequence[str]] = None,
+        mode: str = "page_only",
+        launch_plan: Optional[Dict[str, Any]] = None,
+        lane_adapters: Optional[Dict[str, Any]] = None,
+        progress_path: Optional[Path] = None) -> Dict[str, Any]:
     """Validate, bridge, dispatch, and write one result per page. Returns the dispatch report.
 
     landing_pages is the client's landing page choice ("landing", "sales" or both). Without it the set
@@ -221,11 +337,16 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
     ImagePlanError) whose detail says what is needed and what has NOT been done (nothing spent, nothing sent).
     """
     out_dir = Path(out_dir)
+    if mode not in ("page_only", "turnkey_launch"):
+        raise BridgeError("AF-LAUNCH-BRIDGE-MODE",
+                          f"mode {mode!r} is not page_only or turnkey_launch. The mode is "
+                          "explicit and never inferred. Nothing was dispatched.")
     normalized = intake_module.validate(payload)
     inputs, to_confirm = image_plan.resolve(normalized.get("image_plan"),
                                             test_only=bool(normalized.get("test_only", True)))
     graph = route.compile_route(normalized)
-    launch = to_launch_record(normalized, graph, inputs)
+    launch = to_launch_record(normalized, graph, inputs,
+                              raw_offers=payload.get("offers") or [])
     fails = check_launch_record(launch)
     if fails:
         raise BridgeError("AF-LAUNCH-BRIDGE-RECORD",
@@ -279,6 +400,23 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
                               f"Skill 49's dispatch cannot build {', '.join(extra_pages)} in this checkout. "
                               "Nothing was dispatched and nothing was spent.")
         kwargs["extra_pages"] = tuple(extra_pages)
+    if mode == "turnkey_launch":
+        # A turnkey run promises every plan unit; a Skill 49 checkout that cannot
+        # run the full plan must block, never quietly build pages only.
+        if not all(_accepts(dl.dispatch, name) for name in
+                   ("mode", "launch_plan", "lane_adapters")):
+            raise BridgeError("AF-LAUNCH-BRIDGE-MODE",
+                              "Skill 49's dispatch in this checkout has no turnkey_launch mode "
+                              "(page_only only). Nothing was dispatched and nothing was spent.")
+        if launch_plan is None:
+            raise BridgeError("AF-LAUNCH-BRIDGE-MODE",
+                              "turnkey_launch needs the FULL approved launch plan. "
+                              "Nothing was dispatched.")
+        kwargs["mode"] = mode
+        kwargs["launch_plan"] = launch_plan
+        kwargs["lane_adapters"] = lane_adapters
+        if progress_path is not None and _accepts(dl.dispatch, "progress_path"):
+            kwargs["progress_path"] = Path(progress_path)
     try:
         manifest = dl.dispatch(
             launch, approval,
@@ -312,6 +450,7 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
 
     report = {
         "launch_id": normalized["launch_id"],
+        "mode": manifest.get("mode", mode),
         "execution": manifest["execution"],
         "pages": written,
         "page_labels": [p["label"] for p in manifest["page_set"]["pages"]],
