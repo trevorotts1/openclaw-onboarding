@@ -119,7 +119,7 @@
       "label": "Python 3 (control layer)",
       "check": { "binary": "python3" },
       "severity": "required",
-      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only, no pip packages (the one exception is the optional lip-sync picture gate: see python-mediapipe). Verify: python3 --version. If missing, install Python 3 (Mac: brew install python3; VPS: apt-get install -y python3) and re-run."
+      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only, no pip packages - the one exception is the optional lip-sync gate stack (mediapipe, opencv, numpy and the pinned face_landmarker.task model), which BOTH the picture gate and the measured clip gate need; see python-mediapipe and face-landmarker-model. Verify: python3 --version. If missing, install Python 3 (Mac: brew install python3; VPS: apt-get install -y python3) and re-run."
     },
     {
       "id": "ffmpeg-binary",
@@ -139,19 +139,19 @@
     },
     {
       "id": "python-mediapipe",
-      "type": "manual",
-      "label": "mediapipe + OpenCV (lip-sync picture gate)",
-      "check": {"note": "python3 -c 'import mediapipe, cv2, numpy' must succeed (lip-sync picture gate)."},
+      "type": "binary",
+      "label": "mediapipe + OpenCV + numpy (lip-sync picture gate and measured clip gate)",
+      "check": { "binary": "mediapipe" },
       "severity": "optional",
-      "satisfy": "python3 -m pip install 'mediapipe>=0.10.14' opencv-python-headless numpy ; verify: python3 -c 'import mediapipe, cv2, numpy'."
+      "satisfy": "One-command repair from the skill folder: python3 \"<skills_dir>/75-drama-song-ad-factory/scripts/lipsync_preflight.py --repair\" (installs mediapipe>=0.10.14, opencv-python-headless and numpy from requirements-lipsync.txt into the python3 the gates run on). Check only, changes nothing: python3 \"<skills_dir>/75-drama-song-ad-factory/scripts/lipsync_preflight.py\". Both the picture gate and the measured clip gate need all four pieces - mediapipe, opencv, numpy and assets/face_landmarker.task. The shell prerequisite checker cannot import Python modules, so it cannot verify this entry: it is reported on every check (exit 2, informational, blocks nothing) and lipsync_preflight.py is the authoritative check. The gates themselves stay fail-closed."
     },
     {
       "id": "face-landmarker-model",
-      "type": "manual",
-      "label": "mediapipe face_landmarker.task (lip-sync picture gate model)",
-      "check": {"note": "assets/face_landmarker.task (or LIPSYNC_FACE_MODEL) with sha256 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff."},
+      "type": "binary",
+      "label": "mediapipe face_landmarker.task (lip-sync picture gate and measured clip gate model)",
+      "check": { "binary": "face_landmarker.task" },
       "severity": "optional",
-      "satisfy": "The picture gate looks for assets/face_landmarker.task (or the path in LIPSYNC_FACE_MODEL) and refuses every lip-sync job without the pinned file. From the skill folder run: python3 scripts/core/lip_sync/lip_gate/install_face_model.py (downloads Google's official float16 model from storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task, verifies the pinned sha256, places it). Re-running with a good file is a no-op. Re-run after every skill update."
+      "satisfy": "One-command repair from the skill folder: python3 \"<skills_dir>/75-drama-song-ad-factory/scripts/lipsync_preflight.py --repair\" (downloads Google's official float16 model from storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task, verifies the pinned sha256 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff and places it at assets/face_landmarker.task; LIPSYNC_FACE_MODEL can point both gates at another copy). Re-running with a good file is a no-op. Check only: python3 \"<skills_dir>/75-drama-song-ad-factory/scripts/lipsync_preflight.py\". Both the picture gate and the measured clip gate need all four pieces - mediapipe, opencv, numpy and assets/face_landmarker.task. The shell prerequisite checker cannot stat or hash the model file, so it cannot verify this entry: it is reported on every check (exit 2, informational, blocks nothing) and lipsync_preflight.py is the authoritative check. The gates themselves stay fail-closed."
     },
     {
       "id": "agnes-key",
