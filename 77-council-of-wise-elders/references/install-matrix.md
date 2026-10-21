@@ -99,6 +99,26 @@ never prints the token, and prints one `COUNCIL_CONNECTOR:` line
 The verifier then reports the connector (DEGRADED COUNCIL_CONNECTOR_DOWN
 when it is not running).
 
+**Container hosts (a remote-managed Command Center tunnel whose rule origin
+is a private bridge address).** A box that runs the Council inside a docker
+container bound to the container's own loopback, with the Command Center
+rule pointing at the container's bridge address (an IPv4 in 172.16.0.0/12,
+10.0.0.0/8 or 192.168.0.0/16, or the literal `host.docker.internal`, on the
+Command Center port), takes this same dedicated tunnel path from
+`provision-council-access.sh`: tunnel `council-<slug>` created remote-managed
+(config_src cloudflare), route `<slug>-council -> http://127.0.0.1:8787`
+(correct because the connector runs inside the container, where the
+Council's loopback lives), connector token saved operator side, and the
+pending line says the connector must run INSIDE the client's container
+(so a later Skill 77 wire.sh or a sanctioned executor can start it). The DNS
+record is still created only once that tunnel shows an active connector,
+and the Access app still mirrors the Command Center app's allow list. Every
+other non-loopback origin (a Command Center on another machine, a public
+origin, or a bridge address on the wrong port) keeps the
+`ORIGIN_NOT_LOOPBACK` refusal exactly as before; a bridge origin on a
+non-Command-Center port (the Contabo 19003 container shape) is allowed only
+on the local-managed path, never the remote-managed one.
+
 ## COUNCIL_WIRE codes (printed by wire.sh during the roll)
 
 Result lines:

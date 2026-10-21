@@ -1,3 +1,7 @@
+## [v27.1.62]  -  2026-10-21  -  Council (Skill 77) v1.0.41: Council: container-host clients with a bridge-origin Command Center can now be provisioned on a dedicated tunnel with an in-container connector
+
+- In plain English: Council (Skill 77) v1.0.41: Council: container-host clients with a bridge-origin Command Center can now be provisioned on a dedicated tunnel with an in-container connector
+
 ## [v27.1.61]  -  2026-10-21  -  Council (Skill 77) v1.0.40: Council: the Council login page now follows the Command Center login page, orphan records are skipped, and a Mac client can use its rescue tunnel for the Council address
 
 - In plain English: Council: the Council login page now follows the Command Center login page, orphan records are skipped, and a Mac client can use its rescue tunnel for the Council address.

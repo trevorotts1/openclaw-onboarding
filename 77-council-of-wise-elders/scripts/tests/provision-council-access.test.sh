@@ -251,12 +251,56 @@ fixture qcbox | jq -c '.tunnels["'$TID'"].status = "inactive"' > "$WORK/f.json";
 run_script qcbox.$Z --apply
 check "inactive tunnel: TUNNEL_DOWN, zero writes" bash -c "test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z TUNNEL_DOWN'"
 
-fixture qcbox | jq -c '.tunnels["'$TID'"].config.ingress[0].service = "http://172.16.1.2:4000"' > "$WORK/f.json"; start_fake "$WORK/f.json"
+fixture qcbox | jq -c '.tunnels["'$TID'"].config.ingress[0].service = "https://example.test:4000"' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
-check "docker-bridge CC origin: ORIGIN_NOT_LOOPBACK, zero writes, exit 0" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z ORIGIN_NOT_LOOPBACK.*172.16.1.2:4000'"
+check "public CC origin: ORIGIN_NOT_LOOPBACK, zero writes, exit 0" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z ORIGIN_NOT_LOOPBACK.*https://example.test:4000'"
 fixture qcbox | jq -c '.tunnels["'$TID'"].config.ingress[0].service = "http://127.0.0.1:4000"' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z
 check "127.0.0.1 CC origin is loopback: PLANNED" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PLANNED'"
+
+echo "== 6a. container shape: remote-managed CC tunnel, bridge origin, Council loopbound inside the container"
+# CSHAPE <service> : the four-container-host shape on qcbox
+CSHAPE() { fixture qcbox | jq -c --arg svc "${1:-http://172.16.1.2:4000}" '.tunnels["'$TID'"].config.ingress[0].service = $svc'; }
+CSHAPE > "$WORK/f.json"; start_fake "$WORK/f.json"; cp "$STATE" "$WORK/orig-state.json"
+run_script qcbox.$Z
+check "container (dry-run): exit 0, GET only, plans the dedicated council-qcbox tunnel" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && grep -q 'would create tunnel council-qcbox' '$OUT' && grep -q '\[plan\] PUT .*configurations' '$OUT'"
+check "container (dry-run): plan holds the DNS record until the connector is up" bash -c "! grep -q 'dns_records' '$OUT' && grep -q '\[hold\] no DNS record' '$OUT'"
+check "container (dry-run): names the container-connector requirement (INSIDE the client's container)" bash -c "grep -q '\[plan\] would create tunnel council-qcbox (remote-managed)' '$OUT' && tail -n1 '$OUT' | grep -q 'PLANNED dry-run: .*no DNS write until tunnel council-qcbox has an active connection, so apply ends CONNECTOR_PENDING' && grep -q 'connector must run INSIDE' '$OUT'"
+run_script qcbox.$Z --apply
+check "container (apply): exit 0, CONNECTOR_PENDING, no DNS write" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 3 && ! grep -Eq '^(POST|PUT|DELETE|PATCH) .*/dns_records' '$LOG' && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING'"
+check "container (apply): no DNS record exists yet" test "$(state '[.dns[] | select(.name=="qcbox-council.'$Z'")] | length')" = 0
+CTID="$(state '[.tunnels | to_entries[] | select(.value.name == "council-qcbox") | .key][0]' | tr -d '"')"
+check "container: a remote-managed (config_src cloudflare) tunnel named council-qcbox was created" test -n "$CTID" -a "$CTID" != null -a "$(state '.tunnels["'$CTID'"].source')" = '"cloudflare"'
+check "container: ingress route <slug>-council -> http://127.0.0.1:8787 (connector runs inside the container)" test "$(state '.tunnels["'$CTID'"].config.ingress')" = '[{"hostname":"qcbox-council.'$Z'","service":"http://127.0.0.1:8787"},{"service":"http_status:404"}]'
+check "container: token file saved, mode 600, dir 700" bash -c "test \"\$(stat -f %Lp '$TOKDIR/council-qcbox.token')\" = 600 && test \"\$(stat -f %Lp '$TOKDIR')\" = 700"
+check "container: the CC tunnel and its bridge rule were not touched" test "$(state '.tunnels["'$TID'"]')" = "$(jq -c '.tunnels["'$TID'"]' "$WORK/orig-state.json")"
+check "container (apply): pending detail says the connector must run INSIDE the container" bash -c "tail -n1 '$OUT' | grep -q 'connector must run INSIDE the client'"
+check "container: Access app mirrors the CC allow list" test "$(state '[.apps[] | select(.domain=="qcbox-council.'$Z'")] | length')" = 1
+jq -c --arg k "$CTID" '.tunnels[$k].conns = [{id:"cc1",is_pending_reconnect:false}]' "$STATE" > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "connector up (apply): exactly 1 write, the DNS POST -> PROVISIONED" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 1 && grep -Eq '^POST /client/v4/zones/zone-real/dns_records' '$LOG' && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED'"
+check "connector up: CNAME points at the container's council tunnel" test "$(state '.dns[] | select(.name=="qcbox-council.'$Z'") | [.content,.proxied] | join("|")')" = '"'$CTID'.cfargotunnel.com|true"'
+
+echo "== 6a2. container shape, non-4000 bridge port (Contabo 19003): only the local-managed path allows it"
+CSHAPE "http://172.16.1.2:19003" > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "bridge origin on :19003, remote-managed: refused exactly as today (the port assert fires first), zero writes, no provisioning" bash -c "test '$(nonget_count)' = 0 && ! grep -q 'CONNECTOR_PENDING' '$OUT' && tail -n1 '$OUT' | grep -Eq 'qcbox.$Z (FAILED|ORIGIN_NOT_LOOPBACK)'"
+CSHAPE "http://172.16.1.2:19003" | jq -c '.tunnels["'$TID'"] = {source:"local",config:{ingress:[{hostname:"qcbox.'$Z'",service:"http://172.16.1.2:19003"}]}}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "bridge origin on :19003, local-managed: dedicated path unchanged (Contabo shape keeps working)" bash -c "test '$RC' = 0 && grep -q 'would create tunnel council-qcbox\|council-qcbox' '$OUT' && ! grep -q 'ORIGIN_NOT_LOOPBACK' '$OUT'"
+
+echo "== 6a3. private-range boundary: 10.x and 192.168.x accepted, 172.32.x refused"
+for svc in "http://10.0.0.5:4000" "http://192.168.1.20:4000" "http://host.docker.internal:4000" "http://172.20.0.4:4000" "http://172.31.0.4:4000"; do
+  CSHAPE "$svc" > "$WORK/f.json"; start_fake "$WORK/f.json"
+  run_script qcbox.$Z
+  check "$svc bridge origin: dedicated path (no ORIGIN_NOT_LOOPBACK)" bash -c "test '$RC' = 0 && grep -q 'council-qcbox' '$OUT' && ! grep -q 'ORIGIN_NOT_LOOPBACK' '$OUT'"
+done
+for svc in "http://172.32.0.9:4000" "http://8.8.8.8:4000"; do
+  CSHAPE "$svc" > "$WORK/f.json"; start_fake "$WORK/f.json"
+  run_script qcbox.$Z --apply
+  check "$svc (outside the private ranges): ORIGIN_NOT_LOOPBACK, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z ORIGIN_NOT_LOOPBACK'"
+done
+rm -f "$TOKDIR/council-qcbox.token"   # 6b expects a clean token dir
 
 fixture qcbox | jq -c --arg z "$Z" '.tunnels["'$TID'"].config.ingress = [
     {hostname:("qcbox."+$z),path:"^/hooks",service:"http://127.0.0.1:18789"},
@@ -612,10 +656,10 @@ done
 check "skip reasons name the service (n8n :5678, empty ingress)" bash -c "grep -q 'flows.$Z SKIPPED_NOT_CC.*http://localhost:5678' '$OUT' && grep -q 'emptyhost.$Z SKIPPED_NOT_CC.*no ingress rule' '$OUT'"
 check "an -openclawdashboard host on a local-managed tunnel is skipped, never given a tunnel" bash -c "grep -q 'beta-openclawdashboard.$Z SKIPPED_NOT_CC' '$OUT' && ! grep -q 'council-beta-openclawdashboard' '$OUT'"
 check "no <x>-openclawdashboard-council record or council tunnel is ever created" test "$(state '[(.dns[] | select(.name|test("openclawdashboard-council"))), (.tunnels[] | select((.name // "")|test("openclawdashboard")))] | length')" = 0
-check "monique (docker-bridge origin) reaches provisioning and is ORIGIN_NOT_LOOPBACK" bash -c "grep -q '^COUNCIL_ACCESS: monique.$Z ORIGIN_NOT_LOOPBACK' '$OUT'"
+check "monique (docker-bridge origin, remote-managed): the container shape reaches the dedicated path and ends CONNECTOR_PENDING" bash -c "grep -q '^COUNCIL_ACCESS: monique.$Z CONNECTOR_PENDING' '$OUT'"
 check "convoplay (path rule first) is PROVISIONED" bash -c "grep -q '^COUNCIL_ACCESS: convoplay.$Z PROVISIONED' '$OUT'"
 check "alpha and beta PROVISIONED; exit 0" bash -c "test '$RC' = 0 && grep -q '^COUNCIL_ACCESS: alpha.$Z PROVISIONED' '$OUT' && grep -q '^COUNCIL_ACCESS: beta.$Z PROVISIONED' '$OUT'"
-check "exactly 9 writes (3 hosts x 3)" test "$(nonget_count)" = 9
+check "exactly 12 writes (alpha 3, beta 3, convoplay 3, monique 3 app+tunnel+ingress, no DNS before its connector)" test "$(nonget_count)" = 12
 
 echo "== 7d. default excludes skip the test tenants"
 fixture alpha acme-dental-c436 smoke probe > "$WORK/f.json"; start_fake "$WORK/f.json"
