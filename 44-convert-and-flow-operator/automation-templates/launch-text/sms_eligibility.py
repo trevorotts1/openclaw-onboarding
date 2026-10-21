@@ -90,8 +90,11 @@ def _local(value, tz_name=None) -> datetime:
     else:
         dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     if dt.tzinfo is not None and tz_name:
-        from zoneinfo import ZoneInfo
-        return dt.astimezone(ZoneInfo(tz_name)).replace(tzinfo=None)
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            return dt.astimezone(ZoneInfo(tz_name)).replace(tzinfo=None)
+        except ZoneInfoNotFoundError:
+            raise ValueError("unknown timezone: %r" % (tz_name,))
     return dt.replace(tzinfo=None)
 
 
@@ -152,6 +155,8 @@ def resolve_send_time(scheduled: datetime, *, category_name: str, kind: str,
     if _in_window(_minute_of_day(scheduled)):
         if now is not None and scheduled < now:
             return "skip", None, "past_due"
+        if anchor is not None and scheduled < anchor:
+            return "skip", None, "before_anchor"
         return "send", scheduled, "inside_quiet_hours"
 
     if scheduled < _at(scheduled.date(), QUIET_START):
@@ -169,6 +174,8 @@ def resolve_send_time(scheduled: datetime, *, category_name: str, kind: str,
 
     if now is not None and candidate < now:
         return "skip", None, "past_due"
+    if anchor is not None and candidate < anchor:
+        return "skip", None, "before_anchor"
     return "hold", candidate, "quiet_hours_held"
 
 
@@ -380,10 +387,15 @@ def evaluate_send(send: dict) -> dict:
         add("content", False, str(exc))
 
     # 6. Quiet hours, resolved before the deadline check.
-    scheduled = _local(send["send_at"], tz_name)
-    now = _local(send["now"], tz_name) if send.get("now") else None
-    deadline = _local(send["deadline"], tz_name) if send.get("deadline") else None
-    anchor = _local(send["anchor"], tz_name) if send.get("anchor") else None
+    try:
+        scheduled = _local(send["send_at"], tz_name)
+        now = _local(send["now"], tz_name) if send.get("now") else None
+        deadline = _local(send["deadline"], tz_name) if send.get("deadline") else None
+        anchor = _local(send["anchor"], tz_name) if send.get("anchor") else None
+    except ValueError as exc:
+        # Unknown timezone or unparsable time: unknown timezone blocks.
+        add("quiet_hours", False, str(exc))
+        return decision("skip", "failed: quiet_hours", None, content)
     action, send_at, reason = resolve_send_time(
         scheduled, category_name=cat, kind=send["kind"], now=now,
         deadline=deadline if cat == "marketing" or

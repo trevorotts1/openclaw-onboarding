@@ -119,6 +119,7 @@ class SendTimeTests(unittest.TestCase):
 
     def test_08_00_is_allowed_and_21_00_is_not(self):
         send = self.base()
+        send["anchor"] = "2026-10-22T06:00:00"
         send["send_at"] = "2026-10-22T08:00:00"
         send["now"] = "2026-10-22T08:00:00"
         self.assertEqual(evaluate_send(send)["action"], "send")
@@ -144,6 +145,25 @@ class SendTimeTests(unittest.TestCase):
         result = evaluate_send(send)
         self.assertEqual(result["action"], "skip")
         self.assertEqual(result["reason"], "failed: launch_deadline")
+
+
+    def test_hold_candidate_before_anchor_skips(self):
+        send = self.base()
+        send["send_at"] = "2026-10-22T07:00:00"
+        send["now"] = "2026-10-22T06:00:00"
+        send["anchor"] = "2026-10-22T09:00:00"
+        result = evaluate_send(send)
+        self.assertEqual(result["action"], "skip")
+        self.assertEqual(result["reason"], "before_anchor")
+
+    def test_unknown_timezone_blocks_never_crashes(self):
+        send = self.base()
+        send["send_at"] = "2026-10-22T10:00:00+00:00"
+        send["now"] = "2026-10-22T10:00:00+00:00"
+        send["timezone"] = "Bogus/Zone"
+        result = evaluate_send(send)
+        self.assertEqual(result["action"], "skip")
+        self.assertIn("quiet_hours", result["reason"])
 
 
 class ConsentAndA2PTests(unittest.TestCase):
