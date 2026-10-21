@@ -5,9 +5,10 @@ Live proof: sessions ran 17-20 h on code older than the installed skill;
 three merged fixes could not reach them.
 
 Proves, behaviourally (stdlib only, $0, no provider):
-  1. a process that booted on v2.9.71 while the installed skill is v2.9.73
+  1. a process that booted on an older version than the installed skill
      REFUSES `next`: outcome error, reason SKILL_UPDATED, exit code 1, and
-     BOTH versions are named (installed_version, boot_version);
+     BOTH versions are named (installed_version, boot_version). The installed
+     version is read from skill-version.txt, so a bump never breaks this test;
   2. the refusal names the stage command in no part (no stage, no command in
      data) — no stage command is ever handed out by stale code;
   3. the CLI carries it end to end (the real factory.py subprocess);
@@ -36,6 +37,24 @@ sys.path.insert(0, str(CORE))
 sys.path.insert(0, str(HERE))
 
 import factory as F            # noqa: E402
+
+
+def _bump(version, by):
+    """v2.9.74 -> v2.9.75; a version without a trailing number -> v<by>."""
+    i = len(version or "")
+    while i and version[i - 1].isdigit():
+        i -= 1
+    digits = (version or "")[i:]
+    if not digits:
+        return "v%d" % by
+    return "%s%d" % (version[:i], int(digits) + by)
+
+
+# Read the installed version from the skill root, never hard-code it: bumping
+# skill-version.txt must not be able to break this test again (G3 class).
+INSTALLED = F._skill_version_on_disk() or ""
+OLDER = _bump(INSTALLED, -2)        # a boot two releases behind
+NEWER = _bump(INSTALLED, 1)         # a box still on a newer install
 
 FAILS = []
 
@@ -68,19 +87,23 @@ def main():
     run = make_run(tmp)
     A.run_dir = str(run)
 
+    # the version under test must really come from skill-version.txt
+    check("installed version read from skill-version.txt",
+          bool(INSTALLED), repr(INSTALLED))
+
     # 1. boot older than installed -> refuse, both named
-    F._BOOT_SKILL_VERSION = "v2.9.71"
+    F._BOOT_SKILL_VERSION = OLDER
     env = F.cmd_next(A())
     check("older boot refuses: error SKILL_UPDATED",
           env["outcome"] == "error" and env["reason_code"] == "SKILL_UPDATED",
           str(env)[:220])
     check("both versions named",
-          env["data"]["installed_version"] == "v2.9.73"
-          and env["data"]["boot_version"] == "v2.9.71",
+          env["data"]["installed_version"] == INSTALLED
+          and env["data"]["boot_version"] == OLDER,
           str(env.get("data")))
     check("the refusal text names both versions too",
-          "v2.9.73" in (env.get("next_action") or "")
-          and "v2.9.71" in (env.get("next_action") or ""),
+          INSTALLED in (env.get("next_action") or "")
+          and OLDER in (env.get("next_action") or ""),
           env.get("next_action", "")[:160])
 
     # 2. no stage command in the refusal envelope
@@ -94,7 +117,7 @@ def main():
         [sys.executable, str(Path(HERE) / "factory.py"), "next",
          "--run-dir", str(run)],
         capture_output=True, text=True, timeout=60,
-        env=dict(os.environ, DSAF_BOOT_SKILL_VERSION="v2.9.70"))
+        env=dict(os.environ, DSAF_BOOT_SKILL_VERSION=OLDER))
     env_cli = json.loads(p.stdout)
     check("CLI end to end: error SKILL_UPDATED, exit 1",
           env_cli["reason_code"] == "SKILL_UPDATED" and p.returncode == 1,
@@ -103,19 +126,19 @@ def main():
     check("CLI refusal names installed %s and boot %s"
           % (env_cli_both.get("installed_version"),
              env_cli_both.get("boot_version")),
-          env_cli_both.get("installed_version") == "v2.9.73"
-          and env_cli_both.get("boot_version") == "v2.9.70",
+          env_cli_both.get("installed_version") == INSTALLED
+          and env_cli_both.get("boot_version") == OLDER,
           str(env_cli_both))
-    F._BOOT_SKILL_VERSION = "v2.9.73"       # restore equal boot
+    F._BOOT_SKILL_VERSION = INSTALLED       # restore equal boot
 
     # 4. equal version: never stale
-    F._BOOT_SKILL_VERSION = "v2.9.73"
+    F._BOOT_SKILL_VERSION = INSTALLED
     env4 = F.cmd_next(A())
     check("equal boot version proceeds normally",
           env4["reason_code"] not in ("SKILL_UPDATED",), str(env4)[:120])
 
     # 5. boot NEWER than installed (boxed rollback): never stale
-    F._BOOT_SKILL_VERSION = "v2.9.73"
+    F._BOOT_SKILL_VERSION = NEWER
     env5 = F.cmd_next(A())
     check("a boot newer than the installed never refuses",
           env5["reason_code"] != "SKILL_UPDATED", str(env5)[:120])
@@ -125,7 +148,7 @@ def main():
     env6 = F.cmd_next(A())
     check("no boot version: never stale", env6["outcome"] == "ok",
           str(env6)[:120])
-    F._BOOT_SKILL_VERSION = "v2.9.73"
+    F._BOOT_SKILL_VERSION = INSTALLED
     orig = F._skill_version_on_disk
     F._skill_version_on_disk = lambda: ""
     try:
@@ -145,7 +168,7 @@ def main():
               env8["outcome"] == "ok", str(env8)[:120])
     finally:
         F._skill_version_on_disk = orig2
-        F._BOOT_SKILL_VERSION = "v2.9.73"
+        F._BOOT_SKILL_VERSION = INSTALLED
 
     print()
     if FAILS:
