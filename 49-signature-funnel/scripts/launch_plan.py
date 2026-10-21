@@ -247,11 +247,14 @@ def _offer_block(launch: Dict[str, Any], answers: Dict[str, Any],
     names = [p.get("display_name") for p in mains if p.get("display_name")]
     primary = mains[0] if mains else None
 
-    for package in mains:
+    for package in packages:
         label = package.get("display_name") or package.get("offer_id") or \
-            "main package %d" % (int(package["provenance"]["offer_index"]) + 1)
+            "package %d" % (int(package["provenance"]["offer_index"]) + 1)
         amount = package.get("amount_minor")
-        if amount is None:
+        if isinstance(amount, int) and not isinstance(amount, bool) and amount < 0:
+            missing.append("a non-negative price for %s (got %r; minor units cannot be "
+                           "negative)" % (label, package.get("amount_raw")))
+        elif amount is None:
             raw = package.get("amount_raw")
             missing.append("the price of %s (unknown is not a price and is never zero%s)"
                            % (label, "" if raw is None else "; got %r" % (raw,)))
