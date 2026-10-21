@@ -43,9 +43,11 @@ LAW
   fact from the sale opening; it is never read from, or substituted by,
   `launch.doors_open_at`.
 * Access is resolved, not assumed: the welcome/access actions carry the approved
-  access destination (or the approved thank-you page) plus every purchased
-  entitlement and its prerequisites. Billing conversion itself belongs to the
-  launch_bridge lane (L14); this planner only records the request.
+  access destination (or the approved thank-you page) plus the purchased BASE
+  entitlements and their prerequisites; optional upsell rights stay with their
+  own follow-up units. An explicit no-delivery choice is honoured. Billing
+  conversion itself belongs to the launch_bridge lane (L14); this planner only
+  records the request.
 
 Deterministic, stdlib only, no network, no model. Exit 0/2/3.
 """
@@ -354,14 +356,28 @@ def _event_block(launch: Dict[str, Any], answers: Dict[str, Any],
 
 def _access_block(launch: Dict[str, Any], answers: Dict[str, Any],
                   missing: List[str]) -> Dict[str, Any]:
-    """Resolve the approved access destination and keep every purchased entitlement."""
+    """Resolve the approved access destination and keep every purchased entitlement.
+
+    Entitlements stay tied to the offer that grants them: base (main-slot)
+    entitlements go to the welcome/access units; upsell/downsell entitlements
+    stay with their own follow-up units, never flattened into every buyer's
+    welcome instructions. The access-delivery choice (launch.access_delivery)
+    decides whether access is delivered at all.
+    """
     offers = [o for o in launch.get("offers", []) if isinstance(o, dict)]
     entitlements: List[str] = []
+    base_entitlements: List[str] = []
+    upsell_entitlements: Dict[str, List[str]] = {}
     prerequisites: List[str] = []
     for offer in offers:
+        slot = offer.get("slot") or ""
         for entitlement in offer.get("entitlement_ids") or []:
             if isinstance(entitlement, str) and entitlement and entitlement not in entitlements:
                 entitlements.append(entitlement)
+                if slot == "main":
+                    base_entitlements.append(entitlement)
+                else:
+                    upsell_entitlements.setdefault(slot, []).append(entitlement)
         for requirement in offer.get("requires") or []:
             if isinstance(requirement, str) and requirement and requirement not in prerequisites:
                 prerequisites.append(requirement)
@@ -370,6 +386,15 @@ def _access_block(launch: Dict[str, Any], answers: Dict[str, Any],
         for entitlement in explicit:
             if isinstance(entitlement, str) and entitlement and entitlement not in entitlements:
                 entitlements.append(entitlement)
+                base_entitlements.append(entitlement)
+
+    delivery_choice = fact(answers, "launch.access_delivery", "access_delivery")
+    deliver_access = True
+    if isinstance(delivery_choice, bool):
+        deliver_access = delivery_choice
+    elif isinstance(delivery_choice, str) and delivery_choice.strip():
+        deliver_access = not _norm(delivery_choice).startswith(
+            ("no", "nothing", "none", "skip"))
 
     destination: Optional[str] = None
     source: Optional[str] = None
@@ -398,7 +423,12 @@ def _access_block(launch: Dict[str, Any], answers: Dict[str, Any],
         "destination_source": source,
         "login_url": login_url,
         "entitlements": entitlements,
+        "base_entitlements": base_entitlements,
+        "upsell_entitlements": upsell_entitlements,
         "prerequisites": prerequisites,
+        "deliver_access": deliver_access,
+        "delivery_choice": delivery_choice if isinstance(
+            delivery_choice, (str, bool)) else None,
         "delivery": "access_link_email_and_text" if destination else "unresolved",
     }
 
@@ -685,14 +715,23 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
         black_friday="black_friday" in calendar,
         event_eligible=event["eligible"])
 
-    # Every welcome/access action carries the resolved destination and the full
-    # entitlement set, so a lane can never deliver a purchase to nowhere or drop
-    # an entitlement the buyer paid for.
+    # Welcome/access units deliver the purchased BASE offer only: an optional
+    # upsell right never lands in every buyer's welcome instructions. Upsell
+    # entitlements ride on their own slot's follow-up email (email_upsell_N).
+    # An explicit "no delivery" choice records deliver_access False and strips
+    # the welcome/access units of destination and entitlements.
+    base_entitlements = list(access["base_entitlements"])
+    upsell_entitlements = access["upsell_entitlements"]
     for unit in emails + texts + automations:
         if unit["id"] in ("email_welcome_access", "text_access_link", "auto_post_sale"):
-            unit["access_destination"] = access["destination"]
-            unit["entitlements"] = list(access["entitlements"])
+            unit["access_destination"] = access["destination"] \
+                if access["deliver_access"] else None
+            unit["entitlements"] = list(base_entitlements) \
+                if access["deliver_access"] else []
             unit["prerequisites"] = list(access["prerequisites"])
+        elif unit["id"].startswith(("email_upsell_", "email_downsell_")):
+            slot = unit["id"].removeprefix("email_")
+            unit["entitlements"] = list(upsell_entitlements.get(slot, []))
 
     a2p_ready = bool(fact(answers, "launch.a2p_ready") or False)
     warnings: List[str] = []
