@@ -13,7 +13,9 @@ That is "unmeasured, report", NEVER a silent pass; lip_gate turns it into an
 UNMEASURABLE verdict that qc_check refuses.
 
 Model file (Google face_landmarker, float16, ~4 MB): env LIPSYNC_FACE_MODEL,
-else <this folder>/face_landmarker.task. Not committed; see DEPENDENCY-MANIFEST.md.
+else <this folder>/face_landmarker.task, else <skill>/assets/face_landmarker.task
+(install_face_model.DEFAULT_DEST, where install_face_model.py writes it).
+Not committed; see DEPENDENCY-MANIFEST.md.
 """
 from __future__ import annotations
 
@@ -34,10 +36,33 @@ class Unmeasured(Exception):
     """The measurement could not be made. Message starts with LIP_UNMEASURED."""
 
 
+def _installer_dest():
+    """install_face_model.DEFAULT_DEST: where install_face_model.py really puts
+    the model (<skill>/assets/face_landmarker.task). Imported both ways this
+    module is (package submodule and lip_gate/ on sys.path)."""
+    try:
+        from . import install_face_model as ifm
+    except Exception:                                    # noqa: BLE001
+        try:
+            import install_face_model as ifm             # noqa: F401
+        except Exception:                                # noqa: BLE001
+            return None
+    return getattr(ifm, "DEFAULT_DEST", None)
+
+
 def model_path():
-    p = _os.environ.get("LIPSYNC_FACE_MODEL") or _os.path.join(
-        _os.path.dirname(__file__), "face_landmarker.task")
-    return p if _os.path.isfile(p) else None
+    """-> model file path, or None when truly absent.
+
+    Order: LIPSYNC_FACE_MODEL (explicit override, authoritative when set), then
+    this lip_gate folder, then install_face_model.DEFAULT_DEST (assets/)."""
+    env = _os.environ.get("LIPSYNC_FACE_MODEL")
+    if env:
+        return env if _os.path.isfile(env) else None
+    here = _os.path.join(_os.path.dirname(__file__), "face_landmarker.task")
+    if _os.path.isfile(here):
+        return here
+    dest = _installer_dest()
+    return dest if dest and _os.path.isfile(dest) else None
 
 
 def mouth_series(clip):
