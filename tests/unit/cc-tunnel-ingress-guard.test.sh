@@ -77,6 +77,26 @@ else
   fail "guard wrongly failed on a healthy CC rule"
 fi
 
+# ── 3b. Path-scoped rules listed FIRST for the CC host do not hide its catch-all ─
+# Live shape (convoplay, revbev-enterprises): path ^/hooks -> :18789 (or
+# /zhc-cohort* -> :3457) first, then the path-less rule -> :4000. The host IS a
+# Command Center; reading the first rule falsely failed it.
+PATH_FIRST='{"success":true,"result":{"source":"cloudflare","config":{"ingress":[
+  {"hostname":"acme.zerohumanworkforce.com","path":"^/hooks","service":"http://127.0.0.1:18789"},
+  {"hostname":"acme.zerohumanworkforce.com","path":"/zhc-cohort*","service":"http://localhost:3457"},
+  {"hostname":"acme.zerohumanworkforce.com","service":"http://localhost:4000"},
+  {"hostname":"acme-hooks.zerohumanworkforce.com","path":"^/hooks/","service":"http://127.0.0.1:18789"},
+  {"service":"http_status:404"}
+]}}}'
+eq "$(cc_ingress_service_for_host "$PATH_FIRST" "$CC_HOST")" "http://localhost:4000" "path-scoped rules first: CC host resolves to its path-less :4000 rule"
+if cc_ingress_assert_cc_port "$PATH_FIRST" "$CC_HOST" 1 2>/dev/null; then
+  pass "guard PASSES a CC host whose path-scoped rules are listed first"
+else
+  fail "guard falsely failed a CC host whose path-scoped rules are listed first"
+fi
+eq "$(cc_ingress_service_for_host "$PATH_FIRST" "acme-hooks.zerohumanworkforce.com")" "http://127.0.0.1:18789" "a host with only path-scoped rules still resolves to its first rule"
+eq "$(cc_ingress_service_for_host "$PATH_FIRST" "nobody.zerohumanworkforce.com")" "" "a host with no rule resolves to empty"
+
 # ── 4. Guard FAILS LOUD on a WRONG-PORT CC rule (the 502 signature) ─────────
 CLOBBERED='{"config":{"ingress":[
   {"hostname":"acme.zerohumanworkforce.com","service":"http://localhost:18789"},

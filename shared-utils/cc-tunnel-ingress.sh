@@ -59,9 +59,13 @@ cc_ingress_of() {
 }
 
 # cc_ingress_service_for_host <json> <host>  ->  echoes the matching service (or empty)
+#   A hostname can carry several rules: path-scoped ones first (e.g. path ^/hooks
+#   -> :18789) and then its path-less catch-all (-> :4000). The path-less rule is
+#   what serves the host, so it wins; a host with only path-scoped rules falls back
+#   to its first rule.
 cc_ingress_service_for_host() {
   cc_ingress_of "$1" | jq -r --arg h "$2" \
-    'map(select(.hostname? == $h)) | (.[0].service // "")' 2>/dev/null
+    'map(select(.hostname? == $h)) | ((map(select((.path // "") == "")) + .) | .[0].service // "")' 2>/dev/null
 }
 
 # cc_ingress_merge <current-cfg-json> <host> <service> [path]

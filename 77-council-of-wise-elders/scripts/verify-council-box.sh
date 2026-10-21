@@ -27,8 +27,12 @@
 #      GET <public_origin>/status without following redirects: a 3xx to
 #      *.cloudflareaccess.com passes; 200 is NOT_READY ACCESS_GATE_OPEN (a
 #      security failure); anything else is DEGRADED ACCESS_GATE_MISSING
-#   8. pm2 boxes only: pm2 jlist lists a cloudflared app
-#                                              else DEGRADED TUNNEL_NOT_IN_CONTAINER
+#   8. pm2 boxes only: pm2 jlist lists a cloudflared app (the Council's own
+#      connector cloudflared-council counts)  else DEGRADED TUNNEL_NOT_IN_CONTAINER
+#   9. only when <OPENCLAW_ROOT>/secrets/tunnel-council.token exists (test -f,
+#      never read): the Council connector runs (Mac: launchctl print
+#      gui/<uid>/ai.blackceo.council-tunnel; VPS: pm2 jlist cloudflared-council)
+#                                              else DEGRADED COUNCIL_CONNECTOR_DOWN
 #
 # Last line: COUNCIL_BOX: READY|DEGRADED|NOT_READY <codes>
 # Exit: 0 READY or DEGRADED, 1 NOT_READY, 2 tooling error (unresolvable node
@@ -161,6 +165,17 @@ SVC_NAME="$(jget "$P/service.json" name)"
 PUBLIC_ORIGIN="$(jget "$P/service.json" public_origin)"
 case "$PORT" in ''|*[!0-9]*) nr SERVICE_NOT_REGISTERED "service-receipt" "$P/service.json has no numeric port"; finish ;; esac
 
+PM2_STATE=""
+pm2_state() { # sets PM2_STATE = "app|noapp tunnel|notunnel council|nocouncil"
+  local list=""
+  if command -v pm2 >/dev/null 2>&1; then list="$(pm2 jlist 2>/dev/null)"; fi
+  PM2_STATE="$(printf '%s' "$list" | "$NODE" -e '
+    let l = []; try { l = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (e) {}
+    const on = (f) => l.some((a) => f(a.name || "") && a.pm2_env && a.pm2_env.status === "online");
+    console.log((on((n) => n === process.argv[1]) ? "app" : "noapp") + " " + (on((n) => /cloudflared/.test(n)) ? "tunnel" : "notunnel")
+      + " " + (on((n) => n === "cloudflared-council") ? "council" : "nocouncil"));' "$SVC_NAME")"
+}
+
 case "$MANAGER" in
   launchd)
     if ! command -v launchctl >/dev/null 2>&1; then
@@ -174,13 +189,7 @@ case "$MANAGER" in
       fi
     fi ;;
   pm2)
-    PM2_LIST=""
-    if command -v pm2 >/dev/null 2>&1; then PM2_LIST="$(pm2 jlist 2>/dev/null)"; fi
-    PM2_STATE="$(printf '%s' "$PM2_LIST" | "$NODE" -e '
-      let l = []; try { l = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (e) {}
-      const online = (n) => l.some((a) => a.name === n && a.pm2_env && a.pm2_env.status === "online");
-      const tunnel = l.some((a) => /cloudflared/.test(a.name) && a.pm2_env && a.pm2_env.status === "online");
-      console.log((online(process.argv[1]) ? "app" : "noapp") + " " + (tunnel ? "tunnel" : "notunnel"));' "$SVC_NAME")"
+    pm2_state
     case "$PM2_STATE" in
       "app "*) ok "service-manager" "pm2 jlist shows $SVC_NAME online" ;;
       *) nr SERVICE_NOT_REGISTERED "service-manager" "pm2 jlist did not show an online app named $SVC_NAME (pm2 on PATH: $(command -v pm2 >/dev/null 2>&1 && echo yes || echo no))" ;;
@@ -261,9 +270,34 @@ fi
 # ---- 8. VPS only: the tunnel must run inside the container ----
 if [ "$MANAGER" = pm2 ]; then
   case "$PM2_STATE" in
-    *" tunnel") ok "tunnel" "pm2 jlist lists a cloudflared app online" ;;
+    *" council") ok "tunnel" "pm2 jlist lists cloudflared-council (the Council's own connector) online" ;;
+    *" tunnel "*) ok "tunnel" "pm2 jlist lists a cloudflared app online" ;;
     *) dg TUNNEL_NOT_IN_CONTAINER "tunnel" "pm2 jlist lists no online cloudflared app; a host-side connector cannot reach the container loopback" ;;
   esac
+fi
+
+# ---- 9. the Council's own connector (only for a box given a council-<slug> tunnel) ----
+TUN_TF="$ROOT/secrets/tunnel-council.token"
+if [ ! -f "$TUN_TF" ]; then
+  skip "council-connector" "no $TUN_TF (checked with test -f); the Council rides the Command Center tunnel"
+else
+  CONN_MGR="$MANAGER"
+  if [ "$CONN_MGR" = external ]; then
+    if [ "$(uname -s 2>/dev/null)" = Darwin ]; then CONN_MGR=launchd; else CONN_MGR=pm2; fi
+  fi
+  if [ "$CONN_MGR" = launchd ]; then
+    if command -v launchctl >/dev/null 2>&1 && launchctl print "gui/$(id -u)/ai.blackceo.council-tunnel" 2>&1 | grep -q 'state = running'; then
+      ok "council-connector" "launchctl print gui/$(id -u)/ai.blackceo.council-tunnel shows state = running"
+    else
+      dg COUNCIL_CONNECTOR_DOWN "council-connector" "$TUN_TF exists but launchctl print gui/$(id -u)/ai.blackceo.council-tunnel did not show state = running"
+    fi
+  else
+    [ -n "$PM2_STATE" ] || pm2_state
+    case "$PM2_STATE" in
+      *" council") ok "council-connector" "pm2 jlist shows cloudflared-council online" ;;
+      *) dg COUNCIL_CONNECTOR_DOWN "council-connector" "$TUN_TF exists but pm2 jlist did not show cloudflared-council online" ;;
+    esac
+  fi
 fi
 
 finish

@@ -322,6 +322,21 @@ mentions scripts, fleet or Cloudflare to the client. If the verifier ever
 reports ACCESS_GATE_OPEN, the address answers without a sign-in: treat it as
 a security failure and do not send the link.
 
+A box whose Command Center tunnel is local-managed (it cannot take an API
+ingress rule) gets a dedicated remote-managed tunnel `council-<slug>` from
+the operator side instead. File contract: the connector token sits at
+`$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
+token. How it reaches the box is an operator delivery step, never wire.sh,
+which fetches nothing. When the file exists, wire.sh keeps
+`cloudflared tunnel run --token-file <file>` running (Mac LaunchAgent
+`ai.blackceo.council-tunnel`, VPS pm2 app `cloudflared-council`), restarts
+it only when the file changes, never touches the Command Center connector,
+never prints the token, and prints one `COUNCIL_CONNECTOR:` line
+(`READY`, `NOOP`, `DEFERRED_NO_GUI`, or `NOT_READY` with `TOKEN_UNREADABLE`,
+`NO_CLOUDFLARED` or `CONNECTOR_START_FAILED`). With no file it does nothing.
+The verifier then reports the connector (DEGRADED COUNCIL_CONNECTOR_DOWN
+when it is not running).
+
 ## Front-door service launcher
 
 `runtime/scripts/service-launch.mjs` is the launcher. wire.sh starts it from

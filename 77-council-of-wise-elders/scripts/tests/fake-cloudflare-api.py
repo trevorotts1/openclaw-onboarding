@@ -10,11 +10,15 @@ state is dumped to --state-out. stdlib only; never a real network call.
 Fixture keys (all optional except zone):
   account  expected account id (default qc-acct)    token  expected bearer token
   zone     {id, name}                                dns    [{id,type,name,content,proxied}]
-  tunnels  {tunnel_id: {source, config, conns}}   conns [] = connector down             apps   [{id,name,domain,session_duration,...}]
+  tunnels  {tunnel_id: {name, source, config, conns, status, token}}   conns [] = connector down;
+           status defaults to "healthy" (GET cfd_tunnel/<id>); token defaults to qc-tunnel-TOKEN-<id>
+  apps     [{id,name,domain,session_duration,...}]
   policies {app_id: [policy,...]}                    edge   {host|"default": {status, location}}
   idps     [{id,type,name}]  Access identity providers (ensure-cc-access.sh)
   fail     {dns_create: true}  -> POST dns_records answers 500; {connections: true} -> connections answers 500
            {app_create: true}  -> POST access/apps answers 500
+           {tunnel_create: true} -> POST cfd_tunnel answers 500
+  POST cfd_tunnel creates a remote-managed tunnel with no connector (status "inactive").
 """
 import argparse, json, re, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -125,6 +129,29 @@ class H(BaseHTTPRequestHandler):
         return self.send(405, env(None, False, [{"message": "method"}]))
 
     def account(self, method, rest, q):
+        if rest == "cfd_tunnel" and method == "GET":
+            want = q.get("name", [None])[0]
+            items = [dict(id=k, name=t.get("name", k), status=t.get("status", "healthy"), deleted_at=t.get("deleted_at"))
+                     for k, t in S["tunnels"].items() if want is None or t.get("name") == want]
+            if q.get("is_deleted", [""])[0] == "false":
+                items = [i for i in items if not i["deleted_at"]]
+            return self.send(200, env(items))
+        if rest == "cfd_tunnel" and method == "POST":
+            if S["fail"].get("tunnel_create"):
+                return self.send(500, env(None, False, [{"code": 9999, "message": "internal error (injected)"}]))
+            b = self.body(); tid = nid("tun")
+            S["tunnels"][tid] = {"name": b.get("name"), "source": b.get("config_src", "local"), "config": None,
+                                 "conns": [], "status": "inactive"}
+            dump()
+            return self.send(200, env({"id": tid, "name": b.get("name"), "status": "inactive"}))
+        m = re.match(r"^cfd_tunnel/([^/]+)(/token)?$", rest)
+        if m and method == "GET":
+            t = S["tunnels"].get(m.group(1))
+            if t is None:
+                return self.send(404, env(None, False, [{"message": "tunnel not found"}]))
+            if m.group(2):
+                return self.send(200, env(t.get("token", "qc-tunnel-TOKEN-" + m.group(1))))
+            return self.send(200, env({"id": m.group(1), "name": t.get("name", m.group(1)), "status": t.get("status", "healthy")}))
         m = re.match(r"^cfd_tunnel/([^/]+)/connections$", rest)
         if m and method == "GET":
             t = S["tunnels"].get(m.group(1))
