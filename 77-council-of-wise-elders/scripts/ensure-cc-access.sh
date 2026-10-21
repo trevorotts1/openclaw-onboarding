@@ -47,7 +47,8 @@ fi
 #                 above, or whose company name IS the slug read as a business name
 #                 (eddie-otts-trading = "Eddie Otts Trading LLC"), plus the same person's
 #                 duplicate contacts (same full name AND same phone). Strict: never a
-#                 first or full name alone, never fuzzy; two different people matched =
+#                 first or full name alone (no one-word slug, no company that is only the
+#                 contact's own name), never fuzzy; two different people matched =
 #                 "ambiguous", nothing added. Skipped silently (one counts line) when
 #                 GOHIGHLEVEL_API_KEY or the location id is not configured. Location id:
 #                 COUNCIL_GHL_LOCATION_ID, else "ghl"."location_id" in the emails file

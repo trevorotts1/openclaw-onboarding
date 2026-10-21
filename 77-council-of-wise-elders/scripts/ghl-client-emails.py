@@ -26,10 +26,13 @@ MATCHING (strict: a wrong match lets a stranger into a client's dashboard). A
 contact is the client ONLY when (i) its email or additionalEmails contains a seed
 email, or (ii) its companyName equals the slug read as a business name (hyphens to
 spaces, lowercased, punctuation dropped), exactly or after dropping the words
-the/inc/llc/enterprises/consulting on both sides. Then add that contact's emails,
+the/inc/llc/enterprises/consulting on both sides; never when that leaves the slug
+one word (a first name such as "ann") or when the company is just the contact's
+own full name. Then add that contact's emails,
 plus the emails of any other contact with the SAME full name AND the SAME phone.
 Never first name alone, never full name alone, no fuzzy matching. Matched contacts
-with two different full names or two different phones = ambiguous. Plus-addresses,
+with two different full names or two different phones, or a nameless contact among
+two or more matches = ambiguous. Plus-addresses,
 blackceo.com addresses (unless already a seed), operator, malformed and pending+
 addresses are never returned.
 """
@@ -87,14 +90,15 @@ def strip_words(s):
     return " ".join(w for w in s.split() if w not in STOP)
 
 
-def company_match(company, slug_name):
+def company_match(company, slug_name, person=""):
+    """The company IS the slug read as a business name. Refused when the slug is one
+    word once the/inc/llc/... are dropped (slugs are often a first name: "ann") and
+    when the company is only the contact's own full name (a name match, not a business)."""
     c = norm(company)
-    if not c or not slug_name:
+    a, b = strip_words(c), strip_words(slug_name or "")
+    if not c or len(b.split()) < 2 or not a or a == person:
         return False
-    if c == slug_name:
-        return True
-    a, b = strip_words(c), strip_words(slug_name)
-    return bool(a) and a == b
+    return c == slug_name or a == b
 
 
 def full_name(c):
@@ -167,13 +171,15 @@ def lookup(req, api):
                 matched[c["id"]] = c
     if slug_name:
         for c in api.search(slug_name):
-            if company_match(c.get("companyName"), slug_name):
+            if company_match(c.get("companyName"), slug_name, full_name(c)):
                 matched[c["id"]] = c
     if not matched:
         return "none", [], 0
     names = {full_name(c) for c in matched.values()} - {""}
     phones = {phone(c) for c in matched.values()} - {""}
-    if len(names) > 1 or len(phones) > 1:
+    # a nameless contact next to another match cannot be shown to be the same person
+    nameless = len(matched) > 1 and any(not full_name(c) for c in matched.values())
+    if len(names) > 1 or len(phones) > 1 or nameless:
         return "ambiguous", [], len(matched)
     people = dict(matched)
     for c in list(matched.values()):

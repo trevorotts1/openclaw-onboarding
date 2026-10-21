@@ -336,7 +336,9 @@ in with Google or a one-time PIN:
   Flow) lookup in the Black CEO LLC location (`scripts/ghl-client-emails.py`):
   contacts carrying one of those emails, or whose company name is the host
   name read as a business name, plus the same person's duplicate contacts
-  (same full name and same phone). Two different people matched is
+  (same full name and same phone). Never a one-word host name (often a
+  first name) and never a company that is only the contact's own name.
+  Two different people matched, or a nameless contact among several, is
   `ambiguous` and adds nothing.
 
 The emails file is `~/.claude/state/council-elders/cc-access-emails.json`

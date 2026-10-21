@@ -31,8 +31,8 @@ fixture() {
       {id:"c6", firstName:"Ann", lastName:"Lee", email:"ann@example.test", phone:"5550300003", companyName:"Twin Peaks Consulting"},
       {id:"c7", firstName:"Bob", lastName:"Lee", email:"bob@example.test", phone:"5550300004", companyName:"The Twin Peaks"},
       {id:"c8", firstName:"Eddie", lastName:"Stranger", email:"stranger@example.test", phone:"5550900009", companyName:"Eddie Otts Trading Fans"}]
-      + [range(0; 22) | {id:("f\(.)"), firstName:"Fan", lastName:"N\(.)", email:"fan\(.)@example.test", companyName:"Pager Fans"}]
-      + [{id:"c9", firstName:"Pat", lastName:"Target", email:"target@example.test", companyName:"Pager Inc"}])}'
+      + [range(0; 22) | {id:("f\(.)"), firstName:"Fan", lastName:"N\(.)", email:"fan\(.)@example.test", companyName:"Pager Works Fans"}]
+      + [{id:"c9", firstName:"Pat", lastName:"Target", email:"target@example.test", companyName:"Pager Works Inc"}])}'
 }
 start_fake() {
   stop_fake
@@ -84,8 +84,23 @@ check "two people (different phones) under one company: ambiguous, no emails" te
 run jennifer '["jen@example.test","jallen-other@example.test"]'
 check "seeds landing on two contacts with different phones: ambiguous" test "$(res '[.status, .emails]')" = '["ambiguous",[]]'
 
+echo "== 3b. a company match never stands in for a name match"
+jq -c --arg t "$TOKEN" --arg l "$LOC" '{token:$t, location:$l, fail:{}, contacts:[
+  {id:"n1", firstName:"Zed", lastName:"Quill", email:"zed@example.test", phone:"5550500001", companyName:"Ann LLC"},
+  {id:"n2", firstName:"Karen", lastName:"Vaughn", email:"kv-other@example.test", phone:"5550500002", companyName:"Karen Vaughn"},
+  {id:"n3", firstName:"Eddie", lastName:"Otts", email:"eddie@example.test", phone:"5550200002"},
+  {id:"n4", email:"bookkeeper@example.test", companyName:"Eddie Otts Trading LLC"}]}' <<<null > "$WORK/fn.json"
+start_fake "$WORK/fn.json"
+run ann '[]'
+check "one-word slug (a first name): company 'Ann LLC' is not a match" test "$(res '[.status, .emails]')" = '["none",[]]'
+run karen-vaughn '[]'
+check "a company that is only the contact's own full name is not a match" test "$(res '[.status, .emails]')" = '["none",[]]'
+run eddie-otts-trading '["eddie@example.test"]'
+check "a nameless company contact next to the seeded client: ambiguous, no emails" test "$(res '[.status, .emails]')" = '["ambiguous",[]]'
+
 echo "== 4. paging"
-run pager '[]'
+start_fake "$WORK/f.json"
+run pager-works '[]'
 check "a match on page 2 is found (22 non-matching contacts first)" test "$(res '[.status, .emails]')" = '["ok",["target@example.test"]]'
 check "...and the helper asked for page 2" grep -q 'page=2' "$LOG"
 
