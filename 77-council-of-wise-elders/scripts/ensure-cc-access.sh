@@ -29,7 +29,9 @@ fi
 # SKIPPED (zero writes): gating a non-Command-Center host could break it. A host whose
 # tunnel or tunnel configuration no longer exists (HTTP 404, "Configuration for tunnel
 # not found") is an orphan record: SKIPPED_ORPHAN, zero writes, exit 0, named in the
-# receipt. A transient read error (5xx, timeout, auth) stays FAILED.
+# receipt. A transient read error (5xx, timeout, auth) stays FAILED, and so does a
+# healthy, not-deleted tunnel whose configuration is missing: a live tunnel is never
+# an orphan.
 #
 # WHO MAY LOG IN. The operator emails + the client's verified email(s). Never
 # everyone, never a service token. The emails file (COUNCIL_CC_EMAILS_FILE, default
@@ -331,7 +333,13 @@ ensure_host() {
   if [ -z "${CFG[$tid]+x}" ]; then CFG[$tid]="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tid}/configurations")"; fi
   cfgr="${CFG[$tid]}"
   if [ "$(ok_of "$cfgr")" != "true" ]; then
-    if gone_of "$cfgr"; then
+    local tr=""
+    gone_of "$cfgr" && tr="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${tid}")"
+    # a live (healthy, not deleted) tunnel is never an orphan, whatever its configuration says
+    if [ -n "$tr" ] && [ "$(ok_of "$tr")" = "true" ] && [ -z "$(jq -r '.result.deleted_at // empty' <<<"$tr")" ] \
+       && [ "$(jq -r '.result.status // ""' <<<"$tr")" = "healthy" ]; then
+      finish "$h" FAILED "could not read tunnel configuration for $tid (HTTP $(jq -r '._http' <<<"$cfgr")), but the tunnel is healthy: not an orphan"
+    elif [ -n "$tr" ] && { [ "$(ok_of "$tr")" = "true" ] || gone_of "$tr"; }; then
       finish "$h" SKIPPED_ORPHAN "the CNAME points at tunnel $tid, whose configuration no longer exists (HTTP $(jq -r '._http' <<<"$cfgr") $(err_of "$cfgr")); an orphan record. Zero writes; nothing deleted"
     else
       finish "$h" FAILED "could not read tunnel configuration for $tid (HTTP $(jq -r '._http // "?"' <<<"$cfgr")): $(err_of "$cfgr")"

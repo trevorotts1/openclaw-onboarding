@@ -162,7 +162,7 @@ check "open (everyone) app reported as non-email rule drift" grep -q "^CC_ACCESS
 echo "== 6b. orphan records: the tunnel or its configuration no longer exists"
 T1="$(printf '%032x' "$((0x0123456789abcdef + 1))")"; T2="$(printf '%032x' "$((0x0123456789abcdef + 2))")"; T3="$(printf '%032x' "$((0x0123456789abcdef + 3))")"
 OPEMAILS="$OP2"
-fixture | jq -c --arg a "$T1" --arg b "$T2" --arg c "$T3" '.tunnels[$a].config_missing = true | del(.tunnels[$b]) | .tunnels[$c].deleted_at = "2026-10-01T00:00:00Z"' > "$WORK/f6b.json"
+fixture | jq -c --arg a "$T1" --arg b "$T2" --arg c "$T3" '.tunnels[$a].config_missing = true | .tunnels[$a].status = "inactive" | del(.tunnels[$b]) | .tunnels[$c].deleted_at = "2026-10-01T00:00:00Z"' > "$WORK/f6b.json"
 start_fake "$WORK/f6b.json"
 run_script --apply
 check "orphans: exit 0 (no FAILED)" test "$RC" = 0
@@ -173,6 +173,9 @@ check "orphans got no app; the other hosts still ran (rescbox CREATED, driftbox 
 # each orphan tunnel also carries the box's -gw and rescue- records: 3 tunnels x 3 records
 check "receipt counts and names every orphan record (3 tunnels x 3 records)" test "$(jq -c '[.counts.SKIPPED_ORPHAN, ([.orphans[].host | select(IN("newbox.'$Z'","noemail.'$Z'","phbox.'$Z'"))] | sort)]' "$WORK/state/cc-access-last-run.json")" = '[9,["newbox.'$Z'","noemail.'$Z'","phbox.'$Z'"]]'
 check "runs.log line carries orphans=9" bash -c "tail -n1 '$WORK/state/cc-access-runs.log' | grep -q ' orphans=9 '"
+fixture | jq -c --arg a "$T1" '.tunnels[$a].config_missing = true' > "$WORK/f6d.json"; start_fake "$WORK/f6d.json"
+run_script --apply
+check "configuration 404 on a HEALTHY tunnel: FAILED, never SKIPPED_ORPHAN, no write for newbox" bash -c "test '$RC' = 1 && grep -q '^CC_ACCESS: newbox.$Z FAILED .*but the tunnel is healthy: not an orphan' '$OUT' && ! grep -q '^CC_ACCESS: newbox.$Z SKIPPED_ORPHAN' '$OUT' && test '$(app_count newbox)' = 0"
 fixture | jq -c '.fail.tunnel_read = true' > "$WORK/f6c.json"; start_fake "$WORK/f6c.json"
 run_script --apply
 check "configuration read 503 stays FAILED (exit 1), never SKIPPED_ORPHAN, zero writes" bash -c "test '$RC' = 1 && grep -q '^CC_ACCESS: newbox.$Z FAILED could not read tunnel configuration for $T1 (HTTP 503)' '$OUT' && ! grep -q SKIPPED_ORPHAN '$OUT' && test '$(nonget_count)' = 0"

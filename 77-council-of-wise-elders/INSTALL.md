@@ -302,7 +302,8 @@ that step. It refuses (`FAILED`, zero writes) when the Council app is not
 `Council - <slug>` on `<slug>-council.<zone>`, when an email to remove sits
 on a reusable or non-allow policy, or when either app's allow rules hold
 something other than emails and service tokens (everyone, an email domain, a
-group).
+group), or when the two apps' exclude/require rules differ (a revocation by
+exclude on the Command Center page is never silently missed).
 
 Nobody does anything to get it, for existing clients and for every client
 added later:
@@ -383,7 +384,8 @@ these hold: the Command Center tunnel reports the host at
 `http://localhost:4000` or `http://127.0.0.1:4000` (Contabo containers on
 19003-19005 never match); exactly one tunnel is named `rescue-<slug>` (or
 `rescue-<slug>-...`, the slug as a whole word); that tunnel is healthy,
-remote-managed and has an `ssh://` rule; the active connectors of both
+remote-managed and has an `ssh://` rule for `rescue-<slug>.<zone>` itself
+(so `rescue-<slug>-x`, another client's tunnel, is never ridden); the active connectors of both
 tunnels report `origin_ip` sets that are non-empty and overlap (the same
 machine); no `<slug>-council` record already points at another tunnel; and
 `COUNCIL_TUNNEL_OVERRIDES` has no entry for the slug (trevor keeps
@@ -394,7 +396,8 @@ longer exists (HTTP 404, `Configuration for tunnel not found`, a deleted
 tunnel) is an orphan: both `ensure-cc-access.sh` and
 `provision-council-access.sh` report `SKIPPED_ORPHAN` (zero writes, exit 0,
 named in the receipts). A transient read error (5xx, timeout, auth) stays
-`FAILED`.
+`FAILED`, and so does a tunnel that is healthy but whose configuration
+cannot be read: a live tunnel is never an orphan.
 
 Failing that, a box whose Command Center tunnel is local-managed (it cannot
 take an API ingress rule) gets a dedicated remote-managed tunnel
