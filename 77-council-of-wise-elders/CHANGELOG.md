@@ -1,5 +1,12 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.41: Council: container-host clients with a bridge-origin Command Center can now be provisioned on a dedicated tunnel with an in-container connector
+
+In plain English: when the Command Center lives inside a container reached through a bridge, the Council provisioner now stands up a dedicated tunnel and an in-container connector instead of failing.
+
+- The provisioner detects the container-host shape, creates a dedicated tunnel for it, and wires the in-container connector.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.62).
+
 ## v1.0.40: Council: the Council login page now follows the Command Center login page, orphan records are skipped, and a Mac client can use its rescue tunnel for the Council address
 
 In plain English: council: the Council login page now follows the Command Center login page, orphan records are skipped, and a Mac client can use its rescue tunnel for the Council address. The Council login list now matches the Command Center login list and never lets in someone the Command Center excludes; records for tunnels that no longer exist are skipped instead of failing the whole run; and a Mac client's Council address can ride its own rescue tunnel.
