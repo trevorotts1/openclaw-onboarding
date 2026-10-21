@@ -107,11 +107,12 @@
     "why": "sender_name, reply_to_email, access_delivery and payment_plans are not fields of launch-plan.schema.json; the block carries them to the consumer without forking the plan schema"
   },
   "approval": {
-    "binding": "the client's approval binds the plan document hash (validate_launch_plan.plan_document_hash), not the session",
+    "binding": "the client's approval binds the plan document hash (validate_launch_plan.plan_document_hash) through the gate, and pins the full launch-plan digest (approve() records approved_launch_plan_digest alongside the approved record) so a rebuilt plan that no longer reproduces the digest proves the plan changed after approval",
     "invalidation_cases": [
       {"id": "answer_changed_after_approval", "trigger": "any answer recorded while the session is approved", "effect": "approval cleared, plan_approval_ref cleared, plan status collecting, session returns to collecting; a fresh assemble/present/approve is required", "enforced_in": "launch_intake.answer -> invalidate_approval"},
       {"id": "revision_requested", "trigger": "request_revision()", "effect": "plan and plan_hash cleared, approval cleared, plan_revision incremented, session state revision_requested", "enforced_in": "launch_intake.request_revision"},
-      {"id": "answers_file_reingested", "trigger": "ingest_answers() into an approved session", "effect": "same as answer_changed_after_approval", "enforced_in": "launch_intake.ingest_answers"},
+      {"id": "answers_file_reingested", "trigger": "ingest_answers() into an approved session", "effect": "same as answer_changed_after_approval; the pinned full-plan digest is cleared too", "enforced_in": "launch_intake.ingest_answers"},
+      {"id": "ingest_into_building_refused", "trigger": "ingest_answers() while the session is building", "effect": "refused with a message naming request_revision(); the ledger and the approval are untouched", "enforced_in": "launch_intake.ingest_answers"},
       {"id": "plan_hash_mismatch", "trigger": "the plan changed (price, offer, route, revision) or the approval belongs to another plan", "effect": "approval rejected with a message naming the hash mismatch", "enforced_in": "validate_launch_plan._check_approval_record"},
       {"id": "approval_revoked", "trigger": "revoked is not false", "effect": "approval rejected: 'approval has been revoked'", "enforced_in": "validate_launch_plan._check_approval_record"},
       {"id": "approval_expired", "trigger": "recorded_at older than the gate window (default 72 hours)", "effect": "approval rejected; a new client approval is required", "enforced_in": "validate_launch_plan._check_approval_record"},
