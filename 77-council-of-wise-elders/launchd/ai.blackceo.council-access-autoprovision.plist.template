@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Operator Mac only. Installed by scripts/install-council-access-job.sh --enable (nothing loads it by default).
+     Placeholders: __PROGRAM__ = absolute path to scripts/council-access-autoprovision.sh,
+                   __HOME__ = operator home directory, __LOG_DIR__ = absolute log directory. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.blackceo.council-access-autoprovision</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__PROGRAM__</string>
+    <string>--apply</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>1800</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Standard, never Background: Background starved this service's children before. -->
+  <key>ProcessType</key>
+  <string>Standard</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__LOG_DIR__/council-access-autoprovision.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIR__/council-access-autoprovision.err.log</string>
+</dict>
+</plist>
