@@ -56,6 +56,9 @@ def check(name, cond, detail=""):
 
 def _live_registry():
     """The repo's own live registry file (the one dispatch reads)."""
+    found = VM.resolve_registry()
+    if found:
+        return found
     for root in (os.path.dirname(SKILL), os.path.dirname(os.path.dirname(SKILL))):
         cand = os.path.join(root, "74-kie-live-adapter", "references",
                             "kie-model-registry.json")
