@@ -45,7 +45,12 @@ runs from the immutable release as
 
 **Dedicated Council tunnel (local-managed Command Center tunnels).** A box whose Command Center tunnel is local-managed (it cannot take an API
 ingress rule) gets a dedicated remote-managed tunnel `council-<slug>` from
-the operator side instead. File contract: the connector token sits at
+the operator side instead. No `<slug>-council` DNS record exists until that
+tunnel has an active connector: the first `--apply` creates the tunnel, its
+route, the Access app and the saved token and ends `CONNECTOR_PENDING` with
+zero DNS writes; the first run that sees the connector creates the record
+(`PROVISIONED`); a record whose connector is later gone is `CONNECTOR_DOWN`,
+zero writes, nothing deleted. File contract: the connector token sits at
 `$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
 token. How it reaches the box is an operator delivery step, never wire.sh,
 which fetches nothing. When the file exists, wire.sh keeps
