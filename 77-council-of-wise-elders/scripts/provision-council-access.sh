@@ -26,13 +26,14 @@ fi
 #      council CNAME already points elsewhere        (-> CONFLICT)
 #   b. the CC host's Access app + allow rules        (none -> NOT_PROVISIONED)
 #   c. tunnel configuration is remote-managed        (local -> PENDING_LOCAL_TUNNEL)
+#      and routes the host to a Command Center :4000 (else -> SKIPPED_NOT_CC)
 #   d. create/reuse Access app 'Council - <slug>', read it back, diff the rules
 #      against the CC app (mismatch -> FAILED before any routing)
 #   e. merge the ingress rule (GET -> merge -> PUT, CC rule asserted unchanged)
 #   f. proxied CNAME -> <tunnel-id>.cfargotunnel.com
 #   g. edge gate: GET the host, no redirects; it must 302 to *.cloudflareaccess.com.
 #      Fail -> roll back what THIS run created, print FAILED.
-# Every refusal (NOT_PROVISIONED, PENDING_LOCAL_TUNNEL, CONFLICT) sends zero writes.
+# Every refusal (NOT_PROVISIONED, PENDING_LOCAL_TUNNEL, SKIPPED_NOT_CC, CONFLICT) sends zero writes.
 # An already provisioned host makes zero writes and prints ALREADY_PROVISIONED.
 #
 # Dry-run is the default and sends GET requests only. --apply is the only way a
@@ -53,7 +54,8 @@ fi
 #
 # OUTPUT: one line per host: COUNCIL_ACCESS: <cc-host> <STATUS> [detail]
 #   STATUS = PROVISIONED | ALREADY_PROVISIONED | PENDING_LOCAL_TUNNEL |
-#            NOT_PROVISIONED | CONFLICT | FAILED | PLANNED (dry-run, writes needed)
+#            NOT_PROVISIONED | CONFLICT | FAILED | PLANNED (dry-run, writes needed) |
+#            SKIPPED_NOT_CC (the host's ingress is not a Command Center on :4000)
 # EXIT: 0 unless a host is FAILED or CONFLICT (1); 2 usage; 3 missing env/tool; 4 zone.
 set -uo pipefail
 
@@ -228,7 +230,9 @@ provision_host() {
     finish PENDING_LOCAL_TUNNEL "$cc rides a locally managed tunnel; add the ingress lines above on the box. No Cloudflare change made (the Access app and CNAME are created on a re-run once routing exists)"
     return
   fi
-  cc_ingress_assert_cc_port "$cfg" "$cc" 1 || { finish FAILED "tunnel $tunnel_id has no valid Command Center rule for $cc; refusing to write"; return; }
+  # A zone CNAME whose own ingress rule is not a Command Center on :4000 (rescue-<slug>
+  # SSH tunnels, gateway hosts) is not a Command Center: skip it, never a failure.
+  cc_ingress_assert_cc_port "$cfg" "$cc" 1 2>/dev/null || { finish SKIPPED_NOT_CC "$cc routes to '$(cc_ingress_service_for_host "$cfg" "$cc")', not a Command Center on :4000; nothing changed"; return; }
 
   # d. Access app first
   local app app_id app_pol created_app=0 body inc

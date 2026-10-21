@@ -9,16 +9,17 @@
 #
 # Hosts are rediscovered from the Cloudflare zone on EVERY run, so a client whose
 # Command Center appears later is simply picked up by the next run. A host that is
-# not ready yet (NOT_PROVISIONED, PENDING_LOCAL_TUNNEL) is reported in the receipt
-# and retried next run; it does not fail the run. Nothing here depends on a box,
+# not ready yet (NOT_PROVISIONED, PENDING_LOCAL_TUNNEL) or not a Command Center
+# (SKIPPED_NOT_CC, e.g. rescue-<slug>) is reported in the receipt and retried next
+# run; it does not fail the run. Nothing here depends on a box,
 # the AI Workforce Interview, or .workforce-build-state.json.
 #
 # Dry-run (GET only) is the default. --apply is the only way a write can happen.
 #
 # CREDENTIALS (names only are ever printed, never values):
 #   CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, from the environment, else
-#   loaded from the operator env file COUNCIL_ACCESS_ENV_FILE
-#   (default $HOME/.openclaw/.env, the operator secret store). Exit 3 if absent.
+#   read (those two keys only, never sourced) from the operator env file
+#   COUNCIL_ACCESS_ENV_FILE (default $HOME/.openclaw/.env). Exit 3 if absent.
 #
 # ENV:
 #   COUNCIL_ACCESS_STATE_DIR   receipts dir (default $HOME/.claude/state/council-elders/access-provision)
@@ -65,8 +66,16 @@ write_receipt() {
 }
 
 # Credentials: use the environment as is; only when one is missing, load the operator env file.
+# The file is parsed for these two keys only, never sourced: other lines are never run or exported.
+env_key() { # <KEY> : last KEY=value in ENV_FILE, quotes stripped
+  sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$ENV_FILE" 2>/dev/null | tail -n1 \
+    | sed -E -e 's/^[[:space:]]+|[[:space:]]+$//g' -e 's/^"(.*)"$/\1/' -e "s/^'(.*)'$/\1/"
+}
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-  if [ -r "$ENV_FILE" ]; then set -a; . "$ENV_FILE" >/dev/null 2>&1; set +a; fi
+  if [ -r "$ENV_FILE" ]; then
+    [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || CLOUDFLARE_API_TOKEN="$(env_key CLOUDFLARE_API_TOKEN)"
+    [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || CLOUDFLARE_ACCOUNT_ID="$(env_key CLOUDFLARE_ACCOUNT_ID)"
+  fi
 fi
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
   MSG="CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must both be set (environment or $ENV_FILE)"
@@ -99,12 +108,12 @@ ARGS="--all --json"; [ "$MODE" = apply ] && ARGS="$ARGS --apply"
 if jq -e 'type == "array"' "$OUT" >/dev/null 2>&1; then
   RECEIPT="$(jq -c --arg t "$TS" --arg m "$MODE" --argjson rc "$RC" '
     . as $r
-    | (reduce ("PROVISIONED","ALREADY_PROVISIONED","PLANNED","NOT_PROVISIONED","PENDING_LOCAL_TUNNEL","CONFLICT","FAILED") as $s
+    | (reduce ("PROVISIONED","ALREADY_PROVISIONED","PLANNED","NOT_PROVISIONED","PENDING_LOCAL_TUNNEL","SKIPPED_NOT_CC","CONFLICT","FAILED") as $s
          ({}; .[$s] = ([$r[] | select(.status == $s)] | length))) as $c
     | ($c.CONFLICT + $c.FAILED) as $bad
     | {timestamp:$t, mode:$m, exit:(if $bad > 0 or $rc != 0 then 1 else 0 end), total:($r | length),
        counts:$c,
-       refused:   [$r[] | select(.status | IN("NOT_PROVISIONED","PENDING_LOCAL_TUNNEL","CONFLICT","FAILED")) | {host:.cc_host, reason:.status, detail:.detail}],
+       refused:   [$r[] | select(.status | IN("PROVISIONED","ALREADY_PROVISIONED","PLANNED") | not) | {host:.cc_host, reason:.status, detail:.detail}],
        provisioned:[$r[] | select(.status == "PROVISIONED") | .cc_host]}' "$OUT")"
   EXIT="$(jq -r .exit <<<"$RECEIPT")"
   LINE="$(jq -r '"\(.timestamp) mode=\(.mode) exit=\(.exit) total=\(.total) provisioned=\(.counts.PROVISIONED) already=\(.counts.ALREADY_PROVISIONED) planned=\(.counts.PLANNED) refused=\([.refused[]] | length)" + ([.refused[] | " \(.host):\(.reason)"] | join(""))' <<<"$RECEIPT")"

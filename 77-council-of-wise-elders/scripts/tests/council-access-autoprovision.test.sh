@@ -151,5 +151,23 @@ echo "== 9. the token never leaks"
 check "token in no output, receipt or log" bash -c "! grep -rq -e '$TOKEN' '$WORK' --include='out*' --include='*.json' --include='*.log' --exclude='f.json' --exclude='after*' --exclude='delta.json' --exclude='state.*' --exclude='log.*'"
 check "no temp file left behind by the job" bash -c "test -z \"\$(ls '$WORK' | grep council-autoprov)\""
 
+echo "== 10. a non-Command-Center host (rescue SSH tunnel) is skipped, never a failure"
+FIXTURE_OFFSET=0 fixture alpha | jq -c --arg z "$Z" --arg t "000000000000000000000000000000aa" '
+  .dns += [{id:"dr",type:"CNAME",name:("rescue-alpha."+$z),content:($t+".cfargotunnel.com"),proxied:true}]
+  | .tunnels[$t] = {source:"cloudflare",config:{ingress:[{hostname:("rescue-alpha."+$z),service:"ssh://localhost:22"},{service:"http_status:404"}]}}
+  | .apps += [{id:"app-rescue",name:"Rescue - alpha",domain:("rescue-alpha."+$z),type:"self_hosted",session_duration:"24h"}]
+  | .policies["app-rescue"] = [{id:"pol-r",name:"allow",decision:"allow",include:[{email:{email:"operator@example.com"}}]}]' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_job --apply
+check "rescue host SKIPPED_NOT_CC, alpha provisioned, exit 0, only alpha's 3 writes" bash -c "test $RC = 0 && test $(nonget_count) = 3 && test \"\$(jq -c '[.counts.SKIPPED_NOT_CC, .counts.PROVISIONED, .exit]' '$SD/last-run.json')\" = '[1,1,0]'"
+check "skipped host is still named in the receipt" test "$(rcpt '[.refused[] | .host + "=" + .reason]')" = '["rescue-alpha.'$Z'=SKIPPED_NOT_CC"]'
+
+echo "== 11. the operator env file is read for the two keys only, never sourced"
+printf 'BROKEN=(unclosed\ntouch %s/sourced\nexport CLOUDFLARE_API_TOKEN="%s"\nCLOUDFLARE_ACCOUNT_ID=qc-acct\n' "$WORK" "$TOKEN" > "$WORK/op2.env"
+FIXTURE_OFFSET=0 fixture alpha > "$WORK/f.json"; start_fake "$WORK/f.json"
+OUT="$WORK/out.envfile2"; env -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ACCOUNT_ID CF_API_BASE="http://127.0.0.1:$PORT/client/v4" COUNCIL_ACCESS_STATE_DIR="$SD" COUNCIL_ACCESS_ENV_FILE="$WORK/op2.env" TMPDIR="$WORK" "$JOB" >"$OUT" 2>&1; RC=$?
+check "a broken line before the keys does not stop the load" test "$RC" = 0 -a "$(jq -r .total "$SD/last-run.json")" = 1
+check "no line of the env file was executed" test ! -e "$WORK/sourced"
+
 echo
 if [ "$FAILS" = 0 ]; then echo "ALL $N CHECKS PASS"; exit 0; else echo "$FAILS of $N CHECKS FAILED"; exit 1; fi
