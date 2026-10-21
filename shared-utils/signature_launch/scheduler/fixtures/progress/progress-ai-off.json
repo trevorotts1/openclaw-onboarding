@@ -1,0 +1,90 @@
+{
+  "counts": {
+    "awaiting_facts": 0,
+    "blocked": 0,
+    "done": 2,
+    "dropped": 0,
+    "empty": 0,
+    "failed": 0,
+    "pending": 0,
+    "ready": 0,
+    "retryable": 0,
+    "running": 0,
+    "terminal": 2,
+    "total": 2
+  },
+  "created_at": "2030-01-01T00:00:00Z",
+  "empty": false,
+  "launch_id": "l03-ai-off",
+  "percent": 100.0,
+  "plan_hash": "sha256:029cf065b268aad22a91831ed1c562804ce1c5497dc50d574635770e0ad82d28",
+  "schema_version": "1.0",
+  "stall": {},
+  "units": {
+    "email_pre_launch": {
+      "artifact": "artifacts/email_pre_launch.json",
+      "attempts": 1,
+      "charged": false,
+      "kind": "email_sequence",
+      "lease_expires_at": null,
+      "missing_facts": [],
+      "note": "synthetic local drafts",
+      "owner": null,
+      "reason": {
+        "blocker": null,
+        "detail": "synthetic local drafts",
+        "kind": "verified_success"
+      },
+      "result": {
+        "artifacts": [
+          "artifacts/email_pre_launch.json"
+        ],
+        "blocker": null,
+        "detail": "synthetic local drafts",
+        "missing_facts": [],
+        "owner": null,
+        "payload": null,
+        "retryable": false,
+        "status": "verified_success",
+        "verified": true
+      },
+      "state": "done",
+      "updated_at": "2030-01-01T00:00:00Z",
+      "waits_for": [
+        "page_landing"
+      ]
+    },
+    "page_landing": {
+      "artifact": "artifacts/page_landing.html",
+      "attempts": 1,
+      "charged": false,
+      "kind": "page",
+      "lease_expires_at": null,
+      "missing_facts": [],
+      "note": "synthetic local build",
+      "owner": null,
+      "reason": {
+        "blocker": null,
+        "detail": "synthetic local build",
+        "kind": "verified_success"
+      },
+      "result": {
+        "artifacts": [
+          "artifacts/page_landing.html"
+        ],
+        "blocker": null,
+        "detail": "synthetic local build",
+        "missing_facts": [],
+        "owner": null,
+        "payload": null,
+        "retryable": false,
+        "status": "verified_success",
+        "verified": true
+      },
+      "state": "done",
+      "updated_at": "2030-01-01T00:00:00Z",
+      "waits_for": []
+    }
+  },
+  "updated_at": "2030-01-01T00:00:00Z"
+}

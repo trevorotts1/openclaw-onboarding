@@ -1,0 +1,15 @@
+{
+  "_note": "Synthetic local fixture for audit lane L03 (UL-009). No live data, no secrets. AI requested AND a reply-workflow unit wired: the two facts stay distinct in scheduler/model.py.",
+  "launch_id": "l03-ai-on",
+  "conversation_ai": {"requested": true, "mode": "faq", "channels": ["sms"]},
+  "pages": [
+    {"id": "page_landing", "kind": "landing", "url": "https://example.invalid/landing", "waits_for": []}
+  ],
+  "email_sequences": [
+    {"id": "email_pre_launch", "kind": "pre_launch", "waits_for": ["page_landing"]}
+  ],
+  "text_sets": [],
+  "automations": [
+    {"id": "auto_ai_reply", "family": "conversation_ai_reply", "waits_for": ["email_pre_launch"]}
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "counts": {
+    "awaiting_facts": 0,
+    "blocked": 0,
+    "done": 0,
+    "dropped": 0,
+    "empty": 1,
+    "failed": 0,
+    "pending": 0,
+    "ready": 0,
+    "retryable": 0,
+    "running": 0,
+    "terminal": 0,
+    "total": 0
+  },
+  "created_at": "2030-01-01T00:00:00Z",
+  "empty": true,
+  "launch_id": "l03-empty",
+  "percent": 0.0,
+  "plan_hash": "sha256:1be93be5bb5fbf0669f6f959136e8a7dba08a788bcb16536a0bd24bad335bf72",
+  "schema_version": "1.0",
+  "stall": {},
+  "units": {},
+  "updated_at": "2030-01-01T00:00:00Z"
+}

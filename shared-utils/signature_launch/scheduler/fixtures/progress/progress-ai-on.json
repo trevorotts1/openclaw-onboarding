@@ -1,0 +1,116 @@
+{
+  "counts": {
+    "awaiting_facts": 0,
+    "blocked": 0,
+    "done": 2,
+    "dropped": 0,
+    "empty": 0,
+    "failed": 0,
+    "pending": 0,
+    "ready": 0,
+    "retryable": 0,
+    "running": 1,
+    "terminal": 2,
+    "total": 3
+  },
+  "created_at": "2030-01-01T00:00:00Z",
+  "empty": false,
+  "launch_id": "l03-ai-on",
+  "percent": 66.67,
+  "plan_hash": "sha256:1df7e4b665fc5b32762e6d38dc65e6a964b74a7c9616fd8e1f3e2ecc5eaa2113",
+  "schema_version": "1.0",
+  "stall": {
+    "auto_ai_reply": [
+      {
+        "detail": "runner-b",
+        "kind": "executing",
+        "state": "running",
+        "unit": "auto_ai_reply"
+      }
+    ]
+  },
+  "units": {
+    "auto_ai_reply": {
+      "artifact": null,
+      "attempts": 1,
+      "charged": false,
+      "kind": "automation",
+      "lease_expires_at": "2030-01-01T01:00:00Z",
+      "missing_facts": [],
+      "note": null,
+      "owner": "runner-b",
+      "reason": null,
+      "result": null,
+      "state": "running",
+      "updated_at": "2030-01-01T00:00:00Z",
+      "waits_for": [
+        "email_pre_launch"
+      ]
+    },
+    "email_pre_launch": {
+      "artifact": "artifacts/email_pre_launch.json",
+      "attempts": 1,
+      "charged": false,
+      "kind": "email_sequence",
+      "lease_expires_at": null,
+      "missing_facts": [],
+      "note": "synthetic local drafts",
+      "owner": null,
+      "reason": {
+        "blocker": null,
+        "detail": "synthetic local drafts",
+        "kind": "verified_success"
+      },
+      "result": {
+        "artifacts": [
+          "artifacts/email_pre_launch.json"
+        ],
+        "blocker": null,
+        "detail": "synthetic local drafts",
+        "missing_facts": [],
+        "owner": null,
+        "payload": null,
+        "retryable": false,
+        "status": "verified_success",
+        "verified": true
+      },
+      "state": "done",
+      "updated_at": "2030-01-01T00:00:00Z",
+      "waits_for": [
+        "page_landing"
+      ]
+    },
+    "page_landing": {
+      "artifact": "artifacts/page_landing.html",
+      "attempts": 1,
+      "charged": false,
+      "kind": "page",
+      "lease_expires_at": null,
+      "missing_facts": [],
+      "note": "synthetic local build",
+      "owner": null,
+      "reason": {
+        "blocker": null,
+        "detail": "synthetic local build",
+        "kind": "verified_success"
+      },
+      "result": {
+        "artifacts": [
+          "artifacts/page_landing.html"
+        ],
+        "blocker": null,
+        "detail": "synthetic local build",
+        "missing_facts": [],
+        "owner": null,
+        "payload": null,
+        "retryable": false,
+        "status": "verified_success",
+        "verified": true
+      },
+      "state": "done",
+      "updated_at": "2030-01-01T00:00:00Z",
+      "waits_for": []
+    }
+  },
+  "updated_at": "2030-01-01T00:00:00Z"
+}
