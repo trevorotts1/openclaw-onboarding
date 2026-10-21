@@ -5213,6 +5213,18 @@ main() {
   ONBOARDING_DIR="$EXTRACTED_DIR"
   export ONBOARDING_DIR
 
+  # Skill 75 lip-sync prerequisites (mediapipe/opencv/numpy + face_landmarker.task).
+  # Same shared module install.sh sources, so a fresh box and every fleet roll
+  # run IDENTICAL ensure logic. Sourced here (inside main, after the extracted
+  # tree is on disk) so ensure_lipsync_deps is defined for the post-stamp
+  # convergence section below. Best-effort: a missing module is warned about at
+  # the call site, never fatal.
+  if [ "${OPENCLAW_LIPSYNC_DEPS_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/shared-utils/lipsync-deps.sh" ]; then
+    # shellcheck source=/dev/null
+    LIPSYNC_DEPS_LIB_ONLY=1 source "$ONBOARDING_DIR/shared-utils/lipsync-deps.sh"
+    export OPENCLAW_LIPSYNC_DEPS_SOURCED=1
+  fi
+
   # scripts/ is outside SKILLS_DIR and therefore outside the numbered-skill
   # content manifest below. Deliver and verify it BEFORE the same-version
   # content-clean early exit; otherwise a box with current skills but a legacy
@@ -12426,6 +12438,40 @@ PY
   if [ "$_PRES_DEPS_CONVERGE_RC" -ne 0 ]; then
     echo "  ⚠ Presentation readiness DEGRADED (converge_presentation_deps exit $_PRES_DEPS_CONVERGE_RC) -- see the PRESENTATION_DEPS_MISSING block above. Unrelated department updates already completed are NOT rolled back; the final exit code carries this latch."
   fi
+  # ----------------------------------------------------------
+  # Skill 75 lip-sync prerequisites (mediapipe, opencv, numpy, face_landmarker.task)
+  # ----------------------------------------------------------
+  # INSTALL.md called this a manual step ("2b"), so every box reached production
+  # with both pieces missing and the fail-closed lip-sync picture gate refused
+  # every job. This convergence step runs on EVERY full pass (not sentinel-gated
+  # like wire_prereqs, which is why already-wired boxes stayed broken) and
+  # backfills an existing box. Idempotent: a satisfied box costs three import
+  # probes plus one file hash, no network. Check-only:
+  #   DRAMA_LIPSYNC_CHECK=1  (writes nothing; prints present/MISSING per item)
+  #   bash <(curl -fsSL .../main/shared-utils/lipsync-deps.sh) --check
+  # LATCHED, never aborting: a transient network failure reports FAILED and
+  # leaves <oc-root>/.lipsync-deps.pending, and the next roll retries. The gate
+  # itself is untouched and still refuses a lip-sync job on an incomplete box.
+  echo ""
+  echo "  Converging Skill 75 lip-sync deps (mediapipe, opencv, numpy, face_landmarker.task)..."
+  _LIPSYNC_DEPS_RC=0
+  if command -v ensure_lipsync_deps >/dev/null 2>&1; then
+    # `|| rc=$?` (the converge_presentation_deps idiom) keeps errexit from
+    # aborting the pass on an incomplete install.
+    ensure_lipsync_deps --apply || _LIPSYNC_DEPS_RC=$?
+  else
+    echo "  ⚠ shared-utils/lipsync-deps.sh missing from the extracted tree — Skill 75 lip-sync prerequisites were NOT verified. Manual: bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/lipsync-deps.sh)" >&2
+    _LIPSYNC_DEPS_RC=2
+  fi
+  if [ "$_LIPSYNC_DEPS_RC" -ne 0 ]; then
+    echo "  ⚠ Skill 75 lip-sync readiness INCOMPLETE (ensure_lipsync_deps exit $_LIPSYNC_DEPS_RC) -- the picture gate and the measured clip gate will REFUSE lip-sync jobs on this box until repaired. Content updates already delivered are NOT rolled back; the next roll retries this step." >&2
+  fi
+  export _LIPSYNC_DEPS_RC
+  # ponytail: rc is exported for a later readiness probe but NOT folded into the
+  # final exit code, so an incomplete lip-sync install cannot flip every fleet
+  # roll red on its own. The FAILED line + .lipsync-deps.pending marker are the
+  # loud signal. Upgrade path: latch it next to _PRES_DEPS_CONVERGE_RC if the
+  # fleet wants this class to gate roll success.
   # FIX 71 (persistence): record the venv interpreter in the box secrets env (values
   # are a path, never a secret) so the door + engine resolve the venv python on the
   # next run without depending on this process env. Append-only + idempotent.

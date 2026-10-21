@@ -3916,6 +3916,14 @@ if [ "${OPENCLAW_LIB_PRESENTATION_SCHEDULES_SOURCED:-0}" != "1" ] && [ -f "$ONBO
     source "$ONBOARDING_DIR/lib-presentation-schedules.sh"
     export OPENCLAW_LIB_PRESENTATION_SCHEDULES_SOURCED=1
 fi
+# Skill 75 lip-sync prerequisites (mediapipe/opencv/numpy + face_landmarker.task).
+# Shared with update-skills.sh so a fresh box and every fleet roll run the SAME
+# ensure step. Best-effort source: Step 6.5b below warns loudly if it is absent.
+if [ "${OPENCLAW_LIPSYNC_DEPS_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/shared-utils/lipsync-deps.sh" ]; then
+    # shellcheck source=/dev/null
+    LIPSYNC_DEPS_LIB_ONLY=1 source "$ONBOARDING_DIR/shared-utils/lipsync-deps.sh"
+    export OPENCLAW_LIPSYNC_DEPS_SOURCED=1
+fi
 
 # ----------------------------------------------------------
 # RETIRED-LIBRARY-FILE RECONCILE (2026-07-21) -- the ROOT-CAUSE surface.
@@ -4865,6 +4873,34 @@ ensure_presentation_venv() {
     export PRESENTATION_PIPELINE_INTERPRETER="$VENV_PY"
 }
 ensure_presentation_venv
+
+# ----------------------------------------------------------
+# Step 6.5b: Skill 75 lip-sync prerequisites (mediapipe, opencv, numpy,
+# face_landmarker.task). INSTALL.md used to call this a manual step ("2b"), so
+# every box shipped with the two pieces missing and the fail-closed lip-sync
+# gate refused every job. This runs the SAME shared ensure step as
+# update-skills.sh (shared-utils/lipsync-deps.sh): probe first, install only
+# what is missing, verify the model by pinned sha256 + size, and no-op in well
+# under 2 seconds when everything is already present.
+# NOT FATAL: a transient network failure must not abort the whole bootstrap.
+# The failure is stated LOUDLY and leaves <oc-root>/.lipsync-deps.pending, and
+# the next update-skills.sh pass retries the same step unconditionally.
+# Check-only: DRAMA_LIPSYNC_CHECK=1, or bash shared-utils/lipsync-deps.sh --check
+# ----------------------------------------------------------
+_LIPSYNC_DEPS_RC=0
+if command -v ensure_lipsync_deps >/dev/null 2>&1; then
+    # `|| rc=$?` keeps errexit from aborting the bootstrap on an incomplete
+    # install (same latch idiom as the presentation converge step).
+    ensure_lipsync_deps --apply || _LIPSYNC_DEPS_RC=$?
+else
+    warn "Step 6.5b: shared-utils/lipsync-deps.sh was not available — skill 75 lip-sync prerequisites (mediapipe, opencv, numpy, face_landmarker.task) were NOT verified. Manual: bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/lipsync-deps.sh)"
+    _LIPSYNC_DEPS_RC=2
+fi
+if [ "$_LIPSYNC_DEPS_RC" -ne 0 ]; then
+    warn "Step 6.5b: skill 75 lip-sync prerequisites INCOMPLETE (rc=$_LIPSYNC_DEPS_RC) — the lip-sync picture gate and the measured clip gate will REFUSE lip-sync jobs on this box until it is repaired. Install continues; update-skills.sh retries this step on every roll. Manual: bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/lipsync-deps.sh)"
+fi
+unset _LIPSYNC_DEPS_RC
+
 if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     # ── VPS ARM ──────────────────────────────────────────────────────────────
     # Resolve the REAL Debian apt-get (NOT the Linuxbrew shim). On these images
