@@ -98,7 +98,7 @@ FIXTURE_OFFSET=0 fixture alpha beta gamma | jq -c --arg z "$Z" --arg g "00000000
 start_fake "$WORK/f.json"
 run_job --apply
 check "apply exit 0 though two hosts are not ready" test "$RC" = 0
-check "7 writes: alpha 3, gamma 4 (app, dedicated council-gamma tunnel, ingress, DNS)" test "$(nonget_count)" = 7
+check "6 writes: alpha 3, gamma 3 (app, dedicated council-gamma tunnel, ingress; no DNS before its connector)" test "$(nonget_count)" = 6
 check "receipt counts: 1 provisioned, 1 not-provisioned, 1 connector-pending" test "$(rcpt '[.mode, .counts.PROVISIONED, .counts.NOT_PROVISIONED, .counts.CONNECTOR_PENDING, .counts.PENDING_LOCAL_TUNNEL, .counts.FAILED]')" = '["apply",1,1,1,0,0]'
 check "receipt names each refusal with host and reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["beta.'$Z'=NOT_PROVISIONED","gamma.'$Z'=CONNECTOR_PENDING"]'
 check "receipt lists alpha as provisioned" test "$(rcpt '.provisioned')" = '["alpha.'$Z'"]'
@@ -141,7 +141,7 @@ check "receipt counts every new code" test "$(rcpt '[.counts.PROVISIONED, .count
 check "receipt names the skipped host with its reason" test "$(rcpt '[.skipped[] | .host + "=" + .reason]')" = '["up-openclawdashboard.'$Z'=SKIPPED_NOT_CC"]'
 check "receipt names each not-ready host with its reason code" test "$(rcpt '[.refused[] | .host + "=" + .reason] | sort')" = '["bridge.'$Z'=ORIGIN_NOT_LOOPBACK","down.'$Z'=TUNNEL_DOWN","loc.'$Z'=CONNECTOR_PENDING"]'
 check "runs.log line carries skipped=1 and each host:REASON" bash -c "l=\"\$(tail -n1 '$SD/runs.log')\"; case \"\$l\" in *skipped=1*down.$Z:TUNNEL_DOWN*) ;; *) exit 1;; esac; case \"\$l\" in *bridge.$Z:ORIGIN_NOT_LOOPBACK*) ;; *) exit 1;; esac; case \"\$l\" in *loc.$Z:CONNECTOR_PENDING*) ;; *) exit 1;; esac"
-check "writes only for up (3) and loc (4): down and bridge got none" test "$(nonget_count)" = 7
+check "writes only for up (3) and loc (3, no DNS before its connector): down and bridge got none" test "$(nonget_count)" = 6
 
 echo "== 6. a real failure exits 1"
 FIXTURE_OFFSET=0 fixture alpha | jq -c --arg z "$Z" '.dns += [{id:"x1",type:"CNAME",name:("alpha-council."+$z),content:"ffffffffffffffffffffffffffffffff.cfargotunnel.com",proxied:true}]' > "$WORK/f.json"

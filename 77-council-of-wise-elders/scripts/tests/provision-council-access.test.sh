@@ -106,6 +106,10 @@ ln_put="$(grep -n '^PUT /client/v4/accounts/qc-acct/cfd_tunnel/.*/configurations
 ln_dns="$(grep -n '^POST /client/v4/zones/zone-real/dns_records' "$LOG" | head -1 | cut -d: -f1)"
 check "Access app POST, then tunnel PUT, then DNS POST" test -n "$ln_app" -a -n "$ln_put" -a -n "$ln_dns" -a "$ln_app" -lt "$ln_put" -a "$ln_put" -lt "$ln_dns"
 check "exactly 3 writes" test "$(nonget_count)" = 3
+ln_health="$(grep -n "^GET /client/v4/accounts/qc-acct/cfd_tunnel/$TID\$" "$LOG" | head -1 | cut -d: -f1)"
+ln_conn="$(grep -n "^GET /client/v4/accounts/qc-acct/cfd_tunnel/$TID/connections\$" "$LOG" | head -1 | cut -d: -f1)"
+ln_first_write="$(grep -Evn '^GET ' "$LOG" | head -1 | cut -d: -f1)"
+check "remote path: tunnel health and connector read in this run before the first write and the DNS POST" test -n "$ln_health" -a -n "$ln_conn" -a -n "$ln_first_write" -a "$ln_health" -lt "$ln_first_write" -a "$ln_conn" -lt "$ln_first_write" -a "$ln_conn" -lt "$ln_dns"
 CC_RULES="$(jq -c '.policies["app-cc-qcbox"] | [.[].include[]] | sort' "$STATE")"
 NEW_RULES="$(jq -c '[.apps[] | select(.domain == "qcbox-council.'$Z'") | .id] as $i | .policies[$i[0]] | [.[].include[]] | sort' "$STATE")"
 check "new app include rules equal the Command Center app's" test -n "$CC_RULES" -a "$CC_RULES" = "$NEW_RULES"
@@ -184,25 +188,54 @@ cp "$STATE" "$WORK/orig-state.json"
 run_script qcbox.$Z
 check "local tunnel (dry-run): exit 0, GET only, PLANNED" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PLANNED'"
 check "local tunnel (dry-run): prints 'would create tunnel council-qcbox' and the token save" bash -c "grep -q 'would create tunnel council-qcbox' '$OUT' && grep -q 'would save the connector token for council-qcbox' '$OUT'"
-check "local tunnel (dry-run): plan lists app, tunnel, ingress and DNS writes" bash -c "grep -q '\[plan\] POST /accounts/qc-acct/access/apps' '$OUT' && grep -q '\[plan\] POST /accounts/qc-acct/cfd_tunnel\$' '$OUT' && grep -q '\[plan\] PUT .*configurations' '$OUT' && grep -q '\[plan\] POST /zones/zone-real/dns_records' '$OUT'"
+check "local tunnel (dry-run): plan lists app, tunnel and ingress writes" bash -c "grep -q '\[plan\] POST /accounts/qc-acct/access/apps' '$OUT' && grep -q '\[plan\] POST /accounts/qc-acct/cfd_tunnel\$' '$OUT' && grep -q '\[plan\] PUT .*configurations' '$OUT'"
+check "local tunnel (dry-run): plans NO DNS write before a connector" bash -c "! grep -q 'dns_records' '$OUT'"
+check "local tunnel (dry-run): says the DNS record is held until the connector is active" bash -c "grep -q '\[hold\] no DNS record for qcbox-council.$Z: tunnel council-qcbox has no active connection yet (zero DNS writes' '$OUT'"
+check "local tunnel (dry-run): last line says apply ends CONNECTOR_PENDING" bash -c "tail -n1 '$OUT' | grep -q 'PLANNED dry-run: .*no DNS write until tunnel council-qcbox has an active connection, so apply ends CONNECTOR_PENDING'"
 check "local tunnel (dry-run): no tunnel created, no token file" bash -c "test '$(state '.tunnels | length')' = 1 && test ! -e '$TOKDIR/council-qcbox.token'"
 run_script qcbox.$Z --apply
 check "local tunnel (apply): exit 0, CONNECTOR_PENDING" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING'"
-check "local tunnel (apply): exactly 4 writes (app, tunnel, ingress, DNS)" test "$(nonget_count)" = 4
+check "local tunnel (apply): exactly 3 writes (app, tunnel, ingress), no DNS write" bash -c "test '$(nonget_count)' = 3 && ! grep -Eq '^(POST|PUT|DELETE|PATCH) .*/dns_records' '$LOG'"
+check "local tunnel (apply): no DNS record exists for the council host" test "$(state '[.dns[] | select(.name=="qcbox-council.'$Z'")] | length')" = 0
+check "local tunnel (apply): the pending line says zero DNS writes" bash -c "tail -n1 '$OUT' | grep -q 'no DNS record created (zero DNS writes)'"
+check "local tunnel (apply): no edge request for a host with no DNS record" bash -c "! grep -q '^GET /edge/' '$LOG'"
 NEWT="$(state '[.tunnels | to_entries[] | select(.value.name == "council-qcbox") | .key][0]' | tr -d '"')"
 check "a remote-managed tunnel named council-qcbox was created" test -n "$NEWT" -a "$NEWT" != null -a "$(state '.tunnels["'$NEWT'"].source')" = '"cloudflare"'
 check "council-qcbox ingress: qcbox-council -> http://127.0.0.1:8787, then 404" test "$(state '.tunnels["'$NEWT'"].config.ingress')" = '[{"hostname":"qcbox-council.'$Z'","service":"http://127.0.0.1:8787"},{"service":"http_status:404"}]'
-check "proxied CNAME points at the new council tunnel" test "$(state '.dns[] | select(.name=="qcbox-council.'$Z'") | [.content,.proxied] | join("|")')" = '"'$NEWT'.cfargotunnel.com|true"'
 check "the local Command Center tunnel was not touched" test "$(state '.tunnels["'$TID'"]')" = "$(jq -c '.tunnels["'$TID'"]' "$WORK/orig-state.json")"
 check "token file saved with mode 600 in a mode 700 dir" bash -c "test \"\$(stat -f %Lp '$TOKDIR/council-qcbox.token')\" = 600 && test \"\$(stat -f %Lp '$TOKDIR')\" = 700"
 check "token file holds the connector token" test "$(cat "$TOKDIR/council-qcbox.token")" = "qc-tunnel-TOKEN-$NEWT"
 check "connector token value appears in no output" bash -c "! grep -rq -- 'qc-tunnel-TOKEN' '$WORK/out'"
 cp "$STATE" "$WORK/ded.json"; start_fake "$WORK/ded.json"
 run_script qcbox.$Z --apply
-check "second apply: zero writes, still CONNECTOR_PENDING (retried every run)" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING'"
+check "second apply, still no connector: zero writes, CONNECTOR_PENDING, still no DNS record" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING' && test '$(state '[.dns[] | select(.name=="qcbox-council.'$Z'")] | length')' = 0"
+run_script qcbox.$Z
+check "dry-run, no connector, nothing else to write: CONNECTOR_PENDING, GET only" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING'"
+check "dry-run, token on disk: pending line says the token is saved" bash -c "tail -n1 '$OUT' | grep -q 'token saved operator side at'"
+mv "$TOKDIR/council-qcbox.token" "$WORK/tok.bak"
+run_script qcbox.$Z
+check "dry-run, no token on disk: pending line says NOT saved, never 'token saved'" bash -c "tail -n1 '$OUT' | grep -q 'token NOT saved yet at .*--apply saves it' && ! tail -n1 '$OUT' | grep -q 'token saved operator side'"
+mv "$WORK/tok.bak" "$TOKDIR/council-qcbox.token"
 jq -c '(.tunnels | to_entries[] | select(.value.name == "council-qcbox") | .key) as $k | .tunnels[$k].conns = [{id:"c1",is_pending_reconnect:false}]' "$WORK/ded.json" > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z
+check "connector up (dry-run): plans exactly the DNS write, PLANNED" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && grep -q '\[plan\] POST /zones/zone-real/dns_records' '$OUT' && ! grep -q '\[hold\]' '$OUT' && test \"\$(grep -c '\[plan\]' '$OUT')\" = 1 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PLANNED'"
 run_script qcbox.$Z --apply
-check "connector up: ALREADY_PROVISIONED, zero writes" bash -c "test '$(nonget_count)' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z ALREADY_PROVISIONED'"
+check "connector up (apply): PROVISIONED with exactly 1 write, the DNS POST" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 1 && grep -Eq '^POST /client/v4/zones/zone-real/dns_records$' '$LOG' && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED'"
+check "connector up: the connections read comes before the DNS POST" bash -c "c=\$(grep -n '^GET .*/cfd_tunnel/$NEWT/connections' '$LOG' | head -1 | cut -d: -f1); d=\$(grep -n '^POST .*/dns_records' '$LOG' | head -1 | cut -d: -f1); test -n \"\$c\" -a -n \"\$d\" && test \"\$c\" -lt \"\$d\""
+check "connector up: proxied CNAME points at the council tunnel" test "$(state '.dns[] | select(.name=="qcbox-council.'$Z'") | [.content,.proxied] | join("|")')" = '"'$NEWT'.cfargotunnel.com|true"'
+check "connector up: edge gate ran after the record exists" bash -c "grep -q '^GET /edge/qcbox-council.$Z/' '$LOG'"
+cp "$STATE" "$WORK/ded-up.json"; start_fake "$WORK/ded-up.json"
+run_script qcbox.$Z --apply
+check "connector still up: ALREADY_PROVISIONED, zero writes" bash -c "test '$(nonget_count)' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z ALREADY_PROVISIONED'"
+jq -c --arg k "$NEWT" '.tunnels[$k].conns = []' "$WORK/ded-up.json" > "$WORK/f.json"; start_fake "$WORK/f.json"; cp "$STATE" "$WORK/orig-state.json"
+run_script qcbox.$Z --apply
+check "connector gone after the record exists: CONNECTOR_DOWN, zero writes, exit 0" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_DOWN.*nothing deleted'"
+check "connector gone: the DNS record, app and tunnel are all kept" test "$(state '[.dns, .apps, .tunnels]')" = "$(jq -c '[.dns, .apps, .tunnels]' "$WORK/orig-state.json")"
+run_script qcbox.$Z
+check "connector gone (dry-run): CONNECTOR_DOWN, not PLANNED" bash -c "test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_DOWN'"
+fixture qcbox | jq -c '.tunnels["'$TID'"] = {source:"local",config:null} | .fail.connections = true | .tunnels["c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"] = {name:"council-qcbox",source:"cloudflare",config:null}' > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "council tunnel connections unreadable: FAILED, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z FAILED.*connections'"
 fixture qcbox | jq -c '.tunnels["'$TID'"] = {source:"local",config:null} | .tunnels["cccccccccccccccccccccccccccccccc"] = {name:"council-qcbox",source:"local",config:null}' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
 check "council tunnel itself local-managed: PENDING_LOCAL_TUNNEL, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PENDING_LOCAL_TUNNEL.*council-qcbox'"
