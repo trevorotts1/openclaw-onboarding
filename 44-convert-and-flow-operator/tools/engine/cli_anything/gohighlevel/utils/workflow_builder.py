@@ -725,8 +725,10 @@ def compile_trigger_conditions(tag: Optional[str], eligibility: list) -> list[di
 
 
 def _guarded_templates(templates: list, *, promotional: bool,
-                       close_at: Optional[str]) -> list:
+                       close_at: Optional[str],
+                       schedule_by_id: Optional[Mapping[str, Mapping[str, Any]]] = None) -> list:
     guarded = []
+    schedule_by_id = schedule_by_id or {}
     for step in templates or []:
         step = {**step}
         if step.get("type") == "email":
@@ -739,6 +741,15 @@ def _guarded_templates(templates: list, *, promotional: bool,
                     conditions.append(condition)
             attrs["conditions"] = conditions
             attrs["marketing"] = promotional
+            node = schedule_by_id.get(step.get("id"))
+            if isinstance(node, Mapping):
+                sched: dict[str, Any] = {}
+                for key in ("at", "anchor", "phase", "kind",
+                            "offset_seconds", "status", "suppress_after"):
+                    if node.get(key) is not None:
+                        sched[key] = node[key]
+                if sched:
+                    attrs["schedule"] = sched
             step["attributes"] = attrs
         guarded.append(step)
     return guarded
@@ -803,8 +814,12 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
                 % (build.get("id"), workflow.get("key"), ", ".join(missing)),
                 detail={"unit_key": unit_key, "missing": missing})
 
-        templates = _guarded_templates(workflow.get("steps") or [],
-                                       promotional=promotional, close_at=close_at)
+        templates = _guarded_templates(
+            workflow.get("steps") or [], promotional=promotional,
+            close_at=close_at,
+            schedule_by_id={node.get("step_id"): node
+                            for node in seq_schedule.get("nodes", [])
+                            if isinstance(node, Mapping) and node.get("step_id")})
         wf_key = "%s__%s" % (build.get("id"), workflow.get("key"))
         required = ["workflow_id", "steps_saved", "readback_verified"]
         if workflow.get("tag"):
