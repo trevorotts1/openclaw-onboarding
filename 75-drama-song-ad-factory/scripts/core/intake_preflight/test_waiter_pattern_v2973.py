@@ -11,7 +11,7 @@ background stage job") anchors on the interpreter AND brackets the script
 name's first character, so a waiter that quotes the pattern does NOT match
 its own argv:
 
-    while pgrep -f "python.*[r]un_vtv_music\\.py" >/dev/null; do sleep 30; done
+    while pgrep -f "[Pp]ython.*[r]un_vtv_music\\.py" >/dev/null; do sleep 30; done
 
 Proven on THIS machine, by real processes ($0, no network), assertions
 scoped by PID (never by "any process matched"):
@@ -38,7 +38,7 @@ SKILL = Path(HERE).parents[2]                 # 75-drama-song-ad-factory/
 RUNBOOK = SKILL / "references" / "stage-runbook.md"
 
 #: the documented pattern, exactly as the runbook's RIGHT block carries it
-PATTERN = r"python.*[r]un_vtv_music\.py"
+PATTERN = r"[Pp]ython.*[r]un_vtv_music\.py"
 #: the buggy pattern the runbook names as WRONG (the control's subject)
 BUGGY = "run_vtv_music.py"
 
@@ -88,7 +88,7 @@ def main():
         # holder before the assertions read the process table.
         holder = subprocess.Popen(
             ["/bin/sh", "-c",
-             'until pgrep -f "python.*[r]un_vtv_music\\.py" >/dev/null; '
+             'until pgrep -f "[Pp]ython.*[r]un_vtv_music\\.py" >/dev/null; '
              'do sleep 6; done'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         procs.append(holder)
@@ -135,7 +135,7 @@ def main():
         text = RUNBOOK.read_text(encoding="utf-8")
         check("stage-runbook.md carries the documented waiter pattern "
               "verbatim",
-              'pgrep -f "python.*[r]un_vtv_music\\.py"' in text,
+              'pgrep -f "[Pp]ython.*[r]un_vtv_music\\.py"' in text,
               "pattern line missing")
         check("runbook names the wrong pattern as WRONG",
               'pgrep -f "run_vtv_music.py"' in text and "WRONG" in text)

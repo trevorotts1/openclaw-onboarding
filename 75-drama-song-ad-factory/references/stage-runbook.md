@@ -100,8 +100,9 @@ while pgrep -f "run_vtv_music.py" >/dev/null; do sleep 30; done
 # quotes THIS pattern never matches it (its own argv carries
 # "[r]un_vtv_music\.py", whose text has no literal 'run_vtv_music.py' — the
 # bracket breaks self-matching on every pass). pgrep -f is an ERE over the
-# full argv, so the interpreter word covers python3 AND a framework python.
-while pgrep -f "python.*[r]un_vtv_music\.py" >/dev/null; do sleep 30; done
+# full argv, so the interpreter word covers python3 AND macOS's CLT
+# framework python (argv: .../MacOS/Python - capital P - covered by [Pp]).
+while pgrep -f "[Pp]ython.*[r]un_vtv_music\.py" >/dev/null; do sleep 30; done
 # and on top of the process check, poll the job's own completion artifact:
 until [ -s "$RUN/music/picked-song.mp3" ]; do sleep 30; done   # or the row:
 until [ "$(sqlite3 "$RUN/control/state.sqlite3" "SELECT state FROM stages WHERE stage='video-generation'")" = "COMPLETE" ]; do sleep 30; done
