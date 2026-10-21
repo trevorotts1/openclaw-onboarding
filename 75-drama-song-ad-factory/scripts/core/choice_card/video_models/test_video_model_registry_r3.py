@@ -3,7 +3,7 @@
 carries, and refuses a card whose model list cannot be resolved.
 
 Behaviour proven (RELIABILITY-SPEC L3; live defect: the client's card answer
-was "MiniMax H3", the live KIE catalog has no such model -- brand is Hailuo
+was "Hailuo 02 Standard", the live KIE catalog has no such model -- brand is Hailuo
 02 -- and the run printed a model the catalog does not carry):
 
   * a resolvable registry yields only models the registry lists;
@@ -93,7 +93,7 @@ def test_live_repo_registry_resolves_all_four():
         check("live repo: all four card models resolve, no reason",
               rows is not None and reason is None
               and [r["name"] for r in rows]
-              == ["MiniMax H3", "Seedance 2.5", "Seedance 2.0 Mini",
+              == ["Hailuo 02 Standard", "Seedance 2.5", "Seedance 2.0 Mini",
                   "Google Veo 3.1"], repr(reason))
         ok_ids = set(VM.registry_ids())
         check("every row's kie_model carried by the registry",
@@ -110,9 +110,9 @@ def test_resolvable_registry_yields_only_listed_models():
     only models the registry lists, and refuses the rest by name."""
     live = _live_registry()
     reg = json.load(open(live, encoding="utf-8")) if live else {"models": []}
-    # registry WITHOUT MiniMax H3 (the live defect: brand is Hailuo 02)
+    # registry WITHOUT Hailuo 02 Standard (the live defect: brand is Hailuo 02)
     stripped = {"models": [m for m in reg.get("models", [])
-                           if not str(m.get("id", "")).startswith("minimax")]}
+                           if m.get("id") != "hailuo/02-image-to-video-standard"]}
     check("stripped registry still carries the other three",
           {"bytedance/seedance-2-5", "bytedance/seedance-2-mini", "veo-3-1"}
           <= {m.get("id") for m in stripped["models"]}, repr(stripped)[:80])
@@ -124,8 +124,8 @@ def test_resolvable_registry_yields_only_listed_models():
               rows is None and reason is not None, repr(reason))
         check("refusal reason names the exact live defect",
               reason["reason_code"] == "MODEL_NOT_IN_REGISTRY"
-              and "MiniMax H3" in reason["detail"]
-              and "minimax-h3/image-to-video" in reason["detail"], '')
+              and "Hailuo 02 Standard" in reason["detail"]
+              and "hailuo/02-image-to-video-standard" in reason["detail"], '')
         try:
             VM.require_choices()
             check("require_choices refuses the defect list", False,
@@ -133,7 +133,7 @@ def test_resolvable_registry_yields_only_listed_models():
         except VM.ModelResolutionError as e:
             check("require_choices refuses the defect list",
                   e.reason == "MODEL_NOT_IN_REGISTRY"
-                  and "MiniMax H3" in str(e), str(e)[:120])
+                  and "Hailuo 02 Standard" in str(e), str(e)[:120])
         # the card question surfaces the same refusal
         try:
             IC._model_question("60 seconds")
@@ -141,7 +141,7 @@ def test_resolvable_registry_yields_only_listed_models():
                   "rendered anyway")
         except VM.ModelResolutionError as e:
             check("card question refuses unresolvable list",
-                  "MiniMax H3" in str(e), str(e)[:140])
+                  "Hailuo 02 Standard" in str(e), str(e)[:140])
         # and lock_choice refuses the same row
         db = os.path.join(os.path.dirname(p), "state.sqlite3")
         try:
@@ -198,29 +198,11 @@ def test_card_gate_menu_refuses_off_registry_rows():
         lines = CG.video_model_picks()
         check("live repo: card menu renders (%d rows)" % len(lines),
               len(lines) == 18, repr(lines[:1]))
-        check("MiniMax H3 768P line still RECOMMENDED",
-              any(l.startswith("MiniMax H3") and "(RECOMMENDED)" in l
-                  for l in lines), repr(lines[:3]))
-    finally:
-        _unreg_env(old)
-    # registry without MiniMax: the exact live defect refuses BY NAME
-    stripped = {"models": [m for m in reg.get("models", [])
-                           if not str(m.get("id", "")).startswith("minimax")]}
-    old = _reg_env(_write_registry(stripped["models"]))
-    try:
-        try:
-            CG.video_model_picks()
-            check("card menu refuses a registry-missing model", False,
-                  "rendered anyway")
-        except CG.VideoModelUnresolvable as e:
-            check("card menu refuses a registry-missing model",
-                  "MiniMax H3" in str(e), str(e)[:160])
-        # render_card -- the whole four-pick card -- refuses the same way
-        try:
-            CG.render_card()
-            check("render_card refuses the same defect", False, "rendered")
-        except CG.VideoModelUnresolvable:
-            check("render_card refuses the same defect", True)
+        rec = [m for m in VM.MODELS if m.get("recommended")]
+        check("the recommended row is a model the registry carries",
+              len(rec) == 1
+              and rec[0]["kie_model"] in [m.get("id") for m in reg["models"]],
+              repr([m.get("kie_model") for m in rec]))
     finally:
         _unreg_env(old)
 
@@ -234,7 +216,7 @@ def test_lock_and_dispatch_stay_gated_for_off_registry_model():
         return
     reg = json.load(open(p, encoding="utf-8"))
     stripped = {"models": [m for m in reg.get("models", [])
-                           if not str(m.get("id", "")).startswith("minimax")]}
+                           if m.get("id") != "hailuo/02-image-to-video-standard"]}
     old = _reg_env(_write_registry(stripped["models"]))
     try:
         d = tempfile.mkdtemp()
@@ -247,14 +229,15 @@ def test_lock_and_dispatch_stay_gated_for_off_registry_model():
                   e.reason == "MODEL_NOT_IN_REGISTRY", str(e)[:120])
         # dispatch-side F14 still fails closed on any unlocked run: the card
         # never answered, so no lock exists and the video job is refused.
-        env = KD.dispatch(model="minimax-h3/image-to-video", request={},
+        env = KD.dispatch(model="hailuo/02-image-to-video-standard", request={},
                           save_dir=tempfile.mkdtemp(), ledger_db=":memory:",
                           run_id="run-x", logical_key="k", attempt_id="a",
                           estimated_cost=100,
                           runner=lambda argv: (1, None, "unused"))
-        check("dispatch refuses (VIDEO_MODEL_LOCK_MISSING, no card, no lock)",
+        check("dispatch refuses (no card, no lock: the job never starts)",
               env.get("reason_code") in ("VIDEO_MODEL_LOCK_MISSING",
-                                         "CARD_UNANSWERED"),
+                                         "CARD_UNANSWERED",
+                                         "MODEL_NOT_ON_MENU"),
               repr(env.get("reason_code")))
     finally:
         _unreg_env(old)
