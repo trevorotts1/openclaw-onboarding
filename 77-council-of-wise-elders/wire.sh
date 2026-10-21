@@ -8,19 +8,30 @@
 #      installer is a no-op when nothing changed),
 #   2. keeps the Council service running (Mac: LaunchAgent, VPS: pm2 app) and
 #      restarts it when the release changes,
-#   3. puts the blackceo-council CLI on PATH for the box's agent.
+#   3. puts the blackceo-council CLI on PATH for the box's agent,
+#   4. when the operator delivered <OPENCLAW_ROOT>/secrets/tunnel-council.token
+#      (a box whose Command Center tunnel is local-managed gets its own
+#      remote-managed council-<slug> tunnel), keeps that tunnel's connector
+#      running: Mac LaunchAgent ai.blackceo.council-tunnel, VPS pm2 app
+#      cloudflared-council, `cloudflared tunnel run --token-file <file>`. It is
+#      restarted only when the token file or the cloudflared path changes; the
+#      Command Center's own connector is never touched; the token value is
+#      never printed or logged. No token file = no-op (most boxes).
 # It writes nothing inside the skill folder and touches no credential, model,
 # openclaw.json, AGENTS.md, gateway or Command Center.
 #
 # One typed line is printed:
 #   COUNCIL_WIRE: READY|NOOP|ADOPTED_EXISTING|DEFERRED_NO_GUI|NOT_READY <CODE> <detail>
+# plus, only when the connector token file exists, one line before it:
+#   COUNCIL_CONNECTOR: READY|NOOP|DEFERRED_NO_GUI|NOT_READY <CODE> <detail>
+# --connector-only runs the connector step and exits 0 (no build, no service).
 # Exit 0 for every state except RUNTIME_BUILD_FAILED (exit 1), so a transient
 # npm failure withholds the .wired sentinel and the next roll retries.
 #
 # Env: COUNCIL_WIRE_PLATFORM (mac|vps) COUNCIL_NODE COUNCIL_NPM COUNCIL_PM2
 #      COUNCIL_SERVICE_PORT (8787) COUNCIL_SERVICE_LABEL (ai.blackceo.council-service)
 #      COUNCIL_PM2_APP (council-of-wise-elders) OPENCLAW_ROOT CC_PUBLIC_URL
-#      MC_TENANT_PUBLIC_URL
+#      MC_TENANT_PUBLIC_URL COUNCIL_CLOUDFLARED (absolute cloudflared path)
 #
 # bash 3.2 safe (macOS system bash): no bash-4-only features.
 
@@ -29,8 +40,9 @@ set -u
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 MARK="managed-by: 77-council-of-wise-elders/wire.sh"
 
+CONNECTOR_ONLY=0
 for _a in "$@"; do
-  case "$_a" in --idempotent) ;; *) ;; esac
+  case "$_a" in --idempotent) ;; --connector-only) CONNECTOR_ONLY=1 ;; *) ;; esac
 done
 
 say()      { printf 'COUNCIL_WIRE: %s\n' "$*"; }
@@ -67,6 +79,13 @@ PM2_APP="${COUNCIL_PM2_APP:-council-of-wise-elders}"
 UID_N="$(id -u)"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 ORIGIN="http://127.0.0.1:$PORT"
+TUN_TF="$OC/secrets/tunnel-council.token"
+TUN_LABEL=ai.blackceo.council-tunnel
+TUN_APP=cloudflared-council
+TUN_PLIST="$HOME/Library/LaunchAgents/$TUN_LABEL.plist"
+TUN_LOG="$LOGDIR/council-tunnel.log"
+TUN_STATE="$P/council-tunnel.state"
+TUN_CFG="$P/council-tunnel.yml"
 
 # ------------------------------------------------------------------- 2. node
 node_version_ok() { # <node> ; prints the version, returns 0 when supported
@@ -149,11 +168,101 @@ if [ "$PLATFORM" = "vps" ]; then
   [ -n "$PM2" ] || notready NO_PM2 "pm2 not found (COUNCIL_PM2, PATH, $OC/npm-global/bin, $HOME/.npm-global/bin, npm root -g)"
 fi
 
-pm2_pid() { # prints the app's pid digits, or empty when the app is unknown
-  "$PM2" pid "$PM2_APP" 2>/dev/null | tail -1 | tr -dc '0-9'
+pm2_pid() { # [app] ; prints the app's pid digits, or empty when the app is unknown
+  "$PM2" pid "${1:-$PM2_APP}" 2>/dev/null | tail -1 | tr -dc '0-9'
 }
-mac_loaded() { launchctl print "gui/$UID_N/$LABEL" >/dev/null 2>&1; }
+mac_loaded() { launchctl print "gui/$UID_N/${1:-$LABEL}" >/dev/null 2>&1; }
 mac_gui()    { launchctl print "gui/$UID_N" >/dev/null 2>&1; }
+
+# ------------------------------------------- 3b. Council tunnel connector
+# Only for a box the operator gave a dedicated council-<slug> tunnel (its
+# Command Center tunnel is local-managed). Never touches the Command Center
+# connector; never prints, logs or passes the token value on argv.
+csay() { printf 'COUNCIL_CONNECTOR: %s\n' "$*"; }
+tun_cloudflared() { # absolute cloudflared path, or rc 1
+  local c
+  if [ -n "${COUNCIL_CLOUDFLARED:-}" ]; then
+    [ -x "$COUNCIL_CLOUDFLARED" ] && { printf '%s' "$COUNCIL_CLOUDFLARED"; return 0; }
+    return 1
+  fi
+  for c in "$(command -v cloudflared 2>/dev/null)" /opt/homebrew/bin/cloudflared /usr/local/bin/cloudflared /usr/bin/cloudflared "$OC/bin/cloudflared"; do
+    case "$c" in /*) [ -x "$c" ] && { printf '%s' "$c"; return 0; } ;; esac
+  done
+  return 1
+}
+council_connector() {
+  [ -f "$TUN_TF" ] || return 0
+  chmod 600 "$TUN_TF" 2>/dev/null
+  if [ ! -r "$TUN_TF" ] || [ ! -s "$TUN_TF" ]; then
+    csay "NOT_READY TOKEN_UNREADABLE $TUN_TF is empty or unreadable; nothing started"; return 0
+  fi
+  local cf fp prev pchanged=0 changed=0 pid i _n
+  cf="$(tun_cloudflared)" || { csay "NOT_READY NO_CLOUDFLARED cloudflared not found (COUNCIL_CLOUDFLARED, PATH, /opt/homebrew/bin, /usr/local/bin, /usr/bin, $OC/bin); nothing started"; return 0; }
+  fp="$(sha_file "$TUN_TF") $cf"           # token fingerprint + binary; never the token
+  mkdir -p "$P" "$LOGDIR" 2>/dev/null
+  prev="$(cat "$TUN_STATE" 2>/dev/null)"
+  # Own config: without --config cloudflared loads ~/.cloudflared/config.yml,
+  # which on these boxes is the Command Center's local-managed tunnel config.
+  [ "$(cat "$TUN_CFG" 2>/dev/null)" = "no-autoupdate: true" ] || printf 'no-autoupdate: true\n' >"$TUN_CFG"
+  if [ "$PLATFORM" = "mac" ]; then
+    mkdir -p "$(dirname "$TUN_PLIST")"
+    cat >"$TUN_PLIST.tmp.$$" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$(xe "$TUN_LABEL")</string>
+  <key>ProgramArguments</key>
+  <array><string>$(xe "$cf")</string><string>tunnel</string><string>--config</string><string>$(xe "$TUN_CFG")</string><string>--no-autoupdate</string><string>--protocol</string><string>http2</string><string>run</string><string>--token-file</string><string>$(xe "$TUN_TF")</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>EnvironmentVariables</key><dict><key>TUNNEL_TOKEN</key><string></string></dict>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Standard</string>
+  <key>StandardOutPath</key><string>$(xe "$TUN_LOG")</string>
+  <key>StandardErrorPath</key><string>$(xe "$TUN_LOG")</string>
+</dict>
+</plist>
+PL
+    if ! plutil -lint "$TUN_PLIST.tmp.$$" >/dev/null 2>&1; then
+      rm -f "$TUN_PLIST.tmp.$$"; csay "NOT_READY CONNECTOR_START_FAILED generated $TUN_LABEL plist failed plutil -lint"; return 0
+    fi
+    if [ -f "$TUN_PLIST" ] && cmp -s "$TUN_PLIST.tmp.$$" "$TUN_PLIST"; then rm -f "$TUN_PLIST.tmp.$$"
+    else mv -f "$TUN_PLIST.tmp.$$" "$TUN_PLIST"; pchanged=1; fi
+    if ! mac_gui; then
+      csay "DEFERRED_NO_GUI LaunchAgent $TUN_LABEL is written and loads at the next login"; return 0
+    fi
+    if ! mac_loaded "$TUN_LABEL"; then
+      launchctl bootstrap "gui/$UID_N" "$TUN_PLIST" >>"$TUN_LOG" 2>&1 || { csay "NOT_READY CONNECTOR_START_FAILED launchctl bootstrap failed for $TUN_LABEL"; return 0; }
+      changed=1
+    elif [ "$pchanged" = 1 ]; then
+      launchctl bootout "gui/$UID_N/$TUN_LABEL" >>"$TUN_LOG" 2>&1
+      i=0; while mac_loaded "$TUN_LABEL" && [ "$i" -lt 20 ]; do sleep 0.5; i=$((i+1)); done
+      launchctl bootstrap "gui/$UID_N" "$TUN_PLIST" >>"$TUN_LOG" 2>&1 || { csay "NOT_READY CONNECTOR_START_FAILED launchctl bootstrap failed for $TUN_LABEL after plist change"; return 0; }
+      changed=1
+    elif [ "$fp" != "$prev" ]; then
+      launchctl kickstart -k "gui/$UID_N/$TUN_LABEL" >>"$TUN_LOG" 2>&1
+      changed=1
+    fi
+  else
+    pid="$(pm2_pid "$TUN_APP")"
+    if [ -z "$pid" ] || [ "$pid" = "0" ] || [ "$fp" != "$prev" ]; then
+      [ -n "$pid" ] && "$PM2" delete "$TUN_APP" >>"$LOGDIR/council-pm2.log" 2>&1
+      # TUNNEL_TOKEN= : an inherited TUNNEL_TOKEN (box .env) beats --token-file
+      # and would run the Command Center tunnel here instead of the Council's.
+      env TUNNEL_TOKEN= "$PM2" start "$cf" --name "$TUN_APP" --interpreter none --time --output "$TUN_LOG" --error "$TUN_LOG" \
+        -- tunnel --config "$TUN_CFG" --no-autoupdate --protocol http2 run --token-file "$TUN_TF" >>"$LOGDIR/council-pm2.log" 2>&1 \
+        || { csay "NOT_READY CONNECTOR_START_FAILED pm2 start $TUN_APP failed (see $LOGDIR/council-pm2.log)"; return 0; }
+      "$PM2" save >>"$LOGDIR/council-pm2.log" 2>&1
+      changed=1
+    fi
+  fi
+  ( umask 077; printf '%s\n' "$fp" >"$TUN_STATE.tmp.$$" ) && mv -f "$TUN_STATE.tmp.$$" "$TUN_STATE"
+  if [ "$PLATFORM" = "mac" ]; then _n="launchd $TUN_LABEL"; else _n="pm2 $TUN_APP"; fi
+  if [ "$changed" = 1 ]; then csay "READY $_n started with token file $TUN_TF"; else csay "NOOP $_n already running with the same token"; fi
+}
+council_connector
+[ "$CONNECTOR_ONLY" = 1 ] && exit 0
 
 # ------------------------------------------- 4. who owns the port (before build)
 OURS=0

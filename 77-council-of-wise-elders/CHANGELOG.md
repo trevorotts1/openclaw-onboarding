@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.37: Every client's Council address is now provisioned: legacy Command Centers, down tunnels and local tunnels are handled
+
+In plain English: every client's Council address is now provisioned: legacy Command Centers, down tunnels and local tunnels are handled. The operator's access job now covers older Command Centers, tunnels that are down and tunnels managed on the operator's machine, and each client box runs its own Council connector without touching the Command Center tunnel.
+
+- The provisioner finds the Command Center by what the tunnel serves, creates a dedicated Council tunnel when needed, and reports a down tunnel or a waiting connector instead of claiming done.
+- The box Council connector runs with its own config and a blank inherited tunnel token, so it can never start the Command Center tunnel by mistake.
+- The box check reports a missing or stopped connector plainly.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.58).
+
 ## v1.0.36: A brand-new client's Council address now sets itself up with no human step
 
 In plain English: a brand-new client's Council address now sets itself up with no human step. The operator's automatic access job first gives the new client's Command Center its login, then creates the Council address, and tells the operator plainly when it is still waiting for the client's email.

@@ -1,3 +1,7 @@
+## [v27.1.58]  -  2026-10-21  -  Council (Skill 77) v1.0.37: Every client's Council address is now provisioned: legacy Command Centers, down tunnels and local tunnels are handled
+
+- In plain English: Every client's Council address is now provisioned: legacy Command Centers, down tunnels and local tunnels are handled.
+
 ## [v27.1.57]  -  2026-10-21  -  Council (Skill 77) v1.0.36: A brand-new client's Council address now sets itself up with no human step
 
 - In plain English: A brand-new client's Council address now sets itself up with no human step.
