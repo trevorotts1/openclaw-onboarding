@@ -31,6 +31,21 @@ LAW
 * Failed payment is planned only when the offer has payment plans; the AI reply
   workflow only when Conversation AI was requested; texts only when the client
   chose email + text. Promotional text sets stay within the spec cap of 5.
+* Offers are preserved per package: offer id, price id, minor units, currency,
+  billing type/schedule and provenance are copied verbatim, never collapsed to
+  the lowest price. An unknown price is a missing fact, never zero; a zero price
+  is accepted only on the supported free route (`journey_mode == "free_entry"`
+  with a price whose approval status is not `unknown`). Founder identity is
+  never inferred from anything.
+* Event units are explicit: webinar, reminder, replay and no-show units are
+  planned only from approved live-event facts. A self-paced product (and the
+  absence of approved event facts) plans none. The event start is a separate
+  fact from the sale opening; it is never read from, or substituted by,
+  `launch.doors_open_at`.
+* Access is resolved, not assumed: the welcome/access actions carry the approved
+  access destination (or the approved thank-you page) plus every purchased
+  entitlement and its prerequisites. Billing conversion itself belongs to the
+  launch_bridge lane (L14); this planner only records the request.
 
 Deterministic, stdlib only, no network, no model. Exit 0/2/3.
 """
@@ -54,6 +69,19 @@ EXIT_FAILCLOSED = 3
 SCHEMA_VERSION = "1.0.0"
 SEND_WINDOW_DEFAULT = {"start": "08:00", "end": "21:00", "timezone": "recipient_local"}
 PROMOTIONAL_CAP = 5
+
+# Approved product/event facts (normalised: lower case, '-' and spaces become '_').
+# A self-paced product may never carry a webinar, reminder, replay or no-show unit.
+SELF_PACED_PRODUCT_TYPES = frozenset({
+    "self_paced", "selfpaced", "evergreen", "on_demand", "recorded", "digital",
+    "digital_product", "digital_course", "course_on_demand", "async",
+})
+LIVE_EVENT_TYPES = frozenset({
+    "webinar", "live_webinar", "live_event", "live", "workshop", "challenge",
+    "masterclass", "bootcamp", "live_stream", "live_streaming", "in_person_event",
+})
+EVENT_UNIT_IDS = ("auto_event_reminders", "text_event_reminder")
+ACCESS_KEYS = ("launch.access_url", "launch.login_url", "launch.member_area_url")
 
 # Page kind in the shared contract for each page_key in structure/page_types.json.
 _CONTRACT_PAGE_KIND = {
@@ -127,6 +155,13 @@ def has_fact(answers: Dict[str, Any], *keys: str) -> bool:
 # ---------------------------------------------------------------------------
 # Offer facts.
 # ---------------------------------------------------------------------------
+def _norm(value: Any) -> str:
+    """Normalise an approved fact for comparison: no case, '-' or spaces."""
+    if value is None:
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
 def _offers(launch: Dict[str, Any]) -> List[Dict[str, Any]]:
     offers = [o for o in launch.get("offers", []) if isinstance(o, dict)]
     mains = [o for o in offers if o.get("slot") == "main"] or offers
@@ -134,37 +169,237 @@ def _offers(launch: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _price_of(offer: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    prices = offer.get("prices") or []
-    return prices[0] if prices and isinstance(prices[0], dict) else None
+    for price in offer.get("prices") or []:
+        if isinstance(price, dict):
+            return price
+    return None
 
 
-def _payment_plans(launch: Dict[str, Any], answers: Dict[str, Any]) -> bool:
+def _package_record(offer: Dict[str, Any], index: int) -> Dict[str, Any]:
+    """One package, verbatim: ids, minor units, currency, billing and provenance.
+
+    Nothing is defaulted. An amount that is not a whole number of minor units is
+    reported as unsupported (its raw value is kept for the reader) and a missing
+    amount stays None — never zero. The offer id is never invented: an offer
+    without one records None. Founder identity is not a field here and is never
+    derived from an offer or a name.
+    """
+    price = _price_of(offer) or {}
+    amount = price.get("amount_minor")
+    known_amount = isinstance(amount, int) and not isinstance(amount, bool)
+    currency = price.get("currency")
+    schedule = price.get("schedule")
+    return {
+        "offer_id": offer.get("offer_id"),
+        "slot": offer.get("slot"),
+        "display_name": offer.get("display_name"),
+        "price_id": price.get("price_choice_id") or price.get("price_id"),
+        "amount_minor": amount if known_amount else None,
+        "amount_raw": amount,
+        "currency": currency if isinstance(currency, str) and currency else None,
+        "billing_type": price.get("billing_type"),
+        "billing_schedule": list(schedule) if isinstance(schedule, list) else [],
+        "billing_schedule_raw": schedule,
+        "terms_source": price.get("terms_source"),
+        "native_product_id": offer.get("native_product_id"),
+        "entitlements": list(offer.get("entitlement_ids") or []),
+        "prerequisites": list(offer.get("requires") or []),
+        "provenance": {
+            "source": "launch.offers",
+            "offer_index": index,
+            "source_kind": offer.get("source_kind"),
+            "source_ref": offer.get("source_ref"),
+            "test_only": bool(offer.get("test_only")),
+            "price_approval_status": price.get("approval_status"),
+            "amount_state": "provided" if known_amount
+            else ("unknown" if amount is None else "unsupported"),
+        },
+    }
+
+
+def _free_route_supported(launch: Dict[str, Any], package: Dict[str, Any]) -> bool:
+    """A zero amount is a real price only on the supported free route."""
+    status = (package.get("provenance") or {}).get("price_approval_status")
+    return _norm(launch.get("journey_mode")) == "free_entry" and status != "unknown"
+
+
+def _payment_plans(launch: Dict[str, Any], answers: Dict[str, Any],
+                   packages: Optional[Sequence[Dict[str, Any]]] = None) -> bool:
     explicit = fact(answers, "offers.main.payment_plans", "launch.payment_plans")
     if explicit is not None:
         return bool(explicit)
+    for package in packages or []:
+        if package.get("billing_type") in ("installment", "recurring", "trial") \
+                or package.get("billing_schedule"):
+            return True
     billing = fact(answers, "offers.main.billing_type")
-    if billing in ("installment", "recurring"):
+    if billing in ("installment", "recurring", "trial"):
         return True
-    schedule = fact(answers, "offers.main.schedule") or []
-    return bool(schedule)
+    return bool(fact(answers, "offers.main.schedule") or [])
 
 
-def _offer_block(launch: Dict[str, Any], answers: Dict[str, Any]) -> Dict[str, Any]:
-    mains = _offers(launch)
-    names = [o.get("display_name") for o in mains if o.get("display_name")]
-    amounts = [(_price_of(o) or {}).get("amount_minor") for o in mains]
-    known = [a for a in amounts if isinstance(a, int)]
-    entry = min(known) if known else 0  # entry (lowest) main price; documented, never a new price
-    currency = ((_price_of(mains[0]) or {}).get("currency") if mains else None) or "USD"
+def _offer_block(launch: Dict[str, Any], answers: Dict[str, Any],
+                 missing: List[str]) -> Dict[str, Any]:
+    """The offer block with one preserved record per package (no lowest-price collapse)."""
+    offers = [o for o in launch.get("offers", []) if isinstance(o, dict)]
+    packages = [_package_record(offer, index) for index, offer in enumerate(offers)]
+    mains = [p for p in packages if p.get("slot") == "main"] or packages
+    names = [p.get("display_name") for p in mains if p.get("display_name")]
+    primary = mains[0] if mains else None
+
+    for package in packages:
+        label = package.get("display_name") or package.get("offer_id") or \
+            "package %d" % (int(package["provenance"]["offer_index"]) + 1)
+        amount = package.get("amount_minor")
+        if isinstance(amount, int) and not isinstance(amount, bool) and amount < 0:
+            missing.append("a non-negative price for %s (got %r; minor units cannot be "
+                           "negative)" % (label, package.get("amount_raw")))
+        elif amount is None:
+            raw = package.get("amount_raw")
+            missing.append("the price of %s (unknown is not a price and is never zero%s)"
+                           % (label, "" if raw is None else "; got %r" % (raw,)))
+        elif amount == 0 and not _free_route_supported(launch, package):
+            missing.append("a supported free route for %s (a zero amount is accepted only on "
+                           "journey_mode free_entry with an approved price)" % label)
+        if not package.get("currency"):
+            missing.append("the currency of %s" % label)
+        elif not (package["currency"].isupper() and len(package["currency"]) == 3):
+            missing.append("the ISO-4217 currency code of %s (got %r)"
+                           % (label, package["currency"]))
+        raw_schedule = package.get("billing_schedule_raw")
+        if raw_schedule is not None and not isinstance(raw_schedule, list):
+            missing.append("a billing schedule for %s must be a list of due/amount rows "
+                           "(got %r)" % (label, raw_schedule))
+        if package.get("billing_type") in ("installment", "trial", "recurring") \
+                and not package.get("billing_schedule") and not package.get("terms_source"):
+            missing.append("the exact %s terms for %s (unsupported without a schedule or "
+                           "terms source)" % (package["billing_type"], label))
+
+    price_usd = None
+    if primary is not None and primary.get("amount_minor") is not None:
+        price_usd = round(primary["amount_minor"] / 100.0, 2)
     return {
         "name": " / ".join(names) if names else str(launch.get("launch_id", "launch")),
-        "price_usd": round(entry / 100.0, 2),
-        "currency": currency,
-        "payment_plans": _payment_plans(launch, answers),
+        # Primary (first main) package for the single scalar the contract requires;
+        # every package's own exact price lives in `packages`. Never a minimum.
+        "price_usd": price_usd if price_usd is not None else 0.0,
+        "currency": (primary or {}).get("currency"),
+        "payment_plans": _payment_plans(launch, answers, packages),
+        "packages": packages,
         "landing_url": fact(answers, "launch.landing_url"),
         "sales_page_url": fact(answers, "launch.sales_page_url"),
         "checkout_url": fact(answers, "launch.checkout_url"),
         "thank_you_url": fact(answers, "launch.thank_you_url"),
+        # Recorded for the launch_bridge lane (L14); this planner never converts.
+        "billing_conversion": {
+            "owner": "launch_bridge",
+            "lane": "L14",
+            "requested": True,
+            "reason": "billing/route conversion belongs to the bridge; the planner keeps the "
+                      "approved minor units, currency and schedule verbatim",
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Event eligibility and access delivery.
+# ---------------------------------------------------------------------------
+def _event_block(launch: Dict[str, Any], answers: Dict[str, Any],
+                 calendar: Dict[str, Any], missing: List[str]) -> Dict[str, Any]:
+    """Explicit event eligibility from approved facts, with the event start kept
+    separate from the sale opening. No fact means no event units (fail closed)."""
+    raw_event = launch.get("event") if isinstance(launch.get("event"), dict) else {}
+    product_type = (_norm(fact(answers, "launch.product_type", "launch.offer_type",
+                               "launch.delivery_mode"))
+                    or _norm(raw_event.get("product_type"))
+                    or _norm(launch.get("product_type")))
+    event_type = (_norm(fact(answers, "launch.event.type", "launch.event_type"))
+                  or _norm(raw_event.get("type")))
+    starts_at = (fact(answers, "launch.event.starts_at", "launch.event_start_at")
+                 or raw_event.get("starts_at"))
+
+    eligible = False
+    reason: Optional[str] = None
+    if product_type in SELF_PACED_PRODUCT_TYPES or event_type in SELF_PACED_PRODUCT_TYPES:
+        reason = ("self-paced product: no webinar, reminder, replay or no-show units "
+                  "(product_type=%r, event_type=%r)"
+                  % (product_type or None, event_type or None))
+    elif event_type in LIVE_EVENT_TYPES or product_type in LIVE_EVENT_TYPES:
+        eligible, reason = True, None
+    elif not (product_type or event_type):
+        reason = ("no approved event facts: webinar, reminder, replay and no-show units "
+                  "are not planned")
+    else:
+        reason = ("approved facts do not describe a live event "
+                  "(product_type=%r, event_type=%r)"
+                  % (product_type or None, event_type or None))
+
+    if eligible and not starts_at:
+        missing.append("when the live event starts (launch.event.starts_at) — the event "
+                       "start is separate from when the sale opens")
+
+    return {
+        "eligible": eligible,
+        "type": (event_type or product_type) if eligible else None,
+        "starts_at": starts_at if eligible else None,
+        # Separate fields, both sourced from the calendar/event facts above.
+        "sale_opens_at": calendar.get("doors_open_at"),
+        "sale_closes_at": calendar.get("doors_close_at"),
+        "reminders_planned": eligible,
+        "facts": {"product_type": product_type or None,
+                  "event_type": event_type or None},
+        "reason": reason,
+    }
+
+
+def _access_block(launch: Dict[str, Any], answers: Dict[str, Any],
+                  missing: List[str]) -> Dict[str, Any]:
+    """Resolve the approved access destination and keep every purchased entitlement."""
+    offers = [o for o in launch.get("offers", []) if isinstance(o, dict)]
+    entitlements: List[str] = []
+    prerequisites: List[str] = []
+    for offer in offers:
+        for entitlement in offer.get("entitlement_ids") or []:
+            if isinstance(entitlement, str) and entitlement and entitlement not in entitlements:
+                entitlements.append(entitlement)
+        for requirement in offer.get("requires") or []:
+            if isinstance(requirement, str) and requirement and requirement not in prerequisites:
+                prerequisites.append(requirement)
+    explicit = fact(answers, "launch.entitlements")
+    if isinstance(explicit, list):
+        for entitlement in explicit:
+            if isinstance(entitlement, str) and entitlement and entitlement not in entitlements:
+                entitlements.append(entitlement)
+
+    destination: Optional[str] = None
+    source: Optional[str] = None
+    for key in ACCESS_KEYS:
+        value = fact(answers, key)
+        if isinstance(value, str) and value.strip():
+            destination, source = value.strip(), key
+            break
+    if not destination:
+        value = fact(answers, "launch.thank_you_url")
+        if isinstance(value, str) and value.strip():
+            destination = value.strip()
+            source = "launch.thank_you_url"
+
+    login = fact(answers, "launch.login_url")
+    login_url = login.strip() if isinstance(login, str) and login.strip() else None
+
+    if not destination:
+        # Every welcome/access action needs a usable approved destination, even on
+        # the free route; a purchase or a registration may never land nowhere.
+        missing.append("the access destination members use after purchase or registration "
+                       "(launch.access_url, launch.login_url or an approved thank-you page)")
+    return {
+        "resolved": bool(destination),
+        "destination": destination,
+        "destination_source": source,
+        "login_url": login_url,
+        "entitlements": entitlements,
+        "prerequisites": prerequisites,
+        "delivery": "access_link_email_and_text" if destination else "unresolved",
     }
 
 
@@ -192,7 +427,8 @@ def _units(launch: Dict[str, Any], landing_pages: Optional[Iterable[str]],
 
 def _text_sets(*, text_channel: bool, has_landing: bool,
                has_sales: bool, has_checkout: bool, has_thank_you: bool,
-               keyword: Optional[str], send_window: Dict[str, Any]) -> List[Dict[str, Any]]:
+               keyword: Optional[str], send_window: Dict[str, Any],
+               event_eligible: bool = False) -> List[Dict[str, Any]]:
     """Spec §3.2. Every set is a draft, ends with a reply invitation and STOP.
     a2p_ready=False changes nothing in the plan — the sets stay drafts and the
     package carries the warning; the plan never claims texts can send."""
@@ -212,12 +448,13 @@ def _text_sets(*, text_channel: bool, has_landing: bool,
             "opt_out_keyword": "STOP", "includes_reply_invitation": True,
             "send_window": dict(send_window), "waits_for": list(landing_wait),
         })
-    sets.append({
-        "id": "text_event_reminder", "kind": "event_reminder",
-        "messages": 3, "promotional": False, "draft_only": True,
-        "opt_out_keyword": "STOP", "includes_reply_invitation": True,
-        "send_window": dict(send_window), "waits_for": [],
-    })
+    if event_eligible:  # only from approved live-event facts; self-paced products get none
+        sets.append({
+            "id": "text_event_reminder", "kind": "event_reminder",
+            "messages": 3, "promotional": False, "draft_only": True,
+            "opt_out_keyword": "STOP", "includes_reply_invitation": True,
+            "send_window": dict(send_window), "waits_for": [],
+        })
     sets.append({
         "id": "text_doors_open", "kind": "doors_open",
         "messages": 1, "promotional": True, "draft_only": True,
@@ -254,7 +491,8 @@ def _text_sets(*, text_channel: bool, has_landing: bool,
 def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
                  has_sales: bool, has_landing: bool, payment_plans: bool,
                  ai_requested: bool, text_ids: Sequence[str],
-                 email_ids: Sequence[str], black_friday: bool) -> List[Dict[str, Any]]:
+                 email_ids: Sequence[str], black_friday: bool,
+                 event_eligible: bool = False) -> List[Dict[str, Any]]:
     """Spec §3.3, one unit per family, template per the spec table. Every unit is
     draft_only and builds through the Skill 44 engine (U-GHL-PROBE)."""
     text = set(text_ids)
@@ -281,11 +519,13 @@ def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
         unit("auto_opt_in", "opt_in", "post-optin-multichannel-stack", "form_submitted",
              "waitlist / registration opt-in tags the contact and starts nurture",
              tset("text_opt_in_confirmation", "text_keyword_opt_in") + ["email_pre_launch"]),
-        unit("auto_event_reminders", "event_reminders",
-             "webinar-registration-reminder-replay-stack", "registration",
-             "confirm, 1 week / 3 days / 1 day / 1 hour / 15 minutes before, then replay and "
-             "no-show follow-up", ["email_pre_launch"] + tset("text_event_reminder")),
     ]
+    if event_eligible:  # approved live-event facts only; never for a self-paced product
+        out.append(unit("auto_event_reminders", "event_reminders",
+                        "webinar-registration-reminder-replay-stack", "registration",
+                        "confirm, 1 week / 3 days / 1 day / 1 hour / 15 minutes before, then "
+                        "replay and no-show follow-up", ["email_pre_launch"]
+                        + tset("text_event_reminder")))
     post_sale_waits = ["email_welcome_access"] + (["page_thank_you"] if has_thank_you else []) \
         + tset("text_access_link")
     out.append(unit("auto_post_sale", "post_sale", "new", "payment_succeeded",
@@ -371,6 +611,12 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
         missing.append("what the Conversation AI does when someone replies "
                        "(faq / booking / checkout / full)")
 
+    # Offer, event and access facts are resolved together so their missing facts
+    # are named in one pass (no partial plan, no invented price/deadline/route).
+    event = _event_block(launch, answers, calendar, missing)
+    offer = _offer_block(launch, answers, missing)
+    access = _access_block(launch, answers, missing)
+
     if missing:
         return {"state": "awaiting_missing_fact", "missing": missing, "plan": None}
 
@@ -379,7 +625,6 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
     if ai_requested and ai_channels:
         conversation_ai["channels"] = list(ai_channels)
 
-    offer = _offer_block(launch, answers)
     built = _units(launch, landing_pages, extra_pages)
     pages = built["pages"]
     page_ids = {p["id"] for p in pages}
@@ -427,7 +672,8 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
                        has_sales=has_sales, has_checkout=has_checkout,
                        has_thank_you=has_thank_you,
                        keyword=fact(answers, "launch.text_keyword"),
-                       send_window=send_window)
+                       send_window=send_window,
+                       event_eligible=event["eligible"])
     text_ids = [t["id"] for t in texts]
 
     has_upsells = any(p["kind"] in ("upsell", "downsell") for p in pages)
@@ -436,14 +682,37 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
         has_sales=has_sales, has_landing=has_landing,
         payment_plans=offer["payment_plans"], ai_requested=ai_requested,
         text_ids=text_ids, email_ids=sorted(email_ids),
-        black_friday="black_friday" in calendar)
+        black_friday="black_friday" in calendar,
+        event_eligible=event["eligible"])
+
+    # Every welcome/access action carries the resolved destination and the full
+    # entitlement set, so a lane can never deliver a purchase to nowhere or drop
+    # an entitlement the buyer paid for.
+    for unit in emails + texts + automations:
+        if unit["id"] in ("email_welcome_access", "text_access_link", "auto_post_sale"):
+            unit["access_destination"] = access["destination"]
+            unit["entitlements"] = list(access["entitlements"])
+            unit["prerequisites"] = list(access["prerequisites"])
+
+    a2p_ready = bool(fact(answers, "launch.a2p_ready") or False)
+    warnings: List[str] = []
+    if not access["resolved"]:
+        warnings.append("no access destination resolved: welcome/access actions have no "
+                        "usable approved destination")
+    if texts and not a2p_ready:
+        warnings.append("A2P 10DLC is not approved: texts stay drafts and cannot send")
+    if not event["eligible"]:
+        warnings.append("event units are not planned — " + str(event["reason"]))
 
     plan = {
         "schema_version": SCHEMA_VERSION,
         "launch_id": str(launch.get("launch_id", "launch")),
         "offer": offer,
         "launch_calendar": calendar,
-        "a2p_ready": bool(fact(answers, "launch.a2p_ready") or False),
+        "event": event,
+        "access": access,
+        "warnings": warnings,
+        "a2p_ready": a2p_ready,
         "conversation_ai": conversation_ai,
         "pages": pages,
         "email_sequences": emails,
@@ -501,6 +770,21 @@ def check(plan: Dict[str, Any]) -> List[str]:
     ai = plan.get("conversation_ai") or {}
     if bool(ai.get("requested")) != (ai.get("mode") not in (None, "none")):
         errors.append("conversation_ai requested and mode disagree")
+    event = plan.get("event") or {}
+    if event.get("eligible") is False:
+        present = {u.get("id") for array in ("text_sets", "automations")
+                   for u in plan.get(array, [])}
+        for unit_id in EVENT_UNIT_IDS:
+            if unit_id in present:
+                errors.append(f"{unit_id}: event unit planned for an ineligible event")
+    access = plan.get("access") or {}
+    if access and not access.get("resolved"):
+        errors.append("access: welcome/access actions have no usable approved destination")
+    for unit in plan.get("email_sequences", []) + plan.get("text_sets", []) \
+            + plan.get("automations", []):
+        if unit.get("id") in ("email_welcome_access", "text_access_link", "auto_post_sale") \
+                and access and unit.get("access_destination") != access.get("destination"):
+            errors.append(f"{unit.get('id')}: access destination disagrees with the plan")
     return errors
 
 
@@ -523,10 +807,16 @@ def _self_test() -> int:
         "launch_id": "demo-2026-11", "journey_mode": "single_simple",
         "extras": {"upsell_1": True, "downsell_1": False, "upsell_2": False},
         "offers": [
-            {"slot": "main", "display_name": "Demo Offer",
-             "prices": [{"amount_minor": 49700, "currency": "USD"}]},
-            {"slot": "upsell_1", "display_name": "Demo Upgrade",
-             "prices": [{"amount_minor": 9900, "currency": "USD"}]},
+            {"offer_id": "MAIN-A", "slot": "main", "display_name": "Demo Offer",
+             "entitlement_ids": ["base-a"],
+             "prices": [{"price_choice_id": "MAIN-A-USD", "amount_minor": 49700,
+                         "currency": "USD", "billing_type": "one_time",
+                         "schedule": [], "approval_status": "provided"}]},
+            {"offer_id": "U1", "slot": "upsell_1", "display_name": "Demo Upgrade",
+             "entitlement_ids": ["upgrade-b"],
+             "prices": [{"price_choice_id": "U1-USD", "amount_minor": 9900,
+                         "currency": "USD", "billing_type": "one_time",
+                         "schedule": [], "approval_status": "provided"}]},
         ],
     }
     answers = {
@@ -537,6 +827,8 @@ def _self_test() -> int:
         "launch.channels": {"value": ["email", "text"], "state": "provided"},
         "launch.a2p_ready": {"value": False, "state": "provided"},
         "launch.conversation_ai": {"value": False, "state": "provided"},
+        "launch.product_type": {"value": "self_paced", "state": "provided"},
+        "launch.access_url": {"value": "https://example.test/access", "state": "provided"},
     }
     result = build_launch_plan(launch, answers)
     say(result["state"] == "ready", "a complete launch plan assembles")
@@ -555,6 +847,20 @@ def _self_test() -> int:
     say(any(e["id"].startswith("email_upsell_") for e in plan["email_sequences"]),
         "one upsell follow-up per upsell page")
     say(check(plan) == [], "waits_for edges all resolve")
+    say([p["offer_id"] for p in plan["offer"]["packages"]] == ["MAIN-A", "U1"],
+        "offer and price ids are copied per package, never invented")
+    say([p["amount_minor"] for p in plan["offer"]["packages"] if p["slot"] == "main"] == [49700]
+        and plan["offer"]["packages"][0]["price_id"] == "MAIN-A-USD",
+        "each package keeps its own exact minor units (no lowest-price collapse)")
+    say(plan["event"]["eligible"] is False and
+        not any(u["id"] in ("text_event_reminder", "auto_event_reminders")
+                for a in ("text_sets", "automations") for u in plan[a]),
+        "a self-paced product plans no webinar, reminder, replay or no-show units")
+    say(plan["access"]["resolved"] is True and
+        plan["access"]["destination"] == "https://example.test/access" and
+        "base-a" in plan["access"]["entitlements"] and
+        "upgrade-b" in plan["access"]["entitlements"],
+        "the welcome/access actions resolve the approved destination and every entitlement")
 
     no_calendar = {k: v for k, v in answers.items() if not k.startswith("launch.launch")}
     blocked = build_launch_plan(launch, no_calendar)
