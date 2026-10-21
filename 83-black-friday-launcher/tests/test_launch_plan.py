@@ -88,6 +88,35 @@ def all_delivered(plan: dict, drop: str = "") -> dict:
             for unit in launch_plan.planned_units(plan) if unit["id"] != drop}
 
 
+def lane_deliveries(plan: dict, run_dir: Path, drop: str = "") -> dict:
+    """Producing-lane delivery receipts: staged bytes plus the lane's own
+    validation and request echo. Assembly consumes these, never the plan."""
+    plan_sha = hashlib.sha256(
+        (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode("utf-8")).hexdigest()
+    out = {}
+    for unit in launch_plan.planned_units(plan):
+        if unit["id"] == drop:
+            continue
+        # Pages the route carries ride on launcher pieces (these records are
+        # then unused); every other planned unit rides on its lane's receipt.
+        rel = f"lane/{unit['id']}/delivery.html"
+        target = run_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(f"<html>{unit['id']}</html>\n".encode("utf-8"))
+        out[unit["id"]] = {
+            "state": "complete",
+            "artifacts": [{"path": rel,
+                           "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                           "size": target.stat().st_size}],
+            "lane_validation": {"lane": "L06", "contract": "lane.output.v1",
+                                "state": "passed"},
+            "request": {"plan_sha256": plan_sha,
+                        "request_id": f"lane-{unit['id']}",
+                        "input_hash": "d" * 64},
+        }
+    return out
+
+
 @unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
 class BlackFridayCalendarTests(unittest.TestCase):
     def test_calendar_carries_every_black_friday_phase_in_order(self):
@@ -185,7 +214,7 @@ class PackagePlanTests(unittest.TestCase):
     def test_a_complete_plan_seals_the_package_and_receipt(self):
         out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
                                council=self.advice, launch_plan=self.plan,
-                               deliveries=all_delivered(self.plan))
+                               deliveries=lane_deliveries(self.plan, self.run_dir))
         manifest = out["manifest"]
         self.assertEqual(manifest["launch_plan"]["completeness"]["percentage"], 100)
         self.assertEqual(manifest["launch_plan"]["completeness"]["missing"], [])
@@ -199,7 +228,7 @@ class PackagePlanTests(unittest.TestCase):
         with self.assertRaises(package.PackageError) as ctx:
             package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
                              council=self.advice, launch_plan=self.plan,
-                             deliveries=all_delivered(self.plan, drop="email_doors_closing"))
+                             deliveries=lane_deliveries(self.plan, self.run_dir, drop="email_doors_closing"))
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-MISSING")
         self.assertIn("email_doors_closing", ctx.exception.detail)
         self.assertFalse((self.run_dir / "receipt.json").exists())
@@ -207,7 +236,7 @@ class PackagePlanTests(unittest.TestCase):
     def test_a_tampered_completeness_record_fails_the_check(self):
         out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
                                council=self.advice, launch_plan=self.plan,
-                               deliveries=all_delivered(self.plan))
+                               deliveries=lane_deliveries(self.plan, self.run_dir))
         manifest_path = Path(out["manifest_path"])
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["launch_plan"]["completeness"]["units"] = [
@@ -220,7 +249,7 @@ class PackagePlanTests(unittest.TestCase):
     def test_a_tampered_calendar_fails_the_check(self):
         out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
                                council=self.advice, launch_plan=self.plan,
-                               deliveries=all_delivered(self.plan))
+                               deliveries=lane_deliveries(self.plan, self.run_dir))
         calendar = self.run_dir / "launch-calendar.json"
         calendar.write_text("{}\n", encoding="utf-8")
         fails = checks.check_package(Path(out["manifest_path"]), self.run_dir)
@@ -232,7 +261,7 @@ class PackagePlanTests(unittest.TestCase):
         with self.assertRaises(package.PackageError) as ctx:
             package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
                              council=self.advice, launch_plan=plan,
-                             deliveries=all_delivered(plan))
+                             deliveries=lane_deliveries(plan, self.run_dir))
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-LAUNCH")
 
 
