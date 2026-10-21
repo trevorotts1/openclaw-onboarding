@@ -30,6 +30,7 @@ stdlib only; no network, no spend of its own.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import hashlib
 import json
 import os
@@ -114,6 +115,19 @@ _MANUAL_SOURCES = ("manual", "hand", "handset", "hand-set", "relabel", "relabell
                    "relabeled", "typed", "literal", "assumed")
 _BINDING_KEYS = ("export_digest", "creative_revision", "profile_revision")
 _ACCEPTANCE_DIR = os.path.join("music", "acceptance")
+#: L2 (WW-21, 2026-10-21): the ONE operator-decision record, written beside the
+#: take records under music/acceptance/. `acceptance_from_run` skips it by
+#: name, so a decision never reads as a blocked variant, never rewrites a
+#: take's own PASS/FAIL record and never stands IN for one (a refused
+#: ACCEPTANCE_RECORD_MISSING stays refused).
+OPERATOR_DECISION_FILE = "operator-decision.json"
+#: Decision values this boundary admits for gates a MEASUREMENT failed to
+#: prove. Anything else (an overclaim, a bare string) is refused.
+OPERATOR_DECISIONS = ("ACCEPTED_RISK",)
+_DECISION_FIELDS = ("decision", "operator", "at_utc", "gates_not_proven",
+                    "measured_evidence_digest", "reason")
+_TS_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?"
+                    r"(Z|[+-]\d{2}:\d{2})?$")
 ACCEPTANCE_CODE_OK = "ACCEPTANCE_OK"
 ACCEPTANCE_CODE_NOT_PROVEN = "ACCEPTANCE_NOT_PROVEN"
 # WW-08: the acceptance-critical take gates. EVERY one is emitted for EVERY
@@ -744,6 +758,156 @@ def _block(reasons, results=None, binding=None, required=None):
             "next_action": "no take is offered, picked or purchased on this path"}
 
 
+def _decision_refusals(dec, required):
+    """L2 (WW-21, 2026-10-21): why ``dec`` is not an admissible operator
+    decision record. [] = admissible. Fail-closed: every required field is
+    demanded, the measured gates the decision does NOT name stay BLOCKED, and
+    a field that tries to write a PASS for a measured gate is refused -- a
+    decision covers only gates its own ``gates_not_proven`` list names."""
+
+    def bad(msgs):
+        return ["OPERATOR_DECISION_REJECTED: %s" % m for m in msgs]
+
+    if not isinstance(dec, dict):
+        return bad(["the decision record is %s, not a mapping"
+                    % type(dec).__name__])
+    missing = [k for k in _DECISION_FIELDS if not str(dec.get(k) or "").strip()]
+    if missing:
+        return bad(["missing %s; a decision without %s is not a decision"
+                    % (", ".join(missing), "it" if len(missing) == 1 else "them")])
+    if str(dec.get("decision")).strip().upper() not in OPERATOR_DECISIONS:
+        return bad(["decision %r is not one of %s; never a PASS" % (dec.get("decision"),
+                                                                    list(OPERATOR_DECISIONS))])
+    tsp = str(dec.get("at_utc")).strip()
+    if not _TS_RE.fullmatch(tsp):
+        return bad(["at_utc %r is not an ISO-8601 UTC timestamp" % dec.get("at_utc")])
+    gp = dec.get("gates_not_proven")
+    if not isinstance(gp, list) or not gp or not all(isinstance(g, str) and g.strip()
+                                                     for g in gp):
+        return bad(["gates_not_proven must be a non-empty list of the gate names "
+                    "the measured evidence did not prove"])
+    unknown = [g for g in gp if g not in required]
+    if unknown:
+        return bad(["gates_not_proven names %s, which is not one of the required "
+                    "delivered-audio results" % ", ".join(unknown)])
+    md = str(dec.get("measured_evidence_digest")).strip()
+    if (not re.fullmatch(r"[0-9a-f]{64}", md.lower()) or md != md.lower()):
+        return bad(["measured_evidence_digest must be a lowercase sha256 of the "
+                    "measured evidence records the decision refuses to override"])
+    rs = str(dec.get("reason")).strip()
+    if len(rs) < 8:
+        return bad(["reason must name what the operator actually decided and why; "
+                    "%r is not a reason" % dec.get("reason")])
+    return []
+
+def operator_decision_path(run_dir):
+    """The ONE operator-decision record: <run>/music/acceptance/operator-decision.json."""""
+    return os.path.join(run_dir, _ACCEPTANCE_DIR, OPERATOR_DECISION_FILE)
+
+def read_operator_decision(run_dir):
+    """The recorded decision, or None when absent/unreadable/malformed (a
+    malformed file is refused downstream, never read as a pass)."""
+    d = _open_json(operator_decision_path(run_dir))
+    return d if isinstance(d, dict) else None
+
+def decision_covers(dec, variant_id):
+    """True only when the decision's scopes cover this variant: an explicit
+    variants list (all of it), else the whole run. The take-level PASS/FAIL
+    records are UNTOUCHED -- the decision never rewrites their verdicts; it
+    only says the run may advance with the named gates NOT PROVEN."""
+    if not isinstance(dec, dict):
+        return False
+    vs = dec.get("variants")
+    if isinstance(vs, list) and vs:
+        return str(variant_id) in [str(v) for v in vs]
+    return True
+
+def decision_applies(run_dir, dec=None, required=None):
+    """(dec, refusals) for the run: the recorded operator decision when it is
+    present, well-formed and admissible, else the refusal codes. A MISSING or
+    malformed decision file returns (None, refusals); a VALID one returns
+    (dec, [])."""
+    if dec is None:
+        dec = read_operator_decision(run_dir)
+        if dec is None:
+            p = operator_decision_path(run_dir)
+            if os.path.exists(p):
+                return None, ["OPERATOR_DECISION_UNREADABLE: %s exists but is not "
+                              "valid JSON" % OPERATOR_DECISION_FILE]
+            return None, []
+    req = tuple(required) if required is not None else _profile_required(acceptance_profile())
+    rs = _decision_refusals(dec, req)
+    return (None, rs) if rs else (dec, [])
+
+def decision_holds_gate(dec, gate):
+    """True when the decision's gates_not_proven names this gate. The decision
+    NEVER marks a measured gate PASS -- a gate the decision covers stays
+    recorded as not proven."""
+    return str(gate) in [str(g) for g in (dec or {}).get("gates_not_proven") or []]
+
+def sha256_evidence_records(results):
+    """The lowercase sha256 over the CANONICAL JSON of the measured evidence
+    records carried (per gate: its record minus nothing). Empty evidence -> the
+    digest of the empty canonical dict, still a real 64-hex digest."""
+    ev = {}
+    for name in sorted(results or {}):
+        rec = results[name]
+        if isinstance(rec, dict):
+            rec = {k: v for k, v in rec.items() if k != "evidence"}
+        ev[name] = rec
+    blob = json.dumps(ev, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+def measure_evidence_digest(run_dir, variant_id):
+    """The sha256 over EVERY measured evidence record under
+    <run>/music/acceptance/<variant>.json -- what the operator decision binds
+    itself to, so a decision whose evidence changed after it was written is
+    detectable. None when the variant has no acceptance record."""
+    rec = _open_json(os.path.join(run_dir, _ACCEPTANCE_DIR, "%s.json" % variant_id))
+    if not isinstance(rec, dict) or not isinstance(rec.get("results"), dict):
+        return None
+    return sha256_evidence_records(rec["results"])
+
+def record_operator_decision(run_dir, dec, required=None):
+    """L2 (WW-21): validate ``dec`` and write it to
+    <run>/music/acceptance/operator-decision.json. Every missing or malformed
+    field is a refusal -- a fabricated digest is one: the operator computes the
+    digest over the evidence they actually decided on and the writer CHECKS it,
+    never recomputes one over what happens to stand on disk. The take-level
+    PASS/FAIL records are never touched; the decision never writes a PASS for
+    a measured gate. Returns the written record; raises DispatchError on
+    refusal."""
+    req = tuple(required) if required is not None else _profile_required(acceptance_profile())
+    rs = _decision_refusals(dec, req)
+    if rs:
+        raise DispatchError("; ".join(rs))
+    vids = sorted(str(v) for v in (dec.get("variants") or []))
+    if vids:
+        digs = {v: (measure_evidence_digest(run_dir, v) or "") for v in vids}
+    else:
+        # whole-run decision: every acceptance record on disk stands today
+        digs = {name[:-5]: (measure_evidence_digest(run_dir, name[:-5]) or "")
+                for name in sorted(os.listdir(os.path.join(run_dir, _ACCEPTANCE_DIR)))
+                if name.endswith(".json") and name != OPERATOR_DECISION_FILE}
+    digest = sha256_evidence_records(digs)
+    claimed = str(dec.get("measured_evidence_digest")).strip().lower()
+    if claimed != digest:
+        # the operator's digest must match the evidence ON THE DISK they
+        # decided on; a digest nobody computed over that evidence is fabricated
+        raise DispatchError("OPERATOR_DECISION_REJECTED: measured_evidence_digest does not "
+                            "match the measured evidence records on disk (claimed %s, on-disk "
+                            "%s over %s); recompute sha256_evidence_records over those records "
+                            "and record THAT digest -- a decision is bound to the evidence it "
+                            "refuses to override." % (claimed[:12] or "none", digest[:12],
+                                                      ", ".join(digs) or "no records"))
+    out = dict(dec, recorded_at_utc=_dt.datetime.now(_dt.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"))
+    p = operator_decision_path(run_dir)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2, sort_keys=True)
+    return out
+
 def binding_reasons(binding, where="take"):
     """Why this binding is not admissible. [] = admissible.
 
@@ -929,7 +1093,7 @@ def acceptance_from_run(run_dir):
     records = {}
     if os.path.isdir(base):
         for name in sorted(os.listdir(base)):
-            if not name.endswith(".json"):
+            if not name.endswith(".json") or name == OPERATOR_DECISION_FILE:
                 continue
             rec = _open_json(os.path.join(base, name))
             if not isinstance(rec, dict):
@@ -960,7 +1124,10 @@ def acceptance_from_run(run_dir):
 def acceptance_refusal(run_dir, action):
     """The delivery-boundary refusal: None when nothing is held, else the
     refusal record. Mirrors ``song_choices.overlap._overlap_refusal``; the
-    BLOCK reaches the offer, the pick and every paid job."""
+    BLOCK reaches the offer, the pick and every paid job. L2 (WW-21): the
+    refusal points at the documented operator-decision path when the only thing
+    missing is a human's recorded decision -- but NEVER at a hand-set relabel,
+    which stays refused (a decision is not a relabel)."""
     chk = acceptance_from_run(run_dir)
     if not chk.get("applicable"):
         return None
@@ -969,6 +1136,19 @@ def acceptance_refusal(run_dir, action):
     detail = []
     for v in chk.get("blocked") or []:
         detail += ["%s: %s" % (v, r) for r in (chk["variants"][v].get("reasons") or [])]
+    manual = any("MANUAL_RELABEL" in r for v in chk.get("blocked") or []
+                 for r in (chk["variants"][v].get("reasons") or []))
+    if manual:
+        nxt = ("a manual relabel is NEVER decided around: the take's own export "
+               "digest binding is the evidence; re-measure the delivered audio "
+               "and record it with record_acceptance.")
+    else:
+        nxt = ("re-run the five delivered-audio results against the export being "
+               "advanced and record them with record_acceptance; when the gates "
+               "fail on MEASURED evidence the run owner may record the documented "
+               "operator decision (factory.py music --action complete "
+               "--operator-decision <path>) -- it never writes a PASS for a "
+               "measured gate and never substitutes a relabel.")
     return {"reason_code": ACCEPTANCE_CODE_NOT_PROVEN,
             "detail": "the WW-21 acceptance boundary has not passed (%s); %s is held. Only a "
                       "complete set of five PASS delivered-audio results, each bound to the "
@@ -976,9 +1156,18 @@ def acceptance_refusal(run_dir, action):
                       "advance -- zero purchases on this path."
                       % ("; ".join(detail[:4]) or "no PASS record", action),
             "blocked": chk.get("blocked") or [],
-            "next_action": "re-run the five delivered-audio results against the export being "
-                           "advanced and record them with record_acceptance; no paid retry is "
-                           "authorised by this refusal."}
+            "next_action": nxt}
+
+def operator_decision_gates(run_dir, dec=None, required=None):
+    """((dec, None) | (None, refusals)) for the run's staged decision, the
+    check `factory.py music --action complete` runs. The decision NEVER opens
+    the boundary here -- `acceptance_from_run` still reads only real take
+    PASS/FAIL records -- it says what the stage may advance with the named
+    gates NOT proven, and the take-level records are untouched."""
+    dec, rs = decision_applies(run_dir, dec=dec, required=required)
+    if dec is not None and not isinstance(dec, dict):
+        return None, ["OPERATOR_DECISION_UNREADABLE"]
+    return dec, rs
 def take_accepted(rcpt):
     """WW-18: the ONE delivery decision. A take whose REQUIRED gate set is not
     all PASS (bar a style-backed NOT_APPLICABLE) is never offered; a missing
