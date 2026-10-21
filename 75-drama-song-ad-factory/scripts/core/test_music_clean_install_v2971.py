@@ -81,7 +81,7 @@ def test_card_receipt_read_shapes():
 
         block = {"answers": {"video_style": "Lifelike 3D",
                              "audio_style": "Soul Ballad", "length": 88,
-                             "video_model": "MiniMax H3"},
+                             "video_model": "Hailuo 02 Standard"},
                  "who": "client", "at": "2026-10-19T23:10:00Z"}
         with open(os.path.join(tmp, "control", "card-receipt-block.json"), "w",
                   encoding="utf-8") as f:
@@ -92,7 +92,7 @@ def test_card_receipt_read_shapes():
         # Jennifer's shape: answers live under the per-question record.
         rec = {"answers": {"video_style": "Lifelike 3D",
                            "audio_style": "Soul Ballad", "length": 60,
-                           "video_model": "MiniMax H3"},
+                           "video_model": "Hailuo 02 Standard"},
                "who": "client", "at": "2026-10-17T10:00:00Z"}
         with open(os.path.join(tmp, "control", "card-receipt.json"), "w",
                   encoding="utf-8") as f:
@@ -138,7 +138,7 @@ def test_generate_attaches_the_run_receipt():
         os.makedirs(os.path.join(tmp, "control"))
         block = {"answers": {"video_style": "Lifelike 3D",
                              "audio_style": "Soul Ballad", "length": 60,
-                             "video_model": "MiniMax H3"},
+                             "video_model": "Hailuo 02 Standard"},
                  "who": "client", "at": "2026-10-19T23:10:00Z"}
         with open(os.path.join(tmp, "control", "card-receipt-block.json"), "w",
                   encoding="utf-8") as f:

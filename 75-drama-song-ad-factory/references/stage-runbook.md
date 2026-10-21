@@ -48,6 +48,16 @@ blocker by itself. The choice card shows the planned seconds and percent.
 
 Music stage lifecycle (state store owner): `next` only reads `control/state.sqlite3`; the music row is moved by `python3 scripts/core/intake_preflight/factory.py music --run-dir "$RUN" --owner <worker id> --action <start|wait-provider|wait-approval|resume|complete|fail|park|reopen>` (`next` returns these under `data.lifecycle`). `start` claims music BEFORE any generation (NOT_STARTED -> READY -> RUNNING; the live owner calling it again heartbeats and resumes, another live owner is refused, an expired waiting lease is reconciled first, never resubmitted). `complete` needs the live lease, the existing song gate (`SONG_PICK_MISSING` parks the row in WAITING_APPROVAL, any other hold is FAILED_BLOCKED), non-empty audio in `$RUN/music`, and an independent `qc_gate` PASS (`--records`, `--makers`, `--required`); only then RUNNING -> QC -> COMPLETE and `continuity-bible` becomes eligible. One parent worker owns the music lease; the three variant units own their take folders, never a second claim. The command never buys or regenerates.
 
+Operator decision (WW-21, 2026-10-21): the acceptance boundary (`song_dispatch.acceptance_from_run`) blocks a stage while a delivered-audio gate is not proven, and the Voyage To Virtue run had no honest way to close one — the music stage sat FAILED_BLOCKED ACCEPTANCE_NOT_PROVEN with zero records. When a gate fails on MEASURED evidence (a real estimator read the real export, e.g. D5 more than one character voice FAIL across four estimators) and the run owner decides to advance anyway, record the decision FIRST as `music/acceptance/operator-decision.json`:
+
+```json
+{"decision": "ACCEPTED_RISK", "operator": "<who>", "at_utc": "<ISO-8601 UTC>",
+ "gates_not_proven": ["D5"], "measured_evidence_digest": "<sha256>",
+ "reason": "<what was decided and why>"}
+```
+
+Then complete with `--operator-decision "$RUN/music/acceptance/operator-decision.json"`: `factory.py` validates every field (a missing operator, timestamp, gate list or evidence digest is refused and NOTHING is written), re-binds the sha256 of the variants' measured evidence records at write time, writes the record beside the take records, and the stage advances — the take-level PASS/FAIL records are UNTOUCHED and no measured gate is ever rewritten to PASS. The decision only ever says the named gates are NOT PROVEN and the owner accepted that. `_MANUAL_SOURCES` refusals (`MANUAL_RELABEL`) are NEVER decided around: a hand-set label is not evidence, and a decision is not a relabel — re-measure the delivered audio instead. A fabricated decision (a verdict-shaped value, a missing field, a non-sha256 digest, an unknown gate name) is refused with `OPERATOR_DECISION_REJECTED` and the row goes FAILED_BLOCKED with the reason on it.
+
 Song choices (FU-SONG-APPROVAL): when the card's SONG APPROVAL answer is Yes, the `music` stage makes three labelled versions instead of one: `song_choices.build_requests` -> `generate_choices` (parallel, each take judged by `song_dispatch`, a fail regenerated once) -> `deliver_choices` (`SONG-CHOICES/` in the delivery folder, title tags, README.txt, client message). The stage order then holds at the pick: `factory.py next` and `kie_dispatch` refuse every later stage (picture timing, images, video, lip-sync) with `SONG_PICK_MISSING` until `python3 scripts/core/song_choices/song_choices.py pick --run-dir "$RUN" --reply <1|2|3>` records the client's choice; the picked file is `$RUN/music/picked-song.mp3`. The card answer is written to the run when the recap is confirmed (`factory.py card --step --run-dir "$RUN" ...`); `deliver_choices(..., target=<chat id>)` sends the message and the three files together (`send_choices`). On No nothing changes.
 
 Reconciled music direction (WW-29), before any `music` dispatch: do not mandate wordless held-note openings or a premature hook. The opening vocalise is OPTIONAL — one short note when a sheet uses one, never a forced lead-in — and the hook is the payoff, so `music_director.build_generate_request(..., true_at_beat=...)` emits the sheet's hook plan and the gate measures the first hook at or after `true_at_beat` (`sung_hook/hook_placement`). R&B Flow directs rhythmic speech-rhythm rap verses contrasted with a fully sung melodic R&B hook (`references/prompt-templates/music/rnb-flow.json`). The FINAL style text is `suno_recipe.style_text(style_id, sheet, vocal_gender, pace_plan)`, built from the style's own `style_parts`; over the 1000-character cap it refuses `STYLE_TOO_LONG` rather than dropping a required clause. `song_dispatch.validate_request` reads the required directions and the transmitted `negative_tags` from the createTask envelope's nested `input` and refuses anything missing before spend. Delivered-audio acceptance has five gates only (WW-21, `song_dispatch.accept_audio_results`); nothing regenerates until Trevor approves.
@@ -72,6 +82,90 @@ Short clips in the delivery folder (FU-DEL-06): the 3, 5 and 10 minute ads ship 
 Note: `music`, `image-keyframes` and `video-generation` share one command shape (the
 Skill 74 `kie_dispatch` route); only the model id, request file and logical key differ.
 Video model ids come from `python3 scripts/core/video_router/video_router.py --request <request.json>`.
+
+## Waiting for a background stage job (the waiter) — L4, v2.9.73
+
+Long jobs (Agnes segments, music takes, a big render) run in the background and
+the stage waits for them. Two shells sat ~8 h on a watcher that matched its own
+command line and never saw the job finish. The bug:
+
+```sh
+# WRONG — `pgrep -f "run_vtv_music.py"` matches THE WAITER ITSELF, because
+# every waiter pass's shell argv holds the quoted string, so the loop waits
+# on itself and never ends:
+while pgrep -f "run_vtv_music.py" >/dev/null; do sleep 30; done
+
+# RIGHT — anchor on the interpreter AND bracket the script name's first
+# character: the regex means "python … run_vtv_music.py", and a waiter that
+# quotes THIS pattern never matches it (its own argv carries
+# "[r]un_vtv_music\.py", whose text has no literal 'run_vtv_music.py' — the
+# bracket breaks self-matching on every pass). pgrep -f is an ERE over the
+# full argv, so the interpreter word covers python3 AND macOS's CLT
+# framework python (argv: .../MacOS/Python - capital P - covered by [Pp]).
+while pgrep -f "[Pp]ython.*[r]un_vtv_music\.py" >/dev/null; do sleep 30; done
+# and on top of the process check, poll the job's own completion artifact:
+until [ -s "$RUN/music/picked-song.mp3" ]; do sleep 30; done   # or the row:
+until [ "$(sqlite3 "$RUN/control/state.sqlite3" "SELECT state FROM stages WHERE stage='video-generation'")" = "COMPLETE" ]; do sleep 30; done
+```
+
+Rules for any waiter `new` in this runbook, on ANY job:
+
+1. Anchor on the interpreter: match `python3 <path>` of the SCRIPT's real argv,
+   not a bare script-name fragment a quoting shell shares.
+2. Never quote a pattern in the waiter that regex-matches the waiter's own
+   argv. `grep`/`pgrep` with a leading `[<first-char>]` class (or `-x` with the
+   full exact command line) is the documented self-exclusion.
+3. The loop MUST have a second, artifact-based exit: the file the job writes
+   last (`-s`, non-empty), or the stage row reaching `COMPLETE` through
+   `state.sqlite3`. A waiter that can only exit on a process name can spin
+   forever when the job died without a matching process. This is what the
+   runbook's waiter section REQUIRES of every waiter: the process check is
+   the guard, the artifact check (or the stage row) is the exit.
+4. Poll no faster than 15 s (agnes/5411) and cap the WAIT yourself: a bounded
+   timeout (for example 30 consecutive quiet checks past the job's ETA) is a
+   FAILURE to investigate, not silence to wait past.
+5. Self-check before trusting a waiter one-off: run
+   `python3 scripts/core/intake_preflight/test_waiter_pattern_v2973.py` —
+   it proves the documented pattern does not match a shell holding the same
+   string and does match a real sleeping job.
+
+## Stop on 3 identical structural failures — L4, v2.9.73
+
+Live proof: 65 lip-sync attempts, every one FAIL FACE_COUNT ("0 faces found"),
+~8 h of paid retries on stills that could never pass. Rule: after 3
+consecutive identical STRUCTURAL failures (the deciding measured field is the
+same — the same face count, the same shape of unmeasurable — anything a re-try
+of an unchanged input can only repeat), STOP and report the cause instead of
+retrying:
+
+```sh
+python3 -c "from attempt_ceiling import ceiling_check
+import json,sys
+h=json.load(open(\"$RUN/lipsync/attempt-history.json\"))
+print(json.dumps(ceiling_check(h)))"
+```
+
+`stop: true` names the cause — for the stills case, "no face in these stills —
+choose a face-visible format" — and names the measured value every attempt
+agreed on. The remedy is a HUMAN change (face-visible shot format, a different
+source picture format), never a further auto-attempt. A transient failure
+(provider 429/5xx, a changed measured value) breaks the streak and never
+counts. Module: `scripts/core/lip_sync/lip_gate/attempt_ceiling.py`
+(`structural_key`, `consecutive_identical`, `ceiling_check`, ceiling 3).
+
+## Cost / approval forks with a safe default — L4, v2.9.73
+
+A run must not sit for hours on a small money question. When `next` meets a
+cost fork whose paid branch is bigger than the remaining ledger balance (or of
+unknown cost), the recorded decision is the FREE branch ("wait") and the
+decision — cost, remaining balance, declared budget, reason, UTC timestamp —
+is appended to `control/fork-decisions.json` and carried on the envelope under
+`data.cost_fork`. Never a default spend above the remaining balance or above
+the run's declared budget; a fork whose cost fits both records "proceed" with
+the paid command standing. Reader: `factory.py` `_remaining_ledger_balance`
+(the run's own `spend.sqlite3` via `spend_ledger.summary`); writer:
+`factory.py` `cost_fork` (test:
+`scripts/core/intake_preflight/test_cost_fork_v2973.py`).
 
 ## FU-U16 story doctrine: villain, pain, rise (Trevor order 2026-10-08)
 

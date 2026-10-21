@@ -37,8 +37,7 @@ in each table.
 | Veo 3.1 Quality | 1080p | 8 | $10.42 | $20.78 | +$2.07 |
 | HappyHorse 1.1 | 720p | 4 | $6.89 | $13.72 | +$1.37 |
 | HappyHorse 1.1 | 1080p | 4 | $8.84 | $17.62 | +$1.76 |
-| MiniMax H3 **(CHEAPEST)** | 768P (no 720p) | 4 | $2.54 | $5.02 | +$0.50 |
-| MiniMax H3 | 2K (no 1080p) | 4 | $4.04 | $8.02 | +$0.80 |
+| Hailuo 02 Standard **(CHEAPEST)** | 768P (no 720p) | 4 | $1.64 | $3.22 | +$0.32 |
 | Kling 3.0 Omni | 720p | 4 | $4.34 | $8.62 | +$0.86 |
 | Kling 3.0 Omni | 1080p | 4 | $5.54 | $11.02 | +$1.10 |
 | Gemini Omni Flash 1.1 | 720p and 1080p (same price) | 6 | $3.96 | $7.86 | +$0.78 |
@@ -60,8 +59,7 @@ in each table.
 | Veo 3.1 Quality | 1080p | 12 | $15.60 | $31.14 | +$3.11 |
 | HappyHorse 1.1 | 720p | 6 | $10.30 | $20.55 | +$2.05 |
 | HappyHorse 1.1 | 1080p | 6 | $13.23 | $26.40 | +$2.63 |
-| MiniMax H3 **(CHEAPEST)** | 768P (no 720p) | 6 | $3.78 | $7.50 | +$0.74 |
-| MiniMax H3 | 2K (no 1080p) | 6 | $6.03 | $12.00 | +$1.19 |
+| Hailuo 02 Standard **(CHEAPEST)** | 768P (no 720p) | 6 | $2.43 | $4.80 | +$0.47 |
 | Kling 3.0 Omni | 720p | 6 | $6.48 | $12.90 | +$1.28 |
 | Kling 3.0 Omni | 1080p | 6 | $8.28 | $16.50 | +$1.64 |
 | Gemini Omni Flash 1.1 | 720p and 1080p (same price) | 9 | $5.91 | $11.76 | +$1.17 |
@@ -90,8 +88,7 @@ rows prices these; the live card still reads Skill 74.
 | Veo 3.1 Quality | 1080p | 15 | $19.48 | $38.91 | +$3.89 |
 | HappyHorse 1.1 | 720p | 8 | $13.72 | $27.38 | +$2.73 |
 | HappyHorse 1.1 | 1080p | 8 | $17.62 | $35.18 | +$3.51 |
-| MiniMax H3 **(CHEAPEST)** | 768P (no 720p) | 8 | $5.02 | $9.98 | +$0.99 |
-| MiniMax H3 | 2K (no 1080p) | 8 | $8.02 | $15.98 | +$1.59 |
+| Hailuo 02 Standard **(CHEAPEST)** | 768P (no 720p) | 8 | $3.22 | $6.38 | +$0.63 |
 | Kling 3.0 Omni | 720p | 8 | $8.62 | $17.18 | +$1.71 |
 | Kling 3.0 Omni | 1080p | 8 | $11.02 | $21.98 | +$2.19 |
 | Gemini Omni Flash 1.1 | 720p and 1080p (same price) | 12 | $7.86 | $15.66 | +$1.56 |
@@ -113,8 +110,7 @@ rows prices these; the live card still reads Skill 74.
 | Veo 3.1 Quality | 1080p | 23 | $29.84 | $59.63 | +$5.96 |
 | HappyHorse 1.1 | 720p | 12 | $20.55 | $41.04 | +$4.10 |
 | HappyHorse 1.1 | 1080p | 12 | $26.40 | $52.74 | +$5.27 |
-| MiniMax H3 | 768P (no 720p) | 12 | $7.50 | $14.94 | +$1.49 |
-| MiniMax H3 | 2K (no 1080p) | 12 | $12.00 | $23.94 | +$2.39 |
+| Hailuo 02 Standard **(CHEAPEST)** | 768P (no 720p) | 12 | $4.80 | $9.54 | +$0.95 |
 | Kling 3.0 Omni | 720p | 12 | $12.90 | $25.74 | +$2.57 |
 | Kling 3.0 Omni | 1080p | 12 | $16.50 | $32.94 | +$3.29 |
 | Gemini Omni Flash 1.1 | 720p and 1080p (same price) | 18 | $11.76 | $23.46 | +$2.34 |
@@ -136,8 +132,7 @@ rows prices these; the live card still reads Skill 74.
 | Veo 3.1 Quality | 1080p | 38 | $49.27 | $98.48 | +$9.84 |
 | HappyHorse 1.1 | 720p | 20 | $34.21 | $68.36 | +$6.83 |
 | HappyHorse 1.1 | 1080p | 20 | $43.96 | $87.86 | +$8.78 |
-| MiniMax H3 | 768P (no 720p) | 20 | $12.46 | $24.86 | +$2.48 |
-| MiniMax H3 | 2K (no 1080p) | 20 | $19.96 | $39.86 | +$3.98 |
+| Hailuo 02 Standard **(CHEAPEST)** | 768P (no 720p) | 20 | $7.96 | $15.86 | +$1.58 |
 | Kling 3.0 Omni | 720p | 20 | $21.46 | $42.86 | +$4.28 |
 | Kling 3.0 Omni | 1080p | 20 | $27.46 | $54.86 | +$5.48 |
 | Gemini Omni Flash 1.1 | 720p and 1080p (same price) | 30 | $19.56 | $39.06 | +$3.90 |
@@ -164,8 +159,7 @@ the per-second models, 8-second clips for Veo, 10-second clips for Gemini.
 | Veo 3.1 Quality | 1080p | 75 | $97.19 | $194.31 | +$19.43 |
 | HappyHorse 1.1 | 720p | 40 | $68.36 | $136.66 | +$13.66 |
 | HappyHorse 1.1 | 1080p | 40 | $87.86 | $175.66 | +$17.56 |
-| MiniMax H3 | 768P (no 720p) | 40 | $24.86 | $49.66 | +$4.96 |
-| MiniMax H3 | 2K (no 1080p) | 40 | $39.86 | $79.66 | +$7.96 |
+| Hailuo 02 Standard **(CHEAPEST)** | 768P (no 720p) | 40 | $15.86 | $31.66 | +$3.16 |
 | Kling 3.0 Omni | 720p | 40 | $42.86 | $85.66 | +$8.56 |
 | Kling 3.0 Omni | 1080p | 40 | $54.86 | $109.66 | +$10.96 |
 | Gemini Omni Flash 1.1 | 720p and 1080p (same price) | 60 | $39.06 | $78.06 | +$7.80 |
@@ -184,7 +178,7 @@ the per-second models, 8-second clips for Veo, 10-second clips for Gemini.
 | Veo 3.1 Fast (veo3_fast; market id veo-3-1) | 720p $0.30 per clip (60 cr) | 1080p $0.325 per clip (65 cr) | 8 s | Yes, both |
 | Veo 3.1 Quality (veo3; market id veo-3-1) | 720p $1.25 per clip (250 cr) | 1080p $1.275 per clip (255 cr) | 8 s | Yes, both |
 | HappyHorse 1.1 (happyhorse-1-1/*) | 720p $0.1125/s | 1080p $0.145/s | 15 s (3-15) | Yes, both |
-| MiniMax H3 (minimax-h3/*) | 768P $0.04/s (720p not offered) | 2K $0.065/s (1080p not offered) | 15 s (4-15) | Yes, both |
+| Hailuo 02 Standard (hailuo/02-image-to-video-standard;hailuo/02-image-to-video-*) | 768P $0.025/s (720p not offered) | 1080p not offered (Hailuo 02 Pro is a separate model) | 6 s | Yes, both |
 | Kling 3.0 Omni (kling-3.0-omni/*) | 720p $0.07/s | 1080p $0.09/s | 15 s (3-15) | Yes, both |
 | Gemini Omni Flash 1.1 (google/gemini-omni-flash-1-1) | 720p $0.63 per 10 s clip (126 cr) | 1080p same $0.63 | 10 s (4, 6, 8 or 10) | Yes, both |
 | Seedance 2.5 (bytedance/seedance-2-5) | 720p $0.315/s | 1080p $0.79/s | 30 s (4-30) | Yes, both |
@@ -300,7 +294,7 @@ total before approval. Books and authors are never mixed.
 
 ## 7. Which to pick
 
-- **Budget.** Seedance 2.0 Mini 720p, MiniMax H3 768P, or Veo 3.1 Fast 720p.
+- **Budget.** Seedance 2.0 Mini 720p, Hailuo 02 Standard 768P, or Veo 3.1 Fast 720p.
   A 90-second single-shape ad is about $3.80 to $3.90; a 3-minute ad is $7.40
   to $7.70; a 10-minute ad is $24.06 to $25.46. The picture is lower
   resolution and quality has not been compared side by side for sung drama,

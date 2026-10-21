@@ -95,7 +95,7 @@ BASE_SCRIPT = {
 STAMPED_CARD = {"answers": {"video_style": "Lifelike 3D",
                             "audio_style": "Soul Ballad",
                             "length": 60,
-                            "video_model": "MiniMax H3 768P"},
+                            "video_model": "Hailuo 02 Standard 768P"},
                 "who": "FU-U7 prompt-cap test",
                 "at": "2026-10-09T09:00:00Z"}
 
@@ -157,23 +157,23 @@ def refused(label, model, input_body, cap, status, lock=None):
 
 # ---- 1. MiniMax H3: 7,001 refused, 7,000 runs ------------------------------
 def test_h3_cap():
-    ev = refused("h3-over", "minimax-h3/text-to-video",
-                 {"prompt": "x" * 7001}, 7000, "VERIFIED")
+    ev = refused("h3-over", "hailuo/02-image-to-video-standard",
+                 {"prompt": "x" * 2001}, 2000, "VERIFIED")
     check("h3: cap 7,000 is the catalog number",
-          "7000" in (ev.get("cap_source") or "") or ev.get("cap") == 7000, str(ev))
+          "2000" in (ev.get("cap_source") or "") or ev.get("cap") == 2000, str(ev))
 
-    env, fake, _, _ = disp("h3-at", "minimax-h3/text-to-video",
-                           {"prompt": "x" * 7000},
+    env, fake, _, _ = disp("h3-at", "hailuo/02-image-to-video-standard",
+                           {"prompt": "x" * 2000},
                            lock=ML.DEFAULT_VIDEO_MODEL)
     check("h3: prompt of exactly 7,000 still dispatches",
           env["outcome"] == "ok", str(env))
     caps = (env.get("evidence") or {}).get("prompt_caps") or []
     row = next((r for r in caps if r["field"] == "prompt"), None)
     check("h3: ok receipt shows cap 7,000, status VERIFIED",
-          row and row["cap"] == 7000 and row["status"] == "VERIFIED"
-          and row["chars"] == 7000, str(caps))
+          row and row["cap"] == 2000 and row["status"] == "VERIFIED"
+          and row["chars"] == 2000, str(caps))
 
-    env, _, _, _ = disp("h3-short", "minimax-h3/text-to-video",
+    env, _, _, _ = disp("h3-short", "hailuo/02-image-to-video-standard",
                         {"prompt": "p" * 200},
                         lock=ML.DEFAULT_VIDEO_MODEL)
     check("h3: a 200-char prompt is NOT padded to the 67 house floor 5000",
@@ -212,7 +212,7 @@ def test_kling30_and_hailuo_caps():
     refused("hailuo-over", "hailuo/02-text-to-video-standard",
             {"prompt": "x" * 2001}, 2000, "VERIFIED")
     check("h3: Hailuo cap did NOT leak onto H3 (7,000, not 2,000)",
-          PL.video_caps("minimax-h3/text-to-video")["prompt"] == 7000)
+          PL.video_caps("hailuo/02-image-to-video-standard")["prompt"] == 2000)
 
 
 # ---- 5. The table itself ---------------------------------------------------
