@@ -1063,6 +1063,11 @@ def _proven_music(run_dir, run_id=""):
 #: stage -> proven-artifact predicate. The ONLY reconciled stages: each
 #: predicate reads exactly the artifacts its OWN stage gate writes.
 _RECONCILIERS = {"storyboard": _proven_storyboard, "music": _proven_music}
+try:  # the continuity stage owns its predicate; wire it, never copy it
+    from character_continuity import stage as _cc_stage  # noqa: PLC0415
+    _cc_stage.register(_RECONCILIERS)
+except Exception:  # noqa: BLE001 - no module means no reconciler, never a pass
+    pass
 
 def _reconcile_stages(run_dir, got):
     """L4.1: reconcile stage rows from proven artifacts through state_store.
