@@ -52,14 +52,17 @@ PATH). The client opens the Roast Room chamber at their own Council
 address and signs in with their Command Center emails. That address is
 set up automatically for every client, finished AI Workforce Interview or
 not, and the command looks for it every time a council is convened, so
-nobody (client or operator) does anything. If the command prints a
-`chamber_url`, send the client exactly that link. If it prints no
-`chamber_url`, the address is not ready yet and the first council after it
-is ready carries the link: do not invent, guess, or build a link, and never
-send a 127.0.0.1 link (it only works on the box itself). Tell the client
-the Council is running, the result will be shared here, and their private
-Council link is still being set up. Never mention scripts, servers, fleet
-or Cloudflare to the client.
+nobody (client or operator) does anything. The helper's `Chamber link:`
+line (see "The chamber visual on every call") is the single source of
+truth for the client's link: the client receives that exact line and
+nothing else. The command's `chamber_url` field is the same link as
+data - it feeds the helper's line and is never sent to the client on its
+own. If no link is ready yet, the first council after it is ready
+carries it: do not invent, guess, or build a link, and never send a
+127.0.0.1 link (it only works on the box itself). Tell the client the
+Council is running, the result will be shared here, and their private
+Council link is still being set up. Never mention scripts, servers,
+fleet or Cloudflare to the client.
 
 Operator side only (never on a client box): the operator Mac's job
 `scripts/council-access-autoprovision.sh` first runs
@@ -189,8 +192,8 @@ operational reference for a follow-up or an existing-session control.
    Tell the client which model is running, then run
    `bash scripts/chamber-visual.sh --session <session_id>` and follow
    "The chamber visual on every call" for the reply link. If the
-   output has no `chamber_url` and the helper's line is a 127.0.0.1
-   address (COUNCIL_BOX code PUBLIC_ORIGIN_UNSET):
+   helper's line is a 127.0.0.1 address (COUNCIL_BOX code
+   PUBLIC_ORIGIN_UNSET):
    do not invent or guess a link and never substitute a 127.0.0.1
    link. Tell the client the Council is running and the result will be
    shared here, give the session id, and say their private Council link is
