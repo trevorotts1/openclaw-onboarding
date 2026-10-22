@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.44: Council: the Roast Room visual pops up and the chamber link rides every reply (BUILD W73)
+
+In plain English: no matter how the client calls the elders — claude-nine terminal or chat — the chamber visual they see at the link shows up for them too: on a desktop box it opens in the browser on every convene, and the chamber link is always in the reply so phone and chat callers tap straight into the same visual.
+
+- New `scripts/chamber-visual.sh`: prints exactly one `Chamber link: <url>` line — resolved at runtime from env `COUNCIL_PUBLIC_URL`, then `WISE_ELDERS_PUBLIC_ORIGIN`, then `public_origin` in the box's own `service.json`, then the loopback service origin — and opens that URL in the default browser when a desktop session exists. Fire-and-forget: it never blocks the reply, and a headless box (CI, cron, server) gets zero pops with the link still emitted.
+- SKILL.md: new "The chamber visual on every call" — the `Chamber link:` line goes into every reply (terminal and chat alike), never rewritten or guessed; a local-only 127.0.0.1 link is never sent to a client.
+- New tests `scripts/tests/chamber-visual.test.sh` (17 cases): GUI present invokes `open` exactly once with the right URL, headless invokes nothing and still emits the link, the link is always in the output, URL source order, and a failed pop never breaks a convene.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill change only).
+
 ## v1.0.43: Council: an existing council ingress rule keeps its own port (FIX W68)
 
 In plain English: the provisioner used to force every council rule back to port 8787. Now it never rewrites an existing rule — the box's own port is authoritative — and only creates a missing rule at the default 8787. A box whose Council serves on 8788 (a client webhook owns 8787 there) is left byte-identical from now on.
