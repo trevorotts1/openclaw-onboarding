@@ -73,7 +73,7 @@ import {
   scopeDenied,
 } from './errors.js';
 import { EventJournal, type JournalEvent } from './journal.js';
-import { ProjectionOutbox } from './outbox.js';
+import { ProjectionOutbox, type OutboxIntent, type OutboxIntentInput } from './outbox.js';
 import type { CouncilDatabase, SqliteDatabaseHandle } from './sqlite.js';
 import type { CouncilPersistenceConfig } from './config.js';
 
@@ -1028,6 +1028,19 @@ export class CouncilRepositories {
    * the recorded claim; a replay with a DIFFERENT fingerprint is a
    * conflict and records nothing (the host maps it to HTTP 409).
    */
+  /**
+   * Commit one projection-outbox intent outside a caller transaction
+   * (W74-A session-close marker). Idempotent per (scope, topic,
+   * idempotency_key): a replay returns the existing intent and writes
+   * nothing.
+   */
+  enqueueOutboxIntent(
+    envelope: AuthorizationEnvelope,
+    input: OutboxIntentInput,
+  ): { intent: OutboxIntent; created: boolean } {
+    return this.db.write((handle) => this.outbox.enqueue(handle, envelope, input));
+  }
+
   claimRequestKey(input: {
     tenantId: string;
     source: string;

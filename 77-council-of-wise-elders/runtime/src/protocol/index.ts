@@ -10,6 +10,7 @@ export * from './challenge.js';
 export * from './ratification.js';
 export * from './verdict.js';
 export * from './session-controls.js';
+export * from './session-close.js';
 export * from './history.js';
 export * from './follow-up.js';
 export * from './outcomes.js';

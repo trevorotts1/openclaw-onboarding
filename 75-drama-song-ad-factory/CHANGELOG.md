@@ -4,6 +4,147 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.87 - 2026-10-22 - smooth scenery is not a gaussian fill
+
+A real master was refused GAUSSIAN_FILL on a dim ceiling: the smooth run was
+20.8% of frame height against an 18% floor, while the SAME shot one second
+later measured 16.7% and passed. Pixel evidence on the refusal: 391 distinct
+rows of 399, row-to-row change continuous (max 0.88 grey levels), no seam at
+the band edge (0.77 grey), band present identically in the original 24 fps
+clip, and the master's laplacian uniformly HIGHER than the source (lanczos
+upscale sharpened, never blurred).
+
+`qc_no_blur` now requires mechanical fill evidence before GAUSSIAN_FILL: a run
+of >=3 byte-identical rows, a band that is a near-copy of the adjacent strip,
+or a step at the band edge. Smooth content has none of the three and passes;
+the shipped blur-fill fixtures still fail. New
+`scripts/qc_no_blur/test_smooth_content_not_fill.py` pins both sides
+(smooth scene passes, repeated strip and hard step refused); the existing
+36-test detector suite still passes.
+
+## v2.9.86 - 2026-10-22 - a client wait is never HEARTBEAT_EXPIRED
+
+A run parked on the client's approval was reported expired once the 3-hour cap
+passed, so the watcher told the client the run had run out of time while the
+only missing thing was their own reply (seen on a real run: 1,226 minutes,
+WAITING_APPROVAL, HEARTBEAT_EXPIRED). The cap now measures the studio's own
+delay only: when `legitimate_wait` names a client wait, `expired` stays False
+and no HEARTBEAT_EXPIRED is emitted. Stalls are unchanged - silence is still a
+stall. Test 12 in `test_run_watch.py` pins it.
+
+## v2.9.85 - 2026-10-22 - rebased on main (no feature regressions in the WAL fixes)
+
+The merge that carried the WAL-safe reads onto main had been resolved by taking
+this branch wholesale for four files, which dropped main's newer APIs:
+`state_store` lost `read_qc_records`/`DOC_QC_RECORDS` and its typed errors,
+`run_watch` lost its supervision/activity model, `lyric_timing` lost main's
+loader work, and CI caught it (QC static invariants). This release re-bases
+each file on main and re-applies ONLY the branch's own change:
+
+1. `state_store.needs_recovery` uses `_ro_connect` (forced open + private-copy
+   fallback) on top of main's full API. `test_state_store_s75w02u4`: 22 groups.
+2. `run_watch._ro` same fallback, plus COMPLETE is never a stall; tests 10 and
+   11 added to main's suite. `test_run_watch`: ALL PASS.
+3. `intake_card.channel_send_argv` stages out-of-allowlist media into
+   `<state>/delivery-queue-media` on top of main's builder; a missing file is
+   passed through so the sender names the real error.
+4. `lyric_timing` reverts to main unchanged - main already carries the lazy
+   faster_whisper loader, the `compute_type` keyword and the word-shape
+   conversion.
+
+## v2.9.84 - 2026-10-22 - the documented dispatch command can actually pass F14 and the H3 receipt
+
+Two wiring defects made the runbook's own video command impossible to satisfy;
+both were found by dry-running the real gates on built H3 requests.
+
+1. `--state-store` ON `dispatch` (`scripts/core/kie_dispatch/kie_dispatch.py`).
+   `main()` never passed `state_store`, so `read_locked_model(None, run_id)`
+   always returned None and every CLI video dispatch refused
+   VIDEO_MODEL_LOCK_MISSING no matter what the run had locked. The flag now
+   threads the run's `control/state.sqlite3` into F14.
+2. PROMPT FILE NEWLINE (`scripts/core/kie_dispatch/kie_dispatch.py`). A prompt
+   file written with one trailing newline changed the bytes an H3 receipt was
+   issued over, so `--prompt-file` refused PROMPT_NOT_TEMPLATED on every
+   templated job. Reading a prompt file now drops exactly one trailing newline.
+
+Regression: `test_kie_dispatch` 18/18, `test_prompt_cap_u7` 5/5,
+`test_model_lock_f14` 9 blocks, `test_make_h3_request` and
+`test_model_identity_h3` all pass.
+
+## v2.9.83 - 2026-10-22 - one supported H3 request path
+
+H3 refuses an un-templated prompt (PROMPT_NOT_TEMPLATED), and nothing in the
+run path ever called the assembler, so the only way an H3 shot could dispatch
+was to substitute another model. Now there is one supported builder.
+
+1. `scripts/core/prompt_templates/make_h3_request.py` - spec + character record
+   in, dispatch-ready request out: assembles via `prompt_templates.assemble_h3`,
+   measures the model's own band, attaches `prompt_templates.receipt()`, pins
+   `model` to a canonical `minimax-h3/*` id, and refuses any other model id
+   rather than silently using it. Fixed model id, no padding, no truncation.
+2. `scripts/core/prompt_templates/test_make_h3_request.py` - nine assertions on
+   the golden fixture: band 5,000-6,800, receipt sha equals the prompt, the cap
+   and receipt gates pass, a changed prompt is refused, and a Hailuo id is
+   refused (exit 2).
+3. `references/stage-runbook.md` - the video row now names the builder and says
+   in words: never substitute another model to get a prompt through.
+
+## v2.9.82 - 2026-10-22 - MiniMax H3 is its own model: 7,000 chars, never Hailuo
+
+Owner directive, verbatim: "Don't you ever change the model. I told you H3. I
+meant H3." The H3 family was blocked from dispatch entirely: its canonical ids
+were missing from the F14 video allowlist, so any card lock of H3 could only be
+made to run by substituting a Hailuo 02 id - a different model with a 2,000
+char prompt cap. That substitution is now impossible.
+
+1. H3 ON THE MENU (`scripts/core/kie_dispatch/model_lock.py`,
+   `references/price-menu.md`). `minimax-h3/image-to-video`,
+   `minimax-h3/text-to-video` and the `minimax-h3/*` family are on both the
+   static allowlist and the rate table, so `assert_allowed` and the menu drift
+   check agree and a H3 lock dispatches as H3.
+2. PROMPT BAND UNTOUCHED (`scripts/core/prompt_limits.py` behaviour, no code
+   change needed once the id is correct): H3 measures off the 67 catalog entry's
+   `vendor_hard_cap_chars` = 7,000; the 2,000 override stays scoped to
+   `hailuo/*`. Fixture: 6,800 passes, 7,001 refuses PROMPT_OVER_CAP.
+3. PERMANENT GUARD (`scripts/core/kie_dispatch/test_model_identity_h3.py`).
+   Twelve assertions pin: both H3 ids allowlisted, price-menu == static
+   allowlist, no H3->Hailuo alias anywhere in either module, H3 cap 7000,
+   Hailuo cap 2000, and the 6,800/7,001 boundary. Any future edit that aliases
+   the families or re-caps H3 fails this test.
+
+## v2.9.81 - 2026-10-22 - factory.py reads a WAL state db whose sidecars are gone
+
+1. RESILIENT READ-ONLY OPEN (`scripts/core/intake_preflight/factory.py`).
+   `factory.py next` opened `control/state.sqlite3` with a `mode=ro` URI. The
+   store is WAL mode, so with the `-wal`/`-shm` sidecars absent the open raised
+   "unable to open database file" and `next` answered `state-unreadable` for a
+   perfectly healthy run — the same defect v2.9.79 fixed in `run_watch.py`, in
+   the command every agent is told to run first. Both read-only opens now go
+   through `_ro_connect`, which retries on a private temp copy and never writes
+   the run. `test_factory_next.py`: 35 checks, 0 failures.
+
+## v2.9.80 - 2026-10-22 - a delivered run is never "stalled"
+
+1. NO STALL ON A COMPLETE STAGE (`scripts/core/heartbeat/run_watch.py`).
+   After delivery the last stage's `updated_at` ages past 30 minutes, so
+   `stall_check` flagged HEARTBEAT_STALLED on a fully delivered run and the
+   client message said the run "hit a problem" on every tick after the video
+   had already been sent. `stall_check` now returns not-stalled for a COMPLETE
+   stage. Covered by test 8 in `scripts/core/heartbeat/test_run_watch.py`.
+
+## v2.9.79 - 2026-10-22 - a WAL state database never reads as "unreadable"
+
+1. RUN_WATCH PRIVATE-COPY FALLBACK (`scripts/core/heartbeat/run_watch.py`).
+   The state store is WAL mode. When `control/state.sqlite3` exists but its
+   `-wal`/`-shm` sidecars are gone (an orphan-temp sweep, a restore, a copy),
+   the `mode=ro` URI open raises SQLITE_CANTOPEN and the envelope emitted
+   `HEARTBEAT_STATE_UNREADABLE` — a client-facing "I couldn't read where your
+   video is up to" on a perfectly healthy run. `_ro()` now retries by copying
+   the db plus whatever sidecars exist into a private temp dir, opening the
+   copy with `PRAGMA query_only=ON`, and removing the temp dir at exit. The
+   live run is still never written. Covered by test 7 in
+   `scripts/core/heartbeat/test_run_watch.py`.
+
 ## v2.9.78 - 2026-10-21 - an overshoot flags, the client decides the song
 
 1. QC DURATION OVERSHOOT = FLAG, NOT STOP (master_length, song_dispatch,

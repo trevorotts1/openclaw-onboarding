@@ -1764,6 +1764,10 @@ def main(argv=None):
     x.add_argument("--adapter", default=None,
                    help="Path to kie_live_adapter.py (default: search).")
     x.add_argument("--timeout", type=int, default=300)
+    x.add_argument("--state-store", default=None,
+                   help="run state DB (control/state.sqlite3) for the F14 "
+                        "video-model lock; without it a video job can never "
+                        "pass F14 from the CLI")
     a = ap.parse_args(argv)
 
     if a.cmd == "dispatch":
@@ -1775,6 +1779,13 @@ def main(argv=None):
             else:
                 with open(a.prompt_file, encoding="utf-8") as f:
                     prompt = f.read()
+                # A file written with a trailing newline must not change the
+                # bytes an H3 prompt receipt was issued over: the receipt
+                # hashes the prompt itself, so one 0x0A makes every templated
+                # H3 job refuse PROMPT_NOT_TEMPLATED. Reading a prompt file
+                # drops exactly one trailing newline.
+                if prompt.endswith("\n"):
+                    prompt = prompt[:-1]
         else:
             prompt = a.prompt or ""
         env = dispatch(model=a.model, request=request, save_dir=a.save_dir,
@@ -1782,7 +1793,7 @@ def main(argv=None):
                        logical_key=a.logical_key, attempt_id=a.attempt_id,
                        estimated_cost=a.cost, prompt=prompt, units=a.units,
                        stage=a.stage, owner=a.owner, adapter_path=a.adapter,
-                       timeout=a.timeout)
+                       timeout=a.timeout, state_store=a.state_store)
         json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
         sys.stdout.write("\n")
         return EXIT[env["outcome"]]

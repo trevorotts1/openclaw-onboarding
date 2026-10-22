@@ -13,7 +13,18 @@ location this year, or put the same money into the online store?"
 Agent behavior: resolve the client and any existing session for this
 decision, gather permitted context (cash position, lease constraints,
 current store performance), show the prepared brief with unknowns
-marked, confirm the selected route (model), then convene.
+marked, confirm the selected route (model), then convene. The brief is
+assembled by the shared brief-builder from the door's permitted memory
+files first: only the facts that bear on this decision, private detail
+excluded, unknowns marked, before any deliberation spends.
+
+## Which door, same ask
+
+The same sentence opens the council on either door. Said to the
+client's OpenClaw agent, it runs the OpenClaw door. Said inside
+claude-nine or Claude Code, it runs the 999 door. The client changes
+nothing: each door reads its own permitted context and the council
+behaves identically.
 
 ## A named-seat consult
 
@@ -39,6 +50,21 @@ Client: "Explain Russell's objection."
 Agent behavior: retrieve the recorded objection from the session as a
 read. Only if the client asks for new analysis does this become a
 linked consult.
+
+## Closing a sitting
+
+Agent: "Is that all, or are we still working?" (asked once, after five
+quiet minutes)
+
+Client: "That's all."
+Agent behavior: this is an explicit close phrase, so finalize now, no
+further question. The reply carries the counsel artifact link beside the
+chamber link: the finished artifact in one click, the Roast Room in
+the other.
+
+Client: (says nothing for ten minutes after the question)
+Agent behavior: finalize automatically. The sitting is never left
+open, and the artifact arrives the same way.
 
 ## Department request
 

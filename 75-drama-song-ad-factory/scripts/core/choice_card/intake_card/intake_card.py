@@ -47,7 +47,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
+import tempfile
 
 _CORE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _CORE not in sys.path:
@@ -1044,6 +1046,37 @@ def telegram_payload(chat_id, text):
     return {"chat_id": chat_id, "text": text}
 
 
+def _staged_media(media):
+    """Media paths the channel will actually accept.
+
+    OpenClaw only sends files inside its own state roots (media, workspace,
+    delivery-queue-media, canvas, sandboxes) or tmp; a run-folder attachment
+    is refused with LocalMediaAccessError. Anything else is COPIED into
+    <state>/delivery-queue-media first -- the copy is what gets sent, the
+    original is never moved or rewritten.
+    """
+    root = os.path.join(os.path.expanduser("~"), ".openclaw")
+    allowed = tuple(os.path.join(root, d) for d in
+                    ("media", "workspace", "delivery-queue-media", "canvas",
+                     "sandboxes")) + (tempfile.gettempdir(),)
+    staged = []
+    for m in media or ():
+        path = os.path.abspath(str(m))
+        if path.startswith(allowed) and os.path.isfile(path):
+            staged.append(path)
+            continue
+        dest_dir = os.path.join(root, "delivery-queue-media")
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, os.path.basename(path))
+        if not os.path.isfile(path):
+            staged.append(path)      # let the sender name the real error
+            continue
+        if not (os.path.isfile(dest)
+                and os.path.getsize(dest) == os.path.getsize(path)):
+            shutil.copy2(path, dest)
+        staged.append(dest)
+    return staged
+
 def channel_send_argv(channel, target, text, media=(), account=None, thread_id=None):
     """THE command builder (W03-U1, finding D06): one ``openclaw message send``
     argv for the RESOLVED channel. ``channel`` arrives as data -- from the run's
@@ -1063,7 +1096,7 @@ def channel_send_argv(channel, target, text, media=(), account=None, thread_id=N
                          "refusing to guess a default channel")
     return (["openclaw", "message", "send", "--channel", channel,
              "--target", str(target), "--message", text]
-            + [x for m in media for x in ("--media", str(m))]
+            + [x for m in _staged_media(media) for x in ("--media", str(m))]
             + (["--account", str(account)] if account else [])
             + (["--thread-id", str(thread_id)] if thread_id else []))
 
