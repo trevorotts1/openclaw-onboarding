@@ -15,12 +15,24 @@
 #     travels in exactly one place: the python child's environment.
 #   * No secret -> skip. A client box must still install cleanly when the
 #     operator has not injected a studio secret yet: one plain line to stderr,
-#     exit 0, nothing written, nothing touched.
-#   * A machine key already present -> do nothing and say so (enroll is once
-#     per box), exit 0.
+#     exit 0, nothing written, nothing touched. The optional Studio capability
+#     is then recorded as `disabled` (chat intake works without Studio) — the
+#     box is never auto-enrolled just to silence logs (SPEC 9.3).
+#   * A COMPLETE enrolment receipt already present -> do nothing and say so
+#     (enrol is once per box), exit 0. Key presence alone is NOT that check:
+#     the receipt is key + URL in one consistent state root with private
+#     permissions (D24).
+#   * An interrupted/key-only/stray-root record is RECOVERED in place through
+#     `enroll --resume`: the valid key is preserved and adopted, the missing
+#     machine.url is restored, permissions are tightened — never a second
+#     identity, never a discarded key. No HTTP call happens on that path.
 #   * Every other refusal -> one warning line, exit 0. The installers call this
 #     bare under `set -e`; a studio that is down must never fail a client
 #     install, and a failed enroll is simply retried on the next update pass.
+#
+# STATE ROOT: resolved through the bridge's own `state-dir` — the ONE platform
+# contract (mac/Hostinger $HOME/.drama-studio; Contabo
+# /home/node/.openclaw/.drama-studio). Never restated here.
 #
 # SECRET RESOLUTION — the same order the onboarding installer already trusts
 #   1. the live process environment (`install.sh` search_env_var_mac source 1).
@@ -36,7 +48,6 @@ set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 BRIDGE="$HERE/studio_bridge.py"
-STATE="${DRAMA_STUDIO_STATE:-${HOME:-}/.drama-studio}"
 
 # ---- secret resolution (value never leaves this function's caller variable) --
 resolve_secret() {
@@ -84,22 +95,46 @@ if [ ! -f "$BRIDGE" ]; then
     echo "warn: drama-studio enroll skipped: bridge not found ($BRIDGE)" >&2
     exit 0
 fi
-if ! command -v python3 >/dev/null 2>&1; then
+PYTHON="$(command -v python3 2>/dev/null || true)"
+if [ -z "$PYTHON" ]; then
     echo "warn: drama-studio enroll skipped: python3 not on PATH" >&2
     exit 0
 fi
 
-# ---- 2. once per box: an existing machine key means we are already enrolled --
+# The ONE persistent state-root contract (D24), from the bridge itself.
+STATE="$("$PYTHON" "$BRIDGE" state-dir 2>/dev/null | head -n 1)"
+[ -n "$STATE" ] || STATE="${DRAMA_STUDIO_STATE:-${HOME:-}/.drama-studio}"
+
+# ---- 2. a COMPLETE receipt means we are already enrolled ---------------------
 # Checked here, not left to the bridge, so the already-enrolled case is a clean
-# exit 0 instead of a refusal the installers would have to special-case.
-if [ -f "$STATE/machine.key" ]; then
-    echo "drama-studio: already enrolled (machine key present at $STATE/machine.key); enroll is once per box"
+# exit 0 instead of a refusal the installers would have to special-case. Key
+# presence alone is NOT the check (D24): `enroll --resume` validates key + URL
+# in one consistent root with private permissions, and repairs an interrupted
+# or key-only record in place — locally, never re-enrolling, never dropping a
+# valid key.
+if [ -f "$STATE/machine.key" ] || [ -f "${HOME:-}/.drama-studio/machine.key" ]; then
+    OUT=""
+    RC=0
+    OUT="$("$PYTHON" "$BRIDGE" enroll --resume 2>&1)" || RC=$?
+    if [ "$RC" -eq 0 ]; then
+        if printf '%s' "$OUT" | grep -q '"recovered": true'; then
+            echo "drama-studio: enrollment receipt recovered at $STATE (valid key preserved, no re-enrol)"
+        else
+            echo "drama-studio: already enrolled (machine key present); enroll is once per box"
+        fi
+        exit 0
+    fi
+    CODE=$(printf '%s' "$OUT" | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    echo "warn: drama-studio receipt could not be validated${CODE:+ ($CODE)} — the operator can repair it by hand. Install continues." >&2
     exit 0
 fi
 
 # ---- 3. no secret -> skip, leave the box untouched ---------------------------
+# The optional capability is recorded as `disabled` so the idle poller stays
+# quiet instead of failing every tick (SPEC 9.3). Chat intake needs nothing here.
 SECRET="$(resolve_secret || true)"
 if [ -z "$SECRET" ]; then
+    "$PYTHON" "$BRIDGE" capability --record disabled >/dev/null 2>&1 || true
     echo "skipped: DS_ENROLLMENT_SECRET not set" >&2
     exit 0
 fi
@@ -111,7 +146,7 @@ fi
 # and could echo anything back, so only locally-known facts are printed.
 OUT=""
 RC=0
-OUT="$(DS_ENROLLMENT_SECRET="$SECRET" python3 "$BRIDGE" enroll 2>&1)" || RC=$?
+OUT="$(DS_ENROLLMENT_SECRET="$SECRET" "$PYTHON" "$BRIDGE" enroll 2>&1)" || RC=$?
 SECRET=""
 
 if [ "$RC" -eq 0 ]; then
@@ -119,7 +154,10 @@ if [ "$RC" -eq 0 ]; then
     exit 0
 fi
 
-# Refused. Surface only the refusal CODE — an identifier, never a payload.
+# Refused. Surface only the refusal CODE — an identifier, never a payload. The
+# operator DID inject a secret, so the capability is needs-enrollment: the
+# next pass retries, and the optional poller stays quiet meanwhile.
+"$PYTHON" "$BRIDGE" capability --record needs-enrollment >/dev/null 2>&1 || true
 CODE=$(printf '%s' "$OUT" | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
 echo "warn: drama-studio enroll refused${CODE:+ ($CODE)} — this box is not enrolled; the operator can enroll it by hand. Install continues." >&2
 exit 0

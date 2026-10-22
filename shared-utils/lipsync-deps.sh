@@ -60,8 +60,11 @@ _lipsync_skills_dir() {
 }
 
 _lipsync_skill_dir() { printf '%s' "$(_lipsync_skills_dir)/75-drama-song-ad-factory"; }
+# ONE face-model path (D19): the locator default, <skill>/assets/, or the
+# LIPSYNC_FACE_MODEL override. The legacy lip_gate/ location is migration
+# source only — every reader resolves through scripts/core/face_model_locator.py.
 _lipsync_model_path() { printf '%s' "$(_lipsync_skill_dir)/assets/$LIPSYNC_MODEL_NAME"; }
-_lipsync_clip_model_path() { printf '%s' "$(_lipsync_skill_dir)/scripts/core/lip_sync/lip_gate/$LIPSYNC_MODEL_NAME"; }
+_lipsync_legacy_model_path() { printf '%s' "$(_lipsync_skill_dir)/scripts/core/lip_sync/lip_gate/$LIPSYNC_MODEL_NAME"; }
 _lipsync_marker() { printf '%s' "$(_lipsync_oc_root)/.lipsync-deps.pending"; }
 
 _lipsync_py() {
@@ -103,17 +106,35 @@ _lipsync_model_valid() {
     return 0
 }
 
-# Both gates must be able to find a good model:
-#   picture gate  -> assets/ or $LIPSYNC_FACE_MODEL
-#   clip gate     -> $LIPSYNC_FACE_MODEL or the lip_gate/ dir next to the code
+# One path for every gate (D19): the override when set, else assets/. The
+# picture gate and the measured lip-sync gate resolve through
+# scripts/core/face_model_locator.py and must see this exact file.
 _lipsync_model_ok() {
     local _py="$1"
-    if [ -n "${LIPSYNC_FACE_MODEL:-}" ] && _lipsync_model_valid "$_py" "$LIPSYNC_FACE_MODEL"; then
+    if [ -n "${LIPSYNC_FACE_MODEL:-}" ]; then
+        _lipsync_model_valid "$_py" "$LIPSYNC_FACE_MODEL"
+        return $?
+    fi
+    _lipsync_model_valid "$_py" "$(_lipsync_model_path)"
+}
+
+# Old boxes kept the model in the legacy lip_gate/ location. Migrate a verified
+# copy instead of re-downloading; the legacy file is not read by any gate now.
+_lipsync_migrate_legacy() {
+    local _py="$1" _src _dst
+    _src="$(_lipsync_legacy_model_path)"
+    _dst="$(_lipsync_model_path)"
+    [ -n "${LIPSYNC_FACE_MODEL:-}" ] && return 0
+    _lipsync_model_valid "$_py" "$_dst" && return 0
+    _lipsync_model_valid "$_py" "$_src" || return 0
+    mkdir -p "$(dirname "$_dst")" 2>/dev/null || true
+    cp -p "$_src" "$_dst" 2>/dev/null || cp "$_src" "$_dst" 2>/dev/null || true
+    if _lipsync_model_valid "$_py" "$_dst"; then
+        _lipsync_log "migrated $LIPSYNC_MODEL_NAME from legacy lip_gate/ to $(dirname "$_dst")"
         return 0
     fi
-    _lipsync_model_valid "$_py" "$(_lipsync_model_path)" || return 1
-    _lipsync_model_valid "$_py" "$(_lipsync_clip_model_path)" || return 1
-    return 0
+    _lipsync_fail "could not migrate $LIPSYNC_MODEL_NAME from $_src"
+    return 1
 }
 
 _lipsync_mark_pending() {
@@ -205,7 +226,7 @@ ensure_lipsync_deps() {
         if [ "$_model_ok" -eq 1 ]; then
             _lipsync_log "  present  $LIPSYNC_MODEL_NAME"
         else
-            _lipsync_log "  MISSING  $LIPSYNC_MODEL_NAME (expected $( [ -n "${LIPSYNC_FACE_MODEL:-}" ] && printf '%s' "$LIPSYNC_FACE_MODEL" || printf '%s' "$(_lipsync_model_path)"), sha256 $LIPSYNC_MODEL_SHA256, $LIPSYNC_MODEL_BYTES bytes)"
+            _lipsync_log "  MISSING  $LIPSYNC_MODEL_NAME (expected $( [ -n "${LIPSYNC_FACE_MODEL:-}" ] && printf '%s' "$LIPSYNC_FACE_MODEL" || printf '%s' "$(_lipsync_model_path)"), sha256 $LIPSYNC_MODEL_SHA256, $LIPSYNC_MODEL_BYTES bytes; one path for every gate via face_model_locator)"
         fi
         if [ -z "$_missing" ] && [ "$_model_ok" -eq 1 ]; then
             _lipsync_log "OK: all lip-sync prerequisites present"
@@ -234,31 +255,21 @@ ensure_lipsync_deps() {
     if [ "$_model_ok" -eq 1 ]; then
         _lipsync_log "$LIPSYNC_MODEL_NAME already present and valid (nothing to do)"
     else
-        local _installer="$_skill_dir/scripts/core/lip_sync/lip_gate/install_face_model.py"
-        if [ ! -f "$_installer" ]; then
-            _lipsync_fail "model missing and the skill's installer is absent: $_installer (is skill 75 installed in $(_lipsync_skills_dir)?)"
-            _rc=2
-        else
-            local _out="" _prc=0
-            _out="$("$_py" "$_installer" 2>&1)" || _prc=$?
-            if [ "$_prc" -ne 0 ]; then
-                _lipsync_fail "model download failed (installer exit $_prc) from $LIPSYNC_MODEL_URL"
-                printf '%s\n' "$_out" | sed 's/^/    /' >&2
+        _lipsync_migrate_legacy "$_py" || _rc=2
+        if ! _lipsync_model_ok "$_py"; then
+            local _installer="$_skill_dir/scripts/core/lip_sync/lip_gate/install_face_model.py"
+            if [ ! -f "$_installer" ]; then
+                _lipsync_fail "model missing and the skill's installer is absent: $_installer (is skill 75 installed in $(_lipsync_skills_dir)?)"
                 _rc=2
             else
-                _lipsync_log "$_out"
-                # The clip gate (mouth_landmarks.model_path) looks next to its own
-                # module, not in assets/. Mirror the verified file there so a box
-                # does not need LIPSYNC_FACE_MODEL set for a measured lip-sync job.
-                local _src _dst
-                _src="$(_lipsync_model_path)"
-                _dst="$(_lipsync_clip_model_path)"
-                if _lipsync_model_valid "$_py" "$_src"; then
-                    if ! _lipsync_model_valid "$_py" "$_dst"; then
-                        mkdir -p "$(dirname "$_dst")" 2>/dev/null || true
-                        cp -p "$_src" "$_dst" 2>/dev/null || cp "$_src" "$_dst" 2>/dev/null || true
-                    fi
-                    _lipsync_model_valid "$_py" "$_dst" || _lipsync_fail "could not mirror $LIPSYNC_MODEL_NAME to $_dst (clip gate will need LIPSYNC_FACE_MODEL)"
+                local _out="" _prc=0
+                _out="$("$_py" "$_installer" 2>&1)" || _prc=$?
+                if [ "$_prc" -ne 0 ]; then
+                    _lipsync_fail "model download failed (installer exit $_prc) from $LIPSYNC_MODEL_URL"
+                    printf '%s\n' "$_out" | sed 's/^/    /' >&2
+                    _rc=2
+                else
+                    _lipsync_log "$_out"
                 fi
             fi
         fi

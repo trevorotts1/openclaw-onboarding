@@ -1,0 +1,15 @@
+{
+  "_fixture": true,
+  "_note": "OFFLINE FIXTURE. Fake ids, fake relation name, fake evidence digest. This is NOT a live capture and must never be treated as evidence about GoHighLevel. It exists so the create-variant + read-back operation is provable with zero network calls. The real capture is written by tools/ghl_split_variant_capture_checklist.sh against an authorized staging location once the D5 login fix lands.",
+  "location_id": "loc-offline-0001",
+  "step_id": "step-offline-control",
+  "control_id_before": "step-offline-control",
+  "control_id_after": "step-offline-control",
+  "variant_id": "step-offline-variant",
+  "variant_relation": "variationOf",
+  "traffic_field": "control_traffic",
+  "traffic_permitted": false,
+  "traffic_default": 100,
+  "readback_keys": ["id", "name", "url", "variationOf", "control_traffic"],
+  "capture_evidence": "fixture://offline-capture sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}

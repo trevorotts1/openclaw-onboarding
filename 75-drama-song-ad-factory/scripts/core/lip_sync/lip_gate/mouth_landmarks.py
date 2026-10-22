@@ -12,9 +12,9 @@ if any is missing, mouth_series() raises Unmeasured (reason code LIP_UNMEASURED)
 That is "unmeasured, report", NEVER a silent pass; lip_gate turns it into an
 UNMEASURABLE verdict that qc_check refuses.
 
-Model file (Google face_landmarker, float16, ~4 MB): env LIPSYNC_FACE_MODEL,
-else <this folder>/face_landmarker.task, else <skill>/assets/face_landmarker.task
-(install_face_model.DEFAULT_DEST, where install_face_model.py writes it).
+Model file (Google face_landmarker, float16, ~4 MB): the ONE path every skill-75
+reader resolves via face_model_locator -- env LIPSYNC_FACE_MODEL, else
+<skill>/assets/face_landmarker.task -- verified against the pinned sha256.
 Not committed; see DEPENDENCY-MANIFEST.md.
 """
 from __future__ import annotations
@@ -26,6 +26,7 @@ _core = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..", ".."))
 if _core not in _sys.path:
     _sys.path.insert(0, _core)
 import load_governor as _LG  # noqa: E402
+import face_model_locator as _LOC  # noqa: E402
 
 LIP_UNMEASURED = "LIP_UNMEASURED"
 GEO = (0.55, 0.85)   # where the mouth sits inside the face box (human proportions)
@@ -36,33 +37,11 @@ class Unmeasured(Exception):
     """The measurement could not be made. Message starts with LIP_UNMEASURED."""
 
 
-def _installer_dest():
-    """install_face_model.DEFAULT_DEST: where install_face_model.py really puts
-    the model (<skill>/assets/face_landmarker.task). Imported both ways this
-    module is (package submodule and lip_gate/ on sys.path)."""
-    try:
-        from . import install_face_model as ifm
-    except Exception:                                    # noqa: BLE001
-        try:
-            import install_face_model as ifm             # noqa: F401
-        except Exception:                                # noqa: BLE001
-            return None
-    return getattr(ifm, "DEFAULT_DEST", None)
-
-
 def model_path():
-    """-> model file path, or None when truly absent.
-
-    Order: LIPSYNC_FACE_MODEL (explicit override, authoritative when set), then
-    this lip_gate folder, then install_face_model.DEFAULT_DEST (assets/)."""
-    env = _os.environ.get("LIPSYNC_FACE_MODEL")
-    if env:
-        return env if _os.path.isfile(env) else None
-    here = _os.path.join(_os.path.dirname(__file__), "face_landmarker.task")
-    if _os.path.isfile(here):
-        return here
-    dest = _installer_dest()
-    return dest if dest and _os.path.isfile(dest) else None
+    """The pinned face model at the shared locator path, or None (D19: one
+    path for installer, preflight, picture gate and this measured gate)."""
+    p = _LOC.resolve()
+    return p if _LOC.is_good(p) else None
 
 
 def mouth_series(clip):
@@ -78,8 +57,8 @@ def mouth_series(clip):
                          % (LIP_UNMEASURED, type(e).__name__))
     model = model_path()
     if not model:
-        raise Unmeasured("%s: face model not found (set LIPSYNC_FACE_MODEL)"
-                         % LIP_UNMEASURED)
+        raise Unmeasured("%s: %s" % (LIP_UNMEASURED,
+                                     _LOC.problem(_LOC.resolve())))
 
     def detect(lm, bgr):
         return lm.detect(mp.Image(image_format=mp.ImageFormat.SRGB,

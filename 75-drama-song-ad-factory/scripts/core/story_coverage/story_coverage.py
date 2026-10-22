@@ -57,6 +57,26 @@ rules are aimed at.
 NEW PROPOSED (not the owner's): OPENING_VOCALISE_MAX_S = 3.0 and TEXT_COVERAGE_MIN
 = 0.98. They are proposals, never values credited to Trevor.
 
+D10 (Skill_75_Universal_Repair_Spec_v1.1 sections 6.1, 15.1). Words and music
+together at time zero. The opening above measured its wordless span from the
+take's own FIRST ALIGNED ROW, so an isolated four-second untranscribed lead-in
+reported zero wordless time and passed. Every wordless span in this module is
+now measured FROM ACTUAL DECODED MEDIA TIME ZERO (the delivered frame zero),
+never from the first aligned row, and untranscribed silence, humming and
+instrumental initials count as wordless opening. The rendered-opening gate
+(``rendered_opening_gate``) verifies the DECODED OUTPUT -- first speech onset
+within FIRST_SPEECH_ONSET_MAX_S = 0.25 s of media zero, no more than
+MUSIC_BEFORE_SPEECH_MAX_S = 0.10 s of audible music preceding it -- and rejects
+silent titles, musical count-ins, humming lead-ins and instrumental intros. A
+prompt saying "no intro" is never evidence. Deterministic trim/alignment repair
+is proven (``prove_deterministic_repair``) before any paid full-track
+generation is even considered, and a low-confidence speech detector triggers
+one bounded independent listening review (``apply_review_evidence``) recorded
+AS review evidence, never as a fabricated measurement. Both hooks stay
+distinct: the immediate spoken opening attention hook, and the earned musical
+Solution Signature Hook that becomes true later and is never forced into the
+opening; the no-sung-word-before-ERM rule stays compatible.
+
 stdlib only; pure; no network, no spend.
 """
 from __future__ import annotations
@@ -90,8 +110,46 @@ VOCAL_TIME_FLOOR_SHARE = 0.85          # voiced seconds / planned voice seconds
 #: denominator is the approved normalized word count, never the lexical seconds.
 TEXT_COVERAGE_MIN = 0.98
 
-#: The three gates named above are gate names the take judge reports.
-GATES = ("story_start", "lexical_coverage", "story_arc", "words_floor")
+#: D10 (spec 6.1): the DECODED-OUTPUT verification tolerances for the rendered
+#: opening. First speech onset within 0.25 s of actual media time zero; no more
+#: than 0.10 s of audible music preceding it; the first music sample lands at
+#: time zero under the same onset tolerance. These are engineering tolerances
+#: for encoding and onset measurement -- never permission for an intro.
+FIRST_SPEECH_ONSET_MAX_S = 0.25
+MUSIC_BEFORE_SPEECH_MAX_S = 0.10
+FIRST_MUSIC_ONSET_MAX_S = 0.25
+#: D10 (NEW PROPOSED): below this detector confidence the onset is not a solid
+#: measurement either way -- one bounded independent listening review is
+#: triggered instead of a verdict, endless regeneration or a fabricated pass.
+SPEECH_DETECTOR_MIN_CONFIDENCE = 0.60
+#: D10: lead-ins that never meet the opening requirement (spec 6.1), by the
+#: detector's own classification. Any of these is refused on its own label.
+REJECTED_LEAD_KINDS = ("silent_title", "count_in", "humming", "instrumental")
+
+#: D10: the older "no separate spoken takes" implementation restriction,
+#: reconciled with the spec 6.1 outcome EXPLICITLY, in one record. The
+#: restriction stands for separate delivered takes. When the selected provider
+#: cannot perform the opening in one take, the EXISTING authorized voice/TTS
+#: and editing path may consolidate ONE final soundtrack (spoken opening over
+#: the approved music) -- that is a single consolidated master, not a separate
+#: spoken take, with no new provider and no change to the character voice.
+NO_SEPARATE_SPOKEN_TAKES_RECONCILED = {
+    "older_restriction": "no separate spoken takes",
+    "reconciled_outcome": (
+        "spec 6.1: consolidate the spoken opening through the existing "
+        "authorized voice/TTS and editing path into ONE final soundtrack when "
+        "the provider cannot perform the opening in one take"),
+    "restriction_still_holds_for": "separate delivered spoken takes",
+    "one_final_consolidated_soundtrack": True,
+    "new_provider_added": False,
+    "character_voice_changed": False,
+    "source": "Skill_75_Universal_Repair_Spec_v1.1 section 6.1",
+}
+
+#: The gates named above are gate names the take judge reports. D10 adds the
+#: rendered-opening gate, which judges the decoded output at media zero.
+GATES = ("story_start", "lexical_coverage", "story_arc", "words_floor",
+         "rendered_opening")
 
 #: Tokens that are vocal sound, not story: "oo-o-o-o-o-oh", "oh", "la-la", "mmm".
 VOCALISE_RE = re.compile(
@@ -362,10 +420,12 @@ def _first_aligned_start_s(aligned_words):
     return base
 
 
-def longest_opening_wordless_s(aligned_words, first_story_line_start_s):
-    """The longest contiguous span, measured FROM THE TAKE'S OWN FIRST ALIGNED
-    ROW to ``first_story_line_start_s``, that contains NO lexical aligned word
-    (WW-02), in seconds.
+def longest_opening_wordless_s(aligned_words, first_story_line_start_s,
+                               media_zero_s=0.0):
+    """The longest contiguous span, measured FROM ACTUAL DECODED MEDIA TIME
+    ZERO (D10 -- the delivered frame zero, ``media_zero_s``, default 0.0) to
+    ``first_story_line_start_s``, that contains NO lexical aligned word, in
+    seconds.
 
     A wordless vocalise ("Oo-oh") is not lexical, so it counts as a gap: on
     the stored take this is the span from the last filler word's end (8.299 s)
@@ -373,16 +433,16 @@ def longest_opening_wordless_s(aligned_words, first_story_line_start_s):
     ``_opening_non_lexical_s`` measurement (0 to the first LEXICAL word) read
     only 3.75 s and passed the wordless opening.
 
-    The scan starts at the first aligned row, not at 0.0: the lead-in before a
-    take's first measured row is audio this gate has NO alignment for, and it
-    is judged by the share rule (``OPENING_WORDLESS_SHARE_MAX``) instead.
-    Returns 0.0 when the story line starts at or before that first row."""
+    D10: the scan starts at MEDIA ZERO, never at the take's first aligned row.
+    The old start at the first aligned row is exactly the D10 defect: an
+    isolated four-second untranscribed lead-in carried no alignment row and
+    read as zero wordless time. Silence, humming or an instrumental initial
+    before the first aligned row is wordless opening and counts from delivered
+    frame zero. Returns 0.0 when the story line starts at or before zero."""
     if first_story_line_start_s is None:
         return None
     end = float(first_story_line_start_s)
-    base = _first_aligned_start_s(aligned_words)
-    if base is None:
-        return None
+    base = float(media_zero_s or 0.0)
     if end <= base:
         return 0.0
     spans = []
@@ -419,9 +479,15 @@ def story_start_gate(aligned_words, plot, delivered_s,
     fails on EITHER:
 
       * ``opening_max_s`` (WW-02, an ABSOLUTE 3.0 s): the longest wordless span
-        between the take's own first aligned row and the story line;
+        between ACTUAL DECODED MEDIA TIME ZERO (D10) and the story line;
       * ``opening_share`` (main's WWFIX-U1 rule, kept): the first LEXICAL word
         must not land after this share of the delivered seconds.
+
+    D10: the wordless span is measured from media zero, so an isolated
+    four-second untranscribed lead-in (no aligned row before 4.0 s) reads as
+    4.0 s of wordless opening and FAILS -- it no longer reports zero and
+    passes. Untranscribed silence, humming and instrumental initials count
+    from delivered frame zero.
 
     A take with no measurable plot line at all is FAIL, never PASS. Missing
     evidence is UNAVAILABLE."""
@@ -461,6 +527,12 @@ def story_start_gate(aligned_words, plot, delivered_s,
         "first_plot_line_s": line,
         "first_plot_word_s": loose,
         "opening_wordless_s": opening,
+        # D10: the wordless span is measured FROM MEDIA ZERO (delivered frame
+        # zero), never from the first aligned row; the first aligned row is
+        # reported only as where the alignment evidence begins.
+        "wordless_span_measured_from_media_zero": True,
+        "wordless_span_origin_s": 0.0,
+        "alignment_evidence_starts_s": _first_aligned_start_s(aligned_words),
         "opening_non_lexical_s": lead,
         "opening_vocalise_max_s": opening_max_s,
         "opening_ceiling_s": opening_max_s,
@@ -488,7 +560,8 @@ def story_start_gate(aligned_words, plot, delivered_s,
         "source": ("WW-02: absolute first-story-LINE ceiling + absolute "
                    "OPENING_VOCALISE_MAX_S ceiling, with main's WWFIX-U1 "
                    "OPENING_WORDLESS_SHARE_MAX opening rule kept alongside "
-                   "(the gate fails on either)"),
+                   "(the gate fails on either); D10: the wordless span is "
+                   "measured from actual decoded media time zero"),
     }
 
 
@@ -1046,13 +1119,450 @@ def audit_summary_labels(summary):
             "detail": "the summary reports no words and music-only figures"}
 
 
+# ---- D10: the rendered opening at media time zero --------------------------
+
+def _num(x):
+    """A real, finite float, else None (bools and NaN/inf are never numbers)."""
+    if isinstance(x, bool) or not isinstance(x, (int, float)):
+        return None
+    x = float(x)
+    return None if x != x or x in (float("inf"), float("-inf")) else x
+
+
+def _music_measure_before(intervals, until_s):
+    """Seconds of audible music inside ``[0, until_s)`` from ``(start, end)``
+    intervals, counted once (overlap folded). None when no interval is usable."""
+    spans = []
+    for iv in intervals or []:
+        if not isinstance(iv, (list, tuple)) or len(iv) < 2:
+            continue
+        s, e = _num(iv[0]), _num(iv[1])
+        if s is None or e is None or e <= s:
+            continue
+        s2, e2 = max(s, 0.0), min(e, float(until_s))
+        if e2 > s2:
+            spans.append((s2, e2))
+    if not spans:
+        return None
+    return round(_clip_union(spans, 0.0, float(until_s)), 3)
+
+
+def classify_wordless_lead(aligned_words=None, evidence=None):
+    """The KIND of the opening lead-in before the first speech (D10).
+
+    The detector's own ``lead_kind`` label wins when it supplies one. From the
+    alignment rows alone: "humming" when the lead carries only vocalise rows
+    ("Oo-oh", "mmm"), "untranscribed" when the lead carries NO row at all --
+    silence, humming or instrumental the alignment cannot tell apart, counted
+    as wordless opening from delivered frame zero and classified only by
+    acoustic evidence, "speech" when spoken words themselves open the take
+    (a filler opener: judged by the onset tolerance, never by this label).
+    Never guessed: with no rows and no label the kind is "unknown"."""
+    ev = evidence if isinstance(evidence, dict) else {}
+    if ev.get("lead_kind"):
+        return str(ev["lead_kind"])
+    rows = [r for r in (aligned_words or []) if isinstance(r, dict)]
+    lex = aligned_lexical_words(aligned_words)
+    if not rows:
+        return "untranscribed"
+    if not lex:
+        return "humming" if any(is_vocalise(_tok(r)) for r in rows) else "untranscribed"
+    first_lex = lex[0][0]
+    lead_rows = [r for r in rows
+                 if _num(_start(r)) is not None and _num(_start(r)) < first_lex]
+    if not lead_rows:
+        return "untranscribed"
+    if any(is_lexical(_tok(r)) and not is_vocalise(_tok(r)) for r in lead_rows):
+        return "speech"
+    return "humming"
+
+
+def rendered_opening_gate(evidence=None, aligned_words=None):
+    """PASS / FAIL / REVIEW_REQUIRED / UNAVAILABLE on the RENDERED opening --
+    words and music together at actual decoded media time zero (D10, spec 6.1).
+
+    The tolerances are the specification's engineering tolerances for encoding
+    and onset measurement, never permission for an intro: first speech onset
+    within FIRST_SPEECH_ONSET_MAX_S (0.25 s) of media zero, no more than
+    MUSIC_BEFORE_SPEECH_MAX_S (0.10 s) of audible music preceding it, and the
+    first music sample at time zero under the same onset tolerance. A silent
+    title, a musical count-in, a humming lead-in or an instrumental intro is
+    REJECTED on its own classified label (``REJECTED_LEAD_KINDS``).
+
+    ``evidence`` is measured decoded-media evidence from the audio owner (the
+    ASR / onset detector), never a prompt: ``first_speech_onset_s``,
+    ``speech_onset_confidence``, ``first_audible_music_s`` and/or
+    ``music_before_speech_s`` and/or ``music_intervals``, ``lead_kind``. An
+    ``evidence_kind`` of "prompt_claim" ("the prompt says no intro") is NOT
+    evidence and can never verify anything. With no measured onset the gate
+    falls back to the aligned rows as an UPPER BOUND (``alignment_upper_bound``
+    -- a row cannot start before the word is spoken), which can prove a FAIL
+    but never a PASS.
+
+    A measured onset with ``speech_onset_confidence`` below
+    SPEECH_DETECTOR_MIN_CONFIDENCE is REVIEW_REQUIRED -- classifier
+    uncertainty is never relabelled as a definite creative failure, and one
+    bounded independent listening review (``apply_review_evidence``) resolves
+    it as REVIEW evidence. Missing measurement stays UNAVAILABLE: a numerical
+    threshold that truly requires measurement still needs a valid measurement.
+    Partial evidence can prove a FAIL, never a PASS."""
+    ev = dict(evidence) if isinstance(evidence, dict) else {}
+    if ev.get("evidence_kind") == "prompt_claim":
+        return {"verdict": "UNAVAILABLE", "reason_code": "PROMPT_CLAIM_NOT_EVIDENCE",
+                "first_speech_onset_s": None, "music_before_speech_s": None,
+                "evidence_kind": "prompt_claim",
+                "detail": ("a prompt saying 'no intro' is not evidence; the "
+                           "rendered opening must be measured (actual audio plus "
+                           "word alignment)"),
+                "source": "D10: verify the rendered opening, not the prompt"}
+    onset = _num(ev.get("first_speech_onset_s"))
+    onset_source = "measured_detector" if onset is not None else None
+    if onset is None:
+        onset = _first_aligned_start_s(aligned_words)
+        onset_source = "alignment_upper_bound" if onset is not None else None
+    music_before = _num(ev.get("music_before_speech_s"))
+    music_source = "measured_detector" if music_before is not None else None
+    if music_before is None and onset is not None:
+        fam = _num(ev.get("first_audible_music_s"))
+        if fam is not None:
+            music_before = round(max(0.0, onset - fam), 3)
+            music_source = "derived_from_music_onset"
+        else:
+            m = _music_measure_before(ev.get("music_intervals"), onset)
+            if m is not None:
+                music_before = m
+                music_source = "derived_from_music_intervals"
+    fam = _num(ev.get("first_audible_music_s"))
+    conf = _num(ev.get("speech_onset_confidence"))
+    lead_kind = classify_wordless_lead(aligned_words, ev)
+    fails = []
+    if lead_kind in REJECTED_LEAD_KINDS:
+        fails.append("LEAD_IN_" + lead_kind.upper())
+    if onset is not None and onset > FIRST_SPEECH_ONSET_MAX_S:
+        fails.append("SPEECH_ONSET_LATE")
+    if music_before is not None and music_before > MUSIC_BEFORE_SPEECH_MAX_S:
+        fails.append("MUSIC_BEFORE_SPEECH_TOO_LONG")
+    if fam is not None and fam > FIRST_MUSIC_ONSET_MAX_S:
+        fails.append("MUSIC_NOT_AT_TIME_ZERO")
+    out = {
+        "first_speech_onset_s": None if onset is None else round(onset, 3),
+        "onset_source": onset_source,
+        "music_before_speech_s": music_before,
+        "music_before_source": music_source,
+        "first_audible_music_s": fam,
+        "lead_kind": lead_kind,
+        "speech_onset_confidence": conf,
+        "evidence_kind": ev.get("evidence_kind") or "measurement",
+        "tolerances": {"first_speech_onset_max_s": FIRST_SPEECH_ONSET_MAX_S,
+                       "music_before_speech_max_s": MUSIC_BEFORE_SPEECH_MAX_S,
+                       "first_music_onset_max_s": FIRST_MUSIC_ONSET_MAX_S},
+        "rejected_lead_kinds": list(REJECTED_LEAD_KINDS),
+        "measured_from_media_zero": True,
+        "failed": fails,
+        "source": ("D10: rendered-opening verification at actual decoded media "
+                   "time zero (spec 6.1 tolerances; measured evidence only)"),
+    }
+    if (onset is not None and conf is not None
+            and conf < SPEECH_DETECTOR_MIN_CONFIDENCE):
+        out.update({
+            "verdict": "REVIEW_REQUIRED", "reason_code": "LOW_SPEECH_CONFIDENCE",
+            "measurement_status": "low_confidence",
+            "next_action": "independent_listening_review",
+            "pending_findings": list(fails),
+            "detail": ("speech-onset confidence %.2f is below %.2f: classifier "
+                       "uncertainty is not a creative failure -- one bounded "
+                       "independent listening review resolves it (never endless "
+                       "regeneration, never a fabricated pass)"
+                       % (conf, SPEECH_DETECTOR_MIN_CONFIDENCE))})
+        return out
+    if fails:
+        out.update({"verdict": "FAIL", "reason_code": fails[0],
+                    "detail": ("rendered opening refused: %s (first speech onset "
+                               "%s s from %s, audible music before speech %s s)"
+                               % (", ".join(fails),
+                                  "n/a" if onset is None else "%.3f" % onset,
+                                  onset_source or "no source",
+                                  "unmeasured" if music_before is None
+                                  else "%.3f" % music_before))})
+        return out
+    if onset is None:
+        out.update({"verdict": "UNAVAILABLE", "reason_code": "ONSET_UNMEASURED",
+                    "detail": ("no speech onset was measured and no aligned row "
+                               "bounds it: the 0.25 s onset tolerance needs a "
+                               "valid measurement")})
+        return out
+    if music_before is None:
+        out.update({"verdict": "UNAVAILABLE",
+                    "reason_code": "MUSIC_EVIDENCE_UNMEASURED",
+                    "detail": ("the audible-music side of the opening was not "
+                               "measured: 'no more than 0.10 s of music before "
+                               "the words' cannot be verified without it")})
+        return out
+    out.update({"verdict": "PASS", "reason_code": "WORDS_AND_MUSIC_AT_TIME_ZERO",
+                "detail": ("first speech onset %.3f s (<= %.2f s), %.3f s of "
+                           "audible music before it (<= %.2f s), music sample "
+                           "%s s: words and music together at media zero"
+                           % (onset, FIRST_SPEECH_ONSET_MAX_S, music_before,
+                              MUSIC_BEFORE_SPEECH_MAX_S,
+                              "n/a" if fam is None else "%.3f" % fam))})
+    return out
+
+
+#: D10: the ONE repair-order policy. Deterministic correction first (spec 6.1:
+#: "prefer deterministic correction of leading silence, safe timeline alignment
+#: and mixing over another paid full-track generation"), the existing
+#: authorized consolidation path when the provider cannot perform the opening
+#: in one take, and paid generation LAST -- never before deterministic repair
+#: has been proven (``prove_deterministic_repair``).
+REPAIR_ORDER = ("trim_leading_wordless", "align_timeline_and_mix",
+                "consolidate_spoken_opening", "paid_full_track_generation")
+
+
+def opening_repair_plan(gate_result=None, evidence=None):
+    """The ordered repair plan for a refused or unverified rendered opening.
+
+    Step 1-2 are DETERMINISTIC EDITS (leading-silence/wordless trim at the
+    word boundary and safe timeline alignment + mixing) preserving the
+    approved opening words and natural articulation. Step 3 is the EXISTING
+    authorized voice/TTS and editing path consolidating ONE final soundtrack
+    when the provider cannot perform the opening in one take -- reconciled
+    with the older "no separate spoken takes" restriction in
+    ``NO_SEPARATE_SPOKEN_TAKES_RECONCILED`` (no new provider, character voice
+    unchanged). Paid full-track generation is LAST and is never the first
+    move. The plan never claims a measurement it did not make."""
+    ev = dict(evidence) if isinstance(evidence, dict) else {}
+    gr = dict(gate_result) if isinstance(gate_result, dict) else {}
+    approved_present = ev.get("approved_opening_present")
+    steps = []
+    if approved_present is not False:
+        steps.append({"step": 1, "action": "trim_leading_wordless",
+                      "kind": "deterministic_edit",
+                      "does": ("trim the wordless lead-in at the word boundary "
+                               "so the approved opening starts at 0.000 s"),
+                      "preserves": "approved opening words and natural articulation"})
+        steps.append({"step": 2, "action": "align_timeline_and_mix",
+                      "kind": "deterministic_edit",
+                      "does": ("safe timeline alignment: music underlay from "
+                               "time zero beneath the words, at most %.2f s of "
+                               "audible music before speech"
+                               % MUSIC_BEFORE_SPEECH_MAX_S),
+                      "preserves": "the take's own audio, no regeneration"})
+    steps.append({"step": len(steps) + 1, "action": "consolidate_spoken_opening",
+                  "kind": "authorized_voice_tts_editing",
+                  "when": "the provider cannot perform the opening in one take",
+                  "does": ("the existing authorized voice/TTS and editing path "
+                           "creates the spoken opening over the approved music "
+                           "and consolidates ONE final soundtrack"),
+                  "one_final_consolidated_soundtrack": True,
+                  "new_provider_added": False, "character_voice_changed": False,
+                  "reconciled_restriction": "no separate spoken takes"})
+    steps.append({"step": len(steps) + 1, "action": "paid_full_track_generation",
+                  "kind": "paid_generation", "last": True,
+                  "when": ("deterministic repair and consolidation are both "
+                           "proven infeasible -- never before"),
+                  "requires_first": "prove_deterministic_repair"})
+    return {"steps": steps, "repair_order": list(REPAIR_ORDER),
+            "deterministic_first": True, "paid_generation_last": True,
+            "paid_generation_authorized_now": False,
+            "gate_reason": gr.get("reason_code"),
+            "no_separate_spoken_takes_reconciled": NO_SEPARATE_SPOKEN_TAKES_RECONCILED,
+            "source": ("D10 / spec 6.1: deterministic trim/alignment repair "
+                       "proven before any new paid generation")}
+
+
+def prove_deterministic_repair(gate_result=None, evidence=None):
+    """PROVE the deterministic trim/alignment repair is sufficient BEFORE any
+    paid generation is considered (D10 acceptance).
+
+    Projects the post-repair numbers (wordless lead trimmed at the measured
+    speech onset, music underlay realigned to zero beneath the words) and runs
+    the same rendered-opening gate on that projection. The projection is
+    labelled ``repair_projection_not_a_measurement`` -- it is a plan, never a
+    measurement of an edit that has not been made. Deterministic repair is
+    proven only when the take carries the approved opening words and the onset
+    is a solid measurement; a low-confidence detector routes to the bounded
+    listening review first, and words the take never performed route to the
+    consolidation step (trim cannot create words)."""
+    ev = dict(evidence) if isinstance(evidence, dict) else {}
+    gr = dict(gate_result) if isinstance(gate_result, dict) else {}
+    if ev.get("approved_opening_present") is False:
+        return {"deterministic_repair_proven": False,
+                "reason_code": "APPROVED_OPENING_WORDS_ABSENT",
+                "paid_generation_authorized": False,
+                "next_step": "consolidate_spoken_opening",
+                "detail": ("the take never performed the approved opening "
+                           "words: trim/alignment cannot create them; the "
+                           "authorized consolidation path applies")}
+    conf = _num(ev.get("speech_onset_confidence"))
+    if conf is not None and conf < SPEECH_DETECTOR_MIN_CONFIDENCE:
+        return {"deterministic_repair_proven": False,
+                "reason_code": "LOW_SPEECH_CONFIDENCE",
+                "paid_generation_authorized": False,
+                "next_step": "independent_listening_review",
+                "detail": ("the onset is not a solid measurement: one bounded "
+                           "independent listening review first, never a repair "
+                           "on numbers nobody trusts")}
+    onset = gr.get("first_speech_onset_s")
+    projected = {"evidence_kind": "repair_projection",
+                 "first_speech_onset_s": 0.0,
+                 "music_before_speech_s": 0.0,
+                 "lead_kind": "speech",
+                 "speech_onset_confidence": conf}
+    gate = rendered_opening_gate(projected)
+    ok = gate["verdict"] == "PASS"
+    return {"deterministic_repair_proven": ok,
+            "reason_code": "DETERMINISTIC_REPAIR_SUFFICIENT" if ok
+                           else "DETERMINISTIC_REPAIR_INSUFFICIENT",
+            "trim_offset_s": onset,
+            "projection": projected, "projected_gate": gate,
+            "measurement_status": "repair_projection_not_a_measurement",
+            "paid_generation_authorized": False,
+            "preserves": "approved opening words and natural articulation",
+            "detail": ("the deterministic trim/alignment projection meets the "
+                       "media-zero tolerances: no paid generation is needed "
+                       "first" if ok else
+                       "the deterministic projection does not meet the "
+                       "tolerances: consolidation next, paid generation last"),
+            "source": ("D10: deterministic trim/alignment repair proven before "
+                       "any new paid generation")}
+
+
+def independent_listening_review_request(gate_result=None):
+    """The bounded review request for a low-confidence speech detector (D10).
+
+    ONE independent listening review -- never endless regeneration and never a
+    fabricated pass. Applicable only where the detector's own confidence left
+    the measurement uncertain (REVIEW_REQUIRED); a missing measurement needs a
+    measurement, not a review."""
+    gr = dict(gate_result) if isinstance(gate_result, dict) else {}
+    if gr.get("reason_code") != "LOW_SPEECH_CONFIDENCE":
+        return {"applicable": False,
+                "reason_code": "NOT_A_LOW_CONFIDENCE_MEASUREMENT",
+                "detail": ("only a low-confidence detector measurement triggers "
+                           "the listening review; a missing numerical "
+                           "measurement must be measured")}
+    return {"applicable": True, "bounded": True, "max_reviews": 1,
+            "evidence_kind": "review",
+            "required_fields": ("reviewer", "artifact_sha256", "method", "finding"),
+            "finding_domain": ("opening_acceptable", "opening_rejected"),
+            "measurement_claimed": False,
+            "detail": ("one bounded independent listening review, recorded as "
+                       "REVIEW evidence (its own reviewer, artifact hash, "
+                       "method and finding) -- never as a numerical "
+                       "measurement the system did not obtain"),
+            "source": "D10 / spec 6.5: bounded independent media review"}
+
+
+def apply_review_evidence(gate_result=None, review=None):
+    """Resolve a REVIEW_REQUIRED opening gate with independent listening
+    review evidence -- recorded AS review evidence, never as a fabricated
+    measurement (D10 acceptance).
+
+    The review can resolve detector UNCERTAINTY (its measured onset exists,
+    its confidence did not). It can NEVER create a measurement: a gate that
+    failed for a missing numerical measurement (ONSET_UNMEASURED) keeps its
+    UNAVAILABLE verdict -- "a numerical threshold that truly requires
+    measurement still needs a valid measurement" (spec 6.5)."""
+    gr = dict(gate_result) if isinstance(gate_result, dict) else {}
+    rv = dict(review) if isinstance(review, dict) else {}
+    if gr.get("verdict") != "REVIEW_REQUIRED":
+        return dict(gr, review_applicable=False,
+                    review_refusal=("only a REVIEW_REQUIRED (low-confidence) "
+                                    "measurement is reviewable; a missing "
+                                    "measurement must be measured, never "
+                                    "fabricated"))
+    missing = [f for f in ("reviewer", "artifact_sha256", "method", "finding")
+               if not rv.get(f)]
+    if missing or rv.get("evidence_kind") != "review":
+        return dict(gr, verdict="REVIEW_REQUIRED",
+                    review_applicable=False,
+                    review_refusal=("review evidence needs its own "
+                                    "reviewer/artifact_sha256/method/finding "
+                                    "and evidence_kind='review'; missing: %s"
+                                    % (missing or ["evidence_kind"])))
+    finding = str(rv.get("finding") or "")
+    acceptable = finding == "opening_acceptable"
+    out = dict(gr)
+    out.update({
+        "verdict": "PASS" if acceptable else "FAIL",
+        "reason_code": "REVIEW_ACCEPTED_OPENING" if acceptable
+                       else "REVIEW_REJECTED_OPENING",
+        "resolved_by": "independent_listening_review",
+        "resolution_evidence": {"evidence_kind": "review",
+                                "reviewer": rv.get("reviewer"),
+                                "artifact_sha256": rv.get("artifact_sha256"),
+                                "method": rv.get("method"),
+                                "finding": finding,
+                                "measurement_claimed": False},
+        "numerical_measurement": None,
+        "fabricated_measurement": False,
+        "detail": ("the low-confidence opening was resolved by ONE bounded "
+                   "independent listening review (%s): recorded as review "
+                   "evidence, never as a measurement"
+                   % finding)})
+    return out
+
+
+def opening_hooks_gate(approved_opening_line=None, solution_signature_words=None,
+                       solution_signature_first_s=None, first_sung_word_s=None,
+                       erm_s=None):
+    """PASS / FAIL / UNAVAILABLE: the two hooks stay DISTINCT (D10, spec 6.1).
+
+    The OPENING ATTENTION HOOK is the immediate spoken line that makes the
+    viewer care (``approved_opening_line``). The EARNED musical / Solution
+    Signature Hook (``solution_signature_words``) is the recurring lyric whose
+    claim becomes true after the relevant story development -- it is never
+    forced into the opening just because the opening also needs a hook. The
+    no-sung-word-before-ERM rule stays compatible: sung words begin at the
+    ERM, never before it, and this gate never requires singing earlier."""
+    line = [w for w in normalize_approved_words(approved_opening_line or []) if w]
+    sig = [w for w in normalize_approved_words(solution_signature_words or []) if w]
+    if not line:
+        return {"verdict": "UNAVAILABLE", "reason_code": "NO_APPROVED_OPENING_LINE",
+                "detail": "no approved opening attention hook line to verify",
+                "source": "D10: both hooks preserved distinctly"}
+    fails = []
+    forced = False
+    if sig:
+        forced = ordered_run_match([sig], line, min_words=len(sig)) is not None
+        if forced:
+            fails.append("SOLUTION_SIGNATURE_HOOK_FORCED_INTO_OPENING")
+    sig_first = _num(solution_signature_first_s)
+    if sig and sig_first is not None and sig_first <= FIRST_STORY_WORD_MAX_S:
+        fails.append("EARNED_HOOK_APPEARS_IN_OPENING")
+    first_sung = _num(first_sung_word_s)
+    erm = _num(erm_s)
+    sung_before_erm = (first_sung is not None and erm is not None
+                       and first_sung < erm)
+    if sung_before_erm:
+        fails.append("SUNG_WORD_BEFORE_ERM")
+    return {"verdict": "FAIL" if fails else "PASS",
+            "reason_code": fails[0] if fails else "BOTH_HOOKS_DISTINCT",
+            "failed": fails,
+            "opening_attention_hook": list(line),
+            "solution_signature_hook": list(sig),
+            "solution_signature_forced_into_opening": forced,
+            "solution_signature_first_s": sig_first,
+            "first_sung_word_s": first_sung, "erm_s": erm,
+            "sung_before_erm": sung_before_erm,
+            "hooks_distinct": not fails,
+            "no_sung_word_before_erm_compatible": True,
+            "detail": ("the opening attention hook is spoken at zero; the "
+                       "earned Solution Signature Hook stays out of the "
+                       "opening and sung words begin at the ERM"
+                       if not fails else "hooks refused: %s" % ", ".join(fails)),
+            "source": "D10 / spec 6.1: both hooks preserved distinctly"}
+
+
 # ---- the take judge's seam -------------------------------------------------
 
 def judge_returned_take(take, plan, sheet_text=None, delivered_s=None):
-    """The four story gates on one measured take, for ``song_contract``.
+    """The story gates on one measured take, for ``song_contract``.
 
     ``take`` carries ``aligned_words`` (Suno's aligned words), optionally
-    ``delivered_words`` and ``vocal_seconds``; ``plan`` carries the story arc
+    ``delivered_words``, ``vocal_seconds``, measured decoded-media evidence
+    ``rendered_opening`` (D10: words and music at media zero) and
+    ``opening_hooks``; ``plan`` carries the story arc
     (``beats_u16`` / ``STORY_ARC_U16``) and the word budget. Returns
     {verdict, gates:{name:{...}}, coverage:{...}} where PASS needs every
     applicable gate to PASS and an UNAVAILABLE gate blocks PASS (QC 17.8).
@@ -1098,9 +1608,27 @@ def judge_returned_take(take, plan, sheet_text=None, delivered_s=None):
     if observed_text is None:
         observed_text = take.get("delivered_text")
     gates["text_coverage"] = text_coverage_gate(approved_text, observed_text)
+    # D10: the RENDERED-opening gate runs on every returned take. With measured
+    # decoded-media evidence in ``take["rendered_opening"]`` it verifies words
+    # and music together at media zero (0.25 s / 0.10 s tolerances); without it
+    # the aligned rows give only an onset UPPER BOUND, which can prove a FAIL
+    # and never a PASS, and the music side stays UNMEASURED (fail-closed).
+    ro_ev = take.get("rendered_opening")
+    ro_ev = ro_ev if isinstance(ro_ev, dict) else {}
+    gates["rendered_opening"] = rendered_opening_gate(ro_ev, aligned_words=aligned)
+    hk = take.get("opening_hooks") or plan.get("opening_hooks")
+    if isinstance(hk, dict) and hk:
+        gates["opening_hooks"] = opening_hooks_gate(
+            approved_opening_line=hk.get("approved_opening_line",
+                                         gates["story_start"].get("approved_opening_line")),
+            solution_signature_words=hk.get("solution_signature_words"),
+            solution_signature_first_s=hk.get("solution_signature_first_s"),
+            first_sung_word_s=hk.get("first_sung_word_s"),
+            erm_s=hk.get("erm_s"))
     verdicts = {g["verdict"] for g in gates.values()}
     verdict = ("FAIL" if "FAIL" in verdicts
-               else "UNAVAILABLE" if "UNAVAILABLE" in verdicts else "PASS")
+               else "UNAVAILABLE" if ("UNAVAILABLE" in verdicts
+                                      or "REVIEW_REQUIRED" in verdicts) else "PASS")
     out = {"verdict": verdict, "gates": gates, "applicable": True,
            "approved_opening_line":
                gates["story_start"].get("approved_opening_line") or [],
@@ -1117,6 +1645,12 @@ def judge_returned_take(take, plan, sheet_text=None, delivered_s=None):
     # never drift apart.
     out["script_report"] = script_report(planned_voice_s(plan),
                                          plan.get("intro_outro_s") or 0.0)
+    # D10: whenever the rendered opening is not verified, the deterministic
+    # repair plan rides with the verdict -- deterministic trim/alignment first,
+    # consolidation second, paid generation last. Never a bare "regenerate".
+    if gates["rendered_opening"]["verdict"] != "PASS":
+        out["opening_repair_plan"] = opening_repair_plan(gates["rendered_opening"],
+                                                         ro_ev)
     return out
 
 

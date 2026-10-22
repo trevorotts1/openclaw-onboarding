@@ -7,13 +7,18 @@ Only the Velvet Voiceover version keeps its own flow. stdlib only; no
 network, no spend.
 
 The rules (verbatim in SKILL.md):
-  1. Spoken tags only in [Intro] and [Outro]; spoken is named at most once
-     in the style text, and the style says the full band keeps playing
-     under the spoken lines.
-  2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
-     hyphen-held vowels. A wordless sung vocalise is OPTIONAL (WW-29): it is
-     never a forced lead-in, and where a sheet carries one it asks for a short
-     note only, never long held notes.
+  1. Spoken delivery follows THE one constraint policy (S75-W05-U2, D09): in
+     this dramatization mode a meaningful spoken scene may appear in ANY
+     section (the legacy Intro/Outro-only assumption is removed), spoken is
+     named at most once in the style text, and the style says the full band
+     keeps playing under the spoken lines.
+  2. Sung lines are short and metered inside the policy's preferred syllable
+     band (4-12, lyric_writer W-G-002 G5), rhymed, with hyphen-held vowels. A
+     preferred-band miss is an accept-with-warning finding, never a failure;
+     only a policy hard bound carrying a clear mode-specific reason can refuse
+     a line. A wordless sung vocalise is OPTIONAL (WW-29): it is never a forced
+     lead-in, and where a sheet carries one it asks for a short note only,
+     never long held notes.
   3. The hook is the payoff, never the opener (FU-HOOK-PLACEMENT, Trevor
      2026-10-09): it comes after the build-up the style's own structure
      calls for (a verse, plus a pre-chorus/build where the style and the
@@ -35,6 +40,38 @@ _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
+# S75-W05-U3: THE canonical duration registry is a zero-import leaf
+# (suno_recipe/duration_registry.py), re-exported here and bound BEFORE every
+# heavy import so music_styles / prompt_templates / style_defaults can read
+# their length tables from it in any import order. ONE table: the scattered
+# duration tuples (preflight's missing-120 PROFILE_LENGTHS_S included, D12)
+# are replaced by these names.
+try:
+    from .duration_registry import (   # noqa: E402
+        CANONICAL_DURATION_S, DURATION_LABELS_S, DURATION_REGISTRY,
+        REGISTRY_VERSION as DURATION_REGISTRY_VERSION,
+        RECOMMENDED_DURATION_S, SUPPORTED_SHAPES,
+        duration_row, durations, preflight_profiles, profile_row, profiles,
+        profiles_for, shapes,
+    )
+except ImportError:            # loaded as a plain module (core/suno_recipe on sys.path)
+    try:
+        from duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S, DURATION_REGISTRY,
+            REGISTRY_VERSION as DURATION_REGISTRY_VERSION,
+            RECOMMENDED_DURATION_S, SUPPORTED_SHAPES,
+            duration_row, durations, preflight_profiles, profile_row, profiles,
+            profiles_for, shapes,
+        )
+    except ImportError:
+        from suno_recipe.duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S, DURATION_REGISTRY,
+            REGISTRY_VERSION as DURATION_REGISTRY_VERSION,
+            RECOMMENDED_DURATION_S, SUPPORTED_SHAPES,
+            duration_row, durations, preflight_profiles, profile_row, profiles,
+            profiles_for, shapes,
+        )
+
 import ending_qc as _EQ         # noqa: E402
 import length_formula as _LF    # noqa: E402
 import music_styles as _MS      # noqa: E402
@@ -48,8 +85,8 @@ TOOL_NAME = "suno_recipe"
 TOOL_VERSION = "2.0.0"
 
 RULES = (
-    "Spoken tags only in [Intro] and [Outro]; spoken named once in the style text; the full band keeps playing under it.",
-    "Sung lines are short, rhymed, with hyphen-held vowels; a wordless vocalise is OPTIONAL, and where a sheet carries one it is a short lead-in, never a long held note.",
+    "Spoken delivery follows THE one constraint policy: a meaningful spoken scene may appear in any section of this dramatization; spoken named once in the style text; the full band keeps playing under it.",
+    "Sung lines are short and metered inside the policy's preferred syllable band (4-12), rhymed, with hyphen-held vowels; a preferred-band miss is an accept-with-warning finding, never a failure; a wordless vocalise is OPTIONAL, and where a sheet carries one it is a short lead-in, never a long held note.",
     "The hook is the payoff, never the opener: it comes after the build-up (a verse, plus a pre-chorus where the style has one), measured at or after the story beat where its words become true; the hook is the client's own words.",
     "Each take's singing is measured, not taken from its labels.",
 )
@@ -64,8 +101,64 @@ FIRST_SING_TARGET = 0.15
 ACCEPT_PTS, FLAG_PTS = 5, 10
 SUNO_STYLE_FIELD_MAX = 1000          # Suno style field character limit
 MIN_HOOK_REPEATS = 2
-MAX_SUNG_LINE_SYLLABLES = 8
 BAND_WORDING = "the full band keeps playing continuously under them"
+
+# ---------------------------------------------------------------------------
+# S75-W05-U3: THE one constraint policy (D09, spec 6.3).
+#
+# This recipe no longer carries its own contradictory rules (the 8-syllable
+# cap that refused the writer's legal 9-11 syllable lines; the legacy
+# "spoken only in [Intro]/[Outro]" assumption). It CONSUMES the single
+# versioned mode/duration-aware constraint policy authored in S75-W05-U2
+# (lyric_writer), through ``POLICY_SOURCES`` below, and falls back to
+# ``DEFAULT_CONSTRAINT_POLICY`` -- the same numbers the writer writes under --
+# until that policy resolves. Preferred ranges are accept-with-warning; only a
+# hard bound carrying a clear mode-specific reason may refuse a line, so a
+# 9-syllable line accepted by the writer can never be contradicted here
+# without one.
+#: The three quality outcomes (spec 6.3). "ok" is the no-finding case; every
+#: finding is one of these three. Warnings and errors travel in SEPARATE lists
+#: end to end, so no generic any(findings) check, exit-code mapper, downstream
+#: aggregator or Command Center projection can convert a warning into failure.
+OUTCOME_REQUIRED = "required_correction"
+OUTCOME_WARNING = "accept_with_warning"
+OUTCOME_USER = "user_decision_required"
+OUTCOMES = (OUTCOME_REQUIRED, OUTCOME_WARNING, OUTCOME_USER)
+#: The correction classes (spec 6.2). Regeneration is never an automatic
+#: class: never destroy the only good take or regenerate the whole song for a
+#: two-second overshoot.
+EDIT_DETERMINISTIC = "deterministic_edit"
+EDIT_WITHIN_ALLOWANCE = "repair_within_allowance"
+EDIT_USER_CHOICE = "user_choice"
+CORRECTION_CLASSES = (EDIT_DETERMINISTIC, EDIT_WITHIN_ALLOWANCE, EDIT_USER_CHOICE)
+
+CONSTRAINT_POLICY_VERSION = "blackceo.constraint-policy/v1"
+#: THE fallback policy: lyric_writer's own sung-line band (W-G-002 G5:
+#: SUNG_SYL_MIN=4 / SUNG_SYL_MAX=12). hard_max None = no hard syllable bound
+#: (a preferred-band miss warns, never fails). spoken_sections.allowed_in
+#: None = spoken in ANY section -- this dramatization mode (D09 removed the
+#: legacy Intro/Outro-only restriction).
+DEFAULT_CONSTRAINT_POLICY = {
+    "policy_version": CONSTRAINT_POLICY_VERSION,
+    "mode": "dramatization",
+    "sung_line": {"preferred_min_syllables": 4, "preferred_max_syllables": 12,
+                  "hard_max_syllables": None},
+    "spoken_sections": {"allowed_in": None},
+    "source": "suno_recipe fallback of the S75-W05-U2 policy "
+              "(lyric_writer SUNG_SYL_MIN=4 / SUNG_SYL_MAX=12, W-G-002 G5)",
+}
+#: Where the S75-W05-U2 policy lives once that unit lands. The recipe resolves
+#: the policy through these entry points at call time (mapping or callable)
+#: and falls back to DEFAULT_CONSTRAINT_POLICY when none answers; it never
+#: keeps a second rule set of its own.
+POLICY_SOURCES = (
+    ("lyric_writer.constraint_policy", "CONSTRAINT_POLICY"),
+    ("lyric_writer.constraint_policy", "get_policy"),
+    ("lyric_writer.constraint_policy", "policy_for"),
+    ("lyric_writer.lyric_writer", "CONSTRAINT_POLICY"),
+    ("lyric_writer.lyric_writer", "constraint_policy"),
+)
+_POLICY_OVERRIDE = None
 #: WW-16: the mandated opening vocalise is BOUNDED. Every sheet must still open
 #: with a wordless vocalise (rule 4), but its cue must ask for a SHORT lead-in
 #: (the 3.0-second ceiling); the data's "two very long held notes" produced a
@@ -375,6 +468,132 @@ def syllables(line):
     return n
 
 
+# ---- S75-W05-U3: policy resolution and evaluation --------------------------
+
+def set_constraint_policy(policy):
+    """Inject the policy this recipe enforces (tests, W05-U2 wiring).
+
+    None clears the injection and the recipe resolves through POLICY_SOURCES
+    again. The recipe judges ONE policy either way -- there is no local rule
+    set left to drift against the writer.
+    """
+    global _POLICY_OVERRIDE
+    _POLICY_OVERRIDE = policy
+    return policy
+
+
+def _merge_policy(base, over):
+    """``over`` merged over ``base`` (nested dicts merged, one shape)."""
+    out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in base.items()}
+    for k, v in (over or {}).items():
+        out[k] = {**out.get(k, {}), **v} if isinstance(v, dict) and isinstance(out.get(k), dict) \
+            else v
+    return out
+
+
+def _policy_reason_ok(policy):
+    """True unless the policy contradicts the canonical default with NO reason.
+
+    D09 / spec 6.3: a 9-syllable line accepted upstream cannot be contradicted
+    downstream without a clear mode-specific reason. A hard bound tighter than
+    the canonical preferred band, or any spoken-section restriction, must
+    carry ``mode_specific_reason``; an unreasoned contradiction is ignored and
+    surfaces as a warning.
+    """
+    hard = (policy.get("sung_line") or {}).get("hard_max_syllables")
+    spoken = (policy.get("spoken_sections") or {}).get("allowed_in")
+    tight = (hard is not None and hard < DEFAULT_CONSTRAINT_POLICY["sung_line"]["preferred_max_syllables"]) \
+        or bool(spoken)
+    if not tight:
+        return True
+    return bool(str(policy.get("mode_specific_reason") or "").strip())
+
+
+def constraint_policy(mode=None, duration_s=None):
+    """THE constraint policy this recipe enforces (spec 6.3).
+
+    Resolves the S75-W05-U2 policy through POLICY_SOURCES (mapping or
+    callable), else DEFAULT_CONSTRAINT_POLICY. The result is normalized to one
+    shape and an unreasoned downstream contradiction is ignored (with a
+    recorded note), so the writer's accepted lines can never be refused here
+    without a clear mode-specific reason.
+    """
+    if _POLICY_OVERRIDE is not None:
+        pol = _merge_policy(DEFAULT_CONSTRAINT_POLICY, _POLICY_OVERRIDE)
+        pol.setdefault("policy_version", CONSTRAINT_POLICY_VERSION)
+        pol.setdefault("source", "explicitly injected policy")
+    else:
+        pol = dict(DEFAULT_CONSTRAINT_POLICY)
+        for mod_name, attr in POLICY_SOURCES:
+            try:
+                mod = __import__(mod_name, fromlist=[attr])
+                obj = getattr(mod, attr)
+            except (ImportError, AttributeError):
+                continue
+            if callable(obj):
+                try:
+                    obj = obj(mode=mode, duration_s=duration_s)
+                except TypeError:
+                    try:
+                        obj = obj(mode)
+                    except TypeError:
+                        obj = obj()
+            if isinstance(obj, dict):
+                pol = _merge_policy(DEFAULT_CONSTRAINT_POLICY, obj)
+                pol.setdefault("source", "%s:%s" % (mod_name, attr))
+                break
+    if not _policy_reason_ok(pol):
+        pol = _merge_policy(DEFAULT_CONSTRAINT_POLICY,
+                            {"mode_specific_reason": pol.get("mode_specific_reason")})
+        pol["source"] = (str(pol.get("source") or "") +
+                         " [POLICY_UNREASONED_CONTRADICTION ignored: a tight "
+                         "downstream rule needs a clear mode_specific_reason]")
+    return pol
+
+
+def evaluate_sheet_constraints(sheet, policy=None):
+    """Policy findings for one sheet: {"errors", "warnings", "policy"}.
+
+    The preferred sung-line band (4-12) warns outside it; only a hard bound
+    with a clear mode-specific reason refuses. Spoken scenes outside
+    [Intro]/[Outro] are PRESERVED in this dramatization mode (D09). Warnings
+    never join the errors list -- the seam a generic any(findings) check would
+    need does not exist.
+    """
+    pol = policy or constraint_policy()
+    errors, warnings = [], []
+    sung = pol.get("sung_line") or {}
+    pref_min = sung.get("preferred_min_syllables")
+    pref_max = sung.get("preferred_max_syllables")
+    hard_max = sung.get("hard_max_syllables") if _policy_reason_ok(pol) else None
+    allowed_in = (pol.get("spoken_sections") or {}).get("allowed_in") \
+        if _policy_reason_ok(pol) else None
+    for s in sheet or []:
+        tag = str(s.get("tag", ""))
+        head = tag.lower().split()[0] if tag else ""
+        delivery = s.get("delivery")
+        if delivery == "spoken" and allowed_in:
+            if head not in tuple(a.lower() for a in allowed_in):
+                errors.append("spoken section %r: the policy with reason %r "
+                              "allows spoken only in %s"
+                              % (tag, pol.get("mode_specific_reason"),
+                                 ", ".join(str(a) for a in allowed_in)))
+        if delivery == "sung" and head != "vocalise":
+            for ln in s.get("lines") or []:
+                n = syllables(ln)
+                if hard_max is not None and n > hard_max:
+                    errors.append("sung line over the policy hard bound of %d "
+                                  "syllables (mode-specific reason: %s): %r"
+                                  % (hard_max, pol.get("mode_specific_reason"), ln))
+                elif (pref_min is not None and n < pref_min) or \
+                        (pref_max is not None and n > pref_max):
+                    warnings.append("sung line at %d syllables is outside the "
+                                    "preferred %s-%s band (accepted with "
+                                    "warning): %r"
+                                    % (n, pref_min, pref_max, ln))
+    return {"errors": errors, "warnings": warnings, "policy": pol}
+
+
 def is_exempt(style_id):
     return style_id in EXEMPT_STYLE_IDS
 
@@ -675,8 +894,15 @@ def _norm_char(name):
 
 
 def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
-                      style_id=None, hook_plan=None):
+                      style_id=None, hook_plan=None, policy=None,
+                      warnings_out=None):
     """Rules 1-3 on the sheet. Returns a list of errors (empty = pass).
+
+    S75-W05-U3: the sheet is judged against THE one constraint policy
+    (``policy``, else ``constraint_policy()``), never this module's own
+    contradictory rules. ``warnings_out`` (optional list) receives the
+    policy's accept-with-warning findings; they never appear in the returned
+    errors and can never be converted into failure downstream.
 
     With length_s (delivered seconds) the I8 hook count and the length-formula
     word budget are enforced too. FU-U1: rap sections are counted in the total
@@ -703,14 +929,14 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
     if rap and not rap_ok:
         errs.append("rap sections need a rap style (got style_id=%r): %s"
                     % (style_id, ", ".join(repr(s["tag"]) for s in rap[:4])))
-    for s in sheet:
-        head = s["tag"].lower().split()[0]
-        if s["delivery"] == "spoken" and head not in ("intro", "outro"):
-            errs.append("spoken section %r: spoken tags are only allowed in [Intro]/[Outro]" % s["tag"])
-        if s["delivery"] == "sung" and head != "vocalise":
-            for ln in s["lines"]:
-                if syllables(ln) > MAX_SUNG_LINE_SYLLABLES:
-                    errs.append("sung line over %d syllables: %r" % (MAX_SUNG_LINE_SYLLABLES, ln))
+    # S75-W05-U3: the policy decides both former local rules. The
+    # Intro/Outro-only spoken restriction is gone for this dramatization
+    # (D09), and the 8-syllable cap is gone for the writer's 4-12 band;
+    # a preferred-band miss warns, never refuses.
+    findings = evaluate_sheet_constraints(sheet, policy)
+    errs += findings["errors"]
+    if warnings_out is not None:
+        warnings_out.extend(findings["warnings"])
     sung = [s for s in sheet if s["delivery"] == "sung"]
     if not sung:
         return errs + ["no sung section"]
@@ -1026,21 +1252,30 @@ def check_negatives(neg, style_id=None):
 
 
 def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
-            vocal_gender="f", delivered_s=None, hook_plan=None, pace_plan=None):
+            vocal_gender="f", delivered_s=None, hook_plan=None, pace_plan=None,
+            policy=None):
     """THE gate every Suno style goes through. Returns style + lyrics text.
 
     Exempt (voiceover) -> {"exempt": True}. Unknown id -> fail closed.
     ``delivered_s`` (or ``length_s``) enables the U13 product-share gate.
     ``pace_plan`` (WW-07) writes the approved lowest-point direction and the
     return into the style, last, under the 1000-char cap.
+
+    S75-W05-U3: the result carries "warnings" (the policy's
+    accept-with-warning findings) and "constraint_policy" (the version
+    enforced). A warning never joins ``errs`` and never raises: the only
+    refusal path is an error list that is non-empty.
     """
     if is_exempt(style_id):
         return {"exempt": True}
     if style_id not in suno_style_ids():
         raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
                           "exempt; add it to music_styles" % (style_id,))
+    warnings = []
+    pol = policy or constraint_policy(mode="dramatization", duration_s=length_s)
     errs = check_lyric_sheet(sheet, client_text, length_s, spoken_share_pct,
-                             style_id=style_id, hook_plan=hook_plan)
+                             style_id=style_id, hook_plan=hook_plan,
+                             policy=pol, warnings_out=warnings)
     errs += check_no_voice_lines(render_lyrics(sheet, style_id))
     d = delivered_s if delivered_s is not None else length_s
     # FU-HOOK-PLACEMENT rule 1, always on (no length = UNMEASURED: length_s)
@@ -1054,7 +1289,9 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
         raise RecipeError("LYRICS_REJECTED", "; ".join(errs))
     return {"exempt": False, "style": style_text(style_id, sheet, vocal_gender, pace_plan),
             "lyrics": render_lyrics(sheet, style_id),
-            "negative_tags": negative_tags(style_id)}
+            "negative_tags": negative_tags(style_id),
+            "warnings": warnings,
+            "constraint_policy": pol["policy_version"]}
 
 
 def envelope_input(req):
@@ -1337,6 +1574,119 @@ def check_payload(payload, client_text=None, vocal_gender=None):
     return errs
 
 
+# ---- S75-W05-U3: duration is a target unless the destination has a real limit
+# Spec 6.2 (findings D12): ONE canonical registry (duration_registry) for the
+# six durations and every shape; the overshoot decision below is the ONLY
+# duration-correction rule. THE one overshoot allowance lives in
+# master_length (order 2026-10-21, OVERSHOOT_ALLOWANCE_S) and is read there,
+# never copied here.
+DURATION_POLICY_VERSION = "blackceo.duration-policy/v1"
+#: The elements the existing assembly path protects when a take is edited to
+#: an exact placement (spec 6.2): opening, key plot points, hook, CTA.
+PROTECTED_ELEMENTS = ("opening", "plot_points", "hook", "cta")
+
+
+def _overshoot_allowance_s():
+    """master_length's ONE overshoot allowance (never a second copy here)."""
+    import master_length.master_length as _ML   # noqa: PLC0415
+    return float(_ML.OVERSHOOT_ALLOWANCE_S)
+
+
+def judge_duration_correction(measured_s, target_s, placement_limit_s=None,
+                              protected_fits=True,
+                              repair_allowance_remaining=True):
+    """SPEC 6.2: ONE classified decision for a measured take against its brief.
+
+    Duration is a TARGET unless the destination has a real limit
+    (``placement_limit_s`` = the exact maximum a placement requires):
+
+    - a good 62 s take for a 60 s brief is PRESERVED and presented with a
+      measured-duration warning (outcome accept_with_warning);
+    - an exact-maximum placement gets a suitable edit through the EXISTING
+      assembly path (``edit_plan["route"] == "assembly"``), protecting the
+      opening, key plot points, hook and CTA, while the master is preserved;
+    - an extreme mismatch is NEVER accepted merely because overshoot is
+      advisory: it forces an edit or a bounded repair plan, and the decision
+      is classified (deterministic_edit / repair_within_allowance /
+      user_choice). Only the user_choice class may end in regeneration, and
+      never automatically.
+
+    The only good take is never destroyed and the song is never regenerated
+    for a two-second overshoot: ``preserve_take`` is True and ``regenerate``
+    False on every automatic decision.
+
+    Returns {outcome, correction_class, reason_code, warning, measured_s,
+    target_s, placement_limit_s, binding_max_s, overshoot_s, preserve_take,
+    regenerate, edit_plan}. ``outcome`` is "ok" when nothing deviates, else
+    one of OUTCOMES.
+    """
+
+    def _dec(outcome, cls, code, warning=None, edit_plan=None, overshoot=None):
+        return {"policy_version": DURATION_POLICY_VERSION,
+                "outcome": outcome, "correction_class": cls,
+                "reason_code": code, "warning": warning,
+                "measured_s": measured_s, "target_s": target_s,
+                "placement_limit_s": placement_limit_s,
+                "binding_max_s": binding, "overshoot_s": overshoot,
+                "preserve_take": True, "regenerate": False,
+                "edit_plan": edit_plan}
+
+    if not isinstance(measured_s, (int, float)) or measured_s <= 0:
+        return {"policy_version": DURATION_POLICY_VERSION,
+                "outcome": OUTCOME_REQUIRED, "correction_class": None,
+                "reason_code": "DURATION_UNMEASURED",
+                "warning": "measured duration is %r; remeasure the existing "
+                           "take before any correction is chosen"
+                           % (measured_s,),
+                "measured_s": measured_s, "target_s": target_s,
+                "placement_limit_s": placement_limit_s,
+                "binding_max_s": placement_limit_s
+                if placement_limit_s is not None else target_s,
+                "overshoot_s": None,
+                "preserve_take": True, "regenerate": False, "edit_plan": None}
+    binding = placement_limit_s if placement_limit_s is not None else target_s
+    over = round(float(measured_s) - float(binding), 3)
+    allowance = _overshoot_allowance_s()
+    edit_plan = {"route": "assembly", "protect": list(PROTECTED_ELEMENTS),
+                 "target_s": binding, "master_preserved": True}
+    if over <= 0:
+        if abs(float(measured_s) - float(target_s)) > 1e-9:
+            return _dec(OUTCOME_WARNING, None, "DURATION_MEASURED_VARIATION",
+                        "measured duration %g s against the %g s brief: the "
+                        "take is preserved with this measured-duration "
+                        "warning" % (measured_s, target_s), None, over)
+        return _dec("ok", None, "DURATION_WITHIN", None, None, over)
+    if over <= allowance + 1e-9:
+        warning = ("measured duration %g s is %g s over the %g s %s: the take "
+                   "is preserved (measured-duration warning); never destroy "
+                   "the only good take or regenerate for a small overshoot"
+                   % (measured_s, over, binding,
+                      "placement limit" if placement_limit_s is not None
+                      else "brief target"))
+        if placement_limit_s is not None:
+            # exact-maximum placement: a suitable edit through the existing
+            # assembly path, protecting opening, plot points, hook and CTA.
+            return _dec(OUTCOME_WARNING, EDIT_DETERMINISTIC,
+                        "DURATION_EXACT_PLACEMENT_EDIT", warning, edit_plan, over)
+        return _dec(OUTCOME_WARNING, None, "DURATION_MEASURED_VARIATION",
+                    warning, None, over)
+    # Extreme mismatch: never accepted merely because overshoot is advisory.
+    warning = ("measured duration %g s is %g s over the %g s %s (past the %g s "
+               "allowance): the take is NOT accepted as-is; the correction is "
+               "forced and classified" % (measured_s, over, binding,
+                                          "placement limit"
+                                          if placement_limit_s is not None
+                                          else "brief target", allowance))
+    if protected_fits:
+        return _dec(OUTCOME_REQUIRED, EDIT_DETERMINISTIC,
+                    "DURATION_EXTREME_MISMATCH", warning, edit_plan, over)
+    if repair_allowance_remaining:
+        return _dec(OUTCOME_REQUIRED, EDIT_WITHIN_ALLOWANCE,
+                    "DURATION_EXTREME_MISMATCH", warning, None, over)
+    return _dec(OUTCOME_USER, EDIT_USER_CHOICE,
+                "DURATION_EXTREME_MISMATCH", warning, None, over)
+
+
 def _planned_pct(plan, style_id, key):
     """Percent of delivered runtime one delivery holds in the APPROVED plan
     (U3): words[key] / words_fit's measured rate for the style, over the
@@ -1354,7 +1704,7 @@ def _planned_pct(plan, style_id, key):
     return round(float(words[key]) / float(rate) / float(delivered) * 100.0, 3)
 
 def score_take(take, hook_text=None, words=None, length_s=None,
-               style_id=None, plan=None):
+               style_id=None, plan=None, placement_limit_s=None):
     """Rule 4: judge a take from MEASURED or ALIGNED segments only.
 
     take = {"segments": [{"delivery", "start", "end", "source": "measured"
@@ -1449,6 +1799,23 @@ def score_take(take, hook_text=None, words=None, length_s=None,
     out["style_id"] = style_id
     if receipt:
         out["hook"] = receipt
+    # S75-W05-U3 (spec 6.2): the measured take runs through the ONE duration
+    # decision. A measured-duration warning rides in out["warnings"] ONLY --
+    # never in out["reasons"] -- so no generic any(findings) check can convert
+    # it into failure; only an extreme mismatch is refused (verdict FAIL), with
+    # the forced edit or bounded repair classified in out["duration_decision"].
+    if length_s is not None:
+        dur = judge_duration_correction(total, length_s, placement_limit_s)
+        out["duration_decision"] = dur
+        out["warnings"] = []
+        if dur["outcome"] in (OUTCOME_REQUIRED, OUTCOME_USER):
+            out["reasons"] = out["reasons"] + [
+                "%s: %s" % (dur["reason_code"], dur["warning"] or "")]
+            out["verdict"] = "FAIL"
+        elif dur["warning"]:
+            out["warnings"].append(dur["warning"])
+            if out["verdict"] == "PASS":
+                out["verdict"] = "FLAG"
     return out
 
 def _res(verdict, reasons):

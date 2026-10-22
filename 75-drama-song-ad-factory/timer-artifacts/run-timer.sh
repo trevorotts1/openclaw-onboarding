@@ -21,13 +21,63 @@
 # exported as DS_KEY for the child only. It is never echoed, never argv, never a
 # log line. This script prints no key value on any path.
 #
+# EXIT: 0 ok — or a QUIET SKIP of the optional Studio capability (disabled /
+#       needs-enrollment / degraded: never a noisy per-tick failure) ·
+#       1 error (identity/path/bridge) · 2 refused (ready but key/address
+#       vanished) · 3 undefined (bridge transport unknown) · any other code
+#       is a WAKE failure propagated separately from a successful poll.
 # EXIT: 0 ok · 1 error (identity/path/bridge) · 2 refused (no key/address) ·
 #       3 undefined (bridge transport unknown). Mirrors the U5 bridge.
+#
+# MODES: no argument = the poll. `--ready` = readiness probe (install/readiness
+# seam for the Studio work): same identity/path/bridge checks, one "ready" line,
+# no poll, no network. Exit 0 only when this box could poll right now.
+#
+# QUIET WHEN DISABLED (D34): a disabled optional capability is quiet. When
+# $STATE_DIR/capability.disabled exists (or DS_CAPABILITY_DISABLED=1) the timer
+# exits 0 without polling and without repeating any line. Unpaired notices are
+# TRANSITION-based: the state change is reported once, a steady state is silent.
+#
+# BOUNDED LOG RETENTION (D34): the scheduler redirects this script into
+# $DS_LOG_FILE (derived per platform when unset). Past $DS_LOG_MAX_BYTES the
+# log keeps only its last half, in place (same inode, so `>>` redirections and
+# launchd stay valid). Bounded by construction: the file never exceeds the cap.
 set -u
 
 PROG="ds-timer"
 say() { printf '%s %s\n' "$PROG:" "$*" >&2; }
 die() { say "$*"; exit "${2:-1}"; }
+
+# Transition-based diagnostics (spec 9.3): notice on state CHANGE only, so an
+# idle optional poller never spams and an old log line is never a new failure.
+# The marker is written ONLY into an existing state dir: a poller that finds no
+# state store still writes nothing (it is a reader until pairing), and without a
+# writable marker the notice simply repeats instead of silently vanishing.
+DS_NOTICE_STATE="${DS_NOTICE_STATE:-}"
+ds_notice() {
+  _sig="$1"; shift
+  [ -n "$DS_NOTICE_STATE" ] || { say "$*"; return 0; }
+  _prev=""
+  [ -f "$DS_NOTICE_STATE" ] && _prev="$(cat "$DS_NOTICE_STATE" 2>/dev/null || true)"
+  if [ "$_sig" = "$_prev" ]; then return 0; fi
+  [ -d "$(dirname "$DS_NOTICE_STATE")" ] && printf '%s\n' "$_sig" > "$DS_NOTICE_STATE" 2>/dev/null || true
+  [ "$_sig" = "ok" ] && return 0
+  say "$*"
+}
+
+# Bounded log retention: trim to the last half once past the cap. cat-back keeps
+# the inode, so every `>> $DS_LOG_FILE` redirection stays pointed at the file.
+DS_LOG_MAX_BYTES="${DS_LOG_MAX_BYTES:-262144}"
+ds_trim_log() {
+  [ -n "${DS_LOG_FILE:-}" ] && [ -f "$DS_LOG_FILE" ] || return 0
+  _sz="$(wc -c < "$DS_LOG_FILE" 2>/dev/null | tr -d ' ')"
+  case "$_sz" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$_sz" -gt "$DS_LOG_MAX_BYTES" ] || return 0
+  tail -c "$((DS_LOG_MAX_BYTES / 2))" "$DS_LOG_FILE" > "$DS_LOG_FILE.trim.$$" 2>/dev/null || return 0
+  cat "$DS_LOG_FILE.trim.$$" > "$DS_LOG_FILE" 2>/dev/null || true
+  rm -f "$DS_LOG_FILE.trim.$$"
+  say "log retention: trimmed $DS_LOG_FILE ($_sz -> $((DS_LOG_MAX_BYTES / 2)) bytes)"
+}
 
 # ---- 1) Platform identity: the RIGHT user and the RIGHT paths, or refuse ----
 # The plan (section 1, "Runtime user" / "Persistent state") fixes these exactly.
@@ -101,6 +151,30 @@ esac
 KEY_FILE="${DS_KEY_FILE:-$STATE_DIR/machine.key}"
 URL_FILE="${DS_URL_FILE:-$STATE_DIR/machine.url}"
 
+# ---- 2b) Mode, quiet-disabled capability, bounded log retention -----------
+READY=0
+case "${1:-}" in
+  "") : ;;
+  --ready) READY=1 ;;
+  *) die "unknown argument '${1}' (no argument = poll, or --ready)" 1 ;;
+esac
+
+DS_NOTICE_STATE="${DS_NOTICE_STATE:-$STATE_DIR/.poll-state}"
+case "$PLATFORM" in
+  mac)       DS_LOG_FILE="${DS_LOG_FILE:-$HOME/Library/Logs/openclaw/drama-studio-timer.log}" ;;
+  hostinger) DS_LOG_FILE="${DS_LOG_FILE:-/data/.openclaw/logs/drama-studio-timer.log}" ;;
+  contabo)   DS_LOG_FILE="${DS_LOG_FILE:-/home/node/.openclaw/logs/drama-studio-timer.log}" ;;
+esac
+export DS_LOG_FILE
+ds_trim_log
+
+# A disabled optional capability polls nothing and says nothing (D34). The one
+# transition line tells the story once; every later tick is silent.
+if [ "${DS_CAPABILITY_DISABLED:-0}" = "1" ] || [ -f "$STATE_DIR/capability.disabled" ]; then
+  ds_notice disabled "studio capability disabled - timer idle (quiet)"
+  exit 0
+fi
+
 # ---- 3) Explicit scheduler environment: never inherit a model/env context ----
 # A launchd/cron job has a minimal environment; it must not depend on Claude's
 # settings env (the plan: "Timers never assume Claude settings env loads").
@@ -114,14 +188,16 @@ export PATH
 # ---- 4) The machine key + studio address (own store, never Claude settings) --
 # The pairing gate comes FIRST: an unpaired computer is not paired whether or
 # not the skill copy and interpreter are present, and must say exactly that.
-[ -f "$URL_FILE" ] || { say "no studio address at $URL_FILE — this computer is not paired"; exit 2; }
+# Transition notices only: one line when pairing state CHANGES, silence after.
+[ -f "$URL_FILE" ] || { ds_notice unpaired "no studio address at $URL_FILE — this computer is not paired"; exit 2; }
 DS_BASE_URL="$(tr -d '\r\n' < "$URL_FILE" 2>/dev/null || true)"
-[ -n "$DS_BASE_URL" ] || { say "empty studio address at $URL_FILE"; exit 2; }
+[ -n "$DS_BASE_URL" ] || { ds_notice unpaired "empty studio address at $URL_FILE"; exit 2; }
 
-[ -f "$KEY_FILE" ] || { say "no machine key at $KEY_FILE — this computer is not paired"; exit 2; }
+[ -f "$KEY_FILE" ] || { ds_notice unpaired "no machine key at $KEY_FILE — this computer is not paired"; exit 2; }
 DS_KEY="$(tr -d '\r\n' < "$KEY_FILE" 2>/dev/null || true)"
-[ -n "$DS_KEY" ] || { say "empty machine key at $KEY_FILE"; exit 2; }
+[ -n "$DS_KEY" ] || { ds_notice unpaired "empty machine key at $KEY_FILE"; exit 2; }
 export DS_KEY
+ds_notice ok "paired"
 
 # ---- 5) Resolve the U5 bridge and an absolute interpreter -------------------
 SKILL_ROOT="${DS_SKILL_ROOT:-}"
@@ -142,10 +218,34 @@ BRIDGE="$SKILL_ROOT/shared-bridge/studio_bridge.py"
 PYTHON="$(command -v python3 2>/dev/null || true)"
 [ -n "$PYTHON" ] || die "python3 not found on PATH ($PATH)" 1
 
+# ---- 5b) Readiness seam (W07-U3 Studio work): everything the poll needs is
+# resolved, nothing is polled, no network. Exit 0 = this box could poll now.
+if [ "$READY" -eq 1 ]; then
+  say "ready: platform=$PLATFORM user=$RUN_USER state=$STATE_DIR bridge=$BRIDGE python=$PYTHON"
+  exit 0
+fi
+
 # ---- 6) Order poll: check-in, claim, replay, one JSON line if one waited -----
 # poll = SPEC §6. No model call, no Claude, no prompt, no interactive TTY.
 # Exports the state root the bridge uses for its key/address fallback.
 export DRAMA_STUDIO_STATE="$STATE_DIR"
+
+# ---- 6b) Optional Studio capability gate (SPEC 9.3 / D24) -------------------
+# The capability is modelled explicitly as disabled | needs-enrollment | ready |
+# degraded in the installation state. disabled/needs-enrollment -> quiet skip:
+# a chat-only box must never be polled into noise or auto-enrolled just to
+# silence logs. ready -> poll. degraded -> the gate already tried the local
+# receipt recovery (key-only / interrupted enrolment, never a re-enrol); we say
+# so ONCE per TRANSITION and skip quietly — the gate prints a line only when
+# the state changes, so old ticks never pile up and old log lines are never
+# new failures (last-attempt/successful-check timestamps live in capability.json).
+GATE_RC=0
+GATE_OUT="$("$PYTHON" "$BRIDGE" capability --gate --repair 2>&1)" || GATE_RC=$?
+[ -z "$GATE_OUT" ] || say "$GATE_OUT"
+[ "$GATE_RC" -eq 0 ] || exit 0    # not ready: the optional poller stays quiet
+
+[ -n "$DS_BASE_URL" ] || { say "no studio address at $URL_FILE — this computer is not paired"; exit 2; }
+[ -n "$DS_KEY" ] || { say "no machine key at $KEY_FILE — this computer is not paired"; exit 2; }
 
 case "$PLATFORM" in
   mac)       RUNS_DIR="$HOME/.openclaw/drama-runs" ;;
@@ -155,11 +255,22 @@ esac
 
 WAKE="$SKILL_ROOT/shared-bridge/wake_agent.sh"
 if [ -f "$WAKE" ]; then
-  # An order waited and the bridge printed its JSON line: hand that one line to
-  # the wake script, then leave with the POLL's exit code — never the wake's.
   POLL_OUT="$("$PYTHON" "$BRIDGE" poll --base-url "$DS_BASE_URL" --skill-root "$SKILL_ROOT" --runs "$RUNS_DIR")"
   POLL_RC=$?
-  [ -z "$POLL_OUT" ] || "$WAKE" "$POLL_OUT"
+  if [ "$POLL_RC" -eq 0 ] && [ -n "$POLL_OUT" ]; then
+    # An order waited and the bridge printed its JSON line: hand that one line
+    # to the wake script. A WAKE failure is propagated SEPARATELY from the
+    # poll's success (SPEC 9.4): the exit code is the wake's own, and the line
+    # names both, so a failed wake never looks like a clean tick. The wake
+    # request itself stays queued in the claim ledger and is retried on the
+    # next tick under the same order.
+    WAKE_RC=0
+    "$WAKE" "$POLL_OUT" || WAKE_RC=$?
+    if [ "$WAKE_RC" -ne 0 ]; then
+      say "poll succeeded but the WAKE failed (rc=$WAKE_RC) -- the handoff is not complete and stays queued"
+      exit "$WAKE_RC"
+    fi
+  fi
   exit "$POLL_RC"
 fi
 

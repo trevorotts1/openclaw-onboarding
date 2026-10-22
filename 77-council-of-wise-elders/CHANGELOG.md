@@ -1,14 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.50: Council: nine seat emblems and a cover emblem land as assets/seats art, and the branch folds in upstream main (W74-ASSETS)
+## v1.0.51: Council: nine seat emblems and a cover emblem land as assets/seats art, and the branch folds in upstream main (W74-ASSETS)
 
 In plain English: every seat now has its own painted emblem - the council cover gets one too - so the rendered artifact page (W74-B's `render-counsel-artifact.mjs`, which defaults its asset source to `assets/seats/cover.png`) has the art it points at, in-repo.
 
 - New `assets/seats/` with ten PNG files: nine seat emblems (one per elder seat) plus `cover.png`, all generated as painted heraldic medallion emblems (navy and antique gold, ornate filigree border, symbolic objects only - no human faces, no likenesses of real people, no text in any image).
-- Branch merges upstream main (the W73 BUILD entry lands as v1.0.45 below this one), the W74-C/B/A/D entries renumber to v1.0.46 through v1.0.49, and this entry is the new top at v1.0.50.
-- Repository markers (SKILL.md frontmatter version, skill-version.txt, version file) agree at 1.0.50; manifest and archive regenerated with `scripts/build-bundles.mjs`.
+- Branch merges upstream main (the W73 BUILD entry lands as v1.0.45 below this one), the W74-C/B/A/D entries renumber to v1.0.47 through v1.0.50, and this entry is the new top at v1.0.51.
+- Repository markers (SKILL.md frontmatter version, skill-version.txt, version file) agree at 1.0.51; manifest and archive regenerated with `scripts/build-bundles.mjs`.
 
-## v1.0.49: Council: one convene flow wires the brief-builder, the deliberation, the close protocol and the artifact - on both doors (W74-D)
+## v1.0.50: Council: one convene flow wires the brief-builder, the deliberation, the close protocol and the artifact - on both doors (W74-D)
 
 In plain English: a council now runs as one flow. The brief the elders read is assembled first from the client's permitted memory files, the council deliberates and reaches its verdict, the sitting closes itself (the soft-close question, or the client's own "that's all"), and the finished counsel page arrives in the reply beside the chamber link. The same flow serves both doors: the client's OpenClaw agent and claude-nine / Claude Code (999) - the client only asks for the council, whichever side they are on.
 
@@ -18,7 +18,7 @@ In plain English: a council now runs as one flow. The brief the elders read is a
 - New assert-style test `runtime/tests/convene-flow.test.ts` (no framework) proving the order on both doors - the deliberation leg receives the assembled brief, finalize really renders through the W74-B renderer, and the delivery carries the artifact link beside the chamber - plus the sitting cases (soft-close at 5m, close phrase finalizes, 10-minute auto-finalize).
 - Manifest and archive regenerated with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
 
-## v1.0.48: Council: a sitting now closes itself - one soft-close question, an explicit close phrase finalizes at once, and ten quiet minutes never leave a session open (W74-A)
+## v1.0.49: Council: a sitting now closes itself - one soft-close question, an explicit close phrase finalizes at once, and ten quiet minutes never leave a session open (W74-A)
 
 In plain English: a council sitting is one session and every sitting gets closed. Five minutes after the client's last interaction the council asks exactly once "Is that all, or are we still working?"; an explicit close phrase ("that's all", "we're done", "finalize", ...) finalizes immediately; no answer within ten minutes of the question finalizes automatically; and nothing hangs open.
 
@@ -29,7 +29,7 @@ In plain English: a council sitting is one session and every sitting gets closed
 - Skill instructions: "Closing a session" added to SKILL.md and INSTRUCTIONS.md. "Resolve existing sessions first, never create a duplicate" and one active session per client stay exactly as they were.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
 
-## v1.0.47: Council: a finished sitting renders as one fixed counsel artifact page (W74-B)
+## v1.0.48: Council: a finished sitting renders as one fixed counsel artifact page (W74-B)
 
 In plain English: after a council sitting, the result now renders as one clean page: the decision and the overall consensus at the top, the nine elders with their seat emblems and their takes below, the action steps numbered, and a footer with the sitting facts. The page is print-ready and can produce a real PDF when the box has headless Chrome or cupsfilter; otherwise the client prints from the browser. The look is identical for every client and every sitting.
 
@@ -40,7 +40,7 @@ In plain English: after a council sitting, the result now renders as one clean p
 - New runnable check scripts/tests/render-counsel-artifact.test.mjs: renders one synthetic fixture session (clearly labeled synthetic) and asserts the five sections in order, the nine seat images, and no absolute paths in the HTML; nine tests total.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-scoped change only).
 
-## v1.0.46: Council: the convene brief is now built by one shared permitted-context builder across both doors, with private detail excluded and a hard size cap (W74-C)
+## v1.0.47: Council: the convene brief is now built by one shared permitted-context builder across both doors, with private detail excluded and a hard size cap (W74-C)
 
 In plain English: before a council starts, the brief the elders read is now assembled by one shared builder that reads only the client's permitted memory files on whichever side the session runs - the OpenClaw door or the claude-nine door - and selects just the facts that bear on THIS decision. Private preferences stay in the private store, unknowns stay marked, pointer documents are followed at most one link deep, and the brief can never run past its word cap.
 
@@ -51,6 +51,13 @@ In plain English: before a council starts, the brief the elders read is now asse
 - Bloat protection: `BRIEF_WORD_CAP` = 2000 words, hard; facts selected decision-relevant first, newest first inside a relevance class.
 - New runnable check `runtime/tests/brief-builder.test.ts` over fixture memory files: the decision-relevant fact is in the brief, the irrelevant private detail is out, the size cap holds, and unknowns are marked - proven on both doors.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (code fix only).
+## v1.0.46: Council: the Chamber link line is the single link source (FIX W76)
+
+In plain English: the client now gets exactly one link - the helper's `Chamber link:` line - and the raw `chamber_url` field is never sent on its own. This restores the fix that batch #2433 dropped when it merged the older #2431 snapshot instead of the later revision.
+
+- SKILL.md: the helper's `Chamber link:` line is the single source of truth for the client's link; the command's `chamber_url` field feeds that line and is never sent to the client on its own.
+- Both safety rules kept: never invent, guess, or build a link; never send a 127.0.0.1 link to a client.
+- Version markers rolled to v1.0.46 (G3 requires the version marker with a skill content change); manifest and archive regenerated with `scripts/build-bundles.mjs`.
 
 ## v1.0.45: Council: the W73 chamber-visual package clears the QC gate and its version markers roll (BUILD W73)
 
