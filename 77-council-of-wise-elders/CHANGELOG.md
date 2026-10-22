@@ -1,5 +1,20 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.46: Council: the Chamber link line is the single link source (FIX W76)
+
+In plain English: the client now gets exactly one link - the helper's `Chamber link:` line - and the raw `chamber_url` field is never sent on its own. This restores the fix that batch #2433 dropped when it merged the older #2431 snapshot instead of the later revision.
+
+- SKILL.md: the helper's `Chamber link:` line is the single source of truth for the client's link; the command's `chamber_url` field feeds that line and is never sent to the client on its own.
+- Both safety rules kept: never invent, guess, or build a link; never send a 127.0.0.1 link to a client.
+- Version markers rolled to v1.0.46 (G3 requires the version marker with a skill content change); manifest and archive regenerated with `scripts/build-bundles.mjs`.
+
+## v1.0.45: Council: the W73 chamber-visual package clears the QC gate and its version markers roll (BUILD W73)
+
+In plain English: the W73 chamber-visual change (the Roast Room visual pops up on desktop and the chamber link rides every reply) is unchanged. This patch rolls the version markers and repackages the archive so the pull request's required G3 check sees the skill content change and the skill-version.txt bump together.
+
+- skill-version.txt and version rolled from v1.0.44 to v1.0.45; SKILL.md frontmatter version rolled to match.
+- Package files carry no em dash character (the QC gate that failed on the previous push now passes: doctor, verify-cohort-parity, verify-bundles, qc-council-of-wise-elders.sh all green; chamber-visual.test.sh 17/17).
+- Manifest and archive regenerated once with `scripts/bump-version.sh` plus `scripts/build-bundles.mjs`.
 ## v1.0.44: Council: the Roast Room visual pops up and the chamber link rides every reply (BUILD W73)
 
 In plain English: no matter how the client calls the elders — claude-nine terminal or chat — the chamber visual they see at the link shows up for them too: on a desktop box it opens in the browser on every convene, and the chamber link is always in the reply so phone and chat callers tap straight into the same visual.

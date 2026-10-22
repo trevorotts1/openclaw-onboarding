@@ -1044,13 +1044,50 @@ def telegram_payload(chat_id, text):
     return {"chat_id": chat_id, "text": text}
 
 
-def openclaw_send_argv(target, text, media=()):
-    """Exact argv for ``openclaw message send`` on Telegram. A list, not a
-    shell string: run it with subprocess (shell=False) and the newlines in
-    ``text`` reach the sender untouched."""
-    return (["openclaw", "message", "send", "--channel", "telegram",
+def channel_send_argv(channel, target, text, media=(), account=None, thread_id=None):
+    """THE command builder (W03-U1, finding D06): one ``openclaw message send``
+    argv for the RESOLVED channel. ``channel`` arrives as data -- from the run's
+    origin record (``delivery_outbox.resolve_origin``) or an explicit caller --
+    and this builder never picks one. Telegram resolves the correct
+    authenticated bot/account, chat and thread through ``--account`` /
+    ``--target`` / ``--thread-id``; an OpenClaw-app conversation is addressed by
+    its own conversation id. A list, not a shell string: run it with subprocess
+    (shell=False) and the newlines in ``text`` reach the sender untouched. The
+    argv is the STABLE identity of one piece (message text last); the transport
+    executor adds ``--json`` when it runs the command, so the channel's receipt
+    (a message id) can be recorded -- that receipt is what allows a delivery to
+    be claimed sent."""
+    channel = (channel or "").strip()
+    if not channel:
+        raise ValueError("channel_send_argv needs the RESOLVED channel; "
+                         "refusing to guess a default channel")
+    return (["openclaw", "message", "send", "--channel", channel,
              "--target", str(target), "--message", text]
-            + [x for m in media for x in ("--media", str(m))])
+            + [x for m in media for x in ("--media", str(m))]
+            + (["--account", str(account)] if account else [])
+            + (["--thread-id", str(thread_id)] if thread_id else []))
+
+
+def openclaw_send_argv(target, text, media=(), channel=None, account=None,
+                       thread_id=None, run_dir=None):
+    """Backward-compatible entry for legacy callers that pass a bare chat id.
+
+    Resolution order: an explicit ``channel``; else the run's canonical origin
+    record (``run_dir``); else the DEPRECATED legacy contract -- a caller that
+    hands in a bare chat id addressed Telegram explicitly (the storyboard
+    approval runner and the song-choice sender document exactly that). New code
+    must route through ``channel_send.send`` / ``channel_send_argv`` with a
+    resolved channel so no path hardcodes Telegram."""
+    if channel is None and run_dir:
+        from choice_card.intake_card import delivery_outbox as _DO   # noqa: PLC0415
+        rec = _DO.resolve_origin(run_dir)
+        channel = (rec or {}).get("channel") or None
+        account = account or (rec or {}).get("account_id") or None
+        thread_id = thread_id or (rec or {}).get("thread_id") or None
+    if channel is None:
+        channel = "telegram"     # deprecated legacy default (caller-explicit)
+    return channel_send_argv(channel, target, text, media=media,
+                             account=account, thread_id=thread_id)
 
 
 # --- FU-U4: the fit STOP card (registry-only options, plan 2.3) ----------------

@@ -492,6 +492,561 @@ def evaluate(run_id, stage, records, makers, required,
             "critical_failures": crit}
 
 
+# ---- S75-W02-U3: the versioned QC evidence contract ----------------------
+#
+# qc-schema 1.0.0 records name the verdict FAMILY (the ``check`` category) but
+# not which measurement produced the verdict, on which artifact, under which
+# evaluator. This contract adds the deterministic adapters between the three
+# levels -- take-level measurement -> stage-level QC record -> delivered-audio
+# acceptance -- around ONE validated schema that producer and consumer share,
+# and the REQUIRED-CHECK REGISTRY declared independently of whatever records
+# arrive: neither an arbitrary record list nor an empty list can establish
+# all-checks-passed.
+
+EVIDENCE_CONTRACT_VERSION = "1.0.0"
+
+#: Finding severities. "advisory" is the ONLY surface a scoped creative
+#: exception may ever address.
+SEVERITIES = frozenset({"critical", "major", "advisory"})
+
+#: Structural evidence failures. NONWAIVABLE: missing or corrupt QC, schema
+#: errors, inaccessible evidence files, absent required measurements,
+#: wrong-tenant evidence, unsupported attestations and paid-dispatch controls.
+#: No operator decision, no creative exception and no re-aggregation ever
+#: advances a stage under one -- MISSING_QC and SCHEMA_VIOLATION included.
+STRUCTURAL_CODES = frozenset({
+    "MISSING_QC", "QC_CORRUPT", "SCHEMA_VIOLATION", "EVIDENCE_INACCESSIBLE",
+    "MEASUREMENT_MISSING", "WRONG_TENANT", "ATTESTATION_UNSUPPORTED",
+    "PAID_DISPATCH_CONTROL",
+    # binding and independence faults are structural too (17.6 / 24.4)
+    "UNKNOWN_CHECK", "UNKNOWN_CHECK_ID", "UNKNOWN_STAGE",
+    "MAKER_UNKNOWN", "MAKER_SELF_REVIEW", "WRONG_RUN", "WRONG_ARTIFACT",
+    "STALE_BINDING", "CHECKER_VERSION_MISMATCH", "PROFILE_MISMATCH",
+    "UNAVAILABLE_MANDATORY", "SUNG_CLAIM_UNMEASURED", "FILL_CLAIM_MEASURED",
+})
+
+
+def chain_link(stage, code, detail=""):
+    """ONE boundary hop in a refusal's causal chain (same shape as
+    song_choices.causal_link -- the two modules never import each other)."""
+    return {"stage": str(stage), "reason_code": str(code or ""),
+            "detail": str(detail or "")}
+
+
+def refusal_envelope(code, detail, next_action, chain=()):
+    """A refusal that survives every wrapper boundary: reason, detail, next    action and the causal chain travel together and are never rewritten."""
+    out = []
+    for link in chain or ():
+        if not isinstance(link, dict) or not link.get("stage"):
+            raise GateError("BAD_INPUT", "causal_chain entries need a stage")
+        out.append(chain_link(link.get("stage"), link.get("reason_code", ""),
+                              link.get("detail", "")))
+    return {"reason_code": str(code or ""), "detail": str(detail or ""),
+            "next_action": str(next_action or ""), "causal_chain": out}
+
+
+def _entry(category, producer, consumer, measurement, severity,
+           confidence=False, control=None):
+    return {"category": category, "producer": producer, "consumer": consumer,
+            "measurement": measurement, "severity": severity,
+            "confidence": bool(confidence), "control": control}
+
+
+#: The producer-to-consumer mapping. Each STABLE CHECK ID (what was measured)
+#: declares the qc-schema CATEGORY its record rides, WHO measures it, WHICH
+#: consumer reads it and the MEASUREMENT KEY the producer must attest. One
+#: category carries many check IDs; the ID never changes category. Both
+#: adapters read THIS table -- the mapping is declared, never caller-asserted.
+CHECK_REGISTRY = {
+    "take.lyrics.critical_words": _entry(
+        "lyrics", "song_dispatch.judge_take", "qc_gate.evidence_to_record",
+        "critical_word_coverage", "critical", confidence=True),
+    "take.timing.word_alignment": _entry(
+        "timing", "lyric_timing", "qc_gate.evidence_to_record",
+        "median_ms", "critical", confidence=True),
+    "take.audio.first_sung": _entry(
+        "audio", "singing_detector", "qc_gate.evidence_to_record",
+        "first_sung_s", "major", confidence=True),
+    "stage.shots.no_blur_fill": _entry(
+        "no_blur_fill", "no_blur_fill.still_fill", "qc_gate.evidence_to_record",
+        "fill_method", "critical"),
+    "stage.final_edit.master_length": _entry(
+        "final_edit", "master_length.check_master", "qc_gate.evidence_to_record",
+        "measured_s", "critical", confidence=True),
+    "stage.final_qc.prompt_compliance": _entry(
+        "prompt_compliance", "prompt_templates.receipt",
+        "qc_gate.evidence_to_record", "receipt_rows", "major",
+        control="paid_dispatch"),
+    "delivery.audio.acceptance": _entry(
+        "audio_versions", "delivery_variants.song_files",
+        "qc_gate.delivery_acceptance", "accepted", "critical"),
+}
+
+#: REQUIRED CHECKS PER STAGE -- DECLARED here, never derived from received
+#: records. An arbitrary record list cannot shrink the requirement and an
+#: empty list cannot satisfy it: the consumers below measure records AGAINST
+#: this registry, never FROM them.
+REQUIRED_CHECK_REGISTRY = {
+    "take": ("take.lyrics.critical_words", "take.timing.word_alignment",
+             "take.audio.first_sung"),
+    "shots": ("stage.shots.no_blur_fill",),
+    "final_edit": ("stage.final_edit.master_length",),
+    "final_qc": ("stage.final_qc.prompt_compliance",),
+    "delivery": ("delivery.audio.acceptance",),
+}
+
+
+def required_checks_for(stage):
+    """The stage's REQUIRED check IDs from the DECLARED registry (independent
+    of any record list). Unknown stages fail closed."""
+    if stage not in REQUIRED_CHECK_REGISTRY:
+        raise GateError("UNKNOWN_STAGE",
+                        "no declared required-check registry for stage %r" % (stage,))
+    return tuple(REQUIRED_CHECK_REGISTRY[stage])
+
+
+def _evidence_error_code(err):
+    """Map a shared-schema validation error to its structural code."""
+    e = (err or "").lower()
+    if "unsupported attestation" in e:
+        return "ATTESTATION_UNSUPPORTED"
+    if "measured" in e or "confidence" in e:
+        return "MEASUREMENT_MISSING"
+    return "SCHEMA_VIOLATION"
+
+
+def validate_evidence(doc):
+    """THE validated schema both sides share: the producer builds with
+    measurement_evidence(), the consumer re-checks with THIS function before
+    trusting a byte of the doc. Error string or None."""
+    if not isinstance(doc, dict):
+        return "evidence doc must be an object"
+    if doc.get("contract_version") != EVIDENCE_CONTRACT_VERSION:
+        return "contract_version must be %r" % EVIDENCE_CONTRACT_VERSION
+    cid = doc.get("check_id")
+    ent = CHECK_REGISTRY.get(cid)
+    if ent is None:
+        return "unknown check_id %r (not in CHECK_REGISTRY)" % (cid,)
+    for key in ("category", "producer", "consumer"):
+        if doc.get(key) != ent[key]:
+            return ("%s %r does not match the declared producer-to-consumer "
+                    "mapping %r" % (key, doc.get(key), ent[key]))
+    art = doc.get("artifact_sha256")
+    if not isinstance(art, str) or not re.fullmatch(r"[0-9a-f]{64}", art):
+        return "artifact_sha256 must be a 64-character lowercase hex digest"
+    for key in ("plan_revision", "evaluator_version", "evidence_source",
+                "tenant"):
+        if not _nonempty_str(doc.get(key)):
+            return "%s must be a non-empty string" % key
+    if not isinstance(doc.get("applicable"), bool):
+        return "applicable must be a boolean"
+    if doc.get("severity") not in SEVERITIES:
+        return "severity must be one of %s" % sorted(SEVERITIES)
+    if doc.get("verdict") not in VERDICTS:
+        return "verdict must be one of %s" % sorted(VERDICTS)
+    meas = doc.get("measured")
+    if not isinstance(meas, dict) or ent["measurement"] not in meas:
+        return ("measured must record the declared measurement %r"
+                % ent["measurement"])
+    allowed = {ent["measurement"], "method", "detail", "sample_ref", "units"}
+    extra = sorted(set(meas) - allowed)
+    if extra:
+        return ("unsupported attestation keys %r (the producer %r attests %r "
+                "only)" % (extra, ent["producer"], ent["measurement"]))
+    if ent["confidence"] and doc.get("applicable") and doc.get("confidence") is None:
+        return "confidence must be recorded for %r" % cid
+    rec = doc.get("record")
+    if not isinstance(rec, dict):
+        return "record must be an object"
+    if rec.get("check_id") != cid or rec.get("check") != ent["category"]:
+        return "record identity must match the declared check_id/category"
+    err = validate_record(rec)
+    if err is not None:
+        return "record: " + err
+    return None
+
+
+def measurement_record(check_id, measurement, *, run_id, stage, verdict,
+                       reviewer, summary="", reason_code=""):
+    """take-level measurement -> ONE stage-level qc-schema record.
+    DETERMINISTIC: the check identity and category come from CHECK_REGISTRY,
+    the evaluator version becomes the checker version, the evidence source is
+    recorded in refs. Nothing about the mapping is caller-asserted."""
+    ent = CHECK_REGISTRY.get(check_id)
+    if ent is None:
+        raise GateError("UNKNOWN_CHECK_ID",
+                        "check %r is not in CHECK_REGISTRY" % (check_id,))
+    if verdict not in VERDICTS:
+        raise GateError("SCHEMA_VIOLATION",
+                        "verdict must be one of %s" % sorted(VERDICTS))
+    if not _nonempty_str(summary):
+        summary = "measured %s=%r via %s" % (
+            ent["measurement"], (measurement or {}).get(ent["measurement"]),
+            ent["producer"])
+    return {"schema_version": "1.0.0", "check_id": check_id,
+            "run_id": run_id, "stage": stage, "check": ent["category"],
+            "verdict": verdict,
+            "evidence": {"summary": summary,
+                         "refs": ["qc-evidence:%s" % check_id]},
+            "reason_code": reason_code, "checker_version": "",
+            "reviewer": dict(reviewer or {})}
+
+
+def measurement_evidence(check_id, measurement, *, verdict, artifact_sha256,
+                         plan_revision, evaluator_version, evidence_source,
+                         run_id, stage, reviewer, summary="", reason_code="",
+                         confidence=None, applicable=True, tenant="default",
+                         severity=None):
+    """take-level measurement -> the shared evidence doc (PRODUCER side of the
+    one validated schema). ``measurement`` is the measured result: a dict    carrying the declared measurement key. The category, producer, consumer and
+    default severity come from CHECK_REGISTRY; the approved-plan revision,    artifact hash, evaluator version, evidence source, applicability and    confidence ride WITH the measurement. ``severity`` defaults to the    registry's declared severity and may carry the measured finding's own    severity (e.g. an advisory FLAG riding a critical-category check). Raises    GateError on any schema error -- a producer never emits a doc the consumer
+    would refuse."""
+    ent = CHECK_REGISTRY.get(check_id)
+    if ent is None:
+        raise GateError("UNKNOWN_CHECK_ID",
+                        "check %r is not in CHECK_REGISTRY" % (check_id,))
+    if verdict not in VERDICTS:
+        raise GateError("SCHEMA_VIOLATION",
+                        "verdict must be one of %s" % sorted(VERDICTS))
+    if severity is not None and severity not in SEVERITIES:
+        raise GateError("SCHEMA_VIOLATION",
+                        "severity must be one of %s" % sorted(SEVERITIES))
+    rec = measurement_record(check_id, measurement, run_id=run_id, stage=stage,
+                             verdict=verdict, reviewer=reviewer,
+                             summary=summary, reason_code=reason_code)
+    rec["checker_version"] = str(evaluator_version or "")
+    if ent["category"] == "timing":
+        # 17.8: the qc-schema timing record carries its sample, confidence and
+        # annotation method -- mapped deterministically from the measurement    # (the declared producer IS the annotation method), never caller-asserted.
+        rec["timing_detail"] = {
+            "sample_ref": str((measurement or {}).get("sample_ref")
+                              or evidence_source),
+            "confidence": str(confidence if confidence is not None else ""),
+            "annotation_method": ent["producer"]}
+    doc = {"contract_version": EVIDENCE_CONTRACT_VERSION,
+           "check_id": check_id,
+           "category": ent["category"], "producer": ent["producer"],
+           "consumer": ent["consumer"],
+           "artifact_sha256": artifact_sha256,
+           "plan_revision": plan_revision,
+           "evaluator_version": evaluator_version,
+           "evidence_source": evidence_source,
+           "tenant": tenant, "applicable": bool(applicable),
+           "confidence": confidence, "measured": measurement,
+           "severity": severity or ent["severity"], "verdict": verdict,
+           "reason_code": reason_code, "record": rec}
+    err = validate_evidence(doc)
+    if err is not None:
+        raise GateError(_evidence_error_code(err), err)
+    return doc
+
+
+def evidence_to_record(doc):
+    """The CONSUMER-side adapter: the stage-level qc-schema record inside a
+    validated evidence doc. Raises rather than return a record the shared    schema refused."""
+    err = validate_evidence(doc)
+    if err is not None:
+        raise GateError(_evidence_error_code(err), err)
+    return dict(doc["record"])
+
+
+def required_satisfied(docs, stage):
+    """ALL required checks for ``stage`` established by valid, applicable,
+    PASSing evidence docs. The requirement comes from REQUIRED_CHECK_REGISTRY
+    (an independent declaration); the record list only ever FULFILLS it -- an
+    empty list reports every required check missing and an arbitrary list can
+    never establish all-checks-passed."""
+    req = required_checks_for(stage)
+    ok = set()
+    for d in docs or ():
+        if not isinstance(d, dict) or d.get("check_id") not in req:
+            continue
+        if validate_evidence(d) is None and d.get("applicable") \
+                and (d.get("record") or {}).get("verdict") == "PASS":
+            ok.add(d["check_id"])
+    missing = [c for c in req if c not in ok]
+    return {"stage": stage, "required": list(req), "satisfied": not missing,
+            "missing": missing}
+
+
+def _source_accessible(src):
+    """An evidence SOURCE that names a file must be readable. A logical source
+    name (a dotted symbol, a URI) is not a file and is never file-checked."""
+    if not isinstance(src, str) or "://" in src or os.sep not in src:
+        return True
+    return os.path.isfile(src)
+
+
+def creative_exception(*, check_id, artifact_sha256, plan_revision, authority,
+                       scope, rationale=""):
+    """A SCOPED creative exception: binds the check, the EXACT artifact    revision, the approving authority and the named advisory findings it    covers. Version-bound: the contract version is stamped and re-checked on    every use. It never carries a verdict -- measured verdicts stay as    measured."""
+    if isinstance(scope, str):
+        scope = (scope,)
+    scope = tuple(str(s) for s in (scope or ()) if str(s).strip())
+    if not _nonempty_str(check_id):
+        raise GateError("BAD_INPUT", "a creative exception names ONE check_id")
+    if not _nonempty_str(authority):
+        raise GateError("BAD_INPUT",
+                        "a creative exception names its approving authority")
+    if not scope:
+        raise GateError("BAD_INPUT",
+                        "a creative exception names the advisory findings it covers")
+    return {"contract_version": EVIDENCE_CONTRACT_VERSION,
+            "check_id": check_id, "artifact_sha256": artifact_sha256,
+            "plan_revision": plan_revision, "authority": authority,
+            "scope": scope, "rationale": str(rationale or "")}
+
+
+def apply_creative_exception(finding, exception, *, artifact_sha256,
+                             plan_revision):
+    """ONE scoped creative exception over ONE named advisory finding on ONE
+    exact artifact. The MEASURED verdict is preserved verbatim -- an exception
+    never turns a FAIL into a PASS; it records who approved it, for which    artifact revision, and which named finding it covers. Structural findings,
+    critical findings and unnamed findings are refused outright."""
+    if not isinstance(finding, dict) or not isinstance(exception, dict):
+        raise GateError("BAD_INPUT",
+                        "a creative exception needs a finding and an exception object")
+    if exception.get("contract_version") != EVIDENCE_CONTRACT_VERSION:
+        raise GateError("EXCEPTION_REFUSED",
+                        "exception contract_version %r is not the supported %r "
+                        "(version-bound)" % (exception.get("contract_version"),
+                                             EVIDENCE_CONTRACT_VERSION))
+    code = finding.get("code")
+    if code in STRUCTURAL_CODES:
+        raise GateError("EXCEPTION_REFUSED",
+                        "structural failure %s is nonwaivable" % code)
+    if finding.get("verdict") == "UNAVAILABLE":
+        raise GateError("EXCEPTION_REFUSED",
+                        "UNAVAILABLE never becomes PASS (17.8); it cannot be excepted")
+    name = finding.get("reason_code") or code
+    if name not in (exception.get("scope") or ()):
+        raise GateError("EXCEPTION_REFUSED",
+                        "finding %r is not named in the exception scope %r"
+                        % (name, exception.get("scope")))
+    severity = finding.get("severity") or ("critical" if finding.get("critical")
+                                           else "advisory")
+    if severity != "advisory":
+        raise GateError("EXCEPTION_REFUSED",
+                        "only an ADVISORY finding may be excepted; %r is %s"
+                        % (name, severity))
+    if exception.get("check_id") != finding.get("check_id"):
+        raise GateError("EXCEPTION_REFUSED",
+                        "exception names check %r, finding is check %r"
+                        % (exception.get("check_id"), finding.get("check_id")))
+    if exception.get("artifact_sha256") != artifact_sha256:
+        raise GateError("EXCEPTION_REFUSED",
+                        "exception binds artifact %r, not %r (exact artifact only)"
+                        % (exception.get("artifact_sha256"), artifact_sha256))
+    if exception.get("plan_revision") != plan_revision:
+        raise GateError("EXCEPTION_REFUSED",
+                        "exception binds approved-plan revision %r, not %r"
+                        % (exception.get("plan_revision"), plan_revision))
+    if not _nonempty_str(exception.get("authority")):
+        raise GateError("EXCEPTION_REFUSED",
+                        "a creative exception names its approving authority")
+    out = dict(finding)
+    out["excepted"] = True
+    out["measured_verdict"] = finding.get("verdict") or "FAIL"
+    out["exception"] = {"authority": exception["authority"],
+                        "scope": list(exception["scope"]),
+                        "check_id": exception["check_id"],
+                        "artifact_sha256": exception["artifact_sha256"],
+                        "plan_revision": exception["plan_revision"],
+                        "contract_version": exception["contract_version"],
+                        "rationale": exception.get("rationale", "")}
+    return out
+
+
+def stage_complete(result):
+    """True only when a stage may complete on this result. NEVER under
+    MISSING_QC or SCHEMA_VIOLATION -- or any structural failure -- and an
+    operator decision cannot change that (see apply_operator_decision)."""
+    if not isinstance(result, dict):
+        return False
+    codes = {f.get("code") for f in (result.get("failures") or [])
+             if isinstance(f, dict)}
+    codes |= {s.get("code") for s in (result.get("structural") or [])
+              if isinstance(s, dict)}
+    if codes & STRUCTURAL_CODES:
+        return False
+    if "gate" in result:
+        return result.get("gate") == "PASS"
+    return bool(result.get("accepted"))
+
+
+def apply_operator_decision(result, *, authority, exceptions=(),
+                            artifact_sha256=None, plan_revision=None):
+    """An OPERATOR DECISION over a gate result. Only explicitly scoped,
+    version-bound creative exceptions for named ADVISORY findings on the    exact artifact may be applied, and each one PRESERVES the measured verdict    in the record. Structural evidence failures are nonwaivable: any of them    refuses the decision outright with the causal chain intact -- an operator
+    override can never advance structurally invalid QC, and no stage completes
+    under MISSING_QC or SCHEMA_VIOLATION."""
+    if not isinstance(result, dict):
+        raise GateError("BAD_INPUT", "result must be a gate result object")
+    failures = [f for f in (result.get("failures") or []) if isinstance(f, dict)]
+    structural = [f for f in failures if f.get("code") in STRUCTURAL_CODES]
+    if structural:
+        return {"advanced": False, "excepted": [], "result": result,
+                "refusal": refusal_envelope(
+                    "STRUCTURAL_EVIDENCE_FAILURE",
+                    "structural evidence failures are nonwaivable: %s"
+                    % ", ".join(sorted({f.get("code") for f in structural})),
+                    "repair the named structural evidence; no operator "
+                    "decision, override or exception advances it",
+                    chain=[chain_link("evaluate", f.get("code"),
+                                      str(f.get("detail") or ""))
+                           for f in structural]
+                    + [chain_link("operator_override",
+                                  "STRUCTURAL_EVIDENCE_FAILURE",
+                                  "override refused for authority %s" % authority)])}
+    applied, kept = [], []
+    for f in failures:
+        name = f.get("reason_code") or f.get("code")
+        exc = next((e for e in exceptions if isinstance(e, dict)
+                    and e.get("check_id") == f.get("check_id")
+                    and name in (e.get("scope") or ())), None)
+        if exc is None:
+            kept.append(f)
+            continue
+        applied.append(apply_creative_exception(
+            f, exc, artifact_sha256=artifact_sha256,
+            plan_revision=plan_revision))
+    out = dict(result)
+    out["failures"] = kept
+    out["excepted"] = list(result.get("excepted") or []) + applied
+    if kept:
+        out["gate"] = "FAIL" if result.get("gate") != "BLOCKED" else "BLOCKED"
+        out["reason_code"] = "+".join(sorted({f.get("code") or "" for f in kept}))
+    else:
+        out["gate"] = "PASS"
+        out["reason_code"] = ("ALL_REQUIRED_PASS_EXCEPTED" if applied
+                              else result.get("reason_code"))
+    return {"advanced": not kept and result.get("gate") != "BLOCKED",
+            "excepted": applied, "result": out, "refusal": None}
+
+
+def delivery_acceptance(docs, *, artifact_sha256, plan_revision,
+                        tenant="default", evaluator_version=None,
+                        stage="delivery", exceptions=()):
+    """delivered-audio acceptance over the evidence docs for ONE exact
+    artifact under ONE approved-plan revision. Required checks come from
+    REQUIRED_CHECK_REGISTRY -- the declaration is independent of ``docs``.
+    Structural evidence failures (missing/corrupt QC, schema errors,
+    inaccessible files, absent required measurements, wrong-tenant evidence,
+    unsupported attestations, paid-dispatch controls) refuse the acceptance
+    and can never be excepted. Scoped creative exceptions bind to the exact
+    artifact and preserve the measured verdicts.
+    Returns the acceptance row: accepted, the required set, every MEASURED    verdict (kept even under an exception), missing checks, structural    failures, findings and separate counts."""
+    req = required_checks_for(stage)
+    structural, findings, measured, foreign = [], [], {}, []
+    counted = set()
+    counts = {"required": len(req), "evidence": 0, "pass": 0, "fail": 0,
+              "unavailable": 0, "structural": 0, "excepted": 0, "missing": 0}
+    for d in docs or ():
+        if not isinstance(d, dict):
+            structural.append({"check_id": "", "code": "QC_CORRUPT",
+                               "detail": "evidence entry is not an object"})
+            continue
+        counts["evidence"] += 1
+        err = validate_evidence(d)
+        if err is not None:
+            structural.append({"check_id": d.get("check_id", ""),
+                               "code": _evidence_error_code(err),
+                               "detail": err})
+            continue
+        cid = d["check_id"]
+        if d.get("tenant") != tenant:
+            structural.append({"check_id": cid, "code": "WRONG_TENANT",
+                               "detail": "evidence tenant %r != expected %r"
+                                         % (d.get("tenant"), tenant)})
+            continue
+        if d["artifact_sha256"] != artifact_sha256:
+            if cid in req:
+                foreign.append(cid)     # another artifact: never this artifact's proof
+            continue
+        if d["plan_revision"] != plan_revision:
+            structural.append({"check_id": cid, "code": "STALE_BINDING",
+                               "detail": "evidence plan revision %r != "
+                                         "approved-plan revision %r"
+                                         % (d["plan_revision"], plan_revision)})
+            continue
+        if evaluator_version is not None and \
+                d["evaluator_version"] != evaluator_version:
+            structural.append({"check_id": cid,
+                               "code": "CHECKER_VERSION_MISMATCH",
+                               "detail": "evaluator %r != expected %r"
+                                         % (d["evaluator_version"],
+                                            evaluator_version)})
+            continue
+        if not _source_accessible(d["evidence_source"]):
+            structural.append({"check_id": cid, "code": "EVIDENCE_INACCESSIBLE",
+                               "detail": "evidence source %r is not readable"
+                                         % (d["evidence_source"],)})
+            continue
+        verdict = d["record"]["verdict"]
+        measured[cid] = {"verdict": verdict, "severity": d["severity"],
+                         "measured": d["measured"],
+                         "evaluator_version": d["evaluator_version"]}
+        counted.add(cid)
+        ent = CHECK_REGISTRY[cid]
+        if ent.get("control") == "paid_dispatch" and verdict != "PASS":
+            structural.append({"check_id": cid, "code": "PAID_DISPATCH_CONTROL",
+                               "detail": "paid-dispatch control not satisfied "
+                                         "(%s)" % verdict})
+            continue
+        if verdict == "PASS":
+            counts["pass"] += 1
+        elif verdict == "UNAVAILABLE":
+            counts["unavailable"] += 1
+            findings.append({"check_id": cid, "reason_code": d.get("reason_code"),
+                             "verdict": verdict, "severity": d["severity"],
+                             "waivable": False})
+        else:
+            counts["fail"] += 1
+            findings.append({"check_id": cid, "reason_code": d.get("reason_code"),
+                             "verdict": verdict, "severity": d["severity"],
+                             "waivable": d["severity"] == "advisory"})
+    for c in req:
+        if c not in counted:
+            counts["missing"] += 1
+            structural.append({"check_id": c, "code": "MISSING_QC",
+                               "detail": "no usable evidence for required check "
+                                         "%r (foreign evidence: %s)"
+                                         % (c, sorted(set(foreign)))})
+    excepted = []
+    for e in exceptions or ():
+        target = next((f for f in findings
+                       if f.get("waivable")
+                       and f.get("check_id") == (e.get("check_id") if isinstance(e, dict) else None)
+                       and (f.get("reason_code") or f.get("check_id"))
+                       in ((e.get("scope") or ()) if isinstance(e, dict) else ())), None)
+        if target is not None:
+            excepted.append(apply_creative_exception(
+                target, e, artifact_sha256=artifact_sha256,
+                plan_revision=plan_revision))
+    counts["structural"] = len(structural)
+    counts["excepted"] = len(excepted)
+    excepted_names = {(x.get("check_id"),
+                       x.get("reason_code") or x.get("check_id"))
+                      for x in excepted}
+    blocking = [f for f in findings
+                if (f.get("check_id"),
+                    f.get("reason_code") or f.get("check_id"))
+                not in excepted_names]
+    accepted = (not structural and not blocking and
+                all((measured.get(c) or {}).get("verdict") == "PASS"
+                    or any(x.get("check_id") == c for x in excepted)
+                    for c in req))
+    return {"accepted": bool(accepted),
+            "artifact_sha256": artifact_sha256,
+            "plan_revision": plan_revision,
+            "contract_version": EVIDENCE_CONTRACT_VERSION,
+            "required": list(req), "missing": sorted(
+                {s["check_id"] for s in structural if s["code"] == "MISSING_QC"}),
+            "measured_verdicts": measured,
+            "structural": structural, "findings": findings,
+            "excepted": excepted, "counts": counts}
+
+
 def envelope(command, outcome, reason_code, next_action="", run_id="",
              stage="", evidence=None, state_version=0):
     return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,

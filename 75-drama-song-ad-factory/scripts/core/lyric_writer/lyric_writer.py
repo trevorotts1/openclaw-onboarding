@@ -31,6 +31,43 @@ prose cut at line breaks -- the O3 fault -- and is refused as
 "prose-line-in-sung-block"; prose belongs in spoken blocks. Lines that do
 not carry a ``delivery`` field are judged exactly as before (no behaviour
 change for existing callers).
+
+CONSTRAINT POLICY (Skill_75 repair D09; spec 6.3 / 15.3): this module owns THE
+single versioned, mode- and duration-aware constraint policy
+(``constraint_policy``). lyric_writer, suno_recipe (wired by S75-W05-U3),
+words_fit, the spoken-share rules, the hook checks and the final audio
+evaluator all consume THIS object, so the writer receives exactly the
+constraints downstream enforces. The W-G-002 4..12 band versus suno_recipe's
+"8 at most" contradiction is resolved by ONE mode-specific rule:
+
+  * PREFERRED sung meter is 4..8 syllables (the meter the provider sings
+    cleanly -- 5-6 aimed, 8 at most). Outside the preferred range the line is
+    still singable, so the finding is ACCEPT WITH WARNING, never a failure.
+  * A required correction fires ONLY where violating the range makes the
+    provider request invalid or the line impossible to perform: outside the
+    performable band 1..12 (over 12 syllables one short metered sung line
+    cannot be delivered; the provider splits or rewrites it), over a REAL
+    destination provider cap (a mode/destination-specific reason recorded on
+    the finding -- the only sanctioned way to contradict an accepted 9- or
+    11-syllable line), or more syllables than the line's slot can hold at the
+    policy's sung rate.
+  * A line whose meter cannot be measured at all is USER DECISION REQUIRED
+    (remeasure or decide) -- never fabricated into a pass or a failure.
+  * Story information and natural delivery beat mechanical padding: the
+    policy never asks for meaningless words to satisfy a count.
+
+Spoken sections: for the dramatization mode spoken scenes are preserved
+ANYWHERE in the sheet -- the legacy "spoken only in [Intro]/[Outro]"
+assumption is retired here and survives only in constraint mode "standard",
+carrying its mode-specific reason.
+
+Three quality outcomes (spec 15.3): required_correction, accept_with_warning,
+user_decision_required. ``result["findings"]`` carries ONLY required
+corrections BY CONTRACT, so a generic ``any(findings)`` check can never convert
+a warning into failure; the complete typed inventory is ``quality_findings``,
+and warnings travel to final delivery in ``result["warnings"]``. Use
+``exit_code_for`` and ``delivery_status`` for the exit-code mapper and the
+Command Center projection -- both are warning-proof.
 """
 from __future__ import annotations
 
@@ -45,7 +82,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import protected_names  # noqa: E402  H7 build gate
 
 SCHEMA_VERSION = "blackceo.lyric-writer/v1"
-TOOL_VERSION = "0.2.0"
+TOOL_VERSION = "0.3.0"
 
 # ponytail: fixed ceilings, no per-campaign override; add when directive names numbers.
 MAX_WORDS = 18
@@ -56,16 +93,256 @@ FIRST_PERSON = frozenset({
     "ourselves", "i'm", "i've", "i'll", "i'd", "we're", "we've",
     "we'll", "we'd",
 })
-EXIT = {"ok": 0, "rejected": 4, "error": 1}
+EXIT = {"ok": 0, "rejected": 4, "error": 1, "decision": 3}
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
-#: G5 singability (review G5): sung lines are short metered lines. The
-#: band and the rhyme/repeat rule reuse core/lyric_structure (W-G-002's
-#: G2 module) so the sheet builder and the writer judge one rule, twice.
+# ---------------------------------------------------------------------------
+# THE constraint policy (D09; spec 6.3 / 15.3). One versioned, mode- and
+# duration-aware table, consumed by lyric_writer, suno_recipe (S75-W05-U3
+# wires it), words_fit, the spoken-share rules, the hook checks and the final
+# audio evaluator. Mirrored numbers are drift-guarded against their owning
+# modules in selftest, so the writer receives exactly what downstream enforces.
+# ---------------------------------------------------------------------------
+CONSTRAINT_POLICY_VERSION = "blackceo.constraint-policy/v1"
+POLICY_MODE_DEFAULT = "dramatization"
+POLICY_MODES = ("dramatization", "standard")
+
+#: Three quality outcomes (spec 15.3). Every finding carries exactly one and
+#: only a required_correction ever blocks. A warning can never become a
+#: failure: ``result["findings"]`` is blocking-only BY CONTRACT, and the
+#: exit-code / aggregator / Command Center mappers below are typed.
+Q_REQUIRED = "required_correction"
+Q_WARNING = "accept_with_warning"
+Q_DECISION = "user_decision_required"
+
+#: G5 singability band, restated by the policy: the PREFERRED sung meter is
+#: 4..8 syllables (the meter the provider sings cleanly, 5-6 aimed, 8 at most
+#: -- suno_recipe's retired "at most 8" folded in as the preference); 1..12 is
+#: the PERFORMABLE band (over 12 one short metered sung line cannot be
+#: delivered); outside it the request is invalid or the line impossible to
+#: perform and the finding is a required correction. Values read from the
+#: policy at judge time; these names stay for existing importers.
 SUNG_SYL_MIN = 4
 SUNG_SYL_MAX = 12
 HOOK_REPEAT = 2      # a hook line/phrase repeats at least this many times
 PHRASE_WORDS = 3     # a run this long shared by two lines is a hook phrase
+
+#: A sung line faster than this cannot be performed in its slot (fast sung
+#: delivery measures well under 5 syllables/second; beyond it the line is
+#: spoken, not sung).
+MAX_SUNG_RATE_SPS = 5.0
+
+#: Duration-aware canonical lengths (spec 6.2/6.3). The recipe duration
+#: registry (S75-W05-U3) binds to this table; no second copy.
+CANONICAL_DURATION_S = (60, 90, 120, 180, 300, 600)
+
+
+def finding(code, detail, quality=Q_REQUIRED, **extra):
+    """One typed finding. ``error`` keeps the legacy key name so existing
+    consumers of the findings lists read the code exactly as before."""
+    f = {"error": code, "detail": detail,
+         "quality": quality, "blocking": quality == Q_REQUIRED}
+    f.update(extra)
+    return f
+
+
+def blocking(findings):
+    """The only findings that may refuse a sheet. Warnings and decisions are
+    NEVER in this list -- a generic ``any(findings)`` check over the result's
+    ``findings`` field therefore cannot convert a warning into a failure."""
+    return [f for f in (findings or [])
+            if f.get("quality", Q_REQUIRED) == Q_REQUIRED]
+
+
+def has_required_correction(findings):
+    return bool(blocking(findings))
+
+
+def outcome_from_findings(findings):
+    """THE one findings mapper (spec 15.3). Refuses only on a required
+    correction; a decision holds; everything else accepts, warnings included."""
+    f = list(findings or [])
+    if any(x.get("quality", Q_REQUIRED) == Q_REQUIRED for x in f):
+        return "rejected"
+    if any(x.get("quality") == Q_DECISION for x in f):
+        return "decision"
+    return "ok"
+
+
+def exit_code_for(result):
+    """THE one exit-code mapper. A warning-carrying result exits 0 exactly
+    like a clean one; only a required correction exits non-zero, and a held
+    decision gets its own code (3), never the failure code."""
+    return EXIT.get((result or {}).get("outcome"), EXIT["error"])
+
+
+def delivery_status(result):
+    """Command Center projection. A warning is projected as
+    ``accepted_with_warnings`` -- never as failure."""
+    r = result or {}
+    if has_required_correction(r.get("findings")):
+        return "failed"
+    if r.get("decisions"):
+        return "user_decision_required"
+    if r.get("warnings"):
+        return "accepted_with_warnings"
+    return "accepted"
+
+
+def aggregate_status(results):
+    """Downstream aggregator: worst delivery status wins, but no aggregation
+    of warnings may ever read as failure."""
+    statuses = [delivery_status(r) for r in (results or [])]
+    for s in ("failed", "user_decision_required",
+              "accepted_with_warnings", "accepted"):
+        if s in statuses:
+            return s
+    return "accepted"
+
+
+def constraint_policy(mode=None, duration_s=None):
+    """Resolve THE constraint policy for ``mode`` (default ``dramatization``)
+    and an optional runtime ``duration_s``. Mode-specific rules carry their
+    ``reason`` so any downstream contradiction is forced to name one."""
+    m = str(mode or POLICY_MODE_DEFAULT).strip().lower() or POLICY_MODE_DEFAULT
+    if m not in POLICY_MODES:
+        raise ValueError("unknown constraint mode %r (want one of %s)"
+                         % (mode, POLICY_MODES))
+    dur = None
+    if duration_s is not None:
+        try:
+            dur = float(duration_s)
+        except (TypeError, ValueError):
+            raise ValueError("duration_s must be a number, got %r" % (duration_s,))
+        if dur <= 0:
+            raise ValueError("duration_s must be positive, got %r" % (duration_s,))
+    if m == "standard":
+        # Legacy provider contract kept whole, WITH its reason: sung lines the
+        # provider would rewrite and spoken outside [Intro]/[Outro] make the
+        # request invalid as authored.
+        meter = {"preferred": (4, 8), "performable": (1, 8), "provider_cap": 8,
+                 "reason": "mode standard: the provider caps sung lines at 8 "
+                           "syllables and rewrites longer ones -- the request "
+                           "would be invalid as authored"}
+        spoken = {"allowed_tags": ("intro", "outro"),
+                  "reason": "mode standard (legacy provider rule 1): spoken "
+                            "tags are only allowed in [Intro]/[Outro]"}
+    else:
+        # Dramatization: story scenes speak anywhere; the sung meter's
+        # preference warns, its performable band corrects (D09 resolution).
+        meter = {"preferred": (4, 8), "performable": (1, 12),
+                 "provider_cap": None,
+                 "reason": "mode dramatization: over 12 syllables one short "
+                           "metered sung line cannot be delivered -- the "
+                           "provider splits or rewrites it"}
+        spoken = {"allowed_tags": ("*",),
+                  "reason": "mode dramatization: spoken story scenes are "
+                            "preserved anywhere in the sheet; the legacy "
+                            "[Intro]/[Outro]-only assumption is retired here"}
+    p = {
+        "policy_version": CONSTRAINT_POLICY_VERSION,
+        "mode": m,
+        "duration_s": dur,
+        "duration": {"canonical_s": CANONICAL_DURATION_S},
+        "sung_meter": dict(meter, max_rate_sps=MAX_SUNG_RATE_SPS,
+                           retired_bounds={"suno_recipe."
+                                           "MAX_SUNG_LINE_SYLLABLES": 8}),
+        "spoken_sections": spoken,
+        "hook": {"min_repeats": HOOK_REPEAT, "phrase_words": PHRASE_WORDS,
+                 "hook_opens_song": False,
+                 "first_sung_target_pct": 15.0,
+                 # ponytail: percentages mirrored from spoken_share/words_fit
+                 # (drift-guarded in selftest); route reads through those
+                 # modules' own accessors when they consume this policy.
+                 "source": "core/sung_hook + core/spoken_share (owners)"},
+        "spoken_share": {"target_pct": 22.5, "min_pct": 12.5, "max_pct": 32.5,
+                         "sung_of_voice_pct": 77.5, "accept_pts": 5,
+                         "flag_pts": 10,
+                         "owner": "core/spoken_share"},
+        "words_fit": {"intro_outro_s": 8.0, "headroom": 0.15,
+                      "owner": "core/words_fit"},
+        "quality": {"outcomes": (Q_REQUIRED, Q_WARNING, Q_DECISION),
+                    "findings_field_is_blocking_only": True,
+                    "warning_never_failure": True},
+    }
+    if dur is not None:
+        p["hook"]["first_sung_target_s"] = round(
+            dur * p["hook"]["first_sung_target_pct"] / 100.0, 3)
+        p["spoken_share"]["budget_s"] = [
+            round(dur * p["spoken_share"]["min_pct"] / 100.0, 3),
+            round(dur * p["spoken_share"]["max_pct"] / 100.0, 3)]
+    return p
+
+
+def sung_meter_finding(syllables, policy=None, slot_s=None, measurable=True,
+                       label="line"):
+    """THE single sung-meter rule (D09), for the writer AND the recipe.
+
+    None when the line sits in the preferred meter. Outside the preference but
+    performable: accept_with_warning. Outside the performable band, over a
+    real provider cap (mode-specific ``reason`` recorded), or too many
+    syllables for its slot: required_correction. Unmeasurable: a user
+    decision -- never fabricated into pass or failure."""
+    p = (policy or constraint_policy())["sung_meter"]
+    if not measurable:
+        return finding("sung-meter-unmeasurable",
+                       "%s: syllables not measurable; remeasure or decide"
+                       % label, Q_DECISION)
+    try:
+        syl = int(syllables)
+    except (TypeError, ValueError):
+        return finding("sung-meter-unmeasurable",
+                       "%s: syllable count %r is not a number; remeasure or "
+                       "decide" % (label, syllables), Q_DECISION)
+    lo_p, hi_p = (int(x) for x in p["preferred"])
+    lo_f, hi_f = (int(x) for x in p["performable"])
+    if p.get("provider_cap") is not None:
+        hi_f = min(hi_f, int(p["provider_cap"]))
+    if slot_s is not None:
+        try:
+            slot = float(slot_s)
+        except (TypeError, ValueError):
+            slot = None
+        if slot is not None and slot > 0 and syl > slot * p["max_rate_sps"]:
+            return finding("sung-line-unperformable-in-slot",
+                           "%s: %d syllables in a %.2fs slot exceeds %.1f "
+                           "syllables/s -- impossible to perform"
+                           % (label, syl, slot, p["max_rate_sps"]),
+                           Q_REQUIRED, mode_reason=p["reason"])
+    if lo_p <= syl <= hi_p:
+        return None
+    if lo_f <= syl <= hi_f:
+        return finding("sung-line-not-metered",
+                       "%s: %d syllables; preferred sung meter is %d..%d -- "
+                       "singable with effort, accepted with warning"
+                       % (label, syl, lo_p, hi_p), Q_WARNING)
+    return finding("sung-line-not-metered",
+                   "%s: %d syllables; %d..%d cannot be performed as one sung "
+                   "line (preferred meter %d..%d)"
+                   % (label, syl, lo_f, hi_f, lo_p, hi_p),
+                   Q_REQUIRED, mode_reason=p["reason"])
+
+
+def spoken_section_findings(sheet, policy=None):
+    """Spoken placement per mode (D09). Dramatization preserves spoken scenes
+    ANYWHERE -- including outside [Intro]/[Outro]; the legacy placement rule
+    applies only in mode "standard" and carries its reason."""
+    pol = policy or constraint_policy()
+    sp = pol["spoken_sections"]
+    allowed = tuple(str(t).lower() for t in sp["allowed_tags"])
+    out = []
+    for i, s in enumerate(sheet or []):
+        if not isinstance(s, dict) or \
+                str(s.get("delivery") or "").strip().lower() != "spoken":
+            continue
+        tag = str(s.get("tag") or ("section %d" % i))
+        head = tag.strip().lower().split()[0] if tag.strip() else ""
+        if "*" in allowed or head in allowed:
+            continue
+        out.append(finding("spoken-section-not-allowed",
+                           "spoken section %r: %s" % (tag, sp["reason"]),
+                           Q_REQUIRED, mode_reason=sp["reason"]))
+    return out
 
 #: WW-27: the ensemble cast gate (character_bible.character_bible), imported
 #: LAZILY so a brief that declares no cast never loads it.
@@ -229,39 +506,39 @@ def _phrases3(text):
             for i in range(len(toks) - PHRASE_WORDS + 1)}
 
 
-def check_sung_lines(lines):
-    """G5: judge the singable-ness of the lines marked sung.
+def audit_sung_lines(lines, policy=None):
+    """Full typed G5 audit of the lines marked sung (D09 policy).
 
-    Review item G5 / order 1150 amend: sung lines are short metered lines
-    (4..12 syllables) grouped in pairs or fours that rhyme or repeat, with
-    a hook (a repeated line or 3-word phrase) appearing at least twice.
-    A sung line that connects to no other sung line is script prose cut at
-    a line break -- the O3 fault -- and returns "prose-line-in-sung-block".
-    Prose belongs in spoken blocks (``delivery: "spoken"``), which this
-    never judges. Returns a list of error dicts ([] = singable).
-    """
+    Meter is judged by ``sung_meter_finding`` -- the SAME rule suno_recipe
+    consumes -- so the 4..12 versus 8 contradiction cannot reappear: outside
+    the preferred meter the finding is accept_with_warning, and only an
+    unperformable or provider-invalid line is a required correction. The
+    connection rule (prose-line-in-sung-block) and the hook rule stay required
+    corrections: prose cut at line breaks and a missing hook are script
+    faults, not meter preferences. Returns findings with ``quality``; use
+    ``blocking`` for the refuse list."""
+    pol = policy or constraint_policy()
     ls = _structure()
-    sung = [(ln.get("line_id") or "line %d" % i, ln.get("text") or "")
-            for i, ln in enumerate(lines) if is_sung_line(ln)]
+    sung = [(i, ln.get("line_id") or "line %d" % i, ln.get("text") or "")
+            for i, ln in enumerate(lines or []) if is_sung_line(ln)]
     if not sung:
         return []
-    errors = []
+    out = []
 
-    # 1. meter: a sung line is a short metered line
-    for lid, text in sung:
-        syl = ls.line_syllables(text)
-        if not (SUNG_SYL_MIN <= syl <= SUNG_SYL_MAX):
-            errors.append({
-                "error": "sung-line-not-metered",
-                "detail": "%s: %d syllables, sung lines are %d..%d"
-                          % (lid, syl, SUNG_SYL_MIN, SUNG_SYL_MAX)})
+    # 1. meter: one mode/duration-aware rule, preferred range warns
+    for i, lid, text in sung:
+        f = sung_meter_finding(ls.line_syllables(text), pol,
+                               slot_s=(lines[i] or {}).get("seconds"),
+                               label=lid)
+        if f is not None:
+            out.append(f)
 
     # 2. connection: each sung line rhymes with, repeats, or shares a
     #    3-word phrase with another sung line (pairs or fours)
-    ends = [ls.words(t)[-1:] for _, t in sung]
-    texts = [re.sub(r"\s+", " ", t.strip().lower()) for _, t in sung]
-    phrs = [_phrases3(t) for _, t in sung]
-    for k, (lid, text) in enumerate(sung):
+    ends = [ls.words(t)[-1:] for _, _, t in sung]
+    texts = [re.sub(r"\s+", " ", t.strip().lower()) for _, _, t in sung]
+    phrs = [_phrases3(t) for _, _, t in sung]
+    for k, (_, lid, text) in enumerate(sung):
         connected = False
         for j in range(len(sung)):
             if j == k:
@@ -276,73 +553,133 @@ def check_sung_lines(lines):
                 connected = True
                 break
         if not connected:
-            errors.append({
-                "error": "prose-line-in-sung-block",
-                "detail": "%s: %r connects to no other sung line by rhyme "
-                          "or repetition -- prose belongs in a spoken block"
-                          % (lid, text[:60])})
+            out.append(finding(
+                "prose-line-in-sung-block",
+                "%s: %r connects to no other sung line by rhyme "
+                "or repetition -- prose belongs in a spoken block"
+                % (lid, text[:60])))
 
     # 3. hook: one line or 3-word phrase repeats at least twice
+    hmin = pol["hook"]["min_repeats"]
+    pwords = pol["hook"]["phrase_words"]
     counts = {}
     for t in texts:
         if t:
             counts[t] = counts.get(t, 0) + 1
     hook = max(counts.values(), default=0)
-    if hook < HOOK_REPEAT:
+    if hook < hmin:
         pc = {}
         for s in phrs:
             for p in s:
                 pc[p] = pc.get(p, 0) + 1
         hook = max(pc.values(), default=0)
-    if hook < HOOK_REPEAT:
-        errors.append({
-            "error": "no-repeated-hook",
-            "detail": "no sung line and no 3-word phrase repeats: sing a "
-                      "hook at least %d times (G5)" % HOOK_REPEAT})
-    return errors
+    if hook < hmin:
+        out.append(finding(
+            "no-repeated-hook",
+            "no sung line and no %d-word phrase repeats: sing a "
+            "hook at least %d times (G5)" % (pwords, hmin)))
+    return out
+
+
+def check_sung_lines(lines, policy=None):
+    """G5 singability gate: the BLOCKING findings only ([] = nothing refuses
+    the sheet). Meter outside the preferred band is accepted with warning and
+    is NOT returned here; use ``audit_sung_lines`` for the full typed
+    inventory. Prose-in-sung-block and a missing hook are still refused."""
+    return blocking(audit_sung_lines(lines, policy))
 
 
 def product_tokens(brief):
     return significant((brief or {}).get("product_name"))
 
 
-def _res(outcome, reason_code, errors, lines, coverage):
+def _policy_from_brief(brief):
+    """The policy the brief names. ``constraint_mode`` (dramatization |
+    standard) and ``duration_s``/``length_s`` are the writer's constraint
+    inputs -- ``brief["mode"]`` stays the intake's own concept/standard key."""
+    b = brief if isinstance(brief, dict) else {}
+    dur = b.get("duration_s", b.get("length_s"))
+    return constraint_policy(b.get("constraint_mode"), dur)
+
+
+def _res(outcome, reason_code, errors, lines, coverage,
+         warnings=None, decisions=None, policy=None):
+    warnings, decisions = warnings or [], decisions or []
     return {
         "schema_version": SCHEMA_VERSION,
         "tool_version": TOOL_VERSION,
         "outcome": outcome,
         "reason_code": reason_code,
         "errors": errors,
+        # findings is blocking-only BY CONTRACT: any(findings) can never
+        # convert a warning into a failure (spec 15.3). Warnings travel to
+        # final delivery in "warnings"; "quality_findings" is the full audit.
+        "findings": blocking(errors),
+        "warnings": warnings,
+        "decisions": decisions,
+        "quality_findings": list(errors) + warnings + decisions,
+        "quality": {"required_correction": len(blocking(errors)),
+                    "accept_with_warning": len(warnings),
+                    "user_decision_required": len(decisions)},
+        "constraint_policy": CONSTRAINT_POLICY_VERSION,
+        "policy": policy,
         "line_count": len(lines) if isinstance(lines, list) else 0,
         "coverage": coverage,
         "next_action": (
             "Proceed to lyric QC." if outcome == "ok"
+            else "A user decision is required before proceeding (see "
+                 "decisions)." if outcome == "decision"
             else "Fix the listed lyric errors and re-run validate_lyrics."
         ),
     }
 
 
-def validate_lyrics(lines, brief=None):
+def _from_findings(errors, warnings, decisions, lines, coverage, policy):
+    """THE findings-to-verdict mapping: only a required correction refuses,
+    a decision holds for the user, a warning rides along on an ok verdict."""
+    errors = blocking(errors)
+    if errors:
+        return _res("rejected", errors[0]["error"], errors, lines, coverage,
+                    warnings, decisions, policy)
+    if decisions:
+        return _res("decision", decisions[0]["error"], errors, lines, coverage,
+                    warnings, decisions, policy)
+    if warnings:
+        return _res("ok", "lyrics-valid-with-warnings", errors, lines, coverage,
+                    warnings, decisions, policy)
+    return _res("ok", "lyrics-valid", errors, lines, coverage,
+                warnings, decisions, policy)
+
+
+def validate_lyrics(lines, brief=None, policy=None):
     """Validate sung lines against the brief. Returns outcome/reason/coverage.
 
     WW-27: the CAST DECISION is taken FIRST. A declared cast that is not a
     complete ensemble refuses here, before one line is judged, so drafting never
     begins on a broken cast; with no declared cast nothing changes.
+
+    D09: the resolved ``constraint_policy`` (mode + duration) is passed down
+    verbatim and echoed in the result, so the writer receives exactly the
+    constraints downstream enforces. Only required corrections refuse; warnings
+    ride along on an ok verdict and decisions hold for the user.
     """
     brief = brief or {}
+    pol = policy or _policy_from_brief(brief)
     cast_rcpt = _cast_gate(brief)
     if cast_rcpt is not None and cast_rcpt["reasons"]:
         return _with_cast(
             _res("rejected", cast_rcpt["reason_code"],
                  [{"error": cast_rcpt["reason_code"].lower().replace("_", "-"),
                    "detail": m} for m in cast_rcpt["reasons"]],
-                 lines, {"critical_words": 0, "covered": 0, "missing": []}), cast_rcpt)
+                 lines, {"critical_words": 0, "covered": 0, "missing": []},
+                 policy=pol), cast_rcpt)
     if not isinstance(lines, list) or not lines:
         return _with_cast(
             _res("rejected", "lyrics-empty",
                  [{"error": "lyrics-empty",
                    "detail": "lyrics must be a non-empty list"}],
-                 lines, {"critical_words": 0, "covered": 0, "missing": []}), cast_rcpt)
+                 lines, {"critical_words": 0, "covered": 0, "missing": []},
+                 policy=pol), cast_rcpt)
 
     errors, seen, ok_lines = [], set(), []
     client_runs = client_word_runs(brief)
@@ -410,8 +747,9 @@ def validate_lyrics(lines, brief=None):
                                    "detail": "%s: map key %r not in line text" % (lid, k)})
         ok_lines.append(ln)
 
-    # W-G-002 amend (review G5): lines marked sung must be singable.
-    errors.extend(check_sung_lines(lines))
+    # W-G-002 amend (review G5): lines marked sung must be singable. The
+    # audit is typed (D09): meter outside the preferred band is a warning.
+    errors.extend(audit_sung_lines(lines, pol))
 
     # H7: the sheet may not change a protected name or rewrite a packet line.
     packet = brief.get("packet_lines")
@@ -432,10 +770,14 @@ def validate_lyrics(lines, brief=None):
                        "detail": "critical words with no critical line: %s" % missing})
     coverage = {"critical_words": len(crit_words), "covered": len(covered), "missing": missing}
 
-    if errors:
-        return _with_cast(_res("rejected", errors[0]["error"], errors, lines,
-                               coverage), cast_rcpt)
-    return _with_cast(_res("ok", "lyrics-valid", [], lines, coverage), cast_rcpt)
+    # D09 three quality outcomes: partition before the verdict. Untyped
+    # (legacy) findings are required corrections; only typed warnings and
+    # decisions leave the refuse list.
+    warnings = [f for f in errors if f.get("quality") == Q_WARNING]
+    decisions = [f for f in errors if f.get("quality") == Q_DECISION]
+    return _with_cast(
+        _from_findings(blocking(errors), warnings, decisions,
+                       lines, coverage, pol), cast_rcpt)
 
 
 def _spoken_share():
@@ -571,6 +913,158 @@ def selftest():
         if not want_ok and want_reason not in errs:
             fails.append("%s: %s not raised (%s)" % (name, want_reason, sorted(errs)))
 
+    # ---- D09: the one constraint policy (spec 6.3 / 15.3) ----------------
+    def t(name, cond, why=""):
+        checks.append(name)
+        if not cond:
+            fails.append("%s: %s" % (name, why))
+
+    pol = constraint_policy()
+    t("policy-version",
+      pol["policy_version"] == CONSTRAINT_POLICY_VERSION, pol["policy_version"])
+    try:
+        constraint_policy("no-such-mode")
+        t("unknown-mode-refused", False, "accepted")
+    except ValueError:
+        t("unknown-mode-refused", True)
+    try:
+        constraint_policy(duration_s="x")
+        t("bad-duration-refused", False, "accepted")
+    except ValueError:
+        t("bad-duration-refused", True)
+    pol60 = constraint_policy(duration_s=60)
+    t("duration-aware",
+      pol60["hook"]["first_sung_target_s"] == 9.0
+      and pol60["spoken_share"]["budget_s"] == [7.5, 19.5],
+      "%s %s" % (pol60["hook"].get("first_sung_target_s"),
+                 pol60["spoken_share"].get("budget_s")))
+    t("d09-legacy-8-retired-as-bound",
+      pol["sung_meter"]["performable"] == (1, 12)
+      and pol["sung_meter"].get("provider_cap") is None, repr(pol["sung_meter"]))
+    ls_mod = _structure()
+    sung11 = "I " + " ".join(["la"] * 10)      # 11 syllables
+    sung9 = "I " + " ".join(["la"] * 8)        # 9 syllables
+    t("counterexample-shape",
+      ls_mod.line_syllables(sung11) == 11 and ls_mod.line_syllables(sung9) == 9,
+      "%d/%d" % (ls_mod.line_syllables(sung11), ls_mod.line_syllables(sung9)))
+
+    def sung_pair(text):
+        return [{"line_id": "h1", "delivery": "sung", "text": text},
+                {"line_id": "h2", "delivery": "sung", "text": text}]
+
+    # 11-syllable counterexample passes the WRITER and the RECIPE's rule
+    # under one policy (the recipe's <=8 hard bound is retired).
+    r11 = validate_lyrics(sung_pair(sung11), {})
+    t("d09-11syl-passes-writer",
+      r11["outcome"] == "ok", "%s/%s" % (r11["outcome"], r11["reason_code"]))
+    f11 = sung_meter_finding(ls_mod.line_syllables(sung11), pol)
+    t("d09-11syl-passes-recipe-rule",
+      f11 is None or f11["quality"] == Q_WARNING, repr(f11))
+    t("d09-11syl-warns-never-fails",
+      not r11["findings"] and not r11["errors"] and r11["warnings"]
+      and all(w["quality"] == Q_WARNING for w in r11["warnings"]),
+      "%s %s" % (r11["findings"], r11["warnings"]))
+
+    # 9-syllable acceptance cannot be contradicted downstream without a
+    # clear mode-specific reason.
+    r9 = validate_lyrics(sung_pair(sung9), {})
+    t("d09-9syl-accepted",
+      r9["outcome"] == "ok", "%s/%s" % (r9["outcome"], r9["reason_code"]))
+    f9 = sung_meter_finding(ls_mod.line_syllables(sung9), pol)
+    t("d09-9syl-not-contradicted",
+      f9 is None or f9["quality"] == Q_WARNING, repr(f9))
+    f9s = sung_meter_finding(ls_mod.line_syllables(sung9),
+                             constraint_policy("standard"))
+    t("d09-9syl-contradicted-only-with-mode-reason",
+      f9s is not None and f9s.get("blocking") and f9s.get("mode_reason"),
+      repr(f9s))
+
+    # Warning propagation to final delivery: no seam converts a warning
+    # into failure (generic any-findings check, exit-code mapper, downstream
+    # aggregator, Command Center projection).
+    t("seam-any-findings-never-fires",
+      not any(r9["findings"]) and not any(r9["errors"]),
+      "%s" % (r9["findings"],))
+    t("seam-exit-code-mapper", exit_code_for(r9) == 0, exit_code_for(r9))
+    t("seam-aggregator",
+      aggregate_status([r9, r11]) == "accepted_with_warnings",
+      aggregate_status([r9, r11]))
+    t("seam-cc-projection",
+      delivery_status(r9) == "accepted_with_warnings", delivery_status(r9))
+    rclean = validate_lyrics(
+        [{"line_id": "cta01", "text": "Tap to claim your kit today",
+          "critical": True}],
+        {"product_name": "", "offer_text": "", "cta_text": "Tap to claim your kit",
+         "claims": []})
+    t("seam-clean-accepted",
+      delivery_status(rclean) == "accepted"
+      and aggregate_status([rclean, r9]) == "accepted_with_warnings",
+      "%s %s" % (delivery_status(rclean), aggregate_status([rclean, r9])))
+    rdec = _from_findings(
+        [], [], [finding("sung-meter-unmeasurable", "x", Q_DECISION)],
+        [], {"critical_words": 0, "covered": 0, "missing": []}, pol)
+    t("seam-decision-not-failure",
+      rdec["outcome"] == "decision" and exit_code_for(rdec) == EXIT["decision"]
+      and delivery_status(rdec) == "user_decision_required"
+      and aggregate_status([rdec, r9]) == "user_decision_required",
+      "%s %s" % (rdec["outcome"], delivery_status(rdec)))
+    t("d09-unmeasurable-decides",
+      sung_meter_finding(None, pol, measurable=False)["quality"] == Q_DECISION)
+    t("d09-over12-corrected",
+      sung_meter_finding(13, pol)["quality"] == Q_REQUIRED)
+    t("d09-slot-infeasible-corrected",
+      sung_meter_finding(7, pol, slot_s=1.0)["quality"] == Q_REQUIRED)
+
+    # Spoken scenes outside Intro/Outro preserved (dramatization); the
+    # legacy placement rule survives only in mode "standard", with a reason.
+    sheet = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
+             {"tag": "Scene 2", "delivery": "spoken",
+              "lines": ["I lost everything that winter."]},
+             {"tag": "Outro", "delivery": "spoken", "lines": ["Get the book."]}]
+    t("d09-mid-song-spoken-preserved",
+      spoken_section_findings(sheet, pol) == [],
+      repr(spoken_section_findings(sheet, pol)))
+    fsp = spoken_section_findings(sheet, constraint_policy("standard"))
+    t("d09-spoken-legacy-rule-mode-specific",
+      len(fsp) == 1 and fsp[0].get("mode_reason"), repr(fsp))
+    rsc = validate_lyrics(
+        [{"line_id": "sc1", "text": "I lost everything that winter."}], {})
+    t("d09-spoken-scene-kept-by-writer",
+      rsc["outcome"] == "ok" and rsc["line_count"] == 1,
+      "%s %s" % (rsc["outcome"], rsc["line_count"]))
+
+    # Mirrored constraints equal their owners: the writer receives exactly
+    # the constraints downstream enforces (drift guard).
+    try:
+        from spoken_share import spoken_share as ss_mod
+        t("mirror-spoken_share",
+          pol["spoken_share"]["target_pct"] == ss_mod.SPOKEN_TARGET_PCT
+          and pol["spoken_share"]["min_pct"] == ss_mod.SPOKEN_MIN_PCT
+          and pol["spoken_share"]["max_pct"] == ss_mod.SPOKEN_MAX_PCT
+          and pol["spoken_share"]["sung_of_voice_pct"] == ss_mod.SUNG_TARGET_PCT
+          and pol["spoken_share"]["accept_pts"] == ss_mod.ACCEPT_PTS
+          and pol["spoken_share"]["flag_pts"] == ss_mod.FLAG_PTS
+          and pol["hook"]["first_sung_target_pct"]
+          == ss_mod.FIRST_SUNG_TARGET_PCT,
+          "policy mirrors drift from core/spoken_share")
+    except Exception as e:  # noqa: BLE001  an unreadable owner is UNCHECKED
+        t("mirror-spoken_share", False, "mirror UNCHECKED: %s" % e)
+    try:
+        from words_fit import words_fit as wf_mod
+        t("mirror-words_fit",
+          pol["words_fit"]["intro_outro_s"] == wf_mod.INTRO_OUTRO_S
+          and pol["words_fit"]["headroom"] == wf_mod.HEADROOM,
+          "policy mirrors drift from core/words_fit")
+    except Exception as e:  # noqa: BLE001
+        t("mirror-words_fit", False, "mirror UNCHECKED: %s" % e)
+    try:
+        from suno_recipe import suno_recipe as sr_mod
+        t("mirror-suno_recipe",
+          pol["hook"]["min_repeats"] == sr_mod.MIN_HOOK_REPEATS,
+          "policy mirrors drift from core/suno_recipe")
+    except Exception as e:  # noqa: BLE001
+        t("mirror-suno_recipe", False, "mirror UNCHECKED: %s" % e)
+
     print("lyric_writer selftest: %s (%d checks, %d failures)"
           % ("PASS" if not fails else "FAIL", len(checks), len(fails)))
     for f in fails:
@@ -612,7 +1106,7 @@ def main(argv=None):
             r = validate_lyrics(doc if isinstance(doc, list) else None, brief)
     json.dump(r, sys.stdout, indent=2, sort_keys=True, default=str)
     sys.stdout.write("\n")
-    return EXIT[r["outcome"]]
+    return exit_code_for(r)
 
 
 if __name__ == "__main__":

@@ -407,11 +407,21 @@ PLOT = ["one", "closed", "door", "seed", "truth"]
 
 def test_d1_story_start_gate():
     """The measurement is the approved PLOT LINE (a run of >= 4 words), never a
-    stray word: the ceiling is an ABSOLUTE 5.0 s and a late opening FAILS."""
-    early = _spread(["one", "closed", "door", "seed"] + ["la"] * 40, 4.0)
+    stray word: the ceiling is an ABSOLUTE 5.0 s and a late opening FAILS.
+
+    D10: the opening wordless span is measured FROM MEDIA TIME ZERO, so the
+    passing control must open at 0.0 s -- the old fixture started its first
+    row at 4.0 s, which is exactly the four-second lead-in counterexample
+    (it now FAILS with OPENING_VOCALISE_TOO_LONG)."""
+    early = _spread(["one", "closed", "door", "seed"] + ["la"] * 40, 0.0)
     g = SV.story_start_gate(early, PLOT, 58.0)
     check(g["verdict"] == "PASS" and g["first_plot_line_s"] <= 5.0,
           "D1: a plot line at %.2f s passes the 5.0 s ceiling" % g["first_plot_line_s"])
+    lead4 = _spread(["one", "closed", "door", "seed"] + ["la"] * 40, 4.0)
+    g = SV.story_start_gate(lead4, PLOT, 58.0)
+    check(g["verdict"] == "FAIL" and "OPENING_VOCALISE_TOO_LONG" in g["failed"],
+          "D10: a four-second untranscribed lead-in NO LONGER passes -- the "
+          "wordless span is measured from media zero (%r)" % (g["failed"],))
     late = _spread(["la"] * 30 + ["one", "closed", "door", "seed"], 4.0)
     g = SV.story_start_gate(late, PLOT, 58.0)
     check(g["verdict"] == "FAIL" and "FIRST_STORY_WORD_LATE" in g["failed"],
@@ -1761,12 +1771,14 @@ def test_ww22_production_story_gate_carries_and_enforces_the_ordered_line():
     story_coverage.judge_returned_take -> story_start_gate -> ordered_run_match.
     The known-good control runs first, then the two refusals."""
     good = SCT.check_returned_story(
-        {"aligned_words": _ww22_rows(["i", "cooked", "for", "two"])},
+        {"aligned_words": _ww22_rows(["i", "cooked", "for", "two"], start=0.0)},
         "rnb-flow", 88.0, WW22_SHEET, {"delivered_s": 88.0})
     gs = good["story_coverage"]["gates"]["story_start"]
-    check(gs["verdict"] == "PASS" and gs["first_plot_line_s"] == 4.0
+    check(gs["verdict"] == "PASS" and gs["first_plot_line_s"] == 0.0
           and gs["failed"] == [],
-          "WW-22 control: the approved line in order at 4.0 s PASSES story_start")
+          "WW-22 control: the approved line in order at 0.0 s PASSES story_start "
+          "(D10: it must open at media zero -- the old 4.0 s start is the "
+          "four-second lead-in counterexample and no longer passes)")
     check(gs["approved_opening_line"] == WW22_APPROVED
           and good["story_coverage"]["approved_opening_line"] == WW22_APPROVED,
           "WW-22: the exact approved opening line rides the production gate's "

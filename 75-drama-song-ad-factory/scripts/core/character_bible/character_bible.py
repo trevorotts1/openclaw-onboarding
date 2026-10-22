@@ -801,9 +801,27 @@ def produce_delivery(run_dir, item):
     directory of the same reference pictures. Fixture bytes are never
     written: ``contract.produce_item`` is test-only and no deliver path
     imports it. Signature: produce_delivery(run_dir, item) -> list[Path].
+
+    W06-U1: when the run carries a versioned bible (``character/bible.json``),
+    the reference pictures are the LOCKED ones -- the approval boundary
+    (``character_approval.locked_references``) refuses until the approved
+    image bytes are current, so locked character references never feed
+    dependent work before the versioned approval event. A run without the
+    versioned bible keeps the original DEL-02 path unchanged.
     """
     from delivery_package import run_inputs as RI
     out = RI.delivery_dir(run_dir)
+    if os.path.isfile(os.path.join(run_dir, "character", "bible.json")):
+        from character_bible import character_approval as CA  # noqa: PLC0415
+        refs = CA.locked_references(run_dir)
+        imgs = {}
+        for r in refs:
+            for view, meta in (r.get("images") or {}).items():
+                imgs[view] = meta.get("path")
+        brief = RI.load_json(run_dir, os.path.join("character", "brief.json"))
+        rec = record(brief)
+        write_delivery(str(out), rec, imgs)
+        return RI.stage(item, out)
     brief = RI.load_json(run_dir, os.path.join("character", "brief.json"))
     rec = record(brief)
     write_delivery(str(out), rec)
