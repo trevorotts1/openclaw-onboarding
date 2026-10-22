@@ -1401,7 +1401,11 @@ class _RealPlaywrightHandle:
         self._pw = sync_playwright().start()
         self._ctx = self._pw.chromium.launch_persistent_context(
             profile_dir,
-            headless=bool(options.get("headless", True)),
+            # Literal, never options-derived: COMPLIANT-BY-CONSTRUCTION for the
+            # U28/D6 headless_guard_audit (same class as ghl_iframe_drag's
+            # self-test). pw_launch_options() has already REFUSED any headed
+            # request upstream, so this literal cannot mask a headed launch.
+            headless=True,
             devtools=bool(options.get("devtools", False)),
         )
         self.pages = self._ctx.pages
