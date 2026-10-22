@@ -114,7 +114,10 @@ class TestB01HeadlessAndCleanup:
     def test_launch_options_always_headless(self):
         opts = bm.pw_launch_options({}, {"args": ["--no-sandbox"]})
         assert opts["headless"] is True
-        assert opts["devtools"] is False
+        # devtools is REFUSED when requested and ABSENT when not: playwright's
+        # launch_persistent_context takes no devtools kwarg, so emitting it made
+        # the lane unlaunchable (D1). Absence IS the enforced value.
+        assert "devtools" not in opts
         assert opts["args"] == ["--no-sandbox"]
 
     def test_normal_run_cleans_owned_processes(self, tmp_path):
