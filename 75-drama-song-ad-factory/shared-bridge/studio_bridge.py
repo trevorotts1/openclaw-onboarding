@@ -47,12 +47,15 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from studio_claim import ClaimLedger, LedgerError, message_id  # noqa: E402
+from studio_claim import (ClaimLedger, LedgerError, message_id,  # noqa: E402
+                          STEP_CLAIMED, STEP_ORDER_FETCHED, STEP_MATERIALIZED,
+                          STEP_WAKE_QUEUED, STEP_EXECUTION_ACCEPTED)
 
 EXIT = {"ok": 0, "error": 1, "refused": 2, "undefined": 3}
 
@@ -104,17 +107,37 @@ def _env_of(env):
 
 
 def _home_state(env=None):
-    """`~/.drama-studio` for the SAME env the caller passed (SPEC §2)."""
+    """`~/.drama-studio` for the SAME env the caller passed (SPEC §2).
+
+    Kept exactly as it always was: the legacy fallback rung for a key written
+    before the platform contract existed (see `load_key`).
+    """
     src = _env_of(env)
     home = (src.get("HOME") or "").strip() or str(pathlib.Path.home())
     return pathlib.Path(home) / ".drama-studio"
 
 
+def _contract_state(env=None):
+    """THE persistent state root — the one contract for every reader (D24).
+
+    macOS and Hostinger keep state under HOME (`/Users/<u>/.drama-studio`,
+    `/data/.drama-studio`). Contabo's HOME is the ephemeral container layer, so
+    its persistent root is `/home/node/.openclaw/.drama-studio` — exactly what
+    timer-artifacts/run-timer.sh enforces and install-timer.sh stores into.
+    Enrolment, installer, bridge, poller and wake helper must all meet here.
+    """
+    src = _env_of(env)
+    home = (src.get("HOME") or "").strip() or str(pathlib.Path.home())
+    if home.rstrip("/") == "/home/node":
+        return pathlib.Path("/home/node/.openclaw/.drama-studio")
+    return pathlib.Path(home) / ".drama-studio"
+
+
 def state_dir(env=None):
-    """The state folder: `$DRAMA_STUDIO_STATE` when set, else `~/.drama-studio`."""
+    """The state folder: `$DRAMA_STUDIO_STATE` when set, else the contract root."""
     src = _env_of(env)
     given = (src.get("DRAMA_STUDIO_STATE") or "").strip()
-    return pathlib.Path(given).expanduser() if given else _home_state(env)
+    return pathlib.Path(given).expanduser() if given else _contract_state(env)
 
 
 def read_private(path):
@@ -448,8 +471,27 @@ class Board:
 
 # --- CLI ---------------------------------------------------------------------
 
+#: Capability-bearing links (a studio URL whose fragment/query carries a key)
+#: never appear in routine diagnostics. A deliberate client handoff prints the
+#: link through `link` / wake_agent.sh's message — the authorized delivery
+#: route — and never through `_emit`.
+CAPABILITY_LINK = re.compile(
+    r"https?://[^\s\"']*(?:[#?&][^\s\"']*(?:key|token|k)=)[^\s\"']*", re.I)
+
+
+def redact_links(value):
+    """Scrub capability-bearing links out of any diagnostic structure."""
+    if isinstance(value, str):
+        return CAPABILITY_LINK.sub("[redacted-link]", value)
+    if isinstance(value, dict):
+        return {k: redact_links(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_links(v) for v in value]
+    return value
+
+
 def _emit(obj):
-    print(json.dumps(obj, indent=2, sort_keys=True))
+    print(json.dumps(redact_links(obj), indent=2, sort_keys=True))
 
 
 def cmd_handshake(args):
@@ -565,13 +607,136 @@ def _refusal(out, status, what):
     return EXIT["refused"]
 
 
+#: A state file's required mode on platforms that enforce POSIX permissions.
+PRIVATE_FILE_MODE = 0o600
+PRIVATE_DIR_MODE = 0o700
+
+
+def _legacy_state(env=None):
+    """The pre-contract home root when it is a STRAY OF THIS BOX — else None.
+
+    Only the Contabo shape has a real split (contract root moved under
+    /home/node/.openclaw while old writes sit in the ephemeral home leaf), so
+    only there may a stranded key be adopted. An explicit DRAMA_STUDIO_STATE
+    that is not the contract root is a DIFFERENT installation: never raided
+    for identity, never merged.
+    """
+    root = state_dir(env)
+    legacy = _home_state(env)
+    if root == _contract_state(env) and root != legacy:
+        return legacy
+    return None
+
+
+def _receipt(env=None, *, base_url=None):
+    """Validate the COMPLETE enrolment receipt locally — no network (D24).
+
+    Key presence alone is not readiness: the receipt is the pair (key, url)
+    in ONE consistent state root with private permissions. `stray_key` is a
+    valid identity stranded in the legacy home root (a pre-contract write on
+    the one platform where the root moved); recovery adopts it, never
+    re-enrols and never discards it.
+    """
+    root = state_dir(env)
+    legacy = _legacy_state(env)
+    key_path = root / "machine.key"
+    url_path = root / "machine.url"
+    stray_key = None
+    if legacy is not None and not read_private(key_path):
+        if read_private(legacy / "machine.key"):
+            stray_key = legacy / "machine.key"
+    has_key = bool(read_private(key_path)) or bool(stray_key)
+    has_url = bool(read_private(url_path))
+    key_mode = _mode_of(key_path)
+    perms_ok = (key_mode is None or key_mode == PRIVATE_FILE_MODE) and (
+        not stray_key)
+    return {"state_root": str(root), "has_key": has_key, "has_url": has_url,
+            "stray_key": str(stray_key) if stray_key else None,
+            "key_permissions": ("0%o" % key_mode) if key_mode is not None else None,
+            "complete": bool(has_key and has_url and perms_ok and not stray_key),
+            "base_url": (base_url or "").strip() or None}
+
+
+def _mode_of(path):
+    try:
+        return pathlib.Path(path).stat().st_mode & 0o777
+    except OSError:
+        return None
+
+
+def _recover_receipt(env=None, *, base_url=None):
+    """Complete an interrupted enrolment WITHOUT a second identity (D24).
+
+    A key-only record (crash between the two writes), a stranded legacy-root
+    key, or an over-open mode is repaired in place: the valid key is adopted
+    or preserved, the missing machine.url is written from the configured
+    address, and modes are tightened. No HTTP call happens here — a recovery
+    must never mint a duplicate identity.
+    """
+    root = state_dir(env)
+    legacy = _legacy_state(env)
+    recovered = []
+    if legacy is not None:
+        stray = legacy / "machine.key"
+        if not read_private(root / "machine.key") and read_private(stray):
+            for name in ("machine.key", "machine.url"):
+                src = legacy / name
+                if read_private(src):
+                    write_private(root / name, read_private(src) + "\n")
+                    try:
+                        src.unlink()
+                    except OSError:
+                        pass
+                    recovered.append("adopted %s from %s" % (name, legacy))
+    if not read_private(root / "machine.key"):
+        return None, recovered  # nothing to recover: no identity at all
+    if not read_private(root / "machine.url"):
+        base = (base_url or "").strip() or resolve_base_url(None, env) or STUDIO_BASE_URL
+        write_private(root / "machine.url", base.rstrip("/") + "\n")
+        recovered.append("machine.url restored")
+    for name in ("machine.key", "machine.url", "client.url"):
+        p = root / name
+        if p.is_file() and _mode_of(p) != PRIVATE_FILE_MODE:
+            try:
+                os.chmod(p, PRIVATE_FILE_MODE)
+            except OSError:
+                pass
+            recovered.append("%s permissions tightened" % name)
+    return root / "machine.key", recovered
+
+
 def cmd_enroll(args):
-    """Register this box ONCE; the key comes back once and is written 0600."""
+    """Register this box ONCE; the key comes back once and is written 0600.
+
+    A valid key is never replaced and never re-minted: a key-only or
+    interrupted record is RECOVERED locally (`--resume`, also the default for
+    an existing key) instead of contacting the studio again, so no duplicate
+    identity can be created.
+    """
     env = os.environ
     if load_key(env):
-        _emit({"code": "ALREADY_ENROLLED",
-               "message": "a machine key already exists; refusing to replace it"})
-        return EXIT["refused"]
+        rec = _receipt(env, base_url=args.base_url)
+        if rec["complete"] and not args.resume:
+            _emit({"code": "ALREADY_ENROLLED",
+                   "message": "a machine key already exists; refusing to replace it"})
+            return EXIT["refused"]
+        key_path, recovered = _recover_receipt(env, base_url=args.base_url)
+        if key_path is None:
+            # An identity exists in a fallback root but none in this one:
+            # never mint a second identity; --resume reconciles quietly.
+            if args.resume:
+                _emit({"ok": True, "already_enrolled": True, "recovered": False,
+                       "changes": recovered})
+                return EXIT["ok"]
+            _emit({"code": "ALREADY_ENROLLED",
+                   "message": "a machine key already exists; refusing to replace it"})
+            return EXIT["refused"]
+        rec = _receipt(env, base_url=args.base_url)
+        _emit({"ok": True, "recovered": bool(recovered),
+               "already_enrolled": rec["complete"] and not recovered,
+               "changes": recovered, "machine_key": str(key_path),
+               "machine_url": str(state_dir(env) / "machine.url")})
+        return EXIT["ok"]
     secret = (env.get("DS_ENROLLMENT_SECRET") or "").strip()
     if not secret:
         _emit({"code": "NO_ENROLLMENT_SECRET",
@@ -585,6 +750,8 @@ def cmd_enroll(args):
     if status // 100 != 2 or not out.get("ok") or not out.get("key"):
         return _refusal(out, status, "enroll")
     folder = state_dir(env)
+    # key first, then url: a crash between the two leaves a key-only record,
+    # which the next pass recovers in place (never re-enrols).
     write_private(folder / "machine.key", str(out["key"]).strip() + "\n")
     write_private(folder / "machine.url", base + "\n")
     _emit({"ok": True, "client_id": out.get("client_id"), "base_url": base,
@@ -619,6 +786,168 @@ def cmd_link(args):
     write_private(stored_path, link + "\n")
     print(link)
     return EXIT["ok"]
+
+
+# --- optional Studio capability (SPEC 9.3, D24) ------------------------------
+#
+# The optional intake capability is modelled EXPLICITLY in the installation
+# state (the persistent state root's capability.json) as one of
+# disabled | needs-enrollment | ready | degraded. Chat intake never needs it;
+# an idle optional poller reads `capability --gate` and stays quiet instead of
+# failing every tick or auto-enrolling a chat-only user to silence logs.
+
+CAPABILITY_STATES = ("disabled", "needs-enrollment", "ready", "degraded")
+#: `capability --gate` exit: 0 = ready (poll), 10 = skip quietly.
+GATE_READY, GATE_SKIP = 0, 10
+#: Transitional delivery to the timer is one line per TRANSITION, never per tick.
+CAPABILITY_FILE = "capability.json"
+
+
+def _capability_path(env=None):
+    return state_dir(env) / CAPABILITY_FILE
+
+
+def cmd_state_dir(args):
+    """Print the persistent state root — the ONE contract (D24) in one place.
+
+    Shell callers (enroll-on-install.sh) resolve through this command instead
+    of restating the platform rule and drifting from the bridge.
+    """
+    print(str(state_dir()))
+    return EXIT["ok"]
+
+
+def _read_capability(env=None):
+    try:
+        raw = _capability_path(env).read_text(encoding="utf-8")
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_capability(record, env=None):
+    p = _capability_path(env)
+    write_private(p, json.dumps(record, indent=2, sort_keys=True) + "\n")
+    return p
+
+
+def _record_capability(state, env=None, *, now=None, error=None, note=None):
+    """Merge one observation into capability.json (the installation state).
+
+    `last_attempt_at` moves on every observation, `last_success_at` only on a
+    proven-ready check. An error carries its own `at`; a reader marks it
+    STALE once `last_success_at` passes it — old log tails are then never
+    reported as new failures.
+    """
+    ts = time.time() if now is None else now
+    rec = _read_capability(env)
+    rec["capability"] = state
+    rec["updated_at"] = ts
+    rec["last_attempt_at"] = ts
+    if state == "ready":
+        rec["last_success_at"] = ts
+        rec.pop("last_error", None)
+    elif error:
+        rec["last_error"] = {"at": ts, "code": str(error.get("code") or "ERROR"),
+                             "message": str(error.get("message") or "")[:200]}
+    if note:
+        rec["last_note"] = str(note)[:200]
+    try:
+        _write_capability(rec, env)
+    except OSError:
+        pass  # a read-only state root must never break the caller's flow
+    return rec
+
+
+def _capability_view(rec, *, now=None):
+    """The record as routine diagnostics see it: no link value, staleness set."""
+    ts = time.time() if now is None else now
+    out = {k: v for k, v in rec.items() if k != "last_error"}
+    err = rec.get("last_error")
+    if isinstance(err, dict):
+        out["last_error"] = dict(err)
+        out["last_error"]["stale"] = bool(
+            rec.get("last_success_at") and
+            float(err.get("at") or 0) <= float(rec.get("last_success_at") or 0))
+    out["link_present"] = bool(read_private(state_dir() / "client.url"))
+    return out
+
+
+def _capability_state(env=None, *, base_url=None, probe=None, recover=False):
+    """Compute the live capability state from observed facts — never logs.
+
+    disabled         no key and no enrolment intent (a chat-only install)
+    needs-enrollment no key, but the operator injected an enrolment secret
+    ready            the complete receipt validates and the handshake answers
+    degraded         a key exists but the receipt is incomplete/unhealthy
+                     (recoverable in place; never re-enrols, never drops key)
+    """
+    if recover:
+        _recover_receipt(env, base_url=base_url)
+    rec = _receipt(env, base_url=base_url)
+    saved = _read_capability(env)
+    if not rec["has_key"]:
+        state = "needs-enrollment" if saved.get("intent") == "needs-enrollment" \
+            else "disabled"
+        return state, None
+    if not rec["complete"]:
+        return "degraded", {"code": "RECEIPT_INCOMPLETE",
+                            "message": "key present but the enrolment receipt is "
+                                       "incomplete (key=%s url=%s root-consistent=%s)"
+                                       % (rec["has_key"], rec["has_url"],
+                                          not rec["stray_key"])}
+    probe = handshake if probe is None else probe
+    ok, summary = probe(base_url or resolve_base_url(None, env) or STUDIO_BASE_URL,
+                        load_key(env))
+    if ok:
+        return "ready", None
+    return "degraded", {"code": str(summary.get("code") or "HANDSHAKE_REFUSED"),
+                        "message": str(summary.get("message") or "handshake refused")}
+
+
+def cmd_capability(args):
+    """Model the optional Studio capability in the installation state (D24)."""
+    env = os.environ
+    now = time.time()
+    if args.record:
+        if args.record not in CAPABILITY_STATES:
+            _emit({"code": "BAD_CAPABILITY", "message": args.record})
+            return EXIT["refused"]
+        saved = _read_capability(env)
+        if load_key(env) or saved.get("capability") in ("ready", "degraded"):
+            # an observed enrolment is never downgraded by an install pass
+            _emit({"ok": True, "capability": saved.get("capability") or "present",
+                   "kept": True})
+            return EXIT["ok"]
+        rec = _record_capability(args.record, env, now=now)
+        if args.record == "needs-enrollment":
+            rec = _read_capability(env)
+            rec["intent"] = "needs-enrollment"
+            _write_capability(rec, env)
+        elif args.record == "disabled":
+            rec = _read_capability(env)
+            rec.setdefault("intent", "disabled")
+            _write_capability(rec, env)
+        _emit({"ok": True, "capability": args.record})
+        return EXIT["ok"]
+    # live evaluation
+    prev = _read_capability(env).get("capability")
+    state, err = _capability_state(env, base_url=args.base_url,
+                                   probe=None if not args.no_network else
+                                   (lambda _b, _k: (True, {"ok": True})),
+                                   recover=args.repair)
+    _record_capability(state, env, now=now, error=err)
+    view = _capability_view(_read_capability(env), now=now)
+    if args.gate:
+        if state != prev:
+            # ONE transition line, to stderr; silence on every later tick.
+            sys.stderr.write("drama-studio: capability %s -> %s%s\n"
+                             % (prev or "unset", state,
+                                (" (%s)" % err["code"]) if err else ""))
+        return GATE_READY if state == "ready" else GATE_SKIP
+    _emit(view)
+    return EXIT["ok"] if state == "ready" else EXIT["refused"]
 
 
 # --- poll (SPEC §6) ----------------------------------------------------------
@@ -863,7 +1192,18 @@ def _ensure_run_state(skill_root, run_dir, order_id):
     return stages
 
 def cmd_poll(args):
-    """Check in, claim one waiting order, replay it, print one JSON line."""
+    """Check in, claim one waiting order, replay it, print one JSON line.
+
+    Durable claim/wake (SPEC 9.4, D35): the claim ledger records the steps
+    claimed -> order-fetched -> materialized -> wake-queued ->
+    execution-accepted. A local claim survives a failed fetch or wake and is
+    RESUMED by the next poll under the same order (a same-owner re-claim is a
+    resume; a live other owner is the only refusal). A repeated poll
+    RECONCILES the recorded steps instead of returning quiet success, and a
+    wake request stays pending — the line is re-emitted — until the supported
+    runtime acknowledgement (wake --ack) arrives. Execution-accepted is final:
+    later polls stay silent, so no duplicate campaign or paid job can start.
+    """
     key = load_key()
     if not key:
         _emit({"code": "NO_KEY", "message": "no machine key; run enroll first"})
@@ -890,55 +1230,142 @@ def cmd_poll(args):
         _emit({"code": "BAD_ORDER_ID", "message": "refusing order id %r" % order_id[:64]})
         return EXIT["refused"]
 
-    with ClaimLedger(args.db or str(state_dir() / "studio.db")) as led:
+    db = os.path.abspath(args.db or str(state_dir() / "studio.db"))
+    with ClaimLedger(db) as led:
         won = led.claim_order(order_id, BRIDGE_OWNER)
-    if not won:
-        return EXIT["ok"]                       # another run holds it: no output
+        if not won:
+            return EXIT["ok"]                   # a live OTHER owner holds it
+        recs = led.receipts(order_id)
+        st = led.order_state(order_id) or {}
+        if st.get("step") == STEP_EXECUTION_ACCEPTED:
+            return EXIT["ok"]   # acknowledged: silent, no duplicate campaign
+        kinds = {r["kind"] for r in recs}
+        stored_order = next((r["payload"].get("order") for r in reversed(recs)
+                             if r["kind"] == "order_fetched"), None)
+        stored_line = next((r["payload"] for r in reversed(recs)
+                            if r["kind"] == "poll_line"), None)
 
-    status, out = _http("POST", base + "/api/studio/orders/%s/state" % order_id,
-                        key=key, body={"event": "claim"})
-    if status // 100 != 2 or not out.get("ok"):
-        return _refusal(out, status, "claim")
-    status, out = _http("GET", base + "/api/studio/orders/%s" % order_id, key=key)
-    if status // 100 != 2 or not out.get("ok"):
-        return _refusal(out, status, "order fetch")
-    order = out.get("order") or {}
-    title = str(order.get("title") or title)
-    client_id = str(order.get("client_id") or "")
+        # Claim event: sent once. A repeat poll after a crash must never
+        # re-post a claim the studio could reject as its own replay (D35).
+        if "claim_event" not in kinds:
+            status, out = _http("POST", base + "/api/studio/orders/%s/state" % order_id,
+                                key=key, body={"event": "claim"})
+            posted = status // 100 == 2 and bool(out.get("ok"))
+            led.write_receipt(order_id, "claim_event", {
+                "posted": posted,
+                "code": None if posted else (out.get("code") or "HTTP_%d" % status)})
+            # A refused claim POST is NOT fatal while the order still fetches:
+            # repeated polls reconcile existing state (9.4).
 
-    # Before the run folder exists at all: a reply count that cannot complete
-    # the card's question list replays shifted answers, so the order is
-    # cancelled with that reason instead and nothing is written (SPEC B1).
-    mismatch = _question_mismatch(args.skill_root, order.get("replies") or [],
-                                  args.client_dir)
-    if mismatch is not None:
-        return _refuse_mismatch(base, key, order_id, mismatch)
+        order = stored_order
+        if order is None:
+            status, out = _http("GET", base + "/api/studio/orders/%s" % order_id, key=key)
+            if status // 100 != 2 or not out.get("ok"):
+                # The claim stays at its step and the NEXT poll resumes this
+                # fetch under the same order — never a silent
+                # claimed-and-forgotten state.
+                return _refusal(out, status, "order fetch")
+            order = out.get("order") or {}
+            led.write_receipt(order_id, "order_fetched", {"order": order})
+        led.advance_step(order_id, BRIDGE_OWNER, STEP_ORDER_FETCHED)
+        title = str(order.get("title") or title)
+        client_id = str(order.get("client_id") or "")
 
-    # Absolute, always: the poll line's `next` is meant to be run as printed,
-    # from wherever the agent happens to be (a relative --runs would otherwise
-    # print a relative run_dir and a next that resolves somewhere else).
-    run_dir = (pathlib.Path(args.runs).expanduser() / order_id).resolve()
-    control = run_dir / "control"
-    control.mkdir(parents=True, exist_ok=True)
-    # The run dir knows WHERE the studio is; it never holds the key.
-    (control / "studio-order.json").write_text(
-        json.dumps({"order_id": order_id, "client_id": client_id,
-                    "title": title, "base_url": base}, sort_keys=True) + "\n",
-        encoding="utf-8")
+        # Before the run folder exists at all: a reply count that cannot complete
+        # the card's question list replays shifted answers, so the order is
+        # cancelled with that reason instead and nothing is written (SPEC B1).
+        mismatch = _question_mismatch(args.skill_root, order.get("replies") or [],
+                                      args.client_dir)
+        if mismatch is not None:
+            return _refuse_mismatch(base, key, order_id, mismatch)
 
-    # The run's state authority, at claim time, so the very next command works.
-    if _ensure_run_state(args.skill_root, run_dir, order_id) is None:
-        return EXIT["error"]
+        # Absolute, always: the poll line's `next` is meant to be run as printed,
+        # from wherever the agent happens to be (a relative --runs would otherwise
+        # print a relative run_dir and a next that resolves somewhere else).
+        run_dir = (pathlib.Path(args.runs).expanduser() / order_id).resolve()
+        out_line = stored_line
+        if out_line is None:
+            control = run_dir / "control"
+            control.mkdir(parents=True, exist_ok=True)
+            # The run dir knows WHERE the studio is; it never holds the key.
+            (control / "studio-order.json").write_text(
+                json.dumps({"order_id": order_id, "client_id": client_id,
+                            "title": title, "base_url": base}, sort_keys=True) + "\n",
+                encoding="utf-8")
 
-    code, factory = _replay(args.skill_root, run_dir, order.get("replies") or [])
-    if code != EXIT["ok"]:
-        return code
-    _board_epic(args.skill_root, order_id, title)
-    print(json.dumps({"order_id": order_id, "run_dir": str(run_dir),
-                      "next": "%s %s next --run-dir %s"
-                              % (sys.executable, factory, run_dir)},
-                     sort_keys=True))
-    return EXIT["ok"]
+            # The run's state authority, at claim time, so the very next command works.
+            if _ensure_run_state(args.skill_root, run_dir, order_id) is None:
+                return EXIT["error"]
+
+            code, factory = _replay(args.skill_root, run_dir, order.get("replies") or [])
+            if code != EXIT["ok"]:
+                return code
+            _board_epic(args.skill_root, order_id, title)
+            out_line = {"order_id": order_id, "run_dir": str(run_dir),
+                        "next": "%s %s next --run-dir %s"
+                                % (sys.executable, factory, run_dir),
+                        "db": db}
+            led.write_receipt(order_id, "poll_line", out_line)
+            led.advance_step(order_id, BRIDGE_OWNER, STEP_MATERIALIZED)
+        # Materialized but not yet acknowledged: re-emit the SAME line so the
+        # wake request persists and is retried (a quiet success here is the
+        # claimed-and-forgotten state this repair exists to remove).
+        print(json.dumps(out_line, sort_keys=True))
+        return EXIT["ok"]
+
+
+# --- durable wake handoff (SPEC 9.4, D35) ------------------------------------
+
+#: A wake turn must finish inside this lease or a later tick may re-wake.
+WAKE_LEASE_TTL_S = 600.0
+
+
+def cmd_wake(args):
+    """Record the wake handoff steps on the claim ledger (D35).
+
+    --queued  the wake request is in flight; a concurrent wake for the same
+              order is refused (lease), so a turn is never started twice.
+    --ack     the supported runtime acknowledged the turn: the claim moves to
+              execution-accepted and every later poll stays silent.
+    --fail    the wake failed for a NAMED reason. The step does not move: the
+              request stays queued and the next poll retries it under the same
+              order. Failures are never converted into silent success.
+    """
+    db = os.path.abspath(args.db or str(state_dir() / "studio.db"))
+    now = time.time()
+    lease_owner = "%s@%s" % (BRIDGE_OWNER, os.getpid())
+    with ClaimLedger(db) as led:
+        st = led.order_state(args.order)
+        owner = st["owner"] if st else BRIDGE_OWNER
+        if args.queued:
+            won = led.lease_acquire("wake:" + args.order, lease_owner,
+                                    ttl_s=WAKE_LEASE_TTL_S, now=now)
+            if not won:
+                _emit({"order_id": args.order, "in_flight": True,
+                       "message": "a wake for this order is already in flight"})
+                return EXIT["ok"]
+            led.advance_step(args.order, owner, STEP_WAKE_QUEUED, now=now)
+            led.write_receipt(args.order, "wake_queued",
+                              {"pid": os.getpid()}, now=now)
+            _emit({"order_id": args.order, "queued": True})
+            return EXIT["ok"]
+        if args.ack:
+            led.advance_step(args.order, owner, STEP_EXECUTION_ACCEPTED, now=now)
+            led.write_receipt(args.order, "execution_accepted",
+                              {"pid": os.getpid()}, now=now)
+            led.lease_clear("wake:" + args.order)
+            _emit({"order_id": args.order, "execution_accepted": True})
+            return EXIT["ok"]
+        if args.fail:
+            led.write_receipt(args.order, "wake_failed",
+                              {"reason": args.reason or "UNNAMED",
+                               "pid": os.getpid()}, now=now)
+            led.lease_clear("wake:" + args.order)
+            _emit({"order_id": args.order, "wake_failed": args.reason or "UNNAMED",
+                   "retryable": True})
+            return EXIT["ok"]
+    _emit({"code": "BAD_WAKE", "message": "use --queued, --ack or --fail"})
+    return EXIT["refused"]
 
 
 # --- approvals (U2 owns approvals_bridge) ------------------------------------
@@ -1069,7 +1496,37 @@ def main(argv=None):
     en = sub.add_parser("enroll", help="register this box once; writes machine.key + machine.url")
     en.add_argument("--base-url", default=None, help="default: stored address, else the studio")
     en.add_argument("--label", default=None, help="computer/box name stored with the key")
+    en.add_argument("--resume", action="store_true",
+                    help="with an existing key: complete/recover the receipt locally "
+                         "(never contacts the studio; never re-enrols)")
     en.set_defaults(func=cmd_enroll)
+
+    cap = sub.add_parser("capability",
+                         help="model the optional Studio capability in the install state")
+    cap.add_argument("--gate", action="store_true",
+                     help="exit 0 = ready to poll, 10 = skip quietly; one line per "
+                          "transition only (the idle optional poller reads this)")
+    cap.add_argument("--record", default=None, choices=CAPABILITY_STATES,
+                     help="install-time intent (disabled | needs-enrollment); an "
+                          "observed enrolment is never downgraded")
+    cap.add_argument("--repair", action="store_true",
+                     help="recover an interrupted/key-only receipt in place first")
+    cap.add_argument("--no-network", action="store_true",
+                     help="receipt-only check; the handshake is not probed")
+    cap.add_argument("--base-url", default=None)
+    cap.set_defaults(func=cmd_capability)
+
+    wk = sub.add_parser("wake", help="record the durable wake handoff on the claim ledger")
+    wk.add_argument("--order", required=True)
+    wk.add_argument("--db", default=None, help="claim ledger (default: <state folder>/studio.db)")
+    wk.add_argument("--queued", action="store_true", help="wake request in flight")
+    wk.add_argument("--ack", action="store_true", help="runtime acknowledged the turn")
+    wk.add_argument("--fail", action="store_true", help="wake failed; the request stays queued")
+    wk.add_argument("--reason", default=None, help="with --fail: the named failure code")
+    wk.set_defaults(func=cmd_wake)
+
+    sd = sub.add_parser("state-dir", help="print the persistent state root (one contract)")
+    sd.set_defaults(func=cmd_state_dir)
 
     li = sub.add_parser("link", help="print the client's personal link; --new rotates it")
     li.add_argument("--new", action="store_true", help="mint a fresh link; the old one stops working")
