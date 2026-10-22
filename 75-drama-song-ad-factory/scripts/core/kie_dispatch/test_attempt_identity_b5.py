@@ -147,8 +147,21 @@ def test_dispatch_carries_it():
           e4.get("reason_code"), "DUPLICATE_ATTEMPT")
 
 
+def test_no_string_suffix_minter():
+    """The disposition forbids a locally-minted attempt identity. #2414 shipped
+    `_next_attempt_id` (a ledger read + MAX()+1 suffix); it must not exist."""
+    SC = importlib.import_module("song_choices.song_choices")
+    check("15: no _next_attempt_id minter survives in song_choices",
+          hasattr(SC, "_next_attempt_id"), False)
+    src = open(os.path.join(CORE, "song_choices", "song_choices.py"),
+               encoding="utf-8").read()
+    check("16: the generate path asks the ledger to mint",
+          'attempt_id="",' in src, True)
+
+
 def main():
-    for fn in (test_ledger_mints, test_dispatch_carries_it):
+    for fn in (test_ledger_mints, test_dispatch_carries_it,
+               test_no_string_suffix_minter):
         try:
             fn()
         except Exception as e:                  # noqa: BLE001

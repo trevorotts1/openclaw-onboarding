@@ -1,5 +1,5 @@
 ---
-version: 1.0.46
+version: 1.0.51
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -134,6 +134,16 @@ tenth advisor.
 
 ## Front doors
 
+The council has two doors and the client triggers both the same way:
+by asking for the council in their own words (the phrases below). The
+OpenClaw door is the client's OpenClaw agent on their box; the
+claude-nine / Claude Code (999) door is the same skill running inside
+claude-nine or Claude Code (the 999 tree vendors it under
+`.claude/skills/council-of-wise-elders`, entry
+`runtime/dist/council-entry.mjs`). Each door reads its own permitted
+context through its own adapter and feeds the same assembler, so the
+brief and the flow look identical either way.
+
 Recognize these explicit phrases through the existing intent router:
 
 - "Ask my Council of Wise Elders"
@@ -152,6 +162,11 @@ creates a linked consult only when new inference is requested.
 
 Read references/protocol.md before starting a new council; load the relevant
 operational reference for a follow-up or an existing-session control.
+One flow runs the sitting end to end
+(`runtime/src/flow/convene-flow.ts`): the brief-builder runs first
+(permitted context), then deliberation, then the verdict, the
+session-close protocol manages the sitting, and finalize renders the
+counsel artifact.
 
 1. Resolve the authenticated client and the authoritative managed or
    standalone session store. Do not silently change modes or create a
@@ -159,8 +174,18 @@ operational reference for a follow-up or an existing-session control.
 2. Identify whether this is a new decision, a follow-up, a rerun, a pause,
    a cancel, a resume, or an ordinary explanation. Resolve existing-session
    controls first.
-3. Retrieve permitted context before asking for facts. Ask only the next
-   material missing question. Preserve unknowns and show the prepared brief.
+3. Retrieve permitted context before asking for facts: the brief the
+   elders read is assembled FIRST by the one shared permitted-context
+   builder (`runtime/src/brief/permitted-brief.ts`), through the door's
+   own adapter: the OpenClaw door reads memory.md, agents.md, soul.md,
+   user.md; the claude-nine / Claude Code (999) door reads CLAUDE.md,
+   AGENTS.md, memory/MEMORY.md. It follows a pointer link at most one
+   hop (recursion never), selects only the facts that bear on THIS
+   decision (never a file dump), keeps private detail in the private
+   store (only an opaque `private_preference_ref` handle), marks what
+   the context does not state as an explicit unknown, and never runs
+   past its 2000-word cap. Ask only the next material missing question.
+   Preserve unknowns and show the prepared brief.
 4. Ask the client which model the council should use. Run
    `blackceo-council routes` and list the options it returns, then offer
    the default for the harness you are running in, and say which it is:
@@ -222,6 +247,26 @@ Read references/scoring.md for score interpretation,
 references/source-policy.md for evidence and quotations,
 references/model-routing.md for route and identity rules, and
 references/report-template.md for the fixed verdict page order.
+
+## Closing a session
+
+A council sitting is one session, and every sitting gets closed; a
+sitting never hangs open. Five minutes after the client's last
+interaction in an open session, ask exactly ONE soft-close question:
+"Is that all, or are we still working?" An explicit close phrase
+("that's all", "we're done", "finalize", ...) finalizes immediately;
+any other answer continues the sitting and restarts the five-minute
+quiet clock; no answer within ten minutes of the question finalizes
+automatically. Finalize marks the session closed in the store, renders
+the counsel artifact through the renderer's
+`renderArtifact(sessionRecord)` (it returns the artifact path and
+link), and delivers it: the reply carries the artifact link beside the
+chamber link, so the client can read the counsel and return to the
+Roast Room from the same message. The close state derives from
+the store's own timestamps, never from in-memory timers, so a restart
+loses nothing and never repeats the question. One active session per
+client: resolve the existing session first, never create a duplicate.
+Full detail in INSTRUCTIONS.md, Closing a session.
 
 ## State lives outside this folder
 

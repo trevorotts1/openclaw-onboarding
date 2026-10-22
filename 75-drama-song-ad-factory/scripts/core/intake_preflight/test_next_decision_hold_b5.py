@@ -101,6 +101,12 @@ def main():
     check("6: an unknown gate name opens nothing",
           env4["reason_code"] == "ACCEPTANCE_NOT_PROVEN", True)
 
+    # 7. the disposition forbids a SECOND acceptance artifact: the decision is
+    # operator-decision.json only, and no QC_ACCEPTED_RISK override exists.
+    fsrc = open(F.__file__, encoding="utf-8").read()
+    check("7: no qc-risk-acceptance artifact", "qc-risk-acceptance" in fsrc, False)
+    check("8: no QC_ACCEPTED_RISK override", "QC_ACCEPTED_RISK" in fsrc, False)
+
     print()
     if FAILS:
         print("%d FAILED: %s" % (len(FAILS), ", ".join(FAILS)))

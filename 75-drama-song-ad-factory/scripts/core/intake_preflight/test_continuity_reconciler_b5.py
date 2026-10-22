@@ -79,6 +79,9 @@ def main():
     got = {"continuity-bible": "NOT_STARTED"}
     rows, fresh = F._reconcile_stages(run, got)
     moved = [r for r in rows if r.get("stage") == "continuity-bible"]
+    check("2b: no inline _proven_continuity copy survives in factory",
+          hasattr(F, "_proven_continuity"), False)
+
     check("3: proven records reconcile the row",
           bool(moved) and moved[0].get("to_state"), "COMPLETE")
     check("4: the fresh state map says COMPLETE",
