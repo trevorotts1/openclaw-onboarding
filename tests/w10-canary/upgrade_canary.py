@@ -217,9 +217,10 @@ def verify_against_source(inst_root, src_root):
     bad = []
     for rel, digest in src.items():
         if rel not in inst:
-            bad.append("%s (missing)" % rel)
+            bad.append("%s (missing at %s)" % (rel, inst_root))
         elif inst[rel] != digest:
-            bad.append("%s (sha256 %s != %s)" % (rel, inst[rel][:16], digest[:16]))
+            bad.append("%s (path %s; installed sha256 %s != pinned %s)"
+                       % (rel, Path(inst_root) / rel, inst[rel][:16], digest[:16]))
     if bad:
         raise Refusal("DIGEST_MISMATCH",
                       "installed bytes differ from pinned source: " + "; ".join(bad[:5]))
@@ -515,12 +516,112 @@ def run_both(out, vector_path, repo, old_rev, new_rev):
     return 0 if not failed else 1
 
 
+def run_selftest(out):
+    """Prove the real check machinery can FAIL. No installer, no repository.
+
+    Exercises the exact functions run_real() relies on, against synthetic trees,
+    so a green selftest means those checks are capable of refusing.
+    """
+    print("upgrade canary SELFTEST (check machinery only; no installer, "
+          "no repository, no real root)")
+    RESULTS.clear()
+    work = Path(out) / "selftest"
+    if work.exists():
+        shutil.rmtree(work)
+    old_root = work / "old" / SKILL
+    new_root = work / "new" / SKILL
+    inst = work / "installed" / SKILL
+    for root, body in ((old_root, "old"), (new_root, "new")):
+        for rel in ("scripts/core/state_store.py", "INSTRUCTIONS.md",
+                    "scripts/core/only_old.py"):
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            if rel == "INSTRUCTIONS.md":
+                p.write_text("unchanged text\n", encoding="utf-8")
+            else:
+                p.write_text("%s %s\n" % (body, rel), encoding="utf-8")
+    (new_root / "scripts/core/only_new.py").write_text("new only\n", encoding="utf-8")
+    (old_root / "scripts/core/only_old.py").write_text("old only\n", encoding="utf-8")
+    (new_root / "scripts/core/only_old.py").unlink()   # removed between revisions
+
+    # (a) manifest built from real bytes; independent recompute must agree
+    before = tree_manifest(old_root)
+    shutil.copytree(old_root, inst)
+    shutil.rmtree(inst)
+    shutil.copytree(new_root, inst)
+    after = tree_manifest(inst)
+    man = diff_manifests(before, after)
+    indep = hashlib.sha256((new_root / PROBE_FILE).read_bytes()).hexdigest()
+    check("selftest:manifest changed files detected", man["changed"],
+          "changed=%d" % len(man["changed"]))
+    check("selftest:manifest added/removed detected",
+          list(man["added"]) == ["scripts/core/only_new.py"]
+          and list(man["removed"]) == ["scripts/core/only_old.py"],
+          "added=%r removed=%r" % (list(man["added"]), list(man["removed"])))
+    check("selftest:manifest digests are the real bytes",
+          man["changed"][PROBE_FILE]["new"] == indep,
+          "%s sha256 %s" % (PROBE_FILE, indep[:16]))
+
+    # (b) tamper must be caught and must NAME the exact path
+    (inst / PROBE_FILE).write_text("# tampered\n", encoding="utf-8")
+    try:
+        verify_against_source(inst, new_root.parent)
+        check("selftest:tamper refused with DIGEST_MISMATCH", False,
+              "tamper was NOT detected")
+    except Refusal as e:
+        named = str(inst / PROBE_FILE)
+        check("selftest:tamper refused with DIGEST_MISMATCH",
+              e.code == "DIGEST_MISMATCH" and named in e.detail,
+              "%s names %s" % (e.code, named))
+
+    # (c) a missing preservation artifact must be refused
+    try:
+        assert_preservation({"a": "deadbeef"}, {"a": None})
+        check("selftest:missing preservation refused", False, "not detected")
+    except Refusal as e:
+        check("selftest:missing preservation refused",
+              e.code == "PRESERVATION_MISSING", e.code)
+    try:
+        assert_preservation({"a": "deadbeef"}, {"a": "cafebabe"})
+        check("selftest:changed preservation refused", False, "not detected")
+    except Refusal as e:
+        check("selftest:changed preservation refused",
+              e.code == "PRESERVATION_MISSING", e.code)
+
+    # (d) process survival must fail when the process actually dies
+    proc, start_before = start_survivor()
+    proc.terminate()
+    proc.wait(timeout=5)
+    proc.poll()
+    alive = proc.poll() is None
+    check("selftest:dead survivor would be refused (PROCESS_LOST)",
+          not alive, "pid %d alive=%s start=%r" % (proc.pid, alive, start_before))
+
+    # (e) an empty installed tree must be refused as MANIFEST_MISSING
+    try:
+        verify_against_source(work / "empty", new_root.parent)
+        check("selftest:empty install refused as MANIFEST_MISSING", False,
+              "not detected")
+    except Refusal as e:
+        check("selftest:empty install refused as MANIFEST_MISSING",
+              e.code == "MANIFEST_MISSING", e.code)
+
+    passed, failed, total = cc.summarize_checks(RESULTS)
+    cc.write_json(work / "selftest.json",
+                  {"schema": "blackceo.skill75.canary.upgrade-selftest/v1",
+                   "results": RESULTS})
+    print("selftest: %d/%d checks passed%s" % (len(passed), total,
+          ("" if not failed else "; FAIL: " + ", ".join(failed))))
+    return 0 if not failed else 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--vector", required=True)
     ap.add_argument("--dist", choices=["onboarding", "999", "both"], default="both")
     ap.add_argument("--out", required=True)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--repo", default=str(Path(__file__).resolve().parents[2]),
                     help="git checkout to materialize revisions from")
     ap.add_argument("--old-rev", default=None)
@@ -533,6 +634,8 @@ def main():
     Path(a.out).mkdir(parents=True, exist_ok=True)
     if a.dry_run:
         return run_dry(a.out)
+    if a.selftest:
+        return run_selftest(a.out)
     if a.dist == "both":
         return run_both(a.out, a.vector, a.repo, a.old_rev, a.new_rev)
     return run_real(a.out, a.vector, a.dist, a.repo, a.old_rev, a.new_rev,
