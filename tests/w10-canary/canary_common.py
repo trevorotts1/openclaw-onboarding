@@ -89,6 +89,11 @@ def _is_sha(s):
         c in "0123456789abcdef" for c in s.lower())
 
 
+def _is_sha256(s):
+    return isinstance(s, str) and len(s) == 64 and all(
+        c in "0123456789abcdef" for c in s.lower())
+
+
 def require_pinned(v):
     """Gate every REAL canary run. Returns (ok, reason).
 
@@ -134,16 +139,56 @@ esac
 exec "$REAL_GIT" "$@"
 """
 
+#: The installers obtain their source with `git clone <url> <dest>`. A real
+#: install canary must run that code path, but it must never touch the network
+#: and it must install EXACTLY the pinned revision. This shim answers the clone
+#: from a tree already materialized at that revision and answers the two
+#: provenance reads the installer performs afterwards. Everything else falls
+#: through to the real git binary.
+_GIT_CLONE_STUB = """#!/bin/sh
+REAL_GIT="__REAL_GIT__"
+PINNED_TREE="__PINNED_TREE__"
+PINNED_SHA="__PINNED_SHA__"
+CANON_URL="__CANON_URL__"
+case "$*" in
+  clone*)
+    _dest=""
+    for _a in "$@"; do _dest="$_a"; done
+    rm -rf "$_dest"; mkdir -p "$_dest" || exit 1
+    tar -C "$PINNED_TREE" -cf - . | tar -C "$_dest" -xf - || exit 1
+    echo "[canary-shim] git clone -> pinned tree $PINNED_TREE @ $PINNED_SHA" >> "__LOG__"
+    exit 0 ;;
+  *"remote get-url origin"*) printf '%s\\n' "$CANON_URL"; exit 0 ;;
+  *"rev-parse HEAD"*) printf '%s\\n' "$PINNED_SHA"; exit 0 ;;
+  fetch*|pull*|push*|ls-remote*|submodule*)
+    echo "[canary-shim] git (network verb suppressed, hermetic)" >> "__LOG__"
+    exit 0 ;;
+esac
+exec "$REAL_GIT" "$@"
+"""
 
-def build_shims(shim_dir, log_path, real_git=None):
-    """Write openclaw/curl/git stubs into shim_dir. Return shim_dir."""
+
+def build_shims(shim_dir, log_path, real_git=None, clone_source=None):
+    """Write openclaw/curl/git stubs into shim_dir. Return shim_dir.
+
+    clone_source: optional (pinned_tree, pinned_sha, canonical_url). When given,
+    `git clone` is answered from that already-materialized tree instead of being
+    suppressed, so the installer's real clone path runs with no network.
+    """
     shim = Path(shim_dir)
     shim.mkdir(parents=True, exist_ok=True)
     real_git = real_git or shutil.which("git") or "/usr/bin/git"
+    git_body = _GIT_STUB.replace("__REAL_GIT__", real_git)
+    if clone_source:
+        tree, sha, url = clone_source
+        git_body = (_GIT_CLONE_STUB.replace("__REAL_GIT__", real_git)
+                    .replace("__PINNED_TREE__", str(tree))
+                    .replace("__PINNED_SHA__", str(sha))
+                    .replace("__CANON_URL__", str(url)))
     for name, body in (
         ("openclaw", _OPENCLAW_STUB),
         ("curl", _CURL_STUB),
-        ("git", _GIT_STUB.replace("__REAL_GIT__", real_git)),
+        ("git", git_body),
     ):
         p = shim / name
         p.write_text(body.replace("__LOG__", str(log_path)), encoding="utf-8")
@@ -160,24 +205,30 @@ class Sandbox(object):
             subprocess.run([bash, installer], env=sb.env, ...)
     """
 
-    def __init__(self, prefix=SCRATCH_PREFIX, keep=False):
+    def __init__(self, prefix=SCRATCH_PREFIX, keep=False, base_dir=None,
+                 clone_source=None):
         self.prefix = prefix
         self.keep = keep
+        self.base_dir = base_dir
+        self.clone_source = clone_source
         self.dir = None
         self.env = {}
         self.shim_log = None
 
     def __enter__(self):
-        self.dir = Path(tempfile.mkdtemp(prefix=self.prefix, dir="/tmp"))
+        self.dir = Path(tempfile.mkdtemp(prefix=self.prefix,
+                                         dir=str(self.base_dir or "/tmp")))
         home = self.dir / "home"
         oc = self.dir / "oc"
         skills = self.dir / "skills"
         claude = self.dir / "claude"
-        for d in (home, oc, skills, claude):
+        tmp = self.dir / "tmp"
+        for d in (home, oc, skills, claude, tmp):
             d.mkdir(parents=True, exist_ok=True)
         self.shim_log = self.dir / "shim.log"
         self.shim_log.write_text("", encoding="utf-8")
-        shim = build_shims(self.dir / "shims", self.shim_log)
+        shim = build_shims(self.dir / "shims", self.shim_log,
+                           clone_source=self.clone_source)
 
         env = dict(os.environ)
         env.update({
@@ -185,6 +236,7 @@ class Sandbox(object):
             "OC_CONFIG": str(oc),
             "SKILLS_DIR": str(skills),
             "CLAUDE_CONFIG_DIR": str(claude),
+            "TMPDIR": str(tmp),
             "PATH": "%s:%s" % (shim, env.get("PATH", "")),
             "PYTHONDONTWRITEBYTECODE": "1",
             # belt-and-suspenders: any child that still resolves a network tool
@@ -234,3 +286,167 @@ def summarize_checks(results):
     passed = [k for k, v in results.items() if v.get("ok")]
     failed = [k for k, v in results.items() if not v.get("ok")]
     return passed, failed, len(results)
+
+
+# ------------------------------------------------------- pinned sources ----
+def materialize_revision(repo, revision, dest):
+    """Extract EXACTLY `revision` from a local checkout into `dest`. No network.
+
+    Returns (ok, detail). Fail closed: a revision that is not in the local object
+    database is refused rather than silently substituted with HEAD, so a canary
+    can never claim it installed a revision it never checked out.
+    """
+    repo = Path(repo)
+    dest = Path(dest)
+    if not _is_sha(revision):
+        return False, "revision is not a 40-hex sha: %r" % (revision,)
+    if not (repo / ".git").exists():
+        return False, "not a git checkout: %s" % repo
+    v = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify",
+                        revision + "^{commit}"], capture_output=True, text=True)
+    if v.returncode != 0:
+        return False, "revision %s not present in %s" % (revision, repo)
+    got = v.stdout.strip()
+    if got != revision:
+        return False, "revision %s resolved to %s (ref, not an exact sha)" % (
+            revision, got)
+    dest.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix=".tar") as tf:
+        a = subprocess.run(["git", "-C", str(repo), "archive", "--format=tar",
+                            "-o", tf.name, got], capture_output=True, text=True)
+        if a.returncode != 0:
+            return False, "git archive failed: %s" % a.stderr.strip()[:300]
+        t = subprocess.run(["tar", "-x", "-C", str(dest), "-f", tf.name],
+                           capture_output=True, text=True)
+        if t.returncode != 0:
+            return False, "tar extract failed: %s" % t.stderr.strip()[:300]
+    return True, "%s @ %s -> %s" % (repo.name, got[:12], dest)
+
+
+SKIP_DIRS = (".git", "__pycache__")
+
+
+def manifest_tree(root, skip_dirs=SKIP_DIRS):
+    """{relative posix path: sha256} for every regular file under root."""
+    root = Path(root)
+    man = {}
+    if not root.is_dir():
+        return man
+    for p in sorted(root.rglob("*")):
+        if not p.is_file() or p.is_symlink():
+            continue
+        rel = p.relative_to(root)
+        if any(part in skip_dirs for part in rel.parts):
+            continue
+        man[rel.as_posix()] = sha256_file(p)
+    return man
+
+
+def manifest_digest(manifest):
+    """Order-free sha256 over a {path: digest} manifest."""
+    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def diff_manifests(old, new):
+    """Return (added, changed, removed) as sorted lists of paths."""
+    old = old or {}
+    new = new or {}
+    added = sorted(set(new) - set(old))
+    removed = sorted(set(old) - set(new))
+    changed = sorted(k for k in set(old) & set(new) if old[k] != new[k])
+    return added, changed, removed
+
+
+def verify_manifest(root, manifest, ignore=()):
+    """Recompute an installed tree against a recorded manifest.
+
+    Returns (ok, problems). A manifest with no entries is refused outright:
+    an empty manifest is exactly the placeholder this check exists to catch.
+    `ignore` names paths the caller seeded deliberately (user state that is not
+    installer output); they are named in the receipt, never silently dropped.
+    """
+    root = Path(root)
+    ignore = set(ignore or ())
+    if not isinstance(manifest, dict) or not manifest:
+        return False, ["manifest is empty — nothing to verify"]
+    bad = [k for k, v in manifest.items() if not _is_sha256(v)]
+    if bad:
+        return False, ["manifest carries a non-sha256 digest for %s" % k
+                       for k in bad[:10]]
+    problems = []
+    for rel, want in sorted(manifest.items()):
+        p = root / rel
+        if not p.is_file():
+            problems.append("MISSING %s" % rel)
+            continue
+        got = sha256_file(p)
+        if got != want:
+            problems.append("CHANGED %s (manifest %s != installed %s)"
+                            % (rel, want[:12], got[:12]))
+    for rel in sorted(set(manifest_tree(root)) - set(manifest) - ignore):
+        problems.append("EXTRA %s (not in manifest)" % rel)
+    return (not problems), problems
+
+
+def compare_to_source(installed, source):
+    """Is every installed file exactly the pinned source file at the same path?
+
+    Returns (ok, detail). Installers may add their own bookkeeping files inside
+    the skill tree, so EXTRA files are reported but never silently tolerated:
+    any installed file that is absent from the source, or whose digest differs,
+    fails. That is the "no placeholder content" contract.
+    """
+    missing = sorted(set(installed) - set(source))
+    differing = sorted(k for k in set(installed) & set(source)
+                       if installed[k] != source[k])
+    detail = ("%d installed / %d source; %d absent-from-source %s; %d differing %s"
+              % (len(installed), len(source), len(missing), missing[:3],
+                 len(differing), differing[:3]))
+    return (bool(installed) and not missing and not differing), detail
+
+
+def distribution_manifest(dist, install_root, files, source):
+    """The real distribution manifest: files + digests + install path + revision."""
+    return {
+        "schema": "blackceo.skill75.distribution-manifest/v1",
+        "distribution": dist,
+        "installed_path": str(install_root),
+        "source": source,
+        "file_count": len(files),
+        "manifest_sha256": manifest_digest(files),
+        "files": files,
+    }
+
+
+#: Where the loaded-source proof tool lives in the agents-skills tree. Printed,
+#: never executed here: running it needs a live process and an execution GO.
+RUNTIME_PROOF_HINT = ("<agents-skills>/S75-W07-U2/tools/runtime_proof.py")
+
+
+def loaded_source_proof(manifest_path, install_root, runtime_proof=None,
+                        ignore=()):
+    """Validate a distribution manifest before the loaded-source proof runs.
+
+    Prints (and returns) the exact runtime_proof.py command the acceptance run
+    would execute, and independently recomputes every digest in the manifest so
+    a missing, empty or tampered manifest is refused here rather than being
+    handed to a proof step that would trust it.
+    """
+    cmd = ("python3 %s record --manifest %s --root %s"
+           % (runtime_proof or RUNTIME_PROOF_HINT, manifest_path, install_root))
+    mp = Path(manifest_path)
+    if not mp.is_file():
+        return False, "manifest missing: %s" % mp, cmd
+    try:
+        doc = json.loads(mp.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return False, "manifest unreadable: %s" % e, cmd
+    files = doc.get("files")
+    if not isinstance(files, dict) or not files:
+        return False, "manifest has no files (empty/placeholder manifest refused)", cmd
+    ok, problems = verify_manifest(install_root, files, ignore=ignore)
+    if not ok:
+        return False, ("manifest does not match the installed tree: "
+                       + "; ".join(problems[:5])), cmd
+    return True, "%d files verified against %s" % (len(files), mp), cmd
