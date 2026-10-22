@@ -23,6 +23,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
+sys.path.insert(0, HERE)   # carried fix: bare `import approval_events` needs the test's own dir
 sys.path.insert(0, CORE)
 sys.path.insert(0, os.path.join(CORE, "kie_dispatch"))
 sys.path.insert(0, os.path.join(CORE, "suno_recipe"))
