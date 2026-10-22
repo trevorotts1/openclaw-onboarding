@@ -70,10 +70,20 @@ browser — another lane owns it. Nothing here fabricates a selector.
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import json
+import os
 import re
+import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import ghl_evidence  # noqa: E402  (sha256_file — the ONE hashing helper)
 
 PENDING_LIVE_SELECTOR_CAPTURE = "PENDING_LIVE_SELECTOR_CAPTURE"
 ENABLED_FOR_REVIEW = "ENABLED_FOR_REVIEW"
@@ -81,8 +91,22 @@ ENABLED_FOR_REVIEW = "ENABLED_FOR_REVIEW"
 CAPABILITY_ID = "ghl.native_split_test.variant"
 
 # ── What a live capture MUST contain before this capability may be enabled ───
+#
+# TWO LAYERS, and the second one is the point.
+#
+# LAYER 1 — SELECTOR_RESULTS — the 11 observed values. These are what a capture
+# *says*. A hand-written JSON object can say all 11 and be pure fiction, so
+# shape alone is never evidence (that was the de-markered-fixture defect).
+#
+# LAYER 2 — BINDING_CAPTURE_FIELDS — what a capture is bound TO: the sha256 of
+# the actual artifact bytes written at capture time (re-hashed from disk at
+# validation, never trusted from the declared string), the authenticated
+# authorized target (location + company, both from the live identity call), the
+# capture time and session/lease, the candidate revision (git SHA of the tree
+# that ran the capture), and an independent review receipt that signs off on
+# THAT artifact hash. Losing any one of them is a refusal.
 
-REQUIRED_CAPTURE_FIELDS: Tuple[str, ...] = (
+SELECTOR_FIELDS: Tuple[str, ...] = (
     "location_id",              # the authorized staging location captured in
     "step_id",                  # the control step the variant was added to
     "control_id_before",        # control identity BEFORE the variant existed
@@ -95,6 +119,37 @@ REQUIRED_CAPTURE_FIELDS: Tuple[str, ...] = (
     "readback_keys",            # keys the authoritative read returns
     "capture_evidence",         # path/hash of the raw capture artifact
 )
+
+BINDING_CAPTURE_FIELDS: Tuple[str, ...] = (
+    "company_id",               # authenticated authorized target's company id
+    "captured_at",              # ISO-8601 UTC instant the capture was taken
+    "session_id",               # browser session / lease id that ran it
+    "candidate_revision",       # git SHA of the tree that ran the capture
+    "capture_artifact",         # path to the REAL artifact bytes on disk
+    "capture_artifact_sha256",  # sha256 the artifact must hash to
+    "selector_results_sha256",  # sha256 over SELECTOR_FIELDS as captured
+    "review_receipt",           # path to the independent reviewer's receipt
+)
+
+REQUIRED_CAPTURE_FIELDS: Tuple[str, ...] = (
+    SELECTOR_FIELDS + BINDING_CAPTURE_FIELDS
+)
+
+# What a review receipt must carry to count as an independent sign-off.
+REQUIRED_REVIEW_RECEIPT_FIELDS: Tuple[str, ...] = (
+    "reviewer",                 # who reviewed (never the capturing agent)
+    "reviewed_at",              # ISO-8601 UTC
+    "artifact_sha256",          # the hash they SIGNED OFF ON
+    "candidate_revision",       # the tree whose capture they reviewed
+    "selector_results_sha256",  # the selector set they reviewed
+    "verdict",                  # "approved" is the only enabling verdict
+)
+
+APPROVED_VERDICT = "approved"
+
+_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 # Fields a variant request may never carry until the capture proves them.
 FORBIDDEN_UNTIL_CAPTURE: Tuple[str, ...] = (
@@ -183,6 +238,57 @@ CAPTURE_SCHEMA: Dict[str, Dict[str, Any]] = {
                 "by accident",
         "check": lambda v: isinstance(v, str) and bool(_EVIDENCE_RE.search(v)),
     },
+    # ── Layer 2: the bindings. Shape checks only; the cross-checks that make
+    # them evidence (re-hash the artifact, receipt hash match, revision match)
+    # live in validate_bindings(), because they need the FILESYSTEM.
+    "company_id": {
+        "rule": "non-empty string: the company id the live identity call "
+                "returned for the authorized target (never assumed from the "
+                "location id)",
+        "check": lambda v: isinstance(v, str) and bool(v.strip()),
+    },
+    "captured_at": {
+        "rule": "ISO-8601 UTC instant, e.g. 2026-10-22T14:03:11Z: when the "
+                "capture ran. A capture with no time cannot be tied to the "
+                "artifact bytes or to the revision",
+        "check": lambda v: isinstance(v, str) and bool(_ISO_RE.match(v)),
+    },
+    "session_id": {
+        "rule": "non-empty string: the browser session / lease id that ran the "
+                "capture, so the artifact can be tied to one authorized run",
+        "check": lambda v: isinstance(v, str) and bool(v.strip()),
+    },
+    "candidate_revision": {
+        "rule": "40-hex git commit SHA of the tree that ran the capture; a "
+                "selector set from another revision is not this tree's evidence",
+        "check": lambda v: isinstance(v, str)
+                           and bool(_REVISION_RE.match(v)),
+    },
+    "capture_artifact": {
+        "rule": "path to the REAL captured bytes (screenshot / trace / DOM "
+                "dump) written at capture time and kept under the run's "
+                "evidence dir; re-hashed from disk at validation",
+        "check": lambda v: isinstance(v, str) and bool(v.strip()),
+    },
+    "capture_artifact_sha256": {
+        "rule": "64-lowercase-hex sha256 that the artifact file at "
+                "capture_artifact MUST hash to at validation time; the "
+                "declared digest is never trusted on its own",
+        "check": lambda v: isinstance(v, str) and bool(_SHA256_RE.match(v)),
+    },
+    "selector_results_sha256": {
+        "rule": "64-lowercase-hex sha256 over the 11 selector results as "
+                "captured (selector_results_digest()); the reviewer signs this "
+                "same digest, so a selector edited after review is detectable",
+        "check": lambda v: isinstance(v, str) and bool(_SHA256_RE.match(v)),
+    },
+    "review_receipt": {
+        "rule": "path to the independent reviewer's receipt; it must carry "
+                "artifact_sha256 == capture_artifact_sha256, the same "
+                "candidate_revision and selector_results_sha256, and "
+                "verdict 'approved'",
+        "check": lambda v: isinstance(v, str) and bool(v.strip()),
+    },
 }
 
 assert tuple(CAPTURE_SCHEMA) == REQUIRED_CAPTURE_FIELDS, (
@@ -209,8 +315,188 @@ def capture_checklist() -> Dict[str, Any]:
     }
 
 
-def validate_capture(capture: Optional[Dict[str, Any]]) -> List[str]:
-    """Return every schema problem; empty list == valid. Never raises."""
+def selector_results_digest(capture: Optional[Dict[str, Any]]) -> str:
+    """sha256 over the 11 SELECTOR results, canonicalised.
+
+    This is what the reviewer signs and what ``selector_results_sha256`` must
+    equal. Canonical JSON with sorted keys and a fixed field order, so the
+    digest is stable across machines and re-serialisations. Returns "" when
+    the capture is not a dict."""
+    if not isinstance(capture, dict):
+        return ""
+    payload = {k: capture.get(k) for k in SELECTOR_FIELDS}
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                     default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _resolve_artifact_path(capture: Dict[str, Any], capture_path: str) -> str:
+    """Resolve ``capture_artifact`` to a path on disk.
+
+    Absolute paths are used as-is. A relative path is resolved against the
+    capture file's own directory first (the run's evidence dir layout), then
+    against the CWD — never invented, never defaulted."""
+    given = str(capture.get("capture_artifact") or "").strip()
+    if not given:
+        return ""
+    if os.path.isabs(given):
+        return given
+    for base in (os.path.dirname(os.path.abspath(capture_path)), os.getcwd()):
+        candidate = os.path.join(base, given)
+        if os.path.isfile(candidate):
+            return candidate
+    return os.path.join(os.path.dirname(os.path.abspath(capture_path)), given)
+
+
+def validate_bindings(capture: Optional[Dict[str, Any]],
+                      capture_path: str = "") -> List[str]:
+    """Verify a capture against the ACTUAL artifact on disk, and against its
+    review receipt. Returns every binding problem; empty list == bound.
+
+    This is the layer that makes shape insufficient. Everything here is a
+    RE-DERIVATION, never a re-read of the capture's own claim:
+
+      1. the artifact file must exist, and its bytes must hash to
+         ``capture_artifact_sha256`` (re-hashed now, not trusted);
+      2. ``selector_results_sha256`` must equal the digest of the selector
+         results as they are in the capture NOW;
+      3. ``capture_evidence`` must embed the same artifact digest, so the
+         human-facing reference agrees with the machine one;
+      4. ``captured_at`` must be a real, parseable instant;
+      5. the review receipt must exist, parse, carry the required fields,
+         say verdict "approved", and SIGN THE SAME artifact hash, revision
+         and selector digest.
+    """
+    if not isinstance(capture, dict):
+        return ["capture is not a JSON object"]
+    problems: List[str] = []
+
+    artifact = _resolve_artifact_path(capture, capture_path)
+    declared = str(capture.get("capture_artifact_sha256") or "").strip()
+    if not artifact:
+        problems.append("capture_artifact: missing")
+    elif not os.path.isfile(artifact):
+        problems.append(
+            f"capture_artifact: no artifact at {artifact!r}; a capture is "
+            "evidence only when its captured bytes are on disk"
+        )
+    else:
+        actual = ghl_evidence.sha256_file(artifact)
+        if not actual:
+            problems.append(f"capture_artifact: {artifact!r} is unreadable")
+        elif actual != declared:
+            problems.append(
+                f"capture_artifact_sha256: declared {declared!r} but the "
+                f"artifact at {artifact!r} hashes to {actual!r}; the metadata "
+                "does not describe those bytes"
+            )
+        evidence = str(capture.get("capture_evidence") or "")
+        m = _EVIDENCE_RE.search(evidence)
+        if declared and m and m.group(0) != f"sha256:{declared}":
+            problems.append(
+                "capture_evidence: embeds a different digest than "
+                "capture_artifact_sha256; the reference and the binding must "
+                "name the same artifact"
+            )
+
+    expected_sel = selector_results_digest(capture)
+    if str(capture.get("selector_results_sha256") or "") != expected_sel:
+        problems.append(
+            "selector_results_sha256: does not match the selector results in "
+            "this capture; a selector set edited after capture is not the "
+            "captured set"
+        )
+
+    captured_at = str(capture.get("captured_at") or "")
+    if captured_at:
+        try:
+            datetime.datetime.strptime(captured_at, "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            problems.append(
+                f"captured_at: {captured_at!r} is not an ISO-8601 UTC instant"
+            )
+
+    problems += _validate_review_receipt(
+        capture, capture_path, declared, expected_sel)
+    return problems
+
+
+def _validate_review_receipt(capture: Dict[str, Any], capture_path: str,
+                             artifact_sha: str, selector_sha: str) -> List[str]:
+    """The independent review receipt must sign THE SAME artifact hash.
+
+    A receipt that signs off on a JSON *shape* (or on nothing) cannot enable
+    anything: it has to name the artifact digest, the revision and the
+    selector digest, and its verdict must be ``approved``.
+    """
+    given = str(capture.get("review_receipt") or "").strip()
+    if not given:
+        return ["review_receipt: missing"]
+    path = given
+    if not os.path.isabs(path):
+        path = os.path.join(os.path.dirname(os.path.abspath(capture_path)),
+                            given)
+    if not os.path.isfile(path):
+        return [f"review_receipt: no receipt at {path!r}"]
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            receipt = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return [f"review_receipt: {path!r} is not readable JSON: {exc}"]
+    if not isinstance(receipt, dict):
+        return [f"review_receipt: {path!r} is not a JSON object"]
+
+    problems: List[str] = []
+    for field_name in REQUIRED_REVIEW_RECEIPT_FIELDS:
+        value = receipt.get(field_name)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            problems.append(f"review_receipt.{field_name}: missing")
+    if problems:
+        return problems
+
+    if str(receipt["verdict"]).strip().lower() != APPROVED_VERDICT:
+        problems.append(
+            f"review_receipt.verdict: {receipt['verdict']!r} is not "
+            f"{APPROVED_VERDICT!r}; only an approval enables review"
+        )
+    if str(receipt["artifact_sha256"]) != artifact_sha:
+        problems.append(
+            "review_receipt.artifact_sha256: signs "
+            f"{receipt['artifact_sha256']!r} but the capture's artifact is "
+            f"{artifact_sha!r}; the reviewer did not approve THESE bytes"
+        )
+    if str(receipt["candidate_revision"]) != str(
+            capture.get("candidate_revision") or ""):
+        problems.append(
+            "review_receipt.candidate_revision: reviewed "
+            f"{receipt['candidate_revision']!r} but the capture is from "
+            f"{capture.get('candidate_revision')!r}"
+        )
+    if str(receipt["selector_results_sha256"]) != selector_sha:
+        problems.append(
+            "review_receipt.selector_results_sha256: reviewed "
+            f"{receipt['selector_results_sha256']!r} but the capture's "
+            f"selector set hashes to {selector_sha!r}"
+        )
+    reviewer = str(receipt["reviewer"]).strip().lower()
+    capturer = str(capture.get("session_id") or "").strip().lower()
+    if reviewer and capturer and reviewer == capturer:
+        problems.append(
+            "review_receipt.reviewer: the reviewer is the capturing session; "
+            "a review must be independent of the capture"
+        )
+    return problems
+
+
+def validate_capture(capture: Optional[Dict[str, Any]],
+                     capture_path: str = "") -> List[str]:
+    """Return every schema problem; empty list == valid. Never raises.
+
+    Shape problems only when ``capture_path`` is empty (the in-memory callers
+    and the shape fixtures). Passing ``capture_path`` — which ``load_capture``
+    always does — ALSO runs ``validate_bindings``, so an artifact-less or
+    hash-mismatched capture is invalid even when every key is present.
+    """
     if not isinstance(capture, dict):
         return ["capture is not a JSON object"]
     problems: List[str] = []
@@ -225,12 +511,24 @@ def validate_capture(capture: Optional[Dict[str, Any]]) -> List[str]:
             ok = False
         if not ok:
             problems.append(f"{name}: {CAPTURE_SCHEMA[name]['rule']}")
-    return problems
+    if capture_path:
+        problems += validate_bindings(capture, capture_path)
+    # A missing field is reported once by the shape pass and again by the
+    # binding pass; keep the first occurrence so the reader sees one line.
+    seen: set = set()
+    return [p for p in problems if not (p in seen or seen.add(p))]
 
 
 def load_capture(path: str) -> Dict[str, Any]:
     """Load and validate a capture file. This is the ONLY ingress for a real
-    capture. Refuses synthetic fixtures and any schema problem."""
+    capture.
+
+    Enforces, in order: readable JSON → not synthetic → full schema →
+    the BINDINGS against the actual artifact on disk and the review receipt.
+    A capture that merely looks right is refused: the artifact must exist and
+    hash to the declared digest, and an independent receipt must sign that
+    digest.
+    """
     try:
         with open(path, "r", encoding="utf-8") as fh:
             capture = json.load(fh)
@@ -241,7 +539,7 @@ def load_capture(path: str) -> Dict[str, Any]:
             f"{CAPABILITY_ID}: capture {path} is synthetic; "
             f"{SYNTHETIC_CAPTURE_WARNING}"
         )
-    problems = validate_capture(capture)
+    problems = validate_capture(capture, capture_path=path)
     if problems:
         raise CaptureInvalid(
             f"{CAPABILITY_ID}: capture {path} fails the schema: {problems}"
@@ -316,43 +614,61 @@ class VariantPlan:
 
 
 def capability_state(capture: Optional[Dict[str, Any]] = None,
-                     reviewed: bool = False) -> Dict[str, Any]:
+                     reviewed: bool = False,
+                     capture_path: str = "") -> Dict[str, Any]:
     """Report the capability state, what is missing, and what is malformed.
 
     ``capture=None`` is the honest default: nothing has been captured, so the
     state is PENDING_LIVE_SELECTOR_CAPTURE and every required field is missing.
     A partial capture lists only what is still missing — it never rounds up.
 
-    ``enabled`` is gated on BOTH: (a) every required field present, (b) the
-    capture passing the FULL schema, (c) an explicit ``reviewed=True``. The
-    schema check is why a plausible-looking field can never enable this:
-    ``traffic_permitted`` must be literally ``False`` and ``capture_evidence``
-    must carry a sha256 digest.
+    ``enabled`` is gated on ALL of: (a) every required field present, (b) the
+    capture passing the FULL schema, (c) the BINDINGS holding — the artifact on
+    disk hashes to the declared digest and an independent receipt signs that
+    digest (this needs ``capture_path``; without one the bindings cannot be
+    checked and the state stays PENDING, honestly), and (d) an explicit
+    ``reviewed=True``.
+
+    ``reviewed=True`` alone enables NOTHING. The reviewer's approval is the
+    receipt on disk; this flag only says "look at that receipt". A caller
+    flipping it without a receipt gets ``enabled=False`` and the receipt
+    problems spelled out.
     """
     missing = [f for f in REQUIRED_CAPTURE_FIELDS
                if not _capture_field_present(capture, f)]
-    problems = validate_capture(capture) if not missing else []
+    problems = validate_capture(capture, capture_path=capture_path) \
+        if not missing else []
     if not missing:
         schema_valid = not problems
+        bound = schema_valid and bool(capture_path) and not validate_bindings(
+            capture, capture_path)
         return {
             "capability": CAPABILITY_ID,
             "state": ENABLED_FOR_REVIEW,
-            "enabled": bool(schema_valid and reviewed),
+            "enabled": bool(bound and reviewed),
             "missing_capture_fields": [],
             "schema_valid": schema_valid,
             "schema_problems": problems,
+            "bindings_valid": bound,
             "reviewed": bool(reviewed),
             "reason": (
-                "a complete live capture is present and passes the schema; the "
-                "capability may be ENABLED only after review of that capture"
-                if schema_valid else
-                "a capture is present but FAILS the schema; it is not evidence "
-                "and can never enable this capability"
+                "a complete, artifact-bound, independently reviewed capture is "
+                "present; the capability may be ENABLED only by a separate, "
+                "tested change"
+                if bound and reviewed else
+                "a complete capture is present but is not BOUND to an artifact "
+                "and an independent review; shape is not evidence"
+                if not bound else
+                "a complete, artifact-bound capture is present and awaits the "
+                "reviewer's approval"
             ),
             "next_action": (
-                "reviewer approves the capture (enablement is a separate, "
-                "tested change)" if schema_valid else
-                "re-run the capture checklist and fix: " + "; ".join(problems)
+                "enablement is a separate, tested change"
+                if bound and reviewed else
+                "bind the capture: write the artifact under the run evidence "
+                "dir, hash it, and have an independent reviewer sign that hash"
+                if not bound else
+                "reviewer signs the artifact hash in review_receipt"
             ),
         }
     return {
@@ -362,6 +678,7 @@ def capability_state(capture: Optional[Dict[str, Any]] = None,
         "missing_capture_fields": missing,
         "schema_valid": False,
         "schema_problems": problems,
+        "bindings_valid": False,   # nothing to bind until every field is there
         "reviewed": bool(reviewed),
         "reason": (
             "native split-test entity relation and traffic semantics have not "
@@ -389,10 +706,15 @@ def _capture_field_present(capture: Optional[Dict[str, Any]], key: str) -> bool:
     return True
 
 
-def assert_capture_proven(capture: Optional[Dict[str, Any]]) -> None:
-    """Raise unless the capture passes the FULL schema. Used by anything that
-    would otherwise be tempted to proceed on a partial or malformed capture."""
-    state = capability_state(capture)
+def assert_capture_proven(capture: Optional[Dict[str, Any]],
+                          capture_path: str = "") -> None:
+    """Raise unless the capture passes the FULL schema AND its bindings.
+
+    A capture supplied without ``capture_path`` cannot be re-hashed against the
+    artifact it names, so it is NOT proven: it raises ``CaptureRequired``
+    rather than being accepted on its own say-so.
+    """
+    state = capability_state(capture, capture_path=capture_path)
     if state["state"] == PENDING_LIVE_SELECTOR_CAPTURE:
         raise CaptureRequired(
             f"{CAPABILITY_ID}: {PENDING_LIVE_SELECTOR_CAPTURE}; missing "
@@ -401,11 +723,23 @@ def assert_capture_proven(capture: Optional[Dict[str, Any]]) -> None:
     problems = validate_capture(capture)
     if problems:
         raise CaptureInvalid(f"{CAPABILITY_ID}: capture fails schema: {problems}")
+    if not capture_path:
+        raise CaptureRequired(
+            f"{CAPABILITY_ID}: the capture was supplied without its path, so "
+            "the artifact it names cannot be re-hashed. Self-reported metadata "
+            "alone is not evidence — load the capture with load_capture(path)."
+        )
+    problems = validate_bindings(capture, capture_path)
+    if problems:
+        raise CaptureInvalid(
+            f"{CAPABILITY_ID}: capture is not bound to its evidence: {problems}"
+        )
 
 
 def plan_variant(request: VariantRequest,
                  capture: Optional[Dict[str, Any]] = None,
-                 reviewed: bool = False) -> VariantPlan:
+                 reviewed: bool = False,
+                 capture_path: str = "") -> VariantPlan:
     """Plan one variant. While the capability is disabled this REFUSES.
 
     It refuses BEFORE validating the request, so a caller cannot use the
@@ -413,10 +747,12 @@ def plan_variant(request: VariantRequest,
     make, and cannot mistake "the request looked fine" for "the write is
     allowed".
 
-    ``reviewed=True`` is the reviewer's approval. Without a valid, complete
-    capture AND that approval, this returns a DISABLED plan with no request.
+    ``reviewed=True`` is the reviewer's approval, and the approval that counts
+    is the receipt on disk. Without a complete, artifact-BOUND capture AND
+    that approval, this returns a DISABLED plan with no request.
     """
-    state = capability_state(capture, reviewed=reviewed)
+    state = capability_state(capture, reviewed=reviewed,
+                             capture_path=capture_path)
     if not state["enabled"]:
         return VariantPlan(
             capability=CAPABILITY_ID,
@@ -427,14 +763,15 @@ def plan_variant(request: VariantRequest,
             reason=state["reason"],
             next_action=state["next_action"],
         )
-    body = build_variant_request(request, capture)
+    body = build_variant_request(request, capture, capture_path=capture_path)
     return VariantPlan(
         capability=CAPABILITY_ID,
         state=ENABLED_FOR_REVIEW,
         enabled=True,
         request=body,
-        readback_assertions=readback_assertions(capture),
-        reason="capture complete, schema-valid and reviewed",
+        readback_assertions=readback_assertions(capture,
+                                                 capture_path=capture_path),
+        reason="capture complete, artifact-bound, schema-valid and reviewed",
         next_action="execute through the receipted write driver, then assert "
                     "readback_assertions()",
     )
@@ -471,13 +808,18 @@ def assert_no_fake_ab(steps: List[Dict[str, Any]]) -> None:
 # from the capture or from the reviewed VariantRequest. A caller who has no
 # capture cannot get a request body at all.
 
-def _require_valid_capture(capture: Any) -> Dict[str, Any]:
-    """Coerce a path to a capture and enforce the full schema.
+def _require_valid_capture(capture: Any, capture_path: str = "") -> Dict[str, Any]:
+    """Coerce a path to a capture and enforce the full schema + bindings.
 
     Traffic activation is checked FIRST so a capture that observed an
     activation path gets the precise refusal, not a generic schema complaint.
+
+    A dict supplied without ``capture_path`` is NOT proof — see
+    ``assert_capture_proven``. In-memory callers (tests, planners) pass
+    ``capture_path`` explicitly, which is what makes the binding real.
     """
     if isinstance(capture, str):
+        capture_path = capture
         capture = load_capture(capture)
     # A PRESENT non-False value is an armed capture; a MISSING one is just
     # incomplete and must read as CaptureRequired, not as activation.
@@ -489,7 +831,7 @@ def _require_valid_capture(capture: Any) -> Dict[str, Any]:
             "activates traffic. Re-capture against a split test whose traffic "
             "is OFF."
         )
-    assert_capture_proven(capture)
+    assert_capture_proven(capture, capture_path=capture_path)
     return capture
 
 
@@ -540,20 +882,22 @@ def _walk_payload(node: Any, path: str = "$"):
 
 
 def build_variant_request(request: VariantRequest,
-                          capture: Any) -> Dict[str, Any]:
+                          capture: Any,
+                          capture_path: str = "") -> Dict[str, Any]:
     """Build the create-variant (B) request for a control page step.
 
-    Refuses with ``CaptureRequired`` when no capture is supplied, with
-    ``CaptureInvalid`` when the capture is malformed, and with
-    ``TrafficActivationRefused`` when anything in the capture or the built
-    body could move traffic. Traffic is pinned to the captured default, so the
-    variant is created with the split test's traffic still OFF.
+    Refuses with ``CaptureRequired`` when no capture (or no bound capture —
+    a bare dict cannot be re-hashed) is supplied, with ``CaptureInvalid`` when
+    the capture is malformed or unbound, and with ``TrafficActivationRefused``
+    when anything in the capture or the built body could move traffic. Traffic
+    is pinned to the captured default, so the variant is created with the split
+    test's traffic still OFF.
 
     The relation is emitted under the capture's own ``variant_relation`` name
     with the control's captured id as its value: whatever the platform calls
     that linker, the capture said so. This module never guesses the name.
     """
-    cap = _require_valid_capture(capture)
+    cap = _require_valid_capture(capture, capture_path=capture_path)
     if request.location_id != cap["location_id"]:
         raise VariantRefused(
             f"location mismatch: request is for {request.location_id!r} but the "
@@ -582,7 +926,8 @@ def build_variant_request(request: VariantRequest,
     return body
 
 
-def readback_assertions(capture: Any) -> Dict[str, Any]:
+def readback_assertions(capture: Any,
+                        capture_path: str = "") -> Dict[str, Any]:
     """The assertions an authoritative read-back must satisfy.
 
     Built entirely from captured observations: the keys the read must carry,
@@ -590,7 +935,7 @@ def readback_assertions(capture: Any) -> Dict[str, Any]:
     failure), and the relation value that proves the variant is linked rather
     than merely coexisting.
     """
-    cap = _require_valid_capture(capture)
+    cap = _require_valid_capture(capture, capture_path=capture_path)
     return {
         "must_contain_keys": list(cap["readback_keys"]),
         "control_id_must_equal": {"before": cap["control_id_before"],
@@ -606,14 +951,15 @@ def readback_assertions(capture: Any) -> Dict[str, Any]:
 
 
 def readback_passes(capture: Any,
-                    readback: Dict[str, Any]) -> Tuple[bool, List[str]]:
+                    readback: Dict[str, Any],
+                    capture_path: str = "") -> Tuple[bool, List[str]]:
     """Check one read-back payload against ``readback_assertions``.
 
     Returns ``(ok, problems)``. Extra keys in the read-back are fine — the
     platform may return more than was captured; missing or moved values are
     not.
     """
-    a = readback_assertions(capture)
+    a = readback_assertions(capture, capture_path=capture_path)
     problems: List[str] = []
     if not isinstance(readback, dict):
         return False, ["read-back is not a JSON object"]
@@ -644,7 +990,8 @@ def readback_passes(capture: Any,
 
 def reuse_decision(capture: Any,
                    existing: List[Dict[str, Any]],
-                   request: VariantRequest) -> Dict[str, Any]:
+                   request: VariantRequest,
+                   capture_path: str = "") -> Dict[str, Any]:
     """Two-run idempotency: decide CREATE vs REUSE from a read-back list.
 
     A variant is the same variant when its captured relation field points at
@@ -652,7 +999,7 @@ def reuse_decision(capture: Any,
     captured relation only — never on list position, which the platform does
     not promise.
     """
-    cap = _require_valid_capture(capture)
+    cap = _require_valid_capture(capture, capture_path=capture_path)
     if not isinstance(existing, list):
         raise VariantRefused("existing variants must be a list from a read-back")
     rel_field = cap["variant_relation"]
@@ -721,11 +1068,13 @@ SYNTHETIC_CAPTURE_WARNING = (
     "observed values and a hash of the raw artifact."
 )
 
-# The OFFLINE capture: schema-valid, self-consistent, `_fixture: true`, and
-# every value fake. It exists so the operation's happy path is provable with
-# no live GHL call. `_fixture` is what makes `is_synthetic_capture` and
-# `load_capture` refuse it as evidence — the tests below rely on that.
-OFFLINE_CAPTURE: Dict[str, Any] = {
+# The OFFLINE SELECTOR RESULTS: the 11 observed values, every one fake. This is
+# LAYER 1 only — a set of selectors with no artifact behind them. It is
+# deliberately NOT a capture: `selector_results_*` helpers and the shape tests
+# use it, and `write_capture_bundle` turns it into a bound capture. `_fixture`
+# is what makes `is_synthetic_capture` and `load_capture` refuse it when
+# someone passes it as evidence — the tests rely on that.
+OFFLINE_SELECTOR_RESULTS: Dict[str, Any] = {
     "_fixture": True,
     "_note": "offline fixture; fake ids; not evidence about GHL",
     "location_id": "loc-offline-0001",
@@ -740,6 +1089,12 @@ OFFLINE_CAPTURE: Dict[str, Any] = {
     "readback_keys": ["id", "name", "url", "variationOf", "control_traffic"],
     "capture_evidence": "fixture://offline-capture sha256:" + "0" * 64,
 }
+
+# Backwards-compatible alias: pre-hardening callers/tests imported
+# ``OFFLINE_CAPTURE``. It stays a SELECTOR set, not a capture, so importing it
+# and passing it to a *plan* entry point is refused (no bindings). That is the
+# hardening, not a regression.
+OFFLINE_CAPTURE: Dict[str, Any] = OFFLINE_SELECTOR_RESULTS
 
 
 def is_synthetic_capture(capture: Optional[Dict[str, Any]]) -> bool:
@@ -763,7 +1118,8 @@ def is_synthetic_capture(capture: Optional[Dict[str, Any]]) -> bool:
 
 def plan_variant_from_real_capture(request: VariantRequest,
                                    capture: Optional[Dict[str, Any]],
-                                   reviewed: bool = False) -> VariantPlan:
+                                   reviewed: bool = False,
+                                   capture_path: str = "") -> VariantPlan:
     """``plan_variant`` plus the synthetic-capture refusal. Production callers
     use THIS entry point; tests use ``plan_variant`` directly."""
     if is_synthetic_capture(capture):
@@ -771,7 +1127,102 @@ def plan_variant_from_real_capture(request: VariantRequest,
             f"{CAPABILITY_ID}: the supplied capture is synthetic "
             f"({SYNTHETIC_CAPTURE_WARNING}); a shape fixture is not evidence"
         )
-    return plan_variant(request, capture, reviewed=reviewed)
+    return plan_variant(request, capture, reviewed=reviewed,
+                        capture_path=capture_path)
+
+
+# ── Producing a bound capture (the write side of the contract) ──────────────
+#
+# ``load_capture`` proves a capture is bound; this is how one GETS bound. The
+# capture step writes whatever bytes it actually captured (screenshot, trace,
+# DOM dump) into the run's evidence dir, and this hashes THAT file — never a
+# caller-declared string — then writes the capture JSON and, once a human has
+# looked, the reviewer's receipt. Reusing the run's evidence dir + 0600/0700
+# modes is ghl_evidence's job, not a new platform.
+
+CAPTURE_BUNDLE_ARTIFACT = "split-variant-capture-artifact.bin"
+CAPTURE_BUNDLE_CAPTURE = "split-variant-capture.json"
+CAPTURE_BUNDLE_RECEIPT = "split-variant-review-receipt.json"
+
+
+def write_capture_bundle(evidence_dir: str,
+                         selector_results: Dict[str, Any],
+                         artifact_bytes: bytes,
+                         *,
+                         company_id: str,
+                         captured_at: str,
+                         session_id: str,
+                         candidate_revision: str,
+                         reviewer: str = "",
+                         reviewed_at: str = "",
+                         verdict: str = APPROVED_VERDICT,
+                         artifact_name: str = CAPTURE_BUNDLE_ARTIFACT,
+                         capture_name: str = CAPTURE_BUNDLE_CAPTURE,
+                         receipt_name: str = CAPTURE_BUNDLE_RECEIPT) -> Dict[str, Any]:
+    """Write one bound capture bundle and return its paths + digests.
+
+    Layout under ``evidence_dir`` (0700 dirs, 0600 files):
+      * ``artifact_name`` — the bytes as captured, hashed after writing;
+      * ``capture_name``  — the capture JSON, its digests taken from the file;
+      * ``receipt_name``  — the reviewer's receipt, signing those digests.
+
+    Passing an empty ``reviewer`` writes NO receipt: the capture is then
+    correctly refused at validation until a human signs it. That is the
+    deliberate shape — the producer can never supply its own approval.
+    """
+    import ghl_evidence as _ev
+
+    _ev.ensure_private_dir(evidence_dir)
+    artifact_path = os.path.join(evidence_dir, artifact_name)
+    with open(artifact_path, "wb") as fh:
+        fh.write(artifact_bytes)
+        fh.flush()
+        os.fsync(fh.fileno())
+    _ev.set_private_file(artifact_path)
+    artifact_sha = _ev.sha256_file(artifact_path)
+
+    capture = dict(selector_results)
+    capture.update({
+        "company_id": company_id,
+        "captured_at": captured_at,
+        "session_id": session_id,
+        "candidate_revision": candidate_revision,
+        "capture_artifact": artifact_name,
+        "capture_artifact_sha256": artifact_sha,
+        "review_receipt": receipt_name if reviewer else "",
+    })
+    # capture_evidence is one of the SELECTOR fields, so it is set BEFORE the
+    # digest — otherwise the digest would describe a value that no longer
+    # exists and the capture would (correctly) fail its own binding check.
+    # It names the artifact RELATIVE to the evidence dir (not its absolute
+    # path) so the selector digest is stable across machines and run roots.
+    capture["capture_evidence"] = (
+        f"evidence://{artifact_name} sha256:{artifact_sha}"
+    )
+    capture["selector_results_sha256"] = selector_results_digest(capture)
+    capture_path = os.path.join(evidence_dir, capture_name)
+    _ev.write_json_private(capture_path, capture)
+
+    receipt_path = ""
+    if reviewer:
+        receipt = {
+            "reviewer": reviewer,
+            "reviewed_at": reviewed_at or captured_at,
+            "artifact_sha256": artifact_sha,
+            "candidate_revision": candidate_revision,
+            "selector_results_sha256": capture["selector_results_sha256"],
+            "verdict": verdict,
+        }
+        receipt_path = os.path.join(evidence_dir, receipt_name)
+        _ev.write_json_private(receipt_path, receipt)
+
+    return {
+        "capture_path": capture_path,
+        "artifact_path": artifact_path,
+        "receipt_path": receipt_path,
+        "artifact_sha256": artifact_sha,
+        "selector_results_sha256": capture["selector_results_sha256"],
+    }
 
 
 # ── Self-test (pure; no network) ─────────────────────────────────────────────
@@ -825,51 +1276,117 @@ def _selftest() -> int:
     except VariantRefused:
         pass
 
-    # ── The operation, on a schema-valid OFFLINE capture ────────────────────
-    cap = dict(OFFLINE_CAPTURE)
-    if validate_capture(cap):
-        errors.append(f"the offline capture fixture must be schema-valid: "
-                      f"{validate_capture(cap)}")
-    op_req = VariantRequest(location_id=cap["location_id"],
-                            funnel_id="funnel-offline",
-                            step_id=cap["step_id"], name="B", slug="b")
+    # ── The operation, on a BOUND capture built in a temp evidence dir ──────
+    #
+    # The selector set alone is not a capture any more, so the selftest builds
+    # a real bundle: artifact bytes on disk, hashed from the file, and a
+    # reviewer's receipt signing that hash. Then it attacks each binding.
+    import tempfile
 
-    try:
-        build_variant_request(op_req, None)
-        errors.append("the operation must refuse with no capture")
-    except CaptureRequired:
-        pass
+    sel = {k: v for k, v in OFFLINE_SELECTOR_RESULTS.items()
+           if k not in ("_fixture", "_note")}
+    rev = "a" * 40
+    with tempfile.TemporaryDirectory() as td:
+        bundle = write_capture_bundle(
+            td, sel, b"<html>offline capture artifact</html>",
+            company_id="co-offline-0001",
+            captured_at="2026-10-22T12:00:00Z",
+            session_id="sess-offline-1",
+            candidate_revision=rev,
+            reviewer="offline-reviewer",
+            reviewed_at="2026-10-22T12:05:00Z",
+        )
+        cap = load_capture(bundle["capture_path"])
+        if validate_capture(cap, capture_path=bundle["capture_path"]):
+            errors.append("the bound offline capture must validate: "
+                          f"{validate_capture(cap, capture_path=bundle['capture_path'])}")
 
-    bad = dict(cap, traffic_permitted=True)
-    try:
-        build_variant_request(op_req, bad)
-        errors.append("a capture with traffic_permitted=True must be refused")
-    except TrafficActivationRefused:
-        pass
+        # An UNBOUND selector set is never evidence — this is the whole fix.
+        if capability_state(sel, reviewed=True)["enabled"] is not False:
+            errors.append("a selector-only fixture must never enable")
+        try:
+            build_variant_request(req, sel)
+            errors.append("a selector-only dict must be refused (no bindings)")
+        except CaptureRequired:
+            pass
 
-    body = build_variant_request(op_req, cap)
-    if body["step"][cap["traffic_field"]] != cap["traffic_default"]:
-        errors.append("the built body must carry ONLY the captured traffic "
-                      "default")
-    if any(k in body["step"] for k in FORBIDDEN_UNTIL_CAPTURE):
-        errors.append("the built body must carry no traffic-affecting field")
+        # Attack the artifact binding: absent, then tampered.
+        gone = dict(cap, capture_artifact="no-such-artifact.bin")
+        if not validate_bindings(gone, bundle["capture_path"]):
+            errors.append("an absent artifact must fail the bindings")
+        tampered = os.path.join(td, "tampered.bin")
+        with open(tampered, "wb") as fh:
+            fh.write(b"different bytes")
+        if not validate_bindings(
+                dict(cap, capture_artifact=tampered), bundle["capture_path"]):
+            errors.append("an artifact whose hash differs must fail the bindings")
 
-    rb = {k: "x" for k in cap["readback_keys"]}
-    rb[cap["variant_relation"]] = cap["control_id_before"]
-    rb[cap["traffic_field"]] = cap["traffic_default"]
-    ok, problems = readback_passes(cap, rb)
-    if not ok:
-        errors.append(f"the matching read-back must pass, got {problems}")
-    moved = dict(rb, **{cap["traffic_field"]: "activated"})
-    if readback_passes(cap, moved)[0]:
-        errors.append("a read-back that moved traffic must fail")
+        # Attack the review receipt: absent, and verdict not approved.
+        if not validate_bindings(dict(cap, review_receipt=""), bundle["capture_path"]):
+            errors.append("a capture with no review receipt must fail")
+        no_rev = write_capture_bundle(
+            td, sel, b"<html>offline capture artifact</html>",
+            company_id="co-offline-0001",
+            captured_at="2026-10-22T12:00:00Z",
+            session_id="sess-offline-1", candidate_revision=rev,
+            artifact_name="a2.bin", capture_name="c2.json",
+            receipt_name="r2.json",
+        )
+        with open(no_rev["capture_path"], encoding="utf-8") as fh:
+            unreviewed = json.load(fh)
+        if not validate_bindings(unreviewed, no_rev["capture_path"]):
+            errors.append("a bundle written without a reviewer must fail")
+        try:
+            load_capture(no_rev["capture_path"])
+            errors.append("load_capture must refuse an unreviewed bundle")
+        except CaptureInvalid:
+            pass
 
-    existing = [{"id": cap["variant_id"], "name": req.name, "url": req.slug,
-                 cap["variant_relation"]: cap["control_id_before"]}]
-    if reuse_decision(cap, existing, req)["action"] != "REUSE":
-        errors.append("a linked, matching variant must be REUSED")
-    if reuse_decision(cap, [], req)["action"] != "CREATE":
-        errors.append("with no match the decision must be CREATE")
+        op_req = VariantRequest(location_id=cap["location_id"],
+                                funnel_id="funnel-offline",
+                                step_id=cap["step_id"], name="B", slug="b")
+
+        try:
+            build_variant_request(op_req, None)
+            errors.append("the operation must refuse with no capture")
+        except CaptureRequired:
+            pass
+
+        bad = dict(cap, traffic_permitted=True)
+        try:
+            build_variant_request(op_req, bad,
+                                  capture_path=bundle["capture_path"])
+            errors.append("a capture with traffic_permitted=True must be refused")
+        except TrafficActivationRefused:
+            pass
+
+        body = build_variant_request(op_req, cap,
+                                     capture_path=bundle["capture_path"])
+        if body["step"][cap["traffic_field"]] != cap["traffic_default"]:
+            errors.append("the built body must carry ONLY the captured traffic "
+                          "default")
+        if any(k in body["step"] for k in FORBIDDEN_UNTIL_CAPTURE):
+            errors.append("the built body must carry no traffic-affecting field")
+
+        rb = {k: "x" for k in cap["readback_keys"]}
+        rb[cap["variant_relation"]] = cap["control_id_before"]
+        rb[cap["traffic_field"]] = cap["traffic_default"]
+        ok, problems = readback_passes(cap, rb,
+                                       capture_path=bundle["capture_path"])
+        if not ok:
+            errors.append(f"the matching read-back must pass, got {problems}")
+        moved = dict(rb, **{cap["traffic_field"]: "activated"})
+        if readback_passes(cap, moved, capture_path=bundle["capture_path"])[0]:
+            errors.append("a read-back that moved traffic must fail")
+
+        existing = [{"id": cap["variant_id"], "name": req.name, "url": req.slug,
+                     cap["variant_relation"]: cap["control_id_before"]}]
+        if reuse_decision(cap, existing, req,
+                          capture_path=bundle["capture_path"])["action"] != "REUSE":
+            errors.append("a linked, matching variant must be REUSED")
+        if reuse_decision(cap, [], req,
+                          capture_path=bundle["capture_path"])["action"] != "CREATE":
+            errors.append("with no match the decision must be CREATE")
 
     if errors:
         for e in errors:
@@ -914,7 +1431,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         if args.state:
             capture = load_capture(args.capture) if args.capture else None
-            print(json.dumps(capability_state(capture, reviewed=args.reviewed),
+            print(json.dumps(capability_state(capture, reviewed=args.reviewed,
+                                              capture_path=args.capture or ""),
                              indent=2))
             return 0
         if args.plan:
@@ -926,7 +1444,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                                  funnel_id=args.funnel, step_id=args.step,
                                  name=args.name, slug=args.slug)
             plan = plan_variant(req, load_capture(args.capture),
-                                reviewed=args.reviewed)
+                                reviewed=args.reviewed,
+                                capture_path=args.capture)
             print(json.dumps(plan.as_dict(), indent=2))
             return 0 if plan.enabled else 3
     except (CaptureRequired, VariantRefused) as exc:
@@ -938,11 +1457,14 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 __all__ = [
     "PENDING_LIVE_SELECTOR_CAPTURE", "ENABLED_FOR_REVIEW", "CAPABILITY_ID",
-    "REQUIRED_CAPTURE_FIELDS", "FORBIDDEN_UNTIL_CAPTURE", "CAPTURE_SCHEMA",
+    "REQUIRED_CAPTURE_FIELDS", "SELECTOR_FIELDS", "BINDING_CAPTURE_FIELDS",
+    "REQUIRED_REVIEW_RECEIPT_FIELDS", "APPROVED_VERDICT",
+    "FORBIDDEN_UNTIL_CAPTURE", "CAPTURE_SCHEMA",
     "CaptureRequired", "CaptureInvalid", "VariantRefused",
     "TrafficActivationRefused",
     "VariantRequest", "VariantPlan", "capability_state",
-    "capture_checklist", "validate_capture", "load_capture",
+    "capture_checklist", "validate_capture", "validate_bindings",
+    "selector_results_digest", "load_capture", "write_capture_bundle",
     "assert_capture_proven", "plan_variant", "plan_variant_from_real_capture",
     "build_variant_request", "assert_no_traffic_activation",
     "readback_assertions", "readback_passes", "reuse_decision",
