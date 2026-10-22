@@ -388,6 +388,18 @@ if [ "$MODE" = "dry-run" ]; then
   _log "  desired: model=${MODEL:-<unrequested>} effort=${EFFORT:-<unrequested>} agent=${AGENT:-<none: box-bound default>}"
   _log "  desired: prompt_rev=$PROMPT_REV runs_dir=$RUNS_ROOT_CANON"
   _log "  reconcile keys: enabled,schedule,model,thinking,agent,session,message,description,declkey,delivery_silent"
+  # the exact command --apply would run: the plan IS the command (never a
+  # paraphrase), printed only - a dry-run registers nothing and writes nothing.
+  PLAN_ARGS=(--name "$NAME" --cron "$CRON" --message "$PROMPT" --description "$DESC")
+  [ -n "$AGENT" ] && PLAN_ARGS+=(--agent "$AGENT")
+  _has_add --no-deliver && PLAN_ARGS+=(--no-deliver)
+  _has_add --session && PLAN_ARGS+=(--session isolated)
+  _has_add --declaration-key && PLAN_ARGS+=(--declaration-key "skill75-keepalive:$INSTALL_ID")
+  [ -n "$MODEL" ] && _has_add --model && PLAN_ARGS+=(--model "$MODEL")
+  [ -n "$EFFORT" ] && _has_add --thinking && PLAN_ARGS+=(--thinking "$EFFORT")
+  printf '%s cron add' "$OPENCLAW_BIN"
+  for _a in "${PLAN_ARGS[@]}"; do printf ' %q' "$_a"; done
+  printf '\n'
   if [ -n "$MODEL" ] && ! _has_add --model; then
     _log "  WARN this CLI advertises no --model: a model pin CANNOT be registered - a mismatch will be left visible (no silent unpin)."
   fi
@@ -409,7 +421,9 @@ fi
 # --- 2. read the registry (exact name; disabled jobs visible when possible) --
 JOBS_RAW="$(_list_jobs_json)"
 if [ -z "$JOBS_RAW" ]; then
-  _err "FAIL could not read 'cron list --json' - presence of '$NAME' UNKNOWN, NOT registering (would risk a duplicate). Re-run to backfill."
+  # stdout, not stderr: the plan log is where an operator reads the verdict,
+  # and UNKNOWN must be visible there (it is the reason nothing registered).
+  _log "FAIL could not read 'cron list --json' - presence of '$NAME' UNKNOWN, NOT registering (would risk a duplicate). Re-run to backfill."
   exit 3
 fi
 
@@ -508,6 +522,22 @@ if [ -z "$PRIMARY_ID" ]; then
   PRIMARY_ID="$(printf '%s' "$MATCHES" | head -1 | python3 -c 'import json,sys;print(json.loads(sys.stdin.readline()).get("id",""))')"
 fi
 JOB_JSON="$(printf '%s' "$MATCHES" | head -1)"
+
+# --- 5a. presence-only: a record this CLI cannot address --------------------
+# `cron get`/`cron edit` take a job id. A record without one proves PRESENCE
+# and nothing more: field-level reconciliation and tick proof are impossible
+# against it. Say what is proven (baseline contract: present = nothing to do),
+# never fabricate drift on an unaddressable record, never print DONE.
+if [ -z "$PRIMARY_ID" ]; then
+  if [ "$ATT_CONDITION" = "registered" ]; then
+    _log "OK $NAME registered ($CRON) - this CLI exposes no job id, so field-level readback is UNPROVEN. Re-run once it does."
+  else
+    _log "OK $NAME already present - nothing to do (this CLI exposes no job id, so field-level reconciliation is UNPROVEN)."
+  fi
+  _attest readback '{"fetched": false, "reason": "job record has no addressable id - presence-only proof"}'
+  _write_attest "presence-only" "not-needed"
+  exit 0
+fi
 
 # --- 5. desired-state reconciliation ---------------------------------------
 DESIRED="$(_desired_json_with_message)"

@@ -268,10 +268,28 @@ Then relay, and nothing else:
    and the code. Never resolve an origin conflict yourself - the client's own
    authenticated session resolves it.
 2. Do not add wording, do not answer pending decisions for the client, do not
-   edit any run file, do not spend, do not resubmit anything. The block has
+   spend, do not resubmit anything. Never write to the run folder yourself:
+   the block alone writes its own supervision records (run registry, per-run
+   leases, shared breaker, tick summary) and nothing else. The block has
    already delivered every client message; there is nothing else to send.
 3. If the block failed to run at all, report the exact stderr once on the
    operator lane (that is a supervision outage, not a run failure) and stop.
+4. The delivery contract the block follows (never invent another one): every
+   message_for_client goes out on the SAME lane every other message from this
+   skill uses (the choice card's own sender):
+
+   openclaw message send --channel telegram --target <chat id> \
+     --message "<message_for_client>"
+
+   The chat id is the run's own recorded target (control/origin.json, or the
+   run's recorded receipt/order). If there is no recorded target, do NOT guess one:
+   the run is isolated and KEEPALIVE_TARGET_MISSING is raised for the
+   operator lane.
+5. Envelope loud codes - HEARTBEAT_EXPIRED (the 3-hour cap was reached),
+   HEARTBEAT_STALLED (no progress), HEARTBEAT_STATE_UNREADABLE (state unreadable)
+   - are facts to act on, not retry budgets: never resubmit a paid job, never
+   invent a stage, a percentage or a delivery time, and never say the video is
+   done unless stage_state is COMPLETE.
 
 Breaker rules the block enforces (so a model outage cannot break them): a hard
 quota/credit/suspension/authorization failure opens ONE shared event and
