@@ -28,8 +28,14 @@
  */
 
 import { canTransition } from '../contracts/state-machine.js';
+import type { CouncilCard, Verdict } from '../contracts/index.js';
 import type { StoredSession } from '../cli/host-ports.js';
-import type { RenderSessionRecord } from '../reports/artifact-renderer.js';
+import {
+  RenderInputError,
+  assembleRenderRecord,
+  type RenderExtras,
+  type RenderSessionRecord,
+} from '../reports/artifact-renderer.js';
 import type { AuthorizationEnvelope } from '../persistence/envelope.js';
 import type { CouncilRepositories } from '../persistence/repositories.js';
 import { ProtocolError } from './errors.js';
@@ -272,8 +278,23 @@ export class SessionCloseService {
    * session is not re-rendered and not re-marked.
    */
   async finalize(sessionId: string, reason: CloseReason, nowIso: string): Promise<FinalizeResult> {
-    const record = this.deps.port.sessionRecord(sessionId);
-    if (!record) {
+    // The close port assembles the render record from the store's own
+    // rows. A session whose sitting recorded no renderer rows (no seat
+    // takes, no verdict) surfaces the typed RenderInputError here: the
+    // sitting still closes (never hangs open), the typed state is
+    // reported through render_error, and nothing is invented.
+    let record: RenderableSession | null = null;
+    let recordError: RenderInputError | null = null;
+    try {
+      record = this.deps.port.sessionRecord(sessionId);
+    } catch (error) {
+      if (error instanceof RenderInputError) {
+        recordError = error;
+      } else {
+        throw error;
+      }
+    }
+    if (record === null && recordError === null) {
       throw new ProtocolError('SESSION_NOT_FOUND', `Session ${sessionId} was not found.`, {
         session_id: sessionId,
       });
@@ -289,6 +310,27 @@ export class SessionCloseService {
       };
     }
     this.deps.port.markClosed(sessionId, nowIso, reason);
+    if (recordError !== null) {
+      return {
+        session_id: sessionId,
+        closed: true,
+        close_reason: reason,
+        artifact: null,
+        render_error: `${recordError.code}: ${recordError.message}`,
+      };
+    }
+    if (record === null) {
+      // Unreachable: a missing record threw SESSION_NOT_FOUND above and a
+      // store-assembly failure returned the typed state just above. If the
+      // port ever yields neither, report it — never render a null.
+      return {
+        session_id: sessionId,
+        closed: true,
+        close_reason: reason,
+        artifact: null,
+        render_error: 'RENDER_INPUT_INCOMPLETE: the close port produced no session record.',
+      };
+    }
     const render = this.deps.renderArtifact ?? (await resolveRenderArtifact());
     if (!render) {
       return {
@@ -310,13 +352,19 @@ export class SessionCloseService {
       };
     } catch (error) {
       // The session is closed either way; a render failure is reported
-      // and never reopens or re-marks the sitting.
+      // and never reopens or re-marks the sitting. A bare record with no
+      // extras surfaces as the typed state, never a bare TypeError.
       return {
         session_id: sessionId,
         closed: true,
         close_reason: reason,
         artifact: null,
-        render_error: error instanceof Error ? error.message : 'RENDER_FAILED',
+        render_error:
+          error instanceof RenderInputError
+            ? `${error.code}: ${error.message}`
+            : error instanceof Error
+              ? error.message
+              : 'RENDER_FAILED',
       };
     }
   }
@@ -326,6 +374,102 @@ export class SessionCloseService {
 
 const SOFT_CLOSE_TOPIC = 'session_soft_close';
 const SESSION_CLOSE_TOPIC = 'session_close';
+
+/**
+ * Honest placeholder for the one renderer row the store cannot derive by
+ * construction: the store is client-name-free (the repo ships no client
+ * names; a client name enters only as runtime data through the door
+ * that knows the client). The default store-backed close path renders
+ * the sitting the STORE can account for and says exactly this in the
+ * header, rather than fabricating a client identity or bypassing the
+ * privacy boundary to guess one.
+ */
+export const CLIENT_NAME_UNRECORDED = 'Client name not recorded for this sitting';
+
+/**
+ * The seat take the store's own card rows carry: the advisor's change-my-mind
+ * threshold for the recorded card (ratification cards carry no take; consult
+ * cards carry their answer). Derived, never invented.
+ */
+function cardTake(card: CouncilCard): string | null {
+  if (card.card_kind === 'advisor') return card.change_my_mind;
+  if (card.card_kind === 'consult') return card.answer;
+  return null;
+}
+
+/**
+ * The consensus line the store's own verdict row carries. Scored verdicts
+ * state their label and main reasons; consult results state their answer
+ * and next step. Derived, never invented.
+ */
+function verdictConsensus(verdict: Verdict): string {
+  if (verdict.result_kind === 'scored') {
+    const reasons = verdict.main_reasons.join(' ');
+    return reasons.length > 0
+      ? `${verdict.label}: ${reasons}`
+      : `${verdict.label}.`;
+  }
+  return `Consult: ${verdict.consult_card.answer}`;
+}
+
+/**
+ * The action steps the store's own verdict row carries. Scored verdicts
+ * carry action proposals (title plus description) and prerequisites;
+ * consult results carry their next step. Derived, never invented.
+ */
+function verdictActionSteps(verdict: Verdict): string[] {
+  if (verdict.result_kind === 'scored') {
+    const steps = verdict.action_proposals.map(
+      (proposal) => `${proposal.title}: ${proposal.description}`,
+    );
+    return [...steps, ...verdict.prerequisites];
+  }
+  return [verdict.next_step];
+}
+
+/**
+ * The store-backed close port's half of the close-to-render contract.
+ * When the store carries the sitting's own card and verdict rows, this
+ * assembles the renderer's record from them (the DEFAULT close path).
+ * When it does not — the explicit conveneFlow path runs deliberation
+ * live and supplies its own runtime rows — it returns the bare
+ * StoredSession so the caller's extras seam assembles the record. It
+ * never fabricates takes, a verdict, or a client identity, and never
+ * crosses the privacy boundary; a bare record with no extras surfaces
+ * the typed `RenderInputError` at the renderer's own trust boundary.
+ */
+export function assembleStoreRenderRecord(
+  repositories: CouncilRepositories,
+  envelope: AuthorizationEnvelope,
+  session: StoredSession,
+): RenderSessionRecord | StoredSession {
+  const cards = repositories.listCards(envelope, session.spec.session_id);
+  const withTakes: RenderExtras['cards'] = [];
+  for (const card of cards) {
+    const take = cardTake(card);
+    if (typeof take === 'string' && take.length > 0) {
+      withTakes.push({ seat_id: card.seat_id, take });
+    }
+  }
+  const verdict = repositories.getVerdict(envelope, session.spec.session_id);
+  if (withTakes.length === 0 || verdict === null) {
+    // The store's own rows are not present yet: the caller's runtime
+    // rows (the explicit conveneFlow path) assemble the record instead.
+    return session;
+  }
+  const extras: RenderExtras = {
+    client_name: CLIENT_NAME_UNRECORDED,
+    model_used: session.spec.model_policy.requested_model_id
+      ?? session.spec.model_policy.route_id,
+    question_count: cards.length,
+    cards: withTakes,
+    verdict: {
+      consensus: verdictConsensus(verdict),
+      action_steps: verdictActionSteps(verdict),
+    },
+  };
+  return assembleRenderRecord(session, extras);
+}
 
 /**
  * The close port over the canonical CWE-006 store. The close marker
@@ -440,7 +584,15 @@ export function storeSessionClosePort(
     },
 
     sessionRecord(sessionId) {
-      return repositories.getSession(envelope, sessionId);
+      // The default store-backed close path must hand finalize the
+      // ASSEMBLED render record (the stored session plus the store's
+      // own card and verdict rows), never a bare StoredSession: the
+      // renderer validates exactly those rows, and a bare record made
+      // finalize dereference undefined extras (R1). The assembled
+      // record is derived from the store, never guessed.
+      const session = repositories.getSession(envelope, sessionId);
+      if (session === null) return null;
+      return assembleStoreRenderRecord(repositories, envelope, session);
     },
   };
 }

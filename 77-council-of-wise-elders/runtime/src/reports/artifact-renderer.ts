@@ -89,6 +89,28 @@ function isStoredSession(record: unknown): record is StoredSession {
 }
 
 /**
+ * The typed state surfaced when a renderer input cannot honestly be
+ * derived from the store's own records. Never a guessed value: the
+ * renderer contract requires real rows, and a session without them is
+ * reported, not papered over.
+ */
+export const RENDER_INPUT_INCOMPLETE = 'RENDER_INPUT_INCOMPLETE' as const;
+export type RenderInputIncompleteCode =
+  | typeof RENDER_INPUT_INCOMPLETE
+  | 'NO_CARDS'
+  | 'NO_VERDICT';
+
+export class RenderInputError extends Error {
+  constructor(
+    readonly code: RenderInputIncompleteCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'RenderInputError';
+  }
+}
+
+/**
  * Project the runtime rows into the renderer's session record. The
  * session supplies identity and the decision; the extras supply the
  * runtime-only rows. Missing extras surface at the renderer's own trust
@@ -162,16 +184,32 @@ function loadRenderer(): Promise<RendererModule> {
  *
  * The W74-B entry point, called by export name. Accepts the assembled
  * render record, or a bare StoredSession plus `options.extras` (the
- * session-close protocol hands over exactly what its close port
- * returned). Delegates to the fixed-template renderer unchanged.
+ * session-close protocol hands over what its close port assembled).
+ * A bare StoredSession WITHOUT extras is a contract violation, not a
+ * default: it carries none of the runtime rows the renderer validates,
+ * and this seam reports it with the typed `RenderInputError` instead of
+ * casting undefined through (the R1 defect: `options.extras as
+ * RenderExtras` let a bare record dereference undefined in
+ * assembleRenderRecord). Delegates to the fixed-template renderer
+ * unchanged.
  */
 export async function renderArtifact(
   sessionRecord: RenderSessionRecord | StoredSession,
   options: RenderOptions = {},
 ): Promise<ArtifactRenderResult> {
-  const record = isStoredSession(sessionRecord)
-    ? assembleRenderRecord(sessionRecord, options.extras as RenderExtras)
-    : sessionRecord;
+  let record: RenderSessionRecord;
+  if (isStoredSession(sessionRecord)) {
+    if (options.extras === undefined) {
+      throw new RenderInputError(
+        RENDER_INPUT_INCOMPLETE,
+        'renderArtifact received a bare StoredSession without options.extras: ' +
+          `the close-to-render contract requires the runtime rows (client name, model, question count, cards, verdict) for session ${sessionRecord.spec.session_id}.`,
+      );
+    }
+    record = assembleRenderRecord(sessionRecord, options.extras);
+  } else {
+    record = sessionRecord;
+  }
   const renderer = await loadRenderer();
   const rendererOptions: Record<string, unknown> = {};
   if (options.dataDir !== undefined) rendererOptions['dataDir'] = options.dataDir;

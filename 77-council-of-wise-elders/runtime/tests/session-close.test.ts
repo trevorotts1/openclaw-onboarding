@@ -17,13 +17,15 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   canonicalHash,
+  type CouncilCard,
   type DecisionBrief,
   type ScopeFields,
   type SessionSpec,
   type SessionStateRecord,
+  type Verdict,
 } from '../src/contracts/index.js';
 import type { StoredSession } from '../src/cli/host-ports.js';
-import { envelopeFromScope } from '../src/persistence/envelope.js';
+import { envelopeFromScope, type AuthorizationEnvelope } from '../src/persistence/envelope.js';
 import { CouncilStoreService } from '../src/persistence/store.js';
 import {
   AUTO_FINALIZE_SILENCE_MS,
@@ -297,6 +299,92 @@ function storedSession(sessionId: string): StoredSession {
   return { spec, brief, scope: SCOPE, state, sample: false };
 }
 
+/**
+ * Seed the store's own card and verdict rows for a session — the rows
+ * the default close path assembles the render record from (R1 contract).
+ * Real writes through the repository layer; no stubbed seam.
+ */
+function seedStoreRows(
+  store: CouncilStoreService,
+  envelope: AuthorizationEnvelope,
+  sessionId: string,
+): void {
+  const session = store.repositories.getSession(envelope, sessionId);
+  if (session === null) throw new Error(`seedStoreRows: session ${sessionId} not found`);
+  const brief = session.brief;
+  const card: CouncilCard = {
+    schema_version: 'wise-elders.card/v1',
+    session_id: sessionId,
+    brief_revision: brief.revision,
+    seat_id: 'simon-sinek',
+    input_manifest_sha256: canonicalHash({ manifest: 'seed' }),
+    pack_version: 'pack-fixture-1.0.0',
+    card_kind: 'advisor',
+    round: 1,
+    stance: 'conditional',
+    preferred_option_id: brief.options[0]?.id ?? 'option-a',
+    option_scores: brief.options.map((option) => ({
+      option_id: option.id,
+      score: 7,
+      rationale: 'Fixture rationale.',
+      evidence_ids: [],
+    })),
+    framework_applications: [],
+    decisive_arguments: ['Seeded take.'],
+    strongest_objection: 'Seeded objection.',
+    conditions: [],
+    critical_unknowns: [],
+    change_my_mind: 'Seeded change-my-mind.',
+    challenges_answered: [],
+    quotes: [],
+    evidence_strength: 'medium',
+    minority_position: null,
+    host: {
+      scope: { ...session.scope },
+      operation_id: 'op-seed-1',
+      route_id: 'route-1',
+      session_id: sessionId,
+      stamped_at: at(0),
+      source_status: 'unverified',
+    },
+  };
+  store.repositories.acceptCard(
+    envelope,
+    card,
+    { expected_state_version: session.state.state_version, cancel_generation: 0, lease_epoch: 0 },
+  );
+  const base = {
+    schema_version: 'wise-elders.verdict/v1',
+    result_kind: 'scored' as const,
+    session_id: sessionId,
+    verdict_revision: 1,
+    recommended_option_id: brief.options[0]?.id ?? 'option-a',
+    label: 'WAIT' as const,
+    option_scores: [],
+    active_weights: {},
+    evidence_strength: 'medium' as const,
+    hard_constraint_findings: [],
+    main_reasons: ['Seeded verdict reason.'],
+    strongest_dissent: null,
+    accepted_amendments: [],
+    rejected_amendments: [],
+    critical_unknowns: [],
+    prerequisites: ['Seeded prerequisite.'],
+    action_proposals: [],
+    cheapest_informative_test: null,
+    stop_criteria: [],
+    review_criteria: [],
+    resolution_support: null,
+    validation_status: 'valid' as const,
+    ratification_status: 'ratified' as const,
+    brief_sha256: session.spec.brief_sha256,
+  };
+  store.repositories.saveVerdict(envelope, {
+    ...base,
+    content_sha256: canonicalHash(base),
+  } as Verdict);
+}
+
 test('restart-safe derivation: close state lives in the store, not in timers', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'cwe074-close-'));
   const clock = { nowUtc: () => at(0) };
@@ -308,6 +396,9 @@ test('restart-safe derivation: close state lives in the store, not in timers', a
   // Process 1: a session, one soft-close at the 5m mark.
   const store1 = CouncilStoreService.open({ dataDir, clock, ids, envelope });
   await store1.createSession(storedSession(sessionId));
+  // The store's own card and verdict rows: what the close port assembles
+  // the render record from (R1 contract) at finalize time.
+  seedStoreRows(store1, envelope, sessionId);
   const port1 = storeSessionClosePort(store1.repositories, envelope, ids);
   const service1 = new SessionCloseService({ port: port1 });
   const softCloseAt = at(SOFT_CLOSE_IDLE_MS);
@@ -332,6 +423,10 @@ test('restart-safe derivation: close state lives in the store, not in timers', a
   assert.equal(port2.readMarker(sessionId).soft_close_sent_at, softCloseAt, 'the question is sent ONCE');
 
   // 10:00 after the question -> auto-finalize from store-derived state.
+  // The close port assembles the render record from the store's own rows
+  // (R1 contract): this session carries one card and one verdict, so the
+  // port hands the renderer an ASSEMBLED RenderSessionRecord, never a
+  // bare StoredSession.
   const rendererCalls: StoredSession[] = [];
   const service2b = new SessionCloseService({
     port: port2,
@@ -349,7 +444,11 @@ test('restart-safe derivation: close state lives in the store, not in timers', a
   assert.equal(done.finalized.close_reason, 'auto_finalize');
   assert.deepEqual(done.finalized.artifact, RENDERED);
   assert.equal(rendererCalls.length, 1);
-  assert.equal(rendererCalls[0].spec.session_id, sessionId);
+  assert.equal(
+    (rendererCalls[0] as { session_id?: string }).session_id ?? null,
+    sessionId,
+    'the default close path hands the renderer the assembled render record',
+  );
   assert.equal(port2.readMarker(sessionId).closed_at, at(SOFT_CLOSE_IDLE_MS + AUTO_FINALIZE_SILENCE_MS));
   store2.close();
 
