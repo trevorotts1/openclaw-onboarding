@@ -372,9 +372,15 @@ def derive_requirements(ctx, manifest=None, payload=None):
                              manifest=manifest,
                              manifest_id="ffmpeg-binary" if tool == "ffmpeg" else None,
                              args={"tool": tool}))
+        # Hard only when the run DECLARED its capability set. A payload with
+        # no capabilities{} is asking the structural question and cannot make
+        # an absent credential store (CI, an empty HOME) authoritative: the
+        # F15 card gate owns the paid-work refusal there, and the presence
+        # check is still recorded in checks["derived"] -- never a silent pass.
         reqs.append(_req("kie-api-key", "credential",
                          "paid media generation: KIE credential presence",
                          manifest=manifest, manifest_id="kie-api-key",
+                         hard=ctx.get("declared"),
                          args={"envVar": "KIE_API_KEY"}))
         reqs.append(_req("model-routes", "route",
                          "media production: at least one declared model route",
@@ -742,6 +748,41 @@ def check(payload):
     checks["requirements"] = [{"id": r["id"], "severity": r["severity"],
                                "manifest_severity": r["manifest_severity"],
                                "why": r["why"]} for r in derived]
+    if not ctx["generating"]:
+        # Non-generating diagnostic mode: reduced requirements, declares itself.
+        return {"outcome": "ok", "reason_code": "preflight-pass-diagnostic",
+                "checks": checks, "mode": "diagnostic", "generating": False,
+                "readiness": "diagnostic-only",
+                "next_action": "Diagnostic only (non-generating): reduced "
+                               "requirements verified; this is NOT paid-work readiness."}
+
+    auth = p.get("auth") or {}
+    if not auth:
+        return {"outcome": "rejected", "reason_code": "approval-missing",
+                "checks": checks, "next_action": "Record authorization scope before paid work."}
+    import time
+    exp = auth.get("expires_unix")
+    if isinstance(exp, (int, float)) and int(time.time()) > exp:
+        return {"outcome": "rejected", "reason_code": "approval-expired",
+                "checks": checks, "next_action": "Renew expired authorization."}
+    scope = auth.get("scope")
+    dgst = p.get("summary_digest")
+    if scope not in ("campaign", dgst):
+        return {"outcome": "rejected", "reason_code": "approval-out-of-scope",
+                "checks": checks, "next_action": "Bind authorization to this campaign summary digest."}
+    card_refusal = check_card_receipt(p.get("run_state"), p.get("card_receipt"))
+    # F15: paid work (which is what preflight gates) never starts on an
+    # unanswered card, whichever entry path launched the run.
+    if card_refusal is not None:
+        checks["card_recorded"] = False
+        return {"outcome": "waiting", "reason_code": card_refusal["reason_code"],
+                "checks": checks, "missing": card_refusal.get("missing", []),
+                "next_action": card_refusal.get(
+                    "next_action", "Show and answer the choice card first.")}
+    checks["card_recorded"] = True
+    # F15 precedence: the card gate is the paid-work precondition, so it is
+    # answered BEFORE any capability-derived refusal. A dependency refusal in
+    # a credential-free environment must never stand in for "answer the card".
     if ctx["generating"] and (not ctx["media"] or not derived):
         return {"outcome": "error", "reason_code": "requirements-empty",
                 "checks": checks, "missing": [],
@@ -781,38 +822,6 @@ def check(payload):
                                   for u in plan["unsupported"])
                                   or "Unsupported interpreter/host; no install is attempted.")
         return out
-    if not ctx["generating"]:
-        # Non-generating diagnostic mode: reduced requirements, declares itself.
-        return {"outcome": "ok", "reason_code": "preflight-pass-diagnostic",
-                "checks": checks, "mode": "diagnostic", "generating": False,
-                "readiness": "diagnostic-only",
-                "next_action": "Diagnostic only (non-generating): reduced "
-                               "requirements verified; this is NOT paid-work readiness."}
-
-    auth = p.get("auth") or {}
-    if not auth:
-        return {"outcome": "rejected", "reason_code": "approval-missing",
-                "checks": checks, "next_action": "Record authorization scope before paid work."}
-    import time
-    exp = auth.get("expires_unix")
-    if isinstance(exp, (int, float)) and int(time.time()) > exp:
-        return {"outcome": "rejected", "reason_code": "approval-expired",
-                "checks": checks, "next_action": "Renew expired authorization."}
-    scope = auth.get("scope")
-    dgst = p.get("summary_digest")
-    if scope not in ("campaign", dgst):
-        return {"outcome": "rejected", "reason_code": "approval-out-of-scope",
-                "checks": checks, "next_action": "Bind authorization to this campaign summary digest."}
-    card_refusal = check_card_receipt(p.get("run_state"), p.get("card_receipt"))
-    # F15: paid work (which is what preflight gates) never starts on an
-    # unanswered card, whichever entry path launched the run.
-    if card_refusal is not None:
-        checks["card_recorded"] = False
-        return {"outcome": "waiting", "reason_code": card_refusal["reason_code"],
-                "checks": checks, "missing": card_refusal.get("missing", []),
-                "next_action": card_refusal.get(
-                    "next_action", "Show and answer the choice card first.")}
-    checks["card_recorded"] = True
     checks["readiness"] = "full"
     return {"outcome": "ok", "reason_code": "preflight-pass",
             "checks": checks, "next_action": "Proceed to claim eligible stage."}
