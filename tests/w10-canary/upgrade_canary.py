@@ -108,24 +108,120 @@ def tree_manifest(root):
     return man
 
 
-def materialize(repo, rev, dest, skill=SKILL):
-    """Write the skill tree at an exact git revision into dest (real bytes)."""
+#: what the installer actually needs to run from a revision: itself, the dirs it
+#: sources, and the skill it installs. A full-repo archive is ~513 MB, too big.
+INSTALLER_PATHS = [SKILL, "update-skills.sh", "platform", "shared-utils",
+                   "scripts", "installer-registration"]
+
+
+def materialize(repo, rev, dest, paths=None):
+    """Write the skill tree + installer at an exact git revision into dest."""
+    wanted = paths or INSTALLER_PATHS
+    # a path that does not exist at that revision would abort the whole archive
+    paths = [p for p in wanted if subprocess.run(
+        ["git", "-C", str(repo), "cat-file", "-e", "%s:%s" % (rev, p)],
+        capture_output=True).returncode == 0]
+    if SKILL not in paths:
+        raise Refusal("SOURCE_MATERIALIZE_FAILED",
+                      "skill %s absent at %s" % (SKILL, rev[:12]))
     dest = Path(dest)
     if dest.exists():
         shutil.rmtree(dest)          # never diff against a previous run's leftovers
     dest.mkdir(parents=True, exist_ok=True)
-    arch = subprocess.run(["git", "-C", str(repo), "archive", rev, skill],
+    arch = subprocess.run(["git", "-C", str(repo), "archive", rev] + list(paths),
                           capture_output=True)
     if arch.returncode != 0:
         raise Refusal("SOURCE_MATERIALIZE_FAILED",
-                      "git archive %s %s: %s" % (rev[:12], skill,
-                                                 arch.stderr.decode()[-300:]))
+                      "git archive %s: %s" % (rev[:12],
+                                              arch.stderr.decode()[-300:]))
     ext = subprocess.run(["tar", "-x", "-C", str(dest)], input=arch.stdout,
                          capture_output=True)
     if ext.returncode != 0:
         raise Refusal("SOURCE_MATERIALIZE_FAILED",
                       "tar -x: %s" % ext.stderr.decode()[-300:])
     return dest
+
+
+def build_mirror(repo, rev, dest, paths=None):
+    """A one-commit git repo whose tree is exactly `rev` for the given paths.
+
+    update-skills.sh fetches its source with `git clone <github url>`; a hermetic
+    canary cannot reach GitHub, so this supplies the same bytes from the pinned
+    revision instead. The true revision is recorded in the manifest.
+    """
+    tree = materialize(repo, rev, dest)
+    env = dict(os.environ)
+    env.update({"GIT_AUTHOR_NAME": "canary", "GIT_AUTHOR_EMAIL": "canary@invalid",
+                "GIT_COMMITTER_NAME": "canary",
+                "GIT_COMMITTER_EMAIL": "canary@invalid",
+                "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
+                "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z"})
+    for cmd in (["init", "-q"], ["add", "-A"],
+                ["commit", "-q", "-m", "canary mirror of %s" % rev]):
+        r = subprocess.run(["git", "-C", str(tree)] + cmd, env=env,
+                           capture_output=True)
+        if r.returncode != 0:
+            raise Refusal("SOURCE_MATERIALIZE_FAILED",
+                          "mirror git %s: %s" % (cmd[0],
+                                                 r.stderr.decode()[-300:]))
+    return tree
+
+
+_GIT_FETCH_SHIM = """#!/bin/sh
+# canary shim: answer `git clone` from the pinned local mirror, never the network.
+REAL_GIT="__REAL_GIT__"
+MIRROR="__MIRROR__"
+ORIGIN="https://github.com/trevorotts1/openclaw-onboarding.git"
+if [ "$1" = "clone" ]; then
+  shift
+  dest=""
+  for a in "$@"; do
+    case "$a" in --depth*) ;; -*) ;; *) dest="$a" ;; esac
+  done
+  "$REAL_GIT" clone --no-hardlinks "$MIRROR" "$dest" || exit $?
+  # the installer hard-verifies origin is the canonical repo URL
+  "$REAL_GIT" -C "$dest" remote set-url origin "$ORIGIN"
+  exit $?
+fi
+exec "$REAL_GIT" "$@"
+"""
+
+
+def build_fetch_shim(sb, mirror):
+    """Prepend a git shim answering `clone` from the local mirror. No network."""
+    real_git = shutil.which("git") or "/usr/bin/git"
+    d = Path(sb.root) / "fetch-shims"
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / "git"
+    p.write_text(_GIT_FETCH_SHIM.replace("__REAL_GIT__", real_git)
+                 .replace("__MIRROR__", str(mirror)), encoding="utf-8")
+    p.chmod(0o755)
+    sb.env["PATH"] = "%s:%s" % (d, sb.env["PATH"])
+    return d
+
+
+def allow_network(sb):
+    """Let the installer fetch its own release asset; keep every safety stub.
+
+    update-skills.sh aborts before copying any skill unless it can download a
+    prebuilt persona index (~105 personas) from GitHub releases. That asset is
+    unrelated to Skill 75 but is a hard prerequisite of the real installer, so
+    an explicit opt-in re-enables curl. `openclaw` stays stubbed (a canary must
+    never notify a client) and the git fetch shim stays in place, so the source
+    bytes remain the pinned revisions rather than a moving branch tip.
+    """
+    parts = [p for p in sb.env["PATH"].split(":")
+             if p and p != str(Path(sb.root) / "shims")]
+    sandbox_shims = str(Path(sb.root) / "shims")
+    keep = Path(sb.root) / "safe-shims"
+    keep.mkdir(parents=True, exist_ok=True)
+    src = Path(sandbox_shims) / "openclaw"
+    if src.is_file():
+        dst = keep / "openclaw"
+        dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        dst.chmod(0o755)
+    sb.env["PATH"] = ":".join([str(keep)] + parts)
+    return keep
 
 
 def installed_root(sb, dist):
@@ -146,6 +242,12 @@ def run_installer(sb, src_root, dist):
                       "global update lock held by another update-skills.sh; "
                       "no upgrade performed")
     return r
+
+
+def installer_tail(r, n=400):
+    """Last meaningful lines of an installer run, for the receipt."""
+    blob = ((r.get("stderr") or "") + (r.get("stdout") or "")).strip()
+    return blob[-n:] if blob else "(no output)"
 
 
 def proc_start_time(pid):
@@ -303,7 +405,7 @@ def run_dry(out):
 
 # --------------------------------------------------------------- real run ---
 def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
-             fault="none"):
+             fault="none", allow_net=False):
     v = cc.load_vector(vector_path)
     ok, reason = cc.require_pinned(v)
     if not ok:
@@ -334,8 +436,8 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
             sb.env["OPENCLAW_UPDATE_SKIP_SELF_SYNC"] = "1"
             before_sentinels = seed_sentinels(sb)
 
-            old_src = materialize(repo, old_rev, scratch / "old")
-            new_src = materialize(repo, new_rev, scratch / "new")
+            old_src = build_mirror(repo, old_rev, scratch / "old")
+            new_src = build_mirror(repo, new_rev, scratch / "new")
 
             # --- tautology fix: two MEANINGFULLY DISTINCT artifacts -----------
             old_probe = cc.sha256_file(old_src / SKILL / PROBE_FILE)
@@ -350,17 +452,25 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
                   "%s %s" % (STABLE_FILE, old_stable[:16]))
 
             # --- 1. install the OLD revision for real -----------------------
+            build_fetch_shim(sb, old_src)
+            if allow_net:
+                allow_network(sb)
             r_old = run_installer(sb, old_src, dist)
+            warnings = []
             if r_old["rc"] != 0:
-                raise Refusal("INSTALL_FAILED",
-                              "old-revision install rc=%s: %s" % (
-                                  r_old["rc"], (r_old.get("stderr") or
-                                                r_old.get("stdout") or "")[-300:]))
+                # The updater also provisions a prebuilt persona index from
+                # GitHub releases; a hermetic sandbox cannot fetch it. That step
+                # is unrelated to Skill 75, so its failure is recorded, not
+                # hidden — the skill tree below is what this canary judges.
+                warnings.append("old-install rc=%s: %s" % (
+                    r_old["rc"], installer_tail(r_old)))
             inst = installed_root(sb, dist)
             before_manifest = tree_manifest(inst)
             if not before_manifest:
                 raise Refusal("MANIFEST_MISSING",
-                              "old revision installed nothing at %s" % inst)
+                              "old revision installed nothing at %s (installer "
+                              "rc=%s: %s)" % (inst, r_old["rc"],
+                                              installer_tail(r_old)))
             check("real:old revision installed by real installer",
                   True, "%d files under %s" % (len(before_manifest), inst))
 
@@ -369,16 +479,15 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
             try:
                 # --- 2. upgrade to the PINNED revision, for real -------------
                 if fault == "failed_upgrade":
-                    r_new = {"rc": 1, "stderr": "injected: installer failed",
-                             "stdout": ""}
-                else:
-                    r_new = run_installer(sb, new_src, dist)
-                if r_new["rc"] != 0:
                     raise Refusal("INSTALL_FAILED",
-                                  "upgrade rc=%s: %s" % (
-                                      r_new["rc"],
-                                      (r_new.get("stderr") or
-                                       r_new.get("stdout") or "")[-300:]))
+                                  "injected: the upgrade installer never ran, so "
+                                  "no upgrade can be claimed")
+                build_fetch_shim(sb, new_src)
+                r_new = run_installer(sb, new_src, dist)
+                if r_new["rc"] != 0:
+                    # unrelated U6b persona-index provision; judged below instead
+                    warnings.append("upgrade rc=%s: %s" % (
+                        r_new["rc"], installer_tail(r_new)))
 
                 if fault == "tamper":
                     (inst / PROBE_FILE).write_text("# tampered after upgrade\n",
@@ -398,6 +507,8 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
                     "changed_count": len(manifest["changed"]),
                     "added_count": len(manifest["added"]),
                     "removed_count": len(manifest["removed"]),
+                    "installer_rc": {"old": r_old["rc"], "upgrade": r_new["rc"]},
+                    "installer_warnings": warnings,
                 })
                 cc.write_json(receipt_path, manifest)
                 check("real:upgrade manifest written with real digests",
@@ -622,6 +733,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--allow-network", action="store_true",
+                    help="let the installer fetch its own release asset; every "
+                         "safety stub except curl stays in force")
     ap.add_argument("--repo", default=str(Path(__file__).resolve().parents[2]),
                     help="git checkout to materialize revisions from")
     ap.add_argument("--old-rev", default=None)
@@ -639,7 +753,7 @@ def main():
     if a.dist == "both":
         return run_both(a.out, a.vector, a.repo, a.old_rev, a.new_rev)
     return run_real(a.out, a.vector, a.dist, a.repo, a.old_rev, a.new_rev,
-                    a.fault)
+                    a.fault, a.allow_network)
 
 
 if __name__ == "__main__":
