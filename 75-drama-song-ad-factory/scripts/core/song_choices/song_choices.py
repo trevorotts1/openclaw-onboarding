@@ -79,6 +79,133 @@ class ChoiceError(ValueError):
     """A loud refusal: nothing was spent or delivered on the broken path."""
 
 
+# ---- S75-W02-U3: the complete typed result envelope per attempt ----------
+#
+# The dispatch path used to save ONLY the provider evidence
+# (dispatch-envelope.json = {"variant_id", "evidence"}): the refusal reason and
+# its next action died at the generate() boundary, the lifecycle stages were
+# conflated into one "dispatched" number, and an empty take list walked out of
+# the CLI as exit 0 -- narrated as a successful dispatch. The typed envelope
+# below is preserved per attempt INSTEAD: the refusal triple (reason_code,
+# detail, next_action), the causal chain across every wrapper boundary, and
+# the lifecycle counts reported SEPARATELY.
+
+#: The envelope schema this module produces and consumes.
+ENVELOPE_SCHEMA_VERSION = "1.0.0"
+#: The seven lifecycle counts. SEVEN separate facts -- planned work, provider
+#: submission, provider acknowledgment, the settled bill, files materialized
+#: on disk, takes evaluated by the judge, takes delivered. No key stands in
+#: for another and no single total replaces them.
+COUNT_KEYS = ("planned", "submitted", "acknowledged", "billed",
+              "materialized", "evaluated", "delivered")
+#: The outcome vocabulary (the kie_dispatch envelope vocabulary, so a provider
+#: refusal keeps its own words as it crosses this module).
+ENVELOPE_OUTCOMES = ("ok", "rejected", "waiting", "error")
+#: Run narration: "ok" ONLY when every attempt actually dispatched. An empty
+#: take list or a refused dispatch is never "ok".
+RUN_OUTCOMES = ("ok", "partial", "error")
+#: What an attempt with no take and no refusal detail must tell the operator.
+_EMPTY_NEXT_ACTION = ("reconcile the provider job before any retry; an empty "
+                      "take list is never a successful dispatch")
+
+
+def make_counts(**kw):
+    """The seven lifecycle counts as ONE typed object: every key present, each
+    a non-negative integer. Counts are never conflated -- a caller fills the
+    stages it measured and leaves the rest at 0, never invented."""
+    unknown = sorted(set(kw) - set(COUNT_KEYS))
+    if unknown:
+        raise ChoiceError("unknown attempt counts %r (the counts are exactly %s)"
+                          % (unknown, list(COUNT_KEYS)))
+    out = {}
+    for k in COUNT_KEYS:
+        v = kw.get(k, 0)
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            raise ChoiceError("count %r must be a non-negative integer; got %r" % (k, v))
+        out[k] = v
+    return out
+
+
+def add_counts(*rows):
+    """Per-key sum over attempt count objects. The keys never merge: planned
+    stays planned, delivered stays delivered."""
+    out = make_counts()
+    for row in rows or ():
+        if not isinstance(row, dict):
+            raise ChoiceError("counts must be an object; got %r" % (type(row).__name__,))
+        add = make_counts(**{k: row[k] for k in COUNT_KEYS
+                             if row.get(k) is not None})
+        out = make_counts(**{k: out[k] + add[k] for k in COUNT_KEYS})
+    return out
+
+
+def causal_link(stage, reason_code="", detail=""):
+    """ONE boundary hop in a refusal's causal chain."""
+    return {"stage": str(stage), "reason_code": str(reason_code or ""),
+            "detail": str(detail or "")}
+
+
+def attempt_envelope(variant_id, attempt_id, outcome, counts,
+                     reason_code="", detail="", next_action="",
+                     evidence=None, causal_chain=()):
+    """THE typed result envelope preserved per attempt (schema
+    ENVELOPE_SCHEMA_VERSION): outcome, refusal reason, next action, the seven
+    counts reported separately and the causal chain. ``ok`` is the ONLY
+    successful-dispatch narration; every other outcome must carry its refusal
+    reason and next action forward. Counts are required and complete: an
+    envelope never carries a partial count object."""
+    if not _nonempty_str(variant_id):
+        raise ChoiceError("variant_id must be a non-empty string")
+    if not _nonempty_str(attempt_id):
+        raise ChoiceError("attempt_id must be a non-empty string")
+    if outcome not in ENVELOPE_OUTCOMES:
+        raise ChoiceError("outcome must be one of %s; got %r"
+                          % (list(ENVELOPE_OUTCOMES), outcome))
+    if outcome != "ok":
+        if not _nonempty_str(reason_code):
+            raise ChoiceError("a refused attempt envelope must carry its refusal reason_code")
+        if not _nonempty_str(next_action):
+            raise ChoiceError("a refused attempt envelope must carry its next_action")
+    chain = []
+    for link in causal_chain or ():
+        if not isinstance(link, dict) or not link.get("stage"):
+            raise ChoiceError("causal_chain entries need a stage; got %r" % (link,))
+        chain.append(causal_link(link.get("stage"), link.get("reason_code", ""),
+                                 link.get("detail", "")))
+    return {"schema_version": ENVELOPE_SCHEMA_VERSION, "tool": TOOL_NAME,
+            "variant_id": str(variant_id), "attempt_id": str(attempt_id),
+            "outcome": outcome,
+            "reason_code": str(reason_code or ""),
+            "detail": str(detail or ""),
+            "next_action": str(next_action or ""),
+            "counts": make_counts(**(counts or {})),
+            "causal_chain": chain,
+            "evidence": dict(evidence or {}),
+            "dispatch_ok": outcome == "ok"}
+
+
+def carry(envelope, stage, detail=""):
+    """Cross a wrapper boundary WITHOUT losing the envelope: the refusal triple
+    is preserved verbatim (the first cause is never rewritten) and this
+    boundary is appended to the causal chain. Returns a NEW envelope."""
+    if not isinstance(envelope, dict) or "counts" not in envelope:
+        raise ChoiceError("carry() needs a typed attempt envelope; got %r"
+                          % (type(envelope).__name__,))
+    return attempt_envelope(
+        envelope.get("variant_id"), envelope.get("attempt_id"),
+        envelope.get("outcome"), envelope.get("counts"),
+        reason_code=envelope.get("reason_code", ""),
+        detail=envelope.get("detail", ""),
+        next_action=envelope.get("next_action", ""),
+        evidence=envelope.get("evidence"),
+        causal_chain=list(envelope.get("causal_chain") or [])
+        + [causal_link(stage, envelope.get("reason_code", ""), detail)])
+
+
+def _nonempty_str(v):
+    return isinstance(v, str) and bool(v.strip())
+
+
 def _brief_refusals(variant):
     """WW-26: the ten-direction completeness of ONE variant brief. [] = complete.
 
@@ -298,6 +425,96 @@ def _require_three(rows, key=lambda r: r):
     return rows
 
 
+def _counts_from_dispatch(env, ev):
+    """The DISPATCH-boundary counts of one attempt, measured from the provider
+    envelope and its evidence -- planned 1 (one generation per attempt),
+    submitted when a provider submission was issued, acknowledged on the    provider's task acknowledgment, billed when the ledger settled a cost,    materialized as the saved files on disk. evaluated/delivered belong to the    judge boundary and stay 0 here: recorded, never invented."""
+    submitted = 1 if (ev.get("accepted_submit_at") or ev.get("task_id")
+                      or ev.get("generated")) else 0
+    acknowledged = 1 if ev.get("accepted_submit_at") else 0
+    billed = 1 if ev.get("actual_cost") is not None else 0
+    saved = ev.get("saved_paths") or []
+    materialized = sum(1 for p in saved
+                       if isinstance(p, str) and os.path.isfile(p))
+    return make_counts(planned=1, submitted=submitted,
+                       acknowledged=acknowledged, billed=billed,
+                       materialized=materialized)
+
+
+def _finish_envelope(generate, variant, r, got, heard):
+    """The judge boundary's measured counts (evaluated/delivered) folded into
+    the attempt envelope the transport preserved. An attempt that ended with
+    NO take at all is never narrated as a successful dispatch, whatever the
+    transport called its outcome: an empty take list is an error envelope."""
+    store = getattr(generate, "attempt_envelopes", None)
+    env = store.get(variant["id"]) if isinstance(store, dict) else None
+    evaluated = len(r.get("receipts") or [])
+    delivered = 1 if got else 0
+    materialized = len([t for t in (heard or []) if isinstance(t, dict)])
+    if env is None:
+        # No dispatch envelope (an injected transport): only what is
+        # observable is recorded. The transport call IS the submission act.
+        if delivered or materialized:
+            return attempt_envelope(
+                variant["id"], "a1", "ok",
+                make_counts(planned=1, submitted=1, materialized=materialized,
+                            evaluated=evaluated, delivered=delivered))
+        return attempt_envelope(
+            variant["id"], "a1", "error",
+            make_counts(planned=1, submitted=1),
+            reason_code="EMPTY_TAKE_LIST",
+            detail="the generation transport returned no take",
+            next_action=_EMPTY_NEXT_ACTION,
+            causal_chain=[causal_link("run_takes", "EMPTY_TAKE_LIST",
+                                      "generate() returned zero takes")])
+    counts = make_counts(**dict(env["counts"], evaluated=evaluated,
+                                delivered=delivered))
+    outcome, reason, detail, nxt = (env["outcome"], env["reason_code"],
+                                    env["detail"], env["next_action"])
+    chain = list(env["causal_chain"])
+    if outcome == "ok" and not delivered and not materialized and not evaluated:
+        outcome = "error"
+        reason = "EMPTY_TAKE_LIST"
+        detail = detail or "the attempt produced no take"
+        nxt = nxt or _EMPTY_NEXT_ACTION
+    if outcome != "ok":
+        # the refusal crossed this boundary too; the chain says so
+        chain = chain + [causal_link("run_takes", reason,
+                                     "refusal carried across the take-judge boundary")]
+    return attempt_envelope(env["variant_id"], env["attempt_id"], outcome,
+                           counts, reason_code=reason, detail=detail,
+                           next_action=nxt, evidence=env["evidence"],
+                           causal_chain=chain)
+
+
+def _refused_envelope(generate, variant, exc):
+    """A transport/run_takes exception folded into the typed refusal envelope:
+    the reason and the next action survive the wrapper boundary and the
+    failure joins the causal chain. Dispatch facts already evidenced are    preserved; nothing beyond them is claimed."""
+    store = getattr(generate, "attempt_envelopes", None)
+    env = store.get(variant["id"]) if isinstance(store, dict) else None
+    msg = str(exc) or type(exc).__name__
+    code = (msg.split(":", 1)[0].strip() or type(exc).__name__)[:80]
+    detail = (msg.split(":", 1)[1].strip() if ":" in msg else msg)[:400]
+    nxt = ("fix the named refusal and re-run; nothing here may be narrated "
+           "as a successful dispatch")
+    if env is None:
+        return attempt_envelope(
+            variant["id"], "a1", "error", make_counts(planned=1),
+            reason_code=code, detail=detail, next_action=nxt,
+            causal_chain=[causal_link("run_takes", code, detail)])
+    return attempt_envelope(
+        env["variant_id"], env["attempt_id"],
+        "error" if env["outcome"] == "ok" else env["outcome"],
+        make_counts(**dict(env["counts"], evaluated=0, delivered=0)),
+        reason_code=env["reason_code"] or code,
+        detail=env["detail"] or detail,
+        next_action=env["next_action"] or nxt,
+        evidence=env["evidence"],
+        causal_chain=list(env["causal_chain"])
+        + [causal_link("run_takes", code, detail)])
+
+
 def one_variant(n, variant, request, plan, generate, measure, save, script_words, hook_text,
                 spoken_range_pct=None, **kw):
     """THE single-variant worker path. Every caller (the umbrella three-up
@@ -312,9 +529,13 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
 
     WW-18: `run_takes` delivers only a take whose REQUIRED gate set all PASSed
     (its constituent receipt is current), so `status` is never a take that a
-    required gate blocked; the receipt rides the result to the delivery gate."""
+    required gate blocked; the receipt rides the result to the delivery gate.
+
+    S75-W02-U3: every result carries the COMPLETE typed attempt envelope    (``envelope``) and its seven counts (``counts``) -- refusal reason, next    action and the causal chain survive this wrapper boundary, and the counts    are never conflated. An attempt that ended with no take can never be    narrated as a successful dispatch."""
     opts = dict(kw)
     opts.setdefault("style_id", request.get("_style_id"))
+    # S75-W02-U3: where the FINALIZED envelope is written. run_takes never    # sees this key.
+    envelope_run_dir = opts.pop("envelope_run_dir", None)
     req = {k: x for k, x in request.items() if k != "_style_id"}
     heard = []
 
@@ -322,10 +543,22 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
         heard.append(dict(t))          # the paid take, kept for the client's listen
         return save(variant, t, rc)
 
-    r = _SD.run_takes(req, plan, lambda rq: generate(variant, rq), measure,
-                      _save, script_words, hook_text,
-                      spoken_range_pct, cap_cents=_SD.GEN_COST_CENTS, **opts)
+    try:
+        r = _SD.run_takes(req, plan, lambda rq: generate(variant, rq), measure,
+                          _save, script_words, hook_text,
+                          spoken_range_pct, cap_cents=_SD.GEN_COST_CENTS, **opts)
+    except Exception as exc:                     # noqa: BLE001 - carried as a typed refusal envelope
+        env = _refused_envelope(generate, variant, exc)
+        if envelope_run_dir:
+            _write_envelope(envelope_run_dir, variant["id"], env)
+        return {"n": n, "variant": variant, "status": "REFUSED", "take": None,
+                "heard": None, "concerns": [], "receipt": None,
+                "attempt": 1, "attempts": 1, "receipts": [],
+                "envelope": env, "counts": env["counts"]}
     got = None if r["verdict"] == "FAIL" else r
+    env = _finish_envelope(generate, variant, r, got, heard)
+    if envelope_run_dir:
+        _write_envelope(envelope_run_dir, variant["id"], env)
     return {"n": n, "variant": variant,
             "status": got["verdict"] if got else "FAILED",
             "take": got["delivered"] if got else None,
@@ -334,7 +567,8 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             "heard": None if got else (heard[-1] if heard else None),
             "concerns": [] if got else failure_concerns(r),
             "receipt": got.get("receipt") if got else (r.get("receipt")),
-            "attempt": 1, "attempts": 1, "receipts": r["receipts"]}
+            "attempt": 1, "attempts": 1, "receipts": r["receipts"],
+            "envelope": env, "counts": env["counts"]}
 
 
 def run_unit(requests, unit_id=None, variant_id=None, **kw):
@@ -1101,13 +1335,18 @@ def refusal(run_dir):
 def _refuse(why, code="SONG_PICK_MISSING"):
     return {"reason_code": code, "detail": why,
             "next_action": "Send the client the three songs and wait for their pick (1, 2 or 3). "
-                           "No picture timing, video, image or lip-sync job starts before it."}
+                           "No picture timing, video, image or lip-sync job starts before it.",
+            # S75-W02-U3: the refusal travels as an envelope with its causal
+            # chain, so a wrapper boundary can never flatten it to a bare "no".
+            "causal_chain": [causal_link("song_choices", code, why)]}
 
 
 def _refuse_constituent(why):
     return {"reason_code": "SONG_CONSTITUENT_EVIDENCE_MISSING", "detail": why,
             "next_action": "Re-record the take's constituent-evidence receipt (every required "
-                           "gate PASS) before any picture, image or video spend."}
+                           "gate PASS) before any picture, image or video spend.",
+            "causal_chain": [causal_link("song_choices",
+                                         "SONG_CONSTITUENT_EVIDENCE_MISSING", why)]}
 
 
 def constituent_hold(run_dir):
@@ -1180,11 +1419,34 @@ def _hook_text(spec):
 def _envelope_path(run_dir, variant_id):
     return os.path.join(run_dir, "music", "takes", variant_id, "dispatch-envelope.json")
 
-def _write_envelope(run_dir, variant_id, evidence):
+def _write_envelope(run_dir, variant_id, payload):
+    """Persist ONE attempt's envelope under music/takes/<variant>/.
+
+    S75-W02-U3: the COMPLETE typed envelope is preserved per attempt --    outcome, refusal reason, next action, the seven counts and the causal
+    chain -- never only the provider evidence. A legacy raw-evidence payload    (pre-contract callers) is still accepted and wrapped, never saved alone.
+    """
+    env, ev = None, {}
+    if isinstance(payload, dict) and \
+            payload.get("schema_version") == ENVELOPE_SCHEMA_VERSION and \
+            isinstance(payload.get("counts"), dict):
+        env = attempt_envelope(payload.get("variant_id") or variant_id,
+                               payload.get("attempt_id"), payload.get("outcome"),
+                               payload.get("counts"),
+                               reason_code=payload.get("reason_code", ""),
+                               detail=payload.get("detail", ""),
+                               next_action=payload.get("next_action", ""),
+                               evidence=payload.get("evidence"),
+                               causal_chain=payload.get("causal_chain") or ())
+        ev = env["evidence"]
+    elif isinstance(payload, dict):
+        ev = payload                      # legacy raw evidence write
     p = _envelope_path(run_dir, variant_id)
     os.makedirs(os.path.dirname(p), exist_ok=True)
+    doc = {"variant_id": variant_id, "evidence": ev}
+    if env is not None:
+        doc["envelope"] = env
     with open(p, "w", encoding="utf-8") as f:
-        json.dump({"variant_id": variant_id, "evidence": evidence}, f, indent=2, sort_keys=True)
+        json.dump(doc, f, indent=2, sort_keys=True)
     return p
 
 
@@ -1289,7 +1551,25 @@ def _real_generate(run_dir, ledger, run_id):
                            attempt_id="a1", estimated_cost=_SD.GEN_COST_CENTS,
                            prompt=payload.get("input", {}).get("style", "")[:2000])
         ev = env.get("evidence", {}) if isinstance(env, dict) else {}
-        _write_envelope(run_dir, variant["id"], ev)
+        # S75-W02-U3: the COMPLETE typed envelope per attempt is preserved           # here -- outcome, refusal reason, next action and the dispatch-boundary           # counts (evaluated/delivered are folded in at the judge boundary) --           # never only the evidence above. The refusal triple of a rejected or           # waiting dispatch survives this boundary verbatim.
+        _raw_outcome = env.get("outcome") if isinstance(env, dict) else "error"
+        _outcome = _raw_outcome if _raw_outcome in ENVELOPE_OUTCOMES else "error"
+        _reason = (env.get("reason_code") or "") if isinstance(env, dict) else ""
+        _next = (env.get("next_action") or "") if isinstance(env, dict) else ""
+        if _outcome != "ok":
+            _reason = _reason or "DISPATCH_NOT_OK"
+            _next = _next or _EMPTY_NEXT_ACTION
+        _aenv = attempt_envelope(
+            variant["id"], (env.get("attempt_id") if isinstance(env, dict) else None) or "a1",
+            _outcome, _counts_from_dispatch(env, ev),
+            reason_code=_reason,
+            detail=str(ev.get("detail") or ""),
+            next_action=_next, evidence=ev,
+            causal_chain=[causal_link("kie_dispatch",
+                                      _reason or "KIE_DISPATCH_OK",
+                                      str(ev.get("detail") or ""))])
+        generate.attempt_envelopes[variant["id"]] = _aenv
+        _write_envelope(run_dir, variant["id"], _aenv)
         # D2 item 3: the overlap receipt, built from the PROVIDER lifecycle
         # stamps only. accepted_submit_at is stamped after a valid task-id
         # acknowledgment; terminal_at at the first terminal provider response.
@@ -1311,6 +1591,10 @@ def _real_generate(run_dir, ledger, run_id):
             for p in ev.get("saved_paths", []) or []:
                 takes.append(dict(prov, audio_path=p))
         return takes
+
+    # S75-W02-U3: the per-attempt envelopes this transport preserved, keyed by
+    # variant id -- one_variant reads them to fold in the judge-boundary counts.
+    generate.attempt_envelopes = {}
     return generate
 
 
@@ -1346,21 +1630,30 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
                     "_pace_plan": spec["pace_plan"]}
     gen = generate or _real_generate(run_dir, a.ledger, a.run_id)
     kw = dict(plan=plan, generate=gen, measure=measure, save=save,
-              script_words=_sheet_lyric_words(spec), hook_text=hook_text)
-    # WWFIXGAPS U1 (defect 3): ``dispatched`` is MEASURED from the run that
-    # actually happened, never a literal. One provider job goes out per
-    # attempt, and ``one_variant`` regenerates a FAIL once, so a variant that
-    # had to retry is TWO dispatches -- an umbrella run that retries every
-    # arrangement dispatches six, not the three the old literal claimed.
+              script_words=_sheet_lyric_words(spec), hook_text=hook_text,
+              envelope_run_dir=run_dir)
+    # WWFIXGAPS U1 (defect 3): the reported count is MEASURED from the run that
+    # actually happened, never a literal -- and S75-W02-U3 reports the seven
+    # lifecycle counts SEPARATELY. ``dispatched`` is the submitted count (the
+    # provider submissions actually issued); a generate call that a gate
+    # refused before submission is no longer counted as dispatched, and an
+    # empty take list is never narrated as success (see ``outcome``).
     if a.variant or a.unit_id:
         results = run_unit(reqs, unit_id=a.unit_id or None, variant_id=a.variant or None, **kw)
     else:
         results = generate_choices(reqs, **kw)
-    dispatched = sum(int(r.get("attempts") or 0) for r in results)
+    counts = add_counts(*[r.get("counts") or {} for r in results])
+    outcomes = [(r.get("envelope") or {}).get("outcome") for r in results]
+    run_outcome = (RUN_OUTCOMES[0] if outcomes and all(o == "ok" for o in outcomes)
+                   else RUN_OUTCOMES[1] if any(o == "ok" for o in outcomes)
+                   else RUN_OUTCOMES[2])
+    dispatched = counts["submitted"]
     if a.variant or a.unit_id:
-        out = {"mode": "orchestrated", "dispatched": dispatched, "results": results}
+        out = {"mode": "orchestrated", "outcome": run_outcome,
+               "dispatched": dispatched, "counts": counts, "results": results}
     else:
-        out = {"mode": "umbrella", "dispatched": dispatched, "results": results,
+        out = {"mode": "umbrella", "outcome": run_outcome,
+               "dispatched": dispatched, "counts": counts, "results": results,
                "media_concurrency": 3, "builder_agent_units": 1,
                "note": "3 provider jobs in 3 THREADS inside ONE agent unit; "
                        "threads are not visible agents"}
@@ -1439,6 +1732,12 @@ def main(argv=None):
                 save=_ST.make_save(_run_dir))
             json.dump(out, sys.stdout, indent=2, sort_keys=True, default=str)
             sys.stdout.write("\n")
+            if out.get("outcome") != "ok":
+                # S75-W02-U3: exit 0 is reserved for a run whose every attempt
+                # actually dispatched. An empty take list or a refused dispatch
+                # prints its typed envelope above and exits NONZERO -- it can
+                # never be narrated as a successful dispatch.
+                return 5
         else:
             r = refusal(a.run_dir)
             if r:
