@@ -101,6 +101,34 @@ the link. Until then no `chamber_url` is printed. Nobody hand-runs npm.
 - Pause, resume, and cancel act on the existing session. A cancelled
   session stays cancelled even if a late provider response arrives.
 
+## Closing a session
+
+A council sitting is one session, and every sitting gets closed; a
+sitting never hangs open.
+
+- Five minutes after the client's last interaction in an open session,
+  ask exactly ONE soft-close question: "Is that all, or are we still
+  working?" One per quiet spell — never repeat it while the question
+  is standing.
+- An explicit close phrase ("that's all", "we're done", "finalize",
+  and the other phrases in runtime/src/protocol/session-close.ts)
+  finalizes the sitting immediately — ask nothing more.
+- Any other answer is a new interaction: the sitting continues and the
+  five-minute quiet clock restarts from it. Never auto-finalize over
+  an answer.
+- No answer within ten minutes of the soft-close question: finalize
+  automatically. The session is never left open.
+- Finalize means: mark the session closed in the store, render the
+  counsel artifact (the renderer's `renderArtifact(sessionRecord)`
+  returns its path and link), and put the artifact link in the reply.
+- Close state is derived from the store's own timestamps (the last
+  event on the session and the recorded soft-close), never from
+  in-memory timers: a service restart continues the same quiet spell,
+  loses nothing, and never sends a second soft-close question.
+- One active session per client: resolve the existing session first
+  (see Starting a council); never open a second sitting while one is
+  still open.
+
 ## Reading a result
 
 The verdict page order is fixed (references/report-template.md):

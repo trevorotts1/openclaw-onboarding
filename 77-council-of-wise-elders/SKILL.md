@@ -1,5 +1,5 @@
 ---
-version: 1.0.44
+version: 1.0.46
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -190,6 +190,24 @@ Read references/scoring.md for score interpretation,
 references/source-policy.md for evidence and quotations,
 references/model-routing.md for route and identity rules, and
 references/report-template.md for the fixed verdict page order.
+
+## Closing a session
+
+A council sitting is one session, and every sitting gets closed; a
+sitting never hangs open. Five minutes after the client's last
+interaction in an open session, ask exactly ONE soft-close question:
+"Is that all, or are we still working?" An explicit close phrase
+("that's all", "we're done", "finalize", ...) finalizes immediately;
+any other answer continues the sitting and restarts the five-minute
+quiet clock; no answer within ten minutes of the question finalizes
+automatically. Finalize marks the session closed in the store, renders
+the counsel artifact through the renderer's
+`renderArtifact(sessionRecord)` (it returns the artifact path and
+link), and puts the link in the reply. The close state derives from
+the store's own timestamps, never from in-memory timers, so a restart
+loses nothing and never repeats the question. One active session per
+client: resolve the existing session first, never create a duplicate.
+Full detail in INSTRUCTIONS.md, Closing a session.
 
 ## State lives outside this folder
 

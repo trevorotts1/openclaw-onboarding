@@ -1,5 +1,27 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.46: Council: a sitting now closes itself — one soft-close question, an explicit close phrase finalizes at once, and ten quiet minutes never leave a session open (W74-A)
+
+In plain English: a council sitting is one session and every sitting gets closed. Five minutes after the client's last interaction the council asks exactly once "Is that all, or are we still working?"; an explicit close phrase ("that's all", "we're done", "finalize", ...) finalizes immediately; no answer within ten minutes of the question finalizes automatically; and nothing hangs open.
+
+- Session-close protocol in the runtime (`runtime/src/protocol/session-close.ts`): a 5-minute idle soft-close sends ONE question per quiet spell, an explicit close phrase finalizes immediately, and 10 minutes of silence after the question auto-finalizes. A client answer is a new interaction that restarts the quiet clock — never an auto-finalize over an answer.
+- Finalize marks the session closed in the store, hands the session record to the artifact renderer's `renderArtifact(sessionRecord)` (W74-B contract: returns artifact path + link), and the reply carries the link. Idempotent: a closed sitting renders once and never re-marks.
+- Close state derives from the store's own timestamps — the session's last journal event and the durable soft-close/close markers in the projection outbox — never from in-memory timers. A service restart continues the same quiet spell, loses nothing, and never sends a second soft-close question (proven over the real store in the test).
+- New assert-style test `runtime/tests/session-close.test.ts` (no framework) proving the four cases: idle fires the soft-close at 5m, an explicit close phrase finalizes immediately, 10 minutes of silence after the question auto-finalizes, and restart-safe derivation.
+- Skill instructions: "Closing a session" added to SKILL.md and INSTRUCTIONS.md. "Resolve existing sessions first, never create a duplicate" and one active session per client stay exactly as they were.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
+
+## v1.0.45: Council: a finished sitting renders as one fixed counsel artifact page (W74-B)
+
+In plain English: after a council sitting, the result now renders as one clean page: the decision and the overall consensus at the top, the nine elders with their seat emblems and their takes below, the action steps numbered, and a footer with the sitting facts. The page is print-ready and can produce a real PDF when the box has headless Chrome or cupsfilter; otherwise the client prints from the browser. The look is identical for every client and every sitting.
+
+- renderArtifact(sessionRecord) is a pure function of the session record (assembled from the council.db cards and verdicts): one fixed deep-green and gold template, no per-client theming, writing council-data/artifacts/<session-id>/index.html plus copied assets referenced by relative paths only, and returning { path, link, pdf }.
+- Five sections in fixed order: header (client name, date, the decision, slim cover band), overall consensus in large type, nine elder cards (seat emblem, name, lane, take), numbered action steps from the verdict record, footer (date, model used, question count in the sitting).
+- Print-ready CSS always in the template (page-break rules per elder card). PDF is best effort only: headless Chrome or macOS cupsfilter when present, degrading gracefully to print-from-browser, never blocking and never faked.
+- Artifacts are per-session folders bounded by the session count; the rotation note lives in the code.
+- New runnable check scripts/tests/render-counsel-artifact.test.mjs: renders one synthetic fixture session (clearly labeled synthetic) and asserts the five sections in order, the nine seat images, and no absolute paths in the HTML; nine tests total.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-scoped change only).
+
 ## v1.0.44: Council: the convene brief is now built by one shared permitted-context builder across both doors, with private detail excluded and a hard size cap (W74-C)
 
 In plain English: before a council starts, the brief the elders read is now assembled by one shared builder that reads only the client's permitted memory files on whichever side the session runs — the OpenClaw door or the claude-nine door — and selects just the facts that bear on THIS decision. Private preferences stay in the private store, unknowns stay marked, pointer documents are followed at most one link deep, and the brief can never run past its word cap.
