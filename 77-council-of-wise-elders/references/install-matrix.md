@@ -89,7 +89,11 @@ zero DNS writes; the first run that sees the connector creates the record
 zero writes, nothing deleted. File contract: the connector token sits at
 `$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
 token. How it reaches the box is an operator delivery step, never wire.sh,
-which fetches nothing. When the file exists, wire.sh keeps
+which fetches nothing: the provisioner saved it operator side at
+`~/.openclaw/secrets/council-tunnels/<tunnel-name>.token`
+(`COUNCIL_TUNNEL_TOKEN_DIR`), and delivery copies that file to the box under
+the fixed name `$OPENCLAW_ROOT/secrets/tunnel-council.token`. When the file
+exists, wire.sh keeps
 `cloudflared tunnel run --token-file <file>` running (Mac LaunchAgent
 `ai.blackceo.council-tunnel`, VPS pm2 app `cloudflared-council`), restarts
 it only when the file changes, never touches the Command Center connector,
