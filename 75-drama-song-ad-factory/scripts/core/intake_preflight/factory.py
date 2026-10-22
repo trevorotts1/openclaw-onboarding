@@ -999,7 +999,40 @@ def _proven_music(run_dir, run_id=""):
 
 #: stage -> proven-artifact predicate. The ONLY reconciled stages: each
 #: predicate reads exactly the artifacts its OWN stage gate writes.
-_RECONCILIERS = {"storyboard": _proven_storyboard, "music": _proven_music}
+def _proven_continuity(run_dir, run_id=""):
+    """(proven, evidence): continuity-bible is proven by its OWN QC records.
+
+    The runbook drives this stage with `qc_gate.py evaluate --stage
+    continuity-bible --records $RUN/continuity/qc-records.json --makers ...
+    --required <checks>`; the agent authors the Character DNA, product DNA and
+    style-bible records, and those records are the gate. Before this
+    reconciler existed the stage had no CLI and no reconciler at all, so a run
+    that finished music could never leave continuity-bible. No records ->
+    not proven; nothing is invented here.
+    """
+    cdir = Path(run_dir) / "continuity"
+    recs = _read_json(cdir / "qc-records.json")
+    makers = _read_json(cdir / "makers.json")
+    if not isinstance(recs, list) or not recs:
+        return False, {"missing": "continuity/qc-records.json"}
+    try:
+        qg = _core_mod("qc_gate")
+        checked = sorted({str(r.get("check_id")) for r in recs
+                          if isinstance(r, dict) and r.get("check_id")}
+                         & set(qg.CHECKS))
+        if not checked:
+            return False, {"missing": "no recognized check ids in continuity records"}
+        res = qg.evaluate(run_id or Path(run_dir).name or "reconcile",
+                          "continuity-bible", recs, makers or {}, checked)
+    except Exception as exc:  # noqa: BLE001 - a broken gate never advances
+        return False, {"gate_error": repr(exc)[:200]}
+    return (res.get("gate") == "PASS",
+            {"gate": res.get("gate"), "reason_code": res.get("reason_code"),
+             "checks": checked})
+
+
+_RECONCILIERS = {"storyboard": _proven_storyboard, "music": _proven_music,
+                 "continuity-bible": _proven_continuity}
 
 def _reconcile_stages(run_dir, got):
     """L4.1: reconcile stage rows from proven artifacts through state_store.

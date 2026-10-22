@@ -245,6 +245,39 @@ def read_state(run_dir):
             "events_by_stage": by_stage, "last_event_at": last}, None
 
 
+_HUMAN_DECISION_FILES = ("control/method.json", "control/card-answers.json",
+                         "control/studio-order.json",
+                         "music/acceptance/operator-decision.json",
+                         "song-choices/fork-decision.json")
+
+
+def human_decision_at(run_dir):
+    """Newest human/operator decision artifact in the run, or None.
+
+    The 3-hour window measures from the LAST HUMAN DECISION, not from intake:
+    a client-paced run otherwise expires before the client ever answers, which
+    is exactly how a 25-hour stall reported HEARTBEAT_EXPIRED instead of
+    continuing the work a person had already approved.
+    """
+    newest = 0.0
+    for rel in _HUMAN_DECISION_FILES:
+        p = Path(run_dir) / rel
+        try:
+            if p.is_file():
+                newest = max(newest, p.stat().st_mtime)
+        except OSError:
+            pass
+    try:
+        for p in Path(run_dir).rglob("script-approval.json"):
+            try:
+                newest = max(newest, p.stat().st_mtime)
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return newest or None
+
+
 def runs_created_at(run_dir, run_id):
     """The run's own start, from spend_ledger runs.created_at (the 3h anchor)."""
     db = Path(run_dir) / "spend.sqlite3"
@@ -505,6 +538,9 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None):
     if ledger_start is not None:
         anchors.append(ledger_start)
     started = min(anchors) if anchors else now
+    human = human_decision_at(run_dir)
+    if human is not None and human > started:
+        started = human
     elapsed_minutes = max(0, int((now - started) // 60))
     stalled, stall_detail = stall_check(run_dir, state, row, now)
     decisions = (intake_decisions(run_dir)
