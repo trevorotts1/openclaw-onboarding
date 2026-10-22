@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.47: Council: one convene flow wires the brief-builder, the deliberation, the close protocol and the artifact — on both doors (W74-D)
+
+In plain English: a council now runs as one flow. The brief the elders read is assembled first from the client's permitted memory files, the council deliberates and reaches its verdict, the sitting closes itself (the soft-close question, or the client's own "that's all"), and the finished counsel page arrives in the reply beside the chamber link. The same flow serves both doors: the client's OpenClaw agent and claude-nine / Claude Code (999) — the client only asks for the council, whichever side they are on.
+
+- One wired flow (`runtime/src/flow/convene-flow.ts`) in the exact order the skill prescribes: brief-builder FIRST (permitted context through the door's adapter), deliberation, verdict, then session-close manages the sitting and finalize calls `renderArtifact(sessionRecord)` and returns the delivery (reply link + chamber).
+- The render seam lands (`runtime/src/reports/artifact-renderer.ts`): the entry point the close protocol resolves by name, plus `assembleRenderRecord`, the projection from the stored session and the runtime rows (client name, model, question count, seat takes, verdict) into the renderer's fixed session record. Nothing is invented at the seam; the renderer's own validation still runs.
+- Both doors wired and documented: the OpenClaw door uses the OpenClaw adapter (memory.md, agents.md, soul.md, user.md), the claude-nine / Claude Code (999) door its adapter (CLAUDE.md, AGENTS.md, memory/MEMORY.md). Harness markers select the door; the brief shape and the flow are identical either way. SKILL.md, INSTRUCTIONS.md and EXAMPLES.md now say exactly how a client triggers each door and carry the close question and the artifact delivery.
+- New assert-style test `runtime/tests/convene-flow.test.ts` (no framework) proving the order on both doors — the deliberation leg receives the assembled brief, finalize really renders through the W74-B renderer, and the delivery carries the artifact link beside the chamber — plus the sitting cases (soft-close at 5m, close phrase finalizes, 10-minute auto-finalize).
+- Manifest and archive regenerated with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
+
 ## v1.0.46: Council: a sitting now closes itself — one soft-close question, an explicit close phrase finalizes at once, and ten quiet minutes never leave a session open (W74-A)
 
 In plain English: a council sitting is one session and every sitting gets closed. Five minutes after the client's last interaction the council asks exactly once "Is that all, or are we still working?"; an explicit close phrase ("that's all", "we're done", "finalize", ...) finalizes immediately; no answer within ten minutes of the question finalizes automatically; and nothing hangs open.

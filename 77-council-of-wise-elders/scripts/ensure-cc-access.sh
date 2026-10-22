@@ -146,7 +146,7 @@ API="${CF_API_BASE:-https://api.cloudflare.com/client/v4}"
 ACCT="$CLOUDFLARE_ACCOUNT_ID"
 ZONE_NAME="${COUNCIL_ZONE_NAME:-zerohumanworkforce.com}"
 # COUNCIL_ACCESS_EXCLUDE resolves from the environment, else the env-file line, else
-# the default — the same exclude source as provision-council-access.sh and the
+# the default: the same exclude source as provision-council-access.sh and the
 # autoprovision job. An excluded host is skipped silently, zero writes.
 EXCLUDE="${COUNCIL_ACCESS_EXCLUDE:-}"
 [ -n "$EXCLUDE" ] || EXCLUDE="$(env_file_val COUNCIL_ACCESS_EXCLUDE)"

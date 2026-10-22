@@ -29,9 +29,13 @@
 
 import { canTransition } from '../contracts/state-machine.js';
 import type { StoredSession } from '../cli/host-ports.js';
+import type { RenderSessionRecord } from '../reports/artifact-renderer.js';
 import type { AuthorizationEnvelope } from '../persistence/envelope.js';
 import type { CouncilRepositories } from '../persistence/repositories.js';
 import { ProtocolError } from './errors.js';
+
+/** The session record at the render seam: the stored session as-is, or the assembled render record. */
+export type RenderableSession = StoredSession | RenderSessionRecord;
 
 /** Quiet time after the last client interaction before the soft close. */
 export const SOFT_CLOSE_IDLE_MS = 5 * 60 * 1000;
@@ -147,7 +151,7 @@ export interface ArtifactRenderResult {
   link: string;
 }
 export type RenderArtifactFn = (
-  sessionRecord: StoredSession,
+  sessionRecord: RenderableSession,
 ) => ArtifactRenderResult | Promise<ArtifactRenderResult>;
 
 /**
@@ -187,7 +191,8 @@ export interface SessionClosePort {
   recordClientInteraction(sessionId: string, at: string): void;
   /** Mark the session closed in the store; idempotent. */
   markClosed(sessionId: string, closedAt: string, reason: CloseReason): void;
-  sessionRecord(sessionId: string): StoredSession | null;
+  /** The session record finalize hands to renderArtifact: stored session or assembled render record. */
+  sessionRecord(sessionId: string): RenderableSession | null;
 }
 
 export interface FinalizeResult {

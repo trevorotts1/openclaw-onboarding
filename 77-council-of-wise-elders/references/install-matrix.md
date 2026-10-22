@@ -88,7 +88,7 @@ zero DNS writes; the first run that sees the connector creates the record
 (`PROVISIONED`); a record whose connector is later gone is `CONNECTOR_DOWN`,
 zero writes, nothing deleted. File contract: the connector token sits at
 `$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
-token — the in-container path for container hosts (`OPENCLAW_ROOT` resolves
+token: the in-container path for container hosts (`OPENCLAW_ROOT` resolves
 to `/data/.openclaw` or `~/.openclaw` as wire.sh does), the host path
 `~/.openclaw/secrets/tunnel-council.token` for host-run connectors; the
 `CONNECTOR_PENDING` line names both delivery paths. How it reaches the box
@@ -125,7 +125,7 @@ connector token saved operator side. The private-bridge shape alone never
 proves a container: the in-container wording (the connector must run INSIDE
 the client's container, so a later Skill 77 wire.sh or a sanctioned executor
 can start it) fires only with positive container evidence the operator side
-can gather — `COUNCIL_CONTAINER_HOSTS` names the host (comma list of slugs,
+can gather: `COUNCIL_CONTAINER_HOSTS` names the host (comma list of slugs,
 the explicit operator override), or the tunnel's other ingress rules use a
 container-bridge pattern. With no evidence the same dedicated path runs
 unchanged and the message says the connector runs ON THE HOST; the
