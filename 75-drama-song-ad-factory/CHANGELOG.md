@@ -4,6 +4,25 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.84 - 2026-10-22 - the documented dispatch command can actually pass F14 and the H3 receipt
+
+Two wiring defects made the runbook's own video command impossible to satisfy;
+both were found by dry-running the real gates on built H3 requests.
+
+1. `--state-store` ON `dispatch` (`scripts/core/kie_dispatch/kie_dispatch.py`).
+   `main()` never passed `state_store`, so `read_locked_model(None, run_id)`
+   always returned None and every CLI video dispatch refused
+   VIDEO_MODEL_LOCK_MISSING no matter what the run had locked. The flag now
+   threads the run's `control/state.sqlite3` into F14.
+2. PROMPT FILE NEWLINE (`scripts/core/kie_dispatch/kie_dispatch.py`). A prompt
+   file written with one trailing newline changed the bytes an H3 receipt was
+   issued over, so `--prompt-file` refused PROMPT_NOT_TEMPLATED on every
+   templated job. Reading a prompt file now drops exactly one trailing newline.
+
+Regression: `test_kie_dispatch` 18/18, `test_prompt_cap_u7` 5/5,
+`test_model_lock_f14` 9 blocks, `test_make_h3_request` and
+`test_model_identity_h3` all pass.
+
 ## v2.9.83 - 2026-10-22 - one supported H3 request path
 
 H3 refuses an un-templated prompt (PROMPT_NOT_TEMPLATED), and nothing in the
