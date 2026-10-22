@@ -9,8 +9,9 @@ unavailable" and refuses to approve — paid work never starts on a partial
 price (choice-card-spec 4.3-4.4, fail closed).
 
 The rows are ``INSTRUCTIONS.md`` lines 213-221, in order: Length, Shape,
-Style, Music, Voice, Clips, Video model. The total line carries the 20%
-retake allowance the same way the paid extension does (plan 4.1).
+Style, Music, Voice, Clips, Video model. The total line carries the measured
+planning allowance (``budget_contingency``) the same way the paid extension
+does.
 
 ``price_fn`` is the Skill 74 ``price`` adapter (or any callable that answers
 the same JSON for ``(model, units)``). With no ``price_fn`` the card renders
@@ -20,6 +21,11 @@ Stdlib only. No network: the price callable is injected.
 """
 import os
 import sys
+
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+import budget_contingency as BC      # the one planning-allowance policy
 
 try:  # package import (core.catalog_calculator)
     from .extensions import price_card_ext
@@ -75,7 +81,7 @@ _WITH_CLIPS = "automatic 60-second and 90-second clips (included in the price)"
 CLIPS_OFFER = {k: (_WITH_CLIPS if clips_for(v) else _NO_CLIPS)
                for k, v in LENGTH_SECONDS.items()}
 
-RETAKE_RATE = 0.20  # plan 4.1; the extension applies the same rate
+RETAKE_RATE = float(BC.RATE)  # public alias; the rate lives in budget_contingency
 
 
 def _cents(value):
@@ -124,7 +130,8 @@ def price_envelope(card, price_fn, state_store=None, run_id=None, catalog=None):
 
 def quote(n, length_label, agnes=False, price_fn=None):
     """Question price for option n at the chosen length: the card's own total
-    with its 20% redo allowance, in dollars (None if the card cannot price it).
+    with its measured planning allowance, in dollars (None if the card cannot
+    price it).
 
     ``agnes=True`` quotes an Agnes card (SPEC A9): its only money lines are the
     song and the lip-sync close-ups, so it needs a Skill 74 ``price_fn`` —
@@ -250,11 +257,12 @@ def render(card, price_fn, state_store=None, run_id=None):
                         plan["reference_set_usd"]))
     _append_storyboard_line(lines, envelope if priced_ok else None, card)
     if priced_ok and total is not None:
-        extra = song_extra or 0.0           # the two extra songs carry the 20% allowance too
-        retake = ok_card["retake_allowance_usd"] + extra * RETAKE_RATE
+        extra = song_extra or 0.0           # the two extra songs carry the allowance too
+        retake = ok_card["retake_allowance_usd"] + BC.contingency(extra)
         lines.append("")
-        lines.append("  %-12s $%.2f + $%.2f retake allowance (20%%) = $%.2f"
-                     % ("Total:", total, retake, ok_card["spending_limit_usd"] + extra * (1 + RETAKE_RATE)))
+        lines.append("  %-12s $%.2f + $%.2f retake allowance (%s) = $%.2f"
+                     % ("Total:", total, retake, BC.label(),
+                        ok_card["spending_limit_usd"] + BC.envelope(extra)))
     else:
         lines.append("")
         lines.append("  %-12s Price unavailable -- media generation pricing is "

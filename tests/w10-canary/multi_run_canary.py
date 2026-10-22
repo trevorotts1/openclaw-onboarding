@@ -16,7 +16,13 @@ WHAT IT PROVES, against the REAL core modules of the tree under test
      an active logical job refuses a second submission (DUPLICATE_LOGICAL_JOB),
      and a retry is only allowed after a known-failed prior attempt within the
      repair cap;
-  5. terminal-state truth: a run parked/failed/empty never reports delivered.
+  5. terminal-state truth (A02): an all-parked, all-failed, empty or MIXED
+     terminal run never reports delivered, and no failed/parked stage can be
+     promoted to COMPLETE by a wake;
+  6. event continuation (A03): an accepted event enqueues ONE durable
+     continuation for the same run; a replay adds no second row; after a
+     restart the pending work is claimed exactly once with its ORIGINAL
+     attempt ordinal, and the event ordinals record enqueue before resume.
 
 SAFETY: the whole canary runs in a Sandbox() scratch dir with the core modules
 imported from an explicit --core-root (the pinned checkout). It writes only
@@ -111,8 +117,9 @@ def scenario_tenant_isolation(ss, sl, sb):
           rowB["state"] == "NOT_STARTED" and rowB["owner"] is None,
           "B.music=%s" % rowB["state"])
     evB = [e for e in stB.events("runB")]
+    # events() rows are (stage, kind, detail, at): the actor is the DETAIL.
     check("tenant-isolation:B has no A events",
-          not any(e[3] and "worker-A" in str(e[3]) for e in evB),
+          not any(e[2] and "worker-A" in str(e[2]) for e in evB),
           "%d events in B" % len(evB))
 
     # spend DBs are separate files
@@ -251,13 +258,20 @@ def scenario_attempt_identity(sl, sb):
 
 
 def scenario_terminal_not_delivered(ss, sb):
-    """Parked/failed/empty runs never report delivered."""
+    """A02: all-parked / all-failed / empty / mixed never report delivered.
+
+    Every terminal shape the acceptance row names is exercised separately: a
+    uniform park, a uniform failure, a run with no stages at all, and a MIXED
+    run where some stages completed while others did not. In no shape may the
+    stage table reach all-COMPLETE, and a wake can never promote a failed or
+    parked stage straight to COMPLETE.
+    """
     base = Path(sb.env["HOME"]).parent / "terminal"
     base.mkdir(parents=True, exist_ok=True)
     st = ss.Store(str(base / "state.db"))
-    st.init_run("runT", CANONICAL_STAGES)
 
-    # park every stage -> run is all-parked, must NOT look delivered
+    # -- all-parked -> must NOT look delivered ----------------------------
+    st.init_run("runT", CANONICAL_STAGES)
     for s in CANONICAL_STAGES:
         ready(st, "runT", s, "worker")
         st.claim("runT", s, "worker")
@@ -266,9 +280,43 @@ def scenario_terminal_not_delivered(ss, sb):
     check("terminal:all-parked never delivered",
           all(x == "PARKED" for x in states) and "COMPLETE" not in states,
           "%d stages parked" % len(states))
+    try:
+        st.transition("runT", "music", "COMPLETE", "worker")
+        parked_promoted, perr = False, "no error"
+    except ss.StoreError as e:
+        parked_promoted, perr = e.code == "ILLEGAL_TRANSITION", e.code
+    check("terminal:parked stage cannot be promoted to COMPLETE",
+          parked_promoted, perr)
 
-    # empty stage table: an unknown run/stage yields an actionable state error,
-    # never a silent delivered
+    # -- all-failed -> no COMPLETE, and nothing can be promoted -----------
+    st.init_run("runF", CANONICAL_STAGES)
+    for s in CANONICAL_STAGES:
+        ready(st, "runF", s, "worker")
+        st.claim("runF", s, "worker")
+        st.transition("runF", s, "FAILED_BLOCKED", "worker", reason="provider refused")
+    fstates = [st.get("runF", s)["state"] for s in CANONICAL_STAGES]
+    check("terminal:all-failed never delivered",
+          all(x == "FAILED_BLOCKED" for x in fstates) and "COMPLETE" not in fstates,
+          "%d stages failed" % len(fstates))
+    try:
+        st.transition("runF", "music", "COMPLETE", "worker")
+        promoted, ferr = False, "no error"
+    except ss.StoreError as e:
+        promoted, ferr = e.code == "ILLEGAL_TRANSITION", e.code
+    check("terminal:failed stage cannot be promoted to COMPLETE", promoted, ferr)
+
+    # -- empty run -> no stage exists, so none can be complete ------------
+    st.init_run("runE", [])
+    missing = 0
+    for s in CANONICAL_STAGES:
+        try:
+            st.get("runE", s)
+        except ss.StoreError as e:
+            if e.code == "NOT_FOUND":
+                missing += 1
+    check("terminal:empty run has no complete stages",
+          missing == len(CANONICAL_STAGES),
+          "%d/%d stages absent" % (missing, len(CANONICAL_STAGES)))
     try:
         st.get("runEMPTY", "music")
         empty_ok, err = False, "no error"
@@ -276,7 +324,101 @@ def scenario_terminal_not_delivered(ss, sb):
         empty_ok = e.code == "NOT_FOUND"
         err = e.code
     check("terminal:empty/unknown stage = actionable state error", empty_ok, err)
+
+    # -- mixed -> genuinely mixed, still not all-complete -----------------
+    st.init_run("runM", CANONICAL_STAGES)
+    half = len(CANONICAL_STAGES) // 2
+    for i, s in enumerate(CANONICAL_STAGES):
+        ready(st, "runM", s, "worker")
+        st.claim("runM", s, "worker")
+        if i < half:
+            st.transition("runM", s, "COMPLETE", "worker")
+        else:
+            st.transition("runM", s, "FAILED_BLOCKED", "worker", reason="provider refused")
+    mstates = [st.get("runM", s)["state"] for s in CANONICAL_STAGES]
+    complete = [x for x in mstates if x == "COMPLETE"]
+    check("terminal:mixed run is genuinely mixed",
+          len(complete) == half and len(complete) < len(mstates),
+          "%d complete, %d not" % (len(complete), len(mstates) - len(complete)))
+    check("terminal:mixed never reports all-complete",
+          len(complete) != len(CANONICAL_STAGES),
+          "complete=%d of %d" % (len(complete), len(CANONICAL_STAGES)))
+    try:
+        st.transition("runM", CANONICAL_STAGES[half], "COMPLETE", "worker")
+        mixed_promoted, merr = False, "no error"
+    except ss.StoreError as e:
+        mixed_promoted, merr = e.code == "ILLEGAL_TRANSITION", e.code
+    check("terminal:mixed failed member cannot be promoted", mixed_promoted, merr)
     st.close()
+
+
+def scenario_event_continuation(ss, sb):
+    """A03: an accepted event continues the SAME run across a restart, with its
+    original attempt ordinal, exactly once.
+
+    Enqueue a continuation for one work item, replay the same event (no second
+    row), close and reopen the store (a restart), then resume: the pending row
+    is claimed once with its original attempt_id, a second resume claims
+    nothing, and the event ordinals show enqueue BEFORE resume and carry the
+    same identity.
+    """
+    base = Path(sb.env["HOME"]).parent / "continuation"
+    base.mkdir(parents=True, exist_ok=True)
+    db = str(base / "state.db")
+    digest, attempt = "digest-music-1", "a7"
+
+    st = ss.Store(db)
+    st.init_run("runC", CANONICAL_STAGES)
+    first = st.enqueue_continuation("runC", "music", "dispatch",
+                                    request_digest=digest, attempt_id=attempt)
+    row = first.get("continuation") or {}
+    check("continuation:event enqueues one pending row",
+          first.get("created") is True and row.get("state") == "pending"
+          and row.get("attempt_id") == attempt,
+          "created=%s state=%s attempt=%s"
+          % (first.get("created"), row.get("state"), row.get("attempt_id")))
+
+    replay = st.enqueue_continuation("runC", "music", "dispatch",
+                                     request_digest=digest, attempt_id=attempt)
+    check("continuation:replayed event adds no second row",
+          replay.get("created") is False
+          and (replay.get("continuation") or {}).get("id") == row.get("id")
+          and (replay.get("continuation") or {}).get("attempt_id") == attempt,
+          "created=%s attempt=%s"
+          % (replay.get("created"),
+             (replay.get("continuation") or {}).get("attempt_id")))
+    st.close()
+
+    # -- restart: a brand-new Store over the same file --------------------
+    st2 = ss.Store(db)
+    pending = st2.scan_pending_continuations("runC")
+    check("continuation:restart finds the same pending work",
+          len(pending) == 1 and pending[0].get("attempt_id") == attempt
+          and pending[0].get("identity") == digest,
+          "%d pending attempt=%s" % (len(pending),
+                                     pending[0].get("attempt_id") if pending else None))
+
+    claimed = st2.resume_continuations("runC", "worker-restart")
+    check("continuation:restart resumes with the original attempt ordinal",
+          len(claimed) == 1 and claimed[0].get("attempt_id") == attempt
+          and claimed[0].get("state") == "claimed"
+          and claimed[0].get("claimed_by") == "worker-restart",
+          "%d claimed attempt=%s"
+          % (len(claimed), claimed[0].get("attempt_id") if claimed else None))
+
+    again = st2.resume_continuations("runC", "worker-restart")
+    check("continuation:second restart claims nothing (exactly once)",
+          again == [], "%d claimed on replay" % len(again))
+
+    kinds = [e[1] for e in st2.events("runC")]
+    resumes = [e[2] for e in st2.events("runC") if e[1] == "continuation-resume"]
+    check("continuation:event ordinals enqueue then resume",
+          "continuation-enqueue" in kinds and "continuation-resume" in kinds
+          and kinds.index("continuation-enqueue") < kinds.index("continuation-resume"),
+          "kinds=%s" % kinds[-4:])
+    check("continuation:resume event carries the same identity",
+          resumes == [digest], "resume details=%s" % resumes)
+    st2.close()
 
 
 def run(mode, core_root, out, vector_info):
@@ -288,6 +430,7 @@ def run(mode, core_root, out, vector_info):
         scenario_fair_supervision(ss, sb)
         scenario_lease_single_writer(ss, sb)
         scenario_attempt_identity(sl, sb)
+        scenario_event_continuation(ss, sb)
         scenario_terminal_not_delivered(ss, sb)
 
         receipt = {

@@ -54,6 +54,7 @@ import tempfile
 _CORE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
+import budget_contingency as BC      # the one planning-allowance policy
 
 #: Telegram's hard limit is 4096 characters per message; stay under it.
 TELEGRAM_LIMIT = 4000
@@ -145,7 +146,7 @@ def _usd(x):
 
 def spend_question(price=None, limit=None, from_brief=False):
     """The ONE money question, asked here and nowhere else (FU-ONE-SPEND-QUESTION).
-    price: the card's total in dollars (20% redo allowance included). limit: a
+    price: the card's total in dollars (planning allowance included). limit: a
     maximum already known. from_brief: that maximum came from the brief (not a --limit
     override). Neither is ever defaulted: the client must reply."""
     opts, vals = [], {}
@@ -153,7 +154,8 @@ def spend_question(price=None, limit=None, from_brief=False):
         opts.append(("Your max: " + _usd(limit), "from your brief" if from_brief else None))
         vals[len(opts)] = str(limit).lstrip("$")
     if price is not None:
-        opts.append((_usd(price), "the estimated price for your video, including a 20% allowance for redoing shots"))
+        opts.append((_usd(price), "the estimated price for your video, including a "
+                     "%s allowance for redoing shots" % BC.label()))
         vals[len(opts)] = str(price).lstrip("$")
     opts.append(("A different maximum", "reply with a dollar amount, like $25"))
     return {"id": "spend", "why": "This keeps you in control of the cost.",
@@ -224,8 +226,9 @@ def _model_price_line(length_label):
     client chose. The card's ask and the studio-json export both read it here,
     so the two price surfaces cannot drift apart."""
     from choice_card.video_models import video_models as VM
-    return ("Prices are for your %s ad, with the song, pictures and a 20%% "
-            "redo allowance." % VM.length_phrase(VM.length_seconds(length_label)))
+    return ("Prices are for your %s ad, with the song, pictures and a %s "
+            "redo allowance." % (VM.length_phrase(VM.length_seconds(length_label)),
+                                 BC.label()))
 
 
 def _vm():
@@ -1472,7 +1475,7 @@ def main(argv=None):
                     help="with --step and no replies: send the one-time intro as its "
                          "own message first (recorded as intro_shown in this file)")
     ap.add_argument("--price", default=None,
-                    help="the card total in dollars (20%% redo allowance included); "
+                    help="the card total in dollars (planning allowance included); "
                          "shown as spend option 1 or 2")
     ap.add_argument("--limit", default=None,
                     help="a spend limit the brief already gave, in dollars; "

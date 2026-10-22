@@ -55,7 +55,7 @@ Your drama song ad
   Video model:  Hailuo 02 Standard (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
                 Google Veo 3.1, each with its price for the chosen length
   Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
-  Price:        computed by Skill 74 `price`   (+ the 20% retake allowance)
+  Price:        computed by Skill 74 `price`   (+ the measured planning allowance)
   Includes:     all video shots, the song (song mp3 included), one image per shot
   Not included: the AI writing, planning and checking (runs on your own AI plan)
   [Approve]   [Change options]
@@ -527,7 +527,7 @@ its price for THAT length, one plain descriptor each (about 8 words), and Hailuo
 ```
 Question 4 of 6 - VIDEO MODEL
 Which video model should make your shots? Prices are for your 3-minute ad,
-with the song, pictures and a 20% redo allowance.
+with the song, pictures and a 50% redo allowance.
 1. Hailuo 02 Standard - great quality, best value - about $6.36 (RECOMMENDED)
 2. Seedance 2.5 - premium detail and motion - about $68.57
 3. Seedance 2.0 Mini - quicker and cheaper - about $9.38
@@ -542,7 +542,7 @@ factory really renders: Hailuo 02 Standard 768P, Seedance 2.5 720p, Seedance 2.0
 Google Veo 3.1 Fast 720p (per 8-second clip). The figure shown comes from the
 SAME function as the final card (`card_render.price_envelope`): video + one
 keyframe per shot + the character reference pictures + the song, then the
-20% redo allowance, so the number in the question is the number on the card
+50% redo allowance, so the number in the question is the number on the card
 (for the standard 9:16 ad with one main character; more characters or both
 shapes re-price on the card with the same function). Skill 74 `price` returns
 the highest listed tier, so the chosen model's video line is priced from the
@@ -599,7 +599,7 @@ Decision 34, plan 6.14:
 - **Never mix books or authors.** Characters, lyrics, assets and files stay
   inside that book's campaign.
 - The approval card shows the **batch total**, computed from Skill 74
-  `price` for every book in the list, plus the 20% retake allowance.
+  `price` for every book in the list, plus the measured planning allowance.
 - One Kanban card per ad and one parent card per batch.
 
 ### 3.11 Social Media Planner card (Skill 35, plan 6.15)
@@ -662,8 +662,8 @@ numbers `references/price-menu.md` documents:
    repository.
 2. `preflight --model ID --units N` runs before approval; a shortfall is
    shown on the card and no paid call starts.
-3. Approval records the spending limit: the chosen price **plus the 20%
-   retake allowance**, in USD, with the KIE credit equivalent. No paid call
+3. Approval records the spending limit: the chosen price **plus the measured
+   planning allowance**, in USD, with the KIE credit equivalent. No paid call
    happens before that record exists.
 4. If a live rate cannot be read, the card says the price is unavailable and
    does not start paid work.

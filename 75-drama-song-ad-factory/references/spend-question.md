@@ -12,7 +12,7 @@ budget or cost, and the freed slot goes to the next needed story question. It is
 a video, not an ad. Wording:
 
     What's the most you want to spend on this video?
-    1. $<price> - the estimated price for your video, including a 20% allowance for redoing shots (recommended)
+    1. $<price> - the estimated price for your video, including a 50% allowance for redoing shots (recommended)
     2. A different maximum - reply with a dollar amount, like $25
 
 When the brief or the weekly planner (`smp/initial_questions`) already gave a
@@ -20,12 +20,12 @@ maximum, it is option 1 and the price is option 2; the client still confirms by
 replying:
 
     1. Your max: $<limit> - from your brief (recommended)
-    2. $<price> - the estimated price for your video, including a 20% allowance for redoing shots
+    2. $<price> - the estimated price for your video, including a 50% allowance for redoing shots
     3. A different maximum - reply with a dollar amount, like $25
 
 When `--limit` overrides (the number did not come from the brief), option 1 reads
 `Your max: $<limit>` with no "from your brief". `<price>` is the card's total
-with the 20% allowance (`spending_limit_usd`); pass it as
+with the 50% allowance (`spending_limit_usd`); pass it as
 `factory.py card --step --price <usd>`. The maximum is picked up on its own from
 `--brief`, `--brief-file` or `--summary-file` (`budget_minor` or the summary's
 `generation_ceiling`, US dollars only); `--limit <usd>` overrides it. With no

@@ -25,6 +25,11 @@ import math
 import os
 import sys
 
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+import budget_contingency as BC      # the one planning-allowance policy
+
 UNIT_NAME = "catalog-calculator"
 
 # 1 KIE credit = 0.005 USD list price. Currency conversion, not a model rate:
@@ -327,8 +332,19 @@ def _build_card(norm, entry, lines, is_default):
     """lines = {"video":..., "music":..., "image":...}, all priced."""
     total_credits = round(sum(lines[k]["credits"] for k in ("video", "music", "image")), 4)
     total_usd = credits_to_usd(total_credits)
-    retake_usd = math.floor(total_usd * 0.20 * 100 + 0.5) / 100.0  # plan 4.1: +20% retake
     shots = video_shot_count(norm["length_seconds"], entry.get("max_shot_seconds"))
+    # The planned jobs this card prices, named as the shot/cue manifest the
+    # contingency is measured from (v3.0 section 8). Shots are projected from
+    # the chosen length and model max-shot here; once a real storyboard shot
+    # manifest exists it replaces this projected one unchanged.
+    manifest = {
+        "projected": True,
+        "shots": [{"shot_id": "shot-%d" % (i + 1),
+                   "seconds": float(norm["length_seconds"]) / shots}
+                  for i in range(shots * norm["shape_count"])],
+        "cues": [{"cue_id": "song-1"}],
+    }
+    allowance = BC.measure(manifest, total_usd)
     cap_pictures = storyboard_cap()  # one config read; cap is data, not code
     items = []
     for comp in ("video", "music", "image"):
@@ -351,8 +367,9 @@ def _build_card(norm, entry, lines, is_default):
         "price_credits": total_credits,
         "price_usd": total_usd,
         "price_label": usd_label(total_usd),
-        "retake_allowance_usd": retake_usd,
-        "spending_limit_usd": round(total_usd + retake_usd, 2),
+        "retake_allowance_usd": allowance["contingency_usd"],
+        "spending_limit_usd": allowance["envelope_usd"],
+        "allowance": allowance,
     }
 
 

@@ -299,7 +299,7 @@ If you accept Lifelike 3D, we move on.
 
 ## STEP 11: Question 8, Set Your Ceiling (Budget)
 
-**What happens.** The last question sets your spending limit. We ask: *What's the most you want to spend on this video?* Option 1 is the cost on your card, which already includes a 20% redo allowance (recommended). Option 2 is a different maximum that you name.
+**What happens.** The last question sets your spending limit. We ask: *What's the most you want to spend on this video?* Option 1 is the cost on your card, which already includes a 50% redo allowance (recommended). Option 2 is a different maximum that you name.
 
 **Why it matters.** This is your safety rail. We promise to stay under it. The redo allowance means that if a shot needs to be reshot to meet the standard, there is room in the budget to fix it without stopping to ask you for more.
 
@@ -313,7 +313,7 @@ If you accept Lifelike 3D, we move on.
 
 **What you'll see.** Your budget line added to the card.
 
-**[INFOGRAPHIC: flow diagram]** *Title: "Your Safety Net."* Data: a price tag at the top labeled "Cost on your card," with a safety-net icon underneath labeled "20% redo allowance included," and an arrow to "Your ceiling: we stay under it."
+**[INFOGRAPHIC: flow diagram]** *Title: "Your Safety Net."* Data: a price tag at the top labeled "Cost on your card," with a safety-net icon underneath labeled "50% redo allowance included," and an arrow to "Your ceiling: we stay under it."
 
 ---
 
@@ -340,7 +340,7 @@ If you accept Lifelike 3D, we move on.
 > 5. Music: Soul Rise
 > 6. Video style: 2D Hand-Painted
 > 7. Video model: Hailuo 02 Standard
-> 8. Budget: the recommended price, with a 20% redo allowance
+> 8. Budget: the recommended price, with a 50% redo allowance
 
 **Great answer:** "Yes." Or: "Change 4 to 90 seconds."
 

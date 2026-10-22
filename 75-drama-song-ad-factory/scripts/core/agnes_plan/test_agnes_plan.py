@@ -83,16 +83,16 @@ def test_need_one_shape_and_both_shapes():
     segs = AP.segments(298)
     one = AP.need(segs, ["cartoon"])
     assert one == {"video_seconds": 300, "images": 30,
-                   "allowance_seconds": 360}, one
+                   "allowance_seconds": 450}, one
     both = AP.need(segs, ["drawn", "real"])
     assert both["video_seconds"] == 600 and both["images"] == 60, both
-    assert both["allowance_seconds"] == 720, both
+    assert both["allowance_seconds"] == 900, both
 
 
 def test_need_for_a_90_second_card_is_90_seconds():
     # U7 prints "Agnes video time: about N of your 500 seconds today" from this.
     assert AP.need(AP.segments(88), ["cartoon"])["video_seconds"] == 90
-    assert AP.need(AP.segments(88), ["cartoon"])["allowance_seconds"] == 108
+    assert AP.need(AP.segments(88), ["cartoon"])["allowance_seconds"] == 135
     # A bare clip count is accepted too.
     assert AP.need(9, ["cartoon"])["video_seconds"] == 90
 
