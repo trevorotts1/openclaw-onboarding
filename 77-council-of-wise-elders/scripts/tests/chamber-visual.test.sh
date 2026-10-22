@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Acceptance cases for scripts/chamber-visual.sh (W73). Everything runs against
-# stub `open`, `uname` and `launchctl` on PATH and temp config files — no real
+# stub `open`, `uname` and `launchctl` on PATH and temp config files - no real
 # browser, window server or box config is touched.
 #   bash scripts/tests/chamber-visual.test.sh      (exit 0 = all PASS)
 set -uo pipefail
