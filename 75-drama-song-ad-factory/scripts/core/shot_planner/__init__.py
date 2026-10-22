@@ -101,7 +101,8 @@ __all__ = [
     "validate_no_reuse", "plan_generation_count", "validate_story_order",
     "e4_final_checks", "to_e4_qc_record", "prompt_spec_for", "PROMPT_SPEC_KEYS",
     "class_check",
-    "MOTION_SCORE_LOW", "CLIP_LOW_MOTION", "MotionScoreError",
+    "MOTION_SCORE_LOW", "MOTION_SUBJECT_LOW", "CLIP_LOW_MOTION",
+    "MotionScoreError",
     "gate_clip_motion",
 ]
 
@@ -113,6 +114,7 @@ __all__ = [
 # `import shot_planner.motion_score as ms` with the function object.
 from .motion_score import (  # noqa: E402,F401
     MOTION_SCORE_LOW,
+    MOTION_SUBJECT_LOW,
     CLIP_LOW_MOTION,
     MotionScoreError,
     gate_clips as gate_clip_motion,
