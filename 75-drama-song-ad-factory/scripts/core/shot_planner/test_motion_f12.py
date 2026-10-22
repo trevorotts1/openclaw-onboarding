@@ -52,6 +52,12 @@ STILL_STATS = [[i, 128.0 + (0.25 if i % 2 else 0.0)] for i in range(8)]
 #: Moving clip: mean luma sweeps ~90/255 across the samples.
 MOVING_STATS = [[i, 40.0 + i * 12.0] for i in range(8)]
 
+#: Frozen-frame pan: a still image with the camera panning across it. A real
+#: 3 s rendered fixture measured 0.0 mean YAVG change (ffmpeg signalstats) —
+#: the mean-luma metric cannot see translation. Static MP4 / slide-transition
+#: case (spatial metric replacement is a separate follow-on).
+PAN_OVER_STILL_STATS = [[i, 126.0] for i in range(8)]
+
 #: Prompt-builder fixtures (bible shapes: minimal valid records).
 STYLE = {
     "schema_version": "1.0.0", "style_id": "resilia-animated-01",
@@ -298,11 +304,62 @@ def test_assembler_receipt_and_gate():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_gate_refuses_flag_overridden_measured_score():
+    """F12 fail-closed: a supplied flagged:false can never override a
+    measured sub-threshold score (the gate's fail-open half)."""
+    forced = {"clip_id": "clip-forced-ok",
+              "motion_score": {"score": 0.001, "flagged": False}}
+    res = gate_clips([forced])
+    check("sub-threshold + flagged:false -> refused",
+          res["outcome"] == "rejected"
+          and res["reason_code"] == CLIP_LOW_MOTION
+          and res["flagged"] == ["clip-forced-ok"], json.dumps(res))
+    pan = motion_score(frame_stats=PAN_OVER_STILL_STATS)
+    check("pan-over-still fixture measures below threshold",
+          pan["score"] < MOTION_SCORE_LOW, repr(pan))
+    pan_row = {"clip_id": "clip-pan",
+               "motion_score": dict(pan, flagged=False)}
+    reviewer = {"identity": "qc/f12", "session": "unit-test",
+                "authority": "manual Part F F12"}
+    rec = to_motion_qc_record([pan_row], reviewer, "run-pan")
+    check("static MP4 / slide-transition fixture fails animation QA",
+          rec["verdict"] == "FAIL" and rec["reason_code"] == CLIP_LOW_MOTION,
+          json.dumps(rec)[:140])
+    # Boundary is strict '<': exactly at the threshold is not near-still.
+    edge = gate_clips([{"clip_id": "clip-edge",
+                       "motion_score": {"score": MOTION_SCORE_LOW,
+                                        "flagged": False}}])
+    check("score exactly at threshold passes", edge["outcome"] == "ok",
+          json.dumps(edge)[:120])
+    moving = motion_score(frame_stats=MOVING_STATS)
+    ok = gate_clips([{"clip_id": "clip-move", "motion_score": moving}])
+    check("genuine motion above threshold still passes", ok["outcome"] == "ok",
+          json.dumps(ok)[:120])
+    # Contradictory row: high score but flagged:true keeps the stricter
+    # verdict — loosening a supplied flag would be a second fail-open.
+    contra = gate_clips([{"clip_id": "clip-contra",
+                         "motion_score": {"score": 0.5, "flagged": True}}])
+    check("high score + flagged:true stays refused (stricter verdict wins)",
+          contra["outcome"] == "rejected"
+          and contra["flagged"] == ["clip-contra"], json.dumps(contra))
+    # The other half must not regress: missing / malformed evidence refused.
+    missing = gate_clips([{"clip_id": "clip-missing"}])
+    check("missing evidence still listed unscored",
+          missing["unscored"] == ["clip-missing"], json.dumps(missing))
+    try:
+        gate_clips([{"clip_id": "clip-bad", "motion_score": {"score": "low"}}])
+        check("malformed evidence still fails closed", False, "no raise")
+    except MotionScoreError as e:
+        check("malformed evidence still fails closed",
+              e.code == "CLIP_UNSCORED", e.code)
+
+
 def main():
     for fn in (test_bible_prompt_carries_motion,
                test_style_bible_prompts_carry_motion,
                test_motion_score_pure_over_stats,
                test_gate_flags_before_assembly,
+               test_gate_refuses_flag_overridden_measured_score,
                test_qc_record_verdicts,
                test_assembler_receipt_and_gate):
         try:
@@ -320,6 +377,7 @@ def main():
             test_style_bible_prompts_carry_motion,
             test_motion_score_pure_over_stats,
             test_gate_flags_before_assembly,
+            test_gate_refuses_flag_overridden_measured_score,
             test_qc_record_verdicts,
             test_assembler_receipt_and_gate))))
     return 0
