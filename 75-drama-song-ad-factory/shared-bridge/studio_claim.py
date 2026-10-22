@@ -38,8 +38,21 @@ import os
 import sqlite3
 import time
 
-LEDGER_VERSION = 1
+LEDGER_VERSION = 2
 DEFAULT_LEASE_TTL_S = 120.0
+#: A claim lease outlives one poll gap, so a live order is never taken over
+#: while its owner is simply between ticks.
+DEFAULT_CLAIM_TTL_S = 3600.0
+
+#: The durable handoff steps (SPEC 9.4). Monotonic: a step only moves forward,
+#: and every write is fenced on the claim's owner+fence (see `advance_step`).
+STEP_CLAIMED = "claimed"
+STEP_ORDER_FETCHED = "order_fetched"
+STEP_MATERIALIZED = "materialized"
+STEP_WAKE_QUEUED = "wake_queued"
+STEP_EXECUTION_ACCEPTED = "execution_accepted"
+STEPS = (STEP_CLAIMED, STEP_ORDER_FETCHED, STEP_MATERIALIZED,
+         STEP_WAKE_QUEUED, STEP_EXECUTION_ACCEPTED)
 
 #: Studio order keys and lease names are `<kind>:<client_id>:<id>`. The colon
 #: is the reason this ledger is SQLite and not a lock file (see module doc).
@@ -49,7 +62,10 @@ CREATE TABLE IF NOT EXISTS orders(
   order_id TEXT PRIMARY KEY,
   owner TEXT NOT NULL,
   claimed_at REAL NOT NULL,
-  state TEXT NOT NULL DEFAULT 'claimed');
+  state TEXT NOT NULL DEFAULT 'claimed',
+  step TEXT NOT NULL DEFAULT 'claimed',
+  fence INTEGER NOT NULL DEFAULT 1,
+  lease_expires_at REAL NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS messages(
   run_id TEXT NOT NULL,
   message_id TEXT NOT NULL,
@@ -81,6 +97,22 @@ class LedgerError(Exception):
     def __init__(self, code, message):
         super().__init__(message)
         self.code = code
+
+
+def _migrate(con):
+    """Bring a v1 ledger forward: the step machine columns on `orders`.
+
+    ALTER-only and idempotent: a column that already exists raises
+    OperationalError and is skipped, so a v1 file keeps every row it had
+    (existing claims land at `step='claimed'`, `fence=1`, an expired claim
+    lease that the next poll renews).
+    """
+    cols = {r[1] for r in con.execute("PRAGMA table_info(orders)")}
+    for name, ddl in (("step", "step TEXT NOT NULL DEFAULT 'claimed'"),
+                      ("fence", "fence INTEGER NOT NULL DEFAULT 1"),
+                      ("lease_expires_at", "lease_expires_at REAL NOT NULL DEFAULT 0")):
+        if name not in cols:
+            con.execute("ALTER TABLE orders ADD COLUMN %s" % ddl)
 
 
 # --- Windows-safe liveness ---------------------------------------------------
@@ -165,6 +197,7 @@ class ClaimLedger:
                     con.executescript(DDL)
                     con.execute("INSERT OR IGNORE INTO meta(k, v) VALUES('version', ?)",
                                 (str(LEDGER_VERSION),))
+                    _migrate(con)
                 return con
             except sqlite3.OperationalError as e:
                 last = e
@@ -186,27 +219,106 @@ class ClaimLedger:
         self.close()
 
     # -- claim ------------------------------------------------------------
-    def claim_order(self, order_id, owner, *, now=None):
-        """Claim `order_id` for `owner`. Returns True to the ONE winner only.
+    def claim_order(self, order_id, owner, *, now=None, ttl_s=DEFAULT_CLAIM_TTL_S):
+        """Claim `order_id` for `owner`, or RESUME it. True = we hold it now.
 
-        The `INSERT OR IGNORE` against the UNIQUE order_id is the whole
-        arbitration: the database decides, so two runs racing the same order
-        cannot both return True. Every other caller (including a re-claim by a
-        holder that already won) is refused.
+        Three ways to True (D35 — a crash must never leave a silent
+        claimed-and-forgotten order):
+
+          fresh win    the `INSERT OR IGNORE` against the UNIQUE order_id:
+                       exactly one caller inserts (rowcount 1).
+          same owner   a re-claim by the recorded owner is a RESUME: the lease
+                       is renewed and the claim continues under the same
+                       order, so a failed fetch/wake is retryable.
+          takeover     a different owner gets the claim ONLY after the lease
+                       expires, and only with a new fence (see `advance_step`):
+                       the fenced-out old worker can no longer write.
+
+        A live lease held by a different owner is the ONLY refusal.
         """
         if not order_id or not owner:
             raise LedgerError("BAD_CLAIM", "order_id and owner are required")
         ts = time.time() if now is None else now
+        lease = ts + float(ttl_s)
         cur = self.con.execute(
-            "INSERT OR IGNORE INTO orders(order_id, owner, claimed_at)"
-            " VALUES(?,?,?)", (order_id, owner, ts))
+            "INSERT OR IGNORE INTO orders(order_id, owner, claimed_at, state,"
+            " step, fence, lease_expires_at)"
+            " VALUES(?,?,?,'claimed',?,1,?)",
+            (order_id, owner, ts, STEP_CLAIMED, lease))
+        if cur.rowcount == 1:
+            self.con.commit()
+            return True
+        row = self.con.execute(
+            "SELECT owner, fence, lease_expires_at FROM orders WHERE order_id=?",
+            (order_id,)).fetchone()
+        if row is None:  # released between the two statements: retry the insert
+            self.con.commit()
+            return self.claim_order(order_id, owner, now=now, ttl_s=ttl_s)
+        cur_owner, fence, lease_at = row
+        if cur_owner == owner:
+            self.con.execute(
+                "UPDATE orders SET lease_expires_at=? WHERE order_id=? AND owner=?",
+                (lease, order_id, owner))
+            self.con.commit()
+            return True
+        if lease_at <= ts:
+            cur = self.con.execute(
+                "UPDATE orders SET owner=?, claimed_at=?, lease_expires_at=?,"
+                " fence=fence+1 WHERE order_id=? AND lease_expires_at<=?",
+                (owner, ts, lease, order_id, ts))
+            self.con.commit()
+            return cur.rowcount == 1
         self.con.commit()
-        return cur.rowcount == 1
+        return False
 
     def claim_owner(self, order_id):
         row = self.con.execute("SELECT owner FROM orders WHERE order_id=?",
                                (order_id,)).fetchone()
         return row[0] if row else None
+
+    def order_state(self, order_id):
+        """The claim row as a dict (owner, step, fence, lease), or None."""
+        row = self.con.execute(
+            "SELECT owner, claimed_at, state, step, fence, lease_expires_at"
+            " FROM orders WHERE order_id=?", (order_id,)).fetchone()
+        if row is None:
+            return None
+        return {"order_id": order_id, "owner": row[0], "claimed_at": row[1],
+                "state": row[2], "step": row[3], "fence": row[4],
+                "lease_expires_at": row[5]}
+
+    def advance_step(self, order_id, owner, step, *, now=None, fence=None,
+                     ttl_s=DEFAULT_CLAIM_TTL_S):
+        """Move the claim one step forward. True = recorded; False = refused.
+
+        Refused when the step is not forward, when the owner does not hold the
+        claim, or when `fence` is stale (a fenced-out worker after a takeover
+        cannot write). The claim lease is renewed by every accepted step.
+        """
+        if step not in STEPS:
+            raise LedgerError("BAD_STEP", "unknown step %r" % (step,))
+        if not order_id or not owner:
+            raise LedgerError("BAD_STEP", "order_id and owner are required")
+        ts = time.time() if now is None else now
+        row = self.con.execute(
+            "SELECT owner, step, fence FROM orders WHERE order_id=?",
+            (order_id,)).fetchone()
+        if row is None:
+            return False
+        cur_owner, cur_step, cur_fence = row
+        if cur_owner != owner:
+            return False
+        if fence is not None and int(fence) != int(cur_fence):
+            return False
+        if STEPS.index(step) <= STEPS.index(cur_step if cur_step in STEPS
+                                            else STEP_CLAIMED):
+            return False
+        cur = self.con.execute(
+            "UPDATE orders SET step=?, lease_expires_at=? WHERE order_id=?"
+            " AND owner=? AND fence=?",
+            (step, ts + float(ttl_s), order_id, owner, cur_fence))
+        self.con.commit()
+        return cur.rowcount == 1
 
     def release_order(self, order_id, owner):
         """Release a claim — only the recorded owner may release it."""
@@ -265,6 +377,14 @@ class ClaimLedger:
     def lease_release(self, name, owner):
         cur = self.con.execute("DELETE FROM leases WHERE name=? AND owner=?",
                                (name, owner))
+        self.con.commit()
+        return cur.rowcount == 1
+
+    def lease_clear(self, name):
+        """End a lease unconditionally — for the wake ack/fail paths, which
+        close THEIR OWN turn from a different process than the one that
+        queued it (the pid-scoped owner can never match)."""
+        cur = self.con.execute("DELETE FROM leases WHERE name=?", (name,))
         self.con.commit()
         return cur.rowcount == 1
 
