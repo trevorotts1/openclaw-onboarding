@@ -68,11 +68,19 @@ def scan_file(path):
 
 
 def scan_tree(root):
+    root = Path(root)
+    self_path = Path(__file__).resolve()
     all_findings = []
-    for p in sorted(Path(root).rglob("*")):
+    for p in sorted(root.rglob("*")):
         if not p.is_file() or p.suffix.lower() not in TEXT_SUFFIXES:
             continue
-        if any(part in SKIP_DIRS for part in p.parts):
+        # skip only DIRECTORIES BELOW the scan root, never the root itself —
+        # otherwise --root tests/w10-canary scans nothing and reports "clean"
+        if any(part in SKIP_DIRS for part in p.relative_to(root).parts[:-1]):
+            continue
+        # the scanner's own pattern table is not a deliverable; it would
+        # otherwise match its own DETECTS literals when scanned as a file
+        if p.resolve() == self_path:
             continue
         all_findings.extend(scan_file(p))
     return all_findings
@@ -103,6 +111,16 @@ def selftest():
         print("  [%s] clean text flagged nothing"
               % ("PASS" if not f_good else "FAIL"))
         ok &= not f_good
+        # regression: a scan root whose own NAME is in SKIP_DIRS must still be
+        # scanned (--root tests/w10-canary used to scan nothing -> false clean)
+        named = Path(td) / "w10-canary"
+        named.mkdir()
+        (named / "planted.md").write_text(
+            "incident run_deadbeef1234567890\n", encoding="utf-8")
+        f_named = scan_tree(named)
+        print("  [%s] scan root named like a skip dir is still scanned"
+              % ("PASS" if f_named else "FAIL"))
+        ok &= bool(f_named)
     return 0 if ok else 1
 
 
