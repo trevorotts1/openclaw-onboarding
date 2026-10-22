@@ -1,0 +1,33 @@
+{
+ "driver": {
+  "entry": "intake_preflight/factory.py cmd_next",
+  "kind": "product",
+  "tree": "999 main"
+ },
+ "fixture_id": "S75-F01",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "run_dir": "<RUN_DIR>",
+  "state_db": "<RUN_DIR>/control/state.sqlite3"
+ },
+ "observed_defect": {
+  "complete_stages": 0,
+  "message_claims_delivered": true,
+  "outcome": "ok",
+  "reason_code": "run-complete"
+ },
+ "pattern": "all-parked run reporting delivered",
+ "required_post_repair": "No success claim; retain each reason and resume policy.",
+ "setup": {
+  "selector": "factory.py next",
+  "stage_rows": 12,
+  "stage_states": "all PARKED"
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 17.4 row 1 (all-PARKED path) and 17.8"
+}

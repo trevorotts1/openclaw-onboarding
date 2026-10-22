@@ -1,0 +1,87 @@
+{
+ "acceptance_evidence": {
+  "S75-F01_all_parked_reporting_delivered": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: factory next -> outcome ok, reason_code run-complete, message claims delivered, 0 COMPLETE stages"
+  },
+  "S75-F02_failed_blocked_mixed_runs": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: mixed FAILED_BLOCKED/PARKED rows -> same ok run-complete with 0 COMPLETE stages"
+  },
+  "S75-F03_expired_running_music_lease": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: resume -> rejected ILLEGAL_TRANSITION detail 'RUNNING -> RUNNING'; separate start path claims a second owner"
+  },
+  "S75-F04_positional_approval_reorder": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: same saved answers, reordered catalog -> approval requirement true then false"
+  },
+  "S75-F05_missing_corrupt_approval_records": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: missing and corrupt records both read as None and the gate gives no refusal (treated as approval not asked)"
+  },
+  "S75-F06_empty_lists_pass_preflight": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: outcome ok, reason_code preflight-pass, tools/modules/credentials_present all empty maps"
+  },
+  "S75-F07_120s_profile_rejection": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: drama-9x16-120s -> rejected delivery-profile-unknown"
+  },
+  "S75-F08_four_second_silent_lead_in": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: gate verdict PASS, first_plot_line_s 4.0, opening_wordless_s 0.0 (measurement starts at first aligned row, not decoded media zero)"
+  },
+  "S75-F09_dict_only_reader_over_valid_qc_list": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: valid QC record list rejected by dict-only reader, continuity probe reports the records file missing"
+  },
+  "S75-F10_missing_qc_plus_schema_violation_completes_music": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: qc gate BLOCKED reason MISSING_QC+SCHEMA_VIOLATION, yet music COMPLETE under admissible operator decision (music-complete-accepted-risk), failed checks kept FAIL"
+  },
+  "S75-F11_attempt_ordinal_stuck_at_1": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: three sequential attempts through the omitted-ordinal call shape all persist attempt_no 1 with repair cap 0, retry cost 0; explicit ordinal 2 control -> REPAIR_CAP"
+  },
+  "S75-F12_empty_take_list_dispatch_success": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: typed DUPLICATE_ATTEMPT refusal -> empty take list, no exception, envelope holds only variant_id+evidence (reason and next action lost)"
+  },
+  "S75-F13_stale_keepalive_registration": {
+   "file": "RUN-LOG.json",
+   "result": "REPRODUCED: same-name disabled/wrong-model/hourly/stale job -> exit 0 'already present'; pinned registration rejected then unpinned lands while DONE prints the requested model"
+  }
+ },
+ "boundary_stubs": [
+  "S75-F12: dispatcher seam inside the generation wrapper (spec 17.10 retry-harness shape); everything else in the wrapper is real product code",
+  "S75-F13: scheduler CLI behind a fake binary on PATH (spec 17.10 scheduler-harness shape); the installer script under test is the real pinned revision"
+ ],
+ "date": "2026-10-22",
+ "driver_revisions": {
+  "999_main": "35e54bbb9086478ab2e6c665cae95be70c54db08",
+  "onboarding_pending_head": "cb6c03600f5bb0aa21b22f782baea6f6fe305e67",
+  "onboarding_timer_pinned": "18c510088cf4e2d94e188deedff380d42912637f"
+ },
+ "fixtures": "fixtures/S75-F01.json .. S75-F13.json (13)",
+ "identities": "all fixtures use the synthetic namespace only (tenant-synth-0001, run-synth-0001, chat-synth-0001, host-synth-0001, worker-synth-01/02); all runtime paths are injected placeholders",
+ "privacy_scan": {
+  "pending_pr_titles_bodies": "PASS: both open recovery PRs scanned via live metadata, 0 findings",
+  "release_notes": "advisories recorded: 54 name-class, 4 chat-identity, 2 home-directory hits across the two distribution CHANGELOGs (values withheld); files not touched by this unit",
+  "report": "PRIVACY-SCAN-REPORT.md",
+  "shared_artifacts_touched": "PASS: 23 files scanned (incl. this receipt), 0 findings in every class"
+ },
+ "product_tree_pollution_check": {
+  "result": "999 tree status byte-identical before and after (999-status-before/after in private lane); pending-head worktree clean; all product code executed read-only with per-fixture scratch state"
+ },
+ "status": "BUILT_AWAITING_QC",
+ "suite_commit": "80976d2d13f6a1f8b5bea0c55f729935f9991f6c",
+ "suite_commit_note": "fixture suite, harness, tests, scan and docs committed in this work directory's own git repository; this receipt rides the follow-up commit",
+ "tests": {
+  "output": "TESTS-run.txt",
+  "result": "4/4 pass, exit 0 (13-pattern reproduction test plus 3 anonymity tests)"
+ },
+ "transcript_handling": "supplied incident transcript kept as private diagnostic evidence only; no transcript content copied into any artifact",
+ "unit": "S75-W01-U2",
+ "work": "Anonymous incident fixtures and privacy hygiene"
+}

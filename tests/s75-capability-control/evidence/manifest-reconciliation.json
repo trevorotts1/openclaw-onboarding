@@ -1,0 +1,244 @@
+{
+ "built_from": {
+  "authoritative_catalog": "fixtures/provider-catalog.openrouter.json",
+  "host_catalog": "fixtures/host-catalog.9router.json",
+  "router_surfaces": "fixtures/router-surfaces.db.json",
+  "runtime_schema": "fixtures/runtime-schema.snapshot.json",
+  "session_cache": "fixtures/session-cache.model-catalog.json"
+ },
+ "host_dispatch_proof": {
+  "effort_parameter_sent": false,
+  "gateway_request_id": "gen-1792660961-qt4v5MU8JUOsHnY8JqvE",
+  "receipt_file": "evidence/host-dispatch-openrouter_xiaomi_mimo-v2.6-pro.json",
+  "requested_model": "openrouter/xiaomi/mimo-v2.6-pro",
+  "response_model": "xiaomi/mimo-v2.6-pro",
+  "thinking_block_seen": true,
+  "verdict": {
+   "code": "DISPATCH_VERIFIED",
+   "detail": "role builder proven at model openrouter/xiaomi/mimo-v2.6-pro",
+   "severity": "info",
+   "surface": "role_bindings"
+  }
+ },
+ "manifest": {
+  "allowlist": {
+   "aliases": {
+    "mimo-pro": "openrouter/xiaomi/mimo-v2.6-pro"
+   },
+   "disabled": [
+    "alicode",
+    "anthropic",
+    "cc",
+    "ds",
+    "nvidia",
+    "oc",
+    "ollama"
+   ],
+   "enabled": [
+    "openrouter/xiaomi/mimo-v2.6-pro",
+    "openrouter/z-ai/glm-5.3"
+   ]
+  },
+  "caches": [
+   {
+    "cache_id": "model-catalog.json",
+    "fetched_at": "1792641629583",
+    "refresh_path": "python3 -I tools/capture_fixtures.py --out fixtures/",
+    "source_revision": "W/\"09f0aba1f0badac515debc68b12ce4f8\"",
+    "version": 2
+   }
+  ],
+  "dispatch_receipts": [
+   {
+    "requested_model": "openrouter/xiaomi/mimo-v2.6-pro",
+    "resolved_model": "openrouter/xiaomi/mimo-v2.6-pro",
+    "response_model": "xiaomi/mimo-v2.6-pro",
+    "role": "builder",
+    "router_request_id": "gen-1792660961-qt4v5MU8JUOsHnY8JqvE",
+    "timestamp": "2026-10-22T09:22:43.864635+00:00"
+   }
+  ],
+  "findings": [
+   {
+    "code": "CACHE_STALE",
+    "detail": "cache 'model-catalog.json' at revision 'W/\"09f0aba1f0badac515debc68b12ce4f8\"' != authoritative 'openrouter-live-2026-10-22'",
+    "severity": "warning",
+    "surface": "caches"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'ds/deepseek-flash'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'openrouter/deepseek/deepseek-v4.1-flash-1017'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'high' claimed for unknown model 'cc/claude-opus-5-5'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'high' claimed for unknown model 'anthropic/claude-opus-5-5'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'xhigh' claimed for unknown model 'openrouter/meta/muse-spark-1.3-contributor'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'xhigh' claimed for unknown model 'oc/mimo-v2.6-flash-free'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'cc/claude-haiku-5-5'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'anthropic/claude-haiku-5-5'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'cc/claude-sonnet-5-5'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'anthropic/claude-sonnet-5-5'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'ollama/glm-5.3-flash:cloud'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'ollama/deepseek-v4.1-flash:1017'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'high' claimed for unknown model 'cx/gpt-6.1-sol'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'high' claimed for unknown model 'openrouter/xiaomi/mimo-v2.6-flash'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'openrouter/qwen/qwen3.8-flash'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'cx/gpt-6-astra'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for openrouter/xiaomi/mimo-v2.6-pro, which supports reasoning without an effort selector; a UI ladder cannot create provider support",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'openrouter/z-ai/glm-5.3-flash'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'max' claimed for unknown model 'ollama/glm-5.3:cloud'",
+    "severity": "error",
+    "surface": "effort"
+   },
+   {
+    "code": "UNSUPPORTED_EFFORT_CLAIM",
+    "detail": "effort 'high' claimed for unknown model 'agnes/agnes-3.0-flash'",
+    "severity": "error",
+    "surface": "effort"
+   }
+  ],
+  "models": [
+   {
+    "effort_selector": false,
+    "fetched_at": "",
+    "model_id": "openrouter/xiaomi/mimo-v2.6-pro",
+    "provider": "openrouter",
+    "reasoning": true,
+    "source_revision": "",
+    "tools": true
+   },
+   {
+    "effort_selector": true,
+    "fetched_at": "",
+    "model_id": "openrouter/z-ai/glm-5.3",
+    "provider": "openrouter",
+    "reasoning": true,
+    "source_revision": "",
+    "tools": true
+   }
+  ],
+  "providers": [
+   {
+    "entry_id": "providerThinking:openrouter",
+    "provider": "openrouter",
+    "thinking_mode": "high"
+   }
+  ],
+  "role_bindings": [
+   {
+    "model_id": "openrouter/xiaomi/mimo-v2.6-pro",
+    "requested_effort": "none",
+    "role": "builder",
+    "verification": "verified_by_host_dispatch",
+    "verified_by": "gen-1792660961-qt4v5MU8JUOsHnY8JqvE"
+   },
+   {
+    "model_id": "openrouter/z-ai/glm-5.3",
+    "requested_effort": "high",
+    "role": "qc"
+   }
+  ],
+  "scheduler_jobs": [
+   {
+    "job_id": "keepalive-15min",
+    "model_id": "openrouter/xiaomi/mimo-v2.6-pro",
+    "schedule": "*/15 * * * *"
+   }
+  ],
+  "schema_id": "s75-w04-u2/capability-config/v1"
+ },
+ "note": "qc role left unverified: no qc dispatch probe was made in this unit; W00-U1 route-receipts.json carries the GLM high-effort end-to-end proof.",
+ "unit": "S75-W04-U2",
+ "unverified_roles_after_proof": [
+  "qc"
+ ]
+}

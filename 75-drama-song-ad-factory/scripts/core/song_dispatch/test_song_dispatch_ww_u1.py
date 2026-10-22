@@ -293,6 +293,121 @@ def test_ww07_the_assembled_variant_styles_all_carry_the_pace_clause_last():
         assert rq["_pace_plan"] == pace          # rides to the judge, never to KIE
 
 
+# ---- C2: treatment B never drops the base dry/upfront lead -----------------
+
+#: C2: R&B Flow DELIVERS rap, so its sheet must plan the rap floor (two rap
+#: verses) -- the soul sheets cannot be reused for it. Same shape as the
+#: shipped 88 s fixture: four hooks, spoken [Outro] CTA.
+SHEET_RNB_C2 = [
+    {"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
+    {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
+    {"tag": "Verse", "delivery": "sung",
+     "lines": ["And I rise above the pa-a-ain,", "Through the dark I walk alo-o-one,"]},
+    {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
+    {"tag": "Verse", "delivery": "sung",
+     "lines": ["One seed of truth made me stro-o-ong,", "I hold the light I found,",
+               "I walk out free,", "I rise a-a-above,", "I am more than this,",
+               "I am he-e-ere,", "I am not lost,", "I am still standing ta-a-all,"]},
+    {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
+    {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
+    {"tag": "Hook 4", "delivery": "sung", "lines": HOOK},
+    {"tag": "Verse", "delivery": "rap",
+     "lines": ["Backup shoes, backup jacket, but no backup plan,",
+               "So I count what I make and not what they take today,"]},
+    {"tag": "Verse", "delivery": "rap",
+     "lines": ["Every door they closed I opened with my own two hands,",
+               "And I keep walking toward the morning light now,"]},
+    {"tag": "Outro", "delivery": "spoken",
+     "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
+
+
+def test_c2_the_harmony_organ_variant_keeps_the_base_dry_upfront_lead():
+    """C2: variant B (warm-live-band) re-voices the lead with a soft live harmony
+    over soft organ. The WW-26 brief replaces ``style_parts[0]`` -- the only place
+    the style data says "close dry upfront vocal" -- so the FINAL provider payload
+    must still carry that direction. Asserted on ``request["input"]["style"]``,
+    the exact text handed to KIE."""
+    reqs = SC.build_requests("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
+    variant, req = [r for r in reqs if r[0]["id"] == "warm-live-band"][0]
+    style = req["input"]["style"]
+    assert "soft live harmony" in style and "soft organ" in style, style
+    assert "close dry upfront vocal" in style, style
+    assert style.count("dry upfront vocal") == 1, style
+
+
+#: C2: the variants whose authored vocals line re-voices the lead. PINNED as
+#: literals so a data edit that adds or drops a harmony/stack line without
+#: touching ``revoices_lead`` fails here instead of shipping silently.
+REVOICES_LEAD_C2 = {
+    "soul-ballad": {"warm-live-band", "cinematic-strings"},
+    "rnb-flow": {"polished-modern", "warm-live-band", "cinematic-strings"},
+    "soul-rise": {"warm-live-band", "cinematic-strings"},
+}
+
+
+def test_c2_every_re_voiced_variant_carries_the_dry_upfront_lead_once():
+    """C2: only a variant that harmonises/stacks the lead needs the base presence
+    direction restored. On the FINAL provider payload that is exactly the seven
+    flagged variants, each carrying it once and staying under the cap."""
+    seen = set()
+    for style_id, sheet, length in (("soul-ballad", SHEET, 58),
+                                    ("rnb-flow", SHEET_RNB_C2, 88),
+                                    ("soul-rise", SHEET, 58)):
+        flagged = {v["id"] for v in SC.variants_for(style_id) if v.get("revoices_lead")}
+        assert flagged == REVOICES_LEAD_C2[style_id], (style_id, flagged)
+        for v, rq in SC.build_requests(style_id, sheet, CLIENT, "T", length,
+                                       hook_plan=HOOK_PLAN):
+            style = rq["input"]["style"]
+            if v["id"] in flagged:
+                seen.add((style_id, v["id"]))
+                assert "dry upfront vocal" in style, (style_id, v["id"], style)
+                assert style.count("dry upfront vocal") == 1, (style_id, v["id"], style)
+            else:
+                # the control: intimate-piano already says "close mike" and
+                # modern-lift does not re-voice -- neither is forced into it.
+                assert "dry upfront" not in style, (style_id, v["id"], style)
+            assert len(style) <= R.SUNO_STYLE_FIELD_MAX
+    assert len(seen) == 7, seen
+
+
+def test_c2_the_48s_real_payload_stays_under_the_cap_with_the_presence_lead():
+    """C2: the real 48 s approved run (intimate-piano at 988 chars, 11 to spare)
+    is why the presence direction is scoped to re-voiced variants: the flagged
+    two still fit, and the unflagged one is not pushed over."""
+    d = json.load(open(os.path.join(HERE, "..", "sung_hook", "fixtures",
+                                    "gala-48s-approved.json"), encoding="utf-8"))
+    plan = dict(d["pace_plan"])
+    plan["drop"], plan["return"] = R.PACE_DROP_CLAUSE, R.PACE_RETURN_CLAUSE
+    sheet = R.parse_lyrics(d["sheet_text"])
+    client = ("The night of legacy and light, in emerald and light. "
+              "Reserve by October 27. examplegala2026 dot com.")
+    lengths = {v["id"]: len(rq["input"]["style"])
+               for v, rq in SC.build_requests("soul-ballad", sheet, client, "Gala", 48,
+                                              hook_plan={"true_at_beat": "pain_deepens"},
+                                              pace_plan=plan)}
+    assert set(lengths) == set(REVOICES_LEAD_C2["soul-ballad"]) | {"intimate-piano"}, lengths
+    assert all(n < R.SUNO_STYLE_FIELD_MAX for n in lengths.values()), lengths
+
+
+def test_c2_a_style_whose_data_has_no_dry_upfront_rule_gains_none():
+    """C2 control: the direction comes FROM the style's own data, never a constant
+    in the composer, so a style that does not mandate it is not forced into it --
+    even when the variant is flagged as re-voicing."""
+    real = R.music_block
+    R.music_block = lambda sid: {"style_parts": [
+        "fake ballad, slow, no presence rule.",
+        "{gender} lead, sung melody.",
+        "The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music.",
+        "Only the short intro and the final outro are spoken; the full band keeps "
+        "playing continuously under them."]}
+    try:
+        text = R.brief_style_text("soul-ballad", "fake brief core", None, "f",
+                                  revoices_lead=True)
+    finally:
+        R.music_block = real
+    assert "dry upfront" not in text, text
+
+
 def test_ww07_no_pace_plan_means_no_clause_and_an_over_cap_append_raises():
     plain = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
     assert "half-time" not in plain["input"]["style"]

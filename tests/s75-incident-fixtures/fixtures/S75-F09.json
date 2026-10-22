@@ -1,0 +1,33 @@
+{
+ "driver": {
+  "entry": "intake_preflight/factory.py _read_json + _proven_continuity",
+  "kind": "product",
+  "tree": "onboarding pending head"
+ },
+ "fixture_id": "S75-F09",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "records": "<RUN_DIR>/continuity/qc-records.json",
+  "run_dir": "<RUN_DIR>"
+ },
+ "note": "valid list is reported through the missing-file branch",
+ "observed_defect": {
+  "proven": false,
+  "reader_accepts": "dict only",
+  "reported": "continuity/qc-records.json",
+  "valid_list_rejected": true
+ },
+ "pattern": "dict-only reader over a valid QC list",
+ "required_post_repair": "Validate real data shapes through the actual reader; typed readers and schema migrations reconcile from independently declared required evidence.",
+ "setup": {
+  "reader": "dict-only _read_json",
+  "records_file": "valid JSON list of QC records"
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 D33 and 17.8 (3400-3474), 17.9"
+}

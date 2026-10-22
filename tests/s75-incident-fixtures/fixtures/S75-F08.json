@@ -1,0 +1,32 @@
+{
+ "driver": {
+  "entry": "story_coverage/story_coverage.py story_start_gate + longest_opening_wordless_s",
+  "kind": "product",
+  "tree": "999 main"
+ },
+ "fixture_id": "S75-F08",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "take": "<IN_MEMORY>/aligned-word-rows"
+ },
+ "observed_defect": {
+  "first_plot_line_s": 4.0,
+  "opening_wordless_s": 0.0,
+  "verdict": "PASS"
+ },
+ "pattern": "four-second silent lead-in passing the opening gate",
+ "required_post_repair": "Measurement starts at decoded media zero; immediate opening requirement is verified and repaired if needed.",
+ "setup": {
+  "approved_opener": "first plot line (word list) aligned at 4.0 s",
+  "delivered_s": 60.0,
+  "first_recognized_words_at_s": 4.0,
+  "prior_rows": 0
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 17.4 row 6"
+}
