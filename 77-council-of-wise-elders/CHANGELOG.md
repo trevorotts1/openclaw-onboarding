@@ -1,35 +1,35 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.49: Council: nine seat emblems and a cover emblem land as assets/seats art, and the branch folds in upstream main (W74-ASSETS)
+## v1.0.50: Council: nine seat emblems and a cover emblem land as assets/seats art, and the branch folds in upstream main (W74-ASSETS)
 
-In plain English: every seat now has its own painted emblem — the council cover gets one too — so the rendered artifact page (W74-B's `render-counsel-artifact.mjs`, which defaults its asset source to `assets/seats/cover.png`) has the art it points at, in-repo.
+In plain English: every seat now has its own painted emblem - the council cover gets one too - so the rendered artifact page (W74-B's `render-counsel-artifact.mjs`, which defaults its asset source to `assets/seats/cover.png`) has the art it points at, in-repo.
 
-- New `assets/seats/` with ten PNG files: nine seat emblems (one per elder seat) plus `cover.png`, all generated as painted heraldic medallion emblems (navy and antique gold, ornate filigree border, symbolic objects only — no human faces, no likenesses of real people, no text in any image).
-- Branch merges upstream main (`unit/W74-counsel-artifacts` folds in the W73 BUILD entry as v1.0.44 below), the renumbered W74-C/B/A/D entries stay at v1.0.45 through v1.0.48, and this entry is the new top at v1.0.49.
-- Repository markers (SKILL.md frontmatter version, skill-version.txt, version file) agree at 1.0.49; manifest and archive regenerated with `scripts/build-bundles.mjs`.
+- New `assets/seats/` with ten PNG files: nine seat emblems (one per elder seat) plus `cover.png`, all generated as painted heraldic medallion emblems (navy and antique gold, ornate filigree border, symbolic objects only - no human faces, no likenesses of real people, no text in any image).
+- Branch merges upstream main (the W73 BUILD entry lands as v1.0.45 below this one), the W74-C/B/A/D entries renumber to v1.0.46 through v1.0.49, and this entry is the new top at v1.0.50.
+- Repository markers (SKILL.md frontmatter version, skill-version.txt, version file) agree at 1.0.50; manifest and archive regenerated with `scripts/build-bundles.mjs`.
 
-## v1.0.48: Council: one convene flow wires the brief-builder, the deliberation, the close protocol and the artifact — on both doors (W74-D)
+## v1.0.49: Council: one convene flow wires the brief-builder, the deliberation, the close protocol and the artifact - on both doors (W74-D)
 
-In plain English: a council now runs as one flow. The brief the elders read is assembled first from the client's permitted memory files, the council deliberates and reaches its verdict, the sitting closes itself (the soft-close question, or the client's own "that's all"), and the finished counsel page arrives in the reply beside the chamber link. The same flow serves both doors: the client's OpenClaw agent and claude-nine / Claude Code (999) — the client only asks for the council, whichever side they are on.
+In plain English: a council now runs as one flow. The brief the elders read is assembled first from the client's permitted memory files, the council deliberates and reaches its verdict, the sitting closes itself (the soft-close question, or the client's own "that's all"), and the finished counsel page arrives in the reply beside the chamber link. The same flow serves both doors: the client's OpenClaw agent and claude-nine / Claude Code (999) - the client only asks for the council, whichever side they are on.
 
 - One wired flow (`runtime/src/flow/convene-flow.ts`) in the exact order the skill prescribes: brief-builder FIRST (permitted context through the door's adapter), deliberation, verdict, then session-close manages the sitting and finalize calls `renderArtifact(sessionRecord)` and returns the delivery (reply link + chamber).
 - The render seam lands (`runtime/src/reports/artifact-renderer.ts`): the entry point the close protocol resolves by name, plus `assembleRenderRecord`, the projection from the stored session and the runtime rows (client name, model, question count, seat takes, verdict) into the renderer's fixed session record. Nothing is invented at the seam; the renderer's own validation still runs.
 - Both doors wired and documented: the OpenClaw door uses the OpenClaw adapter (memory.md, agents.md, soul.md, user.md), the claude-nine / Claude Code (999) door its adapter (CLAUDE.md, AGENTS.md, memory/MEMORY.md). Harness markers select the door; the brief shape and the flow are identical either way. SKILL.md, INSTRUCTIONS.md and EXAMPLES.md now say exactly how a client triggers each door and carry the close question and the artifact delivery.
-- New assert-style test `runtime/tests/convene-flow.test.ts` (no framework) proving the order on both doors — the deliberation leg receives the assembled brief, finalize really renders through the W74-B renderer, and the delivery carries the artifact link beside the chamber — plus the sitting cases (soft-close at 5m, close phrase finalizes, 10-minute auto-finalize).
+- New assert-style test `runtime/tests/convene-flow.test.ts` (no framework) proving the order on both doors - the deliberation leg receives the assembled brief, finalize really renders through the W74-B renderer, and the delivery carries the artifact link beside the chamber - plus the sitting cases (soft-close at 5m, close phrase finalizes, 10-minute auto-finalize).
 - Manifest and archive regenerated with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
 
-## v1.0.47: Council: a sitting now closes itself — one soft-close question, an explicit close phrase finalizes at once, and ten quiet minutes never leave a session open (W74-A)
+## v1.0.48: Council: a sitting now closes itself - one soft-close question, an explicit close phrase finalizes at once, and ten quiet minutes never leave a session open (W74-A)
 
 In plain English: a council sitting is one session and every sitting gets closed. Five minutes after the client's last interaction the council asks exactly once "Is that all, or are we still working?"; an explicit close phrase ("that's all", "we're done", "finalize", ...) finalizes immediately; no answer within ten minutes of the question finalizes automatically; and nothing hangs open.
 
-- Session-close protocol in the runtime (`runtime/src/protocol/session-close.ts`): a 5-minute idle soft-close sends ONE question per quiet spell, an explicit close phrase finalizes immediately, and 10 minutes of silence after the question auto-finalizes. A client answer is a new interaction that restarts the quiet clock — never an auto-finalize over an answer.
+- Session-close protocol in the runtime (`runtime/src/protocol/session-close.ts`): a 5-minute idle soft-close sends ONE question per quiet spell, an explicit close phrase finalizes immediately, and 10 minutes of silence after the question auto-finalizes. A client answer is a new interaction that restarts the quiet clock - never an auto-finalize over an answer.
 - Finalize marks the session closed in the store, hands the session record to the artifact renderer's `renderArtifact(sessionRecord)` (W74-B contract: returns artifact path + link), and the reply carries the link. Idempotent: a closed sitting renders once and never re-marks.
-- Close state derives from the store's own timestamps — the session's last journal event and the durable soft-close/close markers in the projection outbox — never from in-memory timers. A service restart continues the same quiet spell, loses nothing, and never sends a second soft-close question (proven over the real store in the test).
+- Close state derives from the store's own timestamps - the session's last journal event and the durable soft-close/close markers in the projection outbox - never from in-memory timers. A service restart continues the same quiet spell, loses nothing, and never sends a second soft-close question (proven over the real store in the test).
 - New assert-style test `runtime/tests/session-close.test.ts` (no framework) proving the four cases: idle fires the soft-close at 5m, an explicit close phrase finalizes immediately, 10 minutes of silence after the question auto-finalizes, and restart-safe derivation.
 - Skill instructions: "Closing a session" added to SKILL.md and INSTRUCTIONS.md. "Resolve existing sessions first, never create a duplicate" and one active session per client stay exactly as they were.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
 
-## v1.0.46: Council: a finished sitting renders as one fixed counsel artifact page (W74-B)
+## v1.0.47: Council: a finished sitting renders as one fixed counsel artifact page (W74-B)
 
 In plain English: after a council sitting, the result now renders as one clean page: the decision and the overall consensus at the top, the nine elders with their seat emblems and their takes below, the action steps numbered, and a footer with the sitting facts. The page is print-ready and can produce a real PDF when the box has headless Chrome or cupsfilter; otherwise the client prints from the browser. The look is identical for every client and every sitting.
 
@@ -40,18 +40,25 @@ In plain English: after a council sitting, the result now renders as one clean p
 - New runnable check scripts/tests/render-counsel-artifact.test.mjs: renders one synthetic fixture session (clearly labeled synthetic) and asserts the five sections in order, the nine seat images, and no absolute paths in the HTML; nine tests total.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-scoped change only).
 
-## v1.0.45: Council: the convene brief is now built by one shared permitted-context builder across both doors, with private detail excluded and a hard size cap (W74-C)
+## v1.0.46: Council: the convene brief is now built by one shared permitted-context builder across both doors, with private detail excluded and a hard size cap (W74-C)
 
-In plain English: before a council starts, the brief the elders read is now assembled by one shared builder that reads only the client's permitted memory files on whichever side the session runs — the OpenClaw door or the claude-nine door — and selects just the facts that bear on THIS decision. Private preferences stay in the private store, unknowns stay marked, pointer documents are followed at most one link deep, and the brief can never run past its word cap.
+In plain English: before a council starts, the brief the elders read is now assembled by one shared builder that reads only the client's permitted memory files on whichever side the session runs - the OpenClaw door or the claude-nine door - and selects just the facts that bear on THIS decision. Private preferences stay in the private store, unknowns stay marked, pointer documents are followed at most one link deep, and the brief can never run past its word cap.
 
 - One module (`runtime/src/brief/permitted-brief.ts`), two source adapters (OpenClaw: memory.md, agents.md, soul.md, user.md; 999: CLAUDE.md, AGENTS.md, memory/MEMORY.md), identical brief shape regardless of door.
 - Permitted context only: the door's root files plus at most one hop of their pointer links; recursion never; a link can never escape the context root or touch a private path.
 - Private preferences stay in the private store: private sections and `private:` lines are stripped, `private/` paths and `*.private.md` are never read, and the brief carries only the opaque `private_preference_ref`.
 - Unknowns marked explicitly: unstated options or constraints and explicit "not yet known" markers land in `unknowns`, and items dropped by the cap are reported there too.
 - Bloat protection: `BRIEF_WORD_CAP` = 2000 words, hard; facts selected decision-relevant first, newest first inside a relevance class.
-- New runnable check `runtime/tests/brief-builder.test.ts` over fixture memory files: the decision-relevant fact is in the brief, the irrelevant private detail is out, the size cap holds, and unknowns are marked — proven on both doors.
+- New runnable check `runtime/tests/brief-builder.test.ts` over fixture memory files: the decision-relevant fact is in the brief, the irrelevant private detail is out, the size cap holds, and unknowns are marked - proven on both doors.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (code fix only).
 
+## v1.0.45: Council: the W73 chamber-visual package clears the QC gate and its version markers roll (BUILD W73)
+
+In plain English: the W73 chamber-visual change (the Roast Room visual pops up on desktop and the chamber link rides every reply) is unchanged. This patch rolls the version markers and repackages the archive so the pull request's required G3 check sees the skill content change and the skill-version.txt bump together.
+
+- skill-version.txt and version rolled from v1.0.44 to v1.0.45; SKILL.md frontmatter version rolled to match.
+- Package files carry no em dash character (the QC gate that failed on the previous push now passes: doctor, verify-cohort-parity, verify-bundles, qc-council-of-wise-elders.sh all green; chamber-visual.test.sh 17/17).
+- Manifest and archive regenerated once with `scripts/bump-version.sh` plus `scripts/build-bundles.mjs`.
 ## v1.0.44: Council: the Roast Room visual pops up and the chamber link rides every reply (BUILD W73)
 
 In plain English: no matter how the client calls the elders — claude-nine terminal or chat — the chamber visual they see at the link shows up for them too: on a desktop box it opens in the browser on every convene, and the chamber link is always in the reply so phone and chat callers tap straight into the same visual.

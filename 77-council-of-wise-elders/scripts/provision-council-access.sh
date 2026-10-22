@@ -789,11 +789,11 @@ provision_host() {
   fi
 
   # f. ingress: an existing council rule is preserved byte-identical (any port); only
-  # an absent rule is created: GET -> merge -> PUT at $COUNCIL_SERVICE, CC rule
+  # an absent rule is created - GET -> merge -> PUT at $COUNCIL_SERVICE, CC rule
   # asserted unchanged when it shares the tunnel
   local prior_svc ing_changed=0 new_body
   prior_svc="$(cc_ingress_service_for_host "$ride_cfg" "$COUNCIL_HOST")"
-  # An existing council rule is authoritative on its own port (the box owns it,
+  # An existing council rule is authoritative on its own port (the box owns it -
   # adopted routes and custom ports alike): it is NEVER rewritten. Only an absent
   # rule is created, and it is created on $COUNCIL_SERVICE.
   if [ -n "$prior_svc" ]; then
