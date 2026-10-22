@@ -40,6 +40,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -70,10 +71,11 @@ SENTINELS = [
     ("skills/46-kie-callback-relay/SKILL.md", "sentinel: other skill preserved\n"),
 ]
 
-#: --dist -> (install root env key, installer extra args). Distinct on purpose.
+#: --dist -> installer mode. `discover_skills_dir` in update-skills.sh resolves
+#: OC_SKILLS_DIR first, so the canary pins a distinct root per dist there.
 DISTS = {
-    "onboarding": ("SKILLS_DIR", ["--onboarding-only"]),
-    "999": ("CLAUDE_CONFIG_DIR", []),
+    "onboarding": {"root": "install-onboarding", "args": ["--onboarding-only"]},
+    "999": {"root": "install-999", "args": []},
 }
 
 
@@ -109,6 +111,8 @@ def tree_manifest(root):
 def materialize(repo, rev, dest, skill=SKILL):
     """Write the skill tree at an exact git revision into dest (real bytes)."""
     dest = Path(dest)
+    if dest.exists():
+        shutil.rmtree(dest)          # never diff against a previous run's leftovers
     dest.mkdir(parents=True, exist_ok=True)
     arch = subprocess.run(["git", "-C", str(repo), "archive", rev, skill],
                           capture_output=True)
@@ -125,13 +129,12 @@ def materialize(repo, rev, dest, skill=SKILL):
 
 
 def installed_root(sb, dist):
-    env_key, _ = DISTS[dist]
-    return Path(sb.env[env_key]) / SKILL
+    return Path(sb.env["OC_SKILLS_DIR"]) / SKILL
 
 
 def run_installer(sb, src_root, dist):
     """Really invoke update-skills.sh, scoped to skill 75, into the sandbox."""
-    _env_key, extra = DISTS[dist]
+    extra = DISTS[dist]["args"]
     installer = Path(src_root) / "update-skills.sh"
     if not installer.is_file():
         raise Refusal("INSTALL_FAILED", "update-skills.sh missing at %s" % installer)
@@ -319,12 +322,15 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
         return 1
 
     print("upgrade canary REAL mode dist=%s (%s)" % (dist, reason))
+    RESULTS.clear()                  # each dist run reports only its own checks
     scratch = Path(out) / "scratch" / dist
     receipt_path = Path(out) / ("upgrade-manifest.%s.json" % dist)
     started = time.time()
 
     with cc.Sandbox() as sb:
         try:
+            sb.env["OC_SKILLS_DIR"] = str(sb.root / DISTS[dist]["root"])
+            sb.env["OPENCLAW_UPDATE_SKIP_SELF_SYNC"] = "1"
             before_sentinels = seed_sentinels(sb)
 
             old_src = materialize(repo, old_rev, scratch / "old")
@@ -374,16 +380,15 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
                                        r_new.get("stdout") or "")[-300:]))
 
                 if fault == "tamper":
-                    victim = inst / PROBE_FILE
-                    victim.write_text("# tampered after upgrade\n",
-                                      encoding="utf-8")
-                    tampered = str(Path(SKILL) / PROBE_FILE)
+                    (inst / PROBE_FILE).write_text("# tampered after upgrade\n",
+                                                   encoding="utf-8")
 
                 after_manifest = tree_manifest(inst)
                 manifest = diff_manifests(before_manifest, after_manifest)
                 manifest.update({
                     "schema": "blackceo.skill75.canary.upgrade-manifest/v1",
                     "dist": dist,
+                    "distribution_args": DISTS[dist]["args"],
                     "old_revision": old_rev,
                     "new_revision": new_rev,
                     "install_root": str(inst),
@@ -493,6 +498,7 @@ def run_both(out, vector_path, repo, old_rev, new_rev):
     pb = Path(out) / "upgrade-manifest.999.json"
     if rc_a or rc_b:
         return 1 if (rc_a or rc_b) else 0
+    RESULTS.clear()
     a = json.loads(pa.read_text(encoding="utf-8"))
     b = json.loads(pb.read_text(encoding="utf-8"))
     differ = (a["file_count_after"] != b["file_count_after"]
