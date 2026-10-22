@@ -4,6 +4,24 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.83 - 2026-10-22 - one supported H3 request path
+
+H3 refuses an un-templated prompt (PROMPT_NOT_TEMPLATED), and nothing in the
+run path ever called the assembler, so the only way an H3 shot could dispatch
+was to substitute another model. Now there is one supported builder.
+
+1. `scripts/core/prompt_templates/make_h3_request.py` - spec + character record
+   in, dispatch-ready request out: assembles via `prompt_templates.assemble_h3`,
+   measures the model's own band, attaches `prompt_templates.receipt()`, pins
+   `model` to a canonical `minimax-h3/*` id, and refuses any other model id
+   rather than silently using it. Fixed model id, no padding, no truncation.
+2. `scripts/core/prompt_templates/test_make_h3_request.py` - nine assertions on
+   the golden fixture: band 5,000-6,800, receipt sha equals the prompt, the cap
+   and receipt gates pass, a changed prompt is refused, and a Hailuo id is
+   refused (exit 2).
+3. `references/stage-runbook.md` - the video row now names the builder and says
+   in words: never substitute another model to get a prompt through.
+
 ## v2.9.82 - 2026-10-22 - MiniMax H3 is its own model: 7,000 chars, never Hailuo
 
 Owner directive, verbatim: "Don't you ever change the model. I told you H3. I
