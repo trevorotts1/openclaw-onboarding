@@ -697,6 +697,65 @@ def _finalize_record(
     return rec
 
 
+# ── WF-E SUPPLEMENTARY-EVIDENCE SEAM (P7 / C8) ───────────────────────────────
+# Playwright journey assertions and recipe evidence are SUPPLEMENTARY evidence
+# (plan §11.1). They join the canonical raw-record/derived-summary pipeline
+# through the EXISTING forced-fail channel ONLY: any failing supplementary
+# assertion folds into ``render_errors`` and is therefore forced ``PASS: False``
+# by the same rule that governs render errors. Supplementary evidence can NEVER
+# set ``PASS: True``, NEVER clear an existing render_error (a clean HTML repair
+# cannot mask a failing journey), and NEVER write a summary — ``ghl_verify``
+# remains the SOLE ``overall_pass`` writer. There is deliberately NO second
+# overall_pass reducer here; the fold is additive evidence, not a new truth.
+#
+# A page carries its supplementary evidence in ``page["supplementary"]`` as a list
+# of assertion groups: ``{"source", "ref_id", "ok", "errors"}`` (see
+# ``supplementary_evidence``). The fold is order-preserving and idempotent.
+
+SUPPLEMENTARY_ERROR_PREFIX = "supplementary"
+
+
+def supplementary_evidence(
+    source: str, ref_id: str, ok: bool, errors: list[str] | None = None
+) -> dict:
+    """Build ONE supplementary assertion group for a page's ``supplementary`` list.
+
+    ``source`` is e.g. ``"playwright_journey"`` or ``"recipe"``; ``ref_id`` names
+    the journey/recipe. A failing group with no explicit ``errors`` still yields a
+    single folded failure so an empty failure can never slip through as clean.
+    """
+    errs = [str(e) for e in (errors or [])]
+    if not ok and not errs:
+        errs = [f"{source}:{ref_id} reported not-ok with no error detail"]
+    return {"source": source, "ref_id": ref_id, "ok": bool(ok), "errors": errs}
+
+
+def _supplementary_errors(page: dict) -> list[str]:
+    """Reduce a page's supplementary evidence to forced-fail render errors.
+
+    Only FAILING groups contribute errors; passing groups contribute none. The
+    returned strings are folded into ``render_errors`` and forced ``PASS: False``
+    by verify_page's existing rule. Never sets PASS True; never clears errors.
+    """
+    out: list[str] = []
+    for item in page.get("supplementary") or []:
+        if not isinstance(item, dict):
+            out.append(f"{SUPPLEMENTARY_ERROR_PREFIX}: malformed entry {item!r}")
+            continue
+        if item.get("ok") is True:
+            continue
+        source = item.get("source") or "unknown"
+        ref_id = item.get("ref_id") or "?"
+        errs = item.get("errors") or []
+        if not errs:
+            out.append(
+                f"{SUPPLEMENTARY_ERROR_PREFIX}:{source}:{ref_id} failed (no detail)"
+            )
+        for e in errs:
+            out.append(f"{SUPPLEMENTARY_ERROR_PREFIX}:{source}:{ref_id}: {e}")
+    return out
+
+
 def verify_page(
     page: dict,
     *,
@@ -824,6 +883,10 @@ def verify_page(
         # the page carries a published url + a JS signal). Routes the published
         # render through the SAME stub in mock mode.
         render_errors += _published_csp_errors(page, _call_fetcher)
+        # WF-E supplementary seam (C8d): Playwright journey / recipe assertions are
+        # SUPPLEMENTARY evidence folded into render_errors (forced-fail channel).
+        # They can only FAIL a page — never pass one, never clear an existing error.
+        render_errors += _supplementary_errors(page)
         http = res.get("http")
         mird = bool(res.get("marker_in_rendered_dom") or res.get("marker_found"))
         forced_fail = bool(render_errors) or http != 200
@@ -918,6 +981,11 @@ def verify_page(
                         _missing_imgs = _missing_imgs2
                 except Exception:  # noqa: BLE001 — repair must never mask primary verdict
                     pass
+        # WF-E supplementary seam (C8d): Playwright journey / recipe assertions are
+        # SUPPLEMENTARY evidence folded into render_errors (forced-fail channel).
+        # Added AFTER the HTML-repair seam so a clean preview repair can never mask
+        # a failing journey/recipe assertion — they can only FAIL a page.
+        render_errors += _supplementary_errors(page)
     http = res.get("http")
     mird = bool(res.get("marker_in_rendered_dom"))
     # HARD RULE: render_errors != [] OR http != 200 => PASS:False, no override.
