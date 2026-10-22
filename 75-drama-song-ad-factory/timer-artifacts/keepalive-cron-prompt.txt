@@ -69,3 +69,18 @@ internal codes to the client. Never spend. Never write to the run folder.
    once. `next` reconciles continuity-bible from those records and advances the
    run to storyboard. Never write a PASS for a check you did not prove: leave
    it FAIL and report it. Spend no money at this stage.
+
+8. If the reported stage is `storyboard` and its stage_state is NOT_STARTED or
+   READY: this stage is agent-authored too. Build $RUN/storyboard/shot-list.json
+   from creative/story-plan.json and the lyric timing -- one entry per beat,
+   every villain shot tagged `villain`, the pain and rise tags on those same
+   shots -- then run
+
+   python3 scripts/core/shot_planner/speaker_check/speaker_check.py check --env "$RUN/storyboard/shot-list.json"
+
+   until it passes. Write $RUN/storyboard/gate.json with {"shots": [...]} and
+   $RUN/storyboard/approval.json {"state":"approved"} ONLY when
+   control/card-receipt.json really records the client's delegated "just make
+   it" for storyboard; cite that receipt in the file. Then run
+   `python3 scripts/core/intake_preflight/factory.py next --run-dir "$RUN"` once
+   so the reconciler advances it. Spend no money at this stage.

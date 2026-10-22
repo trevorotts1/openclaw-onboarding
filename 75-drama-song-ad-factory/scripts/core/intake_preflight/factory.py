@@ -1011,7 +1011,11 @@ def _proven_continuity(run_dir, run_id=""):
     not proven; nothing is invented here.
     """
     cdir = Path(run_dir) / "continuity"
-    recs = _read_json(cdir / "qc-records.json")
+    try:
+        with open(cdir / "qc-records.json", encoding="utf-8") as fh:
+            recs = json.load(fh)      # a LIST: _read_json only returns dicts
+    except (OSError, ValueError):
+        recs = None
     makers = _read_json(cdir / "makers.json")
     if not isinstance(recs, list) or not recs:
         return False, {"missing": "continuity/qc-records.json"}
