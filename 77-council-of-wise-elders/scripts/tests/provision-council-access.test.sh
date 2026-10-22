@@ -831,6 +831,38 @@ start_fake "$WORK/live.json"
 TEST_CONTAINER_HOSTS="evelyn,monique" run_script evelyn.$Z --apply
 check "evelyn with COUNCIL_CONTAINER_HOSTS evidence: same ALREADY_PROVISIONED line" bash -c "test '$RC' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: evelyn.$Z ALREADY_PROVISIONED'"
 
+echo "== 8c. FIX W68: an existing council ingress rule keeps its own port (never rewritten)"
+# (a) rule already at 8788 (a box whose client webhook owns 8787: the Council
+# serves on 8788) is preserved byte-identical: no merge, no PUT, the port is the
+# box's to own.
+fixture qcbox | jq -c --arg z "$Z" --arg t "$TID" \
+  '.tunnels[$t].config.ingress = (.tunnels[$t].config.ingress[0:-1] + [{hostname:("qcbox-council."+$z),service:"http://127.0.0.1:8788"}] + .tunnels[$t].config.ingress[-1:])' > "$WORK/f.json"; start_fake "$WORK/f.json"
+cp "$STATE" "$WORK/w68-8788-orig.json"
+run_script qcbox.$Z --apply
+check "8788 rule: PROVISIONED (app+DNS created), exit 0" bash -c "test '$RC' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED'"
+check "8788 rule: exactly 2 writes, zero PUTs (no ingress rewrite)" test "$(nonget_count)" = 2 -a "$(state '.put_bodies | length')" = 0
+check "8788 rule: no configurations PUT in the log" bash -c "! grep -q 'PUT .*configurations' '$LOG'"
+check "8788 rule: still serves http://127.0.0.1:8788" test "$(state '.tunnels["'$TID'"].config.ingress | map(select(.hostname=="qcbox-council.'$Z'")) | .[0].service')" = '"http://127.0.0.1:8788"'
+check "8788 rule: whole ingress config byte-identical to pre-run" test "$(state '.tunnels["'$TID'"].config.ingress')" = "$(jq -c '.tunnels["'$TID'"].config.ingress' "$WORK/w68-8788-orig.json")"
+check "8788 rule: output reports the rule preserved at its own port" bash -c "grep -q 'qcbox-council.$Z -> http://127.0.0.1:8788 preserved' '$OUT'"
+check "8788 rule: Access app and CNAME still created" test "$(state '[.apps[] | select(.domain=="qcbox-council.'$Z'")]|length')" = 1 -a "$(state '[.dns[] | select(.name=="qcbox-council.'$Z'")]|length')" = 1
+
+# (b) rule absent: created at the default COUNCIL_SERVICE (8787)
+fixture qcbox > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "missing rule: PROVISIONED, exit 0" bash -c "test '$RC' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED'"
+check "missing rule: exactly 3 writes, exactly one PUT" test "$(nonget_count)" = 3 -a "$(state '.put_bodies | length')" = 1
+check "missing rule: created at http://127.0.0.1:8787" test "$(state '.put_bodies[0].config.ingress | map(select(.hostname=="qcbox-council.'$Z'")) | .[0].service')" = '"http://127.0.0.1:8787"'
+
+# (c) rule already at the default 8787: stays untouched
+fixture qcbox | jq -c --arg z "$Z" --arg t "$TID" \
+  '.tunnels[$t].config.ingress = (.tunnels[$t].config.ingress[0:-1] + [{hostname:("qcbox-council."+$z),service:"http://127.0.0.1:8787"}] + .tunnels[$t].config.ingress[-1:])' > "$WORK/f.json"; start_fake "$WORK/f.json"
+cp "$STATE" "$WORK/w68-8787-orig.json"
+run_script qcbox.$Z --apply
+check "8787 rule: PROVISIONED (app+DNS), zero PUTs" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 2 && test '$(state '.put_bodies | length')' = 0 && tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: qcbox.$Z PROVISIONED'"
+check "8787 rule: still serves http://127.0.0.1:8787, config byte-identical" test "$(state '.tunnels["'$TID'"].config.ingress')" = "$(jq -c '.tunnels["'$TID'"].config.ingress' "$WORK/w68-8787-orig.json")"
+check "8787 rule: output reports it present" bash -c "grep -q 'ingress rule qcbox-council.$Z -> http://127.0.0.1:8787 present' '$OUT'"
+
 echo "== 9. the token never leaks"
 check "token appears in no case's stdout or stderr" bash -c "! grep -rq -- '$TOKEN' '$WORK/out'"
 check "no temp file is left in the script's TMPDIR" test -z "$(ls -A "$SCRIPT_TMP")"
