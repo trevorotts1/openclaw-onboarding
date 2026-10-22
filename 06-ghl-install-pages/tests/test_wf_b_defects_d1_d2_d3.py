@@ -242,8 +242,13 @@ class TestD3SeedWritesRawCookies:
         assert json.loads(base64.b64decode(raw).decode()) == obj
 
     def test_token_cookie_writes_carry_no_encoding(self):
+        """D3 intent: the token cookie value goes in RAW (the SPA atob()s it).
+        D5 kept this — the value moved into `val` so the login/current `token`
+        alias can feed custom-firebase-token; the write still carries no
+        escaping. Assert the INTENT (raw write, no encoder), not the spelling."""
         tmpl = ga.PLAYWRIGHT_SEED_JS
         loop = tmpl.split("for (const [field, name] of Object.entries(ck.token_map))")[1]
         body = loop.split("}", 1)[0]
         assert "encodeURIComponent" not in body
-        assert "name + '=' + i[field] + attrs" in body
+        assert "document.cookie = name + '=' + val + attrs" in body
+        assert "const val = i[field]" in body
