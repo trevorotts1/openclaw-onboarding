@@ -59,7 +59,7 @@ from datetime import datetime
 from typing import Callable, Iterator, Optional
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_PY_VERSION = "v27.1.68"
+BROWSER_MANAGER_PY_VERSION = "v27.1.69"
 
 # Tunables mirror browser_manager.sh / the ADVISORY openclaw.json
 # browser.agentBrowser block (agent-browser ignores that config natively — the
@@ -967,12 +967,15 @@ def pw_launch_options(env: Optional[dict] = None,
         overrides.pop(key, None)  # always forced below
     opts = dict(overrides)
     opts["headless"] = True
-    opts["devtools"] = False
+    # ``devtools`` is NOT emitted: playwright's launch_persistent_context has no
+    # such kwarg (passing it raises TypeError and the lane cannot launch). The
+    # REQUEST for it was already REFUSED above, so absence here is the refusal,
+    # not a silent drop.
     # Post-build verification on the object that will actually be passed to
     # launch — construction cannot drift even if a future caller edits above.
-    if opts.get("headless") is not True or opts.get("devtools") is not False:
+    if opts.get("headless") is not True or "devtools" in opts:
         raise PWLaunchRefused(  # pragma: no cover - belt, not reachable
-            "REFUSE (P3): launch options drifted from headless=True/devtools=False."
+            "REFUSE (P3): launch options drifted from the headless-only shape."
         )
     return opts
 
@@ -1406,7 +1409,6 @@ class _RealPlaywrightHandle:
             # self-test). pw_launch_options() has already REFUSED any headed
             # request upstream, so this literal cannot mask a headed launch.
             headless=True,
-            devtools=bool(options.get("devtools", False)),
         )
         self.pages = self._ctx.pages
 
@@ -1432,6 +1434,11 @@ class PlaywrightSession:
         with PlaywrightSession() as s:
             page = s.new_page()
             ...
+
+    After ghl_auth seeds auth into this session's context, navigate the page
+    the bridge RETURNED (``receipt.page``) — not a second ``new_page()``: the
+    seed lives in one page's origin store partition, and a different page
+    reads as user_not_logged_in even though the mint succeeded.
 
     Guarantees: headless enforced at the actual launch; one owned browser and
     one owned context; at most PW_MAX_PAGES pages; bounded lifetime;

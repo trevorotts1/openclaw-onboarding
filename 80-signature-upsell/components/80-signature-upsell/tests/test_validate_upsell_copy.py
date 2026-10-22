@@ -37,6 +37,7 @@ Covers:
 """
 import copy
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -57,6 +58,38 @@ except ImportError:  # schema tests are skipped loudly if the lib is absent
 
 def load(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+def packet_reference_dir():
+    """Locate the packet reference independent of the checkout depth.
+
+    CR-INT-S80-001 (same fix as components/adapters/tests/test_routing_state.py):
+    this module read the acceptance cases from
+    ``Path.home() / "workspace/signature-launch/packet/reference"`` — an
+    authored layout absent on every other machine, so the fixture-drift
+    canary never ran anywhere else. Resolution order: the
+    ``S80_PACKET_REFERENCE`` env override, a tolerant ancestor walk to the
+    first ancestor carrying ``packet/reference``, then this repository's
+    vendored packet copy at ``79-signature-order-form/fixtures/packet``.
+    Fail closed naming the env override.
+    """
+    override = os.environ.get("S80_PACKET_REFERENCE")
+    if override:
+        return Path(override)
+    skill_dir = Path(__file__).resolve().parents[2]
+    for ancestor in skill_dir.parents:
+        candidate = ancestor / "packet" / "reference"
+        if (candidate / "launch-example.json").is_file() and \
+                (candidate / "acceptance-cases.json").is_file():
+            return candidate
+        vendored = ancestor / "79-signature-order-form" / "fixtures" / "packet"
+        if (vendored / "reference_contracts.py").is_file() and \
+                (vendored / "acceptance-cases.json").is_file():
+            return vendored
+    raise ImportError(
+        "S80 tests: packet reference (acceptance-cases.json) not found in "
+        f"any ancestor of {skill_dir}; set S80_PACKET_REFERENCE to the "
+        "packet reference directory"
+    )
 
 
 def run_validator(*args):
@@ -818,7 +851,7 @@ class R4RepairTests(unittest.TestCase):
 
 class PacketFixtureCrossCheckTests(unittest.TestCase):
     def test_reference_acceptance_cases_still_64(self):
-        cases = load(Path.home() / "workspace/signature-launch/packet/reference/acceptance-cases.json")
+        cases = load(packet_reference_dir() / "acceptance-cases.json")
         self.assertEqual(len(cases["cases"]), 64)
 
 

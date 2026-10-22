@@ -1,6 +1,6 @@
 # Council of Wise Elders (77): Changelog
 
-## v1.0.47: Council: one convene flow wires the brief-builder, the deliberation, the close protocol and the artifact — on both doors (W74-D)
+## v1.0.48: Council: one convene flow wires the brief-builder, the deliberation, the close protocol and the artifact — on both doors (W74-D)
 
 In plain English: a council now runs as one flow. The brief the elders read is assembled first from the client's permitted memory files, the council deliberates and reaches its verdict, the sitting closes itself (the soft-close question, or the client's own "that's all"), and the finished counsel page arrives in the reply beside the chamber link. The same flow serves both doors: the client's OpenClaw agent and claude-nine / Claude Code (999) — the client only asks for the council, whichever side they are on.
 
@@ -10,7 +10,7 @@ In plain English: a council now runs as one flow. The brief the elders read is a
 - New assert-style test `runtime/tests/convene-flow.test.ts` (no framework) proving the order on both doors — the deliberation leg receives the assembled brief, finalize really renders through the W74-B renderer, and the delivery carries the artifact link beside the chamber — plus the sitting cases (soft-close at 5m, close phrase finalizes, 10-minute auto-finalize).
 - Manifest and archive regenerated with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
 
-## v1.0.46: Council: a sitting now closes itself — one soft-close question, an explicit close phrase finalizes at once, and ten quiet minutes never leave a session open (W74-A)
+## v1.0.47: Council: a sitting now closes itself — one soft-close question, an explicit close phrase finalizes at once, and ten quiet minutes never leave a session open (W74-A)
 
 In plain English: a council sitting is one session and every sitting gets closed. Five minutes after the client's last interaction the council asks exactly once "Is that all, or are we still working?"; an explicit close phrase ("that's all", "we're done", "finalize", ...) finalizes immediately; no answer within ten minutes of the question finalizes automatically; and nothing hangs open.
 
@@ -21,7 +21,7 @@ In plain English: a council sitting is one session and every sitting gets closed
 - Skill instructions: "Closing a session" added to SKILL.md and INSTRUCTIONS.md. "Resolve existing sessions first, never create a duplicate" and one active session per client stay exactly as they were.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-internal change).
 
-## v1.0.45: Council: a finished sitting renders as one fixed counsel artifact page (W74-B)
+## v1.0.46: Council: a finished sitting renders as one fixed counsel artifact page (W74-B)
 
 In plain English: after a council sitting, the result now renders as one clean page: the decision and the overall consensus at the top, the nine elders with their seat emblems and their takes below, the action steps numbered, and a footer with the sitting facts. The page is print-ready and can produce a real PDF when the box has headless Chrome or cupsfilter; otherwise the client prints from the browser. The look is identical for every client and every sitting.
 
@@ -32,7 +32,7 @@ In plain English: after a council sitting, the result now renders as one clean p
 - New runnable check scripts/tests/render-counsel-artifact.test.mjs: renders one synthetic fixture session (clearly labeled synthetic) and asserts the five sections in order, the nine seat images, and no absolute paths in the HTML; nine tests total.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill-scoped change only).
 
-## v1.0.44: Council: the convene brief is now built by one shared permitted-context builder across both doors, with private detail excluded and a hard size cap (W74-C)
+## v1.0.45: Council: the convene brief is now built by one shared permitted-context builder across both doors, with private detail excluded and a hard size cap (W74-C)
 
 In plain English: before a council starts, the brief the elders read is now assembled by one shared builder that reads only the client's permitted memory files on whichever side the session runs — the OpenClaw door or the claude-nine door — and selects just the facts that bear on THIS decision. Private preferences stay in the private store, unknowns stay marked, pointer documents are followed at most one link deep, and the brief can never run past its word cap.
 
@@ -43,6 +43,15 @@ In plain English: before a council starts, the brief the elders read is now asse
 - Bloat protection: `BRIEF_WORD_CAP` = 2000 words, hard; facts selected decision-relevant first, newest first inside a relevance class.
 - New runnable check `runtime/tests/brief-builder.test.ts` over fixture memory files: the decision-relevant fact is in the brief, the irrelevant private detail is out, the size cap holds, and unknowns are marked — proven on both doors.
 - Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (code fix only).
+
+## v1.0.44: Council: the Roast Room visual pops up and the chamber link rides every reply (BUILD W73)
+
+In plain English: no matter how the client calls the elders — claude-nine terminal or chat — the chamber visual they see at the link shows up for them too: on a desktop box it opens in the browser on every convene, and the chamber link is always in the reply so phone and chat callers tap straight into the same visual.
+
+- New `scripts/chamber-visual.sh`: prints exactly one `Chamber link: <url>` line — resolved at runtime from env `COUNCIL_PUBLIC_URL`, then `WISE_ELDERS_PUBLIC_ORIGIN`, then `public_origin` in the box's own `service.json`, then the loopback service origin — and opens that URL in the default browser when a desktop session exists. Fire-and-forget: it never blocks the reply, and a headless box (CI, cron, server) gets zero pops with the link still emitted.
+- SKILL.md: new "The chamber visual on every call" — the `Chamber link:` line goes into every reply (terminal and chat alike), never rewritten or guessed; a local-only 127.0.0.1 link is never sent to a client.
+- New tests `scripts/tests/chamber-visual.test.sh` (17 cases): GUI present invokes `open` exactly once with the right URL, headless invokes nothing and still emits the link, the link is always in the output, URL source order, and a failed pop never breaks a convene.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (skill change only).
 
 ## v1.0.43: Council: an existing council ingress rule keeps its own port (FIX W68)
 

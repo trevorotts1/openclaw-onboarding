@@ -13,15 +13,53 @@ Run: python3 -m unittest discover -s tests -v   (from adapters/)
 """
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
 
 ADAPTERS_DIR = Path(__file__).resolve().parents[1]
 WORK_DIR = ADAPTERS_DIR.parent
-PACKET_DIR = WORK_DIR.parents[2] / "packet"
+SKILL_DIR = WORK_DIR.parent
+
+
+def _packet_reference_dir():
+    """Locate the packet reference independent of the checkout depth.
+
+    CR-INT-S80-001: this module resolved the packet only at the authored
+    layout's depth (``WORK_DIR.parents[2] / "packet"`` — a sibling of the
+    whole repository), so ``import reference_contracts`` failed everywhere
+    the repository is checked out on its own. Resolution order, mirroring
+    S78's CR-INT-S78-001, S81's CR-INT-S81-001 and S82's CR-INT-S82-001:
+    the ``S80_PACKET_REFERENCE`` env override, then a tolerant ancestor
+    walk to the first ancestor carrying ``packet/reference``, then this
+    repository's vendored packet copy at
+    ``79-signature-order-form/fixtures/packet`` (reference_contracts.py
+    beside the two JSON files). Fail closed naming the env override.
+    """
+    override = os.environ.get("S80_PACKET_REFERENCE")
+    if override:
+        return Path(override)
+    for ancestor in SKILL_DIR.parents:
+        candidate = ancestor / "packet" / "reference"
+        if (candidate / "launch-example.json").is_file() and \
+                (candidate / "acceptance-cases.json").is_file():
+            return candidate
+        vendored = ancestor / "79-signature-order-form" / "fixtures" / "packet"
+        if (vendored / "reference_contracts.py").is_file() and \
+                (vendored / "acceptance-cases.json").is_file():
+            return vendored
+    raise ImportError(
+        "S80 tests: packet reference (reference_contracts.py + "
+        "acceptance-cases.json) not found in any ancestor of "
+        f"{SKILL_DIR}; set S80_PACKET_REFERENCE to the packet reference "
+        "directory"
+    )
+
+
+PACKET_REF_DIR = _packet_reference_dir()
 sys.path.insert(0, str(ADAPTERS_DIR))
-sys.path.insert(0, str(PACKET_DIR / "reference"))
+sys.path.insert(0, str(PACKET_REF_DIR))
 
 import routing_state as rs
 import reference_contracts as ref
@@ -274,9 +312,9 @@ class Acceptance64CrossCheckTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        doc = json.loads((PACKET_DIR / "reference" / "acceptance-cases.json").read_text())
+        doc = json.loads((PACKET_REF_DIR / "acceptance-cases.json").read_text())
         cls.cases = doc["cases"]
-        launch = json.loads((PACKET_DIR / "reference" / "launch-example.json").read_text())
+        launch = json.loads((PACKET_REF_DIR / "launch-example.json").read_text())
         cls.prices = {
             o["offer_id"]: o["prices"][0]["amount_minor"] for o in launch["offers"]
         }

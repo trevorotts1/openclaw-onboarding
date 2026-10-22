@@ -569,9 +569,15 @@ PLAYWRIGHT_SEED_JS = (
     "  const attrs = '; path=' + path + '; Max-Age=' + maxAge +"
     "    (dom ? '; domain=' + dom + '; secure' : '');"
     "  const aObj = { apiKey: i.apiKey, userId: i.userId, companyId: i.companyId };"
-    "  document.cookie = ck.a_name + '=' + encodeURIComponent(btoa(JSON.stringify(aObj))) + attrs;"
+    # RAW cookie values, exactly as the proven injector
+    # (tools/inject-ghl-auth.sh) and the SPA's own setter write them: the SPA
+    # getter reads the cookie value raw and applies atob to it, so
+    # percent-escaping btoa output turns '+', '/' and '=' into %2B %2F %3D and
+    # atob throws InvalidCharacterError -> auth/get returns user_not_logged_in
+    # despite a successful mint. NEVER encodeURIComponent a cookie value here.
+    "  document.cookie = ck.a_name + '=' + btoa(JSON.stringify(aObj)) + attrs;"
     "  for (const [field, name] of Object.entries(ck.token_map)) {"
-    "    if (i[field]) document.cookie = name + '=' + encodeURIComponent(i[field]) + attrs;"
+    "    if (i[field]) document.cookie = name + '=' + i[field] + attrs;"
     "  }"
     "  const lm = (location.pathname || '').match(/\\/location\\/([A-Za-z0-9_-]+)/);"
     "  return { userId: i.userId, companyId: i.companyId,"
@@ -582,7 +588,14 @@ PLAYWRIGHT_SEED_JS = (
 
 def _resolve_page(context):
     """The single page the bridge seeds (first owned page of the owned context,
-    creating one when the context is fresh)."""
+    creating one when the context is fresh).
+
+    CONTRACT: this page is the SINGLE SOURCE OF TRUTH for the seeded session.
+    The seed lands in this page's IndexedDB + cookie jar; the caller MUST
+    navigate THIS page object (the one ``bridge_seed_into_context`` returns),
+    never a fresh ``context.new_page()`` — a second page is a different origin
+    store partition and its auth/get throws SecurityError / user_not_logged_in
+    even though the mint succeeded."""
     try:
         pages = getattr(context, "pages", None) or []
         if pages:
@@ -593,6 +606,22 @@ def _resolve_page(context):
             "REFUSE (P4): no usable page in the owned context for seeding."
         ) from exc
 
+
+class BridgeReceipt(dict):
+    """The REDACTED, JSON-serializable bridge receipt.
+
+    The seeded page rides as the ``page`` ATTRIBUTE, never as a key: a receipt
+    is what gets logged/printed (B19), and a live page handle must never land in
+    a serialized receipt. Callers navigate ``receipt.page`` — the exact page the
+    seed was applied to — instead of opening a second page (a second page is a
+    different store partition and reads as user_not_logged_in)."""
+
+    def __init__(self, *args, page=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.page = page
+
+    def copy(self):
+        return BridgeReceipt(self, page=self.page)
 
 def bridge_seed_into_context(context, seed, *,
                              expected_location_id=None,
@@ -607,7 +636,9 @@ def bridge_seed_into_context(context, seed, *,
     2. Fetch the ACTUAL identity and validate it (validate_location_identity)
        BEFORE anything else runs.
     3. Return a REDACTED receipt — identity fields and counters only, never a
-       token or cookie value (B19).
+       token or cookie value (B19). The receipt's ``page`` ATTRIBUTE is the
+       exact page object the seed was applied to; callers navigate THAT page
+       (see _resolve_page's contract) rather than opening another one.
 
     Never drives a login form, never opens a login popup, never falls back to
     password/2FA (D7 hard rule — night mode is implicit here)."""
@@ -646,14 +677,18 @@ def bridge_seed_into_context(context, seed, *,
     if not any(raw_identity.get(k) for k in
                ("userId", "user_id", "companyId", "company_id",
                 "locationId", "location_id")):
-        return {"ok": False, "state": "SESSION_EXPIRED", "redacted": True}
+        return BridgeReceipt(
+            {"ok": False, "state": "SESSION_EXPIRED", "redacted": True},
+            page=page)
 
     identity = validate_location_identity(
         raw_identity,
         expected_location_id=expected_location_id,
         expected_company_id=expected_company_id,
     )
-    return {"ok": True, "state": "OK", "identity": identity, "redacted": True}
+    return BridgeReceipt(
+        {"ok": True, "state": "OK", "identity": identity, "redacted": True},
+        page=page)
 
 
 def mint_and_bridge(context, session, out, *,
@@ -739,7 +774,7 @@ def mint_and_bridge(context, session, out, *,
     except AuthBridgeError as exc:
         raise AuthBridgeError(redact_secrets(str(exc), secrets)) from exc
 
-    receipt = dict(receipt)
+    receipt = receipt.copy()  # keeps the seeded page handle off the dict keys
     receipt["reseed_count"] = reseed_state["count"]
     receipt["redacted"] = True
     return receipt
