@@ -298,33 +298,42 @@ export function assembleBrief(input: BriefInput): PermittedContextBrief {
     : null;
 
   // Hard cap: drop the least-relevant facts first, then constraints,
-  // then options, then clip the decision — never over the cap.
+  // then options, then unknowns, then clip the decision — never over
+  // the cap. Every rung counts as a drop, so `truncated` is accurate on
+  // every trimming path including the decision clip.
   let facts: BriefFact[] = [...candidates];
   const keptConstraints = [...constraints];
   const keptOptions = [...options];
+  let keptUnknowns = [...unknowns];
   let keptDecision = decision;
   let dropped = 0;
-  const measure = (f: BriefFact[], c: string[], o: string[], d: string): number => {
+  const measure = (f: BriefFact[], c: string[], o: string[], u: string[], d: string): number => {
     const omissionNote = dropped > 0
       ? `${dropped} permitted-context item(s) omitted under the brief word cap.`
       : '';
-    return countWords([d, ...o, ...c, ...f.map((x) => x.statement), ...unknowns, omissionNote].join(' '));
+    return countWords([d, ...o, ...c, ...f.map((x) => x.statement), ...u, omissionNote].join(' '));
   };
-  while (measure(facts, keptConstraints, keptOptions, keptDecision) > wordCap) {
+  while (measure(facts, keptConstraints, keptOptions, keptUnknowns, keptDecision) > wordCap) {
     if (facts.length > 0) {
       facts = facts.slice(0, -1);
     } else if (keptConstraints.length > 0) {
       keptConstraints.pop();
     } else if (keptOptions.length > 0) {
       keptOptions.pop();
+    } else if (keptUnknowns.length > 0) {
+      keptUnknowns.pop();
     } else {
+      // Last resort: clip the decision. Counts as a drop like every
+      // other rung (the break is only the loop's termination guard for
+      // an already-clipped decision).
       keptDecision = keptDecision.split(/\s+/).slice(0, Math.max(1, Math.floor(wordCap / 2))).join(' ');
+      dropped += 1;
       break;
     }
     dropped += 1;
   }
 
-  const finalUnknowns = [...unknowns];
+  const finalUnknowns = [...keptUnknowns];
   if (dropped > 0) {
     finalUnknowns.push(`${dropped} permitted-context item(s) omitted under the brief word cap.`);
   }

@@ -12,6 +12,8 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -132,4 +134,125 @@ test('permitted context only: adapters read root files plus one hop, nothing els
     }
     assert.ok(docs.some((d) => d.depth === 1), `${door}: no one-hop doc read`);
   }
+});
+
+// ------------------------------------------------ W80 R2: the drop ladder
+//
+// The 2000-word cap holds across the WHOLE emitted brief (decision,
+// options, constraints, facts, unknowns), `truncated` is accurate on
+// every trimming path including the decision clip, and the priority
+// order is honored: facts fall off first, then constraints, then
+// options, then unknowns; the decision clips last.
+
+function tmpContextRoot(files: Record<string, string>): string {
+  const root = mkdtempSync(join(tmpdir(), 'cwe-r2-root-'));
+  for (const [rel, text] of Object.entries(files)) {
+    const abs = join(root, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, text);
+  }
+  return root;
+}
+
+function emittedWordCount(brief: PermittedContextBrief): number {
+  return [brief.decision, ...brief.options, ...brief.constraints,
+    ...brief.facts.map((f) => f.statement), ...brief.unknowns]
+    .join(' ').split(/\s+/).filter(Boolean).length;
+}
+
+test('cap case (a): oversized unknowns are trimmed, brief stays under cap, truncated=true', () => {
+  const lines = Array.from({ length: 260 }, (_, i) =>
+    `- item ${i} is unknown pending review of the Austin office timeline`);
+  const rootDir = tmpContextRoot({ 'CLAUDE.md': `# memory\n${lines.join('\n')}\n` });
+
+  // Untrimmed reference: what the cap has to bite.
+  const untrimmed = assembleBrief({ door: 'claude-nine', rootDir, decision: DECISION, wordCap: 100_000 });
+  assert.ok(untrimmed.unknowns.length > 250, `setup: expected many unknowns, got ${untrimmed.unknowns.length}`);
+  assert.ok(emittedWordCount(untrimmed) > BRIEF_WORD_CAP, 'setup: brief should overflow the cap');
+
+  const brief = assembleBrief({ door: 'claude-nine', rootDir, decision: DECISION });
+  assert.ok(brief.meta.word_count <= BRIEF_WORD_CAP, `over cap: ${brief.meta.word_count}`);
+  assert.ok(emittedWordCount(brief) <= BRIEF_WORD_CAP, `emitted text over cap: ${emittedWordCount(brief)}`);
+  assert.equal(brief.meta.truncated, true, 'unknowns were trimmed: truncated must be true');
+  // The drop ladder trims unknowns (not just their tail note).
+  assert.ok(brief.unknowns.length < untrimmed.unknowns.length, 'unknowns were not trimmed');
+  // Priority order: the surviving unknowns are the leading ones.
+  assert.deepEqual(
+    brief.unknowns.slice(0, -1),
+    untrimmed.unknowns.slice(0, brief.unknowns.length - 1),
+    'surviving unknowns must be the leading ones',
+  );
+  // The omission note is appended and counts toward the cap.
+  assert.match(brief.unknowns.at(-1) ?? '', /omitted under the brief word cap/);
+});
+
+test('cap case (b): oversized decision is clipped, brief stays under cap, truncated=true', () => {
+  const longDecision = Array.from({ length: 5000 }, (_, i) => `word${i}`).join(' ');
+  const rootDir = tmpContextRoot({ 'CLAUDE.md': '# memory\n' });
+
+  const brief = assembleBrief({ door: 'claude-nine', rootDir, decision: longDecision });
+  assert.ok(brief.meta.word_count <= BRIEF_WORD_CAP, `over cap: ${brief.meta.word_count}`);
+  assert.ok(emittedWordCount(brief) <= BRIEF_WORD_CAP, `emitted text over cap: ${emittedWordCount(brief)}`);
+  // The decision-clip path also marks truncation.
+  assert.equal(brief.meta.truncated, true, 'decision was clipped: truncated must be true');
+  // The clip is a prefix cut, never a rewording.
+  assert.ok(longDecision.startsWith(brief.decision), 'clipped decision must be a prefix of the original');
+  assert.ok(brief.decision.length < longDecision.length, 'decision was not clipped');
+});
+
+test('cap case (c): mixed oversized brief stays under cap, priority order honored, truncated=true', () => {
+  const facts = Array.from({ length: 60 }, (_, i) =>
+    `- Austin office fact ${i} ${'filler '.repeat(20).trim()}`);
+  const rootDir = tmpContextRoot({
+    'CLAUDE.md': [
+      '# memory',
+      ...facts,
+      '- Constraint: the second office cannot open before the September cohort ends.',
+      '- Constraint: the Austin budget cap is fixed for this year.',
+      '- Constraint: no lease signing until the reserve is confirmed.',
+      '- option 1: open the Austin office in Q3',
+      '- option 2: wait until next year',
+      '- item 7 is unknown pending review of the Austin timeline.',
+      '- item 8 is unknown pending review of the Austin timeline.',
+    ].join('\n'),
+  });
+  const wordCap = 300;
+
+  const untrimmed = assembleBrief({ door: 'claude-nine', rootDir, decision: DECISION, wordCap: 100_000 });
+  const brief = assembleBrief({ door: 'claude-nine', rootDir, decision: DECISION, wordCap });
+
+  assert.ok(brief.meta.word_count <= wordCap, `over cap: ${brief.meta.word_count}`);
+  assert.ok(emittedWordCount(brief) <= wordCap, `emitted text over cap: ${emittedWordCount(brief)}`);
+  assert.equal(brief.meta.truncated, true, 'items were dropped: truncated must be true');
+
+  // Priority order: facts fall off first and least-relevant first.
+  assert.ok(brief.facts.length < untrimmed.facts.length, 'facts were not the first to go');
+  assert.deepEqual(brief.facts, untrimmed.facts.slice(0, brief.facts.length), 'surviving facts must be the leading ones');
+  // Constraints and options are only touched after facts are exhausted.
+  assert.deepEqual(brief.constraints, untrimmed.constraints, 'constraints must survive while facts drop');
+  assert.deepEqual(brief.options, untrimmed.options, 'options must survive while facts drop');
+  // Unknowns survive in full; the omission note marks the dropped facts.
+  assert.deepEqual(brief.unknowns.slice(0, -1), untrimmed.unknowns, 'unknowns must survive while facts drop');
+  assert.match(brief.unknowns.at(-1) ?? '', /omitted under the brief word cap/);
+});
+
+test('cap case (d): below-cap brief is byte-preserved, truncated=false', () => {
+  const rootDir = join(FIXTURES, DOOR_DIRS['openclaw']);
+  const brief = build('openclaw');
+  const untrimmed = assembleBrief({
+    door: 'openclaw',
+    rootDir,
+    decision: DECISION,
+    options: OPTIONS,
+    wordCap: 100_000,
+  });
+
+  assert.ok(brief.meta.word_count < BRIEF_WORD_CAP, `expected a brief under the cap, got ${brief.meta.word_count}`);
+  assert.equal(brief.meta.truncated, false, 'nothing was trimmed: truncated must be false');
+  // Byte-preserved: identical content to an uncapped build, no omission note.
+  assert.equal(brief.decision, untrimmed.decision);
+  assert.deepEqual(brief.options, untrimmed.options);
+  assert.deepEqual(brief.constraints, untrimmed.constraints);
+  assert.deepEqual(brief.facts, untrimmed.facts);
+  assert.deepEqual(brief.unknowns, untrimmed.unknowns);
 });
