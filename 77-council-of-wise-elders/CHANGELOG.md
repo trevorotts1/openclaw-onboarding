@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.43: Council: an existing council ingress rule keeps its own port (FIX W68)
+
+In plain English: the provisioner used to force every council rule back to port 8787. Now it never rewrites an existing rule — the box's own port is authoritative — and only creates a missing rule at the default 8787. A box whose Council serves on 8788 (a client webhook owns 8787 there) is left byte-identical from now on.
+
+- An existing council ingress rule (any port) is preserved byte-identical; the run reports it as preserved and names the box's own port.
+- Only an absent council rule is created, and it is created on `COUNCIL_SERVICE` (http://127.0.0.1:8787).
+- New regression tests: an existing rule at 8788 is never rewritten (zero PUTs, config byte-identical), a missing rule is created at 8787, an existing rule at 8787 stays.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (code fix only).
+
 ## v1.0.42: Council: an already-wired Council address is adopted instead of conflicting, the client exclude list is honored everywhere, and container-connector instructions only appear with container evidence
 
 In plain English: when the Council address is already wired, the provisioner now adopts it instead of failing on a conflict; the client exclude list is honored everywhere; and container-connector instructions only appear with container evidence.

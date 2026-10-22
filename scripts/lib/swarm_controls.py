@@ -12,6 +12,10 @@ Stdlib-only, deterministic, no LLM calls. Provides:
     counter — never conversational memory as the lock. A crash frees the
     flock and leaves state for resume (same owner+batch, no duplicate) or
     takeover (generation bumped, stale writer fenced).
+  - Process identity (section 7.5 / S19): PID + start time + boot identity.
+    A reused PID is provably NOT the recorded owner, so a stale owner can
+    never be impersonated or silently taken over, and a live owner's lease
+    cannot be stolen mid-batch.
 
 CLI (used by supervision loops and fault tests):
   python3 swarm_controls.py health --internal P --external P
@@ -21,6 +25,7 @@ CLI (used by supervision loops and fault tests):
 import fcntl
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -36,6 +41,10 @@ BROWSER_CAP = 1
 
 class SlotRefused(Exception):
     pass
+
+
+class OwnerAlive(SlotRefused):
+    """Recorded owner process is provably alive: its lease is not stealable."""
 
 
 class StaleGeneration(Exception):
@@ -175,6 +184,66 @@ def _disk_free_gib(path):
     return shutil.disk_usage(path).free / GIB
 
 
+# --- process identity (section 7.5 / S19) -----------------------------------
+
+def boot_identity():
+    """Stable token for the current boot (start time alone is not enough)."""
+    try:
+        out = subprocess.run(['sysctl', '-n', 'kern.boottime'],
+                             capture_output=True, text=True, timeout=5).stdout
+        m = re.search(r'sec\s*=\s*(\d+)', out)
+        if m:
+            return 'boot-' + m.group(1)
+    except Exception:
+        pass
+    try:
+        return 'boot-' + Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    except Exception:
+        return 'boot-unknown'
+
+
+def process_start_time(pid):
+    """Wall-clock start time of a PID as ps reports it, or None if gone."""
+    try:
+        out = subprocess.run(['ps', '-p', str(int(pid)), '-o', 'lstart='],
+                             capture_output=True, text=True, timeout=5).stdout
+        return out.strip() or None
+    except Exception:
+        return None
+
+
+def capture_identity(pid=None):
+    """PID + start time + boot identity of a process (defaults: caller)."""
+    pid = os.getpid() if pid is None else int(pid)
+    return {'pid': pid, 'start_time': process_start_time(pid),
+            'boot_id': boot_identity()}
+
+
+def identity_matches(a, b):
+    """True only when both records describe the SAME process. A reused PID
+    has a different start time, so it never matches the recorded owner."""
+    if not a or not b:
+        return False
+    return (a.get('pid') == b.get('pid')
+            and bool(a.get('start_time'))
+            and a.get('start_time') == b.get('start_time')
+            and a.get('boot_id') == b.get('boot_id'))
+
+
+def identity_alive(record):
+    """True only when the RECORDED process is still that exact process.
+    PID reuse or a reboot makes the recorded owner provably not-alive.
+    A bare PID (or anything else) is never proof of identity."""
+    if not isinstance(record, dict):
+        return False
+    if not record.get('pid') or not record.get('start_time'):
+        return False
+    if record.get('boot_id') not in (None, 'boot-unknown') \
+            and record.get('boot_id') != boot_identity():
+        return False
+    return process_start_time(record['pid']) == record['start_time']
+
+
 def _mem_free_gib():
     try:
         out = subprocess.run(['vm_stat'], capture_output=True, text=True,
@@ -227,6 +296,9 @@ class MergeLock:
       resumes at the same generation (restart resumes, never duplicates).
     - Takeover (different owner/batch after a crash): generation is bumped,
       so a returning stale writer's complete() is refused.
+    - S19: the owner's process identity (PID + start time + boot) is stored.
+      A takeover is refused while that exact process is provably alive —
+      a reused PID or a reboot is NOT the recorded owner.
     - complete()/release() release the held flock when done."""
 
     def __init__(self, state_dir, now=time.time):
@@ -272,11 +344,19 @@ class MergeLock:
             self._held.close()
             self._held = None
 
-    def try_acquire(self, owner, batch_id):
+    def try_acquire(self, owner, batch_id, identity=None):
         """Return (True, generation) when owned, (False, None) when another
-        live supervisor holds the lock right now."""
+        live supervisor holds the lock right now.
+
+        identity: this process's identity record (PID + start time + boot);
+        captured automatically when omitted. A same-owner resume is refused
+        while the RECORDED process is still that exact process (a second
+        supervisor must not start the same batch); a takeover by a different
+        owner/batch is refused while the recorded owner is provably alive
+        (OwnerAlive) — a reused PID is not the recorded owner (S19)."""
         if self._held is not None:
             return (True, self._generation)  # already own it
+        me = capture_identity() if identity is None else identity
         fh = open(self.lock_path, 'a+')
         try:
             fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -284,14 +364,34 @@ class MergeLock:
             fh.close()
             return (False, None)
         state = self._read()
-        if (state.get('status') == 'active' and state.get('owner') == owner
-                and state.get('batch_id') == batch_id):
+        same_batch = (state.get('status') == 'active'
+                      and state.get('owner') == owner
+                      and state.get('batch_id') == batch_id)
+        if same_batch and identity_matches(state.get('identity'), me):
+            self._held = fh                    # same process retries
+            self._generation = state['generation']
+            return (True, state['generation'])
+        recorded = state.get('identity')
+        if state.get('status') == 'active' and identity_alive(recorded):
+            fcntl.flock(fh, fcntl.LOCK_UN)
+            fh.close()
+            if same_batch:
+                raise OwnerAlive(
+                    f'batch {batch_id} owned by live process '
+                    f'{recorded.get("pid")}: duplicate supervisor refused')
+            raise OwnerAlive(
+                f'lease held by live process {recorded.get("pid")}: '
+                'takeover refused (recovery needs a new fenced generation '
+                'after the recorded owner is proven gone)')
+        if same_batch:
             self._held = fh                    # restart resumes same batch
             self._generation = state['generation']
+            state['identity'] = me
+            self._write(state)
             return (True, state['generation'])
         state = {'owner': owner, 'batch_id': batch_id,
                  'generation': state.get('generation', 0) + 1,
-                 'status': 'active'}
+                 'status': 'active', 'identity': me}
         self._write(state)
         self._held = fh
         self._generation = state['generation']
@@ -359,7 +459,11 @@ def main(argv):
                 return 4
             time.sleep(0.01)
     lock = MergeLock(args.state_dir)
-    ok, gen = lock.try_acquire(args.owner, args.batch)
+    try:
+        ok, gen = lock.try_acquire(args.owner, args.batch)
+    except SlotRefused:          # OwnerAlive: live owner, lease not stealable
+        print('REFUSED')
+        return 3
     if not ok:
         print('REFUSED')
         return 3
