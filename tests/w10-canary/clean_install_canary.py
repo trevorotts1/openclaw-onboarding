@@ -503,6 +503,30 @@ def run_self_test(a):
                        capture_output=True, text=True)
     check("self-test:missing manifest -> non-zero", r.returncode != 0,
           "rc=%d %s" % (r.returncode, (r.stdout or "").strip().splitlines()[-1:]))
+
+    # (b3) ONE plausible file is not an install. A manifest carrying only the
+    # seeded fixture file must be refused even though it is non-empty and its
+    # digest matches the bytes on disk.
+    if sandbox and (sandbox / "SKILL.md").is_file():
+        one = out / "manifest-one-file.json"
+        cc.write_json(one, {
+            "schema": "blackceo.skill75.distribution-manifest/v1",
+            "distribution": "onboarding",
+            "installed_path": str(sandbox),
+            "source": {"repo": "openclaw-onboarding", "revision": "0" * 40},
+            "file_count": 1,
+            "manifest_sha256": cc.manifest_digest({"SKILL.md": cc.sha256_file(sandbox / "SKILL.md")}),
+            "files": {"SKILL.md": cc.sha256_file(sandbox / "SKILL.md")},
+        })
+        r = subprocess.run([sys.executable, str(here), "--verify-manifest",
+                            str(one), "--verify-root", str(sandbox)],
+                           capture_output=True, text=True)
+        line = [l for l in (r.stdout or "").splitlines() if "[FAIL]" in l]
+        check("self-test:one-file manifest -> refused", r.returncode != 0,
+              "rc=%d %s" % (r.returncode, line[-1:] or [""]))
+        check("self-test:one-file refusal names the shape problem",
+              "below the" in (r.stdout or ""),
+              (line[-1:] or [""])[0][:160])
     if manifest_path and sandbox:
         ok, detail, _cmd = cc.loaded_source_proof(manifest_path, sandbox)
         check("self-test:loaded-source proof verifies manifest", ok, detail)

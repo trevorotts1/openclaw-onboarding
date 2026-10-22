@@ -358,11 +358,35 @@ def diff_manifests(old, new):
     return added, changed, removed
 
 
-def verify_manifest(root, manifest, ignore=()):
+#: The Skill 75 tree's real shipped shape. A manifest that is non-empty but does
+#: not carry these cannot be a real install of the skill — it is a placeholder or
+#: a single seeded fixture file. "Non-empty" alone is a fail-open test.
+REQUIRED_SKILL_TOP_LEVEL = ("SKILL.md", "scripts")
+MIN_SKILL_FILES = 100
+
+
+def _manifest_shape_problems(manifest, min_files, required):
+    problems = []
+    if len(manifest) < min_files:
+        problems.append("manifest has %d file(s), below the %d this skill tree "
+                        "ships — refusing a placeholder/single-file install"
+                        % (len(manifest), min_files))
+    for top in required:
+        if not any(k == top or k.startswith(top + "/") for k in manifest):
+            problems.append("manifest is missing the required top-level path %r"
+                            % top)
+    return problems
+
+
+def verify_manifest(root, manifest, ignore=(), min_files=MIN_SKILL_FILES,
+                    required=REQUIRED_SKILL_TOP_LEVEL):
     """Recompute an installed tree against a recorded manifest.
 
-    Returns (ok, problems). A manifest with no entries is refused outright:
-    an empty manifest is exactly the placeholder this check exists to catch.
+    Returns (ok, problems). A manifest is refused unless it can only be the
+    result of a real install: it must be non-empty AND carry at least `min_files`
+    entries AND include every path in `required`. "Non-empty" alone is not enough
+    — one seeded fixture file would otherwise pass, which is exactly how a tree
+    where the installer did nothing got blessed.
     `ignore` names paths the caller seeded deliberately (user state that is not
     installer output); they are named in the receipt, never silently dropped.
     """
@@ -374,6 +398,9 @@ def verify_manifest(root, manifest, ignore=()):
     if bad:
         return False, ["manifest carries a non-sha256 digest for %s" % k
                        for k in bad[:10]]
+    shape = _manifest_shape_problems(manifest, min_files, required)
+    if shape:
+        return False, shape
     problems = []
     for rel, want in sorted(manifest.items()):
         p = root / rel
@@ -389,21 +416,28 @@ def verify_manifest(root, manifest, ignore=()):
     return (not problems), problems
 
 
-def compare_to_source(installed, source):
-    """Is every installed file exactly the pinned source file at the same path?
+def compare_to_source(installed, source, ignore=()):
+    """Is the installed tree the pinned source tree, in BOTH directions?
 
-    Returns (ok, detail). Installers may add their own bookkeeping files inside
-    the skill tree, so EXTRA files are reported but never silently tolerated:
-    any installed file that is absent from the source, or whose digest differs,
-    fails. That is the "no placeholder content" contract.
+    Returns (ok, detail). A source file that never got installed fails (the
+    installer did less than the source requires), an installed file that is not
+    in the source fails (placeholder or foreign content), and a differing digest
+    fails. Checking only one direction lets a one-file tree satisfy a 858-file
+    source, so completeness is enforced here rather than in a separate check.
     """
-    missing = sorted(set(installed) - set(source))
+    ignore = set(ignore or ())
+    not_installed = sorted(set(source) - set(installed) - ignore)
+    absent_from_source = sorted(set(installed) - set(source) - ignore)
     differing = sorted(k for k in set(installed) & set(source)
                        if installed[k] != source[k])
-    detail = ("%d installed / %d source; %d absent-from-source %s; %d differing %s"
-              % (len(installed), len(source), len(missing), missing[:3],
-                 len(differing), differing[:3]))
-    return (bool(installed) and not missing and not differing), detail
+    detail = ("%d installed / %d source; %d source file(s) NOT installed %s; "
+              "%d installed file(s) absent-from-source %s; %d differing %s"
+              % (len(installed), len(source), len(not_installed),
+                 not_installed[:3], len(absent_from_source),
+                 absent_from_source[:3], len(differing), differing[:3]))
+    ok = (bool(installed) and not not_installed and not absent_from_source
+          and not differing)
+    return ok, detail
 
 
 def distribution_manifest(dist, install_root, files, source):
