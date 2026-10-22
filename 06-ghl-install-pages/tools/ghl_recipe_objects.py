@@ -49,9 +49,20 @@ with the confidence value and the doc's own caveat preserved:
     `?locationId=&type=funnel`), and the `Create folder` button anchor is
     captured at confidence 9 in BOTH lists. The create DIALOG's interior
     (its name field, its confirm button) was NEVER captured, and no folder
-    create RESPONSE shape was captured. So folder identity is proven on the
-    READ side only, and folder creation is RUNTIME_CAPTURE at click time.
-    Nothing is invented to fill that gap.
+    create ROUTE, VERB, BODY-KEY SET or RESPONSE shape was captured. So folder
+    identity is proven on the READ side only.
+    IMPLEMENTED, GATED: the create itself now exists —
+    `ghl_rest_canvas.folder_create_path / folder_create_body / folder_create` —
+    but every unknown (route, verb, body keys, response id field) is REPLAYED
+    from an approved live capture and there is no default. With no capture the
+    gate reports PENDING_LIVE_CAPTURE and the create refuses; a schema-valid
+    capture alone only reaches ENABLED_FOR_REVIEW, and a reviewer's explicit
+    `reviewed=True` is still required. `folder_create_recipe_contract` below
+    turns a closed gate into `execution_mode="disabled"`, which
+    `RecipeContract.validate()` refuses — so a folder create cannot be run by
+    forgetting a check. Fill the checklist with
+    `tools/ghl_folder_create_capture_checklist.sh checklist`. Nothing is
+    invented to fill that gap.
   * funnels / websites: modal + list anchors locked (9-9.5).
   * steps / pages: New-step dialog anchors locked (9-9.5); the website
     variant of the same dialog is `Add new page` (9.5).
@@ -938,6 +949,109 @@ def recipe_contract_for(kind: str, *, location_id: str, parent_id: str = "",
     )
 
 
+# ── Folder-create recipe contract (the create path is capture-gated) ─────────
+#
+# The folder kinds already reconcile and re-list correctly, but until this
+# change NO module carried a folder CREATE verb at all: `grep -c folder
+# tools/*.py` found the list route and the kind table, never a create. The
+# create is now implemented in `ghl_rest_canvas.folder_create*` behind a
+# capture gate (the Create-folder dialog interior, the create route+verb, the
+# body keys and the create response shape were never captured live).
+#
+# This function is the RECIPE-SIDE half of that gate: it builds the normal
+# §10.2 contract for a folder kind, but forces `execution_mode="disabled"`
+# whenever the capture gate is closed. `RecipeContract.validate()` already
+# refuses a disabled contract, so a folder create cannot be run by forgetting a
+# check — the contract itself is unrunnable until a reviewed capture exists.
+
+FOLDER_CREATE_KINDS: Tuple[str, ...] = FOLDER_KINDS
+
+
+def folder_create_recipe_contract(
+    kind: str,
+    *,
+    location_id: str,
+    capture: Any = None,
+    reviewed: bool = False,
+    scoped_approval: str = "",
+    recipe_version: str = "v3.0",
+    auth_rail: str = "firebase_token_id",
+) -> "RecipeContract":
+    """Build the folder-create recipe contract, gated on the live capture.
+
+    Args:
+        kind: ``funnel_folder`` or ``website_folder`` (folders hang at the
+            location root, so there is no parent).
+        location_id: The sub-account location id.
+        capture: an approved folder-create capture dict (or ``None``).
+        reviewed: the reviewer's approval.
+        scoped_approval: the account/location-scoped approval string.
+        recipe_version: contract version.
+        auth_rail: the auth rail the create runs on.
+
+    Returns:
+        A ``RecipeContract``. ``execution_mode`` is ``"disabled"`` while the
+        capture gate is closed, which makes ``validate()`` raise.
+    """
+    if kind not in FOLDER_CREATE_KINDS:
+        raise ContractError(
+            f"{kind!r} is not a folder kind; folder_create_recipe_contract is "
+            f"for {list(FOLDER_CREATE_KINDS)}"
+        )
+    schema = schema_for(kind)
+    mode = "rest_in_browser"
+    if capture is None:
+        mode = "disabled"
+    else:
+        import ghl_rest_canvas  # read-only reuse of the capture gate
+        if ghl_rest_canvas.is_synthetic_folder_capture(capture):
+            # A shape fixture is not evidence; it closes the gate outright
+            # rather than raising, so the caller sees a disabled contract.
+            mode = "disabled"
+            capture = None
+        try:
+            state = (ghl_rest_canvas.folder_create_capability_state(
+                capture, reviewed=reviewed
+            ) if capture is not None else {"enabled": False})
+        except Exception:  # a hostile capture is a closed gate, never open
+            state = {"enabled": False}
+        if not state.get("enabled"):
+            mode = "disabled"
+        elif str(state.get("folder_type") or "") != schema.platform_type:
+            raise ContractError(
+                f"the capture was taken under type {state.get('folder_type')!r} "
+                f"but {kind} lives in type {schema.platform_type!r}; a capture "
+                "authorizes only its own type scope"
+            )
+    return RecipeContract(
+        recipe_version=recipe_version,
+        object_kind=kind,
+        execution_mode=mode,
+        location_id=location_id,
+        parent_id="",
+        parent_kind="",
+        input_schema={"name": "str"},
+        idempotency_key="scoped_identity(kind,native_id,location,parent)",
+        auth_rail=auth_rail,
+        browser_lease_required=True,
+        scoped_approval=scoped_approval or "UNSET",
+        readback_contract=schema.readback,
+        expected_ui_baseline=schema.ui_baseline,
+        expected_ui_baseline_status=schema.ui_baseline_status,
+    )
+
+
+def folder_create_gate_state(capture: Any = None,
+                             reviewed: bool = False) -> Dict[str, Any]:
+    """The folder-create gate as plain data, safe to report.
+
+    Delegates to ``ghl_rest_canvas.folder_create_capability_state`` so there is
+    exactly ONE definition of what an open gate means.
+    """
+    import ghl_rest_canvas  # read-only reuse; no edit, no call
+    return ghl_rest_canvas.folder_create_capability_state(capture, reviewed=reviewed)
+
+
 # ── Self-test (pure; no network, no browser) ─────────────────────────────────
 
 def _selftest() -> int:
@@ -1010,16 +1124,53 @@ def _selftest() -> int:
 
 def main(argv: Optional[List[str]] = None) -> int:
     import argparse
+    import os
+
+    # `python3 -I` drops the script's own directory from sys.path, and the
+    # folder-create gate lives in ghl_rest_canvas; put the tools dir back so the
+    # CLI resolves it the same way the importing tests do.
+    import sys as _sys
+    _tools = os.path.dirname(os.path.abspath(__file__))
+    if _tools not in _sys.path:
+        _sys.path.insert(0, _tools)
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--selftest", action="store_true", help="offline selftest")
     ap.add_argument("--kinds", action="store_true", help="print the kind table")
+    ap.add_argument("--folder-create-checklist", action="store_true",
+                    help="print the checklist the folder-create dialog capture "
+                         "must fill (gate stays closed until it is filled)")
+    ap.add_argument("--folder-create-state", action="store_true",
+                    help="print the folder-create gate state")
+    ap.add_argument("--capture", help="folder-create capture JSON (for --state)")
+    ap.add_argument("--reviewed", action="store_true",
+                    help="the reviewer's approval; without it the gate stays shut")
     args = ap.parse_args(argv)
     if args.selftest:
         return _selftest()
     if args.kinds:
         import json
         print(json.dumps(kind_table(), indent=2))
+        return 0
+    if args.folder_create_checklist:
+        import json
+        import ghl_rest_canvas
+        print(json.dumps(ghl_rest_canvas.folder_create_capture_checklist(),
+                         indent=2))
+        return 0
+    if args.folder_create_state:
+        import json
+        import ghl_rest_canvas
+        try:
+            capture = (ghl_rest_canvas.load_folder_create_capture(args.capture)
+                       if args.capture else None)
+        except ghl_rest_canvas.CaptureRequired as exc:
+            import sys
+            print(f"REFUSE: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(folder_create_gate_state(capture,
+                                                  reviewed=args.reviewed),
+                         indent=2))
         return 0
     ap.print_help()
     return 2
@@ -1038,6 +1189,8 @@ __all__ = [
     "RecipeLlmCallViolation", "LlmCallGuard",
     "RECIPE_SEQUENCE", "EXECUTION_MODES", "RecipeContract", "ContractError",
     "recipe_contract_for",
+    "FOLDER_CREATE_KINDS", "folder_create_recipe_contract",
+    "folder_create_gate_state",
 ]
 
 

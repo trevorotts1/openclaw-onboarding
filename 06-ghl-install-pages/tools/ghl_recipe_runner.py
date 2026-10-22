@@ -249,6 +249,112 @@ def run_recipe(
                 pass           # mask the run outcome
 
 
+def run_folder_recipe(
+    kind: str,
+    *,
+    location_id: str,
+    name: str,
+    capture: Any = None,
+    reviewed: bool = False,
+    scoped_approval: str = "",
+    inventory: Callable[[], Dict[str, Any]],
+    create: Callable[[Dict[str, Any]], Dict[str, Any]],
+    readback: Callable[[str], Dict[str, Any]],
+    recipe_id: str = "",
+    **kw: Any,
+) -> RecipeRun:
+    """Run one FOLDER recipe (``funnel_folder`` / ``website_folder``).
+
+    The folder create verb is capture-gated (see
+    ``ghl_rest_canvas.folder_create``), but folder IDENTITY and reuse are proven
+    by the captured list route, which needs no gate. This entry point keeps that
+    split honest:
+
+      * the contract is built by ``ro.folder_create_recipe_contract``, which is
+        ``disabled`` while the gate is closed;
+      * while the gate is closed, reconciliation still runs FIRST so a resume
+        that finds the folder already present reports ``reused`` (no capture
+        needed to prove an existing object), and only a CREATE is refused.
+
+    ``capture``/``reviewed`` open the gate; with both the run delegates to
+    ``run_recipe`` unchanged. The payload is built from the capture via
+    ``ghl_rest_canvas.folder_create_body`` — the runner never invents a body, and
+    a caller may still pass their own ``payload``.
+    """
+    if kind not in ro.FOLDER_CREATE_KINDS:
+        raise RecipeRunError(
+            f"{kind!r} is not a folder kind; run_folder_recipe is for "
+            f"{list(ro.FOLDER_CREATE_KINDS)}"
+        )
+    if capture is not None:
+        import ghl_rest_canvas  # read-only reuse; the gate lives there
+        if isinstance(capture, str):
+            capture = ghl_rest_canvas.load_folder_create_capture(capture)
+        if ghl_rest_canvas.is_synthetic_folder_capture(capture):
+            # Loud, not silent: a shape fixture is never evidence.
+            raise ghl_rest_canvas.CaptureRequired(
+                f"ghl.folder.create: the supplied capture is synthetic "
+                f"({ghl_rest_canvas.FOLDER_CREATE_FIXTURE_WARNING}); a shape "
+                "fixture is not evidence"
+            )
+    contract = ro.folder_create_recipe_contract(
+        kind, location_id=location_id, capture=capture, reviewed=reviewed,
+        scoped_approval=scoped_approval,
+    )
+    run = RecipeRun(recipe_id=recipe_id or f"{kind}:{location_id}", kind=kind)
+
+    # Gate CLOSED: prove reuse if the folder exists; refuse a create.
+    #
+    # No browser lease is acquired on this path at all (the only work is the
+    # captured LIST read), so ``released`` stays False and no "release" step is
+    # recorded — claiming a release that never happened would be a lie in the
+    # receipt. ``released`` False here means "nothing to release", and the
+    # recorded steps say exactly that.
+    if contract.execution_mode == "disabled":
+        try:
+            snap = inventory()
+            if not isinstance(snap, dict):
+                raise RecipeRunError(
+                    "inventory() must return {'rows': [...], 'complete': bool}"
+                )
+            decision = ro.reconcile(
+                snap.get("rows") or [], kind=kind, location_id=location_id,
+                parent_id="", name=name, read_complete=bool(snap.get("complete")),
+            )
+        except Exception as exc:  # noqa: BLE001 — honest FAIL, never silent
+            run.outcome = FAILED
+            run.error = f"{type(exc).__name__}: {exc}"
+            return run
+        run.action = decision.action
+        run.reason = decision.reason
+        run.steps.append("reconcile")
+        if decision.action == ro.REUSE:
+            run.outcome = OK_REUSED
+            run.native_id = decision.identity.native_id
+            run.steps.append("reuse")
+            return run
+        run.outcome = REFUSED
+        state = ro.folder_create_gate_state(capture, reviewed=reviewed)
+        run.error = (
+            f"{state.get('state')}: {state.get('reason')} "
+            f"[{state.get('next_action')}]"
+        )
+        return run
+
+    # Gate OPEN: a normal §10.2 run, with the body replayed from the capture.
+    payload = kw.pop("payload", None)
+    if payload is None:
+        import ghl_rest_canvas  # read-only reuse; shapes the captured body
+        payload = ghl_rest_canvas.folder_create_body(
+            location_id, name, ro.schema_for(kind).platform_type,
+            capture=capture, reviewed=reviewed,
+        )
+    return run_recipe(
+        contract, inputs={"name": name}, inventory=inventory, create=create,
+        readback=readback, payload=payload, recipe_id=run.recipe_id, **kw,
+    )
+
+
 # ── Self-test (pure; injected fakes only) ────────────────────────────────────
 
 def _selftest() -> int:
@@ -319,13 +425,60 @@ def _selftest() -> int:
     if not r.released:
         errors.append("a refused run must still release the lease")
 
+    # ── Folder recipes: reuse without a capture, refuse a create without one ─
+    import ghl_rest_canvas as canvas
+    cap = dict(canvas.OFFLINE_FOLDER_CAPTURE)
+    cap.pop("_fixture", None)          # fixture marker off: shape, still fake
+    cap["location_id"] = floc = "loc-folder-selftest"
+    folder_store: Dict[str, Dict[str, Any]] = {}
+    folder_creates: List[Dict[str, Any]] = []
+
+    def _f_inventory():
+        return {"rows": list(folder_store.values()), "complete": True}
+
+    def _f_create(payload):
+        folder_creates.append(payload)
+        return {cap["response_id_field"]: f"folder-{len(folder_creates)}"}
+
+    def _f_readback(native_id):
+        row = {"id": native_id, "name": "ZHC Folder", "locationId": floc,
+               "type": "funnel"}
+        folder_store[native_id] = row
+        return row
+
+    closed = run_folder_recipe(
+        ro.KIND_FUNNEL_FOLDER, location_id=floc, name="ZHC Folder",
+        inventory=_f_inventory, create=_f_create, readback=_f_readback,
+        scoped_approval="APPROVED-selftest", recipe_id="folder-closed",
+    )
+    if closed.outcome != REFUSED or folder_creates:
+        errors.append(f"a closed gate must refuse a create, got {closed.as_dict()}")
+
+    opened = run_folder_recipe(
+        ro.KIND_FUNNEL_FOLDER, location_id=floc, name="ZHC Folder",
+        capture=cap, reviewed=True,
+        inventory=_f_inventory, create=_f_create, readback=_f_readback,
+        authenticate=lambda: floc, scoped_approval="APPROVED-selftest",
+        recipe_id="folder-open",
+    )
+    if opened.outcome != OK_CREATED or len(folder_creates) != 1:
+        errors.append(f"an open gate must create once, got {opened.as_dict()}")
+
+    second = run_folder_recipe(
+        ro.KIND_FUNNEL_FOLDER, location_id=floc, name="ZHC Folder",
+        inventory=_f_inventory, create=_f_create, readback=_f_readback,
+        scoped_approval="APPROVED-selftest", recipe_id="folder-reuse",
+    )
+    if second.outcome != OK_REUSED or len(folder_creates) != 1:
+        errors.append(f"a closed gate must still REUSE, got {second.as_dict()}")
+
     if errors:
         for e in errors:
             print(f"  FAIL: {e}", file=sys.stderr)
         print(f"\n[selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
         return 1
-    print("[selftest] PASS — ghl_recipe_runner sequence + two-run idempotency "
-          "(no network)")
+    print("[selftest] PASS — ghl_recipe_runner sequence + two-run idempotency + "
+          "folder capture gate (no network)")
     return 0
 
 
@@ -343,7 +496,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 __all__ = [
     "OK_CREATED", "OK_REUSED", "REFUSED", "FAILED",
-    "RecipeRun", "RecipeRunError", "run_recipe",
+    "RecipeRun", "RecipeRunError", "run_recipe", "run_folder_recipe",
 ]
 
 
