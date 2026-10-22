@@ -602,10 +602,12 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
         return 0 if not failed else 1
 
 
-def run_both(out, vector_path, repo, old_rev, new_rev):
+def run_both(out, vector_path, repo, old_rev, new_rev, allow_net=False):
     """Prove --dist selects a different installer and yields different manifests."""
-    rc_a = run_real(out, vector_path, "onboarding", repo, old_rev, new_rev)
-    rc_b = run_real(out, vector_path, "999", repo, old_rev, new_rev)
+    rc_a = run_real(out, vector_path, "onboarding", repo, old_rev, new_rev,
+                    allow_net=allow_net)
+    rc_b = run_real(out, vector_path, "999", repo, old_rev, new_rev,
+                    allow_net=allow_net)
     pa = Path(out) / "upgrade-manifest.onboarding.json"
     pb = Path(out) / "upgrade-manifest.999.json"
     if rc_a or rc_b:
@@ -751,7 +753,8 @@ def main():
     if a.selftest:
         return run_selftest(a.out)
     if a.dist == "both":
-        return run_both(a.out, a.vector, a.repo, a.old_rev, a.new_rev)
+        return run_both(a.out, a.vector, a.repo, a.old_rev, a.new_rev,
+                        a.allow_network)
     return run_real(a.out, a.vector, a.dist, a.repo, a.old_rev, a.new_rev,
                     a.fault, a.allow_network)
 
