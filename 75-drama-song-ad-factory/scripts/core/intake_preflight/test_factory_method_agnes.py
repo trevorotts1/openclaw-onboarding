@@ -109,7 +109,47 @@ def make_run(tmp, stage, method=None, agnes=None, progress=None,
         (run / "storyboard").mkdir()
         (run / "storyboard" / "approval.json").write_text(
             json.dumps({"state": storyboard}), "utf-8")
+    if stage == "video-generation" and storyboard == "approved":
+        # v3.0 B7/B8: the video paid stage holds on the ONE final recap + the
+        # operator's Go. Seed the measured sources a real run carries and
+        # record both, so these checks still exercise the Agnes routing.
+        _seed_recap(run)
     return run
+
+
+def _seed_recap(run):
+    """The Gate 4 sources a real run carries, plus one recap and one Go."""
+    import hashlib
+    core = str(HERE.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    import final_recap as FR
+    import spend_ledger as SL
+    (run / "music").mkdir(exist_ok=True)
+    master = run / "music" / "picked-song.mp3"
+    master.write_bytes(b"the picked master")
+    (run / "song-choices").mkdir()
+    (run / "song-choices" / "pick.json").write_text(json.dumps({
+        "pick": 1, "label": "warm-live-band",
+        "sha256": hashlib.sha256(master.read_bytes()).hexdigest()}), "utf-8")
+    (run / "storyboard" / "shot-list.json").write_text(json.dumps({"shots": [
+        {"shot_id": "s1", "song_start": 0.0, "song_end": 30.0},
+        {"shot_id": "s2", "song_start": 30.0, "song_end": 60.0}]}), "utf-8")
+    with sqlite3.connect(str(run / "control" / "state.sqlite3")) as con:
+        con.execute("CREATE TABLE IF NOT EXISTS video_model_lock("
+                    " run_id TEXT PRIMARY KEY, model TEXT NOT NULL,"
+                    " locked_at TEXT NOT NULL,"
+                    " version INTEGER NOT NULL DEFAULT 0)")
+        con.execute("INSERT OR REPLACE INTO video_model_lock VALUES"
+                    "('R1', 'minimax-h3/image-to-video',"
+                    " '2026-10-22T00:00:00Z', 1)")
+    SL.init_run(str(run / "spend.sqlite3"), "R1", ceiling=50000,
+                currency="USD")
+    doc = FR.build(str(run))
+    FR.record_go(str(run), {"schema": FR.GO_SCHEMA, "decision": "GO",
+                            "operator": "Test Operator",
+                            "at_utc": "2026-10-22T00:00:00Z",
+                            "recap_digest": doc["recap_digest"]})
 
 
 def next_env(run, extra_env=None):
