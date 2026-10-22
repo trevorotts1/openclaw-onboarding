@@ -47,7 +47,20 @@ PROVIDERS are derived from the resolved slug, never prescribed:
   slug ending in `:cloud`  → Ollama Cloud (baseUrl ollama.com, `:cloud` suffix,
                              `id_ed25519` device key)
   any other slug           → OpenRouter
-`thinking=high` on every rung.
+
+EFFORT (OPT-IN, plan §4.4)
+  Legacy behavior is preserved: `thinking=high` on every rung when NO effort
+  profile is set. A client MAY opt in per role:
+    MODEL_ROUTER_EFFORT_PROFILE_<ROLE>   e.g. MODEL_ROUTER_EFFORT_PROFILE_HTML
+    MODEL_ROUTER_EFFORT_PROFILE          (all roles)
+  Value: a bare level, one of "low" | "medium" | "high".
+  Precedence: role profile > global profile > legacy "high".
+  Provider capability is validated per rung against EFFORT_CAPABILITIES; an
+  unsupported level or provider FAILS EXPLICITLY (EffortUnsupportedError /
+  EffortProfileError) — it never silently becomes max/high. Level names are
+  generic; no project model names are ever baked into a client install.
+  Known deterministic procedures need no model selection per click (B18):
+  select() runs once per role/build, never per scripted action.
 
 BANNED
 ------
@@ -56,6 +69,9 @@ BANNED
                  AND `assert_model_sovereignty` (shared-utils, per-slug at select-time).
                  The block applies to resolved slugs too: a client configuration
                  naming an Anthropic model is rejected, not routed.
+  S24 excluded models — Luna, Terra, Qwen, Muse Wonder / Muse Wonder Full, and
+                 free endpoints are a POLICY REJECTION (ExcludedModelPolicyError):
+                 never called, never routed, never proposed as a fallback.
 
 USAGE
   python3 tools/model_router.py --selftest                    # offline, exits 0 on pass
@@ -97,8 +113,33 @@ _ANTHROPIC_MARKERS = ("anthropic", "claude", "opus", "sonnet", "haiku")
 OLLAMA_CLOUD_BASE_URL = "https://ollama.com"   # MEMORY: ollama-cloud baseUrl trap
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# Every rung carries thinking=high (policy binding).
+# Every rung carries thinking=high (policy binding) unless the client opts in
+# to a role effort profile (see EFFORT_LEVELS / resolve_effort below).
 THINKING_EFFORT = "high"
+
+# Generic effort levels — provider-neutral names, never a project model name.
+EFFORT_LEVELS = frozenset(["low", "medium", "high"])
+
+# Opt-in role effort profile env keys (plan §4.4). Absent = legacy THINKING_EFFORT.
+EFFORT_PROFILE_ENV = "MODEL_ROUTER_EFFORT_PROFILE"
+EFFORT_PROFILE_ENV_ROLE = "MODEL_ROUTER_EFFORT_PROFILE_{ROLE}"
+
+# Provider capability table (documented approved capability map, plan §4.4).
+# A level outside a provider's set FAILS EXPLICITLY — it never silently becomes
+# max. When a preflight probe reports narrower observed support, pass it as
+# `capabilities` to resolve_effort(); the probe observation wins over this table.
+EFFORT_CAPABILITIES: dict[str, frozenset] = {
+    "openrouter": frozenset(["low", "medium", "high"]),
+    "ollama-cloud": frozenset(["low", "medium", "high"]),
+}
+
+# S24 excluded models (plan §4.2): Luna, Terra, Qwen, Muse Wonder / Muse Wonder
+# Full, and free endpoints. Any slug naming one is a POLICY REJECTION at
+# resolution time — never called, never proposed as a fallback. Substring match
+# on the lowercase slug; "free" excludes OpenRouter `:free` endpoints.
+_EXCLUDED_MODEL_MARKERS = (
+    "luna", "terra", "qwen", "muse-wonder", "muse wonder", "musewonder", ":free",
+)
 
 # Ollama Cloud hard output-token ceiling (enforced on every ollama-cloud rung).
 OLLAMA_CLOUD_MAX_TOKENS = 65536
@@ -129,6 +170,23 @@ class ClientModelNotConfiguredError(RuntimeError):
     """Raised when the client has configured neither a model choice nor a
     configured default model for a role. This is the ask-the-client stop: the
     router never silently substitutes a named model of its own."""
+
+
+class EffortProfileError(RuntimeError):
+    """Raised when an opt-in effort profile is malformed (unknown level name).
+    Fails explicitly — never silently degrades to the legacy/max level."""
+
+
+class EffortUnsupportedError(RuntimeError):
+    """Raised when the requested effort level is not supported by the resolved
+    provider's capability set. Fails explicitly or maps through a documented
+    approved mapping — never silently becomes max (plan §4.4)."""
+
+
+class ExcludedModelPolicyError(RuntimeError):
+    """Raised when any configured or proposed model names an S24 excluded model
+    (Luna, Terra, Qwen, Muse Wonder/Full, free endpoints). Policy rejection:
+    the model is never called."""
 
 
 # ---------------------------------------------------------------------------
@@ -216,8 +274,10 @@ def resolve_client_models(env: dict, role: str) -> list:
     )
     out: list = []
     if choice:
+        _excluded_model_check(choice)
         out.append((choice, _provider_for_slug(choice), "client-choice"))
     if default and default != choice:
+        _excluded_model_check(default)
         out.append((default, _provider_for_slug(default), "client-default"))
     return out
 
@@ -234,6 +294,71 @@ def ask_client_message(role: str) -> str:
         f"MODEL_ROUTER_DEFAULT). Recommendation: {rec}. "
         "This router does not prescribe a specific model by name."
     )
+
+
+def _excluded_model_check(slug: str) -> None:
+    """S24 guard: reject any slug naming an excluded model (Luna, Terra, Qwen,
+    Muse Wonder/Full, free endpoints). Policy rejection — the slug is never
+    called and never proposed as a fallback."""
+    low = (slug or "").lower()
+    for marker in _EXCLUDED_MODEL_MARKERS:
+        if marker in low:
+            raise ExcludedModelPolicyError(
+                f"excluded model {slug!r} rejected by S24 policy "
+                f"(matched {marker!r}): never called, never proposed as a "
+                f"fallback"
+            )
+
+
+def resolve_effort(
+    env: dict,
+    role: str,
+    provider: str,
+    capabilities: Optional[dict] = None,
+) -> str:
+    """Resolve the opt-in effort level for a role, validated against the
+    provider's capability set.
+
+    Precedence (plan §4.4, client-choice preserved):
+      1. MODEL_ROUTER_EFFORT_PROFILE_<ROLE>  (client's role-level opt-in)
+      2. MODEL_ROUTER_EFFORT_PROFILE         (client's global opt-in)
+      3. Legacy THINKING_EFFORT ("high")     when no profile is set
+
+    Validation:
+      - Unknown level name → EffortProfileError (explicit fail, never silent max).
+      - Level outside the provider's capability set → EffortUnsupportedError
+        (explicit fail or documented approved mapping — never silent max).
+        A preflight `capabilities` observation, when given, wins over the
+        static EFFORT_CAPABILITIES table.
+
+    Returns the resolved level string. No project model names involved."""
+    canonical = _ROLE_ALIASES.get(role, role)
+    suffix = canonical.upper()
+    raw = (
+        _env_value(env, EFFORT_PROFILE_ENV_ROLE.format(ROLE=suffix))
+        or _env_value(env, EFFORT_PROFILE_ENV)
+    )
+    if not raw:
+        return THINKING_EFFORT  # legacy behavior preserved: profile absent
+    level = raw.strip().lower()
+    if level not in EFFORT_LEVELS:
+        raise EffortProfileError(
+            f"effort profile {raw!r} for role {canonical!r} is not a valid "
+            f"level; must be one of {sorted(EFFORT_LEVELS)}"
+        )
+    caps = (
+        (capabilities or {}).get(provider)
+        or EFFORT_CAPABILITIES.get(provider)
+        or frozenset()
+    )
+    caps = frozenset(caps)
+    if level not in caps:
+        raise EffortUnsupportedError(
+            f"effort level {level!r} is not supported by provider "
+            f"{provider!r} for role {canonical!r} (supported: "
+            f"{sorted(caps)}); refusing to silently become max"
+        )
+    return level
 
 
 def _sovereignty_check(slug: str) -> None:
@@ -280,7 +405,11 @@ def _build_role_ladder(env: dict, role: str) -> list:
                 else OPENROUTER_BASE_URL
             ),
             "probe_gated": req["probe_gated"],
-            "thinking": THINKING_EFFORT, "vision": req["vision"],
+            # Opt-in effort seam (plan §4.4): legacy "high" when no profile is
+            # set; a validated level otherwise. Provider capability mismatch
+            # raises here — explicit fail, never silent max.
+            "thinking": resolve_effort(env, role, provider),
+            "vision": req["vision"],
             "resolution": source,
             "models": [
                 {"slug": slug, "family": _family_of(slug),
@@ -334,7 +463,18 @@ def build_ladder(env: Optional[dict] = None, *, role: str = "execution") -> list
         )
     ladder = _ROLE_BUILDERS[canonical](env)
     assert_no_anthropic(ladder)
+    assert_no_excluded_models(ladder)
     return ladder
+
+
+def assert_no_excluded_models(ladder: list) -> None:
+    """HARD S24 GUARD: raise ExcludedModelPolicyError if any rung (including a
+    caller-proposed fallback ladder) names an excluded model — Luna, Terra,
+    Qwen, Muse Wonder/Full, or a free endpoint. Policy rejection: such a model
+    is never called."""
+    for rung in ladder:
+        for m in rung.get("models", []):
+            _excluded_model_check(m.get("slug", ""))
 
 
 def assert_no_anthropic(ladder: list) -> None:
@@ -486,6 +626,7 @@ def select(
     if ladder is None:
         ladder = build_ladder(env, role=role)
     assert_no_anthropic(ladder)
+    assert_no_excluded_models(ladder)
 
     # Resolve canonical role name from the ladder or the argument.
     canonical_role = _ROLE_ALIASES.get(role, role)
@@ -555,8 +696,10 @@ def select(
     receipt = {
         "policy": (
             "client-provider; NEVER Anthropic; model is the client's choice "
-            "or the client's configured default model; thinking=HIGH; "
-            "MiniMax M2 BANNED"
+            "or the client's configured default model; thinking=high (legacy) "
+            "unless the client opted in to a validated effort profile; "
+            "MiniMax M2 BANNED; S24 excluded models (Luna, Terra, Qwen, "
+            "Muse Wonder/Full, free endpoints) rejected, never called"
         ),
         "role": canonical_role,
         "chosen": chosen,
@@ -776,6 +919,93 @@ def _selftest() -> int:
         errors.append(
             "select() must NOT add max_tokens to an openrouter chosen entry"
         )
+
+    # ── 14. Opt-in effort profile: role profile > global profile > legacy ──
+    if resolve_effort(TEST_ENV, "content", "openrouter") != THINKING_EFFORT:
+        errors.append("no profile set must resolve the legacy high level")
+    E_ROLE = dict(TEST_ENV)
+    E_ROLE["MODEL_ROUTER_EFFORT_PROFILE_REASONING"] = "medium"
+    for role in _VALID_ROLES:
+        for rung in build_ladder(E_ROLE, role=role):
+            want = "medium" if role == "reasoning" else "high"
+            if rung.get("thinking") != want:
+                errors.append(
+                    f"role={role!r}: effort profile must give {want}, "
+                    f"got {rung.get('thinking')}"
+                )
+    E_ALL = dict(TEST_ENV)
+    E_ALL["MODEL_ROUTER_EFFORT_PROFILE"] = "low"
+    for role in _VALID_ROLES:
+        for rung in build_ladder(E_ALL, role=role):
+            if rung.get("thinking") != "low":
+                errors.append(
+                    f"role={role!r}: global effort profile must give low, "
+                    f"got {rung.get('thinking')}"
+                )
+
+    # ── 15. Unsupported effort FAILS EXPLICITLY, never silently max ────────
+    E_BAD = dict(TEST_ENV)
+    E_BAD["MODEL_ROUTER_EFFORT_PROFILE"] = "ultra"
+    try:
+        build_ladder(E_BAD, role="content")
+        errors.append("unknown effort level must raise EffortProfileError")
+    except EffortProfileError:
+        pass
+    E_LOW = dict(TEST_ENV)
+    E_LOW["MODEL_ROUTER_EFFORT_PROFILE"] = "low"
+    try:
+        resolve_effort(E_LOW, "html", "openrouter",
+                       {"openrouter": frozenset({"high"})})
+        errors.append(
+            "effort level outside provider capabilities must raise "
+            "EffortUnsupportedError"
+        )
+    except EffortUnsupportedError:
+        pass
+    try:
+        resolve_effort(E_LOW, "html", "unknown-provider")
+        errors.append(
+            "an unknown provider with an opt-in profile must fail explicitly"
+        )
+    except EffortUnsupportedError:
+        pass
+
+    # ── 16. S24: excluded models are a policy rejection, never called ──────
+    for bad_slug in ("client/luna-x", "acme/terra-2", "ollama/qwen3:cloud",
+                     "vendor/muse-wonder-full", "vendor/model:free"):
+        try:
+            build_ladder({"MODEL_ROUTER_DEFAULT": bad_slug}, role="content")
+            errors.append(f"excluded model {bad_slug!r} must be rejected")
+        except ExcludedModelPolicyError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            errors.append(
+                f"excluded model {bad_slug!r} raised wrong exception: {exc!r}"
+            )
+    called: list = []
+
+    def _spy_executor(*_a, **_k):
+        called.append(1)
+        return {"tool_call_fired": True, "parsed": True, "args": {"ok": True}}
+
+    bad_ladder = build_ladder(TEST_ENV, role="execution")
+    bad_ladder[0]["models"][0]["slug"] = "client/luna-x"
+    try:
+        select(_spy_executor, role="execution", ladder=bad_ladder,
+               sleep=lambda *_: None)
+        errors.append(
+            "select() must reject an S24 excluded model in a proposed "
+            "fallback ladder"
+        )
+    except ExcludedModelPolicyError:
+        pass
+    if called:
+        errors.append("an S24 excluded model must NEVER be called")
+
+    # ── 17. B18: select() resolves once per role; deterministic procedures ──
+    # need no model selection per click — nothing here dispatches per action.
+    if out_c["chosen"] is None:
+        errors.append("B18 setup: content selection must still resolve once")
 
     if errors:
         for e in errors:
