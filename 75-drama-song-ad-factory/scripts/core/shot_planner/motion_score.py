@@ -172,11 +172,11 @@ def gate_clips(clips):
             raise MotionScoreError("CLIP_UNSCORED",
                                    "%s carries a malformed motion score" % cid)
         scores[cid] = ms["score"]
-        # Trust the row's own flagged verdict when present; recompute when
-        # absent, so receipts written by motion_score() stay authoritative.
-        if ms.get("flagged") is True or (
-                not isinstance(ms.get("flagged"), bool)
-                and ms["score"] < MOTION_SCORE_LOW):
+        # Fail closed on the MEASURED score: a supplied flagged:false can
+        # never override a measured sub-threshold score. A supplied
+        # flagged:true is still honoured, so a stricter verdict is never
+        # loosened into a pass.
+        if ms["score"] < MOTION_SCORE_LOW or ms.get("flagged") is True:
             flagged.append(cid)
     return {"outcome": "ok" if not flagged else "rejected",
             "reason_code": "CLIPS_MOTION_PASS" if not flagged

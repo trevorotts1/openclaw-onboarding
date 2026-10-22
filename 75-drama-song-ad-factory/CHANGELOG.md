@@ -4,6 +4,18 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.89 - 2026-10-22 - batch 6: F12 motion gate fails closed, H3 native audio
+
+1. F12 motion gate: a measured sub-threshold motion score now FAILS CLOSED
+   instead of passing on an unmeasured/neutral score (shot_planner/motion_score).
+2. MiniMax H3 native audio: the mixing decision is recorded, a double-audio
+   case is detected (model native audio + a separate music track), the model
+   contract carries the audio policy, and both the dispatcher and the final
+   assembler honour it.
+The source-vector pin is NOT part of this release: it lands as its own
+micro-batch immediately AFTER batch 6 merges, so the pinned onboarding revision
+is a main that actually contains these units.
+
 ## v2.9.88 - 2026-10-22 - batch 5: WAL reads, H3 CLI, ledger-minted identity
 
 1. WAL stores read behind a private copy (state_store, run_watch, factory, incl.
