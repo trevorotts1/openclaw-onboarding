@@ -141,6 +141,9 @@ RAW_REL = os.path.join("logs", "final-preview-verify.json")
 SUMMARY_REL = os.path.join("scorecard", "verify-summary.json")
 RENDER_MANIFEST_REL = os.path.join("scorecard", "render-manifest.json")
 MOCK_SENTINEL_REL = os.path.join("scorecard", "MOCK-DO-NOT-SHIP")
+# Where bound-evidence receipts live: one JSON per reviewed artifact. Same
+# 0600/0700 writer as every other evidence file in this module.
+EVIDENCE_RECEIPT_REL = os.path.join("evidence", "receipts")
 
 # The two standard screenshot viewports (desktop + mobile) the agent captures as
 # REAL PNGs (replacing the V1 SVG placeholders).
@@ -1282,6 +1285,113 @@ def assert_consistent(
                         f"actual={actual_sha!r}. Evidence has been tampered "
                         "with or truncated."
                     )
+
+
+# ── BOUND EVIDENCE RECEIPTS ─────────────────────────────────────────────────
+#
+# The render-manifest invariant (5) already binds a run's DOM/PNG/console
+# artifacts to their sha256. What it did NOT do is let an INDEPENDENT reviewer
+# sign those bytes: a manifest is produced by the same pass that captured the
+# artifacts, so a self-reporting chain could still agree with itself.
+#
+# A bound-evidence receipt closes that: it names one artifact path, the hash
+# the reviewer looked at, WHO reviewed it and when. ``assert_receipts_bound``
+# re-hashes every referenced file at validation time and refuses on absence,
+# mismatch, or a receipt authored by the capturing run itself. This reuses the
+# existing manifest/artifact-hash mechanism (`_sha256_file`) and the existing
+# 0600/0700 evidence writers — it is not a new platform.
+
+REQUIRED_EVIDENCE_RECEIPT_FIELDS = (
+    "artifact_path",      # the file the reviewer actually looked at
+    "artifact_sha256",    # what they signed off on
+    "reviewer",           # identity, never the capturing run
+    "reviewed_at",        # ISO-8601 UTC
+    "run_id",             # the run whose artifact this is
+)
+_APPROVED_RECEIPT_VERDICTS = ("approved", "passed", "reviewed")
+
+
+def make_evidence_receipt(
+    artifact_path: str,
+    *,
+    reviewer: str,
+    run_id: str = "",
+    reviewed_at: str = "",
+    verdict: str = "approved",
+    captured_by: str = "",
+    candidate_revision: str = "",
+) -> dict:
+    """Build one bound-evidence receipt for ``artifact_path``.
+
+    The digest is taken from the FILE, never passed in — a receipt that could
+    be told its own truth would prove nothing. ``captured_by`` records the run
+    that produced the artifact so ``assert_receipts_bound`` can refuse a
+    receipt signed by the capturing run itself.
+    """
+    return {
+        "artifact_path": str(artifact_path),
+        "artifact_sha256": _sha256_file(str(artifact_path)),
+        "reviewer": str(reviewer or ""),
+        "reviewed_at": reviewed_at or _ts(),
+        "verdict": str(verdict or ""),
+        "run_id": str(run_id or ""),
+        "captured_by": str(captured_by or ""),
+        "candidate_revision": str(candidate_revision or ""),
+    }
+
+
+def write_evidence_receipt(run_dir: str, receipt: dict,
+                           name: str = "") -> str:
+    """Write one receipt under ``<run_dir>/evidence/receipts/`` at 0600."""
+    safe = "".join(c if (c.isalnum() or c in "-_.") else "_"
+                   for c in (name or os.path.basename(
+                       str(receipt.get("artifact_path") or "receipt"))))[:80]
+    if not safe.endswith(".json"):
+        safe += ".json"
+    path = os.path.join(run_dir, EVIDENCE_RECEIPT_REL, safe)
+    return ghl_evidence.write_json_private(path, receipt)
+
+
+def assert_receipts_bound(receipts: list[dict]) -> None:
+    """Raise ``VerifyContradiction`` unless every receipt is bound to its bytes.
+
+    Refuses on: a missing required field, a non-approving verdict, an artifact
+    that no longer exists, an artifact whose bytes no longer hash to the signed
+    digest, and a receipt authored by the run that captured the artifact (a
+    reviewer must be independent of what they review).
+    """
+    for idx, receipt in enumerate(receipts or []):
+        if not isinstance(receipt, dict):
+            raise VerifyContradiction(
+                f"evidence receipt {idx} is not a JSON object")
+        for field_name in REQUIRED_EVIDENCE_RECEIPT_FIELDS:
+            if not str(receipt.get(field_name) or "").strip():
+                raise VerifyContradiction(
+                    f"evidence receipt {idx} is missing {field_name!r}; a "
+                    "receipt without it cannot be bound to anything")
+        verdict = str(receipt.get("verdict") or "").strip().lower()
+        if verdict not in _APPROVED_RECEIPT_VERDICTS:
+            raise VerifyContradiction(
+                f"evidence receipt {idx} verdict={receipt.get('verdict')!r} "
+                f"is not one of {_APPROVED_RECEIPT_VERDICTS}")
+        reviewer = str(receipt.get("reviewer") or "").strip().lower()
+        captured_by = str(receipt.get("captured_by") or "").strip().lower()
+        if reviewer and captured_by and reviewer == captured_by:
+            raise VerifyContradiction(
+                f"evidence receipt {idx} was signed by the capturing run "
+                f"({reviewer!r}); a review must be independent of the capture")
+        path = str(receipt.get("artifact_path") or "")
+        signed = str(receipt.get("artifact_sha256") or "")
+        actual = _sha256_file(path)
+        if not actual:
+            raise VerifyContradiction(
+                f"evidence receipt {idx}: artifact at {path!r} is missing. A "
+                "receipt can only vouch for bytes that exist.")
+        if actual != signed:
+            raise VerifyContradiction(
+                f"evidence receipt {idx}: artifact at {path!r} hashes to "
+                f"{actual!r} but the reviewer signed {signed!r}. The bytes "
+                "changed after review.")
 
 
 # ── The single canonical pass (writes BOTH files from one source of truth) ────

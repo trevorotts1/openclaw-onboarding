@@ -1,6 +1,6 @@
 {
   "_fixture": true,
-  "_note": "OFFLINE FIXTURE. Fake ids, fake relation name, fake evidence digest. This is NOT a live capture and must never be treated as evidence about GoHighLevel. It exists so the create-variant + read-back operation is provable with zero network calls. The real capture is written by tools/ghl_split_variant_capture_checklist.sh against an authorized staging location once the D5 login fix lands.",
+  "_note": "OFFLINE SELECTOR FIXTURE — LAYER 1 ONLY. Fake ids, fake relation name, fake evidence digest. This is NOT a capture: it has no artifact, no digest over real bytes, no session and no review receipt, so load_capture() refuses it and it can never enable anything. A capture must be BOUND (artifact_sha256 over a real file + an independent review receipt); see write_capture_bundle() and tools/ghl_split_variant_capture_checklist.sh, which is what writes a real one against an authorized staging location once the D5 login fix lands.",
   "location_id": "loc-offline-0001",
   "step_id": "step-offline-control",
   "control_id_before": "step-offline-control",
