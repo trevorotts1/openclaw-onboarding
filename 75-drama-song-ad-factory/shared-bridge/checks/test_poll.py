@@ -12,7 +12,9 @@ Proves, against a local fake studio (stdlib `http.server`, no network):
   4  poll with no order → no output at all, exit 0
   5  poll with an order → claim posted, run dir created, `factory.py card`
      invoked with every reply IN ORDER, one JSON line printed — and a second
-     poll of the same order stays silent, proving the claim is load-bearing
+     poll of the same order RECONCILES (D35): the same line re-emitted for the
+     pending wake, no second claim post, no second card replay, and silence
+     only after `wake --ack` records execution-accepted
   6  publish-approval / approval-answer are registered and refuse without a
      key BEFORE any module import or request
   7  link --new stores client.url 0600 and prints it; a plain link re-reads
@@ -292,16 +294,34 @@ class PollBridgeTests(unittest.TestCase):
         self.assertNotIn(MACHINE_KEY, p.stdout)
         self.assertNotIn(MACHINE_KEY, control.read_text(encoding="utf-8"))
 
-        # the claim is load-bearing: a second poll of the same order stays silent
+        # D35 reconcile: a repeated poll of OUR OWN claim is not quiet success.
+        # The line is re-emitted (the wake request persists until the runtime
+        # ack), the claim event is never re-posted, and the card is replayed
+        # exactly once. After `wake --ack` (execution-accepted) the poll goes
+        # silent for good — no duplicate campaign can start.
         claims = len([r for r in STUDIO["seen"] if r["path"].endswith("/state")])
         again = self.poll(DS_KEY=MACHINE_KEY)
         self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
-        self.assertEqual(again.stdout, "")
+        lines = [l for l in again.stdout.splitlines() if l.strip()]
+        self.assertEqual(len(lines), 1, again.stdout)
+        out2 = json.loads(lines[0])
+        self.assertEqual(out2["order_id"], out["order_id"])
+        self.assertEqual(out2["run_dir"], out["run_dir"])
+        self.assertEqual(out2["next"], out["next"])
+        self.assertEqual(out2["db"], out["db"])          # same ledger, same order
         self.assertEqual(len([r for r in STUDIO["seen"] if r["path"].endswith("/state")]),
                          claims)
         self.assertEqual(len([json.loads(l) for l in
                               self.factory_log.read_text(encoding="utf-8").splitlines()]),
                          1)
+        # the supported runtime acknowledges the wake -> the claim is final
+        ack = subprocess.run([PY, BRIDGE, "wake", "--ack",
+                              "--order", out["order_id"], "--db", out["db"]],
+                             capture_output=True, text=True, env=self.env(DS_KEY=MACHINE_KEY))
+        self.assertEqual(ack.returncode, 0, ack.stdout + ack.stderr)
+        done = self.poll(DS_KEY=MACHINE_KEY)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(done.stdout, "")                # execution-accepted: silent
 
     def test_poll_without_a_key_refuses(self):
         p = self.poll()

@@ -21,6 +21,11 @@
 # exported as DS_KEY for the child only. It is never echoed, never argv, never a
 # log line. This script prints no key value on any path.
 #
+# EXIT: 0 ok — or a QUIET SKIP of the optional Studio capability (disabled /
+#       needs-enrollment / degraded: never a noisy per-tick failure) ·
+#       1 error (identity/path/bridge) · 2 refused (ready but key/address
+#       vanished) · 3 undefined (bridge transport unknown) · any other code
+#       is a WAKE failure propagated separately from a successful poll.
 # EXIT: 0 ok · 1 error (identity/path/bridge) · 2 refused (no key/address) ·
 #       3 undefined (bridge transport unknown). Mirrors the U5 bridge.
 #
@@ -225,6 +230,23 @@ fi
 # Exports the state root the bridge uses for its key/address fallback.
 export DRAMA_STUDIO_STATE="$STATE_DIR"
 
+# ---- 6b) Optional Studio capability gate (SPEC 9.3 / D24) -------------------
+# The capability is modelled explicitly as disabled | needs-enrollment | ready |
+# degraded in the installation state. disabled/needs-enrollment -> quiet skip:
+# a chat-only box must never be polled into noise or auto-enrolled just to
+# silence logs. ready -> poll. degraded -> the gate already tried the local
+# receipt recovery (key-only / interrupted enrolment, never a re-enrol); we say
+# so ONCE per TRANSITION and skip quietly — the gate prints a line only when
+# the state changes, so old ticks never pile up and old log lines are never
+# new failures (last-attempt/successful-check timestamps live in capability.json).
+GATE_RC=0
+GATE_OUT="$("$PYTHON" "$BRIDGE" capability --gate --repair 2>&1)" || GATE_RC=$?
+[ -z "$GATE_OUT" ] || say "$GATE_OUT"
+[ "$GATE_RC" -eq 0 ] || exit 0    # not ready: the optional poller stays quiet
+
+[ -n "$DS_BASE_URL" ] || { say "no studio address at $URL_FILE — this computer is not paired"; exit 2; }
+[ -n "$DS_KEY" ] || { say "no machine key at $KEY_FILE — this computer is not paired"; exit 2; }
+
 case "$PLATFORM" in
   mac)       RUNS_DIR="$HOME/.openclaw/drama-runs" ;;
   hostinger) RUNS_DIR="/data/.openclaw/drama-runs" ;;
@@ -233,11 +255,22 @@ esac
 
 WAKE="$SKILL_ROOT/shared-bridge/wake_agent.sh"
 if [ -f "$WAKE" ]; then
-  # An order waited and the bridge printed its JSON line: hand that one line to
-  # the wake script, then leave with the POLL's exit code — never the wake's.
   POLL_OUT="$("$PYTHON" "$BRIDGE" poll --base-url "$DS_BASE_URL" --skill-root "$SKILL_ROOT" --runs "$RUNS_DIR")"
   POLL_RC=$?
-  [ -z "$POLL_OUT" ] || "$WAKE" "$POLL_OUT"
+  if [ "$POLL_RC" -eq 0 ] && [ -n "$POLL_OUT" ]; then
+    # An order waited and the bridge printed its JSON line: hand that one line
+    # to the wake script. A WAKE failure is propagated SEPARATELY from the
+    # poll's success (SPEC 9.4): the exit code is the wake's own, and the line
+    # names both, so a failed wake never looks like a clean tick. The wake
+    # request itself stays queued in the claim ledger and is retried on the
+    # next tick under the same order.
+    WAKE_RC=0
+    "$WAKE" "$POLL_OUT" || WAKE_RC=$?
+    if [ "$WAKE_RC" -ne 0 ]; then
+      say "poll succeeded but the WAKE failed (rc=$WAKE_RC) -- the handoff is not complete and stays queued"
+      exit "$WAKE_RC"
+    fi
+  fi
   exit "$POLL_RC"
 fi
 
