@@ -1,11 +1,11 @@
 #!/bin/bash
-# chamber-visual.sh (W73) — the Roast Room link and the visual pop on every
+# chamber-visual.sh (W73) - the Roast Room link and the visual pop on every
 # convene, no matter how the client called the council (terminal or chat).
 #
 # Prints exactly one line to stdout:
 #   Chamber link: <url>
 # ALWAYS copy that exact line into the reply to the client. The URL is
-# resolved at runtime from the box's own configuration — never hardcoded,
+# resolved at runtime from the box's own configuration - never hardcoded,
 # never guessed.
 #
 # On a desktop (GUI) session it also opens <url> in the default browser:
