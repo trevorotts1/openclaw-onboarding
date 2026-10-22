@@ -16,7 +16,8 @@ Adds four things to the choice-card total and to the D26 batch total:
     shared Suno song and its packs no.
   * **batch total** (plan 6.14, price-menu 6): one card per book, then
     ``batch total = sum over books of (Skill 74 price for that book's
-    choices)``, plus the same 20% retake allowance.
+    choices)``, plus the same planning allowance
+    (``budget_contingency.RATE``, measured from the shot/cue manifest).
 
 Everything is done through unit V2-W0-U2's ``price_card`` / ``price_line`` /
 ``credits_to_usd``. This module never re-implements that arithmetic, never
@@ -30,13 +31,13 @@ if any new rate cannot be read, the card says "Price unavailable" and
 Stdlib only. No network: the Skill 74 callable is injected and the base
 calculator is discovered on disk, never fetched.
 """
-import math
 import os
 import sys
 
 _CORE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
+import budget_contingency as BC         # the one planning-allowance policy
 import lipsync_clips                    # the doubled-lip-sync numbers (one source)
 
 try:  # package import (core.catalog_calculator.extensions)
@@ -47,9 +48,9 @@ except ImportError:  # script import from inside this directory
 UNIT_NAME = "catalog-calculator.extensions"
 BATCH_UNIT_NAME = "catalog-calculator.extensions.batch"
 
-# Plan 4.1 / choice-card-spec 4.3: the retake allowance. A policy percentage,
-# not a price - unit V2-W0-U2 applies the same one to its own total.
-RETAKE_RATE = 0.20
+# The planning allowance lives in core/budget_contingency (one source). This
+# name stays for the module's public API only; it is not an independent rate.
+RETAKE_RATE = float(BC.RATE)
 
 # Decision 33 / choice-card-spec 3.6: the lip-sync roster is closed - Kling
 # avatar first, InfiniTalk as the backup. A model outside it is never offered
@@ -64,8 +65,8 @@ def _is_int(value):
 
 
 def retake_allowance(price_usd):
-    """Plan 4.1: the 20% retake allowance, half-up to the cent."""
-    return math.floor(price_usd * RETAKE_RATE * 100 + 0.5) / 100.0
+    """The planning allowance on an already manifest-measured baseline."""
+    return BC.contingency(price_usd)
 
 
 def find_calculator(explicit=None):
@@ -204,15 +205,19 @@ def _extend_card(base, card, lip, vp, choice, skill74):
 
     total_credits = round(sum(li["credits"] for li in items), 4)
     total_usd = base.credits_to_usd(total_credits)
-    retake = retake_allowance(total_usd)
+    try:  # the base card's measured shot/cue manifest carries onto the new total
+        allowance = BC.remeasure(card.get("allowance"), total_usd)
+    except BC.ContingencyUnmeasured as exc:
+        return None, BC.CODE, str(exc)
 
     out = dict(card)
     out["line_items"] = items
     out["price_credits"] = total_credits
     out["price_usd"] = total_usd
     out["price_label"] = base.usd_label(total_usd)
-    out["retake_allowance_usd"] = retake
-    out["spending_limit_usd"] = round(total_usd + retake, 2)
+    out["retake_allowance_usd"] = allowance["contingency_usd"]
+    out["spending_limit_usd"] = allowance["envelope_usd"]
+    out["allowance"] = allowance
     out["lip_sync"] = lip_block
     out["voice_packs"] = vp_block
     return out, None, None
@@ -307,7 +312,7 @@ def price_batch(ads, catalog, skill74, approval=None, calculator_path=None):
     Any ad that cannot be priced takes the whole batch down: the envelope then
     says "Price unavailable" with no numbers anywhere and ``start_paid`` false
     (choice-card-spec 4.4). On success ``batch.total`` is the exact sum of the
-    per-ad card prices, with the 20% retake allowance on top.
+    per-ad card prices, with the measured planning allowance on top.
     """
     if not isinstance(ads, (list, tuple)) or not ads:
         return _fail("error", ["BATCH_EMPTY"], approval, unit=BATCH_UNIT_NAME)
@@ -347,12 +352,17 @@ def price_batch(ads, catalog, skill74, approval=None, calculator_path=None):
     # cents so the sum of already-rounded quotes never drifts.
     total_credits = round(sum(i["price_credits"] for i in items), 4)
     total_usd = sum(_cents(i["price_usd"]) for i in items) / 100.0
-    retake = retake_allowance(total_usd)
+    try:  # each ad card was measured from its own shot/cue manifest
+        allowance = BC.remeasure(items[0]["card"].get("allowance"), total_usd)
+    except (BC.ContingencyUnmeasured, IndexError) as exc:
+        return _fail("unavailable", [BC.CODE, str(exc)], approval,
+                     unit=BATCH_UNIT_NAME)
     summary = {"kind": "batch", "ad_count": len(items),
                "price_credits": total_credits, "price_usd": total_usd,
                "price_label": base.usd_label(total_usd),
-               "retake_allowance_usd": retake,
-               "spending_limit_usd": round(total_usd + retake, 2)}
+               "retake_allowance_usd": allowance["contingency_usd"],
+               "spending_limit_usd": allowance["envelope_usd"],
+               "allowance": allowance}
     batch = dict(summary)
     batch["items"] = items
     return {"unit": BATCH_UNIT_NAME, "state": "ok",

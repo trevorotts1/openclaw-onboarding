@@ -48,11 +48,11 @@ def _half_up(num, den):
 
 def _expect(rate, per_clip, shot_s, seconds):
     """Independent restatement of the card, in whole cents: video + (7 character
-    reference pictures + 1 keyframe per shot) at 2c + song 6c, then +20% half-up."""
+    reference pictures + 1 keyframe per shot) at 2c + song 6c, then +50% half-up."""
     shots = -(-seconds // shot_s)
     mills = round(rate * 1000) * (shots if per_clip else seconds)
     total = _half_up(mills, 10) + 2 * (shots + 7) + 6
-    return total + _half_up(total * 20, 100)
+    return total + _half_up(total * 50, 100)
 
 
 EXPECT = {  # (rate, per_clip, shot_s) -> the four models in order

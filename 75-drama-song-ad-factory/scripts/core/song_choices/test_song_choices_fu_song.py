@@ -417,7 +417,7 @@ def test_card_price_includes_two_extra_songs_when_yes():
     assert ok1 and ok2 and "Song picks:" not in base and "Song picks:" in yes
     tot = lambda t: float(t.split("= $")[1].split()[0])
     music = float([l for l in base.splitlines() if l.strip().startswith("Music:")][0].split("$")[-1])
-    assert abs((tot(yes) - tot(base)) - 2 * music * 1.2) < 0.02, (tot(yes), tot(base), music)
+    assert abs((tot(yes) - tot(base)) - 2 * music * 1.5) < 0.02, (tot(yes), tot(base), music)
     assert "added $" in yes
     assert SC.extra_cost_cents() == 2 * SC._SD.GEN_COST_CENTS
 

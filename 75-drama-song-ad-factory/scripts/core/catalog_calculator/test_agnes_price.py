@@ -70,11 +70,12 @@ GOLDEN_PLAIN_CARD = (
     "  Storyboard:  8 storyboard pictures (cap 120 from configuration; "
     "separate from the 10 video shots above)\n"
     "\n"
-    "  Total:       $1.90 + $0.38 retake allowance (20%) = $2.28")
+    "  Total:       $1.90 + $0.95 retake allowance (50%) = $2.85")
 
 #: quote(1, "90 seconds") on this branch (table rates, no adapter; Hailuo
-#: 02 Standard's $0.025/s x 90 = $2.25 + music + voice rows = $3.30).
-GOLDEN_QUOTE_90 = 3.3
+#: 02 Standard's $0.025/s x 90 = $2.25 + music + voice rows = $2.75 base,
+#: + $1.38 planning allowance = $4.13).
+GOLDEN_QUOTE_90 = 4.13
 
 
 class FakePrice:

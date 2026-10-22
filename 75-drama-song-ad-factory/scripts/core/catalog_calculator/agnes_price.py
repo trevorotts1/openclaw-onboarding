@@ -35,14 +35,14 @@ if _CORE not in sys.path:
 try:  # package import (core.catalog_calculator)
     from .extensions import base_bridge
     from .extensions.price_extension import (LIPSYNC_ROSTER, _lip_sync_spec,
-                                             _resolve, retake_allowance)
+                                             _resolve)
 except ImportError:  # script import from inside this directory
     from extensions import base_bridge                            # type: ignore
     from extensions.price_extension import (LIPSYNC_ROSTER,       # type: ignore
-                                            _lip_sync_spec, _resolve,
-                                            retake_allowance)
+                                            _lip_sync_spec, _resolve)
 
 import lipsync_clips                 # the one lip-sync plan (one source)
+import budget_contingency as BC      # the one planning-allowance policy
 
 UNIT_NAME = "catalog-calculator.agnes-price"
 
@@ -156,7 +156,12 @@ def envelope(card, price_fn):
 
     credits = round(sum(float(li.get("credits") or 0.0) for li in items), 4)
     usd = base.credits_to_usd(credits)
-    retake = retake_allowance(usd)
+    clips = max(1, int(math.ceil(n / 10.0)))   # agnes_plan's fixed 10 s windows
+    allowance = BC.measure({"projected": True,
+                            "shots": [{"shot_id": "agnes-%d" % (i + 1),
+                                       "seconds": float(n) / clips}
+                                      for i in range(clips)],
+                            "cues": [{"cue_id": "song-1"}]}, usd)
     priced = {
         "length_seconds": choice["length_seconds"],
         "shapes": list(choice["shapes"]),
@@ -167,8 +172,9 @@ def envelope(card, price_fn):
         "price_credits": credits,
         "price_usd": usd,
         "price_label": base.usd_label(usd),
-        "retake_allowance_usd": retake,
-        "spending_limit_usd": round(usd + retake, 2),
+        "retake_allowance_usd": allowance["contingency_usd"],
+        "spending_limit_usd": allowance["envelope_usd"],
+        "allowance": allowance,
         "lip_sync": {"model_id": spec["model"], "seconds": units, "lines": jobs,
                      "seconds_per_shape": spec["seconds"],
                      "lines_per_shape": spec["lines"],

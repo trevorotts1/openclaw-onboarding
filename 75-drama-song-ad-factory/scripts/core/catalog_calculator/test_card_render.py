@@ -9,7 +9,7 @@ Proves, in order:
      under any HOME is an operator path (~/Downloads lane is gone);
   3. with HOME pointed at an empty folder, the card render prints every
      row of INSTRUCTIONS.md 213-221 and -- when Skill 74 is reachable --
-     a dollar total with the 20% retake allowance; when it is not,
+     a dollar total with the 50% planning allowance; when it is not,
      "Price unavailable" and no approval (fail closed);
   4. batch price_batch/materialize use the same default wiring: a machine
      with the adapter prices live, one without stays unpriced and refuses
@@ -128,7 +128,7 @@ dollar_rows = [ln for ln in text2.splitlines()
                if ln.strip().startswith(tuple(EXPECTED_ROWS)) and "$" in ln]
 check("every-row-has-a-dollar-figure", len(dollar_rows) >= 6, dollar_rows)
 check("priced-total-with-retake",
-      "retake allowance (20%)" in body and "$" in body, body)
+      "retake allowance (50%)" in body and "$" in body, body)
 check("priced-flag", priced2 is True)
 
 # ------------------------------------------------------------ 4. batch seam
@@ -139,7 +139,7 @@ if B is not None:
     priced_card = B.price_batch(card, lambda book, fields: 1.25)
     check("batch-price-seam-ok",
           priced_card["price_status"] == "ok"
-          and priced_card["price_usd"] == 1.5,          # 1 x 1.20 retake
+          and priced_card["price_usd"] == 1.88,          # 1.25 x 1.50 envelope, half-up
           priced_card.get("price_usd"))
     check("batch-start-allowed-gated", priced_card["start_allowed"] is True)
     tmp = os.path.join(os.sep + "tmp", "w75-W2-C-U1-materialize-check")
