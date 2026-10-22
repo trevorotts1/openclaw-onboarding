@@ -285,6 +285,21 @@ _should_exclude() {
     # source tree: hashing them made every box that ran the prover after an
     # update fail the fleet roll's role-library digest and get rolled back.
     */23-ai-workforce-blueprint/scripts/receipts/*) return 0 ;;
+    # A2.5/A3 INTERRUPTED-RUN FIX: the updater's box-state allow-list now keeps
+    # Skill 75's interrupted-run resume state across the wholesale replace
+    # (.checkpoint-pending at the skill root and a half-written
+    # scripts/core/state_store.py.part beside the canonical module). Neither is in
+    # the clean source tree or the release, so while they are preserved the DEST
+    # digest of 75-drama-song-ad-factory can never equal SRC and A2.5/A3 would
+    # withhold the version stamp on exactly the boxes mid-run. They are user state,
+    # not shipped content (same class as model-map.json / install-status.txt
+    # above), and the acceptance harness excludes the same two relative paths from
+    # its own manifest comparison. Exclude ONLY these exact paths under ONLY this
+    # skill, on BOTH sides — every shipped .md/.py/.sh file of Skill 75 stays in
+    # scope, so tamper-detection is unchanged. Basename is deliberately NOT used:
+    # an unrelated skill's .part is still hashed and still detectable.
+    */75-drama-song-ad-factory/.checkpoint-pending) return 0 ;;
+    */75-drama-song-ad-factory/scripts/core/state_store.py.part) return 0 ;;
   esac
   case "$base" in
     # Python compiled/optimised bytecode files — same rationale as __pycache__
