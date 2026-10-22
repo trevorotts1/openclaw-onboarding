@@ -452,6 +452,11 @@ def stall_check(run_dir, state, row, now):
     if row is None:
         return False, ""
     stage, st = row["stage"], row["state"]
+    if st == "COMPLETE":
+        # A finished stage has nothing left to move. Without this, a delivered
+        # run's last stage aged past 30 minutes and the client was told the
+        # run "hit a problem" every tick after delivery.
+        return False, ""
     if st == "STALE":
         return True, ("the run marked %s stale: %s"
                       % (stage, row.get("reason") or "no reason recorded"))

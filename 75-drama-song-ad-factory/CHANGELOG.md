@@ -4,6 +4,15 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.80 - 2026-10-22 - a delivered run is never "stalled"
+
+1. NO STALL ON A COMPLETE STAGE (`scripts/core/heartbeat/run_watch.py`).
+   After delivery the last stage's `updated_at` ages past 30 minutes, so
+   `stall_check` flagged HEARTBEAT_STALLED on a fully delivered run and the
+   client message said the run "hit a problem" on every tick after the video
+   had already been sent. `stall_check` now returns not-stalled for a COMPLETE
+   stage. Covered by test 8 in `scripts/core/heartbeat/test_run_watch.py`.
+
 ## v2.9.79 - 2026-10-22 - a WAL state database never reads as "unreadable"
 
 1. RUN_WATCH PRIVATE-COPY FALLBACK (`scripts/core/heartbeat/run_watch.py`).

@@ -335,6 +335,18 @@ def main():
           env["stage"] == "research" and env["stages_total"] == 12,
           "%s/%s" % (env["stage"], env["stages_total"]))
 
+    # 8. a delivered run is not "stalled" just because time passed -----------
+    run8 = make_run(tmp, "run8")
+    for s in STAGES:
+        set_stage(run8, "run8", s, "COMPLETE", age_s=1000 * 60)
+    env = RW.build(run8, now=NOW)
+    check("8: a COMPLETE stage never counts as a stall",
+          env["stalled"] is False, env["stall_detail"])
+    check("8: no HEARTBEAT_STALLED on a delivered run",
+          "HEARTBEAT_STALLED" not in env["loud"], env["loud"])
+    check("8: the delivered run still stops the loop",
+          env["loop_should_stop"] is True)
+
     print()
     if FS:
         print("%d FAILED: %s" % (len(FS), ", ".join(FS)))
