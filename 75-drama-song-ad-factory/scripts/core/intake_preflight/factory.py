@@ -592,6 +592,23 @@ def _song_hold(run_dir):
         return {"reason_code": "SONG_GATE_BROKEN", "detail": repr(exc)[:200]}
 
 
+def _recap_hold(run_dir):
+    """Gate 4 (v3.0 B7/B8): the ONE final scene/music/cost recap plus the
+    operator's production Go, read as a HOLD on the video paid stage.
+
+    ONE implementation (``final_recap.hold``) reads the run's own measured
+    sources -- shot list, picked song and its file digest, locked video model,
+    duration, spend ledger projection -- and refuses with a typed code naming
+    whichever measurement is missing. No flag opens this; the Go approves the
+    digest of the recap it was shown, never a different one."""
+    fr = _core_mod("final_recap")
+    if fr is None:
+        return {"reason_code": "FINAL_RECAP_BROKEN",
+                "detail": "final_recap is not on this box",
+                "next_action": "install scripts/core/final_recap.py; the video "
+                               "stage stays closed without the recap gate."}
+    return fr.hold(str(run_dir))
+
 def music_stage(run_dir, owner, action, run_id=None, reason=None,
                 retryable=False, qc=None, lease_s=3600, operator_decision=None):
     """One guarded lifecycle step on the music row. Returns _mres(...).
@@ -845,6 +862,52 @@ def _music_lifecycle():
                     "operator, at_utc, gates_not_proven, measured_evidence_digest, "
                     "reason) -- it never writes a PASS for a measured gate."}
 
+
+def cmd_final_recap(a):
+    """final-recap --run-dir D: build and show the ONE Gate 4 recap."""
+    run_dir = Path(a.run_dir).expanduser().resolve()
+    sid = run_dir.name or "run"
+    fr = _core_mod("final_recap")
+    if fr is None:
+        return envelope("final-recap", str(sid), "error", "FINAL_RECAP_BROKEN",
+                        "final_recap is not on this box; the video stage stays closed.")
+    try:
+        doc = fr.build(str(run_dir))
+    except Exception as e:  # noqa: BLE001 - a failed measurement writes nothing
+        return envelope("final-recap", str(sid), "error",
+                        getattr(e, "code", "FINAL_RECAP_BROKEN"),
+                        str(getattr(e, "detail", str(e)))[:500])
+    return envelope("final-recap", str(sid), "ok", "FINAL_RECAP_BUILT",
+                    "Show this recap to the operator. The video stage opens only on "
+                    "their Go for digest %s." % doc["recap_digest"],
+                    data={"path": fr.recap_path(str(run_dir)), "recap": doc})
+
+def cmd_production_go(a):
+    """production-go --run-dir D --go P: record the operator's Go.
+
+    The Go document carries {decision: GO, operator, at_utc, recap_digest};
+    a digest that does not match the recap on disk is refused."""
+    run_dir = Path(a.run_dir).expanduser().resolve()
+    sid = run_dir.name or "run"
+    fr = _core_mod("final_recap")
+    if fr is None:
+        return envelope("production-go", str(sid), "error", "FINAL_RECAP_BROKEN",
+                        "final_recap is not on this box; the video stage stays closed.")
+    try:
+        go = _load(a.go)
+    except (OSError, ValueError) as e:
+        return envelope("production-go", str(sid), "error", "PRODUCTION_GO_INVALID",
+                        "%s: %s" % (a.go, str(e)[:200]))
+    try:
+        out = fr.record_go(str(run_dir), go)
+    except Exception as e:  # noqa: BLE001 - nothing is written when it cannot verify
+        return envelope("production-go", str(sid), "rejected",
+                        getattr(e, "code", "PRODUCTION_GO_INVALID"),
+                        str(getattr(e, "detail", str(e)))[:500])
+    return envelope("production-go", str(sid), "ok", "PRODUCTION_GO_RECORDED",
+                    "The operator Go is recorded for recap %s; `next` may hand out "
+                    "the video stage." % out["recap_digest"][:12],
+                    data={"path": fr.go_path(str(run_dir)), "go": out})
 
 # ── W2-wiring-U1: purpose routing, method gates, Agnes routing ──────────────
 #
@@ -2219,6 +2282,19 @@ def cmd_next(a):
                             "(sends the shot cards + stills once; reply GO or "
                             "'shot N: change ...' via --reply)." % run_dir,
                             data={"stage": next_stage})
+        # B7/B8 Gate 4: the LAST thing before any video spend is the ONE final
+        # recap and the operator's Go bound to its digest. Read once, here, the
+        # same way the song hold is read -- a flag never satisfies it.
+        recap = _recap_hold(run_dir)
+        if recap:
+            return envelope("next", str(sid), "rejected",
+                            str(recap.get("reason_code") or "FINAL_RECAP_BROKEN"),
+                            "%s %s" % (recap.get("detail", ""),
+                                       recap.get("next_action", "")),
+                            data={"stage": next_stage,
+                                  "recap": {"path": "control/final-recap.json",
+                                            "go": "control/production-go.json"},
+                                  "detail": recap.get("detail", "")})
     if (stages.index(next_stage) > stages.index(MUSIC)
             and got.get(MUSIC) in ("FAILED_BLOCKED", "PARKED")):
         # A blocked or parked music row is skipped by the loop above; it must
@@ -2558,6 +2634,18 @@ def main(argv=None):
     sr.add_argument("--run-dir", required=True)
     sr.add_argument("--reply", required=True)
     sr.add_argument("--target", default="")
+    fr = sub.add_parser("final-recap", help="Gate 4: build the ONE final "
+                        "scene/music/cost recap by MEASURING the run (scenes, "
+                        "soundtrack, model, duration, spend). Refuses, naming the "
+                        "missing measurement, when any of them cannot be read.")
+    fr.add_argument("--run-dir", required=True)
+    pg = sub.add_parser("production-go", help="Gate 4: record the operator's Go "
+                        "bound to the digest of the recap they were shown.")
+    pg.add_argument("--run-dir", required=True)
+    pg.add_argument("--go", required=True,
+                    help="Go JSON: {schema, decision: GO, operator, at_utc, "
+                         "recap_digest}. A digest that does not match the recap on "
+                         "disk is refused and nothing is written.")
     c = sub.add_parser("card", help=_card_help())
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json", "studio-json"),
@@ -2637,6 +2725,10 @@ def main(argv=None):
         env = cmd_script_reply(a)
     elif a.cmd == "music":
         env = cmd_music(a)
+    elif a.cmd == "final-recap":
+        env = cmd_final_recap(a)
+    elif a.cmd == "production-go":
+        env = cmd_production_go(a)
     elif a.cmd == "event":
         env = cmd_event(a)
     else:
