@@ -788,13 +788,20 @@ provision_host() {
     created_tunnel=1
   fi
 
-  # f. ingress: GET -> merge -> PUT, CC rule asserted unchanged when it shares the tunnel
+  # f. ingress: an existing council rule is preserved byte-identical (any port); only
+  # an absent rule is created — GET -> merge -> PUT at $COUNCIL_SERVICE, CC rule
+  # asserted unchanged when it shares the tunnel
   local prior_svc ing_changed=0 new_body
   prior_svc="$(cc_ingress_service_for_host "$ride_cfg" "$COUNCIL_HOST")"
-  # An adopted route's rule is present by construction (the adoption matched it in an
-  # equivalent loopback form): it is never rewritten, so adoption keeps zero writes.
-  if [ "$prior_svc" = "$COUNCIL_SERVICE" ] || [ "$adopted" = "1" ]; then
-    step "[ok] ingress rule $COUNCIL_HOST -> $prior_svc present"
+  # An existing council rule is authoritative on its own port (the box owns it —
+  # adopted routes and custom ports alike): it is NEVER rewritten. Only an absent
+  # rule is created, and it is created on $COUNCIL_SERVICE.
+  if [ -n "$prior_svc" ]; then
+    if [ "$prior_svc" = "$COUNCIL_SERVICE" ]; then
+      step "[ok] ingress rule $COUNCIL_HOST -> $COUNCIL_SERVICE present"
+    else
+      step "[ok] ingress rule $COUNCIL_HOST -> $prior_svc preserved (the box owns this port; never rewritten)"
+    fi
   else
     new_body="$(cc_ingress_merge "$ride_cfg" "$COUNCIL_HOST" "$COUNCIL_SERVICE")" || { finish FAILED "ingress merge failed"; return; }
     if [ "$rescue" = "1" ]; then
