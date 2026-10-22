@@ -41,18 +41,33 @@ DEFAULT_LOOK_FALLBACK = "Lifelike 3D"
 DEFAULT_MUSIC_FALLBACK = "Soul Ballad"
 
 # Batch card length labels -> seconds (batch_mode.LENGTH_VALUES).
-_LENGTH_LABELS = {
-    "60 seconds": 60,
-    "90 seconds": 90,
-    "3 minutes": 180,
-    "5 minutes": 300,
-    "10-minute long version": 600,
+# S75-W05-U3: the scattered map is derived from THE one table
+# (suno_recipe.duration_registry DURATION_LABELS_S), which restores the
+# 2-minute / 120 s entry the old map dropped (D12); the extra alias spellings
+# below are input parsing only, never a second label table.
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+try:
+    from suno_recipe.duration_registry import (   # noqa: E402
+        CANONICAL_DURATION_S, DURATION_LABELS_S)
+except ImportError:
+    try:
+        from duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S)
+    except ImportError:
+        from ..suno_recipe.duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S)
+
+_LENGTH_LABELS = {DURATION_LABELS_S[s]: s for s in CANONICAL_DURATION_S}
+_LENGTH_LABELS.update({
     "10 minutes": 600,
     # intake card answers (the card text is what the client picked)
     "3 minutes + 60s and 90s clips": 180,
     "5 minutes + 60s and 90s clips": 300,
     "10 minutes (the long version) + 60s and 90s clips": 600,
-}
+})
 
 _SHAPE_ALIASES = {
     "9:16": "9:16",
