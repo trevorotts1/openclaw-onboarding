@@ -50,7 +50,7 @@ def test_export_has_question_price_and_example_for_every_screen():
 def test_model_screen_carries_the_live_prices_and_the_model_example():
     screen = next(s for s in IC.studio_json()["questions"] if s["id"] == "model")
     assert screen["price"] == ("Prices are for your 60-second ad, with the song, "
-                               "pictures and a 20% redo allowance.")
+                               "pictures and a 50% redo allowance.")
     assert screen["question"].endswith(screen["price"])       # card ask and export agree
     prices = [o["price"] for o in screen["options"]]
     assert len(prices) == 4 and all(p and p.startswith("$") for p in prices), prices

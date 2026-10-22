@@ -58,7 +58,7 @@
         "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
         "one keyframe image per H3 shot + one close-up per speaking character",
         "Suno takes until the first pass",
-        "20% retake allowance"
+        "50% retake allowance"
       ]
     },
     "90": {
@@ -118,7 +118,7 @@
         "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
         "one keyframe image per H3 shot + one close-up per speaking character",
         "Suno takes until the first pass",
-        "20% retake allowance"
+        "50% retake allowance"
       ]
     },
     "120": {
@@ -178,7 +178,7 @@
         "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
         "one keyframe image per H3 shot + one close-up per speaking character",
         "Suno takes until the first pass",
-        "20% retake allowance"
+        "50% retake allowance"
       ],
       "code_gap": "music_styles.OFFERED_LENGTHS_S and words_fit.CARD_LENGTHS_S still lack 120 (U2 fixes); length_formula and lipsync_clips already handle it."
     },
@@ -239,7 +239,7 @@
         "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
         "one keyframe image per H3 shot + one close-up per speaking character",
         "Suno takes until the first pass",
-        "20% retake allowance"
+        "50% retake allowance"
       ],
       "spoken_share_note": "length_formula.plan at 178 s reaches 22.5% with the CTA scale (Trevor 2026-10-09: the spoken band 20-25% holds at every length)."
     },
@@ -300,7 +300,7 @@
         "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
         "one keyframe image per H3 shot + one close-up per speaking character",
         "Suno takes until the first pass",
-        "20% retake allowance"
+        "50% retake allowance"
       ],
       "spoken_share_note": "length_formula.plan at 298 s reaches 22.5% with the CTA scale (Trevor 2026-10-09)."
     },
@@ -361,7 +361,7 @@
         "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
         "one keyframe image per H3 shot + one close-up per speaking character",
         "Suno takes until the first pass + extends",
-        "20% retake allowance"
+        "50% retake allowance"
       ],
       "spoken_share_note": "length_formula.plan at 598 s reaches 22.5% with the CTA scale (Trevor 2026-10-09)."
     }

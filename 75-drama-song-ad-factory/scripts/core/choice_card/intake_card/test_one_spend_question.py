@@ -48,7 +48,7 @@ def test_card_asks_money_exactly_once():
 
 def test_real_dollar_figure_in_option_one():
     msg = IC.render_step(SPEND_AT + 1, _qs(18.5))
-    assert "1. $18.50 - the estimated price for your video, including a 20% allowance for redoing shots (RECOMMENDED)" in msg, msg
+    assert "1. $18.50 - the estimated price for your video, including a 50% allowance for redoing shots (RECOMMENDED)" in msg, msg
     assert "2. A different maximum - reply with a dollar amount, like $25" in msg
     assert "price on the card" not in msg.lower()
 
@@ -113,7 +113,7 @@ def _ask(price=None, limit=None, from_brief=False):
 
 def test_exact_rendering_four_cases():
     ask = "What's the most you want to spend on this video?"
-    price = "$18.50 - the estimated price for your video, including a 20% allowance for redoing shots"
+    price = "$18.50 - the estimated price for your video, including a 50% allowance for redoing shots"
     other = "A different maximum - reply with a dollar amount, like $25"
     assert _ask(18.5, 40, True) == "\n".join([ask, "1. Your max: $40.00 - from your brief (RECOMMENDED)", "2. " + price, "3. " + other])
     assert _ask(18.5) == "\n".join([ask, "1. " + price + " (RECOMMENDED)", "2. " + other])

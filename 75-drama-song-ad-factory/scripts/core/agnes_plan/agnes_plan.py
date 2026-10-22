@@ -18,6 +18,13 @@ Run: python3 -m pytest -q scripts/core/agnes_plan
 from __future__ import annotations
 
 import math
+import os
+import sys
+
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+import budget_contingency as BC         # the one planning-allowance policy
 
 TOOL_NAME = "agnes_plan"
 TOOL_VERSION = "0.1.0"
@@ -27,13 +34,13 @@ TOOL_VERSION = "0.1.0"
 SEGMENT_S = 10
 
 #: The Agnes 5-minute cap (SPEC A5.1, Trevor 2026-10-13): 5 min = 300 s of
-#: clips + 20% retakes = 360 s, which still fits the 500-second day with room
-#: for a redo. The same number anchors the quota ledger (agnes_quota); this
-#: module stays pure and does not import it.
+#: clips + the planning allowance = 450 s, which still fits the 500-second
+#: day with room for a redo. The same number anchors the quota ledger
+#: (agnes_quota); this module stays pure and does not import it.
 AGNES_MAX_DELIVERED_S = 298
 
-#: SPEC A5.3: need = clips x 10 x 1.2 (20% retakes).
-ALLOWANCE = 1.2
+#: SPEC A5.3, restated under v3.0 section 8: need = clips x 10 x (1 + RATE).
+ALLOWANCE = float(BC.multiplier())
 
 #: SPEC A6: every still and every video prompt carries this block.
 NO_TEXT_BLOCK = ("No words, letters, numbers, logos or signage anywhere in "
@@ -128,8 +135,8 @@ def lipsync_cutaways(segments, lipsync_windows):
 
 def need(segments, shapes):
     """What one run costs the Agnes day: ``{"video_seconds", "images",
-    "allowance_seconds"}`` (SPEC A5.2/A5.3: clips x 10 x shapes, plus the 20%
-    retake allowance).
+    "allowance_seconds"}`` (SPEC A5.2/A5.3: clips x 10 x shapes, plus the
+    planning allowance from ``budget_contingency``).
 
     ``segments`` is the list from ``segments()`` (a bare clip count is
     accepted too); ``shapes`` is the list of looks the run makes, one clip and
