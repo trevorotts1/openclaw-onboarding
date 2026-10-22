@@ -351,10 +351,14 @@ def test_missing_model_asset_detected_with_plan_and_rerun():
             if lip_gate not in sys.path:
                 sys.path.insert(0, lip_gate)
             import install_face_model as IFM  # noqa: PLC0415
-            real_sha, real_bytes = IFM.MODEL_SHA256, IFM.MODEL_BYTES
+            # pin authority is face_model_locator since W07-U2's delegation
+            # landed on this base: patch BOTH modules or is_good() reads the
+            # real pin and the stub file can never satisfy it.
+            import face_model_locator as LOC  # noqa: PLC0415
+            real_sha, real_bytes = LOC.MODEL_SHA256, LOC.MODEL_BYTES
             import hashlib
-            IFM.MODEL_SHA256 = hashlib.sha256(content).hexdigest()
-            IFM.MODEL_BYTES = len(content)
+            LOC.MODEL_SHA256 = IFM.MODEL_SHA256 = hashlib.sha256(content).hexdigest()
+            LOC.MODEL_BYTES = IFM.MODEL_BYTES = len(content)
             os.environ["LIPSYNC_FACE_MODEL"] = dest
             try:
                 def installer(argv):
@@ -369,13 +373,14 @@ def test_missing_model_asset_detected_with_plan_and_rerun():
                       rep["rerun"]["after"].get("face-landmarker-model") is True,
                       json.dumps(rep.get("rerun"), default=str)[:300])
                 # wrong-hash file is PRESENT-BUT-BROKEN, never PRESENT
-                IFM.MODEL_SHA256 = "0" * 64
+                LOC.MODEL_SHA256 = IFM.MODEL_SHA256 = "0" * 64
                 state, detail = P.face_model_state()
                 check("wrong-hash asset is PRESENT-BUT-BROKEN, never PRESENT",
                       state == "PRESENT-BUT-BROKEN" and "mismatch" in detail,
                       "%s (%s)" % (state, detail))
             finally:
-                IFM.MODEL_SHA256, IFM.MODEL_BYTES = real_sha, real_bytes
+                LOC.MODEL_SHA256 = IFM.MODEL_SHA256 = real_sha
+                LOC.MODEL_BYTES = IFM.MODEL_BYTES = real_bytes
         finally:
             os.environ["PATH"] = old_path
             if old_env is None:
