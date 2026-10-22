@@ -168,6 +168,26 @@ else
   LOCK_LIVE=0
 fi
 
+# ── (0) P3 Playwright-lane watchdog sweep — DELEGATED, one implementation ─────
+# The opt-in headless Playwright lane keeps its leases as *.pwlease files with
+# PID + start-time + exact-profile-path identity. The canonical reclaim
+# (PID-reuse-safe; graceful stop before force; personal Chrome never signaled)
+# lives once, in 06-ghl-install-pages/tools/browser_manager.py --pw-watchdog.
+# The reaper delegates instead of re-implementing it (no second drifting
+# implementation). Non-fatal on any failure; skipped entirely in dry-run.
+if [[ "$DRY_RUN" == "1" ]]; then
+  log "DRY" "would run: browser_manager.py --pw-watchdog (Playwright-lane lease sweep)"
+else
+  _pw_watchdog="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." >/dev/null 2>&1 && pwd)/06-ghl-install-pages/tools/browser_manager.py"
+  if command -v python3 >/dev/null 2>&1 && [[ -f "$_pw_watchdog" ]]; then
+    _pw_out="$(python3 "$_pw_watchdog" --pw-watchdog 2>/dev/null)" && \
+      log "OK" "playwright-lane watchdog sweep: $_pw_out" || \
+      log "WARN" "playwright-lane watchdog sweep rc!=0 (non-fatal)"
+  else
+    log "INFO" "playwright-lane watchdog sweep skipped (python3 or browser_manager.py absent)"
+  fi
+fi
+
 # ── (1) Expired-lease close ───────────────────────────────────────────────────
 # Liveness keys off started_epoch + ttl_sec (process+mtime), NEVER a .pid file.
 # KNOWN_SESSIONS is a bash-3.2-safe indexed-array set (see _known_* helpers).
@@ -326,9 +346,28 @@ if [[ "${LOCK_LIVE:-0}" != "1" ]]; then
       continue
     fi
     if [[ "$DRY_RUN" == "1" ]]; then
-      log "DRY" "would SIGKILL leaked scoped Chromium pid $pid (age ${age_sec}s, no live lease)"
+      log "DRY" "would SIGTERM then (after grace) SIGKILL leaked scoped Chromium pid $pid (age ${age_sec}s, no live lease)"
     else
-      kill -9 "$pid" 2>/dev/null && log "SWEPT" "SIGKILL leaked scoped Chromium pid $pid (age ${age_sec}s, no live lease)" || log "WARN" "could not kill pid $pid"
+      # P3 (plan §9.3): GRACEFUL STOP BEFORE FORCE. SIGTERM first, bounded
+      # wait, then SIGKILL ONLY a survivor that is still the SAME process
+      # (start time unchanged — PID-reuse safe). A PID recycled during the
+      # grace window is never killed (fail safe toward leaving it alive).
+      start_before="$(ps -o lstart= -p "$pid" 2>/dev/null | tr -s ' ')"
+      kill -TERM "$pid" 2>/dev/null && log "SWEPT" "SIGTERM to leaked scoped Chromium pid $pid (graceful stop first)" || log "WARN" "could not SIGTERM pid $pid"
+      _gwait=0
+      while [[ "$_gwait" -lt "${AB_STOP_GRACE_S:-10}" ]]; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 1
+        _gwait=$((_gwait + 1))
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        start_after="$(ps -o lstart= -p "$pid" 2>/dev/null | tr -s ' ')"
+        if [[ -n "$start_before" && "$start_before" == "$start_after" ]]; then
+          kill -9 "$pid" 2>/dev/null && log "SWEPT" "SIGKILL leaked scoped Chromium pid $pid after ${_gwait}s grace (age ${age_sec}s, no live lease)" || log "WARN" "could not SIGKILL pid $pid"
+        else
+          log "INFO" "pid $pid identity changed during grace (PID reuse?) — NOT killing (fail safe)"
+        fi
+      fi
     fi
     reclaimed_procs=$((reclaimed_procs + 1))
   done
