@@ -1,0 +1,38 @@
+{
+ "driver": {
+  "entry": "intake_preflight/factory.py music_stage",
+  "kind": "product",
+  "tree": "999 main"
+ },
+ "fixture_id": "S75-F03",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "second_owner_id": "worker-synth-02",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "run_dir": "<RUN_DIR>",
+  "state_db": "<RUN_DIR>/control/state.sqlite3"
+ },
+ "observed_defect": {
+  "resume_detail_contains": "RUNNING -> RUNNING",
+  "resume_outcome": "rejected",
+  "resume_reason_code": "ILLEGAL_TRANSITION",
+  "second_owner_claim": "success"
+ },
+ "pattern": "expired RUNNING music lease",
+ "required_post_repair": "Resume uses the supported fenced reclaim path and reconciles paid jobs.",
+ "setup": {
+  "actions": [
+   "resume",
+   "start"
+  ],
+  "lease": "expired",
+  "stage": "music",
+  "state": "RUNNING"
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 17.4 row 2"
+}

@@ -4,6 +4,61 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.91 - 2026-10-22 - batch 8b: 3x3 candidate matrix, capability-aware dispatch admission
+
+1. 3x3 soundtrack candidate matrix (`song_choices/candidate_matrix.py`): three
+   materially different lyric concepts (rows 1-3) x three treatments (columns
+   A-C), stable ids **1A-3C**. One concept's three cells share the same lyric
+   hash; the three treatment hashes differ. Completeness is SET EQUALITY with
+   all nine ids, never `count == 9`. The contract owns build, validate, cost
+   plan, selection and recovery only — it never generates audio, prices a
+   budget or renders a UI.
+2. C2 presence inheritance: every cell's provider style is composed by the SAME
+   `suno_recipe.brief_style_text` the legacy three-variant path uses, and
+   `variants.json` briefs (including the `revoices_lead` flag folded into
+   `treatment_hash`) are reused through `song_choices.variants_for`. A variant
+   marked `revoices_lead` therefore keeps its dry/upfront lead presence
+   direction in the matrix cells too. The legacy one-concept/three-variant path
+   is untouched; a three-option run is never relabelled as nine.
+3. Capability-aware model configuration + D30 account-failure wiring at
+   `ai_models.admit_dispatch`: an unsupported capability claim is refused with
+   `CAPABILITY_UNSUPPORTED`, and a dispatch to an account the shared breaker has
+   failed is refused with `ACCOUNT_FAILED`, both as actionable typed results.
+   `ai_models.json` is unchanged — no model identity, route, price or lock
+   semantics moved.
+4. W01-U2 privacy scanner over the incident fixtures: the three roots scan
+   clean and the fixtures are genuinely anonymous.
+
+## v2.9.90 - 2026-10-22 - batch 8a: measured 50% contingency, acceptance scenario runners
+
+1. F1/F2 contingency: the planning/retake allowance is now a measured 50% of a
+   shot/cue job manifest (was a flat 20%). `budget_contingency.py` is the single
+   owner of the rate, the ROUND_HALF_UP cent rule and the envelope math; every
+   card, quote, quota and price path reads it. With no manifest naming its
+   planned shots and cues the contingency is UNMEASURED (`CONTINGENCY_UNMEASURED`)
+   and is surfaced as unmeasured — never silently replaced by a bare percentage.
+2. Acceptance scenario runners (tests/w10-canary/scenarios/): A04 versioned
+   visibility, A05 character-bible approval, A06 song playable + storyboard
+   delivery/resume, A07 opening sync/duration, A09 factory lifecycle outbox, plus
+   A02/A03 extensions in multi_run_canary.py. Each runner asserts against the
+   tree under test with no live provider, no paid job and no channel send.
+3. A06 is deliberately incomplete without a paid artifact: it needs a real
+   produced song file via `--audio`. Without it the runner prints BLOCKED_A11
+   and exits 4 BY DESIGN — a named blocked acceptance item, never a pass. It
+   never fakes the playable-song assertion.
+
+## v2.9.89 - 2026-10-22 - batch 6: F12 motion gate fails closed, H3 native audio
+
+1. F12 motion gate: a measured sub-threshold motion score now FAILS CLOSED
+   instead of passing on an unmeasured/neutral score (shot_planner/motion_score).
+2. MiniMax H3 native audio: the mixing decision is recorded, a double-audio
+   case is detected (model native audio + a separate music track), the model
+   contract carries the audio policy, and both the dispatcher and the final
+   assembler honour it.
+The source-vector pin is NOT part of this release: it lands as its own
+micro-batch immediately AFTER batch 6 merges, so the pinned onboarding revision
+is a main that actually contains these units.
+
 ## v2.9.88 - 2026-10-22 - batch 5: WAL reads, H3 CLI, ledger-minted identity
 
 1. WAL stores read behind a private copy (state_store, run_watch, factory, incl.

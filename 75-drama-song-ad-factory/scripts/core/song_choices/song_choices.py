@@ -364,7 +364,8 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
         # level except the route model and the callBackUrl.
         style = _sr.brief_style_text(style_id, _brief_text(v, vocal_gender),
                                      sheet, vocal_gender, pace_plan,
-                                     tail_clause=v["brief"]["arrangement"])
+                                     tail_clause=v["brief"]["arrangement"],
+                                     revoices_lead=bool(v.get("revoices_lead")))
         req = dict(req, input=dict(req["input"], style=style))
         # FU-HOOK-PLACEMENT: the hook plan must ride the request BEFORE the
         # pre-spend validation so the hook-count gate judges it with the same

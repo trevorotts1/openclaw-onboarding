@@ -21,8 +21,14 @@ import json
 import math
 import os
 import sqlite3
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+import budget_contingency as BC     # the one planning-allowance policy
 
 TOOL_NAME = "agnes_quota"
 TOOL_VERSION = "1.0.0"
@@ -240,7 +246,7 @@ def record_vendor_402(now=None, env=os.environ):
         conn.close()
 
 
-def fits_today(clips, now, allowance=1.2, env=os.environ):
+def fits_today(clips, now, allowance=float(BC.multiplier()), env=os.environ):
     """Whole-run admission for `clips` Agnes clips: run now, or wait for the
     next 00:00 UTC reset. Never a partial start (SPEC A5.3, Trevor 2026-10-13).
     """

@@ -1,0 +1,37 @@
+{
+ "driver": {
+  "entry": "script_approval/script_approval.py wants_approval",
+  "kind": "product",
+  "tree": "999 main"
+ },
+ "fixture_id": "S75-F04",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "answers": "<IN_MEMORY>/saved-card-answers",
+  "catalog": "<CATALOG_V1_TO_V2_REORDER>"
+ },
+ "observed_defect": {
+  "approval_required_after_reorder": false,
+  "approval_required_before_reorder": true
+ },
+ "pattern": "positional approval reorder flipping a saved Yes",
+ "required_post_repair": "Stable-ID lookup preserves the decision, including migrated schema.",
+ "setup": {
+  "catalog_v1": [
+   "length",
+   "script"
+  ],
+  "catalog_v2": [
+   "script",
+   "length"
+  ],
+  "saved_answer": "Yes (option 1) on question id 'script'"
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 17.4 row 4 and 5.2"
+}

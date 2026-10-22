@@ -5,7 +5,8 @@ Owner decision D26, plan 6.14 (choice-card-spec 3.10):
 * ``make_card`` / ``set_books`` / ``price_batch`` / ``approve_batch`` --
   the five fields (length, shape, style, music, voice) are chosen once for the
   batch; the card takes a list of books, one brief each; the card shows the
-  batch total (Skill 74 ``price`` per book + the 20% retake allowance) and one
+  batch total (Skill 74 ``price`` per book + the measured planning allowance)
+  and one
   click approves the whole batch. An unreadable price means the card says
   unavailable and nothing starts.
 * ``default_price_fn`` -- the shipped Skill 74 adapter wiring (B4): the

@@ -1,0 +1,44 @@
+{
+ "driver": {
+  "entry": "intake_preflight/factory.py music_stage complete + qc_gate.evaluate",
+  "kind": "product",
+  "tree": "onboarding pending head"
+ },
+ "fixture_id": "S75-F10",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "acceptance": "<RUN_DIR>/music/acceptance",
+  "run_dir": "<RUN_DIR>"
+ },
+ "observed_defect": {
+  "failed_checks_kept": [
+   "MISSING_QC",
+   "SCHEMA_VIOLATION"
+  ],
+  "music_state": "COMPLETE",
+  "outcome": "ok",
+  "reason_code": "music-complete-accepted-risk"
+ },
+ "pattern": "MISSING_QC plus SCHEMA_VIOLATION completing music",
+ "required_post_repair": "Make structural evidence failures nonwaivable; only explicitly scoped, version-bound creative exceptions, with actual measured verdicts preserved.",
+ "setup": {
+  "expected_failures": [
+   "MISSING_QC",
+   "SCHEMA_VIOLATION"
+  ],
+  "operator_decision": "non-null, admissible (ACCEPTED_RISK)",
+  "qc_records": [
+   "one schema-violating record"
+  ],
+  "qc_required": [
+   "song"
+  ]
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 D28, 17.4 row 28, 17.8 (2790-3004), 17.9"
+}

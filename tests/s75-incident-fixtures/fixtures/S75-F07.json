@@ -1,0 +1,29 @@
+{
+ "driver": {
+  "entry": "intake_preflight/preflight.py check",
+  "kind": "product",
+  "tree": "999 main"
+ },
+ "fixture_id": "S75-F07",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "storage_dir": "<RUN_DIR>/storage"
+ },
+ "observed_defect": {
+  "outcome": "rejected",
+  "profile": "drama-9x16-120s",
+  "reason_code": "delivery-profile-unknown"
+ },
+ "pattern": "120s profile rejection",
+ "required_post_repair": "Two-minute production is supported by the canonical duration registry.",
+ "setup": {
+  "profile": "drama-9x16-120s"
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 17.4 row 10"
+}

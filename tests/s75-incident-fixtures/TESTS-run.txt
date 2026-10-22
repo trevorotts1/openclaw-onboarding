@@ -1,0 +1,9 @@
+test_fixture_identities_are_synthetic (__main__.TestAnonymity.test_fixture_identities_are_synthetic) ... ok
+test_no_fixture_depends_on_real_run_host_chat (__main__.TestAnonymity.test_no_fixture_depends_on_real_run_host_chat) ... ok
+test_suite_artifacts_pass_privacy_patterns (__main__.TestAnonymity.test_suite_artifacts_pass_privacy_patterns) ... ok
+test_each_named_pattern_reproduces (__main__.TestReproduction.test_each_named_pattern_reproduces) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 1.352s
+
+OK

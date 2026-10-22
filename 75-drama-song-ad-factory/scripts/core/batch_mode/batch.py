@@ -13,7 +13,8 @@ section 3.10 ("Batch mode"):
   * never mix books or authors -- characters, lyrics, assets and files stay
     inside that book's campaign (``isolation.py`` owns those checks);
   * the approval card shows the batch total, computed from Skill 74 ``price``
-    for every book in the list, plus the 20% retake allowance.
+    for every book in the list, plus the planning allowance
+    (``budget_contingency.RATE``, measured from the batch's shot/cue manifest).
 
 Price is a SEAM, never computed here: every number comes from the injected
 ``price_fn(book, card)`` (the Skill 74 ``price`` adapter). With no seam, with
@@ -54,6 +55,13 @@ except ImportError as _e:
     from .. import style_defaults as SD           # type: ignore
 
 try:
+    import budget_contingency as BC               # the one planning-allowance policy
+except ImportError as _e:
+    if "budget_contingency" not in str(_e):
+        raise
+    from .. import budget_contingency as BC       # type: ignore
+
+try:
     from choice_card.stl_voice_guard import (     # D25: STL is always All Suno
         CLIENT_REASON as STL_CLIENT_REASON,
         REASON_CODE as STL_REASON_CODE,
@@ -78,8 +86,9 @@ SOURCE = "D26, plan 6.14 (choice-card-spec 3.10)"
 #: The five fields chosen ONCE for the batch. Spec card order.
 CARD_FIELDS = ("length", "shape", "style", "music", "voice")
 
-#: choice-card-spec section 4.3: the approved price carries 20% retake.
-RETAKE_ALLOWANCE = 0.20
+#: The planning allowance. A policy rate, not a price; the rate lives in
+#: core/budget_contingency and this name is the module's public alias.
+RETAKE_ALLOWANCE = float(BC.RATE)
 
 #: The book brief (choice-card-spec 3.9), still inside the three-question cap.
 BRIEF_REQUIRED = ("title", "author")
@@ -123,6 +132,9 @@ SHAPE_ALIASES = {
 DEFAULT_VOICE = "all-suno"
 DEFAULT_LENGTH = "60 seconds"
 DEFAULT_SHAPE = "9:16"
+
+#: The card's length label -> planned seconds (the registry is the one table).
+_SECONDS_BY_LABEL = {label: secs for secs, label in DURATION_LABELS_S.items()}
 
 # Plan 10.3 board, transcribed: plan_103.py lives under tests/ and core does
 # not import tests. Titles are what the Command Center renders.
@@ -403,7 +415,8 @@ def adapter_for_env(choice, catalog, adapter):
 
 
 def price_batch(card, price_fn=None):
-    """Price the batch: one Skill 74 price per book, plus the 20% retake.
+    """Price the batch: one Skill 74 price per book, plus the measured
+    planning allowance (``budget_contingency``).
 
     ``price_fn(book, card_fields) -> USD number`` is the Skill 74 ``price``
     adapter; it is never supplied from a table in this repository. When no
@@ -428,15 +441,17 @@ def price_batch(card, price_fn=None):
         return out
 
     try:
+        manifest = _batch_manifest(out, books)
         priced = []
         subtotal = 0.0
         for book in books:
             amount = _book_price(price_fn, book, out)
             subtotal += amount
             book["price_usd"] = _cents(amount)
-            book["ceiling_usd"] = _cents(amount * (1 + RETAKE_ALLOWANCE))
+            book["ceiling_usd"] = _cents(BC.envelope(amount))
             priced.append(book)
-    except BatchError:
+        allowance = BC.measure(manifest, subtotal)
+    except (BatchError, BC.ContingencyUnmeasured):
         out.update(price_status="unavailable", subtotal_usd=None,
                    price_usd=None, start_allowed=False, books=books)
         return out
@@ -444,9 +459,22 @@ def price_batch(card, price_fn=None):
     out["books"] = priced
     out["price_status"] = "ok"
     out["subtotal_usd"] = _cents(subtotal)
-    out["price_usd"] = _cents(subtotal * (1 + RETAKE_ALLOWANCE))
+    out["price_usd"] = _cents(allowance["envelope_usd"])
+    out["allowance"] = allowance
     out["start_allowed"] = True
     return out
+
+
+def _batch_manifest(card, books):
+    """The batch's shot/cue manifest: one planned ad job and one song cue per
+    book, projected from the card's chosen length (v3.0 section 8)."""
+    seconds = _SECONDS_BY_LABEL.get(card.get("length"))
+    if seconds is None:
+        raise BC.ContingencyUnmeasured("the batch card names no planned length")
+    return {"projected": True,
+            "shots": [{"shot_id": "book-%d" % (i + 1), "seconds": float(seconds)}
+                      for i in range(len(books))],
+            "cues": [{"cue_id": "song-%d" % (i + 1)} for i in range(len(books))]}
 
 
 def _shown_voice(card, value):
@@ -485,10 +513,11 @@ def card_lines(card):
                  % ("Books:", len(card.get("books") or []),
                     "" if len(card.get("books") or []) == 1 else "s"))
     if card.get("price_status") == "ok":
-        lines.append("  %-13s $%.2f  (%d book%s, +20%% retake allowance)"
+        lines.append("  %-13s $%.2f  (%d book%s, +%s retake allowance)"
                      % ("Batch total:", card["price_usd"],
                         len(card.get("books") or []),
-                        "" if len(card.get("books") or []) == 1 else "s"))
+                        "" if len(card.get("books") or []) == 1 else "s",
+                        BC.label()))
     else:
         lines.append("  %-13s unavailable -- media generation pricing is not "
                      "readable, nothing starts" % "Batch total:")
@@ -500,8 +529,8 @@ def approve_batch(card):
     """One click, whole batch. Refuses while the price is unavailable.
 
     Returns the approval record written onto the parent campaign: the five
-    fields, every book, the ceiling (price + 20% retake) and the card digest.
-    There is no per-book approval -- one card, one approval.
+    fields, every book, the ceiling (price + measured planning allowance) and
+    the card digest. There is no per-book approval -- one card, one approval.
     """
     if not isinstance(card, dict) or card.get("card_type") != "batch":
         raise BatchError("CARD_INVALID", "not a batch card")
@@ -510,6 +539,7 @@ def approve_batch(card):
     if card.get("price_status") != "ok" or not card.get("start_allowed"):
         raise BatchError("PRICE_UNAVAILABLE",
                          "the batch total is unavailable, nothing starts")
+    allowance = _card_allowance(card)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "approved_at": _now(),
@@ -518,12 +548,22 @@ def approve_batch(card):
         "card_fields": card_fields(card),
         "books": [b["slug"] for b in card["books"]],
         "subtotal_usd": card["subtotal_usd"],
-        "retake_allowance": RETAKE_ALLOWANCE,
+        "retake_allowance": allowance["rate"],
         "price_usd": card["price_usd"],
         "ceiling_usd": card["price_usd"],
+        "allowance": allowance,
         "card_digest": card_digest(card),
     }
     return payload
+
+
+def _card_allowance(card):
+    """The measured allowance carried by a priced batch card."""
+    allowance = card.get("allowance")
+    if not isinstance(allowance, dict) or allowance.get("basis") != BC.BASIS:
+        raise BatchError(BC.CODE,
+                         "the batch card carries no measured shot/cue manifest")
+    return allowance
 
 
 def card_digest(card):
@@ -620,7 +660,7 @@ def materialize(card, root, price_fn=None, outbox=None,
             "card_fields": card_fields(card),
             "price_usd": book["price_usd"],
             "ceiling_usd": book["ceiling_usd"],
-            "retake_allowance": RETAKE_ALLOWANCE,
+            "retake_allowance": _card_allowance(card)["rate"],
             "written_at": _now(),
         }
         receipt_path = book_dir / "receipt.json"
@@ -693,7 +733,7 @@ def materialize(card, root, price_fn=None, outbox=None,
         "books": entries,
         "book_count": len(entries),
         "subtotal_usd": card["subtotal_usd"],
-        "retake_allowance": RETAKE_ALLOWANCE,
+        "retake_allowance": _card_allowance(card)["rate"],
         "price_usd": card["price_usd"],
         "currency": "USD",
         "written_at": _now(),

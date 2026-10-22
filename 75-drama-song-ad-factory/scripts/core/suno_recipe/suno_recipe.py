@@ -1188,8 +1188,16 @@ def _sheet_deliveries(sheet, style_id):
 BRIEF_STYLE_NOTE = ("WW-26: compliance trailer first, the variant's own complete "
                     "brief next, the approved pace clause LAST, cap on the final text")
 
+#: C2 repair: the lead's presence direction ("close dry upfront vocal" /
+#: "dry upfront vocal") lives in ``style_parts[0]``, which the WW-26 brief
+#: replaces. A variant that harmonises or stacks the lead must still ship it
+#: (variants.json marks those ``revoices_lead``), so the phrase is lifted from the
+#: style's OWN data -- never restated here -- and joins the compliance trailer.
+#: A style whose data carries no such rule gains nothing.
+_LEAD_PRESENCE_RE = re.compile(r"(?:close\s+)?dry\s+upfront\s+vocal", re.IGNORECASE)
+
 def brief_style_text(style_id, brief_text, sheet=None, vocal_gender=None,
-                     pace_plan=None, tail_clause=None):
+                     pace_plan=None, tail_clause=None, revoices_lead=False):
     """WW-26: the FINAL provider style for ONE complete variant brief.
 
     ``brief_text`` is the variant's whole, independently authored core (groove,
@@ -1199,17 +1207,24 @@ def brief_style_text(style_id, brief_text, sheet=None, vocal_gender=None,
     a shared core. ``tail_clause`` (the variant's own arrangement sentence) is
     the LAST content before the pace clause, so the assembled style still ends
     with that variant's arrangement exactly as the base asserted. The mandated
-    compliance wording (delivery map, band wording, one clean ending, hook-order
-    clause) sits BETWEEN them -- it is the only shared text, because no variant
-    may vary it. The approved pace clause is appended LAST and the 1000-char cap
-    is measured on the FINAL text (a raise, never a truncation).
+    compliance wording (the delivery map, band wording, one clean ending,
+    hook-order clause) sits BETWEEN them -- it is the only shared text, because
+    no variant may vary it. ``revoices_lead`` restores the base lead-presence
+    direction, taken from the style's own ``style_parts[0]``, for a variant that
+    harmonises or stacks the lead: the WW-26 brief replaces that line, and a
+    harmonised lead must still reach Suno dry and upfront. The approved pace
+    clause is appended LAST and the 1000-char cap is measured on the FINAL text
+    (a raise, never a truncation).
     """
     sid = _style_key(style_id)
     block = music_block(sid)
     parts = [str(p).rstrip(".") for p in (block.get("style_parts") or [])]
     if len(parts) < 2:
         raise RecipeError("NO_STYLE_PARTS", "%r carries no compliance parts" % (style_id,))
-    compliance = parts[2:] if len(parts) >= 4 else parts[-2:]
+    compliance = list(parts[2:] if len(parts) >= 4 else parts[-2:])
+    presence = _LEAD_PRESENCE_RE.search(parts[0]) if revoices_lead else None
+    if presence:
+        compliance.insert(0, "%s." % presence.group(0))
     mid = _gender_variant(" ".join(compliance), vocal_gender_word(vocal_gender)).rstrip(".")
     mid = "%s, %s." % (mid, _EQ.STYLE_ENDING)
     mid = "%s %s." % (mid.rstrip(), _HP.PROMPT_CLAUSE)

@@ -81,7 +81,7 @@ def test_thirty_clips_on_an_empty_day_fit(env):
     res = Q.fits_today(30, DAY1, env=env)
     assert res["fits"] is True
     assert res["video_seconds"] == 300
-    assert res["allowance_seconds"] == 360     # 300 s x 1.2
+    assert res["allowance_seconds"] == 450     # 300 s x 1.5
     assert res["remaining_video_seconds"] == 500
     assert res["waiting_reason"] is None
 
@@ -92,7 +92,7 @@ def test_thirty_clips_after_200_used_wait_whole_for_the_reset(env):
 
     res = Q.fits_today(30, DAY1, env=env)
     assert res["fits"] is False
-    assert res["allowance_seconds"] == 360
+    assert res["allowance_seconds"] == 450
     # No split: the whole run waits for the next 00:00 UTC.
     assert res["waiting_reason"] == "agnes-quota-next-day"
     assert res["next_continue_utc"] == "2026-10-14T00:00:00Z"

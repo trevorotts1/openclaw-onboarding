@@ -1,38 +1,40 @@
 {
   "schema": "blackceo.skill75.source-vector/v1",
-  "pinned": false,
-  "pinned_at": null,
-  "pinned_by": null,
-  "note": "TEMPLATE — NOT the accepted vector. The W10 canaries FAIL-CLOSED on this file until an integrator fills every revision with the accepted post-merge main SHA and sets pinned=true. Fill in after the final merges land; never pin against a moving branch.",
+  "pinned": true,
+  "pinned_at": "2026-10-22T22:44:47Z",
+  "pinned_by": "pr2414b (S75-WM vector pin micro-batch, post batch-6 main)",
+  "note": "ACCEPTED source vector. Every revision below was read live from its remote main with `git ls-remote <remote> refs/heads/main` at pinned_at, at the same moment. openclaw-onboarding = M2, the merge commit of batch-6 PR #2453.",
   "spec": "Skill_75_Universal_Repair_Spec_v1.1 section 3 (repository baselines) and section 15.2 / 16 (anonymous canaries, completion receipt)",
   "repositories": {
     "openclaw-onboarding": {
       "role": "canonical Skill 75 core + OpenClaw install/runtime integration",
-      "revision": null,
+      "revision": "6f25359bbad593e981294d20a63c87267694429e",
       "audited_baseline": "18c510088cf4e2d94e188deedff380d42912637f",
-      "merged_prs": [],
-      "note": "set revision = accepted main SHA after final merges; add merged PR/commit refs for the completion receipt"
+      "merged_prs": [
+        "#2453 batch-6 (F12 motion gate fail-closed + H3 native-audio mixing policy)"
+      ],
+      "note": "M2 = merge commit of PR #2453; this revision contains the batch-6 units S75-B6-MOTIONFIX and S75-B6-H3AUDIO."
     },
     "999-setup": {
       "role": "Claude-Nine distribution, installed skill sync, helper pins, workflow guard + merge machinery",
-      "revision": null,
+      "revision": "eac897e790201f1c1ed5d8fe9e34568e021f5151",
       "audited_baseline": "35e54bbb9086478ab2e6c665cae95be70c54db08",
       "merged_prs": [],
-      "note": "set revision = accepted main SHA after final merges"
+      "note": "live origin/main at pinned_at; no merge between observation and pin."
     },
     "blackceo-command-center": {
       "role": "campaign/task transitions, evidence, approvals, media presentation, requester routing",
-      "revision": null,
+      "revision": "6161cc04cf88e96557d7386ac97e4733065e9336",
       "audited_baseline": "edc29a1dc9396cc15a8b71a0456f41732f705cba",
       "merged_prs": [],
-      "note": "set revision = accepted main SHA after final merges"
+      "note": "live origin/main at pinned_at."
     },
     "blackceo-graphify-infrastructure": {
       "role": "structural/semantic refresh, cross-repository dependency knowledge, coherent source revisions",
-      "revision": null,
+      "revision": "6fa4f6ef225a4fa134bb2f76abb229c85b0b19c4",
       "audited_baseline": "b441ff39d715a8d3e2ca69bcf563076aae9d0ee8",
       "merged_prs": [],
-      "note": "set revision = accepted main SHA after final merges"
+      "note": "live origin/main at pinned_at; the engine revision that performs the final refresh."
     }
   },
   "distribution_manifest_hashes": {
@@ -42,6 +44,6 @@
   },
   "canary_execution_authorization": {
     "level": "preparation-only",
-    "note": "SFR-007 builds harnesses only. Real canary EXECUTION (against an authorized canary target, with loaded-source proof) and acceptance attestation WAIT for this vector to be pinned and for an explicit execution GO. No execution, no paid job, no client-fleet rollout is authorized by this file."
+    "note": "The vector is now pinned, so vector_check.py exits 0. Real canary EXECUTION (against an authorized canary target, with loaded-source proof) and acceptance attestation still require an explicit execution GO. No execution, no paid job, no client-fleet rollout is authorized by this file alone."
   }
 }

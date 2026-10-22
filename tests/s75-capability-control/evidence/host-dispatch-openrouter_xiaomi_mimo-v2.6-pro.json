@@ -1,0 +1,20 @@
+{
+ "http_status": 200,
+ "probe": "host-dispatch",
+ "received_at": "2026-10-22T09:22:43.864635+00:00",
+ "request": {
+  "max_tokens": 16,
+  "model": "openrouter/xiaomi/mimo-v2.6-pro"
+ },
+ "requested_model": "openrouter/xiaomi/mimo-v2.6-pro",
+ "response": {
+  "message_start_model": "xiaomi/mimo-v2.6-pro",
+  "sse_events": 12,
+  "thinking_block_seen": true
+ },
+ "response_model": "xiaomi/mimo-v2.6-pro",
+ "router_receipt_id": "gen-1792660961-qt4v5MU8JUOsHnY8JqvE",
+ "router_request_rows": [],
+ "sent_at": "2026-10-22T09:22:41.325499+00:00",
+ "thinking_block_seen": true
+}

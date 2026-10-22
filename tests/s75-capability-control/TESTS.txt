@@ -1,0 +1,63 @@
+== S75-W04-U2 test run 2026-10-22T09:24:27Z ==
+== python3 -I -m unittest discover -s tests -t . -v ==
+test_failed_reload_rolls_back_to_previous_usable_configuration (tests.test_config_stage.TestConfigStage.test_failed_reload_rolls_back_to_previous_usable_configuration) ... ok
+test_invalid_proposal_leaves_unrelated_settings_unchanged (tests.test_config_stage.TestConfigStage.test_invalid_proposal_leaves_unrelated_settings_unchanged) ... ok
+test_refuses_cache_and_bundle_targets (tests.test_config_stage.TestConfigStage.test_refuses_cache_and_bundle_targets) ... ok
+test_schema_invalid_proposal_rejected_before_activation (tests.test_config_stage.TestConfigStage.test_schema_invalid_proposal_rejected_before_activation) ... ok
+test_unstaged_apply_refuses (tests.test_config_stage.TestConfigStage.test_unstaged_apply_refuses) ... ok
+test_valid_proposal_applies_atomically_with_verified_reload (tests.test_config_stage.TestConfigStage.test_valid_proposal_applies_atomically_with_verified_reload) ... ok
+test_generic_thinking_log_is_never_proof (tests.test_effort.TestEffortHonesty.test_generic_thinking_log_is_never_proof) ... ok
+test_no_reasoning_model_refuses_effort (tests.test_effort.TestEffortHonesty.test_no_reasoning_model_refuses_effort) ... ok
+test_optional_effort_on_selectorless_model_omits_param_and_claims_honestly (tests.test_effort.TestEffortHonesty.test_optional_effort_on_selectorless_model_omits_param_and_claims_honestly) ... ok
+test_required_effort_on_selectorless_model_is_refused_not_stripped (tests.test_effort.TestEffortHonesty.test_required_effort_on_selectorless_model_is_refused_not_stripped) ... ok
+test_selector_model_sends_the_real_parameter (tests.test_effort.TestEffortHonesty.test_selector_model_sends_the_real_parameter) ... ok
+test_ui_ladder_cannot_create_provider_support (tests.test_effort.TestEffortHonesty.test_ui_ladder_cannot_create_provider_support) ... ok
+test_completed_outputs_preserved_breaker_closes_once (tests.test_failures.TestBreaker.test_completed_outputs_preserved_breaker_closes_once) ... ok
+test_hard_cap_retry_elapses_only_at_the_declared_time (tests.test_failures.TestBreaker.test_hard_cap_retry_elapses_only_at_the_declared_time) ... ok
+test_one_actionable_event_under_a_swarm_of_identical_failures (tests.test_failures.TestBreaker.test_one_actionable_event_under_a_swarm_of_identical_failures) ... ok
+test_queued_launches_suppressed_while_deterministic_scheduling_continues (tests.test_failures.TestBreaker.test_queued_launches_suppressed_while_deterministic_scheduling_continues) ... ok
+test_throttle_and_transient_never_open_the_breaker (tests.test_failures.TestBreaker.test_throttle_and_transient_never_open_the_breaker) ... ok
+test_authorization_failure_is_hard (tests.test_failures.TestClassification.test_authorization_failure_is_hard) ... ok
+test_credit_cap_is_hard (tests.test_failures.TestClassification.test_credit_cap_is_hard) ... ok
+test_explicit_bounded_policy_is_labelled_policy_derived (tests.test_failures.TestClassification.test_explicit_bounded_policy_is_labelled_policy_derived) ... ok
+test_hard_cap_without_authoritative_retry_gets_no_invented_short_reset (tests.test_failures.TestClassification.test_hard_cap_without_authoritative_retry_gets_no_invented_short_reset) ... ok
+test_monthly_cap_is_hard_even_with_a_short_reset_message (tests.test_failures.TestClassification.test_monthly_cap_is_hard_even_with_a_short_reset_message) ... ok
+test_suspension_is_hard (tests.test_failures.TestClassification.test_suspension_is_hard) ... ok
+test_throttle_is_not_hard_and_keeps_authoritative_retry_at (tests.test_failures.TestClassification.test_throttle_is_not_hard_and_keeps_authoritative_retry_at) ... ok
+test_transient_service_error (tests.test_failures.TestClassification.test_transient_service_error) ... ok
+test_allowlist_entries_must_resolve (tests.test_manifest.TestManifestReconciliation.test_allowlist_entries_must_resolve) ... ok
+test_cache_rows_carry_provenance_and_stale_is_flagged (tests.test_manifest.TestManifestReconciliation.test_cache_rows_carry_provenance_and_stale_is_flagged) ... ok
+test_cache_without_refresh_path_is_flagged (tests.test_manifest.TestManifestReconciliation.test_cache_without_refresh_path_is_flagged) ... ok
+test_combo_effort_annotations_are_checked_against_the_catalog (tests.test_manifest.TestManifestReconciliation.test_combo_effort_annotations_are_checked_against_the_catalog) ... ok
+test_manifest_resolves_models_with_honest_effort_flags (tests.test_manifest.TestManifestReconciliation.test_manifest_resolves_models_with_honest_effort_flags) ... ok
+test_provider_entry_drift_flagged (tests.test_manifest.TestManifestReconciliation.test_provider_entry_drift_flagged) ... ok
+test_role_verified_only_by_actual_host_dispatch (tests.test_manifest.TestManifestReconciliation.test_role_verified_only_by_actual_host_dispatch) ... ok
+test_scheduler_job_pin_must_resolve (tests.test_manifest.TestManifestReconciliation.test_scheduler_job_pin_must_resolve) ... ok
+test_bad_enum_rejected (tests.test_runtime_schema.TestRuntimeSchema.test_bad_enum_rejected) ... ok
+test_cache_rows_require_provenance (tests.test_runtime_schema.TestRuntimeSchema.test_cache_rows_require_provenance) ... ok
+test_guard_refuses_vendor_bundle_and_cache (tests.test_runtime_schema.TestRuntimeSchema.test_guard_refuses_vendor_bundle_and_cache) ... ok
+test_merge_preserves_unrelated_sections (tests.test_runtime_schema.TestRuntimeSchema.test_merge_preserves_unrelated_sections) ... ok
+test_merge_rejects_unowned_section (tests.test_runtime_schema.TestRuntimeSchema.test_merge_rejects_unowned_section) ... ok
+test_missing_required_rejected (tests.test_runtime_schema.TestRuntimeSchema.test_missing_required_rejected) ... ok
+test_unknown_key_rejected (tests.test_runtime_schema.TestRuntimeSchema.test_unknown_key_rejected) ... ok
+test_valid_doc_passes (tests.test_runtime_schema.TestRuntimeSchema.test_valid_doc_passes) ... ok
+test_wrong_type_rejected (tests.test_runtime_schema.TestRuntimeSchema.test_wrong_type_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 42 tests in 0.013s
+
+OK
+
+== integration: python3 -I tools/verify_manifest_with_probe.py ==
+manifest findings: ['CACHE_STALE', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM', 'UNSUPPORTED_EFFORT_CLAIM']
+builder dispatch: DISPATCH_VERIFIED | unverified roles: ['qc']
+wrote <HOME>/skill75-repair/work/S75-W04-U2/evidence/manifest-reconciliation.json
+
+== fixture refresh provenance: python3 -I tools/capture_fixtures.py --out fixtures/ ==
+wrote 6 fixtures to <HOME>/skill75-repair/work/S75-W04-U2/fixtures
+ - provider-catalog.openrouter.json
+ - host-catalog.9router.json
+ - router-surfaces.db.json
+ - session-cache.model-catalog.json
+ - host-settings.claude-nine.json
+ - scheduler-jobs.crontab.json

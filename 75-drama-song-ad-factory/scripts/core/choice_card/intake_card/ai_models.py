@@ -24,6 +24,9 @@ import os
 import re
 from datetime import datetime, timezone
 
+from capability_control.effort import ModelCaps, plan_request
+from capability_control.failures import AccountBreaker
+
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_models.json"), encoding="utf-8") as _f:
     _T = json.load(_f)
 
@@ -42,6 +45,15 @@ CHECK_QUESTION = "Which available model should check quality and fix problems?"
 #: Evidence kinds that can prove which model actually answered. A label or
 #: alias string is never proof (spec 7.1/7.2).
 PROOF_KINDS = ("response_metadata", "router_receipt")
+#: D30 typed codes at the dispatch boundary. These are capability-aware config
+#: and account-failure outcomes, distinct from the model-selection codes above:
+#: an unsupported capability claim is refused, never attempted or silently
+#: stripped, and a failed account refuses queued launches instead of retrying.
+CAPABILITY_UNSUPPORTED = "CAPABILITY_UNSUPPORTED"
+ACCOUNT_FAILED = "ACCOUNT_FAILED"
+#: One shared account breaker for the whole dispatch boundary (D30): one
+#: actionable event per opening, queued launches suppressed while it is open.
+ACCOUNT_BREAKER = AccountBreaker()
 _PAT = re.compile(r"^\s*(.+?)\s+builds?\s*[,;]?\s*(?:and\s+)?(.+?)\s+checks?\s*\.?\s*$", re.I)
 _BY_NAME = {}
 _BANNED_WORDS = tuple(w for f in EXCLUDED for w in (f,))
@@ -380,13 +392,78 @@ def _reasoning_check(m, req):
     return True, {"effort": req["effort"]}, "effort selector proven on the live provider catalog"
 
 
+def _model_caps(m):
+    """The catalog entry as capability_control's ModelCaps. The authoritative
+    catalog decides; a UI ladder or an alias claim never adds support."""
+    r = m.get("reasoning") or {}
+    return ModelCaps(model_id=m["id"], reasoning=bool(r.get("supported")),
+                     effort_selector=bool(r.get("effort_selector")),
+                     tools="tool_use" in (m.get("capabilities") or []),
+                     provider=m.get("route") or "")
+
+
+def _capability_refusal(m, claim, role, requested):
+    """Refuse a capability claim the authoritative catalog does not support.
+
+    `claim` may name `needs` (capability/modality tokens) and `effort`. An
+    unsupported token or effort is refused with CAPABILITY_UNSUPPORTED — never
+    attempted and never silently stripped.
+    """
+    held = set(m.get("capabilities") or []) | set(m.get("modalities") or [])
+    missing = [n for n in (claim.get("needs") or []) if n not in held]
+    if missing:
+        return _selection_result(
+            requested, CAPABILITY_UNSUPPORTED,
+            "%s does not expose %s; the claim is refused rather than attempted."
+            % (m["label"], ", ".join(missing)), role,
+            next_action="Drop the unsupported claim or pick a model that exposes %s."
+                        % ", ".join(missing))
+    effort = claim.get("effort")
+    if effort:
+        plan = plan_request(_model_caps(m), effort, required=True)
+        if plan.refusal:
+            return _selection_result(
+                requested, CAPABILITY_UNSUPPORTED, "%s: %s" % (m["label"], plan.refusal), role,
+                next_action="Send no effort for %s; its catalog entry exposes no effort selector."
+                            % m["label"])
+    return None
+
+
+def _account_refusal(account, role, requested):
+    """The typed outcome for a dispatch to an account the breaker has failed."""
+    if not account or ACCOUNT_BREAKER.admit(account):
+        return None
+    ev = next((e for e in ACCOUNT_BREAKER.open_events() if e.account == account), None)
+    return _selection_result(
+        requested, ACCOUNT_FAILED,
+        "Account %s is marked failed (%s); queued launches to it are suppressed."
+        % (account, ev.kind if ev else "unknown"), role or ROLE_BUILD,
+        next_action=(ev.action if ev else "Repair the account, then retry."))
+
+
+def record_account_failure(account, envelope):
+    """D30 at the dispatch boundary: normalize one account/provider failure.
+
+    Returns the ONE actionable breaker event when this failure opens the
+    breaker, and None when it is already open (no second event) or when the
+    failure is only throttling / transient service error (no breaker opened).
+    """
+    return ACCOUNT_BREAKER.record_failure(account, envelope)
+
+
 def admit_dispatch(run_dir, role, requested_model=None, *, route=None, reasoning_request=None,
-                   fallbacks=None, cached_model=None, runtime=None):
+                   fallbacks=None, cached_model=None, runtime=None,
+                   capability_claim=None, account=None):
     """Dispatch admission: every stage dispatch consumes the run's stored role
     binding here before any worker is called. Refuses an unbound run, an excluded
     model arriving through any catalog/alias/cache/fallback name, a request that
-    does not match the persisted binding, a wrong route and an unsupported
-    reasoning request — each refusal an actionable model-selection result."""
+    does not match the persisted binding, a wrong route, an unsupported
+    capability claim (CAPABILITY_UNSUPPORTED), a dispatch to an account the
+    shared breaker has failed (ACCOUNT_FAILED) and an unsupported reasoning
+    request — each refusal an actionable, typed result."""
+    failed = _account_refusal(account, role, requested_model)
+    if failed:
+        return failed
     doc = _read_store(run_dir)
     if not doc:
         return _selection_result(
@@ -422,6 +499,10 @@ def admit_dispatch(run_dir, role, requested_model=None, *, route=None, reasoning
         return _selection_result(requested_model, "ROUTE_MISMATCH",
                                  "Role %s is bound to route %s, not %s." % (role, binding["route"], route), role)
     m = _entry(mid)
+    if capability_claim:
+        refused = _capability_refusal(m, capability_claim, role, requested_model or mid)
+        if refused:
+            return refused
     ok, verified_req, note = _reasoning_check(m, reasoning_request)
     if not ok:
         return {"ok": False, "error_code": "REASONING_NOT_SUPPORTED",
