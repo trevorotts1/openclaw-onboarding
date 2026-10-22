@@ -28,5 +28,5 @@
     "no extra pedestrians in focus"
   ],
   "beats_pattern": "enter/start position -> mid-path detail (glance, prop) -> reach end position -> held last frame",
-  "motion_floor": "motion_score >= 0.02 (MOTION_SCORE_LOW) or the clip is flagged CLIP_LOW_MOTION before assembly"
+  "motion_floor": "subject_motion_score >= 0.012 (MOTION_SUBJECT_LOW) after global luminance and translation compensation, or the clip is flagged CLIP_LOW_MOTION before assembly; 1.0.0 receipts without spatial evidence still gate on motion_score >= 0.02 (MOTION_SCORE_LOW)"
 }
