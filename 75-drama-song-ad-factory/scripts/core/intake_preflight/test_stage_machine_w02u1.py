@@ -159,9 +159,17 @@ def test_expired_lease_fenced_reclaim():
         st = ss.Store(db)
         st.init_run("run-B", [F.MUSIC])
         st.transition("run-B", F.MUSIC, "READY", "old", expected_version=None)
-        row = st.claim("run-B", F.MUSIC, "old", lease_s=1, expected_version=None)
+        row = st.claim("run-B", F.MUSIC, "old", lease_s=-1, expected_version=None)
         old_version = row["version"]
-        time.sleep(1.2)  # let the old lease expire
+        # Carried fix (batch-2 discipline, same defect class as
+        # unit/S75-W05-U1-carryfix / test_approval_events.py): the old lease is
+        # born EXPIRED instead of sleeping 1.2 s for it to expire. time.sleep is
+        # a global that another suite (test_load_governor.py, on main) rebinds to
+        # a no-op at import time, so under pytest's full-suite run the sleep was
+        # a no-op, the 1 s lease never expired, and this test failed with
+        # NOT_OWNER ("lease held by old") only when run together with it.
+        # lease_s=-1 exercises the identical _lease_live=False reclaim path
+        # deterministically, with no clock dependency.
 
         # resume via the fenced claim path (music_stage action=resume -> RUNNING)
         res = F.music_stage(str(run), "new", "resume", run_id="run-B", lease_s=60)
