@@ -504,7 +504,33 @@ def client_message(run_id, row, decisions, stalled, stall_detail, expired,
 
 
 # --- the one look ------------------------------------------------------------
-def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None):
+def configured_max_hours(run_dir, fallback=DEFAULT_MAX_HOURS):
+    """The run's own cap: config.json "max_hours", else RUN_WATCH_MAX_HOURS,
+    else the 3 h default. A human-paced production run needs a longer window
+    than the anti-runaway default, and the owner sets it per run."""
+    try:
+        import json as _json
+        with open(Path(run_dir) / "config.json", encoding="utf-8") as fh:
+            cfg = _json.load(fh)
+        if isinstance(cfg, dict):
+            v = cfg.get("max_hours")
+            if isinstance(v, (int, float)) and v > 0:
+                return float(v)
+    except (OSError, ValueError):
+        pass
+    try:
+        import os as _os
+        v = float(_os.environ.get("RUN_WATCH_MAX_HOURS", ""))
+        if v > 0:
+            return v
+    except (TypeError, ValueError):
+        pass
+    return fallback
+
+
+def build(run_dir, max_hours=None, now=None):
+    if max_hours is None:
+        max_hours = configured_max_hours(run_dir)
     now = time.time() if now is None else float(now)
     run_dir = str(run_dir)
     loud = []
@@ -583,7 +609,7 @@ def main(argv=None):
     ap.add_argument("--run-dir", required=True, help="the run folder ($RUN)")
     ap.add_argument("--interval-check", action="store_true",
                     help="one tick of the 10-minute driver: exit 10 stops the loop")
-    ap.add_argument("--max-hours", type=float, default=DEFAULT_MAX_HOURS,
+    ap.add_argument("--max-hours", type=float, default=None,
                     help="the hard cap from the run's start (default 3)")
     ap.add_argument("--now", type=float, default=None,
                     help="epoch seconds to judge 'now' by (tests; default: the clock)")

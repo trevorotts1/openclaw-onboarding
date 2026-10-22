@@ -84,3 +84,14 @@ internal codes to the client. Never spend. Never write to the run folder.
    it" for storyboard; cite that receipt in the file. Then run
    `python3 scripts/core/intake_preflight/factory.py next --run-dir "$RUN"` once
    so the reconciler advances it. Spend no money at this stage.
+
+9. If the reported stage is `image-keyframes`: this stage is PAID. Build
+   $RUN/generation/req.json from the approved shot list, then run the runbook's
+   own dispatch row verbatim:
+
+   python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <image-model-id>      --request "$RUN/generation/req.json" --save-dir "$RUN/generation"      --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key keyframes      --attempt-id a1 --cost 0
+
+   Take <image-model-id> from the skill's own model policy -- never invent one
+   and never substitute an operator key. One dispatch per tick, then re-run
+   `factory.py next` once. Stop immediately if the spend ledger refuses on the
+   run's ceiling; report the refusal, never retry around it.
