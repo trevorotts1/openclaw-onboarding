@@ -1,5 +1,13 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.42: Council: an already-wired Council address is adopted instead of conflicting, the client exclude list is honored everywhere, and container-connector instructions only appear with container evidence
+
+In plain English: when the Council address is already wired, the provisioner now adopts it instead of failing on a conflict; the client exclude list is honored everywhere; and container-connector instructions only appear with container evidence.
+
+- The provisioner adopts an already-wired Council address, and the client exclude list is honored everywhere.
+- Container-connector instructions only appear with container evidence.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers rolled once with `scripts/bump-version.sh` (v27.1.63).
+
 ## v1.0.41: Council: container-host clients with a bridge-origin Command Center can now be provisioned on a dedicated tunnel with an in-container connector
 
 In plain English: when the Command Center lives inside a container reached through a bridge, the Council provisioner now stands up a dedicated tunnel and an in-container connector instead of failing.
