@@ -33,12 +33,18 @@ fi
 #        and the tunnel has an active connector     (none  -> CONNECTOR_DOWN)
 #        CONTAINER-HOST SHAPE (a remote-managed CC tunnel whose CC rule origin is a
 #        private bridge address: 10.x, 172.16-31.x, 192.168.x or host.docker.internal,
-#        on the CC port): the box's Council runs inside a docker container bound to
-#        the container's own loopback, so the Council takes the dedicated-tunnel path
+#        on the CC port): the Council takes the dedicated-tunnel path
 #        below unchanged (tunnel council-<slug>, route <slug>-council ->
-#        http://127.0.0.1:8787 -- the connector runs INSIDE the client's container,
-#        where the Council's loopback lives), token file, CONNECTOR_PENDING, DNS only
-#        after the connector. A bridge origin on any other port stays ORIGIN_NOT_LOOPBACK.
+#        http://127.0.0.1:8787 -- the connector runs where that loopback
+#        lives), token file, CONNECTOR_PENDING, DNS only after the connector.
+#        The IN-CONTAINER wording (the connector runs INSIDE the client's
+#        container) fires only with POSITIVE container evidence the operator
+#        side can gather: COUNCIL_CONTAINER_HOSTS names the host (comma list of
+#        slugs), or the tunnel's other ingress rules use a container-bridge
+#        pattern. The private-bridge shape alone is never evidence; without
+#        evidence the path and every write stay identical and the message says
+#        the connector runs ON THE HOST. A bridge origin on any other port
+#        stays ORIGIN_NOT_LOOPBACK.
 #      local-managed CC tunnel, RESCUE RIDE first: the Council rides the client's own
 #        rescue tunnel exactly like the remote path (detail "rides rescue tunnel <name>")
 #        when ALL hold: the CC tunnel reports this host at http://localhost:4000 or
@@ -52,7 +58,16 @@ fi
 #        named council-<slug> (or the COUNCIL_TUNNEL_OVERRIDES name), created or reused
 #        (that tunnel local-managed -> PENDING_LOCAL_TUNNEL). The container-host shape
 #        (a.) reaches this same dedicated path: no rescue ride, no CC-tunnel ride.
-#      council CNAME already points elsewhere        (-> CONFLICT)
+#      council CNAME already points at a healthy tunnel that already routes
+#        the exact rule <slug>-council.<zone> -> http://127.0.0.1:8787 (any
+#        equivalent loopback form the code matches elsewhere counts): this host
+#        is ADOPTED by that tunnel. Report ALREADY_PROVISIONED with the detail
+#        "Council address already wired via tunnel <name>", zero writes, exit 0,
+#        and never re-plan a dedicated tunnel for it. The Access app
+#        'Council - <slug>' and the edge 302 check still apply to the adopted route.
+#      council CNAME points anywhere else (a dead tunnel, a non-CNAME record,
+#        or a healthy tunnel with NO such rule -- a genuinely foreign or broken
+#        claim)                        (-> CONFLICT)
 #   d. create/reuse Access app 'Council - <slug>', read it back, compare the rules with
 #      the CC app (exclude/require rules that differ are refused, never synced). An existing app whose rules differ is SYNCED: its allow EMAILS are made
 #      equal to the CC app's (missing ones added, ones the CC no longer lists removed, so
@@ -104,6 +119,9 @@ fi
 # edge answers, not that the client's connector and Council service are up. The
 # check cannot see the Council service itself, only the tunnel connector.
 # An already provisioned host makes zero writes and prints ALREADY_PROVISIONED.
+# A host adopted by a foreign tunnel that already routes the council rule prints
+# ALREADY_PROVISIONED with the detail "Council address already wired via tunnel
+# <name>" (see ORDER c.), zero writes.
 #
 # Dry-run is the default and sends GET requests only. --apply is the only way a
 # write leaves this script. The ingress path is a sibling HOSTNAME, never a path
@@ -116,9 +134,24 @@ fi
 #   CF_API_BASE                     default https://api.cloudflare.com/client/v4
 #   COUNCIL_ZONE_NAME               default zerohumanworkforce.com (zone resolved BY NAME;
 #                                   CLOUDFLARE_ZONE_ID points at the wrong zone and is ignored)
-#   COUNCIL_ACCESS_EXCLUDE          --all: comma list of hosts to skip (default: the
-#                                   operator council host and the test tenants
+#   COUNCIL_ACCESS_EXCLUDE          comma list of hosts to skip, honored in EVERY
+#                                   entry path (single-host and --all): the host is
+#                                   dropped silently (not an alert) with zero writes.
+#                                   Resolved from the environment, else the
+#                                   COUNCIL_ACCESS_EXCLUDE line of the operator env
+#                                   file COUNCIL_ACCESS_ENV_FILE (parsed, never
+#                                   executed), else the default: the operator council
+#                                   host and the test tenants
 #                                   council, acme-dental-c436, smoke, probe .<zone>)
+#   COUNCIL_ACCESS_ENV_FILE         operator env file for the exclude line only
+#                                   (default $HOME/.openclaw/.env; credentials come
+#                                   from the environment only)
+#   COUNCIL_CONTAINER_HOSTS         comma list of slugs that run the Council inside a
+#                                   docker container: the explicit operator override
+#                                   that turns the private-bridge CC origin into the
+#                                   in-container connector wording (see the
+#                                   CONTAINER-HOST SHAPE above; absent evidence the
+#                                   same dedicated path runs with ON THE HOST wording)
 #   COUNCIL_TUNNEL_OVERRIDES        slug=tunnel-name list for the dedicated path
 #                                   (default trevor=council-desktop; set empty to disable)
 #   COUNCIL_TUNNEL_TOKEN_DIR        connector token store, mode 700 dir / 600 files
@@ -172,7 +205,20 @@ unset CLOUDFLARE_ZONE_ID 2>/dev/null || true   # known trap: points at the wrong
 API="${CF_API_BASE:-https://api.cloudflare.com/client/v4}"
 ACCT="$CLOUDFLARE_ACCOUNT_ID"
 ZONE_NAME="${COUNCIL_ZONE_NAME:-zerohumanworkforce.com}"
-EXCLUDE="${COUNCIL_ACCESS_EXCLUDE:-council.$ZONE_NAME,acme-dental-c436.$ZONE_NAME,smoke.$ZONE_NAME,probe.$ZONE_NAME}"
+ENV_FILE="${COUNCIL_ACCESS_ENV_FILE:-$HOME/.openclaw/.env}"
+env_file_val() {  # KEY -> last KEY=value in ENV_FILE, quotes stripped. The file is parsed, never executed.
+  local v
+  v="$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d '\r')"
+  v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
+  printf '%s' "$v"
+}
+# COUNCIL_ACCESS_EXCLUDE: the environment, else the env-file line, else the default.
+# One exclude source everywhere (the wrapper and ensure-cc-access.sh resolve it the
+# same way), so an excluded host is skipped in every entry path.
+EXCLUDE="${COUNCIL_ACCESS_EXCLUDE:-}"
+[ -n "$EXCLUDE" ] || EXCLUDE="$(env_file_val COUNCIL_ACCESS_EXCLUDE)"
+EXCLUDE="${EXCLUDE:-council.$ZONE_NAME,acme-dental-c436.$ZONE_NAME,smoke.$ZONE_NAME,probe.$ZONE_NAME}"
+CONTAINER_HOSTS="${COUNCIL_CONTAINER_HOSTS:-}"
 TUNNEL_OVERRIDES="${COUNCIL_TUNNEL_OVERRIDES-trevor=council-desktop}"
 TOKEN_DIR="${COUNCIL_TUNNEL_TOKEN_DIR:-$HOME/.openclaw/secrets/council-tunnels}"
 EDGE_TPL="${COUNCIL_EDGE_URL_TEMPLATE:-https://%s/}"
@@ -327,6 +373,29 @@ council_tunnel_name() {
     [ "${kv%%=*}" = "$1" ] && [ -n "${kv#*=}" ] && { printf '%s' "${kv#*=}"; return; }
   done
   printf 'council-%s' "$1"
+}
+
+# container_evidence SLUG CFG -> 0 when the operator side holds POSITIVE evidence the
+# box runs the Council inside a docker container; sets EVIDENCE_WHY. The private-bridge
+# origin alone is never evidence (a host-run service can sit on a bridge address too).
+# ponytail: two signals only (COUNCIL_CONTAINER_HOSTS, bridge-pattern sibling rule);
+# add a tunnel-name convention here when one is actually deployed.
+container_evidence() {
+  local slug="$1" cfg="$2" kv n
+  EVIDENCE_WHY=""
+  for kv in ${CONTAINER_HOSTS//,/ }; do
+    kv="${kv#"${kv%%[![:space:]]*}"}"; kv="${kv%"${kv##*[![:space:]]}"}"
+    if [ "$kv" = "$slug" ] || [ "$kv" = "$CC_HOST" ]; then
+      EVIDENCE_WHY="COUNCIL_CONTAINER_HOSTS names $slug"; return 0
+    fi
+  done
+  n="$(cc_ingress_of "$cfg" | jq --arg h "$CC_HOST" \
+      '[.[] | select(has("hostname") and ((.hostname // "" | ascii_downcase) != ($h | ascii_downcase)))
+        | .service // "" | select(test("^https?://(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.|host\\.docker\\.internal)([:/]|$)"))] | length' 2>/dev/null)"
+  if [ -n "$n" ] && [ "$n" != "0" ]; then
+    EVIDENCE_WHY="the tunnel's other ingress rules use a container-bridge address"; return 0
+  fi
+  return 1
 }
 
 # active_conns TUNNEL_ID -> number of active connections ("ERR" when unreadable)
@@ -516,7 +585,7 @@ provision_host() {
   fi
   src="$(jq -r '.result.source // "cloudflare"' <<<"$cfg")"
 
-  local ride_tid ride_cfg ride_name="" ride_new=0 token_file="" dedicated=0 rescue=0 container=0 note=""
+  local ride_tid ride_cfg ride_name="" ride_new=0 token_file="" dedicated=0 rescue=0 container=0 evidenced=0 adopted=0 note=""
   if [ "$src" = "cloudflare" ]; then
     cc_ingress_assert_cc_port "$cfg" "$cc" 1 || { finish FAILED "tunnel $tunnel_id has no valid Command Center rule for $cc; refusing to write"; return; }
     local cc_svc origin
@@ -525,17 +594,22 @@ provision_host() {
     case "$origin" in
       localhost|127.*|"[::1]") ;;
       host.docker.internal|10.*|172.1[6-9].*|172.2[0-9].*|172.30.*|172.31.*|192.168.*)
-        # Container-host shape: the box runs the Council inside a docker container
-        # bound to the container's own loopback, and the CC rule points at the
-        # container's bridge address. The dedicated connector runs INSIDE the
-        # container, where 127.0.0.1:8787 is reachable, so the dedicated path
-        # applies unchanged. Any other non-loopback origin keeps the refusal.
+        # Container-host SHAPE only (the CC rule points at a private bridge address
+        # on the CC port): the dedicated path applies unchanged. WHICH connector the
+        # message names needs positive container evidence (container_evidence); with
+        # no evidence the same dedicated path runs and the message says ON THE HOST.
+        # Any other non-loopback origin keeps the refusal.
         local origin_port; origin_port="$(cc_ingress_port_of "$cc_svc")"
         if [ "$origin_port" != "$CC_INGRESS_PORT" ]; then
           finish ORIGIN_NOT_LOOPBACK "the Command Center rule for $cc points at $cc_svc, not loopback and not the Command Center port $CC_INGRESS_PORT; that connector cannot reach the Council on $COUNCIL_SERVICE. No Cloudflare change made"; return
         fi
         container=1
-        step "[ok] container host: the Command Center rule for $cc points at the container bridge $cc_svc, and the Council rides a dedicated tunnel whose connector runs inside the client's container"
+        if container_evidence "$slug" "$cfg"; then
+          evidenced=1
+          step "[ok] container host ($EVIDENCE_WHY): the Command Center rule for $cc points at the container bridge $cc_svc, and the Council rides a dedicated tunnel whose connector runs inside the client's container"
+        else
+          step "[info] the Command Center rule for $cc points at the private bridge $cc_svc but no container evidence names $slug (COUNCIL_CONTAINER_HOSTS or a bridge-pattern sibling rule): the Council takes the dedicated path and the connector runs ON THE HOST"
+        fi
         ;;
       *) finish ORIGIN_NOT_LOOPBACK "the Command Center rule for $cc points at $cc_svc, not loopback; that connector cannot reach the Council on $COUNCIL_SERVICE (it binds the box's IPv4 loopback only). No Cloudflare change made"; return ;;
     esac
@@ -587,7 +661,11 @@ provision_host() {
     dedicated=1
     ride_name="$(council_tunnel_name "$slug")"
     token_file="$TOKEN_DIR/${ride_name}.token"
-    say "  Tunnel $tunnel_id (serving $cc) is remote-managed and the Command Center runs inside a container (bridge origin); the Council rides its own remote-managed tunnel $ride_name, whose connector must run INSIDE the client's container."
+    if [ "$evidenced" = "1" ]; then
+      say "  Tunnel $tunnel_id (serving $cc) is remote-managed and the Command Center runs inside a container (bridge origin, $EVIDENCE_WHY); the Council rides its own remote-managed tunnel $ride_name, whose connector must run INSIDE the client's container."
+    else
+      say "  Tunnel $tunnel_id (serving $cc) reports the Command Center at $cc_svc (a private bridge address) with no container evidence; the Council rides its own remote-managed tunnel $ride_name and the connector runs ON THE HOST."
+    fi
     r="$(cf GET "/accounts/${ACCT}/cfd_tunnel?name=${ride_name}&is_deleted=false")"
     [ "$(ok_of "$r")" = "true" ] || { finish FAILED "could not look up tunnel $ride_name: $(err_of "$r")"; return; }
     ride_tid="$(jq -r --arg n "$ride_name" '[.result[]? | select(.name == $n and (.deleted_at == null))][0].id // empty' <<<"$r")"
@@ -605,13 +683,43 @@ provision_host() {
     fi
   fi
 
-  # council CNAME: an existing record must already point at the tunnel the Council rides
+  # council CNAME: an existing record must already point at the tunnel the Council rides,
+  # or at a healthy tunnel that already routes the exact council rule (ADOPT, below)
   local expected="${ride_tid:-new}.cfargotunnel.com" rec_id rec_type rec_content
   r="$(cf GET "/zones/${ZONE_ID}/dns_records?name=${COUNCIL_HOST}")"
   [ "$(ok_of "$r")" = "true" ] || { finish FAILED "could not read DNS for $COUNCIL_HOST: $(err_of "$r")"; return; }
   rec_id="$(jq -r '.result[0].id // empty' <<<"$r")"
   rec_type="$(jq -r '.result[0].type // empty' <<<"$r")"
   rec_content="$(jq -r '.result[0].content // empty' <<<"$r")"
+  if [ -n "$rec_id" ] && { [ "$ride_new" = "1" ] || [ "$rec_type" != "CNAME" ] || [ "$rec_content" != "$expected" ]; }; then
+    # ADOPT NOT CONFLICT: the record already claims a healthy tunnel that routes the
+    # exact rule <slug>-council.<zone> -> $COUNCIL_SERVICE. That is a completed
+    # wire-up (the live platinum-pearls shape), not a foreign claim: ride the adopting
+    # tunnel, never re-plan a dedicated tunnel, and let the Access app + edge gate run.
+    local atid="${rec_content%.cfargotunnel.com}"
+    if [ "$rec_type" = "CNAME" ] && [ -n "$atid" ] && [ "$atid" != "$rec_content" ] && [ "$atid" != "${ride_tid:-}" ]; then
+      local ath acfg asvc
+      ath="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${atid}")"
+      acfg=""
+      if [ "$(ok_of "$ath")" = "true" ] && [ -z "$(jq -r '.result.deleted_at // empty' <<<"$ath")" ] \
+         && [ "$(jq -r '.result.status // "unknown"' <<<"$ath")" = "healthy" ]; then
+        acfg="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${atid}/configurations")"
+      fi
+      if [ -n "$acfg" ] && [ "$(ok_of "$acfg")" = "true" ]; then
+        asvc="$(cc_ingress_service_for_host "$acfg" "$COUNCIL_HOST")"
+        case "$asvc" in
+          http://localhost:8787|http://localhost:8787/|http://127.0.0.1:8787|http://127.0.0.1:8787/|http://[::1]:8787|http://[::1]:8787/)
+            ride_new=0; dedicated=0; rescue=0; token_file=""; adopted=1
+            ride_tid="$atid"; ride_cfg="$acfg"; ride_name="$(jq -r '.result.name // empty' <<<"$ath")"
+            expected="$rec_content"
+            note="Council address already wired via tunnel $ride_name"
+            say "  ADOPTED: $COUNCIL_HOST is already wired via tunnel $ride_name ($ride_tid); no dedicated tunnel planned, zero routing writes"
+            step "[ok] adopted: tunnel $ride_name already routes $COUNCIL_HOST -> $asvc"
+            ;;
+        esac
+      fi
+    fi
+  fi
   if [ -n "$rec_id" ] && { [ "$ride_new" = "1" ] || [ "$rec_type" != "CNAME" ] || [ "$rec_content" != "$expected" ]; }; then
     finish CONFLICT "$COUNCIL_HOST already exists as $rec_type -> $rec_content, not $([ "$ride_new" = 1 ] && echo "the new tunnel $ride_name" || echo "$expected"); nothing changed"; return
   fi
@@ -676,8 +784,10 @@ provision_host() {
   # f. ingress: GET -> merge -> PUT, CC rule asserted unchanged when it shares the tunnel
   local prior_svc ing_changed=0 new_body
   prior_svc="$(cc_ingress_service_for_host "$ride_cfg" "$COUNCIL_HOST")"
-  if [ "$prior_svc" = "$COUNCIL_SERVICE" ]; then
-    step "[ok] ingress rule $COUNCIL_HOST -> $COUNCIL_SERVICE present"
+  # An adopted route's rule is present by construction (the adoption matched it in an
+  # equivalent loopback form): it is never rewritten, so adoption keeps zero writes.
+  if [ "$prior_svc" = "$COUNCIL_SERVICE" ] || [ "$adopted" = "1" ]; then
+    step "[ok] ingress rule $COUNCIL_HOST -> $prior_svc present"
   else
     new_body="$(cc_ingress_merge "$ride_cfg" "$COUNCIL_HOST" "$COUNCIL_SERVICE")" || { finish FAILED "ingress merge failed"; return; }
     if [ "$rescue" = "1" ]; then
@@ -744,8 +854,10 @@ provision_host() {
 
   # dedicated path: the box must run the tunnel's connector before the record exists
   if [ "$dns_held" = "1" ]; then
-    local where_note="The box must run its connector"
-    [ "$container" = "1" ] && where_note="The connector must run INSIDE the client's container (the Council binds the container's loopback, not the host's)"
+    # The CONNECTOR_PENDING message names BOTH delivery paths, never one impossible step.
+    local deliver="deliver the connector token to the in-container path \$OPENCLAW_ROOT/secrets/tunnel-council.token (OPENCLAW_ROOT resolves to /data/.openclaw or ~/.openclaw as wire.sh does) for container hosts, or the host path ~/.openclaw/secrets/tunnel-council.token for host-run connectors"
+    local where_note="The connector runs ON THE HOST ($deliver)"
+    [ "$evidenced" = "1" ] && where_note="The connector must run INSIDE the client's container (the Council binds the container's loopback, not the host's; $deliver)"
     if [ "$APPLY" = "1" ] || [ "$wrote" = "0" ]; then
       local tok_note="token saved operator side at $token_file"
       [ -s "$token_file" ] || tok_note="token NOT saved yet at $token_file; $([ "$APPLY" = 1 ] && echo "retried next run" || echo "--apply saves it")"
@@ -829,7 +941,9 @@ else
   valid_host "$TARGET" || { echo "host must be <slug>.$ZONE_NAME" >&2; exit 2; }
   case "$TARGET" in *-hooks.*|*-podcast.*|*-council.*) echo "give the Command Center host, not a -hooks/-podcast/-council host" >&2; exit 2 ;; esac
   not_cc_name "$TARGET" && { echo "give the Command Center host, not a gateway dashboard/rescue/webhook/n8n host" >&2; exit 2; }
-  HOSTS=("$TARGET")
+  # COUNCIL_ACCESS_EXCLUDE is honored here exactly as in --all: a silent skip
+  # (not an alert), zero writes.
+  case ",$EXCLUDE," in *",$TARGET,"*) ;; *) HOSTS=("$TARGET") ;; esac
 fi
 
 say "provision-council-access: zone=$ZONE_NAME ($ZONE_ID) hosts=${#HOSTS[@]} mode=$([ "$APPLY" = 1 ] && echo apply || echo dry-run)"
