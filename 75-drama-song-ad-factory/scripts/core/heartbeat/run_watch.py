@@ -891,7 +891,14 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
     stalled, stall_detail = stall_check(state, row, now, decisions)
     wait = None if stalled else legitimate_wait(row, decisions)
     activity_at, activity_source = watchdog_clock(state, row)
-    expired = elapsed_minutes >= int(max_hours * 60) and not complete
+    # The cap measures the STUDIO's own delay. A run parked on a client
+    # answer is not late: it is waiting, and the clock must not turn that
+    # into HEARTBEAT_EXPIRED (the client was being told the run ran out of
+    # time while the only missing thing was their own reply).
+    waiting_on_client = bool(wait) and str(
+        (wait or {}).get("kind", "")).startswith("client")
+    expired = (elapsed_minutes >= int(max_hours * 60)
+               and not complete and not waiting_on_client)
     if stalled:
         loud.append(_fail("HEARTBEAT_STALLED",
                           "%s/%s: %s" % (state["run_id"], row["stage"],

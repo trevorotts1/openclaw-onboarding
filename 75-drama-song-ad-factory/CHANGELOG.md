@@ -4,6 +4,16 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.86 - 2026-10-22 - a client wait is never HEARTBEAT_EXPIRED
+
+A run parked on the client's approval was reported expired once the 3-hour cap
+passed, so the watcher told the client the run had run out of time while the
+only missing thing was their own reply (seen on a real run: 1,226 minutes,
+WAITING_APPROVAL, HEARTBEAT_EXPIRED). The cap now measures the studio's own
+delay only: when `legitimate_wait` names a client wait, `expired` stays False
+and no HEARTBEAT_EXPIRED is emitted. Stalls are unchanged - silence is still a
+stall. Test 12 in `test_run_watch.py` pins it.
+
 ## v2.9.85 - 2026-10-22 - rebased on main (no feature regressions in the WAL fixes)
 
 The merge that carried the WAL-safe reads onto main had been resolved by taking
