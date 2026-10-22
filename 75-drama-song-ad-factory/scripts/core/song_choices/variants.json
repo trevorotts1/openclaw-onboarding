@@ -1,5 +1,5 @@
 {
-  "_note": "WW-26: three independently authored COMPLETE briefs per music style -- not one shared request plus a short appended clause. Each brief carries all ten directions (groove, palette, arrangement, energy, cast/version vocal direction, rap-versus-sung hook, immediate scene words, both shifts, short ending). Exactly ONE variant per style is the explicitly upbeat role, within the same music style (no unapproved genre substitution). The arrangement sentence is the trailing clause: the assembled provider style ends with it before the approved pace clause.",
+  "_note": "WW-26: three independently authored COMPLETE briefs per music style -- not one shared request plus a short appended clause. Each brief carries all ten directions (groove, palette, arrangement, energy, cast/version vocal direction, rap-versus-sung hook, immediate scene words, both shifts, short ending). Exactly ONE variant per style is the explicitly upbeat role, within the same music style (no unapproved genre substitution). The arrangement sentence is the trailing clause: the assembled provider style ends with it before the approved pace clause. A variant whose vocals line re-voices the lead (harmony, backing replies, stacks) is marked \"revoices_lead\": true -- the assembled style then also carries the style's own dry/upfront presence direction, which the per-variant brief would otherwise drop.",
   "rnb-flow": [
     {
       "id": "polished-modern",
@@ -8,6 +8,7 @@
       "genre": "rnb-flow",
       "role": "polished",
       "upbeat": false,
+      "revoices_lead": true,
       "brief": {
         "groove": "contemporary r&b hip-hop flow, 90 bpm",
         "palette": "glossy pads, sub bass, crisp programmed drums",
@@ -28,6 +29,7 @@
       "genre": "rnb-flow",
       "role": "live",
       "upbeat": false,
+      "revoices_lead": true,
       "brief": {
         "groove": "contemporary r&b hip-hop flow, live 88 bpm sway",
         "palette": "round electric bass, soft Rhodes, gentle clean guitar",
@@ -48,6 +50,7 @@
       "genre": "rnb-flow",
       "role": "upbeat",
       "upbeat": true,
+      "revoices_lead": true,
       "brief": {
         "groove": "contemporary r&b hip-hop flow, upbeat 94 bpm",
         "palette": "bright synth plucks, sub bass, tight driving hats",
@@ -90,6 +93,7 @@
       "genre": "soul-ballad",
       "role": "live",
       "upbeat": false,
+      "revoices_lead": true,
       "brief": {
         "groove": "soul ballad, warm 66 bpm live feel",
         "palette": "round electric bass, soft organ, clean guitar",
@@ -110,6 +114,7 @@
       "genre": "soul-ballad",
       "role": "upbeat",
       "upbeat": true,
+      "revoices_lead": true,
       "brief": {
         "groove": "soul ballad lifted to an upbeat 84 bpm swing",
         "palette": "bright strings, piano, claps, warm bass",
@@ -152,6 +157,7 @@
       "genre": "soul-rise",
       "role": "live",
       "upbeat": false,
+      "revoices_lead": true,
       "brief": {
         "groove": "soul rise, live 66 bpm opening into the lift",
         "palette": "live bass, organ, clean guitar, live kit",
@@ -172,6 +178,7 @@
       "genre": "soul-rise",
       "role": "upbeat",
       "upbeat": true,
+      "revoices_lead": true,
       "brief": {
         "groove": "soul rise, upbeat 108 bpm at the turn",
         "palette": "bright horns, claps, strings, warm bass",
