@@ -1379,8 +1379,13 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     if pl["outcome"] != "ok":
         return envelope("dispatch", pl["outcome"], pl["reason_code"],
                         pl.get("next_action", ""), run_id=run_id,
-                        logical_key=logical_key, attempt_id=attempt_id,
+                        logical_key=logical_key,
+                        attempt_id=pl.get("attempt_id") or attempt_id,
                         state_version=pl.get("state_version", 0))
+    # An empty attempt_id asked the ledger to mint one; the id it committed is
+    # the only identity this job may use from here on. Minting is never a
+    # string suffix of a prior attempt and never a default "a1".
+    attempt_id = pl.get("attempt_id") or attempt_id
     rs = L.reserve(ledger_db, run_id, logical_key, attempt_id, owner=owner)
     if rs["outcome"] != "ok":
         return envelope("dispatch", rs["outcome"], rs["reason_code"],
