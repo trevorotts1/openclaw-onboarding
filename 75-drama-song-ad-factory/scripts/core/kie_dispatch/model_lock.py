@@ -39,6 +39,8 @@ ALLOWED_VIDEO_MODELS = (
     "happyhorse-1-1/*",
     "hailuo/02-image-to-video-standard",
     "hailuo/02-image-to-video-*",
+    "minimax-h3/image-to-video",
+    "minimax-h3/*",
     "kling-3.0-omni/*",
     "google/gemini-omni-flash-1-1",
     "bytedance/seedance-2-5",

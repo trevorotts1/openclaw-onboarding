@@ -179,6 +179,7 @@ the per-second models, 8-second clips for Veo, 10-second clips for Gemini.
 | Veo 3.1 Quality (veo3; market id veo-3-1) | 720p $1.25 per clip (250 cr) | 1080p $1.275 per clip (255 cr) | 8 s | Yes, both |
 | HappyHorse 1.1 (happyhorse-1-1/*) | 720p $0.1125/s | 1080p $0.145/s | 15 s (3-15) | Yes, both |
 | Hailuo 02 Standard (hailuo/02-image-to-video-standard;hailuo/02-image-to-video-*) | 768P $0.025/s (720p not offered) | 1080p not offered (Hailuo 02 Pro is a separate model) | 6 s | Yes, both |
+| MiniMax H3 (minimax-h3/image-to-video; minimax-h3/*) | 768P per KIE pricing (owner directive 2026-10-22) | 2K per KIE pricing | 15 s (4-15) | Yes, both |
 | Kling 3.0 Omni (kling-3.0-omni/*) | 720p $0.07/s | 1080p $0.09/s | 15 s (3-15) | Yes, both |
 | Gemini Omni Flash 1.1 (google/gemini-omni-flash-1-1) | 720p $0.63 per 10 s clip (126 cr) | 1080p same $0.63 | 10 s (4, 6, 8 or 10) | Yes, both |
 | Seedance 2.5 (bytedance/seedance-2-5) | 720p $0.315/s | 1080p $0.79/s | 30 s (4-30) | Yes, both |
