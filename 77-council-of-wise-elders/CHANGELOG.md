@@ -1,5 +1,13 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.49: Council: nine seat emblems and a cover emblem land as assets/seats art, and the branch folds in upstream main (W74-ASSETS)
+
+In plain English: every seat now has its own painted emblem — the council cover gets one too — so the rendered artifact page (W74-B's `render-counsel-artifact.mjs`, which defaults its asset source to `assets/seats/cover.png`) has the art it points at, in-repo.
+
+- New `assets/seats/` with ten PNG files: nine seat emblems (one per elder seat) plus `cover.png`, all generated as painted heraldic medallion emblems (navy and antique gold, ornate filigree border, symbolic objects only — no human faces, no likenesses of real people, no text in any image).
+- Branch merges upstream main (`unit/W74-counsel-artifacts` folds in the W73 BUILD entry as v1.0.44 below), the renumbered W74-C/B/A/D entries stay at v1.0.45 through v1.0.48, and this entry is the new top at v1.0.49.
+- Repository markers (SKILL.md frontmatter version, skill-version.txt, version file) agree at 1.0.49; manifest and archive regenerated with `scripts/build-bundles.mjs`.
+
 ## v1.0.48: Council: one convene flow wires the brief-builder, the deliberation, the close protocol and the artifact — on both doors (W74-D)
 
 In plain English: a council now runs as one flow. The brief the elders read is assembled first from the client's permitted memory files, the council deliberates and reaches its verdict, the sitting closes itself (the soft-close question, or the client's own "that's all"), and the finished counsel page arrives in the reply beside the chamber link. The same flow serves both doors: the client's OpenClaw agent and claude-nine / Claude Code (999) — the client only asks for the council, whichever side they are on.
