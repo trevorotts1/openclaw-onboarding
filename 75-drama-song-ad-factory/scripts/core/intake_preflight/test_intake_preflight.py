@@ -108,16 +108,20 @@ def test_card_defaults_from_style_defaults():
           fields.get("target_length_s") == 60, repr(fields.get("target_length_s")))
 
 
-def test_ten_delivery_profiles():
+def test_twelve_delivery_profiles():
+    """D12: profiles come from the ONE canonical duration table (six lengths,
+    the F15 120 s entry included) x two shapes -- the old ten-profile set
+    dropped 120 s and is gone."""
     got = P.DEFAULT_PROFILES
     want = tuple(
         "drama-%s-%ss" % (shape, secs)
-        for secs in (60, 90, 180, 300, 600)
+        for secs in (60, 90, 120, 180, 300, 600)
         for shape in ("9x16", "16x9"))
-    check("exactly the ten version-2 profiles",
+    check("exactly the twelve version-2 profiles",
           got == want, "%s != %s" % (got, want))
-    check("ten profiles, five lengths x two shapes",
-          len(got) == 10, str(len(got)))
+    check("twelve profiles, six lengths x two shapes",
+          len(got) == 12, str(len(got)))
+    check("120 s profile present (D12)", "drama-9x16-120s" in got, repr(got))
     check("v1 profile retired from defaults",
           "short-9x16-30s" not in got)
 
@@ -158,13 +162,17 @@ def test_cli_done_when():
                        "at": "2026-10-08T09:00:00Z"}
         with open(receipt_path, "w", encoding="utf-8") as fh:
             json.dump(receipt, fh)
+        # D05: a production preflight derives the KIE credential requirement
+        # from PREREQS.json (presence only; the value is never read or logged),
+        # so the CLI run carries a set name in its env like a real launcher.
+        cli_env = dict(os.environ, KIE_API_KEY="kie-cli-presence-2026")
         run = subprocess.run(
             [sys.executable, FACTORY, "preflight",
              "--root", tmp, "--storage-dir", tmp,
              "--profile", "drama-16x9-300s",
              "--auth-file", auth, "--summary-digest", "t",
              "--card-receipt-file", receipt_path],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=cli_env)
         env = json.loads(run.stdout)
         check("CLI: not delivery-profile-unknown",
               env.get("reason_code") != "delivery-profile-unknown",
@@ -179,7 +187,7 @@ def test_cli_done_when():
              "--root", tmp, "--storage-dir", tmp,
              "--profile", "drama-16x9-300s",
              "--auth-file", auth, "--summary-digest", "t"],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=cli_env)
         env2 = json.loads(run2.stdout)
         check("CLI: paid preflight without card -> CARD_UNANSWERED",
               env2.get("reason_code") == "CARD_UNANSWERED",
@@ -288,7 +296,7 @@ TESTS = [
     test_weekly_brief_fields_pass_through,
     test_explicit_target_length_wins,
     test_card_defaults_from_style_defaults,
-    test_ten_delivery_profiles,
+    test_twelve_delivery_profiles,
     test_default_profile_known,
     test_cli_done_when,
     test_thin_brief_asks_no_money_question,
