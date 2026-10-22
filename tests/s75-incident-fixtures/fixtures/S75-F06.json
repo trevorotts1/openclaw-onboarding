@@ -1,0 +1,39 @@
+{
+ "driver": {
+  "entry": "intake_preflight/preflight.py check",
+  "kind": "product",
+  "tree": "999 main"
+ },
+ "fixture_id": "S75-F06",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "storage_dir": "<RUN_DIR>/storage"
+ },
+ "observed_defect": {
+  "checks_credentials_present": {},
+  "checks_modules": {},
+  "checks_tools": {},
+  "outcome": "ok",
+  "reason_code": "preflight-pass"
+ },
+ "pattern": "empty tool/module/credential lists passing preflight",
+ "required_post_repair": "Derive the needed checks automatically; preserve functioning explicit checks.",
+ "setup": {
+  "credentials": [],
+  "modules": [],
+  "tools": [],
+  "valid": [
+   "storage",
+   "intake",
+   "authorization",
+   "choice card"
+  ]
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 17.4 row 9"
+}

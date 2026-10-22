@@ -1,0 +1,39 @@
+{
+ "driver": {
+  "entry": "spend_ledger.py plan",
+  "kind": "product",
+  "tree": "999 main"
+ },
+ "fixture_id": "S75-F11",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "ledger_db": "<RUN_DIR>/control/spend.sqlite3"
+ },
+ "observed_defect": {
+  "control_explicit_ordinal_2": "REPAIR_CAP",
+  "persisted_attempt_no": [
+   1,
+   1,
+   1
+  ],
+  "retry_cost": 0
+ },
+ "pattern": "attempt ordinal stuck at 1",
+ "required_post_repair": "Allocate identity and ordinal atomically inside the ledger; derive cap and accounting checks from authoritative persisted state.",
+ "setup": {
+  "attempts": [
+   "a1",
+   "a2",
+   "a3"
+  ],
+  "call_shape": "dispatcher omitted ordinal",
+  "repair_cap": 0
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 D20, 17.10 row 1, 17.9"
+}

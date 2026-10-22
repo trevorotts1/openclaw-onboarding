@@ -1,0 +1,16 @@
+{
+ "cache_meta": {
+  "etag": "W/\"09f0aba1f0badac515debc68b12ce4f8\"",
+  "model_count": 5575,
+  "provider_count": 24,
+  "syncedAt": 1792641629583,
+  "v": 2
+ },
+ "provenance": {
+  "fetched_at": "2026-10-22T09:24:28+00:00",
+  "refresh_path": "python3 -I tools/capture_fixtures.py --out fixtures/",
+  "source": "<HOME>/.9router/model-catalog.json",
+  "source_revision": null,
+  "source_sha256": "d446244ab851b3b657b95d41062014b0846219241c13f91db32c16a440535910"
+ }
+}

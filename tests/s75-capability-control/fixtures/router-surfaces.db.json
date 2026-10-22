@@ -1,0 +1,390 @@
+{
+ "combo_strategy": "fallback",
+ "combos": [
+  {
+   "models": [
+    "ds/deepseek-flash(max)",
+    "openrouter/deepseek/deepseek-v4.1-flash-1017(max)",
+    "cx/gpt-5.6-sol"
+   ],
+   "name": "Coding"
+  },
+  {
+   "models": [
+    "openrouter/minimax/minimax-m3.1-flash:free",
+    "ollama/minimax-m3.1-flash:cloud"
+   ],
+   "name": "MINIMAX-CHAIN"
+  },
+  {
+   "models": [
+    "cc/claude-opus-5-5(high)",
+    "anthropic/claude-opus-5-5(high)",
+    "openrouter/meta/muse-spark-1.3-contributor(xhigh)",
+    "oc/mimo-v2.6-flash-free(xhigh)"
+   ],
+   "name": "claude-chain"
+  },
+  {
+   "models": [
+    "cc/claude-haiku-5-5(max)",
+    "anthropic/claude-haiku-5-5(max)"
+   ],
+   "name": "claude-haiku-chain"
+  },
+  {
+   "models": [
+    "cc/claude-sonnet-5-5(max)",
+    "anthropic/claude-sonnet-5-5(max)",
+    "ollama/glm-5.3-flash:cloud(max)",
+    "openrouter/meta/muse-spark-1.3-contributor(xhigh)"
+   ],
+   "name": "claude-sonnet-chain"
+  },
+  {
+   "models": [
+    "ds/deepseek-flash(max)",
+    "openrouter/deepseek/deepseek-v4.1-flash-1017(max)",
+    "ollama/deepseek-v4.1-flash:1017(max)"
+   ],
+   "name": "deepseek-chain"
+  },
+  {
+   "models": [
+    "cx/gpt-6.1-sol(high)",
+    "openrouter/xiaomi/mimo-v2.6-flash(high)",
+    "openrouter/qwen/qwen3.8-flash(max)"
+   ],
+   "name": "fable-chain"
+  },
+  {
+   "models": [
+    "openrouter/meta/muse-spark-1.3-contributor(xhigh)",
+    "cc/claude-opus-5-5(max)",
+    "cx/gpt-6-astra(max)"
+   ],
+   "name": "fusion-chain"
+  },
+  {
+   "models": [
+    "openrouter/xiaomi/mimo-v2.6-pro(max)",
+    "openrouter/z-ai/glm-5.3-flash(max)",
+    "ollama/glm-5.3:cloud(max)",
+    "ollama/glm-5.3-flash:cloud(max)",
+    "openrouter/meta/muse-spark-1.3-contributor(xhigh)",
+    "ollama/glm-5.3:cloud(max)"
+   ],
+   "name": "glm-chain"
+  },
+  {
+   "models": [
+    "agnes/agnes-3.0-flash(high)",
+    "openrouter/minimax/minimax-m3"
+   ],
+   "name": "haiku-chain"
+  },
+  {
+   "models": [
+    "ollama-local/ornith-1.5:9b"
+   ],
+   "name": "local-chain"
+  },
+  {
+   "models": [
+    "openrouter/xiaomi/mimo-v2.6-flash"
+   ],
+   "name": "mimoflash-chain"
+  },
+  {
+   "models": [
+    "openrouter/xiaomi/mimo-v2.6-pro"
+   ],
+   "name": "mimopro-chain"
+  },
+  {
+   "models": [
+    "ollama/glm-5.3-flash:cloud(max)",
+    "ollama/deepseek-v4.1-flash:1017",
+    "ollama/minimax-m3"
+   ],
+   "name": "ollama-chain"
+  },
+  {
+   "models": [
+    "openrouter/xiaomi/mimo-v2.6-pro(high)",
+    "openrouter/meta/muse-spark-1.3-contributor(max)",
+    "ds/deepseek-flash(max)",
+    "oc/mimo-v2.6-flash-free(xhigh)",
+    "oc/mimo-v2.6-flash-free(xhigh)"
+   ],
+   "name": "opus-chain"
+  },
+  {
+   "models": [
+    "ollama/glm-5.3-flash:cloud(max)",
+    "openrouter/z-ai/glm-5.3-flash(max)",
+    "ollama/deepseek-v4.1-flash:1017(max)",
+    "ds/deepseek-flash(max)",
+    "openrouter/qwen/qwen3.8-flash(high)"
+   ],
+   "name": "sonnet-chain"
+  }
+ ],
+ "kv": {
+  "customModels": [
+   "anthropic|claude-fable-5-1|llm",
+   "anthropic|claude-haiku-5-5|llm",
+   "anthropic|claude-opus-5-5|llm",
+   "anthropic|claude-sonnet-5-5|llm",
+   "cc|claude-haiku-5-5|llm",
+   "cc|claude-opus-5-5|llm",
+   "ds|deepseek-flash|llm",
+   "nous|reflection/beam-1.0-501b-a23b:free|llm",
+   "nvidia|deepseek-ai/deepseek-v4.1-flash|llm",
+   "nvidia|moonshotai/kimi-k3|llm",
+   "nvidia|nvidia/nemotron-3-nano-omni-30b-a3b-reasoning|llm",
+   "nvidia|nvidia/nemotron-3-super-120b-a12b|llm",
+   "nvidia|nvidia/nemotron-3-ultra-550b-a55b|llm",
+   "nvidia|nvidia/nemotron-3.5-lightning-30b-a3b|llm",
+   "nvidia|z-ai/glm-5.3-flash|llm",
+   "nvidia|z-ai/glm-5.3|llm",
+   "oc|big-pickle|llm",
+   "oc|jev-1.13-free|llm",
+   "oc|ling-3.0-flash-fin-free|llm",
+   "oc|mimo-v2.6-flash-free|llm",
+   "oc|nemotron-3-ultra-free|llm",
+   "ollama-local|gemma4:12b-mlx|llm",
+   "ollama-local|muse-glimmer:30b-mlx|llm",
+   "ollama-local|ornith-1.5:9b|llm",
+   "ollama-local|qwen3.8:27b-mlx|llm",
+   "ollama|deepseek-v4.1-flash:1017|llm",
+   "ollama|gemma4:31b|llm",
+   "ollama|glm-5.3-flash:cloud|llm",
+   "ollama|glm-5.3:cloud|llm",
+   "ollama|kimi-k2.6|llm",
+   "ollama|kimi-k2.7-code|llm",
+   "ollama|kimi-k3|llm",
+   "ollama|minimax-m3|llm",
+   "ollama|mistral-large-3:675b|llm",
+   "ollama|nemotron-3-nano:30b|llm",
+   "ollama|nemotron-3-super|llm",
+   "ollama|nemotron-3-ultra|llm",
+   "openai-compatible-chat-19fba778-d9c1-42f3-ab0b-f90d62948ae7|qwen3.8-max-preview|llm",
+   "openai-compatible-chat-19fba778-d9c1-42f3-ab0b-f90d62948ae7|qwen3.8-max|llm",
+   "openai-compatible-chat-206e0512-9f56-48cf-8dc0-ee299fa31a82|qwen3.8-max-preview|llm",
+   "openai-compatible-chat-206e0512-9f56-48cf-8dc0-ee299fa31a82|qwen3.8-max|llm",
+   "openai-compatible-chat-3a76263c-87b7-431c-9b4c-6a6c3b710dbc|agnes-3.0-flash|llm",
+   "openai-compatible-chat-5209cc30-7655-4012-8a3e-3f829ed63f52|google/gemini-3.7-flash@preset/gemini-3-7-flash-vertex-max|llm",
+   "openai-compatible-chat-58c35417-5d7c-4eae-9f1d-b72f6fc1e41a|nvidia/nemotron-3-nano-30b-a3b|llm",
+   "openai-compatible-chat-58c35417-5d7c-4eae-9f1d-b72f6fc1e41a|nvidia/nemotron-3-nano-omni-30b-a3b-reasoning|llm",
+   "openai-compatible-chat-5bf011c8-2805-49d5-a824-6cc3fc124ee7|stealth/ox-alpha|llm",
+   "openai-compatible-chat-86582c20-66f7-45c8-96a6-dcf0fcb133d2|nvidia/nemotron-3-nano-30b-a3b|llm",
+   "openai-compatible-chat-86582c20-66f7-45c8-96a6-dcf0fcb133d2|nvidia/nemotron-3-nano-omni-30b-a3b-reasoning|llm",
+   "openai-compatible-chat-9ffbda9a-e7c5-49c5-abde-b7839e937e87|glm-5.2|llm",
+   "openai-compatible-chat-9ffbda9a-e7c5-49c5-abde-b7839e937e87|qwen-audio-3.0-tts-plus|llm",
+   "openai-compatible-chat-9ffbda9a-e7c5-49c5-abde-b7839e937e87|qwen3.8-max-preview|llm",
+   "openai-compatible-chat-9ffbda9a-e7c5-49c5-abde-b7839e937e87|wan2.7-image-pro|llm",
+   "openai-compatible-chat-9ffbda9a-e7c5-49c5-abde-b7839e937e87|wan2.7-image|llm",
+   "openai-compatible-chat-a2d0ff09-9e5c-4d0a-a0ad-af3aec283941|qwen3.8-max-preview|llm",
+   "openai-compatible-chat-a2d0ff09-9e5c-4d0a-a0ad-af3aec283941|qwen3.8-max|llm",
+   "openai-compatible-chat-efcfc77b-4ead-42c3-8060-05b7892c8a7d|qwen3.8-max-preview|llm",
+   "openai-compatible-chat-efcfc77b-4ead-42c3-8060-05b7892c8a7d|qwen3.8-max|llm",
+   "openrouter|apodex/apodex-1.1-mini:free|llm",
+   "openrouter|cohere/north-mini-code:free|llm",
+   "openrouter|deepseek/deepseek-v4-flash-0731:free|llm",
+   "openrouter|deepseek/deepseek-v4.1-flash-1017|llm",
+   "openrouter|deepseek/deepseek-v4.1-flash|llm",
+   "openrouter|dots-studio/dots-3-note-preview:free|llm",
+   "openrouter|google/gemma-4-26b-a4b-it:free|llm",
+   "openrouter|google/gemma-4-31b-it:free|llm",
+   "openrouter|inclusionai/ling-3.0-flash-fin:free|llm",
+   "openrouter|inclusionai/ling-3.0-flash-sante:free|llm",
+   "openrouter|inclusionai/ling-3.0-flash-vl:free|llm",
+   "openrouter|inclusionai/ling-3.0-flash:free|llm",
+   "openrouter|inclusionai/ling-3.1-flash|llm",
+   "openrouter|meta/muse-spark-1.3-contributor|llm",
+   "openrouter|minimax/minimax-m3.1-flash:free|llm",
+   "openrouter|minimax/minimax-m3:free|llm",
+   "openrouter|moonshotai/kimi-k2.6|llm",
+   "openrouter|moonshotai/kimi-k3|llm",
+   "openrouter|nex-agi/nex-n2.5-pro:free|llm",
+   "openrouter|nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free|llm",
+   "openrouter|nvidia/nemotron-3-super-120b-a12b:free|llm",
+   "openrouter|nvidia/nemotron-3-ultra-550b-a55b:free|llm",
+   "openrouter|nvidia/nemotron-3.5-lightning:free|llm",
+   "openrouter|nvidia/nemotron-3.5-super-vl:free|llm",
+   "openrouter|openrouter/free|llm",
+   "openrouter|poolside/laguna-s-2.1:free|llm",
+   "openrouter|poolside/laguna-xs-2.1:free|llm",
+   "openrouter|qwen/qwen3-vl-32b-instruct|llm",
+   "openrouter|qwen/qwen3.8-27b:free|llm",
+   "openrouter|qwen/qwen3.8-flash|llm",
+   "openrouter|qwen/qwen3.8-max-0902|llm",
+   "openrouter|qwen/qwen3.8-max|llm",
+   "openrouter|thinkingmachines/inkling-small:free|llm",
+   "openrouter|thinkingmachines/inkling:free|llm",
+   "openrouter|typesafe/jev-1.13|llm",
+   "openrouter|xiaomi/mimo-v2.6-flash@relace-lock|llm",
+   "openrouter|xiaomi/mimo-v2.6-flash|llm",
+   "openrouter|xiaomi/mimo-v2.6-pro|llm",
+   "openrouter|z-ai/glm-5.3-flash|llm",
+   "openrouter|z-ai/glm-5.3|llm"
+  ],
+  "disabledModels": [
+   "alicode",
+   "anthropic",
+   "cc",
+   "ds",
+   "nvidia",
+   "oc",
+   "ollama"
+  ],
+  "modelAliases": [
+   "mimo-flash-relace"
+  ]
+ },
+ "provenance": {
+  "fetched_at": "2026-10-22T09:24:27+00:00",
+  "refresh_path": "python3 -I tools/capture_fixtures.py --out fixtures/",
+  "source": "<HOME>/.9router/db/data.sqlite",
+  "source_revision": null,
+  "source_sha256": "6268d1fd54f001da7524b5e6c5f67ad9cfbb54511ff3c92a59f5538cefacc714"
+ },
+ "provider_strategy_keys": [],
+ "provider_thinking": {
+  "82a4252d-ca28-44dd-8957-3022f27922ae": {
+   "mode": "max"
+  },
+  "agnes": {
+   "mode": "high"
+  },
+  "anthropic": {
+   "mode": "high"
+  },
+  "anthropic-compatible-a12d17e3-ad65-413f-9e55-34d921daef23": {
+   "mode": "max"
+  },
+  "kimi": {
+   "mode": "max"
+  },
+  "nous": {
+   "mode": "high"
+  },
+  "nvidia": {
+   "mode": "max"
+  },
+  "ollama": {
+   "mode": "max"
+  },
+  "openai-compatible-chat-19fba778-d9c1-42f3-ab0b-f90d62948ae7": {
+   "mode": "none"
+  },
+  "openai-compatible-chat-1d4132fa-53c8-4440-9358-6ef530779902": {
+   "mode": "none"
+  },
+  "openai-compatible-chat-206e0512-9f56-48cf-8dc0-ee299fa31a82": {
+   "mode": "medium"
+  },
+  "openai-compatible-chat-3a76263c-87b7-431c-9b4c-6a6c3b710dbc": {
+   "mode": "xhigh"
+  },
+  "openai-compatible-chat-5209cc30-7655-4012-8a3e-3f829ed63f52": {
+   "mode": "high"
+  },
+  "openai-compatible-chat-58b3f684-6f76-45f6-bad9-ac586e98942b": {
+   "mode": "high"
+  },
+  "openai-compatible-chat-58c35417-5d7c-4eae-9f1d-b72f6fc1e41a": {
+   "mode": "medium"
+  },
+  "openai-compatible-chat-5bf011c8-2805-49d5-a824-6cc3fc124ee7": {
+   "mode": "max"
+  },
+  "openai-compatible-chat-86582c20-66f7-45c8-96a6-dcf0fcb133d2": {
+   "mode": "low"
+  },
+  "openai-compatible-chat-9ffbda9a-e7c5-49c5-abde-b7839e937e87": {
+   "mode": "max"
+  },
+  "openai-compatible-chat-a2d0ff09-9e5c-4d0a-a0ad-af3aec283941": {
+   "mode": "high"
+  },
+  "openai-compatible-chat-b281a4ed-ecb8-45fb-985a-4ea2cc5ba173": {
+   "mode": "max"
+  },
+  "openai-compatible-chat-efcfc77b-4ead-42c3-8060-05b7892c8a7d": {
+   "mode": "low"
+  },
+  "opencode": {
+   "mode": "xhigh"
+  },
+  "openrouter": {
+   "mode": "max"
+  }
+ },
+ "quota_visibility_keys": [
+  "codex",
+  "deepseek",
+  "ollama"
+ ],
+ "settings_keys": [
+  "authMode",
+  "capacityAdapter",
+  "cavemanEnabled",
+  "cavemanLevel",
+  "claudeAutoPing",
+  "cloudEnabled",
+  "codexAutoPing",
+  "comboStickyRoundRobinLimit",
+  "comboStrategies",
+  "comboStrategy",
+  "dnsToolEnabled",
+  "enableObservability",
+  "enableRequestLogs",
+  "enableTranslator",
+  "hasPassword",
+  "headroomCompressUserMessages",
+  "headroomEnabled",
+  "headroomUrl",
+  "mitmRouterBaseUrl",
+  "observabilityBatchSize",
+  "observabilityFlushIntervalMs",
+  "observabilityMaxJsonSize",
+  "observabilityMaxRecords",
+  "oidcClientId",
+  "oidcConfigured",
+  "oidcIssuerUrl",
+  "oidcLoginLabel",
+  "oidcScopes",
+  "outboundNoProxy",
+  "outboundProxyEnabled",
+  "outboundProxyUrl",
+  "password",
+  "ponytailEnabled",
+  "ponytailLevel",
+  "providerStrategies",
+  "providerThinking",
+  "pxpipeAutoInstall",
+  "pxpipeEnabled",
+  "pxpipeMinChars",
+  "pxpipeTimeoutMs",
+  "quotaVisibility",
+  "requireApiKey",
+  "requireLogin",
+  "rtkEnabled",
+  "samlAttributeEmail",
+  "samlAttributeName",
+  "samlCert",
+  "samlEntryPoint",
+  "samlIssuer",
+  "samlLoginLabel",
+  "ssoType",
+  "stickyRoundRobinLimit",
+  "tailscaleEnabled",
+  "tailscaleUrl",
+  "tunnelDashboardAccess",
+  "tunnelEnabled",
+  "tunnelProvider",
+  "tunnelUrl"
+ ]
+}

@@ -1,0 +1,125 @@
+{
+ "models": {
+  "xiaomi/mimo-v2.6-flash": {
+   "architecture": [
+    "text"
+   ],
+   "context_length": 1050000,
+   "id": "xiaomi/mimo-v2.6-flash",
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ]
+  },
+  "xiaomi/mimo-v2.6-pro": {
+   "architecture": [
+    "text"
+   ],
+   "context_length": 1050000,
+   "id": "xiaomi/mimo-v2.6-pro",
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "max_tokens",
+    "min_p",
+    "presence_penalty",
+    "reasoning",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_p"
+   ]
+  },
+  "z-ai/glm-5.3": {
+   "architecture": [
+    "text"
+   ],
+   "context_length": 1048576,
+   "id": "z-ai/glm-5.3",
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "parallel_tool_calls",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ]
+  },
+  "z-ai/glm-5.3-flash": {
+   "architecture": [
+    "text"
+   ],
+   "context_length": 1048576,
+   "id": "z-ai/glm-5.3-flash",
+   "supported_parameters": [
+    "frequency_penalty",
+    "include_reasoning",
+    "logit_bias",
+    "logprobs",
+    "max_tokens",
+    "min_p",
+    "parallel_tool_calls",
+    "presence_penalty",
+    "reasoning",
+    "reasoning_effort",
+    "repetition_penalty",
+    "response_format",
+    "seed",
+    "stop",
+    "structured_outputs",
+    "temperature",
+    "tool_choice",
+    "tools",
+    "top_k",
+    "top_logprobs",
+    "top_p"
+   ]
+  }
+ },
+ "provenance": {
+  "fetched_at": "2026-10-22T09:24:27+00:00",
+  "refresh_path": "python3 -I tools/capture_fixtures.py --out fixtures/",
+  "source": "https://openrouter.ai/api/v1/models",
+  "source_revision": null,
+  "source_sha256": null
+ }
+}
