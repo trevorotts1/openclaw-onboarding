@@ -157,17 +157,25 @@ def tail_rms_dbfs(x, tail_s=2.0, sr=SR):
 def segments_from_detector(rec, aligned_words=None):
     """Detector sung seconds -> the ``measured`` segments judge_take reads.
 
-    Aligned words carry no delivery label: Suno returns where each word sits,
-    not whether it was sung. Classifying them by their literal ``delivery``
-    field (absent) defaulted EVERY word to "spoken", which made the aligned
-    basis report a spoken share the detector never measured. A word is sung
-    when its start falls inside a second the detector measured as sung -- that
-    is the one authority on which seconds are voice-as-song.
+    Aligned words carry no delivery label: ASR (or Suno) returns where each
+    word sits, not whether it was sung -- ASR text is NEVER the sung
+    classifier. Classifying words by their literal ``delivery`` field (absent)
+    defaulted EVERY word to "spoken", and trusting one that IS present let
+    transcription text overrule the detector. A word is sung when its start
+    falls inside a second the DETECTOR measured as sung: the declared detector
+    is the one owner of the sung/spoken decision, and every segment carries
+    that owner plus the detector's own confidence (spec 6.5, finding D29).
     """
     sung_idx = rec.get("sung_seconds_indexes") or []
     runtime = float(rec.get("runtime_s") or 0)
     if runtime <= 0:
         raise TransportError("the detector reported no runtime")
+    owner = {"owner": "singing_detector",
+             "detector": rec.get("detector"),
+             "detector_version": rec.get("detector_version"),
+             "method": rec.get("method"),
+             "confidence": rec.get("confidence"),
+             "decision_source": "measured"}
     flags = [False] * int(round(runtime))
     for i in sung_idx:
         if 0 <= int(i) < len(flags):
@@ -176,14 +184,14 @@ def segments_from_detector(rec, aligned_words=None):
     cur = flags[0] if flags else False
     for i in range(1, len(flags)):
         if flags[i] != cur:
-            segs.append({"delivery": "sung" if cur else "spoken",
-                         "start": float(start), "end": float(i),
-                         "source": "measured"})
+            segs.append(dict(owner, delivery="sung" if cur else "spoken",
+                             start=float(start), end=float(i),
+                             source="measured"))
             start, cur = i, flags[i]
     if flags:
-        segs.append({"delivery": "sung" if cur else "spoken",
-                     "start": float(start), "end": float(len(flags)),
-                     "source": "measured"})
+        segs.append(dict(owner, delivery="sung" if cur else "spoken",
+                         start=float(start), end=float(len(flags)),
+                         source="measured"))
     if aligned_words:
         def _sung_at(t):
             i = int(t)
@@ -192,14 +200,12 @@ def segments_from_detector(rec, aligned_words=None):
         for w in aligned_words:
             if not isinstance(w, dict):
                 continue
-            s, e = w.get("startS"), w.get("endS")
+            s, e = w.get("start", w.get("startS")), w.get("end", w.get("endS"))
             if s is None or e is None:
                 continue
-            declared = w.get("delivery")
-            delivery = (declared if declared in ("sung", "spoken")
-                        else ("sung" if _sung_at(s) else "spoken"))
-            segs.append({"delivery": delivery,
-                         "start": float(s), "end": float(e), "source": "aligned"})
+            segs.append(dict(owner, delivery="sung" if _sung_at(s) else "spoken",
+                             start=float(s), end=float(e), source="aligned",
+                             timing_owner="asr"))
     return segs
 
 
@@ -289,14 +295,17 @@ def make_measure(pace_plan=None, ffmpeg=None, timings=None):
         import singing_detector as SDet     # noqa: PLC0415
         rec = SDet.detect_track(path)
         words = list((take or {}).get("aligned_words") or [])
+        words_src = "aligned_words"
         take_errors = None
         if not words and timings is not None:
             try:
                 got = timings(take)
                 if isinstance(got, dict) and got.get("words"):
                     words = got["words"]
+                    words_src = "lyric_timing"
                 elif isinstance(got, list):
                     words = got
+                    words_src = "lyric_timing"
                 if isinstance(got, dict) and got.get("error") and not words:
                     take_errors = "word timings unavailable: %s" % got["error"]
             except Exception as e:          # noqa: BLE001 - never a silent pass
@@ -309,6 +318,23 @@ def make_measure(pace_plan=None, ffmpeg=None, timings=None):
             "aligned_words": words,
             "duration_s": round(len(x) / float(SR), 2),
             "detector": "%s %s" % (rec.get("detector"), rec.get("detector_version")),
+            # S75-W05-U5 (spec 6.5, D29): the OWNER of each measurement is
+            # recorded with its confidence. ASR supplies transcription/timing
+            # ONLY; the sung/spoken decision belongs to the declared detector
+            # and its measured confidence -- ASR text never classifies singing.
+            "detector_confidence": rec.get("confidence"),
+            "measurement_owners": {
+                "transcription_and_timing": {
+                    "owner": "asr", "source": words_src,
+                    "measures": "transcription and timing only"},
+                "sung_spoken": {
+                    "owner": "singing_detector",
+                    "detector": rec.get("detector"),
+                    "detector_version": rec.get("detector_version"),
+                    "method": rec.get("method"),
+                    "confidence": rec.get("confidence"),
+                    "decision_source": "measured", "share_source": "measured"},
+            },
             "first_sung_s": first_sung_second(segs),
             "tail_rms_dbfs": tail_rms_dbfs(x),
             "music_under_speech_ratio": music_under_speech_ratio(

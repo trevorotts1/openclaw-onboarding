@@ -350,61 +350,209 @@ def _timed_tokens(aligned_words):
     return out
 
 
+# ---- bounded lexical normalization (S75-W05-U5: spec 6.5, finding D29) -----
+#
+# The old comparisons were exact token tuples (the hook spans here) and a
+# token SET (song_dispatch's script words): a benign "don't" vs "do not" or a
+# compound token failed a good take, while a changed word order or a dropped
+# repeated word passed. Matching is SEQUENCE-aware and bounded: punctuation is
+# benign, contractions expand to their canonical words, and a compound token
+# may stand for its two halves (or the reverse). Word order, repetition,
+# names, numbers and negation are preserved -- a genuinely missing or changed
+# critical word is still detected, and no campaign phrase gets an exception of
+# its own.
+
+#: Bounded contraction table: one token -> its canonical words. Clitics whose
+#: apostrophe form collides with a real word (well/shell/were/id/lets/wed/hed/
+#: shed) are deliberately ABSENT: a false equivalence is worse than a strict
+#: one. Negation words always survive the expansion ("wont" -> ("will", "not"))
+#: so a dropped or changed negation is still a missing word.
+_CONTRACTIONS = {
+    "dont": ("do", "not"), "doesnt": ("does", "not"), "didnt": ("did", "not"),
+    "isnt": ("is", "not"), "arent": ("are", "not"), "wasnt": ("was", "not"),
+    "werent": ("were", "not"), "wont": ("will", "not"), "cant": ("can", "not"),
+    "cannot": ("can", "not"), "couldnt": ("could", "not"),
+    "shouldnt": ("should", "not"), "wouldnt": ("would", "not"),
+    "havent": ("have", "not"), "hasnt": ("has", "not"), "hadnt": ("had", "not"),
+    "mustnt": ("must", "not"), "im": ("i", "am"), "ive": ("i", "have"),
+    "youre": ("you", "are"), "youve": ("you", "have"), "youd": ("you", "would"),
+    "youll": ("you", "will"), "theyre": ("they", "are"), "theyve": ("they", "have"),
+    "theyll": ("they", "will"), "hes": ("he", "is"), "shes": ("she", "is"),
+    "its": ("it", "is"), "thats": ("that", "is"), "theres": ("there", "is"),
+    "whats": ("what", "is"), "wheres": ("where", "is"), "whos": ("who", "is"),
+    "weve": ("we", "have"),
+}
+
+#: The fallback reader's own confidence (spec 6.5: "use the existing supported
+#: lexical/timing fallback WITH its confidence"). PROPOSED values on the
+#: singing detector's 0..1 scale; they move only with a documented
+#: calibration, never to make a take pass.
+LEX_CONF_COMPLETE = 0.9
+LEX_CONF_UNMEASURED = 0.2
+LEX_CONF_HEADERS = 0.95
+
+#: Every lexical result names the OWNER of each measurement (spec 6.5): the
+#: words and their times come from ASR; the sung/spoken decision comes from
+#: the singing detector's measured segments -- ASR text is never the sung
+#: classifier.
+LEX_OWNER = {"words_and_timing": "asr", "sung_spoken": "singing_detector",
+             "reader": "hook_placement.lexical"}
+
+
+def norm_tokens(text):
+    """Canonical atoms of free text: the shared ``sung_hook._words`` tokenizer
+    (benign punctuation, hyphen-held vowels, doubled letters), apostrophes
+    dropped, and every bounded contraction expanded to its canonical words --
+    each emitted atom re-folded exactly as ``_words`` folds, so an expanded
+    "will" matches a spelled "will" on the other side."""
+    out = []
+    for w in _SH._words(text):
+        w = w.replace("'", "")
+        out.extend(_fold(a) for a in (_CONTRACTIONS.get(w) or (w,)))
+    return out
+
+
+def _fold(w):
+    """The ``sung_hook._words`` letter fold, applied to expansion outputs too
+    ("will" -> "wil") so both sides of every comparison fold the same way."""
+    return re.sub(r"([a-z])\1+", r"\1", w)
+
+
+def _join_ok(whole, a, b):
+    """Bounded compound equivalence: ``whole`` is exactly ``a`` + ``b``, all
+    three plain words. Digits are never merged, so numbers stay exact."""
+    return (bool(whole) and bool(a) and bool(b) and whole.isalpha()
+            and a.isalpha() and b.isalpha() and whole == a + b)
+
+
+def _atom_at(key, ki, seq, j):
+    """Bounded equivalence at ONE position: one key atom against one seq atom
+    (equal), one against two (compound on the delivered side) or two key atoms
+    against one (compound on the approved side). Returns ``(key_used,
+    seq_used)`` or None. Single-path and bounded to 2x2 (ponytail: add
+    backtracking if a real take ever needs it)."""
+    a = key[ki]
+    if seq[j] == a:
+        return (1, 1)
+    if j + 1 < len(seq) and _join_ok(a, seq[j], seq[j + 1]):
+        return (1, 2)
+    if ki + 1 < len(key) and _join_ok(seq[j], a, key[ki + 1]):
+        return (2, 1)
+    return None
+
+
+def _match_run(key, seq, i):
+    """End index (exclusive) when ``key`` matches ``seq`` at ``i`` under the
+    bounded equivalence; else None."""
+    ki, j = 0, i
+    while ki < len(key):
+        if j >= len(seq):
+            return None
+        w = _atom_at(key, ki, seq, j)
+        if w is None:
+            return None
+        ki, j = ki + w[0], j + w[1]
+    return j
+
+
 def _find(seq, key):
-    """Start indexes of every non-overlapping run of ``key`` in ``seq``."""
-    hits, i, n, key = [], 0, len(key), list(key)
-    while n and i + n <= len(seq):
-        if list(seq[i:i + n]) == key:
-            hits.append(i)
-            i += n
+    """[(start, end)] of every non-overlapping run of ``key`` in ``seq`` under
+    the bounded lexical equivalence (was exact tuple equality)."""
+    key, seq = list(key), list(seq)
+    hits, i = [], 0
+    while key and i < len(seq):
+        e = _match_run(key, seq, i)
+        if e is not None:
+            hits.append((i, e))
+            i = e
         else:
             i += 1
     return hits
 
 
+def match_sequence(key, seq):
+    """Sequence-aware bounded match of the APPROVED words (``key``) inside the
+    DELIVERED words (``seq``): every key atom matches IN ORDER, so word order
+    and repetition are preserved (a word approved twice and delivered once is
+    a missing repetition), while extra delivered words (ad-libs, packings) are
+    tolerated. Returns {"ok", "missing", "out_of_order", "matched"}: ``missing``
+    holds words delivered fewer times than approved (or never), ``out_of_order``
+    words delivered but not in their approved place. Both block; neither is
+    ever papered over."""
+    key, seq = list(key), list(seq)
+    ki, si, matched, gone = 0, 0, 0, []
+    while ki < len(key):
+        hit = None
+        for j in range(si, len(seq)):
+            w = _atom_at(key, ki, seq, j)
+            if w:
+                hit = (j, w)
+                break
+        if hit:
+            j, (ku, su) = hit
+            matched += ku
+            ki += ku
+            si = j + su
+        else:
+            gone.append(key[ki])
+            ki += 1
+    missing, out_of_order = [], []
+    for t in gone:
+        if seq.count(t) < key.count(t):
+            missing.append(t)
+        else:
+            out_of_order.append(t)
+    return {"ok": not gone, "missing": list(dict.fromkeys(missing)),
+            "out_of_order": list(dict.fromkeys(out_of_order)), "matched": matched}
+
+
 def _lexical_unmeasured(why, wh):
     return {"verdict": "FAIL", "reasons": ["UNMEASURED: " + why], "first_hook_s": None,
             "min_first_hook_s": None, "hook_blocks_sheet": wh, "hook_blocks_returned": None,
-            "basis": "lexical", "source": SOURCE}
+            "basis": "lexical", "confidence": LEX_CONF_UNMEASURED,
+            "owner": dict(LEX_OWNER), "source": SOURCE}
 
 
 def _check_lexical(secs, want, aligned_words, segments, style_id, delivered_s, true_at):
     """Rule 4 with NO section headers in the returned words (local transcription
     hears words, never editorial labels). Each sheet hook block is found as its
-    exact approved words on the measured word times and counts only when the
-    singing detector measured it sung. Everything incomplete blocks: untrusted
-    timing, no measured segments, ambiguous hook words, or fewer sung hook
-    blocks than the sheet carries (an unread earlier hook cannot be ruled out).
-    No header is ever invented at a planned time."""
+    approved words -- under the bounded lexical equivalence -- on the measured
+    word times and counts only when the singing detector measured it sung.
+    Missing headers alone never prove a failed hook: this supported
+    lexical/timing fallback reads the hook and stamps its OWN confidence
+    (``LEX_CONF_*``) and owners. Everything genuinely incomplete blocks:
+    untrusted timing, no measured segments, ambiguous hook words, or fewer
+    sung hook blocks than the sheet carries (a missing or changed hook
+    repetition is detected, never passed). No header is ever invented at a
+    planned time."""
     wh = want.count("hook")
-    keys = sorted({tuple(_SH._words(" ".join(s.get("lines") or [])))
+    keys = sorted({tuple(norm_tokens(" ".join(s.get("lines") or [])))
                    for s, k in zip(secs, want) if k == "hook"} - {()}, key=len, reverse=True)
     if not keys:
-        return _lexical_unmeasured("section headers (Suno returned none) and the sheet carries "
-                                   "no hook words to place", wh)
+        return _lexical_unmeasured("the sheet carries no hook words to place", wh)
     for s, k in zip(secs, want):
-        own = _SH._words(" ".join(s.get("lines") or []))
+        own = norm_tokens(" ".join(s.get("lines") or []))
         if k != "hook" and any(_find(own, key) for key in keys):
             return _lexical_unmeasured("hook words also sit in the sheet's %r section: hook "
-                                       "placement is ambiguous without section headers"
+                                       "placement is ambiguous from the words alone"
                                        % s.get("tag"), wh)
     toks = _timed_tokens(aligned_words)
     if not toks:
-        return _lexical_unmeasured("section headers (Suno returned none) and the word timing "
-                                   "is missing or untrusted, so the hook cannot be placed", wh)
+        return _lexical_unmeasured("the word timing is missing or untrusted, so the hook "
+                                   "cannot be placed", wh)
     segs = [s for s in segments or [] if isinstance(s, dict)]
     if not segs or any(s.get("source") != "measured" for s in segs):
-        return _lexical_unmeasured("section headers (Suno returned none) and no detector-"
-                                   "measured segments confirm the hook was sung", wh)
-    seq = [t for t, _, _ in toks]
-    found = set()
+        return _lexical_unmeasured("no detector-measured segments confirm the hook was sung", wh)
+    atoms = [(a, x, y) for t, x, y in toks for a in norm_tokens(t)]
+    seq = [t for t, _, _ in atoms]
+    found = []
     for key in keys:                                # longest key first: no double count
-        for i in _find(seq, key):
-            if not any(i <= j < i + len(key) or j <= i < j + n for j, n in found):
-                found.add((i, len(key)))
+        for i, e in _find(seq, key):
+            if not any(i < e2 and i2 < e for i2, e2 in found):
+                found.append((i, e))
     sung = []
-    for i, n in sorted(found):
-        a, b = toks[i][1], toks[i + n - 1][2]
+    for i, e in sorted(found):
+        a, b = atoms[i][1], atoms[e - 1][2]
         if any(s.get("delivery") == "sung" and s["start"] <= (a + b) / 2 <= s["end"] for s in segs):
             sung.append(round(a, 3))
     if len(sung) > wh:
@@ -413,18 +561,50 @@ def _check_lexical(secs, want, aligned_words, segments, style_id, delivered_s, t
                             % (len(sung), wh, ", ".join("%.1f s" % t for t in sung))]
                 + _floor_reasons(sung[0], style_id, delivered_s, true_at),
                 "min_first_hook_s": min_first_hook_s(style_id, delivered_s),
-                "hook_blocks_sheet": wh, "hook_blocks_returned": len(sung), "source": SOURCE}
+                "hook_blocks_sheet": wh, "hook_blocks_returned": len(sung),
+                "confidence": LEX_CONF_COMPLETE, "owner": dict(LEX_OWNER), "source": SOURCE}
     if len(sung) < wh:
-        r = _lexical_unmeasured("section headers (Suno returned none); the approved hook words "
-                                "were heard sung %d of the sheet's %d times, so an earlier "
-                                "unread hook cannot be ruled out" % (len(sung), wh), wh)
+        r = _lexical_unmeasured(
+            "hook repetition not established from the words: the approved hook words were "
+            "heard sung %d of the sheet's %d times on the measured word times (bounded "
+            "lexical matching counts punctuation, contractions and compound tokens as the "
+            "same words); a missing or changed repetition never passes" % (len(sung), wh), wh)
         r["hook_blocks_returned"] = len(sung)
         return r
     reasons = _floor_reasons(sung[0], style_id, delivered_s, true_at)
     return {"verdict": "FAIL" if reasons else "PASS", "reasons": reasons,
             "first_hook_s": sung[0], "min_first_hook_s": min_first_hook_s(style_id, delivered_s),
             "hook_blocks_sheet": wh, "hook_blocks_returned": len(sung), "basis": "lexical",
-            "source": SOURCE}
+            "confidence": LEX_CONF_COMPLETE, "owner": dict(LEX_OWNER), "source": SOURCE}
+
+
+def measure_hook(hook_text, words, segments, target):
+    """The judge's hook gate, counted with the bounded lexical matcher (was
+    sung_hook.measure's exact token tuples). Same receipt shape as
+    sung_hook.measure, plus basis, confidence and owners. A hook sung as a
+    benign punctuation, contraction or compound-token equivalent still counts
+    as a repetition; a changed or missing repetition is still detected. The
+    sung/spoken decision comes from the detector's measured segments only --
+    the ASR words never classify themselves."""
+    segs = segments or []
+    if not segs or any(s.get("source") != "measured" for s in segs):
+        return dict(_SH.judge(hook_text, target, [],
+                              reason="segments are not detector-measured"),
+                    basis="lexical", confidence=LEX_CONF_UNMEASURED, owner=dict(LEX_OWNER))
+    toks = _timed_tokens(words)
+    if not toks:
+        return dict(_SH.judge(hook_text, target, [],
+                              reason="word timing is missing or untrusted"),
+                    basis="lexical", confidence=LEX_CONF_UNMEASURED, owner=dict(LEX_OWNER))
+    atoms = [(a, x, y) for t, x, y in toks for a in norm_tokens(t)]
+    seq = [t for t, _, _ in atoms]
+    hits = []
+    for i, e in _find(seq, norm_tokens(hook_text)):
+        a, b = atoms[i][1], atoms[e - 1][2]
+        if any(s.get("delivery") == "sung" and s["start"] <= (a + b) / 2 <= s["end"] for s in segs):
+            hits.append(round(a, 2))
+    return dict(_SH.judge(hook_text, target, hits),
+                basis="lexical", confidence=LEX_CONF_COMPLETE, owner=dict(LEX_OWNER))
 
 
 def check_returned(sheet, aligned_words, style_id, delivered_s, hook_plan=None, segments=None):
@@ -437,7 +617,8 @@ def check_returned(sheet, aligned_words, style_id, delivered_s, hook_plan=None, 
                       hook_plan=hook_plan) or beat_errors(true_at)
     if miss:
         return {"verdict": "FAIL", "reasons": miss, "first_hook_s": None,
-                "min_first_hook_s": None, "source": SOURCE}
+                "min_first_hook_s": None, "confidence": LEX_CONF_UNMEASURED,
+                "owner": dict(LEX_OWNER), "source": SOURCE}
     secs = [s for s in _sheet(sheet) if s.get("delivery") is not None]
     want = [kind_of(s) for s in secs]
     got_tags = returned_sections(aligned_words)
@@ -470,7 +651,7 @@ def check_returned(sheet, aligned_words, style_id, delivered_s, hook_plan=None, 
     return {"verdict": "FAIL" if reasons else "PASS", "reasons": reasons,
             "first_hook_s": first, "min_first_hook_s": floor,
             "hook_blocks_sheet": wh, "hook_blocks_returned": gh, "basis": "headers",
-            "source": SOURCE}
+            "confidence": LEX_CONF_HEADERS, "owner": dict(LEX_OWNER), "source": SOURCE}
 
 
 def _extra_hooks(secs, got):
