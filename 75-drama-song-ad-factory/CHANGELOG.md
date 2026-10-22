@@ -4,6 +4,24 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.87 - 2026-10-22 - smooth scenery is not a gaussian fill
+
+A real master was refused GAUSSIAN_FILL on a dim ceiling: the smooth run was
+20.8% of frame height against an 18% floor, while the SAME shot one second
+later measured 16.7% and passed. Pixel evidence on the refusal: 391 distinct
+rows of 399, row-to-row change continuous (max 0.88 grey levels), no seam at
+the band edge (0.77 grey), band present identically in the original 24 fps
+clip, and the master's laplacian uniformly HIGHER than the source (lanczos
+upscale sharpened, never blurred).
+
+`qc_no_blur` now requires mechanical fill evidence before GAUSSIAN_FILL: a run
+of >=3 byte-identical rows, a band that is a near-copy of the adjacent strip,
+or a step at the band edge. Smooth content has none of the three and passes;
+the shipped blur-fill fixtures still fail. New
+`scripts/qc_no_blur/test_smooth_content_not_fill.py` pins both sides
+(smooth scene passes, repeated strip and hard step refused); the existing
+36-test detector suite still passes.
+
 ## v2.9.86 - 2026-10-22 - a client wait is never HEARTBEAT_EXPIRED
 
 A run parked on the client's approval was reported expired once the 3-hour cap
