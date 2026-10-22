@@ -533,6 +533,55 @@ def main():
           env["stalled"] is True and env["activity"]["source"] == "durable-event",
           str(env))
 
+    # 10. a WAL state db with no sidecars is readable ------------------------
+    run10 = make_run(tmp, "run10")
+    set_stage(run10, "run10", "music", "RUNNING", age_s=60, lease_in=300,
+              owner="worker-10")
+    db10 = run10 / "control" / "state.sqlite3"
+    con = sqlite3.connect(str(db10))
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    con.close()
+    for side in ("-wal", "-shm"):
+        sidep = Path(str(db10) + side)
+        if sidep.exists():
+            sidep.unlink()
+    env = RW.build(run10, now=NOW)
+    check("10: WAL db without sidecars reads, not HEARTBEAT_STATE_UNREADABLE",
+          "HEARTBEAT_STATE_UNREADABLE" not in env["loud"], env["loud"])
+    check("10: the stage table still reads through the private-copy fallback",
+          env["stage"] == "research", env["stage"])
+
+    # 11. a delivered run is never "stalled" just because time passed --------
+    run11 = make_run(tmp, "run11")
+    for s in STAGES:
+        set_stage(run11, "run11", s, "COMPLETE", age_s=1000 * 60)
+    env = RW.build(run11, now=NOW)
+    check("11: a COMPLETE stage never counts as a stall",
+          env["stalled"] is False, env.get("stall_detail"))
+    check("11: no HEARTBEAT_STALLED on a delivered run",
+          "HEARTBEAT_STALLED" not in env["loud"], env["loud"])
+    check("11: the delivered run still stops the loop",
+          env["loop_should_stop"] is True)
+
+
+    # 12. a client wait past the cap is not an expiry ------------------------
+    run12 = make_run(tmp, "run12", base_ago_s=6 * 60 * 60)
+    for s in ("research", "creative-strategy", "script-lyrics", "music",
+              "continuity-bible", "storyboard", "image-keyframes"):
+        set_stage(run12, "run12", s, "COMPLETE", age_s=6 * 60 * 60)
+    set_stage(run12, "run12", "video-generation", "WAITING_APPROVAL",
+              age_s=30 * 60)
+    env = RW.build(run12, now=NOW)
+    check("12: a run parked on the client is not expired",
+          env["expired"] is False, env.get("expired"))
+    check("12: no HEARTBEAT_EXPIRED while the client owes the answer",
+          "HEARTBEAT_EXPIRED" not in env["loud"], env["loud"])
+    check("12: the client is told it is waiting on them",
+          (env.get("wait") or {}).get("kind", "").startswith("client"),
+          env.get("wait"))
+
+
     print()
     if FS:
         print("%d FAILED: %s" % (len(FS), ", ".join(FS)))

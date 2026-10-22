@@ -14,6 +14,7 @@ Covers the acceptance rows:
 """
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -293,6 +294,60 @@ def test_qc_records_list_reader():
         ok("QC-record lists read by the real reader; dict-only never coerces")
 
 
+# ── 7. a WAL state db with no sidecars still yields the right next action ───
+def test_wal_db_without_sidecars_reads():
+    import sqlite3
+    with tempfile.TemporaryDirectory() as td:
+        run = Path(td) / "run-W"
+        (run / "control").mkdir(parents=True)
+        db = run / "control" / "state.sqlite3"
+        st = ss.Store(db)
+        st.init_run("run-W", F.CANONICAL_STAGES)
+        st.transition("run-W", "research", "READY", "w1")
+        st.claim("run-W", "research", "w1", 60)
+        st.transition("run-W", "research", "COMPLETE", "w1")
+        st.close()
+        # Reproduce the real fleet failure: a WAL db that still carries frames,
+        # handed to a reader whose directory it cannot write (no -shm can be
+        # attached). Plain mode=ro then raises SQLITE_CANTOPEN "unable to open
+        # database file"; a WAL db with the sidecars simply deleted does NOT
+        # reproduce it on this SQLite, so this fixture keeps the -wal.
+        con = sqlite3.connect(str(db))
+        con.execute("PRAGMA wal_autocheckpoint=0")
+        con.execute("UPDATE stages SET state='COMPLETE' "
+                    "WHERE run_id='run-W' AND stage='research'")
+        con.commit()
+        sealed = Path(td) / "run-S"
+        (sealed / "control").mkdir(parents=True)
+        sdb = sealed / "control" / "state.sqlite3"
+        for suf in ("", "-wal"):
+            if Path(str(db) + suf).exists():
+                shutil.copy2(str(db) + suf, str(sdb) + suf)
+        con.close()
+        os.chmod(sealed / "control", 0o555)
+        try:
+            try:
+                sqlite3.connect("file:%s?mode=ro" % sdb, uri=True,
+                                timeout=5).execute(
+                    "PRAGMA schema_version").fetchone()
+                raise AssertionError("fixture does not reproduce the failure")
+            except sqlite3.Error:
+                pass                       # the control: raw open really fails
+
+            assert F._ro_connect(sdb).execute(
+                "SELECT state FROM stages WHERE stage='research'"
+            ).fetchone() == ("COMPLETE",)
+
+            # the blind spot itself: continuation_enqueue silently used got={}
+            # and answered from nothing whenever the store was unreadable.
+            a = F.continuation_enqueue(sealed, "approval", run_id="run-W")
+            assert a["verdict"] == "runnable", a
+            assert a["next_stage"] == "creative-strategy", a
+        finally:
+            os.chmod(sealed / "control", 0o755)
+        ok("WAL db in a read-only dir still reads the real stages")
+
+
 def main():
     test_false_completion_never_delivered()
     test_mixed_terminal_keeps_reasons()
@@ -301,6 +356,7 @@ def main():
     test_expired_lease_fenced_reclaim()
     test_registry_traversal_and_completion()
     test_qc_records_list_reader()
+    test_wal_db_without_sidecars_reads()
     print("\nALL %d CHECKS PASSED" % len(PASS))
     return 0
 
