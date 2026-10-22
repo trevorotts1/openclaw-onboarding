@@ -2191,10 +2191,14 @@ def cmd_next(a):
             _c = str(Path(__file__).resolve().parent.parent)
             if _c not in sys.path:
                 sys.path.insert(0, _c)
-            from song_choices import song_choices as _sc  # noqa: PLC0415
             # WW-08 item 3: the pick must be in AND every offered song's
             # constituent-evidence receipt current before a later stage runs.
-            hold = _sc.refusal(str(run_dir)) or _sc.constituent_hold(str(run_dir))
+            # One hold implementation: the same _song_hold the music stage
+            # uses, so a recorded operator-decision.json that opens the
+            # acceptance hold for `music --action complete` also opens it
+            # here -- measured gates stay FAIL and MANUAL_RELABEL stays
+            # absolute either way.
+            hold = _song_hold(run_dir)
         except Exception as exc:  # noqa: BLE001 - a broken gate never opens
             hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}
         if hold:
