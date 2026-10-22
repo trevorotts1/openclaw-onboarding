@@ -77,35 +77,27 @@ LENGTH_ALIASES = {
 #: this tuple only bounds what a caller may ask about.
 #: S75-W05-U3: the scattered duration tuple is REMOVED (D12). THE one table is
 #: suno_recipe.duration_registry.CANONICAL_DURATION_S (60, 90, 120, 180, 300,
-#: 600, the two-minute 120 s entry included). The __getattr__ is defined first
-#: so any import order resolves without an import cycle (the registry leaf is
-#: zero-import), then the value is bound here for this module's own lookups.
+#: 600, the two-minute 120 s entry included). The registry leaf is loaded BY
+#: FILE PATH, never through `import suno_recipe...`: that name resolves to the
+#: heavy package __init__ (or to a bare suno_recipe.py shadowing it when the
+#: suno_recipe/ dir is on sys.path), which pulls hook_placement back into a
+#: partially-initialized length_formula whenever this module is first reached
+#: from length_formula's own import. The leaf imports NOTHING, so a file-path
+#: load is safe in every import order and never touches sys.modules.
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
-def __getattr__(name):
-    if name == "OFFERED_LENGTHS_S":
-        try:
-            from suno_recipe.duration_registry import CANONICAL_DURATION_S
-        except ImportError:
-            try:
-                from duration_registry import CANONICAL_DURATION_S
-            except ImportError:
-                from ..suno_recipe.duration_registry import CANONICAL_DURATION_S
-        globals()["OFFERED_LENGTHS_S"] = CANONICAL_DURATION_S
-        return CANONICAL_DURATION_S
-    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+def _load_canonical_durations():
+    import importlib.util
+    leaf = os.path.join(_CORE, "suno_recipe", "duration_registry.py")
+    spec = importlib.util.spec_from_file_location(
+        "_suno_recipe_duration_registry", leaf)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.CANONICAL_DURATION_S
 
-
-try:
-    from suno_recipe.duration_registry import CANONICAL_DURATION_S  # noqa: E402
-except ImportError:
-    try:
-        from duration_registry import CANONICAL_DURATION_S  # noqa: E402
-    except ImportError:
-        from ..suno_recipe.duration_registry import CANONICAL_DURATION_S  # noqa: E402
-
+CANONICAL_DURATION_S = _load_canonical_durations()
 OFFERED_LENGTHS_S = CANONICAL_DURATION_S
 
 #: Delivery labels a timing segment may carry.
