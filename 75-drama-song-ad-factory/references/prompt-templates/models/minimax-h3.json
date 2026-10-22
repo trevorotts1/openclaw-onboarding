@@ -10,7 +10,20 @@
     "duration_s": "clamp(ceil(shot_seconds + 1.0), 4, 15): one second of trim handle; catalog window 4-15 s, default 6",
     "resolution": "768P (card default) or 2K",
     "first_frame_url": "the approved keyframe for this shot (image-to-video). H3 takes ONE image: first_frame_url OR last_frame_url (67 catalog max_reference_images 1).",
-    "audio": "none: the clip is silent, the Suno master is the soundtrack (video_router 16.2 default)"
+    "audio": "post_processing only: minimax-h3 returns a stereo track on every take and exposes no flag to disable it. The Suno master is the soundtrack (video_router 16.2 default); the generated track is stripped in post. See native_audio."
+  },
+  "native_audio": {
+    "provider": "minimax-h3/text-to-video and image-to-video return a stereo audio track on every take",
+    "provider_can_disable": false,
+    "enforcement": "post_processing",
+    "default_decision": "strip",
+    "decisions": {
+      "retain": "keep the generated track as the mix bed; no separate soundtrack may be layered over it",
+      "reduce_music": "keep dialogue and ambience, duck the generated music before the soundtrack is laid in",
+      "strip": "remove the generated track and lay the approved soundtrack over the silent take"
+    },
+    "prompt_note": "The SOUND_AND_TEXT fragment asks the model for no speech, music or sound effects. That is an instruction to the model and a post-processing intent; it is never a provider-side disable, so a take must still be measured and stripped before mixing.",
+    "receipt": "prompt_templates.receipt() echoes native_audio (decision, provider_can_disable, enforcement, prompt_ambition, observed) on every H3 prompt receipt; the request carries the same block."
   },
   "sections": [
     {

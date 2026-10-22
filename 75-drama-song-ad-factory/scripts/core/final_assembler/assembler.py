@@ -1240,6 +1240,36 @@ def _attach_evidence(receipt, detector_result, target, takes, verdict,
     return receipt
 
 
+def _native_audio_layering(tl):
+    """-> None, or a DOUBLE_MUSIC refusal for a timeline that layers a song
+    over a take still carrying its generated track.
+
+    A segment opts into this audit by carrying ``native_audio`` (the block
+    prompt_templates.native_audio_block wrote for that take). The rule lives
+    in prompt_templates.layering_refusal -- one owner for the policy.
+    """
+    try:
+        import prompt_templates as _PT
+    except ImportError:                                  # pragma: no cover
+        # The policy module is a sibling package of every real deployment; if
+        # it is absent the timeline's audio evidence cannot be audited, so the
+        # layer fails closed rather than mixing unseen.
+        return {"reason_code": "NATIVE_AUDIO_UNAVAILABLE",
+                "detail": "prompt_templates is not importable; the take's "
+                          "native_audio evidence cannot be audited"}
+    for seg in tl.get("segments") or []:
+        if not isinstance(seg, dict) or seg.get("native_audio") is None:
+            continue
+        bad = _PT.layering_refusal(seg.get("native_audio"), soundtrack=True,
+                                   audio_dropped=True)
+        if bad:
+            bad = dict(bad)
+            bad["segment"] = seg.get("src")
+            bad["native_audio"] = seg.get("native_audio")
+            return bad
+    return None
+
+
 def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
              timeout=None, base_dir=".", dry_run=False, chosen_length_s=None,
              detector_result=None, target=None, takes=None, verdict=None,
@@ -1342,6 +1372,17 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             s["hold"] = True   # held on its own last frame(s) to the slot
     if plan["song_path"]:
         plan["song_path"] = abspath(plan["song_path"])
+    # H3 native audio: H3 returns a stereo track the provider cannot disable,
+    # so a timeline that carries a take's native_audio evidence may not lay
+    # the approved song over a take that still carries its own generated
+    # track. Timelines with no such key assemble exactly as before (clip
+    # audio is already dropped: only the song is mapped).
+    if plan["song_path"]:
+        na_bad = _native_audio_layering(tl)
+        if na_bad:
+            return _fail(na_bad["reason_code"], next_action=na_bad["detail"],
+                         evidence={"segment": na_bad.get("segment"),
+                                   "native_audio": na_bad.get("native_audio")})
     # Part E E5: lip-sync clips stay whole — same gate the shot-planner QC
     # path runs, at assembly validation. Render only a plan that passes.
     try:

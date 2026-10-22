@@ -675,6 +675,105 @@ def band_cap(model, root=None):
     return {"model": model, "field": "prompt", "cap": cap, "status": status,
             "source": source}
 
+# ---------------------------------------------------------------------------
+# H3 native audio. minimax-h3/* always returns a stereo audio track and the
+# provider exposes no flag to turn it off (references/prompt-templates/models/
+# minimax-h3.json native_audio). "Silent clip" is therefore a POST-PROCESSING
+# intent, never a provider flag: the request records the decision, the receipt
+# echoes it plus what was actually observed, and a soundtrack may not be
+# layered over a take that still carries its generated track.
+
+#: retain = keep the generated track as the mix bed; reduce_music = keep
+#: dialogue/ambience, duck the generated music; strip = remove the generated
+#: track and lay the approved soundtrack over the take.
+H3_NATIVE_AUDIO_DECISIONS = ("retain", "reduce_music", "strip")
+
+#: The contract default: the Suno master is the soundtrack (video_router
+#: 16.2), so the generated track is stripped in post. A request that names no
+#: decision is recorded as this and is never left blank.
+H3_NATIVE_AUDIO_DEFAULT = "strip"
+
+
+def native_audio_block(spec=None):
+    """The native-audio policy stamp for one H3 request and its receipt.
+
+    ``decision`` comes from ``spec["native_audio"]`` (a string, or a dict with
+    ``decision``); absent -> H3_NATIVE_AUDIO_DEFAULT. An unknown value raises
+    H3_NATIVE_AUDIO_UNKNOWN -- a typo never silently becomes a strip.
+
+    ``observed`` is what the delivered take actually carried
+    (``{"has_audio": bool, "removed": bool}``); None means not established.
+    ``provider_can_disable`` is always False: H3 cannot be asked for silence,
+    so no caller may record a provider-side "no audio" flag.
+    """
+    raw = spec.get("native_audio") if isinstance(spec, dict) else None
+    if isinstance(raw, dict):
+        decision = raw.get("decision") or H3_NATIVE_AUDIO_DEFAULT
+        observed = raw.get("observed")
+    elif raw in (None, ""):
+        decision, observed = H3_NATIVE_AUDIO_DEFAULT, None
+    else:
+        decision, observed = raw, None
+    if decision not in H3_NATIVE_AUDIO_DECISIONS:
+        raise PromptTemplateError(
+            "H3_NATIVE_AUDIO_UNKNOWN",
+            "%r is not one of %s"
+            % (decision, ", ".join(H3_NATIVE_AUDIO_DECISIONS)))
+    if observed is not None and not isinstance(observed, dict):
+        raise PromptTemplateError(
+            "H3_NATIVE_AUDIO_UNKNOWN",
+            "observed must be a dict or None, got %r" % (observed,))
+    return {"decision": decision,
+            "provider_can_disable": False,
+            "enforcement": "post_processing",
+            "prompt_ambition": "silent",
+            "observed": observed}
+
+
+def layering_refusal(native_audio, soundtrack=False, audio_dropped=False):
+    """-> None, or a refusal when a song would ride generated audio.
+
+    Fires when an approved soundtrack is combined with a take that still
+    carries its generated track: ``retain`` keeps it by definition, and a
+    strip/reduce decision whose observed take shows audio present but not
+    removed. A missing or unknown decision fails closed here -- the mixing
+    decision cannot be audited, so it is never assumed safe.
+
+    ``audio_dropped`` lets a caller that provably discards the take's own
+    audio channel (final_assembler maps only the song) pass an unmeasured
+    take; every other caller gets NATIVE_AUDIO_UNVERIFIED when the delivery
+    was never measured, because unknown is not the same as removed.
+    """
+    if not soundtrack:
+        return None
+    block = native_audio if isinstance(native_audio, dict) else None
+    decision = block.get("decision") if block else None
+    if decision not in H3_NATIVE_AUDIO_DECISIONS:
+        return {"reason_code": "DOUBLE_MUSIC",
+                "detail": "a soundtrack is layered over a take with no valid "
+                          "native_audio decision (%r); the mixing decision "
+                          "cannot be audited" % (decision,)}
+    if decision == "retain":
+        return {"reason_code": "DOUBLE_MUSIC",
+                "detail": "native_audio=retain keeps the generated track and "
+                          "an approved soundtrack is layered over it; use "
+                          "strip, or reduce_music with the music ducked"}
+    observed = block.get("observed")
+    if isinstance(observed, dict) and observed.get("has_audio") and \
+            not observed.get("removed"):
+        return {"reason_code": "DOUBLE_MUSIC",
+                "detail": "native_audio=%s but the delivered take still "
+                          "carries its generated track (observed.has_audio "
+                          "set, removed not set) and a soundtrack is layered "
+                          "over it" % decision}
+    if observed is None and not audio_dropped:
+        return {"reason_code": "NATIVE_AUDIO_UNVERIFIED",
+                "detail": "native_audio=%s but the delivered take was never "
+                          "measured; a soundtrack may not be layered over "
+                          "audio whose removal is unproven" % decision}
+    return None
+
+
 def assemble_h3(spec, characters, root=None):
     """Assemble one H3 prompt from a shot spec (the planner's facts).
 
@@ -842,7 +941,12 @@ def expand(spec, characters, prompt, verdict, root=None):
            "; ".join(reasons) or "H3_BELOW_FLOOR"))
 
 def receipt(spec, prompt, sections, verdict, root=None):
-    """The prompt receipt: sha256 + template version + section char map."""
+    """The prompt receipt: sha256 + template version + section char map.
+
+    Also echoes the native-audio decision (native_audio_block): the mixing
+    decision travels with the exact prompt bytes it applies to, so no paid H3
+    take can be assembled without one.
+    """
     man = templates_dir(root) / "manifest.json"
     return {"shot_id": spec["shot_id"], "model": spec["model"],
             "look": spec["look"], "mode": spec["mode"],
@@ -851,7 +955,8 @@ def receipt(spec, prompt, sections, verdict, root=None):
             "manifest_sha256": hashlib.sha256(man.read_bytes()).hexdigest(),
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
             "chars": len(prompt), "band": band(spec["model"], root=root),
-            "sections": sections, "check": verdict}
+            "sections": sections, "check": verdict,
+            "native_audio": native_audio_block(spec)}
 
 def has_receipt(prompt_sha256, receipts):
     """True when one receipt in ``receipts`` matches this prompt's sha256."""

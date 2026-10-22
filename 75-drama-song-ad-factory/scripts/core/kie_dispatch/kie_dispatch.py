@@ -567,6 +567,68 @@ def prompt_templated_refusal(model, request, prompt):
     return None
 
 
+def native_audio_refusal(model, request, prompt=""):
+    """-> None unless the H3 request's native-audio decision is unusable.
+
+    minimax-h3 always returns a stereo track and cannot be asked for silence,
+    so the mixing decision travels on the request/receipt as
+    ``native_audio`` (prompt_templates.native_audio_block). This gate refuses
+    a decision that is present but not one of retain/reduce_music/strip, and
+    refuses DOUBLE_MUSIC when the request declares that an approved soundtrack
+    is layered over the take (``request["soundtrack_layering"]``) and the
+    decision/observed audio makes that double music.
+
+    A request with no decision at all is not refused here: the receipt gate
+    (prompt_templated_refusal) already demands a receipt, and receipts written
+    before this policy stay dispatchable. The layering boundary fails closed.
+    """
+    if not str(model or "").startswith(TEMPLATED_VIDEO_PREFIXES):
+        return None
+    try:
+        import prompt_templates as _PT
+    except ImportError:                                 # pragma: no cover
+        return {"reason_code": "NATIVE_AUDIO_UNAVAILABLE",
+                "detail": "prompt_templates is not importable; the native-audio "
+                          "decision cannot be validated"}
+    req = request if isinstance(request, dict) else {}
+    block = req.get("native_audio")
+    if isinstance(block, str):
+        block = {"decision": block}
+    if not isinstance(block, dict):
+        rec = req.get("prompt_receipt")
+        if rec is None:
+            rec = req.get("prompt_receipts")
+        if rec is None:
+            rs = req.get("run_state")
+            if isinstance(rs, dict):
+                rec = rs.get("prompt_receipt") or rs.get("prompt_receipts")
+        recs = [r for r in (rec if isinstance(rec, list) else [rec])
+                if isinstance(r, dict)]
+        block = None
+        # the decision must belong to the prompt being paid for, so a matching
+        # prompt_sha256 receipt is read first and the rest only as a fallback.
+        if isinstance(prompt, str) and prompt:
+            import hashlib as _hashlib
+            sha = _hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+            recs = ([r for r in recs if r.get("prompt_sha256") == sha]
+                    + [r for r in recs if r.get("prompt_sha256") != sha])
+        for r in recs:
+            if isinstance(r.get("native_audio"), dict):
+                block = r["native_audio"]
+                break
+    if isinstance(block, dict) and block.get("decision") is not None \
+            and block["decision"] not in _PT.H3_NATIVE_AUDIO_DECISIONS:
+        return {"reason_code": "H3_NATIVE_AUDIO_UNKNOWN",
+                "detail": "%r is not one of %s; nothing was sent"
+                          % (block.get("decision"),
+                             ", ".join(_PT.H3_NATIVE_AUDIO_DECISIONS))}
+    if req.get("soundtrack_layering"):
+        snd = _PT.layering_refusal(block, soundtrack=True)
+        if snd:
+            return snd
+    return None
+
+
 def final_payload_cap_refusal(model, request, is_video):
     """U15b/U6: measure the FINAL payload just before spend. -> None or dict.
 
@@ -1350,6 +1412,16 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id,
                         evidence={"generated": False, "gate": "U15b"})
+    # H3 native audio: H3 cannot be asked for silence, so the mixing decision
+    # must be a recorded one (and never a double-music layer) before spend.
+    na_refusal = native_audio_refusal(model, request, prompt)
+    if na_refusal:
+        return envelope("dispatch", "rejected", na_refusal["reason_code"],
+                        na_refusal["detail"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"generated": False,
+                                  "gate": "native-audio"})
     cap_refusal = final_payload_cap_refusal(model, request, is_video)
     if cap_refusal:
         return envelope("dispatch", "rejected", cap_refusal["reason_code"],
