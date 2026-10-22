@@ -239,8 +239,11 @@ def make_timings(run_dir, ledger=None, run_id=None, card_receipt=None):
             receipt = card_receipt
             if receipt is None:
                 receipt = _card_receipt(run_dir)
+            # audio_path travels too: tier 2 transcribes the take's own file
+            # and a stripped path made every local timing run crash.
             track = {k: (take or {}).get(k) for k in ("task_id", "audio_id",
-                                                      "callback_url")
+                                                      "callback_url",
+                                                      "audio_path", "path")
                      if (take or {}).get(k)}
             env = LT.provide_word_timings(
                 dict(track, save_dir=os.path.join(run_dir, "music", "word-timings")),
