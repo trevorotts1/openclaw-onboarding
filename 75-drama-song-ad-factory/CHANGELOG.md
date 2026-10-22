@@ -4,6 +4,29 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.82 - 2026-10-22 - MiniMax H3 is its own model: 7,000 chars, never Hailuo
+
+Owner directive, verbatim: "Don't you ever change the model. I told you H3. I
+meant H3." The H3 family was blocked from dispatch entirely: its canonical ids
+were missing from the F14 video allowlist, so any card lock of H3 could only be
+made to run by substituting a Hailuo 02 id - a different model with a 2,000
+char prompt cap. That substitution is now impossible.
+
+1. H3 ON THE MENU (`scripts/core/kie_dispatch/model_lock.py`,
+   `references/price-menu.md`). `minimax-h3/image-to-video`,
+   `minimax-h3/text-to-video` and the `minimax-h3/*` family are on both the
+   static allowlist and the rate table, so `assert_allowed` and the menu drift
+   check agree and a H3 lock dispatches as H3.
+2. PROMPT BAND UNTOUCHED (`scripts/core/prompt_limits.py` behaviour, no code
+   change needed once the id is correct): H3 measures off the 67 catalog entry's
+   `vendor_hard_cap_chars` = 7,000; the 2,000 override stays scoped to
+   `hailuo/*`. Fixture: 6,800 passes, 7,001 refuses PROMPT_OVER_CAP.
+3. PERMANENT GUARD (`scripts/core/kie_dispatch/test_model_identity_h3.py`).
+   Twelve assertions pin: both H3 ids allowlisted, price-menu == static
+   allowlist, no H3->Hailuo alias anywhere in either module, H3 cap 7000,
+   Hailuo cap 2000, and the 6,800/7,001 boundary. Any future edit that aliases
+   the families or re-caps H3 fails this test.
+
 ## v2.9.81 - 2026-10-22 - factory.py reads a WAL state db whose sidecars are gone
 
 1. RESILIENT READ-ONLY OPEN (`scripts/core/intake_preflight/factory.py`).
