@@ -418,14 +418,19 @@ def e_no_registration_anywhere(work: str) -> bool:
 # --------------------------------------------------------------------------- #
 def run_timer_env(work: str, overrides: dict) -> subprocess.CompletedProcess:
     env = dict(os.environ)
+    # The tree under test, never an installed copy: the poller must exercise
+    # this checkout's bridge (its `capability --gate` is part of the contract).
+    env.setdefault("DS_SKILL_ROOT", os.path.dirname(ROOT))
     env.update(overrides)
     return subprocess.run([RUN_TIMER], capture_output=True, text=True, env=env, cwd=work)
 
 
 def g_poller_refuses_wrong_user_path(work: str) -> bool:
     home = real_mac_home()
-    # A HOME-legal path that does not exist: run-timer.sh only READS it, so this
-    # proves the good-identity path reaches the pairing gate without writing a byte.
+    # A HOME-legal path that does not exist: run-timer.sh only READS pairing
+    # files from it. The optional Studio capability record (capability.json,
+    # the installation state) may be written there — but never a key, never a
+    # URL, never anything that enrols a chat-only box (SPEC 9.3 / D24).
     scratch_state = f"{home}/.drama-studio-selftest-{os.getpid()}"
     cases = [
         ("contabo user enforced on mac",
@@ -433,9 +438,9 @@ def g_poller_refuses_wrong_user_path(work: str) -> bool:
         ("mac wrong state path",
          {"DS_PLATFORM": "mac", "HOME": home, "DS_STATE_DIR": "/tmp/nope"}, 1,
          "state dir must be under HOME"),
-        ("mac good identity, unpaired -> refused 2",
-         {"DS_PLATFORM": "mac", "HOME": home, "DS_STATE_DIR": scratch_state}, 2,
-         "not paired"),
+        ("mac good identity, unpaired -> quiet skip 0",
+         {"DS_PLATFORM": "mac", "HOME": home, "DS_STATE_DIR": scratch_state}, 0,
+         "capability"),
     ]
     ok = True
     det = []
@@ -444,6 +449,17 @@ def g_poller_refuses_wrong_user_path(work: str) -> bool:
         good = r.returncode == want_rc and needle in (r.stderr or "")
         ok = ok and good
         det.append(f"{label}: rc={r.returncode}{'ok' if good else ' BAD'}")
+    # D24: an idle optional poller must never fail repeatedly or enrol the
+    # user to silence logs. Second tick: no repeated failure, no new
+    # transition noise, and the state root holds no identity at all.
+    r2 = run_timer_env(work, {"DS_PLATFORM": "mac", "HOME": home,
+                              "DS_STATE_DIR": scratch_state})
+    quiet = (r2.returncode == 0 and "not paired" not in (r2.stderr or "")
+             and (r2.stderr or "") == "")
+    files = sorted(os.listdir(scratch_state)) if os.path.isdir(scratch_state) else []
+    no_identity = not any(f in files for f in ("machine.key", "machine.url"))
+    ok = ok and quiet and no_identity
+    det.append(f"second tick quiet={quiet} files={files or '[]'}{'ok' if quiet and no_identity else ' BAD'}")
     return record("G poller", ok, " | ".join(det))
 
 
