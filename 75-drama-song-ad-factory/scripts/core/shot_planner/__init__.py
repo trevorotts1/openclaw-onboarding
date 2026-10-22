@@ -101,8 +101,8 @@ __all__ = [
     "validate_no_reuse", "plan_generation_count", "validate_story_order",
     "e4_final_checks", "to_e4_qc_record", "prompt_spec_for", "PROMPT_SPEC_KEYS",
     "class_check",
-    "MOTION_SCORE_LOW", "MOTION_SUBJECT_LOW", "CLIP_LOW_MOTION",
-    "MotionScoreError",
+    "MOTION_SCORE_LOW", "MOTION_SUBJECT_LOW", "MOTION_STRUCTURE_MIN",
+    "CLIP_LOW_MOTION", "CLIP_MOTION_UNMEASURABLE", "MotionScoreError",
     "gate_clip_motion",
 ]
 
@@ -115,7 +115,9 @@ __all__ = [
 from .motion_score import (  # noqa: E402,F401
     MOTION_SCORE_LOW,
     MOTION_SUBJECT_LOW,
+    MOTION_STRUCTURE_MIN,
     CLIP_LOW_MOTION,
+    CLIP_MOTION_UNMEASURABLE,
     MotionScoreError,
     gate_clips as gate_clip_motion,
 )

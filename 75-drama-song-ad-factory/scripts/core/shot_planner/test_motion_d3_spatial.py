@@ -10,15 +10,22 @@ measured numbers printed per case:
                          pan over a still (global translation) -> refused
                          static                            -> refused
                          genuine local motion               -> allowed
-  pure frame grids       the same three cases with exact expected geometry
-  gate                   missing evidence, malformed evidence, and measured
-                         sub-threshold scores still refuse (F12 fail-closed
-                         semantics preserved)
+                         8 Hz full-black exposure strobe    -> refused
+                         gain/contrast strobe               -> refused
+                         coded noise c0s 8/48/64/80         -> refused
+                         pan + local motion                 -> allowed
+  pure frame grids       the same cases with exact expected geometry,
+                         including a uniform-noise field that clears the
+                         magnitude threshold and is refused on structure
+  gate                   missing evidence, malformed evidence, degenerate
+                         (unmeasurable) evidence, and measured sub-threshold
+                         scores still refuse (F12 fail-closed preserved)
 
 Run: python3 core/shot_planner/test_motion_d3_spatial.py
 """
 import json
 import os
+import random
 import subprocess
 import sys
 import tempfile
@@ -29,7 +36,8 @@ if CORE not in sys.path:
     sys.path.insert(0, CORE)
 
 from shot_planner.motion_score import (           # noqa: E402
-    MOTION_SCORE_LOW, MOTION_SUBJECT_LOW, SPATIAL_GRID, CLIP_LOW_MOTION,
+    MOTION_SCORE_LOW, MOTION_SUBJECT_LOW, MOTION_STRUCTURE_MIN,
+    CLIP_LOW_MOTION, CLIP_MOTION_UNMEASURABLE, SPATIAL_GRID,
     MotionScoreError, frame_diff_score, gate_clips, motion_score,
     subject_motion_evidence,
 )
@@ -137,8 +145,62 @@ def test_pure_grids_discriminate():
           json.dumps(flat, sort_keys=True)[:120])
 
 
-# ---------------------------------------------------------- ffmpeg fixtures --
+def test_pure_degenerate_and_noise():
+    """Degenerate exposure frames and uniform grain must never score as motion.
 
+    Pure grids, no ffmpeg: a zero-variance frame has no gain fit, and a
+    noise field raises every tile by the same amount.
+    """
+    base = _pattern()
+    black = [0.0] * (W * H)
+    rnd = random.Random(7)
+    noise = [[128.0 + rnd.gauss(0.0, 9.0) for _ in range(W * H)]
+             for _ in range(8)]
+
+    ev = subject_motion_evidence(noise)
+    print("  grid noise   subject=%.6f struct=%7.2f (magnitude gate %.3f, "
+          "structure gate %.1f)"
+          % (ev["subject_motion_score"], ev["motion_structure"],
+             MOTION_SUBJECT_LOW, MOTION_STRUCTURE_MIN))
+    check("pure noise clears the magnitude threshold",
+          ev["subject_motion_score"] >= MOTION_SUBJECT_LOW,
+          repr(ev["subject_motion_score"]))
+    check("pure noise fails the structure test",
+          ev["motion_structure"] < MOTION_STRUCTURE_MIN,
+          repr(ev["motion_structure"]))
+    check("pure noise is flagged as a whole",
+          motion_score(frame_grids=noise)["flagged"] is True,
+          json.dumps(motion_score(frame_grids=noise), sort_keys=True)[:160])
+
+    mixed = subject_motion_evidence([base, base, black, black, base, base])
+    print("  grid black   subject=%.6f struct=%7.2f degen=%d valid=%d"
+          % (mixed["subject_motion_score"], mixed["motion_structure"],
+             mixed["degenerate_pairs"], mixed["valid_pairs"]))
+    check("degenerate pairs are counted, not scored",
+          mixed["degenerate_pairs"] == 3 and mixed["valid_pairs"] == 2,
+          repr((mixed["degenerate_pairs"], mixed["valid_pairs"])))
+    check("a black frame does not become subject motion",
+          mixed["subject_motion_score"] < MOTION_SUBJECT_LOW,
+          repr(mixed["subject_motion_score"]))
+    check("the legacy score still reports the exposure event",
+          mixed["frame_diff_score"] > MOTION_SCORE_LOW,
+          repr(mixed["frame_diff_score"]))
+
+    dark = motion_score(frame_grids=[black, black, black])
+    check("an all-degenerate clip is unmeasurable, not low-motion",
+          dark["unmeasurable"] is True and dark["flagged"] is True
+          and dark["reason_code"] == CLIP_MOTION_UNMEASURABLE,
+          json.dumps(dark, sort_keys=True)[:200])
+    res = gate_clips([{"clip_id": "all-black", "motion_score": dark}])
+    check("gate refuses an unmeasurable clip with its own typed reason",
+          res["outcome"] == "rejected"
+          and res["reason_code"] == CLIP_MOTION_UNMEASURABLE
+          and res["unmeasurable"] == ["all-black"]
+          and res["flagged"] == ["all-black"],
+          json.dumps(res)[:200])
+
+
+# ---------------------------------------------------------- ffmpeg fixtures --
 def _run(argv):
     proc = subprocess.run(argv, capture_output=True)
     if proc.returncode != 0:
@@ -158,7 +220,12 @@ def _build_clips(tmp):
     clips = {"flash": os.path.join(tmp, "flash.mp4"),
              "pan": os.path.join(tmp, "pan.mp4"),
              "local": os.path.join(tmp, "local.mp4"),
-             "static": os.path.join(tmp, "static.mp4")}
+             "static": os.path.join(tmp, "static.mp4"),
+             "black_strobe": os.path.join(tmp, "black_strobe.mp4"),
+             "gain_strobe": os.path.join(tmp, "gain_strobe.mp4"),
+             "pan_local": os.path.join(tmp, "pan_local.mp4")}
+    for c in (8, 48, 64, 80):
+        clips["noise%d" % c] = os.path.join(tmp, "noise%d.mp4" % c)
     # Global luminance flash: white blended over the whole still.
     _run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", "24",
           "-i", still, "-f", "lavfi", "-i", "color=c=white:s=320x180:r=24",
@@ -178,6 +245,31 @@ def _build_clips(tmp):
           "-pix_fmt", "yuv420p", clips["local"]])
     _run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", "24",
           "-i", still, "-t", "2", "-pix_fmt", "yuv420p", clips["static"]])
+    # 8 Hz full-black exposure strobe: one frame in three collapses to black.
+    _run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", "24",
+          "-i", still, "-f", "lavfi", "-i", "color=c=black:s=320x180:r=24",
+          "-filter_complex",
+          "[0:v][1:v]blend=all_expr='A*(1-gt(mod(N\\,3)\\,1))"
+          "+B*(gt(mod(N\\,3)\\,1))'", "-t", "2",
+          "-pix_fmt", "yuv420p", clips["black_strobe"]])
+    # Gain-only exposure strobe (contrast, no offset).
+    _run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", "24",
+          "-i", still, "-vf",
+          "eq=contrast=1.6:enable='lt(mod(t\\,0.35)\\,0.12)'", "-t", "2",
+          "-pix_fmt", "yuv420p", clips["gain_strobe"]])
+    # Pan plus a small local subject: compensation must keep the subject.
+    _run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", "24",
+          "-i", big, "-f", "lavfi", "-i", "color=c=white:s=24x24:r=24",
+          "-filter_complex",
+          "[0:v]crop=320:180:x='(iw-320)*(t/4)':y=0[p];"
+          "[p][1:v]overlay=x='100+80*t/2':y=80", "-t", "2",
+          "-pix_fmt", "yuv420p", clips["pan_local"]])
+    # Coded noise sweep: grain is spatially uniform and can reach the
+    # magnitude threshold; the structure test must refuse it.
+    for c in (8, 48, 64, 80):
+        _run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", "24",
+              "-i", still, "-vf", "noise=c0s=%d:c0f=t" % c, "-t", "2",
+              "-pix_fmt", "yuv420p", clips["noise%d" % c]])
     return clips
 
 
@@ -185,20 +277,38 @@ def test_real_clips_move_the_decision():
     tmp = tempfile.mkdtemp(prefix="motion_d3_")
     try:
         clips = _build_clips(tmp)
+        names = ("flash", "pan", "local", "static", "black_strobe",
+                 "gain_strobe", "pan_local", "noise8", "noise48",
+                 "noise64", "noise80")
         scores = {}
-        for name in ("flash", "pan", "local", "static"):
+        for name in names:
             scores[name] = motion_score(clip_path=clips[name])
             s = scores[name]
-            print("  clip %-6s subject_motion=%.6f legacy_frame_diff=%.6f "
-                  "global_luma_change=%.6f displacement=%.6f samples=%d "
-                  "flagged=%s"
-                  % (name, s["subject_motion_score"], s["frame_diff_score"],
-                     s["global_luma_change"], s["global_displacement"],
-                     s["samples"], s["flagged"]))
+            print("  clip %-12s subject=%.6f struct=%7.2f degen=%2d valid=%2d "
+                  "legacy=%.6f flagged=%s"
+                  % (name, s["subject_motion_score"], s["motion_structure"],
+                     s["degenerate_pairs"], s["valid_pairs"],
+                     s["frame_diff_score"], s["flagged"]))
         check("clip sampling produced spatial evidence",
               all(s["evidence"] == "spatial" and s["samples"] >= 2
                   for s in scores.values()),
               json.dumps({k: v.get("samples") for k, v in scores.items()}))
+        # The four calibrated fixtures, numbers locked (tolerance covers a
+        # different x264 build, not a semantic change). Their structure
+        # values are printed above and asserted by class below.
+        for name, subject, legacy in (
+                ("flash", 0.000369, 0.106209),
+                ("pan", 0.000190, 0.044635),
+                ("static", 0.000000, 0.000000),
+                ("local", 0.026011, 0.000549)):
+            s = scores[name]
+            check("%s reproduces its calibrated numbers" % name,
+                  abs(s["subject_motion_score"] - subject) < 5e-4
+                  and abs(s["frame_diff_score"] - legacy) < 5e-4,
+                  "%r vs %r" % (s["subject_motion_score"], subject))
+        check("genuine local motion clears the structure test",
+              scores["local"]["motion_structure"] > MOTION_STRUCTURE_MIN,
+              repr(scores["local"]["motion_structure"]))
         check("flash refused by the subject-motion gate",
               scores["flash"]["flagged"] is True
               and scores["flash"]["subject_motion_score"] < MOTION_SUBJECT_LOW,
@@ -213,6 +323,9 @@ def test_real_clips_move_the_decision():
         check("pan would have PASSED the legacy mean-luma score",
               scores["pan"]["frame_diff_score"] >= MOTION_SCORE_LOW,
               repr(scores["pan"]["frame_diff_score"]))
+        check("pan compensation still saw its flat frames (degenerate count)",
+              scores["pan"]["degenerate_pairs"] >= 1,
+              repr(scores["pan"]["degenerate_pairs"]))
         check("genuine local motion allowed",
               scores["local"]["flagged"] is False
               and scores["local"]["subject_motion_score"] > MOTION_SUBJECT_LOW,
@@ -222,23 +335,70 @@ def test_real_clips_move_the_decision():
               repr(scores["local"]["frame_diff_score"]))
         check("static clip refused", scores["static"]["flagged"] is True,
               repr(scores["static"]["subject_motion_score"]))
+        # Pan + small subject: compensation removes the pan, keeps the subject.
+        check("pan + local motion is allowed",
+              scores["pan_local"]["flagged"] is False
+              and scores["pan_local"]["subject_motion_score"]
+              > MOTION_SUBJECT_LOW,
+              repr(scores["pan_local"]["subject_motion_score"]))
+        check("pan + local motion is not the pure-pan number",
+              scores["pan_local"]["subject_motion_score"]
+              > 10 * max(1e-6, scores["pan"]["subject_motion_score"]),
+              "%r vs %r" % (scores["pan_local"]["subject_motion_score"],
+                            scores["pan"]["subject_motion_score"]))
+        # Whole-frame black strobe: an exposure event, never subject motion.
+        bs = scores["black_strobe"]
+        check("8 Hz black strobe is refused",
+              bs["flagged"] is True
+              and bs["subject_motion_score"] < MOTION_SUBJECT_LOW,
+              repr(bs["subject_motion_score"]))
+        check("black strobe counts its degenerate pairs",
+              bs["degenerate_pairs"] >= 10 and bs["valid_pairs"] >= 1,
+              repr((bs["degenerate_pairs"], bs["valid_pairs"])))
+        check("black strobe still carries the legacy exposure signature",
+              bs["frame_diff_score"] >= MOTION_SCORE_LOW,
+              repr(bs["frame_diff_score"]))
+        check("gain strobe is refused", scores["gain_strobe"]["flagged"] is True,
+              repr(scores["gain_strobe"]["subject_motion_score"]))
+        # Noise sweep: the heavier fields clear the magnitude threshold and
+        # must be refused on structure.
+        for name in ("noise8", "noise48", "noise64", "noise80"):
+            s = scores[name]
+            check("%s refused (magnitude or structure)" % name,
+                  s["flagged"] is True,
+                  json.dumps({k: s[k] for k in ("subject_motion_score",
+                                                "motion_structure")}))
+        for name in ("noise48", "noise64", "noise80"):
+            s = scores[name]
+            check("%s clears the magnitude threshold but fails structure"
+                  % name,
+                  s["subject_motion_score"] >= MOTION_SUBJECT_LOW
+                  and s["motion_structure"] < MOTION_STRUCTURE_MIN,
+                  json.dumps({k: s[k] for k in ("subject_motion_score",
+                                                "motion_structure")}))
 
         rows = [{"clip_id": k, "motion_score": scores[k]}
-                for k in ("flash", "pan", "local", "static")]
+                for k in ("flash", "pan", "local", "static", "black_strobe",
+                          "noise64")]
         res = gate_clips(rows)
-        check("gate rejects flash and pan before assembly",
+        check("gate rejects flash, pan, static, black strobe and noise",
               res["outcome"] == "rejected"
               and res["reason_code"] == CLIP_LOW_MOTION
-              and res["flagged"] == ["flash", "pan", "static"],
-              json.dumps(res)[:200])
+              and res["flagged"] == ["flash", "pan", "static",
+                                     "black_strobe", "noise64"],
+              json.dumps(res)[:220])
         ok = gate_clips([{"clip_id": "local",
-                          "motion_score": scores["local"]}])
-        check("gate passes genuine motion", ok["outcome"] == "ok",
+                          "motion_score": scores["local"]},
+                         {"clip_id": "pan_local",
+                          "motion_score": scores["pan_local"]}])
+        check("gate passes genuine motion and pan+local", ok["outcome"] == "ok",
               json.dumps(ok)[:160])
-        check("gate reports the spatial threshold it decided on",
+        check("gate reports the thresholds it decided on",
               res["threshold"] == MOTION_SUBJECT_LOW
+              and res["structure_threshold"] == MOTION_STRUCTURE_MIN
               and res["legacy_threshold"] == MOTION_SCORE_LOW,
-              repr((res["threshold"], res["legacy_threshold"])))
+              repr((res["threshold"], res["structure_threshold"],
+                    res["legacy_threshold"])))
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
@@ -262,12 +422,18 @@ def test_fail_closed_semantics_preserved():
             ("legacy string score", "high"),
             ("spatial without subject score",
              {"score": 0.5, "evidence": "spatial"}),
+            ("spatial without structure score",
+             {"score": 0.5, "evidence": "spatial",
+              "subject_motion_score": 0.5}),
+            ("spatial structure not numeric",
+             {"score": 0.5, "evidence": "spatial",
+              "subject_motion_score": 0.5, "motion_structure": "wide"}),
             ("spatial subject out of range",
              {"score": 0.5, "evidence": "spatial",
-              "subject_motion_score": 1.5}),
+              "subject_motion_score": 1.5, "motion_structure": 9.0}),
             ("spatial subject not numeric",
              {"score": 0.5, "evidence": "spatial",
-              "subject_motion_score": "moving"}),
+              "subject_motion_score": "moving", "motion_structure": 9.0}),
             ("unknown evidence tag",
              {"score": 0.5, "evidence": "vibes"}),
             ("non-dict score", 0.5)):
@@ -304,10 +470,31 @@ def test_fail_closed_semantics_preserved():
           frame_diff_score([40.0, 52.0]) > MOTION_SCORE_LOW,
           repr(frame_diff_score([40.0, 52.0])))
 
+    # A structure failure is a measured refusal too, and flagged:false
+    # cannot override it.
+    weak = {"score": 0.03, "evidence": "spatial",
+            "subject_motion_score": 0.03, "motion_structure": 1.5,
+            "flagged": False}
+    res6 = gate_clips([{"src": "grain", "motion_score": weak}])
+    check("a noise-like residual is refused even with flagged:false",
+          res6["flagged"] == ["grain"], json.dumps(res6)[:160])
+
+    # The magnitude gate flips exactly once, strictly below the threshold.
+    boundary = []
+    for subj in (0.011999, MOTION_SUBJECT_LOW, 0.012001):
+        row = {"score": subj, "evidence": "spatial",
+               "subject_motion_score": subj, "motion_structure": 9.0}
+        boundary.append(gate_clips([{"src": "b", "motion_score": row}])
+                        ["flagged"] == ["b"])
+    check("near-threshold flips exactly at MOTION_SUBJECT_LOW",
+          boundary == [True, False, False], repr(boundary))
+
 
 def test_thresholds_and_version():
     check("subject threshold is 0.012", MOTION_SUBJECT_LOW == 0.012,
           repr(MOTION_SUBJECT_LOW))
+    check("structure threshold is 4.0", MOTION_STRUCTURE_MIN == 4.0,
+          repr(MOTION_STRUCTURE_MIN))
     check("legacy threshold is unchanged at 0.02", MOTION_SCORE_LOW == 0.02,
           repr(MOTION_SCORE_LOW))
     check("spatial grid is 48x27", SPATIAL_GRID == (48, 27),
@@ -317,6 +504,7 @@ def test_thresholds_and_version():
 def main():
     for fn in (test_thresholds_and_version,
                test_pure_grids_discriminate,
+               test_pure_degenerate_and_noise,
                test_real_clips_move_the_decision,
                test_fail_closed_semantics_preserved):
         try:

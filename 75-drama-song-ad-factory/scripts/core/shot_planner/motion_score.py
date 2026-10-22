@@ -8,15 +8,32 @@ assembly."
 Two measures, one gate:
 
 * SUBJECT MOTION (the gate's decision) — frame differencing on a 48x27
-  grayscale grid sampled at 15 fps. For each consecutive pair the global
-  luminance offset+gain is fitted away (so a flash/exposure change scores
-  zero) and the best global translation is searched on a stride-2 lattice
-  with quarter-pixel refinement (so a pan/global camera move scores zero).
-  What remains is local, non-translational change: subject motion.
+  grayscale grid sampled at 15 fps. For each consecutive pair a global
+  luminance offset+gain is fitted and subtracted, and the best global
+  translation is searched on a stride-2 correlation lattice with
+  quarter-pixel refinement. What remains is local, non-translational
+  change: subject motion. Two things this does and does NOT absorb:
+    - Absorbs an additive flash and a gain/contrast flash, PROVIDED both
+      frames carry measurable contrast (a gain fit cannot exist otherwise).
+    - Absorbs a pure camera pan/translation.
+    - Does NOT absorb a frame collapsed to near-uniform luma (black,
+      white, blank): there is no contrast to fit, so that pair is an
+      exposure event and contributes ZERO motion evidence — never the
+      content amplitude. Every degenerate pair is counted; a clip whose
+      every pair is degenerate is `unmeasurable` and is refused with the
+      typed reason CLIP_MOTION_UNMEASURABLE.
+    - Does NOT absorb global zoom or rotation: those are read as motion.
   MOTION_SUBJECT_LOW = 0.012 normalized residual was calibrated on real
   ffmpeg fixtures (see test_motion_d3_spatial.py): static 0.000, coded
-  noise 0.002, flash 0.003, pan 0.004, handheld shake 0.009, moving
-  subject 0.026.
+  noise 0.002-0.031 (see the structure test), flash 0.003, pan 0.004,
+  handheld shake 0.009, moving subject 0.026-0.036.
+* RESIDUAL STRUCTURE — p90/p20 of 4x3 tile means over the residual map.
+  Coded grain raises every tile by about the same amount, so a noise field
+  can reach the magnitude threshold; MOTION_STRUCTURE_MIN = 4.0 refuses
+  it because grain is not concentrated (measured 1.7-2.4) while moving
+  content is (measured 9.5-338). The gate requires magnitude AND
+  structure, so grain cannot pass as motion. A non-rigid motion whose
+  residual genuinely fills every tile is refused (fail-closed).
 * LEGACY MEAN LUMA (kept for callers that still consume it) —
   MOTION_SCORE_LOW = 0.02 mean frame-to-frame change of per-frame mean
   luma, unchanged from 1.0.0. A flash or a pan scores HIGH on this one,
@@ -29,6 +46,8 @@ and a clip_path is supplied; MotionScoreError CLIP_UNREADABLE when it
 cannot answer, never a guessed score. Stdlib only, $0 spend, no network.
 """
 from __future__ import annotations
+
+import math
 
 # Skill 75 load governor: every heavy local job goes through it (see load_governor/).
 import os as _gos, sys as _gsys
@@ -47,6 +66,17 @@ MOTION_SCORE_LOW = 0.02
 #: genuine local motion 0.026.
 MOTION_SUBJECT_LOW = 0.012
 
+#: Minimum spatial concentration of the residual: p90/p20 of 4x3 tile
+#: means over the overlap. Coded grain spreads evenly (measured 1.7-2.4)
+#: while moving content concentrates (measured 9.5-338), so grain of
+#: gate-crossing magnitude is refused on structure, not on mean brightness.
+MOTION_STRUCTURE_MIN = 4.0
+
+#: A frame whose interior contrast falls below this many luma units is an
+#: exposure collapse (black/white/blank): the per-pair gain fit does not
+#: exist and the pair carries no motion evidence.
+DEGENERATE_CONTRAST = 2.0
+
 #: Spatial evidence sampler: grayscale grid per frame, sampled frames/second.
 SPATIAL_GRID = (48, 27)
 SPATIAL_FPS = 15
@@ -54,8 +84,13 @@ SPATIAL_FPS = 15
 #: Reason code the receipt and the pre-assembly gate carry.
 CLIP_LOW_MOTION = "CLIP_LOW_MOTION"
 
+#: Typed refusal for a clip whose every sampled pair is a degenerate
+#: exposure frame: there is no measurable motion evidence, which is NOT the
+#: same finding as "the subject barely moved".
+CLIP_MOTION_UNMEASURABLE = "CLIP_MOTION_UNMEASURABLE"
+
 TOOL_NAME = "motion_score"
-TOOL_VERSION = "2.0.0"
+TOOL_VERSION = "2.0.1"
 SCHEMA_VERSION = "1.0.0"
 
 
@@ -222,12 +257,32 @@ def _best_shift(a, b, w, h):
     return cands[0]
 
 
+def _interior_values(grid, w, h):
+    _, margin = _shift_limit(w)
+    return [grid[y * w + x]
+            for y in range(margin, h - margin)
+            for x in range(margin, w - margin)]
+
+
+def _contrast(values):
+    mean = sum(values) / len(values)
+    return (sum((v - mean) ** 2 for v in values) / len(values)) ** 0.5
+
+
 def _affine_residual(a, b, w, h, dx, dy):
-    """Mean |b - (g*a + o)| over the interior after the best global shift.
+    """Mean |b - (g*a + o)| over the interior after the best global shift,
+    plus the residual map over the whole overlap as a row-list.
 
     g/o are fitted per pair, so a global luminance offset (additive flash)
-    or gain (exposure/contrast flash) is absorbed instead of counted as
-    motion.
+    or gain (contrast/exposure flash) is absorbed instead of counted as
+    motion — but only while `a` carries measurable contrast. A frame
+    collapsed to near-uniform luma has zero variance and no fit exists;
+    callers must exclude that pair (see DEGENERATE_CONTRAST).
+
+    The mean stays on the interior (the region every shift covers) so the
+    calibrated magnitude is stable; the row-list spans the larger overlap
+    because the structure test needs enough tiles to see untouched
+    background.
     """
     _, margin = _shift_limit(w)
     av, bv = [], []
@@ -243,7 +298,53 @@ def _affine_residual(a, b, w, h, dx, dy):
     var = sum((av[k] - ma) ** 2 for k in range(n)) / n
     gain = cov / var if var > 1e-9 else 1.0
     off = mb - gain * ma
-    return sum(abs(bv[k] - (gain * av[k] + off)) for k in range(n)) / n
+    res = [abs(bv[k] - (gain * av[k] + off)) for k in range(n)]
+    iw = w - 2 * margin
+    rows = [res[i:i + iw] for i in range(0, n, iw)]
+    bx = min(int(math.floor(abs(dx))) + 1, w // 4)
+    by = min(int(math.floor(abs(dy))) + 1, h // 4)
+    full = []
+    for y in range(by, h - by):
+        row = y * w
+        full.append([abs(b[row + x] - (gain * _bilinear(a, w, x - dx, y - dy)
+                                       + off))
+                     for x in range(bx, w - bx)])
+    return sum(res) / n, full
+
+
+#: Tile shape for the concentration test over the residual overlap map.
+_STRUCT_TILE = (4, 3)
+
+
+def _structure(rows):
+    """Spatial concentration of the residual map: p90/p20 of tile means.
+
+    The map is the whole shift-compensated overlap (~46x25 at the default
+    grid), so untouched background shows up as low tiles. Coded grain raises
+    every tile by about the same amount, so the ratio collapses toward 1
+    however strong the grain is. Moving content raises a few tiles far above
+    the rest, so the ratio stays high. This is what stops a noise field of
+    gate-crossing magnitude from passing as motion.
+    """
+    tw, th = _STRUCT_TILE
+    h = len(rows)
+    w = len(rows[0]) if h else 0
+    tiles = []
+    for ty in range(0, h - th + 1, th):
+        for tx in range(0, w - tw + 1, tw):
+            total = 0.0
+            for y in range(ty, ty + th):
+                for x in range(tx, tx + tw):
+                    total += rows[y][x]
+            tiles.append(total / (tw * th))
+    if len(tiles) < 5:
+        return 0.0
+    tiles.sort()
+    p20 = tiles[int(0.2 * (len(tiles) - 1))]
+    p90 = tiles[int(0.9 * (len(tiles) - 1))]
+    if p20 > 1e-6:
+        return p90 / p20
+    return 99.0 if p90 > 0.5 else 0.0
 
 
 def subject_motion_evidence(frame_grids, grid_size=None):
@@ -265,22 +366,45 @@ def subject_motion_evidence(frame_grids, grid_size=None):
     w, h = grid_size or SPATIAL_GRID
     _check_grids(frame_grids, w, h)
     prev, prev_mean = _dc(frame_grids[0])
-    subjects, lumas, disps = [], [], []
+    prev_std = _contrast(_interior_values(prev, w, h))
+    subjects, structs, lumas, disps = [], [], [], []
+    degenerate = 0
     for raw in frame_grids[1:]:
         cur, cur_mean = _dc(raw)
-        _, dx, dy = _best_shift(prev, cur, w, h)
-        resid = _affine_residual(prev, cur, w, h, dx, dy)
-        subjects.append(resid / 255.0)
+        cur_std = _contrast(_interior_values(cur, w, h))
+        # The legacy field is measured on EVERY pair: an exposure collapse
+        # is exactly what it is supposed to see.
         lumas.append(abs(cur_mean - prev_mean) / 255.0)
+        if prev_std < DEGENERATE_CONTRAST or cur_std < DEGENERATE_CONTRAST:
+            # Exposure event (frame collapsed to near-uniform luma): no
+            # gain fit exists, so this pair carries NO motion evidence.
+            # It contributes zero -- never the content amplitude -- and is
+            # counted, so one black frame cannot scale the mean up.
+            degenerate += 1
+            subjects.append(0.0)
+            disps.append(0.0)
+            prev, prev_mean, prev_std = cur, cur_mean, cur_std
+            continue
+        _, dx, dy = _best_shift(prev, cur, w, h)
+        resid, rows = _affine_residual(prev, cur, w, h, dx, dy)
+        subjects.append(resid / 255.0)
+        structs.append(_structure(rows))
         disps.append(((dx * dx + dy * dy) ** 0.5) / w)
-        prev, prev_mean = cur, cur_mean
+        prev, prev_mean, prev_std = cur, cur_mean, cur_std
     pairs = float(len(subjects))
+    measured = float(len(structs))
     return {
-        "subject_motion_score": round(sum(subjects) / pairs, 6),
-        "frame_diff_score": round(sum(lumas) / pairs, 6),
-        "global_luma_change": round(sum(lumas) / pairs, 6),
-        "global_displacement": round(sum(disps) / pairs, 6),
+        "subject_motion_score": round(sum(subjects) / pairs, 6) if pairs
+        else 0.0,
+        "motion_structure": round(sum(structs) / measured, 6) if measured
+        else 0.0,
+        "frame_diff_score": round(sum(lumas) / pairs, 6) if pairs else 0.0,
+        "global_luma_change": round(sum(lumas) / pairs, 6) if pairs else 0.0,
+        "global_displacement": round(sum(disps) / pairs, 6) if pairs else 0.0,
         "samples": len(frame_grids),
+        "valid_pairs": len(structs),
+        "degenerate_pairs": degenerate,
+        "unmeasurable": not structs,
         "grid": [w, h],
     }
 
@@ -290,25 +414,34 @@ def motion_score(clip_path=None, frame_stats=None, frame_grids=None,
 
     frame_grids given  -> SPATIAL evidence (the gate's decision path):
                           score is subject_motion_score, threshold is
-                          MOTION_SUBJECT_LOW, and the legacy frame_diff_score
+                          MOTION_SUBJECT_LOW, motion_structure carries the
+                          concentration test, and the legacy frame_diff_score
                           rides along as data.
     frame_stats given  -> LEGACY pure function over per-frame mean luma
                           (no file opened, $0, no ffmpeg).
     neither given, clip_path given -> spatial sampling of the real clip
                           with ffmpeg; MotionScoreError CLIP_UNREADABLE when
                           it cannot answer, never a guessed score.
-    flagged is True exactly when the measured score on the evidence path
-    used is below its threshold.
+    flagged is True when the measured score on the evidence path used is
+    below its threshold, or when the spatial structure test fails, or when
+    the clip carries no measurable pair at all (unmeasurable: its
+    reason_code is then CLIP_MOTION_UNMEASURABLE, not CLIP_LOW_MOTION).
     """
     if frame_grids is not None:
         ev = subject_motion_evidence(frame_grids, grid_size=grid_size)
-        return {"score": ev["subject_motion_score"],
-                "flagged": bool(ev["subject_motion_score"]
-                                < MOTION_SUBJECT_LOW),
-                "threshold": MOTION_SUBJECT_LOW,
-                "evidence": "spatial",
-                **ev,
-                "tool_version": TOOL_VERSION}
+        flagged = bool(ev["unmeasurable"]
+                       or ev["subject_motion_score"] < MOTION_SUBJECT_LOW
+                       or ev["motion_structure"] < MOTION_STRUCTURE_MIN)
+        out = {"score": ev["subject_motion_score"],
+               "flagged": flagged,
+               "threshold": MOTION_SUBJECT_LOW,
+               "structure_threshold": MOTION_STRUCTURE_MIN,
+               "evidence": "spatial",
+               "tool_version": TOOL_VERSION,
+               **ev}
+        if ev["unmeasurable"]:
+            out["reason_code"] = CLIP_MOTION_UNMEASURABLE
+        return out
     if frame_stats is not None:
         score = frame_diff_score(frame_stats)
         return {"score": round(score, 6),
@@ -361,23 +494,29 @@ def gate_clips(clips):
     clips: [{clip_id|shot_id|src, motion_score: {'score', 'flagged'...}}].
     The gate decides on the SPATIAL evidence when the row carries it —
     motion_score['subject_motion_score'] with evidence 'spatial' (written
-    by motion_score() 2.0.0) — and flags a clip below MOTION_SUBJECT_LOW,
-    so a flash or a global pan no longer passes as motion. Rows without
-    spatial evidence (receipts written by 1.0.0) keep the legacy decision
-    on 'score' < MOTION_SCORE_LOW, unchanged. Rows carrying neither a
-    motion_score key are listed in 'unscored' and reported in the receipt
-    — the QC review layer reads a non-empty unscored list as FAIL (same
-    seam E6 uses: the assembler never scores video itself; the scoring
-    step does). MALFORMED evidence — non-dict row, non-numeric score, a
-    spatial tag without a numeric in-range subject_motion_score, or an
-    unknown evidence tag — raises MotionScoreError CLIP_UNSCORED
+    by motion_score() 2.0.0). A clip is flagged when the subject-motion
+    score is below MOTION_SUBJECT_LOW, when the residual is not spatially
+    concentrated (motion_structure below MOTION_STRUCTURE_MIN, e.g. a
+    coded-noise field), or when the row is unmeasurable (every sampled pair
+    was a degenerate exposure frame — reason_code
+    CLIP_MOTION_UNMEASURABLE). A flash or a global pan therefore no longer
+    passes as motion, and grain cannot either. Rows without spatial
+    evidence (receipts written by 1.0.0) keep the legacy decision on
+    'score' < MOTION_SCORE_LOW, unchanged. Rows carrying no motion_score
+    key are listed in 'unscored' and reported in the receipt — the QC
+    review layer reads a non-empty unscored list as FAIL (same seam E6
+    uses: the assembler never scores video itself; the scoring step does).
+    MALFORMED evidence — non-dict row, non-numeric score, a spatial tag
+    without a numeric in-range subject_motion_score or motion_structure, or
+    an unknown evidence tag — raises MotionScoreError CLIP_UNSCORED
     fail-closed. Returns
     {'outcome', 'reason_code', 'flagged': [ids], 'unscored': [ids],
-    'scores': {id: gate score}, 'threshold', 'legacy_threshold'}.
+    'unmeasurable': [ids], 'scores': {id: gate score}, 'threshold',
+    'structure_threshold', 'legacy_threshold'}.
     """
     if not isinstance(clips, list) or not clips:
         raise MotionScoreError("CLIPS_EMPTY", "clips must be a non-empty list")
-    flagged, unscored, scores = [], [], {}
+    flagged, unscored, unmeasurable, scores = [], [], [], {}
     for c in clips:
         if not isinstance(c, dict):
             raise MotionScoreError("CLIP_UNSCORED", "clip row not a record")
@@ -397,27 +536,45 @@ def gate_clips(clips):
                 "%s carries an unknown motion evidence tag" % cid)
         subject = ms.get("subject_motion_score")
         if evidence == "spatial" or subject is not None:
-            # Malformed spatial evidence refuses: a tagged row must carry a
-            # numeric score on the same 0.0-1.0 scale as its threshold.
-            if not _is_num(subject) or not 0.0 <= subject <= 1.0:
+            # Malformed spatial evidence refuses: a tagged row must carry
+            # numeric scores on the same scales as their thresholds.
+            structure = ms.get("motion_structure")
+            if (not _is_num(subject) or not 0.0 <= subject <= 1.0
+                    or not _is_num(structure) or structure < 0.0):
                 raise MotionScoreError(
                     "CLIP_UNSCORED",
                     "%s carries malformed spatial motion evidence" % cid)
+            if ms.get("unmeasurable") is True:
+                # No valid measurement exists. Refuse, and say so with the
+                # typed code rather than a low-motion verdict.
+                scores[cid] = subject
+                flagged.append(cid)
+                unmeasurable.append(cid)
+                continue
             measured, threshold = subject, MOTION_SUBJECT_LOW
+            weak = structure < MOTION_STRUCTURE_MIN
         else:
             measured, threshold = ms["score"], MOTION_SCORE_LOW
+            weak = False
         scores[cid] = measured
-        # Fail closed on the MEASURED score: a supplied flagged:false can
-        # never override a measured sub-threshold score. A supplied
-        # flagged:true is still honoured, so a stricter verdict is never
-        # loosened into a pass.
-        if measured < threshold or ms.get("flagged") is True:
+        # Fail closed on the MEASURED scores: a supplied flagged:false can
+        # never override a measured sub-threshold score or an inconclusive
+        # structure test. A supplied flagged:true is still honoured, so a
+        # stricter verdict is never loosened into a pass.
+        if measured < threshold or weak or ms.get("flagged") is True:
             flagged.append(cid)
+    if not flagged:
+        reason = "CLIPS_MOTION_PASS"
+    elif unmeasurable and len(unmeasurable) == len(flagged):
+        reason = CLIP_MOTION_UNMEASURABLE
+    else:
+        reason = CLIP_LOW_MOTION
     return {"outcome": "ok" if not flagged else "rejected",
-            "reason_code": "CLIPS_MOTION_PASS" if not flagged
-            else CLIP_LOW_MOTION,
-            "flagged": flagged, "unscored": unscored, "scores": scores,
+            "reason_code": reason,
+            "flagged": flagged, "unscored": unscored,
+            "unmeasurable": unmeasurable, "scores": scores,
             "threshold": MOTION_SUBJECT_LOW,
+            "structure_threshold": MOTION_STRUCTURE_MIN,
             "legacy_threshold": MOTION_SCORE_LOW}
 
 
