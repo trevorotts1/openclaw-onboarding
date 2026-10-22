@@ -331,22 +331,36 @@ def _floor_reasons(first, style_id, delivered_s, true_at):
     return out
 
 
+#: Timing slop one word record may overlap its neighbour and still be trusted.
+#: Far below any real hook span, far above timestamp jitter.
+_TIME_EPS = 0.011
+
 def _timed_tokens(aligned_words):
-    """[(token, start, end)] from ordered word records, every token of a record
-    kept (Suno packs "Verse 3 " or "talking.\\n\\n" into one record). None when the
-    timing cannot be trusted: a non-numeric, non-finite or reversed time, or
-    starts that run backwards."""
-    out, last = [], None
+    """[(token, start, end)] from word records, every token of a record kept
+    (Suno packs "Verse 3 " or "talking.\\n\\n" into one record). The records may
+    arrive grouped out of time order -- an aligner delivers by section, not by
+    second -- so they are sorted by time first and the tokens are read in
+    playback order. The timing is untrusted (None) when a record's interval is
+    unusable (a non-numeric, non-finite or reversed time) or it overlaps the
+    record before it: a corrupted timestamp must stay UNMEASURED, never become
+    a false hook count."""
+    recs = []
     for w in aligned_words or []:
         if not isinstance(w, dict):
             return None
         a, b = _SH._span(w)
         if not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
-                   for x in (a, b)) or b < a or (last is not None and a < last):
+                   for x in (a, b)) or b < a:
             return None
-        last = a
         text = re.sub(r"\[[^\]]*\]?|^[^\[]*\]", " ", str(w.get("word", "")))
-        out += [(t, float(a), float(b)) for t in _SH._words(text)]
+        recs.append((float(a), float(b), text))
+    recs.sort(key=lambda r: (r[0], r[1]))
+    out, last_end = [], None
+    for a, b, text in recs:
+        if last_end is not None and a < last_end - _TIME_EPS:
+            return None
+        last_end = b
+        out += [(t, a, b) for t in _SH._words(text)]
     return out
 
 
