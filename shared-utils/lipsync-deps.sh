@@ -134,13 +134,16 @@ _lipsync_pip_install() {
     if [ "$_rc" -eq 0 ]; then _lipsync_log "installed ${LIPSYNC_PKG_SPECS[*]} into $_py"; return 0; fi
 
     # PEP 668 box: system python refuses a bare install. --user is the smallest
-    # step that does not touch system site-packages.
+    # step that does not touch system site-packages. _rc is reset per attempt so
+    # a fallback that succeeds is reported as the success it is.
+    _rc=0
     _out="$("$_py" -m pip install --quiet --user --disable-pip-version-check --no-input "${LIPSYNC_PKG_SPECS[@]}" 2>&1)" || _rc=$?
     if [ "$_rc" -eq 0 ]; then _lipsync_log "installed ${LIPSYNC_PKG_SPECS[*]} with --user into $_py"; return 0; fi
 
     # Last resort on a Debian/Ubuntu container whose python is marked
     # externally managed and where --user is also refused. Loudly announced:
     # this is the only path that makes the gate runnable on such a box.
+    _rc=0
     _out="$("$_py" -m pip install --quiet --break-system-packages --disable-pip-version-check --no-input "${LIPSYNC_PKG_SPECS[@]}" 2>&1)" || _rc=$?
     if [ "$_rc" -eq 0 ]; then
         _lipsync_log "installed ${LIPSYNC_PKG_SPECS[*]} with --break-system-packages (externally-managed python) into $_py"
@@ -270,7 +273,9 @@ ensure_lipsync_deps() {
         _lipsync_log "OK: mediapipe, opencv, numpy and $LIPSYNC_MODEL_NAME all present"
         return 0
     fi
-    _lipsync_mark_pending "missing: python=${_missing:-none} model=$([ "$(_lipsync_model_ok "$_py" && echo ok || echo missing)")"
+    local _model_state="missing"
+    if _lipsync_model_ok "$_py"; then _model_state="ok"; fi
+    _lipsync_mark_pending "missing: python=${_missing:-none} model=$_model_state"
     _lipsync_fail "lip-sync prerequisites still incomplete; the fail-closed gate will refuse lip-sync jobs on this box until repaired. Re-run: bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/lipsync-deps.sh)"
     return 2
 }
