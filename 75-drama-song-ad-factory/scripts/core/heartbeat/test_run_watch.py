@@ -315,6 +315,26 @@ def main():
           snap == tree_digest(run6),
           sorted(set(snap) ^ set(tree_digest(run6))))
 
+    # 7. a WAL database whose -wal/-shm are gone is still readable -----------
+    run7 = make_run(tmp, "run7")
+    set_stage(run7, "run7", "music", "RUNNING", age_s=60, lease_in=300,
+              owner="worker-7")
+    db7 = run7 / "control" / "state.sqlite3"
+    con = sqlite3.connect(str(db7))
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    con.close()
+    for side in ("-wal", "-shm"):
+        p = Path(str(db7) + side)
+        if p.exists():
+            p.unlink()
+    env = RW.build(run7, now=NOW)
+    check("7: WAL db without sidecars is read, not HEARTBEAT_STATE_UNREADABLE",
+          "HEARTBEAT_STATE_UNREADABLE" not in env["loud"], env["loud"])
+    check("7: the stage table still reads through the private-copy fallback",
+          env["stage"] == "research" and env["stages_total"] == 12,
+          "%s/%s" % (env["stage"], env["stages_total"]))
+
     print()
     if FS:
         print("%d FAILED: %s" % (len(FS), ", ".join(FS)))

@@ -45,10 +45,13 @@ LOUD CODES (loud_failure.py, printed to stderr AND carried in the envelope)
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
+import shutil
 import sqlite3
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -176,9 +179,26 @@ def _json(path):
 
 
 def _ro(db_path):
-    """Read-only connection. A run is NEVER mutated by this module."""
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    return sqlite3.connect(uri, uri=True, timeout=5)
+    """Read-only connection. A run is NEVER mutated by this module.
+
+    A WAL database whose -wal/-shm sidecars are gone cannot be opened
+    mode=ro (SQLITE_CANTOPEN), which used to surface to the client as
+    "state database not readable". Fall back to a private copy of the db
+    and whatever sidecars exist, opened query_only.
+    """
+    path = Path(db_path).resolve()
+    try:
+        return sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=5)
+    except sqlite3.OperationalError:
+        tmp = tempfile.mkdtemp(prefix="run-watch-")
+        atexit.register(shutil.rmtree, tmp, True)
+        for name in (path.name, path.name + "-wal", path.name + "-shm"):
+            src = path.with_name(name)
+            if src.is_file():
+                shutil.copy2(src, os.path.join(tmp, name))
+        con = sqlite3.connect(os.path.join(tmp, path.name), timeout=5)
+        con.execute("PRAGMA query_only=ON")
+        return con
 
 
 def _utc_iso(epoch):

@@ -4,6 +4,19 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.79 - 2026-10-22 - a WAL state database never reads as "unreadable"
+
+1. RUN_WATCH PRIVATE-COPY FALLBACK (`scripts/core/heartbeat/run_watch.py`).
+   The state store is WAL mode. When `control/state.sqlite3` exists but its
+   `-wal`/`-shm` sidecars are gone (an orphan-temp sweep, a restore, a copy),
+   the `mode=ro` URI open raises SQLITE_CANTOPEN and the envelope emitted
+   `HEARTBEAT_STATE_UNREADABLE` — a client-facing "I couldn't read where your
+   video is up to" on a perfectly healthy run. `_ro()` now retries by copying
+   the db plus whatever sidecars exist into a private temp dir, opening the
+   copy with `PRAGMA query_only=ON`, and removing the temp dir at exit. The
+   live run is still never written. Covered by test 7 in
+   `scripts/core/heartbeat/test_run_watch.py`.
+
 ## v2.9.78 - 2026-10-21 - an overshoot flags, the client decides the song
 
 1. QC DURATION OVERSHOOT = FLAG, NOT STOP (master_length, song_dispatch,
