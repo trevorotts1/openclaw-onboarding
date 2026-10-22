@@ -576,9 +576,28 @@ PLAYWRIGHT_SEED_JS = (
     # atob throws InvalidCharacterError -> auth/get returns user_not_logged_in
     # despite a successful mint. NEVER encodeURIComponent a cookie value here.
     "  document.cookie = ck.a_name + '=' + btoa(JSON.stringify(aObj)) + attrs;"
+    # D5 — SURVIVAL CONTRACT. The SPA's boot unconditionally deletes these six
+    # cookie names (30 writes: every name x domain=app.gohighlevel.com /
+    # domain=gohighlevel.com / bare) and then RE-AUTHENTICATES from what
+    # persisted. Two persisted artifacts decide whether it comes back logged in:
+    #   (1) cookie custom-firebase-token — the Firebase custom token. The SPA's
+    #       own setter takes it from the login/current response field `token`,
+    #       NOT from a field named `firebaseToken`. The seed's token_map names
+    #       the COOKIE `firebaseToken`, so a direct i[field] read misses it and
+    #       the cookie is never written — the boot then has nothing to sign in
+    #       with and every other seeded cookie stays deleted.
+    #   (2) localStorage loginDate — written by the SPA after a real auth and
+    #       read on boot to decide whether the persisted login is usable.
+    # Measured 2x2 on fresh profiles: seed alone -> wiped; +token -> wiped;
+    # +loginDate -> wiped; +both -> auth/get ok and the location route survives
+    # a reload AND a fresh navigation. Missing either one is the D5 failure.
+    "  const RESPONSE_ALIAS = { firebaseToken: 'token' };"
     "  for (const [field, name] of Object.entries(ck.token_map)) {"
-    "    if (i[field]) document.cookie = name + '=' + i[field] + attrs;"
+    "    const val = i[field] || i[RESPONSE_ALIAS[field]] || '';"
+    "    if (val) document.cookie = name + '=' + val + attrs;"
     "  }"
+    "  try { localStorage.setItem('loginDate', new Date().toISOString()); }"
+    "  catch (e) {}"
     "  const lm = (location.pathname || '').match(/\\/location\\/([A-Za-z0-9_-]+)/);"
     "  return { userId: i.userId, companyId: i.companyId,"
     "           locationId: lm ? lm[1] : '' };"
@@ -595,7 +614,15 @@ def _resolve_page(context):
     navigate THIS page object (the one ``bridge_seed_into_context`` returns),
     never a fresh ``context.new_page()`` — a second page is a different origin
     store partition and its auth/get throws SecurityError / user_not_logged_in
-    even though the mint succeeded."""
+    even though the mint succeeded.
+
+    CALLER-ORDER PRECONDITION (B4/D5): the page must ALREADY be on the GHL app
+    origin (https://app.gohighlevel.com) before the bridge runs. A fresh owned
+    context starts on about:blank, an opaque origin where IndexedDB open throws
+    SecurityError, document.cookie is unusable, and localStorage is unavailable —
+    the seed then fails or silently lands nowhere. ``bridge_seed_into_context``
+    ENFORCES this (``_require_ghl_origin``) and refuses with a precondition error
+    naming the fix; it never navigates on the caller's behalf."""
     try:
         pages = getattr(context, "pages", None) or []
         if pages:
@@ -605,6 +632,53 @@ def _resolve_page(context):
         raise AuthBridgeError(
             "REFUSE (P4): no usable page in the owned context for seeding."
         ) from exc
+
+
+GHL_APP_ORIGIN = "https://app.gohighlevel.com"
+
+# about:blank and other opaque origins — a page here has no origin store to seed.
+_OPAQUE_ORIGIN_PREFIXES = ("about:", "data:", "blob:", "")
+
+
+def _page_url(page):
+    """The page's own URL, or None when the object exposes no ``url`` at all.
+
+    None means a DI double (a fake page in tests), not a real Playwright page:
+    every real page carries ``.url``. ``_require_ghl_origin`` skips the check
+    for those doubles so the bridge stays unit-testable without a browser."""
+    if not hasattr(page, "url"):
+        return None
+    try:
+        return str(getattr(page, "url", "") or "")
+    except Exception:  # noqa: BLE001 - a closed page is a precondition failure
+        return ""
+
+
+def _require_ghl_origin(page) -> None:
+    """B4 — REFUSE to seed a page that is not on the GHL app origin.
+
+    Reads the page's own URL (no navigation, no network): a page on about:blank
+    or any other origin cannot hold the seed, and seeding it is exactly the
+    failure this guard exists to stop. The error is a PRECONDITION error: it
+    tells the caller to navigate first, and it never mutates the page."""
+    url = _page_url(page)
+    if url is None:
+        return  # DI double with no url attribute — not a real page
+    if url.startswith(GHL_APP_ORIGIN):
+        return
+    if url.startswith(_OPAQUE_ORIGIN_PREFIXES) or not url:
+        raise AuthBridgeError(
+            "REFUSE (P4 precondition): the bridge page is on an opaque origin "
+            f"({url or 'no url'}) — IndexedDB and cookies cannot be seeded "
+            "there. Navigate the owned page to "
+            f"{GHL_APP_ORIGIN}/ FIRST, then call the bridge. The bridge never "
+            "navigates for the caller."
+        )
+    raise AuthBridgeError(
+        "REFUSE (P4 precondition): the bridge page is on the wrong origin "
+        f"({url.split('?')[0][:80]}), not {GHL_APP_ORIGIN}. The seed must land "
+        "on the GHL app origin — navigate the owned page there FIRST."
+    )
 
 
 class BridgeReceipt(dict):
@@ -654,6 +728,12 @@ def bridge_seed_into_context(context, seed, *,
         pass
 
     page = _resolve_page(context)
+    # B4 — PRECONDITION, enforced before any seed work: the bridge page must
+    # already be on the GHL app origin. A fresh owned context sits on
+    # about:blank, where IndexedDB/cookies/localStorage are all unusable, and
+    # seeding there fails with an opaque SecurityError. Refusing here names the
+    # one-line fix (navigate first) instead of surfacing that opaque error.
+    _require_ghl_origin(page)
     try:
         if identity_fetcher is not None:
             raw_identity = identity_fetcher(context)
@@ -708,11 +788,12 @@ def mint_and_bridge(context, session, out, *,
     ``reseed_count``."""
     import browser_manager as _bm  # same-dir module; lazy (import-only coupling)
 
+    env_arg = env  # ponytail: keep None distinct — _resolve_refresh(None) searches canonical stores
     env = env if env is not None else os.environ
     expected_location_id = (expected_location_id if expected_location_id is not None
                             else resolve_location_id(env)[0] or None)
     pit_value, pit_source = resolve_location_pit(env)
-    resolution = _resolve_refresh(env)
+    resolution = _resolve_refresh(env_arg)
     assert_credentials_not_substituted(
         resolution.source, pit_source,
         refresh_value=resolution.value, pit_value=pit_value)
