@@ -83,12 +83,15 @@ LOUD CODES (loud_failure.py, printed to stderr AND carried in the envelope)
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -231,9 +234,31 @@ def _json(path):
 
 
 def _ro(db_path):
-    """Read-only connection. A run is NEVER mutated by this module."""
-    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
-    return sqlite3.connect(uri, uri=True, timeout=5)
+    """Read-only connection. A run is NEVER mutated by this module.
+
+    A WAL database whose -wal/-shm sidecars are gone cannot be opened
+    mode=ro (SQLITE_CANTOPEN), and connect() is lazy, so the failure only
+    shows on the first statement. Retry on a private temp copy instead.
+    """
+    path = Path(db_path).resolve()
+    try:
+        con = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=5)
+        con.execute("PRAGMA schema_version").fetchone()
+        return con
+    except sqlite3.Error:
+        try:
+            con.close()                       # noqa: F821
+        except Exception:                     # noqa: BLE001
+            pass
+    tmp = tempfile.mkdtemp(prefix="run-watch-")
+    atexit.register(shutil.rmtree, tmp, True)
+    for name in (path.name, path.name + "-wal", path.name + "-shm"):
+        src = path.with_name(name)
+        if src.is_file():
+            shutil.copy2(src, os.path.join(tmp, name))
+    con = sqlite3.connect(os.path.join(tmp, path.name), timeout=5)
+    con.execute("PRAGMA query_only=ON")
+    return con
 
 
 def _utc_iso(epoch):
@@ -497,6 +522,9 @@ def stall_check(state, row, now, decisions=()):
     if row is None:
         return False, ""
     stage, st = row["stage"], row["state"]
+    if st == "COMPLETE":
+        # A finished stage has nothing left to move.
+        return False, ""
     if st == "STALE":
         return True, ("the run marked %s stale: %s"
                       % (stage, row.get("reason") or "no reason recorded"))
@@ -863,7 +891,14 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
     stalled, stall_detail = stall_check(state, row, now, decisions)
     wait = None if stalled else legitimate_wait(row, decisions)
     activity_at, activity_source = watchdog_clock(state, row)
-    expired = elapsed_minutes >= int(max_hours * 60) and not complete
+    # The cap measures the STUDIO's own delay. A run parked on a client
+    # answer is not late: it is waiting, and the clock must not turn that
+    # into HEARTBEAT_EXPIRED (the client was being told the run ran out of
+    # time while the only missing thing was their own reply).
+    waiting_on_client = bool(wait) and str(
+        (wait or {}).get("kind", "")).startswith("client")
+    expired = (elapsed_minutes >= int(max_hours * 60)
+               and not complete and not waiting_on_client)
     if stalled:
         loud.append(_fail("HEARTBEAT_STALLED",
                           "%s/%s: %s" % (state["run_id"], row["stage"],

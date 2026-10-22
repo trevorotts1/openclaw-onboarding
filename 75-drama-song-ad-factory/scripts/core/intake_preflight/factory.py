@@ -98,6 +98,44 @@ def envelope(command, run_id, outcome, reason_code, next_action,
             or {"expected": None, "current": run_id}}
 
 
+def _ro_connect(db, timeout=5):
+    """Read-only connection that survives a WAL db whose -wal/-shm are gone.
+
+    The state store and the spend ledger are both WAL mode. With the sidecars
+    absent, opening the file ``mode=ro`` raises "unable to open database file"
+    and every caller reported the run as unreadable -- a healthy run looked
+    dead until a writer happened to recreate them. Retry on a private temp
+    copy; the run's own file is never written.
+    """
+    import atexit
+    import shutil
+    import tempfile
+
+    path = os.path.abspath(str(db))
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % path, uri=True,
+                              timeout=timeout)
+        # connect() is lazy: a WAL db with missing sidecars only fails when a
+        # statement touches the file. Force the real open here.
+        con.execute("PRAGMA schema_version").fetchone()
+        return con
+    except sqlite3.Error:
+        try:
+            con.close()                       # noqa: F821  (may be unbound)
+        except Exception:                     # noqa: BLE001
+            pass
+    tmp = tempfile.mkdtemp(prefix="factory-ro-")
+    atexit.register(shutil.rmtree, tmp, True)
+    base = os.path.basename(path)
+    for name in (base, base + "-wal", base + "-shm"):
+        src = os.path.join(os.path.dirname(path), name)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(tmp, name))
+    con = sqlite3.connect(os.path.join(tmp, base), timeout=timeout)
+    con.execute("PRAGMA query_only=ON")
+    return con
+
+
 def _load(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -1170,7 +1208,7 @@ def _remaining_ledger_balance(run_dir):
     # must be the run dir's own name (a run folder named for its run id).
     try:
         import sqlite3
-        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        con = _ro_connect(db, timeout=5)
         try:
             ids = [r[0] for r in con.execute("SELECT run_id FROM runs")]
         finally:
@@ -1922,7 +1960,7 @@ def continuation_enqueue(run_dir, event, run_id=None, stages=None,
         db = rd / "control" / "state.sqlite3"
         if db.exists():
             try:
-                con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=10)
+                con = _ro_connect(db, timeout=10)
                 try:
                     got = dict(con.execute(
                         "SELECT stage, state FROM stages WHERE run_id=?",
@@ -2055,7 +2093,7 @@ def cmd_next(a):
     # Read-only projection of the store: states already say what is eligible.
     try:
         import sqlite3
-        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=10)
+        con = _ro_connect(db, timeout=10)
         try:
             got = dict(con.execute(
                 "SELECT stage, state FROM stages ORDER BY rowid").fetchall())

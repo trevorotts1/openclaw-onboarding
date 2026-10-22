@@ -262,6 +262,51 @@ def _detail(rows_, lo, hi, w):
     return statistics.fmean(_laplacian(r) for r in band) if band else 0.0
 
 
+def _fill_signature(rows_, lo, hi):
+    """Evidence that a smooth band is a FILL, not smooth scenery.
+
+    A gaussian/edge fill is manufactured from pixels that already exist, so at
+    least one of these is mechanically true of it:
+      * rows repeat -- a stretched strip is copies of a few source rows, so a
+        long run of byte-identical consecutive rows appears;
+      * the band is a near-copy of the strip just below/above it;
+      * the band's bottom edge is a discontinuity -- the fill ends and the
+        real content begins with a step in row mean.
+    A dim ceiling, a shadowed wall or a night sky is smooth but has none of
+    these: its rows are all distinct, it does not match a neighbouring strip,
+    and its gradient is continuous across the band boundary. Returns
+    (True, reason) or (False, "smooth-but-real").
+    """
+    band = rows_[lo:hi]
+    if band:
+        hashes = [hash(bytes(r)) for r in band]
+        longest = run = 1
+        for a, b in zip(hashes, hashes[1:]):
+            run = run + 1 if a == b else 1
+            longest = max(longest, run)
+        if longest >= 3:
+            return True, "rows repeat (a run of %d identical rows)" % longest
+    if not band:
+        return False, "empty band"
+    # near-copy of the strip just below the band
+    below = rows_[hi:min(hi + len(band), len(rows_))]
+    if below:
+        band_means = [_mean(r) for r in band]
+        below_means = [_mean(r) for r in below]
+        diffs = [abs(a - b) for a, b in zip(band_means, below_means)]
+        if diffs and statistics.fmean(diffs) <= 1.0:
+            return True, "band is a near-copy of the strip below it"
+    # hard edge at the band boundary
+    if band and hi < len(rows_):
+        dy_in = abs(_mean(rows_[hi]) - _mean(rows_[hi - 1]))
+        typical = statistics.fmean(
+            [abs(_mean(rows_[y]) - _mean(rows_[y - 1]))
+             for y in range(lo + 1, hi)]) if hi - lo > 2 else 0.0
+        if typical and dy_in > max(3.0, 4.0 * typical):
+            return True, ("band ends in a step (%.1f vs typical %.2f grey)"
+                          % (dy_in, typical))
+    return False, "smooth but real: distinct rows, no copy, continuous edge"
+
 def _classify_band(rows_, lo, hi, h, w, stats):
     """Letterbox -> plain (legal) -> edge column -> strip -> gaussian.
 
@@ -308,6 +353,10 @@ def _classify_band(rows_, lo, hi, h, w, stats):
         return None        # a still, sharp band (a graphic): legal
     if (hi - lo) / float(h) < GAUSSIAN_MIN_PCT:
         return None        # a small smooth band: natural content, not a fill
+    fill_ev, fill_why = _fill_signature(rows_, lo, hi)
+    if not fill_ev:
+        stats["band_note"] = fill_why
+        return None        # smooth scenery, not a manufactured fill
     return violation(
         GAUSSIAN_FILL,
         "rows %d..%d of %d are a smooth backdrop "
