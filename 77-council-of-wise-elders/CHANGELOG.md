@@ -1,5 +1,17 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.44: Council: the convene brief is now built by one shared permitted-context builder across both doors, with private detail excluded and a hard size cap (W74-C)
+
+In plain English: before a council starts, the brief the elders read is now assembled by one shared builder that reads only the client's permitted memory files on whichever side the session runs — the OpenClaw door or the claude-nine door — and selects just the facts that bear on THIS decision. Private preferences stay in the private store, unknowns stay marked, pointer documents are followed at most one link deep, and the brief can never run past its word cap.
+
+- One module (`runtime/src/brief/permitted-brief.ts`), two source adapters (OpenClaw: memory.md, agents.md, soul.md, user.md; 999: CLAUDE.md, AGENTS.md, memory/MEMORY.md), identical brief shape regardless of door.
+- Permitted context only: the door's root files plus at most one hop of their pointer links; recursion never; a link can never escape the context root or touch a private path.
+- Private preferences stay in the private store: private sections and `private:` lines are stripped, `private/` paths and `*.private.md` are never read, and the brief carries only the opaque `private_preference_ref`.
+- Unknowns marked explicitly: unstated options or constraints and explicit "not yet known" markers land in `unknowns`, and items dropped by the cap are reported there too.
+- Bloat protection: `BRIEF_WORD_CAP` = 2000 words, hard; facts selected decision-relevant first, newest first inside a relevance class.
+- New runnable check `runtime/tests/brief-builder.test.ts` over fixture memory files: the decision-relevant fact is in the brief, the irrelevant private detail is out, the size cap holds, and unknowns are marked — proven on both doors.
+- Manifest and archive regenerated once with `scripts/build-bundles.mjs`; repository markers not rolled (code fix only).
+
 ## v1.0.43: Council: an existing council ingress rule keeps its own port (FIX W68)
 
 In plain English: the provisioner used to force every council rule back to port 8787. Now it never rewrites an existing rule — the box's own port is authoritative — and only creates a missing rule at the default 8787. A box whose Council serves on 8788 (a client webhook owns 8787 there) is left byte-identical from now on.
