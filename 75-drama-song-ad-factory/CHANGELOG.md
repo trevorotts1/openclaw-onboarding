@@ -4,6 +4,17 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.81 - 2026-10-22 - factory.py reads a WAL state db whose sidecars are gone
+
+1. RESILIENT READ-ONLY OPEN (`scripts/core/intake_preflight/factory.py`).
+   `factory.py next` opened `control/state.sqlite3` with a `mode=ro` URI. The
+   store is WAL mode, so with the `-wal`/`-shm` sidecars absent the open raised
+   "unable to open database file" and `next` answered `state-unreadable` for a
+   perfectly healthy run — the same defect v2.9.79 fixed in `run_watch.py`, in
+   the command every agent is told to run first. Both read-only opens now go
+   through `_ro_connect`, which retries on a private temp copy and never writes
+   the run. `test_factory_next.py`: 35 checks, 0 failures.
+
 ## v2.9.80 - 2026-10-22 - a delivered run is never "stalled"
 
 1. NO STALL ON A COMPLETE STAGE (`scripts/core/heartbeat/run_watch.py`).
