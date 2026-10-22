@@ -4,6 +4,42 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.88 - 2026-10-22 - batch 5: WAL reads, H3 CLI, ledger-minted identity
+
+1. WAL stores read behind a private copy (state_store, run_watch, factory, incl.
+   continuation_enqueue) -- a healthy run no longer reports "unable to open
+   database file" when the -wal/-shm sidecars cannot be attached.
+2. Heartbeat: a COMPLETE stage is never a stall; a run parked on a client answer
+   is not expired by the run cap.
+3. make_timings passes the take's own audio_path through; qc_no_blur only calls a
+   smooth band a fill when it carries a fill signature (repeated rows, a copy of
+   the strip below, or a hard step), so smooth scenery is not refused.
+4. Dispatch CLI: --state-store reaches the F14 lock, and --prompt-file drops
+   exactly one trailing newline so an H3 prompt receipt still matches. MiniMax H3
+   (minimax-h3/*) is on the allowlist, in the price menu, and has its own request
+   builder (make_h3_request.py). Runbook rows updated.
+5. Attempt identity is minted by the ledger: dispatch(attempt_id="") uses the
+   committed id for reserve, settle and the overlap receipt -- a retry after a
+   failed paid take no longer refuses DUPLICATE_ATTEMPT.
+6. `factory.py next` uses the same _song_hold as the music stage, so a recorded
+   operator-decision.json opens the acceptance hold in both places (measured
+   gates stay FAIL; a relabel-shaped refusal stays absolute).
+7. The continuity stage's own reconciler is wired into factory's registry, so a
+   run with proven continuity records can leave continuity-bible.
+8. Preflight: requirement/manifest/capability refusals now come AFTER the auth and
+   choice-card gates (the card answer is authoritative), and a derived KIE
+   credential requirement is hard-declared.
+9. W10 canary harnesses ship (clean-install, upgrade, multi-run, receipt mapping,
+   source vector) with the privacy scanner fixed: a scan root whose own name looks
+   like a skip directory is scanned, never silently empty.
+
+NOTE: v2.9.85 - v2.9.87 below shipped from the #2444 fold. Three of their constructs are
+superseded by v2.9.88 and are NOT in this tree: attempt identity minted by string suffix
+(`_next_attempt_id`), the second acceptance artifact `music/acceptance/qc-risk-acceptance.json`
+(`QC_ACCEPTED_RISK`), and the inline `_proven_continuity` reconciler. The ledger-minted
+identity, `operator-decision.json` + no-relabel semantics and `character_continuity.stage.register`
+replace them. Their other content stands.
+
 ## v2.9.87 - 2026-10-22 - smooth scenery is not a gaussian fill
 
 A real master was refused GAUSSIAN_FILL on a dim ceiling: the smooth run was

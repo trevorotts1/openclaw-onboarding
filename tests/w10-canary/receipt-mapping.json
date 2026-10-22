@@ -1,0 +1,76 @@
+{
+  "schema": "blackceo.skill75.receipt-mapping/v1",
+  "unit": "S75-W10-PREP",
+  "purpose": "Maps every Skill 75 acceptance row (A01-A12, weights frozen in spec section 15) and the three W10 canary classes to the harness command that produces its concrete evidence, and separates PREPARED (built + dry-checked now, SFR-007) from WAI TS-FOR-VECTOR (final execution + attestation after the accepted source vector is pinned).",
+  "prepared_status_legend": {
+    "PREPARED": "harness exists, is runnable in dry form, and was exercised against a fake vector; no acceptance point claimed",
+    "WAITS_FOR_VECTOR": "final execution/attestation requires the pinned source vector and (where named) an authorized live target + explicit GO; intentionally NOT claimed now",
+    "BLOCKED_NEEDS_AUTHORIZATION": "a genuine live/production authorization is missing; isolated precisely here, everything else still built"
+  },
+  "canaries": {
+    "clean_install": {
+      "harness": "tests/w10-canary/clean_install_canary.py",
+      "run_command": "python3 tests/w10-canary/clean_install_canary.py --vector tests/w10-canary/source-vector.json --dist both --out <evidence-dir>",
+      "dry_run_command": "python3 tests/w10-canary/clean_install_canary.py --vector tests/w10-canary/source-vector.json --dist both --dry-run --out /tmp/skill75-repair-SFR-007-canary-dry",
+      "produces": ["clean-install receipt JSON", "per-file manifest hashes for both distributions", "distribution parity rows", "helper-preflight rc", "loaded-source proof hooks"],
+      "prepared_status": "PREPARED",
+      "waits_for_vector": "real install against the pinned vector trees + loaded-process proof",
+      "acceptance_rows": ["A08", "A12", "A11"]
+    },
+    "upgrade": {
+      "harness": "tests/w10-canary/upgrade_canary.py",
+      "run_command": "python3 tests/w10-canary/upgrade_canary.py --vector tests/w10-canary/source-vector.json --dist both --out <evidence-dir>",
+      "dry_run_command": "python3 tests/w10-canary/upgrade_canary.py --vector tests/w10-canary/source-vector.json --dist both --dry-run --out /tmp/skill75-repair-SFR-007-canary-dry",
+      "produces": ["upgrade receipt JSON", "interrupted-run resume proof", "byte-identical preservation of settings/aliases/secrets/sessions/paid artifacts/approvals/kill switch", "scoped-restart loaded-process identity"],
+      "prepared_status": "PREPARED",
+      "waits_for_vector": "real upgrade from pinned prior revision -> pinned vector revision",
+      "acceptance_rows": ["A08", "A12", "A11"]
+    },
+    "multi_run": {
+      "harness": "tests/w10-canary/multi_run_canary.py",
+      "run_command": "python3 tests/w10-canary/multi_run_canary.py --vector tests/w10-canary/source-vector.json --tenants 2 --runs 2 --out <evidence-dir>",
+      "dry_run_command": "python3 tests/w10-canary/multi_run_canary.py --vector tests/w10-canary/source-vector.json --tenants 2 --runs 2 --dry-run --out /tmp/skill75-repair-SFR-007-canary-dry",
+      "produces": ["two-tenant isolation receipt", "fair multi-run supervision receipt", "state_store lease/claim single-writer proof", "spend_ledger attempt-ordinal + no-duplicate-paid proof"],
+      "prepared_status": "PREPARED",
+      "waits_for_vector": "final scenario matrix execution (S75-W10-U1 scope) + live channel/provider rows",
+      "acceptance_rows": ["A01", "A02", "A03", "A11"]
+    }
+  },
+  "read_only_checks": {
+    "vector_check": {
+      "harness": "tests/w10-canary/vector_check.py",
+      "run_command": "python3 tests/w10-canary/vector_check.py --vector tests/w10-canary/source-vector.json",
+      "prepared_status": "PREPARED",
+      "note": "exit 0 only when the vector is valid AND pinned; exit 3 = valid-but-not-pinned (expected right now); exit 1 = malformed. Gate for all real canaries."
+    },
+    "receipt_mapping_check": {
+      "harness": "tests/w10-canary/receipt_mapping_check.py",
+      "run_command": "python3 tests/w10-canary/receipt_mapping_check.py",
+      "prepared_status": "PREPARED",
+      "note": "verifies every A01-A12 row has a mapped harness + status, weights sum to 100, and no acceptance point is claimed as credited"
+    },
+    "privacy_scan": {
+      "harness": "tests/w10-canary/privacy_scan.py",
+      "run_command": "python3 tests/w10-canary/privacy_scan.py --root <shared-artifact-dir>",
+      "prepared_status": "PREPARED",
+      "note": "shared-source and release-artifact privacy scan (spec 15.3 / A12): no real incident name, private run/host/chat identity, access link, or person-conditioned repair branch in shared deliverables"
+    }
+  },
+  "acceptance_rows": {
+    "A01": {"weight": 8, "canaries": ["multi_run"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "W00 identity/admission/scheduler/restart proofs + multi-run supervision run at pinned revisions", "claims_now": "none"},
+    "A02": {"weight": 8, "canaries": ["multi_run"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "terminal-state non-delivery proofs (all-parked/all-failed/empty/mixed) at pinned revisions", "claims_now": "none"},
+    "A03": {"weight": 8, "canaries": ["multi_run"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "event-continuation + lease/attempt-ordinal proofs at pinned revisions", "claims_now": "none"},
+    "A04": {"weight": 8, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "script/lyrics/hook versioned-visibility proofs (S75-W10-U1 scenario matrix)", "claims_now": "none"},
+    "A05": {"weight": 7, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "character bible + versioned approve/revise proofs (S75-W10-U1)", "claims_now": "none"},
+    "A06": {"weight": 7, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "playable song + storyboard delivery/resume proofs (S75-W10-U1)", "claims_now": "none"},
+    "A07": {"weight": 8, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "opening sync + measurement + 62s + duration proofs (S75-W10-U1)", "claims_now": "none"},
+    "A08": {"weight": 8, "canaries": ["clean_install", "upgrade"], "prepared_status": "PREPARED", "waits_for": "clean-install + upgrade canary execution at pinned revisions + loaded-process proof on both distributions", "claims_now": "none"},
+    "A09": {"weight": 8, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "factory lifecycle + adapter/outbox + completion-guard proofs (S75-W10-U1)", "claims_now": "none"},
+    "A10": {"weight": 6, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "graphify source-vector + semantic-sibling + unified-promotion proofs (SFR-006 / S75-W09)", "claims_now": "none"},
+    "A11": {"weight": 14, "canaries": ["clean_install", "upgrade", "multi_run"], "prepared_status": "BLOCKED_NEEDS_AUTHORIZATION", "waits_for": "anonymous end-to-end canaries incl. authorized live channel + provider run under the existing authorization/spending ceiling; harnesses ready, live execution not authorized in this window", "claims_now": "none", "blocker": "authorized live channel/provider acceptance target and spending ceiling are outside this unit's write surface (scratch isolation; no production/client writes, no paid jobs). Recorded as a named blocked acceptance item; everything else prepared."},
+    "A12": {"weight": 10, "canaries": ["clean_install", "upgrade"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "release/version/pin alignment + canary receipts + loaded-source proof + queue cleanup + privacy scan on shared artifacts", "claims_now": "none"}
+  },
+  "weights_total": 100,
+  "accepted_points_claimed_now": 0,
+  "boundary": "SFR-007 PREPARATION ONLY. This mapping records preparedness and precise blockers. It claims NO acceptance point, certifies NOTHING against a moving branch, and invents NO authorization. Final canary execution and acceptance attestation wait for the pinned source vector (and, where named, an explicit live-execution GO)."
+}
