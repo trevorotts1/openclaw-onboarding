@@ -59,9 +59,11 @@ PROBE_FILE = "scripts/core/state_store.py"
 #: a file the upgrade does not touch — the "provably identical" positive control
 STABLE_FILE = "INSTRUCTIONS.md"
 
-#: sentinel paths (relative to sandbox home/oc) that must survive byte-identical
+#: sentinel paths (relative to sandbox home/oc) that must survive byte-identical.
+#: settings.json is deliberately ABSENT: update-skills.sh rewrites it to un-wire
+#: ceo-intent-gate.sh from PreToolUse, so its bytes legitimately change. Its user
+#: content is asserted semantically below instead.
 SENTINELS = [
-    ("home/.claude/settings.json", '{"sentinel":"settings","tuned":true}'),
     ("home/.claude/model-aliases.json", '{"sentinel":"aliases"}'),
     ("oc/secrets/.env", "SENTINEL_SECRET=do-not-touch\n"),
     ("oc/sessions/active.json", '{"sentinel":"sessions"}'),
@@ -71,11 +73,15 @@ SENTINELS = [
     ("skills/46-kie-callback-relay/SKILL.md", "sentinel: other skill preserved\n"),
 ]
 
-#: --dist -> installer mode. `discover_skills_dir` in update-skills.sh resolves
-#: OC_SKILLS_DIR first, so the canary pins a distinct root per dist there.
+#: files the installer may rewrite: the user's own content must still be there
+SEMANTIC_SENTINELS = [("home/.claude/settings.json", "sentinel", "settings")]
+
+#: --dist -> installer mode. The installer resolves its skills root from
+#: $OC_CONFIG/skills (OC_SKILLS_DIR is NOT honoured in practice), so each dist
+#: gets its own OC_CONFIG and therefore its own install root.
 DISTS = {
-    "onboarding": {"root": "install-onboarding", "args": ["--onboarding-only"]},
-    "999": {"root": "install-999", "args": []},
+    "onboarding": {"cfg": "cfg-onboarding", "args": ["--onboarding-only"]},
+    "999": {"cfg": "cfg-999", "args": []},
 }
 
 
@@ -225,7 +231,19 @@ def allow_network(sb):
 
 
 def installed_root(sb, dist):
-    return Path(sb.env["OC_SKILLS_DIR"]) / SKILL
+    """Where update-skills.sh actually writes.
+
+    Measured, not assumed: `discover_skills_dir()` resolves
+    ${OC_SKILLS_DIR:-${OPENCLAW_ROOT:-${OC_CONFIG:-$HOME/.openclaw}}/skills}, and a
+    sandbox OC_SKILLS_DIR was empirically ignored — the installer wrote to
+    $OC_CONFIG/skills. Reading any other path yields a phantom "nothing installed".
+    """
+    return Path(sb.env["OC_CONFIG"]) / "skills" / SKILL
+
+
+def locate_skill_tree(sb):
+    """Every SKILL tree the installer could have left behind, for honest errors."""
+    return sorted(str(p) for p in Path(sb.root).rglob(SKILL) if p.is_dir())
 
 
 def run_installer(sb, src_root, dist):
@@ -286,7 +304,30 @@ def seed_sentinels(sb):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(body, encoding="utf-8")
         out[rel] = cc.sha256_file(p)
+    # the installer MAY rewrite this one; seed the user content it must keep
+    p = root / SEMANTIC_SENTINELS[0][0]
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text('{"sentinel":"settings","tuned":true}', encoding="utf-8")
     return out
+
+
+def assert_semantics(sb):
+    """A rewritten settings.json must still carry the user's own content."""
+    root = Path(sb.env["HOME"]).parent
+    for rel, key, want in SEMANTIC_SENTINELS:
+        p = root / rel
+        if not p.is_file():
+            raise Refusal("PRESERVATION_MISSING", "%s removed by the upgrade" % rel)
+        try:
+            doc = json.loads(p.read_text(encoding="utf-8"))
+        except ValueError as e:
+            raise Refusal("PRESERVATION_MISSING",
+                          "%s is no longer valid JSON after the upgrade: %s" % (rel, e))
+        if not isinstance(doc, dict) or doc.get(key) != want:
+            raise Refusal("PRESERVATION_MISSING",
+                          "%s lost user key %r=%r (now %r)" % (
+                              rel, key, want, doc.get(key) if isinstance(doc, dict) else doc))
+    return True
 
 
 def digest_sentinels(sb):
@@ -432,7 +473,8 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
 
     with cc.Sandbox() as sb:
         try:
-            sb.env["OC_SKILLS_DIR"] = str(sb.root / DISTS[dist]["root"])
+            sb.env["OC_CONFIG"] = str(sb.root / DISTS[dist]["cfg"])
+            sb.env.pop("OC_SKILLS_DIR", None)
             sb.env["OPENCLAW_UPDATE_SKIP_SELF_SYNC"] = "1"
             before_sentinels = seed_sentinels(sb)
 
@@ -467,10 +509,12 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
             inst = installed_root(sb, dist)
             before_manifest = tree_manifest(inst)
             if not before_manifest:
+                found = locate_skill_tree(sb)
                 raise Refusal("MANIFEST_MISSING",
                               "old revision installed nothing at %s (installer "
-                              "rc=%s: %s)" % (inst, r_old["rc"],
-                                              installer_tail(r_old)))
+                              "rc=%s: %s); trees found elsewhere: %s" % (
+                                  inst, r_old["rc"], installer_tail(r_old),
+                                  found or "none"))
             check("real:old revision installed by real installer",
                   True, "%d files under %s" % (len(before_manifest), inst))
 
@@ -543,6 +587,10 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
                 assert_preservation(before_sentinels, after_sentinels)
                 check("real:all unrelated sentinels byte-identical across upgrade",
                       True, "%d sentinels compared" % len(SENTINELS))
+                assert_semantics(sb)
+                check("real:rewritten settings.json kept the user's content",
+                      True, "%s still carries its user key"
+                      % SEMANTIC_SENTINELS[0][0])
 
                 # --- 4. process survival, by pid AND start time ----------
                 alive = proc.poll() is None
@@ -611,7 +659,7 @@ def run_both(out, vector_path, repo, old_rev, new_rev, allow_net=False):
     pa = Path(out) / "upgrade-manifest.onboarding.json"
     pb = Path(out) / "upgrade-manifest.999.json"
     if rc_a or rc_b:
-        return 1 if (rc_a or rc_b) else 0
+        return rc_a or rc_b          # propagate 3 (unpinned) rather than collapsing
     RESULTS.clear()
     a = json.loads(pa.read_text(encoding="utf-8"))
     b = json.loads(pb.read_text(encoding="utf-8"))
