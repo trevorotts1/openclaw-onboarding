@@ -12,16 +12,29 @@ fixtures in a temp dir):
      its labelled versions (and NOT surfaced once pick.json exists), and a cost
      fork still on the safe default "wait" (a later "proceed" for the same fork
      supersedes it);
-  3. a stall is detected when the current stage has made no progress for 30
-     minutes, and when its lease has run out -- with HEARTBEAT_STALLED named and
-     the exact factory.py recovery command PRINTED (never run);
-  4. the 3-hour cap is anchored on the run's own start: expired, the wrap-up
-     message, HEARTBEAT_EXPIRED named, --interval-check exits 10; a COMPLETE
-     run says so and also stops the loop without an expiry failure;
+  3. a stall is detected when the current stage has made no durable event for
+     30 minutes, and when its lease has run out -- with HEARTBEAT_STALLED named
+     and the exact factory.py recovery command PRINTED (never run) when the
+     actuator is not separately authorized;
+  4. the supervision cap is anchored on the run's own start: expired and
+     HEARTBEAT_EXPIRED named, but supervision never self-terminates --
+     --interval-check keeps looping (exit 0) on an unfinished run however long
+     it runs; only a verified COMPLETE run stops the loop (exit 10);
   5. an unreadable state store is loud (HEARTBEAT_STATE_UNREADABLE), never a
      silent pass, and exits 1;
-  6. the watcher never mutates the run: the state store, spend ledger,
-     fork-decisions.json and run-state.json are byte-identical afterwards.
+  6. the observer never mutates the run: the state store, spend ledger,
+     fork-decisions.json and run-state.json are byte-identical afterwards;
+  7. a four-hour unfinished run stays supervised: evidence-based recovery runs
+     under separate authorization (or a named legitimate wait is reported),
+     never false success, never self-termination;
+  8. the recovery actuator is fenced: monotonic generation claims with
+     revocation-before-replacement, stale tokens rejected AND quarantined at
+     the write, evidence, state and provider-dispatch boundaries, execution
+     only through the supported native control (factory.py next), no provider
+     dispatch, and creative/PASS-record actions refused (roles stay distinct);
+  9. watchdog clocks advance only from durable events: copied/touched decision
+     files and file mtime never reset them, and a durable event outranks a
+     fresh state stamp.
 
 Run: python3 scripts/core/heartbeat/test_run_watch.py
 """
@@ -120,6 +133,31 @@ def tree_digest(run):
             continue
         out[str(p.relative_to(run))] = hashlib.sha256(p.read_bytes()).hexdigest()
     return out
+
+
+def tree_digest_skip(run, skip_prefix):
+    """tree_digest, minus paths under skip_prefix (the actuator's own ledger)."""
+    return {k: v for k, v in tree_digest(run).items()
+            if not k.startswith(skip_prefix)}
+
+
+def add_event(run, run_id, stage, at, kind="progress"):
+    """A durable event row -- the ONLY thing that advances a watchdog clock."""
+    con = sqlite3.connect(str(run / "control" / "state.sqlite3"))
+    con.execute("INSERT INTO events(id, run_id, stage, kind, detail, at)"
+                " VALUES(?,?,?,?,?,?)",
+                (hashlib.sha256(("%s|%s|%g|%s" % (run_id, stage, at, kind))
+                                .encode()).hexdigest(),
+                 run_id, stage, kind, "", float(at)))
+    con.commit()
+    con.close()
+
+
+def write_auth(run, by="operator", scope=("resume",), run_id=None):
+    """The SEPARATE written authorization the actuator needs (never self-made)."""
+    write_json(run / "control" / "recovery-authorization.json",
+               {"authorized": True, "scope": list(scope), "by": by,
+                "run_id": run_id or run.name})
 
 
 def main():
@@ -250,7 +288,7 @@ def main():
           env["stalled"] is True and "upstream brief changed" in env["stall_detail"],
           env["stall_detail"])
 
-    # 4. the 3-hour cap -------------------------------------------------------
+    # 4. the supervision cap escalates, it never stops supervision ----------
     run = make_run(tmp, "run4", base_ago_s=185 * 60)
     for s in ("research", "creative-strategy", "script-lyrics", "music",
               "continuity-bible", "storyboard", "image-keyframes",
@@ -262,13 +300,15 @@ def main():
     check("4: 185 minutes is past the 3-hour cap", env["expired"] is True)
     check("4: HEARTBEAT_EXPIRED is named", "HEARTBEAT_EXPIRED" in env["loud"],
           env["loud"])
-    check("4: the client gets the final wrap-up",
-          "Time's up for this round" in env["message_for_client"]
-          and "10 of 12 steps are finished" in env["message_for_client"],
+    check("4: the client gets honest progress, no stopping story",
+          "10 of 12 steps are finished" in env["message_for_client"]
+          and "Time's up for this round" not in env["message_for_client"]
+          and "staying with it" in env["message_for_client"],
           env["message_for_client"])
-    check("4: the loop is told to stop", env["loop_should_stop"] is True)
+    check("4: the cap never stops supervision",
+          env["loop_should_stop"] is False and env["supervising"] is True)
     rc = RW.main(["--run-dir", str(run), "--interval-check", "--now", str(NOW)])
-    check("4: --interval-check exits 10 on expiry", rc == 10, rc)
+    check("4: --interval-check keeps looping past the cap", rc == 0, rc)
     rc = RW.main(["--run-dir", str(run), "--now", str(NOW)])
     check("4: a plain read still exits 0", rc == 0, rc)
 
@@ -283,7 +323,21 @@ def main():
     check("4b: the client is told it is finished",
           "Your video is finished" in env["message_for_client"],
           env["message_for_client"])
-    check("4b: the loop stops on COMPLETE too", env["loop_should_stop"] is True)
+    check("4b: only verified completion stops the loop",
+          env["loop_should_stop"] is True and env["supervising"] is False)
+    rc = RW.main(["--run-dir", str(run), "--interval-check", "--now", str(NOW)])
+    check("4b: --interval-check exits 10 on verified completion", rc == 10, rc)
+
+    # 4c. an explicit user cancellation is the one other legitimate stop ----
+    run = make_run(tmp, "run4c", base_ago_s=240 * 60)
+    set_stage(run, "run4c", "research", "RUNNING", age_s=40 * 60, lease_in=300,
+              owner="worker-4c")
+    write_json(run / "control" / "run-state.json", {"canceled": True})
+    env = RW.build(run, now=NOW)
+    check("4c: a recorded user cancellation stops the loop, honestly",
+          env["canceled"] is True and env["loop_should_stop"] is True
+          and "You asked us to stop this run" in env["message_for_client"],
+          env["message_for_client"])
 
     # 5. an unreadable run is loud, never a silent pass ----------------------
     empty = Path(tmp) / "run5"
@@ -314,6 +368,170 @@ def main():
     check("6: state, ledger, forks and run-state unchanged",
           snap == tree_digest(run6),
           sorted(set(snap) ^ set(tree_digest(run6))))
+
+    # 7. a four-hour unfinished run keeps supervised -------------------------
+    calls = []
+
+    def runner(argv):
+        calls.append(list(argv))
+        return {"returncode": 0, "stdout_sha256": "0" * 64, "stderr_tail": ""}
+
+    run = make_run(tmp, "run7", base_ago_s=240 * 60)
+    for s in ("research", "creative-strategy", "script-lyrics"):
+        set_stage(run, "run7", s, "COMPLETE", age_s=240 * 60)
+    set_stage(run, "run7", "music", "RUNNING", age_s=45 * 60, lease_in=300,
+              owner="worker-7")
+    write_auth(run)
+    before = tree_digest_skip(run, "control/recovery/")
+    env = RW.build(run, now=NOW, recovery_act=True, runner=runner)
+    check("7: 240 minutes is past the cap", env["expired"] is True)
+    check("7: supervision never self-terminates",
+          env["loop_should_stop"] is False and env["supervising"] is True, str(env))
+    check("7: the stalled run got evidence-based recovery",
+          bool(env["recovery"]) and env["recovery"]["acted"] is True
+          and "factory.py" in env["recovery"]["control"]["argv"][1],
+          str(env.get("recovery")))
+    check("7: recovery executed the supported native control exactly once",
+          len(calls) == 1 and calls[0][2] == "next"
+          and calls[0][4] == str(run), calls)
+    check("7: the recovery claim carries a generation and token",
+          env["recovery"]["claim"]["generation"] >= 1
+          and len(env["recovery"]["claim"]["token"]) == 32,
+          str(env["recovery"].get("claim")))
+    check("7: no false success on an unfinished run",
+          "Your video is finished" not in env["message_for_client"]
+          and env["stage_state"] != "COMPLETE", env["message_for_client"])
+    check("7: the run's own files are untouched outside the fence ledger",
+          before == tree_digest_skip(run, "control/recovery/"),
+          sorted(set(before) ^ set(tree_digest_skip(run, "control/recovery/"))))
+    rc = RW.main(["--run-dir", str(run), "--interval-check", "--now", str(NOW)])
+    check("7: --interval-check keeps looping at four hours", rc == 0, rc)
+
+    # 7b. four hours parked on the client is a NAMED legitimate wait --------
+    run = make_run(tmp, "run7b", base_ago_s=240 * 60)
+    set_stage(run, "run7b", "research", "COMPLETE", age_s=240 * 60)
+    set_stage(run, "run7b", "creative-strategy", "WAITING_APPROVAL",
+              age_s=200 * 60)
+    env = RW.build(run, now=NOW)
+    check("7b: a client wait is named, not a stall",
+          env["stalled"] is False and bool(env["wait"])
+          and env["wait"]["kind"] == "client-approval", str(env.get("wait")))
+    check("7b: four hours waiting on the client keeps supervision alive",
+          env["loop_should_stop"] is False and env["supervising"] is True)
+    check("7b: never false success while waiting",
+          "Your video is finished" not in env["message_for_client"],
+          env["message_for_client"])
+
+    # 8. the recovery actuator is fenced ------------------------------------
+    run = make_run(tmp, "run8")
+    write_auth(run)
+    fence = RW.RecoveryFence(run / "control" / "recovery" / "fence.json")
+    c1 = fence.claim("first worker", now=NOW - 30)
+    c2 = fence.claim("replacement worker", now=NOW - 20)
+    c3 = fence.claim("second replacement", now=NOW - 10)
+    check("8: claim generations are monotonic",
+          (c1["generation"], c2["generation"], c3["generation"]) == (1, 2, 3),
+          (c1["generation"], c2["generation"], c3["generation"]))
+    doc = json.loads((run / "control" / "recovery" / "fence.json").read_text())
+    first = doc["claims"][0]
+    check("8: the old token is revoked before the replacement may write",
+          first["status"] == "revoked"
+          and first["revoked_for_generation"] == c2["generation"]
+          and first["revoked_at"] <= doc["claims"][1]["claimed_at"], first)
+    stale = [fence.guard(b, c1["token"], now=NOW) for b in RW.FENCE_BOUNDARIES]
+    check("8: a stale token is rejected at every fenced boundary",
+          len(stale) == 4 and all(not ok for ok, _ in stale), stale)
+    doc = json.loads((run / "control" / "recovery" / "fence.json").read_text())
+    check("8: stale results are quarantined at all four boundaries",
+          sorted(q["boundary"] for q in doc["quarantine"]
+                 if q["token"] == c1["token"]) == sorted(RW.FENCE_BOUNDARIES),
+          doc["quarantine"])
+    ok, detail = fence.guard("state", c3["token"], now=NOW)
+    check("8: the current token passes its boundary", ok is True, detail)
+
+    calls = []
+
+    def runner(argv):
+        calls.append(list(argv))
+        return {"returncode": 0, "stdout_sha256": "0" * 64, "stderr_tail": ""}
+
+    rec = RW.actuate_recovery(run, reason="stalled", action="resume", now=NOW,
+                              runner=runner)
+    check("8: the actuator executes the supported native control",
+          rec["acted"] is True and len(calls) == 1
+          and "factory.py" in calls[0][1] and calls[0][2] == "next"
+          and calls[0][4] == str(run), calls)
+    check("8: one claim cleared every fenced boundary",
+          sorted(s["boundary"] for s in rec["steps"]) == sorted(RW.FENCE_BOUNDARIES)
+          and all(s["ok"] for s in rec["steps"]), rec["steps"])
+    check("8: provider dispatch is refused, never attempted",
+          rec["provider_dispatch"]["attempted"] is False
+          and rec["provider_dispatch"]["refused"]
+          == "RECOVERY_NO_PROVIDER_DISPATCH", rec["provider_dispatch"])
+    check("8: evidence records loaded source hashes",
+          set(rec.get("evidence", {}).get("loaded_source_hashes", {}))
+          == {"run_watch.py", "factory.py"}, rec.get("evidence"))
+    rec = RW.actuate_recovery(run, reason="x", action="write-pass", now=NOW,
+                              runner=runner)
+    check("8: manufacturing a PASS record is refused (reviewer is a real role)",
+          rec["acted"] is False
+          and rec["refused"]["code"] == "RECOVERY_ACTION_REFUSED", rec)
+    rec = RW.actuate_recovery(run, reason="x", action="author-creative", now=NOW,
+                              runner=runner)
+    check("8: authoring creative output is refused (builder is a real role)",
+          rec["acted"] is False
+          and rec["refused"]["code"] == "RECOVERY_ACTION_REFUSED", rec)
+    check("8: refused actions ran no control", len(calls) == 1, calls)
+
+    run2 = make_run(tmp, "run8b")
+    calls2 = []
+
+    def runner2(argv):
+        calls2.append(list(argv))
+        return {"returncode": 0, "stdout_sha256": "0" * 64, "stderr_tail": ""}
+
+    rec = RW.actuate_recovery(run2, reason="stall", now=NOW, runner=runner2)
+    check("8: without the separate written authorization the actuator refuses",
+          rec["acted"] is False
+          and rec["refused"]["code"] == "RECOVERY_NOT_AUTHORIZED", rec)
+    check("8: nothing ran and no fence was created when unauthorized",
+          calls2 == [] and not (run2 / "control" / "recovery").exists(),
+          (calls2, sorted(p.name for p in (run2 / "control").iterdir())))
+
+    # 9. watchdog clocks advance only from durable events -------------------
+    run = make_run(tmp, "run9")
+    set_stage(run, "run9", "research", "RUNNING", age_s=45 * 60, lease_in=3600,
+              owner="worker-9")
+    env = RW.build(run, now=NOW)
+    check("9: 45 minutes of work silence is a stall", env["stalled"] is True,
+          str(env["stall_detail"]))
+    check("9: the activity clock names its source",
+          env["activity"]["source"] in ("state-stamp-anchor", "durable-event"),
+          str(env["activity"]))
+    # copied/touched decision files are not activity: fresh mtimes change nothing
+    write_json(run / "control" / "run-state.json", {"outstanding": []})
+    write_json(run / "control" / "fork-decisions.json",
+               {"forks": [{"fork_id": "f", "decision": "proceed"}]})
+    write_json(run / "control" / "copied-decision.json", {"note": "a fresh copy"})
+    for p in ("run-state.json", "fork-decisions.json", "copied-decision.json"):
+        os.utime(str(run / "control" / p), (NOW, NOW))
+    env = RW.build(run, now=NOW)
+    check("9: copied/touched decision files never reset the watchdog clock",
+          env["stalled"] is True, str(env["stall_detail"]))
+    add_event(run, "run9", "research", NOW - 5 * 60, kind="worker-heartbeat")
+    env = RW.build(run, now=NOW)
+    check("9: a durable event advances the clock and clears the stall",
+          env["stalled"] is False
+          and env["activity"]["source"] == "durable-event", str(env))
+    run = make_run(tmp, "run9b")
+    set_stage(run, "run9b", "research", "RUNNING", age_s=0, lease_in=3600,
+              owner="worker-9b")
+    add_event(run, "run9b", "research", NOW - 2 * RW.STALL_AFTER_S,
+              kind="progress")
+    env = RW.build(run, now=NOW)
+    check("9b: only durable events advance the clock (a fresh state stamp does not)",
+          env["stalled"] is True and env["activity"]["source"] == "durable-event",
+          str(env))
 
     print()
     if FS:

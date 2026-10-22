@@ -208,6 +208,9 @@ def test_confirmed_recap_writes_answers_yes_pauses():
     run = make_run()
     confirm_card(run, "1")
     rows = json.load(open(os.path.join(run, "card-answers.json")))
+    if isinstance(rows, dict):                 # the versioned envelope
+        assert rows.get("schema_version") == 2
+        rows = rows.get("answers")
     assert [r["id"] for r in rows] == [q["id"] for q in IC.QUESTIONS]
     env = next_(run)
     assert env["outcome"] == "waiting" and env["reason_code"] == "SCRIPT_AWAITING_APPROVAL", env

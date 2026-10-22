@@ -1,41 +1,110 @@
 {
- "_doc": "AI MODELS question (FU-AI-MODELS-QUESTION). Models the build lane and the check lane can name. Route: openrouter (recommended) | ollama (allowed) | deepseek-direct | router-alias (a 9Router chain the box already has). Slugs match shared-utils/model-capabilities.json verified_slugs. This is a preference record only: the session runs on the model the user configured (SKILL.md, the user's choice wins).",
+ "_doc": "AI MODELS catalog and live role binding (FU-AI-MODELS-QUESTION, repair D01). Models the build lane and the check lane can name. Route: openrouter (recommended) | ollama (allowed) | deepseek-direct | router-alias (a 9Router chain the box already has). Slugs match shared-utils/model-capabilities.json verified_slugs. id is the canonical stored identifier and the installed router/claude-nine route; request_id is the direct OpenRouter request id without the provider prefix; openclaw_id is OpenClaw's verified openrouter/ prefix identifier (spec 7.1). THIS CATALOG IS LIVE BINDING, NOT A PREFERENCE RECORD: ai_models.bind_roles() stores the run's builder/QC role bindings in the run configuration, and every stage dispatch consumes them through ai_models.admit_dispatch() and ai_models.record_attempt(), which verify requested model, resolved provider model, actual response model, reasoning request and route and record correlated request/router/response evidence. A label or alias string is never proof of the model actually called. Claude Sonnet is excluded from Skill 75 selectable, recommended and fallback routes in both distributions (claude-nine/Claude Code and OpenClaw) and is refused at catalog, alias, cache and fallback paths with an actionable model-selection result; other verified builder/QC choices stay configurable. Reasoning is represented honestly: a model with reasoning but no effort selector gets no invented effort control. Entries carry capabilities (shared-utils families), verified modalities, a reasoning policy, an empty same-model-only fallback list and a price_class so selection is filtered by actual access, tool capabilities, modality needs, price policy and availability.",
+ "schema_version": "blackceo.skill75.ai-models/v2",
+ "excluded_families": ["sonnet"],
  "recommended": {
-  "build": "openrouter/z-ai/glm-5.3-flash",
-  "check": "sonnet-chain"
+  "build": "openrouter/xiaomi/mimo-v2.6-pro",
+  "check": "openrouter/z-ai/glm-5.3"
  },
+ "recommended_rationale": "MiMo 2.6 Pro builds and develops the work; GLM 5.3 checks and fixes it at high reasoning effort. The two roles stay different models so the checker is independent of the builder, and both routes are verified on this box's OpenRouter catalog.",
  "models": [
   {
+   "id": "openrouter/xiaomi/mimo-v2.6-pro",
+   "request_id": "xiaomi/mimo-v2.6-pro",
+   "openclaw_id": "openrouter/xiaomi/mimo-v2.6-pro",
+   "label": "MiMo 2.6 Pro (OpenRouter)",
+   "route": "openrouter",
+   "aliases": [
+    "mimo",
+    "mimo 2.6",
+    "mimo 2.6 pro",
+    "mimo pro",
+    "xiaomi mimo",
+    "xiaomi mimo 2.6 pro",
+    "mimo 2.6 pro openrouter"
+   ],
+   "capabilities": ["text", "reasoning", "tool_use", "structured_output", "streaming"],
+   "modalities": ["text", "vision", "audio_input"],
+   "modality_note": "the router catalog advertises vision/audio/video input; the serving route and host transport must still prove they accept the intended modality before any modality-specific judgment relies on it (spec 7.1)",
+   "reasoning": {
+    "supported": true,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "reasoning supported (thinkingFormat deepseek); the live catalog reports thinkingEffortSupported=false, so no effort control is ever sent or claimed"
+   },
+   "fallbacks": [],
+   "price_class": "api"
+  },
+  {
+   "id": "openrouter/z-ai/glm-5.3",
+   "request_id": "z-ai/glm-5.3",
+   "openclaw_id": "openrouter/z-ai/glm-5.3",
+   "label": "GLM 5.3 (OpenRouter)",
+   "route": "openrouter",
+   "aliases": [
+    "glm 5.3",
+    "glm 5.3 openrouter"
+   ],
+   "capabilities": ["text", "reasoning", "tool_use", "structured_output", "streaming"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": true,
+    "effort_selector": true,
+    "efforts": ["low", "high", "max"],
+    "default": "high",
+    "note": "thinkingEffortSupported=true on the live catalog; low/high/max are the provider's real effort choices"
+   },
+   "fallbacks": [],
+   "price_class": "api"
+  },
+  {
    "id": "openrouter/z-ai/glm-5.3-flash",
+   "request_id": "z-ai/glm-5.3-flash",
+   "openclaw_id": "openrouter/z-ai/glm-5.3-flash",
    "label": "GLM 5.3 Flash (OpenRouter)",
    "route": "openrouter",
    "aliases": [
     "glm",
     "glm 5.3 flash",
     "glm 5.3 flash openrouter"
-   ]
-  },
-  {
-   "id": "openrouter/z-ai/glm-5.3",
-   "label": "GLM 5.3 (OpenRouter)",
-   "route": "openrouter",
-   "aliases": [
-    "glm 5.3",
-    "glm 5.3 openrouter"
-   ]
+   ],
+   "capabilities": ["text", "reasoning", "tool_use", "structured_output", "streaming"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": true,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "reasoning supported; effort control not proven for this entry (proven only on GLM 5.3), so none is sent or claimed"
+   },
+   "fallbacks": [],
+   "price_class": "api"
   },
   {
    "id": "openrouter/deepseek/deepseek-v4-flash",
+   "request_id": "deepseek/deepseek-v4-flash",
+   "openclaw_id": "openrouter/deepseek/deepseek-v4-flash",
    "label": "DeepSeek V4 Flash (OpenRouter)",
    "route": "openrouter",
    "aliases": [
     "deepseek",
     "deepseek v4 flash",
     "deepseek openrouter"
-   ]
+   ],
+   "capabilities": ["text", "tool_use", "structured_output", "streaming"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": false,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "deepseek-flash family exposes no reasoning control"
+   },
+   "fallbacks": [],
+   "price_class": "api"
   },
   {
    "id": "ollama/deepseek-v4.1-flash",
+   "request_id": "deepseek-v4.1-flash",
+   "openclaw_id": "ollama/deepseek-v4.1-flash",
    "label": "DeepSeek V4.1 Flash (Ollama)",
    "route": "ollama",
    "aliases": [
@@ -43,84 +112,168 @@
     "ollama deepseek",
     "deepseek ollama",
     "deepseek on ollama"
-   ]
+   ],
+   "capabilities": ["text", "tool_use", "structured_output", "streaming"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": false,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "deepseek-flash family exposes no reasoning control"
+   },
+   "fallbacks": [],
+   "price_class": "local"
   },
   {
    "id": "ollama/minimax-m3",
+   "request_id": "minimax-m3",
+   "openclaw_id": "ollama/minimax-m3",
    "label": "MiniMax M3 (Ollama)",
    "route": "ollama",
    "aliases": [
     "minimax",
     "minimax m3",
     "minimax ollama"
-   ]
-  },
-  {
-   "id": "sonnet-chain",
-   "label": "Claude Sonnet",
-   "route": "router-alias",
-   "aliases": [
-    "sonnet",
-    "claude sonnet",
-    "sonnet chain"
-   ]
-  },
-  {
-   "id": "opus-chain",
-   "label": "Claude Opus",
-   "route": "router-alias",
-   "aliases": [
-    "opus",
-    "claude opus",
-    "opus chain"
-   ]
-  },
-  {
-   "id": "haiku-chain",
-   "label": "Claude Haiku",
-   "route": "router-alias",
-   "aliases": [
-    "haiku",
-    "claude haiku",
-    "haiku chain"
-   ]
-  },
-  {
-   "id": "fusion-chain",
-   "label": "Fusion",
-   "route": "router-alias",
-   "aliases": [
-    "fusion",
-    "fusion chain"
-   ]
+   ],
+   "capabilities": ["text", "reasoning", "tool_use", "structured_output", "streaming"],
+   "modalities": ["text", "vision"],
+   "reasoning": {
+    "supported": true,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "reasoning supported; no effort selector proven"
+   },
+   "fallbacks": [],
+   "price_class": "local"
   },
   {
    "id": "ollama/kimi-k2.6",
+   "request_id": "kimi-k2.6",
+   "openclaw_id": "ollama/kimi-k2.6",
    "label": "Kimi K2.6 (Ollama)",
    "route": "ollama",
    "aliases": [
     "kimi",
     "kimi k2.6",
     "kimi ollama"
-   ]
+   ],
+   "capabilities": ["text", "reasoning", "tool_use", "structured_output", "streaming"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": true,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "reasoning supported; no effort selector proven"
+   },
+   "fallbacks": [],
+   "price_class": "local"
   },
   {
    "id": "ollama/agnes",
+   "request_id": "agnes",
+   "openclaw_id": "ollama/agnes",
    "label": "Agnes (Ollama)",
    "route": "ollama",
    "aliases": [
     "agnes",
     "agnes ollama"
-   ]
+   ],
+   "capabilities": ["text", "tool_use"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": false,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "no family entry in shared-utils/model-capabilities.json; only text chat is claimed"
+   },
+   "fallbacks": [],
+   "price_class": "local"
   },
   {
    "id": "deepseek/deepseek-v4.1-flash",
+   "request_id": "deepseek-v4.1-flash",
+   "openclaw_id": "deepseek/deepseek-v4.1-flash",
    "label": "DeepSeek V4.1 Flash (DeepSeek direct)",
    "route": "deepseek-direct",
    "aliases": [
     "deepseek direct",
     "deepseek v4.1 flash direct"
-   ]
+   ],
+   "capabilities": ["text", "tool_use", "structured_output", "streaming"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": false,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "deepseek-flash family exposes no reasoning control"
+   },
+   "fallbacks": [],
+   "price_class": "api"
+  },
+  {
+   "id": "opus-chain",
+   "request_id": "opus-chain",
+   "openclaw_id": "opus-chain",
+   "label": "Claude Opus",
+   "route": "router-alias",
+   "aliases": [
+    "opus",
+    "claude opus",
+    "opus chain"
+   ],
+   "capabilities": ["text", "tool_use"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": false,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "router chain: the capability set depends on the chain's members and must be verified per run"
+   },
+   "fallbacks": [],
+   "price_class": "api"
+  },
+  {
+   "id": "haiku-chain",
+   "request_id": "haiku-chain",
+   "openclaw_id": "haiku-chain",
+   "label": "Claude Haiku",
+   "route": "router-alias",
+   "aliases": [
+    "haiku",
+    "claude haiku",
+    "haiku chain"
+   ],
+   "capabilities": ["text", "tool_use"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": false,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "router chain: the capability set depends on the chain's members and must be verified per run"
+   },
+   "fallbacks": [],
+   "price_class": "api"
+  },
+  {
+   "id": "fusion-chain",
+   "request_id": "fusion-chain",
+   "openclaw_id": "fusion-chain",
+   "label": "Fusion",
+   "route": "router-alias",
+   "aliases": [
+    "fusion",
+    "fusion chain"
+   ],
+   "capabilities": ["text", "tool_use"],
+   "modalities": ["text"],
+   "reasoning": {
+    "supported": false,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "router chain: the capability set depends on the chain's members and must be verified per run"
+   },
+   "fallbacks": [],
+   "price_class": "api"
   }
  ]
 }

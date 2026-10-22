@@ -116,27 +116,52 @@ def make_fake_loader(counter):
     """A fake faster_whisper.WhisperModel: records loads + per-track calls.
 
     Name/module surface must keep passing the banned-ASR check exactly the
-    way the real 'faster_whisper' import does.
+    way the real 'faster_whisper' import does. The CALL SHAPE IS the real
+    supported faster-whisper contract (D18): loader(size, compute) -> model;
+    model.transcribe(path, word_timestamps=True) -> (segments, info); each
+    segment object carries .words of word objects with word/start/end
+    (probability when the source reports it).
     """
+    class _Word:
+        def __init__(self, w, s, e, p):
+            self.word, self.start, self.end, self.probability = w, s, e, p
+
+    class _Seg:
+        def __init__(self, words):
+            self.words = words
+
+    class FakeModel:
+        def transcribe(self, path, word_timestamps=False):
+            assert word_timestamps is True, "word_timestamps=True is the contract"
+            counter.setdefault("paths", []).append(path)
+            segs = [_Seg([_Word(w["word"], float(w["startS"]),
+                                float(w["endS"]), 0.93)
+                          for w in ALIGNED_DOC["alignedWords"]])]
+            return iter(segs), object()
+
     def fake_loader(size, compute):
         counter["loads"] += 1
         counter["sizes"].append((size, compute))
-        # A real faster_whisper.WhisperModel.transcribe() yields segments; the
-        # stand-in returns the segment list directly.
-        return lambda audio: [
-            {"words": [{"word": w["word"], "start": float(w["startS"]),
-                        "end": float(w["endS"])}
-                       for w in ALIGNED_DOC["alignedWords"]]}]
+        return FakeModel()
     fake_loader.__name__ = "fake_loader"          # no whisper surface
     fake_loader.__module__ = "test_lyric_timing_f17"
     return fake_loader
+
+
+def make_audio(name="take.wav", content=b"RIFF....WAVEfmt fake-audio"):
+    """An actual audio file on disk -- the real audio-path handoff."""
+    p = os.path.join(make_tmp(), name)
+    with open(p, "wb") as f:
+        f.write(content)
+    return p
 
 
 def test_tier2_forced_failure_exactly_one_load_multi_track():
     counter = {"loads": 0, "sizes": []}
     session = LT.WhisperSession(loader=make_fake_loader(counter),
                                 free_gb_probe=lambda: 16.0)
-    got = LT.provide_word_timings(dict(TRACK), dispatcher=fail_dispatch,
+    got = LT.provide_word_timings(dict(TRACK, audio_path=make_audio()),
+                                  dispatcher=fail_dispatch,
                                   whisper_session=session,
                                   ledger_db=os.path.join(make_tmp(), "l.db"))
     check("tier2 ok", got["ok"] is True)
@@ -159,8 +184,9 @@ def test_tier2_multi_track_one_session_counts_one_load():
     counter = {"loads": 0, "sizes": []}
     session = LT.WhisperSession(loader=make_fake_loader(counter),
                                 free_gb_probe=lambda: 16.0)
-    tracks = [dict(TRACK), {"task_id": "t2", "audio_id": "a2",
-                            "audio_path": "/x/second.wav"}]
+    tracks = [dict(TRACK, audio_path=make_audio("first.wav")),
+              {"task_id": "t2", "audio_id": "a2",
+               "audio_path": make_audio("second.wav")}]
     tx = session.transcribe_all(tracks)
     one = LT.provide_word_timings(tracks[0], dispatcher=fail_dispatch,
                                   whisper_session=session)
@@ -389,6 +415,456 @@ def test_scan_banned_surface_in_core():
     check("offender path named", "bad.py" in r.stderr)
 
 
+# ── 6. D18 counterexample: production fallback API, no injected test loader ─
+
+def test_no_loader_counterexample_production_api():
+    """The 17.4 counterexample: local ASR fallback with sufficient mocked
+    resource allowance and NO injected test loader. Before: LyricTimingError
+    "no faster-whisper loader wired". Now: the production loader runs the
+    real supported faster-whisper API on an actual audio path, producing
+    word conversions under ONE governed load."""
+    import types
+    audio = make_audio("counterexample.wav")
+    seen = {}
+
+    class _Word:
+        def __init__(self, w, s, e, p):
+            self.word, self.start, self.end, self.probability = w, s, e, p
+
+    class _Seg:
+        def __init__(self, words):
+            self.words = words
+
+    class _Model:
+        def transcribe(self, path, word_timestamps=False):
+            seen["call"] = (path, word_timestamps)
+            return iter([_Seg([_Word("power", 0.0, 0.42, 0.97),
+                               _Word("climb", 0.75, 1.3, 0.91)])]), object()
+
+    def fake_whisper_model(size, device="cpu", compute_type="int8"):
+        seen["load"] = (size, device, compute_type)
+        return _Model()
+
+    mod = types.ModuleType("faster_whisper")
+    mod.WhisperModel = fake_whisper_model
+    saved_mod = sys.modules.get("faster_whisper")
+    sys.modules["faster_whisper"] = mod
+    try:
+        session = LT.WhisperSession(free_gb_probe=lambda: 16.0)  # NO loader
+        tx = session.transcribe_all([{"task_id": "t1", "audio_id": "a1",
+                                      "audio_path": audio}])
+        words = session.words_of(tx[0])
+    finally:
+        if saved_mod is None:
+            sys.modules.pop("faster_whisper", None)
+        else:
+            sys.modules["faster_whisper"] = saved_mod
+    check("no-loader counterexample runs", True)
+    check("production loader used the real load contract",
+          seen.get("load") == ("small", "cpu", "int8"), seen.get("load"))
+    check("real call contract: transcribe(path, word_timestamps=True)",
+          seen.get("call") == (audio, True), seen.get("call"))
+    check("word conversions produced",
+          [w["word"] for w in words] == ["power", "climb"], words)
+    check("word rows carry word/start/end(+probability)",
+          set(words[0]) == {"word", "start", "end", "probability"},
+          sorted(words[0]))
+    check("exactly ONE governed load", session.loads == 1,
+          "loads=%s" % session.loads)
+
+
+# ── 7. D25: each failure class keeps its causal chain to the saved record ──
+
+def _trigger(name):
+    """(error, exc) for one named failure class, via the real code paths."""
+    if name == "missing-loader":
+        saved = LT.WHISPER_LOADER_FACTORY
+        LT.WHISPER_LOADER_FACTORY = None
+        try:
+            LT.WhisperSession(free_gb_probe=lambda: 16.0).transcribe_all(
+                [{"audio_path": make_audio()}])
+        finally:
+            LT.WHISPER_LOADER_FACTORY = saved
+    elif name == "missing-dependency":
+        saved = sys.modules.pop("faster_whisper", None)
+        sys.modules["faster_whisper"] = None  # forces ImportError
+        try:
+            LT.WhisperSession(free_gb_probe=lambda: 16.0).transcribe_all(
+                [{"audio_path": make_audio()}])
+        finally:
+            sys.modules.pop("faster_whisper", None)
+            if saved is not None:
+                sys.modules["faster_whisper"] = saved
+    elif name == "low-memory":
+        LT.memory_guard("small", free_gb_probe=lambda: 1.0)
+    elif name == "unreadable-resource-telemetry":
+        LT.memory_guard("small", free_gb_probe=lambda: float("nan"))
+    elif name == "unwired-loader":
+        LT.WhisperSession(free_gb_probe=lambda: 16.0,
+                          use_default_loader=False).transcribe_all(
+            [{"audio_path": make_audio()}])
+    elif name == "model-load-failure":
+        def boom(size, compute):
+            raise OSError("corrupt model shard")
+        boom.__name__, boom.__module__ = "boom", "test_lyric_timing_f17"
+        LT.WhisperSession(loader=boom,
+                          free_gb_probe=lambda: 16.0).transcribe_all(
+            [{"audio_path": make_audio()}])
+    elif name == "bad-call-signature":
+        class NoTranscribe:
+            pass
+        bad = lambda s, c: NoTranscribe()  # noqa: E731
+        bad.__name__, bad.__module__ = "bad", "test_lyric_timing_f17"
+        LT.WhisperSession(loader=bad,
+                          free_gb_probe=lambda: 16.0).transcribe_all(
+            [{"audio_path": make_audio()}])
+    elif name == "missing-audio-path":
+        LT.WhisperSession(loader=make_fake_loader({"loads": 0, "sizes": []}),
+                          free_gb_probe=lambda: 16.0).transcribe_all(
+            [{"task_id": "t1"}])
+    elif name == "unavailable-timestamps":
+        class _Seg:
+            words = None
+
+        class QuietModel:
+            def transcribe(self, path, word_timestamps=False):
+                return iter([_Seg()]), object()
+
+        def quiet(size, compute):
+            return QuietModel()
+        quiet.__name__, quiet.__module__ = "quiet", "test_lyric_timing_f17"
+        sess = LT.WhisperSession(loader=quiet, free_gb_probe=lambda: 16.0)
+        got = LT.provide_word_timings(
+            {"task_id": "t1", "audio_path": make_audio()},
+            dispatcher=fail_dispatch, whisper_session=sess)
+        assert got["ok"] is False and got["failure_class"] == name, got
+        # surface the boundary envelope the consumer would save
+        raise LT.LyricTimingError(got["error"]["code"], got["error"]["detail"],
+                                  got["failure_class"])
+    elif name == "malformed-qc-input":
+        LT.words_from_segments([{"words": [{"word": "x"}]}])
+    else:
+        raise AssertionError(name)
+
+
+def test_error_classes_distinct_causal_chain_saved_record():
+    tmp = make_tmp()
+    want = ["missing-loader", "missing-dependency", "low-memory",
+            "unreadable-resource-telemetry", "unwired-loader",
+            "model-load-failure", "bad-call-signature", "missing-audio-path",
+            "unavailable-timestamps", "malformed-qc-input"]
+    seen = []
+    for name in want:
+        try:
+            _trigger(name)
+            check("%s refused" % name, False, "no error raised")
+            continue
+        except AssertionError:
+            raise
+        except LT.LyricTimingError as e:
+            err = e
+        check("%s distinct failure_class" % name,
+              err.failure_class == name, err.failure_class)
+        seen.append(err.failure_class)
+        env = err.envelope()
+        check("%s envelope keeps code+class" % name,
+              env["code"] == err.code and env["failure_class"] == name, env)
+        rec = LT.save_error_record(os.path.join(tmp, "%s.json" % name), err)
+        back = LT.read_error_record(os.path.join(tmp, "%s.json" % name))
+        check("%s saved record keeps causal chain" % name,
+              back.get("cause") == rec.get("cause")
+              and back["failure_class"] == name
+              and back["code"] == err.code, back)
+    check("all ten failure classes distinct",
+          len(set(seen)) == 10 and sorted(seen) == sorted(want), seen)
+
+
+def test_error_detail_bounded_and_redacted():
+    secret = "api_key=sk-supersecrettoken1234567890"
+    err = LT.LyricTimingError("WHISPER_TRANSCRIBE_FAILED",
+                              "boom %s %s" % (secret, "x" * 500),
+                              LT.CLASS_TRANSCRIBE_FAILED)
+    env = err.envelope()
+    check("diagnostic bounded", len(env["detail"]) <= 220, len(env["detail"]))
+    check("diagnostic redacted", "sk-supersecrettoken" not in env["detail"],
+          env["detail"])
+    check("cause chain keeps error_type",
+          env.get("cause") is None or "error_type" in env["cause"])
+
+
+def test_cause_chain_crosses_boundaries():
+    inner = LT.LyricTimingError(LT.CLASS_CODE[LT.CLASS_DEPENDENCY_MISSING],
+                                "No module named 'faster_whisper'",
+                                LT.CLASS_DEPENDENCY_MISSING)
+    mid = LT.LyricTimingError(LT.CLASS_CODE[LT.CLASS_MODEL_LOAD_FAILED],
+                              "load failed", LT.CLASS_MODEL_LOAD_FAILED,
+                              cause=inner)
+    tmp = make_tmp()
+    LT.save_error_record(os.path.join(tmp, "chain.json"), mid)
+    back = LT.read_error_record(os.path.join(tmp, "chain.json"))
+    check("two-level chain survives the saved record",
+          back["cause"]["failure_class"] == LT.CLASS_DEPENDENCY_MISSING
+          and back["cause"].get("cause") is None
+          and bool(back["cause"].get("detail")), back)
+    # boundary codes: guard umbrella surfaces the distinct class code
+    guard_err = LT.LyricTimingError("LOCAL_MODEL_LOAD_REFUSED", "free 1 GB",
+                                    LT.CLASS_LOW_MEMORY)
+    check("guard boundary code is distinct, umbrella kept on the error",
+          guard_err.code == "LOCAL_MODEL_LOAD_REFUSED"
+          and guard_err.boundary_code() == "LOCAL_MODEL_LOW_MEMORY")
+
+
+# ── 8. D26: non-generating operations ──────────────────────────────────────
+
+def test_missing_fallback_never_regenerates_paid_music():
+    """All tiers fail (fallback missing) -> zero music-generation calls, the
+    dispatcher only ever saw the timestamped-lyrics ANALYSIS model."""
+    calls = []
+
+    def spy_dispatcher(**kw):
+        calls.append(kw)
+        return fail_dispatch(**kw)
+
+    class DeadSession(LT.WhisperSession):
+        def transcribe_all(self, tracks):
+            raise LT.LyricTimingError(
+                LT.CLASS_CODE[LT.CLASS_UNWIRED_LOADER], "nothing wired",
+                LT.CLASS_UNWIRED_LOADER)
+
+    got = LT.provide_word_timings({"task_id": "t1", "audio_id": "a1"},
+                                  dispatcher=spy_dispatcher,
+                                  whisper_session=DeadSession(loader=None))
+    check("missing fallback fails closed", got["ok"] is False)
+    check("failure attests zero music-generation calls",
+          got["counts"]["music_generation_calls"] == 0, got["counts"])
+    check("dispatcher only ever saw the analysis model",
+          all(c["model"] == "ai-music-api/timeStamped-lyrics" for c in calls),
+          [c["model"] for c in calls])
+    check("next_action recovers WITHOUT generation",
+          "NO paid music was generated" in got["next_action"]
+          and "regenerat" not in got["next_action"].lower(),
+          got["next_action"])
+    check("failure carries the typed envelope",
+          got["error"]["failure_class"] == LT.CLASS_UNWIRED_LOADER
+          and got["error_code"] == "WHISPER_LOADER_UNWIRED",
+          (got.get("error_code"), got.get("failure_class")))
+
+
+def test_remeasure_unchanged_hash_zero_generation_calls():
+    audio = make_audio("remeasure.wav", b"RIFF....WAVE saved-take")
+    before = LT.audio_sha256(audio)
+
+    def spy_dispatcher(**kw):
+        raise AssertionError("remeasure must never dispatch: %r"
+                             % (kw.get("model"),))
+
+    counter = {"loads": 0, "sizes": []}
+    session = LT.WhisperSession(loader=make_fake_loader(counter),
+                                free_gb_probe=lambda: 16.0)
+    got = LT.remeasure_saved_audio(
+        audio, record={"track": {"task_id": "t-suno", "audio_id": "a-suno"},
+                       "transcription_provider": "suno (KIE timeStamped-lyrics)"},
+        whisper_session=session, dispatcher=spy_dispatcher)
+    check("remeasure produced current evidence",
+          [w["word"] for w in got["words"]] == ["power", "in", "the", "climb"],
+          got["words"])
+    check("audio hash unchanged",
+          got["audio"]["sha256_before"] == got["audio"]["sha256_after"]
+          == before and got["audio"]["unchanged"] is True, got["audio"])
+    check("remeasure zero music-generation calls",
+          got["counts"]["music_generation_calls"] == 0
+          and got["counts"]["paid_analysis_calls"] == 0, got["counts"])
+    check("remeasure ONE governed load", got["local_model_loads"] == 1
+          and session.loads == 1, session.loads)
+    check("provider provenance preserved",
+          got["provenance"]["task_id"] == "t-suno"
+          and got["provenance"]["audio_id"] == "a-suno"
+          and got["provenance"]["provider"], got["provenance"])
+
+
+def test_rejudge_uses_saved_measurements_only():
+    """Rejudging calls NO provider and loads NO model -- it takes neither a
+    dispatcher nor a loader."""
+    import inspect
+    sig = inspect.signature(LT.rejudge_saved)
+    check("rejudge takes no dispatcher/loader",
+          "dispatcher" not in sig.parameters and "loader" not in sig.parameters,
+          sorted(sig.parameters))
+    high = LT.rejudge_saved({"words": [
+        {"word": "power", "start": 0.0, "end": 0.42, "probability": 0.95}]})
+    check("high confidence rejudges pass", high["verdict"] == "pass", high)
+    low = LT.rejudge_saved({"words": [
+        {"word": "power", "start": 0.0, "end": 0.42, "probability": 0.3}]})
+    check("low confidence is needs-review, never a definite failure",
+          low["verdict"] == "needs-review" and low["verdict"] != "fail",
+          low)
+    check("low confidence triggers bounded remeasure + independent review",
+          {a["action"] for a in low["next_actions"]} >=
+          {"remeasure", "independent-media-review"}
+          and all(a.get("bounded") for a in low["next_actions"]
+                  if a["action"] == "remeasure")
+          and all(a.get("max_passes") == 1 for a in low["next_actions"]
+                  if a["action"] == "remeasure"), low["next_actions"])
+    empty = LT.rejudge_saved({"words": []})
+    check("no measurement -> needs-remeasure, not creative failure",
+          empty["verdict"] == "needs-remeasure", empty)
+    inverted = LT.rejudge_saved({"words": [
+        {"word": "power", "start": 1.4, "end": 0.4, "probability": 0.9}]})
+    check("inverted span is a definite fail", inverted["verdict"] == "fail",
+          inverted)
+    check("rejudge results attest zero provider/generation calls",
+          all(r["provider_calls"] == 0 and r["music_generation_calls"] == 0
+              for r in (high, low, empty, inverted)))
+    try:
+        LT.rejudge_saved({"words": [{"word": "x"}]})
+        check("malformed QC input refused", False)
+    except LT.LyricTimingError as e:
+        check("malformed QC input refused",
+              e.code == "MALFORMED_QC_INPUT" and e.failure_class ==
+              "malformed-qc-input", e.code)
+
+
+def test_validate_migrate_read_records_shapes():
+    good = {"words": [{"word": "power", "start": 0.0, "end": 0.42}],
+            "source": "suno-timestamped-lyrics"}
+    check("validate accepts a good record", LT.validate_record(good) is good)
+    check("read_records: single object", len(LT.read_records(good)) == 1)
+    check("read_records: valid list", len(LT.read_records([good, good])) == 2)
+    check("read_records: empty list valid", LT.read_records([]) == [])
+    check("read_records: records wrapper",
+          len(LT.read_records({"records": [good]})) == 1)
+    for bad in ("nope", None, 7):
+        try:
+            LT.read_records(bad)
+            check("read_records rejects %r" % (bad,), False)
+        except LT.LyricTimingError as e:
+            check("read_records rejects %r" % (bad,),
+                  e.code == "MALFORMED_QC_INPUT", e.code)
+    try:
+        LT.validate_record({"words": [{"word": "x"}]})
+        check("validate names the missing key", False)
+    except LT.LyricTimingError as e:
+        check("validate names the missing key",
+              "words[0]" in str(e) and "start" in str(e), str(e))
+    legacy = {"schema_version": "blackceo.audio-c3/lyric-timing/v0",
+              "words": [{"word": "power", "startS": 0.0, "endS": 0.42}],
+              "performance_tags": ["soul"], "provider_envelope_absent": True}
+    mig = LT.migrate_record(legacy)
+    check("migrate maps startS/endS with values unchanged",
+          mig["words"] == [{"word": "power", "start": 0.0, "end": 0.42}],
+          mig["words"])
+    check("migrate preserves approved/unknown fields",
+          mig["performance_tags"] == ["soul"]
+          and mig["provider_envelope_absent"] is True)
+    check("migrate reports what changed",
+          mig["migration"]["changed"] is True
+          and mig["migration"]["semantic_differences"], mig["migration"])
+    check("absent provider-envelope fields are not an error",
+          "obsolete" not in str(mig).lower())
+    conflict = LT.migrate_record({"words": [
+        {"word": "power", "startS": 0.0, "endS": 0.42, "start": 9.9}]})
+    check("conflicting keys reported for review",
+          any("review" in s for s in
+              conflict["migration"]["semantic_differences"]),
+          conflict["migration"])
+
+
+def test_reconcile_reports_hash_mismatch():
+    audio = make_audio("reconcile.wav", b"RIFF....WAVE take-bytes")
+    good = {"words": [{"word": "power", "start": 0.0, "end": 0.42}],
+            "audio": {"path": audio, "sha256": LT.audio_sha256(audio)}}
+    bad = {"words": [], "audio": {"path": audio, "sha256": "0" * 64}}
+    res = LT.reconcile_records([good, bad])
+    check("reconcile reports per-record status",
+          [r["status"] for r in res["rows"]] == ["match", "mismatch"], res)
+    check("reconcile counts mismatches", res["mismatches"] == 1, res)
+    check("reconcile never generates",
+          res["counts"]["music_generation_calls"] == 0)
+    gone = LT.reconcile_records([{"audio": {"path": "/no/such/file.wav"}}])
+    check("missing audio reported, not crashed",
+          gone["rows"][0]["status"] in ("audio-missing", "no-audio-path"),
+          gone)
+
+
+def test_low_confidence_receipt_keeps_words_and_triggers_bounded_review():
+    counter = {"loads": 0, "sizes": []}
+    session = LT.WhisperSession(loader=make_fake_loader(counter),
+                                free_gb_probe=lambda: 16.0)
+    # fake loader reports probability 0.93 -> force low via a quiet model
+    class _W:
+        word, start, end, probability = "power", 0.0, 0.42, 0.25
+
+    class _S:
+        words = [_W()]
+
+    class LowModel:
+        def transcribe(self, path, word_timestamps=False):
+            return iter([_S()]), object()
+
+    def low_loader(size, compute):
+        return LowModel()
+    low_loader.__name__, low_loader.__module__ = "low_loader", \
+        "test_lyric_timing_f17"
+    sess = LT.WhisperSession(loader=low_loader, free_gb_probe=lambda: 16.0)
+    got = LT.provide_word_timings({"task_id": "t1", "audio_path": make_audio()},
+                                  dispatcher=fail_dispatch, whisper_session=sess)
+    check("low confidence still measured (ok, words kept)",
+          got["ok"] and got["timings"]["words"], got)
+    check("low confidence flagged, not failed",
+          got.get("low_confidence") is True and "ok" in got, got)
+    check("low confidence triggers bounded recovery",
+          {a["action"] for a in got["next_actions"]} >=
+          {"remeasure", "independent-media-review"}, got.get("next_actions"))
+
+
+# ── 9. CLI contract: a refusal stays a refusal ─────────────────────────────
+
+def test_cli_non_generating_ops_exit_contract():
+    tmp = make_tmp()
+    good = os.path.join(tmp, "good.json")
+    lowr = os.path.join(tmp, "low.json")
+    badr = os.path.join(tmp, "bad.json")
+    with open(good, "w", encoding="utf-8") as f:
+        json.dump({"words": [{"word": "power", "start": 0.0, "end": 0.42,
+                              "probability": 0.95}]}, f)
+    with open(lowr, "w", encoding="utf-8") as f:
+        json.dump({"words": [{"word": "power", "start": 0.0, "end": 0.42,
+                              "probability": 0.1}]}, f)
+    with open(badr, "w", encoding="utf-8") as f:
+        json.dump({"words": [{"word": "power"}]}, f)
+    mod_path = os.path.join(HERE, "lyric_timing.py")
+
+    def run(*args):
+        return subprocess.run([sys.executable, mod_path] + list(args),
+                              capture_output=True, text=True, timeout=120)
+
+    r = run("validate", good)
+    check("cli validate good -> exit 0", r.returncode == 0, r.returncode)
+    r = run("validate", badr)
+    out = json.loads(r.stdout)
+    check("cli validate malformed -> exit 5 refusal",
+          r.returncode == 5 and out["ok"] is False
+          and out["error_code"] == "MALFORMED_QC_INPUT",
+          (r.returncode, out.get("error_code")))
+    r = run("migrate", good)
+    check("cli migrate -> exit 0", r.returncode == 0, r.returncode)
+    r = run("rejudge", good)
+    check("cli rejudge pass -> exit 0", r.returncode == 0, r.returncode)
+    r = run("rejudge", lowr)
+    out = json.loads(r.stdout)
+    check("cli rejudge low-confidence -> exit 5 (refusal stays refusal)",
+          r.returncode == 5 and out["rejudge"]["verdict"] == "needs-review",
+          (r.returncode, out.get("rejudge")))
+    r = run("remeasure", "--audio", "/no/such/file.wav")
+    out = json.loads(r.stdout)
+    check("cli remeasure missing audio -> exit 5 typed refusal",
+          r.returncode == 5 and out["ok"] is False
+          and out["error_code"] == "AUDIO_PATH_MISSING",
+          (r.returncode, out.get("error_code")))
+    check("cli failure envelope attests zero generation",
+          out["counts"]["music_generation_calls"] == 0, out.get("counts"))
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -410,6 +886,17 @@ def main():
     test_scan_detects_planted_whisper_script()
     test_scan_permits_faster_whisper_only_in_module()
     test_scan_banned_surface_in_core()
+    test_no_loader_counterexample_production_api()
+    test_error_classes_distinct_causal_chain_saved_record()
+    test_error_detail_bounded_and_redacted()
+    test_cause_chain_crosses_boundaries()
+    test_missing_fallback_never_regenerates_paid_music()
+    test_remeasure_unchanged_hash_zero_generation_calls()
+    test_rejudge_uses_saved_measurements_only()
+    test_validate_migrate_read_records_shapes()
+    test_reconcile_reports_hash_mismatch()
+    test_low_confidence_receipt_keeps_words_and_triggers_bounded_review()
+    test_cli_non_generating_ops_exit_contract()
     print("\n%d passed, %d failed" % (len(PASSES), len(FAILS)))
     if FAILS:
         print("FAILED:", ", ".join(FAILS))

@@ -21,7 +21,8 @@ BREAKTHROUGH_S = 42.0
 LOCK_TOKEN = "cape off"
 ROW = {"placement": "instagram-reels-ad",
        "safe_zone": {"top": 0.12, "bottom": 0.18, "left": 0.05, "right": 0.05}}
-TODAY_CARD = ("Shot %d (%s)\nLine: \"%s\"\nViewer must understand: %s\n"
+TODAY_CARD = ("Shot %d - Timing: %s\nLine: \"%s\"\nEmotional purpose: %s\n"
+              "Action: %s\nCharacter: %s\nViewer must understand: %s\n"
               "Place and action: %s\nFace: %s\nPicture: %s")
 _TMP = []
 atexit.register(lambda: [shutil.rmtree(d, ignore_errors=True) for d in _TMP])
@@ -159,21 +160,27 @@ def test_flashback_tagged_with_a_reason_passes():
     assert refused["outcome"] == "rejected" and "no reason" in refused["findings"][0]["detail"], refused
 
 
-def test_non_method_package_is_byte_identical_to_today():
+def test_non_method_package_is_pinned_to_the_shot_card_contract():
     _, shots, contracts, stills = _fixture(with_method_fields=False)
     pkg = AP.build(shots, contracts, stills)
     cards = []
     for n, s in enumerate(shots, 1):
         c = contracts[s["shot_id"]]
         card = SM.shot_card(s, c)
+        # 5.1 item 8 per-shot facts: line, action, emotional purpose, timing,
+        # character — every one carried on the card.
         cards.append(TODAY_CARD % (n, "%s-%s" % (_clock(s["song_start"]), _clock(s["song_end"])),
-                                   card["line"], card["meaning"], card["where_action"],
+                                   card["line"], card["face_emotion"],
+                                   c["character_action"],
+                                   ", ".join(s.get("character_ids") or []),
+                                   card["meaning"], card["where_action"],
                                    card["face_emotion"], stills[s["shot_id"]]))
     expected = ("Storyboard: %d shots. Nothing is made into video until you say go.\n\n%s\n\n%s"
                 % (len(cards), "\n\n".join(cards), AP.FOOTER))
     assert pkg["message"] == expected, pkg["message"]
     today_keys = {"n", "shot_id", "time", "line", "meaning",
-                  "where_action", "face_emotion", "still"}
+                  "where_action", "face_emotion", "still",
+                  "timing", "action", "emotional_purpose", "character"}
     assert [set(item) for item in pkg["items"]] == [today_keys] * 3, pkg["items"]
     assert pkg["images"] == [stills["s1"], stills["s2"], stills["s3"]]
     # today's callers (approval_runner) pass three arguments and nothing else

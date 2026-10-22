@@ -6,9 +6,10 @@ blendshapes measures the picture; nothing here guesses. If mediapipe, OpenCV
 or the face model is missing, `measure()` raises PictureGateUnavailable and the
 caller REFUSES (never a silent pass).
 
-Face model: <skill>/assets/face_landmarker.task (or LIPSYNC_FACE_MODEL),
-installed by install_face_model.py (Google float16 model, sha256 pinned, not
-committed). Heavy local work runs inside load_governor.heavy_slot.
+Face model: the ONE path every skill-75 reader resolves via face_model_locator
+(env LIPSYNC_FACE_MODEL, else <skill>/assets/face_landmarker.task), installed by
+install_face_model.py (Google float16 model, sha256 pinned, not committed).
+Heavy local work runs inside load_governor.heavy_slot.
 """
 from __future__ import annotations
 
@@ -19,14 +20,10 @@ _gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..', '..
 if _gcore not in _gsys.path:
     _gsys.path.insert(0, _gcore)
 import load_governor as _LG  # noqa: E402
+import face_model_locator as _LOC  # noqa: E402
 
-try:
-    from . import install_face_model as _IM
-except ImportError:
-    import install_face_model as _IM
-
-MODEL_ENV = "LIPSYNC_FACE_MODEL"
-MODEL_NAME = _IM.MODEL_NAME
+MODEL_ENV = _LOC.MODEL_ENV
+MODEL_NAME = _LOC.MODEL_NAME
 
 
 class PictureGateUnavailable(Exception):
@@ -36,11 +33,11 @@ class PictureGateUnavailable(Exception):
 def model_path():
     """The face model, verified against the pinned sha256. A missing or wrong
     file refuses and names the install command."""
-    p = os.path.abspath(os.environ.get(MODEL_ENV) or _IM.DEFAULT_DEST)
-    if not _IM.is_good(p):
+    p = _LOC.resolve()
+    if not _LOC.is_good(p):
         raise PictureGateUnavailable(
             "face model missing or not the pinned file at %s; install it with: %s"
-            % (p, _IM.INSTALL_COMMAND))
+            % (p, _LOC.INSTALL_COMMAND))
     return p
 
 
