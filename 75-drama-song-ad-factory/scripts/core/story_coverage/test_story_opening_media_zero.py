@@ -38,7 +38,7 @@ CORE = os.path.dirname(HERE)
 if CORE not in sys.path:
     sys.path.insert(0, CORE)
 
-import story_coverage as SV                     # noqa: E402
+import story_coverage.story_coverage as SV      # noqa: E402 (submodule: the package __init__ does not export _first_aligned_start_s)
 
 PLOT = [["one", "closed", "door", "seed"]]
 FAILURES = []
@@ -401,8 +401,8 @@ def main():
                 D10DeterministicRepairFirst, D10ListeningReviewEvidence,
                 D10HooksDistinct, D10JudgeSeam):
         suite.addTests(loader.loadTestsFromTestCase(cls))
-    unittest.TextTestRunner(verbosity=0).run(suite)
-    if FAILURES:
+    result = unittest.TextTestRunner(verbosity=0).run(suite)
+    if FAILURES or not result.wasSuccessful():
         print("\n%d CHECK(S) FAILED" % len(FAILURES))
         return 1
     print("\nall checks passed")
