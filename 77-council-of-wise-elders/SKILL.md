@@ -82,7 +82,7 @@ references/install-matrix.md, instead of improvising.
 
 ## The chamber visual on every call
 
-However the client calls the council — claude-nine terminal or chat — the
+However the client calls the council - claude-nine terminal or chat - the
 Roast Room visual they see at the link must show up for them too. On every
 convene, right after `blackceo-council convene` returns:
 
@@ -91,7 +91,7 @@ convene, right after `blackceo-council convene` returns:
    runtime configuration (env, then the box's service.json), never
    hardcoded.
 2. ALWAYS copy that exact `Chamber link:` line into your reply to the
-   client — terminal and chat alike — so phone and chat callers tap it
+   client - terminal and chat alike - so phone and chat callers tap it
    straight into the same visual. Never rewrite, guess, or build the URL.
 3. The helper also opens that same visual in the box's default browser
    when a desktop session exists. It is fire-and-forget: it never blocks
@@ -99,7 +99,7 @@ convene, right after `blackceo-council convene` returns:
    and still prints the link.
 4. If the line is a 127.0.0.1 address (local-only): the box's own screen
    shows the visual, and a remote client cannot open it. Never send a
-   127.0.0.1 link to a client — tell them the Council is running, the
+   127.0.0.1 link to a client - tell them the Council is running, the
    result will be shared here, and their private Council link is still
    being set up. It arrives by itself with a later council.
 
