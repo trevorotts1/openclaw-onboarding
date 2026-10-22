@@ -864,7 +864,37 @@ def has_receipt(prompt_sha256, receipts):
 # U15h: the length-class table -- ONE table the card, the planner and QC read.
 
 #: The six card lengths (design 6). The table keys are these strings.
-LENGTH_CLASSES_S = (60, 90, 120, 180, 300, 600)
+#: S75-W05-U3: the scattered duration tuple is REMOVED (D12); THE one table is
+#: suno_recipe.duration_registry.CANONICAL_DURATION_S. __getattr__ is defined
+#: first so any import order resolves without an import cycle (the registry
+#: leaf is zero-import), then the value is bound for this module's lookups.
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+def __getattr__(name):
+    if name == "LENGTH_CLASSES_S":
+        try:
+            from suno_recipe.duration_registry import CANONICAL_DURATION_S
+        except ImportError:
+            try:
+                from duration_registry import CANONICAL_DURATION_S
+            except ImportError:
+                from ..suno_recipe.duration_registry import CANONICAL_DURATION_S
+        globals()["LENGTH_CLASSES_S"] = CANONICAL_DURATION_S
+        return CANONICAL_DURATION_S
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
+
+try:
+    from suno_recipe.duration_registry import CANONICAL_DURATION_S  # noqa: E402
+except ImportError:
+    try:
+        from duration_registry import CANONICAL_DURATION_S  # noqa: E402
+    except ImportError:
+        from ..suno_recipe.duration_registry import CANONICAL_DURATION_S  # noqa: E402
+
+LENGTH_CLASSES_S = CANONICAL_DURATION_S
 
 #: W-G-008 minute-lanes (PR #96/#1710, merged to main 2026-10-09). U15h hook:
 #: lane_planner.py is NOT on this base branch (unit/FU-U15b predates the

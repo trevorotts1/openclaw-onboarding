@@ -14,7 +14,9 @@ stdlib only.
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 
 #: Look vocabulary + Style Bible records (D21 five-look card).
 try:
@@ -47,16 +49,47 @@ MUSIC_FIELD = "music"
 #: Length menu (F15, owner order 2026-10-08): 2 minutes (120 s) added
 #: between 90 s and 3 minutes. 60 s stays the RECOMMENDED default (decision
 #: 32 card default). Labels are the card's own spellings.
-LENGTH_OPTIONS_S = (60, 90, 120, 180, 300, 600)
-LENGTH_LABELS_S = {
-    60: "60 seconds",
-    90: "90 seconds",
-    120: "2 minutes",
-    180: "3 minutes",
-    300: "5 minutes",
-    600: "10-minute long version",
-}
-RECOMMENDED_LENGTH_S = 60
+#: S75-W05-U3: the scattered duration tuple and label map are REMOVED (D12);
+#: THE one table is suno_recipe.duration_registry (CANONICAL_DURATION_S,
+#: DURATION_LABELS_S, RECOMMENDED_DURATION_S). __getattr__ is defined first so
+#: any import order resolves without an import cycle (the registry leaf is
+#: zero-import), then the values are bound for this module's own lookups.
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+def __getattr__(name):
+    _from_registry = {"LENGTH_OPTIONS_S": "CANONICAL_DURATION_S",
+                      "LENGTH_LABELS_S": "DURATION_LABELS_S",
+                      "RECOMMENDED_LENGTH_S": "RECOMMENDED_DURATION_S"}
+    if name in _from_registry:
+        try:
+            import suno_recipe.duration_registry as _DR   # noqa: PLC0415
+        except ImportError:
+            try:
+                import duration_registry as _DR   # noqa: PLC0415
+            except ImportError:
+                from ..suno_recipe import duration_registry as _DR   # noqa: PLC0415
+        val = getattr(_DR, _from_registry[name])
+        globals()[name] = val
+        return val
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
+
+try:
+    from suno_recipe.duration_registry import (   # noqa: E402
+        CANONICAL_DURATION_S, DURATION_LABELS_S, RECOMMENDED_DURATION_S)
+except ImportError:
+    try:
+        from duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S, RECOMMENDED_DURATION_S)
+    except ImportError:
+        from ..suno_recipe.duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S, RECOMMENDED_DURATION_S)
+
+LENGTH_OPTIONS_S = CANONICAL_DURATION_S
+LENGTH_LABELS_S = DURATION_LABELS_S
+RECOMMENDED_LENGTH_S = RECOMMENDED_DURATION_S
 SOURCE_OF_LENGTH_MENU = "F15 owner order 2026-10-08 (2 minutes new); card default decision 32"
 
 #: What the client typed that still means "no choice": the card's own
