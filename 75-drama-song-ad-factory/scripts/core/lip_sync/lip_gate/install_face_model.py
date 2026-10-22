@@ -5,44 +5,40 @@ The picture gate refuses every lip-sync job without this file. One command:
 
     python3 scripts/core/lip_sync/lip_gate/install_face_model.py
 
-Fetches the model from Google's official bucket, verifies the pinned sha256 and size,
-and places it at <skill>/assets/face_landmarker.task (where picture_measure
-looks). Stdlib only. Re-running with a good file in place is a no-op. A wrong
-hash deletes nothing that was good and exits 1.
+Fetches the model from Google's official bucket, verifies the pinned sha256 and
+size, and places it at the ONE face-model path every reader resolves:
+face_model_locator (env LIPSYNC_FACE_MODEL, else <skill>/assets/face_landmarker.task).
+Stdlib only. Re-running with a good file in place is a no-op. A wrong hash
+deletes nothing that was good and exits 1.
 """
 from __future__ import annotations
 
-import hashlib
 import os
 import sys
 import urllib.request
 
-MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/"
-             "face_landmarker/float16/latest/face_landmarker.task")
-MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
-MODEL_BYTES = 3758596
-MODEL_NAME = "face_landmarker.task"
-HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_DEST = os.path.abspath(os.path.join(HERE, "..", "..", "..", "..", "assets", MODEL_NAME))
-INSTALL_COMMAND = "python3 %s" % os.path.join(
-    "scripts", "core", "lip_sync", "lip_gate", "install_face_model.py")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_core = os.path.abspath(os.path.join(_HERE, "..", ".."))
+if _core not in sys.path:
+    sys.path.insert(0, _core)
+import face_model_locator as _LOC  # noqa: E402
+
+# Public names kept for existing importers; the pins live in the locator only.
+MODEL_URL = _LOC.MODEL_URL
+MODEL_SHA256 = _LOC.MODEL_SHA256
+MODEL_BYTES = _LOC.MODEL_BYTES
+MODEL_NAME = _LOC.MODEL_NAME
+DEFAULT_DEST = _LOC.default_path()
+INSTALL_COMMAND = _LOC.INSTALL_COMMAND
+
+sha256_file = _LOC.sha256_file
+is_good = _LOC.is_good
 
 
-def sha256_file(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for b in iter(lambda: f.read(1 << 20), b""):
-            h.update(b)
-    return h.hexdigest()
-
-
-def is_good(path):
-    return (os.path.isfile(path) and os.path.getsize(path) == MODEL_BYTES
-            and sha256_file(path) == MODEL_SHA256)
-
-
-def install(dest=DEFAULT_DEST, url=MODEL_URL, sha256=MODEL_SHA256, opener=None):
-    """-> dest. Raises RuntimeError on a hash mismatch (nothing is placed)."""
+def install(dest=None, url=MODEL_URL, sha256=MODEL_SHA256, opener=None):
+    """-> dest (default: the resolved face-model path, override or assets/).
+    Raises RuntimeError on a hash mismatch (nothing is placed)."""
+    dest = os.path.abspath(dest or _LOC.resolve())
     if is_good(dest):
         return dest
     os.makedirs(os.path.dirname(dest), exist_ok=True)
