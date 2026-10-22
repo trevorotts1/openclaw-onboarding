@@ -265,6 +265,18 @@ all8="$(cat "$WORK"/out/case.* "$WORK/state/cc-access-last-run.json" "$WORK/stat
 check "no email address and no GoHighLevel or Cloudflare token in any output or receipt" bash -c "! grep -Eq '@|GHL-TOKEN|qc-secret-TOKEN' <<<\"\$1\"" _ "$all8"
 stop_ghl
 
+echo "== 9. FIX 2: the same exclude source (the env-file line), even with the credentials exported"
+printf 'COUNCIL_ACCESS_EXCLUDE=newbox.%s\n' "$Z" > "$WORK/excl.env"
+fixture > "$WORK/f9.json"; start_fake "$WORK/f9.json"
+env CF_API_BASE="http://127.0.0.1:$PORT/client/v4" COUNCIL_ACCESS_STATE_DIR="$WORK/state" \
+    COUNCIL_CC_EMAILS_FILE="$WORK/emails.json" COUNCIL_CC_OPERATOR_EMAILS="$OP2" \
+    CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct CLOUDFLARE_ZONE_ID=wrong-zone \
+    COUNCIL_ACCESS_ENV_FILE="$WORK/excl.env" TMPDIR="$WORK/tmp" "$SCRIPT" --apply >"$WORK/out/case.excl" 2>&1; RC=$?
+check "excluded host newbox: silent (no CC_ACCESS line at all), zero writes to it, no app" bash -c "test '$RC' = 0 && ! grep -q 'newbox' '$WORK/out/case.excl' && test \"$(app_count newbox)\" = 0"
+check "excluded host newbox: not one write was for it (only rescbox CREATED + driftbox RECONCILED)" test "$(nonget_count)" = 2
+check "the run still proceeds for the others (rescbox CREATED)" bash -c "grep -q '^CC_ACCESS: rescbox.$Z CREATED' '$WORK/out/case.excl'"
+check "the excluded host is absent from the receipt" bash -c "! grep -q 'newbox' '$WORK/state/cc-access-last-run.json'"
+
 echo
 if [ "$FAILS" = 0 ]; then echo "ALL $N CHECKS PASSED"; else echo "$FAILS of $N FAILED"; fi
 [ "$FAILS" = 0 ]
