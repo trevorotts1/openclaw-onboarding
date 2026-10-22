@@ -122,16 +122,19 @@ class Recipe(unittest.TestCase):
         self.assertNotIn(V.ALL_SUNO_ID, R.EXEMPT_STYLE_IDS)
 
     def test_sheet_rules(self):
-        late = sheet()
-        late[0]["tag"] = "Verse"                      # spoken outside Intro/Outro
         bad = ((sheet(repeats=1), "repeated"), (sheet(hook=["Buy now and save big"]), "client's own"),
-               (late, "only allowed"),
                ([{"tag": "Hook", "delivery": "sung", "lines": HOOK}] + sheet()[1:], "may not open"))
         for b_, why in bad:
             errs = R.check_lyric_sheet(b_, CLIENT)
             self.assertTrue(any(why in e for e in errs), (why, errs))
             with self.assertRaises(R.RecipeError):
                 R.prepare("soul-ballad", b_, CLIENT)
+        # S75-W05-U3 (D09): a meaningful spoken scene outside [Intro]/[Outro]
+        # is PRESERVED by the one constraint policy, never refused.
+        late = sheet()
+        late[0]["tag"] = "Verse"                      # spoken outside Intro/Outro
+        self.assertEqual(R.check_lyric_sheet(late, CLIENT), [],
+                         "D09: spoken scenes outside Intro/Outro are preserved")
         # WW-29: the wordless vocalise is OPTIONAL, never a forced lead-in, so the
         # no-vocalise sheet is legal. (This replaces the base entry that pinned the
         # removed mandate; the sheet is still refused by prepare without its length.)

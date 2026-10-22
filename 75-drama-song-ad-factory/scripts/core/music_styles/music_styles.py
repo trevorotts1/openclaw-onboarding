@@ -34,7 +34,9 @@ names a delivery by core/audio_c3 no_echo.
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 
 from math import isfinite
 
@@ -73,7 +75,38 @@ LENGTH_ALIASES = {
 
 #: Every length the factory offers. The D15 band is keyed by NONE of them --
 #: this tuple only bounds what a caller may ask about.
-OFFERED_LENGTHS_S = (60, 90, 120, 180, 300, 600)
+#: S75-W05-U3: the scattered duration tuple is REMOVED (D12). THE one table is
+#: suno_recipe.duration_registry.CANONICAL_DURATION_S (60, 90, 120, 180, 300,
+#: 600, the two-minute 120 s entry included). The __getattr__ is defined first
+#: so any import order resolves without an import cycle (the registry leaf is
+#: zero-import), then the value is bound here for this module's own lookups.
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+def __getattr__(name):
+    if name == "OFFERED_LENGTHS_S":
+        try:
+            from suno_recipe.duration_registry import CANONICAL_DURATION_S
+        except ImportError:
+            try:
+                from duration_registry import CANONICAL_DURATION_S
+            except ImportError:
+                from ..suno_recipe.duration_registry import CANONICAL_DURATION_S
+        globals()["OFFERED_LENGTHS_S"] = CANONICAL_DURATION_S
+        return CANONICAL_DURATION_S
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
+
+try:
+    from suno_recipe.duration_registry import CANONICAL_DURATION_S  # noqa: E402
+except ImportError:
+    try:
+        from duration_registry import CANONICAL_DURATION_S  # noqa: E402
+    except ImportError:
+        from ..suno_recipe.duration_registry import CANONICAL_DURATION_S  # noqa: E402
+
+OFFERED_LENGTHS_S = CANONICAL_DURATION_S
 
 #: Delivery labels a timing segment may carry.
 DELIVERIES = ("spoken", "rap", "sung")

@@ -33,7 +33,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -92,10 +94,25 @@ VOICE_LABELS = {
     "all-suno": "All Suno",
     "velvet-voiceover": "Velvet Voiceover",
 }
-LENGTH_VALUES = (
-    "60 seconds", "90 seconds", "3 minutes", "5 minutes",
-    "10-minute long version",
-)
+#: S75-W05-U3: the scattered label list (which dropped the 2-minute option,
+#: contradicting the F15 card menu) is REMOVED. The card labels derive from
+#: THE one table: suno_recipe.duration_registry (D12).
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+
+try:
+    from suno_recipe.duration_registry import (   # noqa: E402
+        CANONICAL_DURATION_S, DURATION_LABELS_S)
+except ImportError:
+    try:
+        from duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S)
+    except ImportError:
+        from ..suno_recipe.duration_registry import (   # noqa: E402
+            CANONICAL_DURATION_S, DURATION_LABELS_S)
+
+LENGTH_VALUES = tuple(DURATION_LABELS_S[s] for s in CANONICAL_DURATION_S)
 SHAPE_VALUES = ("9:16", "16:9", "both")
 #: The spellings the rest of the factory already puts on a card.
 SHAPE_ALIASES = {
