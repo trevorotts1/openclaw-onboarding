@@ -59,8 +59,9 @@ fi
 #        (that tunnel local-managed -> PENDING_LOCAL_TUNNEL). The container-host shape
 #        (a.) reaches this same dedicated path: no rescue ride, no CC-tunnel ride.
 #      council CNAME already points at a healthy tunnel that already routes
-#        the exact rule <slug>-council.<zone> -> http://127.0.0.1:8787 (any
-#        equivalent loopback form the code matches elsewhere counts): this host
+#        the exact PATH-LESS rule <slug>-council.<zone> -> http://127.0.0.1:8787 (any
+#        equivalent loopback form the code matches elsewhere counts; a
+#        path-scoped rule does not count): this host
 #        is ADOPTED by that tunnel. Report ALREADY_PROVISIONED with the detail
 #        "Council address already wired via tunnel <name>", zero writes, exit 0,
 #        and never re-plan a dedicated tunnel for it. The Access app
@@ -119,7 +120,7 @@ fi
 # edge answers, not that the client's connector and Council service are up. The
 # check cannot see the Council service itself, only the tunnel connector.
 # An already provisioned host makes zero writes and prints ALREADY_PROVISIONED.
-# A host adopted by a foreign tunnel that already routes the council rule prints
+# A host adopted by another tunnel that already routes the exact council rule prints
 # ALREADY_PROVISIONED with the detail "Council address already wired via tunnel
 # <name>" (see ORDER c.), zero writes.
 #
@@ -706,9 +707,15 @@ provision_host() {
         acfg="$(cf GET "/accounts/${ACCT}/cfd_tunnel/${atid}/configurations")"
       fi
       if [ -n "$acfg" ] && [ "$(ok_of "$acfg")" = "true" ]; then
-        asvc="$(cc_ingress_service_for_host "$acfg" "$COUNCIL_HOST")"
+        # The EXACT rule only: a PATH-LESS <COUNCIL_HOST> rule. A path-scoped rule is
+        # not the council wire-up (the host root would still fall to the catch-all),
+        # and cc_ingress_service_for_host's first-rule fallback would wrongly count one.
+        asvc="$(cc_ingress_of "$acfg" | jq -r --arg h "$COUNCIL_HOST" \
+          '[.[] | select(.hostname? == $h and ((.path // "") == "")) | .service // ""] | .[0] // ""' 2>/dev/null)"
+        # The IPv6 forms are QUOTED: an unquoted [::1] is a glob bracket expression and
+        # would bless a foreign origin like http://1:8787 as loopback.
         case "$asvc" in
-          http://localhost:8787|http://localhost:8787/|http://127.0.0.1:8787|http://127.0.0.1:8787/|http://[::1]:8787|http://[::1]:8787/)
+          http://localhost:8787|http://localhost:8787/|http://127.0.0.1:8787|http://127.0.0.1:8787/|"http://[::1]:8787"|"http://[::1]:8787/")
             ride_new=0; dedicated=0; rescue=0; token_file=""; adopted=1
             ride_tid="$atid"; ride_cfg="$acfg"; ride_name="$(jq -r '.result.name // empty' <<<"$ath")"
             expected="$rec_content"

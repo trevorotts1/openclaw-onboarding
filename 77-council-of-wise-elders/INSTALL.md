@@ -426,13 +426,15 @@ The verifier then reports the connector (DEGRADED COUNCIL_CONNECTOR_DOWN
 when it is not running).
 
 When the `<slug>-council` record already points at a healthy tunnel that
-already routes the exact rule `<slug>-council.<zone> -> http://127.0.0.1:8787`
-(equivalent loopback forms count), the host is ADOPTED by that tunnel:
+already routes the exact path-less rule
+`<slug>-council.<zone> -> http://127.0.0.1:8787`
+(equivalent loopback forms count; a path-scoped rule does not count), the host is ADOPTED by that tunnel:
 `ALREADY_PROVISIONED` with the detail `Council address already wired via
 tunnel <name>`, zero writes, and no dedicated tunnel is ever planned for it.
 The `Council - <slug>` Access app and the edge 302 check still apply to the
 adopted route. Only a record pointing at a tunnel with no such rule (a
-genuinely foreign or broken claim) stays `CONFLICT` and fails the run.
+genuinely foreign or broken claim), or at a dead or deleted tunnel, stays
+`CONFLICT` and fails the run.
 
 A remote-managed Command Center tunnel whose rule points at a private bridge
 address (an IPv4 in 172.16.0.0/12, 10.0.0.0/8 or 192.168.0.0/16, or the
