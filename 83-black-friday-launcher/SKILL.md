@@ -73,11 +73,23 @@ a numbered directory, so the same code runs in both layouts.
 
 ```
 python3 -m launcher_core.cli route        --intake intake.json
+python3 -m launcher_core.cli plan         --plan <launch-plan.json> [--deliveries <dir>]
+python3 -m launcher_core.cli dispatch     --intake intake.json --out <run-dir> \
+                 --approval <approval.json> --client <client-ref> --worker <worker-ref> \
+                 [--adapters <adapters.json>] [--adapter-inputs <inputs.json>] \
+                 [--parallel N] [--scoped-approvals <array.json>] \
+                 [--landing-pages <file>] [--extra-page downsell_2]
+python3 -m launcher_core.cli questions
 python3 -m launcher_core.cli assemble     --intake intake.json --pieces <dir> --out <run-dir>
 python3 -m launcher_core.cli check        --manifest <run-dir>/package-manifest.json --root <run-dir>
 python3 -m launcher_core.cli seams
 python3 -m launcher_core.cli dependencies [--root <repo>]
 ```
+
+`plan` validates a shared launch plan's calendar and completeness. `dispatch`
+turns an intake into a Skill 49 launch record and builds every page, recording
+the approver and the builder as two distinct identities. `questions` prints the
+picture questions a client is asked, as data.
 
 Run the shipped checks with `bash verify.sh` (exit 0 pass, non-zero fail).
 

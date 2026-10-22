@@ -9,7 +9,7 @@
     "directory": "83-black-friday-launcher",
     "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
     "entry": "SKILL.md",
-    "version": "0.2.5",
+    "version": "0.2.7",
     "status": "enabled-in-999"
   },
   "number_assignment": {
@@ -37,8 +37,8 @@
       {
         "claim": "registry line 18 in 999 CONTROL/bundled-skills.txt names 83-black-friday-launcher",
         "check": "cat -n ~/999-setup/CONTROL/bundled-skills.txt and grep black-friday-launcher CONTROL installer-registration",
-        "result": "not reproduced: that file has 15 lines, none of which is black-friday-launcher, and grep returns no match (exit 1). The coordinator's report of line 18 could not be confirmed on the operator 999-setup tree.",
-        "status": "unconfirmed"
+        "result": "confirmed on a live re-read 2026-10-22 (operator 999-setup tree): the file now has 18 lines and line 18 is exactly 'black-friday-launcher'. The earlier read ('15 lines, no match') was accurate when taken and the file changed since; both reads are kept, the later one settles the claim. The same re-read found the INSTALLED launcher copy at 0.2.4 (skill-version.txt in ~/.claude/skills/black-friday-launcher and ~/.claude-nine/skills/black-friday-launcher) while this source tree is 0.2.7: a registry line proves registration intent only, and the deployed copy is separately behind (evidence/s06-WF-E-P9-999-parity.md in the v3-2026-10-22T02Z run).",
+        "status": "confirmed"
       }
     ],
     "blocking_evidence": [
@@ -47,7 +47,7 @@
       "999 no 83-* directory"
     ],
     "non_blocking_evidence": [
-      "the 999 registry line was reported by the coordinator but is absent from the live file read here; it is recorded as unconfirmed, never asserted as fact"
+      "the 999 registry line was first read as absent and is present on the 2026-10-22 live re-read (line 18); the claim is settled as confirmed, and the installed copy's version drift is recorded separately and never inferred from the registry line"
     ]
   },
   "registration": {
