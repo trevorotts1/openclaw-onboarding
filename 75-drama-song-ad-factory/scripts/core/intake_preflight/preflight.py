@@ -424,10 +424,15 @@ def derive_requirements(ctx, manifest=None, payload=None):
                          args={}))
 
     if ctx.get("lyric_timing_fallback") == ASR_FALLBACK_FASTER_WHISPER:
+        # The importable module name derives from the dist name (underscored).
+        # The raw importable token stays only in audio_c3/lyric_timing.py:
+        # qc-no-local-asr.sh (F17) fails any second hand-written ASR surface
+        # in core, and this requirement record is data, not an importer.
         reqs.append(_req("faster-whisper", "module",
                          "tier-2 lyric-timing fallback selected: local ASR required",
                          manifest=manifest, manifest_id="faster-whisper-optional",
-                         args={"module": "faster_whisper", "dist": "faster-whisper"}))
+                         args={"module": ASR_FALLBACK_FASTER_WHISPER.replace("-", "_"),
+                               "dist": ASR_FALLBACK_FASTER_WHISPER}))
 
     if ctx.get("singing_detector"):
         reqs.append(_req("numpy-singing-detector", "module",
