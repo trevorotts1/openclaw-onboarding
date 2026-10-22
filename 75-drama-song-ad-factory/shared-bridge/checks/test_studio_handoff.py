@@ -19,9 +19,14 @@ instrument:
      the channel is the one the rest of the skill sends on, the agent is the
      one the gateway binds that channel to, and the message says in plain words
      that the video has started and where the approvals appear.
-       control: a failed agent turn is ONE invocation -- no retry loop.
-       control: no OpenClaw on PATH -> exit 0 with the reason on stderr, and
-       the timer is not failed.
+       control: a failed agent turn is ONE invocation -- no retry loop -- and
+       keeps the turn's own exit code (the wake stays queued in the ledger).
+       control: no OpenClaw on PATH -> named wake failure (exit 70), nothing
+       invoked, the timer reports it separately from the poll.
+       control: an ambiguous agent binding starts NOTHING (never an unnamed
+       default agent): exit 70 with DS_AGENT_ID named on stderr.
+       control: no --deliver on this runtime -> the turn runs but the gap is
+       named (exit 71), never silent success.
        control: a poll line that is not JSON -> exit 65, nothing invoked.
   C  the safe-degradation paths: a poll with no order is silent exit 0; a poll
      on a box that was never enrolled refuses exit 2 before any request.
@@ -320,7 +325,12 @@ class HandoffTests(unittest.TestCase):
             version = st.get(out["order_id"], "research")["version"]
         again = self.poll(DS_KEY=MACHINE_KEY)
         self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
-        self.assertEqual(again.stdout, "")          # the claim is load-bearing
+        # D35 reconcile: the pending wake re-emits the SAME line (the claim is
+        # ours and unacknowledged) — never quiet success, never a re-init.
+        line2 = [l for l in again.stdout.splitlines() if l.strip()]
+        self.assertEqual(len(line2), 1, again.stdout)
+        out2 = json.loads(line2[0])
+        self.assertEqual(out2["run_dir"], out["run_dir"])
         with state_store.Store(str(db)) as st:
             row = st.get(out["order_id"], "research")
         self.assertEqual(row["state"], "READY", row)   # init_run did not clobber
@@ -361,15 +371,30 @@ class HandoffTests(unittest.TestCase):
         self.assertIn("INSTRUCTIONS.md step 6", msg2)
 
     def test_wake_names_the_agent_only_when_the_binding_is_unambiguous(self):
-        """Control: two agents bind telegram with no catch-all -> no guess, and
-        the box is told to name one."""
+        """Control: two agents bind telegram with no catch-all -> NO turn is
+        started as an unnamed default agent (SPEC 9.4): the wake fails
+        actionably, names DS_AGENT_ID, and stays queued for retry. Then
+        DS_AGENT_ID resolves it, over the binding and over any ambiguity."""
         _, out = self.claim_order()
         p, argvs = self.wake(json.dumps(out), bindings=[
             {"agentId": "a", "match": {"channel": "telegram", "accountId": "x"}},
             {"agentId": "b", "match": {"channel": "telegram", "accountId": "y"}}])
-        self.assertEqual(len(argvs), 1, argvs)
-        self.assertNotIn("--agent", argvs[0])
+        self.assertEqual(argvs, [])                     # nothing unnamed started
+        self.assertEqual(p.returncode, 70, p.stdout + p.stderr)
         self.assertIn("DS_AGENT_ID", p.stderr)
+        # the failure is NAMED in the claim ledger and the request stays
+        # queued (step unchanged) — actionable, never claimed-and-forgotten
+        con = sqlite3.connect("file:%s?mode=ro" % out["db"], uri=True)
+        try:
+            fails = [json.loads(r[0]) for r in con.execute(
+                "SELECT payload FROM records WHERE run_id=? AND kind='wake_failed'",
+                (out["order_id"],))]
+            steps = con.execute("SELECT step FROM orders WHERE order_id=?",
+                                (out["order_id"],)).fetchall()
+        finally:
+            con.close()
+        self.assertTrue(fails and fails[0]["reason"] == "AMBIGUOUS_BINDING", fails)
+        self.assertEqual(steps, [("wake_queued",)], steps)  # still retryable
         # DS_AGENT_ID always wins, over the binding and over any ambiguity
         _, forced = self.wake(json.dumps(out), DS_AGENT_ID="ops")
         self.assertEqual(forced[0][forced[0].index("--agent") + 1], "ops")
@@ -380,17 +405,23 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(p.returncode, 3)               # the agent's own code
         self.assertEqual(len(argvs), 1, argvs)          # exactly one attempt
 
-    def test_wake_without_delivery_available_says_so_and_leaves_zero(self):
+    def test_wake_without_delivery_available_names_the_gap_and_fails_separately(self):
+        """SPEC 9.4: an unsupported delivery capability is never silent
+        success. The turn still runs (work continues) but the exit is the
+        wake's own failure code, separate from the poll's success — the timer
+        propagates it. No OpenClaw at all starts nothing and fails the same way
+        (the wake stays queued either way)."""
         _, out = self.claim_order()
         p, argvs = self.wake(json.dumps(out), deliver=False)
-        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.returncode, 71, p.stdout + p.stderr)
         self.assertIn("no --deliver", p.stderr)
         self.assertNotIn("--deliver", argvs[0])
-        # control: no OpenClaw on PATH at all -> still exit 0, nothing invoked
+        self.assertEqual(len(argvs), 1, argvs)          # the turn DID run
+        # control: no OpenClaw on PATH at all -> nothing invoked, named failure
         p2 = subprocess.run([WAKE, json.dumps(out)],
                             capture_output=True, text=True,
                             env={"PATH": "/usr/bin:/bin"})
-        self.assertEqual(p2.returncode, 0, p2.stdout + p2.stderr)
+        self.assertEqual(p2.returncode, 70, p2.stdout + p2.stderr)
         self.assertIn("not on PATH", p2.stderr)
 
     def test_wake_rejects_a_bad_poll_line_before_touching_openclaw(self):
@@ -413,7 +444,8 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(p.stderr, "")
         self.assertEqual(STUDIO["seen"],
                          [{"method": "POST", "path": "/api/studio/checkin",
-                           "body": {}, "key": MACHINE_KEY}])
+                           "body": {"agnes_remembered": "unknown"},
+                           "key": MACHINE_KEY}])
         # and nothing was created in the runs dir
         self.assertFalse(self.runs.exists())
 
