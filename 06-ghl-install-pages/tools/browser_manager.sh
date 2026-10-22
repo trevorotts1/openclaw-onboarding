@@ -55,10 +55,11 @@
 #   bash browser_manager.sh session-name
 #   bash browser_manager.sh auth-age [-- <session>]    # F5-b: seconds since last seed (-1=unknown)
 #   bash browser_manager.sh auth-stale [-- <session>]  # F5-b: exit 0=STALE, 1=FRESH
+#   bash browser_manager.sh watchdog                   # P3: one Playwright-lane watchdog sweep
 #   bash browser_manager.sh probe                      # P0-6: capability probe (ADVISORY: always exit 0)
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v27.1.62"
+BROWSER_MANAGER_VERSION="v27.1.69"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -267,10 +268,17 @@ _bm_lock_acquire() {
 
 # ── LEASE (Approach 0 graft) — process+mtime liveness, never .pid ─────────────
 _bm_now() { date -u +%s; }
+# PID start-time token — with the PID this is a PID-REUSE-SAFE process identity
+# (plan P3: "watchdog keyed by lease+PID+start-time+profile-path"). A recycled
+# PID has a different start time and can never match a stale lease.
+_bm_pid_start() {
+  ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | tr -d '"\\' | sed -e 's/^ //' -e 's/ $//'
+}
 _bm_write_lease() {
   local session="$1"
-  printf '{"session":"%s","manager_pid":%s,"started_epoch":%s,"ttl_sec":%s,"box_id":"%s","override":%s}\n' \
+  printf '{"session":"%s","manager_pid":%s,"started_epoch":%s,"ttl_sec":%s,"box_id":"%s","override":%s,"pid_start":"%s","profile_path":"%s"}\n' \
     "$session" "$$" "$(_bm_now)" "$AB_SESSION_TTL" "$(_bm_box_id)" "$_BM_OVERRIDE" \
+    "$(_bm_pid_start $$)" "${AB_ENGINE_DIR:-$HOME/.agent-browser}" \
     > "$LOCKDIR/leases/${session}.lease" 2>/dev/null || true
 }
 
@@ -908,6 +916,22 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
         echo "FRESH"; exit 1
       fi
       ;;
+    watchdog)
+      # P3: ONE watchdog sweep over the Playwright-lane leases (*.pwlease).
+      # The implementation lives once, in browser_manager.py (PID-reuse-safe
+      # lease identity: PID + start-time + exact owned profile path; graceful
+      # stop before force; personal Chrome never signaled). LOCK-FREE: a sweep
+      # never takes the box singleton lock (it only reclaims leases whose owner
+      # is dead/reused or whose bounded lifetime passed).
+      _bm_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+      if [ -f "$_bm_self_dir/browser_manager.py" ] && command -v python3 >/dev/null 2>&1; then
+        python3 "$_bm_self_dir/browser_manager.py" --pw-watchdog
+      else
+        echo "WARN watchdog: python3/browser_manager.py unavailable — sweep skipped" >&2
+        echo '{"reclaimed": [], "healthy": [], "detail": {}, "error": "skipped"}'
+      fi
+      exit 0
+      ;;
     probe)
       # P0-6 / plan 2.4-1: capability probe. LOCK-FREE (auth-age model):
       # never takes the box singleton lock (a probe subprocess that took the
@@ -1045,7 +1069,7 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       echo "TORN-DOWN: session=$(bm_session_name)"
       ;;
     *)
-      echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name|auth-age|auth-stale|probe} [-- args...]" >&2
+      echo "usage: browser_manager.sh {ensure|eval|open|snapshot|wait|find|fill|run-detached|teardown|session-name|auth-age|auth-stale|watchdog|probe} [-- args...]" >&2
       exit 64
       ;;
   esac

@@ -22,6 +22,17 @@ Directive 20.5 rules enforced here:
   acknowledged registration required (2xx + idempotent-replay proof), never
   "attempted write counts as done"; replay preserves order + tenant isolation.
 
+Durable state (W08-U1 / finding D13): the outbox defaults to a FILE bound to
+the tenant and run identity (default_outbox_path), never :memory:. Passing
+db_path=":memory:" is an explicit test seam only. An outage keeps rows
+pending/sent in that file (pending_sync() is the visible synchronization
+state) and a later flush replays them idempotently -- same key, same row, no
+second campaign, no manual database edits. stage_receipts holds the evidence
+identity of stage review/completion so a replay can return the existing
+receipt instead of re-running transitions. events() projects the run's
+state, approval request/decision, failure, recovery and deliverable events
+from the same durable rows -- one source of truth.
+
 Out of scope (explicit): POST /api/tasks/{id}/return-to-orchestrator handback
 (task family, worker->orchestrator path) and any new Kanban implementation.
 
@@ -96,10 +107,31 @@ CREATE TABLE IF NOT EXISTS card_ids(
   task_id TEXT NOT NULL,
   PRIMARY KEY (job_id, stage_slug)
 );
+CREATE TABLE IF NOT EXISTS stage_receipts(
+  job_id TEXT NOT NULL,
+  stage_slug TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  evidence TEXT NOT NULL,
+  reviewer TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  receipt TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (job_id, stage_slug, phase)
+);
 """
 
 #: CC deliverable types (src/lib/validation.ts CreateDeliverableSchema).
 DELIVERABLE_TYPES = ("file", "url", "artifact", "image")
+
+#: Run event taxonomy (spec 13: state, approval request/decision, failure,
+#: recovery and deliverable events throughout the run). events() projects them
+#: from the durable outbox rows.
+EVENT_TYPES = ("state", "approval_request", "approval_decision", "failure",
+               "recovery", "deliverable")
+
+#: Receipt phases recorded per stage card.
+RECEIPT_PHASES = ("review", "done")
 
 
 def _loud(kind, code, detail):
@@ -157,10 +189,38 @@ def _key(kind, job_id, stage_slug, payload):
     return "%s:%s:%s:%s" % (kind, job_id, stage_slug or "-", digest)
 
 
-class Outbox:
-    """Durable board outbox bound to ONE workspace (tenant isolation)."""
+def _slug(value):
+    safe = "".join(c if c.isalnum() or c in "._-" else "-" for c in str(value)).strip("-")
+    safe = safe or "x"
+    return safe if safe == str(value) else "%s-%s" % (
+        safe, hashlib.sha1(str(value).encode()).hexdigest()[:8])
 
-    def __init__(self, db_path=":memory:", base_url=None, workspace=None, sender=None):
+
+def default_outbox_path(workspace, run_id=None):
+    """Durable outbox file bound to the tenant and run identity (D13: the
+    default state must never be :memory:). CC_OUTBOX_DIR overrides the root;
+    CC_RUN_ID supplies the run when the caller has no explicit run identity.
+    ponytail: callers that know their run (the adapter does) pass run_id=;
+    studio_bridge._board_epic passes none and lands in the tenant's
+    'default' run file -- add run_id there when that file is next owned."""
+    root = (os.environ.get("CC_OUTBOX_DIR")
+            or os.path.join(os.path.expanduser("~"), ".claude",
+                            "drama-song-factory", "outbox"))
+    run = run_id or os.environ.get("CC_RUN_ID") or "default"
+    return os.path.join(root, _slug(workspace), _slug(run) + ".sqlite3")
+
+
+class Outbox:
+    """Durable board outbox bound to ONE workspace (tenant isolation).
+
+    db_path=None resolves default_outbox_path(workspace, run_id): a durable
+    file that survives process restart. db_path=":memory:" is an explicit
+    test seam only -- production callers must get the durable default or pass
+    a durable path.
+    """
+
+    def __init__(self, db_path=None, base_url=None, workspace=None, sender=None,
+                 run_id=None):
         # CC_PORT is what Command Center's ecosystem.config.cjs exports; default stays 4000.
         # Env order matches every other fleet board client (mc_board.py,
         # cc_board.py): CC_BASE_URL, then COMMAND_CENTER_URL, then MISSION_CONTROL_URL.
@@ -173,6 +233,13 @@ class Outbox:
         self.workspace = workspace or os.environ.get("CC_WORKSPACE", "")
         if not self.workspace:
             raise BoardSyncError("workspace binding required (pass workspace= or set CC_WORKSPACE)")
+        if db_path is None:
+            db_path = default_outbox_path(self.workspace, run_id)
+        if db_path != ":memory:":
+            parent = os.path.dirname(os.path.abspath(db_path))
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+        self.db_path = db_path
         self.db = sqlite3.connect(db_path)
         self.db.executescript(_SCHEMA)
         self.sender = sender or self._http_sender
@@ -262,15 +329,21 @@ class Outbox:
         return self._insert("deliverable", epic_id, None, workspace, payload)
 
     def enqueue_stage_deliverable(self, job_id, stage_slug, url, title, workspace,
-                                  description=None):
-        """Register a ``url`` deliverable on ONE stage card.
+                                  description=None, deliverable_type="url",
+                                  task_id=None):
+        """Register ONE deliverable on ONE stage card through the durable
+        outbox (pending -> sent -> acked) -- the same acknowledged contract
+        the stage-move guard reads (stage_deliverable_queued).
 
         The Command Center refuses ``review``/``done`` on a card with no
         registered deliverable (task-lifecycle.ts PRECONDITION_EVIDENCE), so a
         stage card must say where its work landed before it can move up. The
-        POST address is the stage card's TASK id, kept in ``card_ids`` from the
-        create response's ``stages[].id`` (see _seed_cards) — resolved at send
-        time, so this may be queued in the same flush as the create.
+        POST address is the stage card's TASK id (``task_id=`` when the caller
+        knows it, else ``card_ids`` from the create response's ``stages[].id``,
+        see _seed_cards) -- resolved at send time, so this may be queued in the
+        same flush as the create. ``url`` type must be http(s) (CC FIX 27
+        refuses a non-http(s) url at registration; fail here instead); file /
+        image / artifact types carry the registered path as given.
         """
         self._bind(workspace)
         if not (1 <= len(job_id) <= 128):
@@ -279,11 +352,22 @@ class Outbox:
             raise BoardSyncError("stage slug length out of range")
         if not (1 <= len(title) <= 500):
             raise BoardSyncError("deliverable title length out of range")
+        if deliverable_type not in DELIVERABLE_TYPES:
+            raise BoardSyncError("unknown deliverable_type %r" % (deliverable_type,))
         path = (url or "").strip()
-        # CC FIX 27 refuses a non-http(s) url at registration; fail here instead.
-        if not (path.startswith("http://") or path.startswith("https://")):
-            raise BoardSyncError("stage deliverable url must be http(s): %r" % (url,))
-        payload = {"deliverable_type": "url", "path": path, "title": title}
+        if deliverable_type == "url":
+            if not (path.startswith("http://") or path.startswith("https://")):
+                raise BoardSyncError("stage deliverable url must be http(s): %r" % (url,))
+        elif not path:
+            raise BoardSyncError("stage deliverable path required")
+        if task_id:
+            if not (1 <= len(task_id) <= 128):
+                raise BoardSyncError("task_id length out of range")
+            self.db.execute(
+                "INSERT OR REPLACE INTO card_ids(job_id,stage_slug,task_id) VALUES(?,?,?)",
+                (job_id, stage_slug, task_id))
+            self.db.commit()
+        payload = {"deliverable_type": deliverable_type, "path": path, "title": title}
         if description is not None:
             payload["description"] = description
         return self._insert("deliverable", job_id, stage_slug, workspace, payload)
@@ -296,6 +380,106 @@ class Outbox:
             " AND state IN (?,?,?) LIMIT 1",
             (job_id, stage_slug, PENDING, SENT, ACKED)).fetchone()
         return row is not None
+
+    def acknowledged_status(self, job_id, stage_slug):
+        """The card's current ACKNOWLEDGED status (card_state only ever holds
+        create-ack seeds and acked moves), or None when nothing ever acked."""
+        row = self.db.execute(
+            "SELECT status FROM card_state WHERE job_id=? AND stage_slug=?",
+            (job_id, stage_slug)).fetchone()
+        return row[0] if row else None
+
+    def reopen_count(self, job_id, stage_slug):
+        """How many times this card was legally re-opened (non-rejected moves
+        whose reason starts 'reopen:'). Durable and monotonic: replayed flows
+        after a re-open carry it in their reason so they queue as NEW intents
+        instead of deduping onto the rows of the cycle that was invalidated."""
+        row = self.db.execute(
+            "SELECT COUNT(*) FROM outbox WHERE kind='move' AND job_id=? AND stage_slug=?"
+            " AND state!=? AND payload LIKE ?",
+            (job_id, stage_slug, REJECTED, '%"reason":"reopen:%')).fetchone()
+        return row[0]
+
+    def record_stage_receipt(self, job_id, stage_slug, phase, evidence,
+                             reviewer, actor, receipt):
+        """Durable receipt for one stage phase ('review' or 'done'): the
+        evidence identity a replay compares against, and the receipt replay
+        returns unchanged."""
+        if phase not in RECEIPT_PHASES:
+            raise BoardSyncError("unknown receipt phase %r" % (phase,))
+        ts = _now()
+        self.db.execute(
+            "INSERT OR REPLACE INTO stage_receipts"
+            "(job_id,stage_slug,phase,evidence,reviewer,actor,receipt,created_at,updated_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?)",
+            (job_id, stage_slug, phase, evidence, reviewer, actor,
+             json.dumps(receipt, sort_keys=True), ts, ts))
+        self.db.commit()
+
+    def stage_receipt(self, job_id, stage_slug, phase):
+        row = self.db.execute(
+            "SELECT evidence,reviewer,actor,receipt,updated_at FROM stage_receipts"
+            " WHERE job_id=? AND stage_slug=? AND phase=?",
+            (job_id, stage_slug, phase)).fetchone()
+        if not row:
+            return None
+        return {"evidence": row[0], "reviewer": row[1], "actor": row[2],
+                "receipt": json.loads(row[3]), "updated_at": row[4]}
+
+    def pending_sync(self, job_id=None):
+        """Visible pending-synchronization state: every row not yet
+        acknowledged (queued or dispatched-but-unknown), oldest first."""
+        sql = ("SELECT id,kind,job_id,stage_slug,state,attempts,updated_at"
+               " FROM outbox WHERE state IN (?,?)")
+        args = [PENDING, SENT]
+        if job_id is not None:
+            sql += " AND job_id=?"
+            args.append(job_id)
+        sql += " ORDER BY id"
+        return [{"id": r[0], "kind": r[1], "job_id": r[2], "stage_slug": r[3],
+                 "state": r[4], "attempts": r[5], "updated_at": r[6]}
+                for r in self.db.execute(sql, args)]
+
+    def events(self, job_id=None):
+        """Ordered run events projected from the durable outbox rows
+        themselves (spec 13 taxonomy: state, approval_request,
+        approval_decision, failure, recovery, deliverable). A rejected row is
+        a failure event; a row that acked only after a retry/reconcile is a
+        recovery event; blocked-with-ask is the approval request and the
+        first acked move off blocked is its decision."""
+        rows = self.db.execute(
+            "SELECT id,kind,job_id,stage_slug,payload,state,attempts,result"
+            " FROM outbox ORDER BY id").fetchall()
+        out, last_status = [], {}
+        for rid, kind, job, stage, payload, state, attempts, result in rows:
+            if job_id is not None and job != job_id:
+                continue
+            body = json.loads(payload)
+            base = {"id": rid, "kind": kind, "job_id": job, "stage_slug": stage,
+                    "state": state, "attempts": attempts}
+            if state == REJECTED:
+                out.append({**base, "type": "failure",
+                            "detail": json.loads(result or "{}")})
+                continue
+            key = (job, stage)
+            if kind == "create":
+                etype = "state"
+            elif kind == "deliverable":
+                etype = "deliverable"
+            elif body.get("status") == "blocked":
+                etype = "approval_request"
+            elif last_status.get(key) == "blocked":
+                etype = "approval_decision"
+            else:
+                etype = "state"
+            out.append({**base, "type": etype, "detail": body})
+            if kind == "move":
+                if state == ACKED:
+                    last_status[key] = body.get("status")
+            if state == ACKED and attempts > 1:
+                out.append({**base, "type": "recovery",
+                            "detail": json.loads(result or "{}")})
+        return out
 
     def epic_id(self, job_id):
         """The epic card id recorded for this campaign's create, or None."""
@@ -344,6 +528,14 @@ class Outbox:
             payload["reason"] = reason
         if actor is not None:
             payload["actor"] = actor
+        if evidence is not None:
+            # Part of the intent identity (the idempotency key): a changed
+            # artifact is a NEW transition intent and must never dedupe onto
+            # the earlier row. The server's UpdateAdCampaignStageSchema strips
+            # unknown keys today and binds revision evidence when it accepts it.
+            payload["evidence"] = evidence
+        if reviewer is not None:
+            payload["reviewer"] = reviewer
         if blocked_reason is not None:
             payload["blocked_reason"] = blocked_reason
         if blocked_on_human is not None:
@@ -467,7 +659,8 @@ class Outbox:
         self._mark_sent(rid)
         status, resp = self.sender("POST", "/api/tasks/%s/deliverables" % task_id, body)
         if status in (200, 201):
-            self._resolve(rid, ACKED, {"http": status, "deliverable": task_id})
+            self._resolve(rid, ACKED, {"http": status, "deliverable": task_id,
+                                       "id": (resp or {}).get("id")})
             report["acked"].append(rid)
         elif status == 404:
             # Unknown card: reconciled against the board before any retry —

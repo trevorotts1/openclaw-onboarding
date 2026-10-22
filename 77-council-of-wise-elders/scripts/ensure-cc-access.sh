@@ -80,7 +80,11 @@ fi
 #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID   required (else BOTH read from
 #                                   COUNCIL_ACCESS_ENV_FILE, default $HOME/.openclaw/.env;
 #                                   that file is parsed for those two keys, never sourced)
-#   CF_API_BASE, COUNCIL_ZONE_NAME, COUNCIL_ACCESS_EXCLUDE   as provision-council-access.sh
+#   CF_API_BASE, COUNCIL_ZONE_NAME   as provision-council-access.sh
+#   COUNCIL_ACCESS_EXCLUDE   as provision-council-access.sh: the environment, else
+#                            the COUNCIL_ACCESS_EXCLUDE line of COUNCIL_ACCESS_ENV_FILE
+#                            (parsed like the two credentials above, even when the
+#                            credentials come from the environment), else the default
 #   COUNCIL_ACCESS_STATE_DIR   receipts dir, same as the autoprovision job
 #                              (default $HOME/.claude/state/council-elders/access-provision)
 #   COUNCIL_CC_EMAILS_FILE, COUNCIL_CC_OPERATOR_EMAILS, COUNCIL_GHL_LOCATION_ID   see above
@@ -141,7 +145,12 @@ unset CLOUDFLARE_ZONE_ID 2>/dev/null || true   # known trap: points at the wrong
 API="${CF_API_BASE:-https://api.cloudflare.com/client/v4}"
 ACCT="$CLOUDFLARE_ACCOUNT_ID"
 ZONE_NAME="${COUNCIL_ZONE_NAME:-zerohumanworkforce.com}"
-EXCLUDE="${COUNCIL_ACCESS_EXCLUDE:-council.zerohumanworkforce.com}"
+# COUNCIL_ACCESS_EXCLUDE resolves from the environment, else the env-file line, else
+# the default - the same exclude source as provision-council-access.sh and the
+# autoprovision job. An excluded host is skipped silently, zero writes.
+EXCLUDE="${COUNCIL_ACCESS_EXCLUDE:-}"
+[ -n "$EXCLUDE" ] || EXCLUDE="$(env_file_val COUNCIL_ACCESS_EXCLUDE)"
+EXCLUDE="${EXCLUDE:-council.zerohumanworkforce.com}"
 SESSION="720h"            # setup-access-app.sh: 30-day session
 RESCUE_MAX_CLIENT_EMAILS=2  # ponytail: more non-operator emails on a rescue app than this = ambiguous; raise only with the file source
 

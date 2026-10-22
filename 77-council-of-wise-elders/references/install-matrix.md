@@ -88,7 +88,11 @@ zero DNS writes; the first run that sees the connector creates the record
 (`PROVISIONED`); a record whose connector is later gone is `CONNECTOR_DOWN`,
 zero writes, nothing deleted. File contract: the connector token sits at
 `$OPENCLAW_ROOT/secrets/tunnel-council.token`, mode 600, holding only the
-token. How it reaches the box is an operator delivery step, never wire.sh,
+token - the in-container path for container hosts (`OPENCLAW_ROOT` resolves
+to `/data/.openclaw` or `~/.openclaw` as wire.sh does), the host path
+`~/.openclaw/secrets/tunnel-council.token` for host-run connectors; the
+`CONNECTOR_PENDING` line names both delivery paths. How it reaches the box
+is an operator delivery step, never wire.sh,
 which fetches nothing. When the file exists, wire.sh keeps
 `cloudflared tunnel run --token-file <file>` running (Mac LaunchAgent
 `ai.blackceo.council-tunnel`, VPS pm2 app `cloudflared-council`), restarts
@@ -99,18 +103,36 @@ never prints the token, and prints one `COUNCIL_CONNECTOR:` line
 The verifier then reports the connector (DEGRADED COUNCIL_CONNECTOR_DOWN
 when it is not running).
 
+**ADOPT, not CONFLICT.** When the `<slug>-council` record already points at a
+healthy tunnel that already routes the exact path-less rule
+`<slug>-council.<zone> -> http://127.0.0.1:8787` (equivalent loopback forms
+count; a path-scoped rule does not count), the host is ADOPTED by that tunnel: `ALREADY_PROVISIONED` with the
+detail `Council address already wired via tunnel <name>`, zero writes, and no
+dedicated tunnel is ever planned for it. The `Council - <slug>` Access app and
+the edge 302 check still apply to the adopted route. Only a record pointing at
+a tunnel with no such rule (a genuinely foreign or broken claim), or at a dead
+or deleted tunnel, stays
+`CONFLICT` and fails the run.
+
 **Container hosts (a remote-managed Command Center tunnel whose rule origin
-is a private bridge address).** A box that runs the Council inside a docker
-container bound to the container's own loopback, with the Command Center
-rule pointing at the container's bridge address (an IPv4 in 172.16.0.0/12,
+is a private bridge address).** A remote-managed Command Center tunnel whose
+rule points at a private bridge address (an IPv4 in 172.16.0.0/12,
 10.0.0.0/8 or 192.168.0.0/16, or the literal `host.docker.internal`, on the
-Command Center port), takes this same dedicated tunnel path from
+Command Center port) takes this same dedicated tunnel path from
 `provision-council-access.sh`: tunnel `council-<slug>` created remote-managed
-(config_src cloudflare), route `<slug>-council -> http://127.0.0.1:8787`
-(correct because the connector runs inside the container, where the
-Council's loopback lives), connector token saved operator side, and the
-pending line says the connector must run INSIDE the client's container
-(so a later Skill 77 wire.sh or a sanctioned executor can start it). The DNS
+(config_src cloudflare), route `<slug>-council -> http://127.0.0.1:8787`,
+connector token saved operator side. The private-bridge shape alone never
+proves a container: the in-container wording (the connector must run INSIDE
+the client's container, so a later Skill 77 wire.sh or a sanctioned executor
+can start it) fires only with positive container evidence the operator side
+can gather - `COUNCIL_CONTAINER_HOSTS` names the host (comma list of slugs,
+the explicit operator override), or the tunnel's other ingress rules use a
+container-bridge pattern. With no evidence the same dedicated path runs
+unchanged and the message says the connector runs ON THE HOST; the
+`CONNECTOR_PENDING` line always names both delivery paths (in-container
+`$OPENCLAW_ROOT/secrets/tunnel-council.token`, host
+`~/.openclaw/secrets/tunnel-council.token`, plus the operator-side saved
+token). The DNS
 record is still created only once that tunnel shows an active connector,
 and the Access app still mirrors the Command Center app's allow list. Every
 other non-loopback origin (a Command Center on another machine, a public

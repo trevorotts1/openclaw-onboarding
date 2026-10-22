@@ -22,11 +22,46 @@ never charges) through the package's adapter, not only the
 reference's rejection of the event names.
 Run with the rest of the suite: python3 -m unittest discover -s tests -v
 """
+import os
 import sys
 import unittest
 from pathlib import Path
 
-PACKET_REF = Path("/home/hatch/workspace/signature-launch/packet/reference")
+SKILL_DIR = Path(__file__).resolve().parent.parent
+
+
+def _packet_reference_dir():
+    """Locate the packet reference independent of the checkout depth.
+
+    CR-INT-S81-001 (same fix as test_d1_routes.py): the hard-coded
+    ``/home/hatch/workspace/signature-launch/packet/reference`` authored-layout
+    path failed at import on every other machine. Resolution order:
+    ``S81_PACKET_REFERENCE`` env override, tolerant ancestor walk for
+    ``packet/reference``, then the repository's vendored packet copy at
+    ``79-signature-order-form/fixtures/packet``. Fail closed naming the env
+    override; never a silent empty path.
+    """
+    override = os.environ.get("S81_PACKET_REFERENCE")
+    if override:
+        return Path(override)
+    for ancestor in SKILL_DIR.parents:
+        candidate = ancestor / "packet" / "reference"
+        if (candidate / "launch-example.json").is_file() and \
+                (candidate / "acceptance-cases.json").is_file():
+            return candidate
+        vendored = ancestor / "79-signature-order-form" / "fixtures" / "packet"
+        if (vendored / "reference_contracts.py").is_file() and \
+                (vendored / "acceptance-cases.json").is_file():
+            return vendored
+    raise ImportError(
+        "S81 tests: packet reference (reference_contracts.py + "
+        "acceptance-cases.json) not found in any ancestor of "
+        f"{SKILL_DIR}; set S81_PACKET_REFERENCE to the packet reference "
+        "directory"
+    )
+
+
+PACKET_REF = _packet_reference_dir()
 sys.path.insert(0, str(PACKET_REF))
 from reference_contracts import Extras, resolve_after, validate_graph  # noqa: E402
 

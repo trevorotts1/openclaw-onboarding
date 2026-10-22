@@ -27,7 +27,9 @@ from choice_card.intake_card import person_question as PQ  # noqa: E402
 
 SCRIPT = os.path.join(HERE, "person_question.py")
 FIXTURES = os.path.join(HERE, "person_question_fixtures.json")
-OPENCLAW = ["openclaw", "message", "send", "--channel", "telegram", "--target"]
+# W03-U1 (D06): an app-channel question routes through the app adapter -- the
+# path no longer hardcodes Telegram for every surface.
+OPENCLAW = ["openclaw", "message", "send", "--channel", "app", "--target"]
 
 def _fixtures():
     with open(FIXTURES, encoding="utf-8") as f:

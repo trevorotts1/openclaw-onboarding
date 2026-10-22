@@ -656,14 +656,41 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
 
         if action != "complete":
             to = _MUSIC_TO.get(action) or ("FAILED_RETRYABLE" if retryable else "FAILED_BLOCKED")
+            if to == "RUNNING":
+                # D04: resume into RUNNING is fenced. An EXPIRED RUNNING lease
+                # must RECLAIM through the existing claim API (version-CAS
+                # fenced), never attempt the illegal RUNNING->RUNNING transition
+                # that used to raise ILLEGAL_TRANSITION before claim could take
+                # over. A legal edge (WAITING_PROVIDER/WAITING_APPROVAL ->
+                # RUNNING) still transitions; a live same-owner RUNNING lease
+                # heartbeats. Provider tasks are reconciled by the recovering
+                # worker -- never resubmitted to recover a lease.
+                if state == "RUNNING":
+                    if live and row["owner"] == owner:
+                        row = st.heartbeat(rid, MUSIC, owner, lease_s=lease_s)
+                    else:
+                        try:
+                            row = st.claim(rid, MUSIC, owner, lease_s=lease_s,
+                                           expected_version=row["version"])
+                        except ss.StoreError as e:
+                            return _mres("rejected", e.code, str(e), row)
+                else:
+                    row = st.transition(rid, MUSIC, "RUNNING", owner,
+                                        expected_version=row["version"],
+                                        reason=reason)
+                    if row["owner"] == owner:
+                        row = st.heartbeat(rid, MUSIC, owner, lease_s=lease_s)
+                return _mres("ok", "music-resumed",
+                             "%s resumed the music lease (fenced; an expired "
+                             "lease is reclaimed through the claim API and the "
+                             "old owner can no longer write); reconcile the "
+                             "spend ledger's acknowledged provider tasks first, "
+                             "never resubmit a paid job to recover" % owner, row)
             row = st.transition(rid, MUSIC, to, owner, expected_version=row["version"],
                                 reason=reason)
-            if row["owner"] == owner and to in ("RUNNING", "WAITING_PROVIDER", "WAITING_APPROVAL"):
+            if row["owner"] == owner and to in ("WAITING_PROVIDER", "WAITING_APPROVAL"):
                 row = st.heartbeat(rid, MUSIC, owner, lease_s=max(
                     lease_s, _APPROVAL_LEASE_S if to == "WAITING_APPROVAL" else 0))
-            elif to == "RUNNING":       # recovering worker after an expired lease
-                row = st.claim(rid, MUSIC, owner, lease_s=lease_s,
-                               expected_version=row["version"])
             out = {"PARKED": "parked", "FAILED_BLOCKED": "rejected"}.get(to, "ok")
             return _mres(out, "music-" + to.lower().replace("_", "-"),
                          "music %s -> %s" % (state, to), row)
@@ -896,6 +923,68 @@ def _read_json(path, default=None):
         return default
     return doc if isinstance(doc, dict) else default
 
+
+class ShapeError(ValueError):
+    """A typed saved-state object/list had the wrong shape (SPEC 8.5).
+
+    Never silently coerced: a dict-only reader must not be asked to read a
+    list of QC records, and a list reader must not swallow a dict. Raised at
+    the boundary so a wrong shape is a loud, named error, never a quiet
+    default."""
+
+
+def _read_json_list(path, required=True):
+    """Typed LIST reader (SPEC 8.5 / D33): a JSON array of objects.
+
+    `_read_json` is dict-only and returns its default for a list, which is
+    exactly the D33 defect (a dict-only reader asked to read a list of QC
+    records). This reader is list-shaped and raises ``ShapeError`` on a wrong
+    shape instead of coercing. Missing + ``required`` -> ShapeError; missing +
+    not required -> []."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except FileNotFoundError:
+        if required:
+            raise ShapeError("list-missing: %s" % path) from None
+        return []
+    except (OSError, ValueError) as e:
+        raise ShapeError("list-unreadable: %s (%s)" % (path, e)) from e
+    if not isinstance(doc, list):
+        raise ShapeError("list-shape: %s holds %s, need a JSON array"
+                         % (path, type(doc).__name__))
+    for i, rec in enumerate(doc):
+        if not isinstance(rec, dict):
+            raise ShapeError("list-record-shape: %s[%d] is %s, need an object"
+                             % (path, i, type(rec).__name__))
+    return doc
+
+
+#: Independent required-check declaration (SPEC 8.6 / D33). The required set
+#: for a stage is declared HERE, from the stage's own gate contract -- never
+#: derived from whatever QC records happen to arrive. A missing/empty evidence
+#: set can therefore never shrink the required set to nothing and read as
+#: "all checks passed". For music the independent gate is the song gate
+#: (check_id "song", the composite WW-21 song judge); the reconciler requires
+#: that one PASS record regardless of what else shows up. ``_required_checks``
+#: refuses (returns None) when the independent declaration itself is empty: a
+#: required-check set may not become empty because evidence is missing.
+_REQUIRED_CHECKS = {
+    "music": ("song",),
+}
+
+
+def _required_checks(stage):
+    """The independently declared required check IDs for ``stage``.
+
+    None when the declaration is empty/absent -- the caller must then refuse
+    rather than treat an empty set as all-passed (D33). Never derived from the
+    received records: an arbitrary or empty record list cannot change it."""
+    req = _REQUIRED_CHECKS.get(stage)
+    if not req:
+        return None
+    return sorted(set(req))
+
 # ── L4-RL4 (v2.9.73 reliability): reconcile / stale-session / forks ─────────
 #
 # Live proof (Voyage To Virtue, 2026-10-20/21): storyboard gate.json was
@@ -1014,19 +1103,25 @@ def _proven_music(run_dir, run_id=""):
     if qg is None:
         ev["qc"] = "qc_gate-unavailable"
         return False, ev
+    # D33: read the QC records through the LIST reader (the dict-only reader
+    # returns its default for a list, which is the very defect). A wrong shape
+    # is a loud ShapeError, never a quiet empty list that reads as passed.
     try:
-        with open(rec_path, encoding="utf-8") as f:
-            recs = json.load(f)
-    except (OSError, ValueError):
-        recs = None
-    if not isinstance(recs, list) or not recs:
+        recs = _read_json_list(rec_path, required=True)
+    except ShapeError as e:
+        ev["qc"] = "records-shape: %s" % e
+        return False, ev
+    if not recs:
         ev["qc"] = "records-empty"
         return False, ev
     makers = _read_json(Path(run_dir) / "music" / "makers.json", {}) or {}
-    # the required checks the record set itself names (same read the CLI's
-    # complete step takes); an empty required list is a refusal here too.
-    required = sorted({str(r.get("check_id")) for r in recs
-                       if isinstance(r, dict) and r.get("check_id")})
+    # D33: the required checks come from the INDEPENDENT declaration, never
+    # from whatever records arrived. An empty declaration is a refusal, so a
+    # missing/empty evidence set can never shrink the required set to nothing.
+    required = _required_checks(_MUSIC)
+    if not required:
+        ev["qc"] = "required-checks-undeclared"
+        return False, ev
     try:
         res = qg.evaluate(run_id or "reconcile", _MUSIC, recs, makers,
                           required)
@@ -1484,6 +1579,554 @@ def _agnes_admission(remaining):
     except Exception:                             # noqa: BLE001
         return None
 
+# ═══════════════════════════════════════════════════════════════════════════
+# S75-W02-U1: stage registry, lifecycle taxonomy, strict completion selector,
+# and the event-driven continuation controller (SPEC 8.1/8.2/8.6; D02, D03,
+# D04, D33). All logic here is pure over a state dict / evidence dict so it is
+# unit-testable with controlled fixtures; the disk layer is a thin collector.
+# ═══════════════════════════════════════════════════════════════════════════
+
+#: The canonical 12-stage production order (must match batch_mode.STAGES).
+CANONICAL_STAGES = (
+    "research", "creative-strategy", "script-lyrics", "music",
+    "continuity-bible", "storyboard", "image-keyframes", "video-generation",
+    "qc-retakes", "assembly", "final-qc", "delivery",
+)
+
+#: Every field a published stage entry must carry (SPEC 8.6). ``validate_registry``
+#: refuses any required stage missing one of these.
+REQUIRED_REGISTRY_FIELDS = (
+    "prerequisites", "worker_role", "entrypoint", "idempotency",
+    "output_producer", "qc_producer", "required_evidence", "approval_policy",
+    "completion_proof", "recovery_entrypoint", "next_action_event",
+)
+
+
+def _stage(prereqs, worker, entrypoint, idem, out_prod, qc_prod, evidence,
+           approval, completion, recovery, wake, required=True,
+           artifacts=()):
+    return {
+        "prerequisites": list(prereqs),
+        "worker_role": worker,
+        "entrypoint": entrypoint,
+        "idempotency": idem,
+        "output_producer": out_prod,
+        "qc_producer": qc_prod,
+        "required_evidence": list(evidence),
+        "approval_policy": approval,
+        "completion_proof": completion,
+        "recovery_entrypoint": recovery,
+        "next_action_event": wake,
+        "required": bool(required),
+        "required_artifacts": list(artifacts),
+    }
+
+
+#: The full 12-stage registry (SPEC 8.6). Published + validated by
+#: ``validate_registry``. Specialized runners are preserved (an entrypoint may
+#: name a dedicated script); no stage is forced into a reconciler just to fill
+#: the table. No entry returns only an instruction string -- each ``entrypoint``
+#: is a concrete invocation.
+STAGE_REGISTRY = {
+    "research": _stage(
+        [], "research-analyst", "scripts/core/research_engine/research.py gather",
+        "research/<request-digest>", "research/receipt.json",
+        "research/qc-record.json", ["research/receipt.json"],
+        "none", "research brief + sources on disk",
+        "scripts/core/research_engine/research.py resume",
+        "research-complete", artifacts=["research/receipt.json"]),
+    "creative-strategy": _stage(
+        ["research"], "creative-strategist",
+        "scripts/core/method_plan/method_plan.py build",
+        "creative/<plan-revision>", "creative/blueprint.json",
+        "creative/qc-record.json", ["creative/blueprint.json"],
+        "operator", "approved Story Beat Blueprint",
+        "scripts/core/method_plan/method_plan.py resume",
+        "creative-approved", artifacts=["creative/blueprint.json"]),
+    "script-lyrics": _stage(
+        ["creative-strategy"], "lyricist",
+        "scripts/core/script_approval/… generate", "script/<plan-revision>",
+        "script/lyrics.json", "script/qc-record.json", ["script/lyrics.json"],
+        "delivered-approval", "approved lyric sheet",
+        "scripts/core/script_approval/… resume", "script-approved",
+        artifacts=["script/lyrics.json"]),
+    "music": _stage(
+        ["script-lyrics"], "music-producer",
+        "scripts/core/intake_preflight/factory.py music --action start",
+        "music/<run-id>/<attempt-id>", "music/picked-song.mp3",
+        "music/qc-records.json", ["music/picked-song.mp3", "song-choices/pick.json"],
+        "delivered-approval", "picked song + independent QC PASS",
+        "scripts/core/intake_preflight/factory.py music --action resume",
+        "provider-completion", artifacts=["music/picked-song.mp3"]),
+    "continuity-bible": _stage(
+        ["music"], "continuity-editor",
+        "scripts/core/method_plan/method_plan.py continuity",
+        "continuity/<plan-revision>", "continuity/bible.json",
+        "continuity/qc-record.json", ["continuity/bible.json"],
+        "none", "continuity bible on disk",
+        "scripts/core/method_plan/method_plan.py continuity --resume",
+        "continuity-complete", artifacts=["continuity/bible.json"]),
+    "storyboard": _stage(
+        ["continuity-bible"], "storyboard-artist",
+        "scripts/core/intake_preflight/factory.py storyboard",
+        "storyboard/<plan-revision>", "storyboard/gate.json",
+        "storyboard/qc-record.json",
+        ["storyboard/gate.json", "storyboard/approval.json"],
+        "delivered-approval", "approved shots + stills present",
+        "scripts/core/intake_preflight/factory.py storyboard --resume",
+        "approval", artifacts=["storyboard/gate.json"]),
+    "image-keyframes": _stage(
+        ["storyboard"], "keyframe-artist",
+        "scripts/core/… image-keyframes", "keyframes/<shot-set-digest>",
+        "keyframes/manifest.json", "keyframes/qc-record.json",
+        ["keyframes/manifest.json"], "none", "keyframes per approved shot",
+        "scripts/core/… image-keyframes --resume", "provider-completion",
+        artifacts=["keyframes/manifest.json"]),
+    "video-generation": _stage(
+        ["image-keyframes"], "video-generator",
+        "scripts/core/… video-generation", "video/<segment-set-digest>",
+        "video/clips.json", "video/qc-record.json", ["video/clips.json"],
+        "none", "all clips materialized",
+        "scripts/core/… video-generation --resume", "provider-completion",
+        artifacts=["video/clips.json"]),
+    "qc-retakes": _stage(
+        ["video-generation"], "qc-reviewer",
+        "scripts/core/qc_gate.py evaluate", "qc/<clip-set-digest>",
+        "qc/retakes.json", "qc/qc-record.json", ["qc/retakes.json"],
+        "operator", "QC verdict recorded (retakes or accept)",
+        "scripts/core/qc_gate.py resume", "qc-complete",
+        required=False, artifacts=["qc/retakes.json"]),
+    "assembly": _stage(
+        ["qc-retakes"], "editor", "scripts/core/… assembly",
+        "assembly/<timeline-digest>", "assembly/timeline.json",
+        "assembly/qc-record.json", ["assembly/timeline.json"],
+        "none", "assembled timeline on disk",
+        "scripts/core/… assembly --resume", "assembly-complete",
+        artifacts=["assembly/timeline.json"]),
+    "final-qc": _stage(
+        ["assembly"], "final-qc-reviewer", "scripts/core/qc_gate.py final",
+        "final-qc/<assembly-digest>", "final-qc/record.json",
+        "final-qc/record.json", ["final-qc/record.json"],
+        "operator", "independent final QC PASS",
+        "scripts/core/qc_gate.py final --resume", "final-qc-complete",
+        artifacts=["final-qc/record.json"]),
+    "delivery": _stage(
+        ["final-qc"], "delivery-agent", "scripts/core/… deliver",
+        "delivery/<run-id>", "delivery/receipts.json",
+        "delivery/qc-record.json", ["delivery/receipts.json"],
+        "none", "successful destination delivery receipts",
+        "scripts/core/… deliver --resume", "delivery-complete",
+        artifacts=["delivery/receipts.json"]),
+}
+
+
+def validate_registry(registry=None):
+    """Validate the published 12-stage registry (SPEC 8.6). Returns a list of
+    problems; empty list == valid. Checks: all 12 canonical stages present,
+    no extras, and every required stage carries every required field non-empty."""
+    reg = STAGE_REGISTRY if registry is None else registry
+    problems = []
+    for s in CANONICAL_STAGES:
+        if s not in reg:
+            problems.append("missing stage %r" % s)
+    for s in reg:
+        if s not in CANONICAL_STAGES:
+            problems.append("unexpected stage %r" % s)
+    for s in CANONICAL_STAGES:
+        entry = reg.get(s)
+        if not isinstance(entry, dict):
+            continue
+        for field in REQUIRED_REGISTRY_FIELDS:
+            if field not in entry:
+                problems.append("stage %r missing field %r" % (s, field))
+                continue
+            # prerequisites may be an empty list (the root stage has none); it
+            # must still be RECORDED as a list. Every other contract field must
+            # be non-empty. required_evidence is a list and must be non-empty.
+            if field == "prerequisites":
+                if not isinstance(entry[field], list):
+                    problems.append("stage %r field %r must be a list"
+                                    % (s, field))
+                continue
+            if not entry[field]:
+                problems.append("stage %r empty field %r" % (s, field))
+    return problems
+
+
+# ── Lifecycle taxonomy (SPEC 8.1): 9 distinct conditions ───────────────────
+#: Canonical lifecycle states a run/stage can be in. Distinct, never conflated.
+LIFECYCLE_STATES = (
+    "ready", "running", "waiting-for-provider", "waiting-for-delivered-approval",
+    "retryable-failure", "actionable-external-blocked", "parked-by-policy",
+    "canceled", "complete",
+)
+
+#: Migration map: stable raw store state name -> canonical lifecycle. Existing
+#: stable names are preserved; nothing here renames a persisted state.
+STATE_MIGRATION = {
+    "NOT_STARTED": "ready",
+    "READY": "ready",
+    "RUNNING": "running",
+    "QC": "running",
+    "WAITING_PROVIDER": "waiting-for-provider",
+    "WAITING_APPROVAL": "waiting-for-delivered-approval",
+    "FAILED_RETRYABLE": "retryable-failure",
+    "FAILED_BLOCKED": "actionable-external-blocked",
+    "PARKED": "parked-by-policy",
+    "CANCELED": "canceled",
+    "COMPLETE": "complete",
+    "STALE": "ready",
+}
+
+#: For a non-runnable lifecycle, the event that wakes it. ``None`` means only a
+#: human/policy action can wake it (never an automatic continuation).
+WAKE_EVENT = {
+    "ready": "dispatch",
+    "running": "worker-progress",
+    "waiting-for-provider": "provider-completion",
+    "waiting-for-delivered-approval": "approval",
+    "retryable-failure": "retry-authorized",
+    "actionable-external-blocked": None,
+    "parked-by-policy": None,
+    "canceled": None,
+    "complete": None,
+}
+
+#: Terminal lifecycle states: a stage in one of these never auto-continues.
+TERMINAL_LIFECYCLE = frozenset({"complete", "canceled", "parked-by-policy"})
+
+
+def classify(raw_state):
+    """Canonical lifecycle for a raw stored state name. Unknown -> None."""
+    if raw_state is None:
+        return "ready"
+    return STATE_MIGRATION.get(str(raw_state))
+
+
+def why_not_runnable(lifecycle):
+    """(reason, wake_event): why a stage is not runnable now and what wakes it."""
+    wake = WAKE_EVENT.get(lifecycle)
+    if lifecycle == "ready":
+        return ("ready to dispatch", "dispatch")
+    if lifecycle == "running":
+        return ("a worker holds it", "worker-progress")
+    if lifecycle == "waiting-for-provider":
+        return ("waiting on a provider job", "provider-completion")
+    if lifecycle == "waiting-for-delivered-approval":
+        return ("waiting on a delivered approval", "approval")
+    if lifecycle == "retryable-failure":
+        return ("retryable failure awaiting authorization", "retry-authorized")
+    if lifecycle == "actionable-external-blocked":
+        return ("blocked on an external cause a human must clear", None)
+    if lifecycle == "parked-by-policy":
+        return ("parked by explicit policy/user action", None)
+    if lifecycle == "canceled":
+        return ("canceled", None)
+    if lifecycle == "complete":
+        return ("complete", None)
+    return ("unknown state", None)
+
+
+def select_next_action(got, stages=None, registry=None):
+    """Select the next eligible action over a state dict (SPEC 8.1 / D02/D03).
+
+    ``got`` maps stage -> raw state. Returns a decision dict. CRUCIALLY it
+    distinguishes ``exhausted`` (no runnable action -- e.g. all parked, all
+    failed, empty, mixed terminal) from true completion. ``all_complete`` is
+    only True when every stage's lifecycle is ``complete``; the caller must
+    still pass the strict ``evaluate_completion`` gate before reporting
+    delivered. An empty run is never ``all_complete``."""
+    order = list(stages) if stages is not None else list(CANONICAL_STAGES)
+    states = {s: classify(got.get(s)) for s in order}
+    not_runnable = []
+    next_stage = None
+    verdict = "exhausted"
+    wake = None
+    for s in order:
+        lc = states[s]
+        if lc == "complete":
+            continue
+        reason, w = why_not_runnable(lc)
+        if lc in ("ready", "retryable-failure", "running"):
+            next_stage = s
+            verdict = "runnable"
+            wake = "dispatch"
+            break
+        if lc in ("waiting-for-provider", "waiting-for-delivered-approval"):
+            next_stage = s
+            verdict = "waiting"
+            wake = w
+            break
+        # parked / canceled / actionable-blocked: fail closed, do NOT skip to a
+        # later stage (a blocked required stage is never permission downstream).
+        not_runnable.append({"stage": s, "state": lc, "reason": reason,
+                             "wake_event": w})
+        verdict = "exhausted"
+        break
+    else:
+        # loop completed without break: every stage is complete (or order empty)
+        verdict = "exhausted"
+    all_complete = bool(order) and all(states[s] == "complete" for s in order)
+    # collect remaining stuck reasons for the report (mixed terminal states)
+    if verdict == "exhausted":
+        for s in order:
+            lc = states[s]
+            if lc != "complete":
+                reason, w = why_not_runnable(lc)
+                if not any(n["stage"] == s for n in not_runnable):
+                    not_runnable.append({"stage": s, "state": lc,
+                                         "reason": reason, "wake_event": w})
+    return {
+        "verdict": verdict,
+        "next_stage": next_stage,
+        "wake_event": wake,
+        "all_complete": all_complete,
+        "stage_states": states,
+        "not_runnable": not_runnable,
+        "required": [s for s in order
+                     if (registry or STAGE_REGISTRY).get(s, {}).get("required", True)],
+        "optional": [s for s in order
+                     if not (registry or STAGE_REGISTRY).get(s, {}).get("required", True)],
+    }
+
+
+def _decide_completion(ev):
+    """Pure strict-completion decision (SPEC 8.1). ``(delivered, report)``.
+
+    True delivery requires: every required stage complete, a skipped optional
+    stage carries a documented scope reason, current approvals, an INDEPENDENT
+    final QC PASS, all required artifacts present/reachable, and successful
+    destination delivery receipts. all-parked / all-failed / empty / mixed
+    terminal runs never satisfy this. Reasons are preserved per stage."""
+    reasons = []
+    required = list(ev.get("required") or [])
+    states = ev.get("stage_states") or {}
+    if not required:
+        reasons.append("empty-run: no required stages declared")
+    for s in required:
+        if states.get(s) != "complete":
+            reasons.append("required stage %s is %s, not complete"
+                           % (s, states.get(s)))
+    for s in (ev.get("optional") or []):
+        if states.get(s) != "complete":
+            if not (ev.get("skipped_optional_reasons") or {}).get(s):
+                reasons.append("optional stage %s skipped without a documented "
+                               "scope reason" % s)
+    if not ev.get("approvals_current"):
+        reasons.append("approvals not current")
+    if not ev.get("final_qc_independent_pass"):
+        reasons.append("independent final QC not PASS")
+    if not ev.get("artifacts_present"):
+        reasons.append("required artifacts missing or unreachable")
+    if not ev.get("delivery_receipts_ok"):
+        reasons.append("destination delivery receipts not all successful")
+    delivered = not reasons
+    return delivered, {"delivered": delivered, "reasons": reasons,
+                       "stage_states": states,
+                       "required": required, "optional": ev.get("optional") or []}
+
+
+def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
+    """Gather the strict-completion facts from a run dir (controlled fixtures).
+
+    Reads concrete files so tests can build fixture runs: approvals, an
+    independent final-QC record, per-stage required artifacts, and delivery
+    receipts."""
+    order = list(stages) if stages is not None else list(CANONICAL_STAGES)
+    reg = STAGE_REGISTRY if registry is None else registry
+    rd = Path(run_dir)
+    states = {s: classify(got.get(s)) for s in order}
+    required = [s for s in order if reg.get(s, {}).get("required", True)]
+    optional = [s for s in order if not reg.get(s, {}).get("required", True)]
+
+    # approvals current: every required stage with an approval policy other
+    # than "none" must carry an approved record at the current plan revision.
+    plan_rev = (_read_json(rd / "control" / "plan-revision.json", {}) or {}).get("revision")
+    approvals = _read_json(rd / "control" / "approvals.json", {}) or {}
+    approvals_current = True
+    for s in required:
+        if reg.get(s, {}).get("approval_policy", "none") == "none":
+            continue
+        a = approvals.get(s)
+        if not (isinstance(a, dict) and a.get("state") == "approved"
+                and (plan_rev is None or a.get("plan_revision") == plan_rev)):
+            approvals_current = False
+            break
+
+    # independent final QC: a record whose producer is a dedicated final-QC
+    # reviewer, gate PASS. A stage's own output never counts as final QC.
+    fq = _read_json(rd / "final-qc" / "record.json", {}) or {}
+    fq_producer = str(fq.get("producer") or "")
+    final_qc_ok = (fq.get("gate") == "PASS"
+                   and fq_producer == reg.get("final-qc", {}).get("qc_producer", "final-qc-reviewer"))
+
+    # required artifacts present and reachable (non-empty files).
+    missing = []
+    for s in required:
+        for rel in reg.get(s, {}).get("required_artifacts", []):
+            p = rd / rel
+            try:
+                if not (p.is_file() and p.stat().st_size > 0):
+                    missing.append(rel)
+            except OSError:
+                missing.append(rel)
+    artifacts_present = not missing
+
+    # destination delivery receipts: all destinations delivered successfully.
+    receipts = _read_json_list(rd / "delivery" / "receipts.json", required=False)
+    delivery_ok = bool(receipts) and all(
+        r.get("status") == "delivered" for r in receipts
+        if isinstance(r, dict))
+
+    return {
+        "required": required,
+        "optional": optional,
+        "stage_states": states,
+        "skipped_optional_reasons": (_read_json(rd / "control" / "skip-reasons.json", {}) or {}),
+        "approvals_current": approvals_current,
+        "final_qc_independent_pass": final_qc_ok,
+        "artifacts_present": artifacts_present,
+        "missing_artifacts": missing,
+        "delivery_receipts_ok": delivery_ok,
+    }
+
+
+def evaluate_completion(run_dir, got, stages=None, registry=None, evidence=None):
+    """(delivered, report): the strict delivered verdict (SPEC 8.1 / D03).
+
+    Never reports delivered for all-parked, all-failed, empty, or mixed
+    terminal runs. ``evidence`` overrides the disk collector (for pure tests)."""
+    if evidence is None:
+        evidence = _collect_completion_evidence(run_dir, got, stages, registry)
+    return _decide_completion(evidence)
+
+
+# ── Event-driven continuation controller (SPEC 8.1 / D02) ─────────────────
+#: The durable continuation queue lives beside the state store. Every accepted
+#: event enqueues the next eligible action here so the run advances without an
+#: agent remembering to call ``next``.
+_CONTINUATION_QUEUE = "continuation-queue.json"
+
+#: Event kinds the controller accepts (approval, provider completion, QC,
+#: recovery, restart/user revision). Each maps to the lifecycle it wakes.
+EVENT_KINDS = ("approval", "provider-completion", "qc", "recovery",
+               "restart", "user-revision")
+
+
+def continuation_enqueue(run_dir, event, run_id=None, stages=None,
+                         registry=None, evidence=None, got=None):
+    """Event-driven continuation (SPEC 8.1 / D02): compute THIS run's next
+    eligible action and enqueue it to ``control/continuation-queue.json``.
+
+    Called on approval / provider-completion / QC / recovery / restart, it
+    records the next action durably so a successful event auto-continues the
+    correct run. Returns the enqueued action record (never a bare instruction
+    string for a runnable stage)."""
+    rd = Path(run_dir)
+    if run_id is None:
+        run_id = rd.name or "run"
+    if got is None:
+        got = {}
+        db = rd / "control" / "state.sqlite3"
+        if db.exists():
+            try:
+                con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=10)
+                try:
+                    got = dict(con.execute(
+                        "SELECT stage, state FROM stages WHERE run_id=?",
+                        (run_id,)).fetchall())
+                finally:
+                    con.close()
+            except sqlite3.DatabaseError:
+                got = {}
+    decision = select_next_action(got, stages, registry)
+    action = {
+        "event": event,
+        "run_id": run_id,
+        "verdict": decision["verdict"],
+        "next_stage": decision["next_stage"],
+        "wake_event": decision["wake_event"],
+        "all_complete": decision["all_complete"],
+        "not_runnable": decision["not_runnable"],
+        "at": time.time(),
+    }
+    if decision["verdict"] == "runnable" and decision["next_stage"]:
+        entry = (registry or STAGE_REGISTRY).get(decision["next_stage"], {})
+        action["entrypoint"] = entry.get("entrypoint")
+        action["idempotency"] = entry.get("idempotency")
+    if decision["verdict"] == "exhausted" and decision["all_complete"]:
+        delivered, report = evaluate_completion(rd, got, stages, registry,
+                                                evidence=evidence)
+        action["delivered"] = delivered
+        action["completion_report"] = report
+    # durable append to the continuation queue
+    qpath = rd / "control" / _CONTINUATION_QUEUE
+    try:
+        qpath.parent.mkdir(parents=True, exist_ok=True)
+        queue = []
+        if qpath.is_file():
+            try:
+                with open(qpath, encoding="utf-8") as f:
+                    prev = json.load(f)
+                queue = prev if isinstance(prev, list) else []
+            except (OSError, ValueError):
+                queue = []
+        queue.append(action)
+        with open(qpath, "w", encoding="utf-8") as f:
+            json.dump(queue, f, indent=2)
+    except OSError:
+        pass
+    return action
+
+
+def drain_continuation(run_dir):
+    """Read the durable continuation queue for a run (replay-safe)."""
+    qpath = Path(run_dir) / "control" / _CONTINUATION_QUEUE
+    try:
+        with open(qpath, encoding="utf-8") as f:
+            q = json.load(f)
+        return q if isinstance(q, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def cmd_event(a):
+    """event --run-dir <dir> --event <kind>: the continuation controller.
+
+    The event-driven entrypoint (SPEC 8.1 / D02). An approval, provider
+    completion, QC, recovery, restart or user-revision event is recorded and
+    the next eligible action is enqueued for THIS run -- so the run advances
+    without an agent remembering to call ``next`` again. Returns an envelope
+    carrying the enqueued action."""
+    run_dir = Path(a.run_dir).expanduser().resolve()
+    db = run_dir / "control" / "state.sqlite3"
+    if not db.exists():
+        return envelope("event", str(getattr(a, "run_id", "") or run_dir.name),
+                        "error", "state-file-missing",
+                        "Create the run first; missing state file: %s" % db)
+    event = str(a.event)
+    if event not in EVENT_KINDS:
+        return envelope("event", str(getattr(a, "run_id", "") or run_dir.name),
+                        "rejected", "unknown-event",
+                        "event must be one of %s" % (", ".join(EVENT_KINDS),))
+    action = continuation_enqueue(run_dir, event,
+                                  run_id=getattr(a, "run_id", None))
+    sid = action["run_id"]
+    if action["verdict"] == "runnable":
+        return envelope("event", sid, "ok", "continuation-enqueued",
+                        "Event %r enqueued the next action: run %r."
+                        % (event, action.get("entrypoint") or action["next_stage"]),
+                        data=action)
+    if action.get("delivered"):
+        return envelope("event", sid, "ok", "run-complete",
+                        "Event %r: the run is delivered (strict completion)."
+                        % event, data=action)
+    return envelope("event", sid, "waiting", "continuation-waiting",
+                    "Event %r recorded; stage %r advances on the %r event."
+                    % (event, action.get("next_stage"), action.get("wake_event")),
+                    data=action)
+
+
 def cmd_next(a):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     # L4.2: a process whose skill was updated since it started refuses to
@@ -1534,21 +2177,80 @@ def cmd_next(a):
     # artifacts do not prove are never touched, and every move it made is
     # carried on the envelope under data.reconciled.
     reconciled, got = _reconcile_stages(run_dir, got)
-    blocked = ("COMPLETE", "FAILED_BLOCKED", "PARKED")
-    next_stage = None
-    for s in stages:
-        st = got.get(s)
-        if st is None:                    # stage not initialized: still ahead
-            next_stage = s
-            break
-        if st not in blocked:
-            next_stage = s
-            break
-    if next_stage is None:
-        return envelope("next", str(sid), "ok", "run-complete",
-                        "Every stage is COMPLETE; the run is delivered. "
-                        "Nothing left to run.",
-                        data={"reconciled": reconciled} if reconciled else {})
+    # S75-W02-U1 / D03: distinguish "no runnable action" from true completion.
+    # The old selector skipped COMPLETE/FAILED_BLOCKED/PARKED and reported
+    # "Every stage is COMPLETE; delivered" whenever the search was exhausted --
+    # so an all-parked or all-failed run read as delivered. The strict selector
+    # + completion gate never report delivered unless every required stage is
+    # complete AND approvals/final-QC/artifacts/delivery-receipts all hold.
+    decision = select_next_action(got, stages)
+    next_stage = decision["next_stage"]
+    if decision["verdict"] == "exhausted":
+        # D03 fail-closed: a blocked/parked music row is never permission for a
+        # later stage. If music is PARKED/FAILED_BLOCKED and eligible work
+        # remains beyond it, refuse with MUSIC_NOT_COMPLETE (never skip).
+        music_state = got.get(MUSIC)
+        if music_state in ("FAILED_BLOCKED", "PARKED"):
+            _blocked = ("COMPLETE", "FAILED_BLOCKED", "PARKED")
+            first_eligible = None
+            for _s in stages:
+                if got.get(_s) not in _blocked:
+                    first_eligible = _s
+                    break
+            if (first_eligible is not None
+                    and stages.index(first_eligible) > stages.index(MUSIC)):
+                return envelope("next", str(sid), "rejected", "MUSIC_NOT_COMPLETE",
+                                "music is %s, so %r never runs: fix the cause, then "
+                                "`factory.py music --action reopen` and `--action start`."
+                                % (music_state, first_eligible),
+                                data={"stage": MUSIC, "blocked_stage": first_eligible,
+                                      "lifecycle": _music_lifecycle()})
+        delivered, report = evaluate_completion(run_dir, got, stages)
+        data = {"reconciled": reconciled} if reconciled else {}
+        data["completion"] = report
+        data["stage_states"] = decision["stage_states"]
+        if decision["all_complete"]:
+            # Every stage row is COMPLETE: the stage machine has no more work
+            # (exit 0, run-complete). Delivery is only CLAIMED when the strict
+            # gate (approvals + independent final QC + artifacts + delivery
+            # receipts) passes; otherwise it is explicitly NOT proven -- never
+            # a bare "delivered".
+            if delivered:
+                return envelope("next", str(sid), "ok", "run-complete",
+                                "Every required stage is COMPLETE with current "
+                                "approvals, independent final QC, artifacts "
+                                "present and delivery receipts; the run is "
+                                "delivered. Nothing left to run.", data=data)
+            return envelope("next", str(sid), "ok", "run-complete",
+                            "Every stage is COMPLETE (no more stage work), but "
+                            "delivery is NOT yet proven: %s. The completion "
+                            "controller (`factory.py event`) proves delivery "
+                            "before the run is reported delivered."
+                            % ("; ".join(report["reasons"]) or "unverified"),
+                            data=data)
+        # exhausted but NOT all complete: all parked / all failed / empty /
+        # mixed terminal. Preserve each stuck stage's reason; never claim
+        # completion or delivery.
+        stuck = ", ".join("%s=%s(%s)" % (n["stage"], n["state"], n["reason"])
+                          for n in decision["not_runnable"]) or "no stages"
+        return envelope("next", str(sid), "waiting", "no-runnable-action",
+                        "No stage can run now and the run is NOT delivered: "
+                        "%s. Wake events: %s."
+                        % (stuck, ", ".join(sorted({n["wake_event"] or "human"
+                                                     for n in decision["not_runnable"]}))),
+                        data=data)
+    if decision["verdict"] == "waiting":
+        return envelope("next", str(sid), "waiting", "awaiting-" + str(decision["wake_event"]),
+                        "Stage %r is %s; it advances on the %r event, not by "
+                        "calling next again."
+                        % (decision["next_stage"],
+                           decision["stage_states"][decision["next_stage"]],
+                           decision["wake_event"]),
+                        data={"stage": decision["next_stage"],
+                              "stage_states": decision["stage_states"],
+                              "reconciled": reconciled} if reconciled else
+                             {"stage": decision["next_stage"],
+                              "stage_states": decision["stage_states"]})
     # W2-wiring-U1: what this run is for, and whether Agnes makes its media.
     method = _method_record(run_dir)
     if isinstance(method, dict):
@@ -1881,6 +2583,15 @@ def main(argv=None):
                    help="With SONG APPROVAL = Yes, select the ORCHESTRATED mode "
                         "(three units, one variant each) instead of the umbrella "
                         "three-up runner. Exactly one mode is ever emitted.")
+    ev = sub.add_parser("event", help="Continuation controller: record an "
+                        "approval/provider/QC/recovery/restart event and "
+                        "enqueue this run's next eligible action.")
+    ev.add_argument("--run-dir", required=True,
+                    help="Run dir that holds control/state.sqlite3.")
+    ev.add_argument("--event", required=True,
+                    help="One of: %s." % ", ".join(EVENT_KINDS))
+    ev.add_argument("--run-id", default=None,
+                    help="Run id when the store holds more than one.")
     sb = sub.add_parser("storyboard", help="Storyboard approval step: send cards + "
                         "stills, or apply the client's reply.")
     sb.add_argument("--run-dir", required=True)
@@ -1990,6 +2701,8 @@ def main(argv=None):
         env = cmd_script_reply(a)
     elif a.cmd == "music":
         env = cmd_music(a)
+    elif a.cmd == "event":
+        env = cmd_event(a)
     else:
         env = cmd_next(a)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)

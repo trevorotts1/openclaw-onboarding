@@ -45,11 +45,20 @@ PY = sys.executable or "python3"
 
 
 def _ifm():
-    """install_face_model: the one authority for the URL, the pin and the dest."""
+    """install_face_model: the installer (download + place at the locator path)."""
     if LIP_GATE not in sys.path:
         sys.path.insert(0, LIP_GATE)
     import install_face_model
     return install_face_model
+
+
+def _locator():
+    """face_model_locator: the ONE path and pin for every reader (D19)."""
+    core = os.path.join(SKILL_ROOT, "scripts", "core")
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    import face_model_locator
+    return face_model_locator
 
 
 def module_state(name):
@@ -66,30 +75,25 @@ def module_state(name):
 
 
 def model_state():
-    """One state for the face model across both readers.
+    """One state for the face model on the ONE shared locator path (D19).
 
-    picture_measure reads $LIPSYNC_FACE_MODEL or <skill>/assets/face_landmarker.task;
-    mouth_landmarks reads $LIPSYNC_FACE_MODEL or <lip_gate>/face_landmarker.task.
-    A good file at assets/ that the clip gate cannot see is PRESENT-BUT-BROKEN,
-    not PRESENT: that is the state where a lip-sync clip still comes back
-    LIP_UNMEASURED after a correct-looking install.
+    Installer, this preflight, the picture gate and the measured lip-sync gate
+    all resolve through face_model_locator: $LIPSYNC_FACE_MODEL or
+    <skill>/assets/face_landmarker.task, pinned sha256 verified. The old
+    two-location world (assets/ plus a lip_gate/ copy for the clip gate) is
+    gone — a locator path that is wrong or unpinned is PRESENT-BUT-BROKEN, and
+    a missing one is MISSING.
     """
     try:
-        ifm = _ifm()
+        loc = _locator()
     except Exception as exc:                                  # noqa: BLE001
-        return "PRESENT-BUT-BROKEN", "install_face_model unreadable: %s" % exc
-    env = os.environ.get("LIPSYNC_FACE_MODEL")
-    if env:
-        return _judge(ifm, env, "LIPSYNC_FACE_MODEL")
-    dest = ifm.DEFAULT_DEST
-    clip = os.path.join(LIP_GATE, ifm.MODEL_NAME)
-    state, detail = _judge(ifm, dest, "assets")
-    if state != "PRESENT":
-        return state, detail
-    if _judge(ifm, clip, "clip gate")[0] != "PRESENT":
-        return ("PRESENT-BUT-BROKEN",
-                "good at assets/, not readable by the clip gate at %s" % clip)
-    return "PRESENT", dest
+        return "PRESENT-BUT-BROKEN", "face_model_locator unreadable: %s" % exc
+    st = loc.preflight_status()
+    if st["ok"]:
+        return "PRESENT", st["path"]
+    if st["present"]:
+        return "PRESENT-BUT-BROKEN", st["problem"]
+    return "MISSING", st["problem"]
 
 
 def _judge(ifm, path, where):
@@ -157,15 +161,9 @@ def _repair_model():
         failures.append("download failed: %s -> %s: %s"
                         % (ifm.MODEL_URL, type(exc).__name__, exc))
         return failures
-    # mouth_landmarks reads the model from the lip_gate folder when the env
-    # var is unset; assets/ alone leaves the clip gate unmeasured.
-    if not os.environ.get("LIPSYNC_FACE_MODEL"):
-        link = os.path.join(LIP_GATE, ifm.MODEL_NAME)
-        if not ifm.is_good(link):
-            if os.path.lexists(link):
-                os.remove(link)
-            os.symlink(os.path.relpath(dest, LIP_GATE), link)
-            print("clip gate link: %s -> %s" % (link, os.path.relpath(dest, LIP_GATE)))
+    # install() already places the model at the locator path every reader
+    # resolves (override or assets/). The old lip_gate/ copy is never created
+    # again and no gate reads it; an old copy left on a box is simply ignored.
     return failures
 
 
