@@ -22,7 +22,7 @@ configuration honest and account failures contained:
 
 ## Evidence levels (spec 15.2)
 
-- **Unit/regression** (`tests/`, 42 tests, offline, controlled fixtures):
+- **Unit/regression** (`tests/`, 46 tests, offline, controlled fixtures):
   every acceptance row has a failable check. See `TESTS.txt`.
 - **Live host dispatch** (`evidence/host-dispatch-openrouter_xiaomi_mimo-v2.6-pro.json`):
   HTTP 200 through the installed 9Router at `127.0.0.1:20128`, response model
@@ -56,12 +56,18 @@ configuration honest and account failures contained:
    26-failure swarm, suppressed launches, deterministic scheduling continues,
    no invented short reset for a monthly cap).
 
-## Integration points (for the landing lanes — not done here)
+## Integration points (landed on this branch)
 
 - New files land under `75-drama-song-ad-factory/scripts/core/capability_control/`
   in both distributions (999-setup and openclaw-onboarding), consumed by the
   model-selection work of S75-W04-U1 (`ai_models.py`/`ai_models.json`, owned by
   that unit) and the scheduler/keepalive reconciliation lanes.
+- Landed: `ai_models.admit_dispatch()` — the gate every stage dispatch passes
+  before a worker is called — consults this package. An unsupported capability
+  claim is refused as `CAPABILITY_UNSUPPORTED`; a dispatch to an account the
+  shared breaker has failed is refused as `ACCOUNT_FAILED`, with
+  `record_account_failure()` as the matching intake. Covered by
+  `tests/test_dispatch_wiring.py`.
 - The staged-config writer replaces ad hoc edits to model settings; the
   failure classifier plugs into the dispatcher boundary so hard caps open the
   shared breaker instead of killing parallel work.
