@@ -533,24 +533,45 @@ def main():
           env["stalled"] is True and env["activity"]["source"] == "durable-event",
           str(env))
 
-    # 10. a WAL state db with no sidecars is readable ------------------------
+    # 10. the REAL failure: a WAL db whose sidecars cannot be attached ------
+    # A db whose sidecars are merely deleted still opens mode=ro on this
+    # SQLite, so that fixture proves nothing. The failure the fallback exists
+    # for is a store that still carries -wal frames and sits in a directory
+    # the reader cannot write (no -shm can be attached): the raw open raises
+    # SQLITE_CANTOPEN. The raw-open control below must fail, or the fixture
+    # is not reproducing anything.
     run10 = make_run(tmp, "run10")
     set_stage(run10, "run10", "music", "RUNNING", age_s=60, lease_in=300,
               owner="worker-10")
     db10 = run10 / "control" / "state.sqlite3"
     con = sqlite3.connect(str(db10))
-    con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    con.execute("PRAGMA wal_autocheckpoint=0")
+    con.execute("UPDATE stages SET reason='wal frames' WHERE run_id='run10'")
+    con.commit()
+    sealed = Path(tmp) / "run10-sealed"
+    (sealed / "control").mkdir(parents=True)
+    for suf in ("", "-wal"):
+        src = Path(str(db10) + suf)
+        if src.exists():
+            import shutil as _sh
+            _sh.copy2(str(src), str(sealed / "control" / "state.sqlite3") + suf)
     con.close()
-    for side in ("-wal", "-shm"):
-        sidep = Path(str(db10) + side)
-        if sidep.exists():
-            sidep.unlink()
-    env = RW.build(run10, now=NOW)
-    check("10: WAL db without sidecars reads, not HEARTBEAT_STATE_UNREADABLE",
-          "HEARTBEAT_STATE_UNREADABLE" not in env["loud"], env["loud"])
-    check("10: the stage table still reads through the private-copy fallback",
-          env["stage"] == "research", env["stage"])
+    os.chmod(sealed / "control", 0o555)
+    try:
+        try:
+            sqlite3.connect("file:%s?mode=ro" % (sealed / "control" / "state.sqlite3"),
+                            uri=True, timeout=5).execute(
+                "PRAGMA schema_version").fetchone()
+            raise AssertionError("fixture does not reproduce the CANTOPEN failure")
+        except sqlite3.Error:
+            pass                        # the control: the raw open really fails
+        env = RW.build(sealed, now=NOW)
+        check("10: WAL db behind an unwritable dir reads, not STATE_UNREADABLE",
+              "HEARTBEAT_STATE_UNREADABLE" not in env["loud"], env["loud"])
+        check("10: the stage table still reads through the private-copy fallback",
+              env["stage"], "music")
+    finally:
+        os.chmod(sealed / "control", 0o755)
 
     # 11. a delivered run is never "stalled" just because time passed --------
     run11 = make_run(tmp, "run11")
