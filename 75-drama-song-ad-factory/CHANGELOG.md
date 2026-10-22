@@ -4,6 +4,24 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.90 - 2026-10-22 - batch 8a: measured 50% contingency, acceptance scenario runners
+
+1. F1/F2 contingency: the planning/retake allowance is now a measured 50% of a
+   shot/cue job manifest (was a flat 20%). `budget_contingency.py` is the single
+   owner of the rate, the ROUND_HALF_UP cent rule and the envelope math; every
+   card, quote, quota and price path reads it. With no manifest naming its
+   planned shots and cues the contingency is UNMEASURED (`CONTINGENCY_UNMEASURED`)
+   and is surfaced as unmeasured — never silently replaced by a bare percentage.
+2. Acceptance scenario runners (tests/w10-canary/scenarios/): A04 versioned
+   visibility, A05 character-bible approval, A06 song playable + storyboard
+   delivery/resume, A07 opening sync/duration, A09 factory lifecycle outbox, plus
+   A02/A03 extensions in multi_run_canary.py. Each runner asserts against the
+   tree under test with no live provider, no paid job and no channel send.
+3. A06 is deliberately incomplete without a paid artifact: it needs a real
+   produced song file via `--audio`. Without it the runner prints BLOCKED_A11
+   and exits 4 BY DESIGN — a named blocked acceptance item, never a pass. It
+   never fakes the playable-song assertion.
+
 ## v2.9.89 - 2026-10-22 - batch 6: F12 motion gate fails closed, H3 native audio
 
 1. F12 motion gate: a measured sub-threshold motion score now FAILS CLOSED
