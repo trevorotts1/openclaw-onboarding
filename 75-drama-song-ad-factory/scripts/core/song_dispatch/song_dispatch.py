@@ -269,6 +269,165 @@ def _script_lyric_words(script_text):
     return set(_w(_SECTION_HEADER.sub(" ", script_text)))
 
 
+def _script_lyric_seq(script_text):
+    """The approved script's words IN ORDER as bounded-normalization atoms
+    (headers dropped exactly as ``_script_lyric_words`` drops them). The
+    script_words gate matches the take SEQUENCE-aware with these, so word
+    order and repetition are preserved while benign punctuation, contractions
+    and compound tokens stay equivalent (S75-W05-U5, spec 6.5, finding D29)."""
+    if script_text is None:
+        return []
+    if not isinstance(script_text, str):
+        script_text = " ".join(str(x) for x in script_text)
+    return _HP.norm_tokens(_SECTION_HEADER.sub(" ", script_text))
+
+
+# ---- S75-W05-U5: confidence-aware evaluation (spec 6.5, finding D29) -------
+#
+# Every measurement records its ACTUAL owner: ASR supplies transcription and
+# timing ONLY; the sung/spoken decision comes from the declared singing
+# detector with its own confidence -- ASR text is never the sung classifier.
+# Low classifier confidence is uncertainty, never a definite creative
+# failure: it triggers remeasurement or ONE bounded independent review before
+# any regeneration, and an independent media review may satisfy a DECLARED
+# alternative-evidence outcome as REVIEW evidence (its own reviewer, artifact
+# hash, method and finding) -- never as a numerical measurement the system
+# did not obtain.
+
+#: Sung/spoken classifier confidence below this is LOW. PROPOSED bound on the
+#: detector's own 0..1 scale (_confidence: separation margin x coverage); it
+#: moves only with a documented calibration, never to make a take pass.
+CLASSIFICATION_CONFIDENCE_MIN = 0.6
+
+#: Declared alternative-evidence outcomes: a check named here MAY be satisfied
+#: by one independent media review recorded as review evidence. Every other
+#: outcome -- every numerical threshold -- still needs a valid measurement.
+#: ponytail: two declared outcomes; grow only with a written policy.
+ALTERNATIVE_EVIDENCE = {"sung_spoken_classification": "independent_media_review",
+                        "hook_placement_lexical": "independent_media_review"}
+
+
+def measurement_owners(take):
+    """Who measured what (spec 6.5). ASR supplies transcription and timing;
+    the sung/spoken decision belongs to the declared detector WITH its
+    confidence. Transport-stamped owners win; a take that carries none gets
+    the derived record, marked ``derived`` so nobody mistakes it for a
+    stamped one."""
+    t = take if isinstance(take, dict) else {}
+    owners = t.get("measurement_owners")
+    if isinstance(owners, dict) and owners:
+        return owners
+    det = str(t.get("detector") or "").split()
+    return {"transcription_and_timing": {"owner": "asr", "source": "aligned_words",
+                                         "measures": "transcription and timing only",
+                                         "derived": True},
+            "sung_spoken": {"owner": "singing_detector",
+                            "detector": det[0] if det else None,
+                            "detector_version": det[1] if len(det) > 1 else None,
+                            "confidence": t.get("detector_confidence"),
+                            "decision_source": "measured", "derived": True}}
+
+
+def review_evidence_record(check_id, reviewer, artifact_hash, method, finding):
+    """One independent media review, recorded as REVIEW evidence -- never as a
+    numerical measurement the system did not obtain (spec 6.5). A record
+    missing any of reviewer, artifact hash, method or finding is refused."""
+    vals = {"check_id": check_id, "reviewer": reviewer, "artifact_hash": artifact_hash,
+            "method": method, "finding": finding}
+    miss = [k for k, v in vals.items() if not isinstance(v, str) or not v.strip()]
+    if miss:
+        raise DispatchError("REVIEW_EVIDENCE_INCOMPLETE: missing %s -- review evidence "
+                            "carries its own reviewer, artifact hash, method and finding"
+                            % ", ".join(miss))
+    return {"check_id": check_id, "evidence_class": "review", "is_measurement": False,
+            "reviewer": reviewer, "artifact_hash": artifact_hash,
+            "method": method, "finding": finding}
+
+
+def satisfies_alternative_evidence(check_id, rec):
+    """True when ``rec`` is review evidence satisfying the DECLARED
+    alternative outcome for ``check_id``. Only declared checks may be
+    satisfied this way; a numerical threshold still needs a valid
+    measurement, and review evidence is never read as one."""
+    if check_id not in ALTERNATIVE_EVIDENCE:
+        return False
+    if not isinstance(rec, dict) or rec.get("evidence_class") != "review":
+        return False
+    if rec.get("is_measurement") is not False:
+        return False
+    return (rec.get("check_id") == check_id
+            and all(isinstance(rec.get(k), str) and rec[k].strip()
+                    for k in ("reviewer", "artifact_hash", "method", "finding")))
+
+
+def repair_order(take=None, judge_result=None):
+    """The deterministic-edit-first ladder for an EXISTING (already paid) take
+    (spec 6.5, D29): remeasure first -- saved audio, zero new music generation
+    -- then deterministic edits (trim, timeline alignment, mixing), then one
+    bounded independent review; NEW PAID GENERATION IS LAST and stays blocked
+    until the cheaper steps are done. The approved dramatic turn and hook
+    order are preserved at every step, and the expected boundary is never
+    moved to make a take pass."""
+    jr = judge_result if isinstance(judge_result, dict) else {}
+    low = bool((jr.get("review") or {}).get("required"))
+    return [
+        {"step": "remeasure", "new_generation": False,
+         "detail": "remeasure the saved take audio (zero new music generation)"},
+        {"step": "deterministic_edit", "new_generation": False,
+         "detail": "deterministic edit of the existing take (trim / timeline alignment / "
+                   "mix) preserving the approved words, dramatic turn and hook order"},
+        {"step": "bounded_review", "new_generation": False, "required": low,
+         "detail": "one bounded independent media review (its finding is REVIEW evidence, "
+                   "never a measurement)"},
+        {"step": "regenerate", "new_generation": True, "blocked": True,
+         "blocked_until": ["remeasure", "deterministic_edit"] + (["bounded_review"] if low else []),
+         "detail": "new paid generation, only after the existing-take ladder is exhausted"},
+    ]
+
+
+def regeneration_allowed(steps_done=(), review=None, judge_result=None):
+    """(ok, reason) for NEW PAID GENERATION on an existing take. Remeasurement
+    and deterministic edits come first, and a low-confidence sung/spoken
+    classification additionally needs its one bounded review recorded as
+    REVIEW evidence (reviewer, artifact hash, method, finding)."""
+    done = {(s.get("step") if isinstance(s, dict) else s) for s in steps_done or ()}
+    for need in ("remeasure", "deterministic_edit"):
+        if need not in done:
+            return False, "%s comes before any new paid generation" % need
+    jr = judge_result if isinstance(judge_result, dict) else {}
+    if (jr.get("review") or {}).get("required") or (review or {}).get("required"):
+        if not satisfies_alternative_evidence("sung_spoken_classification", review or {}):
+            return False, ("a low-confidence sung/spoken classification needs one bounded "
+                           "independent review recorded as review evidence first")
+    return True, ""
+
+
+def _finalize_take(result, take):
+    """Bind the measurement OWNERS and the confidence-aware review/repair
+    policy onto one judged take. Never touches a gate verdict: a low-confidence
+    classifier adds a review requirement, it does not relabel uncertainty as a
+    creative failure."""
+    if not isinstance(result, dict):
+        return result
+    owners = measurement_owners(take)
+    result["measurement_owners"] = owners
+    conf = (owners.get("sung_spoken") or {}).get("confidence")
+    low = (isinstance(conf, (int, float)) and not isinstance(conf, bool)
+           and conf < CLASSIFICATION_CONFIDENCE_MIN)
+    if low:
+        result["review"] = {
+            "required": True, "satisfied": False, "kind": "independent_media_review",
+            "check_id": "sung_spoken_classification",
+            "confidence": conf,
+            "source": (owners.get("sung_spoken") or {}).get("decision_source"),
+            "reason": ("sung/spoken classifier confidence %.3f is below %.2f: classifier "
+                       "uncertainty triggers remeasurement or ONE bounded independent "
+                       "review -- never a definite creative failure (spec 6.5)"
+                       % (conf, CLASSIFICATION_CONFIDENCE_MIN))}
+    result["repair_order"] = repair_order(take, result)
+    return result
+
+
 def _planned_pct(plan, style_id, key):
     """Percent of delivered runtime the approved plan gives one delivery.
 
@@ -420,10 +579,11 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
     """WW-08: run EVERY required gate; a gate that raises blocks and never
     passes."""
     try:
-        return _judge_take_inner(take, plan, script_words, hook_text,
-                                 spoken_range_pct, style_id, sheet_text)
+        return _finalize_take(_judge_take_inner(take, plan, script_words, hook_text,
+                                                spoken_range_pct, style_id, sheet_text), take)
     except Exception as exc:      # noqa: BLE001 - a raised exception blocks
-        return _finish({"judge_exception": _gate("FAIL", "the judge raised %r" % (exc,))})
+        return _finalize_take(
+            _finish({"judge_exception": _gate("FAIL", "the judge raised %r" % (exc,))}), take)
 
 
 def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None,
@@ -525,11 +685,18 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
     put("sung_stretch", "PASS" if real.get("verdict", "PASS") != "FAIL" and not real.get("reasons") else "FAIL",
         "6 s sung stretch")
     # The hook is counted on the DETECTOR segments only: aligned segments
-    # carry the sheet's labels, and sung_hook.measure requires measured ones.
+    # carry the sheet's labels, and the counted spans need measured ones.
+    # S75-W05-U5: counted with the bounded lexical matcher -- a benign
+    # punctuation, contraction or compound-token equivalent still counts as a
+    # sung repetition; a changed or missing repetition is still detected. The
+    # gate record carries the reader's basis and confidence and the owners of
+    # the measurements behind it.
     hook_segs = [s for s in segs if s.get("source") == "measured"]
-    rec = _SH.measure(hook_text, take.get("aligned_words") or [], hook_segs, _HP.hook_target(D, plan.get("hook_plan")))
+    rec = _HP.measure_hook(hook_text, take.get("aligned_words") or [], hook_segs, _HP.hook_target(D, plan.get("hook_plan")))
     put("hook", "PASS" if rec["measured"] >= 2 and rec["verdict"] != "FAIL" else
         ("FLAG" if rec["measured"] >= 2 else "FAIL"), "%d of %d" % (rec["measured"], rec["target"]))
+    g["hook"]["measurement"] = {"owner": "hook_placement", "basis": rec.get("basis"),
+                                "confidence": rec.get("confidence")}
     # FU-RNBFLOW-SONG: the returned song against the style's contract, before any
     # picture or video spend. The plan carries style_id and sheet_text (run_takes
     # stamps the request's lyrics); a missing one is a FAIL, never a skipped gate.
@@ -576,9 +743,24 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
         put("pace_change", "UNMEASURED", _pace_turns_required_detail())
     else:
         put("pace_change", pg["verdict"], pg.get("detail") or pg.get("reason_code", ""))
-    have = set(_w(" ".join(w.get("word", "") for w in take.get("aligned_words") or [])))
-    missing = sorted(_script_lyric_words(script_words) - have)
-    put("script_words", "FAIL" if missing else "PASS", ("missing %s" % missing[:8]) if missing else "")
+    # S75-W05-U5 (spec 6.5, D29): token-SET matching is gone. The approved
+    # script words match the delivered words SEQUENCE-aware under bounded
+    # lexical normalization (benign punctuation, contractions and bounded
+    # compound-token equivalents are equivalent), so word order and repetition
+    # are preserved and a missing or changed critical word -- name, number,
+    # negation, any approved word -- is still detected.
+    mm = _HP.match_sequence(
+        _script_lyric_seq(script_words),
+        _HP.norm_tokens(" ".join(str(w.get("word", "")) for w in take.get("aligned_words") or [])))
+    if mm["ok"]:
+        put("script_words", "PASS", "")
+    else:
+        det = []
+        if mm["missing"]:
+            det.append("missing %s" % mm["missing"][:8])
+        if mm["out_of_order"]:
+            det.append("out of order %s" % mm["out_of_order"][:8])
+        put("script_words", "FAIL", "; ".join(det))
     dur = take.get("duration_s")
     if not isinstance(dur, (int, float)):
         put("length", "FAIL", "unmeasured")
@@ -625,6 +807,12 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
                             segments=hook_segs)
     put("hook_placement", hp["verdict"], "; ".join(hp["reasons"]) or
         "first hook %s s (window %s s)" % (hp["first_hook_s"], hp["min_first_hook_s"]))
+    # S75-W05-U5: the gate record names the reader and its confidence (the
+    # supported lexical/timing fallback carries its own), plus the owner of
+    # the sung/spoken decision behind it -- never the ASR words.
+    g["hook_placement"]["measurement"] = {"owner": "hook_placement", "basis": hp.get("basis"),
+                                          "confidence": hp.get("confidence"),
+                                          "sung_spoken_owner": (hp.get("owner") or {}).get("sung_spoken")}
     # WW-02/WW-08: the story gate (check_returned_story) is CALLED here, in the
     # judge, together with the timeline-integrity gate. Both are emitted for
     # EVERY take: a checker that is absent, that raises, or that cannot pass
@@ -1181,9 +1369,18 @@ def operator_decision_gates(run_dir, dec=None, required=None):
 def take_accepted(rcpt):
     """WW-18: the ONE delivery decision. A take whose REQUIRED gate set is not
     all PASS (bar a style-backed NOT_APPLICABLE) is never offered; a missing
-    required gate and an empty gate set are refused. Returns (ok, reason)."""
+    required gate and an empty gate set are refused. Returns (ok, reason).
+
+    S75-W05-U5: a take whose sung/spoken classification ran at LOW confidence
+    is not delivered until its bounded review is recorded -- classifier
+    uncertainty is never a definite creative failure, and never a free pass
+    either."""
     if not isinstance(rcpt, dict):
         return False, "no receipt"
+    review = rcpt.get("review")
+    if isinstance(review, dict) and review.get("required") and not review.get("satisfied"):
+        return False, "bounded review pending: %s" % review.get("reason",
+                                                               "low-confidence classification")
     gates = rcpt.get("gates") or {}
     if not gates:
         return False, "empty gate set"
@@ -1355,5 +1552,14 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
                 return {"delivered": take, "verdict": rcpt["verdict"],
                         "receipt": constituent_receipt(take, rcpt, plan),
                         "receipts": receipts, "spent_cents": spent, "duration": duration}
+            # S75-W05-U5 (spec 6.5, D29): a low-confidence sung/spoken
+            # classification is uncertainty, never a definite creative failure
+            # -- STOP before any regeneration. The existing-take ladder runs
+            # first (remeasure, deterministic edit, bounded review); only after
+            # it is exhausted may new paid generation be considered.
+            if (rcpt.get("review") or {}).get("required"):
+                return {"delivered": None, "verdict": rcpt["verdict"],
+                        "receipts": receipts, "spent_cents": spent, "duration": duration,
+                        "review_required": rcpt["review"]}
     return {"delivered": None, "verdict": "FAIL", "receipts": receipts, "spent_cents": spent,
             "duration": duration}
