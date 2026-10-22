@@ -14,6 +14,15 @@ All notable changes to this skill wrapper are documented here.
 ---
 
 
+## [v27.1.72] - 2026-10-22 - feat: folder-create implemented behind a capture gate
+
+- GAP CLOSED: `funnel_folder` / `website_folder` existed in the recipe contract and the LIST route was captured live, but NO folder-create path or verb existed in any module. Implemented in `tools/ghl_rest_canvas.py`: `folder_list_path` (both type scopes, an undeclared scope is refused), `folder_create_path`, `folder_create_body`, `folder_create`.
+- CAPTURE-GATED, not guessed: the Create-folder dialog interior, the create route+verb, the body keys and the create response shape were never captured, so every one of them is REPLAYED from an approved live capture — there is no default. With no capture the gate reports `PENDING_LIVE_CAPTURE` and the create refuses; a schema-valid capture only reaches `ENABLED_FOR_REVIEW`; `reviewed=True` is a separate explicit step. Same construction as `ghl_split_variant.py`, and the shipped fixture (`OFFLINE_FOLDER_CAPTURE`) is refused as evidence by `load_folder_create_capture` and by the runner.
+- Recipe contract: `ro.folder_create_recipe_contract` turns a closed gate into `execution_mode="disabled"`, which `RecipeContract.validate()` already refuses — so a folder create cannot run by forgetting a check. A capture taken under one type scope can never create a folder in the other, and a capture authorizes only its own location.
+- `rr.run_folder_recipe`: reconciliation runs FIRST on every run, so a resume that finds the folder already present reports `reused` with no capture (proving an existing object uses the captured LIST route); only a CREATE needs the open gate. Second run reuses the same native id, never duplicates (B17); an ambiguous name refuses (`REFUSE_AMBIGUOUS`).
+- Capture checklist: `tools/ghl_folder_create_capture_checklist.sh` (`checklist` / `state [capture.json] [--reviewed]` / `validate <capture.json>`) and the `ro` CLI `--folder-create-checklist` / `--folder-create-state`, both emitted from the schema so the checklist cannot drift from validation.
+- `tests/test_ghl_folder_create.py`: 51 offline cases — path/body shape replayed from the capture, every missing field keeps the gate shut, the fixture is refused, idempotent create/reuse, and the refusal paths (ambiguous name, wrong type scope, wrong location, unproven read).
+
 ## [v27.1.40] - 2026-10-19 - fix: media LIST is adapter-routed only (GHL-186)
 
 - Reconciled with `origin/main` after the raw `GET /medias/files` implementation merged in #2316. `list_media` keeps the capability-gated `media.files.list` adapter route: the adapter row supplies the method, path and `Version: v3`, and the checked-in capability record stays default-deny. The raw list path and its `GHL_MEDIA_LIST_*` / `_GHL_UA` constants are gone, so there is one path, not two.
