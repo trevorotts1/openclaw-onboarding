@@ -1,0 +1,47 @@
+{
+  "schema": "blackceo.skill75.source-vector/v1",
+  "pinned": false,
+  "pinned_at": null,
+  "pinned_by": null,
+  "note": "TEMPLATE — NOT the accepted vector. The W10 canaries FAIL-CLOSED on this file until an integrator fills every revision with the accepted post-merge main SHA and sets pinned=true. Fill in after the final merges land; never pin against a moving branch.",
+  "spec": "Skill_75_Universal_Repair_Spec_v1.1 section 3 (repository baselines) and section 15.2 / 16 (anonymous canaries, completion receipt)",
+  "repositories": {
+    "openclaw-onboarding": {
+      "role": "canonical Skill 75 core + OpenClaw install/runtime integration",
+      "revision": null,
+      "audited_baseline": "18c510088cf4e2d94e188deedff380d42912637f",
+      "merged_prs": [],
+      "note": "set revision = accepted main SHA after final merges; add merged PR/commit refs for the completion receipt"
+    },
+    "999-setup": {
+      "role": "Claude-Nine distribution, installed skill sync, helper pins, workflow guard + merge machinery",
+      "revision": null,
+      "audited_baseline": "35e54bbb9086478ab2e6c665cae95be70c54db08",
+      "merged_prs": [],
+      "note": "set revision = accepted main SHA after final merges"
+    },
+    "blackceo-command-center": {
+      "role": "campaign/task transitions, evidence, approvals, media presentation, requester routing",
+      "revision": null,
+      "audited_baseline": "edc29a1dc9396cc15a8b71a0456f41732f705cba",
+      "merged_prs": [],
+      "note": "set revision = accepted main SHA after final merges"
+    },
+    "blackceo-graphify-infrastructure": {
+      "role": "structural/semantic refresh, cross-repository dependency knowledge, coherent source revisions",
+      "revision": null,
+      "audited_baseline": "b441ff39d715a8d3e2ca69bcf563076aae9d0ee8",
+      "merged_prs": [],
+      "note": "set revision = accepted main SHA after final merges"
+    }
+  },
+  "distribution_manifest_hashes": {
+    "openclaw_onboarding_tree": null,
+    "nine_999_tree": null,
+    "note": "recorded by the clean-install canary at run time (per-file sha256 manifest hash of the scoped Skill 75 files in each generated tree)"
+  },
+  "canary_execution_authorization": {
+    "level": "preparation-only",
+    "note": "SFR-007 builds harnesses only. Real canary EXECUTION (against an authorized canary target, with loaded-source proof) and acceptance attestation WAIT for this vector to be pinned and for an explicit execution GO. No execution, no paid job, no client-fleet rollout is authorized by this file."
+  }
+}
