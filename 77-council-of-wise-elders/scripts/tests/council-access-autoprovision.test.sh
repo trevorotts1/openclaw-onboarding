@@ -219,6 +219,33 @@ check "runs.log line carries synced=1 and cc_orphans=1" bash -c "tail -n1 '$SD/r
 check "the Council page now lets in exactly the CC page's emails" test "$(jq -c '[.apps[] | select(.domain == "alpha-council.'$Z'") | .id][0] as $c | [.policies[$c][].include[].email.email] | sort' "$STATE")" = "$(jq -c '[.policies["app-cc-alpha"][].include[].email.email] | sort' "$STATE")"
 check "no address in the receipts or the job output" bash -c "! grep -q '@' '$SD/last-run.json' '$SD/runs.log' '$OUT'"
 
+echo "== 8d. FIX 1: an adopted host (council CNAME on a healthy tunnel carrying the rule) is never bad"
+ADOPT="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+FIXTURE_OFFSET=70 fixture adoptbox | jq -c --arg z "$Z" --arg a "$ADOPT" '
+  .tunnels[$a] = {name:"adopt-adoptbox",source:"cloudflare",
+      config:{ingress:[{hostname:("adoptbox-council."+$z),service:"http://127.0.0.1:8787"},{service:"http_status:404"}]}}
+  | .dns += [{id:"x-ad",type:"CNAME",name:("adoptbox-council."+$z),content:($a+".cfargotunnel.com"),proxied:true}]
+  | .apps += [{id:"app-co",name:"Council - adoptbox",domain:("adoptbox-council."+$z),type:"self_hosted",session_duration:"24h"}]
+  | .policies["app-co"] = [{id:"pol-co",decision:"allow",include:[{email:{email:"adoptbox@client.example"}},{email:{email:"operator@example.com"}}]}]' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_job --apply
+check "adopted: wrapper exit 0 (ADOPTED is never counted bad)" test "$RC" = 0
+check "adopted: counted ALREADY_PROVISIONED, zero writes, no refusals" bash -c "test \"\$(jq -c '[.exit, .counts.ALREADY_PROVISIONED, .counts.CONFLICT, .counts.FAILED, (.refused|length)]' '$SD/last-run.json')\" = '[0,1,0,0,0]' && test '$(nonget_count)' = 0"
+check "adopted: no dedicated tunnel was planned or created" bash -c "! grep -Eq '^(POST|PUT|DELETE|PATCH) .*cfd_tunnel' '$LOG' && test \"\$(jq -c '[.tunnels[] | select((.name // \"\") == \"council-adoptbox\")] | length' '$STATE')\" = 0"
+
+echo "== 8e. FIX 2: the env file's COUNCIL_ACCESS_EXCLUDE line is read even when the credentials are already exported"
+printf 'COUNCIL_ACCESS_EXCLUDE=alpha.%s\n' "$Z" > "$WORK/op-excl.env"
+FIXTURE_OFFSET=80 fixture alpha beta > "$WORK/f.json"; start_fake "$WORK/f.json"
+OUT="$WORK/out.excl"; env CF_API_BASE="http://127.0.0.1:$PORT/client/v4" \
+    COUNCIL_EDGE_URL_TEMPLATE="http://127.0.0.1:$PORT/edge/%s/" COUNCIL_EDGE_TRIES=2 COUNCIL_EDGE_SLEEP=0 \
+    CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct \
+    COUNCIL_ACCESS_STATE_DIR="$SD" COUNCIL_ACCESS_ENV_FILE="$WORK/op-excl.env" TMPDIR="$WORK" \
+    COUNCIL_CC_EMAILS_FILE="$WORK/no-cc-emails" COUNCIL_CC_OPERATOR_EMAILS="" \
+    "$JOB" --apply >"$OUT" 2>&1; RC=$?
+check "credentials from the environment, exclude from the env file: alpha skipped, beta still provisioned" bash -c "test '$RC' = 0 && test \"\$(jq -c '[.total, .counts.PROVISIONED]' '$SD/last-run.json')\" = '[1,1]'"
+check "the excluded host is silent (absent from receipt, log line and output)" bash -c "! grep -q 'alpha' '$SD/last-run.json' '$OUT' && ! tail -n1 '$SD/runs.log' | grep -q 'alpha'"
+check "the excluded host got zero writes (exactly 3 writes, beta only)" test "$(nonget_count)" = 3
+
 echo "== 9. the token never leaks"
 check "token in no output, receipt or log" bash -c "! grep -rq -e '$TOKEN' '$WORK' --include='out*' --include='*.json' --include='*.log' --exclude='f.json' --exclude='after*' --exclude='delta.json' --exclude='state.*' --exclude='log.*'"
 check "no temp file left behind by the job" bash -c "test -z \"\$(ls '$WORK' | grep council-autoprov)\""

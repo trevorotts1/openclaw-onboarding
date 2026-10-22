@@ -27,7 +27,12 @@
 #
 # ENV:
 #   COUNCIL_ACCESS_STATE_DIR   receipts dir (default $HOME/.claude/state/council-elders/access-provision)
-#   COUNCIL_ACCESS_ENV_FILE    operator env file (default $HOME/.openclaw/.env)
+#   COUNCIL_ACCESS_ENV_FILE    operator env file (default $HOME/.openclaw/.env).
+#                              Sourced only when a credential is missing; its
+#                              COUNCIL_ACCESS_EXCLUDE line is parsed (never executed)
+#                              on EVERY run, even when the credentials are already in
+#                              the environment, so both steps honor the same exclude
+#                              list (the environment's COUNCIL_ACCESS_EXCLUDE wins)
 #   COUNCIL_ACCESS_STALE_MIN   lock considered stale after this many minutes (default 120)
 #   COUNCIL_ACCESS_PROVISION   provision script path (default: sibling provision-council-access.sh)
 #   COUNCIL_ACCESS_ENSURE_CC   ensure script path (default: sibling ensure-cc-access.sh)
@@ -95,6 +100,17 @@ if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; th
   exit 3
 fi
 export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+# COUNCIL_ACCESS_EXCLUDE: the same exclude source in every entry path. The env-file
+# line is read even when the credentials came from the environment (the file is
+# parsed for that one key, never executed), so an excluded host (karen-vaughn) is
+# skipped by step 1 and step 2 alike; the environment still wins when set.
+if [ -z "${COUNCIL_ACCESS_EXCLUDE:-}" ] && [ -r "$ENV_FILE" ]; then
+  _ex="$(sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?COUNCIL_ACCESS_EXCLUDE=//p" "$ENV_FILE" | tail -n1 | tr -d '\r')"
+  _ex="${_ex#\"}"; _ex="${_ex%\"}"; _ex="${_ex#\'}"; _ex="${_ex%\'}"
+  [ -n "$_ex" ] && COUNCIL_ACCESS_EXCLUDE="$_ex"
+  unset _ex
+fi
+export COUNCIL_ACCESS_EXCLUDE
 
 # Lock: mkdir is atomic. A lock older than STALE_MIN minutes is a dead run; take it over.
 LOCK="$STATE_DIR/run.lock"
