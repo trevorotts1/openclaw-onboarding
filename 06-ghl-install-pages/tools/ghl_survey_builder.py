@@ -200,6 +200,13 @@ try:
 except Exception:  # noqa: BLE001
     _srest = None  # type: ignore[assignment]
 
+# The ONE Skill 44 → Skill 06 dependency handoff contract (§3.2). Soft import so
+# plan-only/dry-run stays dependency-free; preflight P6b is what enforces B06.
+try:
+    import ghl_form_survey_handoff as _handoff  # noqa: E402
+except Exception:  # noqa: BLE001
+    _handoff = None  # type: ignore[assignment]
+
 try:  # SHARED frame-scoped coordinate-drag primitive (cross-origin iframe FIX)
     import ghl_iframe_drag as _ghl_iframe_drag  # noqa: E402
 except Exception:  # noqa: BLE001
@@ -1029,6 +1036,13 @@ def _idempotency_key(task: dict) -> str:
 def _run_preflight(task: dict, evidence_root: str) -> dict:
     """Run P1–P8 preflight checks; record results to routing/survey-preflight.json.
 
+    ``task['_handoff_record']`` (§3.2 / B06): the Skill 44 → Skill 06 dependency
+    handoff record. When present (or found at
+    ``<evidence_root>/routing/form-survey-handoff.json``) it is HARD-gated — an
+    unproven field/tag, a wrong-tenant result or an unapproved location stops the
+    survey BEFORE any browser action. Absent = the legacy out-of-band path,
+    recorded as DEFERRED (honest, never claimed as proven).
+
     Returns {pass: bool, checks: list, stop_reason?: str}.
     """
     checks: List[dict] = []
@@ -1130,6 +1144,31 @@ def _run_preflight(task: dict, evidence_root: str) -> dict:
         checks.append({"check": "P6:field_plan", "pass": True,
                        "detail": "field_creation='browser' — LEGACY in-browser create "
                                  "(no-PIT fallback ONLY, not the default rail)"})
+
+    # P6b (§3.2 / B06): the Skill 44 dependency HANDOFF must PROVE every planned
+    # custom field + tag on the APPROVED location before a single browser action.
+    # A missing dependency is a STOP — never a licence to create a duplicate field
+    # because a lookup missed. No record at all = legacy out-of-band path, recorded
+    # as DEFERRED (honest, never reported as proven).
+    handoff = task.get("_handoff_record")
+    if handoff is None and _handoff is not None:
+        handoff = _handoff.load_handoff(evidence_root)
+    if handoff is None:
+        checks.append({"check": "P6b:dependency_handoff", "pass": True,
+                       "detail": "no handoff record — legacy out-of-band Skill 44 path; "
+                                 "dependency proof DEFERRED (not claimed)"})
+    elif _handoff is None:
+        chk("P6b:dependency_handoff", False,
+            "a handoff record was supplied but ghl_form_survey_handoff is not "
+            "importable — cannot verify it, refusing to guess")
+    else:
+        try:
+            _handoff.assert_ready_for_native_build(handoff, build_location_id=loc or None)
+            chk("P6b:dependency_handoff", True,
+                "every planned field/tag proven on location "
+                f"{handoff.get('location_ref', {}).get('location_id')!r}")
+        except _handoff.HandoffIncomplete as exc:
+            chk("P6b:dependency_handoff", False, f"{type(exc).__name__}: {exc}")
 
     # P7 — agent-browser version pin (warn only; logged)
     try:
@@ -1575,7 +1614,31 @@ def _validate_topology(
     # (linear next) or it carries a convergence jump. A branch with neither falls
     # through into a sibling branch whose required fields make the survey
     # UNSUBMITTABLE, so it is a HARD STOP here (not a mid-build surprise).
+    #
     converge_ref = task.get("converge_slide")
+    # B08 (v3.0 §3.2): convergence is NOT opt-in when a branch target is
+    # IMMEDIATELY FOLLOWED by a sibling branch target — that is a genuine
+    # fall-through into the other branch (whose required fields sit between the
+    # respondent and Submit), so it fails closed even with no converge_slide
+    # declared. A branch followed by an ordinary slide is left alone: the survey
+    # continues linearly and stays submittable, which is the pre-existing
+    # behaviour for plain forward-router surveys.
+    if not converge_ref:
+        fwd = [nr for nr in _norm_rules if not nr.get("owner_slide")]
+        resolve_sib = _make_slide_resolver(slides)
+        sib_idx = {}
+        for nr in fwd:
+            t = resolve_sib(nr.get("then_slide"))
+            if t is not None:
+                sib_idx.setdefault(t["index"], nr.get("then_slide"))
+        for idx, label in sorted(sib_idx.items()):
+            nxt = sib_idx.get(idx + 1)
+            if nxt is not None:
+                errors.append(
+                    f"B08: branch slide {label!r} falls through into sibling branch "
+                    f"{nxt!r} (no slide between them, no convergence jump) — the "
+                    "respondent cannot submit; set converge_slide or add a jump"
+                )
     if converge_ref:
         resolve = _make_slide_resolver(slides)
         converge = resolve(converge_ref)
@@ -3143,7 +3206,8 @@ SURVEY_PHASES: List[PhaseSpec] = [
 
 
 def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True,
-                 state: Optional["ghl_run_state.RunState"] = None) -> dict:
+                 state: Optional["ghl_run_state.RunState"] = None,
+                 handoff: Optional[dict] = None) -> dict:
     """Build a GoHighLevel native survey via browser-control.
 
     This is the v2_dispatcher INJECTED BUILDER: called as
@@ -3258,6 +3322,10 @@ def build_survey(task: dict, evidence_root: str, *, dry_run: bool = True,
     # ── Step 1: Preflight ─────────────────────────────────────────────────────
     _board_activity(board_task_id, "updated",
                     f"Step 1/{total_steps}: Running preflight checks")
+    if handoff is not None:
+        # Route the record through the task dict so preflight reads it without a
+        # signature change (callers/tests that spy on _run_preflight keep working).
+        task = {**task, "_handoff_record": handoff}
     preflight = _phase("preflight", lambda: _run_preflight(task, evidence_root))
     if not preflight["pass"]:
         stop = preflight.get("stop_reason", "preflight failed")
