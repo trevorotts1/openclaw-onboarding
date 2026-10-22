@@ -394,11 +394,18 @@ class WhisperSession:
         self._guard()
         if self.model is None:
             if self._loader is None:
-                raise LyricTimingError(
-                    "LOCAL_MODEL_LOAD_REFUSED",
-                    "no faster-whisper loader wired (PREREQS "
-                    "faster-whisper-optional: install only when this "
-                    "fallback is enabled)")
+                # Wire the ONE permitted loader here: the production path never
+                # passed one, so tier 2 refused even with faster-whisper
+                # installed and every take's word timing died UNMEASURED.
+                try:
+                    from faster_whisper import WhisperModel as _WM  # noqa: PLC0415
+                except Exception as _e:  # noqa: BLE001
+                    raise LyricTimingError(
+                        "LOCAL_MODEL_LOAD_REFUSED",
+                        "no faster-whisper loader wired and the package is "
+                        "not importable (%s); PREREQS faster-whisper-optional"
+                        % type(_e).__name__) from _e
+                self._loader = _WM
             self.model = self._loader(self.model_size, self.compute_type)
             self.loads += 1
 
