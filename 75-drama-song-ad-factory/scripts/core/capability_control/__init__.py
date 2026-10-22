@@ -1,4 +1,6 @@
-"""S75-W04-U2 capability-aware configuration and account failure control.
+"""capability_control — S75-W04-U2 capability-aware configuration and account
+failure control. Import as ``capability_control`` from this skill's
+``scripts/core`` directory; stdlib only.
 
 One resolved capability manifest from the installed runtime schema and the
 authoritative provider catalog; staged/validated/atomic configuration changes;

@@ -12,7 +12,8 @@ import re
 import sys
 
 UNIT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, UNIT_ROOT)
+REPO_ROOT = os.path.dirname(os.path.dirname(UNIT_ROOT))
+sys.path.insert(0, os.path.join(REPO_ROOT, "75-drama-song-ad-factory", "scripts", "core"))
 
 from capability_control.manifest import (  # noqa: E402
     DispatchReceipt, effort_claims_findings, resolve_manifest,

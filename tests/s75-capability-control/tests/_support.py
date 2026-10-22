@@ -1,11 +1,21 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+HERE = os.path.dirname(os.path.abspath(__file__))
+UNIT_ROOT = os.path.dirname(HERE)
+REPO_ROOT = os.path.dirname(os.path.dirname(UNIT_ROOT))
 
-import json
+# The production module lives in the skill tree; the tests live here. One
+# implementation, two consumers: this is the only path wiring between them.
+SKILL_CORE = os.path.join(REPO_ROOT, "75-drama-song-ad-factory", "scripts", "core")
 
-FIXTURES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "fixtures")
+for _p in (UNIT_ROOT, SKILL_CORE):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import json  # noqa: E402
+
+FIXTURES = os.path.join(UNIT_ROOT, "fixtures")
 
 
 def fixture(name):

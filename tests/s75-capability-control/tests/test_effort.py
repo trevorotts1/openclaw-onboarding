@@ -3,6 +3,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import tests._support  # noqa: E402,F401 - puts the skill-tree module on sys.path
 
 from capability_control.effort import ModelCaps, plan_request, thinking_log_proof  # noqa: E402
 
