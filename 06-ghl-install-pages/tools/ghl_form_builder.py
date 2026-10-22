@@ -156,6 +156,13 @@ if _TOOLS_DIR not in sys.path:
 import ghl_run_state  # noqa: E402
 from ghl_run_state import PhaseSpec  # noqa: E402
 
+# The ONE Skill 44 → Skill 06 dependency handoff contract (§3.2). Soft import so
+# dry-run/selftest stay dependency-free; the gate below is what enforces B06.
+try:  # pragma: no cover - exercised via the gate below
+    import ghl_form_survey_handoff as _handoff  # type: ignore
+except Exception:  # noqa: BLE001
+    _handoff = None  # type: ignore
+
 # Model ladders resolve through the shared router (client choice / configured
 # default only; no model is prescribed by name in this module).
 import model_router  # noqa: E402
@@ -348,6 +355,10 @@ def is_zhc_field_key(key: str) -> bool:
 
 def is_zhc_tag(tag: str) -> bool:
     return tag.lower().startswith(ZHC_KEY_PREFIX)
+
+def _norm_key(value: Any) -> str:
+    """Lowercase+strip a field key / tag for handoff comparisons (never raises)."""
+    return str(value).strip().lower() if value is not None else ""
 
 
 # ---------------------------------------------------------------------------
@@ -727,7 +738,14 @@ def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
                    *, live: bool = False) -> dict:
     """THINK-layer gate. ``live=True`` (the ``--no-dry-run`` path) additionally
     HARD-verifies the runtime environment so a live attempt is never burned on
-    an environment mistake (F-P9)."""
+    an environment mistake (F-P9).
+
+    ``task['_handoff_record']`` is the Skill 44 → Skill 06 dependency handoff record
+    (``ghl_form_survey_handoff``). When one exists it is HARD-gated: a record that
+    does not PROVE every planned field/tag on the approved location stops the form
+    BEFORE any browser step (B06). Absent = the legacy out-of-band path, recorded
+    honestly as deferred (never silently reported as proven).
+    """
     checks: List[dict] = []
     stop: Optional[str] = None
 
@@ -754,6 +772,31 @@ def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
     # custom fields must be add_object_fields (never create-on-the-fly)
     aof = all(f.get("add_via") == "add_object_fields" for f in fields if f["source"] == "custom")
     chk("F-P7:custom_via_object_fields", aof, "all custom fields routed via Add Object Fields")
+
+    # F-P11 (§3.2 / B06): the Skill 44 dependency HANDOFF must PROVE every planned
+    # custom field + tag on the APPROVED location before a single browser step is
+    # emitted. A missing dependency is a STOP, never a licence to create a
+    # duplicate field because a lookup missed. No record at all = the legacy
+    # out-of-band path, recorded as DEFERRED (honest, not "proven").
+    handoff = task.get("_handoff_record")
+    if handoff is None:
+        checks.append({"check": "F-P11:dependency_handoff", "pass": True,
+                       "detail": "no handoff record supplied — legacy out-of-band Skill 44 "
+                                 "path; dependency proof DEFERRED (not claimed)"})
+    elif _handoff is None:
+        chk("F-P11:dependency_handoff", False,
+            "a handoff record was supplied but ghl_form_survey_handoff is not importable "
+            "— cannot verify it, refusing to guess")
+    else:
+        try:
+            _handoff.assert_ready_for_native_build(
+                handoff, build_location_id=loc or None,
+                tag_attachment_method=dep_plan.get("tag_attachment", {}).get("method"))
+            chk("F-P11:dependency_handoff", True,
+                f"all {len(dep_plan['custom_fields'])} custom field(s) + "
+                f"{len(dep_plan['tags'])} tag(s) proven on location {loc!r}")
+        except _handoff.HandoffIncomplete as exc:
+            chk("F-P11:dependency_handoff", False, f"{type(exc).__name__}: {exc}")
     # headless guard (soft — only when the real skill module is present)
     if ghl_builder is not None and hasattr(ghl_builder, "headless_guard"):
         try:
@@ -2863,7 +2906,8 @@ def _ghl_verify_available() -> bool:
 # Main entry point
 # ---------------------------------------------------------------------------
 def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
-               state: Optional["ghl_run_state.RunState"] = None) -> dict:
+               state: Optional["ghl_run_state.RunState"] = None,
+               handoff: Optional[dict] = None) -> dict:
     """Build a GHL (Convert and Flow) FORM via browser-control.
 
     THINK layer always runs (preflight + plan + dependency plan + field map +
@@ -2873,11 +2917,35 @@ def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
     ``state`` (U8): a RunState turns the click-list walk's own F1…F13 phases into
     resume points. ``None`` (the dispatcher / library callers) = no checkpointing,
     and the walk behaves exactly as it always did.
+
+    ``handoff`` (§3.2): the Skill 44 → Skill 06 dependency handoff record. When
+    omitted, one is loaded from ``<evidence_root>/routing/form-survey-handoff.json``
+    if it exists — a record on disk means the caller opted into the gate, and the
+    gate is what stops a build on an unproven dependency (B06).
     """
     started = time.monotonic()
     dry_run = bool(task.get("dry_run", dry_run))
     os.makedirs(os.path.join(evidence_root, "routing"), exist_ok=True)
     os.makedirs(os.path.join(evidence_root, "shots"), exist_ok=True)
+
+    if handoff is None and _handoff is not None:
+        handoff = _handoff.load_handoff(evidence_root)
+    if handoff is not None:
+        # Route the record through the task dict so preflight reads it without a
+        # signature change (callers/tests that spy on _run_preflight keep working).
+        task = {**task, "_handoff_record": handoff}
+    if handoff is not None and _handoff is not None and not task.get("existing_field_keys"):
+        # The handoff already proves which keys exist — feed them into the plan so
+        # the dependency plan agrees with what Skill 44 actually reported.
+        _proven = [_norm_key(f.get("field_key")) for f in
+                   (handoff.get("dependency_results") or {}).get("custom_fields", [])
+                   if _norm_key(f.get("field_key"))]
+        _proven_tags = [_norm_key(t.get("tag")) for t in
+                        (handoff.get("dependency_results") or {}).get("tags", [])
+                        if _norm_key(t.get("tag"))]
+        if _proven:
+            task = {**task, "existing_field_keys": _proven,
+                    "existing_tags": _proven_tags}
 
     fields = _resolve_fields(task)
     dep_plan = plan_dependencies(

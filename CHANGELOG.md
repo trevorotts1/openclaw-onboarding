@@ -1,3 +1,7 @@
+## [v27.1.63]  -  2026-10-22  -  Council (Skill 77) v1.0.42: Council: an already-wired Council address is adopted instead of conflicting, the client exclude list is honored everywhere, and container-connector instructions only appear with container evidence
+
+- In plain English: Council (Skill 77) v1.0.42: Council: an already-wired Council address is adopted instead of conflicting, the client exclude list is honored everywhere, and container-connector instructions only appear with container evidence
+
 ## [v27.1.62]  -  2026-10-21  -  Council (Skill 77) v1.0.41: Council: container-host clients with a bridge-origin Command Center can now be provisioned on a dedicated tunnel with an in-container connector
 
 - In plain English: Council (Skill 77) v1.0.41: Council: container-host clients with a bridge-origin Command Center can now be provisioned on a dedicated tunnel with an in-container connector

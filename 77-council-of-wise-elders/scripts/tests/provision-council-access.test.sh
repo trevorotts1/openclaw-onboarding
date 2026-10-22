@@ -70,6 +70,8 @@ run_script() {
       COUNCIL_EDGE_TRIES=2 COUNCIL_EDGE_SLEEP=0 \
       CLOUDFLARE_API_TOKEN="$TOKEN" CLOUDFLARE_ACCOUNT_ID=qc-acct CLOUDFLARE_ZONE_ID=wrong-zone \
       COUNCIL_TUNNEL_TOKEN_DIR="$TOKDIR" PATH="${TEST_PATH:-$PATH}" \
+      COUNCIL_CONTAINER_HOSTS="${TEST_CONTAINER_HOSTS:-}" \
+      COUNCIL_ACCESS_EXCLUDE="${TEST_EXCLUDE:-}" COUNCIL_ACCESS_ENV_FILE="${TEST_ENV_FILE:-/nonexistent}" \
       TMPDIR="$SCRIPT_TMP" "$SCRIPT" "$@" >"$OUT" 2>&1
   RC=$?
 }
@@ -258,9 +260,10 @@ fixture qcbox | jq -c '.tunnels["'$TID'"].config.ingress[0].service = "http://12
 run_script qcbox.$Z
 check "127.0.0.1 CC origin is loopback: PLANNED" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z PLANNED'"
 
-echo "== 6a. container shape: remote-managed CC tunnel, bridge origin, Council loopbound inside the container"
+echo "== 6a. container shape WITH evidence (COUNCIL_CONTAINER_HOSTS): remote-managed CC tunnel, bridge origin, in-container connector"
 # CSHAPE <service> : the four-container-host shape on qcbox
 CSHAPE() { fixture qcbox | jq -c --arg svc "${1:-http://172.16.1.2:4000}" '.tunnels["'$TID'"].config.ingress[0].service = $svc'; }
+TEST_CONTAINER_HOSTS=qcbox   # FIX 3: the explicit operator override is the evidence
 CSHAPE > "$WORK/f.json"; start_fake "$WORK/f.json"; cp "$STATE" "$WORK/orig-state.json"
 run_script qcbox.$Z
 check "container (dry-run): exit 0, GET only, plans the dedicated council-qcbox tunnel" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && grep -q 'would create tunnel council-qcbox' '$OUT' && grep -q '\[plan\] PUT .*configurations' '$OUT'"
@@ -275,11 +278,14 @@ check "container: ingress route <slug>-council -> http://127.0.0.1:8787 (connect
 check "container: token file saved, mode 600, dir 700" bash -c "test \"\$(stat -f %Lp '$TOKDIR/council-qcbox.token')\" = 600 && test \"\$(stat -f %Lp '$TOKDIR')\" = 700"
 check "container: the CC tunnel and its bridge rule were not touched" test "$(state '.tunnels["'$TID'"]')" = "$(jq -c '.tunnels["'$TID'"]' "$WORK/orig-state.json")"
 check "container (apply): pending detail says the connector must run INSIDE the container" bash -c "tail -n1 '$OUT' | grep -q 'connector must run INSIDE the client'"
+check "container (apply): the pending line names BOTH delivery paths exactly (in-container + host) plus the operator-side token" bash -c "tail -n1 '$OUT' | grep -qF 'the in-container path \$OPENCLAW_ROOT/secrets/tunnel-council.token' && tail -n1 '$OUT' | grep -qF '(OPENCLAW_ROOT resolves to /data/.openclaw or ~/.openclaw as wire.sh does)' && tail -n1 '$OUT' | grep -qF 'the host path ~/.openclaw/secrets/tunnel-council.token for host-run connectors' && tail -n1 '$OUT' | grep -q 'token saved operator side at'"
+check "container (apply): the step line names the evidence (COUNCIL_CONTAINER_HOSTS)" grep -q 'COUNCIL_CONTAINER_HOSTS names qcbox' "$OUT"
 check "container: Access app mirrors the CC allow list" test "$(state '[.apps[] | select(.domain=="qcbox-council.'$Z'")] | length')" = 1
 jq -c --arg k "$CTID" '.tunnels[$k].conns = [{id:"cc1",is_pending_reconnect:false}]' "$STATE" > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
 check "connector up (apply): exactly 1 write, the DNS POST -> PROVISIONED" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 1 && grep -Eq '^POST /client/v4/zones/zone-real/dns_records' '$LOG' && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z PROVISIONED'"
 check "connector up: CNAME points at the container's council tunnel" test "$(state '.dns[] | select(.name=="qcbox-council.'$Z'") | [.content,.proxied] | join("|")')" = '"'$CTID'.cfargotunnel.com|true"'
+TEST_CONTAINER_HOSTS=""
 
 echo "== 6a2. container shape, non-4000 bridge port (Contabo 19003): only the local-managed path allows it"
 CSHAPE "http://172.16.1.2:19003" > "$WORK/f.json"; start_fake "$WORK/f.json"
@@ -300,6 +306,16 @@ for svc in "http://172.32.0.9:4000" "http://8.8.8.8:4000"; do
   run_script qcbox.$Z --apply
   check "$svc (outside the private ranges): ORIGIN_NOT_LOOPBACK, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z ORIGIN_NOT_LOOPBACK'"
 done
+
+echo "== 6a4. FIX 3: private-bridge :4000 WITHOUT container evidence takes the host-side dedicated path (ON THE HOST)"
+CSHAPE > "$WORK/f.json"; start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "no evidence (apply): the dedicated path still runs, CONNECTOR_PENDING, zero DNS writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 3 && ! grep -Eq '^(POST|PUT|DELETE|PATCH) .*/dns_records' '$LOG' && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONNECTOR_PENDING'"
+check "no evidence: the message says the connector runs ON THE HOST" bash -c "tail -n1 '$OUT' | grep -q 'The connector runs ON THE HOST'"
+check "no evidence: the message never commands the in-container step" bash -c "! grep -q 'must run INSIDE' '$OUT'"
+check "no evidence: both delivery paths still named exactly" bash -c "tail -n1 '$OUT' | grep -qF 'the in-container path \$OPENCLAW_ROOT/secrets/tunnel-council.token' && tail -n1 '$OUT' | grep -qF 'the host path ~/.openclaw/secrets/tunnel-council.token for host-run connectors'"
+check "no evidence: the step line says the host-side fallback" grep -q 'no container evidence' "$OUT"
+check "no evidence: the tunnel is still council-qcbox with the 8787 route (same writes as with evidence)" test "$(state '.tunnels | to_entries[] | select(.value.name == "council-qcbox") | .value.config.ingress')" = '[{"hostname":"qcbox-council.'$Z'","service":"http://127.0.0.1:8787"},{"service":"http_status:404"}]'
 rm -f "$TOKDIR/council-qcbox.token"   # 6b expects a clean token dir
 
 fixture qcbox | jq -c --arg z "$Z" '.tunnels["'$TID'"].config.ingress = [
@@ -420,6 +436,85 @@ check "already-provisioned host with a dead connector is CONNECTOR_DOWN, not ALR
 fixture qcbox | jq -c '.dns += [{id:"x1",type:"CNAME",name:"qcbox-council.'$Z'",content:"ffffffffffffffffffffffffffffffff.cfargotunnel.com",proxied:true}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
 check "council CNAME at another tunnel: CONFLICT, zero writes, exit 1" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONFLICT'"
+
+echo "== 6d2. FIX 1 ADOPT NOT CONFLICT: the council CNAME on a healthy tunnel already carrying the exact rule"
+ADOPT="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+fixture qcbox | jq -c --arg z "$Z" --arg a "$ADOPT" '
+  .tunnels["'$TID'"] = {name:"command-center",source:"local",config:null}
+  | .tunnels[$a] = {name:"adopt-qcbox",source:"cloudflare",
+      config:{ingress:[{hostname:("qcbox-council."+$z),service:"http://127.0.0.1:8787"},{service:"http_status:404"}]}}
+  | .dns += [{id:"x-ad",type:"CNAME",name:("qcbox-council."+$z),content:($a+".cfargotunnel.com"),proxied:true}]
+  | .apps += [{id:"app-co",name:"Council - qcbox",domain:("qcbox-council."+$z),type:"self_hosted",session_duration:"24h"}]
+  | .policies["app-co"] = [{id:"pol-co",decision:"allow",include:[{email:{email:"qcbox@client.example"}},{email:{email:"operator@example.com"}}]}]' > "$WORK/f.json"
+start_fake "$WORK/f.json"; cp "$STATE" "$WORK/adopt-state.json"
+run_script qcbox.$Z
+check "adopted (dry-run): exit 0, GET only, ALREADY_PROVISIONED naming the adopting tunnel" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: qcbox.$Z ALREADY_PROVISIONED Council address already wired via tunnel adopt-qcbox'"
+check "adopted (dry-run): no dedicated tunnel is re-planned (no 'would create tunnel')" bash -c "! grep -q 'would create tunnel' '$OUT'"
+run_script qcbox.$Z --apply
+check "adopted (apply): exit 0, ALREADY_PROVISIONED 'Council address already wired via tunnel adopt-qcbox'" bash -c "test '$RC' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z ALREADY_PROVISIONED Council address already wired via tunnel adopt-qcbox'"
+check "adopted: zero writes" test "$(nonget_count)" = 0
+check "adopted: no council-qcbox tunnel was created and the DNS record kept its target" test "$(state '[.tunnels[] | select((.name // "") == "council-qcbox")] | length')" = 0 -a "$(state '.dns[] | select(.name=="qcbox-council.'$Z'") | .content')" = '"'$ADOPT'.cfargotunnel.com"'
+check "adopted: the adopting tunnel's config was never written" test "$(state '.put_bodies | length')" = 0
+check "adopted: no connector token was fetched or saved" bash -c "! grep -q '/token' '$LOG' && test ! -e '$TOKDIR/adopt-qcbox.token'"
+check "adopted: the step line records the adoption" grep -q "adopted: tunnel adopt-qcbox already routes qcbox-council.$Z -> http://127.0.0.1:8787" "$OUT"
+
+fixture qcbox | jq -c --arg z "$Z" --arg a "$ADOPT" '
+  .tunnels["'$TID'"] = {name:"command-center",source:"local",config:null}
+  | .tunnels[$a] = {name:"adopt-qcbox",source:"local",
+      config:{ingress:[{hostname:("qcbox-council."+$z),service:"http://localhost:8787"},{service:"http_status:404"}]}}
+  | .dns += [{id:"x-ad",type:"CNAME",name:("qcbox-council."+$z),content:($a+".cfargotunnel.com"),proxied:true}]
+  | .apps += [{id:"app-co",name:"Council - qcbox",domain:("qcbox-council."+$z),type:"self_hosted",session_duration:"24h"}]
+  | .policies["app-co"] = [{id:"pol-co",decision:"allow",include:[{email:{email:"qcbox@client.example"}},{email:{email:"operator@example.com"}}]}]' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "adopted (LOCAL-managed adopting tunnel, localhost:8787 equivalent form): same ALREADY_PROVISIONED, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z ALREADY_PROVISIONED Council address already wired via tunnel adopt-qcbox'"
+
+fixture qcbox | jq -c --arg z "$Z" --arg a "$ADOPT" '
+  .tunnels[$a] = {name:"foreign-qcbox",source:"cloudflare",
+      config:{ingress:[{hostname:("qcbox-council."+$z),service:"http://127.0.0.1:9999"},{service:"http_status:404"}]}}
+  | .dns += [{id:"x-fr",type:"CNAME",name:("qcbox-council."+$z),content:($a+".cfargotunnel.com"),proxied:true}]' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "foreign CNAME (healthy tunnel WITHOUT the council rule): stays CONFLICT, zero writes, exit 1" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONFLICT'"
+check "foreign CNAME: no adoption line in the output" bash -c "! grep -q ADOPTED '$OUT'"
+check "foreign CNAME: no council-qcbox tunnel was created" test "$(state '[.tunnels[] | select((.name // "") == "council-qcbox")] | length')" = 0
+
+echo "== 6d3. FIX 4: adoption needs the EXACT PATH-LESS rule on a healthy tunnel (no false blessing)"
+fixture qcbox | jq -c --arg z "$Z" --arg a "$ADOPT" '
+  .tunnels[$a] = {name:"adopt-qcbox",source:"cloudflare",
+      config:{ingress:[{hostname:("qcbox-council."+$z),service:"http://127.0.0.1:8787",path:"^/chamber/"},{service:"http_status:404"}]}}
+  | .dns += [{id:"x-ad",type:"CNAME",name:("qcbox-council."+$z),content:($a+".cfargotunnel.com"),proxied:true}]' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "path-scoped rule only (no path-less rule): NOT adopted, CONFLICT, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONFLICT' && ! grep -q ADOPTED '$OUT'"
+
+fixture qcbox | jq -c --arg z "$Z" --arg a "$ADOPT" '
+  .tunnels[$a] = {name:"adopt-qcbox",source:"cloudflare",
+      config:{ingress:[{hostname:("qcbox-council."+$z),service:"http://1:8787"},{service:"http_status:404"}]}}
+  | .dns += [{id:"x-ad",type:"CNAME",name:("qcbox-council."+$z),content:($a+".cfargotunnel.com"),proxied:true}]' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "http://1:8787 (host '1', NOT loopback): NOT adopted, CONFLICT (the quoted IPv6 form is literal)" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONFLICT' && ! grep -q ADOPTED '$OUT'"
+
+fixture qcbox | jq -c --arg z "$Z" --arg a "$ADOPT" '
+  .tunnels[$a] = {name:"adopt-qcbox",source:"cloudflare",
+      config:{ingress:[{hostname:("qcbox-council."+$z),service:"http://[::1]:8787"},{service:"http_status:404"}]}}
+  | .dns += [{id:"x-ad",type:"CNAME",name:("qcbox-council."+$z),content:($a+".cfargotunnel.com"),proxied:true}]
+  | .apps += [{id:"app-co",name:"Council - qcbox",domain:("qcbox-council."+$z),type:"self_hosted",session_duration:"24h"}]
+  | .policies["app-co"] = [{id:"pol-co",decision:"allow",include:[{email:{email:"qcbox@client.example"}},{email:{email:"operator@example.com"}}]}]' > "$WORK/f.json"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z --apply
+check "http://[::1]:8787 (the real IPv6 loopback form): adopted, ALREADY_PROVISIONED, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: qcbox.$Z ALREADY_PROVISIONED Council address already wired via tunnel adopt-qcbox'"
+
+for dead in '{"status":"down"}' '{"deleted_at":"2026-10-01T00:00:00Z"}'; do
+  fixture qcbox | jq -c --arg z "$Z" --arg a "$ADOPT" --argjson dead "$dead" '
+    .tunnels[$a] = ({name:"adopt-qcbox",source:"cloudflare",
+        config:{ingress:[{hostname:("qcbox-council."+$z),service:"http://127.0.0.1:8787"},{service:"http_status:404"}]}} + $dead)
+    | .dns += [{id:"x-ad",type:"CNAME",name:("qcbox-council."+$z),content:($a+".cfargotunnel.com"),proxied:true}]' > "$WORK/f.json"
+  start_fake "$WORK/f.json"
+  run_script qcbox.$Z --apply
+  check "stale rule on a dead tunnel ($dead): NOT adopted, CONFLICT, zero writes" bash -c "test '$RC' = 1 && test '$(nonget_count)' = 0 && tail -n1 '$OUT' | grep -q 'qcbox.$Z CONFLICT' && ! grep -q ADOPTED '$OUT'"
+done
 
 fixture qcbox | jq -c '.apps += [{id:"app-old",name:"Council - qcbox",domain:"qcbox-council.'$Z'",type:"self_hosted",session_duration:"24h"}] | .policies["app-old"] = [{id:"po",decision:"allow",include:[{email:{email:"stranger@example.test"}}]}]' > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
@@ -676,12 +771,65 @@ check "explicit rescue- host is refused (exit 2)" test "$RC" = 2
 run_script alpha-openclawdashboard.$Z
 check "explicit -openclawdashboard host is refused (exit 2)" test "$RC" = 2
 
+echo "== 7e. FIX 2: COUNCIL_ACCESS_EXCLUDE is honored in single-host mode (silent skip, zero writes)"
+fixture qcbox > "$WORK/f.json"; start_fake "$WORK/f.json"
+TEST_EXCLUDE="qcbox.$Z" run_script qcbox.$Z --apply
+check "excluded single host: exit 0, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0"
+check "excluded single host: silent (no COUNCIL_ACCESS line, not an alert)" bash -c "! grep -q '^COUNCIL_ACCESS:' '$OUT' && ! grep -Eq 'FAILED|CONFLICT|PLANNED|PROVISIONED' '$OUT'"
+check "excluded single host: the summary line says hosts=0" grep -q 'hosts=0' "$OUT"
+check "excluded single host: nothing in the fake state moved (no PUT/POST body, app count unchanged)" test "$(state '.put_bodies | length')" = 0 -a "$(state '.apps | length')" = 1
+printf 'COUNCIL_ACCESS_EXCLUDE=%s\n' "qcbox.$Z" > "$WORK/excl.env"
+start_fake "$WORK/f.json"
+TEST_ENV_FILE="$WORK/excl.env" run_script qcbox.$Z --apply
+check "excluded via the env-file line (same source as the wrapper and ensure): exit 0, zero writes, silent" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && ! grep -q '^COUNCIL_ACCESS:' '$OUT'"
+start_fake "$WORK/f.json"
+run_script qcbox.$Z
+check "not excluded: the same single-host run still plans (sanity)" bash -c "test '$RC' = 0 && tail -n1 '$OUT' | grep -q '^COUNCIL_ACCESS: qcbox.$Z PLANNED'"
+
 echo "== 8. zone is resolved by name, never from CLOUDFLARE_ZONE_ID"
 fixture qcbox > "$WORK/f.json"; start_fake "$WORK/f.json"
 run_script qcbox.$Z --apply
 check "first request is GET /zones?name=$Z" test "$(head -n1 "$LOG")" = "GET /client/v4/zones?name=$Z"
 check "no request touches the wrong zone id" bash -c "! grep -q wrong-zone '$LOG'"
 check "every zone-scoped request uses the id from the name lookup" bash -c "grep '/zones/' '$LOG' | grep -v '^GET /client/v4/zones?name=' | grep -qv '/zones/zone-real/' && exit 1; grep -q '/zones/zone-real/' '$LOG'"
+
+echo "== 8b. regression guard: the four live container hosts keep ALREADY_PROVISIONED exactly as today"
+# evelyn, bethune-publishing-house-inc, drstephaniebrown, monique: remote-managed CC
+# tunnel with a private-bridge CC rule on :4000, an existing council-<slug> tunnel with
+# the exact rule, its CNAME, and both Access apps. Two of them also carry a
+# bridge-pattern sibling rule (evidence), two do not; the result line is identical.
+container_live_fixture() {
+  local out='{"token":"'"$TOKEN"'","account":"qc-acct","zone":{"id":"zone-real","name":"'"$Z"'"},"dns":[],"tunnels":{},"apps":[],"policies":{},"edge":{"default":{"status":302,"location":"https://sweet-wave-ca28.cloudflareaccess.com/cdn-cgi/access/login/x"}},"fail":{}}'
+  local s i=0 ct kt sib
+  for s in "$@"; do
+    i=$((i + 1)); ct="$(printf 'c%031x' "$i")"; kt="$(printf 'k%031x' "$i")"; sib=0
+    case "$s" in evelyn|monique) sib=1 ;; esac
+    out="$(jq -c --arg s "$s" --arg ct "$ct" --arg kt "$kt" --arg z "$Z" --argjson sib "$sib" '
+      .dns += [{id:("d-"+$s),type:"CNAME",name:($s+"."+$z),content:($ct+".cfargotunnel.com"),proxied:true},
+               {id:("dc-"+$s),type:"CNAME",name:($s+"-council."+$z),content:($kt+".cfargotunnel.com"),proxied:true}]
+      | .tunnels[$ct] = {source:"cloudflare",config:{ingress:(
+          [{hostname:($s+"."+$z),service:"http://172.16.1.2:4000"}]
+          + (if $sib == 1 then [{hostname:($s+"-hooks."+$z),service:"http://172.16.1.2:18789",path:"^/hooks/"}] else [] end)
+          + [{service:"http_status:404"}])}}
+      | .tunnels[$kt] = {name:("council-"+$s),source:"cloudflare",
+          config:{ingress:[{hostname:($s+"-council."+$z),service:"http://127.0.0.1:8787"},{service:"http_status:404"}]}}
+      | .apps += [{id:("app-cc-"+$s),name:("Command Center - "+$s),domain:($s+"."+$z),type:"self_hosted",session_duration:"24h"},
+                  {id:("app-co-"+$s),name:("Council - "+$s),domain:($s+"-council."+$z),type:"self_hosted",session_duration:"24h"}]
+      | .policies[("app-cc-"+$s)] = [{id:("pol-"+$s),name:"allow",decision:"allow",
+          include:[{email:{email:($s+"@client.example")}},{email:{email:"operator@example.com"}}]}]
+      | .policies[("app-co-"+$s)] = [{id:("polc-"+$s),name:"allow",decision:"allow",
+          include:[{email:{email:($s+"@client.example")}},{email:{email:"operator@example.com"}}]}]' <<<"$out")"
+  done
+  printf '%s' "$out"
+}
+container_live_fixture evelyn bethune-publishing-house-inc drstephaniebrown monique > "$WORK/live.json"; start_fake "$WORK/live.json"
+for s in evelyn bethune-publishing-house-inc drstephaniebrown monique; do
+  run_script "$s.$Z" --apply
+  check "$s: ALREADY_PROVISIONED exactly as today, zero writes" bash -c "test '$RC' = 0 && test '$(nonget_count)' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: $s.$Z ALREADY_PROVISIONED'"
+done
+start_fake "$WORK/live.json"
+TEST_CONTAINER_HOSTS="evelyn,monique" run_script evelyn.$Z --apply
+check "evelyn with COUNCIL_CONTAINER_HOSTS evidence: same ALREADY_PROVISIONED line" bash -c "test '$RC' = 0 && test \"\$(tail -n1 '$OUT')\" = 'COUNCIL_ACCESS: evelyn.$Z ALREADY_PROVISIONED'"
 
 echo "== 9. the token never leaks"
 check "token appears in no case's stdout or stderr" bash -c "! grep -rq -- '$TOKEN' '$WORK/out'"
