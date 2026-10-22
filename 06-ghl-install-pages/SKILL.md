@@ -11,7 +11,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.68"
+  version: "v27.1.69"
   priority: HIGH
 ---
 
