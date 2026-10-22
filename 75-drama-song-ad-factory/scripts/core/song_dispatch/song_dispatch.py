@@ -576,8 +576,21 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
         put("pace_change", "UNMEASURED", _pace_turns_required_detail())
     else:
         put("pace_change", pg["verdict"], pg.get("detail") or pg.get("reason_code", ""))
-    have = set(_w(" ".join(w.get("word", "") for w in take.get("aligned_words") or [])))
-    missing = sorted(_script_lyric_words(script_words) - have)
+    _tokens = [w.get("word", "") for w in take.get("aligned_words") or []]
+    have = set(_w(" ".join(_tokens)))
+    _required = _script_lyric_words(script_words)
+    _missing = []
+    for _w_ in sorted(_required - have):
+        # ASR compound tokens: whisper writes "Superwoman" as ONE word, so the
+        # required "super"/"woman" read as missing. Accept a required word only
+        # as a prefix/suffix of a materially longer token (>= 3 extra chars),
+        # never a bare substring ("there" must not satisfy "her").
+        _hit = any(len(t) >= len(_w_) + 3 and
+                   (t.lower().startswith(_w_.lower()) or t.lower().endswith(_w_.lower()))
+                   for t in _tokens if t)
+        if not _hit:
+            _missing.append(_w_)
+    missing = _missing
     put("script_words", "FAIL" if missing else "PASS", ("missing %s" % missing[:8]) if missing else "")
     dur = take.get("duration_s")
     if not isinstance(dur, (int, float)):

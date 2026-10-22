@@ -406,7 +406,12 @@ class WhisperSession:
                         "not importable (%s); PREREQS faster-whisper-optional"
                         % type(_e).__name__) from _e
                 self._loader = _WM
-            self.model = self._loader(self.model_size, self.compute_type)
+            # faster-whisper >=0.10: WhisperModel(size, device="auto",
+            # compute_type=...) -- pass the compute type as a KEYWORD;
+            # positionally it lands as the device and raises
+            # "unsupported device int8".
+            self.model = self._loader(self.model_size,
+                                      compute_type=self.compute_type)
             self.loads += 1
 
     def _guard(self):
@@ -419,7 +424,14 @@ class WhisperSession:
             self._ensure_loaded()
             out = []
             for t in tracks or []:
-                segs = self.model(t.get("audio_path", "") or dict(t))
+                _path = t.get("audio_path", "") or dict(t)
+                _fn = getattr(self.model, "transcribe", None)
+                if callable(_fn) and not isinstance(self.model, type(lambda: None)):
+                    # faster-whisper >=0.10: WhisperModel.transcribe(...)
+                    _segs, _info = _fn(_path, word_timestamps=True)
+                    segs = list(_segs)
+                else:                      # older callable-model API
+                    segs = self.model(_path)
                 tx = {"task_id": (t or {}).get("task_id"),
                       "audio_id": (t or {}).get("audio_id"), "segments": segs}
                 out.append(tx)
@@ -436,6 +448,13 @@ def words_from_segments(segments: Iterable[Any]) -> List[Dict[str, Any]]:
     -> one flat normalized word list."""
     out: List[Dict[str, Any]] = []
     for seg in segments or []:
+        if not isinstance(seg, dict):
+            # faster-whisper Segment objects: .words is a list of Word objects.
+            for w in (getattr(seg, "words", None) or []):
+                out.append({"word": str(getattr(w, "word", "")).strip(),
+                            "start": float(getattr(w, "start", 0.0) or 0.0),
+                            "end": float(getattr(w, "end", 0.0) or 0.0)})
+            continue
         if isinstance(seg, dict) and isinstance(seg.get("words"), list):
             for w in seg["words"]:
                 if isinstance(w, dict) and "word" in w:

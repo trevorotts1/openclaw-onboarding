@@ -617,22 +617,6 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
 
         if action != "complete":
             to = _MUSIC_TO.get(action) or ("FAILED_RETRYABLE" if retryable else "FAILED_BLOCKED")
-            if to == "RUNNING" and state == "RUNNING":
-                # resume from RUNNING: RUNNING->RUNNING is not a legal edge, so
-                # the old transition path raised ILLEGAL_TRANSITION on exactly
-                # the state `next` hands out. A live same-owner lease
-                # heartbeats; an expired lease is reclaimed by claim; a live
-                # foreign lease is refused.
-                if live and row["owner"] == owner:
-                    row = st.heartbeat(rid, MUSIC, owner, lease_s=lease_s)
-                    return _mres("ok", "music-resumed",
-                                 "%s already holds music; lease extended" % owner, row)
-                if live:
-                    return _mres("rejected", "NOT_OWNER", "lease held by %s" % row["owner"], row)
-                row = st.claim(rid, MUSIC, owner, lease_s=lease_s,
-                               expected_version=row["version"])
-                return _mres("ok", "music-resumed",
-                             "%s reclaimed music after an expired lease" % owner, row)
             row = st.transition(rid, MUSIC, to, owner, expected_version=row["version"],
                                 reason=reason)
             if row["owner"] == owner and to in ("RUNNING", "WAITING_PROVIDER", "WAITING_APPROVAL"):
@@ -742,6 +726,38 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
         if state != "QC":
             row = st.transition(rid, MUSIC, "QC", owner, expected_version=row["version"])
         if res["gate"] != "PASS":
+            # Operator order 2026-10-21: a recorded operator decision overcomes
+            # a QC block. NOTHING is relabelled -- the failed checks stay FAIL
+            # in the evidence, and the acceptance is its own audited artifact.
+            if operator_decision is not None:
+                import json as _json
+                import time as _time
+                failed = [f.get("check_id") or f.get("code") or ""
+                          for f in (res.get("failures") or [])]
+                acc_dir = Path(run_dir) / "music" / "acceptance"
+                acc_dir.mkdir(parents=True, exist_ok=True)
+                rec = {
+                    "schema_version": "blackceo.qc-risk-acceptance/v1",
+                    "decision": "QC_ACCEPTED_RISK",
+                    "operator": owner,
+                    "at_utc": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+                    "qc_gate": res.get("gate"),
+                    "reason_code": res.get("reason_code"),
+                    "failed_checks": failed,
+                    "failures": res.get("failures") or [],
+                    "operator_decision": operator_decision,
+                }
+                (acc_dir / "qc-risk-acceptance.json").write_text(
+                    _json.dumps(rec, indent=1, default=str))
+                row = st.transition(rid, MUSIC, "COMPLETE", owner,
+                                    expected_version=row["version"],
+                                    reason="QC_ACCEPTED_RISK by %s: %s; failed %s"
+                                    % (owner, res.get("reason_code"),
+                                       ",".join(failed)[:200]))
+                return _mres("ok", "music-complete-accepted-risk",
+                             "music COMPLETE under recorded operator risk "
+                             "acceptance (%s); failed checks kept FAIL: %s"
+                             % (res.get("reason_code"), ",".join(failed)[:160]), row)
             return block("QC_" + res["gate"], res["reason_code"])
         row = st.transition(rid, MUSIC, "COMPLETE", owner, expected_version=row["version"],
                             reason="qc %s; audio %s" % (res["reason_code"], ",".join(audio)))
@@ -1508,7 +1524,10 @@ def cmd_next(a):
             from song_choices import song_choices as _sc  # noqa: PLC0415
             # WW-08 item 3: the pick must be in AND every offered song's
             # constituent-evidence receipt current before a later stage runs.
-            hold = _sc.refusal(str(run_dir)) or _sc.constituent_hold(str(run_dir))
+            # One hold implementation: the same _song_hold the music stage
+            # uses, so a recorded operator decision that opens the hold
+            # for `music --action complete` also opens it for `next`.
+            hold = _song_hold(run_dir)
         except Exception as exc:  # noqa: BLE001 - a broken gate never opens
             hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}
         if hold:
