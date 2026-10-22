@@ -12,6 +12,7 @@ upstream change is STALE (via mark_stale).
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import time
 import uuid
@@ -54,13 +55,48 @@ class StoreError(Exception):
         self.code = code
 
 
+def _ro_connect(path, timeout=5):
+    """Read-only connection that survives a WAL db whose -wal/-shm are gone.
+
+    sqlite3.connect() is lazy: with the sidecars absent it returns a handle and
+    only fails on the first statement, which surfaced as a false "corrupt:
+    unable to open database file" on a healthy store. Force the real open, then
+    retry on a private temp copy; the store's own file is never written here.
+    """
+    import atexit
+    import shutil
+    import tempfile
+
+    path = os.path.abspath(str(path))
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % path, uri=True,
+                              timeout=timeout)
+        con.execute("PRAGMA schema_version").fetchone()
+        return con
+    except sqlite3.Error:
+        try:
+            con.close()                       # noqa: F821
+        except Exception:                     # noqa: BLE001
+            pass
+    tmp = tempfile.mkdtemp(prefix="state-ro-")
+    atexit.register(shutil.rmtree, tmp, True)
+    base = os.path.basename(path)
+    for name in (base, base + "-wal", base + "-shm"):
+        src = os.path.join(os.path.dirname(path), name)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(tmp, name))
+    con = sqlite3.connect(os.path.join(tmp, base), timeout=timeout)
+    con.execute("PRAGMA query_only=ON")
+    return con
+
+
 def needs_recovery(db_path):
     """(bool, str): True when the DB must be reconciled before use."""
     p = Path(db_path)
     if not p.exists():
         return False, "fresh"
     try:
-        con = sqlite3.connect("file:%s?mode=ro" % p, uri=True, timeout=5)
+        con = _ro_connect(p, timeout=5)
         try:
             row = con.execute("PRAGMA integrity_check").fetchone()
             if not row or row[0] != "ok":
