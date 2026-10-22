@@ -7,6 +7,10 @@
     "WAITS_FOR_VECTOR": "final execution/attestation requires the pinned source vector and (where named) an authorized live target + explicit GO; intentionally NOT claimed now",
     "BLOCKED_NEEDS_AUTHORIZATION": "a genuine live/production authorization is missing; isolated precisely here, everything else still built"
   },
+  "external_repos": {
+    "999-setup": {"root": "/Users/blackceomacmini/.openclaw/persist-home/999-setup", "note": "HARD-PROTECTED clone: read-only for this unit, never written"},
+    "graphify": {"root": "/Users/blackceomacmini/blackceo-graphify-infrastructure", "note": "read-only for this unit, never written"}
+  },
   "canaries": {
     "clean_install": {
       "harness": "tests/w10-canary/clean_install_canary.py",
@@ -47,7 +51,7 @@
       "harness": "tests/w10-canary/receipt_mapping_check.py",
       "run_command": "python3 tests/w10-canary/receipt_mapping_check.py",
       "prepared_status": "PREPARED",
-      "note": "verifies every A01-A12 row has a mapped harness + status, weights sum to 100, and no acceptance point is claimed as credited"
+      "note": "verifies every A01-A12 row names a harness/command that exists (canary harness present, mapped_harness present at its pinned revision, mapped_command binary + verbs present at its pin) or carries an explicit run_by_hand marker; weights sum to 100; and no acceptance point is claimed as credited"
     },
     "privacy_scan": {
       "harness": "tests/w10-canary/privacy_scan.py",
@@ -57,16 +61,24 @@
     }
   },
   "acceptance_rows": {
-    "A01": {"weight": 8, "canaries": ["multi_run"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "W00 identity/admission/scheduler/restart proofs + multi-run supervision run at pinned revisions", "claims_now": "none"},
+    "A01": {"weight": 8, "canaries": ["multi_run"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "W00 identity/admission/scheduler/restart proofs + multi-run supervision run at pinned revisions", "claims_now": "none",
+      "mapped_harness": {"repo": "999-setup", "relpath": ".claude/skills/hook-skill/hooks/workflow-guard/test_u3_canaries.py", "pin": "eac897e790201f1c1ed5d8fe9e34568e021f5151",
+        "proves": "identity/admission: the orchestrator seat is registered as a program and hidden workers + implementation writes are DENIED at the PreToolUse admission boundary (rc=2 with HIDDEN / ORCHESTRATOR ALLOWLIST markers); scheduler: 11 agents in one workflow and the global ceiling are refused atomically at admit_launch; restart: revoke -> checkpoint -> lease revocation -> verified TaskStop acknowledgement -> fenced writes -> restart ONLY the unfinished units under a new attempt ID, with attempt-ID reuse refused and restart-before-revoke refused"}},
     "A02": {"weight": 8, "canaries": ["multi_run"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "terminal-state non-delivery proofs (all-parked/all-failed/empty/mixed) at pinned revisions", "claims_now": "none"},
     "A03": {"weight": 8, "canaries": ["multi_run"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "event-continuation + lease/attempt-ordinal proofs at pinned revisions", "claims_now": "none"},
-    "A04": {"weight": 8, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "script/lyrics/hook versioned-visibility proofs (S75-W10-U1 scenario matrix)", "claims_now": "none"},
-    "A05": {"weight": 7, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "character bible + versioned approve/revise proofs (S75-W10-U1)", "claims_now": "none"},
-    "A06": {"weight": 7, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "playable song + storyboard delivery/resume proofs (S75-W10-U1)", "claims_now": "none"},
-    "A07": {"weight": 8, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "opening sync + measurement + 62s + duration proofs (S75-W10-U1)", "claims_now": "none"},
+    "A04": {"weight": 8, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "script/lyrics/hook versioned-visibility proofs (S75-W10-U1 scenario matrix)", "claims_now": "none", "run_by_hand": "no harness file by design: this row is a scenario-matrix RUN executed by hand (see waits_for), not a file-backed check"},
+    "A05": {"weight": 7, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "character bible + versioned approve/revise proofs (S75-W10-U1)", "claims_now": "none", "run_by_hand": "no harness file by design: this row is a scenario-matrix RUN executed by hand (see waits_for), not a file-backed check"},
+    "A06": {"weight": 7, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "playable song + storyboard delivery/resume proofs (S75-W10-U1)", "claims_now": "none", "run_by_hand": "no harness file by design: this row is a scenario-matrix RUN executed by hand (see waits_for), not a file-backed check"},
+    "A07": {"weight": 8, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "opening sync + measurement + 62s + duration proofs (S75-W10-U1)", "claims_now": "none", "run_by_hand": "no harness file by design: this row is a scenario-matrix RUN executed by hand (see waits_for), not a file-backed check"},
     "A08": {"weight": 8, "canaries": ["clean_install", "upgrade"], "prepared_status": "PREPARED", "waits_for": "clean-install + upgrade canary execution at pinned revisions + loaded-process proof on both distributions", "claims_now": "none"},
-    "A09": {"weight": 8, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "factory lifecycle + adapter/outbox + completion-guard proofs (S75-W10-U1)", "claims_now": "none"},
-    "A10": {"weight": 6, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "graphify source-vector + semantic-sibling + unified-promotion proofs (SFR-006 / S75-W09)", "claims_now": "none"},
+    "A09": {"weight": 8, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "factory lifecycle + adapter/outbox + completion-guard proofs (S75-W10-U1)", "claims_now": "none", "run_by_hand": "no harness file by design: this row is a scenario-matrix RUN executed by hand (see waits_for), not a file-backed check"},
+    "A10": {"weight": 6, "canaries": [], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "graphify source-vector + semantic-sibling + unified-promotion proofs (SFR-006 / S75-W09)", "claims_now": "none",
+      "mapped_command": {"command": "graphifyctl unified rebuild", "repo": "graphify", "relpath": "bin/graphifyctl", "pin": "6fa4f6ef225a4fa134bb2f76abb229c85b0b19c4", "cli_file": "src/graphifyctl/cli.py", "verb": "unified", "subverb": "rebuild",
+        "produces": "unified-promotion evidence: unified.rebuild() composes the component linked graphs into ONE cross-repository graph with per-repo node prefixes (onboarding:: / 999:: / command-center::) and literal-mention cross-repo edges carrying file/line evidence, and refuses to build when a component graph is absent",
+        "supporting_commands": ["graphifyctl verify onboarding", "graphifyctl verify 999", "graphifyctl verify unified"],
+        "supporting_note": "the source-vector and semantic-sibling halves are attested by verify reading the semantic accepted-vector seam (semantic.accepted_vector_file -> the pinned S75-WM source-vector.json); the unified-promotion half is the rebuild output itself",
+        "evidence_receipt": "work/S75-W09-U1/RECEIPT.json",
+        "evidence_receipt_note": "run-root-relative producer path (/Users/blackceomacmini/skill75-repair/work/S75-W09-U1/); not yet written — that directory today holds READINESS-RECEIPT.json, READINESS-RECEIPT.md and PHASE-STATUS.json"}},
     "A11": {"weight": 14, "canaries": ["clean_install", "upgrade", "multi_run"], "prepared_status": "BLOCKED_NEEDS_AUTHORIZATION", "waits_for": "anonymous end-to-end canaries incl. authorized live channel + provider run under the existing authorization/spending ceiling; harnesses ready, live execution not authorized in this window", "claims_now": "none", "blocker": "authorized live channel/provider acceptance target and spending ceiling are outside this unit's write surface (scratch isolation; no production/client writes, no paid jobs). Recorded as a named blocked acceptance item; everything else prepared."},
     "A12": {"weight": 10, "canaries": ["clean_install", "upgrade"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "release/version/pin alignment + canary receipts + loaded-source proof + queue cleanup + privacy scan on shared artifacts", "claims_now": "none"}
   },
