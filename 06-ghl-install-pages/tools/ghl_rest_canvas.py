@@ -228,6 +228,509 @@ def page_list_path(funnel_id: str, location_id: str) -> str:
     return f"/funnels/page/list?funnelId={funnel_id}&locationId={location_id}"
 
 
+# The two DISTINCT folder scopes. A funnel folder is not a website folder: same
+# row shape, same "Create folder" button, different `type` scope on the call.
+FOLDER_TYPES: tuple[str, ...] = ("funnel", "website")
+
+
+def folder_list_path(location_id: str, folder_type: str) -> str:
+    """GET path that lists folder rows for one type scope (CAPTURED LIVE).
+
+    ``GET /funnels/funnel/folder/list?locationId=<loc>&type=funnel`` → 200;
+    ``type=website`` → 200 (the live capture returned 0 rows for a location with
+    no website folders). This is the READ half of folder identity and the
+    inventory read every folder recipe reconciles against.
+    """
+    _require(location_id, "location_id")
+    ft = str(folder_type or "").strip().lower()
+    if ft not in FOLDER_TYPES:
+        raise ValueError(
+            f"folder_type must be one of {list(FOLDER_TYPES)} (got {folder_type!r}); "
+            "a funnel folder and a website folder are different type scopes"
+        )
+    return f"/funnels/funnel/folder/list?locationId={location_id}&type={ft}"
+
+
+# ── FOLDER CREATE — CAPTURE-GATED (the create interior was never captured) ───
+# HONEST STATUS, measured: the folder LIST route is captured live (200, both
+# type scopes) and the "Create folder" button anchor is captured at conf 9 in
+# BOTH lists. What was NEVER captured is everything that decides whether a
+# folder create is real: the create dialog's interior (its name field, its
+# confirm button), the create ROUTE + verb the SPA actually fires, the body's
+# field names, and the create RESPONSE shape. A folder create written against a
+# guessed route is worse than no folder create: it either 404s the build or
+# lands a folder in the wrong type scope, which is the exact corruption
+# `ghl_recipe_objects` exists to prevent (a funnel folder is not a website
+# folder). So the create is shipped COMPLETE and UNREACHABLE until a live
+# capture proves those names — same construction as `ghl_split_variant.py`:
+# schema, checklist, refusal-with-reason, and a fixture that can never be
+# mistaken for evidence.
+#
+# ENABLING IT: one authorized staging capture of the "Create folder" dialog on
+# each type scope, recorded as the 11 fields below. Fill the checklist, then
+# ``load_folder_create_capture(path)``. A capture that passes the FULL schema
+# (not merely present keys) reports ENABLED_FOR_REVIEW; ``enabled`` stays False
+# until a reviewer approves, which is a separate, tested change.
+
+FOLDER_CREATE_CAPABILITY_ID = "ghl.folder.create"
+FOLDER_CREATE_PENDING = "PENDING_LIVE_CAPTURE"
+FOLDER_CREATE_ENABLED_FOR_REVIEW = "ENABLED_FOR_REVIEW"
+
+FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS: tuple[str, ...] = (
+    "location_id",        # the authorized staging location captured
+    "folder_type",        # "funnel" | "website" — the type scope captured
+    "create_method",      # the verb the SPA fires (POST/PUT)
+    "create_path",        # the route the SPA fires, as observed
+    "body_location_key",  # body key carrying locationId, as observed
+    "body_name_key",      # body key carrying the folder name, as observed
+    "body_type_key",      # body key carrying the type scope, "" if none sent
+    "response_id_field",  # where the created folder id comes back
+    "readback_keys",      # keys the re-list returns for the new row
+    "expect_status",      # the status the create returned (200/201)
+    "capture_evidence",   # raw-artifact reference carrying a sha256 digest
+)
+
+_EVIDENCE_RE = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+def _nonempty_str(v: Any) -> bool:
+    return isinstance(v, str) and bool(v.strip())
+
+
+FOLDER_CREATE_CAPTURE_SCHEMA: dict[str, dict[str, Any]] = {
+    "location_id": {
+        "rule": "non-empty string: the authorized staging location",
+        "check": _nonempty_str,
+    },
+    "folder_type": {
+        "rule": f"one of {list(FOLDER_TYPES)}: the type scope the dialog was "
+                "opened under (a funnel folder is not a website folder)",
+        "check": lambda v: isinstance(v, str) and v.strip().lower() in FOLDER_TYPES,
+    },
+    "create_method": {
+        "rule": "one of ['POST', 'PUT']: the verb the SPA actually fired",
+        "check": lambda v: isinstance(v, str) and v.strip().upper() in ("POST", "PUT"),
+    },
+    "create_path": {
+        "rule": "non-empty string starting '/', containing 'folder': the route "
+                "the SPA actually fired (a guessed path is a failed capture)",
+        "check": lambda v: _nonempty_str(v) and v.strip().startswith("/")
+                           and "folder" in v.lower(),
+    },
+    "body_location_key": {
+        "rule": "non-empty string: the request-body key carrying locationId",
+        "check": _nonempty_str,
+    },
+    "body_name_key": {
+        "rule": "non-empty string: the request-body key carrying the name",
+        "check": _nonempty_str,
+    },
+    "body_type_key": {
+        "rule": "string, possibly EMPTY: the body key carrying the type scope; "
+                "empty means the capture observed no type key in the body",
+        "check": lambda v: isinstance(v, str),
+    },
+    "response_id_field": {
+        "rule": "non-empty string: the response field carrying the new folder id",
+        "check": _nonempty_str,
+    },
+    "readback_keys": {
+        "rule": "non-empty list of strings: keys the folder list returns for the "
+                "new row (must include response_id_field)",
+        "check": lambda v: isinstance(v, (list, tuple)) and len(v) > 0
+                           and all(_nonempty_str(k) for k in v),
+    },
+    "expect_status": {
+        "rule": "integer 200 or 201: the status the create returned",
+        "check": lambda v: isinstance(v, int) and not isinstance(v, bool)
+                           and v in (200, 201),
+    },
+    "capture_evidence": {
+        "rule": "string carrying a raw-artifact reference with a "
+                "sha256:<64 hex> digest; a shape fixture cannot satisfy this "
+                "by accident",
+        "check": lambda v: isinstance(v, str) and bool(_EVIDENCE_RE.search(v)),
+    },
+}
+
+assert tuple(FOLDER_CREATE_CAPTURE_SCHEMA) == FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS, (
+    "FOLDER_CREATE_CAPTURE_SCHEMA drifted from "
+    "FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS"
+)
+
+
+class CaptureRequired(RuntimeError):
+    """The live capture that would authorize a folder create is missing."""
+
+
+class FolderCreateRefused(RuntimeError):
+    """A folder create was requested while its capture gate is closed."""
+
+
+class CaptureInvalid(CaptureRequired):
+    """A capture is present but fails the schema. Never rounded up to valid."""
+
+
+OFFLINE_FOLDER_CAPTURE: dict[str, Any] = {
+    "_fixture": True,
+    "_note": "offline fixture; fake values; NOT evidence about GHL",
+    "location_id": "loc-offline-0001",
+    "folder_type": "funnel",
+    "create_method": "POST",
+    "create_path": "/funnels/funnel/folder/create",
+    "body_location_key": "locationId",
+    "body_name_key": "name",
+    "body_type_key": "type",
+    "response_id_field": "id",
+    "readback_keys": ["id", "name", "locationId", "type"],
+    "expect_status": 201,
+    "capture_evidence": "fixture://offline-folder-capture sha256:" + "0" * 64,
+}
+
+FOLDER_CREATE_FIXTURE_WARNING = (
+    "OFFLINE_FOLDER_CAPTURE is a shape fixture. It is NOT a live capture and "
+    "must never be treated as evidence; a real capture carries observed route, "
+    "body keys and a hash of the raw artifact."
+)
+
+
+def is_synthetic_folder_capture(capture: Any) -> bool:
+    """Detect a shape fixture so a caller can never mistake one for evidence."""
+    if not isinstance(capture, dict):
+        return False
+    if capture.get("_fixture"):
+        return True
+    for key, value in capture.items():
+        if str(key) == "_fixture":
+            continue
+        for item in (value if isinstance(value, list) else [value]):
+            if isinstance(item, str) and "SYNTHETIC" in item.upper():
+                return True
+    return False
+
+
+def folder_create_capture_checklist() -> dict[str, Any]:
+    """The checklist the authenticated-browser capture step fills in later.
+
+    Emitted FROM the schema, so the checklist can never drift from validation.
+    """
+    return {
+        "capability": FOLDER_CREATE_CAPABILITY_ID,
+        "state_until_filled": FOLDER_CREATE_PENDING,
+        "artifact": "JSON object: one capture per type scope per staging location",
+        "dialog_entry": "getByRole('button', { name: 'Create folder' }) conf 9 in "
+                        "BOTH the funnels list and the websites list",
+        "what_to_record": [
+            "open the Create folder dialog under ONE type scope (funnel, then "
+            "repeat for website) and screenshot the dialog interior",
+            "the name field selector and the confirm button selector",
+            "the network request the confirm fires: METHOD + FULL PATH",
+            "the request BODY keys carrying locationId, name and (if present) type",
+            "the create RESPONSE: status + the field carrying the new folder id",
+            "re-list /funnels/funnel/folder/list?locationId=&type=<scope> and record "
+            "the keys the new row carries",
+            "hash the raw capture artifact (har.json / screenshot set) as sha256",
+        ],
+        "note": "Fill every field from OBSERVED traffic. A guessed route or key is "
+                "a failed capture, not a partial pass.",
+        "fields": [
+            {"name": name, "rule": FOLDER_CREATE_CAPTURE_SCHEMA[name]["rule"],
+             "required": True}
+            for name in FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS
+        ],
+    }
+
+
+def validate_folder_create_capture(capture: Any) -> list[str]:
+    """Return every schema problem; empty list == valid. Never raises."""
+    if not isinstance(capture, dict):
+        return ["capture is not a JSON object"]
+    problems: list[str] = []
+    for name in FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS:
+        value = capture.get(name)
+        # body_type_key is the ONE field allowed to be an empty string: empty
+        # means the capture observed no type key in the create body.
+        blank = value is None or (isinstance(value, str) and not value.strip())
+        if blank and not (name == "body_type_key" and value == ""):
+            problems.append(f"{name}: missing")
+            continue
+        try:
+            ok = bool(FOLDER_CREATE_CAPTURE_SCHEMA[name]["check"](value))
+        except Exception:  # a hostile value must not crash the gate
+            ok = False
+        if not ok:
+            problems.append(f"{name}: {FOLDER_CREATE_CAPTURE_SCHEMA[name]['rule']}")
+    if "readback_keys" in capture and isinstance(capture.get("readback_keys"), list):
+        rid = capture.get("response_id_field")
+        if rid and rid not in capture["readback_keys"]:
+            problems.append(
+                f"readback_keys must include response_id_field {rid!r}; without "
+                "it the created folder's identity is not read back"
+            )
+    return problems
+
+
+def load_folder_create_capture(path: str) -> dict[str, Any]:
+    """Load and validate a capture file. The ONLY ingress for a real capture.
+    Refuses synthetic fixtures and any schema problem."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            capture = json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise CaptureRequired(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: cannot read capture {path}: {exc}"
+        )
+    if is_synthetic_folder_capture(capture):
+        raise CaptureRequired(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture {path} is synthetic; "
+            f"{FOLDER_CREATE_FIXTURE_WARNING}"
+        )
+    problems = validate_folder_create_capture(capture)
+    if problems:
+        raise CaptureInvalid(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture {path} fails the schema: "
+            f"{problems}"
+        )
+    return capture
+
+
+def folder_create_capability_state(capture: Any = None,
+                                   reviewed: bool = False) -> dict[str, Any]:
+    """Report the folder-create capability state, what is missing, what is
+    malformed.
+
+    ``capture=None`` is the honest default: nothing was captured, so the state
+    is PENDING_LIVE_CAPTURE and every required field is missing. A partial
+    capture lists only what is still missing — it never rounds up. ``enabled``
+    is gated on BOTH a complete schema-valid capture AND an explicit
+    ``reviewed=True``.
+    """
+    if not isinstance(capture, dict):
+        return {
+            "capability": FOLDER_CREATE_CAPABILITY_ID,
+            "state": FOLDER_CREATE_PENDING,
+            "enabled": False,
+            "missing_capture_fields": list(FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS),
+            "schema_valid": False,
+            "schema_problems": [],
+            "reviewed": bool(reviewed),
+            "reason": (
+                "the Create folder dialog interior, the create route+verb, the "
+                "body keys and the create response shape were never captured; "
+                "a folder create written against a guess would either 404 the "
+                "build or land the folder in the wrong type scope (a funnel "
+                "folder is not a website folder)"
+            ),
+            "next_action": (
+                "capture the Create folder dialog under one type scope; "
+                "required fields: "
+                + ", ".join(FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS)
+            ),
+        }
+    problems = validate_folder_create_capture(capture)
+    missing = [f for f in FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS
+               if capture.get(f) is None
+               and not (f == "body_type_key" and capture.get(f) == "")]
+    if not problems:
+        return {
+            "capability": FOLDER_CREATE_CAPABILITY_ID,
+            "state": FOLDER_CREATE_ENABLED_FOR_REVIEW,
+            "enabled": bool(reviewed),
+            "missing_capture_fields": [],
+            "schema_valid": True,
+            "schema_problems": [],
+            "reviewed": bool(reviewed),
+            "folder_type": capture.get("folder_type"),
+            "reason": (
+                "a complete live capture is present and passes the schema; the "
+                "capability may be ENABLED only after review of that capture"
+                if reviewed else
+                "a capture is present and schema-valid, but no reviewer has "
+                "approved it yet; enablement is a separate, tested change"
+            ),
+            "next_action": (
+                "execute through the receipted write driver, then assert the "
+                "readback keys" if reviewed else
+                "reviewer approves the capture (enablement is a separate step)"
+            ),
+        }
+    return {
+        "capability": FOLDER_CREATE_CAPABILITY_ID,
+        "state": FOLDER_CREATE_PENDING,
+        "enabled": False,
+        "missing_capture_fields": missing,
+        "schema_valid": False,
+        "schema_problems": problems,
+        "reviewed": bool(reviewed),
+        "reason": (
+            "a capture is present but FAILS the schema; it is not evidence and "
+            "can never enable a folder create"
+        ),
+        "next_action": "re-run the capture checklist and fix: " + "; ".join(problems),
+    }
+
+
+def assert_folder_create_enabled(capture: Any = None,
+                                 reviewed: bool = False) -> dict[str, Any]:
+    """Raise unless the folder-create capture gate is OPEN (capture complete,
+    schema-valid, reviewed). Returns the capture on success.
+
+    This is the single check that stands between a build and a guessed folder
+    create, so it is called by ``folder_create_path``, ``folder_create_body``
+    and ``folder_create`` — there is no second, laxer door.
+    """
+    if is_synthetic_folder_capture(capture):
+        raise CaptureRequired(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: the supplied capture is synthetic "
+            f"({FOLDER_CREATE_FIXTURE_WARNING}); a shape fixture is not evidence"
+        )
+    state = folder_create_capability_state(capture, reviewed=reviewed)
+    if state["state"] == FOLDER_CREATE_PENDING:
+        if state.get("schema_problems"):
+            raise CaptureInvalid(
+                f"{FOLDER_CREATE_CAPABILITY_ID}: capture fails schema: "
+                f"{state['schema_problems']}"
+            )
+        raise CaptureRequired(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: {FOLDER_CREATE_PENDING}; missing "
+            f"{state['missing_capture_fields']}"
+        )
+    if not state["enabled"]:
+        raise FolderCreateRefused(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture is schema-valid but NOT "
+            "reviewed; a folder create requires an explicit review"
+        )
+    return capture  # type: ignore[return-value]
+
+
+def folder_create_path(capture: Any = None,
+                       reviewed: bool = False) -> str:
+    """POST path that creates a NET-NEW folder — REPLAYED, never guessed.
+
+    The route and verb were never captured, so there is no constant to return:
+    the path comes verbatim from an approved live capture. With no capture this
+    raises ``CaptureRequired`` — the same refusal shape as
+    ``ghl_split_variant.build_variant_request``. The captured row shape IS
+    known, which is why ``folder_list_path`` above needs no gate.
+
+    Args:
+        capture: an approved capture dict (or a path to one).
+        reviewed: the reviewer's approval; without it this refuses.
+
+    Returns:
+        The captured create path, e.g. ``/funnels/funnel/folder/create``.
+    """
+    if isinstance(capture, str):
+        capture = load_folder_create_capture(capture)
+    cap = assert_folder_create_enabled(capture, reviewed=reviewed)
+    return str(cap["create_path"]).strip()
+
+
+def folder_create_body(location_id: str, name: str, folder_type: str, *,
+                       capture: Any = None,
+                       reviewed: bool = False) -> dict:
+    """Build the folder-create POST body from CAPTURED body keys.
+
+    Every key name comes from the capture: the create body's field names were
+    never observed, and inventing ``locationId``/``name``/``type`` would be the
+    same guess the gate exists to prevent. The type scope is included only when
+    the capture observed a type key, and it must equal the capture's own scope —
+    a capture taken under ``funnel`` can never create a ``website`` folder.
+
+    Args:
+        location_id: The sub-account location id.
+        name: The folder name (callers ZHC-prefix it).
+        folder_type: ``"funnel"`` or ``"website"``; must match the capture.
+        capture: an approved capture dict (or a path to one).
+        reviewed: the reviewer's approval.
+
+    Returns:
+        The JSON-serialisable POST body.
+    """
+    _require(location_id, "location_id")
+    _require(name, "name")
+    ft = str(folder_type or "").strip().lower()
+    if ft not in FOLDER_TYPES:
+        raise ValueError(
+            f"folder_type must be one of {list(FOLDER_TYPES)} (got {folder_type!r})"
+        )
+    if isinstance(capture, str):
+        capture = load_folder_create_capture(capture)
+    cap = assert_folder_create_enabled(capture, reviewed=reviewed)
+    if ft != str(cap["folder_type"]).strip().lower():
+        raise FolderCreateRefused(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture was taken under type "
+            f"{cap['folder_type']!r} but this request is for {ft!r}; a capture "
+            "authorizes only its own type scope"
+        )
+    if str(cap["location_id"]).strip() != str(location_id).strip():
+        raise FolderCreateRefused(
+            f"{FOLDER_CREATE_CAPABILITY_ID}: capture was taken at "
+            f"{cap['location_id']!r} but this request is for {location_id!r}; a "
+            "capture authorizes only its own location"
+        )
+    body: dict[str, Any] = {
+        str(cap["body_location_key"]): location_id,
+        str(cap["body_name_key"]): name,
+    }
+    type_key = str(cap.get("body_type_key") or "").strip()
+    if type_key:
+        body[type_key] = ft
+    return body
+
+
+def folder_create(location_id: str, name: str, folder_type: str, *,
+                  capture: Any = None, reviewed: bool = False,
+                  session: str | None = None,
+                  token_global: str = TOKEN_JS_GLOBAL) -> dict:
+    """NET-NEW folder create step: emit the captured create XHR.
+
+    Same shape as ``funnel_create`` / ``step_create`` (path + body + eval +
+    expect), but every unknown is replayed from an approved capture. The agent
+    runs the eval, reads the created folder id from the response via the
+    captured ``response_id_field``, then re-lists ``folder_list_path`` to prove
+    the row — a create without that readback is unproven.
+
+    Args:
+        location_id: The sub-account location id (caller hard-gates it first).
+        name: The folder name (caller ZHC-prefixes it).
+        folder_type: ``"funnel"`` or ``"website"``.
+        capture: an approved capture dict (or a path to one).
+        reviewed: the reviewer's approval.
+        session: Optional agent-browser session for an ``argv``.
+        token_global: The staged-JWT window global.
+
+    Returns:
+        ``{method, path, url, body, eval, argv?, expect}``.
+    """
+    if isinstance(capture, str):
+        capture = load_folder_create_capture(capture)
+    cap = assert_folder_create_enabled(capture, reviewed=reviewed)
+    path = folder_create_path(cap, reviewed=reviewed)
+    body = folder_create_body(location_id, name, folder_type, capture=cap,
+                              reviewed=reviewed)
+    method = str(cap["create_method"]).strip().upper()
+    js = build_fetch_js(method, path, body=body, token_global=token_global)
+    step: dict[str, Any] = {
+        "method": method,
+        "path": path,
+        "url": GHL_BACKEND_ORIGIN.rstrip("/") + path,
+        "body": body,
+        "eval": js,
+        "folder_type": str(cap["folder_type"]).strip().lower(),
+        "expect": {
+            "status": int(cap["expect_status"]),
+            "new_folder_id_field": str(cap["response_id_field"]),
+            "readback_keys": list(cap["readback_keys"]),
+            "verify": "re-list folder/list?locationId=<loc>&type=<scope> and "
+                      "assert the new row carries the id + locationId + type",
+        },
+    }
+    if session:
+        step["argv"] = agent_browser_eval_cmd(session, js)
+    return step
+
+
 def funnel_delete_path() -> str:
     """POST path that deletes a funnel (reversible-cleanup primitive).
 
@@ -2333,6 +2836,27 @@ __all__ = [
     "page_autosave_path",
     "funnel_create_path",
     "step_create_path",
+    "FOLDER_TYPES",
+    "folder_list_path",
+    "FOLDER_CREATE_CAPABILITY_ID",
+    "FOLDER_CREATE_PENDING",
+    "FOLDER_CREATE_ENABLED_FOR_REVIEW",
+    "FOLDER_CREATE_REQUIRED_CAPTURE_FIELDS",
+    "FOLDER_CREATE_CAPTURE_SCHEMA",
+    "CaptureRequired",
+    "CaptureInvalid",
+    "FolderCreateRefused",
+    "OFFLINE_FOLDER_CAPTURE",
+    "FOLDER_CREATE_FIXTURE_WARNING",
+    "is_synthetic_folder_capture",
+    "folder_create_capture_checklist",
+    "validate_folder_create_capture",
+    "load_folder_create_capture",
+    "folder_create_capability_state",
+    "assert_folder_create_enabled",
+    "folder_create_path",
+    "folder_create_body",
+    "folder_create",
     "funnel_fetch_path",
     "page_list_path",
     "funnel_delete_path",
