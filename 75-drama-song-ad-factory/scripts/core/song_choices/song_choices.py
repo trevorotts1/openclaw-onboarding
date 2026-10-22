@@ -1261,6 +1261,27 @@ def _sheet_lyric_words(spec):
     return spec.get("sheet_text") or ""
 
 
+def _next_attempt_id(ledger_db, run_id, logical_key):
+    """Mint the next attempt id from the spend ledger.
+
+    spend_ledger.plan() refuses a duplicate (logical_key, attempt_id) on
+    purpose, but the shipped generate path used a literal "a1" for every
+    dispatch, so a retry after a failed paid take was refused
+    DUPLICATE_ATTEMPT and the retry path was structurally dead.
+    """
+    try:
+        import sqlite3
+        con = sqlite3.connect(ledger_db)
+        row = con.execute(
+            "SELECT COALESCE(MAX(attempt_no),0) FROM jobs WHERE logical_key=? AND run_id=?",
+            (logical_key, run_id)).fetchone()
+        con.close()
+        n = int(row[0]) + 1
+    except Exception:
+        n = 1
+    return "a%d" % max(n, 1)
+
+
 def _real_generate(run_dir, ledger, run_id):
     """The default per-variant worker: ONE KIE dispatch per call, and the
     per-variant envelope carries the two aware-UTC stamps the overlap
@@ -1282,11 +1303,13 @@ def _real_generate(run_dir, ledger, run_id):
             receipt = _card_receipt(run_dir)
             if receipt is not None:
                 payload["card_receipt"] = receipt
+        att_id = _next_attempt_id(ledger, run_id or (os.path.basename(run_dir) or "run"),
+                                  "song/%s" % variant["id"])
         env = _KD.dispatch(model=payload.get("model") or "ai-music-api/generate",
                            request=payload, save_dir=save_dir, ledger_db=ledger,
                            run_id=run_id or (os.path.basename(run_dir) or "run"),
                            logical_key="song/%s" % variant["id"],
-                           attempt_id="a1", estimated_cost=_SD.GEN_COST_CENTS,
+                           attempt_id=att_id, estimated_cost=_SD.GEN_COST_CENTS,
                            prompt=payload.get("input", {}).get("style", "")[:2000])
         ev = env.get("evidence", {}) if isinstance(env, dict) else {}
         _write_envelope(run_dir, variant["id"], ev)
@@ -1296,7 +1319,7 @@ def _real_generate(run_dir, ledger, run_id):
         # No receipt when the provider never acknowledged or never terminated:
         # the gate then reports UNAVAILABLE, which is never a pass.
         if ev.get("accepted_submit_at") and ev.get("terminal_at"):
-            receipt_for(run_dir, variant, request, "a1", ev.get("task_id"),
+            receipt_for(run_dir, variant, request, att_id, ev.get("task_id"),
                         ev["accepted_submit_at"], ev["terminal_at"])
         # Provenance for lyric_timing (reads take["task_id"] / take["audio_id"]).
         # The envelope carries the generation task id only; the per-track Suno

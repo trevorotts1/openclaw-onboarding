@@ -617,6 +617,22 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
 
         if action != "complete":
             to = _MUSIC_TO.get(action) or ("FAILED_RETRYABLE" if retryable else "FAILED_BLOCKED")
+            if to == "RUNNING" and state == "RUNNING":
+                # resume from RUNNING: RUNNING->RUNNING is not a legal edge, so
+                # the old transition path raised ILLEGAL_TRANSITION on exactly
+                # the state `next` hands out. A live same-owner lease
+                # heartbeats; an expired lease is reclaimed by claim; a live
+                # foreign lease is refused.
+                if live and row["owner"] == owner:
+                    row = st.heartbeat(rid, MUSIC, owner, lease_s=lease_s)
+                    return _mres("ok", "music-resumed",
+                                 "%s already holds music; lease extended" % owner, row)
+                if live:
+                    return _mres("rejected", "NOT_OWNER", "lease held by %s" % row["owner"], row)
+                row = st.claim(rid, MUSIC, owner, lease_s=lease_s,
+                               expected_version=row["version"])
+                return _mres("ok", "music-resumed",
+                             "%s reclaimed music after an expired lease" % owner, row)
             row = st.transition(rid, MUSIC, to, owner, expected_version=row["version"],
                                 reason=reason)
             if row["owner"] == owner and to in ("RUNNING", "WAITING_PROVIDER", "WAITING_APPROVAL"):
