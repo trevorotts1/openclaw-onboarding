@@ -85,7 +85,9 @@ internal codes to the client. Never spend. Never write to the run folder.
    `python3 scripts/core/intake_preflight/factory.py next --run-dir "$RUN"` once
    so the reconciler advances it. Spend no money at this stage.
 
-9. If the reported stage is `image-keyframes`: this stage is PAID. Build
+9. If the reported stage is `image-keyframes`, OR `next` reports
+   `storyboard-approval-required` while storyboard/stills is missing or empty
+   (approval cannot happen without the stills): this stage is PAID. Build
    $RUN/generation/req.json from the approved shot list, then run the runbook's
    own dispatch row verbatim:
 

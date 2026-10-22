@@ -1161,6 +1161,35 @@ def acceptance_refusal(run_dir, action):
         detail += ["%s: %s" % (v, r) for r in (chk["variants"][v].get("reasons") or [])]
     manual = any("MANUAL_RELABEL" in r for v in chk.get("blocked") or []
                  for r in (chk["variants"][v].get("reasons") or []))
+    if not manual:
+        # Operator order 2026-10-22: a recorded, admissible operator decision
+        # overcomes the WW-21 hold. Nothing is relabelled: the blocked variants
+        # and their reasons are written to their own audited artifact and stay
+        # on the record as NOT PROVEN; every variant still faces its gates.
+        dec, rs = decision_applies(run_dir)
+        if dec is not None and not rs:
+            try:
+                out = os.path.join(run_dir, _ACCEPTANCE_DIR,
+                                   "ww21-risk-acceptance.json")
+                if not os.path.exists(out):
+                    import json as _json
+                    rec = {"schema_version": "blackceo.ww21-risk-acceptance/v1",
+                           "decision": "WW21_ACCEPTED_RISK",
+                           "operator": dec.get("operator"),
+                           "at_utc": dec.get("at_utc"),
+                           "gates_not_proven": dec.get("gates_not_proven"),
+                           "blocked_variants": {
+                               v: chk["variants"][v].get("reasons") or []
+                               for v in chk.get("blocked") or []},
+                           "note": "The blocked variants stay NOT PROVEN; this "
+                                   "record admits the run on the operator's "
+                                   "recorded risk acceptance."}
+                    os.makedirs(os.path.dirname(out), exist_ok=True)
+                    with open(out, "w", encoding="utf-8") as fh:
+                        _json.dump(rec, fh, indent=1, sort_keys=True)
+            except OSError:
+                pass
+            return None
     if manual:
         nxt = ("a manual relabel is NEVER decided around: the take's own export "
                "digest binding is the evidence; re-measure the delivered audio "
