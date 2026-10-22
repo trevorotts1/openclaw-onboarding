@@ -1,0 +1,111 @@
+{
+ "schema_id": "s75-w04-u2/capability-config/v1",
+ "provenance": {
+  "derived_from": [
+   "~/.9router/db/data.sqlite (settings/kv/combos shapes, observed 2026-10-22)",
+   "http://127.0.0.1:20128/v1/models (host capability flags)",
+   "https://openrouter.ai/api/v1/models (authoritative provider catalog)",
+   "~/.claude-nine/settings.json (alias and role pins)",
+   "crontab -l (scheduler jobs)"
+  ],
+  "fetched_at": "2026-10-22",
+  "refresh_path": "python3 -I tools/capture_fixtures.py --out fixtures/",
+  "note": "Snapshot of the installed runtime schema accepted surfaces. Unknown keys are rejected: an ad hoc key is how the runtime schema broke in the D30 transcript. Compiled runtime bundles are never edited and never a schema source of truth."
+ },
+ "root": {
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+   "schema_version": {"type": "string", "enum": ["1"]},
+   "selectable_models": {
+    "type": "array",
+    "items": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": ["model_id", "provider"],
+     "properties": {
+      "model_id": {"type": "string", "minLength": 1},
+      "provider": {"type": "string", "minLength": 1},
+      "reasoning": {"type": "boolean"},
+      "effort_selector": {"type": "boolean"},
+      "tools": {"type": "boolean"},
+      "source_revision": {"type": "string", "minLength": 1},
+      "fetched_at": {"type": "string", "minLength": 1},
+      "refresh_path": {"type": "string", "minLength": 1}
+     }
+    }
+   },
+   "allowlist": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["enabled", "disabled"],
+    "properties": {
+     "enabled": {"type": "array", "items": {"type": "string"}},
+     "disabled": {"type": "array", "items": {"type": "string"}},
+     "aliases": {"type": "object"}
+    }
+   },
+   "provider_entries": {
+    "type": "array",
+    "items": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": ["entry_id", "provider"],
+     "properties": {
+      "entry_id": {"type": "string", "minLength": 1},
+      "provider": {"type": "string", "minLength": 1},
+      "thinking_mode": {"type": "string", "enum": ["auto", "on", "off", "low", "medium", "high", "xhigh", "max", "budget", "level"]},
+      "credential_ref": {"type": "string"}
+     }
+    }
+   },
+   "role_bindings": {
+    "type": "array",
+    "items": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": ["role", "model_id"],
+     "properties": {
+      "role": {"type": "string", "minLength": 1},
+      "model_id": {"type": "string", "minLength": 1},
+      "requested_effort": {"type": "string", "enum": ["none", "low", "medium", "high", "xhigh", "max"]}
+     }
+    }
+   },
+   "scheduler_jobs": {
+    "type": "array",
+    "items": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": ["job_id", "schedule"],
+     "properties": {
+      "job_id": {"type": "string", "minLength": 1},
+      "schedule": {"type": "string", "minLength": 1},
+      "model_id": {"type": "string"},
+      "prompt_ref": {"type": "string"}
+     }
+    }
+   },
+   "cache_versions": {
+    "type": "array",
+    "items": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": ["cache_id", "source_revision", "fetched_at", "refresh_path"],
+     "properties": {
+      "cache_id": {"type": "string", "minLength": 1},
+      "source_revision": {"type": "string", "minLength": 1},
+      "fetched_at": {"type": "string", "minLength": 1},
+      "refresh_path": {"type": "string", "minLength": 1},
+      "version": {"type": "integer"}
+     }
+    }
+   },
+   "department_models": {"type": "object"},
+   "credentials": {"type": "object"},
+   "aliases": {"type": "object"},
+   "heartbeat_policies": {"type": "object"},
+   "user_preferences": {"type": "object"}
+  }
+ }
+}

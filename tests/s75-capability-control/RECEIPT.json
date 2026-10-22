@@ -1,0 +1,66 @@
+{
+ "unit": "S75-W04-U2",
+ "work": "Capability-aware configuration and account failure control (finding D30, section 7.5): one resolved capability manifest, staged/validated/atomic configuration, honest effort representation, hard-cap failure classification with a shared account breaker",
+ "status": "BUILT_AWAITING_QC",
+ "model": "openrouter/xiaomi/mimo-v2.6-pro",
+ "source": "Skill_75_Universal_Repair_Spec_v1.1 sections 7.5, 15.3; finding D30",
+ "date": "2026-10-22",
+ "mutations": "No repository source owned or changed by this unit (ai_models.py/json belong to S75-W04-U1). All code, tests and evidence live in work/S75-W04-U2/. Nothing merged, nothing published, no self-approval. Two minimal live dispatch probes made through the installed host at 127.0.0.1:20128 (max_tokens=16 each) as the run's smallest non-destructive capability probe; credentials never printed or saved.",
+
+ "deliverables": {
+  "code": "capability_control/ (runtime_schema.py, manifest.py, config_stage.py, effort.py, failures.py, __init__.py) — stdlib only",
+  "tests": "tests/ (42 unittest cases: test_runtime_schema, test_config_stage, test_manifest, test_effort, test_failures)",
+  "test_evidence": "TESTS.txt (full verbose run + integration + fixture refresh, all 42 OK)",
+  "tools": "tools/capture_fixtures.py (supported cache refresh path), tools/probe_host_dispatch.py (minimal live dispatch), tools/verify_manifest_with_probe.py (manifest + real receipt integration)",
+  "fixtures": "fixtures/ (runtime-schema.snapshot.json + 6 captured surfaces, each stamped with source_revision, fetched_at, refresh_path, source_sha256)",
+  "evidence": "evidence/host-dispatch-openrouter_xiaomi_mimo-v2.6-pro.json, evidence/manifest-reconciliation.json",
+  "readme": "README.md (acceptance mapping, evidence levels, integration points)"
+ },
+
+ "live_host_dispatch_proof": {
+  "route": "openrouter/xiaomi/mimo-v2.6-pro via installed 9Router at http://127.0.0.1:20128",
+  "http_status": 200,
+  "response_model_echo": "xiaomi/mimo-v2.6-pro (provider-local echo of the bound route; verify_dispatch accepts exact or provider-local echo only)",
+  "gateway_request_receipt": "gen-1792660961-qt4v5MU8JUOsHnY8JqvE",
+  "thinking_block_seen": true,
+  "effort_parameter_sent": false,
+  "honest_reading": "thinking block proves reasoning is on; it is NOT proof of any model-specific effort level (effort.py:thinking_log_proof)",
+  "router_requestDetails_rows_for_probe": 0,
+  "requestDetails_gap": "the router's requestDetails table holds no row for this probe (its captured rows end 2026-10-14); receipt rests on the gateway-issued message id and response metadata — stated, not papered over"
+ },
+
+ "capability_manifest_reconciliation": {
+  "artifact": "evidence/manifest-reconciliation.json",
+  "builder_role": "verified_by_host_dispatch (gen-1792660961-qt4v5MU8JUOsHnY8JqvE)",
+  "qc_role": "UNVERIFIED in this unit by design (no qc probe made); W00-U1 route-receipts.json carries the GLM high-effort end-to-end proof for the qc route",
+  "live_fabricated_effort_claims_flagged": 20,
+  "headline_defect_live": "openrouter/xiaomi/mimo-v2.6-pro carries a (max) effort annotation in the live router combos while BOTH catalogs (OpenRouter supported_parameters and host /v1/models capabilities.thinkingEffortSupported=false) say reasoning without an effort selector -> UNSUPPORTED_EFFORT_CLAIM, never emitted as a claim",
+  "cache_finding": "model-catalog.json cache (v=2, etag W/\"09f0aba1f0badac515debc68b12ce4f8\") is CACHE_STALE vs the live authoritative capture; cache rows carry source_revision + fetched_at + refresh_path per 7.5",
+  "catalog_facts_2026_10_22": {
+   "xiaomi/mimo-v2.6-pro": "reasoning=true, reasoning_effort ABSENT from supported_parameters, thinkingEffortSupported=false",
+   "z-ai/glm-5.3": "reasoning=true, reasoning_effort PRESENT, thinkingEffortSupported=true"
+  }
+ },
+
+ "acceptance_summary": {
+  "schema_invalid_rejected_before_activation": "yes — tests/test_config_stage.py: unknown key and unowned section rejected; prior healthy configuration byte-identical after rejection; unrelated department models/credentials/aliases/heartbeat policies/user preferences unchanged after a valid apply",
+  "manifest_reconciles_with_actual_host_dispatch": "yes — tests/test_manifest.py + evidence/manifest-reconciliation.json bound to the live receipt; a label alone never verifies (asserted)",
+  "unsupported_effort_never_fabricated": "yes — tests/test_effort.py: required effort on a selectorless model is refused (not silently stripped); optional effort omits the param and claims only 'reasoning_without_effort_selector'; UI ladder overruled; generic thinking log never proof; live combos' fabricated claims flagged",
+  "hard_cap_classified_with_one_breaker_event": "yes — tests/test_failures.py: CREDIT_EXHAUSTED/HARD_QUOTA/ACCOUNT_SUSPENDED/AUTHORIZATION_FAILURE distinct from THROTTLED/TRANSIENT; 26 identical hard failures produce exactly 1 actionable event; queued launches suppressed while deterministic scheduling continues; retry-at from authoritative responses or explicit bounded policy; no invented short reset for a monthly cap"
+ },
+
+ "verification": {
+  "command": "python3 -I -m unittest discover -s tests -t . -v",
+  "result": "Ran 42 tests — OK (TESTS.txt)",
+  "integration_command": "python3 -I tools/verify_manifest_with_probe.py",
+  "integration_result": "builder dispatch: DISPATCH_VERIFIED; wrote evidence/manifest-reconciliation.json",
+  "fixture_refresh_command": "python3 -I tools/capture_fixtures.py --out fixtures/",
+  "secret_scan": "fixtures and evidence grepped for sk-*, $2b$*, Bearer patterns: zero matches"
+ },
+
+ "hygiene": {
+  "scratch": "/tmp temp work prefixed /tmp/s75w04u2- (deleted at run end); lane folder lanes/S75-W04-U2-lane/ unused (all work fits the owned output folder)",
+  "git": "local git repository inside work/S75-W04-U2/ binding the exact artifact revision (commit SHA in the QC verdict head); no remote, nothing pushed, nothing merged",
+  "force_used": "never; nothing removed; no backups of operator state created"
+ }
+}

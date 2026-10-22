@@ -1,0 +1,45 @@
+{
+ "driver": {
+  "entry": "timer-artifacts/install-keepalive-cron.sh (pinned revision)",
+  "kind": "product",
+  "tree": "onboarding pinned revision"
+ },
+ "fixture_id": "S75-F13",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "fake_cli": "<TMP>/bin/openclaw",
+  "script": "<TIMER_DIR>/install-keepalive-cron.sh",
+  "state": "<TMP>/fake-cron-state.json"
+ },
+ "observed_defect": {
+  "case_a_exit": 0,
+  "case_a_log_contains": "already present",
+  "case_b_exit": 0,
+  "case_b_landed_model": "unpinned",
+  "case_b_log_prints_requested_model": true
+ },
+ "pattern": "stale keepalive registration",
+ "required_post_repair": "Compare supported effective configuration, reconcile through the owning scheduler interface, prove one successful tick; refuse silent fallback and report requested and resolved routes separately; never silently remove a model pin.",
+ "setup": {
+  "case_a": {
+   "existing_job": {
+    "enabled": false,
+    "model": "unapproved default",
+    "name_match": true,
+    "prompt": "stale",
+    "schedule": "hourly"
+   }
+  },
+  "case_b": {
+   "pinned_registration": "rejected by CLI",
+   "unpinned_registration": "accepted"
+  }
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 D22, 17.10 rows 3-4, 17.9"
+}

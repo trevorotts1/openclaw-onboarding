@@ -1,0 +1,13 @@
+{
+ "jobs": [
+  "*/15 * * * * /bin/bash <HOME>/clawd/fleet-bootstrap-repair/20260918/watchdog-15min.sh",
+  "* * * * * <HOME>/.local/bin/9router-watchdog.sh >/dev/null 2>&1"
+ ],
+ "provenance": {
+  "fetched_at": "2026-10-22T09:24:28+00:00",
+  "refresh_path": "python3 -I tools/capture_fixtures.py --out fixtures/",
+  "source": "crontab -l",
+  "source_revision": null,
+  "source_sha256": null
+ }
+}

@@ -1,0 +1,34 @@
+{
+ "driver": {
+  "entry": "script_approval/script_approval.py record_for + check_script_approval",
+  "kind": "product",
+  "tree": "999 main"
+ },
+ "fixture_id": "S75-F05",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "record": "<RUN_DIR>/creative/script-approval.json",
+  "run_dir": "<RUN_DIR>"
+ },
+ "observed_defect": {
+  "corrupt_record": "None",
+  "gate_result": "no refusal (go)",
+  "missing_record": "None",
+  "treated_as": "approval not asked"
+ },
+ "pattern": "missing/corrupt approval records",
+ "required_post_repair": "A missing or corrupt answer file is an explicit unknown state, not approval not asked.",
+ "setup": {
+  "record_states": [
+   "missing",
+   "corrupt (invalid JSON)"
+  ]
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 5.2 and 17.8 (approval record integrity)"
+}

@@ -1,0 +1,40 @@
+{
+ "driver": {
+  "entry": "song_choices/song_choices.py _real_generate (stubbed dispatcher boundary)",
+  "kind": "product",
+  "tree": "999 main"
+ },
+ "fixture_id": "S75-F12",
+ "identities": {
+  "chat_id": "chat-synth-0001",
+  "host_id": "host-synth-0001",
+  "operator_id": "worker-synth-01",
+  "run_id": "run-synth-0001",
+  "tenant_id": "tenant-synth-0001"
+ },
+ "injected_paths": {
+  "envelope": "<RUN_DIR>/music/takes/<variant>/dispatch-envelope.json",
+  "run_dir": "<RUN_DIR>"
+ },
+ "observed_defect": {
+  "caller_view": "exit-path success, empty list narrates as dispatch success",
+  "envelope_keys": [
+   "variant_id",
+   "evidence"
+  ],
+  "raised": false,
+  "refusal_next_action_persisted": false,
+  "refusal_reason_persisted": false,
+  "takes": []
+ },
+ "pattern": "empty take list narrated as dispatch success",
+ "required_post_repair": "Preserve the complete typed envelope per attempt; report planned, submitted, acknowledged, billed, materialized, evaluated and delivered counts separately.",
+ "setup": {
+  "dispatcher_refusal": {
+   "next_action": "attempt ID already exists; use a new attempt ID",
+   "outcome": "rejected",
+   "reason_code": "DUPLICATE_ATTEMPT"
+  }
+ },
+ "spec_source": "Skill_75_Universal_Repair_Spec_v1.1 D21, 17.10 row 2, 17.9"
+}
