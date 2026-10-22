@@ -788,11 +788,12 @@ def mint_and_bridge(context, session, out, *,
     ``reseed_count``."""
     import browser_manager as _bm  # same-dir module; lazy (import-only coupling)
 
+    env_arg = env  # ponytail: keep None distinct — _resolve_refresh(None) searches canonical stores
     env = env if env is not None else os.environ
     expected_location_id = (expected_location_id if expected_location_id is not None
                             else resolve_location_id(env)[0] or None)
     pit_value, pit_source = resolve_location_pit(env)
-    resolution = _resolve_refresh(env)
+    resolution = _resolve_refresh(env_arg)
     assert_credentials_not_substituted(
         resolution.source, pit_source,
         refresh_value=resolution.value, pit_value=pit_value)
