@@ -1044,13 +1044,50 @@ def telegram_payload(chat_id, text):
     return {"chat_id": chat_id, "text": text}
 
 
+def _staged_media(media):
+    """Copy outbound attachments into the platform's own delivery media root.
+
+    `openclaw message send` refuses a local media path outside its allowed
+    roots with LocalMediaAccessError, and a run folder is not one of those
+    roots -- so every client delivery from a run used to fail. The
+    delivery-queue media dir (<state>/delivery-queue-media) is the root the
+    platform reserves for delivery, so attachments are staged there and the
+    caller's file is never moved or edited.
+    """
+    import shutil
+    roots = []
+    state = os.environ.get("OPENCLAW_STATE_DIR") or os.path.expanduser("~/.openclaw")
+    for cand in (state, os.path.expanduser("~/.openclaw")):
+        d = os.path.join(cand, "delivery-queue-media")
+        try:
+            os.makedirs(d, exist_ok=True)
+            roots.append(d)
+            break
+        except OSError:
+            continue
+    out = []
+    for m in media or ():
+        p = str(m)
+        if not roots or not os.path.isfile(p):
+            out.append(p)
+            continue
+        dst = os.path.join(roots[0], os.path.basename(p))
+        try:
+            if os.path.abspath(p) != os.path.abspath(dst):
+                shutil.copy2(p, dst)
+            out.append(dst)
+        except OSError:
+            out.append(p)
+    return out
+
+
 def openclaw_send_argv(target, text, media=()):
     """Exact argv for ``openclaw message send`` on Telegram. A list, not a
     shell string: run it with subprocess (shell=False) and the newlines in
     ``text`` reach the sender untouched."""
     return (["openclaw", "message", "send", "--channel", "telegram",
              "--target", str(target), "--message", text]
-            + [x for m in media for x in ("--media", str(m))])
+            + [x for m in _staged_media(media) for x in ("--media", str(m))])
 
 
 # --- FU-U4: the fit STOP card (registry-only options, plan 2.3) ----------------
