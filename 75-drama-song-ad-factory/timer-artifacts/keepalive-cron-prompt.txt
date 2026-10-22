@@ -1,99 +1,305 @@
 #!/usr/bin/env bash
 # keepalive-cron-prompt.txt - the prompt the skill75-keepalive cron runs every
 # 10 minutes. install-keepalive-cron.sh substitutes __SKILL_ROOT__ and
-# __RUNS_DIR__ into this text and registers it as ONE openclaw cron job.
+# __RUNS_DIR__ into this text and registers it as ONE openclaw cron job
+# (silent, model-pinned; the installer reconciles the job's full desired state).
 #
-# Read-only: this job never changes a run, never answers a card question and
-# never spends.
+# DESIGN (D22/D23/D31): the supervision duty is a DETERMINISTIC PROGRAM, the
+# heredoc below. The agent session that receives this prompt only runs that
+# block and relays its operator notice - so observation, fair multi-run
+# scheduling, leases, the shared provider/account circuit breaker, envelope
+# delivery and reporting keep working when NO model route is available (the
+# job payload can also be switched to this block verbatim by the installer on
+# a box that prefers command payloads; the block never calls a model).
+#
+# Read-only with respect to runs: never changes a run's production state,
+# never answers a card question, never spends, never submits or resubmits a
+# paid job, never authors creative output and never manufactures PASS records.
+# It writes only its OWN supervision records (run registry, per-run leases,
+# shared breaker, tick summary) and delivers the envelope's prewritten text.
+#
 #   name: skill75-keepalive   schedule: every 10 minutes   delivery: silent
 #
 # ---------------------------------------------------------------------------
-You are the skill 75 keepalive for this box. One job, every 10 minutes, no spend.
+You are the skill 75 keepalive for this box. Every 10 minutes, run the block
+below EXACTLY as written (it is deterministic and spends nothing):
 
-1. Find the ONE active drama run: the directory under
-   __RUNS_DIR__
-   that holds control/state.sqlite3 and is not finished (its keepalive envelope
-   is not COMPLETE). Newest first. No such run: do nothing, say nothing, stop.
+python3 - <<'PY_KEEPALIVE_CORE'
+# skill75 keepalive core - blackceo.keepalive-core/v2. Deterministic, stdlib only.
+import json, os, subprocess, sys, time, hashlib
 
-2. Run, from the skill root (__SKILL_ROOT__):
+SKILL_ROOT = "__SKILL_ROOT__"
+RUNS_DIR   = "__RUNS_DIR__"
+KA_DIR     = os.path.join(RUNS_DIR, ".keepalive")
+REGISTRY   = os.path.join(KA_DIR, "run-registry.json")
+BREAKER    = os.path.join(KA_DIR, "provider-breaker.json")
+EVENTS     = os.path.join(KA_DIR, "events.log")
+LAST_TICK  = os.path.join(KA_DIR, "last-tick.json")
+LOCK       = os.path.join(KA_DIR, "registry.lock")
+BATCH      = 8               # bounded per-tick batch
+LEASE_S    = 25 * 60         # per-run lease lifetime
+LOCK_STALE = 60              # stale lock takeover
+RUN_WATCH  = os.path.join(SKILL_ROOT, "scripts", "core", "heartbeat", "run_watch.py")
+CHANNEL_SEND = os.path.join(SKILL_ROOT, "scripts", "core", "choice_card", "intake_card", "channel_send.py")
+FINISHED   = ("complete", "expired", "canceled")
+HARD_CLASSES = ("quota", "credit", "suspension", "authorization", "hard-cap", "hard_cap")
 
-   cd __SKILL_ROOT__ && python3 scripts/core/heartbeat/run_watch.py \
-     --run-dir "<the run folder>" --interval-check
+def now(): return int(time.time())
+def load(path, default):
+    try:
+        with open(path, encoding="utf-8") as f: return json.load(f)
+    except Exception: return default
+def save(path, doc):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp.%d" % os.getpid()
+    with open(tmp, "w", encoding="utf-8") as f: json.dump(doc, f, indent=2, sort_keys=True)
+    os.replace(tmp, path)
+def note(code, detail):
+    line = json.dumps({"ts": now(), "code": code, "detail": detail}, sort_keys=True)
+    os.makedirs(KA_DIR, exist_ok=True)
+    with open(EVENTS, "a", encoding="utf-8") as f: f.write(line + "\n")
+    print("KEEPALIVE_EVENT %s %s" % (code, detail), file=sys.stderr)
 
-   Exit 10 means the loop is over (the run finished or the 3-hour cap was
-   reached): stop after one last delivery. Any other exit still prints the
-   envelope, so read it.
+def with_registry_lock():
+    os.makedirs(KA_DIR, exist_ok=True)
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        try:
+            fd = os.open(LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode()); os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                if now() - int(os.path.getmtime(LOCK)) > LOCK_STALE:
+                    os.unlink(LOCK); continue
+            except Exception: pass
+            time.sleep(0.2)
+    return False
 
-3. Read the JSON envelope on stdout. It never changes run state. Its
-   message_for_client is already written for the client, in plain English.
+# ---- 1. shared provider/account circuit breaker (one for the account) ------
+breaker = load(BREAKER, {"schema": "blackceo.provider-breaker/v1", "state": "closed"})
+breaker_open = breaker.get("state") == "open"
+if breaker_open:
+    # Close ONLY on an authoritative recovery observation or a RECORDED
+    # operator decision - never on a temporary-reset message, never on a timer
+    # that was not the provider's own.
+    dec = load(os.path.join(KA_DIR, "provider-breaker.decision.json"), {})
+    if dec.get("decision") == "close":
+        breaker.update({"state": "closed", "closed_at": now(), "closed_by": "operator-decision"})
+        save(BREAKER, breaker); breaker_open = False
+        note("KEEPALIVE_BREAKER_RESUME", "operator-decision")
+    elif (breaker.get("retry_at") and breaker.get("retry_at_source") == "provider-response"
+          and now() >= int(breaker["retry_at"])):
+        breaker.update({"state": "closed", "closed_at": now(), "closed_by": "retry_at-reached"})
+        save(BREAKER, breaker); breaker_open = False
+        note("KEEPALIVE_BREAKER_RESUME", "provider retry_at reached")
 
-4. Deliver message_for_client on the SAME lane every other message from this
+# ---- 2. enumerate EVERY eligible run; one canonical registry --------------
+run_dirs = []
+for name in sorted(os.listdir(RUNS_DIR)) if os.path.isdir(RUNS_DIR) else []:
+    p = os.path.join(RUNS_DIR, name)
+    if os.path.isdir(p) and os.path.isfile(os.path.join(p, "control", "state.sqlite3")):
+        run_dirs.append(p)
+
+reg = load(REGISTRY, {"schema": "blackceo.run-registry/v1", "runs": {}, "cursor": {"next_index": 0}})
+reg.setdefault("runs", {}); reg.setdefault("cursor", {"next_index": 0})
+changed = False
+
+def migrate_origin(run_dir):
+    """ONE canonical origin record first (control/origin.json, written at run
+    creation - the section 5.4 contract). Legacy recorders are recognized
+    migration sources ONLY when no canonical record exists. Never guess:
+    disagreeing destinations isolate the run, never a pick. Two recorded
+    destinations of DIFFERENT kinds (chat + studio) are both real - deliver to
+    each once."""
+    canon = load(os.path.join(run_dir, "control", "origin.json"), None)
+    legacy = []
+    receipt = load(os.path.join(run_dir, "control", "card-receipt.json"), {})
+    t = receipt.get("target") if isinstance(receipt, dict) else None
+    if t: legacy.append({"kind": "chat", "target": str(t), "source": "control/card-receipt.json:target"})
+    order = load(os.path.join(run_dir, "control", "studio-order.json"), {})
+    if isinstance(order, dict) and order.get("order_id") and order.get("base_url"):
+        legacy.append({"kind": "studio", "order_id": order["order_id"],
+                       "base_url": order["base_url"], "source": "control/studio-order.json"})
+    if isinstance(canon, dict) and (canon.get("target") or canon.get("order_id")):
+        c = dict(canon); c["source"] = "control/origin.json"
+        disagree = [h for h in legacy
+                    if h["kind"] == c.get("kind", "chat")
+                    and h.get("target") and c.get("target") and h["target"] != c["target"]]
+        if disagree:
+            return [], ("KEEPALIVE_ORIGIN_CONFLICT:control/origin.json=%s;%s=%s"
+                        % (c.get("target"), disagree[0]["source"], disagree[0]["target"]))
+        return [c], None
+    if not legacy: return [], "KEEPALIVE_ORIGIN_UNKNOWN"
+    chat_targets = {h["target"] for h in legacy if h["kind"] == "chat"}
+    if len(chat_targets) > 1:
+        return [], "KEEPALIVE_ORIGIN_CONFLICT:" + ";".join(h["source"] + "=" + h.get("target", "") for h in legacy)
+    uniq, seen = [], set()
+    for h in legacy:
+        key = (h["kind"], h.get("target"), h.get("order_id"))
+        if key not in seen:
+            seen.add(key); uniq.append(h)
+    return uniq, None
+
+for run_dir in run_dirs:
+    rid = os.path.basename(run_dir)
+    row = reg["runs"].get(rid) or {"run_id": rid, "state": "active", "next_due_at": 0}
+    if row.get("state") not in FINISHED:
+        if not row.get("origins"):
+            origins, err = migrate_origin(run_dir)
+            row["origins"] = origins
+            row["origin"] = origins[0] if origins else None
+            row["origin_error"] = err
+            changed = True
+            if err: note(err, rid)
+        reg["runs"][rid] = row
+        changed = True
+
+# ---- 3. fair order + bounded persistent cursor ----------------------------
+active = sorted([r for r in reg["runs"].values() if r.get("state") not in FINISHED],
+                key=lambda r: (r.get("next_due_at") or 0, r.get("run_id") or ""))
+n = len(active)
+idx = int(reg["cursor"].get("next_index") or 0)
+if idx >= n: idx = 0                     # start a fresh full cycle
+batch = active[idx:idx + BATCH]          # bounded pass; no wraparound repeats
+next_index = idx + len(batch)
+cycle_done = bool(n) and next_index >= n
+summary = {"observed": [], "delivered": [], "isolated": [], "skipped_leased": [],
+           "suppressed": [], "breaker": "open" if breaker_open else "closed"}
+
+# ---- 4. per-run lease + observe + deliver ---------------------------------
+for row in batch:
+    rid = row["run_id"]
+    run_dir = os.path.join(RUNS_DIR, rid)
+    lease_path = os.path.join(run_dir, "control", "keepalive-lease.json")
+    reclaimed_from = None
+    try:
+        fd = os.open(lease_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+    except FileExistsError:
+        lease = load(lease_path, {})
+        if (lease.get("expires_at") or 0) > now():
+            summary["skipped_leased"].append(rid); continue
+        reclaimed_from = lease.get("owner")   # reclaim an EXPIRED lease once
+    save(lease_path, {"owner": "skill75-keepalive", "acquired_at": now(),
+                      "expires_at": now() + LEASE_S,
+                      "reclaimed_from": reclaimed_from})
+    try:
+        proc = subprocess.run([sys.executable, RUN_WATCH, "--run-dir", run_dir, "--interval-check"],
+                              cwd=SKILL_ROOT, capture_output=True, text=True, timeout=120)
+        try: envelope = json.loads(proc.stdout)
+        except Exception: envelope = None
+        row["last_observed_at"] = now()
+        summary["observed"].append(rid)
+        if envelope is None:
+            row["state"] = "needs-attention"; row["state_reason"] = "HEARTBEAT_STATE_UNREADABLE"
+            summary["isolated"].append(rid); note("HEARTBEAT_STATE_UNREADABLE", rid)
+            continue
+        msg = envelope.get("message_for_client") or ""
+        origins = row.get("origins") or ([row["origin"]] if row.get("origin") else [])
+        if msg and origins and not row.get("origin_error"):
+            for origin in origins:
+                try:
+                    if origin.get("kind") == "studio":
+                        send = [sys.executable, CHANNEL_SEND, "send", "--channel", "studio",
+                                "--run-dir", run_dir, "--message", msg]
+                    else:
+                        send = ["openclaw", "message", "send", "--channel", "telegram",
+                                "--target", str(origin["target"]), "--message", msg]
+                    r = subprocess.run(send, capture_output=True, text=True, timeout=60)
+                    if r.returncode == 0: summary["delivered"].append(rid)
+                    else: note("KEEPALIVE_DELIVERY_FAILED", "%s rc=%d" % (rid, r.returncode))
+                except Exception as e:
+                    note("KEEPALIVE_DELIVERY_FAILED", "%s %s" % (rid, e))
+        elif msg and (not origins or row.get("origin_error")):
+            note(row.get("origin_error") or "KEEPALIVE_TARGET_MISSING", rid)
+        # hard provider/account failure surfaced by the run? OPEN THE BREAKER
+        # BEFORE any launch decision below, so this tick already suppresses.
+        hard = None
+        extras = envelope.get("provider_account_failure")
+        if isinstance(extras, dict) and str(extras.get("class", "")).lower() in HARD_CLASSES:
+            hard = extras
+        if hard and breaker.get("state") != "open":
+            save(BREAKER, {"schema": "blackceo.provider-breaker/v1", "state": "open",
+                           "class": hard.get("class"), "provider": hard.get("provider"),
+                           "account_ref": hard.get("account_ref"),
+                           "opened_at": now(),
+                           "retry_at": hard.get("retry_at"),
+                           # retry times come from the provider's own response or
+                           # stay null. A monthly hard cap is NOT a short reset.
+                           "retry_at_source": "provider-response" if hard.get("retry_at") else None,
+                           "event_id": hashlib.sha256((rid + str(now())).encode()).hexdigest()[:12]})
+            breaker_open = True
+            note("KEEPALIVE_BREAKER_OPEN", "%s %s" % (hard.get("provider"), hard.get("class")))
+        if envelope.get("stalled") and envelope.get("recovery_command"):
+            if breaker_open:
+                summary["suppressed"].append(rid)   # breaker open: NO launches
+            else:
+                row["last_recovery_command_at"] = now()
+                subprocess.run(["sh", "-c", envelope["recovery_command"]],
+                               capture_output=True, text=True, timeout=300)
+        if proc.returncode == 10:
+            row["state"] = "expired" if envelope.get("expired") else "complete"
+        row["last_useful_progress_at"] = max(row.get("last_useful_progress_at") or 0,
+                                             int(envelope.get("last_progress_at") or 0))
+        row["next_wait_deadline"] = envelope.get("next_wait_deadline")
+        reg["runs"][rid] = row; changed = True
+    except Exception as e:
+        row["state"] = "isolated"; row["state_reason"] = str(e)[:200]
+        summary["isolated"].append(rid); note("KEEPALIVE_RUN_ISOLATED", "%s %s" % (rid, e))
+    finally:
+        try: os.unlink(lease_path)
+        except OSError: pass
+
+# ---- 5. cursor + tick summary (deterministic reports survive any outage) ---
+reg["cursor"] = {"next_index": 0 if cycle_done else next_index,
+                 "last_full_cycle_at": now() if cycle_done else reg["cursor"].get("last_full_cycle_at")}
+save(REGISTRY, reg)
+save(LAST_TICK, {"schema": "blackceo.keepalive-tick/v1", "ts": now(),
+                 "cursor": reg["cursor"], "summary": summary,
+                 "breaker": summary["breaker"]})
+print(json.dumps(summary, sort_keys=True))
+PY_KEEPALIVE_CORE
+
+Then relay, and nothing else:
+1. If the block printed a KEEPALIVE_EVENT line asking for an operator handoff
+   (KEEPALIVE_ORIGIN_CONFLICT, KEEPALIVE_BREAKER_OPEN, KEEPALIVE_PIN_MISMATCH),
+   announce it ONCE on the operator lane in plain English, with the run folder
+   and the code. Never resolve an origin conflict yourself - the client's own
+   authenticated session resolves it.
+2. Do not add wording, do not answer pending decisions for the client, do not
+   spend, do not resubmit anything. Never write to the run folder yourself:
+   the block alone writes its own supervision records (run registry, per-run
+   leases, shared breaker, tick summary) and nothing else. The block has
+   already delivered every client message; there is nothing else to send.
+3. If the block failed to run at all, report the exact stderr once on the
+   operator lane (that is a supervision outage, not a run failure) and stop.
+4. The delivery contract the block follows (never invent another one): every
+   message_for_client goes out on the SAME lane every other message from this
    skill uses (the choice card's own sender):
 
    openclaw message send --channel telegram --target <chat id> \
      --message "<message_for_client>"
 
-   The chat id is the run's own recorded target - read it from
-   control/studio-order.json, card-answers.json or the run's intake card. If
-   there is no recorded target, do NOT guess one: print a WARNING
-   KEEPALIVE_TARGET_MISSING with the run folder and stop.
+   The chat id is the run's own recorded target (control/origin.json, or the
+   run's recorded receipt/order). If there is no recorded target, do NOT guess one:
+   the run is isolated and KEEPALIVE_TARGET_MISSING is raised for the
+   operator lane.
+5. Envelope loud codes - HEARTBEAT_EXPIRED (the 3-hour cap was reached),
+   HEARTBEAT_STALLED (no progress), HEARTBEAT_STATE_UNREADABLE (state unreadable)
+   - are facts to act on, not retry budgets: never resubmit a paid job, never
+   invent a stage, a percentage or a delivery time, and never say the video is
+   done unless stage_state is COMPLETE.
 
-5. decisions_pending: the message already lists every one with its options.
-   Do not add your own wording and do not answer for the client - the client
-   answers, then the normal factory.py path records it.
-
-6. stalled is true: run envelope.recovery_command ONCE, exactly as printed.
-   Never edit, claim, transition or re-dispatch anything by hand, never edit a
-   validator, never resubmit a paid job. "loud" naming HEARTBEAT_STALLED is a
-   fact to act on, not a retry budget.
-
-7. loud naming HEARTBEAT_EXPIRED: send the wrap-up message (it already says a
-   person is picking it up), then stop. Never say the video is done unless
-   stage_state is COMPLETE.
-
-8. loud naming HEARTBEAT_STATE_UNREADABLE: tell the client the plain sentence
-   in the message, and keep the failure visible on stderr. Never invent a
-   stage, a percentage or a delivery time.
+Breaker rules the block enforces (so a model outage cannot break them): a hard
+quota/credit/suspension/authorization failure opens ONE shared event and
+suppresses duplicate failing launches; completed work and receipts are never
+removed; only unfinished runs resume after the breaker is closed by an
+authoritative recovery observation or a recorded operator decision, under the
+approved fallback policy recorded at install - never a guessed model, never
+Sonnet, never an invented retry time. Deterministic observation, leases,
+delivery and reports continue while model-powered repair is unavailable.
 
 Never print a key, a token or a path under ~/.openclaw/secrets. Never mention
-internal codes to the client. Never spend. Never write to the run folder.
-
-7. If the reported stage is `continuity-bible` and its stage_state is
-   NOT_STARTED or READY: this stage is agent-authored. Author its artifacts per
-   references/stage-runbook.md -- the Character DNA, the product DNA and the
-   style bible -- then write $RUN/continuity/qc-records.json and
-   $RUN/continuity/makers.json using check ids qc_gate recognizes, and run
-
-   python3 scripts/core/intake_preflight/factory.py next --run-dir "$RUN"
-
-   once. `next` reconciles continuity-bible from those records and advances the
-   run to storyboard. Never write a PASS for a check you did not prove: leave
-   it FAIL and report it. Spend no money at this stage.
-
-8. If the reported stage is `storyboard` and its stage_state is NOT_STARTED or
-   READY: this stage is agent-authored too. Build $RUN/storyboard/shot-list.json
-   from creative/story-plan.json and the lyric timing -- one entry per beat,
-   every villain shot tagged `villain`, the pain and rise tags on those same
-   shots -- then run
-
-   python3 scripts/core/shot_planner/speaker_check/speaker_check.py check --env "$RUN/storyboard/shot-list.json"
-
-   until it passes. Write $RUN/storyboard/gate.json with {"shots": [...]} and
-   $RUN/storyboard/approval.json {"state":"approved"} ONLY when
-   control/card-receipt.json really records the client's delegated "just make
-   it" for storyboard; cite that receipt in the file. Then run
-   `python3 scripts/core/intake_preflight/factory.py next --run-dir "$RUN"` once
-   so the reconciler advances it. Spend no money at this stage.
-
-9. If the reported stage is `image-keyframes`, OR `next` reports
-   `storyboard-approval-required` while storyboard/stills is missing or empty
-   (approval cannot happen without the stills): this stage is PAID. Build
-   $RUN/generation/req.json from the approved shot list, then run the runbook's
-   own dispatch row verbatim:
-
-   python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <image-model-id>      --request "$RUN/generation/req.json" --prompt-file "$RUN/generation/req.prompt.txt" --save-dir "$RUN/generation"      --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key keyframes      --attempt-id a1 --cost 0
-
-   Take <image-model-id> from the skill's own model policy -- never invent one
-   and never substitute an operator key. One dispatch per tick, then re-run
-   `factory.py next` once. Stop immediately if the spend ledger refuses on the
-   run's ceiling; report the refusal, never retry around it.
+internal codes to the client. Never spend. The keepalive observes and reports;
+it never builds, never approves, and never certifies its own work.
