@@ -4,6 +4,26 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.85 - 2026-10-22 - rebased on main (no feature regressions in the WAL fixes)
+
+The merge that carried the WAL-safe reads onto main had been resolved by taking
+this branch wholesale for four files, which dropped main's newer APIs:
+`state_store` lost `read_qc_records`/`DOC_QC_RECORDS` and its typed errors,
+`run_watch` lost its supervision/activity model, `lyric_timing` lost main's
+loader work, and CI caught it (QC static invariants). This release re-bases
+each file on main and re-applies ONLY the branch's own change:
+
+1. `state_store.needs_recovery` uses `_ro_connect` (forced open + private-copy
+   fallback) on top of main's full API. `test_state_store_s75w02u4`: 22 groups.
+2. `run_watch._ro` same fallback, plus COMPLETE is never a stall; tests 10 and
+   11 added to main's suite. `test_run_watch`: ALL PASS.
+3. `intake_card.channel_send_argv` stages out-of-allowlist media into
+   `<state>/delivery-queue-media` on top of main's builder; a missing file is
+   passed through so the sender names the real error.
+4. `lyric_timing` reverts to main unchanged - main already carries the lazy
+   faster_whisper loader, the `compute_type` keyword and the word-shape
+   conversion.
+
 ## v2.9.84 - 2026-10-22 - the documented dispatch command can actually pass F14 and the H3 receipt
 
 Two wiring defects made the runbook's own video command impossible to satisfy;

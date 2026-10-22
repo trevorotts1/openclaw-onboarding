@@ -47,7 +47,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
+import tempfile
 
 _CORE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _CORE not in sys.path:
@@ -1045,49 +1047,80 @@ def telegram_payload(chat_id, text):
 
 
 def _staged_media(media):
-    """Copy outbound attachments into the platform's own delivery media root.
+    """Media paths the channel will actually accept.
 
-    `openclaw message send` refuses a local media path outside its allowed
-    roots with LocalMediaAccessError, and a run folder is not one of those
-    roots -- so every client delivery from a run used to fail. The
-    delivery-queue media dir (<state>/delivery-queue-media) is the root the
-    platform reserves for delivery, so attachments are staged there and the
-    caller's file is never moved or edited.
+    OpenClaw only sends files inside its own state roots (media, workspace,
+    delivery-queue-media, canvas, sandboxes) or tmp; a run-folder attachment
+    is refused with LocalMediaAccessError. Anything else is COPIED into
+    <state>/delivery-queue-media first -- the copy is what gets sent, the
+    original is never moved or rewritten.
     """
-    import shutil
-    roots = []
-    state = os.environ.get("OPENCLAW_STATE_DIR") or os.path.expanduser("~/.openclaw")
-    for cand in (state, os.path.expanduser("~/.openclaw")):
-        d = os.path.join(cand, "delivery-queue-media")
-        try:
-            os.makedirs(d, exist_ok=True)
-            roots.append(d)
-            break
-        except OSError:
-            continue
-    out = []
+    root = os.path.join(os.path.expanduser("~"), ".openclaw")
+    allowed = tuple(os.path.join(root, d) for d in
+                    ("media", "workspace", "delivery-queue-media", "canvas",
+                     "sandboxes")) + (tempfile.gettempdir(),)
+    staged = []
     for m in media or ():
-        p = str(m)
-        if not roots or not os.path.isfile(p):
-            out.append(p)
+        path = os.path.abspath(str(m))
+        if path.startswith(allowed) and os.path.isfile(path):
+            staged.append(path)
             continue
-        dst = os.path.join(roots[0], os.path.basename(p))
-        try:
-            if os.path.abspath(p) != os.path.abspath(dst):
-                shutil.copy2(p, dst)
-            out.append(dst)
-        except OSError:
-            out.append(p)
-    return out
+        dest_dir = os.path.join(root, "delivery-queue-media")
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, os.path.basename(path))
+        if not os.path.isfile(path):
+            staged.append(path)      # let the sender name the real error
+            continue
+        if not (os.path.isfile(dest)
+                and os.path.getsize(dest) == os.path.getsize(path)):
+            shutil.copy2(path, dest)
+        staged.append(dest)
+    return staged
 
-
-def openclaw_send_argv(target, text, media=()):
-    """Exact argv for ``openclaw message send`` on Telegram. A list, not a
-    shell string: run it with subprocess (shell=False) and the newlines in
-    ``text`` reach the sender untouched."""
-    return (["openclaw", "message", "send", "--channel", "telegram",
+def channel_send_argv(channel, target, text, media=(), account=None, thread_id=None):
+    """THE command builder (W03-U1, finding D06): one ``openclaw message send``
+    argv for the RESOLVED channel. ``channel`` arrives as data -- from the run's
+    origin record (``delivery_outbox.resolve_origin``) or an explicit caller --
+    and this builder never picks one. Telegram resolves the correct
+    authenticated bot/account, chat and thread through ``--account`` /
+    ``--target`` / ``--thread-id``; an OpenClaw-app conversation is addressed by
+    its own conversation id. A list, not a shell string: run it with subprocess
+    (shell=False) and the newlines in ``text`` reach the sender untouched. The
+    argv is the STABLE identity of one piece (message text last); the transport
+    executor adds ``--json`` when it runs the command, so the channel's receipt
+    (a message id) can be recorded -- that receipt is what allows a delivery to
+    be claimed sent."""
+    channel = (channel or "").strip()
+    if not channel:
+        raise ValueError("channel_send_argv needs the RESOLVED channel; "
+                         "refusing to guess a default channel")
+    return (["openclaw", "message", "send", "--channel", channel,
              "--target", str(target), "--message", text]
-            + [x for m in _staged_media(media) for x in ("--media", str(m))])
+            + [x for m in _staged_media(media) for x in ("--media", str(m))]
+            + (["--account", str(account)] if account else [])
+            + (["--thread-id", str(thread_id)] if thread_id else []))
+
+
+def openclaw_send_argv(target, text, media=(), channel=None, account=None,
+                       thread_id=None, run_dir=None):
+    """Backward-compatible entry for legacy callers that pass a bare chat id.
+
+    Resolution order: an explicit ``channel``; else the run's canonical origin
+    record (``run_dir``); else the DEPRECATED legacy contract -- a caller that
+    hands in a bare chat id addressed Telegram explicitly (the storyboard
+    approval runner and the song-choice sender document exactly that). New code
+    must route through ``channel_send.send`` / ``channel_send_argv`` with a
+    resolved channel so no path hardcodes Telegram."""
+    if channel is None and run_dir:
+        from choice_card.intake_card import delivery_outbox as _DO   # noqa: PLC0415
+        rec = _DO.resolve_origin(run_dir)
+        channel = (rec or {}).get("channel") or None
+        account = account or (rec or {}).get("account_id") or None
+        thread_id = thread_id or (rec or {}).get("thread_id") or None
+    if channel is None:
+        channel = "telegram"     # deprecated legacy default (caller-explicit)
+    return channel_send_argv(channel, target, text, media=media,
+                             account=account, thread_id=thread_id)
 
 
 # --- FU-U4: the fit STOP card (registry-only options, plan 2.3) ----------------
