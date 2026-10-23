@@ -59,7 +59,7 @@ from datetime import datetime
 from typing import Callable, Iterator, Optional
 
 # Version marker (owned by Skill 06; keep in sync with skill-version.txt):
-BROWSER_MANAGER_PY_VERSION = "v27.1.73"
+BROWSER_MANAGER_PY_VERSION = "v27.1.74"
 
 # Tunables mirror browser_manager.sh / the ADVISORY openclaw.json
 # browser.agentBrowser block (agent-browser ignores that config natively — the
