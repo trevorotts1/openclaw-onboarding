@@ -3,6 +3,32 @@
   "version": "1.1.0",
   "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented.",
   "help_label": "I'm not sure, help me",
+  "introduction": "Let's build a launch that fits your business. I'll help you clarify what you're selling, who it helps, and how to present it. Then we'll turn your approved plan into the supported launch pages and follow-up materials. We'll take one question at a time. You can ask for an example, ask me to recommend an answer, or ask me to use what you've already shared. You'll review the plan before we build.",
+  "question_estimate_template": "about {n} short questions, depending on what we already know",
+  "coaching": {
+    "actions": [
+      "Show me an example.",
+      "Help me answer this.",
+      "Recommend something using what you already know about my business."
+    ],
+    "actions_rule": "Every question comes with a short reason and these three ways to get help. When the client is unsure or stuck, open coaching: 'I don't know' and its equivalents are help requests, never a substantive answer the flow then skips past.",
+    "when_unsure": "Reflect back what you understand from what they have shared, offer two or three concrete options with the reason for each, and ask one simple follow-up question. Never merely repeat the question. Never say you cannot guess. Offer a draft answer they can confirm; a genuinely unknown fact stays unknown.",
+    "examples_rule": "An example must fit this client's own situation and use only the context this client has authorized - never another client's information. Mark clearly what is a known fact they gave you, what is your reading of it, and what is only a suggestion. Never invent prices, testimonials, results, inventory, promises or credentials.",
+    "recommendations_rule": "A recommendation is a proposal for the client to review. It is never a silent decision and never approval for spending. Paid work needs its own separate OK, and the three assistance preferences can be changed later at any time.",
+    "language_rule": "Speak like a patient, capable business partner. Use everyday words and translate marketing terms as you go. Schemas, IDs, hashes, provider routing and similar technical details stay invisible to the client. Never present yourself as a licensed therapist and never turn the conversation into a psychological diagnosis.",
+    "one_at_a_time": "One question per turn. Reuse what the client already confirmed instead of asking again, and never repeat confirmed answers after a pause and resume. Prefer a relevant follow-up over mechanically advancing the list. Progress updates at stage milestones and near completion count only the questions that actually apply, and a changed estimate is explained.",
+    "offers_rule": "Develop one offer at a time: who it helps, the result they want, what can realistically be delivered, what is included, and price guidance. Summarize that offer back before considering another one, and ask whether another package would genuinely help. Recommend the simplest setup that fits; never automatically add upsells, downsells or extra products.",
+    "black_friday_rule": "For a seasonal promotion, the same coaching plus the seasonal decisions asked one at a time: promotion dates; the offer, discount or bonus; real limitations; existing customers versus new buyers; delivery and follow-up. Never invent urgency or scarcity. Explain how a discount, bonus or bundle could fit their circumstances, then confirm their choice. The image and style questions are a small part of the interview, never the whole of it.",
+    "plan_review": {
+      "sections": [
+        "What you told us",
+        "What we understand and recommend, and why",
+        "What will be built and what it is meant to do for your business",
+        "Assumptions, limitations and any costs still to confirm"
+      ],
+      "rule": "Use the existing plan review - no extra approval gates. The client can change any item or approve that exact plan. Approval is never a reason to ignore their answers, and nothing in the review promises guaranteed sales."
+    }
+  },
   "modes": [
     "launch",
     "legacy",
@@ -36,24 +62,29 @@
     {
       "id": "interview_mode",
       "group": "start",
-      "text": "How would you like to set this up?",
-      "why": "It decides how much I suggest and how much I ask.",
+      "text": "What is the best way for me to help you with your launch?",
+      "why": "It sets how much I suggest and how much I ask - and you can change it later.",
       "answer_type": "choice",
       "choices": [
-        "I know what I want",
-        "Help me choose",
-        "Set it up for me to review"
+        "A: Recommend a plan for me (use what is known, ask only what is missing, let them review)",
+        "B: Guide me through each decision (explain options, help them choose)",
+        "C: I already have a plan (help act, flag anything important missed)"
       ],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Pick the first if you have your answers ready. Pick the second and I will explain each choice. Pick the third and I will suggest everything for you to review before anything is built.",
-        "examples": []
+        "explain": "You can change this preference at any time. Anything I recommend is only a proposal for you to review - never a silent decision, and never approval to spend money.",
+        "examples": [],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
       },
       "default": {
-        "value": "Help me choose",
+        "value": "B: Guide me through each decision (explain options, help them choose)",
         "flag": "to confirm",
-        "reason": "Most people want explanations; you can change this any time."
+        "reason": "Most people want a guide through the decisions; you can change this any time."
       },
       "never_default": false,
       "required": "always",
@@ -63,6 +94,77 @@
       ],
       "legacy_ids": [
         "m0_mode"
+      ],
+      "required_by": [],
+      "choice_explanations": {
+        "A: Recommend a plan for me (use what is known, ask only what is missing, let them review)": "I use what you have already told me, ask only for what is missing, and put the plan in front of you to review before anything is built.",
+        "B: Guide me through each decision (explain options, help them choose)": "I explain each decision in plain language, walk the options with you, and help you choose.",
+        "C: I already have a plan (help act, flag anything important missed)": "You bring the plan; I help you act on it and flag anything important it misses."
+      }
+    },
+    {
+      "id": "business_outcome",
+      "group": "start",
+      "text": "What is the business outcome you want from this launch? One sentence is plenty.",
+      "why": "Every page and message serves this outcome, and it keeps the plan honest about what a launch can realistically do.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Think about what would make this launch worth it - more sales of one offer, filled seats, a first group of paying clients. A rough answer is fine.",
+        "examples": [
+          "Fill all 12 seats in my group program before the end of November.",
+          "Get 30 new sign-ups for my workshop."
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "business_outcome"
+      ],
+      "legacy_ids": [
+        "a0_outcome"
+      ],
+      "required_by": []
+    },
+    {
+      "id": "difficulty",
+      "group": "start",
+      "text": "What is making that hard right now?",
+      "why": "The page and the follow-up answer your real obstacle instead of a guess.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Say what is in the way in your own words. If there is more than one obstacle, name the biggest one first.",
+        "examples": [
+          "People visit my page but never book a call.",
+          "My list is small and I do not know how to reach new people."
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode != legacy",
+      "targets": [
+        "difficulty"
+      ],
+      "legacy_ids": [
+        "a0_difficulty"
       ],
       "required_by": []
     },
@@ -175,7 +277,8 @@
         "audience"
       ],
       "legacy_ids": [
-        "q4"
+        "q4",
+        "a1_audience"
       ],
       "required_by": []
     },
@@ -300,7 +403,12 @@
       "legacy_ids": [
         "a5_proof"
       ],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "I have some to share": "Real words from real buyers are the strongest proof. Paste or link whatever you have.",
+        "Use my own story": "Your own experience can carry the page instead of buyer quotes.",
+        "None yet": "That is completely fine. The page is built without testimonials - nothing is invented."
+      }
     },
     {
       "id": "founder_story",
@@ -421,22 +529,32 @@
       "required_by": [
         "83:journey_mode",
         "49-launch:journey_mode"
-      ]
+      ],
+      "choice_explanations": {
+        "One offer": "Everyone buys the same thing - the simplest, clearest funnel.",
+        "A few packages": "Buyers pick between clearly different options.",
+        "Levels that build on each other": "Each level includes the one below it."
+      }
     },
     {
       "id": "packages",
       "group": "offer",
-      "text": "Tell me each package or level on its own line: its name, what is in it, and its price. For example: Premium | 12 lessons; 4 live calls | $497",
-      "why": "A page where buyers choose, or levels, is built only from packages you name and price. I never invent them.",
+      "text": "Let's do the packages one at a time, in your own words. For the first one: who is it for, what result does it give, what is included, and what does it cost?",
+      "why": "A page where buyers choose is built only from the packages you describe and price. I never invent one, and no special format is needed.",
       "answer_type": "packages",
       "choices": [],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Give at least two. Each one needs a name and a price; list what is included after the name.",
+        "explain": "Plain sentences are fine. We finish one package, I summarize it back, and then we decide together whether another one would genuinely help.",
         "examples": [
-          "Starter | 6 video lessons | $297",
-          "Premium | 12 lessons; 4 live calls; templates | $497"
+          "Starter: six video lessons, $297.",
+          "Premium: twelve lessons, four live calls and templates, $497."
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
         ]
       },
       "default": null,
@@ -485,7 +603,12 @@
       ],
       "required_by": [
         "83:offers"
-      ]
+      ],
+      "choice_explanations": {
+        "I have a price": "Your price is a fact we can build on.",
+        "Suggest one for me to review": "I suggest a starting price with my reasoning; it stays a proposal until you approve it.",
+        "It is free": "A free offer still needs a clear page and follow-up."
+      }
     },
     {
       "id": "billing",
@@ -518,7 +641,12 @@
       "legacy_ids": [
         "b3_billing"
       ],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "All at once": "One payment at checkout.",
+        "Monthly": "A recurring monthly payment.",
+        "In parts or trial first": "Several smaller payments, or a low-cost trial first."
+      }
     },
     {
       "id": "funnel_length",
@@ -547,7 +675,12 @@
       "legacy_ids": [
         "q10"
       ],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "3-step": "The essentials: main page, checkout, thank-you.",
+        "5-step": "Adds one extra offer after the purchase, with its own page.",
+        "7-step": "Adds the full chain of extra offer pages."
+      }
     },
     {
       "id": "bump",
@@ -582,7 +715,12 @@
       ],
       "required_by": [
         "49-launch:bump_enabled"
-      ]
+      ],
+      "choice_explanations": {
+        "Yes, I have one": "You already have a small add-on in mind.",
+        "Recommend one": "I suggest one only if it genuinely helps them use what they bought.",
+        "No add-on": "A clean checkout with nothing extra is a good choice."
+      }
     },
     {
       "id": "upsell_1",
@@ -618,7 +756,12 @@
       ],
       "required_by": [
         "49-launch:extras"
-      ]
+      ],
+      "choice_explanations": {
+        "Yes, I have one": "You have a next step ready for people who want more.",
+        "Recommend one": "Only from what you have told me, and only if you can deliver it.",
+        "No upgrade": "Keeping the funnel to the main offer is often the simplest, strongest choice."
+      }
     },
     {
       "id": "downsell_1",
@@ -652,7 +795,12 @@
         "c3_d1",
         "q12"
       ],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "Yes, a smaller version": "A lighter version of the upgrade for people who pass.",
+        "Yes, easier payments": "The same upgrade on friendlier payment terms.",
+        "No downsell": "Their no is accepted - no second pitch."
+      }
     },
     {
       "id": "upsell_2",
@@ -686,7 +834,12 @@
         "c4_u2",
         "q13"
       ],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "Yes, I have one": "You have one more genuinely different product to offer.",
+        "Recommend one": "Only if your facts include a distinct third product - never a repeat.",
+        "No second upsell": "One extra offer is often plenty."
+      }
     },
     {
       "id": "downsell_2",
@@ -719,7 +872,12 @@
       "legacy_ids": [
         "q14"
       ],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "Yes, I have one": "You have the smallest true yes ready.",
+        "Easier payments": "The same offer on smaller payments.",
+        "No second downsell": "After this the funnel simply thanks them."
+      }
     },
     {
       "id": "page_set",
@@ -754,7 +912,12 @@
       "legacy_ids": [],
       "required_by": [
         "49:page_set"
-      ]
+      ],
+      "choice_explanations": {
+        "Every page my funnel needs (recommended)": "The full journey is built so no buyer hits a dead end.",
+        "Only the main page and checkout": "The minimum to take a payment; extras can come later.",
+        "Help me choose": "I recommend the smallest set of pages that serves your plan."
+      }
     },
     {
       "id": "brand_colors",
@@ -906,7 +1069,12 @@
         "brand_background"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "Light (white or cream)": "Clean and bright - the easiest to read.",
+        "Dark": "A darker canvas for a bold, premium feel.",
+        "Not sure": "I pick a background that gives your text the best contrast."
+      }
     },
     {
       "id": "logo",
@@ -937,7 +1105,12 @@
         "logo"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "I will send it": "Your real logo is reused exactly as it is.",
+        "Use my business name as text": "Your business name set as clean text stands in.",
+        "Not sure": "Send whatever you have and I will sort it out."
+      }
     },
     {
       "id": "fonts",
@@ -970,7 +1143,12 @@
         "fonts"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "I know my fonts": "Your existing typefaces keep the brand familiar.",
+        "Pick good ones for me": "I choose a readable pairing that suits your brand.",
+        "Not sure": "Point me at your website or logo and I will read them from there."
+      }
     },
     {
       "id": "photos_founder",
@@ -1003,7 +1181,12 @@
       "legacy_ids": [
         "q15"
       ],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "Yes, I will send photos": "A real photo of you builds trust.",
+        "No photos of me": "The pages are built to work beautifully without one.",
+        "Not sure": "You can decide later - nothing is invented."
+      }
     },
     {
       "id": "photos_permission",
@@ -1034,7 +1217,12 @@
         "photos_permission"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "Yes, I give permission": "Your photos may appear on the pages and follow-up.",
+        "No": "Understood - they stay off the pages.",
+        "Not sure": "Nothing is used until you say yes."
+      }
     },
     {
       "id": "design_style",
@@ -1099,6 +1287,11 @@
           "fresh",
           "human"
         ]
+      },
+      "choice_explanations": {
+        "A Block": "Rectangles and clean edges - structured and confident.",
+        "B Circle": "Rounded shapes - softer and friendlier.",
+        "C Hybrid": "A mix of both - balanced and flexible."
       }
     },
     {
@@ -1160,7 +1353,12 @@
       "required_by": [
         "83:image_provider",
         "49-launch:image_provider"
-      ]
+      ],
+      "choice_explanations": {
+        "My connected service": "The image service already connected to your account.",
+        "Recommend one": "I recommend one only after checking what is actually available.",
+        "No images needed": "The pages are built without generated pictures."
+      }
     },
     {
       "id": "image_cap",
@@ -1193,7 +1391,12 @@
       "legacy_ids": [],
       "required_by": [
         "71:image-cap"
-      ]
+      ],
+      "choice_explanations": {
+        "12": "A tight set - the essential pictures.",
+        "24": "A fuller set across the pages.",
+        "No pictures": "No generated pictures this launch."
+      }
     },
     {
       "id": "paid_render_approval",
@@ -1222,7 +1425,12 @@
       "legacy_ids": [
         "d5_budget"
       ],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "Yes, up to a limit I will give": "Paid pictures go ahead only within the limit you name - a separate OK from the plan.",
+        "No paid pieces": "Nothing paid is made.",
+        "Decide later": "No paid work happens until you decide."
+      }
     },
     {
       "id": "copy_profile",
@@ -1257,7 +1465,12 @@
       ],
       "required_by": [
         "83:copy_profile"
-      ]
+      ],
+      "choice_explanations": {
+        "Standard": "The standard page length - clear and focused.",
+        "Long-form": "The detailed version for a more considered purchase.",
+        "Not sure": "I recommend one based on your offer and buyers."
+      }
     },
     {
       "id": "location",
@@ -1286,12 +1499,17 @@
       "legacy_ids": [
         "d3_location"
       ],
-      "required_by": []
+      "required_by": [],
+      "choice_explanations": {
+        "Yes, my existing account": "Work happens inside the Convert & Flow account you already use.",
+        "A new one": "A new account is set up for this launch.",
+        "Not sure yet": "We can confirm this before anything is built."
+      }
     },
     {
       "id": "launch_calendar",
       "group": "launch",
-      "text": "When is your launch, and when do the doors open and close? Include your time zone.",
+      "text": "When is your launch or promotion, and when do the doors open and close? Include your time zone.",
       "why": "Every email, text and automation is timed from these moments, and I never invent a deadline.",
       "answer_type": "free_text",
       "choices": [],
@@ -1316,7 +1534,8 @@
         "timezone"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "area_id": "timing"
     },
     {
       "id": "channels",
@@ -1346,7 +1565,12 @@
         "channels"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "area_id": "channels",
+      "choice_explanations": {
+        "Email only": "Follow-up by email.",
+        "Email and text": "Follow-up by email and text message."
+      }
     },
     {
       "id": "conversation_ai",
@@ -1376,7 +1600,12 @@
         "conversation_ai"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "area_id": "conversation_ai",
+      "choice_explanations": {
+        "No, not this launch": "Replies are handled by you as usual.",
+        "Yes, add the bot": "A bot answers common replies while you stay in control."
+      }
     },
     {
       "id": "access_delivery",
@@ -1403,7 +1632,12 @@
         "delivery_bindings"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "area_id": "access_delivery",
+      "choice_explanations": {
+        "Yes, send access after purchase": "Buyers receive their log-in or access link automatically.",
+        "No, nothing to deliver": "Nothing digital to hand over after payment."
+      }
     },
     {
       "id": "payment_plans",
@@ -1429,7 +1663,12 @@
         "payment_plans"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "area_id": "payment_plans",
+      "choice_explanations": {
+        "Paid in full": "One payment.",
+        "Payment plans offered": "Buyers can spread the cost."
+      }
     },
     {
       "id": "sender_name",
@@ -1456,7 +1695,8 @@
         "sender"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "area_id": "sender_name"
     },
     {
       "id": "reply_to_email",
@@ -1482,13 +1722,14 @@
         "reply_to"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "area_id": "reply_email"
     },
     {
       "id": "a2p_ready",
       "group": "launch",
-      "text": "Is your A2P 10DLC registration approved for sending text messages?",
-      "why": "Texts cannot send until A2P is approved; without it every text stays a draft.",
+      "text": "Are you approved to send text messages to your list? (Phone carriers require a business texting registration; if you are not sure, I will help you find out.)",
+      "why": "Texts cannot send until this approval is in place; without it every text stays a draft.",
       "answer_type": "choice",
       "choices": [
         "Yes, it is approved",
@@ -1497,8 +1738,13 @@
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "A2P is the carrier registration that lets a business send text messages in the United States. Check your Convert & Flow or your SMS provider for its status. If it is not approved, I plan the texts as drafts and the package warns that they cannot send yet.",
-        "examples": []
+        "explain": "This is the registration phone carriers require before a business can text its list. If you do not know, that is fine - say the word and I will help you find out.",
+        "examples": [],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
       },
       "default": {
         "value": "No, not yet",
@@ -1512,7 +1758,12 @@
         "a2p_ready"
       ],
       "legacy_ids": [],
-      "required_by": []
+      "required_by": [],
+      "area_id": "texting_readiness",
+      "choice_explanations": {
+        "Yes, it is approved": "Texting can go live.",
+        "No, not yet": "Texts stay drafts until the approval lands."
+      }
     },
     {
       "id": "community_truth",
@@ -1568,7 +1819,148 @@
       "legacy_ids": [],
       "required_by": [
         "83:entitlement_attestation"
-      ]
+      ],
+      "choice_explanations": {
+        "Yes, it is included": "Covered by what you already have.",
+        "Please check for me": "I verify it against your account record before anything runs.",
+        "No": "This launch needs its own arrangement."
+      }
+    },
+    {
+      "id": "bf_promotion",
+      "group": "bf",
+      "text": "What is the heart of this promotion: a discount, a bonus on top, or a special bundle?",
+      "why": "Each can work in different circumstances; the plan confirms your choice before anything is built.",
+      "answer_type": "choice",
+      "choices": [
+        "A discount",
+        "A bonus",
+        "A special bundle"
+      ],
+      "choice_explanations": {
+        "A discount": "Lowers the price for the promotion window - right when buyers are ready and your numbers allow it.",
+        "A bonus": "Adds extra value at the same price - right when a price cut would cost too much.",
+        "A special bundle": "Combines things they usually buy separately - right when you have pieces that naturally go together."
+      },
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Tell me which fits your circumstances and why, or say what you have in mind in your own words. Nothing is invented and no pressure is added to the page.",
+        "examples": [],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "bf_promotion"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "bf_limitations",
+      "group": "bf",
+      "text": "What are the real limits on this promotion? For example how many you can serve, what is ready to deliver, or any date you cannot move.",
+      "why": "Only real limits go on the page. Urgency or scarcity is never invented.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "If there are no special limits, say so - that is a real answer. Only limits that are true of your business are used.",
+        "examples": [
+          "I can only take 20 new members at this price.",
+          "The bonus is ready now, but the main program starts in January."
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "bf_limitations"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "bf_buyers",
+      "group": "bf",
+      "text": "Is this promotion for people who already bought from you, for new buyers, or both?",
+      "why": "Who the promotion is for shapes the offer wording and the follow-up messages.",
+      "answer_type": "choice",
+      "choices": [
+        "People who already bought from me",
+        "New buyers",
+        "Both"
+      ],
+      "choice_explanations": {
+        "People who already bought from me": "A thank-you offer for loyal customers; the follow-up speaks to them as past buyers.",
+        "New buyers": "A welcome offer for first-time buyers; the follow-up introduces you properly.",
+        "Both": "Both groups can buy; each follow-up speaks to where they already are."
+      },
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "There is no wrong answer - it simply decides how the page and the follow-up speak to people.",
+        "examples": [],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "bf_buyers"
+      ],
+      "legacy_ids": [],
+      "required_by": []
+    },
+    {
+      "id": "bf_followup",
+      "group": "bf",
+      "text": "After someone buys in this promotion, what should happen next for them? Rough notes are fine.",
+      "why": "Buyers should know exactly what happens after they pay; your delivery answers are reused instead of asked again.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Think thank-you note, delivery details, anything they should watch for. We build on the delivery answers you already gave.",
+        "examples": [
+          "A thank-you email today and the access link straight away.",
+          "A short note about when their bonus arrives."
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "bf_followup"
+      ],
+      "legacy_ids": [],
+      "required_by": []
     },
     {
       "id": "plan_approval",

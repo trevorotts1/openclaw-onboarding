@@ -33,9 +33,52 @@ BANK_PATH = Path(__file__).with_name("question-bank.json")
 STATUSES = ("provided", "suggested", "default_to_confirm", "unknown")
 HELP_WORDS = {"help", "help me", "not sure", "not sure yet", "im not sure", "i am not sure", "i dont know", "idk",
               "unsure", "i have no idea", "no idea", "dont know", "im not sure, help me", "im not sure help me", "no clue"}
+# a short reply built from one of these phrases is a help request, never an answer
+HELP_PHRASES = re.compile(r"\b(?:not sure|no idea|no clue|don'?t know|dont know|idk|unsure|help me|need help)\b")
+_MAX_HELP_WORDS = 6  # longer replies are real answers that merely mention a phrase
 SENTINEL = "CLIENT_MUST_SUPPLY"  # the Skill 71 brand-file marker for "not supplied yet"
 ROLE_ORDER = ("primary", "secondary", "accent", "background", "text")
+# The eight launch-operation areas, at the ids the shared intake contract fixes. A bank
+# question may name its own "topic"; this map is the fallback so the ids always reach the
+# client surface and the ledger. Every one of these questions is conditional (never legacy).
+LAUNCH_TOPICS = {
+    "timing": "launch_calendar",
+    "channels": "channels",
+    "conversation_ai": "conversation_ai",
+    "access_delivery": "access_delivery",
+    "payment_plans": "payment_plans",
+    "sender_name": "sender_name",
+    "reply_email": "reply_to_email",
+    "texting_readiness": "a2p_ready",
+}
+_TOPIC_BY_QUESTION = {v: k for k, v in LAUNCH_TOPICS.items()}
+# The three assistance preferences the client may pick and change at any time.
+ASSISTANCE_MODES = {"choose_for_me": "A", "help": "B", "know": "C"}
+# interview_mode answers resolve from the bank's long-form A/B/C wording, a bare
+# A/B/C letter, or the older short phrases (kept as synonyms). None = the text names
+# no recognizable preference — free text or a help phrase — never a silent default.
+_MODE_LETTERS = {"a": "choose_for_me", "b": "help", "c": "know"}
+_MODE_PHRASES = (("recommend a plan", "choose_for_me"),
+                 ("guide me through", "help"),
+                 ("already have a plan", "know"),
+                 ("know what i want", "know"),
+                 ("help me choose", "help"),
+                 ("set it up for me", "choose_for_me"),
+                 ("choose a setup for me", "choose_for_me"))
 _BANK = None
+
+
+def _mode_from_answer(raw):
+    """interview_mode answer -> know/help/choose_for_me, or None when the text names
+    no recognizable preference (a help request or free text, handled by the caller)."""
+    n = _norm(raw)
+    letter = re.match(r"^\(?([abc])\)?[.:\s]*$", n)
+    if letter:
+        return _MODE_LETTERS[letter.group(1)]
+    for phrase, mode in _MODE_PHRASES:
+        if phrase in n:
+            return mode
+    return None
 
 
 def load_bank(path=None):
@@ -219,23 +262,57 @@ def applicable(doc, bank=None):
     return [q for q in (bank or load_bank())["questions"] if cond_met(doc, q["condition"])]
 
 
+def topics(doc, bank=None):
+    """The eight launch-operation areas keyed by their contract ids (timing, channels,
+    conversation_ai, access_delivery, payment_plans, sender_name, reply_email,
+    texting_readiness). Conditional: an area that does not apply to this run is marked so,
+    never asked."""
+    out = {}
+    for topic, qid in LAUNCH_TOPICS.items():
+        entry = get(doc, qid)
+        out[topic] = {"question_id": qid,
+                      "applicable": any(q["id"] == qid for q in applicable(doc, bank)),
+                      "state": ("answered" if entry and entry["status"] != "unknown"
+                                else "help_open" if entry else "unasked")}
+    return out
+
+
+def assistance_mode(doc):
+    """A (recommend a plan for me), B (guide me through each decision) or C (I already
+    have a plan). Read fresh on every call, so the client may change it mid-flow."""
+    e = get(doc, "interview_mode")
+    v = e["value"] if e is not None and e["status"] != "unknown" else None
+    if v is not None and v not in ASSISTANCE_MODES:
+        v = _mode_from_answer(v)   # long-form A/B/C wording or an older synonym
+    return ASSISTANCE_MODES.get(v, "B")
+
+
 # ---------------------------------------------------------------- asking
 def hydrate(doc, q):
-    """The question exactly as a client should see it (text filled in, dynamic choices resolved)."""
+    """The question exactly as a client should see it (text filled in, dynamic choices resolved).
+    Nested help.examples, default.value and every per-option explanation survive untouched."""
     q = json.loads(json.dumps(q))
+    q.setdefault("topic", _TOPIC_BY_QUESTION.get(q["id"]))
     if q.get("dynamic") == "colors":
         role = q["id"].split("_", 1)[1]
         pool = _colors(doc) if role == "primary" else _remaining(doc)
         q["text"] = q["text"].replace("{colors}", "(" + ", ".join(pool) + ")")
         q["choices"] = (pool + (["None"] if role == "accent" else []))[:3]
-    if q["id"] == "design_style":
+    if q["id"] == "design_style" and isinstance(q.get("help"), dict) and isinstance(q["help"].get("examples"), list):
         q["help"]["examples"] = q["help"]["examples"] + _style_links()
     return q
 
 
 def _style_links():
-    for base in Path(__file__).resolve().parents:
-        f = base / "71-blackceo-signature-page" / "references" / "design-styles.json"
+    """The design-style visual examples, wherever this distribution installs Skill 71."""
+    names = ("71-blackceo-signature-page", "blackceo-signature-page")  # repo tree vs skills tree
+    bases = [p / n for p in Path(__file__).resolve().parents for n in names]
+    home = Path.home()
+    for root in (home / ".openclaw" / "skills", home / ".claude" / "skills",
+                 home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")):
+        bases += [root / n for n in names]
+    for base in bases:
+        f = base / "references" / "design-styles.json"
         if f.is_file():
             try:
                 return [f"{s['id']} {s['name']} example: {s['example']['url']}" for s in json.loads(f.read_text())["styles"] if s["example"].get("url")]
@@ -254,14 +331,37 @@ def _askable(doc, q):
 
 
 def next_question(doc, bank=None):
+    """The ONE next applicable question. Mode A (choose_for_me) and C (know) propose the
+    safe defaults and ask only what is missing; mode B (help) walks every applicable
+    question. One question at a time — never the raw bank."""
+    mode = assistance_mode(doc)
+    if mode in ("A", "C"):
+        _default_the_rest(doc, bank)  # a proposal, every one flagged "to confirm"
     todo = [q for q in applicable(doc, bank) if _askable(doc, q)]
     if not todo:
         return None
     todo.sort(key=lambda q: not q["condition"].startswith("needs_role"))  # color-role follow-ups come right after the colors
     total = len(applicable(doc, bank))
+    b = bank or load_bank()
     h = hydrate(doc, todo[0])
-    h["help_label"] = (bank or load_bank())["help_label"]
-    h["progress"] = {"answered": total - len(todo), "of": total}
+    h["help_label"] = b["help_label"]
+    done = total - len(todo)
+    h["progress"] = {"answered": done, "of": total,
+                     "percent": (round(100 * done / total) if total else 100)}
+    meta = doc.setdefault("meta", {})
+    was = meta.get("estimate_of")
+    note = (f"about {total} short questions now, depending on what we already know "
+            f"(was {was}; your answers opened or closed follow-up questions)"
+            if was is not None and was != total else None)
+    template = b.get("question_estimate_template")
+    meta["estimate_of"] = total
+    h["estimate"] = {"questions": total, "note": note,
+                     "text": (template.replace("{n}", str(total)) if template
+                              else f"about {total} short questions, depending on what we already know")}
+    h["assistance_mode"] = mode
+    h["coaching"] = b.get("coaching")
+    if was is None:
+        h["introduction"] = b.get("introduction")  # flow opening, once
     return h
 
 
@@ -279,13 +379,19 @@ def next_batch(doc, limit=4, bank=None):
 
 # ---------------------------------------------------------------- recording
 def wants_help(q, value):
-    """True when the client says they do not know. 'Help me choose' is a real choice only for interview_mode."""
+    """True when the client says they do not know. A help request opens coaching and is
+    never recorded as a substantive answer. 'Help me choose' is a real choice only for interview_mode."""
     if not isinstance(value, str):
         return False
+    if value.strip() in ("?", "??", "???"):
+        return True
     n = _norm(value).replace("'", "")
-    if q["id"] == "interview_mode" and _pick(value, q["choices"]):
-        return False
-    return n in HELP_WORDS or n.startswith("help me") or any("not sure" in _norm(c) and _norm(c) == n for c in q["choices"])
+    if q["id"] == "interview_mode" and (_pick(value, q["choices"])
+                                        or _mode_from_answer(value)):
+        return False   # a real preference (bank wording, A/B/C letter or older synonym)
+    return (n in HELP_WORDS or n.startswith("help me")
+            or (len(n.split()) <= _MAX_HELP_WORDS and HELP_PHRASES.search(n) is not None)
+            or any("not sure" in _norm(c) and _norm(c) == n for c in q["choices"]))
 
 
 def _money(text):
@@ -322,7 +428,11 @@ def _normalize(doc, q, raw):
     low = _norm(text) if isinstance(text, str) else ""
     pick = _pick(text, ch) if isinstance(text, str) else None
     if qid == "interview_mode":
-        return ({"i know what i want": "know", "help me choose": "help", "set it up for me to review": "choose_for_me"}.get(_norm(pick or text), "help"), "provided", None)
+        raw_choice = pick or text
+        mode = ({"i know what i want": "know", "help me choose": "help",
+                 "set it up for me to review": "choose_for_me"}.get(_norm(raw_choice))
+                or _mode_from_answer(raw_choice) or "help")
+        return (mode, "provided", None)
     if qid == "design_style":
         m = re.match(r"^\(?([abc])\b", low) or re.search(r"\b(block|circle|hybrid)\b", low)
         if not m:
@@ -706,14 +816,20 @@ def check(doc, bank=None):
             "to_confirm": doc["to_confirm"], "warnings": r["warnings"] if r else []}
 
 
-def finalize(doc, bank=None):
-    """'Use sensible defaults for the rest': defaults every defaultable question still open, never the
-    never-default ones. Everything defaulted is listed in to_confirm."""
+def _default_the_rest(doc, bank=None):
+    """Apply every safe default still open, never the never-default ones. Each one is a
+    proposal flagged 'to confirm', listed with a one-line way to change it."""
     for _ in range(4):  # defaults can unlock follow-up questions (roles); settle them
         for q in applicable(doc, bank):
             e = get(doc, q["id"])
             if (e is None or e["status"] == "unknown") and not q["never_default"] and q["required"] != "optional" and q["default"] is not None:
                 apply_default(doc, q["id"])
+
+
+def finalize(doc, bank=None):
+    """'Use sensible defaults for the rest': defaults every defaultable question still open, never the
+    never-default ones. Everything defaulted is listed in to_confirm."""
+    _default_the_rest(doc, bank)
     return check(doc, bank)
 
 
