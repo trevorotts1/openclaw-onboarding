@@ -1,40 +1,47 @@
 {
   "schema": "blackceo.skill75.source-vector/v1",
   "pinned": true,
-  "pinned_at": "2026-10-22T22:44:47Z",
-  "pinned_by": "pr2414b (S75-WM vector pin micro-batch, post batch-6 main)",
-  "note": "ACCEPTED source vector. Every revision below was read live from its remote main with `git ls-remote <remote> refs/heads/main` at pinned_at, at the same moment. openclaw-onboarding = M2, the merge commit of batch-6 PR #2453.",
+  "pinned_at": "2026-10-23T03:10:22Z",
+  "pinned_by": "S75-VECTOR-lane (Skill 75 accepted source vector refresh, post batch-8d/batch-8e main)",
+  "note": "ACCEPTED source vector. Every revision below was read live from its remote main with `git ls-remote <remote> refs/heads/main` at pinned_at, at the same moment (one consecutive pass, all four reads returning inside 2026-10-23T03:10:22Z). openclaw-onboarding is M2 at 5b3fc3d2, the merge commit of batch-8d PR #2459, which merged the post-batch-8e main (#2460, A12 runtime-proof harness and A-row execution driver) and batch-8c (#2458); the landed acceptance harnesses therefore bind to the main they were merged into. 999-setup advanced to #282 (fix/skill75-parity) over #285; blackceo-command-center and blackceo-graphify-infrastructure are unchanged. This refresh was first taken at 21b17060 (post-batch-8e) but batch-8d and 999-setup #282 landed mid-flight, so the vector was re-read rather than left pinned to a superseded main. audited_baseline values are historical reference points and were deliberately left byte-identical.",
   "spec": "Skill_75_Universal_Repair_Spec_v1.1 section 3 (repository baselines) and section 15.2 / 16 (anonymous canaries, completion receipt)",
   "repositories": {
     "openclaw-onboarding": {
       "role": "canonical Skill 75 core + OpenClaw install/runtime integration",
-      "revision": "6f25359bbad593e981294d20a63c87267694429e",
+      "revision": "5b3fc3d2ec1814874e9aeb9fe15993219af91296",
       "audited_baseline": "18c510088cf4e2d94e188deedff380d42912637f",
       "merged_prs": [
-        "#2453 batch-6 (F12 motion gate fail-closed + H3 native-audio mixing policy)"
+        "#2453 batch-6 (F12 motion gate fail-closed + H3 native-audio mixing policy)",
+        "#2458 batch-8c",
+        "#2460 batch-8e (A12 runtime-proof harness + A-row execution driver)",
+        "#2459 batch-8d (D3 calibration, D3 spatial-motion, Skill 75 interrupt-state preservation)"
       ],
-      "note": "M2 = merge commit of PR #2453; this revision contains the batch-6 units S75-B6-MOTIONFIX and S75-B6-H3AUDIO."
+      "note": "M2 = merge commit of PR #2459 (batch-8d), which merged the post-batch-8e main (#2460) and therefore carries the A12 runtime-proof harness and A-row execution driver, plus #2458 (batch-8c) and batch-8d's D3-calibration, D3-spatial-motion and Skill 75 interrupt-state preservation units."
     },
     "999-setup": {
       "role": "Claude-Nine distribution, installed skill sync, helper pins, workflow guard + merge machinery",
-      "revision": "eac897e790201f1c1ed5d8fe9e34568e021f5151",
+      "revision": "89fd1995d191da98baaba69e639ac1fcf4f52e00",
       "audited_baseline": "35e54bbb9086478ab2e6c665cae95be70c54db08",
-      "merged_prs": [],
-      "note": "live origin/main at pinned_at; no merge between observation and pin."
+      "merged_prs": [
+        "#284 batch-8b-999 (999 twin: W10 canary harness, R89/B/A twins)",
+        "#285 batch-8d-999 (S75-999-provider-lookup test-honesty fix)",
+        "#282 fix/skill75-parity (Skill 75 parity repair, merged over #285)"
+      ],
+      "note": "live origin/main read at pinned_at; carries #282 (fix/skill75-parity) over #285 (batch-8d-999 provider-lookup test-honesty fix) and #284 (batch-8b-999 twin set including the W10 canary twin)."
     },
     "blackceo-command-center": {
       "role": "campaign/task transitions, evidence, approvals, media presentation, requester routing",
-      "revision": "6161cc04cf88e96557d7386ac97e4733065e9336",
+      "revision": "85c45eb745598ac41bff418080079688eb17ea28",
       "audited_baseline": "edc29a1dc9396cc15a8b71a0456f41732f705cba",
       "merged_prs": [],
-      "note": "live origin/main at pinned_at."
+      "note": "live origin/main read at pinned_at; revision unchanged across both passes today. No PR-level evidence collected, so merged_prs is left as found."
     },
     "blackceo-graphify-infrastructure": {
       "role": "structural/semantic refresh, cross-repository dependency knowledge, coherent source revisions",
       "revision": "6fa4f6ef225a4fa134bb2f76abb229c85b0b19c4",
       "audited_baseline": "b441ff39d715a8d3e2ca69bcf563076aae9d0ee8",
       "merged_prs": [],
-      "note": "live origin/main at pinned_at; the engine revision that performs the final refresh."
+      "note": "live origin/main read at pinned_at; engine revision unchanged across both passes today."
     }
   },
   "distribution_manifest_hashes": {
