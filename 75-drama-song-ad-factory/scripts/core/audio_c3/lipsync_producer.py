@@ -205,22 +205,19 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
     _need(not ({"model", "request", "save_dir", "run_id"} & set(dispatch_kwargs)),
           "LIPSYNC_PROVIDER_MAPPING_MISSING", "dispatcher identity cannot be overridden")
     def run(request):
-        receipt = _card_receipt(root)      # THIS run's own context; never synthesized
-        dispatch = dispatch_fn
-        if dispatch is None:
-            from kie_dispatch.kie_dispatch import dispatch
-            # ponytail: the hold is scoped to the real paid route. An injected
-            # dispatch_fn is an offline test double that never reaches a
-            # provider, so it carries no paid operation to hold. If a real
-            # adapter is ever passed here, gate it the same way.
-            _need(isinstance(receipt, dict), "LIPSYNC_CARD_APPROVAL_MISSING",
-                  "the run's recorded choice-card receipt is required before any paid separation job: "
-                  "record all four card answers (video style, audio style, length, video model) in this run first")
-            from style_defaults.card_gate import gate_run_state
-            answered, refusal = gate_run_state(receipt)
-            _need(answered, "LIPSYNC_CARD_APPROVAL_INVALID",
-                  "the run's choice-card receipt does not satisfy the paid-job gate: missing "
-                  + ", ".join((refusal or {}).get("missing") or []))
+        # F15: this run's own recorded card receipt is required on EVERY
+        # dispatch path, injected dispatcher or not -- the gate never depends
+        # on which callable is handed in. Read from this run only; never
+        # synthesized, never borrowed from another run.
+        receipt = _card_receipt(root)
+        _need(isinstance(receipt, dict), "LIPSYNC_CARD_APPROVAL_MISSING",
+              "the run's recorded choice-card receipt is required before any paid separation job: "
+              "record all four card answers (video style, audio style, length, video model) in this run first")
+        from style_defaults.card_gate import gate_run_state
+        answered, refusal = gate_run_state(receipt)
+        _need(answered, "LIPSYNC_CARD_APPROVAL_INVALID",
+              "the run's choice-card receipt does not satisfy the paid-job gate: missing "
+              + ", ".join((refusal or {}).get("missing") or []))
         source = _path(root, request["source_path"])
         digest = _sha(source)
         _need(digest == request["source_sha256"], "LIPSYNC_SOURCE_CHANGED", "selected source changed")
@@ -239,6 +236,9 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
         with upload.open("x", encoding="utf-8") as f:
             json.dump({"path": str(source), "sha256": digest, "url": url}, f)
         inp = {"audio_url": url, "type": "separate_vocal", "stem_name": "Lead Vocal"}
+        dispatch = dispatch_fn
+        if dispatch is None:
+            from kie_dispatch.kie_dispatch import dispatch
         payload = {"model": MODEL, "input": inp, "run_dir": str(root)}
         if isinstance(receipt, dict):
             payload["card_receipt"] = receipt
