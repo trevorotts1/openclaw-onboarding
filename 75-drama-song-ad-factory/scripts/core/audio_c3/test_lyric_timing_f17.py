@@ -87,6 +87,8 @@ def test_tier1_returns_suno_alignment_no_local_loads():
           "no dispatch call recorded")
     check("tier1 provider suno",
           t["transcription_provider"] == "suno (KIE timeStamped-lyrics)")
+    check("tier1 fallback_used is False", t["fallback_used"] is False,
+          t.get("fallback_used"))
 
 
 def test_tier1_hint_skips_dispatch():
@@ -99,6 +101,9 @@ def test_tier1_hint_skips_dispatch():
           "suno-timestamped-lyrics")
     check("tier1 hint zero loads",
           got["timings"]["local_model_loads"] == 0)
+    check("tier1 hint fallback_used is False",
+          got["timings"]["fallback_used"] is False,
+          got["timings"].get("fallback_used"))
 
 
 def test_tier1_words_shape_exact():
@@ -174,6 +179,8 @@ def test_tier2_forced_failure_exactly_one_load_multi_track():
     check("tier2 words present",
           [w["word"] for w in t["words"]] == ["power", "in", "the", "climb"])
     check("tier2 local_model_loads receipt = 1", t["local_model_loads"] == 1)
+    check("tier2 fallback_used is True", t["fallback_used"] is True,
+          t.get("fallback_used"))
     check("tier2 small default",
           counter["sizes"] == [("small", "int8")], counter["sizes"])
     check("tier2 provider faster-whisper",
@@ -242,6 +249,8 @@ def test_tier3_fires_only_after_both_fail_and_cites_client_key():
     check("tier3 cites the CLIENT key env",
           got["timings"]["evidence"]["stt_key_env"] ==
           "DRAMA75_CLOUD_STT_API_KEY")
+    check("tier3 fallback_used is True", got["timings"]["fallback_used"] is True,
+          got["timings"].get("fallback_used"))
 
 
 def test_tier3_no_cloud_wired_reports_chain():
@@ -292,6 +301,8 @@ def test_tier3_word_timestamps_from_provider():
     check("tier3 provider words", got["words"] ==
           [{"word": "cloud", "start": 1.0, "end": 1.5}])
     check("tier3 receipt zero local loads", got["local_model_loads"] == 0)
+    check("tier3 fallback_used is True", got["fallback_used"] is True,
+          got.get("fallback_used"))
 
 
 # ── 4. Part D load guard ─────────────────────────────────────────────────────
