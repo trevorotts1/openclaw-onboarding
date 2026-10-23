@@ -1,14 +1,14 @@
 {
   "schema": "blackceo.skill75.source-vector/v1",
   "pinned": true,
-  "pinned_at": "2026-10-23T03:10:22Z",
-  "pinned_by": "S75-VECTOR-lane (Skill 75 accepted source vector refresh, post batch-8d/batch-8e main)",
+  "pinned_at": "2026-10-23T04:41:10Z",
+  "pinned_by": "S75-FINISH-MERGE (pin refreshed after batch-8g #2463 and batch-8h #2464)",
   "note": "ACCEPTED source vector. Every revision below was read live from its remote main with `git ls-remote <remote> refs/heads/main` at pinned_at, at the same moment (one consecutive pass, all four reads returning inside 2026-10-23T03:10:22Z). openclaw-onboarding is M2 at 5b3fc3d2, the merge commit of batch-8d PR #2459, which merged the post-batch-8e main (#2460, A12 runtime-proof harness and A-row execution driver) and batch-8c (#2458); the landed acceptance harnesses therefore bind to the main they were merged into. 999-setup advanced to #282 (fix/skill75-parity) over #285; blackceo-command-center and blackceo-graphify-infrastructure are unchanged. This refresh was first taken at 21b17060 (post-batch-8e) but batch-8d and 999-setup #282 landed mid-flight, so the vector was re-read rather than left pinned to a superseded main. audited_baseline values are historical reference points and were deliberately left byte-identical.",
   "spec": "Skill_75_Universal_Repair_Spec_v1.1 section 3 (repository baselines) and section 15.2 / 16 (anonymous canaries, completion receipt)",
   "repositories": {
     "openclaw-onboarding": {
       "role": "canonical Skill 75 core + OpenClaw install/runtime integration",
-      "revision": "5b3fc3d2ec1814874e9aeb9fe15993219af91296",
+      "revision": "d9c4220dd7f6e5bf17d43f3c247ec013d3208cfb",
       "audited_baseline": "18c510088cf4e2d94e188deedff380d42912637f",
       "merged_prs": [
         "#2453 batch-6 (F12 motion gate fail-closed + H3 native-audio mixing policy)",
@@ -16,7 +16,7 @@
         "#2460 batch-8e (A12 runtime-proof harness + A-row execution driver)",
         "#2459 batch-8d (D3 calibration, D3 spatial-motion, Skill 75 interrupt-state preservation)"
       ],
-      "note": "M2 = merge commit of PR #2459 (batch-8d), which merged the post-batch-8e main (#2460) and therefore carries the A12 runtime-proof harness and A-row execution driver, plus #2458 (batch-8c) and batch-8d's D3-calibration, D3-spatial-motion and Skill 75 interrupt-state preservation units."
+      "note": "M2 = merge commit of PR #2464 (batch-8h), which follows #2463 (batch-8g). Carries the A12 loaded-source proof (the row now imports the installed module and hashes the bytes actually loaded, refusing a planted .pyc) and the A08 runner fixes (both --repo-root values passed, child output streamed to a sandbox log with a start line and 15 s progress ticks, timeout naming the command). Both batches touch tests/w10-canary, so this pin must name the commit after them - that is the whole reason for a refresh."
     },
     "999-setup": {
       "role": "Claude-Nine distribution, installed skill sync, helper pins, workflow guard + merge machinery",
