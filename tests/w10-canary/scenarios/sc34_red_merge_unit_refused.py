@@ -77,7 +77,14 @@ def resolve_tools(args):
     cands = []
     env = os.environ.get("SPEC_PROTOCOL_TOOLS_ROOT")
     if env:
-        cands.append(Path(env).expanduser())
+        # Same authority rule as the flag: a named tools root without the
+        # expected script must refuse rather than fall through.
+        named_env = Path(env).expanduser()
+        if not (named_env / "merge-train.sh").is_file():
+            print("TOOLING: SPEC_PROTOCOL_TOOLS_ROOT=%s contains no merge-train.sh; "
+                  "refusing to fall back to a different copy" % named_env)
+            raise SystemExit(2)
+        cands.append(named_env)
     cands.append(_real_home() / TOOLS_REL)
     cands.append(Path(args.tree) / TOOLS_REL)
     for c in cands:

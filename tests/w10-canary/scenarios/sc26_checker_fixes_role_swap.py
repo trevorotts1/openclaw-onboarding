@@ -44,6 +44,16 @@ GUARD_REL = Path(".claude/skills/hook-skill/hooks/workflow-guard")
 
 
 def _real_home():
+    """The OPERATOR's home, deliberately not $HOME.
+
+    These rows judge a workflow guard that is INSTALLED on the box, so they
+    must find the real install even when the harness is run with a throwaway
+    HOME for isolation. Reading $HOME here would make the default candidates
+    vanish under `HOME=$(mktemp -d)` and turn a missing dependency into a
+    confusing tooling error. Consequence, stated plainly: a fresh-HOME run
+    still binds the operator's installed guard; it is NOT isolated from it.
+    Pass the root explicitly to pin a revision.
+    """
     try:
         import pwd
         return Path(pwd.getpwuid(os.getuid()).pw_dir)
@@ -74,7 +84,15 @@ def resolve_guard(args):
     cands = []
     env = os.environ.get("WORKFLOW_GUARD_ROOT")
     if env:
-        cands.append(Path(env).expanduser())
+        # The env var is as authoritative as the flag: a named root that does
+        # not hold guard.py must refuse, not silently fall through to an
+        # installed copy the operator did not name.
+        named_env = Path(env).expanduser()
+        if not (named_env / "guard.py").is_file():
+            print("TOOLING: WORKFLOW_GUARD_ROOT=%s contains no guard.py; "
+                  "refusing to fall back to a different guard" % named_env)
+            raise SystemExit(2)
+        cands.append(named_env)
     cands += DEFAULT_GUARDS
     for c in cands:
         if (c / "guard.py").is_file():
