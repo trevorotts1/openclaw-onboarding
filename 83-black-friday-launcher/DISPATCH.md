@@ -47,13 +47,29 @@ count, the same as Skill 49's own `auto`) is passed to Skill 49's dispatch when
 that dispatcher has a `parallel` argument; if it does not yet, the report says `serial (...)` instead of
 claiming parallel. The plan is always reported: `dispatch-report.json` -> `lane_plan`.
 
-## The picture choices (the client's questions)
+## The client's questions (the guided interview)
 
-The intake carries an optional `image_plan`. `python3 -m launcher_core.cli questions` prints the three
-questions (look A/B/C, image service, picture ceiling) as data: plain text, why we ask, at most three choices
-plus "I'm not sure, help me", the help text, the safe default and its flag. A harness asks them its own way
-(a structured picker in Claude Code or claude-nine, a numbered chat message in OpenClaw) and records the same
-answers in `image_plan`.
+The client interview runs on the shared guided intake (`shared-utils/client_intake/`, the same
+question bank and answers file every harness uses) in Black Friday mode. `python3 -m
+launcher_core.cli questions --answers answers.json` prints the ONE next applicable question as
+data — plain text, why we ask, at most three choices plus "I'm not sure, help me", every
+per-option explanation, nested help examples, the safe default and its flag — and the run's
+computed length estimate over the applicable questions only. One question at a time, never a
+batch, never the raw bank.
+
+The seasonal questions come first and are part of this same interview: promotion dates, the
+offer (any discount or bonus), real limitations, existing vs new buyers, and delivery and
+follow-up. The three picture questions (look A/B/C, image service, picture ceiling) are part
+of it too — they are not the whole interview. The client's assistance preference (A "set it up
+for me to review", B "help me choose", C "I know what I want") is asked first and can change
+mid-flow. "I don't know" is a help request: it opens coaching and is never recorded as an
+answer. A harness asks each question its own way (a structured picker in Claude Code or
+claude-nine, a numbered chat message in OpenClaw) and records the same answers in the one
+answers file; the intake's recorded picture choices land in `image_plan`. Copy never invents
+urgency or scarcity — real dates and real limits only.
+
+The intake carries an optional `image_plan`; its shape check and resolution (defaults, the
+never-default money and ownership rules) are unchanged below.
 
 | Choice | If the client does not know | Never defaulted |
 | --- | --- | --- |

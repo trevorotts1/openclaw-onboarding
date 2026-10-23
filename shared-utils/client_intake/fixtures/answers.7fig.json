@@ -282,6 +282,16 @@
       "value": "Yes, it is approved",
       "status": "provided",
       "source": "client"
+    },
+    "business_outcome": {
+      "value": "Fill the next cohort of my seven-figure program before December.",
+      "status": "provided",
+      "source": "client"
+    },
+    "difficulty": {
+      "value": "People read the sales page but do not buy.",
+      "status": "provided",
+      "source": "client"
     }
   },
   "to_confirm": [
