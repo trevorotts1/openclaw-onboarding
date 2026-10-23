@@ -19,7 +19,7 @@ import json
 import os
 import sys
 
-CLASSIFIER_VERSION = "1.0.0"
+CLASSIFIER_VERSION = "1.1.0"
 INPUT_SCHEMA = "s75.recovery.project/v1"
 OUTPUT_SCHEMA = "s75.recovery.classification/v1"
 JOURNAL_SCHEMA = "s75.recovery.journal/v1"
@@ -131,19 +131,24 @@ class Journal:
             handle.write("\n")
         os.replace(tmp, self.path)
 
+    def _key(self, input_digest, step):
+        # Version-scoped: a behaviour change must never reuse an older cached
+        # step result for the same input.
+        return "%s:%s:%s" % (CLASSIFIER_VERSION, input_digest, step)
+
     def get(self, input_digest, step):
-        entry = self._records.get("%s:%s" % (input_digest, step))
+        entry = self._records.get(self._key(input_digest, step))
         return entry.get("result") if isinstance(entry, dict) else None
 
     def record(self, input_digest, step, result):
-        key = "%s:%s" % (input_digest, step)
-        self._records[key] = {"step": step, "input_digest": input_digest,
-                              "result": result}
+        self._records[self._key(input_digest, step)] = {
+            "step": step, "input_digest": input_digest,
+            "classifier_version": CLASSIFIER_VERSION, "result": result}
         self._flush()
         return result
 
     def step(self, input_digest, name, compute):
-        key = "%s:%s" % (input_digest, name)
+        key = self._key(input_digest, name)
         if key in self._records:
             self.cache_hits += 1
             return self._records[key]["result"]
@@ -327,16 +332,26 @@ def _reconstruction():
             "is_receipt": False}
 
 
-def build_stage_view(project, source_path, evidence_ids):
-    """Facts about recorded stages, each carrying a source reference."""
+def build_stage_view(project, source_path, evidence_states):
+    """Facts about recorded stages, each carrying a source reference.
+
+    A stage is only treated as verified when its evidence reference resolves to
+    VERIFIED evidence. Recorded-but-unverified stages stay in the plan as SKIP
+    (never redo paid work) but raise a recovery gap, so they can never make a
+    project RESUMABLE by assumption.
+    """
     facts, resume_plan, gaps = [], [], []
+    done = 0
     for index, stage in enumerate(project.get("stages", [])):
         sid = stage["stage_id"]
         state = stage["state"]
         paid = bool(stage.get("paid", False))
         evidence_ref = stage.get("evidence_ref")
         if state == "done":
-            if isinstance(evidence_ref, str) and evidence_ref in evidence_ids:
+            done += 1
+            verified = (isinstance(evidence_ref, str)
+                        and evidence_states.get(evidence_ref) == "verified")
+            if verified:
                 source_ref = {"kind": "evidence", "evidence_id": evidence_ref}
             else:
                 source_ref = {"kind": "project-state",
@@ -350,7 +365,10 @@ def build_stage_view(project, source_path, evidence_ids):
             })
             resume_plan.append({"stage_id": sid, "action": "SKIP",
                                 "reason": "ALREADY_RECORDED_DONE",
-                                "paid": paid})
+                                "paid": paid,
+                                "verified": verified})
+            if not verified:
+                gaps.append("stage_unverified:%s" % sid)
         else:
             if paid:
                 gaps.append("paid_stage_incomplete:%s" % sid)
@@ -364,6 +382,8 @@ def build_stage_view(project, source_path, evidence_ids):
                 resume_plan.append({"stage_id": sid, "action": "RESUME",
                                     "reason": "STAGE_INCOMPLETE",
                                     "paid": False})
+    if not project.get("evidence") and not done:
+        gaps.append("no_evidence_records")
     return facts, resume_plan, gaps
 
 
@@ -395,7 +415,7 @@ def classify(project, *, source_path=None, journal_path=None, journal=None,
             key=lambda entry: entry["evidence_id"])])
     approvals = journal.step(digest, "check_approvals",
                              lambda: check_approvals(project))
-    evidence_ids = {e["evidence_id"] for e in project.get("evidence", [])}
+    evidence_ids = {e["evidence_id"]: e["state"] for e in evidence}
 
     def _stage_view():
         facts, plan, gaps = build_stage_view(project, source_path, evidence_ids)

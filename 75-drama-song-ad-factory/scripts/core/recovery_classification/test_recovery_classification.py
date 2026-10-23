@@ -190,14 +190,38 @@ def case_schema_refusal(tmp):
         raise AssertionError("unsupported schema must be refused, not guessed")
 
 
+def case_absent_evidence_not_resumable(tmp):
+    project = {"schema": C.INPUT_SCHEMA, "project_id": "hist-empty",
+               "requires_approvals": [], "approvals": [],
+               "evidence": [], "stages": []}
+    source = _write(tmp, "empty.json", project)
+    out = C.classify(C.load_project(source), source_path=source)
+    assert out["state"] == C.RECOVERABLE, out
+    assert "no_evidence_records" in out["reasons"], out
+
+    project = {"schema": C.INPUT_SCHEMA, "project_id": "hist-unverified",
+               "requires_approvals": [], "approvals": [],
+               "evidence": [{"evidence_id": "state-01",
+                             "kind": "project_state",
+                             "source_ref": "cc://run/5/state.json"}],
+               "stages": [{"stage_id": "clips", "state": "done",
+                           "paid": True, "evidence_ref": "state-01"}]}
+    source = _write(tmp, "unverified.json", project)
+    out = C.classify(C.load_project(source), source_path=source)
+    assert out["state"] == C.RECOVERABLE, out
+    assert "stage_unverified:clips" in out["reasons"], out
+    assert out["resume_plan"][0]["action"] == "SKIP", out
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="recovery-classification-") as tmp:
         for case in (case_resumable, case_recoverable,
                      case_blocked_missing_approval, case_blocked_provenance,
-                     case_idempotent, case_schema_refusal):
+                     case_absent_evidence_not_resumable, case_idempotent,
+                     case_schema_refusal):
             case(tmp)
             print("PASS %s" % case.__name__)
-    print("OK recovery_classification self-check: 6 cases")
+    print("OK recovery_classification self-check: 7 cases")
     return 0
 
 
@@ -215,6 +239,10 @@ def test_blocked_missing_approval(tmp_path):
 
 def test_blocked_provenance(tmp_path):
     case_blocked_provenance(str(tmp_path))
+
+
+def test_absent_evidence_not_resumable(tmp_path):
+    case_absent_evidence_not_resumable(str(tmp_path))
 
 
 def test_idempotent(tmp_path):
