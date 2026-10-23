@@ -29,6 +29,21 @@ def test_clip_over_6_s_is_refused_loudly():
     assert spec(15, 1)[1] == "LIPSYNC_CLIP_OVER_CAP"   # one long 15 s job
 
 
+def test_percent_maximum_and_duration_conflict():
+    LC = P.lipsync_clips
+    ok = {"seconds": 21, "lines": 4}                 # 60 s: exactly 35%
+    assert P._lip_sync_duration_guard(ok, {"length_seconds": 60}) is None
+    over = P._lip_sync_duration_guard({"seconds": 24, "lines": 4},
+                                      {"length_seconds": 60})
+    assert over and over.startswith(LC.OVER_CAP), over
+    # 30 s: the 12 s (3 x 4 s) floor cannot fit inside the 10.5 s maximum.
+    conf = P._lip_sync_duration_guard({"seconds": 9, "lines": 2},
+                                      {"length_seconds": 30})
+    assert conf and conf.startswith(LC.DURATION_CONFLICT), conf
+    # No length on the card: nothing to judge, nothing invented.
+    assert P._lip_sync_duration_guard(ok, {}) is None
+
+
 if __name__ == "__main__":
     for n, f in sorted(globals().items()):
         if n.startswith("test_"):
