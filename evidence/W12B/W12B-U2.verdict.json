@@ -1,0 +1,48 @@
+{
+  "verdict": "FAIL",
+  "unit_id": "W12B-U2",
+  "role": "focused changed-risk reviewer, merged cohort 2 (20 units)",
+  "reviewed_commit": "d430a4d74976111d3c94eb72c0e5d5872ccb88e3",
+  "reviewer_model": "openrouter/xiaomi/mimo-v2.6-pro",
+  "branch": "w12b-u2/cohort2-review",
+  "review_artifact": "integrations/CHANGED-RISK-REVIEW.md (COHORT 2 SECTION)",
+  "merge_proof": "22/22 ancestors of origin/main d430a4d74976111d3c94eb72c0e5d5872ccb88e3 (20 unit heads per integrations/BATCH-MERGE-LOG.md + train fold 7e0bdfec7 + member-PR head 76692f205), git merge-base --is-ancestor exit 0 each",
+  "findings": [
+    {
+      "id": "F1",
+      "unit": "W8D-U1",
+      "file": "shared-utils/ghl/products_prices.py",
+      "lines": "410-415 (function _call, 398-419)",
+      "class": "silent retry after an uncertain write",
+      "scenario": "POST /products/ returns 503 after the platform applied the create; _call (`if resp.status == 429 or resp.status >= 500:` -> backoff -> continue) blindly re-POSTs up to max_attempts with NO reconcile; a duplicate product is created; ensure_product readback-verifies and persists only the second response's _id (449-455) and the first product persists silently as a duplicate. Same duplication for create_price. The module's own docstring claims 'Timeout/uncertain outcome is reconciled before any retry' and reconciles only TransportTimeout (444-447, 513-516); recipe_transport.py classify marks 5xx-on-write UNCERTAIN ('a blind retry of an uncertain mutation never happens') and capability_inventory.CONTRACTS['uncertain_outcome'] requires reconcile BEFORE retry. 429 is safe-retryable; 5xx-on-write is not."
+    },
+    {
+      "id": "F2",
+      "unit": "W8D-U1",
+      "file": "shared-utils/ghl/products_prices.py",
+      "lines": "538-539 (trialPeriod write in _price_payload); 542-570 (_read_price); 561-570 (NativePrice(trial_days=spec.trial_days))",
+      "class": "required/hidden field state written but not read back (accurate terms)",
+      "scenario": "A trial_then_recurring price is created with trialPeriod=7; the platform drops or drifts the trial (trialPeriod=0/absent on GET); _read_price checks only _id, product, amount, currency, type and recurring.interval - never trialPeriod, never intervalCount - so readback passes and the record is returned as 'verified'; NativePrice is constructed with trial_days=spec.trial_days, echoing the REQUEST as verified state; as_price_ref_fields() then hands W8C a 7-day trial the platform will not honor - wrong terms disclosed at checkout. Contradicts the module's own claim ('verify every create ... against authoritative GET/read state; a mismatch is a failure') and spec gap 2 ('set AND read back - never blind-toggle') / Commerce 'accurate terms'."
+    }
+  ],
+  "classes_no_finding": [
+    "create-without-read-before-create",
+    "name-only identity matching",
+    "publishing without explicit approval",
+    "treating a save as a publish",
+    "picking an arbitrary browser tab",
+    "claiming a platform capability that is not verified"
+  ],
+  "classes_hold_with_evidence": {
+    "create-without-read-before-create": "W4A plan_create/record_create; W6A list-before-create + post-create reconcile; W5A reconcile-against-verified-listings; W8D store-first + list-reconcile on timeout (adopt one, refuse 2+, recreate on zero)",
+    "name-only identity matching": "W4A composite (location,kind,parent,logical) keys, find_by_name diagnostic with ambiguity refusal; W1A logical_id identity; W1C duplicate/unknown rejection; W6A/W5A unique-name reuse refuses >1 and prefers stored identity",
+    "publishing without explicit approval": "W7C Approval names every target; out-of-scope target/domain/version refuses WHOLE request before any platform call; capture ops require test_location + temporary_objects",
+    "treating a save as a publish": "W7C CONFIGURED-only + record_publish-only + mandatory real-URL readback (publish-return never used as URL); W4A set_state refuses PUBLISHED; W4B evidence-kind chains; W5A refuses W7-owned states",
+    "picking an arbitrary browser tab": "W3B select_tab refuses empty spec / zero / ambiguous with no first-tab fallback; select_frame refuses unqualified picks; guarded_resolve order target->capability->fresh-frame->frame; W3A one-writer lease with PID+start-time ownership (spec gap 3 closed)",
+    "claiming a platform capability that is not verified": "W2A RETIRED/UNVERIFIED never routable, products family INCOMPLETE 'never as done' with provenance; W2-U1 registrations computed from frozen rows + W2A grants (LIVE_PROOF_PENDING, restricted families forced INCOMPLETE); W8B unknown capability never assumed; W9A unsupported surface ops refused by name; W8D binding refused without component IO"
+  },
+  "required_hidden_field_class": "W6A/W6B hold exactly (set AND read back both directions, bounded retry, mismatch -> ReadbackMismatch/INCOMPLETE, negative controls); F2 is the same class pattern in W8D commerce terms",
+  "completion_evidence": "reused TASK-LEDGER.md 2026-10-23T21:47Z integrator record: all 20 unit self-checks re-proven on the train tree (W2A/W1A/W1C PASS, W3A 8, W3B 20, W3C 8 pytest, W4A 54, W4B 28, W7B 40, W5A, W2-U1 53, W2-U2, W8B 40, W8D 34, W6C 28, W6A 40, W6B 29, W9A 70, W9B 64, W7C), py_compile 23/23 exit 0, batch-prep.sh --check exit 0; NOT re-executed by this reviewer per owner order ('changed-risk reading, not re-execution'); merge ancestry and both defect paths proven independently against the merged tree",
+  "observations_non_blocking": "O1 capability_inventory dynamic_confirmed cannot route DISCOVERABLE entries (fail-closed); O2 publishing.py backend.publish() return ignored + exception path does not distinguish uncertain failure; O3 iframe_router frame_epoch=None bypasses fresh-frame check (documented); O4 products family INCOMPLETE (W2A/W2-U1) vs W8D spec-cited routes (integration seam, both honest); O5 products_prices ignores Retry-After and caps backoff locally at 8s; O6 W7C/W3C self-check scratch dirs left behind; O7 W8D cross-run no-duplicate depends on W4A durable-store wiring (documented seam)",
+  "notes": "Repair is a separate owned unit (W8D-U1 writer); this reviewer changed no product code. Repair target: route 5xx-on-write through the module's own reconcile-before-retry path (F1) and read trialPeriod/intervalCount back into NativePrice or refuse them as unverified (F2)."
+}
