@@ -17,6 +17,11 @@ Authority rules:
 - BEFORE remote task IDs exist, recovery only BLOCKS; it never auto-resubmits
   (crash-before-dispatch vs crash-after-accept are indistinguishable locally,
   so both wait for provider records or operator evidence).
+- Historical runs gain a recovery_classification state (RESUMABLE /
+  RECOVERABLE / BLOCKED) when project evidence is supplied. The classification
+  is a decision aid: it never resumes, re-dispatches, re-renders or spends.
+  Without project evidence the run is reported UNCLASSIFIED, never assumed
+  resumable.
 """
 import argparse
 import json
@@ -24,14 +29,26 @@ import os
 import sqlite3
 import sys
 
+import recovery_classification as RC
 import spend_ledger as L
 from functools import partial as _partial
 
 TOOL_NAME = "job_recovery"
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.1.0"
 _env = _partial(L.envelope, tool=TOOL_NAME)
 TERMINAL = ("succeeded", "failed")
 PROGRESS = ("accepted", "progress", "in_progress", "pending")
+
+RECOVERY_GATE = {
+    RC.RESUMABLE: ("RESUME_ALLOWED",
+                   "existing evidence verified; recovery still never dispatches"),
+    RC.RECOVERABLE: ("RESUME_EXISTING_ONLY",
+                     "resume from preserved artifacts; never regenerate paid work"),
+    RC.BLOCKED: ("HOLD",
+                 "resolve the named classification gap before any resume"),
+    None: ("UNCLASSIFIED",
+           "supply project evidence; resumability is never assumed"),
+}
 
 
 def _open_ro(db_path):
@@ -206,20 +223,39 @@ def record_result(db_path, run_id, logical_key, attempt_id, artifact_path,
         conn.close()
 
 
-def recover(db_path, run_id):
-    """Read-only recovery plan. Writes nothing (mode=ro); never resubmits."""
+def recover(db_path, run_id, project_path=None, journal_path=None, project=None):
+    """Read-only recovery plan. Writes nothing (mode=ro); never resubmits.
+
+    Optional project evidence adds a classification (RESUMABLE / RECOVERABLE /
+    BLOCKED). Classification only reads: it cannot dispatch, re-render, spend,
+    approve or regenerate. If evidence was not supplied the run is reported
+    UNCLASSIFIED -- never assumed resumable.
+    """
+    classification, classify_reason = _classify_project(
+        project=project, project_path=project_path, journal_path=journal_path)
+    gate, gate_note = RECOVERY_GATE[classification["state"]
+                                    if classification else None]
+
     try:
         conn = _open_ro(db_path)
     except L.LedgerError as e:
         return _env("recover", "error", str(e).split(":")[0],
                           "enter verified recovery; spending stopped",
-                          run_id=run_id)
+                          run_id=run_id,
+                          evidence={"classification": classification,
+                                    "classification_reason": classify_reason,
+                                    "recovery_gate": {"state": gate,
+                                                      "note": gate_note}})
     try:
         run = conn.execute("SELECT status,version FROM runs WHERE run_id=?",
                            (run_id,)).fetchone()
         if not run:
             return _env("recover", "error", "NO_SUCH_RUN", "",
-                              run_id=run_id)
+                              run_id=run_id,
+                              evidence={"classification": classification,
+                                        "classification_reason": classify_reason,
+                                        "recovery_gate": {"state": gate,
+                                                          "note": gate_note}})
         plan = []
         for key, att, state, remote, est, seq in conn.execute(
                 "SELECT logical_key,attempt_id,state,remote_task_id,"
@@ -248,10 +284,49 @@ def recover(db_path, run_id):
                                      "resubmitting" % remote})
         return _env("recover", "ok", "OK",
                           "resume from last incomplete stage; no job re-dispatched",
-                          run_id=run_id, evidence={"jobs": plan},
+                          run_id=run_id,
+                          evidence={"jobs": plan,
+                                    "classification": classification,
+                                    "classification_reason": classify_reason,
+                                    "recovery_gate": {"state": gate,
+                                                      "note": gate_note}},
                           state_version=run[1])
     finally:
         conn.close()
+
+
+def _classify_project(project=None, project_path=None, journal_path=None):
+    """Classify historical evidence, fail-closed on anything unreadable.
+
+    Returns (classification_or_None, reason_code). Never raises: an
+    uninterpretable project is reported BLOCKED, not optimistically passed.
+    """
+    if project is None and not project_path:
+        return None, "NO_PROJECT_EVIDENCE_SUPPLIED"
+    try:
+        if project is None:
+            project = RC.load_project(project_path)
+        return RC.classify(project, source_path=project_path,
+                           journal_path=journal_path), "OK"
+    except RC.RecoveryError as exc:
+        code = getattr(exc, "code", "UNINTERPRETABLE_PROJECT")
+        return _held_classification(code, project_path, str(exc)), code
+    except (OSError, ValueError) as exc:
+        return (_held_classification("UNREADABLE_PROJECT", project_path,
+                                     str(exc)),
+                "UNREADABLE_PROJECT")
+
+
+def _held_classification(code, ref, detail):
+    return {"state": RC.BLOCKED,
+            "blocked_by": [{"code": code, "ref": ref or "project",
+                            "detail": detail,
+                            "action": "supply an interpretable project record; "
+                                      "do not guess or fabricate evidence"}],
+            "reasons": [code],
+            "policy": {"regeneration": RC.REGENERATION_POLICY,
+                       "rollback": RC.ROLLBACK_POLICY,
+                       "paid_provider_calls": 0}}
 
 
 def _cli():
@@ -282,6 +357,10 @@ def _cli():
 
     a = sub.add_parser("recover")
     a.add_argument("--run", required=True)
+    a.add_argument("--project", default=None,
+                   help="historical project evidence JSON (read-only)")
+    a.add_argument("--journal", default=None,
+                   help="classification idempotency journal path")
 
     ns = p.parse_args()
     try:
@@ -301,7 +380,8 @@ def _cli():
             out = record_result(ns.db, ns.run, ns.key, ns.attempt, ns.artifact,
                                 ns.sha, ns.bytes)
         elif ns.cmd == "recover":
-            out = recover(ns.db, ns.run)
+            out = recover(ns.db, ns.run, project_path=ns.project,
+                          journal_path=ns.journal)
     except (L.CorruptStateError, L.IncompatibleStateError) as e:
         out = _env(ns.cmd, "error", str(e).split(":")[0],
                          "spending stopped; verified recovery required")
