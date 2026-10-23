@@ -200,6 +200,28 @@ def test_pure_degenerate_and_noise():
           json.dumps(res)[:200])
 
 
+def test_boundary_shift_is_a_typed_refusal():
+    """Uncorrelated noise can put the best global shift at the search
+    boundary, which pushes the full residual map off the grid. That pair has
+    no measurable structure and must be refused with the typed reason, never
+    escape as a bare IndexError.
+    """
+    rnd = random.Random(4)
+    frames = [[128.0 + rnd.gauss(0.0, 64.0) for _ in range(W * H)]
+              for _ in range(6)]
+    try:
+        subject_motion_evidence(frames)
+        check("boundary-shift residual map is refused", False,
+              "measured without ever hitting the boundary guard")
+    except IndexError as e:
+        check("boundary-shift residual map is refused", False,
+              "bare %s: %s" % (type(e).__name__, e))
+    except MotionScoreError as e:
+        check("boundary-shift residual map is refused", True)
+        check("boundary-shift refusal is typed CLIP_MOTION_UNMEASURABLE",
+              e.code == CLIP_MOTION_UNMEASURABLE, e.code)
+
+
 # ---------------------------------------------------------- ffmpeg fixtures --
 def _run(argv):
     proc = subprocess.run(argv, capture_output=True)
@@ -505,6 +527,7 @@ def main():
     for fn in (test_thresholds_and_version,
                test_pure_grids_discriminate,
                test_pure_degenerate_and_noise,
+               test_boundary_shift_is_a_typed_refusal,
                test_real_clips_move_the_decision,
                test_fail_closed_semantics_preserved):
         try:

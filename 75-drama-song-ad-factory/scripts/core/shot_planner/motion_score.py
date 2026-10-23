@@ -303,6 +303,18 @@ def _affine_residual(a, b, w, h, dx, dy):
     rows = [res[i:i + iw] for i in range(0, n, iw)]
     bx = min(int(math.floor(abs(dx))) + 1, w // 4)
     by = min(int(math.floor(abs(dy))) + 1, h // 4)
+    # _bilinear reads (x0, y0), (x0 + 1, y0), (x0, y0 + 1) and
+    # (x0 + 1, y0 + 1), so the furthest cell this window touches is
+    # i + w + 1. A best shift at the search boundary can push that past the
+    # end of the grid, which used to escape as a bare IndexError. Such a
+    # pair carries no measurable residual structure, so it is refused with
+    # the typed reason instead.
+    if (int(math.floor(h - by - 1 - dy)) * w
+            + int(math.floor(w - bx - 1 - dx)) + w + 1 >= w * h):
+        raise MotionScoreError(
+            CLIP_MOTION_UNMEASURABLE,
+            "residual map falls outside the %dx%d grid at shift %.2f,%.2f: "
+            "no measurable structure" % (w, h, dx, dy))
     full = []
     for y in range(by, h - by):
         row = y * w
