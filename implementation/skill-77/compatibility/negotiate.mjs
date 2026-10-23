@@ -87,13 +87,17 @@ function walkFiles(root, out = []) {
  * recorded in the canonical manifest.json): SHA-256 per file over sorted
  * relative paths; the aggregate is SHA-256 of the lines
  * "<sha256>  <path>" joined by newlines with a trailing newline.
- * manifest.json itself and any .skill archive are excluded.
+ * manifest.json itself and any .skill archive are excluded, and so are
+ * the generated runtime/dist and runtime/node_modules trees (the built
+ * entry point is recorded in the manifest's runtime_entry instead).
  */
 export function treeAggregate(root) {
   const pairs = [];
   for (const p of walkFiles(root)) {
     const rel = relative(root, p).split("\\").join("/");
     if (rel === "manifest.json" || rel.endsWith(".skill")) continue;
+    if (rel === "runtime/dist" || rel.startsWith("runtime/dist/")
+      || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/")) continue;
     pairs.push({ path: rel, hash: sha256Hex(readFileSync(p)) });
   }
   pairs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
