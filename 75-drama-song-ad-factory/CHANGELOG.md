@@ -4,6 +4,38 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.93 - 2026-10-22 - batch 8d: spatial subject motion, Skill 75 interrupt-state preservation
+
+1. D3 spatial motion (`scripts/core/shot_planner/motion_score.py`): motion is
+   now measured as LOCALISED subject movement on a 48x27 spatial grid, not the
+   mean change of per-frame mean luma. Each pair is compared after an affine
+   residual that compensates global translation, so a pan over a still scores
+   0.000000 (refused) instead of passing; additive and gain-only flashes score
+   0.000000. Degenerate (zero-contrast) pairs are excluded BEFORE any co-variance
+   division and counted, and a clip whose pairs are all degenerate refuses with
+   the typed `CLIP_MOTION_UNMEASURABLE` rather than a silent low-motion score.
+   `MOTION_STRUCTURE_MIN = 4.0` refuses spatially uncorrelated noise that clears
+   the magnitude gate (sigma-64: subject 0.026224, structure 1.73 -> refused).
+   The subject threshold is `MOTION_SUBJECT_LOW = 0.012`, and the ladder flips
+   exactly once across it in the shipped fixtures. `frame_diff_score` is still
+   emitted, so a 1.0.0 receipt without spatial evidence keeps its documented
+   legacy decision; the F12 fail-closed rule (measured sub-threshold refuses
+   even with `flagged: false`, `flagged: true` honoured) is unchanged.
+   Recorded follow-up, out of scope here: the new residual full-map can raise an
+   untyped `IndexError` on spatially uncorrelated noise (MEDIUM, crash not a
+   wrong pass; no score is emitted, so the gate cannot admit a clip through it).
+2. Installer box state (`update-skills.sh`, `scripts/skill-content-hash.sh`):
+   an interrupted Skill 75 run keeps its resume state inside the skill folder,
+   which the wholesale remove+copy destroyed on every update. The Skill 75
+   box-state allow-list now carries `.checkpoint-pending` and
+   `scripts/core/state_store.py.part` across the replace BYTE-IDENTICAL, scoped
+   to Skill 75 only (the same relative paths in an unrelated skill are still
+   removed), and the A2.5/A3 content gate excludes those paths from the same
+   scoped set so the copy site does not abort and withhold the version stamp.
+   `tests/unit/updater-preserves-skill75-interrupt-state.test.sh` (261 lines,
+   16 assertions) proves the contract, its scoping, the 59-anthology-engine
+   regression, the resume-stage read, and both pre-fix negative controls.
+
 ## v2.9.92 - 2026-10-22 - batch 8c: real canaries, gate-4 recap, mapping integrity
 
 1. Shared real canaries (`tests/w10-canary/`): the clean-install canary and the
