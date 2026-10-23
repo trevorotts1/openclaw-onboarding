@@ -87,7 +87,11 @@ case "$1" in
     fi
     mkdir -p dist
     printf 'export const built = true;\\n' > dist/index.js
-    printf '#!/usr/bin/env node\\nconsole.log("council");\\n' > dist/blackceo-council.mjs
+    if [ "\${FAKE_ENTRY_BROKEN:-0}" = "1" ]; then
+      printf 'export const broken = ;\\n' > dist/blackceo-council.mjs
+    else
+      printf '#!/usr/bin/env node\\nconsole.log("council");\\n' > dist/blackceo-council.mjs
+    fi
     exit 0
     ;;
 esac
@@ -368,6 +372,45 @@ test("a corrupt artifact fails verification without activating", () => {
     assert.equal(rebuilt.status, 0, rebuilt.output);
     assert.doesNotMatch(rebuilt.output, /NOOP/);
     assert.match(readFileSync(join(prefix, "active.json"), "utf8"), /rel-/);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("an unloadable entry point fails verification without activating", () => {
+  const workspace = laneTemp("entryload");
+  try {
+    const runtimeDir = join(workspace, "runtime");
+    const prefix = join(workspace, "prefix");
+    const npm = writeFakeNpm(workspace);
+    const args = ["--runtime-dir", runtimeDir, "--prefix", prefix, "--npm-executable", npm];
+
+    writeFixtureRuntime(runtimeDir, { marker: "one" });
+    assert.equal(run(args).status, 0);
+    const activeBefore = readFileSync(join(prefix, "active.json"), "utf8");
+    const previousRelease = readActive(prefix).releasePath;
+
+    // New source builds a bundle whose entry does not load: the hash receipt
+    // matches the bytes, but the entry must never verify or activate.
+    writeFixtureRuntime(runtimeDir, { marker: "two" });
+    const failed = run(args, { FAKE_ENTRY_BROKEN: "1" });
+    assert.equal(failed.status, 1, failed.output);
+    assert.match(failed.output, /entry load check failed/);
+    assert.match(failed.output, /DEGRADED/);
+    assert.match(failed.output, /unchanged and still active/);
+    assert.equal(readFileSync(join(prefix, "active.json"), "utf8"), activeBefore);
+    assert.ok(existsSync(join(previousRelease, "dist", "blackceo-council.mjs")));
+
+    // The same release id verified by --verify-release must also refuse it.
+    const brokenDir = readdirSync(join(prefix, "releases"))
+      .filter((name) => name.startsWith("rel-"))
+      .map((name) => join(prefix, "releases", name))
+      .find((dir) => dir !== previousRelease && existsSync(join(dir, "dist", "blackceo-council.mjs")));
+    if (brokenDir) {
+      const verified = run(["--prefix", prefix, "--verify-release", brokenDir]);
+      assert.equal(verified.status, 1, verified.output);
+      assert.match(verified.output, /entry load check failed/);
+    }
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
