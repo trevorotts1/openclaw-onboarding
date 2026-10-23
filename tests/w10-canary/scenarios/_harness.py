@@ -178,3 +178,37 @@ def blocked(what):
     """A live provider/channel artifact is required; never fake the pass."""
     print("BLOCKED_A11: %s" % what)
     return 4
+
+def have_tools(*names):
+    """True only when every named executable resolves on PATH right now."""
+    return all(shutil.which(n) for n in names)
+
+def sha256_file(path):
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(str(path), "rb") as fh:
+        for blk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(blk)
+    return h.hexdigest()
+
+def aac_take(path, seconds, tone_hz=440):
+    """A real AAC-LC 48 kHz faststart MP4 of the requested duration.
+
+    The duration is not asserted against this argument: the caller measures the
+    file with the tree's own probe, so a wrong fixture shows up as a wrong
+    measurement rather than passing on the number it was built with.
+    """
+    import subprocess
+
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi",
+         "-i", "sine=frequency=%d:duration=%s" % (tone_hz, seconds),
+         "-c:a", "aac", "-profile:a", "aac_low", "-ar", "48000", "-b:a", "128k",
+         "-movflags", "+faststart", str(p)],
+        capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError("FIXTURE_FAILED: %s" % (proc.stderr or "")[-300:])
+    return str(p)

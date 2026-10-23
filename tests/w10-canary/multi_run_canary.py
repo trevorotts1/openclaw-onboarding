@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import sqlite3
 import sys
 import threading
 import time
@@ -257,6 +258,80 @@ def scenario_attempt_identity(sl, sb):
           p4.get("reason_code") == "REPAIR_CAP", p4.get("reason_code"))
 
 
+def scenario_concurrent_approved_retries(sl, sb):
+    """SC-15: N workers race ONE approved retry -> one dispatch, one paid entry.
+
+    The retry is already approved: attempt a1 is known-failed, so a2 is the
+    legitimate retry. Every worker calls plan() for a2 at the same instant, and
+    the winner alone reserves and submits. Exactly one allocation may commit;
+    the ledger's own summary (not a harness counter) reports the dispatches and
+    the money, so a broken guard shows up as two calls and double the cost.
+    """
+    db = str(Path(sb.env["HOME"]).parent / "concurrent" / "spend.db")
+    Path(db).parent.mkdir(parents=True, exist_ok=True)
+    sl.init_run(db, "runC", ceiling=1000, repair_cap=2)
+    sl.plan(db, "runC", "music.job", "a1", request_digest="d1", estimated_cost=5)
+    sl.reserve(db, "runC", "music.job", "a1")
+    sl.mark_submitted(db, "runC", "music.job", "a1", "remote-c-1")
+    sl.mark_terminal(db, "runC", "music.job", "a1", "failed")
+    before = sl.summary(db, "runC")["evidence"]["counts"]["number_of_generation_calls"]
+
+    workers, gate = 8, threading.Barrier(8)
+    outcomes = []
+
+    def worker(_i):
+        try:
+            gate.wait(timeout=30)
+            out = sl.plan(db, "runC", "music.job", "a2", request_digest="d2",
+                          estimated_cost=5, attempt_no=2)
+        except Exception as exc:  # noqa: BLE001 - a raise is a refusal to record
+            out = {"outcome": "raised", "reason_code": type(exc).__name__}
+        if out.get("outcome") == "ok":
+            sl.reserve(db, "runC", "music.job", "a2")
+            sl.mark_submitted(db, "runC", "music.job", "a2", "remote-c-2")
+        outcomes.append(out)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+
+    winners = [o for o in outcomes if o.get("outcome") == "ok"]
+    losers = [o for o in outcomes if o.get("outcome") != "ok"]
+    check("sc15:exactly-one-dispatch-under-concurrency",
+          len(winners) == 1
+          and winners[0].get("attempt_id") == "a2"
+          and len(outcomes) == workers,
+          "%d of %d workers allocated (%s)"
+          % (len(winners), len(outcomes),
+             [o.get("attempt_id") for o in winners]))
+    check("sc15:every-loser-refused-as-duplicate",
+          len(losers) == workers - 1
+          and all(o.get("reason_code") == "DUPLICATE_ATTEMPT" for o in losers),
+          "refusals=%s" % sorted({o.get("reason_code") for o in losers}))
+
+    conn = sqlite3.connect(db)
+    try:
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE run_id=? AND logical_key=?",
+            ("runC", "music.job")).fetchone()[0]
+        paid = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE run_id=? AND logical_key=? "
+            "AND attempt_no=2", ("runC", "music.job")).fetchone()[0]
+    finally:
+        conn.close()
+    check("sc15:one-new-attempt-row-committed",
+          rows == 2 and paid == 1,
+          "%d job rows for the logical key, %d at attempt 2" % (rows, paid))
+
+    summary = sl.summary(db, "runC")["evidence"]
+    after = summary["counts"]["number_of_generation_calls"]
+    check("sc15:one-paid-ledger-entry",
+          after - before == 1 and summary["committed_cost"] == 5,
+          "generation calls %d -> %d, committed cost %s"
+          % (before, after, summary["committed_cost"]))
+
 def scenario_terminal_not_delivered(ss, sb):
     """A02: all-parked / all-failed / empty / mixed never report delivered.
 
@@ -430,6 +505,7 @@ def run(mode, core_root, out, vector_info):
         scenario_fair_supervision(ss, sb)
         scenario_lease_single_writer(ss, sb)
         scenario_attempt_identity(sl, sb)
+        scenario_concurrent_approved_retries(sl, sb)
         scenario_event_continuation(ss, sb)
         scenario_terminal_not_delivered(ss, sb)
 
