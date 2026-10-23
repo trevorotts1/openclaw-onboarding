@@ -199,16 +199,27 @@ export PATH
 #
 # A recorded ready/degraded capability falls through to the credential demand
 # UNCHANGED, so an enabled-but-broken install is refused (exit 2) rather than
-# silently skipped; a missing capability.json (a reader before pairing) is a
-# visible refusal too. This reads the canonical file and introduces no second
-# state mechanism. `--ready` is a readiness probe: it is never skipped here.
+# silently skipped. With NO record, studio_bridge._capability_state's canonical
+# answer for "no key and no enrolment intent" is `disabled`, so an unpaired box
+# exits 0 in total silence and writes nothing — no record, no marker, no key.
+# This reads the canonical file and introduces no second state mechanism.
+# `--ready` is a readiness probe: it is never skipped here.
 CAP_FILE="${DS_CAPABILITY_FILE:-$STATE_DIR/capability.json}"
-if [ "$READY" -eq 0 ] && [ -f "$CAP_FILE" ]; then
+CAP_RECORDED=""
+if [ -f "$CAP_FILE" ]; then
   CAP_RECORDED="$(sed -n 's/.*"capability"[[:space:]]*:[[:space:]]*"\([a-z-]*\)".*/\1/p' "$CAP_FILE" 2>/dev/null | head -n 1)"
+fi
+if [ "$READY" -eq 0 ]; then
   case "$CAP_RECORDED" in
     disabled|needs-enrollment)
       ds_notice "$CAP_RECORDED" "studio capability $CAP_RECORDED - timer idle (quiet)"
       exit 0 ;;
+    ready|degraded)
+      : ;;   # enabled: the credential demand below still decides (refusal kept)
+    *)
+      if [ ! -f "$KEY_FILE" ]; then
+        exit 0   # canonical disabled: chat-only, silent, writes nothing
+      fi ;;
   esac
 fi
 

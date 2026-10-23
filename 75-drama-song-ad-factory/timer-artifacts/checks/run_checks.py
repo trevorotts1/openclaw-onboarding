@@ -428,9 +428,9 @@ def run_timer_env(work: str, overrides: dict) -> subprocess.CompletedProcess:
 def g_poller_refuses_wrong_user_path(work: str) -> bool:
     home = real_mac_home()
     # A HOME-legal path that does not exist: run-timer.sh only READS pairing
-    # files from it. The optional Studio capability record (capability.json,
-    # the installation state) may be written there — but never a key, never a
-    # URL, never anything that enrols a chat-only box (SPEC 9.3 / D24).
+    # files from it, and an unpaired box is the canonical `disabled` capability
+    # (SPEC 9.3 / D24), so the poller exits 0 in silence and writes nothing —
+    # never a key, never a URL, never anything that enrols a chat-only box.
     scratch_state = f"{home}/.drama-studio-selftest-{os.getpid()}"
     cases = [
         ("contabo user enforced on mac",
@@ -440,7 +440,7 @@ def g_poller_refuses_wrong_user_path(work: str) -> bool:
          "state dir must be under HOME"),
         ("mac good identity, unpaired -> quiet skip 0",
          {"DS_PLATFORM": "mac", "HOME": home, "DS_STATE_DIR": scratch_state}, 0,
-         "capability"),
+         ""),
     ]
     ok = True
     det = []

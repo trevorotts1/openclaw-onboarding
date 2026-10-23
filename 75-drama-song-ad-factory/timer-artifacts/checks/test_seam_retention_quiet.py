@@ -9,8 +9,9 @@ owner (timer-artifacts/run-timer.sh) plus the readiness seam W07-U3 builds on:
   T2  quiet disabled capability: capability.disabled / DS_CAPABILITY_DISABLED=1
       -> exit 0, no poll, and steady-state silence after one transition line;
       without the marker the same run is a visible refusal (negative control).
-  T3  transition notices: an unpaired box with an existing state dir says "not
-      paired" once per state change, never once per tick.
+  T3  an unpaired box (no key, no capability record) is the canonical
+      `disabled` state: exit 0, total silence, and nothing written — never a
+      per-tick "not paired" failure.
   T4  no-write invariant: with NO state dir the unpaired poller writes nothing
       (it is a reader until pairing) — the contract timer check G narrates.
   T5  readiness seam: --ready exits 0 and prints one "ready:" line exactly when
@@ -80,23 +81,24 @@ def main():
         ghost = os.path.join(scratch, "ghost-state")
         r = run_timer(ghost, log_file=os.path.join(scratch, "ghost.log"))
         check("T4-no-write-without-state-dir",
-              r.returncode == 2 and not os.path.exists(ghost),
+              r.returncode == 0 and not os.path.exists(ghost)
+              and r.stderr.strip() == "",
               "rc=%s created=%s" % (r.returncode, os.path.exists(ghost)))
 
-        # ---- T3: transition notices, steady state silent -------------------
+        # ---- T3: unpaired is the canonical `disabled` state -> silent ------
+        # No key and no enrolment intent is `disabled` per
+        # studio_bridge._capability_state, so an unpaired box polls nothing,
+        # says nothing and writes nothing. It is never a per-tick failure.
         os.makedirs(state)
         r1 = run_timer(state, log_file=log)
         r2 = run_timer(state, log_file=log)
-        check("T3-transition-notice-once",
-              r1.returncode == 2 and "not paired" in r1.stderr
-              and r2.returncode == 2 and r2.stderr.strip() == "",
-              "run1 rc=%s run2 rc=%s" % (r1.returncode, r2.returncode))
-        # state change (a pairing attempt resolved) -> the notice returns
-        with open(os.path.join(state, ".poll-state"), "w") as f:
-            f.write("ok\n")
-        r3 = run_timer(state, log_file=log)
-        check("T3-notice-returns-on-transition",
-              r3.returncode == 2 and "not paired" in r3.stderr)
+        w1 = r1.returncode == 0 and r1.stderr.strip() == "" and r1.stdout.strip() == ""
+        w2 = r2.returncode == 0 and r2.stderr.strip() == "" and r2.stdout.strip() == ""
+        left = sorted(os.listdir(state))
+        check("T3-unpaired-is-silent-and-writes-nothing",
+              w1 and w2 and left == [],
+              "run1 rc=%s run2 rc=%s files=%s"
+              % (r1.returncode, r2.returncode, left or "[]"))
 
         # ---- T2: quiet disabled capability --------------------------------
         with open(os.path.join(state, "capability.disabled"), "w") as f:
@@ -109,8 +111,8 @@ def main():
               "run1 rc=%s run2 rc=%s" % (r1.returncode, r2.returncode))
         os.remove(os.path.join(state, "capability.disabled"))
         rn = run_timer(state, log_file=log)
-        check("T2-negative-control-refuses-when-enabled",
-              rn.returncode == 2 and "not paired" in rn.stderr,
+        check("T2-marker-removed-falls-back-to-canonical-disabled",
+              rn.returncode == 0 and rn.stderr.strip() == "",
               "rc=%s" % rn.returncode)
         r1 = run_timer(state, extra={"DS_CAPABILITY_DISABLED": "1"}, log_file=log)
         r2 = run_timer(state, extra={"DS_CAPABILITY_DISABLED": "1"}, log_file=log)

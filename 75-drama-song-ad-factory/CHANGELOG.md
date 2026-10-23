@@ -4,7 +4,7 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
-## v2.9.104 - 2026-10-23 - optional Studio capability is evaluated before credential demand
+## v2.9.105 - 2026-10-23 - optional Studio capability is evaluated before credential demand
 
 The persistent timer (`timer-artifacts/run-timer.sh`) demanded `machine.url` and
 `machine.key` in section 4 and only evaluated the optional Studio capability in
@@ -15,20 +15,33 @@ with "this computer is not paired" instead of staying quiet: on Mac box
 
 The canonical `capability.json` record (`disabled | needs-enrollment | ready |
 degraded`, written by `studio_bridge.py`) is now read in a new section 3b, BEFORE
-any credential demand. `disabled` and `needs-enrollment` exit 0 quietly (one
-transition line, then steady silence). A recorded `ready` or `degraded`
-capability falls through to the unchanged credential demand, so an
-enabled-but-broken installation is still REFUSED with exit 2 rather than
-silently skipped, and a missing `capability.json` stays a visible refusal. The
-`capability.disabled` sentinel and `DS_CAPABILITY_DISABLED=1` keep their
+any credential demand:
+
+- `disabled` / `needs-enrollment` -> `exit 0` quietly (one transition line, then
+  steady silence), before any credential is demanded.
+- `ready` / `degraded` -> fall through to the unchanged credential demand, so an
+  enabled-but-broken installation is still REFUSED with exit 2 rather than
+  silently skipped. Authentication is not weakened for enabled Studio use.
+- No record at all -> `studio_bridge._capability_state`'s canonical answer for
+  "no key and no enrolment intent" is `disabled`, so an unpaired box exits 0 in
+  total silence and writes nothing: no record, no marker, no key. This closes the
+  per-tick failure for a freshly installed chat-only box, not only for one whose
+  record already says disabled.
+
+The `capability.disabled` sentinel and `DS_CAPABILITY_DISABLED=1` keep their
 existing behaviour. `--ready` is a readiness probe and is never skipped. No
 second state mechanism is introduced and no authentication check is removed.
 
-Focused checks added to `timer-artifacts/checks/test_seam_retention_quiet.py`:
-T6 (capability.json disabled / needs-enrollment quiet with no credentials; ready
-without credentials still refused; `--ready` not skipped) and T7 (ordinary chat
-intake remains independent of Studio pairing). On the unpatched tree T6 fails
-2/4; on this release the file is 16/16.
+Checks updated to the corrected contract:
+`timer-artifacts/checks/test_seam_retention_quiet.py` T3/T4 now assert that an
+unpaired box is silent and writes nothing, and T6/T7 were added (capability.json
+disabled/needs-enrollment quiet with no credentials; recorded ready still
+refused without credentials; `--ready` not skipped; ordinary chat intake
+independent of pairing). `timer-artifacts/checks/run_checks.py` check G expects
+the quiet skip it always described and now passes.
+
+On the unpatched tree: 5 seam checks fail and check G fails (21/22). On this
+release: seam checks 15/15, timer checks 22/22.
 
 This release changes the optional Studio poller only. It does not enrol a
 computer, does not generate or rotate a key, and does not alter chat intake,
