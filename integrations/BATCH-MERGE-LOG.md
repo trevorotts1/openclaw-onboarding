@@ -63,8 +63,10 @@ integration run evidence; a unit is never recorded merged before that proof.
   `49-signature-funnel/skill-version.txt` `v2.1.22` at base → `v2.1.23` in this cohort
   (G3 mechanical bookkeeping by `scripts/batch-prep.sh`: W9B adds `role_wrappers.py` content to
   skill directory `49-signature-funnel/`; the only version-file change in this cohort).
-- Member pull request: ONE for this repository cohort — number and final head recorded in the
-  follow-up log commit of this same pull request (opened after the assembly commit).
+- Member pull request: [#2496](https://github.com/trevorotts1/openclaw-onboarding/pull/2496)
+  (`w12b-u1/cohort2-ghl-delivery` → `main`), ONE pull request for this repository cohort.
+  Assembly head `a87cf0cc9524b421096afeb54daa3402508944d9` (manifest commit); final head =
+  tip of this pull request at fold time (exact SHA in the W12B integration evidence).
 - Release policy: no member changes `/version`; the train performs ONE version bump + ONE
   combined CHANGELOG entry at fold time, and `auto-tag-on-merge` cuts the tag on the merged commit.
 
