@@ -67,9 +67,10 @@ is shape-level and fail-closed; consumer-side parent/status semantics are
 W11B's job.
 
 PROVISIONAL (W11AC-U2): the W11AC-U1 producer module
-shared-utils/cc/board_events.py may not exist yet. This module consumes and
-emits plain dicts with the wire keys above and exposes seam_status() so every
-caller can see exactly what integration remains outstanding.
+shared-utils/cc/board_events.py lands via the batch integrator. This module
+consumes its real ``to_outbox_envelope`` shape (append_envelope) and emits the
+W11B wire keys, and exposes seam_status() so every caller can see exactly what
+integration remains outstanding.
 
 Import pattern (namespace package — no __init__.py needed):
 
@@ -161,19 +162,24 @@ def _require_seq(value: Any) -> int:
 
 
 def _wire(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Project an outbox row to the W11B BoardEventInput wire shape."""
-    return {
+    """Project an outbox row to the W11B BoardEventInput wire shape.
+
+    The four required keys are always present; optional keys appear only when
+    set (the W11A to_consumer_projection convention — two identical logical
+    events serialize identically).
+    """
+    out: Dict[str, Any] = {
         "idempotencyKey": row["idempotency_key"],
         "taskId": row["task_id"],
         "kind": row["kind"],
         "seq": row["seq"],
-        "parentTaskId": row["parent_task_id"],
-        "title": row["title"],
-        "actor": row["actor"],
-        "note": row["note"],
-        "stage": row["stage"],
-        "at": row["at"],
     }
+    for src, dst in (("parent_task_id", "parentTaskId"), ("title", "title"),
+                     ("actor", "actor"), ("note", "note"),
+                     ("stage", "stage"), ("at", "at")):
+        if row[src] is not None:
+            out[dst] = row[src]
+    return out
 
 
 class EventOutbox:
@@ -292,6 +298,45 @@ class EventOutbox:
                 )
             row = self._row(cur, event_id)
             return _wire(row), True
+
+    def append_envelope(self, envelope: Dict[str, Any],
+                        now: Optional[float] = None) -> Tuple[Dict[str, Any], bool]:
+        """Append from the W11A producer envelope — closed against the real
+        shared-utils/cc/board_events.py ``to_outbox_envelope`` shape:
+
+            {"schema", "idempotency_key", "task_id", "kind", "seq",
+             "payload": {producer wire dict with optional display fields}}
+
+        Identity comes from the envelope's identity keys (the contract owns
+        identity, the outbox owns delivery/retry state); optional display
+        fields (parent_task_id, title, actor, note, stage, at) are taken from
+        ``payload`` when present. Extra keys (schema, payload) are carried by
+        the producer and ignored here, never invented or coerced.
+        """
+        if not isinstance(envelope, dict):
+            raise OutboxError("bad_input: envelope must be a dict")
+        payload = envelope.get("payload")
+        if payload is not None and not isinstance(payload, dict):
+            raise OutboxError("bad_input: envelope payload must be a dict")
+
+        def field(name: str) -> Any:
+            if name in envelope:
+                return envelope[name]
+            return payload.get(name) if payload else None
+
+        return self.append(
+            idempotency_key=field("idempotency_key"),
+            task_id=field("task_id"),
+            kind=field("kind"),
+            seq=field("seq"),
+            parent_task_id=field("parent_task_id"),
+            title=field("title"),
+            actor=field("actor"),
+            note=field("note"),
+            stage=field("stage"),
+            at=field("at"),
+            now=now,
+        )
 
     # ── delivery lifecycle ──────────────────────────────────────────────────
 
@@ -566,8 +611,9 @@ class _Tx:
 def seam_status() -> Dict[str, Any]:
     """Explicit integration-seam status — never pretended as landed."""
     outstanding = [
-        "W11AC-U1 board_events.py producer calls append()/due()/mark_* "
-        "(wire closed against W11B BoardEventInput; producer import pending)",
+        "W11AC-U1 board_events.py producer calls append_envelope()/append()/due()/"
+        "mark_* — envelope seam closed against its real to_outbox_envelope shape; "
+        "the two units land via the batch integrator, runtime wiring is integration work",
         "reconcile() resolver: authoritative consumer read (CC API or task_state "
         "projection) is wired by the integration owner, not this module",
         "W4B evidence.py state_counts -> stage mapping is the board consumer's",
@@ -610,12 +656,42 @@ def _selfcheck() -> int:
     ok(created and (e1["seq"], e2["seq"], e3["seq"]) == (1, 2, 3),
        "append allocates strictly increasing per-task seq (got 1,2,3)")
 
-    # 2 — wire shape matches W11B BoardEventInput keys exactly
-    ok(set(e1.keys()) == {"idempotencyKey", "taskId", "kind", "seq", "parentTaskId",
-                         "title", "actor", "note", "stage", "at"},
-       "wire keys exactly match W11B BoardEventInput")
+    # 2 — wire shape matches W11B BoardEventInput: required 4 always present,
+    #     optionals only when set (W11A to_consumer_projection convention)
+    ok(set(e1.keys()) == {"idempotencyKey", "taskId", "kind", "seq", "title"},
+       f"wire keys: required 4 + set optionals only (got {sorted(e1.keys())})")
     ok(e1["idempotencyKey"] == "k1" and e1["taskId"] == "T1" and e1["kind"] == "create",
        "wire values carry stable task id, idempotency key, kind")
+
+    # 2b — W11A to_outbox_envelope seam: real envelope shape appends cleanly
+    ob2 = EventOutbox(tmp + ".env")
+    envelope = {  # literal replica of W11A board_events.to_outbox_envelope output
+        "schema": "ghl-board-event/1",
+        "idempotency_key": "env-key-1",
+        "task_id": "T-ENV",
+        "kind": "assign",
+        "seq": 1,
+        "payload": {
+            "schema": "ghl-board-event/1", "kind": "assign", "task_id": "T-ENV",
+            "idempotency_key": "env-key-1", "seq": 1,
+            "producer_id": "cc_board", "correlation_id": "ingest-9",
+            "parent_task_id": "T-PARENT", "title": "Wire the board",
+            "actor": "w11a", "note": "from envelope", "stage": "code_built",
+            "at": "2026-10-23T00:00:00Z",
+        },
+    }
+    ev_env, env_created = ob2.append_envelope(envelope, now=500.0)
+    ok(env_created is True and ev_env["seq"] == 1 and ev_env["taskId"] == "T-ENV",
+       "append_envelope accepts the real W11A envelope shape")
+    ok(set(ev_env.keys()) == {"idempotencyKey", "taskId", "kind", "seq", "parentTaskId",
+                              "title", "actor", "note", "stage", "at"},
+       "envelope optionals promoted from payload; full 10-key wire when all set")
+    ok(ev_env["parentTaskId"] == "T-PARENT" and ev_env["stage"] == "code_built",
+       "payload display fields promoted unchanged (never coerced)")
+    _, env_dup = ob2.append_envelope(envelope, now=501.0)
+    ok(env_dup is False and ob2.counts()["total"] == 1,
+       "envelope re-append is idempotent (dedupe on idempotency_key)")
+    ob2.close()
 
     # 3 — idempotent append: same key = same event, zero new writes
     e1b, created2 = ob.append(idempotency_key="k1", task_id="T1", kind="create", now=1003.0)
