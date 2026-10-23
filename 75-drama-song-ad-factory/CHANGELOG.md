@@ -4,6 +4,34 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.92 - 2026-10-22 - batch 8c: real canaries, gate-4 recap, mapping integrity
+
+1. Shared real canaries (`tests/w10-canary/`): the clean-install canary and the
+   upgrade-of-an-interrupted-run canary are now ONE composition rather than two
+   divergent harnesses. Both drive the REAL distribution installer inside a
+   sandbox (stubbed `openclaw`/`curl`, scratch HOME/OC_CONFIG/SKILLS_DIR/
+   CLAUDE_CONFIG_DIR, network-free git), and both refuse rather than bless a
+   weak tree: a manifest is refused when it is empty, below the skill tree's
+   real file count, or missing the `SKILL.md`/`scripts` top level, and the
+   loaded-source hook recomputes every digest so a tampered, extra or missing
+   file fails. Typed refusals replace silent passes
+   (`MANIFEST_MISSING`, `DIGEST_MISMATCH`, `UNPROVABLE_CHANGE`,
+   `PRESERVATION_MISSING`, `INSTALL_FAILED`, `INSTALLER_LOCKED`,
+   `PROCESS_LOST`, `SOURCE_CHECKOUT_UNRESOLVED`). Receipts name the
+   distribution, the pinned source revisions, the manifest and the acceptance
+   rows. A11 stays blocked: no paid provider call and no live channel send is
+   reachable, and `--allow-paid` / `--allow-live-send` exist only to be
+   refused.
+2. Gate 4 final recap: one recap (scene / music / cost) plus the operator's
+   production Go bound to its digest. The hold sits in front of BOTH video
+   handout paths — the Agnes segment jobs and the KIE runbook row — and stays
+   shut on a missing Go (`PRODUCTION_GO_MISSING`).
+3. Acceptance-row mapping integrity: the receipt mapping verifies each row's
+   `mapped_harness`, `mapped_command` and `run_by_hand`, and carries
+   `external_repos`, so a row cannot claim evidence a harness does not produce.
+4. Re-runnable compatibility proofs for the two behaviours above live under
+   `tests/w10-canary/evidence/B8C/` and are executed by QC, not read.
+
 ## v2.9.91 - 2026-10-22 - batch 8b: 3x3 candidate matrix, capability-aware dispatch admission
 
 1. 3x3 soundtrack candidate matrix (`song_choices/candidate_matrix.py`): three

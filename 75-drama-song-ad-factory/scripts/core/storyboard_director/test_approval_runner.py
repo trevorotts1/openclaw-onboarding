@@ -57,7 +57,35 @@ def make_run(choice="yes"):
         json.dump({"storyboard_approval": choice}, open(os.path.join(run, "control", "card-receipt.json"), "w"))
     with SS.Store(os.path.join(run, "control", "state.sqlite3")) as st:
         st.init_run("run1", [s for s, _ in BATCH.STAGES])
+    _seed_gate4(run)
     return run
+
+
+def _seed_gate4(run):
+    """The Gate 4 sources a real run carries, then ONE recap and the operator's
+    Go bound to its digest. `next` reads exactly these before it may hand out
+    the paid video stage: picked song + its digest, the locked video model and
+    the spend ledger. Seeding them is what a real run does before the recap;
+    without them the stage correctly refuses with FINAL_RECAP_MISSING."""
+    import hashlib
+    import final_recap as FR
+    import spend_ledger as L
+    os.makedirs(os.path.join(run, "music"), exist_ok=True)
+    master = os.path.join(run, "music", "picked-song.mp3")
+    with open(master, "wb") as fh:
+        fh.write(b"the picked master")
+    os.makedirs(os.path.join(run, "song-choices"), exist_ok=True)
+    with open(master, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    json.dump({"pick": 1, "label": "warm-live-band", "sha256": digest},
+              open(os.path.join(run, "song-choices", "pick.json"), "w"))
+    ML.lock_run_model(os.path.join(run, "control", "state.sqlite3"), "run1", VIDEO_MODEL)
+    L.init_run(os.path.join(run, "spend.sqlite3"), "run1", 10_000_000)
+    doc = FR.build(run)
+    FR.record_go(run, {"schema": FR.GO_SCHEMA, "decision": "GO",
+                       "operator": "Test Operator",
+                       "at_utc": "2026-10-22T00:00:00Z",
+                       "recap_digest": doc["recap_digest"]})
 
 
 class World:

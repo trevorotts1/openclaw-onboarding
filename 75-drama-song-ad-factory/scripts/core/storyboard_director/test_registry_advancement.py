@@ -32,6 +32,7 @@ if CORE not in sys.path:
     sys.path.insert(0, CORE)
 
 import character_continuity.stage as ST                   # noqa: E402
+import kie_dispatch.model_lock as ML                      # noqa: E402
 import storyboard_director.approval_package as AP         # noqa: E402
 import storyboard_director.approval_runner as AR          # noqa: E402
 import state_store as SS                                  # noqa: E402
@@ -42,6 +43,7 @@ import factory as FACTORY                                 # noqa: E402
 
 STAGES = [s for s, _ in BATCH.STAGES]
 VIDEO_MODEL_ROW = "video-generation"
+VIDEO_MODEL = "kling-3.0/video"
 FAILS = []
 
 
@@ -111,7 +113,35 @@ def make_run(up_to=None, storyboard_files=True):
                     st.transition("run1", s, "READY", "t")
                     st.claim("run1", s, "t")
                     st.transition("run1", s, "COMPLETE", "t")
+    _seed_gate4(run)
     return run
+
+
+def _seed_gate4(run):
+    """The Gate 4 sources a real run carries, then ONE recap and the operator's
+    Go bound to its digest. `factory.py next` reads exactly these before it may
+    hand out the paid video stage: picked song + its digest, the locked video
+    model and the spend ledger. Without them the stage correctly refuses with
+    FINAL_RECAP_MISSING."""
+    import hashlib
+    import final_recap as FR
+    import spend_ledger as L
+    os.makedirs(os.path.join(run, "music"), exist_ok=True)
+    master = os.path.join(run, "music", "picked-song.mp3")
+    with open(master, "wb") as fh:
+        fh.write(b"the picked master")
+    os.makedirs(os.path.join(run, "song-choices"), exist_ok=True)
+    with open(master, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    json.dump({"pick": 1, "label": "warm-live-band", "sha256": digest},
+              open(os.path.join(run, "song-choices", "pick.json"), "w"))
+    ML.lock_run_model(os.path.join(run, "control", "state.sqlite3"), "run1", VIDEO_MODEL)
+    L.init_run(os.path.join(run, "spend.sqlite3"), "run1", 10_000_000)
+    doc = FR.build(run)
+    FR.record_go(run, {"schema": FR.GO_SCHEMA, "decision": "GO",
+                       "operator": "Test Operator",
+                       "at_utc": "2026-10-22T00:00:00Z",
+                       "recap_digest": doc["recap_digest"]})
 
 
 class A:

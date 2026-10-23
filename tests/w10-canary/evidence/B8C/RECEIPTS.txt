@@ -1,0 +1,86 @@
+# Batch-8c compatibility receipts
+# generated 2026-10-23T00:17:04Z at 479b89f40
+# paths are repo-relative; run dirs are placeholders (the fixtures are rebuilt by the scripts)
+
+$ python3 tests/w10-canary/evidence/B8C/proof_recap_hold.py
+
+== AGNES-yes handout path
+   $ python3 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir <run-dir>
+   rc=0 outcome='ok' reason='next-stage' command='python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <video-model-id> --request "$RUN/generation/req.json" --prompt-file "$RUN/generation/req.prompt.txt" --save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key video --attempt-id a1 --cost 0'
+ok   AGNES-yes handout path: with the Go, the stage hands out a command
+ok   AGNES-yes handout path: control/production-go.json existed
+   python3 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir <run-dir>   # after deleting control/production-go.json
+   rc=4 outcome='rejected' reason='PRODUCTION_GO_MISSING' command=None
+ok   AGNES-yes handout path: without the Go the recap hold refuses the stage :: PRODUCTION_GO_MISSING
+ok   AGNES-yes handout path: without the Go NO command is handed out :: {"command": null}
+
+== KIE runbook-row handout path
+   $ python3 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir <run-dir>
+   rc=0 outcome='ok' reason='next-stage' command='python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <video-model-id> --request "$RUN/generation/req.json" --prompt-file "$RUN/generation/req.prompt.txt" --save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key video --attempt-id a1 --cost 0'
+ok   KIE runbook-row handout path: with the Go, the stage hands out a command
+ok   KIE runbook-row handout path: control/production-go.json existed
+   python3 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir <run-dir>   # after deleting control/production-go.json
+   rc=4 outcome='rejected' reason='PRODUCTION_GO_MISSING' command=None
+ok   KIE runbook-row handout path: without the Go the recap hold refuses the stage :: PRODUCTION_GO_MISSING
+ok   KIE runbook-row handout path: without the Go NO command is handed out :: {"command": null}
+
+proof_recap_hold: 0 check(s) failed
+EXIT=0
+
+$ python3 tests/w10-canary/evidence/B8C/proof_c2_presence.py
+ok   rnb-flow: the style data carries a lead-presence rule :: dry upfront vocal
+  WW-26 serialized input.style [polished-modern] len=893 chars
+  WW-26 serialized input.style [warm-live-band] len=911 chars
+  WW-26 serialized input.style [cinematic-strings] len=905 chars
+  WW-26 three styles: common prefix 31 chars, shortest 893 chars
+  variant        revoices_lead      count    chars
+  polished-modern True               1        893
+ok   rnb-flow/polished-modern: re-voicing payload carries the presence line exactly once :: count=1
+ok   rnb-flow/polished-modern: the style arrives nested under input.style :: empty
+  warm-live-band True               1        911
+ok   rnb-flow/warm-live-band: re-voicing payload carries the presence line exactly once :: count=1
+ok   rnb-flow/warm-live-band: the style arrives nested under input.style :: empty
+  cinematic-strings True               1        905
+ok   rnb-flow/cinematic-strings: re-voicing payload carries the presence line exactly once :: count=1
+ok   rnb-flow/cinematic-strings: the style arrives nested under input.style :: empty
+ok   soul-ballad: the style data carries a lead-presence rule :: close dry upfront vocal
+  WW-26 serialized input.style [intimate-piano] len=865 chars
+  WW-26 serialized input.style [warm-live-band] len=868 chars
+  WW-26 serialized input.style [cinematic-strings] len=870 chars
+  WW-26 three styles: common prefix 11 chars, shortest 865 chars
+  variant        revoices_lead      count    chars
+  intimate-piano False              0        865
+ok   soul-ballad/intimate-piano: non-re-voicing payload carries it zero times :: count=0
+ok   soul-ballad/intimate-piano: the style arrives nested under input.style :: empty
+  warm-live-band True               1        868
+ok   soul-ballad/warm-live-band: re-voicing payload carries the presence line exactly once :: count=1
+ok   soul-ballad/warm-live-band: the style arrives nested under input.style :: empty
+  cinematic-strings True               1        870
+ok   soul-ballad/cinematic-strings: re-voicing payload carries the presence line exactly once :: count=1
+ok   soul-ballad/cinematic-strings: the style arrives nested under input.style :: empty
+ok   soul-rise: the style data carries a lead-presence rule :: close dry upfront vocal
+  WW-26 serialized input.style [modern-lift] len=806 chars
+  WW-26 serialized input.style [warm-live-band] len=820 chars
+  WW-26 serialized input.style [cinematic-strings] len=814 chars
+  WW-26 three styles: common prefix 11 chars, shortest 806 chars
+  variant        revoices_lead      count    chars
+  modern-lift    False              0        806
+ok   soul-rise/modern-lift: non-re-voicing payload carries it zero times :: count=0
+ok   soul-rise/modern-lift: the style arrives nested under input.style :: empty
+  warm-live-band True               1        820
+ok   soul-rise/warm-live-band: re-voicing payload carries the presence line exactly once :: count=1
+ok   soul-rise/warm-live-band: the style arrives nested under input.style :: empty
+  cinematic-strings True               1        814
+ok   soul-rise/cinematic-strings: re-voicing payload carries the presence line exactly once :: count=1
+ok   soul-rise/cinematic-strings: the style arrives nested under input.style :: empty
+
+  causation control: same composer, flag forced off
+  rnb-flow       polished-modern    found=False
+ok   rnb-flow/polished-modern: with the flag off the presence line is absent :: found=False
+  soul-ballad    warm-live-band     found=False
+ok   soul-ballad/warm-live-band: with the flag off the presence line is absent :: found=False
+  soul-rise      warm-live-band     found=False
+ok   soul-rise/warm-live-band: with the flag off the presence line is absent :: found=False
+
+proof_c2_presence: 0 check(s) failed
+EXIT=0
