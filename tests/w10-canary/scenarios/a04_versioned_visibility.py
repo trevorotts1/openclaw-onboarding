@@ -31,6 +31,9 @@ import _harness as H  # noqa: E402
 ROW = "a04"
 TITLE = "script/lyrics/hook versioned-visibility"
 
+HOOK1 = "do it for the ones who stayed"
+HOOK2 = "we did it for the ones who stayed"
+
 STORY = [("Act 1", ["A woman opens a shop on her own street."]),
          ("Act 2", ["The first winter nearly closes it."])]
 
@@ -98,6 +101,67 @@ def scenario(core, muts=frozenset()):
             return dict(real_load(*a, **kw), ok=True, reason_code="OK")
 
         SP.load_approved_source = accepts_stale
+    if "presentation_drops_labels_and_hook" in muts:
+        real_render = SA.render_presentation
+
+        def muted(*a, **kw):
+            out, skipping = [], False
+            for line in real_render(*a, **kw).splitlines():
+                if line.strip() == "EARNED SONG HOOK":
+                    skipping = True
+                    continue
+                if skipping and line.strip() == "ERM DROP":
+                    skipping = False
+                if (skipping or "revision" in line.lower()
+                        or HOOK1 in line or HOOK2 in line):
+                    continue
+                out.append(line)
+            return "\n".join(out)
+
+        SA.render_presentation = muted
+    if "stale_revision_label" in muts:
+        real_render = SA.render_presentation
+        SA.render_presentation = (
+            lambda *a, **kw: real_render(*a, **kw)
+            + "\nLyrics revision 1 (deadbeef)")
+    if "stale_hook_shown" in muts:
+        real_render = SA.render_presentation
+        SA.render_presentation = (
+            lambda *a, **kw: real_render(*a, **kw) + "\n" + HOOK1)
+    if "revisions_start_at_seven" in muts:
+        real_register = AE.register_artifact
+        AE.register_artifact = (
+            lambda rec, kind, sha256, revision=None:
+            real_register(rec, kind, sha256, revision=7))
+    if "revisions_never_advance" in muts:
+        real_register = AE.register_artifact
+        AE.register_artifact = (
+            lambda rec, kind, sha256, revision=None:
+            real_register(rec, kind, sha256, revision=1))
+    if "ask_records_wrong_revisions" in muts:
+        real_ask = AE.open_ask
+
+        def wrong_ask(rec, kinds, message_id=None, ask_id=None):
+            ask = real_ask(rec, kinds, message_id=message_id, ask_id=ask_id)
+            ask["revisions"] = {k: 99 for k in ask.get("kinds") or []}
+            return ask
+
+        AE.open_ask = wrong_ask
+    if "approval_never_opens" in muts:
+        SA.check_script_approval = (
+            lambda record, lyrics: {"reason_code": SA.REASON,
+                                    "detail": "defect: the gate never opens"})
+    if "approval_never_recloses" in muts:
+        SA.check_script_approval = lambda record, lyrics: None
+    if "approval_hash_ignored" in muts:
+        AE.active_approval = (
+            lambda rec, kind, sha256=None: {"state": "active", "kind": kind})
+    if "stale_source_accepted" in muts:
+        SP.load_approved_source = (
+            lambda run_dir, approval=None, doc=None:
+            {"ok": True, "detail": "defect: stale source accepted"})
+    if "record_unreadable" in muts:
+        AE.load_record = lambda run_dir: ("corrupt", AE._new_record())
 
     c = H.Checks(ROW, TITLE)
     print("A04 %s — tree %s%s"
@@ -258,6 +322,45 @@ MUTATIONS = {
     ],
     "stale_revision_accepted": [
         "a04:lyrics-hash-mismatch-refused-by-name",
+    ],
+    "presentation_drops_labels_and_hook": [
+        "a04:presentation-displays-both-revisions",
+        "a04:hook-displayed-as-named-element",
+        "a04:new-revision-displayed",
+        "a04:changed-hook-displayed",
+    ],
+    "stale_revision_label": [
+        "a04:stale-revision-not-displayed",
+    ],
+    "stale_hook_shown": [
+        "a04:stale-hook-not-displayed",
+    ],
+    "revisions_start_at_seven": [
+        "a04:script-registered-rev1",
+        "a04:lyrics-registered-rev1",
+        "a04:unchanged-script-keeps-revision",
+    ],
+    "revisions_never_advance": [
+        "a04:lyrics-revision-advances",
+        "a04:hook-change-advances-lyrics-revision",
+    ],
+    "ask_records_wrong_revisions": [
+        "a04:ask-binds-displayed-revisions",
+    ],
+    "approval_never_opens": [
+        "a04:approval-open-for-approved-lyrics",
+    ],
+    "approval_never_recloses": [
+        "a04:lyrics-edit-recloses-approval",
+    ],
+    "approval_hash_ignored": [
+        "a04:lyrics-approval-hash-mismatch-recorded",
+    ],
+    "stale_source_accepted": [
+        "a04:lyrics-hash-mismatch-refused-by-name",
+    ],
+    "record_unreadable": [
+        "a04:record-readable",
     ],
 }
 

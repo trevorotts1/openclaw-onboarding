@@ -125,6 +125,114 @@ def scenario(core, muts=frozenset()):
         DR.profiles_for = lambda seconds: ()
     if "probe_returns_zero" in muts:
         ASM.probe_duration = lambda path: 0.0
+    if "sheet_check_rejects_valid" in muts:
+        SH.check_sheet_count = (
+            lambda sheet, hook, delivered: ["defect: the valid sheet is refused"])
+    if "sheet_check_accepts_hook_first" in muts:
+        SH.check_sheet_count = lambda sheet, hook, delivered: []
+    if "buildup_rule_never_rejects" in muts:
+        HP.check_buildup = lambda sheet, style, delivered: []
+    if "hook_positions_zero" in muts:
+        HP.hook_positions = lambda sheet, style: [0.0]
+    if "measure_counts_labels" in muts:
+        real_measure = SH.measure
+        SH.measure = lambda hook, words, segments, target: real_measure(
+            hook, words,
+            [dict(s, source="measured") for s in (segments or [])], target)
+    if "measure_wrong_count" in muts:
+        real_measure = SH.measure
+
+        def wrong_count(hook, words, segments, target):
+            out = dict(real_measure(hook, words, segments, target))
+            out["measured"] = int(out.get("measured") or 0) + 1
+            return out
+
+        SH.measure = wrong_count
+    if "one_short_fails" in muts:
+        SH.judge = lambda hook, target, times, reason=None: {
+            "verdict": "FAIL", "action": "regenerate"}
+    if "overshoot_warning_dropped" in muts:
+        real_judge = ML.judge_duration
+
+        def silent(*a, **kw):
+            out = dict(real_judge(*a, **kw))
+            out["warning"] = None
+            return out
+
+        ML.judge_duration = silent
+    if "band_too_short_passes" in muts:
+        real_judge = ML.judge_duration
+
+        def loose(*a, **kw):
+            out = dict(real_judge(*a, **kw))
+            if (a[2] if len(a) > 2 else kw.get("short")) == "band":
+                out["verdict"] = "PASS"
+            return out
+
+        ML.judge_duration = loose
+    if "plan_not_two_early" in muts:
+        real_plan = ML.plan
+
+        def no_margin(chosen):
+            out = dict(real_plan(chosen))
+            out["master_max_s"] = chosen
+            out["song_target_s"] = chosen
+            out["shot_plan_end_s"] = chosen
+            return out
+
+        ML.plan = no_margin
+    if "master_short_rejected" in muts:
+        real_check = ML.check_master
+
+        def strict(chosen, measured):
+            out = dict(real_check(chosen, measured))
+            if measured is not None and measured <= chosen - 2:
+                out["outcome"] = "rejected"
+                out["reason_code"] = "MASTER_LENGTH_SHORT"
+            return out
+
+        ML.check_master = strict
+    if "overshoot_master_silent" in muts:
+        ML.check_master = lambda chosen, measured: {
+            "outcome": "ok", "reason_code": "MASTER_LENGTH_OK"}
+    if "unmeasured_accepted" in muts:
+        real_check = ML.check_master
+
+        def accepts_none(chosen, measured):
+            if measured is None:
+                return {"outcome": "ok", "reason_code": "MASTER_LENGTH_OK"}
+            return dict(real_check(chosen, measured))
+
+        ML.check_master = accepts_none
+    if "probe_lies" in muts:
+        ASM.probe_duration = lambda path, ffprobe=None: 60.0
+    if "probe_appends_bytes" in muts:
+        real_probe = ASM.probe_duration
+
+        def appending_probe(path, *a, **kw):
+            with open(path, "ab") as fh:
+                fh.write(b"\x00" * 16)
+            return real_probe(path, *a, **kw)
+
+        ASM.probe_duration = appending_probe
+    if "provenance_rejects" in muts:
+        MP.check_master_provenance = lambda take_dir, take: {
+            "pass": False, "reason_code": "MASTER_HASH_MISMATCH"}
+    if "provenance_accepts" in muts:
+        MP.check_master_provenance = lambda take_dir, take: {
+            "pass": True, "reason_code": "OK"}
+    if "registry_wrong_seconds" in muts:
+        real_row = DR.profile_row
+
+        def wrong_row(name):
+            out = dict(real_row(name))
+            out["seconds"] = 90
+            return out
+
+        DR.profile_row = wrong_row
+    if "preflight_drops_120" in muts:
+        P.DEFAULT_PROFILES = tuple(
+            n for n in P.DEFAULT_PROFILES if not n.endswith("-120s"))
 
     c = H.Checks(ROW, TITLE)
     print("A07 %s — tree %s%s"
@@ -387,6 +495,70 @@ MUTATIONS = {
         "a07:62s-take-measured-by-ffprobe",
         "a07:measured-62s-passes-as-named-warning",
         "a07:two-minute-master-within-profile",
+    ],
+    "sheet_check_rejects_valid": [
+        "a07:opening-sheet-places-hook-after-build-up",
+    ],
+    "sheet_check_accepts_hook_first": [
+        "a07:hook-first-sheet-rejected",
+    ],
+    "buildup_rule_never_rejects": [
+        "a07:buildup-rule-rejects-hook-first",
+    ],
+    "hook_positions_zero": [
+        "a07:first-hook-at-or-after-plan-floor",
+    ],
+    "measure_counts_labels": [
+        "a07:label-only-segments-never-count",
+    ],
+    "measure_wrong_count": [
+        "a07:measured-hook-count-and-times",
+    ],
+    "one_short_fails": [
+        "a07:one-short-is-flag-not-fail",
+    ],
+    "overshoot_warning_dropped": [
+        "a07:62s-passes-with-named-warning",
+        "a07:severe-overshoot-also-never-stops",
+        "a07:measured-62s-passes-as-named-warning",
+    ],
+    "band_too_short_passes": [
+        "a07:short-side-keeps-5-10-band",
+    ],
+    "plan_not_two_early": [
+        "a07:master-planned-two-seconds-early",
+        "a07:two-minute-plan-ends-two-seconds-early",
+    ],
+    "master_short_rejected": [
+        "a07:master-at-limit-accepted",
+        "a07:two-minute-master-within-profile",
+    ],
+    "overshoot_master_silent": [
+        "a07:master-overshoot-named-on-receipt",
+        "a07:over-profile-master-named-never-silent",
+    ],
+    "unmeasured_accepted": [
+        "a07:unmeasured-duration-never-passes",
+    ],
+    "probe_lies": [
+        "a07:62s-take-measured-by-ffprobe",
+    ],
+    "probe_appends_bytes": [
+        "a07:62s-take-bytes-unchanged",
+    ],
+    "provenance_rejects": [
+        "a07:62s-take-preserved-untouched",
+    ],
+    "provenance_accepts": [
+        "a07:altered-take-refused-not-delivered",
+    ],
+    "registry_wrong_seconds": [
+        "a07:two-minute-profile-id-resolves-to-120s",
+        "a07:receipt-records-duration-profile",
+    ],
+    "preflight_drops_120": [
+        "a07:two-minute-profile-offered-to-preflight",
+        "a07:receipt-records-duration-profile",
     ],
 }
 
