@@ -10,12 +10,14 @@ Generic vocal separation does not prove speaker isolation; its runner must retur
 speaker/isolation metadata from the existing audio preparation/QC process.
 """
 from pathlib import Path
+from datetime import datetime, timezone
 import json
 import uuid
 
 from lipsync_evidence import _approved, _binding, _need, _num, _path, _read, _sha
 from lip_sync.narrator_rule import check_stems
 from lip_sync.stem_offset.stem_offset import measure_offset_files, cut_plan
+from style_defaults.card_gate import gate_run_state
 
 MODEL = "ai-music-api/separate-vocals"
 SCHEMA = "blackceo.lipsync-production/v1"
@@ -174,6 +176,72 @@ def _source_binding(root, evidence, source, digest):
           "LIPSYNC_SEPARATION_SOURCE_MISMATCH", "submitted separation audio is not selected song upload")
 
 
+def _approval_context(root, run_id):
+    """The run's EXISTING card approval, in the shape dispatch reads.
+
+    kie_dispatch reads ``request["card_receipt"]`` (or
+    ``request["run_state"]["card_receipt"]``) and refuses any paid job when
+    the card gate fails. Read the receipt this run already recorded -- the
+    stamped block at ``control/card-receipt-block.json``, the per-question
+    record at ``control/card-receipt.json``, or the run state's own copy at
+    ``control/run-state.json`` -- and never synthesize one. Absent,
+    incomplete, unstamped, mismatched or disagreeing context is a hold
+    before any paid operation, on every dispatch path.
+    """
+    found = []
+    for rel in ("control/card-receipt-block.json", "control/card-receipt.json"):
+        try:
+            doc = json.loads((root / rel).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(doc, dict) and isinstance(doc.get("answers"), dict):
+            found.append(doc)
+    try:
+        state = json.loads((root / "control/run-state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = None
+    state_block = None
+    if isinstance(state, dict):
+        for key in ("card_receipt", "card", "choice_card"):
+            inner = state.get(key)
+            if isinstance(inner, dict) and isinstance(inner.get("answers"), dict):
+                state_block = inner
+                break
+    _need(bool(found) or state_block is not None, "LIPSYNC_CARD_APPROVAL_MISSING",
+          "the run's recorded card approval is required before the paid separation job")
+    block = found[0] if found else state_block
+    if found:
+        _need(all(doc == block for doc in found), "LIPSYNC_CARD_APPROVAL_STALE",
+              "recorded card approvals disagree; re-approve the card before spending")
+    if state_block is not None and state_block != block:
+        _need(False, "LIPSYNC_CARD_APPROVAL_STALE",
+              "recorded card approvals disagree; re-approve the card before spending")
+    ok, refusal = gate_run_state(block)
+    _need(ok, "LIPSYNC_CARD_APPROVAL_INVALID", "card approval is incomplete: %s"
+          % (", ".join((refusal or {}).get("missing") or []) or "no answers"))
+    who, at = block.get("who"), block.get("at")
+    _need(isinstance(who, str) and bool(who.strip()), "LIPSYNC_CARD_APPROVAL_STALE",
+          "card approval must name who answered")
+    try:
+        stamp = datetime.fromisoformat(str(at).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        _need(False, "LIPSYNC_CARD_APPROVAL_STALE", "card approval needs an ISO 'at' stamp")
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    _need(stamp <= datetime.now(timezone.utc), "LIPSYNC_CARD_APPROVAL_STALE",
+          "card approval stamp is in the future")
+    if block.get("run_id") not in (None, "") and str(block["run_id"]) != str(run_id):
+        _need(False, "LIPSYNC_CARD_APPROVAL_MISMATCH",
+              "card approval belongs to run %r, not %r" % (block["run_id"], run_id))
+    if isinstance(state, dict):
+        for key in ("project", "project_id"):
+            want, got = state.get(key), block.get(key)
+            if want not in (None, "") and got not in (None, "") and str(got) != str(want):
+                _need(False, "LIPSYNC_CARD_APPROVAL_MISMATCH",
+                      "card approval belongs to %s %r, not %r" % (key, got, want))
+    return block
+
+
 def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_reader,
                    dispatch_fn=None):
     """Configured real dispatcher adapter; no operation occurs until called.
@@ -191,6 +259,10 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
     _need(not ({"model", "request", "save_dir", "run_id"} & set(dispatch_kwargs)),
           "LIPSYNC_PROVIDER_MAPPING_MISSING", "dispatcher identity cannot be overridden")
     def run(request):
+        # F15: this run's own recorded card approval is required on EVERY
+        # dispatch path, injected dispatcher or not -- the gate never depends
+        # on which callable is handed in.
+        approval = _approval_context(root, request["run_id"])
         source = _path(root, request["source_path"])
         digest = _sha(source)
         _need(digest == request["source_sha256"], "LIPSYNC_SOURCE_CHANGED", "selected source changed")
@@ -212,7 +284,9 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
         dispatch = dispatch_fn
         if dispatch is None:
             from kie_dispatch.kie_dispatch import dispatch
-        result = dispatch(model=MODEL, request={"model": MODEL, "input": inp, "run_dir": str(root)},
+        payload = {"model": MODEL, "input": inp, "run_dir": str(root),
+                   "card_receipt": approval}
+        result = dispatch(model=MODEL, request=payload,
                           save_dir=str(output_dir), run_id=request["run_id"], **dispatch_kwargs)
         if result.get("outcome") != "ok":
             return result
