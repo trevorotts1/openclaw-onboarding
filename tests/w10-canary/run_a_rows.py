@@ -20,8 +20,10 @@ MODES
                        not the landed acceptance vector.
   --real               requires --expect-head; the repo head must equal it, the
                        tree must be clean, and the source vector's
-                       openclaw-onboarding revision must equal the same head
-                       (a stale pin is BLOCKED_VECTOR, never a pass).
+                       openclaw-onboarding revision must be an ancestor of that
+                       head whose only post-pin canary change is the vector
+                       file itself (a stale pin is BLOCKED_VECTOR, never a
+                       pass). Exact equality is still accepted.
 
 VERDICTS (fail-closed)
   PASS            rc==0 AND every required check line present AND the row's
@@ -41,7 +43,9 @@ VERDICTS (fail-closed)
                   disposable install failing. A01 never touches the pinned 999
                   checkout: it copies workflow-guard into the row's TMPDIR,
                   installs the declared dependency there, and runs in the copy.
-  BLOCKED_VECTOR  pin stale: vector revision != head, or vector unpinned.
+  BLOCKED_VECTOR  pin unusable: vector unpinned, pin not a commit, pin not an
+                  ancestor of head, or a canary file other than
+                  source-vector.json changed after the pin.
   BLOCKED_HEAD    --real but repo head != --expect-head.
   BLOCKED_A11     harness exited 4 with BLOCKED_A11 (live artifact required).
 
@@ -53,7 +57,8 @@ RECEIPT SCHEMA  blackceo.skill75.a-row-runner/v1
     "acceptance_usable",         # true only for REAL + PASS
     "head_sha",                  # repo under test
     "vector": {"path","pinned","pinned_at","revision_openclaw_onboarding",
-               "revision_999","revision_matches_head","revisions":{...}},
+               "revision_999","revision_matches_head","pin_is_ancestor",
+               "pin_to_head_diff","revisions":{...}},
     "tree": {"path","head_sha","dirty"},
     "nine_tree": {"path","head_sha","revision_matches_vector"} | null,
     "command",                   # shell-quoted, verbatim
@@ -176,6 +181,22 @@ def git_out(path, *args):
     if r.returncode != 0:
         return None
     return r.stdout.strip()
+
+
+def git_rc(path, *args):
+    """Run git and keep the return code. (rc, stdout, stderr).
+
+    git_out() collapses every failure to None, which cannot distinguish "no
+    output" from "the command failed". The pin gate needs that distinction:
+    a nonzero rc must never be read as an empty result. rc None means the
+    subprocess could not be started at all.
+    """
+    try:
+        r = subprocess.run(["git", "-C", str(path)] + list(args),
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return None, "", "%s: %s" % (type(exc).__name__, exc)
+    return r.returncode, r.stdout or "", r.stderr or ""
 
 
 def tree_state(path):
@@ -756,6 +777,8 @@ def base_receipt(spec, ctx, mode):
             "revision_999": ctx["vector"]["revision_999"],
             "revision_matches_head":
                 ctx["vector"]["revision_openclaw_onboarding"] == ctx["tree_head"],
+            "pin_is_ancestor": None,
+            "pin_to_head_diff": None,
             "revisions": ctx["vector"]["revisions"],
         },
         "tree": ctx["tree_state"],
@@ -780,6 +803,69 @@ def base_receipt(spec, ctx, mode):
     }
 
 
+VECTOR_PIN_PATH = "tests/w10-canary/source-vector.json"
+CANARY_DIR = "tests/w10-canary"
+
+
+def pin_probe(tree, pin, head):
+    """Is this pin still a faithful description of the code under test?
+
+    Exact equality is unsatisfiable here: source-vector.json is itself tracked,
+    so the commit that refreshes the pin can never name itself. The pin is
+    therefore accepted when it is an ancestor of head and the ONLY thing that
+    changed under tests/w10-canary after the pin is the vector file itself.
+
+    Returns (probe, refusal). refusal is None when the pin may be credited;
+    probe is then a dict of facts for the receipt. Fail closed on every git
+    failure: a nonzero rc is never read as "no differences".
+    """
+    if not pin:
+        return None, ("BLOCKED_VECTOR",
+                      "source vector names no openclaw-onboarding revision")
+    rc, _, err = git_rc(tree, "rev-parse", "--git-dir")
+    if rc != 0:
+        return None, ("BLOCKED_ENV",
+                      "tree under test is not a readable git repo (rc=%s): %s"
+                      % (rc, err.strip() or "no stderr"))
+    rc, out, _ = git_rc(tree, "rev-parse", "--verify", "--quiet",
+                        "%s^{commit}" % pin)
+    if rc != 0:
+        return None, ("BLOCKED_VECTOR",
+                      "vector pin %s is not a commit in this tree" % pin)
+    pinned = out.strip()
+    rc, _, err = git_rc(tree, "merge-base", "--is-ancestor", pinned, head)
+    if rc == 1:
+        return None, ("BLOCKED_VECTOR",
+                      "pin %s is not an ancestor of head %s"
+                      % (pinned, head))
+    if rc != 0:
+        return None, ("BLOCKED_ENV",
+                      "git merge-base --is-ancestor failed (rc=%s): %s"
+                      % (rc, err.strip() or "no stderr"))
+    rc, out, err = git_rc(tree, "diff", "--name-status", pinned, head,
+                          "--", CANARY_DIR)
+    if rc != 0:
+        return None, ("BLOCKED_ENV",
+                      "git diff --name-status failed (rc=%s): %s"
+                      % (rc, err.strip() or "no stderr"))
+    changed = []
+    for line in out.splitlines():
+        fields = line.split("\t")
+        if len(fields) < 2:
+            return None, ("BLOCKED_ENV",
+                          "unparsable git diff --name-status line: %r" % line)
+        changed.extend(fields[1:])
+    changed = sorted(set(changed))
+    offending = [p for p in changed if p != VECTOR_PIN_PATH]
+    probe = {"pin_is_ancestor": True, "pin_to_head_diff": changed}
+    if offending:
+        return probe, ("BLOCKED_VECTOR",
+                       "pin %s no longer describes the code under test; "
+                       "files under %s changed after the pin: %s"
+                       % (pinned, CANARY_DIR, ", ".join(offending)))
+    return probe, None
+
+
 def real_gate(spec, ctx):
     if not ctx.get("expect_head"):
         return "BLOCKED_ENV", "--real requires --expect-head <landed sha>"
@@ -792,11 +878,13 @@ def real_gate(spec, ctx):
     vec = ctx["vector"]
     if not vec["pinned"]:
         return "BLOCKED_VECTOR", "source vector is not pinned"
-    if vec["revision_openclaw_onboarding"] != ctx["tree_head"]:
-        return ("BLOCKED_VECTOR",
-                "pin stale: vector names %s but head is %s; refresh the pin "
-                "before any row can be credited"
-                % (vec["revision_openclaw_onboarding"], ctx["tree_head"]))
+    probe, refusal = pin_probe(ctx["tree"],
+                               vec["revision_openclaw_onboarding"],
+                               ctx["tree_head"])
+    if probe is not None:
+        ctx["pin_probe"] = probe
+    if refusal is not None:
+        return refusal
     if spec["id"] == "A01":
         nine = ctx.get("nine_state") or {}
         if vec["revision_999"] and nine.get("head_sha") != vec["revision_999"]:
@@ -819,6 +907,9 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
 
     if mode == "real":
         gate = real_gate(spec, ctx)
+        probe = ctx.pop("pin_probe", None)
+        if probe:
+            rec["vector"].update(probe)
         if gate:
             rec["verdict"], rec["reason"] = gate
             rec["limitations"].append("Real-mode gate refused before execution.")
@@ -1025,6 +1116,53 @@ def self_test():
         }
         Path(ctx["artifacts"]).mkdir(parents=True, exist_ok=True)
 
+        # git fixture for the vector-pin gate: a linear history where a pin
+        # refresh touches only source-vector.json, then a commit that also
+        # changes a second canary file, plus a diverged side branch.
+        grepo = root / "gate-repo"
+        (grepo / "tests/w10-canary").mkdir(parents=True)
+        gvec = grepo / "tests/w10-canary/source-vector.json"
+        gother = grepo / "tests/w10-canary/other-canary.py"
+        gvec.write_text('{"pinned": true}\n', encoding="utf-8")
+        gother.write_text("v1\n", encoding="utf-8")
+
+        def ggit(*args):
+            p = subprocess.run(["git", "-C", str(grepo)] + list(args),
+                               capture_output=True, text=True)
+            if p.returncode != 0:
+                raise RuntimeError("git %r failed: %s" % (args, p.stderr))
+            return p.stdout.strip()
+
+        ggit("init", "-q")
+        ggit("config", "user.email", "selftest@example.invalid")
+        ggit("config", "user.name", "self-test")
+        ggit("config", "commit.gpgsign", "false")
+        ggit("add", "-A")
+        ggit("commit", "-qm", "base")
+        g_base = ggit("rev-parse", "HEAD")
+        gvec.write_text('{"pinned": true, "refreshed": 1}\n', encoding="utf-8")
+        ggit("add", "-A")
+        ggit("commit", "-qm", "refresh pin only")
+        g_vec_only = ggit("rev-parse", "HEAD")
+        gother.write_text("v2\n", encoding="utf-8")
+        ggit("add", "-A")
+        ggit("commit", "-qm", "canary change too")
+        g_head = ggit("rev-parse", "HEAD")
+        ggit("checkout", "-q", "-b", "side", g_base)
+        gvec.write_text('{"pinned": false}\n', encoding="utf-8")
+        ggit("add", "-A")
+        ggit("commit", "-qm", "diverged")
+        g_side = ggit("rev-parse", "HEAD")
+        ggit("checkout", "-q", g_head)
+
+        def gate_ctx(pin, head, tree=None):
+            t = str(tree or grepo)
+            c = dict(ctx, tree=t, tree_head=head, expect_head=head,
+                     tree_state={"path": t, "head_sha": head, "dirty": False})
+            c["vector"] = dict(ctx["vector"],
+                               revision_openclaw_onboarding=pin)
+            return c
+
         # 1. broken fixture prints PASS and a full score, exits 1 -> FAIL.
         rec = run_row(spec, ctx, "dry", root / "rc-broken", 60)
         check("broken fixture (exit 1 while printing PASS) is FAIL",
@@ -1118,7 +1256,7 @@ def self_test():
                                         rec_npm["reason"][:80]))
 
         # 5. real mode, matching head and pinned vector, lying fixture -> FAIL.
-        ctx_real = dict(ctx, expect_head="d" * 40)
+        ctx_real = gate_ctx(g_head, g_head)
         fixture.write_text("import sys\n" + SELFTEST_BODY + "sys.exit(1)\n",
                            encoding="utf-8")
         rec5 = run_row(spec, ctx_real, "real", root / "rc-real-broken", 60)
@@ -1141,16 +1279,116 @@ def self_test():
               % (rec6["verdict"], rec6["evidence_class"],
                  rec6["acceptance_usable"]))
 
-        # 7. real mode with a stale pin refuses before executing.
-        ctx_stale = dict(ctx, expect_head="d" * 40)
-        ctx_stale["vector"] = dict(ctx["vector"],
-                                   revision_openclaw_onboarding="f" * 40)
+        # 7. real mode with an unusable pin refuses before executing.
+        ctx_stale = gate_ctx(g_side, g_head)
         rec7 = run_row(spec, ctx_stale, "real", root / "rc-stale", 60)
         check("stale pin in real mode is BLOCKED_VECTOR, never PASS",
               rec7["verdict"] == "BLOCKED_VECTOR"
               and rec7["acceptance_usable"] is False
               and rec7["exit_code"] is None,
               "verdict=%s" % rec7["verdict"])
+
+        # 8. pin gate: exact equality is unsatisfiable in practice, so an
+        #    ancestor pin whose only post-pin canary change is the vector
+        #    itself must be accepted — while every loosening stays fail-closed.
+        ctx_exact = gate_ctx(g_head, g_head)
+        g_exact = real_gate(spec, ctx_exact)
+        exact_probe = ctx_exact.get("pin_probe") or {}
+        check("pin == head passes the vector gate and records an empty "
+              "pin->head diff",
+              g_exact is None
+              and exact_probe.get("pin_is_ancestor") is True
+              and exact_probe.get("pin_to_head_diff") == [],
+              "gate=%r probe=%r" % (g_exact, exact_probe))
+
+        ctx_vec = gate_ctx(g_base, g_vec_only)
+        g_vec = real_gate(spec, ctx_vec)
+        check("ancestor pin whose only post-pin change is source-vector.json "
+              "passes the vector gate",
+              g_vec is None, "got %r" % (g_vec,))
+        vec_probe = ctx_vec.get("pin_probe") or {}
+        check("ancestor-pin probe names the vector file as the whole diff",
+              vec_probe.get("pin_is_ancestor") is True
+              and vec_probe.get("pin_to_head_diff")
+              == ["tests/w10-canary/source-vector.json"],
+              "probe=%r" % (vec_probe,))
+
+        g_two = real_gate(spec, gate_ctx(g_base, g_head))
+        check("ancestor pin is BLOCKED_VECTOR when a second canary file "
+              "changed after it, naming that file",
+              g_two is not None and g_two[0] == "BLOCKED_VECTOR"
+              and "other-canary.py" in g_two[1],
+              "got %r" % (g_two,))
+
+        g_side = real_gate(spec, gate_ctx(g_side, g_head))
+        check("pin that is not an ancestor of head is BLOCKED_VECTOR",
+              g_side is not None and g_side[0] == "BLOCKED_VECTOR"
+              and "not an ancestor" in g_side[1],
+              "got %r" % (g_side,))
+
+        g_garbage = real_gate(spec, gate_ctx("f" * 40, g_head))
+        check("garbage pin is BLOCKED_VECTOR, never a traceback",
+              g_garbage is not None and g_garbage[0] == "BLOCKED_VECTOR"
+              and "not a commit" in g_garbage[1],
+              "got %r" % (g_garbage,))
+
+        nonrepo = root / "not-a-git-repo"
+        nonrepo.mkdir()
+        g_nonrepo = real_gate(spec, gate_ctx(g_base, g_head, tree=nonrepo))
+        check("a tree that is not a git repo is BLOCKED_ENV, never a pass",
+              g_nonrepo is not None and g_nonrepo[0] == "BLOCKED_ENV",
+              "got %r" % (g_nonrepo,))
+
+        # a nonzero git rc must never be read as "no differences"
+        kept_git_rc = globals()["git_rc"]
+
+        def failing_diff(path, *args):
+            if args and args[0] == "diff":
+                return 128, "", "simulated git diff failure"
+            return kept_git_rc(path, *args)
+
+        globals()["git_rc"] = failing_diff
+        try:
+            g_diff_rc = real_gate(spec, gate_ctx(g_base, g_vec_only))
+        finally:
+            globals()["git_rc"] = kept_git_rc
+        check("nonzero git diff rc is BLOCKED_ENV, not 'no differences'",
+              g_diff_rc is not None and g_diff_rc[0] == "BLOCKED_ENV"
+              and "rc=128" in g_diff_rc[1],
+              "got %r" % (g_diff_rc,))
+
+        # the facts must reach the receipt, and revision_matches_head must
+        # stay exact equality even when the gate passes on ancestry.
+        fixture.write_text("import sys\n" + SELFTEST_BODY + "sys.exit(0)\n",
+                           encoding="utf-8")
+        rec_pin = run_row(spec, gate_ctx(g_base, g_vec_only), "real",
+                          root / "rc-pin-ancestor", 60)
+        check("real receipt records pin_is_ancestor and the pin->head diff "
+              "while revision_matches_head stays exact",
+              rec_pin["verdict"] == "PASS"
+              and rec_pin["vector"]["pin_is_ancestor"] is True
+              and rec_pin["vector"]["pin_to_head_diff"]
+              == ["tests/w10-canary/source-vector.json"]
+              and rec_pin["vector"]["revision_matches_head"] is False,
+              "verdict=%s diff=%r matches=%r"
+              % (rec_pin["verdict"],
+                 rec_pin["vector"].get("pin_to_head_diff"),
+                 rec_pin["vector"].get("revision_matches_head")))
+
+        # 9. the A01 999-revision check sits behind the same gate and must
+        #    still fire exactly as before.
+        a01 = dict(spec, id="A01")
+        ctx_a01_bad = gate_ctx(g_head, g_head)
+        ctx_a01_bad["nine_state"] = {"head_sha": "a" * 40}
+        g_a01_bad = real_gate(a01, ctx_a01_bad)
+        check("A01's 999 revision check still fires after the pin gate change",
+              g_a01_bad is not None and g_a01_bad[0] == "BLOCKED_VECTOR"
+              and "999 head" in g_a01_bad[1], "got %r" % (g_a01_bad,))
+        ctx_a01_ok = gate_ctx(g_head, g_head)
+        ctx_a01_ok["nine_state"] = {"head_sha": ctx["vector"]["revision_999"]}
+        g_a01_ok = real_gate(a01, ctx_a01_ok)
+        check("A01 passes the 999 revision check when the heads agree",
+              g_a01_ok is None, "got %r" % (g_a01_ok,))
 
         print("self-test: %d/%d checks passed"
               % (sum(checks), len(checks)))
