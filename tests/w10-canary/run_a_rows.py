@@ -164,6 +164,17 @@ def sha256_text(text):
     return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
 
 
+def parse_installer_rcs(text):
+    """Every installer rc the canary printed, in order.
+
+    The canary formats the rc as a list — "installer rc=[0, 1]", one entry per
+    installer command it ran — so a bare `installer rc=(\\d+)` never matches.
+    Both forms are read here; callers take the last value as installer_rc.
+    """
+    groups = re.findall(r"installer rc=(\[[\d,\s]*\]|\d+)", text)
+    return [int(n) for g in groups for n in re.findall(r"\d+", g)]
+
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -643,8 +654,8 @@ def evaluate(spec, step_records, overall_rc, mode):
         m = re.search(r"^(\d+) passed in [\d.]+s", text, re.M)
         min_passed_ok = bool(m) and int(m.group(1)) >= spec["min_passed"]
 
-    installer_rcs = re.findall(r"installer rc=(\d+)", text)
-    installer_rc = int(installer_rcs[-1]) if installer_rcs else None
+    installer_rcs = parse_installer_rcs(text)
+    installer_rc = installer_rcs[-1] if installer_rcs else None
     installer_rc_note = ""
     if installer_rc is not None:
         installer_rc_note = (
@@ -1061,10 +1072,9 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
             rec["verdict"] = verdict["verdict"]
             rec["reason"] = verdict["reason"]
             rec["assertions"] = verdict["assertions"]
-        found_rc = re.findall(r"installer rc=(\[[\d,\s]*\]|\d+)", rec["stdout"])
-        rc_nums = [int(n) for grp in found_rc for n in re.findall(r"\d+", grp)]
-        rec["installer_rc"] = rc_nums[-1] if rc_nums else None
-        rec["installer_rc_all"] = rc_nums or None
+        found_rc = parse_installer_rcs(rec["stdout"])
+        rec["installer_rc"] = found_rc[-1] if found_rc else None
+        rec["installer_rc_all"] = found_rc or None
         if rec["installer_rc"] is not None:
             rec["installer_rc_note"] = (
                 "installer_rc=%d was observed inside the canary's scratch "
