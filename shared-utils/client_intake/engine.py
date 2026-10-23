@@ -54,7 +54,31 @@ LAUNCH_TOPICS = {
 _TOPIC_BY_QUESTION = {v: k for k, v in LAUNCH_TOPICS.items()}
 # The three assistance preferences the client may pick and change at any time.
 ASSISTANCE_MODES = {"choose_for_me": "A", "help": "B", "know": "C"}
+# interview_mode answers resolve from the bank's long-form A/B/C wording, a bare
+# A/B/C letter, or the older short phrases (kept as synonyms). None = the text names
+# no recognizable preference — free text or a help phrase — never a silent default.
+_MODE_LETTERS = {"a": "choose_for_me", "b": "help", "c": "know"}
+_MODE_PHRASES = (("recommend a plan", "choose_for_me"),
+                 ("guide me through", "help"),
+                 ("already have a plan", "know"),
+                 ("know what i want", "know"),
+                 ("help me choose", "help"),
+                 ("set it up for me", "choose_for_me"),
+                 ("choose a setup for me", "choose_for_me"))
 _BANK = None
+
+
+def _mode_from_answer(raw):
+    """interview_mode answer -> know/help/choose_for_me, or None when the text names
+    no recognizable preference (a help request or free text, handled by the caller)."""
+    n = _norm(raw)
+    letter = re.match(r"^\(?([abc])\)?[.:\s]*$", n)
+    if letter:
+        return _MODE_LETTERS[letter.group(1)]
+    for phrase, mode in _MODE_PHRASES:
+        if phrase in n:
+            return mode
+    return None
 
 
 def load_bank(path=None):
@@ -258,6 +282,8 @@ def assistance_mode(doc):
     have a plan). Read fresh on every call, so the client may change it mid-flow."""
     e = get(doc, "interview_mode")
     v = e["value"] if e is not None and e["status"] != "unknown" else None
+    if v is not None and v not in ASSISTANCE_MODES:
+        v = _mode_from_answer(v)   # long-form A/B/C wording or an older synonym
     return ASSISTANCE_MODES.get(v, "B")
 
 
@@ -316,8 +342,9 @@ def next_question(doc, bank=None):
         return None
     todo.sort(key=lambda q: not q["condition"].startswith("needs_role"))  # color-role follow-ups come right after the colors
     total = len(applicable(doc, bank))
+    b = bank or load_bank()
     h = hydrate(doc, todo[0])
-    h["help_label"] = (bank or load_bank())["help_label"]
+    h["help_label"] = b["help_label"]
     done = total - len(todo)
     h["progress"] = {"answered": done, "of": total,
                      "percent": (round(100 * done / total) if total else 100)}
@@ -326,10 +353,15 @@ def next_question(doc, bank=None):
     note = (f"about {total} short questions now, depending on what we already know "
             f"(was {was}; your answers opened or closed follow-up questions)"
             if was is not None and was != total else None)
+    template = b.get("question_estimate_template")
     meta["estimate_of"] = total
     h["estimate"] = {"questions": total, "note": note,
-                     "text": f"about {total} short questions, depending on what we already know"}
+                     "text": (template.replace("{n}", str(total)) if template
+                              else f"about {total} short questions, depending on what we already know")}
     h["assistance_mode"] = mode
+    h["coaching"] = b.get("coaching")
+    if was is None:
+        h["introduction"] = b.get("introduction")  # flow opening, once
     return h
 
 
@@ -354,8 +386,9 @@ def wants_help(q, value):
     if value.strip() in ("?", "??", "???"):
         return True
     n = _norm(value).replace("'", "")
-    if q["id"] == "interview_mode" and _pick(value, q["choices"]):
-        return False
+    if q["id"] == "interview_mode" and (_pick(value, q["choices"])
+                                        or _mode_from_answer(value)):
+        return False   # a real preference (bank wording, A/B/C letter or older synonym)
     return (n in HELP_WORDS or n.startswith("help me")
             or (len(n.split()) <= _MAX_HELP_WORDS and HELP_PHRASES.search(n) is not None)
             or any("not sure" in _norm(c) and _norm(c) == n for c in q["choices"]))
@@ -395,7 +428,11 @@ def _normalize(doc, q, raw):
     low = _norm(text) if isinstance(text, str) else ""
     pick = _pick(text, ch) if isinstance(text, str) else None
     if qid == "interview_mode":
-        return ({"i know what i want": "know", "help me choose": "help", "set it up for me to review": "choose_for_me"}.get(_norm(pick or text), "help"), "provided", None)
+        raw_choice = pick or text
+        mode = ({"i know what i want": "know", "help me choose": "help",
+                 "set it up for me to review": "choose_for_me"}.get(_norm(raw_choice))
+                or _mode_from_answer(raw_choice) or "help")
+        return (mode, "provided", None)
     if qid == "design_style":
         m = re.match(r"^\(?([abc])\b", low) or re.search(r"\b(block|circle|hybrid)\b", low)
         if not m:

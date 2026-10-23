@@ -21,6 +21,9 @@ class HelpRequests(unittest.TestCase):
     def test_help_words_open_coaching_and_keep_the_question_open(self):
         s = session()
         li.answer(s, "m0_mode", "Help me choose")
+        # outcome/difficulty open the interview (they precede the offer questions)
+        li.answer(s, "a0_outcome", "Fill my coaching program with paying clients")
+        li.answer(s, "a0_difficulty", "I never know what to say in my marketing")
         for phrase in ("I don't know", "not sure", "?", "no clue what to pick"):
             r = li.answer(s, "a1_offer", phrase)
             self.assertEqual(r["action"], "help", phrase)

@@ -71,6 +71,30 @@ STATES = ("collecting", "recommendation_ready", "awaiting_plan_approval",
           "revision_requested", "cancelled")
 _MODE_FROM_CHOICE = {"i know what i want": "know", "help me choose": "help",
                      "choose a setup for me to review": "choose_for_me"}
+# The bank's long-form A/B/C wording, a bare A/B/C letter and the older phrases above
+# are all one preference. None = no recognizable preference (free text or a help
+# phrase), which the caller handles — never a silent default.
+_MODE_LETTERS = {"a": "choose_for_me", "b": "help", "c": "know"}
+_MODE_PHRASES = (("recommend a plan", "choose_for_me"),
+                 ("guide me through", "help"),
+                 ("already have a plan", "know"),
+                 ("know what i want", "know"),
+                 ("help me choose", "help"),
+                 ("set it up for me", "choose_for_me"),
+                 ("choose a setup for me", "choose_for_me"))
+
+
+def _mode_from_answer(raw: Any) -> Optional[str]:
+    """interview_mode answer -> know/help/choose_for_me, or None when the text names
+    no recognizable preference (a help request or free text)."""
+    n = _norm(raw)
+    letter = re.match(r"^\(?([abc])\)?[.:\s]*$", n)
+    if letter:
+        return _MODE_LETTERS[letter.group(1)]
+    for phrase, mode in _MODE_PHRASES:
+        if phrase in n:
+            return mode
+    return None
 _THINK_FOR_ME = ("you decide", "think for me", "up to you", "whatever you think",
                  "you choose", "your call", "i don't know", "not sure", "unsure")
 # "I don't know" and equivalents are HELP REQUESTS: coaching opens, the question stays
@@ -98,9 +122,14 @@ def _norm(text: Any) -> str:
     return " ".join(str(text or "").casefold().split())
 
 
+def load_bank_doc(path: Optional[Path] = None) -> Dict[str, Any]:
+    """The whole bank document: questions plus the top-level introduction,
+    question_estimate_template and coaching block the client surface shows."""
+    return json.loads((path or QUESTIONS_PATH).read_text(encoding="utf-8"))
+
+
 def load_question_bank(path: Optional[Path] = None) -> List[Dict[str, Any]]:
-    data = json.loads((path or QUESTIONS_PATH).read_text(encoding="utf-8"))
-    return data["questions"]
+    return load_bank_doc(path)["questions"]
 
 
 # ---------------------------------------------------------------------------
@@ -318,8 +347,11 @@ def next_question(session: Dict[str, Any],
     session["estimate_of"] = total
     progress = {"answered": done, "of": total,
                 "percent": (round(100 * done / total) if total else 100)}
+    doc = load_bank_doc()
+    template = doc.get("question_estimate_template")
     estimate = {"questions": total, "note": note,
-                "text": f"about {total} short questions, depending on what we already know"}
+                "text": (template.replace("{n}", str(total)) if template
+                         else f"about {total} short questions, depending on what we already know")}
     for q in bank:
         if q["id"] == "e1_plan_review":
             continue  # asked only via present_plan()
@@ -329,12 +361,16 @@ def next_question(session: Dict[str, Any],
             continue
         if _question_targets_done(session, q):
             continue
-        return {"id": q["id"], "phase": q["phase"], "prompt": q["prompt"],
-                "choices": q.get("choices", []), "reason": q.get("reason", ""),
-                "help": q.get("help"), "examples": q.get("examples", []),
-                "example": q.get("example"), "default": q.get("default"),
-                "safe_default": q.get("safe_default"),
-                "progress": progress, "estimate": estimate}
+        out = {"id": q["id"], "phase": q["phase"], "prompt": q["prompt"],
+               "choices": q.get("choices", []), "reason": q.get("reason", ""),
+               "help": q.get("help"), "examples": q.get("examples", []),
+               "example": q.get("example"), "default": q.get("default"),
+               "safe_default": q.get("safe_default"),
+               "coaching": doc.get("coaching"),
+               "progress": progress, "estimate": estimate}
+        if not asked_ids:
+            out["introduction"] = doc.get("introduction")  # flow opening, once
+        return out
     return None
 
 
@@ -358,6 +394,8 @@ def _help_request(q: Dict[str, Any], raw: Any) -> bool:
     c = _match_choice(raw, q.get("choices", []) or [])
     if c is not None:
         return _norm(c).replace("'", "") in _HELP_ONLY
+    if q.get("id") in ("m0_mode", "interview_mode") and _mode_from_answer(raw) is not None:
+        return False   # a real preference (bank wording, A/B/C letter or older synonym)
     n = _norm(raw).replace("'", "")
     if any(p in n for p in _DELEGATE):
         return False
@@ -383,8 +421,9 @@ def _answer_help(session: Dict[str, Any], q: Dict[str, Any], raw: str,
     examples = q.get("examples") or help_block.get("examples", [])
     return {"ok": False, "action": "help", "id": q["id"], "attempt": counts[q["id"]],
             "explain": q.get("reason", ""), "examples": examples,
-            "coaching": ["show me an example", "help me answer",
-                         "recommend using what I know"],
+            "coaching": ((load_bank_doc().get("coaching") or {}).get("actions")
+                         or ["show me an example", "help me answer",
+                             "recommend using what I know"]),
             "message": "No problem, I will help with this one. " + (q.get("reason") or "") +
                        " Tell me what you do know, say 'show me an example', or say "
                        "'recommend' and I will suggest an answer from what you have "
@@ -450,7 +489,8 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
 # --- per-question handlers -------------------------------------------------
 def _h_mode(s, q, raw, value, ref):
     choice = _match_choice(raw, q["choices"]) or raw
-    s["mode"] = _MODE_FROM_CHOICE.get(_norm(choice), "help")
+    s["mode"] = (_MODE_FROM_CHOICE.get(_norm(choice))
+                 or _mode_from_answer(choice) or "help")
     _set(s, "interview.mode", s["mode"], "provided", q["id"], ref)
 
 
