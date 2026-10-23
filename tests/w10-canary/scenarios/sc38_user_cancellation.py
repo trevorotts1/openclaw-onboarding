@@ -237,6 +237,8 @@ def scenario(core, muts=frozenset()):
                 % (rc_after, env_after["canceled"],
                    env_after["loop_should_stop"], env_after["supervising"]))
 
+        # Watcher/no-spend path only: the ledger itself still accepts
+        # plan/reserve/submit after cancellation, so this is conductor-side.
         c.check("sc38:no-further-paid-work",
                 pre_ledger == post_ledger,
                 "before=%s after=%s"

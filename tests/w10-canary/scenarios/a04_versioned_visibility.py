@@ -54,14 +54,55 @@ def joined(messages):
     return "\n".join(messages or [])
 
 
-def main(argv=None):
-    args = H.add_args(description=__doc__).parse_args(argv)
-    core = H.resolve_core(args)
+def scenario(core, muts=frozenset()):
+    # selftest runs every mutation in this one process; drop the product
+    # modules first so no patch from an earlier mutation leaks into the next.
+    for name in [n for n in list(sys.modules)
+                 if n.split(".")[0] in ("script_approval", "script_pdf")]:
+        del sys.modules[name]
     SA = H.load_pkg(core, "script_approval.script_approval")
     AE = H.load_pkg(core, "script_approval.approval_events")
     SP = H.load_pkg(core, "script_pdf.script_pdf")
+
+    # Deliberate PRODUCT defects: each one damages a rule the row measures, so
+    # the assertion has to read the product to notice. None of them edits a
+    # fixture the assertion compares against.
+    if "presentation_drops_revisions" in muts:
+        real_render = SA.render_presentation
+        SA.render_presentation = (
+            lambda *a, **kw: real_render(*a, **dict(kw, labels=None)))
+    if "presentation_unnames_earned_hook" in muts:
+        real_render = SA.render_presentation
+        SA.render_presentation = (
+            lambda *a, **kw: real_render(*a, **kw).replace(
+                "EARNED SONG HOOK", "SONG HOOK"))
+    if "blanket_revision_bump" in muts:
+        real_register = AE.register_artifact
+
+        def blanket(rec, kind, sha256, revision=None):
+            cur = (rec.get("artifacts") or {}).get(kind) or {}
+            if revision is None and cur.get("sha256") == sha256:
+                bump = int(cur.get("revision") or 0) + 1
+                rec["artifacts"][kind] = dict(cur, revision=bump)
+                return {"changed": True, "kind": kind, "revision": bump,
+                        "invalidated": []}
+            return real_register(rec, kind, sha256, revision)
+
+        AE.register_artifact = blanket
+    if "gate_always_open" in muts:
+        SA.check_script_approval = lambda record, lyrics: None
+    if "stale_revision_accepted" in muts:
+        real_load = SP.load_approved_source
+
+        def accepts_stale(*a, **kw):
+            return dict(real_load(*a, **kw), ok=True, reason_code="OK")
+
+        SP.load_approved_source = accepts_stale
+
     c = H.Checks(ROW, TITLE)
-    print("A04 %s — tree %s" % (TITLE, core))
+    print("A04 %s — tree %s%s"
+          % (TITLE, core, (" [defect: %s]" % ",".join(sorted(muts)))
+             if muts else ""))
 
     hook1 = "do it for the ones who stayed"
     hook2 = "we did it for the ones who stayed"
@@ -196,7 +237,59 @@ def main(argv=None):
                 and SA.lyrics_sha(lyr4)[:12] in detail,
                 "code=%s detail=%s" % (stale.get("reason_code"), detail[:160]))
 
-        return c.finish(args.out)
+        return c
+
+# --------------------------------------------------------------------------
+# selftest — deliberate product defects must turn the named assertions RED
+# --------------------------------------------------------------------------
+MUTATIONS = {
+    "presentation_drops_revisions": [
+        "a04:presentation-displays-both-revisions",
+        "a04:new-revision-displayed",
+    ],
+    "presentation_unnames_earned_hook": [
+        "a04:hook-displayed-as-named-element",
+    ],
+    "blanket_revision_bump": [
+        "a04:unchanged-script-keeps-revision",
+    ],
+    "gate_always_open": [
+        "a04:lyrics-edit-recloses-approval",
+    ],
+    "stale_revision_accepted": [
+        "a04:lyrics-hash-mismatch-refused-by-name",
+    ],
+}
+
+def selftest(core):
+    ok = True
+    for name in sorted(MUTATIONS):
+        c = scenario(core, frozenset([name]))
+        failed = [r["name"] for r in c.failed()]
+        expected = MUTATIONS[name]
+        hit = [e for e in expected if e in failed]
+        good = len(hit) == len(expected) and bool(failed)
+        ok = ok and good
+        print("selftest:%s — %s; red=%s"
+              % (name, "RED as required" if good else "DID NOT FAIL AS EXPECTED",
+                 failed or "none"))
+        print("selftest:%s — expected hit=%d/%d"
+              % (name, len(hit), len(expected)))
+    print("selftest — %s" % ("harness fails on all %d defects" % len(MUTATIONS)
+                             if ok else "HARNESS CANNOT PROVE A FAILURE"))
+    return 0 if ok else 1
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    selftest_mode = bool(argv) and argv[0] == "selftest"
+    args = H.add_args(
+        description="a04 selftest" if selftest_mode else __doc__
+    ).parse_args(argv[1:] if selftest_mode else argv)
+    core = H.resolve_core(args)
+    if selftest_mode:
+        return selftest(core)
+    return scenario(core).finish(args.out)
 
 
 if __name__ == "__main__":

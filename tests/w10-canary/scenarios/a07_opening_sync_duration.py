@@ -56,9 +56,14 @@ DELIVERED = 58.0          # a 60 s video's delivered master length
 HOOK = ["built it from nothing"]
 
 
-def main(argv=None):
-    args = H.add_args(description=__doc__).parse_args(argv)
-    core = H.resolve_core(args)
+def scenario(core, muts=frozenset()):
+    # selftest runs every mutation in this one process; drop the product
+    # modules first so no patch from an earlier mutation leaks into the next.
+    for name in [n for n in list(sys.modules)
+                 if n.split(".")[0] in ("sung_hook", "master_length",
+                                        "final_assembler", "suno_recipe",
+                                        "intake_preflight")]:
+        del sys.modules[name]
     SH = H.load_pkg(core, "sung_hook.sung_hook")
     HP = H.load_pkg(core, "sung_hook.hook_placement")
     ML = H.load_pkg(core, "master_length.master_length")
@@ -66,8 +71,65 @@ def main(argv=None):
     MP = H.load_pkg(core, "final_assembler.master_provenance")
     DR = H.load_pkg(core, "suno_recipe.duration_registry")
     P = H.load_pkg(core, "intake_preflight.preflight")
+
+    # Deliberate PRODUCT defects: each one damages a rule the row measures, so
+    # the assertion has to read the product to notice. None of them edits a
+    # fixture the assertion compares against.
+    if "sheet_count_rule_always_accepts" in muts:
+        SH.check_sheet_count = lambda *a, **kw: []
+    if "buildup_rule_always_accepts" in muts:
+        HP.check_buildup = lambda *a, **kw: []
+    if "labels_trusted_as_measured" in muts:
+        real_measure = SH.measure
+        SH.measure = lambda hook, words, segs, target: real_measure(
+            hook, words, [dict(s, source="measured") for s in (segs or [])],
+            target)
+    if "overshoot_becomes_failure" in muts:
+        real_judge = ML.judge_duration
+
+        def failing_overshoot(actual_s, target_s, short="band",
+                              label_target_s=None):
+            out = real_judge(actual_s, target_s, short=short,
+                             label_target_s=label_target_s)
+            if (isinstance(actual_s, (int, float))
+                    and isinstance(target_s, (int, float))
+                    and actual_s > target_s):
+                return dict(out, verdict="FAIL", outcome="rejected")
+            return out
+
+        ML.judge_duration = failing_overshoot
+    if "plan_keeps_full_length" in muts:
+        ML.master_max_s = lambda chosen_length_s: chosen_length_s
+    if "unmeasured_master_accepted" in muts:
+        real_check = ML.check_master
+
+        def accepts_unmeasured(chosen_length_s, measured_s):
+            if measured_s is None:
+                return {"outcome": "ok", "reason_code": "MASTER_LENGTH_OK",
+                        "master_max_s": chosen_length_s, "measured_s": None,
+                        "detail": "accepted"}
+            return real_check(chosen_length_s, measured_s)
+
+        ML.check_master = accepts_unmeasured
+    if "provenance_ignores_bytes" in muts:
+        real_prov = MP.check_master_provenance
+
+        def ignores_bytes(*a, **kw):
+            out = dict(real_prov(*a, **kw))
+            out["pass"] = True
+            out["reason_code"] = "OK"
+            return out
+
+        MP.check_master_provenance = ignores_bytes
+    if "profile_not_offered" in muts:
+        DR.profiles_for = lambda seconds: ()
+    if "probe_returns_zero" in muts:
+        ASM.probe_duration = lambda path: 0.0
+
     c = H.Checks(ROW, TITLE)
-    print("A07 %s — tree %s" % (TITLE, core))
+    print("A07 %s — tree %s%s"
+          % (TITLE, core, (" [defect: %s]" % ",".join(sorted(muts)))
+             if muts else ""))
 
     # ---- opening sync ----------------------------------------------------
     verses = [{"tag": "Verse 1", "delivery": "sung",
@@ -188,10 +250,6 @@ def main(argv=None):
     # encoded take with the tree's own ffprobe read and then proves the take
     # cannot be silently swapped: the provenance check binds the file's bytes to
     # its assembler receipt, and altered bytes are refused by name.
-    if not H.have_tools("ffmpeg", "ffprobe"):
-        print("TOOLING: ffmpeg/ffprobe are required to measure a real 62 s take "
-              "and a real two-minute master")
-        return 2
     with H.Scratch() as media_dir:
         take_dir = Path(media_dir) / "take"
         take = H.aac_take(take_dir / "take-62s.mp4", 62)
@@ -290,7 +348,81 @@ def main(argv=None):
             and DR.profile_row(got)["seconds"] == 120,
             "receipt duration_profile=%r" % (got,))
 
-    return c.finish(args.out)
+    return c
+
+# --------------------------------------------------------------------------
+# selftest — deliberate product defects must turn the named assertions RED
+# --------------------------------------------------------------------------
+MUTATIONS = {
+    "sheet_count_rule_always_accepts": [
+        "a07:hook-first-sheet-rejected",
+    ],
+    "buildup_rule_always_accepts": [
+        "a07:buildup-rule-rejects-hook-first",
+    ],
+    "labels_trusted_as_measured": [
+        "a07:label-only-segments-never-count",
+    ],
+    "overshoot_becomes_failure": [
+        "a07:62s-passes-with-named-warning",
+        "a07:severe-overshoot-also-never-stops",
+        "a07:master-overshoot-named-on-receipt",
+        "a07:measured-62s-passes-as-named-warning",
+        "a07:over-profile-master-named-never-silent",
+    ],
+    "plan_keeps_full_length": [
+        "a07:master-planned-two-seconds-early",
+        "a07:two-minute-plan-ends-two-seconds-early",
+    ],
+    "unmeasured_master_accepted": [
+        "a07:unmeasured-duration-never-passes",
+    ],
+    "provenance_ignores_bytes": [
+        "a07:altered-take-refused-not-delivered",
+    ],
+    "profile_not_offered": [
+        "a07:two-minute-profile-offered-to-preflight",
+    ],
+    "probe_returns_zero": [
+        "a07:62s-take-measured-by-ffprobe",
+        "a07:measured-62s-passes-as-named-warning",
+        "a07:two-minute-master-within-profile",
+    ],
+}
+
+def selftest(core):
+    ok = True
+    for name in sorted(MUTATIONS):
+        c = scenario(core, frozenset([name]))
+        failed = [r["name"] for r in c.failed()]
+        expected = MUTATIONS[name]
+        hit = [e for e in expected if e in failed]
+        good = len(hit) == len(expected) and bool(failed)
+        ok = ok and good
+        print("selftest:%s — %s; red=%s"
+              % (name, "RED as required" if good else "DID NOT FAIL AS EXPECTED",
+                 failed or "none"))
+        print("selftest:%s — expected hit=%d/%d"
+              % (name, len(hit), len(expected)))
+    print("selftest — %s" % ("harness fails on all %d defects" % len(MUTATIONS)
+                             if ok else "HARNESS CANNOT PROVE A FAILURE"))
+    return 0 if ok else 1
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    selftest_mode = bool(argv) and argv[0] == "selftest"
+    args = H.add_args(
+        description="a07 selftest" if selftest_mode else __doc__
+    ).parse_args(argv[1:] if selftest_mode else argv)
+    core = H.resolve_core(args)
+    if not H.have_tools("ffmpeg", "ffprobe"):
+        print("TOOLING: ffmpeg/ffprobe are required to measure a real 62 s take "
+              "and a real two-minute master")
+        return 2
+    if selftest_mode:
+        return selftest(core)
+    return scenario(core).finish(args.out)
 
 
 if __name__ == "__main__":
