@@ -641,7 +641,7 @@ def _selfcheck() -> int:
         print("PASS " + label)
 
     tmp = os.path.join(tempfile.gettempdir(), "lane-W11C-U1-outbox-selfcheck.sqlite")
-    for suffix in ("", "-wal", "-shm"):
+    for suffix in ("", "-wal", "-shm", ".env"):
         try:
             os.remove(tmp + suffix)
         except FileNotFoundError:
