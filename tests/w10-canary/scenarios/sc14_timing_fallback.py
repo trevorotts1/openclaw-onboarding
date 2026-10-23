@@ -192,15 +192,20 @@ def scenario(core, muts=frozenset()):
         literal = timings.get("fallback_used", evidence.get("fallback_used"))
         c.check("sc14:receipt-records-fallback-used",
                 literal is True,
-                "fallback_used field absent: receipt records source=%r "
-                "evidence.tier=%r instead; the matrix asks for the literal "
-                "boolean" % (timings.get("source"), evidence.get("tier")))
+                ("fallback_used=%r; receipt source=%r evidence.tier=%r"
+                 % (literal, timings.get("source"), evidence.get("tier")))
+                if literal is True else
+                ("fallback_used field absent: receipt records source=%r "
+                 "evidence.tier=%r instead; the matrix asks for the literal "
+                 "boolean" % (timings.get("source"), evidence.get("tier"))))
     return c
 
 # --------------------------------------------------------------------------
 # selftest — deliberate fixture defects must turn the named assertions RED.
-# sc14:receipt-records-fallback-used is the known GAP assertion: it is RED in
-# every run by design, so it is excluded from the mutation expectations.
+# sc14:receipt-records-fallback-used was the product GAP assertion and used to
+# be RED in every run; the product now stamps fallback_used, so it is green and
+# is excluded from the mutation expectations because no fixture defect targets
+# it. Its detail string is conditional so a PASS cannot print a failure reason.
 # --------------------------------------------------------------------------
 GAP = "sc14:receipt-records-fallback-used"
 MUTATIONS = {
