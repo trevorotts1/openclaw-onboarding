@@ -53,7 +53,9 @@ and the value is never read or returned.
 
 Receipt: every timing receipt carries ``source`` =
 "suno-timestamped-lyrics" | "faster-whisper-local" | "cloud-stt" plus
-``transcription_provider`` and ``local_model_loads``.
+``transcription_provider``, ``local_model_loads``, and the literal boolean
+``fallback_used`` (False only when the primary tier 1 path produced the
+timings, True when a fallback tier did).
 
 Typed failure classes (D25 repair). Every refusal keeps its causal chain
 (``raise ... from``; ``LyricTimingError.envelope()`` walks it) instead of
@@ -964,7 +966,8 @@ def cloud_stt_word_timings(track: Dict[str, Any], *, key_name: str = "",
             CLASS_TIMESTAMPS_UNAVAILABLE)
     return _receipt(SOURCE_CLOUD_STT, words, track,
                     {"tier": 3, "stt_key_env": name,
-                     "cloud_provider": "client-configured"})
+                     "cloud_provider": "client-configured"},
+                    fallback_used=True)
 
 
 # ── receipt shaping ──────────────────────────────────────────────────────────
@@ -976,12 +979,19 @@ def _provider(source: str) -> str:
 
 
 def _receipt(source: str, words: List[Dict[str, Any]], track: Any,
-             detail: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+             detail: Optional[Dict[str, Any]] = None, *,
+             fallback_used: bool) -> Dict[str, Any]:
     """The step's receipt: which source produced the timing, the words, and
-    how many local models loaded (0 for tiers 1 and 3)."""
+    how many local models loaded (0 for tiers 1 and 3).
+
+    ``fallback_used`` is stated by the caller that just ran the path: False
+    when tier 1 (the primary path) produced the timings, True when a fallback
+    tier did. The kwarg is required so no new call site can forget to say.
+    """
     rec = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
            "tool_version": TOOL_VERSION, "source": source,
            "transcription_provider": _provider(source),
+           "fallback_used": bool(fallback_used),
            "words": list(words or []),
            "local_model_loads": 1 if source == SOURCE_WHISPER_LOCAL else 0,
            "track": {"task_id": track.get("task_id")
@@ -1033,7 +1043,8 @@ def provide_word_timings(track: Dict[str, Any], *,
                 SOURCE_SUNO, words, track,
                 {"tier": 1, "payload": TIER1_PAYLOAD_SOURCE, "hint": True,
                  "counts": {"music_generation_calls": 0,
-                            "paid_analysis_calls": 0}})}
+                            "paid_analysis_calls": 0}},
+                fallback_used=False)}
 
     # ── tier 1 (dispatch path) ──
     t1_err: Optional[LyricTimingError] = None
@@ -1049,7 +1060,8 @@ def provide_word_timings(track: Dict[str, Any], *,
         if words:
             return {"ok": True, "timings": _receipt(
                 SOURCE_SUNO, words, track, dict(got["evidence"], counts={
-                    "music_generation_calls": 0, "paid_analysis_calls": 1}))}
+                    "music_generation_calls": 0, "paid_analysis_calls": 1}),
+                fallback_used=False)}
         if t1_err is None:
             t1_err = LyricTimingError(
                 "SUNO_ALIGNMENT_MISSING",
@@ -1075,7 +1087,7 @@ def provide_word_timings(track: Dict[str, Any], *,
               "counts": {"music_generation_calls": 0,
                          "paid_analysis_calls": 0}}
         out = {"ok": True, "timings": _receipt(
-            SOURCE_WHISPER_LOCAL, words, track, ev)}
+            SOURCE_WHISPER_LOCAL, words, track, ev, fallback_used=True)}
         if conf and conf.get("low"):
             # Classifier uncertainty is NOT a definite creative failure:
             # keep the measured words, trigger bounded recovery (D25/D26).
@@ -1112,6 +1124,10 @@ def provide_word_timings(track: Dict[str, Any], *,
         return fail
     try:
         got = cloud(track)
+        if isinstance(got, dict):
+            # tier 3 is reached only after tiers 1 AND 2 failed, so this
+            # receipt came from a fallback whatever the cloud fn stamped
+            got["fallback_used"] = True
         return {"ok": True, "timings": got,
                 "counts": {"music_generation_calls": 0,
                            "paid_analysis_calls": 0}}
