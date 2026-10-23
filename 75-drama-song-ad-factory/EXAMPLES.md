@@ -158,7 +158,7 @@ auth.json:
 
 Observed: exit 0, outcome=ok, reason_code=preflight-pass, next_action
 "Proceed to claim eligible stage." data.checks shows every gate:
-schema_trusted, profile_known, references_inside_approved_storage,
+schema_trusted, profile_known, duration_profile, references_inside_approved_storage,
 storage_writable, disk, tools (shutil.which), credentials_present
 (PRESENCE ONLY - values never returned), then the approval checks.
 

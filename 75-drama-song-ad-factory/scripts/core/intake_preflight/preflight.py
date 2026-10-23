@@ -674,6 +674,10 @@ def check(payload):
     if not checks["profile_known"]:
         return {"outcome": "rejected", "reason_code": "delivery-profile-unknown",
                 "checks": checks, "next_action": f"Choose a delivery profile in {allowed}."}
+    # SC-17: the receipt records WHICH duration profile the run used, so the
+    # chosen shape+length is readable after the run and not only inside the
+    # request payload. Known-only: the gate above rejects anything else.
+    checks["duration_profile"] = p.get("profile") or DEFAULT_PROFILES[0]
 
     root = p.get("approved_root") or p.get("storage_dir") or os.getcwd()
     bad, outside = [], []
