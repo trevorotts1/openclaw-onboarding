@@ -1575,6 +1575,10 @@ def render_check(
     dom_content: str = ""
     richness: dict = {"img_count": 0, "block_count": 0, "has_headline": False}
     png_blank: dict = {"blank": False, "determinable": False, "reason": "not_inspected"}
+    # v18.2.0: True only once `console --clear` succeeded IMMEDIATELY before this
+    # navigation — the sole condition under which console entries may be attributed
+    # to the page being checked (see Step 0 below).
+    console_drained: bool = False
 
     # ── P2-4: agent-browser version-pin guard ─────────────────────────────────
     # The command spellings below are 0.27.0-specific: `get html html` (not
@@ -1589,6 +1593,7 @@ def render_check(
     # ── Drive the headless browser (browser_manager singleton gateway) ─────────
     # We use the browser_cmd machinery which enforces --headed false (D6).
     # The agent-browser command sequence is:
+    #   0. DRAIN the console buffer (`console --clear`) — must precede navigation
     #   1. navigate to the URL (waits for network-idle by default)
     #   2. capture the rendered HTML
     #   3. take a real PNG screenshot
@@ -1597,6 +1602,33 @@ def render_check(
     # we invoke the agent-browser CLI directly as a subprocess.  browser_cmd()
     # enforces the singleton session guard so this is safe.
     try:
+        # Step 0 (v18.2.0): DRAIN the console buffer IMMEDIATELY BEFORE navigating.
+        # `agent-browser console` reads a DAEMON-ACCUMULATED buffer, not this
+        # navigation's entries: without the drain, errors from an EARLIER page in
+        # the same daemon were attributed to the page being rendered (proven:
+        # example.com reproduced byte-identical 3 errors, console_sha256 a212bf03…,
+        # row12-verify/golden-probe-2; browser_cmd does not append --session, so
+        # render_check talks to the default daemon shared with everything else).
+        # `console --clear` empties that buffer, so what we read below is
+        # navigation-scoped. The gate itself (zero console errors) is UNCHANGED —
+        # only the MEASUREMENT is repaired. A failed drain is recorded as evidence,
+        # never silently ignored: an un-drained read cannot be attributed.
+        drain_cmd = browser_cmd("console", "--clear")
+        drain_result = subprocess.run(
+            shlex.split(drain_cmd),
+            capture_output=True, text=True, timeout=30,
+        )
+        console_drained = drain_result.returncode == 0
+        if not console_drained:
+            # stderr ONLY: stdout of `console` is buffer CONTENT, and replaying it
+            # here would re-inject another page's lines into this page's errors.
+            render_errors.append(
+                "console drain (console --clear) failed (exit "
+                f"{drain_result.returncode}): "
+                + ((drain_result.stderr or "").strip() or "no stderr")[:300]
+                + " — console entries below may belong to a PREVIOUS navigation"
+            )
+
         # Step 1: navigate to URL (waits for network-idle by default).
         nav_cmd = browser_cmd("open", preview_url)
         # Step 2: capture rendered HTML. agent-browser 0.27.0 uses `get html html`
@@ -1657,6 +1689,11 @@ def render_check(
                     ghl_evidence.set_private_file(png_path)
 
         # Capture console/pageerror. `console` in 0.27.0 outputs plain text.
+        # ONLY attributable when the drain landed before the navigation: when the
+        # drain failed the buffer may still hold a PREVIOUS page's entries, so the
+        # raw lines are kept as evidence but are NOT promoted to render_errors
+        # (the failure is already recorded above — the check still FAILS, it just
+        # does not blame the wrong page twice).
         console_result = subprocess.run(
             shlex.split(console_cmd),
             capture_output=True, text=True, timeout=30,
@@ -1680,6 +1717,8 @@ def render_check(
         # type/level is checked FIRST, then a robust text-severity parse — ANY
         # pageerror / console.error fails the render, never silently dropped.
         for entry in console_entries:
+            if not console_drained:
+                break   # unattributable — see the drain note above
             kind = (entry.get("type") or entry.get("level") or "").lower()
             msg = entry.get("text") or entry.get("message") or entry.get("raw") or ""
             if kind in ("pageerror", "error", "severe") or console_line_is_error(msg):
@@ -1773,6 +1812,10 @@ def render_check(
         "dom_sha256": dom_sha256,
         "png_sha256": png_sha256,
         "console_sha256": console_sha256,
+        # v18.2.0: proven the console buffer was drained BEFORE this navigation, so
+        # the entries above describe THIS page. False ⇒ unattributable (already
+        # failed the gate via render_errors).
+        "console_drained": console_drained,
         "url": preview_url,
         "step": step,
     }

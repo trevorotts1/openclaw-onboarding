@@ -59,7 +59,7 @@
 #   bash browser_manager.sh probe                      # P0-6: capability probe (ADVISORY: always exit 0)
 #
 # Version marker (owned by Skill 06; keep in sync with skill-version.txt):
-BROWSER_MANAGER_VERSION="v27.1.73"
+BROWSER_MANAGER_VERSION="v27.1.74"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
