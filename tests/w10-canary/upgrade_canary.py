@@ -62,6 +62,21 @@ ONB_REPO = "openclaw-onboarding"
 #: canaries.upgrade.acceptance_rows). Stamped into every receipt.
 ACCEPTANCE_ROWS = ["A08", "A12", "A11"]
 
+#: Measured installer behaviour that a receipt must name, never hide. The
+#: interrupted-run preservation check fails for this reason on BOTH
+#: distributions; an upgrade receipt presented without this limitation would
+#: read as a clean pass.
+KNOWN_LIMITATIONS = [
+    "interrupted-run state preservation is NOT achieved: update-skills.sh "
+    "removes each tree before re-copying it (oc_remove_tree_guarded rm -rf -> "
+    "cp -R, update-skills.sh:6788-6803), so an interrupted upgrade of Skill 75 "
+    "cannot resume; seeded resume markers are destroyed by the installer. This "
+    "is measured installer behaviour, not canary drift.",
+    "installer_rc is not a pass signal: update-skills.sh returns rc=1 when its "
+    "unrelated persona-index fetch is unavailable while still delivering the "
+    "Skill 75 tree. Acceptance is judged on installed bytes, never on rc.",
+]
+
 #: the logical path used to prove a genuinely changed file is detectable
 PROBE_FILE = "scripts/core/state_store.py"
 #: a file the upgrade does not touch — the "provably identical" positive control
@@ -576,6 +591,8 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
                     "schema": "blackceo.skill75.canary.upgrade-manifest/v1",
                     "dist": dist,
                     "acceptance_rows": ACCEPTANCE_ROWS,
+                    "limitations": KNOWN_LIMITATIONS,
+                    "installer_rc_is_pass_signal": False,
                     "distribution_args": DISTS[dist]["args"],
                     "old_revision": old_rev,
                     "new_revision": new_rev,
@@ -675,6 +692,8 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
                 "mode": "real",
                 "dist": dist,
                 "acceptance_rows": ACCEPTANCE_ROWS,
+                "limitations": KNOWN_LIMITATIONS,
+                "installer_rc_is_pass_signal": False,
                 "status": "REFUSED",
                 "code": e.code,
                 "detail": e.detail,
