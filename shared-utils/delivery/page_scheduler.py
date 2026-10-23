@@ -28,6 +28,10 @@ Contract points (GHL-DELIVERY-SPEC.md "Delivery contract", "Durable execution"):
   * Resume without duplicating: re-running the same plan against the same
     store reuses checkpointed identities (zero create dispatches) and never
     deletes confirmed assets.
+  * OK_UNVERIFIED never confirms: an unverified create's native ID is
+    persisted UNCONFIRMED (record stays PLANNED) until a verification step
+    confirms it; such a page is never configured from and never reported as
+    reused.
 
 Runnable check (offline; the real modules are imported and exercised):
     python3 -I shared-utils/delivery/page_scheduler.py
@@ -69,6 +73,15 @@ ST_FAILED_RATE_LIMITED = "failed-rate-limited"
 ST_FAILED_TRANSIENT = "failed-transient"
 ST_READBACK_MISMATCH = "readback-mismatch-operator"
 ST_NO_ROUTE = "no-route"                        # real platform restriction, reported as-is
+
+# related_ids role holding an UNVERIFIED create's candidate native ID as
+# UNCONFIRMED: the confirmed `native_id` field stays empty and the record stays
+# PLANNED until a verification step (confirm_native) promotes it. An unverified
+# ID is never used for content writes and never reported as reused.
+# ponytail: checkpoints.py (W4A-owned) has no first-class unconfirmed-ID field,
+# so the candidate lives in related_ids under this role. Upgrade path: when W4A
+# adds an unconfirmed slot on Checkpoint, move the value there and drop this.
+UNCONFIRMED_ID_ROLE = "unconfirmed_native_id"
 
 
 class SchedulerError(ValueError):
@@ -334,6 +347,21 @@ class PageBatchScheduler:
                 batch,
             )
         if decision == "reuse":
+            if existing.native_id is None or existing.state == cp.STATE_PLANNED:
+                # Identity never confirmed (PLANNED until confirm_native):
+                # an unverified/unconfirmed create is never reported as
+                # reused -- it surfaces as unconfirmed, and never re-creates.
+                held = existing.related_ids.get(UNCONFIRMED_ID_ROLE)
+                reason = (
+                    "identity unconfirmed (PLANNED) until a verification step "
+                    "confirms it; resume never re-creates and never claims reuse"
+                )
+                if held:
+                    reason += f"; unverified native ID held in related_ids[{UNCONFIRMED_ID_ROLE}]"
+                return PageOutcome(
+                    page.logical_id, ST_CREATED_UNCONFIRMED,
+                    existing.state, existing.native_id, reason, batch,
+                )
             return PageOutcome(
                 page.logical_id, ST_REUSED, existing.state, existing.native_id,
                 "already checkpointed; resume must never duplicate", batch,
@@ -398,15 +426,32 @@ class PageBatchScheduler:
             )
         if step.final is rt.FinalStatus.OK_UNVERIFIED:
             if native_id:
-                self._store.complete_op(op_id, native_id=native_id)
+                # OK_UNVERIFIED means the transport reports the create
+                # incomplete ('reported incomplete, never as done'): this ID
+                # is NEVER confirmed. Persist it UNCONFIRMED (record stays
+                # PLANNED, confirmed native_id empty) so phase 2 cannot write
+                # content to it and resume never claims reuse; a verification
+                # step (confirm_native) promotes it later.
+                self._store.record_create(
+                    key, name=page.name or page.logical_id, slug=page.slug,
+                    related_ids={UNCONFIRMED_ID_ROLE: native_id},
+                    _resolving_op_id=op_id,
+                )
+                self._store.complete_op(op_id)
             else:
                 self._store.record_create(key, name=page.name or page.logical_id, slug=page.slug,
                                           _resolving_op_id=op_id)
                 self._store.complete_op(op_id)
             rec = self._store.read(key)
+            reason = "provider reported applied; readback unverified"
+            if native_id:
+                reason += (
+                    "; native ID held UNCONFIRMED until a verification step "
+                    f"confirms it (related_ids[{UNCONFIRMED_ID_ROLE}])"
+                )
             return PageOutcome(
                 page.logical_id, ST_CREATED_UNVERIFIED, rec.state, rec.native_id,
-                "provider reported applied; readback unverified", batch, [op_id], [step],
+                reason, batch, [op_id], [step],
             )
         if step.final is rt.FinalStatus.UNRESOLVED:
             # Op stays open on purpose: the next run must see blocked-pending,
@@ -804,6 +849,62 @@ def _self_check() -> int:
     rep = sched.configure_pages(plan)
     ok(rep.outcomes["p01"].status == ST_NOT_CREATED, "L: unconfirmed identity is not configured")
     ok(log == [], "L: no dispatch without a confirmed identity")
+
+    # ---- M. OK_UNVERIFIED + native_id: never confirmed, never reused ------
+    # Negative control for F3. Pre-fix, complete_op(native_id=...) recorded
+    # this create as STATE_CREATED/confirmed and resume reported ST_REUSED.
+    # The readback-required route with no probe yields OK_UNVERIFIED while the
+    # response still carries an extractable native ID.
+    store = fresh_store()
+    log = []
+    ex = rt.ScriptedExecutor([ok_result("nat-u")], log=log)
+    sched = PageBatchScheduler(store, {ci.Transport.PUBLIC_REST: ex})
+    plan = ApprovedPlan("loc", "appr-unv", (
+        PageSpec("p01", target="t", resource="contacts",
+                 create_payload={"n": 1}, content_payload={"body": 1}),))
+    rep = sched.allocate_identities(plan)
+    o = rep.outcomes["p01"]
+    ok(o.status == ST_CREATED_UNVERIFIED,
+       "M: OK_UNVERIFIED create surfaces as unverified")
+    ok(o.state == cp.STATE_PLANNED and o.native_id is None,
+       "M: never STATE_CREATED/confirmed (F3 negative control)")
+    key = plan.pages[0].key_for("loc")
+    rec = store.read(key)
+    ok(rec.state == cp.STATE_PLANNED and rec.native_id is None,
+       "M: record stays PLANNED, confirmed native_id empty")
+    ok(rec.related_ids.get(UNCONFIRMED_ID_ROLE) == "nat-u",
+       "M: native ID persisted as UNCONFIRMED")
+    # phase-2 content gate must not write content to the unverified id
+    log = []
+    ex = rt.ScriptedExecutor([], log=log)
+    sched = PageBatchScheduler(store, {ci.Transport.PUBLIC_REST: ex})
+    conf = sched.configure_pages(plan)
+    ok(conf.outcomes["p01"].status == ST_NOT_CREATED,
+       "M: content gate closed for an unverified id")
+    ok(log == [], "M: no content dispatch to an unverified id")
+    # afterwards: never reported reused; must surface as unconfirmed
+    rep = sched.allocate_identities(plan)
+    o = rep.outcomes["p01"]
+    ok(o.status != ST_REUSED, "M: unverified create never reported as reused")
+    ok(o.status == ST_CREATED_UNCONFIRMED, "M: surfaces as unconfirmed afterwards")
+    ok(o.state == cp.STATE_PLANNED and o.native_id is None,
+       "M: still unconfirmed across runs until a verification step")
+    ok(log == [], "M: resume of an unverified create dispatches nothing")
+    # a verification step promotes the held ID -> normal flow resumes
+    rec = store.read(key)
+    cp_rec = store.confirm_native(key, "nat-u", rec.revision)
+    ok(cp_rec.state == cp.STATE_CREATED and cp_rec.native_id == "nat-u",
+       "M: verification step promotes the held ID to confirmed")
+    log = []
+    ex = rt.ScriptedExecutor([ok_result("x")], log=log)
+    probe = rt.scripted_probe(log, [(rt.ReconcileVerdict.APPLIED, "confirmed on readback")])
+    sched = PageBatchScheduler(store, {ci.Transport.PUBLIC_REST: ex}, probe=probe)
+    rep = sched.run(plan)
+    ok(rep.outcomes["p01"].status == ST_CONFIGURED,
+       "M: verified page configures normally afterwards")
+    ok(len([ln for ln in log if ln.startswith("dispatch:")]) == 1,
+       "M: only the configure dispatch after verification")
+    ok(store.read(key).state == cp.STATE_CONFIGURED, "M: state advances only after verification")
 
     print(f"self-check OK ({n_asserts} assertions)")
     return 0
