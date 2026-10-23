@@ -305,22 +305,23 @@ def _scenario(name):
 
 
 def plan_a08(ctx, mode, sandbox):
-    steps = []
+    # One invocation with --dist both: the canary prints ONE aggregate
+    # "real: N/M checks passed", which is what this row's min_total=7 floor
+    # describes. Two per-dist processes print two 6/6 summaries, so the last
+    # one read by evaluate() can never clear the floor.
+    argv = ["python3", "tests/w10-canary/clean_install_canary.py",
+            "--vector", str(ctx["vector_path"]),
+            "--dist", "both", "--out", str(ctx["artifacts"])]
     # The canary resolves each distribution's source checkout itself: vector
     # path, then --repo-root, then a sibling directory. A runner temp tree has
     # no sibling, so without these the row refuses SOURCE_CHECKOUT_UNRESOLVED
     # before any installer runs and reports no installer_rc.
-    roots = ["--repo-root", "openclaw-onboarding=%s" % ctx["tree"]]
+    argv += ["--repo-root", "openclaw-onboarding=%s" % ctx["tree"]]
     if ctx.get("nine_root"):
-        roots += ["--repo-root", "999-setup=%s" % ctx["nine_root"]]
-    for dist in ("onboarding", "999"):
-        argv = ["python3", "tests/w10-canary/clean_install_canary.py",
-                "--vector", str(ctx["vector_path"]),
-                "--dist", dist, "--out", str(ctx["artifacts"])] + roots
-        if mode == "dry":
-            argv.append("--dry-run")
-        steps.append(Step(argv, cwd=ctx["tree"], note="dist=%s" % dist))
-    return steps
+        argv += ["--repo-root", "999-setup=%s" % ctx["nine_root"]]
+    if mode == "dry":
+        argv.append("--dry-run")
+    return [Step(argv, cwd=ctx["tree"], note="dist=both")]
 
 
 def plan_a12(ctx, mode, sandbox):
@@ -513,7 +514,7 @@ def rows():
             "dry:onboarding:manifest hash recorded",
             "dry:parity negative control (tamper detected)",
             "dry:no legacy mirror tree"],
-        required_re_real=[r"installer rc=\d+", r"\d+ files, digest [0-9a-f]{16,}"],
+        required_re_real=[r"installer rc=\[?\d+", r"\d+ files, digest [0-9a-f]{16,}"],
         required_re_dry=[],
         forbidden_real=[], forbidden_dry=[],
         summary_re=r"^(dry-run|real): (\d+)/(\d+) checks passed$",
@@ -1054,8 +1055,10 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
             rec["verdict"] = verdict["verdict"]
             rec["reason"] = verdict["reason"]
             rec["assertions"] = verdict["assertions"]
-        found_rc = re.findall(r"installer rc=(\d+)", rec["stdout"])
-        rec["installer_rc"] = int(found_rc[-1]) if found_rc else None
+        found_rc = re.findall(r"installer rc=(\[[\d,\s]*\]|\d+)", rec["stdout"])
+        rc_nums = [int(n) for grp in found_rc for n in re.findall(r"\d+", grp)]
+        rec["installer_rc"] = rc_nums[-1] if rc_nums else None
+        rec["installer_rc_all"] = rc_nums or None
         if rec["installer_rc"] is not None:
             rec["installer_rc_note"] = (
                 "installer_rc=%d was observed inside the canary's scratch "
