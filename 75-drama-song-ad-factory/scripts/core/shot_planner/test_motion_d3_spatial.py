@@ -52,13 +52,6 @@ def check(name, cond, detail=""):
     if not cond:
         FAILS.append(name)
 
-def _within_drift(measured, calibrated):
-    """Band for ffmpeg-derived scores: 1e-3 absolute (1000x the widest
-    measured cross-environment drift, 9.1e-4 on the flash legacy score, and
-    12x below the 0.012 subject gate) or 50% relative, whichever is wider.
-    A semantic change moves a calibrated number by far more than that."""
-    return abs(measured - calibrated) <= max(1e-3, 0.5 * abs(calibrated))
-
 
 # ------------------------------------------------------- pure grid fixtures --
 
@@ -128,7 +121,8 @@ def test_pure_grids_discriminate():
     # Measured identically on macOS (ffmpeg 9.0.2, Python 3.14.7) and on the
     # CI runner: flash legacy 0.273265 / 0.273265, pan 0.037398 / 0.037398,
     # local legacy 0.014446 / 0.014446, local subject 0.067247 / 0.067247.
-    # This is the only place a calibrated number may be pinned tightly.
+    # Grids are the only class pinned exactly; encoded-clip numbers below use
+    # the subject/legacy tolerances that their measured spread justifies.
     grid_calibration = (("flash", flash, 0.0, 0.273265),
                         ("pan", pan, 0.0, 0.037398),
                         ("local", local, 0.067247, 0.014446))
@@ -315,33 +309,35 @@ def test_real_clips_move_the_decision():
               all(s["evidence"] == "spatial" and s["samples"] >= 2
                   for s in scores.values()),
               json.dumps({k: v.get("samples") for k, v in scores.items()}))
-        # Clip numbers are NOT pinned by equality: ffmpeg/x264 does not emit
-        # byte-identical frames on every build, so every clip-derived score
-        # drifts with the encoder. Measured spread, macOS (ffmpeg 9.0.2,
-        # Python 3.14.7) vs the Ubuntu CI runner:
-        #   flash  subject 0.000369 / 0.000439 (+7.0e-5)
-        #          legacy  0.106209 / 0.107116 (+9.1e-4)  <- this is the drift
-        #          that used to fail the old 5e-4 equality check
-        #   pan    subject 0.000190 / 0.000190 (  0    )
-        #          legacy  0.044635 / 0.044655 (+2.0e-5)
-        #   local  subject 0.026011 / 0.025899 (-1.1e-4)
-        #          legacy  0.000549 / 0.000544 (-5.0e-6)
-        #   static subject 0.000000 / 0.000000, legacy 0.000000 / 0.000000
-        # So each calibrated fixture is asserted on the decision its number
-        # protects (correct gate side, with margin) and on a magnitude band
-        # sized 1000x above the widest measured drift, which still goes red
-        # on any semantic change.
+        # Clip numbers split into two classes, measured on macOS (ffmpeg 9.0.2,
+        # Python 3.14.7) and on the Ubuntu CI runner:
+        #
+        # Subject term is stable across environments; keep it exact.
+        #   flash 0.000369 / 0.000439 (+7.0e-5)
+        #   pan   0.000190 / 0.000190 (  0    )
+        #   local 0.026011 / 0.025899 (-1.1e-4)   <- widest, 4.5x inside 5e-4
+        #
+        # Legacy mean-luma term moves with the encoder build and is not
+        # exact-pinnable. This is the drift that failed CI:
+        #   flash 0.106209 / 0.107116 (+9.1e-4 = 0.86% of value)
+        #   pan   0.044635 / 0.044655 (+2.0e-5)
+        #   local 0.000549 / 0.000544 (-5.0e-6)
+        # So the legacy number is asserted on a 5% band, 5.8x the widest
+        # measured spread (plus a 1e-5 floor over the 1e-6 rounding step),
+        # which still goes red on any semantic change.
         for name, subject, legacy in (
                 ("flash", 0.000369, 0.106209),
                 ("pan", 0.000190, 0.044635),
                 ("local", 0.026011, 0.000549)):
             s = scores[name]
-            check("%s stays on its calibrated magnitude" % name,
-                  _within_drift(s["subject_motion_score"], subject)
-                  and _within_drift(s["frame_diff_score"], legacy),
-                  "%r/%r vs %r/%r"
-                  % (s["subject_motion_score"], s["frame_diff_score"],
-                     subject, legacy))
+            check("%s reproduces its calibrated subject score" % name,
+                  abs(s["subject_motion_score"] - subject) < 5e-4,
+                  "%r vs %r" % (s["subject_motion_score"], subject))
+            check("%s keeps its calibrated legacy score" % name,
+                  abs(s["frame_diff_score"] - legacy)
+                  <= max(1e-5, 0.05 * abs(legacy)),
+                  "%r vs %r (measured spread 9.1e-4 worst case)"
+                  % (s["frame_diff_score"], legacy))
         for name in ("flash", "pan"):
             s = scores[name]
             check("%s is refused with a 2x margin, not merely below the gate"
