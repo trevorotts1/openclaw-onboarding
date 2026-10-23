@@ -210,10 +210,10 @@ class AgnesPriceTests(unittest.TestCase):
             self.assertEqual(by_component["image"]["agnes_seconds"], 90)
             self.assertGreater(by_component["music"]["usd"], 0)
             self.assertGreater(by_component["lip_sync"]["usd"], 0)
-            # 90 s ad -> 12 clips of the planned 60 s ceiling (lipsync_clips.budget)
+            # 90 s ad -> 32 s (the 35% hard ceiling) in 7 clips (lipsync_clips.budget)
             self.assertEqual(priced_card["lip_sync"], {
-                "model_id": "kling/ai-avatar-standard", "seconds": 60, "lines": 12,
-                "seconds_per_shape": 60, "lines_per_shape": 12, "shape_count": 1})
+                "model_id": "kling/ai-avatar-standard", "seconds": 32, "lines": 7,
+                "seconds_per_shape": 32, "lines_per_shape": 7, "shape_count": 1})
             # the total is the song plus the close-ups, nothing else
             self.assertTrue(approx(
                 priced_card["price_usd"],
@@ -232,7 +232,7 @@ class AgnesPriceTests(unittest.TestCase):
             env = agnes_price.envelope(card, fake)
             self.assertEqual(env["card"]["agnes_seconds"], 180)
             # both shapes run lip-sync
-            self.assertEqual(env["card"]["lip_sync"]["seconds"], 120)
+            self.assertEqual(env["card"]["lip_sync"]["seconds"], 64)
 
     # ----------------------------------------------- 3. price fails closed
     def test_failing_price_fn_says_price_unavailable(self):

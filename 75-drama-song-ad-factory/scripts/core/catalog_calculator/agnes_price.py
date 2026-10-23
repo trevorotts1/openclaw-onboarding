@@ -98,14 +98,21 @@ def _lip_sync_line(length_s, shape_count):
     """lip_sync spec + (units, jobs): the card's lip-sync line (SPEC A9).
 
     Seconds and clip count come from the one lip-sync rule
-    (``lipsync_clips.budget``: 30-40 s and 6-8 clips per 60 s ad, every clip
-    at most 6 s) at its planned ceiling, so the card never under-quotes;
-    ``_lip_sync_spec`` then enforces the roster and the 6 s cap.
+    (``lipsync_clips.budget``: 25-30% of the ad as the target, 35% as the hard
+    maximum, 4-6 s per clip and never fewer than 3 clips) at its HARD ceiling,
+    so the card never under-quotes; ``_lip_sync_spec`` then enforces the
+    roster and the 6 s cap. A duration whose bounds collide is EXPOSED as
+    ``LIPSYNC_DURATION_CONFLICT`` -- the card goes "Price unavailable" rather
+    than silently changing the policy.
     """
+    conflicts = lipsync_clips.duration_conflicts(length_s)
+    if conflicts:
+        return None, None, "%s: %s" % (lipsync_clips.DURATION_CONFLICT,
+                                       "; ".join(conflicts)), "unavailable"
     budget = lipsync_clips.budget(length_s)
     spec, err, kind = _lip_sync_spec({
         "lip_sync": {"model": LIPSYNC_ROSTER[0],
-                     "seconds": int(math.ceil(budget["total_max_s"])),
+                     "seconds": int(math.ceil(budget["hard_max_s"])),
                      "lines": int(budget["max_clips"])}})
     if err:
         return None, None, err, kind

@@ -4,16 +4,18 @@
 Proves exactly the manual's done-when pairs and nothing looser:
 
   FAIL: a 2-minute (120 s) ad with 3 lip-sync clips totalling 6 s.
-  DOUBLED (owner order 2026-10-08): a 60 s ad needs 6 lip-sync clips and
-  30 s of lip-sync (was 4 lines / 15 s), scaled linearly with length.
-  PASS: a 60 s ad with 6 lip-sync lines totalling >= 30 s.
-  FAIL: the old plan (4 lines / 16 s in a 60-75 s ad).
-  FAIL: a 120 s ad with 6 lines totalling 40 s (below 60 s): scales.
+  APPROVED DIRECTION (2026-10-23): coverage is 25-30% of the ad, 35% hard
+  maximum, first 12 s articulated; the E6 floor is the 25% end (15 s in a
+  60 s ad) and 3 clips, scaled with length. Supersedes the 2026-10-08 30-40 s
+  order.
+  PASS: a 60 s ad with 3 lip-sync lines totalling >= 15 s.
+  FAIL: a plan under both floors (2 lines / 10 s in a 60 s ad).
+  FAIL: a 120 s ad with 6 lines totalling 20 s (below 30 s): scales.
   FAIL: a 60 s ad with only 2 lines (never fewer than 3 lines).
   PASS: no reason codes other than the documented two.
   WIRE: the marker rides plan_timeline -> lipsync_gate; assembler
-        dry-run blocks a 2-minute 6-s ad and the old 4-clip 16-s plan, and
-        passes a 60-s ad with 6 clips / 30 s;
+        dry-run blocks a 2-minute 6-s ad and a 60-s 3-clip 9-s plan, and
+        passes a 60-s ad with 3 clips / 15 s;
         load_timeline rejects a non-boolean marker.
   GATE: the emitted record validates in qc_gate (schema + independence)
         and FAILs the final_edit check family in the shared gate.
@@ -56,31 +58,31 @@ def check(name, cond, detail=""):
 
 
 def test_done_when_pairs():
-    """The doubled rule: 6 clips / 30 s per 60 s, linear in length."""
+    """The rule: 25% floor (15 s at 60 s), 3 clips, scaled with length."""
     bad = check_lipsync_coverage(120, 3, 6)
     check("done-when FAIL: 120 s ad, 3 clips totalling 6 s FAILS",
           bad["pass"] is False, bad)
     check("bad ad names the coverage code", COVERAGE_SHORT
           in bad["reason_code"], bad["reason_code"])
-    good = check_lipsync_coverage(60, 6, 32.0)
-    check("done-when PASS: 60 s ad, 6 lines totalling 32 s PASSES",
+    good = check_lipsync_coverage(60, 3, 17.5)
+    check("done-when PASS: 60 s ad, 3 lines totalling 17.5 s PASSES",
           good["pass"] is True, good)
-    exact = check_lipsync_coverage(60, 6, 30.0)
-    check("done-when PASS: 60 s ad, 6 lines totalling exactly 30 s passes",
+    exact = check_lipsync_coverage(60, 3, 15.0)
+    check("done-when PASS: 60 s ad, 3 lines totalling exactly 15 s (25%) passes",
           exact["pass"] is True, exact)
-    old = check_lipsync_coverage(60, 4, 16.0)
-    check("the OLD plan (4 lines / 16 s in a 60 s ad) now FAILS on both",
+    old = check_lipsync_coverage(60, 2, 10.0)
+    check("a plan under BOTH floors (2 lines / 10 s) FAILS on both",
           old["pass"] is False and COVERAGE_SHORT in old["reason_code"]
           and LINES_TOO_FEW in old["reason_code"], old)
     # H8: lip-sync seconds use Trevor's band (percent short of the goal).
-    near = check_lipsync_coverage(60, 6, 29.0)          # 3.3% short
-    check("H8 29 s of a 30 s goal is within 5%: accept, no flag",
+    near = check_lipsync_coverage(60, 3, 14.5)          # 3.3% short
+    check("H8 14.5 s of a 15 s goal is within 5%: accept, no flag",
           near["pass"] is True and near["flags"] == [], near)
-    flag = check_lipsync_coverage(60, 6, 28.0)          # 6.7% short
-    check("H8 28 s of a 30 s goal is 5-10% short: accept WITH A FLAG",
+    flag = check_lipsync_coverage(60, 3, 14.0)          # 6.7% short
+    check("H8 14 s of a 15 s goal is 5-10% short: accept WITH A FLAG",
           flag["pass"] is True and len(flag["flags"]) == 1, flag)
-    redo = check_lipsync_coverage(60, 6, 26.0)          # 13.3% short
-    check("H8 26 s of a 30 s goal is past 10% short: redo",
+    redo = check_lipsync_coverage(60, 3, 13.0)          # 13.3% short
+    check("H8 13 s of a 15 s goal is past 10% short: redo",
           redo["pass"] is False and COVERAGE_SHORT in redo["reason_code"],
           redo)
     more = check_lipsync_coverage(60, 8, 48.0)
@@ -89,23 +91,23 @@ def test_done_when_pairs():
 
 
 def test_scaled_rules():
-    """Everything scales linearly with length; never fewer than 3 lines."""
-    check("60 s floor is 30 s", abs(required_total_s(60) - 30.0) < 1e-9)
-    check("120 s floor is 60 s", abs(required_total_s(120) - 60.0) < 1e-9)
-    check("30 s floor is 15 s", abs(required_total_s(30) - 15.0) < 1e-9)
-    check("clip floor: 6 at 60 s, 12 at 120 s, 3 at 30 s and never < 3",
+    """Everything scales with length; never fewer than 3 lines."""
+    check("60 s floor is 15 s (25%)", abs(required_total_s(60) - 15.0) < 1e-9)
+    check("120 s floor is 30 s", abs(required_total_s(120) - 30.0) < 1e-9)
+    check("30 s floor is 7.5 s", abs(required_total_s(30) - 7.5) < 1e-9)
+    check("clip floor: 3 at 60 s, 5 at 120 s, 3 at 30 s and never < 3",
           (required_lines(60), required_lines(120), required_lines(30),
-           required_lines(10)) == (6, 12, 3, 3),
+           required_lines(10)) == (3, 5, 3, 3),
           (required_lines(60), required_lines(120), required_lines(30)))
-    scaled_pass = check_lipsync_coverage(120, 12, 60.0)
-    check("120 s ad with 12 lines/60 s passes",
+    scaled_pass = check_lipsync_coverage(120, 5, 30.0)
+    check("120 s ad with 5 lines/30 s passes",
           scaled_pass["pass"] is True, scaled_pass)
-    scaled_fail = check_lipsync_coverage(120, 6, 40.0)
-    check("120 s ad with 6 lines/40 s fails (scales with runtime)",
+    scaled_fail = check_lipsync_coverage(120, 6, 20.0)
+    check("120 s ad with 6 lines/20 s fails (scales with runtime)",
           scaled_fail["pass"] is False
           and COVERAGE_SHORT in scaled_fail["reason_code"], scaled_fail)
-    few = check_lipsync_coverage(60, 2, 32.0)
-    check("60 s ad with 2 lines fails lines-min even at 32 s",
+    few = check_lipsync_coverage(60, 2, 17.5)
+    check("60 s ad with 2 lines fails lines-min even at 17.5 s",
           few["pass"] is False and LINES_TOO_FEW in few["reason_code"], few)
     emitted = (scaled_fail["reason_code"], few["reason_code"])
     allowed = {LINES_TOO_FEW, COVERAGE_SHORT}
@@ -174,21 +176,21 @@ def test_gate_wiring(tmp_root):
           and abs(rec["evidence"]["lipsync"]["evidence"]["lipsync_total_s"]
                   - 6.0) < 0.2, rec["evidence"]["lipsync"])
 
-    # The old plan (4 clips, 16 s in 60 s) is now blocked.
-    segs_old = ([{"src": "clip.mp4", "dur": 4.0, "lip_sync": True}] * 4
-                + [{"src": "clip.mp4", "dur": 11.0}] * 4)
+    # A plan under the 25% floor (3 clips, 9 s in 60 s) is blocked.
+    segs_old = ([{"src": "clip.mp4", "dur": 3.0, "lip_sync": True}] * 3
+                + [{"src": "clip.mp4", "dur": 12.75}] * 4)
     rec_old = A.assemble(_tl(segs_old, 60, tmp), os.path.join(tmp, "o.mp4"),
                          dry_run=True)
-    check("60 s / 4 lines / 16 s (the old plan): gate BLOCKS",
+    check("60 s / 3 lines / 9 s (under the 25% floor): gate BLOCKS",
           rec_old["outcome"] == "error"
           and LIPSYNC_COVERAGE_SHORT in rec_old["reason_code"],
           rec_old.get("reason_code"))
-    # Done-when PASS through the assembler gate: 60 s, 6 lines, 30 s.
-    segs_pass = ([{"src": "clip.mp4", "dur": 5.0, "lip_sync": True}] * 6
-                 + [{"src": "clip.mp4", "dur": 10.0}] * 3)
+    # Done-when PASS through the assembler gate: 60 s, 3 lines, 15 s.
+    segs_pass = ([{"src": "clip.mp4", "dur": 5.0, "lip_sync": True}] * 3
+                 + [{"src": "clip.mp4", "dur": 15.0}] * 3)
     tl2 = _tl(segs_pass, 60, tmp)
     rec2 = A.assemble(tl2, os.path.join(tmp, "out2.mp4"), dry_run=True)
-    check("60 s / 6 lines / 30 s: gate passes",
+    check("60 s / 3 lines / 15 s: gate passes",
           rec2["outcome"] == "ok" and rec2["reason_code"] == "DRY_RUN"
           and rec2["evidence"]["lipsync"] is None,
           rec2.get("reason_code"))
