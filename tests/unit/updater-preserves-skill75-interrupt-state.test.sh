@@ -134,6 +134,11 @@ cmp -s "$WORK/want-marker" "$BOX/skills/$S75/$MARK_REL" \
   && ok "marker is byte-identical (not re-created empty)" || bad "marker bytes changed"
 cmp -s "$WORK/want-part" "$BOX/skills/$S75/$PART_REL" \
   && ok ".part is byte-identical" || bad ".part bytes changed"
+# SCOPING, inside the SAME skill that now has an allow-list: preservation must
+# never become blanket. Anything not on the list is still wiped by the replace.
+[ ! -e "$BOX/skills/$S75/stray-not-allow-listed.txt" ] \
+  && ok "Skill 75: non-allow-listed file still removed (preservation is not blanket)" \
+  || bad "Skill 75: non-allow-listed file SURVIVED -- preservation went blanket"
 
 # --- (d) resume can still find its checkpoint --------------------------------
 hdr "an interrupted run can still find its checkpoint after the upgrade"
