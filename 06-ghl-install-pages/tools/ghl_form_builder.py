@@ -115,6 +115,17 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+# This module's OWN directory on sys.path BEFORE any sibling import below.
+# ORDER IS LOAD-BEARING: `python3 -I` (isolated mode) removes BOTH the script
+# directory (sys.path[0] becomes the stdlib zip) AND PYTHONPATH, so a sibling
+# module can only be found if the path is bootstrapped here. Placed above the
+# soft imports, the same `-I` run resolves ghl_iframe_drag (and therefore
+# Playwright) exactly as a non-isolated run does — see `_isolated_mode()` in the
+# F-P9 preflight for the honest report when it still cannot.
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
 # ---------------------------------------------------------------------------
 # Soft imports — selftest + dry-run stay runnable with ZERO deps (no ghl_builder /
 # browser_manager needed). The LIVE browser path requires the real skill modules
@@ -147,12 +158,7 @@ except Exception:  # noqa: BLE001
 # U8/U10 — shared phase-checkpoint store + the uniform RUN REPORT emitter. A HARD
 # import (not a soft one): resume and the run report are part of the CLI contract,
 # and silently degrading to "no checkpoints" would be exactly the kind of gate that
-# fails open. It ships in the same tools/ dir as this file — bootstrap the path so
-# an import from any cwd resolves it.
-_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
-if _TOOLS_DIR not in sys.path:
-    sys.path.insert(0, _TOOLS_DIR)
-
+# fails open. It ships in the same tools/ dir as this file (bootstrapped above).
 import ghl_run_state  # noqa: E402
 from ghl_run_state import PhaseSpec  # noqa: E402
 
@@ -734,6 +740,23 @@ def _emit_click_list(task: dict, fields: List[dict], plan: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Preflight
 # ---------------------------------------------------------------------------
+def _isolated_mode() -> bool:
+    """True when this interpreter runs with ``-I`` / ``-E``-style isolation.
+
+    ``python3 -I`` implies ``-E`` (ignore PYTHON* env) and ``-s`` (no user site)
+    and, critically, drops the SCRIPT DIRECTORY from ``sys.path`` — which is the
+    only reason a sibling import like ``ghl_iframe_drag`` could ever fail under
+    ``-I`` while succeeding without it. The module now bootstraps its own dir
+    (``_TOOLS_DIR`` at the top) so the import is path-independent either way; this
+    helper exists so a GENUINE Playwright miss is REPORTED with the isolation
+    context instead of being mistaken for a browse-to-the-wrong-interpreter bug.
+    Detection is by observation (is ``sys.flags.isolated`` set, or is the script
+    dir absent from ``sys.path``?) — never by guessing from argv."""
+    if getattr(sys.flags, "isolated", 0):
+        return True
+    return _TOOLS_DIR not in sys.path
+
+
 def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
                    *, live: bool = False) -> dict:
     """THINK-layer gate. ``live=True`` (the ``--no-dry-run`` path) additionally
@@ -819,10 +842,20 @@ def _run_preflight(task: dict, fields: List[dict], dep_plan: dict,
     # (soft check, recorded as a warning).
     pw_ok = bool(ghl_iframe_drag is not None
                  and getattr(ghl_iframe_drag, "PLAYWRIGHT_AVAILABLE", False))
+    # `python3 -I` is NOT a Playwright problem and must never be reported as one
+    # (the pre-fix message blamed the interpreter while every non-isolated run
+    # passed). Isolation only ever hid this module's OWN directory from
+    # sys.path — bootstrapped at import time — so when Playwright IS importable
+    # the check simply passes and the isolation is recorded as context.
+    isolated = _isolated_mode()
+    iso_note = (
+        " (running under an ISOLATED interpreter: `python3 -I` drops the script "
+        "directory from sys.path — this module bootstraps its own tools/ dir, so "
+        "the sibling import is unaffected)" if isolated else "")
     pw_detail = (
-        f"Playwright importable under {sys.executable}" if pw_ok else (
+        f"Playwright importable under {sys.executable}{iso_note}" if pw_ok else (
             f"Playwright is NOT importable under this interpreter "
-            f"({sys.executable}, python {sys.version.split()[0]}). The LIVE "
+            f"({sys.executable}, python {sys.version.split()[0]}){iso_note}. The LIVE "
             "walk requires it: F3 rename + F4 field-removal ride "
             "Playwright-over-CDP (ghl_iframe_drag). Re-run under the "
             "interpreter that HAS Playwright — verify with: "
@@ -1018,8 +1051,91 @@ def _click(session: str, target: str, timeout: int = 15) -> subprocess.Completed
     ⚠️ SUBSTRING + first-DOM-order-match: when the target text is a SUBSTRING
     of OTHER on-screen text this can resolve rc=0 against the WRONG element
     (live 2026-07-07, F2 modal confirm — see ``_click_button``). Only use this
-    for text that is unambiguous on the live surface at click time."""
+    for text that is unambiguous on the live surface at click time.
+
+    ⚠️ rc=0 PROVES NOTHING ABOUT ACTIVATION. Live 2026-07-25 (row-7 acceptance):
+    `find text "Create form" click` returned rc=0 '✓ Done' and the Create-new-form
+    modal never appeared, while a direct DOM `.click()` on the SAME button opened
+    it — evidence: row7-live/form/routing/probe-create-modal.json (dialog text
+    'Create new form / Start from Scratch / From templates') vs
+    probe-raw-transport.json (A/B find-text AND find-role both rc=0,
+    has_create_new_form=false). For any click whose success matters, call
+    ``_click_with_proof`` — it VERIFIES the target materialized."""
     return _ab(session, "find", "text", target, "click", timeout=timeout)
+
+# Direct DOM click on the element whose OWN text is exactly ``target`` — the
+# mechanism PROVEN to activate GHL's 'Create form' handler where the CLI's
+# find-click silently no-ops (probe-create-modal.json). Clicks the first VISIBLE
+# match among button / [role=button] / a, exactly like the probe. Returns
+# {"clicked": bool, "n": int, "err": str}; never raises.
+_DOM_CLICK_JS = (
+    "(() => {"
+    "  const q = %s;"
+    "  const vis = (el) => { const r = el.getBoundingClientRect();"
+    "    const s = getComputedStyle(el);"
+    "    return r.width > 0 && r.height > 0"
+    "      && s.visibility !== 'hidden' && s.display !== 'none'; };"
+    "  const nodes = Array.from(document.querySelectorAll('button,[role=button],a'))"
+    "    .filter(vis).filter(e => (e.innerText || '').trim() === q);"
+    "  if (!nodes.length) return JSON.stringify({clicked: false, n: 0,"
+    "    err: 'NO-VISIBLE-MATCH'});"
+    "  nodes[0].click();"
+    "  return JSON.stringify({clicked: true, n: nodes.length});"
+    "})()"
+)
+
+def _dom_click_text(session: str, target: str, timeout: int = 15) -> Dict[str, Any]:
+    """Click ``target`` through a DIRECT DOM element click (the activation rail
+    proven in probe-create-modal.json). EVIDENCE, not a selector guess: the JS
+    reports how many visible matches it saw, so a miss is explainable."""
+    try:
+        raw = _eval(session, _DOM_CLICK_JS % json.dumps(target), timeout=timeout)
+        d = json.loads((raw or "").strip() or "{}")
+        return {"clicked": bool(d.get("clicked")), "n": int(d.get("n", 0)),
+                "err": str(d.get("err", ""))}
+    except Exception as exc:  # noqa: BLE001 — a DOM-click miss is reported, never fatal
+        return {"clicked": False, "n": 0, "err": f"{type(exc).__name__}: {exc}"}
+
+def _click_with_proof(session: str, target: str, proof_text: str, *,
+                      timeout: int = 15, wait_s: Optional[float] = None) -> Dict[str, Any]:
+    """Click ``target`` and PROVE the click ACTIVATED something.
+
+    Two mechanisms, in order, each verified by the SAME observable the click list
+    already declares as the step's ``wait_for`` target:
+
+      1. ``find text <target> click`` — the shipped text verb.
+      2. A DIRECT DOM ``.click()`` on the visible element whose own text equals
+         ``target`` — the mechanism proven on live GHL when (1) returned rc=0
+         '✓ Done' and activated nothing (row7-live/form/routing/
+         probe-raw-transport.json vs probe-create-modal.json).
+
+    Returns ``{"activated", "mechanism", "attempts", "matches", "detail"}``.
+    ``activated=False`` means BOTH mechanisms ran and the proof text never
+    materialized — the caller must STOP-and-report, never blunder past it."""
+    attempts: List[Dict[str, Any]] = []
+    cp = _click(session, target, timeout=timeout)
+    attempts.append({"mechanism": "find-text", "rc": cp.returncode})
+    if proof_text and _wait_text_polling(session, proof_text, timeout_s=wait_s):
+        return {"activated": True, "mechanism": "find-text", "attempts": attempts,
+                "matches": -1, "detail": f"'{proof_text}' appeared after the text click"}
+
+    _log(f"click '{target}': find-text rc={cp.returncode} but '{proof_text}' did NOT "
+         "materialize — retrying once via a DIRECT DOM element click")
+    dom = _dom_click_text(session, target, timeout=timeout)
+    attempts.append({"mechanism": "dom-click", "clicked": dom["clicked"],
+                     "matches": dom["n"], "err": dom["err"]})
+    if dom["clicked"] and proof_text and _wait_text_polling(session, proof_text,
+                                                            timeout_s=wait_s):
+        return {"activated": True, "mechanism": "dom-click", "attempts": attempts,
+                "matches": dom["n"],
+                "detail": f"'{proof_text}' appeared after the direct DOM click"}
+
+    return {"activated": False, "mechanism": "", "attempts": attempts,
+            "matches": dom["n"],
+            "detail": (f"neither a find-text click (rc={cp.returncode}) nor a direct "
+                       f"DOM click on an element whose text is '{target}' "
+                       f"({'no visible match' if not dom['clicked'] else 'clicked but inert'}) "
+                       f"made '{proof_text}' appear")}
 
 
 def _click_button(session: str, name: str, timeout: int = 15) -> subprocess.CompletedProcess:
@@ -2502,18 +2618,28 @@ def _walk_click_list(session: str, click_list: dict, plan: dict, evidence_root: 
                 # doctrine as _capture_form_id's poll-with-deadline fix): a single
                 # _wait_text call does not actually get the timeout=20 budget from
                 # agent-browser — see _wait_text_polling's module notes.
-                _click(session, "Create form")
-                modal_ok = _wait_text_polling(session, "Start from Scratch")
+                #
+                # VERIFIED ACTIVATION (live 2026-07-25, row-7 acceptance): the
+                # find-text click returned rc=0 '✓ Done' and activated NOTHING — the
+                # modal never opened — while a direct DOM .click() on the same button
+                # DID (probe-create-modal.json vs probe-raw-transport.json). The
+                # click is therefore gated on the step's OWN wait_for target, with a
+                # one-shot DOM-click retry INSIDE _click_with_proof. Both mechanisms
+                # failing is still an honest STOP — never a blunder past it.
+                fired = _click_with_proof(session, "Create form", "Start from Scratch")
+                modal_ok = bool(fired["activated"])
                 if not modal_ok:
                     _log("F2: create-modal wait missed — retrying the 'Create form' click once")
-                    _click(session, "Create form")
-                    modal_ok = _wait_text_polling(session, "Start from Scratch")
+                    fired = _click_with_proof(session, "Create form", "Start from Scratch")
+                    modal_ok = bool(fired["activated"])
                 if not modal_ok:
                     raise StopAndReport(
                         "F2.modal",
-                        "clicked 'Create form' (twice) but the Create-new-form modal never "
-                        "showed 'Start from Scratch' — STOP here honestly instead of "
-                        f"blundering into the Create/capture steps blind ({_capture_entry_diag(session)})")
+                        "clicked 'Create form' (twice, find-text AND a direct DOM click) "
+                        "but the Create-new-form modal never showed 'Start from Scratch' — "
+                        "STOP here honestly instead of blundering into the Create/capture "
+                        f"steps blind (attempts={fired['attempts']}; "
+                        f"{_capture_entry_diag(session)})")
                 _screenshot(session, _shot(evidence_root, shot_n, "f2-create-modal"))
                 steps_done.append(tag)
             elif action == "confirm":
@@ -2714,16 +2840,20 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
                 dep_plan: dict, preflight: dict, evidence_root: str, started: float,
                 state: Optional["ghl_run_state.RunState"] = None) -> dict:
     """Drive the live browser build end-to-end: seed → land → walk → capture embed →
-    write build receipt → verify → CLEANUP (delete form + close session). Every
-    failure is a STOP-and-report; the created form is ALWAYS deleted in finally.
+    write build receipt → verify → CLEANUP. Every failure is a STOP-and-report.
+
+    CLEANUP (see the finally block): a SUCCESSFUL build is PRESERVED (the form is
+    the deliverable — deleting it made every returned id/url un-readable), a
+    ``--stop-after-phase`` stop is preserved for ``--resume``, and a FAILURE deletes
+    what the run created, with a positive present→absent verification.
 
     RESUME + CLEANUP, and why they do not fight (U8): cleanup deletes the form on
-    every path that REACHES it, so a run that ends normally leaves nothing to
-    resume — and nothing that needs resuming. Resume exists for the runs that never
-    reach cleanup at all: SIGKILL, a dead box, a browser crash. Those leave a real
-    form behind, and `--resume <run_id>` re-enters THAT form instead of building a
-    second one. A ``--stop-after-phase`` stop deliberately skips cleanup for the
-    same reason: the half-built form must survive for the resume to find it.
+    every FAILURE path that REACHES it, so a run that fails normally leaves nothing
+    to resume — and nothing that needs resuming. Resume exists for the runs that
+    never reach cleanup at all: SIGKILL, a dead box, a browser crash. Those leave a
+    real form behind, and `--resume <run_id>` re-enters THAT form instead of
+    building a second one. A ``--stop-after-phase`` stop deliberately skips cleanup
+    for the same reason: the half-built form must survive for the resume to find it.
     """
     location_id = plan["location_id"]
     os.environ["GHL_LOCATION_ID"] = location_id      # canonical session-name consistency
@@ -2736,6 +2866,13 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
     form_id = ""
     stop: Optional[StopAndReport] = None
     stopped_after: str = ""
+    # SUCCESS-vs-FAILURE is what decides cleanup now (v18.2.0). The pre-fix
+    # contract deleted the form on EVERY reached path — so a plain --no-dry-run
+    # SUCCESS created a real form and then instantly deleted it, leaving nothing
+    # to read back (only --stop-after-phase preserved one, :2723-2726). A built,
+    # verified form is the DELIVERABLE; deleting it on success made `form_id` /
+    # `form_url` / `embed_code` point at an object that no longer exists.
+    build_ok = False
     stop_after: str = str(task.get("stop_after_phase", "") or "")
     # Mutable walk state (v18.1.5): form_id / actual_title recorded AT CAPTURE
     # TIME so cleanup still sees them when a LATER step raises StopAndReport —
@@ -2803,6 +2940,11 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
                              "marker_in_rendered_dom": rec.get("marker_in_rendered_dom"),
                              "render_errors": rec.get("render_errors", [])}
 
+        # Reached the end of the build body with no exception → the form this run
+        # produced is the DELIVERABLE and must SURVIVE cleanup (see the cleanup
+        # block: success PRESERVES, failure/stop cleans up).
+        build_ok = True
+
     except ghl_run_state.StopAfterPhase as sap:
         # An OPERATOR-requested stop, not a failure. Cleanup is deliberately SKIPPED:
         # deleting the half-built form here would delete the very thing --resume is
@@ -2817,16 +2959,31 @@ def _live_build(task: dict, plan: dict, click_list: dict, fields: List[dict],
         stop = StopAndReport("unexpected", f"{type(exc).__name__}: {exc}")
         _log(f"live build unexpected error: {type(exc).__name__}: {exc}")
     finally:
-        # CLEANUP — ALWAYS delete the created form, then close the session (no
-        # residue), with a POSITIVE verification either way (v18.1.5): the id +
-        # actual title come from walk_state so a mid-walk STOP can no longer hide
-        # a created form, and 'nothing to delete' is only ever CLAIMED after the
-        # rendered Forms list positively shows zero rows for the intended name.
+        # CLEANUP POLICY (v18.2.0) — PRESERVE on success, DELETE on failure.
         #
-        # ONE exception (U8): a --stop-after-phase stop leaves the form ALIVE on
-        # purpose. Deleting it would destroy the object the operator explicitly
-        # stopped in order to inspect, and would leave --resume nothing to resume.
-        if stopped_after:
+        #   • SUCCESS (build_ok): the created form is the DELIVERABLE. Leave it in
+        #     place so form_id / form_url / embed_code are READBACK-ABLE and the
+        #     caller can render_check it. Nothing is deleted.
+        #   • --stop-after-phase: also left in place — deleting it would destroy
+        #     the object the operator stopped to inspect and leave --resume nothing.
+        #   • FAILURE (StopAndReport / unexpected exception): delete what this run
+        #     created, with a POSITIVE present→absent verification (v18.1.5): the id
+        #     + actual title come from walk_state so a mid-walk STOP can no longer
+        #     hide a created form, and 'nothing to delete' is only ever CLAIMED
+        #     after the rendered Forms list positively shows zero rows.
+        #
+        # The delete path is the only one that mutates GHL state; it runs solely on
+        # a failure, and its evidence lands in routing/cleanup.json either way.
+        if build_ok:
+            cleanup.update({
+                "attempted": False, "deleted": False, "verified_gone": False,
+                "preserved": True,
+                "skipped_reason": ("build SUCCEEDED — the created form is the deliverable "
+                                   "and is PRESERVED for readback/render_check; delete it "
+                                   "explicitly if a scratch object was intended"),
+                "form_id": walk_state.get("form_id") or form_id,
+            })
+        elif stopped_after:
             cleanup.update({
                 "attempted": False, "deleted": False, "verified_gone": False,
                 "skipped_reason": (f"--stop-after-phase {stopped_after}: form intentionally "
@@ -2994,9 +3151,10 @@ def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
     # Walks click_list['steps'] via agent-browser (router.push / click / wait / fill /
     # type / eval / snapshot / screenshot): seeds auth token-only (never reloads),
     # captures the embed snippet at F10, records F11/F12 handoffs to ghl_rest_canvas /
-    # Skill 44, verifies via ghl_verify.render_check, and ALWAYS deletes the built form
-    # in cleanup. In-iframe surfaces are snapshot-and-bound at runtime; a REQUIRED miss
-    # is a STOP-and-report (no invented CSS, no brute-force).
+    # Skill 44, verifies via ghl_verify.render_check, and on SUCCESS PRESERVES the
+    # built form (deleting it only on failure — v18.2.0). In-iframe surfaces are
+    # snapshot-and-bound at runtime; a REQUIRED miss is a STOP-and-report (no
+    # invented CSS, no brute-force).
     return _live_build(task, plan, click_list, fields, dep_plan, preflight,
                        evidence_root, started, state=state)
 
