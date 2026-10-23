@@ -43,11 +43,14 @@ Rules encoded (GHL-DELIVERY-SPEC.md "Commerce (W8)" and "Durable execution"):
     (location, kind, parent, logical id) -- never name alone; resume never
     duplicates products/prices and never deletes successful assets.
   * Timeout/uncertain outcome is reconciled before any retry; ambiguous
-    matches are refused, never guessed.
-  * Provider limits (HTTP 429) get bounded backoff and retry; denials
-    (401/403) raise RouteDenied with no retry and NO route switch -- never
-    switch tools to bypass a denial. Retired/unverified capability is
-    reported incomplete, never as done.
+    matches are refused, never guessed. A WRITE rejected by 429/5xx is an
+    uncertain outcome (UncertainWriteOutcome): it is NEVER blindly re-sent --
+    reconcile runs first, and a re-send happens only after a reconcile list
+    found zero candidates (reconcile-then-retry, never retry-then-reconcile).
+  * Provider limits (HTTP 429) get bounded backoff and retry on reads only
+    (re-send safe); denials (401/403) raise RouteDenied with no retry and NO
+    route switch -- never switch tools to bypass a denial. Retired/unverified
+    capability is reported incomplete, never as done.
 
 OUTSTANDING INTEGRATION (provisional unit state):
   * Component IO for binding read/write rides managed builder execution
@@ -67,7 +70,7 @@ constructor fields of skills/79-checkout/order_bumps.py PriceRef, so W8C can
 build CheckoutConfig from these records without re-deriving terms.
 
 Runnable check (offline, fake transport; no network, no live charges):
-    python3 shared-utils/ghl/products_prices.py
+    python3 -I shared-utils/ghl/products_prices.py
 """
 from __future__ import annotations
 
@@ -123,6 +126,12 @@ class UnsupportedCapability(ProductsPricesError):
 
 class TransportTimeout(ProductsPricesError):
     """The request may or may not have taken effect. Outcome is UNCERTAIN."""
+
+
+class UncertainWriteOutcome(ProductsPricesError):
+    """A WRITE was rejected by 429/5xx: the platform may or may not have applied
+    it. Never blindly re-sent (a re-send can duplicate the product/price); the
+    caller reconciles authoritative read state first (reconcile-then-retry)."""
 
 
 @dataclass(frozen=True)
@@ -408,6 +417,10 @@ class ProductsPricesAdapter:
             if resp.status in (401, 403):
                 raise RouteDenied(f"{method} {path} denied (HTTP {resp.status}); no reroute")
             if resp.status == 429 or resp.status >= 500:
+                if method != "GET":  # write: outcome uncertain, never blindly re-sent
+                    raise UncertainWriteOutcome(
+                        f"{method} {path} uncertain write outcome (HTTP {resp.status}); "
+                        f"reconcile before any re-send")
                 if attempt == self._max:
                     raise ApiError(f"{method} {path} failed after {self._max} attempts (HTTP {resp.status})")
                 self._sleep(backoff)
@@ -441,7 +454,7 @@ class ProductsPricesAdapter:
                 "productType": spec.product_type,
                 **({"description": spec.description} if spec.description else {}),
             })
-        except TransportTimeout:
+        except (TransportTimeout, UncertainWriteOutcome):
             rec = self._reconcile_product(key, spec)
             return rec, OpRecord(ROUTES["create_product"][0] + " " + ROUTES["create_product"][1],
                                  key.location_id, rec.native_product_id, key.as_tuple(), "reconciled")
@@ -510,7 +523,7 @@ class ProductsPricesAdapter:
         body = self._price_payload(spec)
         try:
             created = self._call("create_price", {"productId": product.native_product_id}, body)
-        except TransportTimeout:
+        except (TransportTimeout, UncertainWriteOutcome):
             rec = self._reconcile_price(key, spec, product)
             return rec, OpRecord(ROUTES["create_price"][0] + " " + ROUTES["create_price"][1],
                                  key.location_id, rec.native_price_id, key.as_tuple(), "reconciled")
@@ -558,6 +571,15 @@ class ProductsPricesAdapter:
             recurring = body.get("recurring") or {}
             if str(recurring.get("interval") or "") != spec.recurring_interval:
                 raise ReadbackMismatch(f"price {native_id} interval readback {recurring.get('interval')!r} != {spec.recurring_interval!r}")
+        raw_trial = body.get("trialPeriod")
+        if raw_trial is None:
+            readback_trial = None  # omitted: equal only when the spec expects no trial
+        elif isinstance(raw_trial, bool) or not isinstance(raw_trial, (int, float)) or int(raw_trial) != raw_trial:
+            raise ReadbackMismatch(f"price {native_id} trialPeriod readback {raw_trial!r} is not an integer day count")
+        else:
+            readback_trial = int(raw_trial)
+        if readback_trial != spec.trial_days:
+            raise ReadbackMismatch(f"price {native_id} trialPeriod readback {readback_trial!r} != spec trial_days {spec.trial_days!r}")
         return NativePrice(
             native_price_id=native_id,
             native_product_id=product.native_product_id,
@@ -566,7 +588,7 @@ class ProductsPricesAdapter:
             currency=spec.currency,
             amount_minor=spec.amount_minor,
             recurring_interval=spec.recurring_interval,
-            trial_days=spec.trial_days,
+            trial_days=readback_trial,
         )
 
     def _reconcile_price(self, key: LogicalKey, spec: PriceSpec, product: NativeProduct) -> NativePrice:
@@ -709,10 +731,12 @@ def _self_check() -> int:
     ok(t3.calls[0][0:2] == ("POST", "/products/prod_1/price"), "price create uses documented /products/{productId}/price")
     ok(pop.readback == "verified", "price create readback verified")
 
-    # 4. Recurring + trial mapping onto documented fields (recurring{interval,intervalCount}, trialPeriod).
+    # 4. Recurring + trial mapping onto documented fields (recurring{interval,intervalCount},
+    #    trialPeriod), with trialPeriod READ BACK and verified (happy path: readback matches).
     rec_body = {"_id": "price_2", "product": "prod_1", "name": "Monthly", "type": "recurring",
                 "currency": "USD", "amount": 27.0, "recurring": {"interval": "month", "intervalCount": 1}}
-    t4 = _FakeTransport([Response(200, rec_body), Response(200, rec_body)])
+    rec_body_ok = dict(rec_body, trialPeriod=7)
+    t4 = _FakeTransport([Response(200, rec_body_ok), Response(200, rec_body_ok)])
     a4 = ProductsPricesAdapter(t4, store, sleep=sleeps.append)
     key_m = LogicalKey(loc, "price", "funnelA.monthly.price", parent_logical_id="funnelA.main.product")
     mrec, _ = a4.ensure_price(
@@ -724,6 +748,7 @@ def _self_check() -> int:
     ok(sent4["trialPeriod"] == 7, "trial maps to documented trialPeriod days")
     ok(mrec.billing_type == "trial_then_recurring" and mrec.trial_days == 7 and mrec.recurring_interval == "month",
        "billing terms preserved for skills/79 PriceRef interop")
+    ok(mrec.trial_days == rec_body_ok["trialPeriod"], "NativePrice.trial_days comes from the readback, not the request")
     ok(mrec.as_price_ref_fields()["native_price_id"] == "price_2",
        "as_price_ref_fields exposes skills/79 PriceRef constructor fields")
 
@@ -759,12 +784,14 @@ def _self_check() -> int:
     refused(lambda: a7.ensure_product(LogicalKey(loc, "product", "p7"), ProductSpec("Vault Access", loc, "DIGITAL")),
             AmbiguousReconcile, "two identity candidates")
 
-    # 8. 429 gets bounded backoff + retry; denial gets neither retry nor reroute.
-    t8 = _FakeTransport([Response(429, {}), Response(429, {}), Response(200, product_body),
-                         Response(200, product_body)])
-    a8 = ProductsPricesAdapter(t8, InMemoryStore(), sleep=sleeps.append)
-    rec8, _ = a8.ensure_product(LogicalKey(loc, "product", "p8"), ProductSpec("Vault Access", loc, "DIGITAL"))
-    ok(rec8.native_product_id == "prod_1" and len(sleeps) == 2, "429 retried with bounded backoff")
+    # 8. 429 on a READ is retried with bounded backoff (re-send is safe there);
+    #    denial gets neither retry nor reroute.
+    store8 = InMemoryStore()
+    store8.put(key_p.as_tuple(), {"native_product_id": "prod_1"})
+    t8 = _FakeTransport([Response(429, {}), Response(429, {}), Response(200, product_body)])
+    a8 = ProductsPricesAdapter(t8, store8, sleep=sleeps.append)
+    rec8, _ = a8.ensure_product(key_p, ProductSpec("Vault Access", loc, "DIGITAL"))
+    ok(rec8.native_product_id == "prod_1" and len(sleeps) == 2, "429 on read retried with bounded backoff")
     ok(all(s <= 8.0 for s in sleeps), "backoff stays bounded")
     t9 = _FakeTransport([Response(403, {"message": "denied"})])
     a9 = ProductsPricesAdapter(t9, InMemoryStore(), sleep=sleeps.append)
@@ -793,6 +820,63 @@ def _self_check() -> int:
     refused(lambda: PriceSpec("x", loc, "one_time", "USD", 100, recurring_interval="month"), SpecError, "one_time with recurrence")
     refused(lambda: ProductSpec("x", loc, "SUBSCRIPTION"), SpecError, "unsupported productType")
     refused(lambda: LogicalKey(loc, "price", "x"), SpecError, "price key without parent")
+
+    # 11. A 429/5xx on a WRITE is an uncertain outcome: raised at once so reconcile
+    #     runs first -- NEVER a blind re-send (a duplicate product/price could
+    #     result). Transport calls are counted: exactly one per write attempt.
+    tw = _FakeTransport([Response(503, {}), Response(503, {}), Response(503, {})])
+    aw = ProductsPricesAdapter(tw, InMemoryStore(), sleep=sleeps.append)
+    refused(lambda: aw._call("create_product", body={
+        "name": "Vault Access", "locationId": loc, "productType": "DIGITAL"}),
+            UncertainWriteOutcome, "503 on create write is an uncertain outcome")
+    ok(len(tw.calls) == 1, "503 on write: exactly one transport call, never a blind retry")
+    t429w = _FakeTransport([Response(429, {}), Response(429, {})])
+    a429w = ProductsPricesAdapter(t429w, InMemoryStore(), sleep=sleeps.append)
+    refused(lambda: a429w._call("create_price", {"productId": "prod_1"}, {"name": "x"}),
+            UncertainWriteOutcome, "429 on create write is an uncertain outcome")
+    ok(len(t429w.calls) == 1, "429 on write: exactly one transport call, never a blind retry")
+
+    # 12. Reconcile-then-retry: the 5xx create surfaces as an uncertain outcome and
+    #     the reconcile list runs BEFORE any write re-send (adopted candidate: zero
+    #     re-sends; a re-send happens only after a zero-candidate list).
+    t11 = _FakeTransport([Response(503, {}),
+                          Response(200, {"products": [product_body], "total": 1}),
+                          Response(200, product_body)])
+    a11 = ProductsPricesAdapter(t11, InMemoryStore(), sleep=sleeps.append)
+    rec11, op11 = a11.ensure_product(LogicalKey(loc, "product", "p11"), ProductSpec("Vault Access", loc, "DIGITAL"))
+    posts11 = [c for c in t11.calls if c[0] == "POST"]
+    ok(op11.readback == "reconciled" and rec11.native_product_id == "prod_1",
+       "5xx create reconciles to the single identity candidate")
+    ok(len(posts11) == 1 and t11.calls[1][0] == "GET",
+       "reconcile list runs before any write re-send (exactly one POST)")
+
+    # 13. trialPeriod is verified on readback like every other field: drift is a
+    #     mismatch, absent readback with a requested trial is a mismatch, and an
+    #     unrequested trial is a mismatch (omitted + spec-none is equal, check 3/4).
+    drift_trial = dict(rec_body, _id="price_3", trialPeriod=14)
+    t12 = _FakeTransport([Response(200, drift_trial), Response(200, drift_trial)])
+    a12 = ProductsPricesAdapter(t12, InMemoryStore(), sleep=sleeps.append)
+    refused(lambda: a12.ensure_price(LogicalKey(loc, "price", "p12", parent_logical_id="funnelA.main.product"),
+                                     PriceSpec("Monthly", loc, "trial_then_recurring", "USD", 2700,
+                                               recurring_interval="month", trial_days=7), rec),
+            ReadbackMismatch, "trialPeriod drift on readback")
+    absent_trial = dict(rec_body, _id="price_4")
+    t13 = _FakeTransport([Response(200, absent_trial), Response(200, absent_trial)])
+    a13 = ProductsPricesAdapter(t13, InMemoryStore(), sleep=sleeps.append)
+    refused(lambda: a13.ensure_price(LogicalKey(loc, "price", "p13", parent_logical_id="funnelA.main.product"),
+                                     PriceSpec("Monthly", loc, "trial_then_recurring", "USD", 2700,
+                                               recurring_interval="month", trial_days=7), rec),
+            ReadbackMismatch, "absent trialPeriod with a requested trial is a mismatch")
+    unrequested_trial = dict(price_body, _id="price_5", trialPeriod=3)
+    t14 = _FakeTransport([Response(200, unrequested_trial), Response(200, unrequested_trial)])
+    a14 = ProductsPricesAdapter(t14, InMemoryStore(), sleep=sleeps.append)
+    refused(lambda: a14.ensure_price(LogicalKey(loc, "price", "p14", parent_logical_id="funnelA.main.product"),
+                                     PriceSpec("Pay in full", loc, "one_time", "USD", 9750), rec),
+            ReadbackMismatch, "unrequested trialPeriod on readback is a mismatch")
+    ok(a12._store.get((loc, "price", "funnelA.main.product", "p12")) is None
+       and a13._store.get((loc, "price", "funnelA.main.product", "p13")) is None
+       and a14._store.get((loc, "price", "funnelA.main.product", "p14")) is None,
+       "trial-period mismatches never persist an ID")
 
     return checks
 
