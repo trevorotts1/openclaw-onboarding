@@ -283,8 +283,23 @@ def _affine_residual(a, b, w, h, dx, dy):
     calibrated magnitude is stable; the row-list spans the larger overlap
     because the structure test needs enough tiles to see untouched
     background.
+
+    raises MotionScoreError CLIP_MOTION_UNMEASURABLE when the shift cannot
+    be sampled inside the grid.
     """
     _, margin = _shift_limit(w)
+    # Every sample reads the two cells at (x-dx, y-dy) and their +1
+    # neighbours, so floor(coord) must land in 0..size-2 on BOTH axes. That
+    # holds only while -margin < shift <= margin: an unclamped negative y0
+    # makes i = y0*w + x0 resolve to the far end of the flat grid, silently
+    # reading the wrong pixels, and a shift past the last row raises
+    # IndexError. Validate before the interior loop so the typed refusal
+    # pre-empts both.
+    if not (-margin < dx <= margin and -margin < dy <= margin):
+        raise MotionScoreError(
+            CLIP_MOTION_UNMEASURABLE,
+            "global shift dx=%r dy=%r cannot be sampled inside the %dx%d "
+            "grid" % (dx, dy, w, h))
     av, bv = [], []
     for y in range(margin, h - margin):
         row = y * w
@@ -303,19 +318,13 @@ def _affine_residual(a, b, w, h, dx, dy):
     rows = [res[i:i + iw] for i in range(0, n, iw)]
     bx = min(int(math.floor(abs(dx))) + 1, w // 4)
     by = min(int(math.floor(abs(dy))) + 1, h // 4)
-    # Every sample reads the two cells at (x-dx, y-dy) and their +1
-    # neighbours, so floor(coord) must land in 0..size-2. Clamp the window
-    # to that region: an unclamped negative y0 makes i = y0*w + x0 resolve
-    # to the far end of the flat grid, silently reading the wrong pixels.
+    # The map window is inset by bx/by so the structure test sees untouched
+    # background. The shift itself was validated above, so this window is
+    # never empty.
     x_lo = max(bx, int(math.ceil(dx)))
     x_hi = min(w - bx - 1, w - 2 + int(math.ceil(dx)))
     y_lo = max(by, int(math.ceil(dy)))
     y_hi = min(h - by - 1, h - 2 + int(math.ceil(dy)))
-    if x_lo > x_hi or y_lo > y_hi:
-        raise MotionScoreError(
-            CLIP_MOTION_UNMEASURABLE,
-            "global shift dx=%r dy=%r cannot be sampled inside the %dx%d "
-            "grid" % (dx, dy, w, h))
     full = []
     for y in range(y_lo, y_hi + 1):
         row = y * w
