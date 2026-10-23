@@ -707,9 +707,8 @@ PYEOF
 fi
 
 # 10. Script-embedded version markers (mirrors how ORPHAN_TEMP_SWEEP_VERSION is
-#     tracked). The browser-safety bundle adds BROWSER_MANAGER_VERSION (shell +
-#     .py), AGENT_BROWSER_REAPER_VERSION, and a guard marker; roll them so the
-#     version-consistency CI + pre-commit gate 5 stay green and these never drift.
+#     tracked). Only root-owned reaper and guard markers roll here. Skill 06
+#     owns its browser-manager markers independently of the root release.
 _roll_marker() {
   # $1 = file (relative to repo root), $2 = marker name (e.g. FOO_VERSION)
   local f="$REPO_ROOT/$1" marker="$2"
@@ -727,52 +726,13 @@ if new != src:
     open(path, "w").write(new)
 PYEOF
 }
-_roll_marker "06-ghl-install-pages/tools/browser_manager.sh" "BROWSER_MANAGER_VERSION"
-_roll_marker "06-ghl-install-pages/tools/browser_manager.py" "BROWSER_MANAGER_PY_VERSION"
 _roll_marker "scripts/agent-browser-reaper.sh"               "AGENT_BROWSER_REAPER_VERSION"
 _roll_marker "scripts/guard-agent-browser-managed.sh"        "GUARD_AGENT_BROWSER_MANAGED_VERSION"
 
-# 11. G3-on-06 GAP FIX (v14.0.1): the two _roll_marker calls above rewrite files
-#     INSIDE the 06-ghl-install-pages/ skill dir (browser_manager.sh + .py). CI guard
-#     G3 (version-consistency.yml) fails any release where a file under a skill dir
-#     changes WITHOUT that skill's own skill-version.txt changing in the same diff.
-#     Because nothing bumped 06-ghl-install-pages/skill-version.txt, EVERY release that
-#     rolled the browser-manager markers tripped G3 (flagged on the v14.0.0 ship).
-#     Roll 06's skill-version.txt here, in lockstep with the markers it gates, so G3
-#     stays green on every release. The 06 skill version is intentionally tracked at
-#     the repo /version (with the v prefix) like 23-ai-workforce-blueprint/skill-version.txt.
-F_06_SKILL_VERSION="$REPO_ROOT/06-ghl-install-pages/skill-version.txt"
-if [ -f "$F_06_SKILL_VERSION" ]; then
-  echo "$TARGET" > "$F_06_SKILL_VERSION"
-fi
-
-# 12. 06 SKILL.md nested `metadata: version:` (v17.0.4 — July-3 audit finding P1-4).
-#     06-ghl-install-pages/SKILL.md carries a version under `metadata:` that ALSO
-#     tracks the repo /version (like 06's skill-version.txt above), but nothing
-#     rolled it, so it silently drifted (found stale at 16.2.14). It is indented,
-#     quoted, and nested under `metadata:` (NOT a top-level frontmatter field like
-#     23's), so the frontmatter-version CI gate deliberately skips it — roll it
-#     HERE, in lockstep, so it can never drift again. Rewrite the first `version:`
-#     line inside the leading `---`…`---` block, preserving its quoting.
-F_06_SKILL_MD="$REPO_ROOT/06-ghl-install-pages/SKILL.md"
-if [ -f "$F_06_SKILL_MD" ]; then
-  python3 - "$F_06_SKILL_MD" "$TARGET" <<'PYEOF'
-import re, sys
-path, target = sys.argv[1], sys.argv[2]
-content = open(path).read()
-m = re.match(r'^(---\s*\n.*?\n---\s*\n)', content, re.DOTALL)
-if m:
-    head = m.group(1); rest = content[m.end():]
-    new_head, n = re.subn(r'(?m)^(\s*version:\s*)(["\']?)[^"\'\n]*(["\']?)\s*$',
-                          lambda mo: f'{mo.group(1)}{mo.group(2)}{target}{mo.group(3)}',
-                          head, count=1)
-    if n == 0:
-        print(f"WARN: no version: field in {path} frontmatter", file=sys.stderr)
-    open(path, "w").write(new_head + rest)
-else:
-    print(f"WARN: no YAML frontmatter in {path}", file=sys.stderr)
-PYEOF
-fi
+# Skill 06 has an independent version. Do not write its skill-version.txt,
+# SKILL.md metadata or browser-manager markers from TARGET. The old root-release
+# coupling lowered all four from v27.1.73 to v27.1.65 in PR #2478, despite no
+# Skill 06 behavior change. Skill 06 changes must bump its own markers together.
 
 # 13. README.md prose version tokens outside the tracked marker pair (added
 #     alongside scripts/check-readme-current-release.sh). Two more README
