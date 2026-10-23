@@ -116,6 +116,22 @@ def test_pure_grids_discriminate():
           local["subject_motion_score"] > 5 * max(1e-6, pan["subject_motion_score"]),
           "%r vs %r" % (local["subject_motion_score"],
                         pan["subject_motion_score"]))
+    # Grid fixtures are pure arithmetic over a fixed formula: no encoder, no
+    # sampling, so their bytes and their scores are identical on every box.
+    # Measured identically on macOS (ffmpeg 9.0.2, Python 3.14.7) and on the
+    # CI runner: flash legacy 0.273265 / 0.273265, pan 0.037398 / 0.037398,
+    # local legacy 0.014446 / 0.014446, local subject 0.067247 / 0.067247.
+    # Grids are the only class pinned exactly; encoded-clip numbers below use
+    # the subject/legacy tolerances that their measured spread justifies.
+    grid_calibration = (("flash", flash, 0.0, 0.273265),
+                        ("pan", pan, 0.0, 0.037398),
+                        ("local", local, 0.067247, 0.014446))
+    for name, ev, subject, legacy in grid_calibration:
+        check("%s grid reproduces its calibrated numbers" % name,
+              abs(ev["subject_motion_score"] - subject) < 1e-6
+              and abs(ev["frame_diff_score"] - legacy) < 1e-6,
+              "%r/%r vs %r/%r" % (ev["subject_motion_score"],
+                                  ev["frame_diff_score"], subject, legacy))
     # motion_score() over grids exposes the numbers and decides on them.
     out = motion_score(frame_grids=[_moving_block(base, 12),
                                     _moving_block(base, 24)])
@@ -293,19 +309,57 @@ def test_real_clips_move_the_decision():
               all(s["evidence"] == "spatial" and s["samples"] >= 2
                   for s in scores.values()),
               json.dumps({k: v.get("samples") for k, v in scores.items()}))
-        # The four calibrated fixtures, numbers locked (tolerance covers a
-        # different x264 build, not a semantic change). Their structure
-        # values are printed above and asserted by class below.
+        # Clip numbers split into two classes, measured on macOS (ffmpeg 9.0.2,
+        # Python 3.14.7) and on the Ubuntu CI runner:
+        #
+        # Subject term is stable across environments; keep it exact.
+        #   flash 0.000369 / 0.000439 (+7.0e-5)
+        #   pan   0.000190 / 0.000190 (  0    )
+        #   local 0.026011 / 0.025899 (-1.1e-4)   <- widest, 4.5x inside 5e-4
+        #
+        # Legacy mean-luma term moves with the encoder build and is not
+        # exact-pinnable. This is the drift that failed CI:
+        #   flash 0.106209 / 0.107116 (+9.1e-4 = 0.86% of value)
+        #   pan   0.044635 / 0.044655 (+2.0e-5)
+        #   local 0.000549 / 0.000544 (-5.0e-6)
+        # So the legacy number is asserted on a 5% band, 5.8x the widest
+        # measured spread (plus a 1e-5 floor over the 1e-6 rounding step),
+        # which still goes red on any semantic change.
         for name, subject, legacy in (
                 ("flash", 0.000369, 0.106209),
                 ("pan", 0.000190, 0.044635),
-                ("static", 0.000000, 0.000000),
                 ("local", 0.026011, 0.000549)):
             s = scores[name]
-            check("%s reproduces its calibrated numbers" % name,
-                  abs(s["subject_motion_score"] - subject) < 5e-4
-                  and abs(s["frame_diff_score"] - legacy) < 5e-4,
+            check("%s reproduces its calibrated subject score" % name,
+                  abs(s["subject_motion_score"] - subject) < 5e-4,
                   "%r vs %r" % (s["subject_motion_score"], subject))
+            check("%s keeps its calibrated legacy score" % name,
+                  abs(s["frame_diff_score"] - legacy)
+                  <= max(1e-5, 0.05 * abs(legacy)),
+                  "%r vs %r (measured spread 9.1e-4 worst case)"
+                  % (s["frame_diff_score"], legacy))
+        for name in ("flash", "pan"):
+            s = scores[name]
+            check("%s is refused with a 2x margin, not merely below the gate"
+                  % name,
+                  s["flagged"] is True
+                  and s["subject_motion_score"] <= MOTION_SUBJECT_LOW / 2,
+                  "%r (gate %r)" % (s["subject_motion_score"],
+                                    MOTION_SUBJECT_LOW))
+        # A still loop encodes identical frames, so zero is structural, not
+        # calibrated: both environments measured exactly 0.0.
+        for name in ("static",):
+            s = scores[name]
+            check("%s is exactly zero for both scores" % name,
+                  s["subject_motion_score"] == 0.0
+                  and s["frame_diff_score"] == 0.0,
+                  "%r/%r" % (s["subject_motion_score"],
+                             s["frame_diff_score"]))
+        check("local is allowed with a 2x margin above the gate",
+              scores["local"]["flagged"] is False
+              and scores["local"]["subject_motion_score"]
+              >= MOTION_SUBJECT_LOW * 2,
+              repr(scores["local"]["subject_motion_score"]))
         check("genuine local motion clears the structure test",
               scores["local"]["motion_structure"] > MOTION_STRUCTURE_MIN,
               repr(scores["local"]["motion_structure"]))
