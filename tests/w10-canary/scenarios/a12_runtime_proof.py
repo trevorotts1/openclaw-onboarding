@@ -24,6 +24,8 @@ Interface reconciliation (deliberate, stated, not silent):
 
 `installer_rc` is never read as a pass signal. Every verdict comes from
 recomputing sha256 over the installed tree and over the manifest's own digest.
+A zero exit from `record` is a collection result, never an acceptance claim:
+`a12_creditable` is the authoritative statement.
 
 Modes:
   record --manifest M [--manifest M ...] [--root R] [--out P]
@@ -268,8 +270,11 @@ def cmd_record(args):
         "loaded-source proof: every file in the installed tree is recomputed "
         "against the manifest's file map, and the manifest's own "
         "manifest_sha256 is recomputed from that map.",
-        "a12_creditable requires both distributions present AND every proof "
-        "ok; one side alone is PARTIAL and can never credit the row.",
+        "A zero exit from record means the requested collection succeeded; it "
+        "does NOT mean the row is creditable. a12_creditable is the "
+        "authoritative statement and requires both distributions present AND "
+        "every proof ok. One side alone is PARTIAL and can never credit the "
+        "row.",
         "installer_rc is not a pass signal.",
     ]
 
@@ -299,6 +304,8 @@ def cmd_record(args):
           "a12_creditable = %s; installer_rc not used as a pass signal"
           % (ROW, sum(1 for r in sides.values() if r["ok"]), len(SIDES), both,
              receipt["a12_creditable"]))
+    print("[%s] note: record exit 0 means the requested collection succeeded, "
+          "NOT that the row is creditable; read a12_creditable." % ROW)
     print("wrote %s" % out)
     return 0 if all_ok else 1
 
