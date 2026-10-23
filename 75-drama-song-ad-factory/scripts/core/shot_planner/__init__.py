@@ -41,6 +41,16 @@ from .timestamp_plan import (  # Part H H5
     pictures_match_gate,
     check_stretch,
 )
+from .opening_scene import (  # S75X-W4-U1
+    OPENING_KEYS,
+    OPPOSITE_READINGS,
+    opening_from_script,
+    build_opening_scene,
+    apply_opening,
+    validate_opening,
+    plan_opening,
+    infer_opposite_reading,
+)
 
 try:
     from style_bible_integration import (
@@ -101,6 +111,9 @@ __all__ = [
     "validate_no_reuse", "plan_generation_count", "validate_story_order",
     "e4_final_checks", "to_e4_qc_record", "prompt_spec_for", "PROMPT_SPEC_KEYS",
     "class_check",
+    "OPENING_KEYS", "OPPOSITE_READINGS",
+    "opening_from_script", "build_opening_scene", "apply_opening",
+    "validate_opening", "plan_opening", "infer_opposite_reading",
     "MOTION_SCORE_LOW", "MOTION_SUBJECT_LOW", "MOTION_STRUCTURE_MIN",
     "CLIP_LOW_MOTION", "CLIP_MOTION_UNMEASURABLE", "MotionScoreError",
     "gate_clip_motion",

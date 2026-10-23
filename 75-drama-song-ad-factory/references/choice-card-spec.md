@@ -435,14 +435,19 @@ Decision 27 and decision 31, plan 6.12 and 6.12.1:
 
 Owner decision D10, superseded 2026-10-07, plan 6.3 and decision 33.
 
-Lip-sync is applied to **selected lines only** - doubled 2026-10-08, more
-pieces and not longer ones: 6 to 8 clips of 4 to 6 seconds per 60 s ad (30 to
-40 seconds), scaled linearly with the ad length, no clip over 6 seconds,
-chosen by the factory and listed on the approval card. Enforced at the final
-edit QC gate (Part E E6): at least 6 lip-sync clips and at least 30 s in a 60 s
-ad (never fewer than 3 clips), scaling linearly (50% of runtime) for longer or
-shorter ads. Clips go first on every sung hook, the spoken opener and the
-spoken closing line, then on:
+Lip-sync is applied to **selected lines only**. Approved direction 2026-10-23
+(supersedes the 2026-10-08 doubling): coverage is **25-30% of the selected
+duration with a 35% HARD MAXIMUM**, in 4 to 6 second clips, no clip over 6
+seconds, never fewer than 3 clips, and the first **12 seconds** clearly
+articulated, chosen by the factory and listed on the approval card. Enforced at
+the final edit QC gate (Part E E6): at least 3 lip-sync clips and at least 25%
+of runtime in a 60 s ad, scaling with runtime for longer or shorter ads. The
+35% maximum, the 6 s per-clip cap and the spend cap are enforced where the
+clips are planned, priced and dispatched (`core/lipsync_clips.py`); a duration
+whose bounds collide fails `LIPSYNC_DURATION_CONFLICT` and is never re-planned
+silently. The historical FREE / no-lip-sync route stays an explicit owner
+opt-in and is never the default. Clips go first on every sung hook, the spoken
+opener and the spoken closing line, then on:
 
 1. the most painful moment (`pain_peak` on the highest-scoring wound beat),
 2. the product line,

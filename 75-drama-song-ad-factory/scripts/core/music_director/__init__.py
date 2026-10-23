@@ -47,6 +47,7 @@ import protected_names
 import words_match
 import words_fit
 import target_engine as TE
+from method_plan import method_plan as _method_plan   # S75X-W4-U2: blueprint reader
 from sung_hook import hook_placement
 
 TOOL_NAME = "music_director"
@@ -319,6 +320,292 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     # _pace_plan into the judge's plan and it never reaches KIE.
     if pace_plan is not None:
         req["_pace_plan"] = pace_plan
+    return req
+
+
+# ---- S75X-W4-U2: request inputs populated from the blueprint ---------------
+#
+# The blueprint (creative/blueprint.json, SPEC C1) carries the story AND the
+# musical direction: ``music_cues[]`` places every turn on the clock. The
+# generic request path never read it -- the director was handed a pace order
+# from somewhere else, so the music could follow a different story than the
+# blueprint's. These functions turn the cues into the ACTUAL inputs
+# ``build_generate_request`` needs (instrumental flag, delivered length, the
+# two-seam pace order, the hook plan's ``true_at_beat``) and refuse a blueprint
+# whose turns have collapsed.
+#
+# The four turns stay DISTINCT, in this order:
+#   spoken_attention_hook   the script's own opening line, spoken at zero. The
+#                           opening may carry instrumental support but never
+#                           becomes dead exposition: it stays under the
+#                           recipe's own ``opener_max`` words.
+#   erm_first_singing       the first sung word at the ERM Drop; nothing sings
+#                           before it. Instrumental support before it is allowed
+#                           and reported, never refused.
+#   hero_shift              a SECOND transition at another moment, changing
+#                           pace, rhythm AND emotional direction against the ERM.
+#   solution_signature_hook the earned hook, at/after the breakthrough; no
+#                           chorus or hook cue may precede that point, and the
+#                           hook line may never be forced into the opening.
+#
+# The seams and ``true_at_beat`` come from method_plan (the ONE reader of the
+# record) and are then written in the blueprint's OWN words: the ERM clause is
+# its pace + rhythmic change, the Hero clause its pace + rhythm + emotional
+# direction, so the clause that reaches the provider IS these cues.
+
+#: The four turns a blueprint-driven request must keep distinguishable, in
+#: story order. The first is spoken by the script; the rest are cues.
+BLUEPRINT_TURNS = ("spoken_attention_hook", "erm_first_singing", "hero_shift",
+                   "solution_signature_hook")
+#: Every cue the four-turn receipt needs to place itself on the clock.
+BLUEPRINT_REQUIRED_CUES = ("BASELINE", "ERM_DROP", "BREAKTHROUGH", "HERO_SHIFT",
+                           "SOLUTION_HOOK")
+#: The directions the Hero Shift must change, each distinct from the ERM Drop's.
+HERO_SHIFT_AXES = ("pace_after", "rhythmic_change", "emotional_direction")
+OPENING_CUE = "BASELINE"
+
+
+def _blueprint_cues(blueprint):
+    """music_cue_id -> cue, in record order ({} when the record has none)."""
+    cues = blueprint.get("music_cues") if isinstance(blueprint, dict) else None
+    if not isinstance(cues, list):
+        return {}
+    return {str(c.get("music_cue_id")): c for c in cues
+            if isinstance(c, dict) and c.get("music_cue_id")}
+
+
+def _seconds(obj, key="start_s"):
+    """The field as a float, or None when absent/unreadable (never guessed)."""
+    try:
+        return float((obj or {}).get(key))
+    except (TypeError, ValueError):
+        return None
+
+
+def _text(cue, *keys):
+    """The first non-empty of ``keys`` on a cue, stripped ('' when none)."""
+    for key in keys:
+        value = str((cue or {}).get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _direction(cue, *keys):
+    """The cue's own words for one transition: distinct parts joined by '; '.
+
+    Empty when the cue names none -- the caller fails closed, because an
+    unstated direction is a request that cannot follow the blueprint."""
+    parts = []
+    for key in keys:
+        value = str((cue or {}).get(key) or "").strip().rstrip(".")
+        if value and value.lower() not in [p.lower() for p in parts]:
+            parts.append(value)
+    return "; ".join(parts)
+
+
+def _blueprint_turns(blueprint):
+    """The four-turn receipt, or ValueError naming every collapsed turn."""
+    idx = _blueprint_cues(blueprint)
+    missing = [c for c in BLUEPRINT_REQUIRED_CUES if c not in idx]
+    if missing:
+        raise ValueError(
+            "BLUEPRINT_CUES_MISSING: the blueprint needs music_cues %s"
+            % ", ".join(missing))
+    erm, hero, hook = idx["ERM_DROP"], idx["HERO_SHIFT"], idx["SOLUTION_HOOK"]
+    beat, base = idx["BREAKTHROUGH"], idx[OPENING_CUE]
+    erm_s, hero_s, hook_s = _seconds(erm), _seconds(hero), _seconds(hook)
+    beat_s, base_s = _seconds(beat), _seconds(base)
+    if None in (erm_s, hero_s, hook_s, beat_s, base_s):
+        raise ValueError(
+            "BLUEPRINT_CUES_MISSING: every required cue needs a numeric start_s")
+
+    errors = []
+    # 2. the first sung word enters at the ERM Drop; nothing sings before it.
+    status = str(erm.get("vocal_status") or "").strip().lower()
+    if status != "first_sung":
+        errors.append(
+            "ERM_NOT_FIRST_SUNG: ERM_DROP carries vocal_status %r; the first sung "
+            "line enters as the groove drops at the ERM apex (method 11.2)"
+            % status)
+    early = [cid for cid, cue in idx.items()
+             if str(cue.get("vocal_status") or "").strip().lower()
+             in _method_plan.SINGING
+             and _seconds(cue) is not None and _seconds(cue) < erm_s]
+    if early:
+        errors.append(
+            "SINGING_BEFORE_ERM: %s sings before the ERM apex at %s s; no sung "
+            "word before the ERM (method 11.2)" % (", ".join(early), erm_s))
+    # 3. the Hero Shift is a distinct transition: another moment AND another
+    # direction on every axis. A shared word or a blank axis is not a turn.
+    if hero_s == erm_s:
+        errors.append(
+            "HERO_SHIFT_NOT_DISTINCT: HERO_SHIFT starts at %s s, the ERM apex's own "
+            "moment; the two turns are two distinct musical transitions (method 11.2)"
+            % hero_s)
+    same = [key for key in HERO_SHIFT_AXES
+            if not str(hero.get(key) or "").strip()
+            or str(hero.get(key)).strip().lower()
+            == str(erm.get(key) or "").strip().lower()]
+    if same:
+        errors.append(
+            "HERO_SHIFT_NOT_DISTINCT: HERO_SHIFT does not change %s against the "
+            "ERM Drop; the two turns are two distinct musical transitions "
+            "(method 11.2)" % ", ".join(same))
+    # 4. the hook is earned: it starts at/after the breakthrough, and no other
+    # chorus or hook cue may precede that point.
+    if hook_s < beat_s:
+        errors.append(
+            "HOOK_UNEARNED: SOLUTION_HOOK starts at %s s, before the breakthrough "
+            "at %s s; the build toward the hook starts once the story earns it"
+            % (hook_s, beat_s))
+    early_hooks = [cid for cid, cue in idx.items()
+                   if cid != "SOLUTION_HOOK" and cid != "ERM_DROP"
+                   and ("HOOK" in cid.upper() or "CHORUS" in cid.upper())
+                   and _seconds(cue) is not None and _seconds(cue) < beat_s]
+    if early_hooks:
+        errors.append(
+            "CHORUS_BEFORE_EARNED: %s starts before the breakthrough at %s s; no "
+            "triumphant chorus precedes the story earning it"
+            % (", ".join(early_hooks), beat_s))
+    if errors:
+        raise ValueError("; ".join(errors))
+
+    support = (erm_s - base_s) if base_s <= erm_s else 0.0
+    turns = {
+        "spoken_attention_hook": {
+            "source": "script", "cue_id": OPENING_CUE, "at_s": base_s,
+            "vocal_status": str(base.get("vocal_status") or "").strip()},
+        "erm_first_singing": {
+            "cue_id": "ERM_DROP", "at_s": erm_s, "vocal_status": "first_sung"},
+        "hero_shift": {
+            "cue_id": "HERO_SHIFT", "at_s": hero_s,
+            "pace_after": str(hero.get("pace_after") or "").strip(),
+            "rhythmic_change": str(hero.get("rhythmic_change") or "").strip(),
+            "emotional_direction": str(hero.get("emotional_direction") or "").strip(),
+            "distinct_from_erm": True},
+        "solution_signature_hook": {
+            "cue_id": "SOLUTION_HOOK", "at_s": hook_s,
+            "earned_after": "BREAKTHROUGH", "earned_from_s": beat_s,
+            "lyric": str(hook.get("lyric_or_dialogue") or "").strip()},
+    }
+    # A blueprint whose first sung word is required is never an instrumental-
+    # only request; the flag is stated, never guessed.
+    return {"turns": turns, "instrumental": False,
+            "instrumental_support_s": round(support, 3)}
+
+
+def blueprint_request_inputs(blueprint, style_id=None):
+    """The music-request inputs, populated from the blueprint's own cues.
+
+    Returns the ``build_generate_request`` arguments that follow the beats:
+    ``instrumental``, ``length_s`` (the DELIVERED seconds of the blueprint's
+    runtime target at ``style_id``, via length_formula -- None when either is
+    absent, never a guess), ``pace_plan`` (the two blueprint seams, written in
+    the cues' words), ``true_at_beat`` and the four-turn ``turns`` receipt
+    plus ``instrumental_support_s`` (allowed before the first singing).
+
+    Raises ValueError on a collapsed blueprint; it never invents a turn.
+    """
+    receipt = _blueprint_turns(blueprint)
+    idx = _blueprint_cues(blueprint)
+    order = _method_plan.pace_order(blueprint)
+    if not order:
+        raise ValueError("BLUEPRINT_CUES_MISSING: no ERM / Hero Shift seams to order")
+    drop = _direction(idx["ERM_DROP"], "pace_after", "rhythmic_change")
+    hero = _direction(idx["HERO_SHIFT"], *HERO_SHIFT_AXES)
+    if not drop or not hero:
+        raise ValueError(
+            "BLUEPRINT_DIRECTION_MISSING: the blueprint must state the ERM Drop's "
+            "pace and the Hero Shift's pace, rhythm and emotional direction")
+    # The blueprint's OWN words ride the two seams, so pace_clause writes these
+    # cues into the final style and check_pace_style measures the same text.
+    order["drop"] = drop
+    order["return"] = hero
+    order["hero_direction"] = str(
+        idx["HERO_SHIFT"].get("emotional_direction") or "").strip()
+    from music_qc import pace_change as _PC   # noqa: PLC0415  the owner gate
+    seam_errs = _PC.check_pace_plan(order)
+    if seam_errs:
+        raise ValueError("; ".join(seam_errs))
+    length_s = None
+    target = _seconds(blueprint, "runtime_target_seconds")
+    if target is not None and style_id is not None:
+        import length_formula as _LF   # noqa: PLC0415  the ONE arc/length table
+        length_s = _LF.plan(target, style_id=style_id)["delivered_s"]
+    return {"instrumental": receipt["instrumental"], "length_s": length_s,
+            "pace_plan": order,
+            "true_at_beat": _method_plan.true_at_beat(blueprint),
+            "turns": receipt["turns"],
+            "instrumental_support_s": receipt["instrumental_support_s"]}
+
+
+def _opening_errors(lyrics_text, blueprint, length_s):
+    """The opening stays the immediate attention hook, never dead exposition.
+
+    The first section must be the script's SPOKEN line (attention hook) --
+    an instrumental tag may follow it, but a sung section may not open the
+    request and the earned hook lyric may not be forced into the opening. A
+    spoken opener is capped by the recipe's own ``opener_max`` words.
+    """
+    try:
+        sheet = suno_recipe.parse_lyrics(lyrics_text)
+    except suno_recipe.RecipeError:
+        return []          # the builder's own parse refusal names that defect
+    if not sheet:
+        return []
+    errors = []
+    first = sheet[0]
+    if str(first.get("delivery") or "").strip() != "spoken":
+        errors.append(
+            "OPENING_NOT_ATTENTION_HOOK: the request opens with %r (%s); a "
+            "blueprint request opens on the spoken attention hook, never a sung "
+            "line and never a tag that carries no voice"
+            % (str(first.get("tag") or ""), first.get("delivery") or "no voice"))
+    if length_s is not None:
+        import length_formula as _LF   # noqa: PLC0415
+        words = sum(len(str(ln).split()) for ln in first.get("lines") or [])
+        cap = (_LF.plan(length_s).get("words") or {}).get("opener_max")
+        if cap is not None and words > cap:
+            errors.append(
+                "OPENING_DEAD_EXPOSITION: the spoken opener is %d words, max %d "
+                "at %g s; the opening is an attention hook, not a narration block"
+                % (words, cap, length_s))
+    hook_line = _text(_blueprint_cues(blueprint).get("SOLUTION_HOOK"),
+                      "lyric_or_dialogue")
+    opened = " ".join(str(ln) for ln in first.get("lines") or [])
+    if hook_line and hook_line.lower() in opened.lower():
+        errors.append(
+            "HOOK_FORCED_INTO_OPENING: the earned Solution Signature Hook (%r) "
+            "sits in the opening; it becomes true later and is never forced "
+            "into the opening" % hook_line)
+    return errors
+
+
+def build_blueprint_request(blueprint, lyrics_text, style_text, title, style_id=None,
+                            length_s=None, **kw):
+    """build_generate_request with every input populated from the blueprint.
+
+    The four turns are checked before anything is built (``_blueprint_turns``),
+    the opening is judged as the attention hook (``_opening_errors``), and the
+    FINAL style must carry both blueprint directions (the owner gate
+    ``song_contract.check_pace_style``) -- so a request whose music drifts off
+    the beats is refused here, at the request, not after spend.
+    """
+    inputs = blueprint_request_inputs(blueprint, style_id=style_id)
+    if length_s is None:
+        length_s = inputs["length_s"]
+    opening = _opening_errors(lyrics_text, blueprint, length_s)
+    if opening:
+        raise ValueError("; ".join(opening))
+    req = build_generate_request(
+        lyrics_text, style_text, title, style_id=style_id, length_s=length_s,
+        instrumental=inputs["instrumental"], pace_plan=inputs["pace_plan"],
+        true_at_beat=inputs["true_at_beat"], **kw)
+    from song_contract import song_contract as _SC   # noqa: PLC0415  owner gate
+    style_errs = _SC.check_pace_style(req["input"]["style"], inputs["pace_plan"])
+    if style_errs:
+        raise ValueError("; ".join(style_errs))
     return req
 
 

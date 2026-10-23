@@ -1,38 +1,58 @@
 #!/usr/bin/env python3
 """lipsync_clips.py: the one place that says HOW MUCH lip-sync an ad carries.
 
-Owner order (Trevor, 2026-10-08): double the lip-sync, with MORE PIECES, NOT
-LONGER ONES. A 60 s ad carries 6-8 short lip-sync clips of 4-6 s each (30-40 s
-in total, was 15-20 s). Every clip is capped at 6 s (short clips hold mouth
-sync on sung lines). Clips go on the lines that matter: every sung hook, the
-spoken opener and the spoken closing line.
+APPROVED DIRECTION (Trevor, 2026-10-23): coverage is a SHARE of the selected
+duration, not a fixed block of seconds.
 
-Everything scales linearly with the ad length L (scale = L / 60). The
-operator's length-formula module is not on main yet; when it lands, replace
-`scale()` with its function and nothing else changes.
+  * target 25-30% of the ad, hard MAXIMUM 35% (nothing may cross it);
+  * the first 12 s must be clearly articulated: the spoken opener / first sung
+    hook is lip-synced inside that window (`check_opening`);
+  * still MORE PIECES, NOT LONGER ONES: every clip is 4-6 s, hard cap 6 s, and
+    never fewer than 3 clips whatever the length.
 
-Every lip-sync clip is a paid KIE job (`kling/ai-avatar-standard`), so doubling
-the footage roughly doubles the lip-sync cost. `check_budget` refuses LOUDLY
-when the job would pass the cap (or when the price or the cap is unknown); it
-never trims the plan or spends past a cap silently. Prices are never stored
-here: the per-second rate comes from Skill 74 `price`.
+This supersedes the 2026-10-08 "30-40 s per 60 s" order. That older text is
+kept ONLY as the derived 60 s reference (`TOTAL_PER_REF_S`, `CLIPS_PER_REF` =
+15-18 s and 3-5 clips) so the class table and the E6 reader keep one source;
+it must not regain control of a run.
 
-TWO-TRY RULE (Trevor 2026-10-08): at most 2 paid Kling jobs per segment, every
-name variant counted (`count_jobs`, `check_try_limit`); after that the best
-measured take wins. Budgets are priced with attempts=MAX_TRIES.
+When a duration cannot satisfy the shares, the 3-clip / 4-s floor and the 6 s
+clip cap at the same time, `duration_conflicts()` says which two bounds
+collide and the caller EXPOSES it (card refuses, plan flags). The policy is
+never silently bent and a run is never re-planned behind the owner's back.
+
+The historical FREE / no-lip-sync route stays explicit (`ROUTE_NO_LIPSYNC`):
+zero paid Kling jobs is a valid plan when the owner asks for it, and is never
+the default and never a reason to drop lip-sync from an ordinary run.
+
+Every lip-sync clip is a paid KIE job (`kling/ai-avatar-standard`), so the
+footage drives the lip-sync cost. `check_budget` refuses LOUDLY when the job
+would pass the cap (or when the price or the cap is unknown); it never trims
+the plan or spends past a cap silently. Prices are never stored here: the
+per-second rate comes from Skill 74 `price`.
+
+TWO-TRY RULE (Trevor 2026-10-08, unchanged): at most 2 paid Kling jobs per
+segment, every name variant counted (`count_jobs`, `check_try_limit`); after
+that the best measured take wins. Budgets are priced with attempts=MAX_TRIES.
 
 Stdlib only, no network, no spend.
 """
 from __future__ import annotations
 
+import math
 import re
 
 REF_LENGTH_S = 60.0
-CLIPS_PER_REF = (6, 8)          # clips in a 60 s ad
+TARGET_SHARE = (0.25, 0.30)     # approved target coverage of the ad length
+MAX_SHARE = 0.35                # HARD maximum: nothing may cross it
+OPENING_WINDOW_S = 12.0         # the opening must be clearly articulated
 CLIP_MIN_S = 4.0
 CLIP_MAX_S = 6.0                # hard cap per clip
-TOTAL_PER_REF_S = (30.0, 40.0)  # lip-sync seconds in a 60 s ad
 MIN_CLIPS_FLOOR = 3             # never fewer than 3, whatever the length
+#: 60 s reference values, DERIVED from the shares above. Kept because the
+#: length-class table and final_assembler/lipsync_coverage read them as a 60 s
+#: reference; they are outputs of the policy, never a second policy.
+TOTAL_PER_REF_S = (TARGET_SHARE[0] * REF_LENGTH_S,
+                   TARGET_SHARE[1] * REF_LENGTH_S)
 PRIORITY_ROLES = ("hook", "opener", "closing")   # sung hooks, spoken open/close
 MAX_TRIES = 2                   # paid Kling jobs per segment, then keep the best
 PRE_S, TAIL_S = 0.30, 0.20      # padding around the first/last word
@@ -46,6 +66,15 @@ OVER_CAP = "LIPSYNC_OVER_CAP"
 PRICE_UNKNOWN = "LIPSYNC_PRICE_UNKNOWN"
 CAP_UNKNOWN = "LIPSYNC_CAP_UNKNOWN"
 BAD_PLAN = "LIPSYNC_PLAN_OUT_OF_RULE"
+DURATION_CONFLICT = "LIPSYNC_DURATION_CONFLICT"
+OPENING_SHORT = "LIPSYNC_OPENING_NOT_ARTICULATED"
+
+#: The two explicit routes. Ordinary runs carry lip-sync; the historical FREE
+#: route is opt-in only and never becomes the default.
+ROUTE_LIPSYNC = "lipsync"
+ROUTE_NO_LIPSYNC = "no_lipsync"
+ROUTES = (ROUTE_LIPSYNC, ROUTE_NO_LIPSYNC)
+FREE_ROUTE_OK = "LIPSYNC_FREE_ROUTE"
 
 
 class LipsyncClipsError(Exception):
@@ -68,25 +97,98 @@ def _round(x):
     return int(x + 0.5)
 
 
+def _clip_bounds(ad_length_s):
+    """(min_clips, max_clips) for one length: enough pieces to reach the 25%
+    target inside the 6 s clip cap, never more than the 35% maximum allows at
+    the 4 s clip floor, and never below the 3-clip floor."""
+    lo = max(MIN_CLIPS_FLOOR,
+             int(math.ceil(TARGET_SHARE[0] * ad_length_s / CLIP_MAX_S - 1e-9)))
+    hi = max(lo,
+             int(math.floor(MAX_SHARE * ad_length_s / CLIP_MIN_S + 1e-9)))
+    return lo, hi
+
+
+#: 60 s reference clip range, derived by the same rule (see TOTAL_PER_REF_S).
+CLIPS_PER_REF = _clip_bounds(REF_LENGTH_S)
+
+
 def budget(ad_length_s):
-    """The rule for one ad length: clip count range, per-clip seconds, total."""
-    k = scale(ad_length_s)
-    lo = max(MIN_CLIPS_FLOOR, _round(CLIPS_PER_REF[0] * k))
-    hi = max(lo, _round(CLIPS_PER_REF[1] * k))
+    """The rule for one ad length: coverage shares, clip range, per-clip seconds.
+
+    ``total_min_s``/``total_max_s`` are the 25-30% target band; ``hard_max_s``
+    is the 35% refusal bound nothing may cross; ``floor_s`` is the smallest
+    legal total (3 clips x 4 s). Conflicts between those bounds at a given
+    duration are reported by ``duration_conflicts()``, never resolved here.
+    """
+    scale(ad_length_s)                       # validates the input
+    lo, hi = _clip_bounds(ad_length_s)
     return {"ad_length_s": ad_length_s, "min_clips": lo, "max_clips": hi,
             "clip_min_s": CLIP_MIN_S, "clip_max_s": CLIP_MAX_S,
-            "total_min_s": TOTAL_PER_REF_S[0] * k,
-            "total_max_s": TOTAL_PER_REF_S[1] * k}
+            "total_min_s": TARGET_SHARE[0] * ad_length_s,
+            "total_max_s": TARGET_SHARE[1] * ad_length_s,
+            "hard_max_s": MAX_SHARE * ad_length_s,
+            "floor_s": MIN_CLIPS_FLOOR * CLIP_MIN_S,
+            "target_share": TARGET_SHARE, "max_share": MAX_SHARE,
+            "opening_window_s": OPENING_WINDOW_S}
 
 
-def check_clips(clip_seconds, ad_length_s):
-    """Does a clip list obey the rule? Fails on any clip over 6 s, a clip
-    count outside the range, or a total below the minimum (above the maximum
-    total is a failure too: the cost cap is planned on it)."""
+def duration_conflicts(ad_length_s):
+    """The bounds this duration cannot satisfy at the same time, or [].
+
+    Each entry names both sides of the collision. The caller must EXPOSE it
+    (refuse the card / flag the plan with DURATION_CONFLICT); it must never
+    bend the policy, re-plan silently, or spend.
+    """
+    b = budget(ad_length_s)
+    out = []
+    if b["floor_s"] > b["hard_max_s"] + 1e-9:
+        out.append("%.1f s floor (%d clips x %.0f s) exceeds the %.0f%% maximum "
+                   "of %.1f s at %.1f s long"
+                   % (b["floor_s"], MIN_CLIPS_FLOOR, CLIP_MIN_S,
+                      MAX_SHARE * 100, b["hard_max_s"], ad_length_s))
+    if b["max_clips"] * CLIP_MAX_S < b["total_min_s"] - 1e-9:
+        out.append("%d clips x %.0f s = %.1f s cannot reach the %.0f%% target "
+                   "of %.1f s at %.1f s long"
+                   % (b["max_clips"], CLIP_MAX_S,
+                      b["max_clips"] * CLIP_MAX_S, TARGET_SHARE[0] * 100,
+                      b["total_min_s"], ad_length_s))
+    return out
+
+
+def check_opening(first_clip_start_s, ad_length_s):
+    """The first 12 s (or the whole ad, if shorter) must be articulated: the
+    first lip-sync clip starts inside that window."""
+    window = min(OPENING_WINDOW_S, float(ad_length_s))
+    ok = (_num(first_clip_start_s) and 0 <= first_clip_start_s <= window + 1e-9)
+    return {"pass": ok,
+            "reason_code": "LIPSYNC_OPENING_OK" if ok else OPENING_SHORT,
+            "opening_window_s": window, "first_clip_start_s": first_clip_start_s}
+
+
+def check_clips(clip_seconds, ad_length_s, route=ROUTE_LIPSYNC,
+                first_clip_start_s=None):
+    """Does a clip list obey the rule?
+
+    ``route="lipsync"`` (the default, and the ordinary run): fails on a clip
+    over 6 s, a clip count outside the range, a total below the 25% target, a
+    total above the 35% maximum, or a duration whose bounds collide.
+    ``route="no_lipsync"``: the explicit historical FREE route -- it passes
+    only with ZERO clips (nothing paid), and it never becomes the default.
+    """
+    if route not in ROUTES:
+        raise LipsyncClipsError(BAD_PLAN, "unknown lip-sync route %r (one of %s)"
+                                % (route, ", ".join(ROUTES)))
     b = budget(ad_length_s)
     secs = [float(s) for s in clip_seconds]
     total = sum(secs)
-    why = []
+    if route == ROUTE_NO_LIPSYNC:
+        why = ([] if not secs else
+               ["the free / no-lip-sync route carries %d clip(s); it is zero "
+                "paid jobs" % len(secs)])
+        return {"pass": not why, "reason_code": FREE_ROUTE_OK if not why
+                else BAD_PLAN, "reasons": why, "route": route,
+                "total_s": round(total, 3), "clips": len(secs), "budget": b}
+    why = list(duration_conflicts(ad_length_s))
     if any(s <= 0 for s in secs):
         why.append("a clip has no length")
     if any(s > CLIP_MAX_S + 1e-9 for s in secs):
@@ -95,14 +197,20 @@ def check_clips(clip_seconds, ad_length_s):
         why.append("%d clips; need %d-%d" % (len(secs), b["min_clips"],
                                              b["max_clips"]))
     if total + 1e-9 < b["total_min_s"]:
-        why.append("%.1f s of lip-sync; need at least %.1f s"
-                   % (total, b["total_min_s"]))
-    if total > b["total_max_s"] + 1e-9:
-        why.append("%.1f s of lip-sync; budgeted at most %.1f s"
-                   % (total, b["total_max_s"]))
+        why.append("%.1f s of lip-sync; need at least %.1f s (%.0f%%)"
+                   % (total, b["total_min_s"], TARGET_SHARE[0] * 100))
+    if total > b["hard_max_s"] + 1e-9:
+        why.append("%.1f s of lip-sync; the %.0f%% maximum at %.1f s is %.1f s"
+                   % (total, MAX_SHARE * 100, ad_length_s, b["hard_max_s"]))
+    if first_clip_start_s is not None:
+        op = check_opening(first_clip_start_s, ad_length_s)
+        if not op["pass"]:
+            why.append("first clip starts at %.1f s; the first %.0f s must be "
+                       "articulated" % (float(first_clip_start_s),
+                                        op["opening_window_s"]))
     return {"pass": not why, "reason_code": "LIPSYNC_CLIPS_OK" if not why
-            else BAD_PLAN, "reasons": why, "total_s": round(total, 3),
-            "clips": len(secs), "budget": b}
+            else BAD_PLAN, "reasons": why, "route": route,
+            "total_s": round(total, 3), "clips": len(secs), "budget": b}
 
 
 def estimate_cost_usd(total_s, usd_per_s, shapes=1, attempts=MAX_TRIES):

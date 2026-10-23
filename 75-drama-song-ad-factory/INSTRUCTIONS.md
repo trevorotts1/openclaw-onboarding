@@ -45,6 +45,36 @@ Route boundaries (from SKILL.md): motion graphics -> motion-video-plus;
 landing pages -> blackceo-signature-page; plain KIE model dispatch ->
 74-kie-live-adapter; Claude-Nine/Claude Code runtime -> the 999 twin skill.
 
+## RELEASE v2.9.103 - WHAT CHANGED IN BEHAVIOUR
+
+Plain-language list of what a run does differently. No command or exit code
+changed. The code references are for the operator; the checks named in
+`SKILL.md` ("Release v2.9.103") prove each item.
+
+- **Openings.** A story may open on the consequence and rewind. The twelve
+  beats keep their ids and causal order; the telling order is declared on the
+  record and checked against the script, the performed lines and the shots.
+- **Presentation order.** One declared order reconciles those three views.
+  Every beat still states its five parts, and the performed-beat manifest is
+  emitted in the presented order while keeping every beat id.
+- **Purpose-aware script check.** The check reads the run's recorded purpose
+  from `control/method.json` and judges a lesson, testimonial or sales run by
+  its own purpose's rules. A run with no recorded purpose is judged exactly as
+  before, and the purpose is never guessed from the script's text.
+- **Whole-package approval.** The script and lyric presentation remain one
+  package with one approval action (`approve` / `approve both`), never a
+  per-scene stop.
+- **Opening in the shot plan.** The opening scene is carried into the first
+  shot in song order (line, action, intended emotion, reading context). Shot
+  order is never changed.
+- **Blueprint-driven music.** The music request is built from the blueprint's
+  own music cues: instrumental flag, delivered length, the two pace seams and
+  the hook's `true_at_beat`. A collapsed blueprint refuses with a typed
+  blueprint error instead of sending a request for a different story.
+- **Lip-sync coverage.** 25-30% of the selected duration target, 35% hard
+  maximum, 4-6 s clips, never fewer than 3, and the first 12 s articulated.
+  The lip-sync section above carries the refusal codes.
+
 ## THE ELEVEN RUNTIME STEPS (BUILD-DIRECTIVE SECTION 25)
 
 Run these in order on every campaign. Nothing here may bypass a shared
@@ -526,12 +556,17 @@ card. The answers and the time answered go into the receipt
 - **Per-character voice registry:** no two characters share a voice, in any
   look or music style. Distinctness still holds inside the one track.
 - **Lip-sync (decision 33):** selected lines only - the pain peak, the
-  product line, the call to action and the chorus hook, DOUBLED (owner order
-  2026-10-08): more pieces, not longer ones. A 60 s ad carries 6 to 8 clips of 4
-  to 6 seconds (30 to 40 seconds, scaled by ad length, no clip over 6 seconds);
-  clips go on every sung hook, the spoken opener and the spoken closing line
-  first, and are listed on the approval card. Each is a paid job, so the cost
-  roughly doubles and a plan past the spend cap is refused loudly. Every
+  product line, the call to action and the chorus hook. Approved direction
+  2026-10-23 (supersedes the 2026-10-08 doubling): coverage is **25-30% of the
+  selected duration with a 35% HARD MAXIMUM**, in clips of 4 to 6 seconds, no
+  clip over 6 seconds, never fewer than 3 clips, and the first **12 seconds**
+  clearly articulated (the spoken opener / first sung hook is lip-synced there).
+  The numbers live in `core/lipsync_clips.py`; a duration whose bounds collide
+  fails `LIPSYNC_DURATION_CONFLICT` instead of being re-planned silently.
+  Clips go on every sung hook, the spoken opener and the spoken closing line
+  first, and are listed on the approval card. The historical FREE /
+  no-lip-sync route stays an explicit owner opt-in and is never the default.
+  Each clip is a paid job, so a plan past the spend cap is refused loudly. Every
   lip-sync source picture passes the lip-sync image gate before any paid job
   (the dispatcher measures the picture with `picture_gate`: PASS, ACCEPT_WITH_FLAG or
   FAIL, and refuses a FAIL; `image_gate` uses those same numbers and adds only size

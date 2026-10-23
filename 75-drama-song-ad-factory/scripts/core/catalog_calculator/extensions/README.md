@@ -13,10 +13,13 @@ re-runs the tests and reads the source.
   close-ups, voice packs, clips and the batch total**.
 - `references/price-menu.md` section **3** (lip-sync close-ups), **4** (voice
   packs), **6** (batch total).
-- Plan **6.3** / decision **33**, doubled 2026-10-08: lip-sync runs on 6-8
-  short clips of 4-6 s per 60 s ad (30-40 seconds, scaled by length, no clip
-  over 6 s) **per shape**; roster is Kling avatar first,
-  InfiniTalk backup.
+- Plan **6.3** / decision **33**, approved direction 2026-10-23 (supersedes
+  the 2026-10-08 doubling): lip-sync covers **25-30%** of the selected
+  duration with a **35% hard maximum**, the first **12 s** clearly
+  articulated, in short clips of 4-6 s (no clip over 6 s), **per shape**;
+  roster is Kling avatar first, InfiniTalk backup. The numbers live in
+  `core/lipsync_clips.py`; a duration whose bounds collide is refused with
+  the conflict named.
 - Plan **6.2**: the song is one asset shared by every shape.
 - Plan **5.4**: Skill 74 `price --model ID --units N` is the single price
   authority.
