@@ -97,6 +97,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import json
 import os
 import re
 import shlex
@@ -315,6 +316,33 @@ def _scenario(name):
     return plan
 
 
+def _require_a08_trees(manifests):
+    """A manifest whose installed tree is gone is not evidence.
+
+    A12 hashes the bytes under installed_path and imports the module from that
+    tree; a manifest left behind by an A08 run that deleted its own sandbox
+    points at nothing. Refuse here, before the harness runs, so the verdict is
+    a named BLOCKED_HARNESS instead of an obscure import error from the child.
+    """
+    dangling = []
+    for path in manifests:
+        try:
+            installed = json.loads(path.read_text(encoding="utf-8"))[
+                "installed_path"]
+        except (OSError, ValueError, KeyError) as exc:
+            raise Blocked("BLOCKED_HARNESS",
+                          "unreadable A08 manifest %s: %s" % (path, exc))
+        if not Path(installed).is_dir():
+            dangling.append((path, installed))
+    if dangling:
+        raise Blocked(
+            "BLOCKED_HARNESS",
+            "A08 installed tree missing (that A08 run deleted its sandbox, i.e. "
+            "ran without --keep): %s. Rerun A08 with --keep; A12 hashes and "
+            "imports the tree at installed_path."
+            % "; ".join("%s -> %s" % (p, inst) for p, inst in dangling))
+
+
 def plan_a08(ctx, mode, sandbox):
     # One invocation with --dist both: the canary prints ONE aggregate
     # "real: N/M checks passed", which is what this row's min_total=7 floor
@@ -332,7 +360,13 @@ def plan_a08(ctx, mode, sandbox):
         argv += ["--repo-root", "999-setup=%s" % ctx["nine_root"]]
     if mode == "dry":
         argv.append("--dry-run")
-    return [Step(argv, cwd=ctx["tree"], note="dist=both")]
+    # A12 hashes the bytes at each manifest's installed_path and imports the
+    # module from that tree, so the sandbox must outlive this process.
+    argv.append("--keep")
+    if mode != "dry":
+        print("A08 keeps its install trees: /tmp/skill75-repair-SFR-007-canary-*"
+              " (~1.2 GB across both dists). A12 reads them; delete by hand.")
+    return [Step(argv, cwd=ctx["tree"], note="dist=both; --keep")]
 
 
 def plan_a12(ctx, mode, sandbox):
@@ -346,6 +380,7 @@ def plan_a12(ctx, mode, sandbox):
         raise Blocked("BLOCKED_HARNESS",
                       "no clean-install manifest in %s (A12 needs A08 real "
                       "output first)" % ctx["artifacts"])
+    _require_a08_trees(manifests)
     manifest = str(manifests[-1])
     # Runbook text: `record --manifest <m>` then `check --manifest <m>
     # --side installed`, proving both onboarding_skill and nine_skill. The tool
