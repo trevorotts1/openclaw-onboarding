@@ -8,8 +8,8 @@
     "BLOCKED_NEEDS_AUTHORIZATION": "a genuine live/production authorization is missing; isolated precisely here, everything else still built"
   },
   "external_repos": {
-    "999-setup": {"root": "/Users/blackceomacmini/.openclaw/persist-home/999-setup", "note": "HARD-PROTECTED clone: read-only for this unit, never written"},
-    "graphify": {"root": "/Users/blackceomacmini/blackceo-graphify-infrastructure", "note": "read-only for this unit, never written"}
+    "999-setup": {"root": "~/.openclaw/persist-home/999-setup", "note": "HARD-PROTECTED clone: read-only for this unit, never written"},
+    "graphify": {"root": "~/blackceo-graphify-infrastructure", "note": "read-only for this unit, never written"}
   },
   "canaries": {
     "clean_install": {
@@ -78,7 +78,7 @@
         "supporting_commands": ["graphifyctl verify onboarding", "graphifyctl verify 999", "graphifyctl verify unified"],
         "supporting_note": "the source-vector and semantic-sibling halves are attested by verify reading the semantic accepted-vector seam (semantic.accepted_vector_file -> the pinned S75-WM source-vector.json); the unified-promotion half is the rebuild output itself",
         "evidence_receipt": "work/S75-W09-U1/RECEIPT.json",
-        "evidence_receipt_note": "run-root-relative producer path (/Users/blackceomacmini/skill75-repair/work/S75-W09-U1/); not yet written — that directory today holds READINESS-RECEIPT.json, READINESS-RECEIPT.md and PHASE-STATUS.json"}},
+        "evidence_receipt_note": "run-root-relative producer path (work/S75-W09-U1/); not yet written — that directory today holds READINESS-RECEIPT.json, READINESS-RECEIPT.md and PHASE-STATUS.json"}},
     "A11": {"weight": 14, "canaries": ["clean_install", "upgrade", "multi_run"], "prepared_status": "BLOCKED_NEEDS_AUTHORIZATION", "waits_for": "anonymous end-to-end canaries incl. authorized live channel + provider run under the existing authorization/spending ceiling; harnesses ready, live execution not authorized in this window", "claims_now": "none", "blocker": "authorized live channel/provider acceptance target and spending ceiling are outside this unit's write surface (scratch isolation; no production/client writes, no paid jobs). Recorded as a named blocked acceptance item; everything else prepared."},
     "A12": {"weight": 10, "canaries": ["clean_install", "upgrade"], "prepared_status": "WAITS_FOR_VECTOR", "waits_for": "release/version/pin alignment + canary receipts + loaded-source proof + queue cleanup + privacy scan on shared artifacts", "claims_now": "none"}
   },

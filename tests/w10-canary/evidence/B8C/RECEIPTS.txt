@@ -1,24 +1,25 @@
 # Batch-8c compatibility receipts
-# generated 2026-10-22T23:56:47Z at 51dbb24c4
+# generated 2026-10-23T00:17:04Z at 479b89f40
+# paths are repo-relative; run dirs are placeholders (the fixtures are rebuilt by the scripts)
 
 $ python3 tests/w10-canary/evidence/B8C/proof_recap_hold.py
 
 == AGNES-yes handout path
-   $ python3.14 /Users/blackceomacmini/skill75-repair/lanes/BATCH8C-PREP-lane/wt/75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/b8c-recap-hold-9dcn90uq/run-b8948042
+   $ python3 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir <run-dir>
    rc=0 outcome='ok' reason='next-stage' command='python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <video-model-id> --request "$RUN/generation/req.json" --prompt-file "$RUN/generation/req.prompt.txt" --save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key video --attempt-id a1 --cost 0'
 ok   AGNES-yes handout path: with the Go, the stage hands out a command
 ok   AGNES-yes handout path: control/production-go.json existed
-   python3.14 /Users/blackceomacmini/skill75-repair/lanes/BATCH8C-PREP-lane/wt/75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/b8c-recap-hold-9dcn90uq/run-b8948042   # after deleting control/production-go.json
+   python3 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir <run-dir>   # after deleting control/production-go.json
    rc=4 outcome='rejected' reason='PRODUCTION_GO_MISSING' command=None
 ok   AGNES-yes handout path: without the Go the recap hold refuses the stage :: PRODUCTION_GO_MISSING
 ok   AGNES-yes handout path: without the Go NO command is handed out :: {"command": null}
 
 == KIE runbook-row handout path
-   $ python3.14 /Users/blackceomacmini/skill75-repair/lanes/BATCH8C-PREP-lane/wt/75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/b8c-recap-hold-9dcn90uq/run-ffc9c708
+   $ python3 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir <run-dir>
    rc=0 outcome='ok' reason='next-stage' command='python3 scripts/core/kie_dispatch/kie_dispatch.py dispatch --model <video-model-id> --request "$RUN/generation/req.json" --prompt-file "$RUN/generation/req.prompt.txt" --save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" --run-id "$RUN_ID" --logical-key video --attempt-id a1 --cost 0'
 ok   KIE runbook-row handout path: with the Go, the stage hands out a command
 ok   KIE runbook-row handout path: control/production-go.json existed
-   python3.14 /Users/blackceomacmini/skill75-repair/lanes/BATCH8C-PREP-lane/wt/75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/b8c-recap-hold-9dcn90uq/run-ffc9c708   # after deleting control/production-go.json
+   python3 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir <run-dir>   # after deleting control/production-go.json
    rc=4 outcome='rejected' reason='PRODUCTION_GO_MISSING' command=None
 ok   KIE runbook-row handout path: without the Go the recap hold refuses the stage :: PRODUCTION_GO_MISSING
 ok   KIE runbook-row handout path: without the Go NO command is handed out :: {"command": null}

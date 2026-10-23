@@ -51,7 +51,10 @@ def check(name, cond, detail=""):
 def case(td, label, agnes):
     run = T.make_run(td, "video-generation", method=T.method(), agnes=agnes,
                      storyboard="approved")
-    cmd = "%s %s next --run-dir %s" % (Path(sys.executable).name, FACTORY, run)
+    # repo-relative invocation: a committed receipt must never carry an
+    # operator-local absolute path, and a placeholder run dir is enough to
+    # reproduce the run (the fixture is rebuilt by this script).
+    cmd = "python3 %s next --run-dir <run-dir>" % (FACTORY.relative_to(REPO))
     print("\n== %s\n   $ %s" % (label, cmd))
     p, doc = T.next_env(run)
     data = doc.get("data") or {}
@@ -67,7 +70,7 @@ def case(td, label, agnes):
     check(label + ": control/production-go.json existed", go.is_file())
     go.unlink()
 
-    print("   %s" % cmd.replace(str(run), str(run)) + "   # after deleting control/production-go.json")
+    print("   %s   # after deleting control/production-go.json" % cmd)
     p2, doc2 = T.next_env(run)
     d2 = doc2.get("data") or {}
     reason = str(doc2.get("reason_code") or "")
