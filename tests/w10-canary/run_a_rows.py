@@ -524,7 +524,7 @@ def rows():
             "a04:stale-hook-not-displayed"],
         required_re_real=[], required_re_dry=[],
         forbidden_real=[], forbidden_dry=[],
-        summary_re=r"^a04: (\d+)/(\d+) checks passed$", expected_total=13,
+        summary_re=r"^a04: (\d+)/(\d+) checks passed$", expected_total=17,
     ))
 
     R.append(dict(
