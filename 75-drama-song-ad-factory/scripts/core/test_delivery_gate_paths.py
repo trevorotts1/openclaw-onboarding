@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 CORE = os.path.dirname(os.path.abspath(__file__))
@@ -98,15 +99,14 @@ class TestAssemblerPath(Base):
             ff("-i", out, "-c:v", "copy", "-c:a", "libmp3lame", tmp)
             os.replace(tmp, out)
             return r
-        # the lip-sync coverage gates are unrelated to audio: stub them out
-        saved = {n: getattr(A, n) for n in ("_run", "lipsync_gate", "face_speaks_gate")}
-        A._run = mp3_run
-        A.lipsync_gate = A.face_speaks_gate = lambda plan: None
-        try:
+        # Isolate the AAC delivery gate from separately tested lip-sync evidence.
+        # These mocks exist only while this fixture deliberately corrupts audio.
+        with patch.object(A, "_run", side_effect=mp3_run), \
+                patch.object(A, "lipsync_gate", return_value=None), \
+                patch.object(A, "face_speaks_gate", return_value=None), \
+                patch("lipsync_evidence.check_plan",
+                      return_value={"pass": True, "evidence": {}}):
             rec = A.assemble(tl, self.p("out.mp4"))
-        finally:
-            for n, f in saved.items():
-                setattr(A, n, f)
         self.assertEqual(rec["outcome"], "error", rec)
         self.assertEqual(rec["reason_code"], DA.BAD_CODEC)
 

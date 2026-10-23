@@ -28,6 +28,7 @@ if CORE not in sys.path:
     sys.path.insert(0, CORE)
 
 from shot_planner import face_speaks as F          # noqa: E402
+from test_lipsync_evidence import attach_evidence
 import final_assembler.assembler as A              # noqa: E402
 
 FAILS = []
@@ -206,7 +207,8 @@ def _tl(tmp, shots_bad=False, no_faces=False):
             (14, [], None, None)]
     segs = []
     for i, (d, faces, lip, spk) in enumerate(spec):
-        s = {"src": "clip%d.mp4" % i, "dur": float(d), "shot_id": "seg%d" % i}
+        s = {"src": "clip%d.mp4" % i, "dur": float(d), "shot_id": "seg%d" % i,
+             "transition": "none", "beat_cut": True}
         if not no_faces:
             s["faces_on_screen"] = faces
         if lip:
@@ -225,6 +227,10 @@ def _tl(tmp, shots_bad=False, no_faces=False):
                     for i, sp, a, b in rows],
           "timing": {"sections": [{"lyrics": [
               {"line_id": i, "start": a, "end": b} for i, _, a, b in rows]}]}}
+    attach_evidence(tl, tmp)
+    if no_faces:
+        for seg in tl["segments"]:
+            seg.pop("faces_on_screen", None)
     path = os.path.join(tmp, "tl-%d%d.json" % (shots_bad, no_faces))
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(tl, fh)
@@ -237,7 +243,8 @@ def test_assembler_gate():
         return
     tmp = tempfile.mkdtemp()
     for i in range(10):
-        open(os.path.join(tmp, "clip%d.mp4" % i), "wb").close()
+        with open(os.path.join(tmp, "clip%d.mp4" % i), "wb") as f:
+            f.write(("synthetic-video-%d" % i).encode())
     ok = A.assemble(_tl(tmp), os.path.join(tmp, "o.mp4"), dry_run=True)
     check("assembler dry run passes when every speaking face is lip-synced",
           ok["outcome"] == "ok", ok.get("reason_code"))

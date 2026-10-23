@@ -22,6 +22,7 @@ stdlib only, zero paid calls, no ffmpeg binary required.
 
 Run: python3 core/final_assembler/test_lipsync_coverage_e6.py
 """
+import copy
 import json
 import os
 import sys
@@ -32,6 +33,7 @@ if CORE not in sys.path:
     sys.path.insert(0, CORE)
 
 import final_assembler.assembler as A          # noqa: E402
+from test_lipsync_evidence import attach_evidence
 import qc_gate as G                            # noqa: E402  (shared gate)
 
 from final_assembler.lipsync_coverage import (
@@ -125,11 +127,26 @@ def test_bad_input_fails_closed():
 
 
 def _tl(segs, dur, tmp):
+    # Distinct files/line IDs model distinct generated clips. Explicit cuts
+    # keep these quantity-gate fixtures independent of transition accounting.
+    segs = [copy.deepcopy(seg) for seg in segs]
+    for i, seg in enumerate(segs):
+        seg["src"] = os.path.realpath(os.path.join(tmp, "fixture-%d.mp4" % i))
+        with open(seg["src"], "wb") as f:
+            f.write(("synthetic-video-%d" % i).encode())
+        seg["transition"], seg["beat_cut"] = "none", True
+    tl = {"schema_version": A.TIMELINE_SCHEMA, "fps": 30,
+          "width": 1920, "height": 1080, "song_path": None,
+          "transition": "none", "segments": segs}
+    attach_evidence(tl, tmp)
+    for seg in tl["segments"]:
+        seg.setdefault("faces_on_screen", [])
+    tl["timing"] = {"sections": [{"lyrics": [
+        {"line_id": ln["line_id"], "start": ln["start_s"], "end": ln["end_s"]}
+        for ln in tl["lines"]]}]}
     path = os.path.join(tmp, "tl-%d.json" % abs(len(segs) * 17 + int(dur)))
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump({"schema_version": A.TIMELINE_SCHEMA, "fps": 30,
-                   "width": 1920, "height": 1080, "song_path": None,
-                   "transition": "none", "segments": segs}, fh)
+        json.dump(tl, fh)
     return path
 
 
@@ -142,11 +159,9 @@ def test_gate_wiring(tmp_root):
 
     # Done-when FAIL through the assembler gate: 3 clips of 2 s each in a
     # 120 s ad (3 x 2 + 5 x 19.5 + 16.5 = 120), 6 s of lip-sync total.
-    # E2 default fades land in the same trunk, so the plan's real total is
-    # 78.2 - 8 x 0.4 = 75 s (inside 60-90): the 6 s total is 7.98% < 12%.
     segs = ([{"src": "clip.mp4", "dur": 2.0, "lip_sync": True}] * 3
-            + [{"src": "clip.mp4", "dur": 11.0}] * 5
-            + [{"src": "clip.mp4", "dur": 17.2}])
+            + [{"src": "clip.mp4", "dur": 19.5}] * 5
+            + [{"src": "clip.mp4", "dur": 16.5}])
     tl = _tl(segs, 120, tmp)
     rec = A.assemble(tl, os.path.join(tmp, "out.mp4"), dry_run=True)
     check("120 s / 3 clips / 6 s: dry_run BLOCKED by E6",
@@ -155,7 +170,7 @@ def test_gate_wiring(tmp_root):
     check("blocked receipt carries coverage evidence",
           rec["outcome"] == "error"
           and abs(rec["evidence"]["lipsync"]["evidence"]["ad_length_s"]
-                  - 75.0) < 0.2
+                  - 120.0) < 0.2
           and abs(rec["evidence"]["lipsync"]["evidence"]["lipsync_total_s"]
                   - 6.0) < 0.2, rec["evidence"]["lipsync"])
 

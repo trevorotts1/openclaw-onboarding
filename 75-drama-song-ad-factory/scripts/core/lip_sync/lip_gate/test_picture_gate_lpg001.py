@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -365,9 +366,13 @@ def _req(a=None, url=None, **kw):
 
 
 def _dispatch(d, model, request, **kw):
-    return D.dispatch(model=model, request=request, save_dir=d,
-                      ledger_db=os.path.join(d, "l.db"), run_id="r", logical_key="k",
-                      attempt_id="a", estimated_cost=1, **kw)
+    # These cases isolate the picture gate and model menu. The dedicated evidence
+    # suite covers approved-plan and provider-input binding; leave the picture gate real.
+    with patch("lipsync_evidence.binding_for_request", return_value={"shot_id": "picture-test"}), \
+         patch("lipsync_evidence.inputs_for_request", return_value={"fixture": "picture-test"}):
+        return D.dispatch(model=model, request=request, save_dir=d,
+                          ledger_db=os.path.join(d, "l.db"), run_id="r", logical_key="k",
+                          attempt_id="a", estimated_cost=1, **kw)
 
 
 def test_dispatcher_hard_block():
@@ -396,7 +401,7 @@ def test_dispatcher_hard_block():
 
 def test_f14_real_lipsync_dispatch_reaches_the_picture_gate():
     """F14 treated kling/ai-avatar-* as an off-menu VIDEO model (MODEL_NOT_ON_MENU).
-    Nothing is stubbed: the real model lock, the real price-menu.md, the real dispatch."""
+    Plan/input evidence is isolated; model lock, price-menu.md and picture gate are real."""
     import kie_dispatch.model_lock as ML
     m = "kling/ai-avatar-standard"
     assert ML.is_locked_lipsync(m) and not ML.is_locked_lipsync("kling/ai-avatar-pro")

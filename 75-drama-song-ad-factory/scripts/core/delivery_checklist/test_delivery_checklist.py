@@ -79,7 +79,7 @@ def final_edit_record(run=RUN, stage=STAGE, verdict="PASS"):
 
 def full_answered_receipt():
     """A receipt answering all 7 questions with measured evidence."""
-    return {
+    receipt = {
         "SUNG": {"style": "sung", "sung_pct": 61.0, "spoken_pct": 39.0,
                  "detector": "singing-detector(vocal-stem)", "source_sung_pct":
                  "vocal-stem astats", "source_spoken_pct": "vocal-stem astats",
@@ -139,6 +139,36 @@ def full_answered_receipt():
         "PACKAGE_COMPLETE": {"delivery_folder": str(_PKG_FOLDER),
                              "source": "delivery_package.verify_folder"},
     }
+
+    # Synthetic export proof: no rendering/provider call. Quantity policy is
+    # deliberately outside this Q8 identity/coverage fixture.
+    from test_lipsync_evidence import attach_evidence
+    from lipsync_evidence import check_plan
+    from final_assembler import assembler as A
+    from final_assembler.master_provenance import sha256_file
+    root = Path(tempfile.mkdtemp(prefix="export-", dir=_PKG_TMP))
+    tl = {"fps": 30, "segments": [
+        {"src": str(root / ("clip%d.mp4" % i)), "dur": 5,
+         "lip_sync": True, "transition": "none", "beat_cut": True} for i in range(2)]}
+    attach_evidence(tl, root)
+    plan = A.plan_timeline(tl)
+    for seg in plan["segments"]:
+        seg["source_dur"] = 5
+    master = root / "master.mp4"
+    master.write_bytes(b"synthetic-export:" + str(root).encode())
+    folder = package_contract.write_reference_package(root / "delivery")
+    shutil.copyfile(master, folder / package_contract.ITEMS_BY_KEY["video"].files[1])
+    receipt["PACKAGE_COMPLETE"]["delivery_folder"] = str(folder)
+    rc = {"outcome": "ok", "produced_by": {"module": "final_assembler.assembler"},
+          "master_sha256": sha256_file(master),
+          "evidence": {"output_dur": plan["total_dur"], "lipsync_plan": plan,
+                       "lipsync_export": check_plan(plan, require_measured=True)}}
+    Path(str(master) + ".receipt.json").write_text(json.dumps(rc))
+    receipt["LIP_SYNC"]["master_path"] = str(master)
+    for row, seg in zip(receipt["LIP_SYNC"]["clips"], plan["segments"]):
+        row.update(shot_id=seg["shot_id"], sha256=seg["artifact"]["sha256"],
+                   task_id=seg["artifact"]["provenance"]["task_id"])
+    return receipt
 
 
 def measured_yes(q, receipt):
@@ -218,7 +248,8 @@ class G7DoneWhen(unittest.TestCase):
             res = dc.evaluate(receipt)
             self.assertFalse(res["pass"],
                              "%s bare 'yes' must count as 'no'" % q)
-            self.assertEqual(res["repair_scope"], [q])
+            expected = ["LIP_SYNC", q] if q == "PACKAGE_COMPLETE" else [q]
+            self.assertEqual(res["repair_scope"], expected)
             self.assertEqual(res["answers"][q]["answer"], "no")
 
     # ---- done-when 4: "no" re-does ONLY the failing part, never cancel --
@@ -707,6 +738,9 @@ class PackageFolderGate(unittest.TestCase):
 
     def receipt(self, folder):
         r = full_answered_receipt()
+        clean = Path(folder) / package_contract.ITEMS_BY_KEY["video"].files[1]
+        if clean.is_file():
+            shutil.copyfile(r["LIP_SYNC"]["master_path"], clean)
         r["PACKAGE_COMPLETE"] = {"delivery_folder": str(folder),
                                  "source": "delivery_package.verify_folder"}
         return r
@@ -754,7 +788,7 @@ class PackageFolderGate(unittest.TestCase):
     def test_missing_delivery_folder_fails_closed(self):
         res = dc.evaluate(self.receipt(self.tmp / "absent"))
         self.assertFalse(res["pass"])
-        self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"])
+        self.assertEqual(res["repair_scope"], ["LIP_SYNC", "PACKAGE_COMPLETE"])
         self.assertIn(dc.CHECKLIST_PACKAGE_INCOMPLETE, res["reason_code"])
 
     def test_answer_without_a_folder_path_counts_as_no(self):
@@ -762,7 +796,7 @@ class PackageFolderGate(unittest.TestCase):
         r["PACKAGE_COMPLETE"] = {"package_ok": True}
         res = dc.evaluate(r)
         self.assertFalse(res["pass"])
-        self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"])
+        self.assertEqual(res["repair_scope"], ["LIP_SYNC", "PACKAGE_COMPLETE"])
         self.assertEqual(res["answers"]["PACKAGE_COMPLETE"]["answer"], "no")
         self.assertIn(dc.REASON_CODES["NO_MEASUREMENT"],
                       res["reason_code"])
@@ -772,7 +806,7 @@ class PackageFolderGate(unittest.TestCase):
         del r["PACKAGE_COMPLETE"]
         res = dc.evaluate(r)
         self.assertFalse(res["pass"])
-        self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"])
+        self.assertEqual(res["repair_scope"], ["LIP_SYNC", "PACKAGE_COMPLETE"])
         self.assertIn(dc.REASON_CODES["ANSWER_MISSING"], res["reason_code"])
 
     def test_folder_is_relative_to_the_receipt_run_root(self):
@@ -783,6 +817,74 @@ class PackageFolderGate(unittest.TestCase):
         res = dc.evaluate(r)
         self.assertTrue(res["pass"], res["detail"])
 
+
+
+class ExportIdentityTests(unittest.TestCase):
+    def test_invalid_export_duration_refused(self):
+        for duration in (float("nan"), float("inf"), 0, -1):
+            with self.subTest(duration=duration):
+                receipt = full_answered_receipt()
+                path = Path(receipt["LIP_SYNC"]["master_path"] + ".receipt.json")
+                rc = json.loads(path.read_text())
+                rc["evidence"]["output_dur"] = duration
+                path.write_text(json.dumps(rc))
+                self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_other_package_master_refused(self):
+        receipt = full_answered_receipt()
+        other = full_answered_receipt()
+        receipt["PACKAGE_COMPLETE"] = other["PACKAGE_COMPLETE"]
+        self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
+
+    def test_replaced_package_clean_video_refused(self):
+        receipt = full_answered_receipt()
+        folder = Path(receipt["PACKAGE_COMPLETE"]["delivery_folder"])
+        (folder / package_contract.ITEMS_BY_KEY["video"].files[1]).write_bytes(b"replacement")
+        self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
+
+    def test_missing_package_clean_video_refused(self):
+        receipt = full_answered_receipt()
+        folder = Path(receipt["PACKAGE_COMPLETE"]["delivery_folder"])
+        (folder / package_contract.ITEMS_BY_KEY["video"].files[1]).unlink()
+        self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC", "PACKAGE_COMPLETE"])
+
+    def test_export_proof_passes(self):
+        self.assertNotIn("LIP_SYNC", dc.evaluate(full_answered_receipt())["repair_scope"])
+
+    def test_generated_but_unused_clip_refused(self):
+        receipt = full_answered_receipt()
+        path = Path(receipt["LIP_SYNC"]["master_path"] + ".receipt.json")
+        rc = json.loads(path.read_text())
+        rc["evidence"]["lipsync_plan"]["segments"].pop()
+        path.write_text(json.dumps(rc))
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_unused_qc_row_refused(self):
+        receipt = full_answered_receipt()
+        receipt["LIP_SYNC"]["clips"][0]["task_id"] = "unused-task"
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_replaced_export_refused(self):
+        receipt = full_answered_receipt()
+        Path(receipt["LIP_SYNC"]["master_path"]).write_bytes(b"replacement")
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_missing_export_receipt_refused(self):
+        receipt = full_answered_receipt()
+        Path(receipt["LIP_SYNC"]["master_path"] + ".receipt.json").unlink()
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_source_replaced_after_export_refused(self):
+        receipt = full_answered_receipt()
+        master = Path(receipt["LIP_SYNC"]["master_path"])
+        (master.parent / "clip0.mp4").write_bytes(b"replacement")
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
+
+    def test_stale_approval_after_export_refused(self):
+        receipt = full_answered_receipt()
+        master = Path(receipt["LIP_SYNC"]["master_path"])
+        (master.parent / "storyboard/shot-0.png").write_bytes(b"changed-still")
+        self.assertIn("LIP_SYNC", dc.evaluate(receipt)["repair_scope"])
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
