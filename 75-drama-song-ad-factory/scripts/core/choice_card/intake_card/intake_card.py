@@ -313,6 +313,83 @@ _SHAPE_PURPOSES = (1, 2, 3)
 #: gives the same list -- positional replay stays deterministic (SPEC B1).
 _CONDITIONAL_IDS = ("purpose", "episode_length", "shape", "permission", "where", "agnes")
 
+#: Method jargon that must never reach a client-facing question. Matched as
+#: WHOLE words, case-insensitive ("terms" is not "ERM"), so ordinary prose is
+#: never flagged. The card asks what the video is for and who it is for; the
+#: method's own vocabulary stays in the method documents.
+METHOD_JARGON = ("MOS", "ERM", "ERM drop", "beat sheet", "screenwriting",
+                 "inciting incident", "story arc", "master scene", "turning point")
+
+
+def jargon_hits(text):
+    """The method-jargon terms in ``text``, whole-word and case-insensitive."""
+    import re
+    hits = []
+    for term in METHOD_JARGON:
+        if re.search(r"(?<![A-Za-z])" + re.escape(term) + r"(?![A-Za-z])",
+                     text or "", re.IGNORECASE):
+            hits.append(term)
+    return hits
+
+
+#: Run-folder files a card writes once it has already been asked. Any one of
+#: them means the run is RESUMED: its answers belong to the list it was asked
+#: with, so the card is replayed exactly and nothing is migrated or rewritten.
+_RESUME_MARKERS = ("card-answers.json",
+                   os.path.join("control", "card-receipt.json"),
+                   os.path.join("control", "state.sqlite3"))
+
+#: The records only a purpose-flow card writes, plus the studio order whose
+#: screens ARE the purpose flow. A run carrying one is replayed THROUGH the
+#: purpose flow, never back through the old list: a replay is not a migration.
+_FLOW_MARKERS = (os.path.join("control", "method.json"),
+                 os.path.join("control", "studio-order.json"))
+
+
+def _run_history(run_dir):
+    """Which card this run already used: True (the purpose flow), False (the old
+    list) or None when the folder shows neither -- a NEW run.
+
+    Strictly read-only: a resumed project is never migrated or rewritten, and a
+    new one has nothing yet to read.
+    """
+    if not run_dir or not os.path.isdir(run_dir):
+        return None
+    if any(os.path.exists(os.path.join(run_dir, p)) for p in _FLOW_MARKERS):
+        return True
+    if any(os.path.exists(os.path.join(run_dir, p)) for p in _RESUME_MARKERS):
+        return False
+    return None
+
+
+def _intro_shown(run_state_file):
+    """Read-only: has this chat run already seen the intro (so it is a resume)?"""
+    if not run_state_file:
+        return False
+    try:
+        with open(run_state_file, encoding="utf-8") as fh:
+            state = json.load(fh)
+    except (OSError, ValueError):
+        return False
+    return bool(isinstance(state, dict) and state.get("intro_shown"))
+
+
+def new_run_flow(run_dir=None, run_state_file=None):
+    """The opening-coaching default for the launcher.
+
+    A run that recorded which card it used keeps that card (``_run_history``).
+    A run folder with nothing recorded yet is a NEW Drama-to-Demand run: it
+    opens on the purpose flow, unless the chat run is already past its intro
+    (a resume stays on the card it started with). No run folder at all is a
+    question preview, not a run, and is left exactly as it was.
+    """
+    history = _run_history(run_dir)
+    if history is not None:
+        return history
+    if not run_dir or not os.path.isdir(run_dir):
+        return False
+    return not _intro_shown(run_state_file)
+
 
 def _loud(kind, code, detail):
     """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
@@ -858,7 +935,7 @@ def _parse(reply, q):
 
 
 def conversation(replies, questions=None, state_store=None, run_id=None,
-                 run_dir=None, target=None, client_dir=None, purpose_flow=False):
+                 run_dir=None, target=None, client_dir=None, purpose_flow=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
     it with the replies so far. state: answers, done, message, video_model.
@@ -868,15 +945,30 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
     answers to the run (approval_runner / song_choices record_card_answer), so Yes
     turns the pick gates on; target (the client's chat id) is stored with them.
 
-    purpose_flow (SPEC B1) is what turns the PURPOSE card on: the question list
+    purpose_flow (SPEC B1) is what turns the purpose card on: the question list
     is rebuilt from the answers so far (``_shaped``) instead of priced in place,
     a confirmed recap writes control/method.json and the receipt's agnes block,
-    and the client's Agnes answer is remembered in their own data folder. It is
-    off by default so every caller that has not been wired for it yet still gets
-    the card it gets today, byte for byte. client_dir is the folder those
-    remembered answers live in.
+    and the client's Agnes answer is remembered in their own data folder.
+    client_dir is the folder those remembered answers live in.
+
+    S75X-W1-U1: the default is now ``None`` = decide from the run. A NEW run
+    folder opens on the purpose flow (the client answers what the video is for
+    first, one plain question per message, reusing the brief and any saved
+    character instead of asking again). A run that already asked a card is
+    replayed with the SAME list it used -- purpose flow when it recorded
+    control/method.json or a studio order, the old list otherwise -- so a
+    resumed project and its approved artifacts are preserved exactly and are
+    never migrated or rewritten. True/False still force either list.
     """
+    if purpose_flow is None:
+        history = _run_history(run_dir)
+        purpose_flow = history is True or (history is None and bool(run_dir)
+                                           and os.path.isdir(run_dir))
     qs = questions or QUESTIONS
+    #: The list every rebuild starts from. Shaping a SHAPED list again would
+    #: lose LENGTH's own slot on a campaign (EPISODE LENGTH took it), so the
+    #: rebuild always reads the list the caller handed in.
+    base_qs = qs
     answers, fix, note, done = [], None, "", False
 
     def shaped(list_, ans):
@@ -884,7 +976,7 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
 
     for r in replies:
         note = ""
-        qs = shaped(qs, answers)
+        qs = shaped(base_qs, answers)
         if len(answers) < len(qs) and fix is None:
             a = _parse(r, qs[len(answers)])
             if a and "error" in a:
@@ -913,7 +1005,7 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
                 fix = int(t) - 1
             else:
                 note = "Sorry, I did not catch that. "
-    qs = shaped(qs, answers)
+    qs = shaped(base_qs, answers)
     model_n = next((a["n"] for q, a in zip(qs, answers) if q["id"] == "model"), None)
     if model_n and state_store and run_id:
         from choice_card.video_models import video_models as VM
@@ -1488,11 +1580,23 @@ def main(argv=None):
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with the saved-character question (I6)")
-    ap.add_argument("--purpose-flow", action="store_true",
-                    help="turn the purpose card on (SPEC B1): PURPOSE is asked "
-                         "first with its own follow-up, and a confirmed recap "
-                         "writes control/method.json to --run-dir")
+    flow = ap.add_mutually_exclusive_group()
+    flow.add_argument("--purpose-flow", dest="purpose_flow", action="store_true",
+                      default=None,
+                      help="turn the purpose card on (SPEC B1): PURPOSE is asked "
+                           "first with its own follow-up, and a confirmed recap "
+                           "writes control/method.json to --run-dir. Default: on "
+                           "for a NEW run, off for a run already underway.")
+    flow.add_argument("--no-purpose-flow", dest="purpose_flow", action="store_false",
+                      help="ask the old card list, exactly as before the purpose "
+                           "flow (a resumed project is always replayed as it was).")
     a = ap.parse_args(argv)
+    #: S75X-W1-U1: the launcher decides the default once, from the run itself.
+    #: A new order opens on the opening-coaching flow; a resumed run -- one that
+    #: recorded what it used, or a chat run already past its intro -- keeps the
+    #: card it was asked with and is never migrated or rewritten.
+    purpose_flow = (a.purpose_flow if a.purpose_flow is not None
+                    else new_run_flow(a.run_dir or None, a.run_state_file or None))
     qs = [spend_question(a.price, a.limit, a.limit_from_brief) if q["id"] == "spend" else q
           for q in _with_saved_character(a.client_dir)]
     if a.format == "studio-json":                  # U1: the studio export, whole card
@@ -1507,7 +1611,7 @@ def main(argv=None):
         return 0
     if a.step:
         st = conversation(a.reply, qs, run_dir=a.run_dir or None, target=a.target or None,
-                          client_dir=a.client_dir or None, purpose_flow=a.purpose_flow)
+                          client_dir=a.client_dir or None, purpose_flow=purpose_flow)
         if not a.reply and a.run_state_file and _intro_take(a.run_state_file):
             st = dict(st, message=_INTRO)          # FU-INTRO-MESSAGE
         if a.format == "text":

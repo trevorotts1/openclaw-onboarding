@@ -176,6 +176,17 @@ and lyrics, songs strong enough to sell as a soundtrack. The arc is hook ->
 the world -> the villain arrives -> the pain deepens -> the lowest point ->
 the turn (the product as the key) -> the rise -> the call to action.
 
+**Clarification (S75X-W1-U2).** "True" in this section means emotionally true
+and dramatically honest, not factually verified. There is no blanket rule
+against invented catastrophic events in fictional or composite drama: a
+composite character may lose a house, a job, a marriage or a business, and that
+invented event may be the opening. What is never allowed is presenting an
+invented event or outcome as a verified fact about a real person or a real
+product (no real client or official as the villain, no "verified"/"real
+customer"/"actual results" label over fiction, no invented testimonial,
+statistic, award or licence). Label invented events `FICTIONAL_PLOT_EVENT` and
+invented characters `COMPOSITE`; see `references/sensational-openings.md` §7.
+
 - The story plan NAMES the villain (person or not a person); the shot plan
   gives it its own shots tagged `villain`; the lyrics name it in the verses,
   carry the pain line, then the rise in the hook.

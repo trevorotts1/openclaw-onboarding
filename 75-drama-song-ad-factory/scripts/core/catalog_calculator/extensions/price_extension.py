@@ -3,10 +3,14 @@
 Adds four things to the choice-card total and to the D26 batch total:
 
   * **lip-sync close-up seconds** (choice-card-spec 3.6, price-menu 3): one
-    line per ad (6-8 clips of 4-6 s per 60 s ad, 30-40 s; no clip over 6 s,
-    so seconds <= 6 x lines or the card is refused), priced by Skill 74 ``price --model <roster model> --units
-    <seconds x shapes>``. Lip-sync runs on every shape that was ordered, so
-    both shapes double this line.
+    line per ad, 4-6 s per clip, no clip over 6 s (so seconds <= 6 x lines, or
+    the card is refused), covering the approved 25-30% of the ad with a 35%
+    HARD MAXIMUM (lipsync_clips: the one source), priced by Skill 74 ``price
+    --model <roster model> --units <seconds x shapes>``. A card over the 35%
+    maximum, or a duration whose bounds collide (the 3-clip / 4-s floor cannot
+    fit inside 35%), is refused with the conflict named -- never trimmed and
+    never silently re-planned. Lip-sync runs on every shape that was ordered,
+    so both shapes double this line.
   * **voice packs** (price-menu 4): one line of extra Suno generations. How
     many generations a pack needs is decided upstream by the music director;
     this module asks Skill 74 ``price`` and never predicts the count or the
@@ -134,6 +138,24 @@ def _voice_pack_spec(choice):
     return {"count": count}, None, None
 
 
+def _lip_sync_duration_guard(lip, choice):
+    """The 35% maximum and a colliding duration, checked where the length is
+    known. -> reason|None (nothing is trimmed, nothing is re-planned)."""
+    length = choice.get("length_seconds")
+    if not isinstance(length, (int, float)) or isinstance(length, bool) \
+            or length <= 0:
+        return None                      # no length on the card: nothing to judge
+    conflicts = lipsync_clips.duration_conflicts(length)
+    if conflicts:
+        return "%s: %s" % (lipsync_clips.DURATION_CONFLICT, "; ".join(conflicts))
+    ceiling = lipsync_clips.MAX_SHARE * length
+    if lip["seconds"] > ceiling + 1e-9:
+        return ("%s: %.1f s of lip-sync is over the %.0f%% maximum of %.1f s at "
+                "%.1f s long" % (lipsync_clips.OVER_CAP, lip["seconds"],
+                                 lipsync_clips.MAX_SHARE * 100, ceiling, length))
+    return None
+
+
 def _prepare(choice):
     """-> (spec|None, reason|None, kind|None)."""
     if not isinstance(choice, dict):
@@ -141,6 +163,10 @@ def _prepare(choice):
     lip, err, kind = _lip_sync_spec(choice)
     if err:
         return None, err, kind
+    if lip is not None:
+        reason = _lip_sync_duration_guard(lip, choice)
+        if reason:
+            return None, reason, "unavailable"
     vp, err, kind = _voice_pack_spec(choice)
     if err:
         return None, err, kind

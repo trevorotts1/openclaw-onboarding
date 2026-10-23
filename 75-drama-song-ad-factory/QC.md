@@ -272,11 +272,22 @@ to self-approve a run.
   speaking face that is not a lip-sync clip of that character's own line fails
   `FACE_SPEAKS_NO_LIPSYNC`; a lip-sync clip whose speaker is not on screen fails
   `LIPSYNC_WRONG_FACE`.
-- Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: 30-40 s
-  and 6-8 clips of 4-6 s in a 60 s ad (doubled 2026-10-08), scaled linearly with
-  length, with a 5-point grace; below the band or under the clip count fails
-  `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the
-  lines (every sung hook, the spoken opener and closing first, each cut to 6 s).
+- Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: lip-sync
+  covers **25-30%** of the selected duration with a **35% hard maximum**
+  (approved direction 2026-10-23, superseding the 2026-10-08 30-40 s order), in
+  4-6 s clips with no clip over 6 s and never fewer than 3 clips, with a
+  5-point grace; below the band or under the clip count fails
+  `LIPSYNC_COVERAGE_BELOW_BAND`, and a plan over the 35% maximum fails
+  `LIPSYNC_OVER_CAP` in `lipsync_clips.check_clips`. The planner
+  (`plan_lipsync_lines`) picks the lines (every sung hook, the spoken opener and
+  closing first, each cut to 6 s) and the first clip must start inside the
+  opening 12 s (`lipsync_clips.check_opening`), or
+  `LIPSYNC_OPENING_NOT_ARTICULATED`. A duration whose bounds cannot all hold
+  (the 3-clip / 4-s floor outside the 35% maximum) fails
+  `LIPSYNC_DURATION_CONFLICT` and is never re-planned silently.
+- The historical FREE / no-lip-sync route stays explicit
+  (`lipsync_clips.ROUTE_NO_LIPSYNC`, zero paid Kling jobs, owner opt-in); it is
+  never the default and never a reason to drop lip-sync from an ordinary run.
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
   paid lip-sync job (its close-up numbers are `picture_gate`'s, one rule set); a
   refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that could not be

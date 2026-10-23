@@ -1364,9 +1364,78 @@ def _write_json(path, doc):
         f.write("\n")
     os.replace(tmp, path)
 
+def _read_json_any(path):
+    """Any JSON shape (a list is a real answer here); None when unreadable."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _card_answers(run_dir):
+    """The run's own saved card answers (the v2 envelope or the v1 list), or []."""
+    run = Path(run_dir)
+    for rel in ("card-answers.json", "control/card-answers.json"):
+        doc = _read_json_any(run / rel)
+        if isinstance(doc, dict):
+            doc = doc.get("answers")
+        if isinstance(doc, list) and all(isinstance(r, dict) for r in doc):
+            return doc
+    return []
+
+
+def _method_record_from_answers(run_dir):
+    """Rebuild the method record from the run's OWN saved card answers.
+
+    W3-U2: the record's one producer is the card's `_method_record`, which needs
+    the PURPOSE answer. A run answered through the purpose card but written by
+    an older launcher, or one whose write was interrupted, still holds that
+    answer in card-answers.json; it is rebuilt here through the card's own
+    function (never a second copy of the mapping) and written once. A run with
+    no PURPOSE answer yields None: nothing is ever invented for it.
+    """
+    try:
+        core = str(Path(__file__).resolve().parent.parent)
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+    except Exception:                                # noqa: BLE001
+        return None
+    rows = _card_answers(run_dir)
+    # D17: saved answers are read by their STORED id, never by position. Only a
+    # run whose answers carry the PURPOSE id was asked the purpose card; a
+    # legacy list has no such row, and rebuilding a shaped list over it would
+    # read its first answer as a purpose. Never guessed.
+    if not rows or not any(r.get("id") == "purpose" for r in rows):
+        return None
+    try:
+        qs = _card._shaped(_card.QUESTIONS, rows)
+        return _card._method_record(rows, qs)
+    except Exception:                                # noqa: BLE001
+        return None
+
+
 def _method_record(run_dir):
-    """control/method.json (SPEC B1); None until the card's recap confirmed."""
-    return _read_json(Path(run_dir) / "control" / "method.json")
+    """control/method.json (SPEC B1); None until the card's recap confirmed.
+
+    W3-U2: the record is also derived from the run's own answers once, when the
+    launcher did capture PURPOSE but the file is not on disk -- so the method
+    guard is never inert for a run that did enter the strategy. Written
+    atomically, and only when the derivation returns a record.
+    """
+    path = Path(run_dir) / "control" / "method.json"
+    rec = _read_json(path)
+    if isinstance(rec, dict):
+        return rec
+    rec = _method_record_from_answers(run_dir)
+    if not isinstance(rec, dict):
+        return None
+    try:
+        _write_json(path, rec)
+    except OSError:      # the envelope still reports what the run's answers say
+        pass
+    return rec
 
 def _agnes_answer(run_dir):
     """The receipt's agnes.answer, or None when this run never answered."""
@@ -2567,6 +2636,71 @@ def cmd_next(a):
                     data=nxt, evidence=["%s" % db, runbook_path])
 
 
+# ── S75X-W3-U2: the purpose card is the launcher's DEFAULT for a new run ────
+#
+# `_method_record` can only answer once control/method.json exists, and only
+# the purpose card writes it. The flag shipped, but no launcher passed it, so
+# every NEW Drama-to-Demand run came out purpose-less and the method guard was
+# inert. The decision lives here, in the ONE launcher every documented path
+# goes through (`factory.py card`: Claude Code chat, Telegram, the Studio
+# bridge), and is read off the RUN -- never off prose the runtime skips.
+
+#: Files that mean the intake already happened: a run holding any of them is a
+#: RESUMED run and keeps the card it started on (never reshaped under a client).
+_CARD_PROGRESS = ("control/method.json", "control/card-receipt.json",
+                  "control/card-receipt-block.json", "control/run-state.json",
+                  "card-answers.json", "control/card-answers.json")
+
+
+def _stage_states(run_dir):
+    """{stage: state} from the run's own store; {} when there is none yet and
+    None when it cannot be read (a broken store is never read as "new")."""
+    db = Path(run_dir) / "control" / "state.sqlite3"
+    if not db.exists():
+        return {}
+    try:
+        con = _ro_connect(db, timeout=5)
+        try:
+            return dict(con.execute("SELECT stage, state FROM stages").fetchall())
+        finally:
+            con.close()
+    except Exception:                                # noqa: BLE001
+        return None
+
+
+def _run_is_new(run_dir):
+    """True when this run has recorded nothing yet: no intake answers and no
+    stage past NOT_STARTED. That is the run the purpose card is written for;
+    every resumed run keeps the list it started on."""
+    run = Path(run_dir)
+    if any((run / rel).exists() for rel in _CARD_PROGRESS):
+        return False
+    got = _stage_states(run)
+    if got is None:
+        return False                     # unreadable: preserve, never reshape
+    return not any(state and state != "NOT_STARTED" for state in got.values())
+
+
+def _purpose_flow_for(run_dir, forced):
+    """The card this launcher asks (SPEC B1 / W3-U2). An explicit flag always
+    wins. Otherwise a run that already carries the method record, or a Studio
+    order (a new Drama-to-Demand run by definition), or one that has recorded
+    nothing yet, gets the purpose card; a run with no run folder, and a resumed
+    run, keep the list they have today."""
+    if forced is not None:
+        return forced
+    if not run_dir:
+        return False                     # nothing to enter the strategy for
+    run = Path(run_dir)
+    if (run / "control" / "method.json").exists():
+        return True
+    if (run / "control" / "studio-order.json").exists():
+        return True
+    if any(r.get("id") == "purpose" for r in _card_answers(run)):
+        return True                      # resumed on the purpose card: stay on it
+    return _run_is_new(run)
+
+
 def _card_help():
     """`card` subcommand help carrying the card's LIVE total.
 
@@ -2707,6 +2841,14 @@ def main(argv=None):
                         "(--brief-file, --packet-file); exit 2 when they do not fit")
     c.add_argument("--packet-file", default=None,
                    help="JSON list of client lines {id, speaker, text, scene}")
+    c.add_argument("--purpose-flow", dest="purpose_flow", action="store_true",
+                   default=None,
+                   help="Force the purpose card on (SPEC B1): PURPOSE is asked "
+                        "first and a confirmed recap writes control/method.json "
+                        "to --run-dir. Default: on for a NEW run, off for a "
+                        "resumed one (W3-U2).")
+    c.add_argument("--no-purpose-flow", dest="purpose_flow", action="store_false",
+                   help="Keep the pre-method card (a run that started on it).")
     ch = sub.add_parser("character", help="Per-client character library: ask / save / "
                                           "list / use / card (Part I, I6). Extra args pass through.")
     args = sys.argv[1:] if argv is None else list(argv)
@@ -2746,6 +2888,8 @@ def main(argv=None):
                           + (["--limit-from-brief"] if limit and from_brief else [])
                           + (["--run-dir", a.run_dir] if a.run_dir else [])
                           + (["--step"] if a.step else [])
+                          + (["--purpose-flow"]
+                             if _purpose_flow_for(a.run_dir, a.purpose_flow) else [])
                           + (["--run-state-file", a.run_state_file] if a.run_state_file else [])
                           + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "intake":

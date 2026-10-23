@@ -76,6 +76,13 @@ def validate_story(story, purpose=None):
     * ``testimonial`` -- every product beat present carries a non-blank
       ``claim_source`` in the record's ``story_beats`` rows; a claim with no
       source is refused as CLAIM_UNSOURCED.
+
+    A record that declares a ``presentation`` block (or ``presentation_order``)
+    is additionally held to ``check_presentation_order``: the twelve canonical
+    beats keep their causal order and their ids, and the declared presentation
+    -- script, performed lines and shots -- must be one and the same order, with
+    every beat's five-part statement present. A record that declares none is
+    judged exactly as before.
     """
     if not isinstance(story, dict):
         return _res("error", "story-not-an-object",
@@ -172,6 +179,16 @@ def validate_story(story, purpose=None):
     # gate (D1-D5 stay the only delivered-audio gates).
     if declares_causal(story):
         for _e in check_causal_story(story)["errors"]:
+            if _e not in errors:
+                errors.append(_e)
+
+    # S75X-W2-U1: an explicitly declared PRESENTATION order (e.g. a
+    # consequence-first opening) is reconciled with the script, the performed
+    # lines and the shot sequence -- ON TOP OF the canonical contract above,
+    # never instead of it. A record that declares no presentation is judged
+    # exactly as before.
+    if declares_presentation(story):
+        for _e in check_presentation_order(story)["errors"]:
             if _e not in errors:
                 errors.append(_e)
 
@@ -403,7 +420,7 @@ def stage_mapping_report():
     }
 
 
-def build_manifest(source):
+def build_manifest(source, presentation=None):
     """ONE source -> the performed-beat manifest for all twelve canonical beats.
 
     ``source`` is either a mapping keyed by canonical beat id, or a manifest /
@@ -411,7 +428,16 @@ def build_manifest(source):
     lines that must be heard IN ORDER, the delivery, the approved line ids, the
     measured window, the approved devices it must carry, the hook placement and
     the pace cue. Every canonical beat is emitted; a beat with no performed
-    content is recorded as missing -- never silently dropped."""
+    content is recorded as missing -- never silently dropped.
+
+    ``presentation`` (S75X-W2-U1) is a declared presentation order -- a
+    ``presentation`` block or a bare list of the twelve beat ids. Rows are then
+    emitted in the PRESENTED sequence so the performed lines are reconciled with
+    the script and the shots, while every row keeps its stable canonical
+    ``beat`` id and gains ``causal_position`` / ``presentation_position``. The
+    canonical order is untouched. A malformed declaration raises
+    ``StoryArcError``: a manifest is never silently emitted in the wrong order.
+    """
     if isinstance(source, dict) and "beats" in source:
         src = source["beats"]
     else:
@@ -446,11 +472,20 @@ def build_manifest(source):
         if not row["present"]:
             missing.append(beat)
         rows.append(row)
+    order = _manifest_order(presentation)
+    if order is not None:
+        by_beat = {r["beat"]: r for r in rows}
+        rows = [by_beat[b] for b in order]
+    for pos, row in enumerate(rows):
+        row["causal_position"] = BEATS.index(row["beat"]) + 1
+        row["presentation_position"] = pos + 1
     manifest = {"schema": MANIFEST_SCHEMA, "beat_count": len(BEATS), "beats": rows,
                 "present_count": sum(1 for r in rows if r["present"]),
                 "missing": missing,
                 "source_method": SOURCE_METHOD_NAME,
-                "source_method_stage_count": SOURCE_METHOD_STAGE_COUNT}
+                "source_method_stage_count": SOURCE_METHOD_STAGE_COUNT,
+                "presentation_order": list(order) if order is not None else list(BEATS),
+                "consequence_first": bool(order is not None and order[0] != BEATS[0])}
     manifest["fingerprint"] = creative_fingerprint(manifest)["sha256"]
     return manifest
 
@@ -1024,6 +1059,220 @@ def assert_mappings_intact():
     assert set(report["beat_to_source_position"]) == set(BEATS), \
         "beat->source-position mapping is incomplete"
     return report
+
+# =====================================================================
+# S75X-W2-U1: PRESENTATION ORDER.
+#
+# The twelve canonical beats (``BEATS``) are the CAUSAL order and stay the
+# contract: a record still carries exactly those twelve stable ids, once each,
+# in that order, and ``validate_story`` still refuses anything else. A story may
+# ALSO declare how those same twelve beats are PRESENTED -- a consequence-first
+# opening that shows the outcome and rewinds, for instance. That is EXPLICIT
+# DATA on the record, never a relabelled beat and never a relaxed validator:
+# the causal meaning, the beat ids and the twelve-beat requirement all survive
+# the reordering.
+#
+# A declared presentation reconciles THREE views against ONE order -- the
+# written script, the performed lines and the shot sequence -- and every one of
+# the twelve beats must still be able to state its five parts, because an
+# out-of-order telling is only readable when each beat carries its own meaning:
+# what happens and what the character does, what changes or becomes harder,
+# what the viewer now understands, what the viewer still needs answered, and the
+# visible action or dialogue that carries it.
+# =====================================================================
+
+PRESENTATION_SCHEMA = "blackceo.presentation-order/v1"
+#: The three views that must agree with the one declared presentation order.
+PRESENTATION_VIEWS = ("script", "performed", "shots")
+#: The five things every beat must be able to state (S75X-W2-U1).
+BEAT_STATEMENT_FIELDS = ("action", "change", "understood", "question", "carrier")
+#: Where a consequence-first presentation rewinds to when it does not say.
+DEFAULT_REWIND_TO = "ordinary_world"
+#: Row keys accepted for a beat id inside a view.
+_VIEW_BEAT_KEYS = ("beat", "story_beat_id", "beat_id")
+
+def declares_presentation(story):
+    """True when the record declares how the beats are presented (a
+    ``presentation`` block or a ``presentation_order`` list). A record with
+    neither is judged by the canonical contract alone."""
+    if not isinstance(story, dict):
+        return False
+    return (isinstance(story.get("presentation"), dict)
+            or isinstance(story.get("presentation_order"), list))
+
+def _view_ids(view):
+    """Ordered beat ids from a view: bare ids, or rows carrying a beat key.
+    Returns None when the view is not a list at all."""
+    if not isinstance(view, (list, tuple)):
+        return None
+    out = []
+    for row in view:
+        if isinstance(row, dict):
+            val = next((row.get(k) for k in _VIEW_BEAT_KEYS
+                        if row.get(k) is not None), None)
+            out.append(str(val).strip() if val is not None else "")
+        else:
+            out.append(str(row).strip())
+    return out
+
+def _presentation_block(story):
+    """The declared presentation. ``presentation_order`` is also accepted flat on
+    the record; the three VIEWS are read only from inside ``presentation``,
+    because a top-level ``script`` or ``shots`` means something else here and
+    must never be mistaken for one."""
+    blk = dict(story.get("presentation")) if isinstance(story.get("presentation"), dict) else {}
+    if "presentation_order" in story and "order" not in blk:
+        blk["order"] = story["presentation_order"]
+    return blk
+
+def presentation_order(story):
+    """The order the twelve beats are PRESENTED in: the declared
+    ``presentation.order`` when the record declares a readable one, else the
+    canonical order. Never validates -- ``check_presentation_order`` judges."""
+    blk = _presentation_block(story) if isinstance(story, dict) else {}
+    ids = _view_ids(blk.get("order"))
+    return tuple(ids) if ids else tuple(BEATS)
+
+def _manifest_order(presentation):
+    """The presentation order a manifest must be emitted in, or None for the
+    canonical order. Raises rather than silently emitting the wrong order."""
+    if presentation is None:
+        return None
+    if isinstance(presentation, dict):
+        ids = _view_ids(presentation.get("order"))
+    else:
+        ids = _view_ids(presentation)
+    if not ids:
+        raise StoryArcError(
+            "presentation.order is required to build a presented manifest")
+    if len(ids) != len(BEATS) or len(set(ids)) != len(ids) or set(ids) != set(BEATS):
+        raise StoryArcError(
+            "presentation.order must carry the twelve canonical beats, once each")
+    return ids
+
+def check_presentation_order(story):
+    """Reconcile a declared presentation order with the canonical contract.
+
+    Runs only on a record that declares presentation content. It NEVER relaxes
+    the canonical validator: ``beats`` must still be the twelve canonical ids
+    in canonical order (``validate_story`` checks that above), the ids here are
+    the same twelve stable ids, and a presentation that drops, duplicates or
+    invents a beat is refused. On top of that:
+
+    * the three views -- ``script``, ``performed``, ``shots`` -- must be the
+      SAME order as ``order`` (rows may be ids or ``{beat: id}`` dicts);
+    * ``opening``, when declared, must be the first presented beat, and a
+      consequence-first opening must name a ``rewind_to`` beat that is one of
+      the twelve and is not the opening itself;
+    * every canonical beat must state its five parts (``action``, ``change``,
+      ``understood``, ``question``, ``carrier``).
+
+    Never raises. Returns the order, the three reconciled views, the opening /
+    rewind and each beat's statement."""
+    out = {"schema": PRESENTATION_SCHEMA, "outcome": "ok",
+           "reason_code": "presentation-ok", "errors": [],
+           "canonical": list(BEATS), "order": list(BEATS),
+           "opening": BEATS[0], "rewind_to": None, "consequence_first": False,
+           "views": {}, "statements": {}, "statement_count": 0,
+           "unknown": [], "duplicate": [], "missing": []}
+    if not isinstance(story, dict):
+        out.update(outcome="error", reason_code="story-not-an-object",
+                   errors=[{"error": "story-not-an-object"}])
+        return out
+
+    errors = []
+    blk = _presentation_block(story)
+    raw = blk.get("order")
+    order = _view_ids(raw) if isinstance(raw, (list, tuple)) else None
+    if not order:
+        errors.append({"error": "presentation-invalid",
+                       "detail": "presentation.order must be a non-empty list of beat ids"})
+        out.update(outcome="rejected", reason_code="presentation-invalid", errors=errors)
+        return out
+
+    known = set(BEATS)
+    unknown = sorted({b for b in order if b not in known})
+    if unknown:
+        errors.append({"error": "presentation-unknown", "detail": unknown})
+    seen, dups = set(), []
+    for b in order:
+        if b in seen and b not in dups:
+            dups.append(b)
+        seen.add(b)
+    if dups:
+        errors.append({"error": "presentation-duplicate", "detail": dups})
+    missing = [b for b in BEATS if b not in seen]
+    if missing:
+        errors.append({"error": "presentation-missing", "detail": missing})
+
+    views = {}
+    for view in PRESENTATION_VIEWS:
+        if blk.get(view) is None:
+            continue
+        ids = _view_ids(blk.get(view))
+        views[view] = ids
+        if ids is None:
+            errors.append({"error": "presentation-view-invalid",
+                           "detail": "%s must be a list of beat ids or {beat: id} rows" % view})
+        elif ids != order:
+            errors.append({"error": "presentation-view-mismatch",
+                           "detail": "%s order %s does not match presentation.order %s"
+                                     % (view, ids, order)})
+
+    opening = order[0]
+    declared_opening = str(blk.get("opening") or "").strip()
+    if declared_opening and declared_opening != opening:
+        errors.append({"error": "presentation-opening-invalid",
+                       "detail": "opening %r is not the first presented beat %r"
+                                 % (declared_opening, opening)})
+    consequence_first = opening != BEATS[0]
+    rewind_to = str(blk.get("rewind_to") or "").strip()
+    if consequence_first:
+        rewind_to = rewind_to or DEFAULT_REWIND_TO
+        if rewind_to not in known:
+            errors.append({"error": "presentation-opening-invalid",
+                           "detail": "rewind_to %r is not one of the twelve canonical beats"
+                                     % rewind_to})
+        elif rewind_to not in order:
+            errors.append({"error": "presentation-opening-invalid",
+                           "detail": "rewind_to %r is absent from the presentation order"
+                                     % rewind_to})
+        elif order.index(rewind_to) == 0:
+            errors.append({"error": "presentation-opening-invalid",
+                           "detail": "a consequence-first opening must rewind: rewind_to %r "
+                                     "cannot be the opening beat" % rewind_to})
+
+    rows = story.get("story_beats")
+    by_beat = {}
+    for r in (rows if isinstance(rows, list) else []):
+        if not isinstance(r, dict):
+            continue
+        bid = next((str(r.get(k)).strip() for k in _VIEW_BEAT_KEYS if r.get(k)), "")
+        if bid:
+            by_beat[bid] = r
+    statements, incomplete = {}, {}
+    for beat in BEATS:
+        row = by_beat.get(beat) or {}
+        statements[beat] = {f: (None if _blank(row.get(f)) else row.get(f))
+                            for f in BEAT_STATEMENT_FIELDS}
+        absent = [f for f in BEAT_STATEMENT_FIELDS if _blank(row.get(f))]
+        if absent:
+            incomplete[beat] = absent
+    if incomplete:
+        errors.append({"error": "beat-statement-missing",
+                       "detail": "; ".join("%s: %s" % (b, ", ".join(fs))
+                                           for b, fs in incomplete.items())})
+
+    out.update(outcome="ok" if not errors else "rejected",
+               reason_code="presentation-ok" if not errors else errors[0]["error"],
+               errors=errors, order=order, opening=opening,
+               rewind_to=rewind_to or None, consequence_first=consequence_first,
+               views={k: list(v) for k, v in views.items() if v is not None},
+               statements=statements,
+               statement_count=sum(1 for s in statements.values()
+                                   if all(not _blank(s[f]) for f in BEAT_STATEMENT_FIELDS)),
+               unknown=unknown, duplicate=dups, missing=missing)
+    return out
 
 
 def main(argv=None):

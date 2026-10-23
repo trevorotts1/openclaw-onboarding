@@ -97,8 +97,8 @@ def test_declared_lines_keep_the_hard_gate():
     short — unchanged hard gate."""
     plan = _faceless_plan()
     plan["segments"] = [
-        dict(s, lip_sync_line_ids=["L%d" % (i + 1)], lip_sync=True)
-        if i < 4 else s
+        dict(s, lip_sync_line_ids=["L1"], lip_sync=True)
+        if i == 0 else s
         for i, s in enumerate(plan["segments"])]
     plan["lines"] = [{"line_id": "L%d" % (i + 1), "speaker": "lead",
                       "start_s": 10.0, "end_s": 12.0} for i in range(4)]
@@ -110,7 +110,7 @@ def test_declared_lines_keep_the_hard_gate():
                       for c in (COVERAGE_SHORT, LINES_TOO_FEW)),
           (rec or {}).get("reason_code"))
     check("refusal carries coverage numbers",
-          (rec.get("evidence") or {}).get("lipsync_lines_count") == 4,
+          (rec.get("evidence") or {}).get("lipsync_lines_count") == 1,
           json.dumps(rec.get("evidence")))
 
 
