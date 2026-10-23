@@ -202,6 +202,14 @@ def skill_root():
     return os.path.dirname(os.path.dirname(_core_dir()))   # skill folder
 
 
+def _duration_registry():
+    """The ONE canonical duration/profile registry (suno_recipe)."""
+    core = _core_dir()
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    from suno_recipe import duration_registry  # noqa: PLC0415
+    return duration_registry
+
 def _canonical_lengths():
     """The canonical duration table, imported (never re-declared): the F15
     length menu in style_defaults.defaults."""
@@ -670,10 +678,29 @@ def check(payload):
         return {"outcome": "error", "reason_code": "schema-untrusted",
                 "checks": checks, "next_action": f"Use a trusted schema: {schemas}."}
     allowed = p.get("allowed_profiles") or list(DEFAULT_PROFILES)
-    checks["profile_known"] = (p.get("profile") or DEFAULT_PROFILES[0]) in allowed
+    chosen_profile = p.get("profile") or DEFAULT_PROFILES[0]
+    checks["profile_known"] = chosen_profile in allowed
     if not checks["profile_known"]:
         return {"outcome": "rejected", "reason_code": "delivery-profile-unknown",
                 "checks": checks, "next_action": f"Choose a delivery profile in {allowed}."}
+    # SC-17: the receipt records WHICH duration profile the run used, so the
+    # chosen shape+length is readable after the run and not only inside the
+    # request payload. ``allowed`` is caller-supplied, so it can only narrow
+    # the set; the ONE canonical registry (suno_recipe.duration_registry) is
+    # the authority on whether the recorded name actually resolves.
+    registry = _duration_registry()
+    try:
+        registry.profile_row(chosen_profile)
+    except ValueError as exc:
+        checks["duration_profile_known"] = False
+        return {"outcome": "rejected", "reason_code": "delivery-profile-unknown",
+                "checks": checks,
+                "next_action": "The canonical duration registry "
+                               "(suno_recipe.duration_registry) is the authority "
+                               "on the recorded profile: %s. Choose one of %s."
+                               % (str(exc)[:160], list(registry.profiles()))}
+    checks["duration_profile_known"] = True
+    checks["duration_profile"] = chosen_profile
 
     root = p.get("approved_root") or p.get("storage_dir") or os.getcwd()
     bad, outside = [], []

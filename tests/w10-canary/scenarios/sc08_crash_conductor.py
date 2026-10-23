@@ -18,7 +18,9 @@ Proves, against the REAL core modules of the tree under test:
   * the artifact the crash did not finish is recorded as missing -- the
     partial set is incomplete, not silently counted as present;
   * a half-delivered destination set (one destination delivered, one still
-    pending) is still not success;
+    pending) is still not success, and the product's own reasons say why;
+  * with every stage COMPLETE and the receipts short, the receipt branch alone
+    refuses delivery and names it -- so a collector that lies is caught;
   * the run is RESUMABLE: the expired lease is re-claimable, the remaining
     destination is delivered, and only then does the gate report delivered --
     with each destination recorded exactly once.
@@ -99,8 +101,18 @@ def write_fixture(run_dir, F, receipts, with_receipts=True):
     if with_receipts:
         H.write_json(rd / RECEIPTS, list(receipts))
 
-def statuses(receipts):
-    return [r.get("status") for r in receipts]
+RECEIPT_REASON = "destination delivery receipts not all successful"
+
+def verdict(F, run_dir, got, muts):
+    """The product's completion verdict over one run dir.
+
+    ``forged_receipts_ok`` is the collector defect itself -- the evidence says
+    the receipts are fine whatever the files say. It forges the PRODUCT's
+    evidence, never a fixture the assertion compares against."""
+    ev = F._collect_completion_evidence(run_dir, got)
+    if "forged_receipts_ok" in muts:
+        ev = dict(ev, delivery_receipts_ok=True)
+    return F.evaluate_completion(run_dir, got, evidence=ev)
 
 # --------------------------------------------------------------------------
 def scenario(core, muts=frozenset()):
@@ -156,19 +168,30 @@ def scenario(core, muts=frozenset()):
                     "missing=%s" % (evidence.get("missing_artifacts"),))
 
             # ---- half the destinations delivered, the rest still pending --
+            # Assert on the PRODUCT's reasons, never on `partial`, which this
+            # harness built itself. `delivered2` alone is not enough here: the
+            # delivery stage is still RUNNING, so it is False for an unrelated
+            # reason and would stay False under a collector that lies.
             partial = [{"destination": DESTINATIONS[0], "status": "delivered"},
                        {"destination": DESTINATIONS[1], "status": "pending"}]
-            if "receipts_all_delivered" in muts:
-                partial = [{"destination": d, "status": "delivered"}
-                           for d in DESTINATIONS]
             write_fixture(run_dir, F, partial)
-            delivered2, report2 = F.evaluate_completion(str(run_dir), got)
+            delivered2, report2 = verdict(F, run_dir, got, muts)
+            reasons2 = report2.get("reasons") or []
             c.check("sc08:partial-destination-set-not-success",
-                    statuses(partial).count("delivered") == 1
-                    and statuses(partial).count("pending") == 1
-                    and delivered2 is False,
-                    "statuses=%s delivered=%s"
-                    % (statuses(partial), delivered2))
+                    delivered2 is False
+                    and reasons2.count(RECEIPT_REASON) == 1
+                    and any(("required stage %s is" % DELIVERY) in r
+                            for r in reasons2),
+                    "delivered=%s reasons=%s" % (delivered2, reasons2))
+
+            # The receipts branch on its own: every stage COMPLETE, so the ONLY
+            # thing that can refuse delivery is the collector's receipt verdict.
+            got_complete = stage_states(st, stages, {DELIVERY: "COMPLETE"})
+            delivered_r, report_r = verdict(F, run_dir, got_complete, muts)
+            reasons_r = report_r.get("reasons") or []
+            c.check("sc08:incomplete-receipts-refuse-a-complete-run",
+                    delivered_r is False and reasons_r == [RECEIPT_REASON],
+                    "delivered=%s reasons=%s" % (delivered_r, reasons_r))
 
             # ---- resume: the expired lease is re-claimable ---------------
             if "live_lease" not in muts:
@@ -197,11 +220,16 @@ def scenario(core, muts=frozenset()):
                         delivered3 is True,
                         "delivered=%s reasons=%s"
                         % (delivered3, report3.get("reasons")))
-                dests = [r.get("destination") for r in final]
+                # Assert on what the PRODUCT concluded, never on `final`, which
+                # this harness built itself: comparing our own list to our own
+                # constant is a tautology that passes for any product and turns
+                # red only because a mutation edited the fixture.
+                dup_reason = [r for r in (report3.get("reasons") or [])
+                              if "destination delivery receipts" in r]
                 c.check("sc08:resume-completes-without-duplicate-destination",
-                        len(final) == len(DESTINATIONS)
-                        and sorted(dests) == sorted(DESTINATIONS),
-                        "receipts=%s" % (dests,))
+                        delivered3 is True and not dup_reason,
+                        "delivered=%s destination_reasons=%s"
+                        % (delivered3, dup_reason))
             else:
                 c.check("sc08:resume-completes-delivery", False,
                         "not resumed")
@@ -219,8 +247,9 @@ MUTATIONS = {
         "sc08:crash-leaves-delivery-not-complete",
         "sc08:report-names-incomplete-delivery-stage",
     ],
-    "receipts_all_delivered": [
+    "forged_receipts_ok": [
         "sc08:partial-destination-set-not-success",
+        "sc08:incomplete-receipts-refuse-a-complete-run",
     ],
     "live_lease": [
         "sc08:resume-claims-expired-delivery",
@@ -244,7 +273,7 @@ def selftest(core):
                  failed or "none"))
         print("selftest:%s — expected hit=%d/%d"
               % (name, len(hit), len(expected)))
-    print("selftest — %s" % ("harness fails on all four defects"
+    print("selftest — %s" % ("harness fails on all %d defects" % len(MUTATIONS)
                              if ok else "HARNESS CANNOT PROVE A FAILURE"))
     return 0 if ok else 1
 

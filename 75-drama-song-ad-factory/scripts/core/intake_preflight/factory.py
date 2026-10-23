@@ -1924,6 +1924,20 @@ def _decide_completion(ev):
                        "required": required, "optional": ev.get("optional") or []}
 
 
+def _destination_key(value):
+    """Total, type-safe identity for one delivery-receipt destination.
+
+    Destinations are normally strings, but a receipt read off disk can carry
+    None (or any other type) and that must be reported as a malformed receipt,
+    never raised as a comparison error. The key is always a comparable,
+    hashable ``(rank, text)`` pair; the original value is what gets reported.
+    """
+    try:
+        return (0, json.dumps(value, sort_keys=True))
+    except (TypeError, ValueError):
+        return (1, repr(value))
+
+
 def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
     """Gather the strict-completion facts from a run dir (controlled fixtures).
 
@@ -1972,9 +1986,27 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
 
     # destination delivery receipts: all destinations delivered successfully.
     receipts = _read_json_list(rd / "delivery" / "receipts.json", required=False)
-    delivery_ok = bool(receipts) and all(
-        r.get("status") == "delivered" for r in receipts
-        if isinstance(r, dict))
+    rows = [r for r in receipts if isinstance(r, dict)]
+    dests = [r.get("destination") for r in rows]
+    # The same destination twice is not a successful delivery set: it means a
+    # receipt was written more than once, which is the duplicate-send defect
+    # this evidence check exists to catch. Recurrence alone is not enough —
+    # two DIFFERENT destinations delivered once each is the healthy shape.
+    # Counting is over the normalised key so any mix of destination types
+    # (str, None, int, dict) is reported without a comparison error; the
+    # values reported are the originals, in key order, and stay JSON-safe.
+    keys = [_destination_key(d) for d in dests]
+    duplicate_destinations = []
+    seen = set()
+    for value, key in sorted(zip(dests, keys), key=lambda pair: pair[1]):
+        if key in seen:
+            continue
+        seen.add(key)
+        if keys.count(key) > 1:
+            duplicate_destinations.append(value)
+    delivery_ok = (bool(rows)
+                   and all(r.get("status") == "delivered" for r in rows)
+                   and not duplicate_destinations)
 
     return {
         "required": required,
@@ -1986,6 +2018,7 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
         "artifacts_present": artifacts_present,
         "missing_artifacts": missing,
         "delivery_receipts_ok": delivery_ok,
+        "duplicate_destinations": duplicate_destinations,
     }
 
 

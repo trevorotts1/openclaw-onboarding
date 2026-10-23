@@ -54,13 +54,55 @@ def joined(messages):
     return "\n".join(messages or [])
 
 
-def main(argv=None):
-    args = H.add_args(description=__doc__).parse_args(argv)
-    core = H.resolve_core(args)
+def scenario(core, muts=frozenset()):
+    # selftest runs every mutation in this one process; drop the product
+    # modules first so no patch from an earlier mutation leaks into the next.
+    for name in [n for n in list(sys.modules)
+                 if n.split(".")[0] in ("script_approval", "script_pdf")]:
+        del sys.modules[name]
     SA = H.load_pkg(core, "script_approval.script_approval")
     AE = H.load_pkg(core, "script_approval.approval_events")
+    SP = H.load_pkg(core, "script_pdf.script_pdf")
+
+    # Deliberate PRODUCT defects: each one damages a rule the row measures, so
+    # the assertion has to read the product to notice. None of them edits a
+    # fixture the assertion compares against.
+    if "presentation_drops_revisions" in muts:
+        real_render = SA.render_presentation
+        SA.render_presentation = (
+            lambda *a, **kw: real_render(*a, **dict(kw, labels=None)))
+    if "presentation_unnames_earned_hook" in muts:
+        real_render = SA.render_presentation
+        SA.render_presentation = (
+            lambda *a, **kw: real_render(*a, **kw).replace(
+                "EARNED SONG HOOK", "SONG HOOK"))
+    if "blanket_revision_bump" in muts:
+        real_register = AE.register_artifact
+
+        def blanket(rec, kind, sha256, revision=None):
+            cur = (rec.get("artifacts") or {}).get(kind) or {}
+            if revision is None and cur.get("sha256") == sha256:
+                bump = int(cur.get("revision") or 0) + 1
+                rec["artifacts"][kind] = dict(cur, revision=bump)
+                return {"changed": True, "kind": kind, "revision": bump,
+                        "invalidated": []}
+            return real_register(rec, kind, sha256, revision)
+
+        AE.register_artifact = blanket
+    if "gate_always_open" in muts:
+        SA.check_script_approval = lambda record, lyrics: None
+    if "stale_revision_accepted" in muts:
+        real_load = SP.load_approved_source
+
+        def accepts_stale(*a, **kw):
+            return dict(real_load(*a, **kw), ok=True, reason_code="OK")
+
+        SP.load_approved_source = accepts_stale
+
     c = H.Checks(ROW, TITLE)
-    print("A04 %s — tree %s" % (TITLE, core))
+    print("A04 %s — tree %s%s"
+          % (TITLE, core, (" [defect: %s]" % ",".join(sorted(muts)))
+             if muts else ""))
 
     hook1 = "do it for the ones who stayed"
     hook2 = "we did it for the ones who stayed"
@@ -144,7 +186,110 @@ def main(argv=None):
                 hook1 not in text3,
                 "old hook present=%s" % (hook1 in text3))
 
-        return c.finish(args.out)
+        # --- SC-05: a lyrics edit AFTER approval re-closes the boundary -----
+        # Everything above only REQUESTED approval. Approve this exact revision
+        # here so both directions can be asserted: the gate is open for the
+        # approved lyrics and shut for an edited revision, and the refusal names
+        # both hashes. A blanket refusal would fail the first check.
+        AE.record_decision(rec3, ["script", "lyrics"],
+                           dict(ctx, approved_by="client",
+                                reply_to_message_id="m-approve-sc05"))
+        AE.project(rec3, SA.lyrics_sha(lyr3))
+        AE.save_record(str(run_dir), rec3)
+        _, rec4 = AE.load_record(str(run_dir))
+
+        still_open = SA.check_script_approval(rec4, lyr3)
+        c.check("a04:approval-open-for-approved-lyrics",
+                still_open is None,
+                "refusal=%s at the approved revision" % (still_open,))
+
+        sh4 = [dict(s) for s in sh3]
+        sh4[2] = {"tag": "Verse 2", "delivery": "sung",
+                  "lines": ["The sign went up in the freezing rain",
+                            "and I still stood there"]}
+        lyr4 = lyrics_of(sh4)
+        closed = SA.check_script_approval(rec4, lyr4)
+        c.check("a04:lyrics-edit-recloses-approval",
+                isinstance(closed, dict)
+                and closed.get("reason_code") == SA.REASON,
+                "reason=%s after the edit"
+                % ((closed or {}).get("reason_code"),))
+
+        live = AE.active_approval(rec4, "lyrics", SA.lyrics_sha(lyr4))
+        recorded = AE.active_approval(rec4, "lyrics", SA.lyrics_sha(lyr3))
+        c.check("a04:lyrics-approval-hash-mismatch-recorded",
+                live is None and recorded is not None
+                and SA.lyrics_sha(lyr3) != SA.lyrics_sha(lyr4),
+                "active_for_edit=%s recorded=%s edit=%s"
+                % (live is not None, str(SA.lyrics_sha(lyr3))[:12],
+                   str(SA.lyrics_sha(lyr4))[:12]))
+
+        stale = SP.load_approved_source(
+            str(run_dir), approval=rec4,
+            doc={"title": "The Corner Shop",
+                 "story": [list(a) for a in STORY],
+                 "sheet": sh4, "lyrics": lyr4})
+        detail = str(stale.get("detail") or "")
+        c.check("a04:lyrics-hash-mismatch-refused-by-name",
+                stale.get("ok") is False
+                and stale.get("reason_code") == SP.REASON_STALE
+                and SA.lyrics_sha(lyr3)[:12] in detail
+                and SA.lyrics_sha(lyr4)[:12] in detail,
+                "code=%s detail=%s" % (stale.get("reason_code"), detail[:160]))
+
+        return c
+
+# --------------------------------------------------------------------------
+# selftest — deliberate product defects must turn the named assertions RED
+# --------------------------------------------------------------------------
+MUTATIONS = {
+    "presentation_drops_revisions": [
+        "a04:presentation-displays-both-revisions",
+        "a04:new-revision-displayed",
+    ],
+    "presentation_unnames_earned_hook": [
+        "a04:hook-displayed-as-named-element",
+    ],
+    "blanket_revision_bump": [
+        "a04:unchanged-script-keeps-revision",
+    ],
+    "gate_always_open": [
+        "a04:lyrics-edit-recloses-approval",
+    ],
+    "stale_revision_accepted": [
+        "a04:lyrics-hash-mismatch-refused-by-name",
+    ],
+}
+
+def selftest(core):
+    ok = True
+    for name in sorted(MUTATIONS):
+        c = scenario(core, frozenset([name]))
+        failed = [r["name"] for r in c.failed()]
+        expected = MUTATIONS[name]
+        hit = [e for e in expected if e in failed]
+        good = len(hit) == len(expected) and bool(failed)
+        ok = ok and good
+        print("selftest:%s — %s; red=%s"
+              % (name, "RED as required" if good else "DID NOT FAIL AS EXPECTED",
+                 failed or "none"))
+        print("selftest:%s — expected hit=%d/%d"
+              % (name, len(hit), len(expected)))
+    print("selftest — %s" % ("harness fails on all %d defects" % len(MUTATIONS)
+                             if ok else "HARNESS CANNOT PROVE A FAILURE"))
+    return 0 if ok else 1
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    selftest_mode = bool(argv) and argv[0] == "selftest"
+    args = H.add_args(
+        description="a04 selftest" if selftest_mode else __doc__
+    ).parse_args(argv[1:] if selftest_mode else argv)
+    core = H.resolve_core(args)
+    if selftest_mode:
+        return selftest(core)
+    return scenario(core).finish(args.out)
 
 
 if __name__ == "__main__":
