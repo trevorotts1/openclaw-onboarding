@@ -576,7 +576,7 @@ def rows():
             "a07:receipt-records-duration-profile"],
         required_re_real=[], required_re_dry=[],
         forbidden_real=[], forbidden_dry=[],
-        summary_re=r"^a07: (\d+)/(\d+) checks passed$", expected_total=15,
+        summary_re=r"^a07: (\d+)/(\d+) checks passed$", expected_total=25,
     ))
 
     R.append(dict(

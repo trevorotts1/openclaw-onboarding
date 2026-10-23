@@ -59,6 +59,7 @@ def main(argv=None):
     core = H.resolve_core(args)
     SA = H.load_pkg(core, "script_approval.script_approval")
     AE = H.load_pkg(core, "script_approval.approval_events")
+    SP = H.load_pkg(core, "script_pdf.script_pdf")
     c = H.Checks(ROW, TITLE)
     print("A04 %s — tree %s" % (TITLE, core))
 
@@ -143,6 +144,57 @@ def main(argv=None):
         c.check("a04:stale-hook-not-displayed",
                 hook1 not in text3,
                 "old hook present=%s" % (hook1 in text3))
+
+        # --- SC-05: a lyrics edit AFTER approval re-closes the boundary -----
+        # Everything above only REQUESTED approval. Approve this exact revision
+        # here so both directions can be asserted: the gate is open for the
+        # approved lyrics and shut for an edited revision, and the refusal names
+        # both hashes. A blanket refusal would fail the first check.
+        AE.record_decision(rec3, ["script", "lyrics"],
+                           dict(ctx, approved_by="client",
+                                reply_to_message_id="m-approve-sc05"))
+        AE.project(rec3, SA.lyrics_sha(lyr3))
+        AE.save_record(str(run_dir), rec3)
+        _, rec4 = AE.load_record(str(run_dir))
+
+        still_open = SA.check_script_approval(rec4, lyr3)
+        c.check("a04:approval-open-for-approved-lyrics",
+                still_open is None,
+                "refusal=%s at the approved revision" % (still_open,))
+
+        sh4 = [dict(s) for s in sh3]
+        sh4[2] = {"tag": "Verse 2", "delivery": "sung",
+                  "lines": ["The sign went up in the freezing rain",
+                            "and I still stood there"]}
+        lyr4 = lyrics_of(sh4)
+        closed = SA.check_script_approval(rec4, lyr4)
+        c.check("a04:lyrics-edit-recloses-approval",
+                isinstance(closed, dict)
+                and closed.get("reason_code") == SA.REASON,
+                "reason=%s after the edit"
+                % ((closed or {}).get("reason_code"),))
+
+        live = AE.active_approval(rec4, "lyrics", SA.lyrics_sha(lyr4))
+        recorded = AE.active_approval(rec4, "lyrics", SA.lyrics_sha(lyr3))
+        c.check("a04:lyrics-approval-hash-mismatch-recorded",
+                live is None and recorded is not None
+                and SA.lyrics_sha(lyr3) != SA.lyrics_sha(lyr4),
+                "active_for_edit=%s recorded=%s edit=%s"
+                % (live is not None, str(SA.lyrics_sha(lyr3))[:12],
+                   str(SA.lyrics_sha(lyr4))[:12]))
+
+        stale = SP.load_approved_source(
+            str(run_dir), approval=rec4,
+            doc={"title": "The Corner Shop",
+                 "story": [list(a) for a in STORY],
+                 "sheet": sh4, "lyrics": lyr4})
+        detail = str(stale.get("detail") or "")
+        c.check("a04:lyrics-hash-mismatch-refused-by-name",
+                stale.get("ok") is False
+                and stale.get("reason_code") == SP.REASON_STALE
+                and SA.lyrics_sha(lyr3)[:12] in detail
+                and SA.lyrics_sha(lyr4)[:12] in detail,
+                "code=%s detail=%s" % (stale.get("reason_code"), detail[:160]))
 
         return c.finish(args.out)
 

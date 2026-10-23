@@ -30,6 +30,16 @@ Four nouns, four groups of assertions, all against the tree under test:
       it; the video overshoot surfaces as MASTER_LENGTH_OVERSHOOT;
     * an unmeasured duration NEVER passes;
     * the short side keeps the 5/10 band.
+
+  SC-16 (real take, not a number)
+    * a real 62 s encoded take is measured by the tree's own ffprobe read, its
+      bytes are unchanged by that measurement, and the provenance check binds
+      it to its receipt; altered bytes are refused MASTER_HASH_MISMATCH.
+
+  SC-17 (two-minute profile)
+    * the profile id resolves to 120 s in the one registry and is offered to
+      preflight; the plan aims 118 s; a real 118 s master measures at or under
+      the profile and an over-profile master is named on the receipt.
 """
 from __future__ import annotations
 
@@ -52,6 +62,10 @@ def main(argv=None):
     SH = H.load_pkg(core, "sung_hook.sung_hook")
     HP = H.load_pkg(core, "sung_hook.hook_placement")
     ML = H.load_pkg(core, "master_length.master_length")
+    ASM = H.load_pkg(core, "final_assembler.assembler")
+    MP = H.load_pkg(core, "final_assembler.master_provenance")
+    DR = H.load_pkg(core, "suno_recipe.duration_registry")
+    P = H.load_pkg(core, "intake_preflight.preflight")
     c = H.Checks(ROW, TITLE)
     print("A07 %s — tree %s" % (TITLE, core))
 
@@ -168,6 +182,98 @@ def main(argv=None):
             band.get("verdict") == "PASS"
             and too_short.get("verdict") == "FAIL",
             "56s=%s 45s=%s" % (band.get("verdict"), too_short.get("verdict")))
+
+    # ---- SC-16: a real 62 s take, measured and preserved ------------------
+    # The duration above is a number passed in. This block measures a real
+    # encoded take with the tree's own ffprobe read and then proves the take
+    # cannot be silently swapped: the provenance check binds the file's bytes to
+    # its assembler receipt, and altered bytes are refused by name.
+    if not H.have_tools("ffmpeg", "ffprobe"):
+        print("TOOLING: ffmpeg/ffprobe are required to measure a real 62 s take "
+              "and a real two-minute master")
+        return 2
+    with H.Scratch() as media_dir:
+        take_dir = Path(media_dir) / "take"
+        take = H.aac_take(take_dir / "take-62s.mp4", 62)
+        sha_before = H.sha256_file(take)
+        measured = ASM.probe_duration(take)
+        c.check("a07:62s-take-measured-by-ffprobe",
+                measured == 62.0,
+                "ffprobe duration=%.3fs for a 62 s take" % measured)
+
+        H.write_json(take + ".receipt.json",
+                     {"outcome": "ok", "produced_by": MP.producer_stamp(),
+                      "master_sha256": H.sha256_file(take)})
+        kept = MP.check_master_provenance(str(take_dir), take)
+        c.check("a07:62s-take-preserved-untouched",
+                kept.get("pass") is True and kept.get("reason_code") == "OK",
+                "reason=%s module=%s"
+                % (kept.get("reason_code"),
+                   (kept.get("evidence") or {}).get("module")))
+        c.check("a07:62s-take-bytes-unchanged",
+                H.sha256_file(take) == sha_before,
+                "sha256 %s before, %s after the measurement"
+                % (sha_before[:12], H.sha256_file(take)[:12]))
+
+        with open(take, "ab") as fh:
+            fh.write(b"\x00" * 4096)
+        altered = MP.check_master_provenance(str(take_dir), take)
+        c.check("a07:altered-take-refused-not-delivered",
+                altered.get("pass") is False
+                and altered.get("reason_code") == MP.MASTER_HASH_MISMATCH,
+                "reason=%s after the take was altered"
+                % (altered.get("reason_code"),))
+
+        policy = ML.judge_duration(measured, 60, short="free")
+        c.check("a07:measured-62s-passes-as-named-warning",
+                policy.get("verdict") == "PASS"
+                and (policy.get("warning") or {}).get("code")
+                == ML.DURATION_OVERSHOOT,
+                "verdict=%s warning=%s detail=%s"
+                % (policy.get("verdict"),
+                   (policy.get("warning") or {}).get("code"),
+                   policy.get("detail")))
+
+        # ---- SC-17: the two-minute profile --------------------------------
+        row = DR.profile_row("drama-9x16-120s")
+        c.check("a07:two-minute-profile-id-resolves-to-120s",
+                row.get("name") == "drama-9x16-120s"
+                and row.get("seconds") == 120
+                and row.get("label") == "2 minutes"
+                and row.get("shape") == "9x16",
+                "profile=%s seconds=%s label=%s"
+                % (row.get("name"), row.get("seconds"), row.get("label")))
+        c.check("a07:two-minute-profile-offered-to-preflight",
+                DR.profiles_for(120) == ("drama-9x16-120s", "drama-16x9-120s")
+                and set(DR.profiles_for(120)) <= set(P.DEFAULT_PROFILES),
+                "profiles_for_120=%s preflight_allows=%s"
+                % (DR.profiles_for(120),
+                   sorted(set(DR.profiles_for(120)) & set(P.DEFAULT_PROFILES))))
+
+        plan120 = ML.plan(120)
+        c.check("a07:two-minute-plan-ends-two-seconds-early",
+                plan120.get("chosen_length_s") == 120
+                and plan120.get("master_max_s") == 118
+                and plan120.get("song_target_s") == 118
+                and plan120.get("shot_plan_end_s") == 118
+                and plan120.get("end_card_end_s") == 118,
+                "plan=%s" % (plan120,))
+
+        master = H.aac_take(take_dir / "master-120-profile.mp4", 118)
+        m118 = ASM.probe_duration(master)
+        c.check("a07:two-minute-master-within-profile",
+                m118 <= 120.0
+                and ML.check_master(120, m118).get("reason_code")
+                == "MASTER_LENGTH_OK",
+                "measured=%.3fs of the 120 s profile, reason=%s"
+                % (m118, ML.check_master(120, m118).get("reason_code")))
+        over_profile = ML.check_master(120, 124)
+        c.check("a07:over-profile-master-named-never-silent",
+                over_profile.get("reason_code") == "MASTER_LENGTH_OVERSHOOT"
+                and (over_profile.get("warning") or {}).get("code")
+                == ML.DURATION_OVERSHOOT,
+                "measured=124s of the 120 s profile, reason=%s"
+                % (over_profile.get("reason_code"),))
 
     # ---- duration profile on the receipt (SC-17) -------------------------
     # The run's receipt must name the duration profile it ran under, and that
