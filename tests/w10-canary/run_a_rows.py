@@ -114,6 +114,27 @@ FROZEN_WEIGHTS = {
 }
 CORE_REL = Path("75-drama-song-ad-factory") / "scripts" / "core"
 NINE_HARNESS = ".claude/skills/hook-skill/hooks/workflow-guard/test_u3_canaries.py"
+A12_HARNESS = Path("tests/w10-canary/scenarios/a12_runtime_proof.py")
+A12_MANIFEST_GLOB = "clean-install-*.manifest.json"
+A12_REQUIRED = [
+    "loaded-source proof: OK",
+    "loaded-module proof: OK",
+    "both distributions present = True",
+    "a12_creditable = True",
+]
+# The loaded-module line names the module the child interpreter actually
+# imported and the digest of the bytes it read. A digest-only proof, a stub, or
+# a skipped load cannot print it. The two side counts are written as
+# number-equals-denominator so an extra manifest in A08's dir cannot turn a
+# clean run into a missing-string FAIL.
+A12_REQUIRED_RE = [
+    r"loaded-module proof: OK — loaded lyric_timing from .+lyric_timing\.py; "
+    r"sha256 [0-9a-f]{12} matches the manifest",
+    r"^\[A12\] record: ([1-9]\d*)/\1 side\(s\) proven;",
+    r"^\[A12\] check: ([1-9]\d*)/\1 side\(s\) clean$",
+]
+A12_FORBIDDEN = ["MISMATCH:", "NOT RECORDED", "DISAGREE",
+                 "a12_creditable = False"]
 
 ENV_STRIP = ("OPENCLAW_HOME", "PYTHONPATH", "PYTHONHOME", "PYTEST_ADDOPTS",
              "PYTHONSTARTUP", "S75_TREE", "S75_NINE_ROOT")
@@ -336,26 +357,34 @@ def plan_a08(ctx, mode, sandbox):
 
 
 def plan_a12(ctx, mode, sandbox):
-    tool = Path(ctx["tree"]) / "work/S75-W07-U2/tools/runtime_proof.py"
+    tree = Path(ctx["tree"])
+    tool = tree / A12_HARNESS
     if not tool.is_file():
         raise Blocked("BLOCKED_HARNESS",
                       "missing %s (A12 harness not landed at this head)" % tool)
-    manifests = sorted((Path(ctx["artifacts"]).parent / "A08").glob(
-        "*manifest*.json"))
+    # A08 writes its manifests into its OWN row artifacts dir, i.e.
+    # <receipts>/artifacts/A08/clean-install-<dist>.manifest.json.
+    a08 = Path(ctx["artifacts"]).parent / "A08"
+    manifests = sorted(a08.glob(A12_MANIFEST_GLOB))
     if not manifests:
         raise Blocked("BLOCKED_HARNESS",
-                      "no clean-install manifest in %s (A12 needs A08 real "
-                      "output first)" % ctx["artifacts"])
-    manifest = str(manifests[-1])
-    # Runbook text: `record --manifest <m>` then `check --manifest <m>
-    # --side installed`, proving both onboarding_skill and nine_skill. The tool
-    # is absent at every head checked so its flags are unverified; the required
-    # patterns below name both distributions so a wrong CLI fails loudly.
+                      "A08 wrote no %s into %s; A12 consumes A08's clean-install "
+                      "manifest and cannot pass without it"
+                      % (A12_MANIFEST_GLOB, a08))
+    # Every manifest A08 produced, not just the last: `record` credits the row
+    # only when BOTH distributions are present, and `check --side installed`
+    # proves each manifest's own side. Passing one manifest would cap the row
+    # at 1/2 sides by construction.
+    sel = []
+    for m in manifests:
+        sel += ["--manifest", str(m)]
     return [
-        Step(["python3", str(tool), "record", "--manifest", manifest],
-             cwd=ctx["tree"]),
-        Step(["python3", str(tool), "check", "--manifest", manifest,
-              "--side", "installed"], cwd=ctx["tree"]),
+        Step(["python3", str(tool), "record"] + sel
+             + ["--out", str(ctx["artifacts"])],
+             cwd=tree, note="record loaded-source proof"),
+        Step(["python3", str(tool), "check"] + sel
+             + ["--side", "installed"],
+             cwd=tree, note="check installed digests"),
     ]
 
 
@@ -575,14 +604,23 @@ def rows():
     R.append(dict(
         id="A12", weight=10, title="loaded-source proof on both distributions",
         plan=plan_a12,
-        required_real=["onboarding_skill", "nine_skill"],
-        required_dry=["onboarding_skill", "nine_skill"],
-        required_re_real=[], required_re_dry=[],
-        forbidden_real=[], forbidden_dry=[],
+        # These strings are a12_runtime_proof.py's own output at this head:
+        # the per-side loaded-source and loaded-module verdicts, the two-count
+        # summaries, and the authoritative `a12_creditable` line. A side that
+        # did not record prints "NOT RECORDED", a stale/tampered tree prints
+        # "MISMATCH:" or "DISAGREE", and a one-sided record prints "1/2", so
+        # none of them can satisfy these.
+        required_real=A12_REQUIRED,
+        required_dry=A12_REQUIRED,
+        required_re_real=A12_REQUIRED_RE, required_re_dry=A12_REQUIRED_RE,
+        forbidden_real=A12_FORBIDDEN, forbidden_dry=A12_FORBIDDEN,
+        # record and check each print the loaded-module verdict once per side.
+        min_occurrences={"loaded-module proof: OK": 4},
         summary_re=None, expected_total=None,
         notes=["A12 consumes A08's clean-install manifest; without it this row "
-               "is BLOCKED_HARNESS. runtime_proof.py CLI is the runbook's "
-               "literal text and is unverified (tool absent at this head)."],
+               "is BLOCKED_HARNESS naming A08, never a pass.",
+               "The harness is tests/w10-canary/scenarios/a12_runtime_proof.py "
+               "and its flags were read from its own --help at this head."],
     ))
     return R
 
