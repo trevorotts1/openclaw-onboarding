@@ -351,9 +351,48 @@ def plan_a08(ctx, mode, sandbox):
     argv += ["--repo-root", "openclaw-onboarding=%s" % ctx["tree"]]
     if ctx.get("nine_root"):
         argv += ["--repo-root", "999-setup=%s" % ctx["nine_root"]]
+    # A12 consumes these manifests AND hashes/imports the installed trees they
+    # point at, so the trees must survive this row's exit. Without --keep the
+    # canary deletes its sandbox and every A08 manifest is left dangling.
+    argv.append("--keep")
     if mode == "dry":
         argv.append("--dry-run")
+    else:
+        # The canary defaults sandbox_base to --out when --sandbox-base is
+        # absent, so the retained trees land under the ROW's artifacts dir, not
+        # under /tmp. Print the real location: an operator who cleans /tmp finds
+        # nothing and ~1.2 GB rots in the receipts tree.
+        print("[A08] keeping install trees under %s/skill75-repair-"
+              "SFR-007-canary-* (~1.2 GB across both dists). A12 reads them; "
+              "delete by hand." % ctx["artifacts"], flush=True)
     return [Step(argv, cwd=ctx["tree"], note="dist=both")]
+
+
+
+def _require_a08_trees(manifests):
+    """Refuse before the harness runs if A08's kept trees are gone.
+
+    A12 hashes the bytes at each manifest's installed_path and imports the
+    module from that tree. A manifest whose tree was deleted (an A08 run
+    without --keep) would otherwise surface as an obscure harness error after
+    a step had already been launched, so this fires first and names the path.
+    """
+    missing = []
+    for m in manifests:
+        try:
+            data = json.loads(Path(m).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            missing.append("%s (unreadable: %s)" % (m, exc))
+            continue
+        ip = data.get("installed_path")
+        if not ip or not Path(ip).is_dir():
+            missing.append("%s -> %s" % (m, ip))
+    if missing:
+        raise Blocked(
+            "BLOCKED_HARNESS",
+            "A08 installed tree missing (that A08 run deleted its sandbox, i.e. "
+            "ran without --keep): %s. Rerun A08 with --keep; A12 hashes and "
+            "imports the tree at installed_path." % "; ".join(missing))
 
 
 def plan_a12(ctx, mode, sandbox):
@@ -371,6 +410,9 @@ def plan_a12(ctx, mode, sandbox):
                       "A08 wrote no %s into %s; A12 consumes A08's clean-install "
                       "manifest and cannot pass without it"
                       % (A12_MANIFEST_GLOB, a08))
+    # The trees those manifests point at must still exist; refuse by name
+    # rather than letting the harness fail obscurely after launch.
+    _require_a08_trees(manifests)
     # Every manifest A08 produced, not just the last: `record` credits the row
     # only when BOTH distributions are present, and `check --side installed`
     # proves each manifest's own side. Passing one manifest would cap the row
