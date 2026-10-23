@@ -58,7 +58,7 @@ import time
 from datetime import datetime
 from typing import Callable, Iterator, Optional
 
-# Version marker (kept in sync by scripts/bump-version.sh):
+# Version marker (owned by Skill 06; keep in sync with skill-version.txt):
 BROWSER_MANAGER_PY_VERSION = "v27.1.74"
 
 # Tunables mirror browser_manager.sh / the ADVISORY openclaw.json

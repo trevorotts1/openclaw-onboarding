@@ -58,7 +58,7 @@
 #   bash browser_manager.sh watchdog                   # P3: one Playwright-lane watchdog sweep
 #   bash browser_manager.sh probe                      # P0-6: capability probe (ADVISORY: always exit 0)
 #
-# Version marker (kept in sync by scripts/bump-version.sh):
+# Version marker (owned by Skill 06; keep in sync with skill-version.txt):
 BROWSER_MANAGER_VERSION="v27.1.74"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
