@@ -15,7 +15,8 @@
       "additionalProperties": false,
       "properties": {
         "mode": {"type": "string", "enum": ["launch", "legacy", "bf"]},
-        "phase": {"type": "string", "enum": ["pre_build", "approval"]}
+        "phase": {"type": "string", "enum": ["pre_build", "approval"]},
+        "estimate_of": {"type": "integer", "minimum": 0, "description": "last computed count of applicable questions; a changed estimate is explained to the client"}
       }
     },
     "answers": {

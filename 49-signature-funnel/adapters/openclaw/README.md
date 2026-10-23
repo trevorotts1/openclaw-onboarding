@@ -5,10 +5,10 @@ How the client is asked, and told, when Skill 49 (Signature Funnel) runs in Open
 ## Asking (one short chat message at a time)
 
 1. Detect: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/harness_profile.py --harness openclaw`.
-2. Render: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/render_question.py --questions-file <bank.json> --answers-file <answers.json> --harness openclaw`. It prints one short numbered message per unanswered question.
+2. Ask ONE question at a time. Render the next applicable question from the shared guided bank (`<REPO_ROOT>/shared-utils/client_intake/question-bank.json` — never a raw bank, never the old technical question lists): `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/render_question.py --questions-file <REPO_ROOT>/shared-utils/client_intake/question-bank.json --answers-file <answers.json> --harness openclaw`. It prints exactly one short numbered message: the next applicable question, with its reasons, examples and each option's own explanation. Never batch questions; the length estimate is computed from the applicable questions only.
 3. Say ONE message in this session's own reply. Wait for the client's reply. Do not send the next question until they answer.
 4. Read the reply with `parse_reply` in `render_question.py`: a number picks that choice, any other text is their own answer, and the word "help" (or "not sure", "I don't know") starts the help path. Never treat silence or "skip" on a must-answer question as an answer.
-5. Record the answer into the answers file with the intake engine, in launch mode and legacy mode. If the session restarts, run step 2 again: answered questions are skipped, the rest are asked.
+5. Record the answer into the answers file with the intake engine, in launch mode and legacy mode. The client's assistance preference is asked first and may change at any time: A "set it up for me to review" (the engine uses what is known, asks only what is missing, and shows the proposal for review), B "help me choose" (every decision is explained and walked through), C "I know what I want" (jump to execution and flag anything important still missing). Any default or recommendation is a proposal flagged "to confirm" — never a silent decision, never an approval for spending. If the session restarts, run step 2 again: confirmed answers are never repeated, the rest are asked.
 
 ## When the client does not know
 

@@ -5,9 +5,9 @@ How the client is asked, and told, when Skill 49 (Signature Funnel) runs in Clau
 ## Asking (structured question tool)
 
 1. Detect: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/harness_profile.py --harness claude-code` (an explicit flag always wins; with no flag it reads the answers file, then the environment, then falls back to plain chat).
-2. Render the questions still unanswered: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/render_question.py --questions-file <bank.json> --answers-file <answers.json> --harness claude-code`. It prints structured question tool calls: 2 to 4 options each, a short header, related questions batched together (at most 4 per call), free text through "Other".
+2. Ask ONE question at a time. Render the next applicable question from the shared guided bank (`<REPO_ROOT>/shared-utils/client_intake/question-bank.json` — never a raw bank, never the old technical question lists): `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/render_question.py --questions-file <REPO_ROOT>/shared-utils/client_intake/question-bank.json --answers-file <answers.json> --harness claude-code`. It prints exactly one structured question tool call: 2 to 4 options with each option's own explanation (never flattened), a short header, free text through "Other". Never batch questions. The length estimate and the progress numbers cover the applicable questions only and are computed at runtime.
 3. Make the call exactly as printed. Do not add, reorder or reword options. The last option is always "I'm not sure, help me".
-4. Record each answer into the answers file with the intake engine, in launch mode and legacy mode.
+4. Record each answer into the answers file with the intake engine, in launch mode and legacy mode. The client's assistance preference is asked first and may change at any time: A "set it up for me to review" (the engine uses what is known, asks only what is missing, and shows the proposal for review), B "help me choose" (every decision is explained and walked through), C "I know what I want" (jump to execution and flag anything important still missing). Any default or recommendation is a proposal flagged "to confirm" — never a silent decision, never an approval for spending.
 
 ## When the client does not know
 

@@ -92,9 +92,44 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_questions(_args: argparse.Namespace) -> int:
-    """The picture questions as canonical question objects, for any harness to ask in its own way."""
-    _emit({"questions": image_plan.QUESTIONS})
+def _client_intake():
+    """shared-utils/client_intake/engine.py: the repo checkout, then any installed tree."""
+    home = Path.home()
+    roots = [Path(__file__).resolve().parents[2]] + [
+        home / ".openclaw" / "skills", home / ".claude" / "skills",
+        home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")]
+    for root in roots:
+        for d in (root / "shared-utils" / "client_intake", root / "client_intake"):
+            if (d / "engine.py").is_file():
+                sys.path.insert(0, str(d))
+                import engine  # noqa: E402
+                return engine
+    return None
+
+
+def cmd_questions(args: argparse.Namespace) -> int:
+    """The guided client interview: the ONE next applicable question from the shared
+    question bank (Black Friday mode), never the raw bank and never a batch. The
+    seasonal questions (promotion dates, the offer, real limitations, existing vs new
+    buyers, delivery and follow-up) and the three picture questions are all part of it,
+    selected by the bank's own conditions one at a time."""
+    eng = _client_intake()
+    if eng is None:
+        print("FAIL shared-utils/client_intake not found; the interview runs on the shared "
+              "guided intake, never a local question list", file=sys.stderr)
+        return 2
+    answers_path = Path(args.answers) if args.answers else None
+    doc = eng.load(str(answers_path), "bf") if answers_path else eng.new_doc("bf")
+    doc.setdefault("meta", {})["mode"] = "bf"
+    q = eng.next_question(doc)
+    if answers_path:
+        eng.save(doc, str(answers_path))
+    if q is None:
+        _emit({"done": True, "check": eng.check(doc)})
+    else:
+        _emit({"question": q, "progress": q.get("progress"), "estimate": q.get("estimate"),
+               "assistance_mode": q.get("assistance_mode"),
+               "source": "shared-utils/client_intake/question-bank.json"})
     return 0
 
 
@@ -179,7 +214,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="an extra design page the client opted into (downsell_2); repeat for more")
     x.set_defaults(fn=cmd_dispatch)
 
-    q = sub.add_parser("questions", help="the picture questions a client is asked, as data")
+    q = sub.add_parser("questions", help="the guided interview's ONE next question (Black Friday "
+                                         "seasonal questions and picture questions alike), as data")
+    q.add_argument("--answers", help="the shared answers file (client-intake-answers/v1); "
+                                     "the run is created on first use and resumed after that")
     q.set_defaults(fn=cmd_questions)
 
     c = sub.add_parser("check", help="run package completeness checks")
