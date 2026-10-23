@@ -21,6 +21,9 @@ WHAT IT PROVES, per distribution:
 TYPED REFUSALS (non-zero exit, never a success receipt):
   MANIFEST_MISSING      the upgrade manifest could not be produced / is empty
   DIGEST_MISMATCH       an installed file's bytes differ from the pinned source
+  UNEXPECTED_EXTRA_FILE installed tree holds a file the pinned source does not
+                        (the installer's own root `.wired-<version>` stamp is
+                        explicitly allow-listed: the installer writes it by design)
   UNPROVABLE_CHANGE     the source revision changed but no installed file did
   PRESERVATION_MISSING  a preservation artifact is absent or was not digested
   INSTALL_FAILED        the real installer returned non-zero
@@ -373,8 +376,25 @@ def assert_preservation(before, after):
                       "preservation artifact(s) changed: " + ", ".join(drift))
 
 
+def is_installer_artefact(rel):
+    """True for the installer's own version stamp, `.wired-<version>`.
+
+    Path-scoped on purpose: only the skill ROOT may carry it, so `.wired-*` nested
+    anywhere deeper is still drift. The installer writes this stamp by design on
+    every upgrade (it names the revision just installed), so its presence is
+    installer state, not a file the pinned source is missing.
+    """
+    return rel.startswith(".wired-") and "/" not in rel and len(rel) > len(".wired-")
+
+
 def verify_against_source(inst_root, src_root):
-    """Every installed file must equal the pinned source bytes, by path."""
+    """Installed bytes must equal the pinned source, BOTH directions.
+
+    Every pinned file must be present with matching bytes, and every installed
+    file the pinned source does not hold must be drift — except the installer's
+    own version stamp, which it writes by design (see is_installer_artefact).
+    Returns (pinned files verified, installer artefacts allowed).
+    """
     inst = tree_manifest(inst_root)
     src = tree_manifest(Path(src_root) / SKILL)
     if not inst:
@@ -390,7 +410,15 @@ def verify_against_source(inst_root, src_root):
     if bad:
         raise Refusal("DIGEST_MISMATCH",
                       "installed bytes differ from pinned source: " + "; ".join(bad[:5]))
-    return len(src)
+    allowed = sorted(rel for rel in inst if rel not in src
+                     and is_installer_artefact(rel))
+    extra = sorted(rel for rel in inst if rel not in src
+                   and not is_installer_artefact(rel))
+    if extra:
+        raise Refusal("UNEXPECTED_EXTRA_FILE",
+                      "installed tree holds file(s) the pinned source does not: "
+                      + ", ".join(str(Path(inst_root) / rel) for rel in extra[:5]))
+    return len(src), allowed
 
 
 # ---------------------------------------------------------------- dry run ---
@@ -628,9 +656,10 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
                                           old_rev[:12], new_rev[:12]))
 
                 # --- installed bytes must match the pinned source --------
-                verified = verify_against_source(inst, new_src)
+                verified, allowed = verify_against_source(inst, new_src)
                 check("real:installed bytes match pinned source revision",
-                      True, "%d files verified by sha256" % verified)
+                      True, "%d files verified by sha256; installer artefact(s) "
+                      "allowed: %s" % (verified, ", ".join(allowed) or "none"))
 
                 # A content install must never eat an interrupted run's resume
                 # state (QC-head 59e893d assertion, restored here on the composed
@@ -831,6 +860,48 @@ def run_selftest(out):
     except Refusal as e:
         check("selftest:empty install refused as MANIFEST_MISSING",
               e.code == "MANIFEST_MISSING", e.code)
+
+    # (f) reverse direction: a file the pinned source does not hold is drift and
+    # must be refused BY PATH. Without the reverse check this stays silently green.
+    shutil.copy2(new_root / PROBE_FILE, inst / PROBE_FILE)   # undo (b)'s tamper
+    (inst / "stray.py").write_text("drift\n", encoding="utf-8")
+    try:
+        verify_against_source(inst, new_root.parent)
+        check("selftest:unexpected extra installed file refused", False,
+              "extra file was NOT detected")
+    except Refusal as e:
+        named = str(inst / "stray.py")
+        check("selftest:unexpected extra installed file refused",
+              e.code == "UNEXPECTED_EXTRA_FILE" and named in e.detail,
+              "%s names %s" % (e.code, named))
+    (inst / "stray.py").unlink()
+
+    # (g) ...but the installer's own version stamp is NOT drift: it writes it by
+    # design, so a real upgrade must still complete with it present.
+    stamp = ".wired-v0.0.1"
+    (inst / stamp).write_text("v0.0.1\n", encoding="utf-8")
+    nested = Path("scripts") / ".wired-v0.0.1"
+    try:
+        verified, allowed = verify_against_source(inst, new_root.parent)
+        check("selftest:installer .wired stamp allowed at skill root",
+              allowed == [stamp] and verified == len(tree_manifest(new_root)),
+              "%d verified; allowed=%r" % (verified, allowed))
+    except Refusal as e:
+        check("selftest:installer .wired stamp allowed at skill root", False,
+              e.detail)
+    # the allow-list is path-scoped: a nested stamp is still drift
+    (inst / nested).write_text("v0.0.1\n", encoding="utf-8")
+    try:
+        verify_against_source(inst, new_root.parent)
+        check("selftest:nested .wired stamp still refused", False,
+              "nested stamp was NOT detected")
+    except Refusal as e:
+        check("selftest:nested .wired stamp still refused",
+              e.code == "UNEXPECTED_EXTRA_FILE"
+              and str(inst / nested) in e.detail,
+              "%s names %s" % (e.code, inst / nested))
+    (inst / nested).unlink()
+    (inst / stamp).unlink()
 
     passed, failed, total = cc.summarize_checks(RESULTS)
     doc = {"schema": "blackceo.skill75.canary.upgrade-selftest/v1",
