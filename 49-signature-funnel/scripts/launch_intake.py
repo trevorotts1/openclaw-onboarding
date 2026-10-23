@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -72,6 +73,17 @@ _MODE_FROM_CHOICE = {"i know what i want": "know", "help me choose": "help",
                      "choose a setup for me to review": "choose_for_me"}
 _THINK_FOR_ME = ("you decide", "think for me", "up to you", "whatever you think",
                  "you choose", "your call", "i don't know", "not sure", "unsure")
+# "I don't know" and equivalents are HELP REQUESTS: coaching opens, the question stays
+# open, and the phrase is never recorded as a substantive answer the flow skips past.
+_HELP_ONLY = {"help", "help me", "not sure", "not sure yet", "im not sure", "i am not sure",
+              "i dont know", "i don't know", "dont know", "don't know", "idk", "unsure",
+              "i have no idea", "no idea", "no clue", "?"}
+_HELP_PHRASES = re.compile(r"\b(?:not sure|no idea|no clue|don'?t know|dont know|idk|unsure|help me|need help)\b")
+_MAX_HELP_WORDS = 6  # longer replies are real answers that merely mention a phrase
+# a delegation ("you decide", "recommend") is a real request: the question's own
+# recommendation path answers it as a proposal, never silently
+_DELEGATE = ("you decide", "think for me", "up to you", "whatever you think",
+             "you choose", "your call", "recommend", "suggest", "you pick")
 
 
 class IntakeError(ValueError):
@@ -132,15 +144,19 @@ def new_session(*, tenant_id: str, location_id: str, launch_id: str,
 
 
 def _client_intake():
-    """shared-utils/client_intake/engine.py: the repo checkout first, then the installed skills tree."""
+    """shared-utils/client_intake/engine.py: the repo checkout first, then any installed
+    skills tree (OpenClaw, Claude Code, claude-nine, container), nested or flat."""
     here = Path(__file__).resolve()
-    for d in [p / "shared-utils" / "client_intake" for p in here.parents] + [
-            Path.home() / ".openclaw" / "skills" / "shared-utils" / "client_intake",
-            Path("/data/.openclaw/skills/shared-utils/client_intake")]:
-        if (d / "engine.py").is_file():
-            sys.path.insert(0, str(d))
-            import engine  # noqa: E402
-            return engine
+    home = Path.home()
+    roots = [p for p in here.parents] + [
+        home / ".openclaw" / "skills", home / ".claude" / "skills",
+        home / ".claude-nine" / "skills", Path("/data/.openclaw/skills")]
+    for root in roots:
+        for d in (root / "shared-utils" / "client_intake", root / "client_intake"):
+            if (d / "engine.py").is_file():
+                sys.path.insert(0, str(d))
+                import engine  # noqa: E402
+                return engine
     raise IntakeError("shared-utils/client_intake not found; install or update the onboarding skills")
 
 
@@ -264,9 +280,10 @@ def _condition_met(session: Dict[str, Any], q: Dict[str, Any]) -> bool:
     if cond == "extras.upsell_1 == true":
         ex = _get(session, "extras")
         return bool(ex and ex["value"].get("upsell_1"))
-    if cond == "after:b2_price":
+    if cond in ("after:b2_price", "price_known_or_free"):
         # Asked once the price question has been TOUCHED, even when the
         # price itself is still unknown (billing shape is a separate fact).
+        # The bank names this condition "price_known_or_free"; both names are wired.
         return _get(session, "offers.main.price") is not None
     if cond == "plan_ready":
         return session.get("plan") is not None
@@ -283,11 +300,26 @@ def next_question(session: Dict[str, Any],
     """The ONE next question, or None when the interview has all it needs.
     Never returns a question whose targets are already answered (supplied
     facts are not asked twice) or whose condition fails (disabled slots are
-    skipped)."""
+    skipped). The question object travels whole: help, examples, default and
+    every per-option explanation reach the client surface untouched."""
     if session["state"] in ("cancelled", "approved", "building"):
         return None
     bank = bank if bank is not None else load_question_bank()
     asked_ids = set(session.get("asked_ids", []))
+    applicable_now = [q for q in bank if q["id"] != "e1_plan_review"
+                      and _condition_met(session, q)]
+    remaining = [q for q in applicable_now if q["id"] not in asked_ids
+                 and not _question_targets_done(session, q)]
+    total = len(applicable_now)
+    done = total - len(remaining)
+    was = session.get("estimate_of")
+    note = (f"about {total} short questions now (was {was}; your answers opened or "
+            f"closed follow-up questions)" if was is not None and was != total else None)
+    session["estimate_of"] = total
+    progress = {"answered": done, "of": total,
+                "percent": (round(100 * done / total) if total else 100)}
+    estimate = {"questions": total, "note": note,
+                "text": f"about {total} short questions, depending on what we already know"}
     for q in bank:
         if q["id"] == "e1_plan_review":
             continue  # asked only via present_plan()
@@ -298,7 +330,11 @@ def next_question(session: Dict[str, Any],
         if _question_targets_done(session, q):
             continue
         return {"id": q["id"], "phase": q["phase"], "prompt": q["prompt"],
-                "choices": q.get("choices", []), "reason": q.get("reason", "")}
+                "choices": q.get("choices", []), "reason": q.get("reason", ""),
+                "help": q.get("help"), "examples": q.get("examples", []),
+                "example": q.get("example"), "default": q.get("default"),
+                "safe_default": q.get("safe_default"),
+                "progress": progress, "estimate": estimate}
     return None
 
 
@@ -311,6 +347,48 @@ def _match_choice(raw: str, choices: List[str]) -> Optional[str]:
         if n.startswith(_norm(c)) or _norm(c) in n:
             return c
     return None
+
+
+def _help_request(q: Dict[str, Any], raw: Any) -> bool:
+    """'I don't know' and equivalents. A listed choice is a real choice — except a choice
+    that IS a help phrase ("Not sure yet") — and a delegation ("you decide", "recommend")
+    is a real request for a proposal, answered by the question's own recommendation path."""
+    if not isinstance(raw, str):
+        return False
+    c = _match_choice(raw, q.get("choices", []) or [])
+    if c is not None:
+        return _norm(c).replace("'", "") in _HELP_ONLY
+    n = _norm(raw).replace("'", "")
+    if any(p in n for p in _DELEGATE):
+        return False
+    return (raw.strip() in ("?", "??", "???") or n in _HELP_ONLY
+            or (len(n.split()) <= _MAX_HELP_WORDS and _HELP_PHRASES.search(n) is not None))
+
+
+def _answer_help(session: Dict[str, Any], q: Dict[str, Any], raw: str,
+                 ref: str) -> Dict[str, Any]:
+    """A help request opens coaching and keeps the question open. Nothing is recorded as
+    an answer: the phrase is never an offer, a price or a promise the plan could read."""
+    if any(p in _norm(raw) for p in _THINK_FOR_ME) and session.get("mode") == "know":
+        session["mode"] = "help"
+    for t in q.get("targets", []):
+        if not _answered(session, t):
+            _set(session, t, None, "unknown", q["id"], ref)
+    counts = session.setdefault("help_counts", {})
+    counts[q["id"]] = counts.get(q["id"], 0) + 1
+    session["history"].append({"at": _now(), "event": "help_requested",
+                               "question_id": q["id"]})
+    _persist(session)
+    help_block = q.get("help") if isinstance(q.get("help"), dict) else {}
+    examples = q.get("examples") or help_block.get("examples", [])
+    return {"ok": False, "action": "help", "id": q["id"], "attempt": counts[q["id"]],
+            "explain": q.get("reason", ""), "examples": examples,
+            "coaching": ["show me an example", "help me answer",
+                         "recommend using what I know"],
+            "message": "No problem, I will help with this one. " + (q.get("reason") or "") +
+                       " Tell me what you do know, say 'show me an example', or say "
+                       "'recommend' and I will suggest an answer from what you have "
+                       "told me, marked for your review."}
 
 
 def answer(session: Dict[str, Any], question_id: str, raw: str,
@@ -339,6 +417,10 @@ def answer(session: Dict[str, Any], question_id: str, raw: str,
                  question_id, source_message_ref)
         else:
             _set(session, field_key, fv, "provided", question_id, source_message_ref)
+
+    if not value.get("fields") and _help_request(q, raw):
+        # coaching, not an answer: the question stays open and is asked again
+        return _answer_help(session, q, raw, source_message_ref)
 
     session.setdefault("asked_ids", []).append(question_id)
     handler = _HANDLERS.get(question_id)

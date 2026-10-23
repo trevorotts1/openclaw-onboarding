@@ -42,18 +42,37 @@ class Detect(unittest.TestCase):
 class Questions(unittest.TestCase):
     def test_structured_is_valid_tool_shape(self):
         calls = rq.structured(QS)
-        self.assertEqual([c["ids"] for c in calls],
-                         [["brand_primary_color", "brand_fonts"], ["offer_price"], ["design_style"]])
+        # one question per call, never a batch
+        self.assertEqual([c["ids"] for c in calls], [[q["id"]] for q in QS])
         for c in calls:
             for q in c["questions"]:
                 self.assertTrue(2 <= len(q["options"]) <= 4, q)
                 self.assertLessEqual(len(q["header"]), 12)
                 self.assertEqual(q["options"][-1]["label"], rq.HELP_LABEL)
-                self.assertTrue(all(o["description"] for o in q["options"]))
+                # per-option explanations are the bank's own; a missing one stays missing
+                self.assertTrue(all("Use this one" not in o["description"] for o in q["options"]))
 
-    def test_more_than_four_questions_in_a_group_are_split(self):
+    def test_every_question_gets_its_own_call(self):
         many = [{"id": f"q{i}", "text": "t", "group": "g"} for i in range(9)]
-        self.assertEqual([len(c["questions"]) for c in rq.structured(many)], [4, 4, 1])
+        self.assertEqual([len(c["questions"]) for c in rq.structured(many)], [1] * 9)
+
+    def test_per_option_explanations_survive_to_the_surface(self):
+        q = dict(QS[0], choices=[{"label": "Navy blue", "value": "#1F3A5F", "description": "from your logo"},
+                                 {"label": "Gold", "value": "#C9A227", "example": "warm and classic"}])
+        opts = rq.structured([q])[0]["questions"][0]["options"]
+        self.assertEqual(opts[0]["description"], "from your logo")
+        self.assertEqual(opts[1]["description"], "warm and classic")  # example also carries an explanation
+        n = rq.normalize({"id": "x", "text": "t", "help": {"explain": "e", "examples": ["ex1"]},
+                          "default": {"value": "V", "reason": "R", "flag": "to confirm"}})
+        self.assertEqual(n["examples"], ["ex1"])
+        self.assertEqual(n["default"]["value"], "V")
+
+    def test_conditions_hold_a_question_back(self):
+        qs = [dict(QS[2], condition="extra == yes"), dict(QS[0], condition="always")]
+        left = [q["id"] for q in rq.pending(qs, {"answers": {"extra": {"value": "no", "status": "provided"}}})]
+        self.assertEqual(left, ["brand_primary_color"])
+        left = [q["id"] for q in rq.pending(qs, {"answers": {"extra": {"value": "yes", "status": "provided"}}})]
+        self.assertEqual(left, ["offer_price", "brand_primary_color"])  # bank order
 
     def test_three_choice_cap_reported_not_silent(self):
         n = rq.normalize(QS[3])
