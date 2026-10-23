@@ -197,6 +197,16 @@ def test_assemble_gate_wired():
                    {"src": "lip2.mp4", "dur": 2.5, "lids": ["L2"]},
                    {"src": "lip3.mp4", "dur": 1.5, "lids": ["L3"]},
                    {"src": "broll.mp4", "dur": 3.0}])
+        # The positive assembly fixture must carry real synthetic evidence;
+        # E5's split/trim/unknown-line negative cases above remain unmocked.
+        from test_lipsync_evidence import attach_evidence
+        for seg in tl2["segments"]:
+            seg.update(transition="none", beat_cut=True)
+            with open(os.path.join(tmp, seg["src"]), "wb") as fh:
+                fh.write(("synthetic-e5-media:" + seg["src"]).encode())
+            if not seg.get("lip_sync_line_ids"):
+                seg["faces_on_screen"] = []
+        attach_evidence(tl2, tmp)
         path2 = os.path.join(tmp, "timeline2.json")
         with open(path2, "w", encoding="utf-8") as fh:
             json.dump(tl2, fh)

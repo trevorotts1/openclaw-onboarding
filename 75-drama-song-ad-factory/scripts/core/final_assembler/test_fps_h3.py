@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+from unittest.mock import patch
 import tempfile
 import unittest
 
@@ -91,7 +92,10 @@ class TestSegmentDupCheck(unittest.TestCase):
 
 @unittest.skipUnless(HAVE_FFMPEG, "ffmpeg not installed")
 class TestRealRender(unittest.TestCase):
-    def test_30fps_master_kling_keeps_frames_h3_interpolated(self):
+    # Isolate FPS rendering from separately tested lip-sync evidence joins.
+    @patch("lipsync_evidence.check_plan", return_value={"pass": True, "evidence": {}})
+    @patch.object(A, "lipsync_gate", return_value=None)
+    def test_30fps_master_kling_keeps_frames_h3_interpolated(self, _coverage, _export):
         d = tempfile.mkdtemp()
         try:
             for name, rate in (("k.mp4", 30), ("h.mp4", 24)):

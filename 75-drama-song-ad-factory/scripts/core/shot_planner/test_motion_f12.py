@@ -24,6 +24,7 @@ import json
 import os
 import sys
 import tempfile
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -220,6 +221,10 @@ def test_qc_record_verdicts():
           rec3["verdict"] == "FAIL", json.dumps(rec3)[:140])
 
 
+# F12 owns motion evidence. Lip-sync planning/provenance is exercised by
+# test_lipsync_evidence; isolate it here so this fixture reaches the motion gate.
+@mock.patch("final_assembler.assembler.lipsync_gate", new=lambda *_a, **_k: None)
+@mock.patch("lipsync_evidence.check_plan", new=lambda *_a, **_k: {"pass": True, "evidence": {}})
 def test_assembler_receipt_and_gate():
     """assemble() dry-run: per-clip motion_score rides the receipt; a
     flagged clip is refused before render (CLIP_LOW_MOTION).

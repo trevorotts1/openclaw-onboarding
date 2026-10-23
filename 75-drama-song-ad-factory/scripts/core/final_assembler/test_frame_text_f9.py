@@ -23,6 +23,7 @@ Run: python3 core/final_assembler/test_frame_text_f9.py
 import json
 import os
 import sys
+from unittest.mock import patch
 import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -84,7 +85,10 @@ def test_done_when_every_clip_has_row():
         check("row shows the mode", r["mode"] == "stub", r)
         check("stub finds no text", r["text_frames"] == [], r)
 
-def test_via_assemble_dry_run(tmp):
+# Frame-text row coverage is independent of the lip-sync evidence join.
+@patch("lipsync_evidence.check_plan", return_value={"pass": True, "evidence": {}})
+@patch.object(A, "lipsync_gate", return_value=None)
+def test_via_assemble_dry_run(tmp, _coverage, _export):
     """The receipt a real run emits carries the rows per lip-sync clip."""
     clip = os.path.join(tmp, "lip.mp4")
     open(clip, "wb").close()
@@ -139,7 +143,10 @@ def test_stub_flag_blocks_before_spend(tmp):
     # No ffmpeg anywhere: prove no binary was needed for the stub path.
     check("no ffmpeg required on the stub path", True)
 
-def test_block_rides_assemble(tmp):
+# Isolate the frame-text refusal from separately tested evidence joins.
+@patch("lipsync_evidence.check_plan", return_value={"pass": True, "evidence": {}})
+@patch.object(A, "lipsync_gate", return_value=None)
+def test_block_rides_assemble(tmp, _coverage, _export):
     """assemble() blocks with GARBLED_TEXT_FRAME before any render spend."""
     # The SAME module copy this file bound at the top: a body-time re-import
     # can hit a second copy (the suite's conftest drops skill modules as

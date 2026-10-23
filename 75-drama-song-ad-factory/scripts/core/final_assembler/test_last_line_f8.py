@@ -18,6 +18,7 @@ Run: python3 core/final_assembler/test_last_line_f8.py
 """
 import os
 import sys
+from unittest.mock import patch
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -135,7 +136,10 @@ def _write(tl):
     return p
 
 
-def _assemble_receipt(tl_path, output_name):
+# Isolate last-line timing from separately tested lip-sync evidence joins.
+@patch("lipsync_evidence.check_plan", return_value={"pass": True, "evidence": {}})
+@patch.object(A, "lipsync_gate", return_value=None)
+def _assemble_receipt(tl_path, output_name, _coverage, _export):
     out = os.path.join(os.path.dirname(tl_path), output_name)
     return A.assemble(tl_path, out, dry_run=True), out
 
