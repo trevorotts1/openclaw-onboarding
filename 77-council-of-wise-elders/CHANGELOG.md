@@ -1,5 +1,18 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.52: Council: the packaged executable ships, and no installer ever says ready from source presence alone (W77R)
+
+In plain English: the .skill archive and the 999 distribution now carry the built `runtime/dist/blackceo-council.mjs` (byte-reproducible: sha256 `b10bb16b740c2a20fa66a49f66c75361df35112754c533556b3e89093626186b`, 1,165,675 bytes), and every install/verify path proves the ACTUAL entry point - exists, byte hash matches the manifest's recorded `runtime_entry`, and it loads (`node --check` plus a real no-spend `--help` run) - before anything may report ready. A missing, stale, or broken build fails with the exact rebuild command (`npm ci && npm run build`), never a silent reuse of an old bundle, never "ready" from SKILL.md presence or source match.
+
+- `scripts/build-bundles.mjs` now builds the runtime FIRST (hard visible stop on failure) and ships `runtime/dist` inside the archive and the extracted-distribution manifest; the manifest records `runtime_entry {path, sha256, bytes}` in both manifests. The tree aggregate stays source-only per the recorded hash method (`implementation/skill-77/compatibility/negotiate.mjs` now implements that method, so recorded aggregates reproduce on built trees).
+- `scripts/entry-point-gate.mjs` (new, shared): the gate every verifier runs after its integrity checks - missing entry, unrecorded entry, hash mismatch, or unloadable code each fails with the action that fixes it. `scripts/tests/entry-point-gate.test.mjs` covers pass / stale / missing / unrecorded / unloadable (5/5).
+- `scripts/install-runtime.mjs`: `verifyRelease` now hash-checks AND load-checks the real entry (new exported `verifyEntryLoad`), threaded through all five call sites - fresh install, idempotent NOOP, pre-activation, rollback, `--verify-release`. Activation happens only after hash+load pass, so a known-broken bundle is never kept or restored as healthy; every failure path preserves the previous release and prints `INSTALL-RUNTIME: DEGRADED install incomplete`.
+- `wire.sh`: the usable-release gate additionally requires `dist/blackceo-council.mjs` (the file the shim execs), and a post-build gate verifies that actual entry - receipt sha256 plus `node --check` - exiting `NOT_READY RUNTIME_BUILD_FAILED` with the `.wired` sentinel withheld on missing/mismatched/unloadable entry.
+- 999 distribution (`999-setup unit/W77R-A-999`, shipped separately): `scripts/vendor-council-bundle.mjs` requires + hash-verifies the canonical `runtime_entry`, copies `runtime/dist` byte-for-byte and records it in the distribution manifest and vendoring record; `node_modules` is no longer a dirtiness signal. `scripts/realign-council-vendor-record.mjs` treats the built runtime as a recorded build artifact, never as divergence.
+
+- Checks on this branch (no-spend, focused): `node scripts/verify-bundles.mjs` VERIFY: PASS with `entry point verified`; entry-point-gate suite 5/5; `scripts/tests/install-runtime.test.mjs` 15/15; fresh scratch-prefix install PASS through activation; corrupted entry fails verification without activating. Repository markers rolled to 1.0.52. Accepted fixes R1/R2/W73/custom-port untouched by this entry.
+
+
 ## v1.0.51: Council: nine seat emblems and a cover emblem land as assets/seats art, and the branch folds in upstream main (W74-ASSETS)
 
 In plain English: every seat now has its own painted emblem - the council cover gets one too - so the rendered artifact page (W74-B's `render-counsel-artifact.mjs`, which defaults its asset source to `assets/seats/cover.png`) has the art it points at, in-repo.
