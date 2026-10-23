@@ -1042,6 +1042,15 @@ def real_gate(spec, ctx):
     if spec["id"] == "A01":
         nine = ctx.get("nine_state") or {}
         if vec["revision_999"] and nine.get("head_sha") != vec["revision_999"]:
+            if not nine.get("head_sha"):
+                if not ctx.get("nine_root"):
+                    return ("BLOCKED_VECTOR",
+                            "999 root not supplied; pass --nine-root (or set "
+                            "NINE_ROOT) so the A01 vector comparison can run")
+                return ("BLOCKED_VECTOR",
+                        "999 root %s unreadable; cannot compare its head to "
+                        "vector 999 revision %s"
+                        % (ctx["nine_root"], vec["revision_999"]))
             return ("BLOCKED_VECTOR",
                     "999 head %s != vector 999 revision %s"
                     % (nine.get("head_sha"), vec["revision_999"]))
@@ -1557,6 +1566,21 @@ def self_test():
         g_a01_ok = real_gate(a01, ctx_a01_ok)
         check("A01 passes the 999 revision check when the heads agree",
               g_a01_ok is None, "got %r" % (g_a01_ok,))
+        ctx_a01_none = gate_ctx(g_head, g_head)
+        ctx_a01_none["nine_root"] = None
+        ctx_a01_none["nine_state"] = None
+        g_a01_none = real_gate(a01, ctx_a01_none)
+        check("A01 without a 999 root names the missing flag, never head None",
+              g_a01_none is not None
+              and g_a01_none[0] == "BLOCKED_VECTOR"
+              and "--nine-root" in g_a01_none[1]
+              and "head None" not in g_a01_none[1],
+              "got %r" % (g_a01_none,))
+        ctx_a01_bad["nine_root"] = "/somewhere/999-setup"
+        g_a01_bad2 = real_gate(a01, ctx_a01_bad)
+        check("supplied-but-mismatched 999 root still reports the head diff",
+              g_a01_bad2 is not None and "999 head" in g_a01_bad2[1],
+              "got %r" % (g_a01_bad2,))
 
         print("self-test: %d/%d checks passed"
               % (sum(checks), len(checks)))
