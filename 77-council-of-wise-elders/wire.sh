@@ -300,8 +300,24 @@ REL_ID="$(jget "$P/active.json" releaseId)"
 REL_PATH="$(jget "$P/active.json" releasePath)"
 NODE_EXE="$(jget "$P/active.json" nodeExecutable)"
 DATA_DIR="$(jget "$P/active.json" dataDir)"
-if [ -z "$REL_ID" ] || [ ! -f "$REL_PATH/scripts/service-launch.mjs" ] || [ ! -f "$REL_PATH/node_modules/tsx/dist/cli.mjs" ] || [ -z "$NODE_EXE" ]; then
-  say "NOT_READY RUNTIME_BUILD_FAILED active.json does not describe a usable release (id=$REL_ID path=$REL_PATH)"
+if [ -z "$REL_ID" ] || [ ! -f "$REL_PATH/scripts/service-launch.mjs" ] || [ ! -f "$REL_PATH/node_modules/tsx/dist/cli.mjs" ] || [ ! -f "$REL_PATH/dist/blackceo-council.mjs" ] || [ -z "$NODE_EXE" ]; then
+  say "NOT_READY RUNTIME_BUILD_FAILED active.json does not describe a usable release (id=$REL_ID path=$REL_PATH; the release must carry dist/blackceo-council.mjs)"
+  exit 1
+fi
+# Installer truth: verify the ACTUAL entry point the shim execs -- byte hash
+# against the release's artifact receipt, plus a parse-level load check.
+# Never 'ready' from SKILL.md presence or source match alone: a missing or
+# unloadable entry is a visible NOT_READY with an actionable error, and an
+# old bundle is never silently treated as the installed one.
+ENTRY="$REL_PATH/dist/blackceo-council.mjs"
+EXP_SHA="$("$NODE" -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const e=(r.entries||[]).find(x=>x.path===process.argv[2]);if(e)process.stdout.write(e.sha256)}catch(e){}' "$P/receipts/$REL_ID.artifact.json" "dist/blackceo-council.mjs" 2>/dev/null)"
+GOT_SHA="$(sha_file "$ENTRY")"
+if [ -z "$EXP_SHA" ] || [ "$EXP_SHA" != "$GOT_SHA" ]; then
+  say "NOT_READY RUNTIME_BUILD_FAILED entry point hash mismatch for $ENTRY (receipt ${EXP_SHA:-missing} != installed ${GOT_SHA:-missing}); previous files preserved, nothing switched"
+  exit 1
+fi
+if ! "$NODE_EXE" --check "$ENTRY" >/dev/null 2>&1; then
+  say "NOT_READY RUNTIME_BUILD_FAILED entry point $ENTRY does not load (node --check failed); previous files preserved, nothing switched"
   exit 1
 fi
 CHANGED=0
