@@ -1,3 +1,5 @@
+## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
+
 ## [v27.1.64]  -  2026-10-22  -  W10 canary: A12 runtime-proof harness and the A-row execution runner
 
 - In plain English: two W10 canary harnesses land. A12 compares an installed Skill 75 tree against its recorded manifest and reports a per-side clean or mismatch verdict. The A-row runner executes the A01-A09 and A12 acceptance rows with an exit-code and assertion gate, so a row that prints PASS while exiting non-zero is classified FAIL rather than accepted.

@@ -2,11 +2,9 @@
 """RL1 tests (skill 75 v2.9.73): reliability fixes proven by the Voyage To
 Virtue run (spec ~/scratch/dsf-stall-fix/RELIABILITY-SPEC.md, L1).
 
-  1. LIP-SYNC GATE CONDITIONAL — a plan that declares zero lip_sync
-     markers and zero speaker lines records the check as NOT_APPLICABLE
-     (LIPSYNC_NOT_IN_PLAN) with the coverage numbers and advances; a plan
-     that declares lip-sync lines keeps the hard gate and still refuses
-     when coverage is short.
+  1. MISSING LIP-SYNC EVIDENCE — zero markers and zero speaker lines
+     fails closed with coverage evidence. Declared short coverage still fails.
+     Numeric policy changes are outside this regression test.
   2. HOLD CLIP TO SLOT — a clip SHORTER than its planned slot is held
      (tpad clone) to the slot; the rendered master duration equals the
      planned total within one frame (live ffmpeg render, no spend).
@@ -25,6 +23,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -55,27 +54,42 @@ def _faceless_plan(total_s=65.0):
                          for i in range(13)]}
 
 
-def test_faceless_plan_is_not_applicable():
-    """Live proof (Voyage To Virtue): 13 shots, zero markers -> the OLD
-    gate refused LIPSYNC_COVERAGE_SHORT+LIPSYNC_LINES_TOO_FEW. The NEW
-    gate records NOT_APPLICABLE with the numbers and advances."""
+def test_faceless_plan_fails_closed():
+    """Deleting both metadata sources cannot turn a failure into exemption."""
     plan = _faceless_plan()
     rec = A.lipsync_gate(plan)
-    check("faceless plan does NOT block",
-          not (rec and rec.get("outcome") == "error"), rec)
-    check("faceless verdict is NOT_APPLICABLE",
-          rec and rec.get("verdict") == A.LIPSYNC_NOT_APPLICABLE,
-          json.dumps(rec) if rec else "None")
-    check("reason code is LIPSYNC_NOT_IN_PLAN",
-          rec and rec.get("reason_code") == A.LIPSYNC_NOT_IN_PLAN,
-          json.dumps(rec) if rec else "None")
-    ev = (rec or {}).get("evidence") or {}
-    check("the record carries the coverage numbers",
+    check("missing metadata blocks", rec and rec.get("outcome") == "error", rec)
+    check("missing metadata names the evidence failure",
+          rec.get("reason_code") == "LIPSYNC_EVIDENCE_MISSING", rec)
+    ev = rec.get("evidence") or {}
+    check("failure retains the coverage numbers",
           ev.get("ad_length_s") == 65.0 and ev.get("lipsync_lines_count") == 0
-          and ev.get("lipsync_total_s") == 0,
-          json.dumps(ev))
-    check("the record is explicit next-action copy, never silent",
-          bool(rec.get("next_action")))
+          and ev.get("lipsync_total_s") == 0, ev)
+    check("failure states the required recovery", bool(rec.get("next_action")))
+
+
+def test_partial_metadata_loss_fails_closed():
+    """A marker alone, a missing line ID or an unknown line is not evidence."""
+    plan = _faceless_plan(30)
+    plan["segments"] = [dict(s, lip_sync=True, lip_sync_line_ids=["L1"])
+                        for s in plan["segments"][:6]]
+    for label, lines in (("speaker metadata removed", []),
+                         ("speaker field removed", [{"line_id": "L1"}]),
+                         ("line identity changed", [{"line_id": "other", "speaker": "lead"}])):
+        plan["lines"] = lines
+        rec = A.lipsync_gate(plan)
+        check(label + " blocks", rec and rec.get("reason_code") ==
+              "LIPSYNC_EVIDENCE_MISSING", rec)
+    plan["lines"] = [{"line_id": "L1", "speaker": "lead"}]
+    for seg in plan["segments"]:
+        seg.pop("lip_sync_line_ids")
+    rec = A.lipsync_gate(plan)
+    check("boolean markers alone block", rec and rec.get("reason_code") ==
+          "LIPSYNC_EVIDENCE_MISSING", rec)
+    # An arbitrary flag is not an approval bound to this plan.
+    plan["lipsync_exception"] = {"approved": True}
+    rec = A.lipsync_gate(plan)
+    check("unbound exception flag cannot bypass", rec and rec.get("outcome") == "error", rec)
 
 
 def test_declared_lines_keep_the_hard_gate():
@@ -106,8 +120,8 @@ def _fixture(tmp, clip_s=2.0, slot_s=3.34, speakers=None):
     `speakers` is given, the timeline declares speaker lines with NO
     lip_sync markers (short coverage -> the unchanged hard gate)."""
     def ff(*a):
-        subprocess.run(["ffmpeg", "-v", "error", "-y"] + list(a),
-                       check=True, capture_output=True)
+        A._LG.run_ffmpeg(["ffmpeg", "-v", "error", "-y"] + list(a),
+                         "synthetic-rl1-fixture", check=True, capture_output=True)
     for i in range(3):
         ff("-f", "lavfi", "-i",
            "testsrc2=size=320x240:rate=30:duration=%g" % clip_s,
@@ -134,6 +148,40 @@ def _fixture(tmp, clip_s=2.0, slot_s=3.34, speakers=None):
     return path, real
 
 
+def test_hold_command_preserved_offline():
+    """No render required: the same command still pads a short ordinary clip."""
+    plan = _faceless_plan(10)
+    plan["segments"] = [dict(plan["segments"][0], source_dur=2.0, hold=True)]
+    argv = A.build_argv(plan, "synthetic-output.mp4")
+    command = " ".join(argv)
+    check("hold-to-slot keeps clone padding", "tpad=stop_mode=clone:stop=-1" in command)
+    check("hold-to-slot trims to the requested slot", "trim=duration=10.000000" in command)
+
+
+def test_missing_metadata_writes_receipt_offline(tmp_root):
+    """Offline assembly refusal writes evidence and never reaches rendering."""
+    tmp = tempfile.mkdtemp(prefix="w75-missing-evidence-", dir=tmp_root)
+    src, timeline, output = (os.path.join(tmp, n) for n in
+                             ("synthetic.mp4", "timeline.json", "out.mp4"))
+    with open(src, "wb") as f:
+        f.write(b"synthetic media: probe is stubbed, render must not run")
+    with open(timeline, "w", encoding="utf-8") as f:
+        json.dump({"schema_version": A.TIMELINE_SCHEMA, "fps": FPS,
+                   "width": 320, "height": 240, "song_path": None,
+                   "segments": [{"src": src, "dur": 5,
+                                 "motion_score": {"score": 0.5}}]}, f)
+    with mock.patch.object(A, "probe_duration", return_value=5), \
+            mock.patch.object(A, "_run") as render:
+        rec = A.assemble(timeline, output)
+    check("metadata-free assembly refuses offline", rec["outcome"] == "error"
+          and rec["reason_code"] == "LIPSYNC_EVIDENCE_MISSING", rec)
+    check("metadata-free assembly never calls renderer", not render.called)
+    with open(output + ".receipt.json", encoding="utf-8") as f:
+        saved = json.load(f)
+    check("offline failure receipt retains exact evidence", saved == rec)
+    check("offline refusal creates no master", not os.path.exists(output))
+
+
 def test_short_clip_held_to_slot(tmp_root):
     """A short clip in a longer slot renders the PLANNED total within one
     frame (live render; BEFORE the fix the file was trimmed to EOF)."""
@@ -150,20 +198,24 @@ def test_short_clip_held_to_slot(tmp_root):
               for s in proc["segments"]),
           "real=%s slots=%s" % (real, [s["snapped_dur"]
                                        for s in proc["segments"]]))
-    rec = A.assemble(tl_path, os.path.join(tmp, "out.mp4"))
-    check("hold-to-slot render assembles",
-          rec["outcome"] == "ok", rec.get("reason_code"))
-    vdur = (rec.get("evidence") or {}).get("output_dur")
+    # This is a renderer unit test, not a lip-sync approval fixture. Exercise
+    # the hold-to-slot command directly; production assembly now requires the
+    # approved storyboard and generated-media identity chain.
+    for seg in proc["segments"]:
+        seg["src"] = os.path.join(tmp, seg["src"])
+        seg["source_dur"] = real
+        seg["hold"] = True
+    output = os.path.join(tmp, "out.mp4")
+    argv = A.build_argv(proc, output)
+    check("short clips retain deliberate hold instructions",
+          "tpad=stop_mode=clone" in " ".join(argv))
+    rendered = A._run(argv, timeout=120)
+    check("hold-to-slot command renders", rendered.returncode == 0,
+          rendered.stderr[-300:])
+    vdur = A.probe_duration(output) if rendered.returncode == 0 else None
     check("rendered == planned within one frame",
           vdur is not None and abs(vdur - planned) <= 1.0 / FPS + 1e-3,
           "planned=%.4f output=%r" % (planned, vdur))
-    # every clip was held (its hold marker rides the post-render report)
-    held = [r for r in rec["evidence"]["segment_dups"] if r["hold"]]
-    check("the short clip is marked and passed as a deliberate hold",
-          len(held) == 3 and all(r["pass"] for r in held),
-          json.dumps(rec["evidence"]["segment_dups"]))
-    check("rendered file exists beside its receipt",
-          os.path.isfile(os.path.join(tmp, "out.mp4.receipt.json")))
 
 
 def test_no_lane_size_warnings(tmp_root):
@@ -228,7 +280,8 @@ def test_error_receipt_beside_output(tmp_root):
 
 def test_assembly_is_headless(tmp_root):
     """RL1 item 4: assemble drivable with no prompt/no browser — the CLI
-    main() on a real render returns without stdin and writes the receipt."""
+    main() refuses a metadata-free timeline without stdin and writes the
+    failure receipt; it must not render that timeline."""
     tmp = tempfile.mkdtemp(prefix="w75-RL1-head-", dir=tmp_root)
     tl_path, _real = _fixture(tmp)
     out = os.path.join(tmp, "master.mp4")
@@ -236,8 +289,11 @@ def test_assembly_is_headless(tmp_root):
     proc = subprocess.run(argv, capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=300)
     rec = json.loads(proc.stdout)
-    check("headless CLI assembles", rec["outcome"] == "ok",
+    check("headless CLI refuses missing lip-sync evidence",
+          rec["outcome"] == "error"
+          and rec["reason_code"] == "LIPSYNC_EVIDENCE_MISSING",
           rec.get("reason_code"))
+    check("headless refusal never renders a master", not os.path.exists(out))
     check("headless CLI wrote the receipt beside the output",
           os.path.isfile(out + ".receipt.json"))
 
@@ -245,8 +301,11 @@ def test_assembly_is_headless(tmp_root):
 def main():
     tmp_root = tempfile.mkdtemp(prefix="/tmp/w75-RL1-tests-")
     try:
-        test_faceless_plan_is_not_applicable()
+        test_faceless_plan_fails_closed()
+        test_partial_metadata_loss_fails_closed()
         test_declared_lines_keep_the_hard_gate()
+        test_hold_command_preserved_offline()
+        test_missing_metadata_writes_receipt_offline(tmp_root)
         test_short_clip_held_to_slot(tmp_root)
         test_no_lane_size_warnings(tmp_root)
         test_error_receipt_beside_output(tmp_root)
