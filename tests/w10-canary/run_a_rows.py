@@ -732,15 +732,20 @@ def make_env(step):
     return env
 
 
-def run_step(step, home, tmpdir, timeout, label=None):
+def run_step(step, home, tmpdir, timeout, label=None, logdir=None):
     step.env = dict(step.env)
     step.env["_HOME"] = home
     step.env["_TMPDIR"] = tmpdir
     env = make_env(step)
     started = time.time()
     label = label or "step-%d" % int(started * 1000)
-    out_log = Path(tmpdir) / ("%s.out.log" % label)
-    err_log = Path(tmpdir) / ("%s.err.log" % label)
+    log_dir = Path(logdir) if logdir else Path(tmpdir)
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        log_dir = Path(tmpdir)
+    out_log = log_dir / ("%s.out.log" % label)
+    err_log = log_dir / ("%s.err.log" % label)
     rec = {"index": None, "command": shlex.join(step.argv), "argv": step.argv,
            "cwd": step.cwd, "note": step.note,
            "env": {"HOME": home, "TMPDIR": tmpdir, "OPENCLAW_HOME": "<unset>",
@@ -995,7 +1000,8 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
         blocked = None
         for i, step in enumerate(steps, 1):
             r = run_step(step, homes, tmps, timeout,
-                         label="%s-%d" % (spec["id"], i))
+                         label="%s-%d" % (spec["id"], i),
+                         logdir=row_artifacts)
             r["index"] = i
             records.append(r)
             step_failed = (r["classification"] is not None
