@@ -303,12 +303,25 @@ def _affine_residual(a, b, w, h, dx, dy):
     rows = [res[i:i + iw] for i in range(0, n, iw)]
     bx = min(int(math.floor(abs(dx))) + 1, w // 4)
     by = min(int(math.floor(abs(dy))) + 1, h // 4)
+    # Every sample reads the two cells at (x-dx, y-dy) and their +1
+    # neighbours, so floor(coord) must land in 0..size-2. Clamp the window
+    # to that region: an unclamped negative y0 makes i = y0*w + x0 resolve
+    # to the far end of the flat grid, silently reading the wrong pixels.
+    x_lo = max(bx, int(math.ceil(dx)))
+    x_hi = min(w - bx - 1, w - 2 + int(math.ceil(dx)))
+    y_lo = max(by, int(math.ceil(dy)))
+    y_hi = min(h - by - 1, h - 2 + int(math.ceil(dy)))
+    if x_lo > x_hi or y_lo > y_hi:
+        raise MotionScoreError(
+            CLIP_MOTION_UNMEASURABLE,
+            "global shift dx=%r dy=%r cannot be sampled inside the %dx%d "
+            "grid" % (dx, dy, w, h))
     full = []
-    for y in range(by, h - by):
+    for y in range(y_lo, y_hi + 1):
         row = y * w
         full.append([abs(b[row + x] - (gain * _bilinear(a, w, x - dx, y - dy)
                                        + off))
-                     for x in range(bx, w - bx)])
+                     for x in range(x_lo, x_hi + 1)])
     return sum(res) / n, full
 
 
