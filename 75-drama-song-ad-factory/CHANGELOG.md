@@ -4,7 +4,7 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
-## v2.9.105 - 2026-10-23 - optional Studio capability is evaluated before credential demand
+## v2.9.106 - 2026-10-23 - optional Studio capability is evaluated before credential demand
 
 The persistent timer (`timer-artifacts/run-timer.sh`) demanded `machine.url` and
 `machine.key` in section 4 and only evaluated the optional Studio capability in
@@ -28,20 +28,29 @@ any credential demand:
   per-tick failure for a freshly installed chat-only box, not only for one whose
   record already says disabled.
 
+The record is parsed with a JSON reader, not a line regex. A case variant
+(`"DISABLED"`, `"READY"`), a duplicate key or a multi-line layout previously
+flipped the decision: an uppercase `disabled` on a box with a key fell through to
+the credential demand and refused every tick, while an uppercase `ready` with no
+key idled instead of refusing. `json.load` now resolves a duplicate key
+deterministically and lowercases the value; an unrecognised value fails CLOSED
+into the credential demand. Truncated or unreadable files resolve to "no usable
+record", which is the canonical `disabled` path when no key is present.
+
 The `capability.disabled` sentinel and `DS_CAPABILITY_DISABLED=1` keep their
 existing behaviour. `--ready` is a readiness probe and is never skipped. No
 second state mechanism is introduced and no authentication check is removed.
 
 Checks updated to the corrected contract:
 `timer-artifacts/checks/test_seam_retention_quiet.py` T3/T4 now assert that an
-unpaired box is silent and writes nothing, and T6/T7 were added (capability.json
+unpaired box is silent and writes nothing, and T6/T7/T8 were added (capability.json
 disabled/needs-enrollment quiet with no credentials; recorded ready still
 refused without credentials; `--ready` not skipped; ordinary chat intake
 independent of pairing). `timer-artifacts/checks/run_checks.py` check G expects
 the quiet skip it always described and now passes.
 
-On the unpatched tree: 5 seam checks fail and check G fails (21/22). On this
-release: seam checks 15/15, timer checks 22/22.
+On the unpatched tree: 7 seam checks fail and check G fails (21/22). On this
+release: seam checks 18/18, timer checks 22/22.
 
 This release changes the optional Studio poller only. It does not enrol a
 computer, does not generate or rotate a key, and does not alter chat intake,

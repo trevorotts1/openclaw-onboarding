@@ -170,6 +170,30 @@ def main():
                   and "no_key" not in blob,
                   "rc=%s outcome=%s" % (ir.returncode, outcome))
 
+        # ---- T8: the record is parsed as JSON, not as a line regex ---------
+        # A case variant or a duplicate key must not flip the decision, and an
+        # unrecognised value must fail CLOSED (credential demand decides).
+        cap = os.path.join(state, "capability.json")
+        with open(cap, "w") as f:
+            f.write('{"capability": "DISABLED"}\n')
+        os.remove(os.path.join(state, ".poll-state"))
+        run_timer(state, log_file=log)          # consume the transition line
+        r = run_timer(state, log_file=log)
+        check("T8-uppercase-disabled-still-quiet",
+              r.returncode == 0 and r.stderr.strip() == "", "rc=%s" % r.returncode)
+        with open(cap, "w") as f:
+            f.write('{"capability": "READY"}\n')
+        r = run_timer(state, log_file=log)
+        check("T8-uppercase-ready-still-refuses-without-credentials",
+              r.returncode == 2 and "not paired" in r.stderr, "rc=%s" % r.returncode)
+        with open(cap, "w") as f:
+            f.write('{"capability": "chat-only"}\n')
+        os.remove(os.path.join(state, ".poll-state"))
+        r = run_timer(state, log_file=log)
+        check("T8-negative-control-unknown-value-fails-closed",
+              r.returncode == 2 and "not paired" in r.stderr, "rc=%s" % r.returncode)
+        os.remove(cap)
+
         # ---- T1: bounded log retention ------------------------------------
         big = "x" * 5000 + "SENTINEL-TAIL\n"
         with open(log, "w") as f:

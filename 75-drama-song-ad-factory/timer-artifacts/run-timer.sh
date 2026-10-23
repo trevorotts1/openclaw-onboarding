@@ -207,7 +207,17 @@ export PATH
 CAP_FILE="${DS_CAPABILITY_FILE:-$STATE_DIR/capability.json}"
 CAP_RECORDED=""
 if [ -f "$CAP_FILE" ]; then
-  CAP_RECORDED="$(sed -n 's/.*"capability"[[:space:]]*:[[:space:]]*"\([a-z-]*\)".*/\1/p' "$CAP_FILE" 2>/dev/null | head -n 1)"
+  # Parse with a real JSON reader, not a line regex: a case variant, a
+  # duplicate key or a multi-line layout must not change the decision. json
+  # resolves a duplicate key deterministically (last wins) and rejects a
+  # truncated file, so the same record can never yield opposite outcomes.
+  CAP_RECORDED="$(python3 -c 'import json,sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+v = d.get("capability") if isinstance(d, dict) else None
+print(v.strip().lower() if isinstance(v, str) else "")' "$CAP_FILE" 2>/dev/null || true)"
 fi
 if [ "$READY" -eq 0 ]; then
   case "$CAP_RECORDED" in
@@ -216,10 +226,14 @@ if [ "$READY" -eq 0 ]; then
       exit 0 ;;
     ready|degraded)
       : ;;   # enabled: the credential demand below still decides (refusal kept)
-    *)
+    "")
+      # No usable record: no key and no enrolment intent is the canonical
+      # `disabled` state. Silent, and writes nothing.
       if [ ! -f "$KEY_FILE" ]; then
-        exit 0   # canonical disabled: chat-only, silent, writes nothing
+        exit 0
       fi ;;
+    *)
+      : ;;   # unrecognised value: fail CLOSED, let the credential demand decide
   esac
 fi
 
