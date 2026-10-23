@@ -21,11 +21,17 @@ Proves, against the tree under test:
 
 Stdlib + ffmpeg/ffprobe on the box for the controls. Exit 2 when the tools are
 absent: the controls cannot be run and the row is never claimed.
+
+Modes:
+  (no flag)   run the scenario and print one assertion line per check
+  selftest    re-run the scenario under deliberate fixture defects and REQUIRE
+              the named assertions to turn RED (proves the harness can fail)
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -59,19 +65,15 @@ def payload(**over):
     p.update(over)
     return p
 
-def main(argv=None):
-    args = H.add_args(description=__doc__).parse_args(argv)
-    core = H.resolve_core(args)
-    if not H.have_tools("ffprobe", "ffmpeg"):
-        print("TOOLING: ffprobe and ffmpeg are required for this row's controls")
-        return 2
-
+def scenario(core, muts=frozenset()):
     P = H.load_pkg(core, "intake_preflight.preflight")
     FM = H.load_file(core / "face_model_locator.py", "sc13_face_locator")
     DA = H.load_file(core / "delivery_audio.py", "sc13_delivery_audio")
     ASM = H.load_pkg(core, "final_assembler.assembler")
     c = H.Checks(ROW, TITLE)
-    print("SC-13 %s — tree %s" % (TITLE, core))
+    print("SC-13 %s — tree %s%s"
+          % (TITLE, core,
+             (" [defect: %s]" % ",".join(sorted(muts))) if muts else ""))
 
     # the box's own ~/.openclaw stores must not contribute credentials/keys
     P._env_stores = lambda: []
@@ -80,7 +82,9 @@ def main(argv=None):
         empty_bin = Path(run_dir) / "empty-bin"
         empty_bin.mkdir(parents=True, exist_ok=True)
         old_path = os.environ.get("PATH", "")
-        os.environ["PATH"] = str(empty_bin)
+        # the defect: leave the real PATH in place, so ffmpeg/ffprobe resolve
+        if "tools_on_path" not in muts:
+            os.environ["PATH"] = str(empty_bin)
         try:
             no_tools = P.check(payload())
             missing = no_tools.get("missing") or []
@@ -97,7 +101,8 @@ def main(argv=None):
                     % (no_tools.get("outcome"), no_tools.get("reason_code")))
 
             caps = json.loads(json.dumps(CAPS))
-            caps["lyric_timing_fallback"] = "faster-whisper"
+            if "asr_not_activated" not in muts:
+                caps["lyric_timing_fallback"] = "faster-whisper"
             no_asr = P.check(payload(capabilities=caps))
             rows = {r.get("id"): r
                     for r in ((no_asr.get("checks") or {}).get("requirements") or [])}
@@ -117,6 +122,9 @@ def main(argv=None):
 
         # ---- model asset ---------------------------------------------------
         absent = str(Path(run_dir) / "models" / "face_landmarker.task")
+        if "model_asset_present" in muts:
+            Path(absent).parent.mkdir(parents=True, exist_ok=True)
+            Path(absent).write_bytes(b"defect: the absent asset exists\n")
         st = FM.preflight_status(env={FM.MODEL_ENV: absent})
         c.check("sc13:missing-model-asset-named",
                 st.get("ok") is False and st.get("present") is False
@@ -133,24 +141,38 @@ def main(argv=None):
         wrong = Path(run_dir) / "models" / "wrong.task"
         wrong.parent.mkdir(parents=True, exist_ok=True)
         wrong.write_bytes(b"not the pinned model\n")
-        bad = FM.preflight_status(env={FM.MODEL_ENV: str(wrong)})
+        # the defect: the "wrong file" is not there at all, so the product can
+        # no longer report present-but-unpinned
+        supplied = str(wrong if "wrong_model_missing" not in muts
+                       else Path(run_dir) / "models" / "gone.task")
+        bad = FM.preflight_status(env={FM.MODEL_ENV: supplied})
         c.check("sc13:wrong-model-asset-refused-by-path",
                 bad.get("ok") is False and bad.get("present") is True
                 and bad.get("pinned") is False
-                and str(wrong) in str(bad.get("problem")),
+                and supplied in str(bad.get("problem")),
                 "present=%s pinned=%s problem=%s"
                 % (bad.get("present"), bad.get("pinned"),
                    str(bad.get("problem"))[:110]))
 
         # ---- an explicitly named tool path is authoritative ----------------
         take = H.aac_take(Path(run_dir) / "media" / "take.mp4", 2)
+        # the defect: the "bogus" named path is in fact the real ffprobe
         bogus = str(Path(run_dir) / "no-such-ffprobe")
+        if "named_ffprobe_is_real" in muts:
+            bogus = shutil.which("ffprobe") or bogus
         named = DA.check_delivery_audio(take, ffprobe=bogus)
         c.check("sc13:named-ffprobe-refused-not-replaced",
                 named.get("ok") is False and bogus in str(named.get("reason")),
                 "code=%s detail=%s"
                 % (named.get("reason_code"), str(named.get("reason"))[:120]))
-        default = DA.check_delivery_audio(take)
+        # the defect: the default probe runs with nothing on PATH
+        if "default_ffprobe_absent" in muts:
+            empty_bin.mkdir(parents=True, exist_ok=True)
+            os.environ["PATH"] = str(empty_bin)
+        try:
+            default = DA.check_delivery_audio(take)
+        finally:
+            os.environ["PATH"] = old_path
         c.check("sc13:default-ffprobe-still-measures",
                 default.get("ok") is True
                 and default.get("reason_code") == "DELIVERY_AUDIO_OK",
@@ -167,7 +189,70 @@ def main(argv=None):
                 and bogus in raised,
                 "raised=%s" % (raised or "nothing"))
 
-        return c.finish(args.out)
+    return c
+
+# --------------------------------------------------------------------------
+# selftest — deliberate fixture defects must turn the named assertions RED
+# --------------------------------------------------------------------------
+# ``sc13:missing-model-asset-no-silent-fallback`` has no working mutation: the
+# product returns a path only for the exact PINNED model file, and the pinned
+# bytes are not in the tree — an unpinned defect file leaves model_path() at
+# None, so the assertion still passes. It is left out rather than faked.
+MUTATIONS = {
+    "tools_on_path": [
+        "sc13:missing-ffmpeg-named",
+        "sc13:missing-ffmpeg-never-passes",
+    ],
+    "asr_not_activated": [
+        "sc13:missing-asr-named",
+        "sc13:activated-asr-gate-held-required",
+    ],
+    "model_asset_present": [
+        "sc13:missing-model-asset-named",
+    ],
+    "wrong_model_missing": [
+        "sc13:wrong-model-asset-refused-by-path",
+    ],
+    "named_ffprobe_is_real": [
+        "sc13:named-ffprobe-refused-not-replaced",
+        "sc13:named-probe-path-named-in-refusal",
+    ],
+    "default_ffprobe_absent": [
+        "sc13:default-ffprobe-still-measures",
+    ],
+}
+
+def selftest(core):
+    ok = True
+    for name in sorted(MUTATIONS):
+        c = scenario(core, frozenset([name]))
+        failed = [r["name"] for r in c.failed()]
+        expected = MUTATIONS[name]
+        hit = [e for e in expected if e in failed]
+        good = len(hit) == len(expected) and bool(failed)
+        ok = ok and good
+        print("selftest:%s — %s; red=%s"
+              % (name, "RED as required" if good else "DID NOT FAIL AS EXPECTED",
+                 failed or "none"))
+        print("selftest:%s — expected hit=%d/%d"
+              % (name, len(hit), len(expected)))
+    print("selftest — %s" % ("harness fails on all %d defects" % len(MUTATIONS)
+                             if ok else "HARNESS CANNOT PROVE A FAILURE"))
+    return 0 if ok else 1
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    selftest_mode = bool(argv) and argv[0] == "selftest"
+    args = H.add_args(
+        description="sc13 selftest" if selftest_mode else __doc__
+    ).parse_args(argv[1:] if selftest_mode else argv)
+    core = H.resolve_core(args)
+    if not H.have_tools("ffprobe", "ffmpeg"):
+        print("TOOLING: ffprobe and ffmpeg are required for this row's controls")
+        return 2
+    if selftest_mode:
+        return selftest(core)
+    return scenario(core).finish(args.out)
 
 if __name__ == "__main__":
     sys.exit(main())

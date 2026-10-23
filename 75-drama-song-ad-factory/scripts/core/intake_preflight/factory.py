@@ -1924,6 +1924,20 @@ def _decide_completion(ev):
                        "required": required, "optional": ev.get("optional") or []}
 
 
+def _destination_key(value):
+    """Total, type-safe identity for one delivery-receipt destination.
+
+    Destinations are normally strings, but a receipt read off disk can carry
+    None (or any other type) and that must be reported as a malformed receipt,
+    never raised as a comparison error. The key is always a comparable,
+    hashable ``(rank, text)`` pair; the original value is what gets reported.
+    """
+    try:
+        return (0, json.dumps(value, sort_keys=True))
+    except (TypeError, ValueError):
+        return (1, repr(value))
+
+
 def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
     """Gather the strict-completion facts from a run dir (controlled fixtures).
 
@@ -1978,7 +1992,18 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
     # receipt was written more than once, which is the duplicate-send defect
     # this evidence check exists to catch. Recurrence alone is not enough —
     # two DIFFERENT destinations delivered once each is the healthy shape.
-    duplicate_destinations = sorted({d for d in dests if dests.count(d) > 1})
+    # Counting is over the normalised key so any mix of destination types
+    # (str, None, int, dict) is reported without a comparison error; the
+    # values reported are the originals, in key order, and stay JSON-safe.
+    keys = [_destination_key(d) for d in dests]
+    duplicate_destinations = []
+    seen = set()
+    for value, key in sorted(zip(dests, keys), key=lambda pair: pair[1]):
+        if key in seen:
+            continue
+        seen.add(key)
+        if keys.count(key) > 1:
+            duplicate_destinations.append(value)
     delivery_ok = (bool(rows)
                    and all(r.get("status") == "delivered" for r in rows)
                    and not duplicate_destinations)

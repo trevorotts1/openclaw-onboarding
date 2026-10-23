@@ -17,6 +17,11 @@ Proves, against the tree under test:
 
 Stdlib + ffmpeg/ffprobe (the gate shells to them). Exit 2 when the tools are
 absent: the row cannot be measured without them and is never claimed.
+
+Modes:
+  (no flag)   run the scenario and print one assertion line per check
+  selftest    re-run the scenario under deliberate fixture defects and REQUIRE
+              the named assertions to turn RED (proves the harness can fail)
 """
 from __future__ import annotations
 
@@ -30,39 +35,44 @@ import _harness as H  # noqa: E402
 ROW = "sc12"
 TITLE = "image-typed previews are never presented as audio/video"
 
-def storyboard_fixture(run_dir):
+def storyboard_fixture(run_dir, extra_shot=False):
     png = H.tiny_png(Path(run_dir) / "fixtures" / "shot-1.png")
-    H.write_json(Path(run_dir) / "storyboard" / "shot-list.json",
-                 {"shots": [{"shot_id": "s1", "song_start": 0, "song_end": 5}]})
-    H.write_json(Path(run_dir) / "storyboard" / "contracts.json",
-                 {"s1": {"lyric_text": "I built this",
-                         "viewer_understanding": "she owns what she built",
-                         "character_action": "stands tall at the counter",
-                         "visible_emotion": "proud"}})
-    H.write_json(Path(run_dir) / "storyboard" / "stills.json", {"s1": png})
+    shots = [{"shot_id": "s1", "song_start": 0, "song_end": 5}]
+    contracts = {"s1": {"lyric_text": "I built this",
+                        "viewer_understanding": "she owns what she built",
+                        "character_action": "stands tall at the counter",
+                        "visible_emotion": "proud"}}
+    stills = {"s1": png}
+    if extra_shot:
+        shots.append({"shot_id": "s2", "song_start": 5, "song_end": 10})
+        contracts["s2"] = dict(contracts["s1"])
+        stills["s2"] = H.tiny_png(Path(run_dir) / "fixtures" / "shot-2.png")
+    H.write_json(Path(run_dir) / "storyboard" / "shot-list.json", {"shots": shots})
+    H.write_json(Path(run_dir) / "storyboard" / "contracts.json", contracts)
+    H.write_json(Path(run_dir) / "storyboard" / "stills.json", stills)
     return png
 
-def main(argv=None):
-    args = H.add_args(description=__doc__).parse_args(argv)
-    core = H.resolve_core(args)
-    if not H.have_tools("ffprobe", "ffmpeg"):
-        print("TOOLING: ffprobe and ffmpeg are required by the delivery-audio "
-              "gate this row measures")
-        return 2
-
+def scenario(core, muts=frozenset()):
     DA = H.load_file(core / "delivery_audio.py", "sc12_delivery_audio")
     AR = H.load_pkg(core, "storyboard_director.approval_runner")
     c = H.Checks(ROW, TITLE)
-    print("SC-12 %s — tree %s" % (TITLE, core))
+    print("SC-12 %s — tree %s%s"
+          % (TITLE, core,
+             (" [defect: %s]" % ",".join(sorted(muts))) if muts else ""))
 
     with H.Scratch() as run_dir:
-        png = storyboard_fixture(run_dir)
+        png = storyboard_fixture(run_dir, extra_shot="extra_shot" in muts)
         png_sha = H.sha256_file(png)
 
         as_video = Path(run_dir) / "fixtures" / "still-as-song.mp4"
         as_audio = Path(run_dir) / "fixtures" / "still-as-song.m4a"
-        shutil.copyfile(str(png), str(as_video))
-        shutil.copyfile(str(png), str(as_audio))
+        if "audio_bytes_instead_of_image" in muts:
+            audio = H.aac_take(Path(run_dir) / "fixtures" / "take.mp4", 2)
+            shutil.copyfile(str(audio), str(as_video))
+            shutil.copyfile(str(audio), str(as_audio))
+        else:
+            shutil.copyfile(str(png), str(as_video))
+            shutil.copyfile(str(png), str(as_audio))
 
         for path, label in ((as_video, "video"), (as_audio, "audio")):
             res = DA.check_delivery_audio(str(path))
@@ -84,7 +94,11 @@ def main(argv=None):
 
         # control: the same gate accepts a real audio file, so the refusals
         # above are about the type and not about the gate refusing everything.
-        real = H.aac_take(Path(run_dir) / "fixtures" / "real-song.mp4", 2)
+        real = Path(run_dir) / "fixtures" / "real-song.mp4"
+        if "control_is_image" in muts:
+            H.tiny_png(real)
+        else:
+            H.aac_take(real, 2)
         good = DA.check_delivery_audio(real)
         c.check("sc12:real-audio-still-accepted",
                 good.get("ok") is True
@@ -113,7 +127,60 @@ def main(argv=None):
                 "sha256 %s before, %s after"
                 % (png_sha[:12], H.sha256_file(png)[:12]))
 
-        return c.finish(args.out)
+    return c
+
+# --------------------------------------------------------------------------
+# selftest — deliberate fixture defects must turn the named assertions RED
+# --------------------------------------------------------------------------
+# ``sc12:presented-image-bytes-unchanged`` has no working mutation: the only
+# way to turn it red is to rewrite the very file the assertion hashes, which
+# proves nothing about the product. It is left out rather than faked.
+MUTATIONS = {
+    "audio_bytes_instead_of_image": [
+        "sc12:image-typed-as-video-refused",
+        "sc12:image-typed-as-audio-refused",
+        "sc12:require-audio-fails-closed-on-image",
+    ],
+    "control_is_image": [
+        "sc12:real-audio-still-accepted",
+    ],
+    "extra_shot": [
+        "sc12:preview-presented-as-image",
+    ],
+}
+
+def selftest(core):
+    ok = True
+    for name in sorted(MUTATIONS):
+        c = scenario(core, frozenset([name]))
+        failed = [r["name"] for r in c.failed()]
+        expected = MUTATIONS[name]
+        hit = [e for e in expected if e in failed]
+        good = len(hit) == len(expected) and bool(failed)
+        ok = ok and good
+        print("selftest:%s — %s; red=%s"
+              % (name, "RED as required" if good else "DID NOT FAIL AS EXPECTED",
+                 failed or "none"))
+        print("selftest:%s — expected hit=%d/%d"
+              % (name, len(hit), len(expected)))
+    print("selftest — %s" % ("harness fails on all %d defects" % len(MUTATIONS)
+                             if ok else "HARNESS CANNOT PROVE A FAILURE"))
+    return 0 if ok else 1
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    selftest_mode = bool(argv) and argv[0] == "selftest"
+    args = H.add_args(
+        description="sc12 selftest" if selftest_mode else __doc__
+    ).parse_args(argv[1:] if selftest_mode else argv)
+    core = H.resolve_core(args)
+    if not H.have_tools("ffprobe", "ffmpeg"):
+        print("TOOLING: ffprobe and ffmpeg are required by the delivery-audio "
+              "gate this row measures")
+        return 2
+    if selftest_mode:
+        return selftest(core)
+    return scenario(core).finish(args.out)
 
 if __name__ == "__main__":
     sys.exit(main())
