@@ -412,6 +412,12 @@ def run_dry(out):
         except Refusal as e:
             check("dry:all unrelated sentinels byte-identical", False, e.detail)
 
+        # QC-head 59e893d parity (union): the simulated success clears the marker.
+        (root / "skills" / SKILL / ".checkpoint-pending").unlink()
+        check("dry:checkpoint marker cleared on success",
+              not (root / "skills" / SKILL / ".checkpoint-pending").exists(),
+              ".checkpoint-pending cleared")
+
         tamper = root / SENTINELS[0][0]
         tamper.write_text('{"sentinel":"settings","tuned":false}', encoding="utf-8")
         after2 = digest_sentinels(sb)
@@ -528,6 +534,17 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
             check("real:old revision installed by real installer",
                   True, "%d files under %s" % (len(before_manifest), inst))
 
+            # QC-head 59e893d parity (union): an interrupted run's resume state
+            # must survive a content upgrade. Seeded in the INSTALLED tree, so the
+            # installer is the thing that could eat it -- never outside it.
+            seeded_markers = (".checkpoint-pending",
+                              "scripts/core/state_store.py.part")
+            (inst / seeded_markers[0]).write_text("resume-stage:music\n",
+                                                  encoding="utf-8")
+            (inst / seeded_markers[1]).parent.mkdir(parents=True, exist_ok=True)
+            (inst / seeded_markers[1]).write_text("partial", encoding="utf-8")
+            before_manifest = tree_manifest(inst)
+
             # --- 4. survivor process started BEFORE the upgrade --------------
             proc, start_before = start_survivor()
             try:
@@ -548,6 +565,12 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
                                                    encoding="utf-8")
 
                 after_manifest = tree_manifest(inst)
+                # Seeded resume state is deliberately user state, not installer
+                # content: excluded from the drift diff so it cannot be mistaken
+                # for drift, and asserted by name just below.
+                for _rel in seeded_markers:
+                    before_manifest.pop(_rel, None)
+                    after_manifest.pop(_rel, None)
                 manifest = diff_manifests(before_manifest, after_manifest)
                 manifest.update({
                     "schema": "blackceo.skill75.canary.upgrade-manifest/v1",
@@ -591,6 +614,15 @@ def run_real(out, vector_path, dist, repo, old_rev=None, new_rev=None,
                 verified = verify_against_source(inst, new_src)
                 check("real:installed bytes match pinned source revision",
                       True, "%d files verified by sha256" % verified)
+
+                # A content install must never eat an interrupted run's resume
+                # state (QC-head 59e893d assertion, restored here on the composed
+                # structure). Clearing the marker belongs to the state_store
+                # resume path, which multi_run_canary proves.
+                check("upgrade:%s:interrupted-run state preserved" % dist,
+                      all((inst / rel).is_file() for rel in seeded_markers),
+                      ".checkpoint-pending and scripts/core/state_store.py.part "
+                      "survive the content upgrade")
 
                 # --- 3. preservation, measured before and after ----------
                 if fault == "missing_preservation":
