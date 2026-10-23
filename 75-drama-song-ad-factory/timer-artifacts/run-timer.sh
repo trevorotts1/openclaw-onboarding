@@ -34,8 +34,12 @@
 # no poll, no network. Exit 0 only when this box could poll right now.
 #
 # QUIET WHEN DISABLED (D34): a disabled optional capability is quiet. When
-# $STATE_DIR/capability.disabled exists (or DS_CAPABILITY_DISABLED=1) the timer
-# exits 0 without polling and without repeating any line. Unpaired notices are
+# $STATE_DIR/capability.json records `disabled` or `needs-enrollment`, or
+# $STATE_DIR/capability.disabled exists (or DS_CAPABILITY_DISABLED=1), the timer
+# exits 0 without polling and without repeating any line — and those checks run
+# BEFORE the machine.url/machine.key demand, so a chat-only box is never told it
+# is "not paired" on every tick. A recorded ready/degraded capability still needs
+# both credential files and is refused (exit 2) when they are missing. Unpaired notices are
 # TRANSITION-based: the state change is reported once, a steady state is silent.
 #
 # BOUNDED LOG RETENTION (D34): the scheduler redirects this script into
@@ -184,6 +188,29 @@ case "$PLATFORM" in
   contabo)   PATH="/home/node/.openclaw/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ;;
 esac
 export PATH
+
+# ---- 3b) Optional Studio capability: evaluated BEFORE any credential demand --
+# SPEC 9.3 / D24. The optional Studio capability is recorded in the CANONICAL
+# installation state file, capability.json (disabled | needs-enrollment | ready |
+# degraded), written by studio_bridge.py. A disabled or chat-only computer polls
+# nothing and says nothing — and must not be told it is "not paired" on every
+# tick, which is what happens when the credential demand below runs first. The
+# recorded capability is therefore read HERE, before section 4.
+#
+# A recorded ready/degraded capability falls through to the credential demand
+# UNCHANGED, so an enabled-but-broken install is refused (exit 2) rather than
+# silently skipped; a missing capability.json (a reader before pairing) is a
+# visible refusal too. This reads the canonical file and introduces no second
+# state mechanism. `--ready` is a readiness probe: it is never skipped here.
+CAP_FILE="${DS_CAPABILITY_FILE:-$STATE_DIR/capability.json}"
+if [ "$READY" -eq 0 ] && [ -f "$CAP_FILE" ]; then
+  CAP_RECORDED="$(sed -n 's/.*"capability"[[:space:]]*:[[:space:]]*"\([a-z-]*\)".*/\1/p' "$CAP_FILE" 2>/dev/null | head -n 1)"
+  case "$CAP_RECORDED" in
+    disabled|needs-enrollment)
+      ds_notice "$CAP_RECORDED" "studio capability $CAP_RECORDED - timer idle (quiet)"
+      exit 0 ;;
+  esac
+fi
 
 # ---- 4) The machine key + studio address (own store, never Claude settings) --
 # The pairing gate comes FIRST: an unpaired computer is not paired whether or

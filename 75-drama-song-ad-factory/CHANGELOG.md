@@ -4,6 +4,36 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.104 - 2026-10-23 - optional Studio capability is evaluated before credential demand
+
+The persistent timer (`timer-artifacts/run-timer.sh`) demanded `machine.url` and
+`machine.key` in section 4 and only evaluated the optional Studio capability in
+section 6b. A chat-only or disabled installation therefore refused every tick
+with "this computer is not paired" instead of staying quiet: on Mac box
+`rescue-maria-anderson` the launchd job produced 5,326 identical lines /
+569,882 bytes before the repair, one every 120 seconds.
+
+The canonical `capability.json` record (`disabled | needs-enrollment | ready |
+degraded`, written by `studio_bridge.py`) is now read in a new section 3b, BEFORE
+any credential demand. `disabled` and `needs-enrollment` exit 0 quietly (one
+transition line, then steady silence). A recorded `ready` or `degraded`
+capability falls through to the unchanged credential demand, so an
+enabled-but-broken installation is still REFUSED with exit 2 rather than
+silently skipped, and a missing `capability.json` stays a visible refusal. The
+`capability.disabled` sentinel and `DS_CAPABILITY_DISABLED=1` keep their
+existing behaviour. `--ready` is a readiness probe and is never skipped. No
+second state mechanism is introduced and no authentication check is removed.
+
+Focused checks added to `timer-artifacts/checks/test_seam_retention_quiet.py`:
+T6 (capability.json disabled / needs-enrollment quiet with no credentials; ready
+without credentials still refused; `--ready` not skipped) and T7 (ordinary chat
+intake remains independent of Studio pairing). On the unpatched tree T6 fails
+2/4; on this release the file is 16/16.
+
+This release changes the optional Studio poller only. It does not enrol a
+computer, does not generate or rotate a key, and does not alter chat intake,
+media generation, approvals or budgets.
+
 ## v2.9.98 - 2026-10-23 - lip-sync evidence follows the final delivery
 
 Missing lip-sync markers, speaker/line identities or approved storyboard evidence

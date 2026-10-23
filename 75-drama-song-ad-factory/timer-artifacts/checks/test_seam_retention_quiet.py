@@ -16,6 +16,12 @@ owner (timer-artifacts/run-timer.sh) plus the readiness seam W07-U3 builds on:
   T5  readiness seam: --ready exits 0 and prints one "ready:" line exactly when
       key, address, bridge and interpreter all resolve; a bogus argument is
       refused with exit 1 (negative control).
+  T6  capability.json is evaluated BEFORE the credential demand: a recorded
+      disabled / needs-enrollment capability is a quiet exit 0 even with no
+      machine.url/machine.key; a recorded ready capability is still REFUSED
+      (exit 2) without them, and --ready is never skipped (negative controls).
+  T7  ordinary chat intake stays independent of Studio pairing: the factory's
+      intake envelope is produced with no capability record and no credentials.
 
 Run:  python3 test_seam_retention_quiet.py      (exit 0 all pass, 1 any fail)
 Writes only in its scratch (DS_TEST_SCRATCH, else a mkdtemp under HOME — the
@@ -24,6 +30,7 @@ scheduler registration, no real key values. Stdlib only.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -109,6 +116,57 @@ def main():
         r2 = run_timer(state, extra={"DS_CAPABILITY_DISABLED": "1"}, log_file=log)
         check("T2-env-disabled-quiet",
               r1.returncode == 0 and r2.returncode == 0 and r2.stderr.strip() == "")
+
+        # ---- T6: capability.json evaluated BEFORE credential demand --------
+        # The canonical record (written by studio_bridge.py) must be honoured
+        # ahead of machine.url/machine.key. A chat-only box is quiet; an
+        # enabled-but-broken box is still refused.
+        cap = os.path.join(state, "capability.json")
+        with open(cap, "w") as f:
+            f.write('{\n  "capability": "disabled",\n  "intent": "disabled"\n}\n')
+        r1 = run_timer(state, log_file=log)
+        r2 = run_timer(state, log_file=log)
+        check("T6-capability-json-disabled-quiet-before-credentials",
+              r1.returncode == 0 and r2.returncode == 0
+              and r2.stderr.strip() == "" and r2.stdout.strip() == "",
+              "run1 rc=%s run2 rc=%s" % (r1.returncode, r2.returncode))
+        with open(cap, "w") as f:
+            f.write('{\n  "capability": "needs-enrollment"\n}\n')
+        run_timer(state, log_file=log)          # consume the disabled -> change transition
+        r = run_timer(state, log_file=log)
+        check("T6-capability-json-needs-enrollment-quiet",
+              r.returncode == 0 and r.stderr.strip() == "", "rc=%s" % r.returncode)
+        with open(cap, "w") as f:
+            f.write('{\n  "capability": "ready"\n}\n')
+        os.remove(os.path.join(state, ".poll-state"))
+        r = run_timer(state, log_file=log)
+        check("T6-negative-control-enabled-no-key-refuses",
+              r.returncode == 2 and "not paired" in r.stderr, "rc=%s" % r.returncode)
+        os.remove(os.path.join(state, ".poll-state"))
+        r = run_timer(state, args=("--ready",), log_file=log)
+        check("T6-negative-control-ready-probe-not-skipped",
+              r.returncode == 2 and "not paired" in r.stderr, "rc=%s" % r.returncode)
+        os.remove(cap)
+
+        # ---- T7: chat intake is independent of Studio pairing --------------
+        factory = os.path.join(os.path.dirname(ROOT), "scripts", "core",
+                               "intake_preflight", "factory.py")
+        if os.path.exists(factory):
+            brief = ('{"offer": "demo offer", "audience": "busy parents", '
+                     '"action": "buy now"}')
+            ir = subprocess.run([sys.executable, factory, "intake", "--brief", brief],
+                                capture_output=True, text=True, cwd=os.path.dirname(ROOT),
+                                env=dict(os.environ, DRAMA_STUDIO_STATE=state))
+            try:
+                env_json = json.loads(ir.stdout)
+            except Exception:
+                env_json = {}
+            outcome = env_json.get("outcome")
+            blob = (ir.stdout + ir.stderr).lower()
+            check("T7-chat-intake-independent-of-pairing",
+                  outcome in ("ok", "waiting") and "not paired" not in blob
+                  and "no_key" not in blob,
+                  "rc=%s outcome=%s" % (ir.returncode, outcome))
 
         # ---- T1: bounded log retention ------------------------------------
         big = "x" * 5000 + "SENTINEL-TAIL\n"
