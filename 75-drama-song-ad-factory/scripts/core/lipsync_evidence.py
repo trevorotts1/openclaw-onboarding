@@ -230,7 +230,7 @@ def inputs_for_request(run_dir, request):
     except LipsyncEvidenceError:
         raise
     except (OSError, ValueError, TypeError, KeyError, AttributeError, PG.LipsyncPictureNotGated) as exc:
-        raise LipsyncEvidenceError("LIPSYNC_INPUTS_MISSING", str(exc)) from exc
+        raise LipsyncEvidenceError(getattr(exc, "code", "LIPSYNC_INPUTS_MISSING"), str(exc)) from exc
 
 
 def check_plan(plan, require_measured=False):
