@@ -26,6 +26,9 @@ The versioned, validated, correlation-carrying task lifecycle event contract:
   * MONOTONIC SEQUENCE / REVISION: the producer assigns a strictly increasing
     per-task ``seq``; the consumer owns the CAS ``revision`` (bumped only on an
     applied change). Older producer state must never overwrite newer state.
+    ``SeqAllocator(store=...)`` seeds each task from the durable store at bind
+    time, so a restarted producer continues AFTER the durable last seq instead
+    of restarting at 1 and being refused as stale.
   * CANONICAL WIRE ENCODING: byte-stable JSON, fail-closed parsing, explicit
     schema version.
   * OUTBOX SEAM: ``to_outbox_envelope`` gives the durable outbox
@@ -72,7 +75,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Normative schema identity (W11A owns the version)
@@ -486,13 +489,65 @@ def to_outbox_envelope(event: BoardEvent) -> Dict[str, Any]:
 class SeqAllocator:
     """Strictly increasing per-task producer sequence. Retries do not allocate;
     only new logical events do. ``observe`` refuses non-monotonic state so an
-    older seq can never be re-armed against newer state."""
+    older seq can never be re-armed against newer state.
 
-    def __init__(self) -> None:
+    RESTART CONTINUITY (F4 repair): ``store`` binds the allocator to the
+    DURABLE sequence store — anything with ``last_seq(task_id) -> int`` (e.g.
+    ``event_outbox.EventOutbox``) or a bare ``task_id -> int`` callable. On the
+    first touch of a task in this process the allocator adopts the store's
+    durable last seq, so a FRESH allocator after a producer restart continues
+    at N+1 instead of restarting at 1 and being refused as ``stale_seq`` — no
+    manual ``observe(task_id, outbox.last_seq())`` call needed. Fail-closed is
+    unchanged: ``observe`` of a seq that would go backwards (against in-memory
+    OR durable state) is refused, never silently armed.
+
+    ponytail: seeding is once per task per process — concurrent allocators
+    sharing one store can race between seed and append (the outbox's stale_seq
+    refusal is the hard backstop). Upgrade: re-read the durable last seq inside
+    the store's allocation transaction if multiple producers ever share a store.
+    """
+
+    def __init__(self, store: Any = None) -> None:
         self._last: Dict[str, int] = {}
+        self._last_seq_fn: Optional[Callable[[str], int]] = None
+        self.bind(store)
+
+    def bind(self, store: Any) -> None:
+        """Attach the durable sequence store (``None`` detaches). Called
+        automatically by ``__init__``; binding is the "bind time" at which
+        per-task seeding becomes possible."""
+        if store is None:
+            self._last_seq_fn = None
+        elif callable(getattr(store, "last_seq", None)):
+            self._last_seq_fn = store.last_seq
+        elif callable(store):
+            self._last_seq_fn = store
+        else:
+            raise BoardEventError(
+                "bad_input", "store must provide last_seq(task_id) or be callable"
+            )
+
+    def _seed(self, tid: str) -> None:
+        """Adopt the durable last seq the first time this process touches a
+        task. Fail closed: an unusable durable value is refused, never guessed."""
+        if self._last_seq_fn is None or tid in self._last:
+            return
+        try:
+            durable = self._last_seq_fn(tid)
+        except Exception as exc:
+            raise BoardEventError(
+                "bind_failed", f"durable last_seq for {tid!r} failed: {exc}"
+            ) from exc
+        if isinstance(durable, bool) or not isinstance(durable, int) or durable < 0:
+            raise BoardEventError(
+                "bad_seq",
+                f"durable last_seq for {tid!r} must be an int >= 0, got {durable!r}",
+            )
+        self._last[tid] = durable
 
     def next(self, task_id: str) -> int:
         tid = _require_text(task_id, "task_id")
+        self._seed(tid)
         nxt = self._last.get(tid, 0) + 1
         self._last[tid] = nxt
         return nxt
@@ -501,12 +556,15 @@ class SeqAllocator:
         tid = _require_text(task_id, "task_id")
         if not isinstance(seq, int) or isinstance(seq, bool) or seq < 1:
             raise BoardEventError("bad_seq", "seq must be an int >= 1")
+        self._seed(tid)
         if seq <= self._last.get(tid, 0):
             raise BoardEventError("bad_seq", f"seq {seq} is not newer than {self._last.get(tid, 0)}")
         self._last[tid] = seq
 
     def last(self, task_id: str) -> int:
-        return self._last.get(_require_text(task_id, "task_id"), 0)
+        tid = _require_text(task_id, "task_id")
+        self._seed(tid)
+        return self._last.get(tid, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -788,6 +846,43 @@ def _selfcheck() -> int:
     assert r2.idempotency_key == r1.idempotency_key, "...but never the same seq slot"
     assert r2.seq > r1.seq
     n += 9
+
+    # 8b. NEGATIVE CONTROL (a) — restart continuity: a FRESH allocator bound to
+    # a durable store whose last_seq is N must emit N+1 WITHOUT any manual
+    # observe call. Fails on pre-fix behaviour (SeqAllocator took no store and
+    # restarted at 1 — the outbox then refused every event as stale_seq).
+    class _DurableStore:  # minimal store shaped like event_outbox.EventOutbox
+        def __init__(self, rows: Dict[str, int]) -> None:
+            self.rows = dict(rows)
+
+        def last_seq(self, task_id: str) -> int:
+            return self.rows.get(task_id, 0)
+
+    store7 = _DurableStore({"t-9": 7})
+    reborn = SeqAllocator(store=store7)  # simulates a producer restart
+    assert reborn.next("t-9") == 8, "restarted allocator must continue after durable last_seq"
+    assert reborn.next("t-9") == 9
+    assert reborn.last("t-10") == 0 and reborn.next("t-10") == 1, \
+        "task absent from the durable store starts at 1"
+    assert SeqAllocator(store=lambda tid: store7.rows.get(tid, 0)).next("t-9") == 8, \
+        "a bare callable binds the same way"
+    assert SeqAllocator(store=store7).last("t-9") == 7, "last() adopts durable state at bind"
+    n += 5
+
+    # 8c. NEGATIVE CONTROL (b) — stale/duplicate seq still refused: a genuinely
+    # backwards seq must never be silently accepted. Fails on pre-fix behaviour:
+    # SeqAllocator(store=...) did not exist, so observe() could not check
+    # durable state at all and a fresh allocator silently armed observe(t-9, 2)
+    # although the durable last seq was 7.
+    stale = SeqAllocator(store=store7)
+    _expect_error("bad_seq", lambda: stale.observe("t-9", 2))
+    assert stale.last("t-9") == 7 and stale.next("t-9") == 8, \
+        "refused observe armed nothing: allocation continues at durable+1"
+    _expect_error("bad_seq", lambda: stale.observe("t-9", 8))
+    _expect_error("bad_input", lambda: SeqAllocator(store=object()))
+    _expect_error("bind_failed", lambda: SeqAllocator(store=lambda tid: 1 / 0).next("t-9"))
+    _expect_error("bad_seq", lambda: SeqAllocator(store=lambda tid: True).next("t-9"))
+    n += 6
 
     print(f"OK board_events self-check: {n} assertions")
     return 0
