@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -155,7 +156,12 @@ def load_npage_contract():
     if spec is None or spec.loader is None:
         raise RouteAdapterError(f"cannot load contract module {path}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.modules[spec.name] = module  # register BEFORE exec: dataclasses resolves
+    try:                             # annotations via sys.modules[cls.__module__]
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(spec.name, None)
+        raise
     return module
 
 
