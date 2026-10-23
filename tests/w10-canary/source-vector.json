@@ -2,7 +2,7 @@
   "schema": "blackceo.skill75.source-vector/v1",
   "pinned": true,
   "pinned_at": "2026-10-23T10:44:59Z",
-  "pinned_by": "S75-FINISH-MERGE (pin refreshed after PR #2475 batch-8m)",
+  "pinned_by": "S75-FINISH-MERGE (pin refreshed in batch-8m, after PR #2475 merged)",
   "note": "ACCEPTED source vector. Every revision below was read live from its remote main with `git ls-remote <remote> refs/heads/main` at pinned_at, at the same moment (one consecutive pass, all four reads returning inside 2026-10-23T10:45:01Z). openclaw-onboarding moved to bca9910ce2bc, the merge commit of PR #2475 (batch/s75-product-fixes), which landed the SC08/SC38 product fixes and the a04/a07 selftests. 999-setup, blackceo-command-center and blackceo-graphify-infrastructure did not move and keep the revisions from the previous refresh. audited_baseline values are historical reference points and were deliberately left byte-identical.",
   "spec": "Skill_75_Universal_Repair_Spec_v1.1 section 3 (repository baselines) and section 15.2 / 16 (anonymous canaries, completion receipt)",
   "repositories": {
@@ -16,7 +16,7 @@
         "#2460 batch-8e (A12 runtime-proof harness + A-row execution driver)",
         "#2459 batch-8d (D3 calibration, D3 spatial-motion, Skill 75 interrupt-state preservation)",
         "#2468 batch-8l (A08 --keep + retained-path reporting + pre-flight guard requiring live install trees)",
-        "#2475 batch-8m (SC08 receipt verdict, SC38 claim scope, a04/a07 selftests)"
+        "#2475 batch/s75-product-fixes (SC08 receipt verdict, SC38 claim scope, a04/a07 selftests)"
       ],
       "note": "bca9910ce2bc = merge commit of PR #2475 (batch/s75-product-fixes), which follows #2468 (batch-8l). It carries the SC08 product-owned receipt verdict, the SC38 scope note, and the a04/a07 selftests, so the pin names the commit after it."
     },
