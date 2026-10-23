@@ -197,11 +197,16 @@ def scenario(core, muts=frozenset()):
                         delivered3 is True,
                         "delivered=%s reasons=%s"
                         % (delivered3, report3.get("reasons")))
-                dests = [r.get("destination") for r in final]
+                # Assert on what the PRODUCT concluded, never on `final`, which
+                # this harness built itself: comparing our own list to our own
+                # constant is a tautology that passes for any product and turns
+                # red only because a mutation edited the fixture.
+                dup_reason = [r for r in (report3.get("reasons") or [])
+                              if "destination delivery receipts" in r]
                 c.check("sc08:resume-completes-without-duplicate-destination",
-                        len(final) == len(DESTINATIONS)
-                        and sorted(dests) == sorted(DESTINATIONS),
-                        "receipts=%s" % (dests,))
+                        delivered3 is True and not dup_reason,
+                        "delivered=%s destination_reasons=%s"
+                        % (delivered3, dup_reason))
             else:
                 c.check("sc08:resume-completes-delivery", False,
                         "not resumed")

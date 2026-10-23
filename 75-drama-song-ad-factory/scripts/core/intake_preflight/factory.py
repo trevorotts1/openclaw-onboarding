@@ -1972,9 +1972,16 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
 
     # destination delivery receipts: all destinations delivered successfully.
     receipts = _read_json_list(rd / "delivery" / "receipts.json", required=False)
-    delivery_ok = bool(receipts) and all(
-        r.get("status") == "delivered" for r in receipts
-        if isinstance(r, dict))
+    rows = [r for r in receipts if isinstance(r, dict)]
+    dests = [r.get("destination") for r in rows]
+    # The same destination twice is not a successful delivery set: it means a
+    # receipt was written more than once, which is the duplicate-send defect
+    # this evidence check exists to catch. Recurrence alone is not enough —
+    # two DIFFERENT destinations delivered once each is the healthy shape.
+    duplicate_destinations = sorted({d for d in dests if dests.count(d) > 1})
+    delivery_ok = (bool(rows)
+                   and all(r.get("status") == "delivered" for r in rows)
+                   and not duplicate_destinations)
 
     return {
         "required": required,
@@ -1986,6 +1993,7 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
         "artifacts_present": artifacts_present,
         "missing_artifacts": missing,
         "delivery_receipts_ok": delivery_ok,
+        "duplicate_destinations": duplicate_destinations,
     }
 
 
