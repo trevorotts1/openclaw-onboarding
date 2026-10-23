@@ -164,6 +164,17 @@ def sha256_text(text):
     return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
 
 
+def parse_installer_rcs(text):
+    """Every installer rc the canary printed, in order.
+
+    The canary formats the rc as a list — "installer rc=[0, 1]", one entry per
+    installer command it ran — so a bare `installer rc=(\\d+)` never matches.
+    Both forms are read here; callers take the last value as installer_rc.
+    """
+    groups = re.findall(r"installer rc=(\[[\d,\s]*\]|\d+)", text)
+    return [int(n) for g in groups for n in re.findall(r"\d+", g)]
+
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -305,15 +316,23 @@ def _scenario(name):
 
 
 def plan_a08(ctx, mode, sandbox):
-    steps = []
-    for dist in ("onboarding", "999"):
-        argv = ["python3", "tests/w10-canary/clean_install_canary.py",
-                "--vector", str(ctx["vector_path"]),
-                "--dist", dist, "--out", str(ctx["artifacts"])]
-        if mode == "dry":
-            argv.append("--dry-run")
-        steps.append(Step(argv, cwd=ctx["tree"], note="dist=%s" % dist))
-    return steps
+    # One invocation with --dist both: the canary prints ONE aggregate
+    # "real: N/M checks passed", which is what this row's min_total=7 floor
+    # describes. Two per-dist processes print two 6/6 summaries, so the last
+    # one read by evaluate() can never clear the floor.
+    argv = ["python3", "tests/w10-canary/clean_install_canary.py",
+            "--vector", str(ctx["vector_path"]),
+            "--dist", "both", "--out", str(ctx["artifacts"])]
+    # The canary resolves each distribution's source checkout itself: vector
+    # path, then --repo-root, then a sibling directory. A runner temp tree has
+    # no sibling, so without these the row refuses SOURCE_CHECKOUT_UNRESOLVED
+    # before any installer runs and reports no installer_rc.
+    argv += ["--repo-root", "openclaw-onboarding=%s" % ctx["tree"]]
+    if ctx.get("nine_root"):
+        argv += ["--repo-root", "999-setup=%s" % ctx["nine_root"]]
+    if mode == "dry":
+        argv.append("--dry-run")
+    return [Step(argv, cwd=ctx["tree"], note="dist=both")]
 
 
 def plan_a12(ctx, mode, sandbox):
@@ -506,7 +525,7 @@ def rows():
             "dry:onboarding:manifest hash recorded",
             "dry:parity negative control (tamper detected)",
             "dry:no legacy mirror tree"],
-        required_re_real=[r"installer rc=\d+", r"\d+ files, digest [0-9a-f]{16,}"],
+        required_re_real=[r"installer rc=\[?\d+", r"\d+ files, digest [0-9a-f]{16,}"],
         required_re_dry=[],
         forbidden_real=[], forbidden_dry=[],
         summary_re=r"^(dry-run|real): (\d+)/(\d+) checks passed$",
@@ -635,8 +654,8 @@ def evaluate(spec, step_records, overall_rc, mode):
         m = re.search(r"^(\d+) passed in [\d.]+s", text, re.M)
         min_passed_ok = bool(m) and int(m.group(1)) >= spec["min_passed"]
 
-    installer_rcs = re.findall(r"installer rc=(\d+)", text)
-    installer_rc = int(installer_rcs[-1]) if installer_rcs else None
+    installer_rcs = parse_installer_rcs(text)
+    installer_rc = installer_rcs[-1] if installer_rcs else None
     installer_rc_note = ""
     if installer_rc is not None:
         installer_rc_note = (
@@ -724,36 +743,91 @@ def make_env(step):
     return env
 
 
-def run_step(step, home, tmpdir, timeout):
+def run_step(step, home, tmpdir, timeout, label=None, logdir=None):
     step.env = dict(step.env)
     step.env["_HOME"] = home
     step.env["_TMPDIR"] = tmpdir
     env = make_env(step)
     started = time.time()
+    label = label or "step-%d" % int(started * 1000)
+    log_dir = Path(logdir) if logdir else Path(tmpdir)
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        log_dir = Path(tmpdir)
+    out_log = log_dir / ("%s.out.log" % label)
+    err_log = log_dir / ("%s.err.log" % label)
     rec = {"index": None, "command": shlex.join(step.argv), "argv": step.argv,
            "cwd": step.cwd, "note": step.note,
            "env": {"HOME": home, "TMPDIR": tmpdir, "OPENCLAW_HOME": "<unset>",
                    "PYTHONPATH": "<unset>",
                    "PYTHONDONTWRITEBYTECODE": "1"},
            "exit_code": None, "stdout": "", "stderr": "",
-           "duration_ms": None, "classification": None}
+           "log": str(out_log), "duration_ms": None, "classification": None}
+    # The child writes straight to these files, so an operator can tail the row
+    # while it runs instead of seeing nothing until it exits.
+    print("  [%s] start: %s (timeout %ss, log %s)"
+          % (label, rec["command"], timeout, out_log), flush=True)
+    rc, timeout_hit = None, False
+    with open(str(out_log), "w+", encoding="utf-8", errors="replace") as fo, \
+            open(str(err_log), "w+", encoding="utf-8", errors="replace") as fe:
+        try:
+            proc = subprocess.Popen(step.argv, cwd=step.cwd, env=env,
+                                    stdin=subprocess.DEVNULL, stdout=fo, stderr=fe)
+        except (OSError, ValueError) as exc:
+            fe.write("%s: %s\n" % (type(exc).__name__, exc))
+            rc = None
+        else:
+            tick = started
+            while True:
+                try:
+                    rc = proc.poll()
+                except OSError:
+                    rc = None
+                if rc is not None:
+                    break
+                now = time.time()
+                if now - started > timeout:
+                    proc.kill()
+                    proc.wait()
+                    rc, timeout_hit = None, True
+                    fo.write("\n[runner] step %s timed out after %ss: %s\n"
+                             % (label, timeout, rec["command"]))
+                    print("  [%s] TIMEOUT after %ss, killed" % (label, timeout),
+                          flush=True)
+                    break
+                if now - tick >= 15.0:
+                    tick = now
+                    print("  [%s] running %.0fs, %d/%d bytes captured"
+                          % (label, now - started, _size_of(out_log),
+                             _size_of(err_log)), flush=True)
+                time.sleep(0.5)
+        fo.flush()
+        fe.flush()
     try:
-        proc = subprocess.run(step.argv, cwd=step.cwd, env=env,
-                              capture_output=True, text=True, timeout=timeout)
-        rec["exit_code"] = proc.returncode
-        rec["stdout"] = proc.stdout or ""
-        rec["stderr"] = proc.stderr or ""
-    except subprocess.TimeoutExpired as exc:
-        rec["exit_code"] = None
-        rec["stdout"] = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
-        rec["stderr"] = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
+        rec["stdout"] = out_log.read_text(encoding="utf-8", errors="replace")
+        rec["stderr"] = err_log.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        rec["stderr"] = "os error reading step log: %s" % exc
+    rec["exit_code"] = rc
+    if timeout_hit:
         rec["classification"] = "TIMEOUT"
-    except (OSError, ValueError) as exc:
-        rec["exit_code"] = None
-        rec["stderr"] = "%s: %s" % (type(exc).__name__, exc)
+        if not (rec["stdout"].strip() or rec["stderr"].strip()):
+            rec["stderr"] = ("[runner] step %s timed out after %ss and produced "
+                             "no output: %s\n" % (label, timeout, rec["command"]))
+    elif rc is None:
         rec["classification"] = "ENV"
     rec["duration_ms"] = int((time.time() - started) * 1000)
+    print("  [%s] rc=%s after %.0fs" % (label, rc, rec["duration_ms"] / 1000.0),
+          flush=True)
     return rec
+
+
+def _size_of(path):
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
 
 
 def base_receipt(spec, ctx, mode):
@@ -936,7 +1010,9 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
         overall = 0
         blocked = None
         for i, step in enumerate(steps, 1):
-            r = run_step(step, homes, tmps, timeout)
+            r = run_step(step, homes, tmps, timeout,
+                         label="%s-%d" % (spec["id"], i),
+                         logdir=row_artifacts)
             r["index"] = i
             records.append(r)
             step_failed = (r["classification"] is not None
@@ -978,16 +1054,27 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
         rec["stderr_sha256"] = sha256_text(rec["stderr"])
         rec["duration_ms"] = sum((r["duration_ms"] or 0) for r in records)
 
+        timed_out = [r for r in records
+                     if r.get("classification") == "TIMEOUT"]
         if blocked is not None:
             rec["verdict"], rec["reason"] = blocked
             rec["limitations"].append("Not executed: %s" % blocked[1])
+        elif timed_out:
+            # A timeout is never "no installer_rc", and never silent: the step
+            # that ran out of time is named in the verdict.
+            rec["verdict"] = "FAIL"
+            rec["reason"] = ("step timed out after %ss: %s (%s)"
+                             % (timeout, timed_out[0].get("note")
+                                or timed_out[0]["command"][:120],
+                                timed_out[0]["command"][:120]))
         else:
             verdict = evaluate(spec, records, overall, mode)
             rec["verdict"] = verdict["verdict"]
             rec["reason"] = verdict["reason"]
             rec["assertions"] = verdict["assertions"]
-        found_rc = re.findall(r"installer rc=(\d+)", rec["stdout"])
-        rec["installer_rc"] = int(found_rc[-1]) if found_rc else None
+        found_rc = parse_installer_rcs(rec["stdout"])
+        rec["installer_rc"] = found_rc[-1] if found_rc else None
+        rec["installer_rc_all"] = found_rc or None
         if rec["installer_rc"] is not None:
             rec["installer_rc_note"] = (
                 "installer_rc=%d was observed inside the canary's scratch "
@@ -996,7 +1083,8 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
                 "from the row's own check lines and summary."
                 % rec["installer_rc"])
         if (mode == "real" and spec.get("expects_installer_rc")
-                and rec["installer_rc"] is None):
+                and rec["installer_rc"] is None and not timed_out
+                and blocked is None):
             rec["verdict"] = "DISAGREEMENT"
             rec["reason"] = (rec["reason"] + "; A08 output carried no "
                              "installer_rc field")

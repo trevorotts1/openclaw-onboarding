@@ -23,6 +23,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 UNIT_ID = "SFR-007"
@@ -266,19 +267,85 @@ class Sandbox(object):
 
 
 # ------------------------------------------------------------ run helpers ----
-def run_capture(cmd, env, cwd=None, timeout=600):
-    """Run a command in the sandbox env; capture rc/stdout/stderr. Never throws."""
+PROGRESS_EVERY = 15.0   # seconds between "still running" lines
+
+
+def run_capture(cmd, env, cwd=None, timeout=600, log_stem=None):
+    """Run a command in the sandbox env; stream it to disk, return rc/stdout/stderr.
+
+    The child writes straight into two log files inside $CANARY_SANDBOX, so a
+    long install is tail-able while it runs instead of appearing only at exit,
+    and a step that dies silently is visibly a step that died. The complete
+    text is still returned under the same keys as before; `log` carries the
+    path. A timeout kills the child and always returns text naming the command,
+    never an empty result. Never throws.
+    """
+    cmd = [str(c) for c in cmd]
+    base = Path(env.get("CANARY_SANDBOX") or tempfile.gettempdir())
     try:
-        p = subprocess.run(cmd, env=env, cwd=cwd, timeout=timeout,
-                           capture_output=True, text=True)
-        return {"cmd": [str(c) for c in cmd], "rc": p.returncode,
-                "stdout": p.stdout[-4000:], "stderr": p.stderr[-4000:]}
-    except subprocess.TimeoutExpired as e:
-        return {"cmd": [str(c) for c in cmd], "rc": 124, "stdout": "",
-                "stderr": "timeout after %ss" % timeout}
-    except OSError as e:
-        return {"cmd": [str(c) for c in cmd], "rc": 127, "stdout": "",
-                "stderr": "os error: %s" % e}
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    stem = log_stem or ("cmd-%d" % int(time.time() * 1000))
+    out_log = base / ("%s.out.log" % stem)
+    err_log = base / ("%s.err.log" % stem)
+    started = time.time()
+    print("[canary %s] start: %s (timeout %ss, log %s)"
+          % (stem, " ".join(cmd), timeout, out_log), flush=True)
+    rc, note = None, ""
+    with open(str(out_log), "w+", encoding="utf-8", errors="replace") as fo, \
+            open(str(err_log), "w+", encoding="utf-8", errors="replace") as fe:
+        try:
+            proc = subprocess.Popen(cmd, env=env, cwd=cwd,
+                                    stdin=subprocess.DEVNULL, stdout=fo, stderr=fe)
+        except OSError as exc:
+            rc, note = 127, "os error: %s" % exc
+            fe.write(note + "\n")
+        else:
+            tick = started
+            while True:
+                rc = proc.poll()
+                if rc is not None:
+                    break
+                now = time.time()
+                if now - started > timeout:
+                    proc.kill()
+                    proc.wait()
+                    rc = 124
+                    note = "timeout after %ss" % timeout
+                    fo.write("\n[canary %s] TIMEOUT after %ss: %s\n"
+                             % (stem, timeout, " ".join(cmd)))
+                    print("[canary %s] TIMEOUT after %ss, killed" % (stem, timeout),
+                          flush=True)
+                    break
+                if now - tick >= PROGRESS_EVERY:
+                    tick = now
+                    print("[canary %s] running %.0fs, %d/%d bytes captured"
+                          % (stem, now - started, _size(out_log), _size(err_log)),
+                          flush=True)
+                time.sleep(0.5)
+        fo.flush()
+        fe.flush()
+    try:
+        out_text = out_log.read_text(encoding="utf-8", errors="replace")
+        err_text = err_log.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        out_text, err_text = "", "os error reading canary log: %s" % exc
+    if not out_text and not err_text and note:
+        out_text = "[canary %s] %s (no output captured)\n" % (stem, note)
+    duration_ms = int((time.time() - started) * 1000)
+    print("[canary %s] rc=%s after %.0fs (log %s)"
+          % (stem, rc, duration_ms / 1000.0, out_log), flush=True)
+    return {"cmd": cmd, "rc": rc, "stdout": out_text, "stderr": err_text,
+            "log": str(out_log), "log_stderr": str(err_log),
+            "duration_ms": duration_ms}
+
+
+def _size(path):
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
 
 
 def summarize_checks(results):

@@ -599,6 +599,12 @@ def run_self_test(a):
 
 def main():
     global FIXTURE
+    # unbuffered progress: a piped or redirected run must show movement while
+    # the installer works, not one block at exit (see cc.run_capture logs).
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--vector")
     ap.add_argument("--dist", choices=["onboarding", "999", "both"], default="both")
