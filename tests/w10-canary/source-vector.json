@@ -1,23 +1,24 @@
 {
   "schema": "blackceo.skill75.source-vector/v1",
   "pinned": true,
-  "pinned_at": "2026-10-23T06:05:09Z",
-  "pinned_by": "S75-FINISH-MERGE (pin refreshed after batch-8l PR #2468)",
-  "note": "ACCEPTED source vector. Every revision below was read live from its remote main with `git ls-remote <remote> refs/heads/main` at pinned_at, at the same moment (one consecutive pass, all four reads returning inside 2026-10-23T03:10:22Z). openclaw-onboarding is M2 at 5b3fc3d2, the merge commit of batch-8d PR #2459, which merged the post-batch-8e main (#2460, A12 runtime-proof harness and A-row execution driver) and batch-8c (#2458); the landed acceptance harnesses therefore bind to the main they were merged into. 999-setup advanced to #282 (fix/skill75-parity) over #285; blackceo-command-center and blackceo-graphify-infrastructure are unchanged. This refresh was first taken at 21b17060 (post-batch-8e) but batch-8d and 999-setup #282 landed mid-flight, so the vector was re-read rather than left pinned to a superseded main. audited_baseline values are historical reference points and were deliberately left byte-identical.",
+  "pinned_at": "2026-10-23T10:44:59Z",
+  "pinned_by": "S75-FINISH-MERGE (pin refreshed after PR #2475 batch-8m)",
+  "note": "ACCEPTED source vector. Every revision below was read live from its remote main with `git ls-remote <remote> refs/heads/main` at pinned_at, at the same moment (one consecutive pass, all four reads returning inside 2026-10-23T10:45:01Z). openclaw-onboarding moved to bca9910ce2bc, the merge commit of PR #2475 (batch/s75-product-fixes), which landed the SC08/SC38 product fixes and the a04/a07 selftests. 999-setup, blackceo-command-center and blackceo-graphify-infrastructure did not move and keep the revisions from the previous refresh. audited_baseline values are historical reference points and were deliberately left byte-identical.",
   "spec": "Skill_75_Universal_Repair_Spec_v1.1 section 3 (repository baselines) and section 15.2 / 16 (anonymous canaries, completion receipt)",
   "repositories": {
     "openclaw-onboarding": {
       "role": "canonical Skill 75 core + OpenClaw install/runtime integration",
-      "revision": "1d5e7611c34ad517126382e7471d81c7a5ac4b4c",
+      "revision": "bca9910ce2bcc44e8290d6ffa074f6cc32ed8282",
       "audited_baseline": "18c510088cf4e2d94e188deedff380d42912637f",
       "merged_prs": [
         "#2453 batch-6 (F12 motion gate fail-closed + H3 native-audio mixing policy)",
         "#2458 batch-8c",
         "#2460 batch-8e (A12 runtime-proof harness + A-row execution driver)",
         "#2459 batch-8d (D3 calibration, D3 spatial-motion, Skill 75 interrupt-state preservation)",
-        "#2468 batch-8l (A08 --keep + retained-path reporting + pre-flight guard requiring live install trees)"
+        "#2468 batch-8l (A08 --keep + retained-path reporting + pre-flight guard requiring live install trees)",
+        "#2475 batch-8m (SC08 receipt verdict, SC38 claim scope, a04/a07 selftests)"
       ],
-      "note": "M2 = merge commit of PR #2468 (batch-8l), which follows #2464 (batch-8h). Batch-8l changes tests/w10-canary/run_a_rows.py: plan_a08 now passes --keep and prints the real retained location, and a pre-flight guard refuses to hand a manifest to A12 when its installed_path is not a live directory. That is a harness change, so the pin must name the commit after it."
+      "note": "bca9910ce2bc = merge commit of PR #2475 (batch/s75-product-fixes), which follows #2468 (batch-8l). It carries the SC08 product-owned receipt verdict, the SC38 scope note, and the a04/a07 selftests, so the pin names the commit after it."
     },
     "999-setup": {
       "role": "Claude-Nine distribution, installed skill sync, helper pins, workflow guard + merge machinery",
