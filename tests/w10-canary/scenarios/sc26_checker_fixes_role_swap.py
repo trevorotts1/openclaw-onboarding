@@ -61,9 +61,17 @@ FIX_REFUSAL = ("A subagent may write only *.verdict.json files in a plan "
 
 
 def resolve_guard(args):
-    cands = []
+    # An explicitly named guard is AUTHORITATIVE. Falling back to a different
+    # guard would let a row pass against a revision it did not name, which is
+    # worse than failing: it reads as coverage of code that never ran.
     if args.guard_root:
-        cands.append(Path(args.guard_root).expanduser())
+        named = Path(args.guard_root).expanduser()
+        if (named / "guard.py").is_file():
+            return named
+        print("TOOLING: --guard-root %s contains no guard.py; refusing to "
+              "fall back to a different guard" % named)
+        raise SystemExit(2)
+    cands = []
     env = os.environ.get("WORKFLOW_GUARD_ROOT")
     if env:
         cands.append(Path(env).expanduser())
