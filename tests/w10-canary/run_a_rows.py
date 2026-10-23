@@ -37,7 +37,10 @@ VERDICTS (fail-closed)
   BLOCKED_OWNER   owner-gated row; never executed.
   BLOCKED_HARNESS harness/tool/manifest absent at this head.
   BLOCKED_ENV     required checkout absent, real mode without --expect-head,
-                  dirty tree in --real, timeout.
+                  dirty tree in --real, timeout, or (A01) npm missing / its
+                  disposable install failing. A01 never touches the pinned 999
+                  checkout: it copies workflow-guard into the row's TMPDIR,
+                  installs the declared dependency there, and runs in the copy.
   BLOCKED_VECTOR  pin stale: vector revision != head, or vector unpinned.
   BLOCKED_HEAD    --real but repo head != --expect-head.
   BLOCKED_A11     harness exited 4 with BLOCKED_A11 (live artifact required).
@@ -110,12 +113,17 @@ NINE_HARNESS = ".claude/skills/hook-skill/hooks/workflow-guard/test_u3_canaries.
 ENV_STRIP = ("OPENCLAW_HOME", "PYTHONPATH", "PYTHONHOME", "PYTEST_ADDOPTS",
              "PYTHONSTARTUP", "S75_TREE", "S75_NINE_ROOT")
 ENV_ERROR_MARKERS = (
-    "MODULE_NOT_FOUND", "Cannot find module", "command not found",
+    # most specific first: ERR_MODULE_NOT_FOUND contains MODULE_NOT_FOUND
+    "ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND", "Cannot find module",
+    "command not found",
     "No such file or directory", "ENOENT", "Permission denied",
     "Address already in use", "No space left on device", "EACCES",
     # A child process that produced no parseable output is a tooling symptom,
     # not this row's contract. Verdict stays FAIL either way.
     "JSONDecodeError", "ERR_MODULE_NOT_FOUND",
+    # npm install failures (offline, registry, permissions) are BLOCKED_ENV.
+    "EAI_AGAIN", "ENOTFOUND", "ETIMEDOUT", "ECONNREFUSED", "ECONNRESET",
+    "npm ERR!", "registry.npmjs.org",
 )
 
 LIMITATION_COMMON = (
@@ -135,11 +143,12 @@ class Blocked(Exception):
 
 
 class Step(object):
-    def __init__(self, argv, cwd, env=None, note=""):
+    def __init__(self, argv, cwd, env=None, note="", blocked_on_failure=None):
         self.argv = [str(a) for a in argv]
         self.cwd = str(cwd)
         self.env = dict(env or {})
         self.note = note
+        self.blocked_on_failure = blocked_on_failure
 
 
 def now_iso():
@@ -199,19 +208,61 @@ def load_vector(path):
 # row plans — the exact command per A-ROW-RUNBOOK.md
 # --------------------------------------------------------------------------
 
-def plan_a01(ctx, mode):
+def plan_a01(ctx, mode, sandbox):
+    """A01 runs on a DISPOSABLE copy of the 999 tree, never the protected clone.
+
+    The 999 checkout may be a symlink into the protected persist-home tree and
+    is read-only by standing rule, so the row copies the workflow-guard subtree
+    into this row's TMPDIR, installs its declared dependencies there with the
+    npm cache inside the same temp tree, and executes the runbook command in the
+    copy. A missing npm, a failed/offline install, or a failed copy is
+    BLOCKED_ENV naming npm; it is never a pass.
+    """
     nine = ctx["nine_root"]
     if not nine:
         raise Blocked("BLOCKED_ENV", "no 999-setup checkout; pass --nine-root")
-    if not (Path(nine) / NINE_HARNESS).is_file():
+    guard_rel = Path(NINE_HARNESS).parent
+    src = Path(nine) / guard_rel
+    if not (src / "test_u3_canaries.py").is_file():
         raise Blocked("BLOCKED_HARNESS", "missing %s in %s" % (NINE_HARNESS, nine))
-    # Command is the runbook's. Cache/bytecode are disabled by env so the 999
-    # checkout is never written to (PYTEST_ADDOPTS, PYTHONDONTWRITEBYTECODE).
-    return [Step(["python3", "-m", "pytest", NINE_HARNESS, "-q"], cwd=nine,
-                 env={"PYTEST_ADDOPTS": "-p no:cacheprovider"})]
+    npm = shutil.which("npm")
+    if not npm:
+        raise Blocked("BLOCKED_ENV",
+                      "npm is not on PATH; A01 needs a disposable npm install "
+                      "of the workflow-guard dependencies (acorn)")
+    dest_repo = Path(sandbox["tmpdir"]) / "nine-copy"
+    dest_guard = dest_repo / guard_rel
+    # The canary also drives .claude/skills/spec-protocol/tools/swarm-plan.mjs
+    # (via ROOT.parent x3), so the disposable copy carries that subtree too.
+    needed = [guard_rel, Path(".claude/skills/spec-protocol")]
+    try:
+        for rel in needed:
+            src_dir = Path(nine) / rel
+            if not src_dir.is_dir():
+                raise Blocked("BLOCKED_HARNESS",
+                              "999 tree is missing %s, which the A01 canary "
+                              "drives" % rel)
+            shutil.copytree(src_dir, dest_repo / rel)
+    except Blocked:
+        raise
+    except OSError as exc:
+        raise Blocked("BLOCKED_ENV",
+                      "cannot provision the disposable 999 copy: %s" % exc)
+    cache = Path(sandbox["tmpdir"]) / "npm-cache"
+    return [
+        Step([npm, "install", "--no-audit", "--no-fund", "--prefer-offline"],
+             cwd=dest_guard,
+             env={"npm_config_cache": str(cache),
+                  "npm_config_update_notifier": "false"},
+             note="disposable npm install (acorn)",
+             blocked_on_failure="BLOCKED_ENV"),
+        Step(["python3", "-m", "pytest", NINE_HARNESS, "-q"],
+             cwd=dest_repo,
+             env={"PYTEST_ADDOPTS": "-p no:cacheprovider"}),
+    ]
 
 
-def _multirun(ctx, mode):
+def _multirun(ctx, mode, sandbox):
     argv = ["python3", "tests/w10-canary/multi_run_canary.py",
             "--vector", str(ctx["vector_path"]),
             "--core-root", str(ctx["tree"]),
@@ -222,7 +273,7 @@ def _multirun(ctx, mode):
 
 
 def _scenario(name):
-    def plan(ctx, mode):
+    def plan(ctx, mode, sandbox):
         core = Path(ctx["tree"]) / CORE_REL
         if not (core / "state_store.py").is_file():
             raise Blocked("BLOCKED_HARNESS", "no Skill 75 core at %s" % core)
@@ -232,7 +283,7 @@ def _scenario(name):
     return plan
 
 
-def plan_a08(ctx, mode):
+def plan_a08(ctx, mode, sandbox):
     steps = []
     for dist in ("onboarding", "999"):
         argv = ["python3", "tests/w10-canary/clean_install_canary.py",
@@ -244,7 +295,7 @@ def plan_a08(ctx, mode):
     return steps
 
 
-def plan_a12(ctx, mode):
+def plan_a12(ctx, mode, sandbox):
     tool = Path(ctx["tree"]) / "work/S75-W07-U2/tools/runtime_proof.py"
     if not tool.is_file():
         raise Blocked("BLOCKED_HARNESS",
@@ -304,13 +355,18 @@ def rows():
         forbidden_dry=[r"\bfailed\b", r"\berrors?\b", r"\bERROR\b", r"FAILED"],
         summary_re=None, expected_total=None,
         min_passed=12,
-        notes=["Runbook command verbatim; PYTEST_ADDOPTS='-p no:cacheprovider' "
-               "keeps the 999 checkout unwritten. Requirement: 999 head must "
-               "equal the vector's 999-setup revision.",
+        notes=["Runbook command verbatim, executed in a DISPOSABLE copy of the "
+               "999 tree under this row's TMPDIR (the pinned checkout may be a "
+               "symlink into the protected persist-home tree and is never "
+               "written to). The copy's workflow-guard dependencies are "
+               "installed with npm using a cache inside the same temp tree.",
+               "Missing npm, a failed or offline npm install, or a failed copy "
+               "is BLOCKED_ENV naming npm, never a pass.",
                "The 999 workflow-guard shells out to node; a missing node "
                "module surfaces as an empty subprocess stdout and is recorded "
                "as failure_class ENV, never as a pass and never as a contract "
-               "red."],
+               "red. The harness never reads the child's stderr, so it hides "
+               "its own cause."],
     ))
 
     R.append(dict(
@@ -771,11 +827,13 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
 
     homes = tempfile.mkdtemp(prefix="s75-arow-home-")
     tmps = tempfile.mkdtemp(prefix="s75-arow-tmp-")
+    sandbox = {"home": homes, "tmpdir": tmps}
     try:
         try:
             row_artifacts = Path(receipts_dir) / "artifacts" / spec["id"]
             row_artifacts.mkdir(parents=True, exist_ok=True)
-            steps = spec["plan"](dict(ctx, artifacts=str(row_artifacts)), mode)
+            steps = spec["plan"](dict(ctx, artifacts=str(row_artifacts)), mode,
+                                 sandbox)
         except Blocked as b:
             rec["verdict"] = b.kind
             rec["reason"] = b.reason
@@ -785,17 +843,26 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
 
         records = []
         overall = 0
+        blocked = None
         for i, step in enumerate(steps, 1):
             r = run_step(step, homes, tmps, timeout)
             r["index"] = i
             records.append(r)
-            if r["classification"] is None and r["exit_code"] not in (0, None):
-                overall = r["exit_code"]
-            if r["classification"] is not None or r["exit_code"] is None:
-                overall = 1
-            if overall != 0:
+            step_failed = (r["classification"] is not None
+                           or r["exit_code"] not in (0, None))
+            if step_failed:
+                if step.blocked_on_failure:
+                    cls, marker = failure_class(records)
+                    blocked = (
+                        step.blocked_on_failure,
+                        "%s failed (%s%s); the row cannot run without it"
+                        % (step.note or step.argv[0], cls,
+                           (": " + marker) if marker else ""))
+                else:
+                    overall = (1 if r["classification"] is not None
+                               else r["exit_code"])
                 break
-        if overall == 0 and len(records) != len(steps):
+        if overall == 0 and blocked is None and len(records) != len(steps):
             overall = 1
 
         rec["steps"] = records
@@ -820,10 +887,14 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
         rec["stderr_sha256"] = sha256_text(rec["stderr"])
         rec["duration_ms"] = sum((r["duration_ms"] or 0) for r in records)
 
-        verdict = evaluate(spec, records, overall, mode)
-        rec["verdict"] = verdict["verdict"]
-        rec["reason"] = verdict["reason"]
-        rec["assertions"] = verdict["assertions"]
+        if blocked is not None:
+            rec["verdict"], rec["reason"] = blocked
+            rec["limitations"].append("Not executed: %s" % blocked[1])
+        else:
+            verdict = evaluate(spec, records, overall, mode)
+            rec["verdict"] = verdict["verdict"]
+            rec["reason"] = verdict["reason"]
+            rec["assertions"] = verdict["assertions"]
         found_rc = re.findall(r"installer rc=(\d+)", rec["stdout"])
         rec["installer_rc"] = int(found_rc[-1]) if found_rc else None
         if rec["installer_rc"] is not None:
@@ -863,8 +934,9 @@ def run_row(spec, ctx, mode, receipts_dir, timeout):
             rec["acceptance_usable"] = (rec["verdict"] == "PASS")
             rec["evidence_class"] = "REAL"
 
-        if rec["verdict"] in ("BLOCKED_VECTOR", "BLOCKED_HEAD", "BLOCKED_ENV",
-                              "BLOCKED_HARNESS", "BLOCKED_A11"):
+        if (mode == "real" and rec["verdict"] in (
+                "BLOCKED_VECTOR", "BLOCKED_HEAD", "BLOCKED_ENV",
+                "BLOCKED_HARNESS", "BLOCKED_A11")):
             rec["evidence_class"] = "NONE"
             rec["acceptance_usable"] = False
 
@@ -926,8 +998,8 @@ def self_test():
                            encoding="utf-8")
         spec = {
             "id": "A99", "weight": 0, "title": "self-test synthetic row",
-            "plan": lambda ctx, mode: [Step([sys.executable, str(fixture)],
-                                            cwd=str(root))],
+            "plan": lambda ctx, mode, sandbox: [
+                Step([sys.executable, str(fixture)], cwd=str(root))],
             "required_dry": ["fake:row-condition"],
             "required_real": ["fake:row-condition"],
             "required_re_dry": [], "required_re_real": [],
@@ -1003,6 +1075,47 @@ def self_test():
         check("exit 0 without the required check line is DISAGREEMENT",
               rec4["verdict"] == "DISAGREEMENT",
               "verdict=%s" % rec4["verdict"])
+
+        # 4b. classification control: an environment marker and a genuine
+        #     assertion failure share exit code 1 but must not share a class.
+        envfixture = root / "envfixture.py"
+        envfixture.write_text(
+            "import sys\n"
+            "sys.stderr.write(\"Error [ERR_MODULE_NOT_FOUND]: Cannot find "
+            "package 'acorn' imported from validate.mjs\\n\")\n"
+            "sys.exit(1)\n", encoding="utf-8")
+        spec_env = dict(spec, plan=lambda ctx, mode, sandbox: [
+            Step([sys.executable, str(envfixture)], cwd=str(root))])
+        rec_env = run_row(spec_env, ctx, "dry", root / "rc-env", 60)
+        check("ERR_MODULE_NOT_FOUND classifies as failure_class=ENV",
+              rec_env["verdict"] == "FAIL"
+              and rec_env.get("failure_class") == "ENV"
+              and rec_env.get("failure_marker") == "ERR_MODULE_NOT_FOUND",
+              "verdict=%s class=%s marker=%s"
+              % (rec_env["verdict"], rec_env.get("failure_class"),
+                 rec_env.get("failure_marker")))
+        check("a genuine assertion failure keeps failure_class=CONTENT",
+              rec.get("failure_class") == "CONTENT"
+              and not rec.get("failure_marker"),
+              "class=%s marker=%r" % (rec.get("failure_class"),
+                                      rec.get("failure_marker")))
+
+        # 4c. a failed preflight marked blocked_on_failure is BLOCKED_ENV.
+        npmfixture = root / "npmfixture.py"
+        npmfixture.write_text(
+            "import sys\nsys.stderr.write('npm ERR! network EAI_AGAIN\\n')\n"
+            "sys.exit(1)\n", encoding="utf-8")
+        spec_npm = dict(spec, plan=lambda ctx, mode, sandbox: [
+            Step([sys.executable, str(npmfixture)], cwd=str(root),
+                 note="disposable npm install (acorn)",
+                 blocked_on_failure="BLOCKED_ENV")])
+        rec_npm = run_row(spec_npm, ctx, "dry", root / "rc-npm", 60)
+        check("failed npm install is BLOCKED_ENV naming npm, never PASS",
+              rec_npm["verdict"] == "BLOCKED_ENV"
+              and rec_npm["acceptance_usable"] is False
+              and "npm" in rec_npm["reason"],
+              "verdict=%s reason=%s" % (rec_npm["verdict"],
+                                        rec_npm["reason"][:80]))
 
         # 5. real mode, matching head and pinned vector, lying fixture -> FAIL.
         ctx_real = dict(ctx, expect_head="d" * 40)
