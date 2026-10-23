@@ -1236,6 +1236,15 @@ oc_remove_tree_guarded() {
 oc_skill_box_state_paths() {
   case "${1:-}" in
     59-anthology-engine) printf '%s\n' "model-map.json" "config/field-map.json" ;;
+    # Skill 75 writes an interrupted run's resume state INSIDE its own folder:
+    # the pending-checkpoint marker at the skill root and the half-written
+    # state_store.py.part beside the canonical module. Both are absent from the
+    # clean source tree, so the wholesale remove+copy destroyed them on every
+    # roll and an interrupted run could not resume across an update. These are
+    # the exact two paths tests/w10-canary/upgrade_canary.py seeds and asserts
+    # survive ("interrupted-run state preserved"). A shipped copy would still
+    # win: neither path is in oc_skill_box_state_overrides_shipped.
+    75-drama-song-ad-factory) printf '%s\n' ".checkpoint-pending" "scripts/core/state_store.py.part" ;;
   esac
   return 0
 }
