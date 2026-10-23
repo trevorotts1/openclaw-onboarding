@@ -24,6 +24,15 @@ def attach_evidence(timeline, root, run_id="synthetic-run"):
     """
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
+    # F15: the lipsync producer holds every dispatch without the run's
+    # recorded choice-card receipt. A synthetic run records the same stamped
+    # block a real answered card writes, so this fixture exercises the gate
+    # instead of being exempt from it.
+    from style_defaults.card_gate import answered_stamped
+    _write(root / "control/card-receipt-block.json", answered_stamped(
+        {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
+         "length": 60, "video_model": "Kling 3.0"},
+        "lipsync evidence test", "2026-10-17T10:00:00Z"))
     timeline.update(run_dir=str(root), run_id=run_id)
     if not timeline.get("song_path"):
         song = root / "synthetic-song.wav"
