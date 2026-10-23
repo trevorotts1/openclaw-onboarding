@@ -13,6 +13,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkArchiveContract } from "./archive-contract.mjs";
+import { checkEntryPoint } from "./entry-point-gate.mjs";
 
 const args = process.argv.slice(2);
 const distribution = args.includes("--distribution");
@@ -95,6 +96,17 @@ for (const error of archiveErrors) fail(error);
 if (archiveErrors.length === 0) pass(distribution
   ? "explicit extracted distribution has no self-nested archive"
   : "source archive SHA-256 matches the source manifest");
+
+// --- entry point (installer truth): the actual executable, hash + load ---
+// A package is never 'ready' from SKILL.md or source presence: the entry
+// point must exist, match the recorded build byte for byte, and load.
+// A missing, stale or broken build fails visibly with an actionable error.
+const gate = checkEntryPoint(root, manifest);
+if (gate.ok) {
+  pass(`entry point verified: ${gate.entry.path} sha256 ${gate.entry.sha256} (hash + load)`);
+} else {
+  for (const problem of gate.problems) fail(problem);
+}
 
 console.log(failures === 0 ? "VERIFY: PASS" : `VERIFY: FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);
