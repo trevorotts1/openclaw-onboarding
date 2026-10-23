@@ -169,6 +169,21 @@ def main(argv=None):
             and too_short.get("verdict") == "FAIL",
             "56s=%s 45s=%s" % (band.get("verdict"), too_short.get("verdict")))
 
+    # ---- duration profile on the receipt (SC-17) -------------------------
+    # The run's receipt must name the duration profile it ran under, and that
+    # name must resolve to the chosen length in the ONE registry -- a bare echo
+    # of the request would pass the first half only.
+    PF = H.load_pkg(core, "intake_preflight.preflight")
+    DR = H.load_pkg(core, "suno_recipe.duration_registry")
+    prof = "drama-9x16-120s"
+    res = PF.check({"profile": prof, "mode": "diagnostic",
+                    "capabilities": {"generating": False}})
+    got = ((res or {}).get("checks") or {}).get("duration_profile")
+    c.check("a07:receipt-records-duration-profile",
+            isinstance(got, str) and got == prof
+            and DR.profile_row(got)["seconds"] == 120,
+            "receipt duration_profile=%r" % (got,))
+
     return c.finish(args.out)
 
 

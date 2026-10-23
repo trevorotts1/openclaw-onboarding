@@ -565,16 +565,18 @@ def rows():
             "a07:62s-passes-with-named-warning",
             "a07:master-overshoot-named-on-receipt",
             "a07:unmeasured-duration-never-passes",
-            "a07:short-side-keeps-5-10-band"],
+            "a07:short-side-keeps-5-10-band",
+            "a07:receipt-records-duration-profile"],
         required_dry=[
             "a07:hook-first-sheet-rejected",
             "a07:62s-passes-with-named-warning",
             "a07:master-overshoot-named-on-receipt",
             "a07:unmeasured-duration-never-passes",
-            "a07:short-side-keeps-5-10-band"],
+            "a07:short-side-keeps-5-10-band",
+            "a07:receipt-records-duration-profile"],
         required_re_real=[], required_re_dry=[],
         forbidden_real=[], forbidden_dry=[],
-        summary_re=r"^a07: (\d+)/(\d+) checks passed$", expected_total=14,
+        summary_re=r"^a07: (\d+)/(\d+) checks passed$", expected_total=15,
     ))
 
     R.append(dict(
