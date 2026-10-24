@@ -1,3 +1,13 @@
+## [2.0.33] - 2026-10-24 - test(T-08/F5): pin the trusted-contact-mapping decision that made F5 unreachable (PBB-229)
+
+F5 of the T-08 QC verdict was "`NO_TRUSTED_CONTACT_MAPPING` can never fire". The behaviour that closes it landed after `053c4fee`; this entry records the decision in the suite so it cannot drift back, and adds no product behaviour.
+
+The gate key `trusted_contact_mapping_evidence_id` is mandatory but nullable, and that is now asserted rather than implied. A gate that carries the key with no mapping refuses by name — `SUPPRESSED` / `NO_TRUSTED_CONTACT_MAPPING` with `errors == []`. A gate that omits the key was never written against this contract and stays `INVALID_GATE` naming the field. Making the field optional would put the reason code back behind a schema default; treating an omitted key as "no mapping" would let an unbound gate through the check. Both directions are refused by the new `test_a_missing_mapping_key_is_malformed_not_a_named_refusal`, which sits beside the existing blank/null and real-id control tests.
+
+Proof, one instrument (`f5_proof.py`, the same dispatch call as the suite) run against three extracted trees: `053c4fee` 1/8 cases held (a gate with no mapping **dispatched**, `DISPATCHED`/`GATE_ALLOWED`; a gate that carried the field was rejected as an unexpected property), `8e98f155e` (the commit F5 reviewed) 4/8 (null and `""` → `INVALID_GATE`, whitespace → `DISPATCHED`), this commit 8/8. The two tests carrying the decision and its control run `FAILED (failures=2, errors=1)` at `053c4fee` and `OK` here.
+
+Tests: `tools/tests/test_pb_contracts.py` 43 (42 previous + 1 new); whole `tools/tests` discovery 324, OK, one named dependency skip.
+
 ## [2.0.32] - 2026-10-24 - fix: write-ahead per-step receipts and a run lock, so a crash never leaves a created object unrecorded (T-36/PBB-081)
 
 The independent QC verdict on v2.0.28 reproduced both shipped claims - the hash-identical second run and the interrupted-run resume - and still failed the unit on one durability defect and one concurrency defect. Both are fixed here; every other v2.0.28 guarantee is unchanged and re-proven.

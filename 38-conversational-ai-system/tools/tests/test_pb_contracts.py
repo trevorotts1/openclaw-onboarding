@@ -587,6 +587,25 @@ class GateRecordTests(Fixture):
         self.assertEqual("NO_TRUSTED_CONTACT_MAPPING", payload["reason"])
         self.assertEqual([], payload["errors"])
 
+    def test_a_missing_mapping_key_is_malformed_not_a_named_refusal(self):
+        # The F5 decision, pinned so it cannot drift either way: the gate field is
+        # mandatory but nullable. A gate that carries the key with no mapping is a
+        # refused check (SUPPRESSED / NO_TRUSTED_CONTACT_MAPPING, errors empty); a
+        # gate that omits the key was never written against this contract and is
+        # malformed (INVALID_GATE naming the field). Making the field optional
+        # would put the reason code back behind a schema default, and treating an
+        # omitted key as "no mapping" would let an unbound gate through the check.
+        gate = copy.deepcopy(json.loads(Path(fixture("gates", "person-allow.json")).read_text(encoding="utf-8")))
+        del gate["trusted_contact_mapping_evidence_id"]
+        path = self.ledger_dir / "absent-mapping.json"
+        path.write_text(json.dumps(gate), encoding="utf-8")
+        code, payload = dispatch(str(self.ledger_dir / "absent.json"),
+                                 fixture("outbound", "person-gift.json"), str(path))
+        self.assertEqual(1, code, payload)
+        self.assertEqual("INVALID_GATE", payload["decision"], payload)
+        self.assertTrue(any("trusted_contact_mapping_evidence_id" in e for e in payload["errors"]),
+                        payload["errors"])
+
     def _gate_with_mapping(self, value, name):
         gate = copy.deepcopy(json.loads(Path(fixture("gates", "person-allow.json")).read_text(encoding="utf-8")))
         gate["trusted_contact_mapping_evidence_id"] = value
