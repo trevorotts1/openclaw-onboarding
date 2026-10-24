@@ -1,3 +1,7 @@
+## [v27.1.67]  -  2026-10-24  -  Cleanup (PBB-131 T-46): typed disposal decisions for scratch, merged, dirty and shared-consumer resources, with immediate eligible removal, preserved content and proven absence
+
+- In plain English: a new `shared-utils/cleanup/` module decides what may be deleted and then deletes it straight away, but only when it can prove the resource is owned, outside-only, on the expected drive, free of live consumers and already preserved. Anything it cannot determine comes back as UNKNOWN with a reason, never as success, and nothing is ever force-deleted.
+
 ## [Unreleased]  -  2026-10-24  -  PBB-070 / T-47: cross-repository compatibility manifest and deployment evidence
 
 - Adds `implementation/pbb-070/compatibility-manifest.json` and `implementation/pbb-070/DEPLOYMENT-EVIDENCE.md`. The manifest binds openclaw-onboarding `bccc4050f`, 999-setup `1d1545fc8`, and blackceo-command-center `ef6b9364e` (pinned tag v7.6.112) by exact commit, names the interfaces that were checked, and marks every interface that is not proven.
