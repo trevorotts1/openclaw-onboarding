@@ -399,7 +399,10 @@ class BookingFollowThrough:
                 return True
         return False
 
-    def _has_daily_capacity(self, calendar_id: str, slot: Slot) -> bool:
+    def _has_daily_capacity(self, calendar_id: str, slot: Slot,
+                            already_counted: int = 0) -> bool:
+        """`already_counted`: bookings in the day's count that leave the day
+        when this one lands (a same-day move vacates its own place)."""
         cap = self.policy.daily_cap
         if cap is None:
             return True
@@ -412,7 +415,7 @@ class BookingFollowThrough:
                 f"daily cap needs a real booked count ({type(exc).__name__}); "
                 "refusing to guess remaining capacity",
             ) from exc
-        return int(booked) < cap
+        return int(booked) - already_counted < cap
 
     def _acceptable(self, calendar_id: str, slot: Slot, start: datetime,
                     end: datetime) -> bool:
@@ -630,7 +633,12 @@ class BookingFollowThrough:
         if not self._within_policy(new_slot, now):
             raise Refusal(R_OUTSIDE_POLICY,
                           "new slot is outside lead time, window or exclusions")
-        if not self._has_daily_capacity(calendar_id, new_slot):
+        # A same-day move on the same calendar already holds one place in that
+        # day's real count; it vacates it, so it is not counted against itself.
+        # A move onto a different day (or calendar) takes a new place.
+        same_day = int(self._occupies_day(prior["payload"], calendar_id, new_slot))
+        if not self._has_daily_capacity(calendar_id, new_slot,
+                                        already_counted=same_day):
             raise Refusal(R_OUTSIDE_POLICY, "the daily cap is already reached")
 
         intent_key = self._intent_key("change", calendar_id,
@@ -654,6 +662,22 @@ class BookingFollowThrough:
         if result.claimed:
             self._note_supersession(result.action_id, booking_action_id)
         return result
+
+    def _occupies_day(self, payload: Mapping[str, Any], calendar_id: str,
+                      slot: Slot) -> bool:
+        """True when the receipted booking sits on `slot`'s calendar and local day.
+        An unreadable or naive start is not proof of the same day, so the full
+        count applies (the conservative side: it can refuse, never overbook)."""
+        if str(payload.get("calendar_id") or "") != calendar_id:
+            return False
+        try:
+            start = datetime.fromisoformat(str(payload["start"]))
+        except (KeyError, TypeError, ValueError):
+            return False
+        if start.tzinfo is None:
+            return False
+        tz_name = self.policy.timezone
+        return start.astimezone(_tz(tz_name)).date() == slot.local(tz_name).date()
 
     def cancel(self, *, booking_action_id: str, now: datetime,
                reason: str = "customer_request") -> Booking:

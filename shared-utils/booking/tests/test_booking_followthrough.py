@@ -151,6 +151,25 @@ class PermissiveAvailability(FakeAvailability):
         return [s for s in self.free if s.calendar_id == calendar_id]
 
 
+class CalendarCountingAvailability(FakeAvailability):
+    """booked_count derived from what is actually on the calendar: this
+    provider's one booking wherever its last write put it, plus `others`."""
+
+    def __init__(self, free, provider, others=()):
+        super().__init__(free)
+        self.provider = provider
+        self.others = list(others)
+
+    def booked_count(self, calendar_id, day):
+        mine = [s for s, _c, _k in self.provider.creates[-1:]]
+        mine = [s for _b, s, _k in self.provider.moves[-1:]] or mine
+        if self.provider.cancels:
+            mine = []
+        return sum(1 for s in mine + self.others
+                   if s.calendar_id == calendar_id
+                   and s.local("America/New_York").date() == day)
+
+
 class BookingCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="t28-booking-")
@@ -631,6 +650,83 @@ class ChangePathTests(BookingCase):
         self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
                            booking_action_id=first.action_id,
                            new_slot=slot(6, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+
+class DailyCapChangePathTests(BookingCase):
+    """The day's count comes from what is really on the calendar, so it already
+    holds the booking being moved. A same-day move vacates its own place; a move
+    onto another day (or calendar) takes a new one. (PBB-178 C6a-C6d.)"""
+
+    def _capped(self, cap, first, new, others=(), purpose="consult"):
+        avail = CalendarCountingAvailability([first, new], self.provider, others)
+        policy = BookingPolicy(
+            calendars={"default": CAL_A, "on-site estimate": CAL_B},
+            timezone="America/New_York", location="x", change_path="y",
+            max_window_days=14, min_lead_hours=2, daily_cap=cap)
+        eng = BookingFollowThrough(store=self.store, availability=avail,
+                                   provider=self.provider, policy=policy,
+                                   tenant_id="tenant-1")
+        booked = eng.book(purpose=purpose, slot=first, contact_id="c1",
+                          confirmed=True, now=NOW)
+        self.assertTrue(booked.claimed)
+        avail.free.remove(first)          # the appointment now occupies it
+        return eng, avail, booked
+
+    def _count(self, avail, s):
+        return avail.booked_count(s.calendar_id, s.local("America/New_York").date())
+
+    def test_C6a_the_only_booking_on_a_cap_1_day_moves_within_that_day(self):
+        eng, avail, first = self._capped(1, slot(5, 10), slot(5, 14))
+        self.assertEqual(self._count(avail, slot(5, 14)), 1)
+        moved = eng.reschedule(booking_action_id=first.action_id,
+                               new_slot=slot(5, 14), now=NOW)
+        self.assertTrue(moved.claimed)
+        self.assertEqual(len(self.provider.moves), 1)
+        self.assertEqual(self._count(avail, slot(5, 14)), 1, "never over the cap")
+
+    def test_C6b_a_same_day_move_on_a_day_at_its_cap_is_accepted(self):
+        eng, avail, first = self._capped(2, slot(5, 10), slot(5, 14),
+                                         others=[slot(5, 16)])
+        self.assertEqual(self._count(avail, slot(5, 14)), 2)
+        moved = eng.reschedule(booking_action_id=first.action_id,
+                               new_slot=slot(5, 14), now=NOW)
+        self.assertTrue(moved.claimed)
+        self.assertEqual(len(self.provider.moves), 1)
+        self.assertEqual(self._count(avail, slot(5, 14)), 2, "never over the cap")
+
+    def test_C6c_a_move_into_a_different_day_that_is_full_is_refused(self):
+        eng, avail, first = self._capped(1, slot(5, 10), slot(6, 14),
+                                         others=[slot(6, 9)])
+        self.assertEqual(self._count(avail, slot(6, 14)), 1)
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(6, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_C6d_a_move_into_a_different_empty_day_is_accepted(self):
+        eng, avail, first = self._capped(1, slot(5, 10), slot(6, 14))
+        self.assertEqual(self._count(avail, slot(6, 14)), 0)
+        moved = eng.reschedule(booking_action_id=first.action_id,
+                               new_slot=slot(6, 14), now=NOW)
+        self.assertTrue(moved.claimed)
+        self.assertEqual(len(self.provider.moves), 1)
+
+    def test_a_same_day_move_still_refuses_when_other_bookings_fill_the_day(self):
+        eng, avail, first = self._capped(1, slot(5, 10), slot(5, 14))
+        avail.others.append(slot(5, 16))  # another booking landed after this one
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_the_same_date_on_another_calendar_takes_a_new_place(self):
+        eng, avail, first = self._capped(1, slot(5, 10, CAL_B), slot(5, 14),
+                                         others=[slot(5, 9)],
+                                         purpose="on-site estimate")
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
         self.assertEqual(self.provider.moves, [])
 
 
