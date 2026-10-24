@@ -236,6 +236,43 @@ printf '%s' "$out" | grep -q '^rc=1' && printf '%s' "$out" | grep -q '^FAIL sele
   || bad "expected FAIL name mismatch (declared name): $out"
 never_success "declared name mismatch" "$out"
 
+# ---- 2f. staleness is disclosed, supplied from the source copy, and an
+# unreadable source version is BLOCKED rather than skipped -------------------
+# (i) no expected version: PASS must SAY the staleness comparison did not run
+out="$(sel "$T/s1bin" "$T/s1")"
+printf '%s' "$out" | grep -q 'stale-check-not-possible-no-expected-version' \
+  && ok "no expected version -> PASS discloses the staleness check did not run" \
+  || bad "expected staleness disclosure: $out"
+
+# (ii) oc_gate_skill supplies the shipment expectation from the source copy
+# beside the lib: a stale selected tree then FAILS.
+mkdir -p "$T/repo/01-demo" "$T/state"
+cp "$REPO/lib-onboarding-state.sh" "$T/repo/lib-onboarding-state.sh"
+printf 'v1.0.53\n' > "$T/repo/01-demo/skill-version.txt"
+gate_reason() { # gate_reason <repo-root> -- run oc_gate_skill with recording stubs
+  HOME="$T/h" PATH="$T/s12bin:$PATH" OC_CONFIG="$T/h/.openclaw" OC_SKILLS_DIR="$T/s12" \
+  bash -c '
+    source "$1/lib-onboarding-state.sh" 2>/dev/null
+    oc_state_mark_field() { return 0; }
+    oc_state_set() { printf "STATE:%s:%s\n" "$1" "${2:-}${3:+ $3}"; return 0; }
+    oc_gate_skill 01-demo; _grc=$?
+    echo "gate_rc=$_grc"
+  ' _ "$1"
+}
+mk_tree "$T/s12" "1.0.52"
+mk_cli "$T/s12bin" "$T/s12/01-demo/SKILL.md"
+out="$(gate_reason "$T/repo")"
+printf '%s' "$out" | grep -q 'gate_rc=1' && printf '%s' "$out" | grep -q 'selected-version-older' \
+  && ok "oc_gate_skill supplies the source expectation (stale tree FAILS)" \
+  || bad "expected FAIL via supplied expectation: $out"
+
+# (iii) a source copy whose version is present but EMPTY is not a licence to skip
+: > "$T/repo/01-demo/skill-version.txt"
+out="$(gate_reason "$T/repo")"
+printf '%s' "$out" | grep -q 'gate_rc=1' && printf '%s' "$out" | grep -q 'expected-version-unreadable' \
+  && ok "unreadable source version -> BLOCKED expected-version-unreadable" \
+  || bad "expected BLOCKED unreadable expectation: $out"
+
 # ---- 2e. no identity evidence at all -> FAIL -------------------------------
 # No version carrier and no declared runtime entry: silence is not evidence.
 mkdir -p "$T/s11/01-demo/advisors"

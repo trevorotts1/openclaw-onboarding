@@ -712,7 +712,8 @@ if entry:
 if not vals and not entry:
     emit("FAIL", "no-identity-evidence:selected-tree-carries-no-version-carrier-and-no-declared-runtime-entry", sel, src)
 
-emit("PASS", "selection-verified" + (":version=" + sel_ver if sel_ver else ""), sel, src, code=0)
+emit("PASS", "selection-verified" + (":version=" + sel_ver if sel_ver else "") +
+     ("" if expected else ":stale-check-not-possible-no-expected-version"), sel, src, code=0)
 PYEOF
   ) || rrc=$?
   OC_SKILL_STATUS=$(printf '%s' "$res" | cut -f1)
@@ -824,8 +825,17 @@ oc_gate_skill() {
   local _libdir; _libdir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
   if [ -f "$_libdir/$folder/skill-version.txt" ]; then
     _exp="$(tr -d '[:space:]' < "$_libdir/$folder/skill-version.txt" 2>/dev/null || true)"
+    if [ -z "$_exp" ]; then
+      # A source copy exists but its version cannot be read: that is not a
+      # licence to skip the staleness comparison.
+      OC_SKILL_STATUS=BLOCKED
+      OC_SKILL_REASON=skill-selection-blocked:expected-version-unreadable
+      _sel_rc=2
+    fi
   fi
-  oc_skill_selection_status "$folder" "$_exp" || _sel_rc=$?
+  if [ "$_sel_rc" -eq 0 ]; then
+    oc_skill_selection_status "$folder" "$_exp" || _sel_rc=$?
+  fi
   oc_state_mark_field "$folder" selectionStatus "\"${OC_SKILL_STATUS:-unknown}\"" || _sw_ok=0
   if [ "$_sel_rc" -eq 0 ]; then
     oc_state_mark_field "$folder" registered true || _sw_ok=0
