@@ -949,7 +949,8 @@ def _parse(reply, q):
 
 
 def conversation(replies, questions=None, state_store=None, run_id=None,
-                 run_dir=None, target=None, client_dir=None, purpose_flow=None):
+                 run_dir=None, target=None, client_dir=None, purpose_flow=None,
+                 run_state_file=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
     it with the replies so far. state: answers, done, message, video_model.
@@ -972,12 +973,13 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
     replayed with the SAME list it used -- purpose flow when it recorded
     control/method.json or a studio order, the old list otherwise -- so a
     resumed project and its approved artifacts are preserved exactly and are
-    never migrated or rewritten. True/False still force either list.
+    never migrated or rewritten. ``run_state_file`` is the same run state the
+    launcher reads: a chat run already past its intro is a resume and keeps the
+    card it started with. The decision itself lives in ``new_run_flow`` so the
+    API and the launcher can never disagree. True/False still force either list.
     """
     if purpose_flow is None:
-        history = _run_history(run_dir)
-        purpose_flow = history is True or (history is None and bool(run_dir)
-                                           and os.path.isdir(run_dir))
+        purpose_flow = new_run_flow(run_dir, run_state_file)
     qs = questions or QUESTIONS
     #: The list every rebuild starts from. Shaping a SHAPED list again would
     #: lose LENGTH's own slot on a campaign (EPISODE LENGTH took it), so the
