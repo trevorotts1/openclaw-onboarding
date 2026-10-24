@@ -197,7 +197,11 @@ def diner_plan():
         "episode_id": "ep_diner_002",
         "status": "complete",
         "foundation": foundation,
-        "foundation_revisions": {"episode_world": {"revision": 6, "digest": "sha256:bb88"}},
+        "foundation_revisions": {
+            k: {"revision": (foundation.get(k) or {}).get("revision"),
+                "digest": (foundation.get(k) or {}).get("digest")}
+            for k in SP.FOUNDATION_KEYS
+        },
         "scenes": [{
             "scene_id": "scene_diner_001",
             "sequence": 1,
@@ -475,6 +479,134 @@ def test_schema_matches_validator():
     assert schema["properties"]["schema_version"]["const"] == SP.SCHEMA_VERSION
     assert (schema["properties"]["scenes"]["items"]["properties"]["timing_basis"]["const"]
             == SP.TIMING_BASIS_PROVISIONAL)
+
+
+def test_world_revision_absence_is_refused():
+    """A world with NO revision must not disable the binding check (S75-A09).
+
+    The named defect: scene world_revision=99 against an unversioned world used
+    to validate ok and reach music_gate allowed.
+    """
+    p = workshop_plan()
+    del p["foundation"]["episode_world"]["revision"]
+    p["foundation_revisions"]["episode_world"] = {"digest": "sha256:dd44"}
+    p["scenes"][0]["world_revision"] = 99
+    p["scenes"][1]["world_revision"] = 99
+    c = codes(SP.validate_scene_plan(p))
+    assert SP.validate_scene_plan(p)["outcome"] == "rejected", c
+    assert "world-revision-missing" in c and "world-revision-unbound" in c, c
+    assert "world-revision-mismatch" not in c, c  # nothing to compare against
+    gate = SP.music_gate(p)
+    assert gate["allowed"] is False, gate["reason_code"]
+
+    # a scene that binds no world revision is refused too
+    p = workshop_plan()
+    p["scenes"][0]["world_revision"] = None
+    assert "world-revision-unbound" in codes(SP.validate_scene_plan(p))
+
+    # the declared-revision path still discriminates
+    p = workshop_plan()
+    p["scenes"][0]["world_revision"] = 99
+    assert "world-revision-mismatch" in codes(SP.validate_scene_plan(p))
+
+
+def test_cast_identity_revision_absence_is_refused():
+    """Neither side declaring an identity revision is a refusal, not a match."""
+    p = workshop_plan()
+    for row in p["foundation"]["episode_cast_manifest"]["cast"]:
+        row.pop("identity_revision")
+    for sc in p["scenes"]:
+        for role in sc["cast_roles"]:
+            role.pop("identity_revision")
+    res = SP.validate_scene_plan(p)
+    assert res["outcome"] == "rejected", res["errors"][:3]
+    assert "cast-revision-missing" in codes(res)
+
+    # a scene role that binds nothing against a declared manifest revision
+    p = workshop_plan()
+    p["scenes"][0]["cast_roles"][0]["identity_revision"] = None
+    assert "cast-revision-missing" in codes(SP.validate_scene_plan(p))
+
+    # the declared path still discriminates
+    p = workshop_plan()
+    p["scenes"][0]["cast_roles"][0]["identity_revision"] = 7
+    assert "cast-revision-mismatch" in codes(SP.validate_scene_plan(p))
+
+
+def test_foundation_revision_pins_reconciled():
+    """The plan's pin must match the artifacts it validates against."""
+    p = workshop_plan()
+    p["foundation_revisions"]["episode_world"]["revision"] = 5
+    assert "foundation-revision-mismatch" in codes(SP.validate_scene_plan(p))
+
+    p = workshop_plan()
+    p["foundation_revisions"]["research_bundle"]["digest"] = "sha256:ffff"
+    assert "foundation-digest-mismatch" in codes(SP.validate_scene_plan(p))
+
+    p = workshop_plan()
+    del p["foundation_revisions"]["episode_cast_manifest"]
+    assert "foundation-revision-unpinned" in codes(SP.validate_scene_plan(p))
+
+    p = workshop_plan()
+    p["foundation_revisions"] = {}
+    assert "foundation-revisions-missing" in codes(SP.validate_scene_plan(p))
+
+    # an artifact with no revision cannot be pinned, and must not be skipped
+    p = workshop_plan()
+    del p["foundation"]["research_bundle"]["revision"]
+    c = codes(SP.validate_scene_plan(p))
+    assert "artifact-revision-missing" in c and "foundation-revision-mismatch" not in c, c
+
+
+def test_empty_foundation_blocks_before_dispatch():
+    """An empty foundation set stops the writer BEFORE the dispatcher."""
+    calls = {"n": 0}
+
+    def counting_submit(request):
+        calls["n"] += 1
+        return {"scenes": []}
+
+    for mutate, code in (
+            (lambda f: f["research_bundle"].update(claims=[]), "research-claims-empty"),
+            (lambda f: f["episode_cast_manifest"].update(cast=[]), "cast-manifest-empty"),
+            (lambda f: f["episode_world"].update(locations=[]), "world-locations-empty")):
+        f = workshop_foundation()
+        mutate(f)
+        out = SP.build_scene_plan(f, BEATS, counting_submit, attempt_key="att-e")
+        assert out["outcome"] == "rejected" and out.get("dispatched") is False, \
+            "%s dispatched: %s" % (code, out.get("reason_code"))
+        assert code in [e["error"] for e in out["errors"]], (code, out["errors"][:2])
+    assert calls["n"] == 0, calls["n"]
+
+
+def test_optional_guards_fail_closed():
+    """No guard in this family may treat absence as permission to skip a check."""
+    p = workshop_plan()
+    p["scenes"][0]["visible_action"] = 24
+    assert "scene-field-not-text" in codes(SP.validate_scene_plan(p))
+
+    p = workshop_plan()
+    p["scenes"][1]["causal_predecessor"] = "  "
+    assert "causal-predecessor-missing" in codes(SP.validate_scene_plan(p))
+
+    p = workshop_plan()
+    del p["schema_version"]
+    assert "schema-version-missing" in codes(SP.validate_scene_plan(p))
+
+    p = workshop_plan()
+    del p["status"]
+    gate = SP.music_gate(p)
+    assert gate["allowed"] is False and "plan-not-complete" in codes(gate), gate["reason_code"]
+
+    # an explicitly EMPTY argument must fail closed, never fall back to the
+    # plan's own foundation and silently pass
+    res = SP.validate_scene_plan(workshop_plan(), cast_manifest={})
+    assert "cast-manifest-empty" in codes(res) and res["outcome"] == "rejected"
+
+    # a non-object scene list member must not crash the causal pass
+    p = workshop_plan()
+    p["scenes"] = ["not-a-scene"]
+    assert SP.validate_scene_plan(p)["outcome"] == "rejected"
 
 
 TESTS = [v for k, v in sorted(globals().items())

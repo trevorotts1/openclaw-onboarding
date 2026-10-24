@@ -217,6 +217,18 @@ def validate_foundation(foundation):
                            "episode_world.locations must be a list of {location_id}",
                            field="episode_world"))
 
+    # an EMPTY foundation set is as unusable as a missing one: it must stop the
+    # authoring writer BEFORE the dispatcher is called, not afterwards
+    for code, rows, detail in (
+            ("cast-manifest-empty", (cast or {}).get("cast"), "episode_cast_manifest.cast"),
+            ("world-locations-empty", (world or {}).get("locations"), "episode_world.locations"),
+            ("research-claims-empty", (foundation.get("research_bundle") or {}).get("claims"),
+             "research_bundle.claims")):
+        if not isinstance(rows, list) or not rows:
+            errors.append(_err(code,
+                               "%s is empty or absent; a foundation with no declared set cannot "
+                               "author a plan" % detail, field=detail))
+
     if errors:
         return _result("rejected", errors[0]["error"], errors,
                        foundation_keys=list(foundation))
@@ -278,7 +290,14 @@ def _check_scene_detail(scene, sid):
         if field in ("sequence", "estimated_duration_seconds", "world_revision",
                      "cast_roles", "claim_ids"):
             continue
-        if _blank(scene.get(field)):
+        val = scene.get(field)
+        if not isinstance(val, str):
+            # a non-text field dodges the blank check AND every word floor
+            errors.append(_err("scene-field-not-text",
+                               "scene %r %r is %s, not prose text"
+                               % (sid, field, type(val).__name__),
+                               scene_id=sid, field=field))
+        elif _blank(val):
             errors.append(_err("scene-field-blank",
                                "scene %r has a blank %r" % (sid, field),
                                scene_id=sid, field=field))
@@ -334,6 +353,8 @@ def _check_scene_detail(scene, sid):
 def _check_causal_chain(scenes):
     """Because/therefore: each outcome IS the next cause. 'And then' fails."""
     errors = []
+    if not scenes:
+        return errors
     for i, scene in enumerate(scenes):
         sid = scene.get("scene_id")
         pred = scene.get("causal_predecessor")
@@ -346,7 +367,11 @@ def _check_causal_chain(scenes):
                                    scene_id=sid, field="causal_predecessor"))
             continue
         prev = scenes[i - 1]
-        if not _blank(pred) and pred != prev.get("causal_outcome"):
+        if _blank(pred):
+            errors.append(_err("causal-predecessor-missing",
+                               "scene %r declares no causal_predecessor; a blank link is not a link"
+                               % sid, scene_id=sid, field="causal_predecessor"))
+        elif pred != prev.get("causal_outcome"):
             errors.append(_err("causal-link-broken",
                                "scene %r is caused by %r but the previous scene's outcome is %r -- "
                                "the chain is decorative, not causal"
@@ -377,13 +402,21 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
                        [_err("plan-not-an-object", "scene_plan must be a JSON object")])
 
     foundation = plan.get("foundation") if isinstance(plan.get("foundation"), dict) else {}
-    cast_manifest = cast_manifest or foundation.get("episode_cast_manifest")
-    world = world or foundation.get("episode_world")
-    research = research or foundation.get("research_bundle")
+    # an explicit argument is authoritative even when EMPTY: an empty set must
+    # fail closed below, never be silently swapped for the plan's own binding
+    if cast_manifest is None:
+        cast_manifest = foundation.get("episode_cast_manifest")
+    if world is None:
+        world = foundation.get("episode_world")
+    if research is None:
+        research = foundation.get("research_bundle")
 
     errors = []
 
-    if plan.get("schema_version") not in (None, SCHEMA_VERSION):
+    if _blank(plan.get("schema_version")):
+        errors.append(_err("schema-version-missing",
+                           "schema_version is required; an unversioned plan is not a contract plan"))
+    elif plan.get("schema_version") != SCHEMA_VERSION:
         errors.append(_err("schema-version-unsupported",
                            "schema_version=%r, expected %r"
                            % (plan.get("schema_version"), SCHEMA_VERSION)))
@@ -414,6 +447,53 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
             errors.append(_err(code,
                                "%s is empty or absent; every scene reference must resolve "
                                "against a declared set" % detail, field=detail))
+
+    # the plan pins revisions; they must match the artifacts actually validated
+    pins = plan.get("foundation_revisions")
+    if not isinstance(pins, dict) or not pins:
+        errors.append(_err("foundation-revisions-missing",
+                           "foundation_revisions must pin every foundation artifact; a plan that "
+                           "pins nothing cannot be reconciled with what it validates"))
+    else:
+        for key in FOUNDATION_KEYS:
+            pin = pins.get(key)
+            artifact = cast_manifest if key == "episode_cast_manifest" else (
+                world if key == "episode_world" else
+                (research if key == "research_bundle" else foundation.get(key)))
+            if not isinstance(pin, dict):
+                errors.append(_err("foundation-revision-unpinned",
+                                   "foundation_revisions carries no pin for %s; a missing pin is a "
+                                   "refusal, not a waiver" % key, field="foundation_revisions"))
+                continue
+            revision = (artifact or {}).get("revision")
+            if _blank(revision):
+                errors.append(_err("artifact-revision-missing",
+                                   "%s declares no revision; absence of a revision is not "
+                                   "permission to skip the revision check" % key, field=key))
+            elif pin.get("revision") != revision:
+                errors.append(_err("foundation-revision-mismatch",
+                                   "plan pins %s revision %r but the validated artifact is %r"
+                                   % (key, pin.get("revision"), revision), field="foundation_revisions"))
+            if _blank((artifact or {}).get("digest")):
+                errors.append(_err("artifact-digest-missing",
+                                   "%s declares no content digest; an undigested artifact cannot "
+                                   "be pinned" % key, field=key))
+            elif _blank(pin.get("digest")):
+                errors.append(_err("foundation-revision-undigested",
+                                   "foundation_revisions pins %s without a digest" % key,
+                                   field="foundation_revisions"))
+            elif pin.get("digest") != (artifact or {}).get("digest"):
+                errors.append(_err("foundation-digest-mismatch",
+                                   "plan pins %s digest %r but the validated artifact is %r"
+                                   % (key, pin.get("digest"), (artifact or {}).get("digest")),
+                                   field="foundation_revisions"))
+
+    # a world that declares NO revision must refuse, not switch the check off
+    if _blank(world_rev):
+        errors.append(_err("world-revision-missing",
+                           "episode_world declares no revision; absence of a revision is not "
+                           "permission to skip the world-revision check",
+                           field="episode_world"))
 
     scenes = plan.get("scenes")
     if not isinstance(scenes, list) or not scenes:
@@ -469,6 +549,16 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
                                        "scene %r names cast_id %r, absent from the cast manifest"
                                        % (sid, cid), scene_id=sid, field="cast_roles",
                                        cast_id=cid))
+                elif (_blank(role.get("identity_revision"))
+                      or _blank(row.get("identity_revision"))):
+                    # neither side declaring a revision is a refusal, never a match
+                    errors.append(_err("cast-revision-missing",
+                                       "scene %r cast %r binds identity_revision %r and the "
+                                       "manifest holds %r; absence of a revision is not permission "
+                                       "to skip the identity check"
+                                       % (sid, cid, role.get("identity_revision"),
+                                          row.get("identity_revision")),
+                                       scene_id=sid, field="cast_roles", cast_id=cid))
                 elif role.get("identity_revision") != row.get("identity_revision"):
                     errors.append(_err("cast-revision-mismatch",
                                        "scene %r binds %r revision %r, manifest holds %r"
@@ -489,7 +579,14 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
                                "scene %r location_id %r is not in the episode world"
                                % (sid, loc), scene_id=sid, field="location_id",
                                location_id=loc))
-        if world_rev is not None and scene.get("world_revision") != world_rev:
+        if _blank(scene.get("world_revision")) or _blank(world_rev):
+            errors.append(_err("world-revision-unbound",
+                               "scene %r cannot bind a world revision: scene world_revision=%r, "
+                               "episode_world.revision=%r; absence of either side is a refusal, "
+                               "not permission to skip the check"
+                               % (sid, scene.get("world_revision"), world_rev),
+                               scene_id=sid, field="world_revision"))
+        elif scene.get("world_revision") != world_rev:
             errors.append(_err("world-revision-mismatch",
                                "scene %r binds world revision %r, world holds %r"
                                % (sid, scene.get("world_revision"), world_rev),
@@ -540,10 +637,10 @@ def music_gate(plan, cast_manifest=None, world=None, research=None):
     result = validate_scene_plan(plan, cast_manifest, world, research)
     reasons = list(result["errors"])
     if isinstance(plan, dict):
-        if plan.get("status") not in (None, "complete"):
+        if plan.get("status") != "complete":
             reasons.append(_err("plan-not-complete",
-                                "plan status=%r; the scene plan must be complete before any song"
-                                % plan.get("status")))
+                                "plan status=%r; the scene plan must be marked complete before "
+                                "any song, and an unmarked plan is not complete" % plan.get("status")))
         for key in PLAN_MUSIC_KEYS:
             if key in plan:
                 reasons.append(_err("plan-carries-song",
@@ -615,7 +712,9 @@ def build_scene_plan(foundation, beats, submit, attempt_key=None):
 
     plan = dict(raw)
     plan.setdefault("schema_version", SCHEMA_VERSION)
-    plan.setdefault("foundation", foundation)
+    # the validated foundation IS the binding: a dispatcher cannot substitute
+    # its own and have that one validated in its place
+    plan["foundation"] = foundation
     plan.setdefault("foundation_revisions", {
         k: {"revision": (foundation.get(k) or {}).get("revision"),
             "digest": (foundation.get(k) or {}).get("digest")}

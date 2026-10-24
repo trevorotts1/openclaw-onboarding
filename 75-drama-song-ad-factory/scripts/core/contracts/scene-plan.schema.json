@@ -5,7 +5,7 @@
   "description": "Complete pre-song scene plan (S75-T09). Structural shape only: the causal chain, cast/location resolution, prose minimums and provisional-timing rules are enforced by scripts/core/story_planner.py:validate_scene_plan, which is authoritative.",
   "type": "object",
   "additionalProperties": true,
-  "required": ["plan_id", "episode_id", "foundation", "foundation_revisions", "scenes"],
+  "required": ["schema_version", "plan_id", "episode_id", "foundation", "foundation_revisions", "scenes"],
   "properties": {
     "schema_version": {"const": "blackceo.scene-plan/v1"},
     "plan_id": {"type": "string", "minLength": 1},
