@@ -4,6 +4,25 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.108 - 2026-10-24 - durable intake bound to the exact rendered questions
+
+Intake now persists every raw client answer with its source and exact rendered
+question/options before advancing. Separate CLI calls resume the saved question;
+unknown options, mismatched or revised menus, and incomplete intake refuse to
+advance. Explicitly sourced prior facts can be reused without importing guessed
+choices or remapping old menu numbers. Recap confirmation remains separate from
+approval of the actual script, complete storyboard, or selected song.
+
+The chosen video provider route is saved in the existing run model lock. Both
+ordinary and campaign intake use the canonical six durations, including 120
+seconds. Existing question text/order and retained descriptions are preserved;
+the authorized Agnes supplement explains both Agnes and KIE.ai, costs and limits.
+The Studio question snapshot follows the renderer. Legacy bulk Studio replies
+without question provenance fail closed; no service deployment is included.
+
+Focused offline CLI, state, duration, model and approval checks accompany the
+change. Existing creative, opening, soundtrack and lip-sync policies are retained.
+
 ## v2.9.107 - 2026-10-24 - MiniMax H3 restored as the card's recommended video model
 
 Commit 9f7bb25c3 removed MiniMax H3 from the VIDEO MODEL question on the
