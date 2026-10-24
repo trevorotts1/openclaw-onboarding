@@ -73,7 +73,12 @@ _AFFIRM = (
     "that works", "works for me", "no changes", "as is", "lgtm", "+1",
     "i approve", "approved!", "yes please", "yes!", "ok!", "okay!",
 )
-_NEGATE = ("not", "nope", "don't", "dont", "never", "wait", "hold")
+_NEGATE = ("not", "nope", "don't", "dont", "never", "wait", "hold", "stop",
+           "nothing", "none", "neither", "nobody", "no one",
+           "cannot", "can't", "cant", "won't", "wont", "shouldn't", "shouldnt",
+           "wouldn't", "wouldnt", "isn't", "isnt", "doesn't", "doesnt",
+           "didn't", "didnt", "without", "refuse", "refused", "refusing",
+           "decline", "declined")
 _REVISE = ("no", "revise", "change", "edit", "fix", "instead", "not yet", "later")
 
 _KIND_WORDS = {
@@ -84,6 +89,74 @@ _KIND_WORDS = {
     "storyboard": ("storyboard", "shots"),
 }
 _REV_RE = re.compile(r"\b(?:rev(?:ision)?|ver|v)\s*[-:.]?\s*(\d+)\b", re.I)
+
+#: idioms where a negation word is an affirmation ("approved, no changes").
+#: Masked BEFORE any screen, so a plain approval with no edits stays one.
+_AFFIRM_IDIOMS = (
+    r"\bno (?:more |further |other )?changes\b",
+    r"\bno (?:more |further )?(?:edits|revisions|tweaks|notes|objections)\b",
+    r"\bas is\b",
+    r"\bwithout (?:any |further )?changes\b",
+    r"\bnothing (?:else )?to change\b",
+)
+
+#: an edit request sitting next to an approval is NOT a clear approval: the
+#: artifact it approves would differ from the one it asks to change
+_CHANGE_WORDS = (
+    "change", "changes", "changing", "revise", "revises", "revised",
+    "edit", "edits", "edited", "fix", "fixes", "fixing", "tweak", "tweaks",
+    "alter", "adjust", "reword", "rewrite", "rework", "update", "replace",
+    "remove", "swap", "different", "instead", "rethink",
+)
+
+#: scoping the approval to part of the package names no whole artifact
+_SCOPE_MARKS = ("except", "excepting", "except that", "other than", "apart from",
+                "aside from", "excluding", "but not", "all but", "everything but")
+
+_SELECTION_RE = re.compile(
+    r"\b(?:option|choice|number|no)\s*[-:.]?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b")
+
+_QUESTION_START = ("am", "are", "can", "could", "did", "do", "does", "had", "has",
+                   "have", "how", "is", "may", "might", "shall", "should", "was",
+                   "were", "what", "when", "where", "which", "who", "why", "will",
+                   "would")
+
+_CONDITIONAL_RE = re.compile(
+    r"\b(?:if|unless|until|once|when|whenever|after|before|provided|assuming|"
+    r"supposing)\b|\bas long as\b")
+
+#: someone else's words, or a question about approving, are never the client's
+#: own decision -- never an approval
+_REPORTED_RE = re.compile(
+    r"\b(?:said|says|told|wrote|replied|mentioned|suggested|thinks?|thought|"
+    r"asked|wants?|wanted|recommends?|recommended)\b[^.!?]{0,40}\bapprov|"
+    r"\b(?:he|she|they|him|her|them|his|hers|their|someone|somebody|anyone|"
+    r"friend|boss|partner|lawyer|mom|dad|mother|father)\b[^.!?]{0,40}"
+    r"\b(?:said|says|told|wrote|replied|suggested|thinks?|asked|wants?)\b")
+_QUOTE_CHARS = ('"', "“", "”", "‘", "’", "«", "»")
+
+_APPROVAL_RE = re.compile(r"\bapprov[a-z]*\b")
+#: where one clause ends and another opinion begins
+_CLAUSE_RE = re.compile(
+    r"\s*(?:,?\s*(?:but|however|although|though|yet|except(?:\s+that)?|other than|"
+    r"apart from|aside from|excluding|unless|until|if|when|once|after|before)\b).*$",
+    re.S | re.I)
+
+#: words that still name the whole package (or nothing) after an approval
+_STOPWORDS = frozenset("""
+a about all also am an and any anyone anything are as at be been but by can
+completely done exactly for from fully go going had has have he her here him
+his how i in is it its itself just lets me my no not nothing now of on one
+ones or other our please perfect really right so than thanks thank thx that
+the their them there these they this those to totally us was we well were
+what when where which who whole entire will with without would yes yeah yep
+yup ya ok okay good great fine work works thing things package artifact
+artifacts creative everything anything both all-it exactly ship proceed
+rev revision ver version v new old latest final draft copy
+""".split())
+
+_KIND_TOKENS = frozenset(
+    w for words in _KIND_WORDS.values() for w in re.findall(r"[a-z]+", " ".join(words)))
 
 
 def utcnow():
@@ -423,11 +496,68 @@ def reply_context_status(rec, ctx=None):
     return result(True, "ARTIFACT_REPLY_PROVENANCE_CONFIRMED", "A new client reply is bound to the current presented artifacts.")
 
 
+def _mask_idioms(t):
+    """Drop affirmation idioms that contain a negation word ("no changes"), so
+    the negation screen sees only real negation."""
+    for pattern in _AFFIRM_IDIOMS:
+        t = re.sub(pattern, " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+def _reads_as_offer(t):
+    """The words are at least offering an approval (or naming one), so the
+    screens below decide what kind of offer it is."""
+    return bool(_APPROVAL_RE.search(t)) or any(
+        re.search(r"\b%s\b" % re.escape(a), t) for a in _AFFIRM if len(a) > 3)
+
+def _scope_leftover(t):
+    """The content word an approval is scoped to, when that word is NOT the
+    whole package and NOT an artifact kind ("approve the foley")."""
+    for m in _APPROVAL_RE.finditer(t):
+        rest = _mask_idioms(_CLAUSE_RE.sub("", t[m.end():]))
+        for w in rest.split():
+            if w in _STOPWORDS or w in _KIND_TOKENS or w.isdigit():
+                continue
+            return w
+    return None
+
+def _decision_screen(text, t):
+    """None when the reply can still be a plain decision; otherwise the reason
+    it cannot.
+
+    "refusal"  the words negate something -- never an approval
+    "ambiguous" a question, a quote, a condition, a scope, a selection or an
+                edit request riding along with the approval. Holding the gate
+                beats guessing which artifact was meant.
+    """
+    if any(re.search(r"\b%s\b" % re.escape(n), _mask_idioms(t)) for n in _NEGATE):
+        return "refusal"
+    if not _reads_as_offer(t):
+        return None                      # not an offer at all: the caller reads it as an edit
+    raw = str(text or "")
+    if raw.strip().endswith("?") or any(re.search(r"\b%s\b" % re.escape(q), t.split(None, 1)[0])
+                                        for q in _QUESTION_START if t.split(None, 1)):
+        return "REPLY_IS_A_QUESTION"
+    if any(c in raw for c in _QUOTE_CHARS) or _REPORTED_RE.search(t):
+        return "REPLY_IS_SOMEONE_ELSES_WORDS"
+    if _CONDITIONAL_RE.search(_mask_idioms(t)):
+        return "REPLY_IS_CONDITIONAL"
+    if any(re.search(r"\b%s\b" % re.escape(m), t) for m in _SCOPE_MARKS):
+        return "REPLY_IS_PARTIAL_SCOPE"
+    if _SELECTION_RE.search(t):
+        return "REPLY_IS_A_SELECTION"
+    if any(re.search(r"\b%s\b" % re.escape(w), _mask_idioms(t)) for w in _CHANGE_WORDS):
+        return "REPLY_APPROVES_AND_REVISES"
+    if _scope_leftover(t):
+        return "REPLY_NAMES_NO_WHOLE_ARTIFACT"
+    return None
+
 def is_affirmative(text):
+    """True only for an unambiguous affirmative: not negated, not conditional,
+    not partial, not a question and not somebody else's words."""
     t = _norm(text)
     if not t:
         return False
-    if any(re.search(r"\b%s\b" % re.escape(n), t) for n in _NEGATE):
+    if _decision_screen(text, t):
         return False
     if t in _AFFIRM:
         return True
@@ -543,11 +673,26 @@ def interpret_reply(text, rec, ctx=None):
              if k in ("script", "lyrics", "character_images", "music", "storyboard")]
     both = bool(re.search(r"\b(both|all|everything|script and lyrics)\b", t))
     affirmative = is_affirmative(raw)
-    explicit = bool(re.search(r"\bapprov(e|ed|es|ing)?\b", t)) or both
-    revise_hit = any(re.search(r"\b%s\b" % re.escape(w), t) for w in _REVISE) \
-        or any(re.search(r"\b%s\b" % re.escape(n), t) for n in _NEGATE)
+    # "no changes" is an approval, not an edit request: edit words are read on
+    # the text with affirmation idioms masked out
+    masked = _mask_idioms(t)
+    revise_hit = any(re.search(r"\b%s\b" % re.escape(w), masked) for w in _REVISE) \
+        or any(re.search(r"\b%s\b" % re.escape(n), masked) for n in _NEGATE)
 
-    if not explicit and (revise_hit or not affirmative):
+    # An approval must be UNAMBIGUOUS: not negated, not conditional, not
+    # partial, not a question, not quoted from somebody else. Anything else
+    # holds the gate -- the system never guesses which artifact was meant.
+    screen = _decision_screen(raw, t)
+    if screen == "refusal":
+        return {"intent": "revise", "kinds": [], "text": raw,
+                "reason_code": "REPLY_NEGATED"}
+    if screen:
+        return {"intent": "ambiguous", "kinds": [], "text": raw,
+                "reason_code": screen, "question":
+                "What exactly are you approving? I hold the gate until you reply "
+                "with a plain yes to the whole script and lyrics exactly as sent."}
+
+    if revise_hit or not affirmative:
         return {"intent": "revise", "kinds": [], "text": raw}
 
     # named kinds must have been presented; a generic yes cannot approve an
