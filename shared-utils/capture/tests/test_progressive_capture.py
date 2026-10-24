@@ -152,6 +152,42 @@ class CapturePlanTests(Base):
         self.assertFalse(plan.email_ask_allowed)
         self.assertEqual("ask_budget_exhausted", plan.reason)
 
+    def test_an_ask_that_exists_spends_the_budget_whatever_the_counter_says(self):
+        # PBB-157 defect 2: ask_state=suppressed with asks_used=0 re-offered
+        # the ask while asks_used=1 refused it. The ask's own state is the
+        # authority; a stale or zero counter must not mint a second ask.
+        for state in (pc.ASK_SUPPRESSED, pc.ASK_FAILED_NOT_SENT):
+            for used in (0, 1):
+                with self.subTest(state=state, asks_used=used):
+                    plan = pc.plan_capture(pc.KnownFields(mobile="+15550001111"),
+                                          access_ready=True, ask_state=state,
+                                          asks_used=used)
+                    self.assertEqual((), plan.asks)
+                    self.assertFalse(plan.email_ask_allowed)
+                    self.assertEqual("ask_budget_exhausted", plan.reason)
+        # Inverse: an ask that was never created is still offered once.
+        plan = pc.plan_capture(pc.KnownFields(mobile="+15550001111"),
+                              access_ready=True, ask_state=pc.ASK_NOT_CREATED,
+                              asks_used=0)
+        self.assertTrue(plan.email_ask_allowed)
+        self.assertEqual("email_missing", plan.reason)
+
+    def test_a_gate_suppressed_ask_is_terminal_for_the_plan(self):
+        # The real path: the gate suppresses the one ask, then the plan is
+        # asked again with the ask's own state and a counter that never moved.
+        self.queued_ask()
+        self.ask.dispatch(self.evaluator("SUPPRESSED"),
+                          self.sender(receipt={"provider": "twilio"}), "w1")
+        self.assertEqual(pc.ASK_SUPPRESSED, self.ask.state())
+        plan = pc.plan_capture(pc.KnownFields(mobile="+15550001111"),
+                              access_ready=True, ask_state=self.ask.state(),
+                              asks_used=0)
+        self.assertEqual((), plan.asks)
+        self.assertFalse(plan.email_ask_allowed)
+        _, created = self.ask.create_or_resume(body="ask body again")
+        self.assertFalse(created)
+        self.assertEqual(1, self.store.counts()["actions"])
+
 
 # ── R-16: refusal scopes ────────────────────────────────────────────────────
 
@@ -538,6 +574,74 @@ class OwnActionBoundaryTests(Base):
         # Inverse: this ask's own id still reports its state and view.
         self.assertEqual(pc.ASK_QUEUED, self.ask.state(mine))
         self.assertEqual(mine, self.ask.view(mine)["logical_action_id"])
+
+    def test_state_after_never_reports_a_foreign_outcome_as_this_ask(self):
+        # PBB-157 defect 1: state_after read outcome.status before checking
+        # whose outcome it was, so another ask's sent outcome came back as
+        # "accepted" for an ask that was never created.
+        other_seq = pc.SmsEmailAsk(
+            self.store, tenant_id=self.tenant, canonical_contact_id=self.cid,
+            collection_sequence_id="seq-3", identity=self.identity)
+        row, _ = other_seq.create_or_resume(body="ask body")
+        self.store.queue(row["action_id"])
+        sent = other_seq.dispatch(self.evaluator(),
+                                  self.sender(receipt={"provider": "twilio"}), "w1")
+        self.assertTrue(sent.sent)
+        with self.assertRaisesRegex(pc.CaptureRefused,
+                                   "the SMS email ask was never created"):
+            self.ask.state()
+        with self.assertRaisesRegex(pc.CaptureRefused, "is not this SMS email ask"):
+            self.ask.state_after(sent)
+        gate = UP.outbound_gate
+        for label, foreign in self.foreign_rows().items():
+            for status in (gate.ST_SENT, gate.ST_UNKNOWN, gate.ST_BLOCKED,
+                           gate.ST_NOT_CLAIMED):
+                with self.subTest(label, status=status):
+                    with self.assertRaisesRegex(pc.CaptureRefused,
+                                               "is not this SMS email ask"):
+                        self.ask.state_after(gate.DispatchOutcome(
+                            status, foreign, verdict="SUPPRESSED"))
+        with self.assertRaisesRegex(pc.CaptureRefused, "names no action"):
+            self.ask.state_after(gate.DispatchOutcome(gate.ST_SENT, None))
+        # Inverse: this ask's own outcome is still mapped.
+        self.queued_ask()
+        own = self.ask.dispatch(self.evaluator(),
+                                self.sender(receipt={"provider": "twilio"}), "w1")
+        self.assertEqual(pc.ASK_ACCEPTED, self.ask.state_after(own))
+        self.assertEqual(other_seq.state_after(sent), pc.ASK_ACCEPTED)
+
+    def test_an_unknown_action_id_is_refused_in_capture_vocabulary(self):
+        # PBB-157 defect 3: an unknown id leaked durable_store's
+        # DurableStoreError through state/view/dispatch instead of the
+        # module's own CaptureRefused.
+        mine = self.queued_ask()
+        evaluator = self.evaluator()
+        sender = self.sender(receipt={"provider": "twilio"})
+        calls = {
+            "state": lambda bad: self.ask.state(bad),
+            "view": lambda bad: self.ask.view(bad),
+            "dispatch": lambda bad: self.ask.dispatch(evaluator, sender, "w1",
+                                                      action_id=bad),
+            "state_after": lambda bad: self.ask.state_after(
+                UP.outbound_gate.DispatchOutcome(UP.outbound_gate.ST_SENT, bad)),
+        }
+        for name, call in calls.items():
+            for bad in ("act_missing", ""):
+                with self.subTest(name, action_id=bad):
+                    with self.assertRaisesRegex(pc.CaptureRefused,
+                                               "is not this SMS email ask") as cm:
+                        call(bad)
+                    self.assertIsInstance(cm.exception.__cause__,
+                                          UP.durable_store.DurableStoreError)
+        self.assertEqual([], evaluator.calls)
+        self.assertEqual([], sender.calls)
+        self.assertEqual("queued", self.store.get_action(mine)["state"])
+        # Inverse: this ask's own id still answers on every entry point.
+        self.assertEqual(pc.ASK_QUEUED, self.ask.state(mine))
+        self.assertEqual(mine, self.ask.view(mine)["logical_action_id"])
+        outcome = self.ask.dispatch(evaluator, sender, "w1", action_id=mine)
+        self.assertTrue(outcome.sent)
+        self.assertEqual(pc.ASK_ACCEPTED, self.ask.state_after(outcome))
 
     def test_retry_after_correction_stays_on_this_ask(self):
         self.queued_ask()

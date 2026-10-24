@@ -288,6 +288,11 @@ def plan_capture(
     if ask_state in ASK_OPEN:
         # Accepted, queued, in flight or unreconciled: still the same ask.
         return CapturePlan(facts.state, (), "ask_already_exists", False)
+    if ask_state != ASK_NOT_CREATED:
+        # Suppressed (terminal) or failed_not_sent (retried as the SAME
+        # action): the ask exists, so the budget is spent whatever the
+        # caller's counter says. asks_used=0 and asks_used=1 answer alike.
+        return CapturePlan(facts.state, (), "ask_budget_exhausted", False)
     if "SMS" in optouts:
         return CapturePlan(facts.state, (), "channel_optout:SMS", False)
     if not access_ready:
@@ -488,7 +493,17 @@ class SmsEmailAsk:
         further, so no path can send a foreign action AS the one logical SMS
         email ask.
         """
-        row = self.store.get_action(action_id) if action_id else self.require_action()
+        if action_id is None:
+            row = self.require_action()
+        else:
+            try:
+                row = self.store.get_action(action_id)
+            except upstream().durable_store.DurableStoreError as exc:
+                # Unknown or malformed id: not this ask either. Same refusal
+                # vocabulary as a foreign row; the store's error is chained.
+                raise CaptureRefused(
+                    "action %r is not this SMS email ask; refusing to touch it"
+                    % (action_id,)) from exc
         if (row.get("tenant_id") != self.tenant_id
                 or row.get("canonical_contact_id") != self.canonical_contact_id
                 or row.get("logical_intent_key") != self.logical_intent_key
@@ -589,7 +604,17 @@ class SmsEmailAsk:
             self.store, evaluator, sender, row["action_id"], worker_id, **kwargs)
 
     def state_after(self, outcome: Any) -> str:
-        """Map a DispatchOutcome to the D-26 ask state."""
+        """Map a DispatchOutcome to the D-26 ask state.
+
+        Only an outcome for this ask's own action is mapped: a foreign, unknown
+        or missing action_id is refused before its status is read, so another
+        action's result is never state-reported as this ask.
+        """
+        action_id = getattr(outcome, "action_id", None)
+        if action_id is None:
+            raise CaptureRefused(
+                "outcome names no action; refusing to report it as this ask")
+        self._select(action_id)
         gate = upstream().outbound_gate
         if outcome.status == gate.ST_SENT:
             return ASK_ACCEPTED
