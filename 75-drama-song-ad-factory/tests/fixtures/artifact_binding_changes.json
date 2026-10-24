@@ -1,0 +1,44 @@
+{
+  "schema_version": "s75.approval_bindings.v1",
+  "note": "Change scenarios for the whole-package approval. Each case names the kinds that changed and the receipts that must be invalidated; every other receipt must stay active.",
+  "package_receipt": "package",
+  "elected_receipt_kind": "storyboard_approval",
+  "cases": [
+    {
+      "name": "script_edit_invalidates_only_the_package",
+      "changed": ["script"],
+      "expect_invalidated": ["package"],
+      "expect_active": ["storyboard_approval"]
+    },
+    {
+      "name": "lyrics_edit_invalidates_only_the_package",
+      "changed": ["lyrics"],
+      "expect_invalidated": ["package"],
+      "expect_active": ["storyboard_approval"]
+    },
+    {
+      "name": "cast_edit_invalidates_only_the_package",
+      "changed": ["episode_cast_manifest"],
+      "expect_invalidated": ["package"],
+      "expect_active": ["storyboard_approval"]
+    },
+    {
+      "name": "world_edit_invalidates_only_the_package",
+      "changed": ["episode_world"],
+      "expect_invalidated": ["package"],
+      "expect_active": ["storyboard_approval"]
+    },
+    {
+      "name": "music_choice_touches_no_receipt",
+      "changed": ["selected_music"],
+      "expect_invalidated": [],
+      "expect_active": ["package", "storyboard_approval"]
+    },
+    {
+      "name": "storyboard_edit_invalidates_only_the_elected_receipt",
+      "changed": ["storyboard_approval"],
+      "expect_invalidated": ["storyboard_approval"],
+      "expect_active": ["package"]
+    }
+  ]
+}
