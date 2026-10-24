@@ -1,0 +1,269 @@
+{
+  "schema_version": "pbb-070.t47.cross-repo-compatibility-manifest/v1",
+  "unit": "PBB-070",
+  "task": "T-47",
+  "generated_at_utc": "2026-10-24T15:45:46Z",
+  "deployment_state": "NOT_DEPLOYED",
+  "deployment_state_statement": "Nothing is deployed. No push, pull request, merge, installer run, service restart, database migration, or client-box contact produced this manifest. Every commit and version below was read from local git objects and repository files on the operator Mac mini.",
+  "host": {
+    "role": "operator Mac mini (canary); no client box contacted",
+    "os": "macOS 26.3.1 (build 25D771280a)",
+    "arch": "arm64"
+  },
+  "repositories": [
+    {
+      "name": "openclaw-onboarding",
+      "repository": "trevorotts1/openclaw-onboarding",
+      "local_path": "/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t47",
+      "role": "canonical skill tree, installers, release-cohort record",
+      "verified_ref": "origin/main",
+      "verified_commit": "bccc4050f8ed98b2d9b55cfc087c27c924d62b03",
+      "verified_version": "v27.1.65",
+      "commit_command": "git -C \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t47\" rev-parse origin/main",
+      "version_command": "git -C \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t47\" show bccc4050f8ed98b2d9b55cfc087c27c924d62b03:version",
+      "local_checkout_state": "clean worktree at origin/main (bccc4050f)",
+      "status": "VERIFIED",
+      "interfaces_checked": [
+        "onb-cc-pin-resolution",
+        "onb-cc-pinned-tag-identity",
+        "onb-cc-http-routes-at-pin",
+        "onb-cc-decision-bridge-schema",
+        "onb-999-helper-pin-guard",
+        "onb-999-vendored-skill-equivalence",
+        "onb-recorded-release-cohort-currentness"
+      ]
+    },
+    {
+      "name": "999-setup",
+      "repository": "trevorotts1/999-setup",
+      "local_path": "/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/999-setup",
+      "role": "student-facing environment bootstrap and vendored skill distribution (9Router, claude-nine)",
+      "verified_ref": "origin/main",
+      "verified_commit": "1d1545fc84129d2995231347886c0a8822395935",
+      "verified_version": "1.38.1",
+      "commit_command": "git -C \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/999-setup\" rev-parse origin/main",
+      "version_command": "git -C \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/999-setup\" show 1d1545fc84129d2995231347886c0a8822395935:VERSION",
+      "local_checkout_state": "local working copy at 3b4e0b9714bad63fd13ab3250f38a6ae44aa9377 (behind origin/main); every check read origin/main objects via git show and git archive, never the working tree",
+      "status": "VERIFIED",
+      "interfaces_checked": [
+        "onb-999-helper-pin-guard",
+        "999-cc-nine-router-paths",
+        "onb-999-vendored-skill-equivalence",
+        "999-cc-skill-runs-ingest"
+      ]
+    },
+    {
+      "name": "blackceo-command-center",
+      "repository": "trevorotts1/blackceo-command-center",
+      "local_path": "/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/blackceo-command-center",
+      "role": "managed state authority and dashboard host",
+      "verified_ref": "tag v7.6.112 (the deployment pin in openclaw-onboarding cc-compat.json)",
+      "verified_commit": "ef6b9364e8ddd695f357cca2f3ed41ab75262a13",
+      "verified_version": "v7.6.112",
+      "commit_command": "git -C \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/blackceo-command-center\" rev-parse 'v7.6.112^{commit}'",
+      "version_command": "git -C \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/blackceo-command-center\" show 'v7.6.112^{commit}:version'",
+      "local_checkout_state": "local working copy at a92d11d940eb082944c30a3433f592aac0ce9842; checks read tag and commit objects via git show",
+      "observed_origin_main": {
+        "commit": "6fb636071f1cbc480721c8d658ce36ad627f57dd",
+        "version": "v7.6.125",
+        "note": "Newer than the pin. Not the deployment pin; used only to show where the /api/skill-runs routes exist."
+      },
+      "status": "VERIFIED",
+      "interfaces_checked": [
+        "onb-cc-pin-resolution",
+        "onb-cc-pinned-tag-identity",
+        "onb-cc-http-routes-at-pin",
+        "onb-cc-decision-bridge-schema",
+        "999-cc-nine-router-paths",
+        "onb-cc-skill-runs-ingest",
+        "999-cc-skill-runs-ingest"
+      ]
+    }
+  ],
+  "interface_checks": [
+    {
+      "id": "onb-cc-pin-resolution",
+      "between": [
+        "openclaw-onboarding",
+        "blackceo-command-center"
+      ],
+      "interface": "cc-compat.json pinnedTag resolves to a real Command Center tag that satisfies minVersion",
+      "command": "cd \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t47\" && python3 -B -c \"import sys; sys.path.insert(0,'shared-utils'); from cc_compat import load_cc_compat, resolve_cc_tag, assert_min_version; d=load_cc_compat(); t=resolve_cc_tag(d); assert_min_version(t, d); print(t, d['commandCenter']['minVersion'])\"",
+      "observed": "pinnedTag=v7.6.112, minVersion=v7.4.0, assert_min_version passed",
+      "exit_code": 0,
+      "result": "PASS",
+      "verified_commits": {
+        "openclaw-onboarding": "bccc4050f8ed98b2d9b55cfc087c27c924d62b03",
+        "blackceo-command-center": "ef6b9364e8ddd695f357cca2f3ed41ab75262a13"
+      }
+    },
+    {
+      "id": "onb-cc-pinned-tag-identity",
+      "between": [
+        "openclaw-onboarding",
+        "blackceo-command-center"
+      ],
+      "interface": "the pinned tag peels to the commit recorded in release-cohort.json, and that commit's version equals the pin",
+      "command": "git -C \".../blackceo-command-center\" rev-parse 'v7.6.112^{commit}'; git -C \".../blackceo-command-center\" show 'v7.6.112^{commit}:version'; python3 -B -c \"import json;print(json.load(open('release-cohort.json'))['cc_sha'])\"",
+      "observed": "tag commit ef6b9364e8ddd695f357cca2f3ed41ab75262a13; version v7.6.112; release-cohort.json cc_sha ef6b9364e8ddd695f357cca2f3ed41ab75262a13 (exact match)",
+      "exit_code": 0,
+      "result": "PASS",
+      "verified_commits": {
+        "openclaw-onboarding": "bccc4050f8ed98b2d9b55cfc087c27c924d62b03",
+        "blackceo-command-center": "ef6b9364e8ddd695f357cca2f3ed41ab75262a13"
+      }
+    },
+    {
+      "id": "onb-cc-http-routes-at-pin",
+      "between": [
+        "openclaw-onboarding",
+        "blackceo-command-center"
+      ],
+      "interface": "HTTP routes the onboarding installers and skills depend on exist at the pinned Command Center commit",
+      "command": "for r in src/app/api/system/converge/route.ts src/app/api/ad-campaigns/route.ts; do git -C \".../blackceo-command-center\" cat-file -e \"v7.6.112^{commit}:$r\"; done",
+      "observed": "src/app/api/system/converge/route.ts EXISTS; src/app/api/ad-campaigns/route.ts EXISTS",
+      "exit_code": 0,
+      "result": "PASS",
+      "verified_commits": {
+        "openclaw-onboarding": "bccc4050f8ed98b2d9b55cfc087c27c924d62b03",
+        "blackceo-command-center": "ef6b9364e8ddd695f357cca2f3ed41ab75262a13"
+      }
+    },
+    {
+      "id": "onb-cc-decision-bridge-schema",
+      "between": [
+        "openclaw-onboarding",
+        "blackceo-command-center"
+      ],
+      "interface": "decision-engine bridge schema version is identical on both sides and equals the release cohort record",
+      "command": "rg -n 'BRIDGE_SCHEMA_VERSION = ' shared-utils/decision-engine.py; git -C \".../blackceo-command-center\" show 'v7.6.112^{commit}:src/lib/decision-engine/contract.ts' | rg 'DECISION_SCHEMA_VERSION'; python3 -B -c \"import json;print(json.load(open('release-cohort.json'))['contract'])\"",
+      "observed": "openclaw-onboarding BRIDGE_SCHEMA_VERSION = \"1.1.0\"; command-center DECISION_SCHEMA_VERSION = '1.1.0'; release-cohort.json contract = \"1.1.0\"",
+      "exit_code": 0,
+      "result": "PASS",
+      "verified_commits": {
+        "openclaw-onboarding": "bccc4050f8ed98b2d9b55cfc087c27c924d62b03",
+        "blackceo-command-center": "ef6b9364e8ddd695f357cca2f3ed41ab75262a13"
+      }
+    },
+    {
+      "id": "onb-999-helper-pin-guard",
+      "between": [
+        "openclaw-onboarding",
+        "999-setup"
+      ],
+      "interface": "999-setup installer-registration helper pins equal openclaw-onboarding origin/main by version and SHA-256 tree hash, and the vendored helper folders match their pins",
+      "extract_command": "git -C \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/999-setup\" archive 1d1545fc84129d2995231347886c0a8822395935 | tar -x -C \"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-070-lane\"",
+      "command": "cd \"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-070-lane\" && python3 -B installer-registration/check-helper-pins.py --onboarding \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t47\" --ref origin/main",
+      "observed": "helper pins: ok — every pin equals openclaw-onboarding@origin/main and every vendored helper folder matches its pin.",
+      "exit_code": 0,
+      "result": "PASS",
+      "verified_commits": {
+        "openclaw-onboarding": "bccc4050f8ed98b2d9b55cfc087c27c924d62b03",
+        "999-setup": "1d1545fc84129d2995231347886c0a8822395935"
+      },
+      "covers": [
+        "66-kie-image",
+        "67-kie-video",
+        "68-kie-audio",
+        "74-kie-live-adapter",
+        "46-kie-callback-relay",
+        "07-kie-setup",
+        "shared-utils",
+        "63-agnes-image",
+        "64-agnes-video"
+      ]
+    },
+    {
+      "id": "999-cc-nine-router-paths",
+      "between": [
+        "999-setup",
+        "blackceo-command-center"
+      ],
+      "interface": "filesystem contract for the 9Router model registry and the claude-nine config root",
+      "command": "git -C \".../999-setup\" grep -n '\\.9router/db' 1d1545fc84129d2995231347886c0a8822395935; git -C \".../blackceo-command-center\" show 'v7.6.112^{commit}:presentation_job/capacity.py'; git -C \".../999-setup\" grep -n 'CLAUDE_CONFIG_DIR' 1d1545fc84129d2995231347886c0a8822395935 -- launchers",
+      "observed": "999-setup configure-nine-router.mjs uses ${HOME}/.9router/db/data.sqlite; Command Center capacity.py defines NINEROUTER_DB = Path.home()/'.9router'/'db'/'data.sqlite' and HARNESS_SETTINGS_CANDIDATES includes Path.home()/'.claude-nine'/'settings.json'; 999-setup launchers/macos/claude-nine sets CLAUDE_CONFIG_DIR default $HOME/.claude-nine and requires settings.json there",
+      "exit_code": 0,
+      "result": "PASS",
+      "verified_commits": {
+        "999-setup": "1d1545fc84129d2995231347886c0a8822395935",
+        "blackceo-command-center": "ef6b9364e8ddd695f357cca2f3ed41ab75262a13"
+      }
+    },
+    {
+      "id": "onb-cc-skill-runs-ingest",
+      "between": [
+        "openclaw-onboarding",
+        "blackceo-command-center"
+      ],
+      "interface": "Skill 71 run-event ingestion endpoints referenced by the skill tree: POST /api/skill-runs/ingest and GET /api/skill-runs",
+      "command": "git -C \".../blackceo-command-center\" cat-file -e 'v7.6.112^{commit}:src/app/api/skill-runs/ingest/route.ts'; git -C \".../blackceo-command-center\" cat-file -e '6fb636071f1cbc480721c8d658ce36ad627f57dd:src/app/api/skill-runs/ingest/route.ts'",
+      "observed": "At the deployment pin ef6b9364 (v7.6.112): ABSENT (both routes). At unpinned origin/main 6fb6360 (v7.6.125): EXISTS (both routes). The endpoint is referenced by openclaw-onboarding 71-blackceo-signature-page/references/run-events-schema.md and by the same reference in the 999-setup vendored copy.",
+      "result": "UNVERIFIED",
+      "reason": "The interface exists in the repository main line but NOT at the commit a deployment would install (cc-compat.json pinnedTag v7.6.112). Compatibility at the pin is therefore not proven, and is contradicted for this interface.",
+      "what_would_verify_it": "Either bump cc-compat.json pinnedTag to a CC tag that contains the routes (v7.6.125 or later) via scripts/pin-cc-tag.py, or prove the ingestion path is unreachable/fail-soft on every deployed host."
+    },
+    {
+      "id": "999-cc-skill-runs-ingest",
+      "between": [
+        "999-setup",
+        "blackceo-command-center"
+      ],
+      "interface": "same Skill 71 run-event ingestion endpoints, from the 999-setup vendored copy",
+      "command": "git -C \".../999-setup\" grep -n 'skill-runs' 1d1545fc84129d2995231347886c0a8822395935 -- .claude/skills/blackceo-signature-page",
+      "observed": "999-setup vendored blackceo-signature-page references POST /api/skill-runs/ingest and /api/skill-runs (ship_run_events.py, run-events-schema.md). Command Center at the pin has neither route.",
+      "result": "UNVERIFIED",
+      "reason": "Same pin gap as onb-cc-skill-runs-ingest. The 999-setup tree ships the emitter; the pinned Command Center does not ship the receiver.",
+      "what_would_verify_it": "Bump the Command Center pin and re-run the check, or prove the emitter is inert on every host (SKILL71_RUNS_SHIP_URL unset everywhere)."
+    },
+    {
+      "id": "onb-999-vendored-skill-equivalence",
+      "between": [
+        "openclaw-onboarding",
+        "999-setup"
+      ],
+      "interface": "every skill vendored into 999-setup equals the canonical skill at openclaw-onboarding origin/main",
+      "command": "cat <skill>/skill-version.txt; git -C \".../999-setup\" show 1d1545fc84129d2995231347886c0a8822395935:.claude/skills/<slug>/skill-version.txt",
+      "observed": "Spot checks show skew, not equality: 77-council-of-wise-elders v1.0.54 vs v1.0.51; 75-drama-song-ad-factory v2.9.106 vs v2.9.99; 71-blackceo-signature-page 1.3.6 vs 1.3.4. Recorded vendoring sources are historical: installer-registration/council-vendoring.json names onboarding 77eb96e (250 commits behind origin/main); DIST-02-PACKAGING-MANIFEST.json names onboarding 39e7443 (1416 commits behind).",
+      "result": "UNVERIFIED",
+      "reason": "The helper pin guard enforces only the nine helper registrations. No guard or pin enforces equality for the rest of the vendored skill trees, and the spot checks show the distributions lag canonical main.",
+      "what_would_verify_it": "A full-tree hash comparison per vendored skill plus a repin/re-vendor run by the release owner; or a recorded distribution manifest with per-skill source commits."
+    },
+    {
+      "id": "onb-recorded-release-cohort-currentness",
+      "between": [
+        "openclaw-onboarding"
+      ],
+      "interface": "release-cohort.json records the exact openclaw-onboarding commit the release was tested at",
+      "command": "python3 -B -c \"import json;print(json.load(open('release-cohort.json'))['onb_sha'])\"; git merge-base --is-ancestor f8491492632a9884922b7dcc0c8fce4579be4704 bccc4050f8ed98b2d9b55cfc087c27c924d62b03; git rev-list --count f8491492632a9884922b7dcc0c8fce4579be4704..bccc4050f8ed98b2d9b55cfc087c27c924d62b03",
+      "observed": "release-cohort.json onb_sha = f8491492632a9884922b7dcc0c8fce4579be4704; it IS an ancestor of origin/main bccc4050f; 2567 commits separate them. cc_sha in the same record does equal the CC pin.",
+      "result": "UNVERIFIED",
+      "reason": "The repository's own tested-pair record describes an older onboarding commit, not the origin/main commit this manifest covers. The static interface checks above pass at bccc4050f, but that is not the recorded cohort test.",
+      "what_would_verify_it": "A release decision to set onb_sha to the commit being released, followed by the decision-engine trainer's promote gate on that exact pair."
+    }
+  ],
+  "unverified": [
+    {
+      "id": "onb-cc-skill-runs-ingest",
+      "summary": "Skill 71 ingestion endpoint absent at the Command Center deployment pin."
+    },
+    {
+      "id": "999-cc-skill-runs-ingest",
+      "summary": "Same absent receiver for the 999-setup vendored emitter."
+    },
+    {
+      "id": "onb-999-vendored-skill-equivalence",
+      "summary": "Vendored skill trees lag canonical main; only helper registrations are pinned and guarded."
+    },
+    {
+      "id": "onb-recorded-release-cohort-currentness",
+      "summary": "Recorded tested onboarding SHA is 2567 commits behind origin/main."
+    }
+  ],
+  "human_required": [
+    "Decide which Command Center commit to deploy: keep the v7.6.112 pin (no /api/skill-runs) or move the pin to v7.6.125 or later through scripts/pin-cc-tag.py. An agent must not move a release pin unilaterally.",
+    "Run the installer and the runtime checks on a canary machine with the owner present; no installer was executed to produce this manifest.",
+    "Supply every credential and provider key on the target box; no credential was read, tested, or written here.",
+    "Approve and perform the deployment itself (checkout, build, migrations, service restart) with an explicit GO.",
+    "Decide whether the 999-setup distribution is re-vendored and released before or after the onboarding/Command Center deployment."
+  ]
+}
