@@ -69,7 +69,7 @@ def _snapshot(run_dir, run_id=None):
             lock = con.execute("SELECT model FROM video_model_lock WHERE run_id=?", (held_id,)).fetchone()
         if not lock or not lock[0]:
             raise ValueError("the run has no recorded video-model lock")
-        return held_id, {s: state for _, s, state in rows}, events
+        return held_id, {s: state for _, s, state in rows}, events, lock[0]
     paths = [Path(str(db) + suffix) for suffix in ("", "-wal", "-shm")]
     def stamp():
         return [(p.stat().st_ino, p.stat().st_size, p.stat().st_mtime_ns) if p.exists() else None for p in paths]
@@ -100,7 +100,7 @@ def _preferences(rows):
     return out
 
 
-def _session_authority(run_dir, state, run_id):
+def _session_authority(run_dir, state, run_id, live_model):
     from choice_card.intake_card import intake_card as card
     from choice_card.intake_card import intake_session
     from script_approval import card_answers
@@ -110,6 +110,16 @@ def _session_authority(run_dir, state, run_id):
                        status.get("detail") or "The exact intake has no valid explicit client recap confirmation.")
     if state.get("run_id") != run_id:
         return _result(False, "PRODUCTION_RUN_ID_MISMATCH", "Intake and stage store identify different runs.")
+    provider = state["answer_records"]["model"]["provider_identity"]
+    expected_model = provider.get("lock") or provider["kie_model"]
+    binding = state.get("model_lock") or {}
+    # completion_status preserves its immutable read-only legacy projection.
+    # The live WAL snapshot is authoritative for the *current* DB lock; it
+    # must still equal the exact provider identity the client confirmed.
+    if (live_model != expected_model or live_model != binding.get("model") or
+            binding.get("provider_identity") != provider):
+        return _result(False, "PRODUCTION_VIDEO_MODEL_LOCK_MISMATCH",
+                       "The live video-model lock differs from the exact confirmed intake provider choice.")
     required = state["required_question_ids"]
     # completion_status also supports small renderer tests. Production must
     # contain the real card inventory; a caller-supplied one-question card must
@@ -229,10 +239,10 @@ def inspect_intake(run_dir, *, run_id=None):
         return _result(False, "PRODUCTION_RUN_REQUIRED", "Name the existing governed run directory.", **context)
     try:
         root = Path(run_dir).resolve()
-        held_id, states, events = _snapshot(root, run_id)
-        context["run_id"] = held_id
+        held_id, states, events, live_model = _snapshot(root, run_id)
+        context.update(run_id=held_id, video_model_lock=live_model)
         path = root / "control" / "intake-session.json"
-        authority = (_session_authority(root, _read(path), held_id) if path.exists()
+        authority = (_session_authority(root, _read(path), held_id, live_model) if path.exists()
                      else _legacy_authority(root, held_id, states, events))
         return dict(authority, **context)
     except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError, sqlite3.Error) as exc:
@@ -331,7 +341,10 @@ def admit_production(run_dir, stage, *, run_id=None):
         order, registry = _graph()
         if stage not in order:
             return _result(False, "PRODUCTION_STAGE_UNKNOWN", "Name a canonical production stage; a provider label is not stage authority.", **context)
-        held_id, states, events = _snapshot(root, intake["run_id"])
+        held_id, states, events, live_model = _snapshot(root, intake["run_id"])
+        if live_model != intake["video_model_lock"]:
+            return _result(False, "PRODUCTION_VIDEO_MODEL_LOCK_MISMATCH",
+                           "The live video-model lock changed while production admission was being checked.", **context)
         context["current_state"] = states.get(stage)
         if any(s not in states for s in order):
             return _result(False, "PRODUCTION_STAGE_HANDOFF_MISSING", "Canonical stage rows are missing; dispatch cannot bootstrap them.", **context)

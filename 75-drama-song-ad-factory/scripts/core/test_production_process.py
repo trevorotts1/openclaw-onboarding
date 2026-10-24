@@ -196,6 +196,37 @@ class ProductionProcessTest(unittest.TestCase):
             self.assertEqual(r["current_state"], "PARKED")
             self.assertEqual(run_hashes(self.run), before)
 
+    def test_live_wal_model_lock_must_match_exact_confirmed_provider_choice(self):
+        confirmed_run(self.run)
+        state = json.loads((self.run / "control" / "intake-session.json").read_text())
+        expected_model = state["model_lock"]["model"]
+        self.assertEqual(expected_model, "minimax-h3/*")
+        def stamps():
+            return {str(p.relative_to(self.run)): (p.stat().st_mtime_ns, hashlib.sha256(p.read_bytes()).hexdigest())
+                    for p in self.run.rglob("*") if p.is_file()}
+        with state_store.Store(self.run / "control" / "state.sqlite3") as store:
+            store.transition(self.run.name, "research", "READY", "fixture-worker")
+            before = stamps()
+            matching = process.inspect_intake(self.run)
+            self.assertTrue(matching["ok"], matching)
+            self.assertEqual(matching["video_model_lock"], expected_model)
+            self.assertTrue(process.admit_production(self.run, "research")["ok"])
+            self.assertEqual(stamps(), before)
+            store.con.execute("UPDATE video_model_lock SET model=? WHERE run_id=?",
+                              ("bytedance/seedance-2-5", self.run.name))
+            store.con.commit()
+            # The old immutable projection still sees the checkpointed H3
+            # lock. The production inspector must validate the live WAL lock.
+            self.assertTrue(session.completion_status(self.run)["done"])
+            before = stamps()
+            changed = process.inspect_intake(self.run)
+            self.assertFalse(changed["ok"], changed)
+            self.assertEqual(changed["reason_code"], "PRODUCTION_VIDEO_MODEL_LOCK_MISMATCH")
+            self.assertEqual(changed["video_model_lock"], "bytedance/seedance-2-5")
+            self.assertEqual(process.admit_production(self.run, "research")["reason_code"],
+                             "PRODUCTION_VIDEO_MODEL_LOCK_MISMATCH")
+            self.assertEqual(stamps(), before)
+
     def test_direct_database_completion_without_transition_is_not_accepted(self):
         confirmed_run(self.run)
         db = self.run / "control" / "state.sqlite3"
