@@ -838,6 +838,9 @@ def _block(i, total, q):
         return "\n".join(["Question %d of %d - %s" % (i, total, q["label"])] + q["body"])
     lines = ["Question %d of %d - %s" % (i, total, q["label"]), q["ask"]]
     lines += _option_lines(q)
+    if q["id"] == "agnes":
+        from choice_card.intake_card.agnes_explanation import lines as explanation_lines
+        lines += [""] + explanation_lines()
     return "\n".join(lines)
 
 
@@ -1475,7 +1478,7 @@ def _studio_screen(q, answers):
     if not options:
         raise StudioExportError(
             "STUDIO_JSON_FIELD_MISSING id=%r field=options" % q.get("id"))
-    return {
+    screen = {
         "id": q.get("id"), "label": q.get("label", ""), "question": ask,
         "price": q.get("price"),
         "example": example,
@@ -1485,6 +1488,10 @@ def _studio_screen(q, answers):
         "typed": bool(q.get("free_text")),
         "options": [_studio_option(q, n, o) for n, o in enumerate(options, 1)],
     }
+    if q["id"] == "agnes":
+        from choice_card.intake_card.agnes_explanation import lines as explanation_lines
+        screen["supplementary_explanation"] = explanation_lines()
+    return screen
 
 
 #: W1-card-questions-U1 (SPEC B1): which screens the studio page shows, and on
@@ -1569,6 +1576,10 @@ def main(argv=None):
                     help="Digest of the exact question and options being answered.")
     ap.add_argument("--reply-source", default="client",
                     help="Answer provenance; client choices require client evidence.")
+    ap.add_argument("--seed-answers-file", default=None,
+                    help="JSON list of explicit prior raw client answers with source references.")
+    ap.add_argument("--answer-source-ref", default=None,
+                    help="Source reference for this explicit client answer.")
     ap.add_argument("--run-state-file", default="",
                     help="with --step and no replies: send the one-time intro as its "
                          "own message first (recorded as intro_shown in this file)")
@@ -1615,7 +1626,8 @@ def main(argv=None):
             return 1                               # refuse loudly, never a half file
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         return 0
-    if a.format == "session-json" or (a.step and (a.run_dir or a.run_state_file)):
+    if (a.seed_answers_file or a.format == "session-json"
+            or (a.step and (a.run_dir or a.run_state_file))):
         from intake_preflight.card_session_cli import run
         return run(a, questions=qs, purpose_flow=purpose_flow)
     if a.step:
