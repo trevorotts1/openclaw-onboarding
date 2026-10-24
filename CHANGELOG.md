@@ -1,3 +1,12 @@
+## [Unreleased]  -  2026-10-24  -  PBB-220 / T-05: adopted engineering loop and proven launchd observer/owner-action bridge
+
+- Adds `CONTROL/eng_loop.py`, `CONTROL/owner_handler.py` and `evidence/engineering-loop-registration.json`, and bumps Skill 38 to v2.0.34. The existing narrow adapter is extended, not replaced: the owner handler is byte-identical and the adapter changes only to allow an isolated label/plist/store.
+- Proven with actual IDs on one synthetic action: create, launchd-tick dispatch, owner ACK, a separate completion receipt, duplicate create/dispatch refused with exactly one effect, a host-level crash followed by replacement resume, and a stop whose read-back completion is a distinct receipt from its ACK.
+- Independent observation came from a separate process reading the effect file and the SQLite store, plus native `launchctl print` with two known-present positive controls. The production engineering job was observed running and left untouched.
+- In plain English: the loop that observes and dispatches work is now a real background macOS job with a durable queue, and the proof shows the same work cannot be performed twice by accident.
+- Nothing is enforced beyond this candidate: C-05, C-F15, C-F18 and C-F19 stay UNVERIFIED for independent QC, and the receipt names what was not exercised.
+- Risk level: LOW (additive control code and evidence; no provider, credential, customer or runtime change).
+
 ## [Unreleased]  -  2026-10-24  -  PBB-070 / T-47: cross-repository compatibility manifest and deployment evidence
 
 - Adds `implementation/pbb-070/compatibility-manifest.json` and `implementation/pbb-070/DEPLOYMENT-EVIDENCE.md`. The manifest binds openclaw-onboarding `bccc4050f`, 999-setup `1d1545fc8`, and blackceo-command-center `ef6b9364e` (pinned tag v7.6.112) by exact commit, names the interfaces that were checked, and marks every interface that is not proven.
