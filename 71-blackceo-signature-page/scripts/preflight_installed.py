@@ -14,16 +14,29 @@ Usage:
     python3 scripts/preflight_installed.py [--target DIR] [--json]
 
 Exit codes:
-    0  installed runtime is ready: layout, imports, local assets and the
-       representative dry run passed, and no demonstrated dependency is missing
+    0  installed runtime is ready: layout and imports passed, every declared
+       local asset resolves, and the representative dry run behaved as expected
     1  a runtime gap was demonstrated: something a production script needs is
        missing or fails
     2  the preflight could not complete a section (named in the output)
+
+What the dry run normally shows. This tree carries no client brand data, so in
+the normal case `build_production_request.py` REFUSES ("brand colors
+unresolved, ...") before writing a request, and the `stage_executor --preflight`
+row is SKIP -- not PASS -- because the executor was never reached. A PASS on
+that row means the build produced a request AND the executor printed its own
+PREFLIGHT markers; exit status alone is never proof that it ran.
 
 A demonstrated gap is fatal to the verdict even when the exercised path never
 reached it — a dependency does not stop being missing because this run did not
 call it. Optional imaging/render capabilities are reported SKIP, matching
 `verify.sh --capabilities`, and never flip the verdict.
+
+Rows reported but NOT gating the verdict: DEGRADED (the shared design tokens
+component resolves outside this tree -- emit_design_tokens records
+`component_not_in_tree` and carries on) and REF (the shared design.css is a
+component reference recorded in a produced page, with no read path in this
+tree). Only GAP and FAIL gate.
 """
 from __future__ import annotations
 
@@ -183,36 +196,212 @@ def check_shared(root: Path):
 
 PACKAGING_TOKENS = ("No such file", "Errno 2", "ModuleNotFoundError", "ImportError")
 
+# The only refusal wording that demonstrates a correct runtime: the skill
+# refusing because the CLIENT has not supplied data this preflight must never
+# invent. Exact literals, read from the emitting code — not a keyword match:
+#   scripts/brand_colors.py failure()            "brand colors unresolved, ..."
+#   scripts/build_production_request.py:741      "(supply --design-prose with the
+#                                                 run's measured design system)"
+# Any other REFUSED means the run failed for a reason that cannot be attributed
+# to missing client data, so it is a gap.
+CLIENT_DATA_REFUSALS = (
+    "brand colors unresolved, no image stage may start.",
+    "supply --design-prose with the run's measured design system",
+)
+
+# The executor's own fail-closed wording, read from the emitter it actually
+# prints (stage_executor.py:1044, surfaced as "PREFLIGHT ... REFUSED: ..." at
+# :1694). It differs from the build's rewording above, so mixing the two makes
+# a healthy install look broken.
+EXECUTOR_FAIL_CLOSED = (
+    "brand colors unresolved, no image stage may start.",
+    "add genuine specification",
+)
+
+
+TRACEBACK_MARKER = "Traceback (most recent call last)"
+
+
+def _last_nonempty_line(text: str) -> str:
+    for raw in reversed(text.splitlines()):
+        if raw.strip():
+            return raw.strip()
+    return ""
+
 
 def classify_build_failure(text: str) -> str:
-    """'gap', 'refused' or 'error' for a failed build_production_request run.
+    """'refused' or 'gap' for a failed build_production_request run.
 
     build_production_request prints REFUSED for OSError too, and OSError
     includes a missing packaged file. A packaging break must never be read as a
     polite refusal, so the file/module signature is tested first and wins.
+
+    A refusal must also be the TERMINAL evidence, not a substring anywhere:
+    the builder prints one `REFUSED: <reason>` line and returns 1, so the last
+    non-empty line has to be that line, carrying an allowlisted client-data
+    literal. A refusal followed by a traceback or an Errno 13 line, and a
+    wrapper error that merely quotes the literal mid-text, are both gaps --
+    the run crashed or failed for a reason that cannot be attributed to missing
+    client data.
     """
     if any(tok in text for tok in PACKAGING_TOKENS):
         return "gap"
-    if "REFUSED" in text:
+    if TRACEBACK_MARKER in text:
+        return "gap"
+    last = _last_nonempty_line(text)
+    if not last.startswith("REFUSED: "):
+        return "gap"
+    if any(sig in last for sig in CLIENT_DATA_REFUSALS):
         return "refused"
     return "gap"
 
 
+def classify_executor_exit(returncode: int, text: str) -> str:
+    """'ok', 'fail-closed' or 'gap' for a stage_executor --preflight exit.
+
+    stage_executor returns 1 both for a legitimate fail-closed refusal and for
+    an unexpected break (argparse, traceback, missing asset), so the exit code
+    alone proves nothing. Only a FAIL or PREFLIGHT REFUSED line carrying an
+    allowlisted client-data reason counts as fail-closed; every other nonzero
+    exit is a gap.
+
+    Exit 0 is not proof either: an empty or stubbed stage_executor.py imports
+    cleanly and exits 0 printing nothing. A zero exit counts as 'ok' only with
+    POSITIVE evidence that the preflight ran -- at least one line beginning
+    `PREFLIGHT` (the executor prints PREFLIGHT_SECTIONS at stage_executor.py:1666
+    and `PREFLIGHT <stage> <file> ratio=...` at :1706) -- and no traceback.
+    """
+    if returncode == 0:
+        if TRACEBACK_MARKER in text:
+            return "gap"
+        if not any(raw.strip().startswith("PREFLIGHT") for raw in text.splitlines()):
+            return "gap"
+        return "ok"
+    if returncode != 1:  # 2 is usage/run-dir, never a fail-closed refusal
+        return "gap"
+    if any(tok in text for tok in PACKAGING_TOKENS):
+        return "gap"
+    if TRACEBACK_MARKER in text:
+        return "gap"
+    # Same terminal-evidence rule as the build path: a refusal followed by a
+    # crash is a crash, so the last non-empty line must itself be the refusal
+    # carrying a client-data literal. Multiple refusal lines still pass (the
+    # last one is a refusal); a trailer or exception line does not.
+    last = _last_nonempty_line(text)
+    if not (last.startswith("FAIL: ") or " REFUSED: " in last):
+        return "gap"
+    if any(sig in last for sig in EXECUTOR_FAIL_CLOSED):
+        return "fail-closed"
+    return "gap"
+
+
+def verdict_is_ready(layout_ok: bool, import_ok: bool, dry_ok: bool, rows) -> bool:
+    """A demonstrated gap always loses, whatever the section flags say."""
+    gaps = [r for r in rows if r[0] in ("GAP", "FAIL")]
+    return bool(layout_ok and import_ok and dry_ok and not gaps)
+
+
 def self_check() -> int:
-    cases = (
-        ("REFUSED: brand colors unresolved, no image stage may start. Ask the client", "refused"),
+    build_cases = (
+        ("REFUSED: brand colors unresolved, no image stage may start. Tried: no intake; "
+         "Ask the client", "refused"),
+        ("REFUSED: visual-mockup section 1: prompt budget: 10609 chars, 5391 below the "
+         "16000-char floor; add genuine specification (supply --design-prose with the "
+         "run's measured design system)", "refused"),
+        ("REFUSED: something else entirely", "gap"),
+        ("REFUSED: page role 'bogus' has no entry in references/page-structures.json", "gap"),
         ("REFUSED: [Errno 2] No such file or directory: 'references/planted.md'", "gap"),
         ("REFUSED: ModuleNotFoundError: No module named 'jsonschema'", "gap"),
+        ("REFUSED: brand colors unresolved, no image stage may start. "
+         "No such file: private/brand.json", "gap"),
         ("Traceback (most recent call last): ValueError: boom", "gap"),
+        # A refusal is proof only when it is the TERMINAL line, with nothing
+        # after it. A crash wearing a refusal's words is a gap.
+        ("REFUSED: brand colors unresolved, no image stage may start.\n"
+         "Traceback (most recent call last):\nValueError: boom", "gap"),
+        ("wrapper ValueError: brand colors unresolved, no image stage may start.", "gap"),
+        ("BUILD REFUSED: something else\n"
+         "ValueError: brand colors unresolved, no image stage may start.", "gap"),
+        ("REFUSED: brand colors unresolved, no image stage may start.\n"
+         "[Errno 13] Permission denied: 'private/brand.json'", "gap"),
+        ("REFUSED: brand colors unresolved, no image stage may start.\n"
+         "PermissionError: [Errno 13] Permission denied", "gap"),
     )
-    bad = [(t, want, classify_build_failure(t)) for t, want in cases
-           if classify_build_failure(t) != want]
-    for text, want, got in bad:
-        print(f"  [FAIL] classify {text[:60]!r}: want {want}, got {got}")
+    exit_cases = (
+        (0, "PREFLIGHT visual-mockup mobile/part-1.png ratio=3:4 chars=17000", "ok"),
+        # Exit 0 from a script that never ran the preflight proves nothing: an
+        # empty stage_executor.py exits 0 printing nothing.
+        (0, "", "gap"),
+        (0, "Traceback (most recent call last):\nKeyError: 'sections'", "gap"),
+        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12", "ok"),
+        (0, "NOTE page_kind: not declared\n", "gap"),
+        (1, "FAIL: brand colors unresolved, no image stage may start. Tried: run brand pin "
+            "private/brand.json: file not found. Ask the client: What are your brand colors?",
+         "fail-closed"),
+        # Captured verbatim from stage_executor.py:1044/:1694 — the executor has
+        # no design-prose rewording, so the build's phrasing must not pass here.
+        (1, "PREFLIGHT visual-mockup desktop/part-01.png REFUSED: prompt budget: "
+            "visual-mockup section 1: 3611 chars, 12389 below the 16000-char floor "
+            "(19000-char target); add genuine specification", "fail-closed"),
+        (1, "PREFLIGHT visual-mockup part-1.png REFUSED: prompt budget: section 1 below the "
+            "16000-char floor (supply --design-prose with the run's measured design system)",
+         "gap"),
+        (1, "Traceback (most recent call last):\nKeyError: 'sections'", "gap"),
+        (2, "usage: stage_executor.py [-h] ...\nstage_executor.py: error: unrecognized arguments",
+         "gap"),
+        (2, "FAIL: brand colors unresolved, no image stage may start. Tried: none", "gap"),
+        (1, "FAIL: unknown stage 'bogus'; expected one of ['design-board']", "gap"),
+        (1, "FAIL: cannot read production request /x: [Errno 2] No such file or directory",
+         "gap"),
+        (1, "PREFLIGHT visual-mockup part-1.png REFUSED: something else entirely", "gap"),
+        # A crash after a legitimate refusal is a crash, exactly as on the
+        # build path: the refusal must be the terminal evidence.
+        (1, "PREFLIGHT visual-mockup desktop/part-01.png REFUSED: prompt budget: "
+            "visual-mockup section 1: 3611 chars, 12389 below the 16000-char floor "
+            "(19000-char target); add genuine specification\n"
+            "Traceback (most recent call last):\nValueError: boom after a legitimate refusal",
+         "gap"),
+        (1, "PREFLIGHT visual-mockup desktop/part-01.png REFUSED: prompt budget: "
+            "visual-mockup section 1: 3611 chars, 12389 below the 16000-char floor "
+            "(19000-char target); add genuine specification\n"
+            "PermissionError: [Errno 13] denied", "gap"),
+        (1, "PREFLIGHT visual-mockup a.png REFUSED: prompt budget: 1 chars, 1 below the "
+            "16000-char floor; add genuine specification\n"
+            "PREFLIGHT visual-mockup b.png REFUSED: prompt budget: 2 chars, 2 below the "
+            "16000-char floor; add genuine specification", "fail-closed"),
+    )
+    verdict_cases = (
+        (True, True, True, [("PASS", "x", "")], True),
+        (True, True, True, [("GAP", "x", "")], False),
+        (True, True, True, [("FAIL", "x", "")], False),
+        (True, True, False, [], False),
+        (False, True, True, [], False),
+        (True, False, True, [], False),
+    )
+
+    bad = []
+    for text, want in build_cases:
+        got = classify_build_failure(text)
+        if got != want:
+            bad.append(f"build {text[:60]!r}: want {want}, got {got}")
+    for rc, text, want in exit_cases:
+        got = classify_executor_exit(rc, text)
+        if got != want:
+            bad.append(f"executor rc={rc} {text[:60]!r}: want {want}, got {got}")
+    for lo, io, do, rows, want in verdict_cases:
+        got = verdict_is_ready(lo, io, do, rows)
+        if got != want:
+            bad.append(f"verdict {(lo, io, do, [r[0] for r in rows])}: want {want}, got {got}")
+
+    for line in bad:
+        print(f"  [FAIL] {line}")
     if bad:
         print("SELF-CHECK FAIL")
         return 1
-    print(f"SELF-CHECK PASS — {len(cases)} build-failure classifications")
+    total = len(build_cases) + len(exit_cases) + len(verdict_cases)
+    print(f"SELF-CHECK PASS — {total} classification and verdict cases "
+          f"({len(build_cases)} build, {len(exit_cases)} executor exit, "
+          f"{len(verdict_cases)} verdict)")
     return 0
 
 
@@ -248,11 +437,9 @@ def check_dry_run(root: Path):
         if build.returncode != 0 or not out.is_file():
             last = [ln for ln in build_text.splitlines() if ln.strip()][-1:] or ["no output"]
             detail = last[0][:200]
-            verdict = classify_build_failure(build_text)
-            if verdict == "gap":
-                rows.append(("GAP", "dry run: build_production_request", detail))
-                return rows, False
-            if verdict == "refused":
+            # PASS only for a refusal this preflight can attribute to client data
+            # it must not invent; any other refusal is an unproven runtime.
+            if classify_build_failure(build_text) == "refused" and not out.is_file():
                 rows.append(("PASS", "dry run: build_production_request (refused on client data)",
                              detail[:160]))
                 rows.append(("SKIP", "dry run: stage_executor --preflight",
@@ -268,16 +455,19 @@ def check_dry_run(root: Path):
              str(tmp), "--request", str(out), "--preflight",
              "--stages", "visual-mockup", "--provider", "stub"],
             cwd=str(root), capture_output=True, text=True, timeout=120, env=_ENV)
-        tail = [ln for ln in (pre.stdout + pre.stderr).splitlines() if ln.strip()][-3:]
-        # A preflight that fails closed on the request's own content is a correct
-        # runtime: the modules loaded and resolved their assets. A traceback that
-        # names a missing file is the gap we are looking for.
-        missing = [ln for ln in tail if "No such file" in ln or "ModuleNotFoundError" in ln]
-        if missing:
-            rows.append(("GAP", "dry run: stage_executor --preflight", missing[-1]))
+        pre_text = pre.stdout + pre.stderr
+        tail = [ln for ln in pre_text.splitlines() if ln.strip()][-3:]
+        # A nonzero exit is success only for the recognised fail-closed refusal
+        # for missing run/client data; argparse errors, tracebacks, missing
+        # modules and unknown refusals are gaps.
+        exit_verdict = classify_executor_exit(pre.returncode, pre_text)
+        if exit_verdict == "gap":
+            rows.append(("GAP", "dry run: stage_executor --preflight",
+                         (tail[-1] if tail else f"rc={pre.returncode}")[:200]))
             return rows, False
         rows.append(("PASS", "dry run: stage_executor --preflight",
-                     "" if pre.returncode == 0 else f"fail-closed rc={pre.returncode}: {tail[-1] if tail else ''}"))
+                     "" if exit_verdict == "ok"
+                     else f"fail-closed rc={pre.returncode}: {tail[-1] if tail else ''}"))
         return rows, True
     except Exception as exc:                           # noqa: BLE001
         rows.append(("GAP", "dry run", f"{type(exc).__name__}: {exc}"))
@@ -325,11 +515,10 @@ def main(argv=None) -> int:
 
     repo_only, total = repo_only_tests(root)
     repo_shaped = (root.parent / "scripts" / "check-skill71-parity.py").is_file()
-    gaps = [r for r in rows if r[0] in ("GAP", "FAIL")]
     # A demonstrated gap keeps the verdict honest even when the exercised path
     # succeeded: the dry run need not reach a conditional dependency for that
-    # dependency to be missing.
-    ready = layout_ok and import_ok and dry_ok and not gaps
+    # dependency to be missing. verdict_is_ready is the single place that rule lives.
+    ready = verdict_is_ready(layout_ok, import_ok, dry_ok, rows)
 
     if args.json:
         print(json.dumps({

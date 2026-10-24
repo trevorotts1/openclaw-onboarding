@@ -257,11 +257,14 @@ def _shared_candidates(skill_root, rel, allow_vendored=True):
     root = Path(skill_root)
     name = Path(rel).name
     parent_rel = Path(rel).relative_to("shared-utils") if rel.startswith("shared-utils/") else Path(rel)
-    candidates = [root.parent / rel, root / rel]
-    if allow_vendored:
-        candidates += [root / "repo-integration" / "shared" / parent_rel,
-                       root / "repo-integration" / "shared" / name]
-    return tuple(candidates)
+    if not allow_vendored:
+        # Authority artifacts are read from the shared tree only. The skill's
+        # own folder is not a candidate at all: a copy shipped inside it could
+        # certify the skill's own citations.
+        return (root.parent / rel,)
+    return (root.parent / rel, root / rel,
+            root / "repo-integration" / "shared" / parent_rel,
+            root / "repo-integration" / "shared" / name)
 
 
 def _registry_policy_ids(skill_root):
@@ -274,6 +277,20 @@ def _registry_policy_ids(skill_root):
     candidates = _shared_candidates(skill_root, PROMPT_POLICY_REGISTRY_REF,
                                     allow_vendored=False)
     path = next((c for c in candidates if c.is_file()), candidates[0])
+    # The path check alone is not the identity check: a symlink in the shared
+    # tree can point back inside the skill, which would let the skill certify
+    # its own citations. Resolve and refuse any file that lives in the skill.
+    skill_resolved = Path(skill_root).resolve()
+    try:
+        resolved = path.resolve()
+    except OSError as exc:
+        raise LaunchContextError(
+            f"prompt-policy registry of record unresolvable at {path}: {exc}")
+    if resolved == skill_resolved or skill_resolved in resolved.parents:
+        raise LaunchContextError(
+            f"prompt-policy registry of record resolves inside the skill "
+            f"({path} -> {resolved}); a registry the skill ships cannot "
+            f"certify the skill's own citations")
     try:
         registry = json.loads(path.read_text(encoding="utf-8"))
         return {entry["policy_id"] for entry in registry["entries"]
