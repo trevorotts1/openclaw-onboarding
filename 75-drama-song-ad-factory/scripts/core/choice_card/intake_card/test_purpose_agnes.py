@@ -132,7 +132,7 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
     assert _ids(test)[:2] == ["purpose", "permission"]
     assert "episode_length" not in _ids(test)
     assert _labels(test, "length") == [
-        "60 seconds", "90 seconds", "3 minutes + 60s and 90s clips"]
+        "60 seconds", "90 seconds", "2 minutes", "3 minutes + 60s and 90s clips"]
     assert "shape" in _ids(test)
 
     # choice 3: no follow-up at all
@@ -140,17 +140,18 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
     assert "permission" not in _ids(lesson)
     assert "where" not in _ids(lesson)
     assert _labels(lesson, "length") == [
-        "60 seconds", "90 seconds", "3 minutes + 60s and 90s clips"]
+        "60 seconds", "90 seconds", "2 minutes", "3 minutes + 60s and 90s clips"]
 
     # choice 4: WHERE right after PURPOSE, then the platform's own lengths
     paid, _ = _plan(purpose=4, where=1)
     assert _ids(paid)[:2] == ["purpose", "where"]
-    assert _labels(paid, "length") == ["30 seconds", "60 seconds", "90 seconds"]
+    assert _labels(paid, "length") == [
+        "30 seconds", "60 seconds", "90 seconds", "2 minutes"]
     plen = next(q for q in paid if q["id"] == "length")
     assert plen["options"][plen["recommended"]][0] == "60 seconds"
     assert "shape" not in _ids(paid)          # 9:16 is pinned for an ad
     free, _ = _plan(purpose=4, where=4)
-    assert _labels(free, "length") == ["60 seconds", "90 seconds"]
+    assert _labels(free, "length") == ["60 seconds", "90 seconds", "2 minutes"]
     assert "shape" not in _ids(free)
 
 

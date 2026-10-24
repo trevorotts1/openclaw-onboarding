@@ -43,26 +43,26 @@ class T(unittest.TestCase):
     def test_full_question_with_numbered_options(self):
         self.assertIn("How long do you want your ad to be?", STEP)
         self.assertIn("also come with short clips you can post on social media", STEP)
-        self.assertEqual(len(OPTS), 5)
+        self.assertEqual(len(OPTS), 6)
         self.assertIn("Reply with a number", STEP)
         self.assertIn('"recommended"', STEP)
 
     def test_clip_wording_on_3_5_10_minutes_only(self):
-        for line, mins in zip(OPTS[2:], ("3", "5", "10")):
+        for line, mins in zip(OPTS[3:], ("3", "5", "10")):
             self.assertIn(mins + " minutes", line)
             self.assertIn("60s and 90s clips", line)
             self.assertIn("Plus a 60-second clip and a 90-second clip", line)
-        for line in OPTS[:2]:
+        for line in OPTS[:3]:
             self.assertNotIn("clip", line)
 
     def test_card_wording_matches_what_the_code_cuts(self):
-        for line, secs in zip(OPTS, (60, 90, 180, 300, 600)):
+        for line, secs in zip(OPTS, (60, 90, 120, 180, 300, 600)):
             self.assertEqual("clip" in line, bool(clips_for(secs)), line)
 
     def test_recap_is_plain(self):
         at = [q["id"] for q in IC.QUESTIONS].index("length")     # after the story brief (DSR-105)
         a = [{"text": "x"}] * len(IC.QUESTIONS)
-        a[at] = {"text": IC.QUESTIONS[at]["options"][2][0]}
+        a[at] = {"text": IC.QUESTIONS[at]["options"][3][0]}
         self.assertIn("%d. Length: 3 minutes + 60s and 90s clips" % (at + 1), IC.render_recap(a))
 
     def test_three_minute_price_includes_clips(self):

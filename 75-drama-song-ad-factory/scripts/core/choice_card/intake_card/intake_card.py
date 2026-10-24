@@ -193,6 +193,7 @@ def _questions():
         {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long do you want your ad to be? The longer ads also come with short clips you can post on social media.",
          "options": [("60 seconds", "The standard ad length."),
                      ("90 seconds", "Room for a fuller story."),
+                     ("2 minutes", "Two full minutes, between the short ad and the full episode."),
                      ("3 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
                      ("5 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
                      ("10 minutes (the long version) + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip.")],
@@ -297,8 +298,8 @@ _OUTPUT_TYPES = {
 
 #: The LENGTH seconds each use offers (SPEC B2). 30 seconds is Trevor's
 #: 2026-10-13 paid-ad addition; the campaign is asked as EPISODE LENGTH instead.
-_LENGTH_KEEP = {"testimonial": (60, 90, 180), "lesson": (60, 90, 180),
-                "paid_ad": (30, 60, 90), "short_post": (60, 90)}
+_LENGTH_KEEP = {"testimonial": (60, 90, 120, 180), "lesson": (60, 90, 120, 180),
+                "paid_ad": (30, 60, 90, 120), "short_post": (60, 90, 120)}
 
 #: Trevor 2026-10-13: Agnes is capped at five minutes, so the AGNES question is
 #: asked only when the chosen length can be made with it (SPEC A15).
