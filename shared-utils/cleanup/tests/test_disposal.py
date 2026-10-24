@@ -17,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 PKG = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PKG))
@@ -552,6 +553,137 @@ class OwnershipProofTests(Base):
                 self.assertIn(disposal.BLOCKED_UNOWNED, record['reasons'])
                 self.assertTrue(os.path.lexists(str(path)),
                                 'unverified ownership deletes nothing')
+
+
+class ReceiptStageTests(Base):
+    """D2: a deletion is never committed without its receipt. The receipt
+    target is proven writable before the first removal, and a write that still
+    fails comes back typed, with the real deletions recorded inline."""
+
+    def test_unwritable_receipt_target_refuses_before_any_deletion(self):
+        path = self.scratch(files={'unique.txt': 'only copy'})
+        target = self.receipts / 'disposal-receipt.json'
+        target.mkdir()  # os.replace onto a directory cannot succeed
+        try:
+            result = self.dispatch([self.item()], receipt_path=target)
+        except OSError as exc:
+            self.fail(f'dispatch raised after deciding to delete: {exc!r}; '
+                      f'resource survives={os.path.lexists(str(path))}')
+        record = result['items'][0]
+        self.assertEqual(disposal.BLOCKED, record['disposition'])
+        self.assertIn(disposal.BLOCKED_RECEIPT_DESTINATION, record['reasons'])
+        self.assertFalse(record['disposed'])
+        self.assertTrue(os.path.lexists(str(path)),
+                        'no receipt possible, so nothing is deleted')
+        self.assertEqual('only copy', (path / 'unique.txt').read_text())
+        self.assertEqual([], result['deletions'])
+        self.assertFalse(result['receipt_written'])
+        self.assertFalse(result['success'])
+
+    def test_receipt_write_failing_after_removal_is_typed_not_raised(self):
+        path = self.scratch()
+        failure = OSError(28, 'No space left on device')
+        with mock.patch.object(disposal, '_write_receipt', side_effect=failure):
+            try:
+                result = self.dispatch([self.item()])
+            except OSError as exc:
+                self.fail(f'committed deletion stranded by a raise: {exc!r}')
+        self.assertFalse(os.path.lexists(str(path)), 'the removal really happened')
+        self.assertFalse(result['receipt_written'])
+        self.assertFalse(result['receipt_read_back'])
+        self.assertFalse(result['success'])
+        self.assertEqual('INCOMPLETE', result['status'])
+        self.assertTrue(result['reason'].startswith(
+            disposal.BLOCKED_RECEIPT_DESTINATION))
+        # the deletion is recorded inline with its exact path and absence proof
+        self.assertEqual(['unit'], [d['id'] for d in result['deletions']])
+        deletion = result['deletions'][0]
+        self.assertEqual(os.path.realpath(str(path)), deletion['canonical_path'])
+        self.assertEqual({'path': str(path), 'lexists': False, 'absent': True},
+                         deletion['absence'])
+
+    def test_writable_receipt_destination_still_disposes(self):
+        path = self.scratch()
+        result = self.dispatch([self.item()])
+        self.assertEqual('DISPATCHED', result['status'])
+        self.assertTrue(result['success'])
+        self.assertTrue(result['receipt_read_back'])
+        self.assertFalse(os.path.lexists(str(path)))
+        self.assertEqual(['disposal-receipt.json'], os.listdir(str(self.receipts)),
+                         'the pre-flight probe leaves nothing behind')
+
+
+class MissingFactTests(Base):
+    """D4: an absent clean_state or consumers key is an unobserved fact,
+    UNKNOWN, and never authorises disposal."""
+
+    def test_missing_clean_state_or_consumers_is_unknown_not_disposal(self):
+        for key, code in (('clean_state', disposal.UNKNOWN_CLEAN_STATE),
+                          ('consumers', disposal.UNKNOWN_CONSUMER_STATE)):
+            with self.subTest(missing=key):
+                path = self.scratch(name=f'no-{key}')
+                item = self.item(id=f'no-{key}', path=str(path))
+                del item[key]
+                result = self.dispatch([item])
+                record = result['items'][0]
+                self.assertEqual(disposal.UNKNOWN, record['disposition'])
+                self.assertIn(code, record['reasons'])
+                self.assertFalse(record['disposed'])
+                self.assertEqual('INCOMPLETE', result['status'])
+                self.assertFalse(result['success'])
+                self.assertTrue(os.path.lexists(str(path)),
+                                'a missing fact deletes nothing')
+
+    def test_explicit_clean_state_and_empty_consumers_still_dispose(self):
+        path = self.scratch()
+        result = self.dispatch([self.item(clean_state='NOT_APPLICABLE',
+                                          consumers=[])])
+        self.assertEqual('DISPATCHED', result['status'])
+        self.assertTrue(result['success'])
+        self.assertFalse(os.path.lexists(str(path)))
+
+
+class ContainmentTests(Base):
+    """M3: contained-or-equal is one semantics, used for the receipt parent and
+    for a caller copy that must sit outside the resource."""
+
+    def test_receipt_directly_in_approved_root_is_accepted(self):
+        path = self.scratch()
+        result = self.dispatch([self.item()],
+                               receipt_path=self.approved / 'disposal-receipt.json')
+        record = result['items'][0]
+        self.assertEqual(disposal.ELIGIBLE, record['disposition'], record['reason'])
+        self.assertTrue(record['disposed'])
+        self.assertEqual('DISPATCHED', result['status'])
+        self.assertTrue(result['success'])
+        self.assertFalse(os.path.lexists(str(path)))
+        on_disk = json.loads((self.approved / 'disposal-receipt.json').read_text())
+        self.assertEqual(['unit'], [d['id'] for d in on_disk['deletions']])
+
+    def test_receipt_in_a_prefix_sibling_of_approved_root_is_outside(self):
+        path = self.scratch()
+        sibling = self.root / (self.approved.name + '-sibling')
+        sibling.mkdir()
+        result = self.dispatch([self.item()], receipt_path=sibling / 'r.json')
+        record = result['items'][0]
+        self.assertEqual(disposal.BLOCKED, record['disposition'])
+        self.assertIn(disposal.BLOCKED_RECEIPT_DESTINATION, record['reasons'])
+        self.assertTrue(os.path.lexists(str(path)))
+
+    def test_caller_copy_equal_to_or_containing_the_resource_is_not_preservation(self):
+        for label in ('equal', 'ancestor'):
+            with self.subTest(preserved_root=label):
+                path = self.scratch(name=label, files={'unique.txt': 'only copy'})
+                claimed = path if label == 'equal' else path.parent
+                result = self.dispatch([self.item(id=label, path=str(path))],
+                                       preserve_content=False,
+                                       preserved_root=claimed)
+                record = result['items'][0]
+                self.assertEqual(disposal.BLOCKED, record['disposition'])
+                self.assertIn(disposal.BLOCKED_MISSING_PRESERVATION,
+                              record['reasons'])
+                self.assertTrue(os.path.lexists(str(path)), 'the only copy survives')
+                self.assertEqual('only copy', (path / 'unique.txt').read_text())
 
 
 class SourceGuardTests(unittest.TestCase):

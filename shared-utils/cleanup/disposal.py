@@ -32,6 +32,7 @@ import json
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 import time
 from collections.abc import Mapping
@@ -161,11 +162,12 @@ def _real(path):
     return Path(os.path.realpath(str(path)))
 
 
-def _beneath(child, root):
+def _within(child, root):
+    """child is root itself or lies beneath it, after resolving both. The one
+    containment test for receipts, preserved copies and their resources."""
     child_real, root_real = _real(child), _real(root)
-    if child_real == root_real:
-        return False
-    return str(child_real).startswith(str(root_real) + os.sep)
+    return (child_real == root_real
+            or str(child_real).startswith(str(root_real).rstrip(os.sep) + os.sep))
 
 
 def _symlink_component(path, root):
@@ -220,8 +222,8 @@ def preserve(resource_path, preserved_root, resource_id):
     """Copy resource content outside itself and prove the copy byte-for-byte."""
     source = Path(resource_path)
     root = Path(preserved_root)
-    if _beneath(root, source):
-        raise Refused('preserved root is inside the resource being disposed')
+    if _within(root, source):
+        raise Refused('preserved root is the resource being disposed or inside it')
     root.mkdir(parents=True, exist_ok=True)
     destination = root / resource_id
     if os.path.lexists(str(destination)):
@@ -309,8 +311,8 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
             note(UNKNOWN, UNKNOWN_VOLUME_IDENTITY, f'lexists failed: {exc}')
 
         root_real = _real(approved_root)
-        contained = (str(canonical) != str(root_real)
-                     and str(canonical).startswith(str(root_real) + os.sep))
+        # The approved root itself is never a disposable resource.
+        contained = canonical != root_real and _within(canonical, root_real)
         record['checks']['beneath_approved_root'] = contained
         if not contained:
             note(BLOCKED, BLOCKED_OUTSIDE_APPROVED_ROOT,
@@ -355,11 +357,16 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
                      'absent with no disposal receipt: prior deletion unproven')
 
     if record['present'] is not False:
-        clean_state = item.get('clean_state', 'NOT_APPLICABLE')
+        # An absent clean_state or consumers key is an unobserved fact, never a
+        # clean default: UNKNOWN, and no disposal on its strength.
+        clean_state = item.get('clean_state')
         if clean_state not in CLEAN_STATES:
             note(UNKNOWN, UNKNOWN_CLEAN_STATE,
                  f'clean_state {clean_state!r} is not one of {sorted(CLEAN_STATES)}')
 
+        if item.get('consumers') is None:
+            note(UNKNOWN, UNKNOWN_CONSUMER_STATE,
+                 'consumers were not recorded; an empty list means none')
         consumers = _as_list(item.get('consumers'))
         active = []
         for consumer in consumers:
@@ -404,7 +411,8 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
         if proof is None:
             existing = [p for p in (preserved_paths or ())
                         if os.path.lexists(str(p))
-                        and not _beneath(str(p), record['path'])]
+                        and not _within(str(p), record['path'])
+                        and not _within(record['path'], str(p))]
             if receipts and existing:
                 proof = 'caller_preserved'
                 record['checks']['preservation_receipt_ids'] = list(receipts)
@@ -438,11 +446,27 @@ def _receipt_destination_ok(receipt_path, approved_root, expected_device):
             return f'receipt parent device differs from expected {expected_device}'
     except OSError as exc:
         return f'receipt parent unreadable: {exc}'
-    if not _beneath(parent, approved_root):
+    if not _within(parent, approved_root):
         return f'receipt parent {parent} is outside {approved_root}'
     link = _symlink_component(parent, approved_root)
     if link is not None:
         return f'receipt parent has symlinked component {link}'
+    return _receipt_target_probe(receipt_path)
+
+
+def _receipt_target_probe(receipt_path):
+    """Pre-flight, before the first removal: the target is absent or a regular
+    file, and a sibling temporary file can be created, as _write_receipt does.
+    No receipt possible means no deletion at all."""
+    target = Path(receipt_path)
+    try:
+        if os.path.lexists(str(target)) and not stat.S_ISREG(os.lstat(str(target)).st_mode):
+            return f'receipt target {target} exists and is not a regular file'
+        probe = target.with_name(f'.{target.name}.probe-{secrets.token_hex(8)}')
+        os.close(os.open(str(probe), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+        os.unlink(str(probe))
+    except OSError as exc:
+        return f'receipt target {target} is not writable: {exc}'
     return None
 
 
@@ -624,8 +648,19 @@ def dispatch(items, *, approved_root, expected_device, receipt_path,
         payload['success'] = False
         return payload
     payload['receipt_written'] = True
-    payload['receipt_read_back'] = _write_receipt(receipt_path, payload)
     payload['receipt_path'] = str(receipt_path)
+    try:
+        payload['receipt_read_back'] = _write_receipt(receipt_path, payload)
+    except Exception as exc:  # a committed deletion is never stranded by a raise
+        # The pre-flight passed, yet the write failed: the real deletions stay
+        # recorded inline (path, canonical path, absence) in this typed result.
+        payload['status'] = 'INCOMPLETE'
+        payload['reason'] = (f'{BLOCKED_RECEIPT_DESTINATION}: receipt write '
+                             f'failed after removal: {exc!r}')
+        payload['receipt_written'] = False
+        payload['receipt_read_back'] = False
+        payload['success'] = False
+        return payload
     payload['success'] = status == 'DISPATCHED' and payload['receipt_read_back']
     return payload
 
