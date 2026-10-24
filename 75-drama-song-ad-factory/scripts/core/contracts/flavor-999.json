@@ -1,0 +1,6 @@
+{
+  "flavor": "999",
+  "skill_root_anchor": ".claude/skills/drama-song-ad-factory",
+  "character_approval_module": null,
+  "provenance": "sampled trevorotts1/999-setup layout: no character_bible/character_approval.py; package data only, all behavior resolves through package_flavor_adapter.SEAM against the shared core"
+}
