@@ -878,6 +878,10 @@ def render_step(i, questions=None):
     lines.append("")
     if q.get("reason"):                     # a question may only mark its pick
         lines.append("I recommend option %d (%s) because %s" % (r + 1, q["options"][r][0], q["reason"]))
+    if q.get("id") == "music":
+        # S75-T23: the plain help for every offered style is one word away; the
+        # question, its options and its recommendation are unchanged.
+        lines.append('Say "help me choose" to hear what each style sounds like.')
     lines.append(q.get("closing") or "Reply with a number, or say \"recommended\".")
     return "\n".join(lines)
 
