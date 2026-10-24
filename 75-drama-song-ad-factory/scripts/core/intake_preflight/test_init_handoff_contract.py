@@ -107,7 +107,10 @@ class InitHandoffContract(unittest.TestCase):
         self.assertEqual(bindings["bindings"]["build"]["model_id"], "deepseek-chain")
         self.assertEqual(bindings["bindings"]["check"]["model_id"], "opus-chain")
         self.assertEqual(bindings["attempts"], [])
-        code, nxt = self.invoke("next", "--run-dir", str(self.run))
+        from choice_card.intake_card import intake_session as consumer_session
+        with mock.patch.object(consumer_session, "ensure_handoff", wraps=consumer_session.ensure_handoff) as handoff:
+            code, nxt = self.invoke("next", "--run-dir", str(self.run))
+        self.assertTrue(handoff.called)
         self.assertEqual(code, 0, nxt)
         self.assertEqual(nxt["data"]["stage"], "research")
         self.assertTrue(nxt["data"]["command"])
