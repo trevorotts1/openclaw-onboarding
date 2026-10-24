@@ -537,7 +537,7 @@ oc_skill_selection_status() {
   out=$("$cli" skills info "$reg_name" ${_ag:+--agent "$_ag"} 2>&1) || rc=$?
   local res rrc=0
   res=$(OC_SKILL_INFO_OUT="$out" OC_SKILL_INFO_RC="$rc" OC_SKILL_FOLDER="$folder" \
-        OC_SKILL_EXPECTED="$expected" python3 - <<'PYEOF'
+        OC_SKILL_EXPECTED="$expected" OC_SKILL_REQUESTED="$reg_name" python3 - <<'PYEOF'
 import hashlib, json, os, re, sys
 
 out = os.environ.get("OC_SKILL_INFO_OUT", "")
@@ -546,6 +546,7 @@ try:
 except ValueError:
     cli_rc = 1
 expected = os.environ.get("OC_SKILL_EXPECTED", "").strip()
+requested = os.environ.get("OC_SKILL_REQUESTED", "").strip()
 
 
 def emit(status, reason, path="", source="", code=1):
@@ -589,6 +590,29 @@ sel = os.path.expanduser(m_path.group(1))
 sel_dir = os.path.dirname(sel)
 if not os.path.isfile(sel):
     emit("FAIL", "selected-tree-missing:resolver-names-" + sel, sel, src)
+
+# (1b) The resolver is the authority on WHICH tree, but a Path that names a
+# different skill is not this skill: cross-check the selected tree's identity.
+def norm_name(v):
+    v = os.path.basename(str(v).strip()).lower()
+    return re.sub(r"^\d+-", "", v)
+
+names = {norm_name(sel_dir)}
+_sk = os.path.join(sel_dir, "SKILL.md")
+if os.path.isfile(_sk):
+    try:
+        _t = open(_sk, encoding="utf-8", errors="ignore").read()
+    except OSError:
+        _t = ""
+    _m = re.match(r"^---\n(.*?)\n---", _t, re.S)
+    if _m:
+        _mn = re.search(r"^name:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", _m.group(1), re.M)
+        if _mn:
+            names.add(norm_name(_mn.group(1)))
+if requested and norm_name(requested) not in names:
+    emit("FAIL",
+         "selected-tree-name-mismatch:requested-%s-selected-%s" % (norm_name(requested), ",".join(sorted(names))),
+         sel, src)
 
 # (2) ARTIFACT/VERSION IDENTITY across every carrier PRESENT in the selected
 # tree. Disagreement is a failure, not a preference.
@@ -680,6 +704,11 @@ if entry:
         h = hashlib.sha256(open(ap, "rb").read()).hexdigest()
         if h.lower() != str(entry["sha256"]).lower():
             emit("FAIL", "runtime-entry-digest-mismatch:%s" % rel, sel, src)
+
+# (2c) A tree that carries neither a version carrier nor a declared artifact
+# identity has proved nothing; silence is not evidence.
+if not vals and not entry:
+    emit("FAIL", "no-identity-evidence:selected-tree-carries-no-version-carrier-and-no-declared-runtime-entry", sel, src)
 
 emit("PASS", "selection-verified" + (":version=" + sel_ver if sel_ver else ""), sel, src, code=0)
 PYEOF

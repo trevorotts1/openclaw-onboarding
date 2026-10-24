@@ -184,4 +184,58 @@ out="$(sel "$T/s7bin" "$T/s7")"
 printf '%s' "$out" | grep -q '^rc=1' && printf '%s' "$out" | grep -q '^FAIL runtime-entry-' \
   && ok "entry point identity mismatch -> FAIL" || bad "expected FAIL entry-mismatch: $out"
 
+# ---- 2c. every BLOCKED branch is pinned by a test ---------------------------
+# (i) multi-agent box: the product says the intended agent cannot be told
+# apart. Selection cannot be established -> BLOCKED, never PASS.
+mk_tree "$T/s8" "1.0.53"
+mkdir -p "$T/s8bin"
+printf '#!/bin/sh\necho "demo has no explicit owner across 3 agents"\nexit 0\n' > "$T/s8bin/openclaw"
+chmod +x "$T/s8bin/openclaw"
+out="$(sel "$T/s8bin" "$T/s8" "1.0.53")"
+printf '%s' "$out" | grep -q '^rc=2' && printf '%s' "$out" | grep -q '^BLOCKED skill-selection-blocked:agent-selection-unresolved' \
+  && ok "multi-agent ambiguity -> BLOCKED agent-selection-unresolved" \
+  || bad "expected BLOCKED agent-selection-unresolved: $out"
+never_success "multi-agent ambiguity" "$out"
+
+# (ii) the verifier itself cannot run (python3 present but failing/empty):
+# that is not success and not a silent pass.
+mk_tree "$T/s9" "1.0.53"
+mk_cli "$T/s9bin" "$T/s9/01-demo/SKILL.md"
+mkdir -p "$T/s9p"
+printf '#!/bin/sh\nexit 1\n' > "$T/s9p/python3"
+chmod +x "$T/s9p/python3"
+out="$(sel "$T/s9bin" "$T/s9" "1.0.53" "$T/s9bin:$T/s9p:/usr/bin:/bin")"
+printf '%s' "$out" | grep -q '^rc=2' && printf '%s' "$out" | grep -q '^BLOCKED skill-selection-blocked:verification-did-not-run' \
+  && ok "verifier did not run -> BLOCKED verification-did-not-run" \
+  || bad "expected BLOCKED verification-did-not-run: $out"
+never_success "verifier did not run" "$out"
+
+# ---- 2d. resolver Path naming a DIFFERENT skill -> FAIL --------------------
+# The resolver is authority on which tree, but a Path that serves another
+# skill is not this skill: identity is cross-checked.
+mk_tree "$T/s10" "1.0.53"
+mkdir -p "$T/s10/99-other"
+printf -- '---\nname: other\nversion: 1.0.53\n---\n' > "$T/s10/99-other/SKILL.md"
+printf 'v1.0.53\n' > "$T/s10/99-other/skill-version.txt"
+printf '1.0.53\n' > "$T/s10/99-other/version"
+mk_cli "$T/s10bin" "$T/s10/99-other/SKILL.md"
+out="$(sel "$T/s10bin" "$T/s10" "1.0.53")"
+printf '%s' "$out" | grep -q '^rc=1' && printf '%s' "$out" | grep -q '^FAIL selected-tree-name-mismatch' \
+  && ok "resolver Path naming another skill -> FAIL name mismatch" \
+  || bad "expected FAIL name mismatch: $out"
+never_success "wrong skill selected" "$out"
+
+# ---- 2e. no identity evidence at all -> FAIL -------------------------------
+# No version carrier and no declared runtime entry: silence is not evidence.
+mkdir -p "$T/s11/01-demo/advisors"
+printf -- '---\nname: demo\n---\n' > "$T/s11/01-demo/SKILL.md"
+mkdir -p "$T/s11bin"
+printf '#!/bin/sh\necho "demo ✓ Ready"\necho "Details:"\necho "  Source: openclaw-managed"\necho "  Path: %s"\n' "$T/s11/01-demo/SKILL.md" > "$T/s11bin/openclaw"
+chmod +x "$T/s11bin/openclaw"
+out="$(sel "$T/s11bin" "$T/s11")"
+printf '%s' "$out" | grep -q '^rc=1' && printf '%s' "$out" | grep -q '^FAIL no-identity-evidence' \
+  && ok "no version carrier and no declared entry -> FAIL no-identity-evidence" \
+  || bad "expected FAIL no-identity-evidence: $out"
+never_success "no identity evidence" "$out"
+
 exit $fail
