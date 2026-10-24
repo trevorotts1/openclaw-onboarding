@@ -345,6 +345,35 @@ class SeparateEventTests(unittest.TestCase):
         self.assertFalse(result["admitted"])
         self.assertIn("excluded:direction", result["reason"])
 
+    def test_a_bare_string_own_actor_ids_is_refused_before_the_inbox(self):
+        # A bare string was read as its own characters, so our own actor
+        # "ourselves" was ADMITTED as if it were a customer.
+        store = self.store_for_test()
+        own = make_dm_event(actor_id="ourselves")
+        for bare in ("ourselves", b"ourselves", bytearray(b"ourselves")):
+            with self.assertRaises(InstagramRouteError) as caught:
+                admit_instagram_event(store, own, own_actor_ids=bare)
+            self.assertIn("own_actor_ids", str(caught.exception), bare)
+        # Nothing reached the inbox: the first real admission is not a
+        # duplicate, and our own actor is still excluded.
+        result = admit_instagram_event(store, own, own_actor_ids=("ourselves",))
+        self.assertFalse(result["admitted"])
+        self.assertEqual(result["reason"], "excluded:own_actor")
+
+    def test_every_real_collection_of_own_actor_ids_is_still_accepted(self):
+        for i, ids in enumerate((["ourselves"], {"ourselves"},
+                                 frozenset({"ourselves"}),
+                                 (a for a in ("ourselves",)))):
+            store = self.store_for_test()
+            own = make_dm_event(provider_event_id="own-%d" % i,
+                                actor_id="ourselves")
+            customer = make_dm_event(provider_event_id="cust-%d" % i)
+            ids = list(ids)
+            self.assertEqual(admit_instagram_event(
+                store, own, own_actor_ids=ids)["reason"], "excluded:own_actor")
+            self.assertTrue(admit_instagram_event(
+                store, customer, own_actor_ids=ids)["admitted"])
+
     def store_for_test(self):
         tmp = tempfile.TemporaryDirectory(prefix="ig-inbox-")
         self.addCleanup(tmp.cleanup)
@@ -440,6 +469,28 @@ class SeparateEligibilityTests(unittest.TestCase):
             self.assertFalse(verdict.allowed, name)
             self.assertEqual(verdict.reason, R_CAPABILITY_NOT_GRANTED, name)
             self.assertFalse(verdict.inbound_dm_window, name)
+
+    def test_a_grant_that_is_not_a_bool_is_refused_at_construction(self):
+        # granted="false" was truthy, so a string grant authorised a send.
+        for bad in ("false", "False", "no", "0", "true", 1, 0, [1], [],
+                    None, 1.0):
+            with self.assertRaises(InstagramRouteError) as caught:
+                InstagramCapability(CAP_DM_SEND, granted=bad)
+            self.assertIn("granted", str(caught.exception), repr(bad))
+
+    def test_a_bool_grant_is_still_accepted_both_ways(self):
+        granted = evaluate_eligibility(
+            account=self.account, purpose=PURPOSE_AI_REPLY,
+            channel=CHANNEL_IG_DM, event=make_dm_event(),
+            capability=InstagramCapability(CAP_DM_SEND, granted=True))
+        self.assertTrue(granted.allowed)
+        self.assertTrue(InstagramCapability(CAP_DM_SEND).granted is True)
+        refused = evaluate_eligibility(
+            account=self.account, purpose=PURPOSE_AI_REPLY,
+            channel=CHANNEL_IG_DM, event=make_dm_event(),
+            capability=InstagramCapability(CAP_DM_SEND, granted=False))
+        self.assertFalse(refused.allowed)
+        self.assertEqual(refused.reason, R_CAPABILITY_NOT_GRANTED)
 
     def test_opener_requires_its_own_capability(self):
         verdict = evaluate_eligibility(
@@ -672,6 +723,49 @@ class VerifiedInteractionTests(_StoreCase):
         self.assert_refused(provider_event_id="dm-own-1", event=own,
                             admission=admission, own_actor_ids=("ourselves",))
         self.follow_up_is_still_ignored()
+
+    def test_a_bare_string_own_actor_ids_never_un_suppresses(self):
+        # A bare "ourselves" degraded to single characters: our own DM was
+        # admitted, accepted as proof, and the follow-up DM SENT.
+        own = make_dm_event(provider_event_id="dm-own-bare-1",
+                            thread_key="thread-1", actor_id="ourselves")
+        with self.assertRaises(InstagramRouteError) as caught:
+            admit_instagram_event(self.store, own, own_actor_ids="ourselves")
+        self.assertIn("own_actor_ids", str(caught.exception))
+        # Even handed a genuine admission of that DM, the record refuses the
+        # bare string rather than reading it as letters.
+        admission = admit_instagram_event(self.store, own)
+        self.assertTrue(admission["admitted"])
+        for bare in ("ourselves", b"ourselves", bytearray(b"ourselves")):
+            with self.assertRaises(InstagramRouteError) as caught:
+                self.routes.record_customer_interaction(
+                    tenant_id="tenant-1", account_id="ig-acct-1",
+                    thread_key="thread-1", provider_event_id="dm-own-bare-1",
+                    event=own, admission=admission, own_actor_ids=bare,
+                    now=20.0)
+            self.assertIn("own_actor_ids", str(caught.exception), bare)
+        self.follow_up_is_still_ignored()
+        # And the follow-up DM never reaches the sender.
+        action_id = self.intent("bare-own-follow", purpose=PURPOSE_AI_REPLY)
+        log = []
+        outcome = dispatch_instagram_action(
+            self.store, account=self.account, route_store=self.routes,
+            action_id=action_id, worker_id="worker-1",
+            purpose=PURPOSE_AI_REPLY, channel=CHANNEL_IG_DM,
+            thread_key="thread-1", event=make_dm_event(thread_key="thread-1"),
+            capability=InstagramCapability(CAP_DM_SEND),
+            consent_evaluator=allow_consent, sender=self.sender(log),
+            now=60.0)
+        self.assertEqual(outcome.status, "blocked")
+        self.assertEqual(log, [])
+
+    def test_a_customer_dm_with_a_real_own_actor_list_still_releases(self):
+        # The inverse: a list (not a bare string) of our ids is accepted, and
+        # a genuine customer's DM still ends the ignored opener.
+        self.assertTrue(self.record_dm("dm-list-1", now=20.0,
+                                       own_actor_ids=["ourselves"]))
+        state = self.routes.opener_state("tenant-1", "ig-acct-1", "thread-1")
+        self.assertTrue(state.customer_responded)
 
     def test_the_admission_of_another_event_is_not_proof(self):
         event = make_dm_event(provider_event_id="dm-mismatch-1",

@@ -207,6 +207,19 @@ def _revision(value: Any, name: str) -> str:
     return _id(value, name)
 
 
+def _own_actor_ids(value: Any) -> Iterable[str]:
+    """own_actor_ids is a collection of ids, never one bare value.
+
+    A bare string is iterated as its characters, so the exclusion set would
+    hold single letters and our own actor would pass as a customer.
+    """
+    if isinstance(value, (str, bytes, bytearray)):
+        raise InstagramRouteError(
+            "bad_input: own_actor_ids must be a collection of actor ids,"
+            " not one bare value")
+    return value
+
+
 # ── separate account ───────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -434,6 +447,7 @@ def admit_instagram_event(store: Any, event: InstagramEvent, *,
     """
     if not isinstance(event, InstagramEvent):
         raise InstagramRouteError("bad_input: event must be InstagramEvent")
+    own_actor_ids = _own_actor_ids(own_actor_ids)
     durable_store = _upstream("durable_store")
     return store.admit_event(
         provider=PROVIDER_IG,
@@ -459,6 +473,10 @@ class InstagramCapability:
 
     def __post_init__(self) -> None:
         _id(self.name, "name")
+        if not isinstance(self.granted, bool):
+            # "false" is truthy: only a real bool may grant or withhold.
+            raise InstagramRouteError(
+                "bad_input: granted must be a bool, not %r" % (self.granted,))
         if self.name in FB_ONLY_CAPABILITIES or self.platform != PLATFORM_IG:
             raise InstagramRouteError(
                 "bad_input: %s (capability %r on platform %r cannot stand in"
@@ -902,6 +920,7 @@ class InstagramRouteStore:
                             ("thread_key", thread_key),
                             ("provider_event_id", provider_event_id)):
             _id(value, name)
+        own_actor_ids = _own_actor_ids(own_actor_ids)
         proven = _verified_inbound_interaction(
             tenant_id=tenant_id, account_id=account_id, thread_key=thread_key,
             provider_event_id=provider_event_id, event=event,

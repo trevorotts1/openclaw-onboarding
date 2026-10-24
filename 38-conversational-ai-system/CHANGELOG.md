@@ -1,3 +1,12 @@
+## [2.0.31] - 2026-10-24 - fix(routes): the Instagram adapter types its own-actor list and its grant (T-21 repair 2, PBB-199)
+
+Repair of the qc4-t-21 FAIL verdict (`PBB-143`, refused commit `d9a6e00c5`). Two type holes, both in `shared-utils/routes/instagram/route_adapter.py`, both reproduced as failing tests on `d9a6e00c5` before any edit. Same class the sibling T-20 repair closed (`facebook_routes.admit_inbound`).
+
+- **Defect 1 — a bare-string `own_actor_ids` admitted our own actor.** `durable_store.admit_event` builds `{str(a) for a in own_actor_ids}`, so `own_actor_ids="ourselves"` became a set of letters: our own DM was admitted, accepted by `record_customer_interaction()` as proof, the ignored opener was released and the follow-up DM sent. `admit_instagram_event()` and `InstagramRouteStore.record_customer_interaction()` now refuse a `str`/`bytes`/`bytearray` before anything reaches the inbox (one helper, `_own_actor_ids`). Inverse held: lists, sets, frozensets and generators of ids still exclude our actor and still admit a customer; a customer DM with a real id list still releases the opener.
+- **Defect 2 — `InstagramCapability.granted` was not typed.** `granted="false"` (or `"no"`, `"0"`, `1`, `[1]`) was truthy and authorised a send. `__post_init__` now refuses any non-`bool` grant at construction. Inverse held: `granted=True` allows, `granted=False` is `ig:capability_not_granted`.
+
+Proof: `test_route_adapter.py` 63 -> 69 OK (3 defect tests fail on `d9a6e00c5`, 3 inverse tests pass on both; no assertion weakened); self-check `OK 15 PASS`; upstream `test_pb_contracts.py` 42 OK, `test_consent_gate.py` 24 OK, `test_durable_processing.py` 26 OK.
+
 ## [2.0.30] - 2026-10-24 - fix(routes): the Instagram adapter stops trusting caller convention (T-21 repair, PBB-143)
 
 Repair of the T-21 FAIL verdict (`qc-t-21`). Three genuine defects, each independently reproduced on the committed bytes (`d0581e206`) before any edit; the verdict's scope clause is not a defect — `38-conversational-ai-system/CHANGELOG.md` and `skill-version.txt` ride in this commit because CONTRIBUTING.md line 76 and lines 116-121 require them in the same commit as the behaviour change. Same two files as 2.0.29 otherwise: `shared-utils/routes/instagram/route_adapter.py` and `test_route_adapter.py`. No second guard is written: `durable_store` is still the only inbox, `outbound_gate.dispatch()` still dispatches, `consent_gate` still owns consent.
