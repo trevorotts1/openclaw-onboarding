@@ -524,6 +524,24 @@ _TRAILING = ["", ".", ",", ";", "!", "?", ")", '"', "'"]
 _CASES = ("lower", "Title", "UPPER")
 _WHITESPACE = ("none", "leading", "trailing", "double")
 
+#: TEST DATA, never a rule: the 73 descriptor heads this grid dresses. The rule
+#: does not read them -- it decides by shape -- so they live here, where they
+#: only say which strings the dressing grid covers.
+DESCRIPTOR_HEADS = frozenset({
+    "woman", "women", "man", "men", "girl", "girls", "boy", "boys",
+    "person", "persons", "people", "child", "children", "kid", "kids",
+    "guy", "guys", "lady", "ladies", "fellow", "fellows",
+    "narrator", "narrators", "manager", "managers", "boss", "bosses",
+    "guard", "guards", "officer", "officers", "driver", "drivers",
+    "waiter", "waiters", "waitress", "waitresses", "server", "servers",
+    "host", "hosts", "clerk", "clerks", "nurse", "nurses", "doctor", "doctors",
+    "teacher", "teachers", "student", "students", "stranger", "strangers",
+    "figure", "figures", "silhouette", "silhouettes", "voice", "voices",
+    "character", "characters",
+    "worker", "workers", "customer", "customers", "bystander", "bystanders",
+    "someone", "somebody", "anyone", "anybody", "crowd", "crowds",
+})
+
 
 def _dress(det, word, punct, mode, ws):
     def cased(text):
@@ -540,13 +558,13 @@ def _dress(det, word, punct, mode, ws):
 def test_every_descriptor_is_refused_in_every_dressing():
     """determiner x trailing punctuation x case x whitespace, over every head."""
     got_through = []
-    for head in sorted(W.GENERIC_DESCRIPTOR_HEADS):
+    for head in sorted(DESCRIPTOR_HEADS):
         for det in _DETERMINERS:
             for punct in _TRAILING:
                 for mode in _CASES:
                     for ws in _WHITESPACE:
                         candidate = _dress(det, head, punct, mode, ws)
-                        if not W._anonymous(candidate):
+                        if W._person_reference(candidate):
                             got_through.append(candidate)
     assert got_through == [], got_through[:5]
 
@@ -576,6 +594,52 @@ def test_a_role_description_stays_refused_in_any_casing():
 
 def test_the_descriptor_rule_is_the_same_in_both_positions():
     for dressed in ("a narrator.", "the narrator;", "the man.", "the woman,"):
+        request, response = load()
+        response["identities"][0]["character_id"] = dressed
+        response["cast"][0]["character_id"] = dressed
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", dressed
+        named = [d for d in exc.packet["incomplete"]
+                 if d["field"] == "character_id"
+                 and "generic descriptor" in d["issue"]]
+        assert named, dressed
+
+
+#: Unicode dressing a descriptor can wear: sentence marks, dashes and quotes
+#: that are not ASCII punctuation; spaces ``\s`` does not collapse; format
+#: characters that delete rather than split, so a determiner glues to its head.
+#: Every one of these IS the same descriptor underneath.
+UNICODE_DRESSED = [
+    "woman\u2026",        # HORIZONTAL ELLIPSIS
+    "woman\uff0e",        # FULLWIDTH FULL STOP
+    "woman\u3002",        # IDEOGRAPHIC FULL STOP
+    "woman\ufe52",        # SMALL FULL STOP
+    "a\u200bwoman",       # ZERO WIDTH SPACE glues the determiner to its head
+    "a\u00adwoman",       # SOFT HYPHEN
+    "a\u2060woman",       # WORD JOINER
+    "\uff41 woman",       # FULLWIDTH LATIN SMALL LETTER A
+    "the\u00a0manager",   # NO-BREAK SPACE
+    "the\u2028manager",   # LINE SEPARATOR
+    "woman\u2013",        # EN DASH
+    "\u201ca woman\u201d",   # curly quotes
+    "woman\u200b",        # trailing zero width space
+]
+
+
+def test_unicode_dressed_descriptor_is_refused_in_both_positions():
+    for dressed in UNICODE_DRESSED:
+        request, response = load()
+        response["identities"][0]["display_name"] = dressed
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", dressed
+        named = [d for d in exc.packet["incomplete"]
+                 if d["character_id"] == "char_mara_001"
+                 and d["field"] == "display_name"
+                 and "generic descriptor" in d["issue"]]
+        assert named, dressed
+
         request, response = load()
         response["identities"][0]["character_id"] = dressed
         response["cast"][0]["character_id"] = dressed

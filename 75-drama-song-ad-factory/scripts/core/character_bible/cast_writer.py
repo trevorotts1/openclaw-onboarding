@@ -35,8 +35,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
-import string
 import sys
 
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,14 +42,14 @@ if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
 import story_first_contracts as C  # noqa: E402  (S75-T03 envelope + cast schema)
+from real_content import person_name_ok, real_content_ok  # noqa: E402
 
 __all__ = [
     "CastWriteError", "author_cast", "build_prompt", "canonical_digest",
     "derive_speakers", "derive_crowds", "library_digest", "profile_defects",
     "verify_receipt",
     "seed_from_legacy_bible", "MANIFEST_SCHEMA_VERSION", "LIBRARY_SCHEMA_VERSION",
-    "ROLES", "SELECTIONS", "PROFILE_FIELDS", "ANONYMOUS_SPEAKERS", "CROWD_REQUIRED",
-    "GENERIC_DESCRIPTOR_HEADS",
+    "ROLES", "SELECTIONS", "PROFILE_FIELDS", "CROWD_REQUIRED",
 ]
 
 MANIFEST_SCHEMA_VERSION = "s75.cast_manifest.v1"
@@ -138,126 +136,24 @@ def _text_list(value):
             and all(_text(item) for item in value))
 
 
-#: Punctuation and quoting that can dress a descriptor up without changing
-#: what it is: brackets, quotes, dashes, sentence marks, underscores.
-_DRESSING = string.punctuation + "“”‘’«»‹›—– "
-
-_POSSESSIVE = re.compile(r"(?:'s|’s)\s*$")
-_POSSESSIVE_LEAD = re.compile(r"^\s*(?:'s|’s)")
-_SPACES = re.compile(r"\s+")
-
-#: Determiners, articles and quantifiers dress a descriptor; they never name a
-#: person, so they come off the front of a candidate, repeatedly.
-_DETERMINERS = frozenset({"a", "an", "the", "some", "any", "another", "one"})
-
-#: Function words. A personal name has none of them, so one anywhere inside a
-#: candidate means the words describe a person instead of naming one.
-_FUNCTION_WORDS = _DETERMINERS | frozenset({
-    "of", "in", "on", "at", "to", "for", "with", "by", "from", "into", "onto",
-    "over", "under", "behind", "beside", "near", "across", "through", "during",
-    "before", "after", "above", "below", "between", "against", "about", "around",
-    "along", "among", "within", "without", "toward", "towards", "per", "via",
-    "and", "or", "but", "as", "than", "that", "which", "who", "whose", "when",
-    "where", "while", "if", "then", "this", "these", "those", "there", "here",
-    "her", "his", "their", "its", "my", "your", "our", "is", "was", "are", "were",
-    "be", "been", "out", "up", "down", "off", "again", "very", "just", "also",
-    "only", "not", "no",
-})
-
-#: The closed vocabulary of generic person-descriptor heads. Not a phrase list:
-#: whatever the dressing, a candidate is refused when it IS one of these, or
-#: when it opens on one and never becomes a personal name.
-GENERIC_DESCRIPTOR_HEADS = frozenset({
-    "woman", "women", "man", "men", "girl", "girls", "boy", "boys",
-    "person", "persons", "people", "child", "children", "kid", "kids",
-    "guy", "guys", "lady", "ladies", "fellow", "fellows",
-    "narrator", "narrators", "manager", "managers", "boss", "bosses",
-    "guard", "guards", "officer", "officers", "driver", "drivers",
-    "waiter", "waiters", "waitress", "waitresses", "server", "servers",
-    "host", "hosts", "clerk", "clerks", "nurse", "nurses", "doctor", "doctors",
-    "teacher", "teachers", "student", "students", "stranger", "strangers",
-    "figure", "figures", "silhouette", "silhouettes", "voice", "voices",
-    "character", "characters",
-    "worker", "workers", "customer", "customers", "bystander", "bystanders",
-    "someone", "somebody", "anyone", "anybody", "crowd", "crowds",
-})
-
-#: Descriptor heads that may stand in front of a personal name as its title
-#: ("Officer Dan Whitfield"). Any other head at the front is refused outright,
-#: so "the manager East Wing" cannot borrow a name's shape.
-_TITLE_HEADS = frozenset({"officer", "doctor", "nurse"})
-
-#: Exported name kept for callers of the round-3 surface; it is now the
-#: descriptor-head vocabulary above rather than a list of dressed phrases.
-ANONYMOUS_SPEAKERS = GENERIC_DESCRIPTOR_HEADS
-
-
-def _strip_dressing(text):
-    """Punctuation, quotes, brackets and possessives off BOTH ends, to stability.
-
-    The dressing is peeled from whichever end carries it, over and over, until
-    a pass changes nothing — so no amount of padding at the front survives.
-    """
-    while True:
-        new = _POSSESSIVE_LEAD.sub("", _POSSESSIVE.sub("", text.strip(_DRESSING)))
-        new = _SPACES.sub(" ", new).strip(_DRESSING)
-        if new == text:
-            return text
-        text = new
-
-
-def _bare(text):
-    """Inner punctuation flattened to spaces too, so ``"a woman, leader"``
-    cannot hide from the descriptor rule behind a comma."""
-    return _SPACES.sub(" ",
-                       "".join(" " if ch in _DRESSING else ch for ch in text)).strip()
-
-
-def _identity_tokens(value):
-    """The core words of a candidate, dressing gone from both ends.
-
-    Case is kept: a name is judged on its shape, and shape needs the capitals.
-    """
-    return [tok for tok in _bare(_strip_dressing(value or "")).split(" ") if tok]
-
-
-def _normalise_identity(value):
-    """Case-folded core of a name or id, dressing gone from both ends."""
-    return " ".join(_identity_tokens(value)).casefold()
-
-
-def _personal_name(tokens, heads):
-    """A given name plus a surname is a person, even when a word inside it is a
-    descriptor (``"Dana Woman"``). The shape says so: every word capitalised,
-    no function words, and not every word a descriptor."""
-    return (len(tokens) >= 2
-            and all(tok[:1].isupper() for tok in tokens)
-            and all(tok.casefold() not in _FUNCTION_WORDS for tok in tokens)
-            and not all(heads))
-
-
-def _anonymous(value):
-    """A generic descriptor is not an identity, whatever it is wearing.
-
-    Structural, never a list of dressed strings: determiners come off the
-    front, dressing comes off both ends, and what remains is refused when it is
-    a descriptor head, or opens on one without turning into a personal name.
-
-    Both positions — ``display_name`` and ``character_id`` — ask this same
-    question, so a descriptor refused as a name is refused as an id.
-    """
-    tokens = _identity_tokens(value)
-    while tokens and tokens[0].casefold() in _DETERMINERS:
-        tokens = tokens[1:]
-    if not tokens:
-        return True
-    lowered = [tok.casefold() for tok in tokens]
-    heads = [tok in GENERIC_DESCRIPTOR_HEADS for tok in lowered]
-    if not any(heads):
-        return False
-    if heads[0] and lowered[0] not in _TITLE_HEADS:
-        return True
-    return not _personal_name(tokens, heads)
+#: A person reference is a PERSON NAME, or an opaque stable id where the surface
+#: carries one. ``real_content.person_name_ok`` IS the person-name decision and
+#: the only one: it accepts on positive name shape -- 2-4 well-formed words,
+#: proper-noun orthography, a designator signal somewhere in the core -- and
+#: refuses otherwise, so "Old Man" is refused while "Dana Woman" passes. Nothing
+#: here reads a topic vocabulary, so no head word can be swapped in to open the
+#: gate; the one closed class the rule consults is the grammatical class of
+#: determiners, pronouns and prepositions, not a list of the things a cast
+#: member might be called.
+#:
+#: The id limb is the same positive polarity applied to the identifier surface a
+#: ``character_id`` or a scene binding actually carries ("char_mara_001"), which
+#: is not a name and is judged as opaque shape instead. A descriptor dressed up
+#: as an id fails BOTH limbs: ``real_content.id_ok`` demands identifier
+#: structure, and a descriptor has none.
+def _person_reference(value):
+    text = value if isinstance(value, str) else str(value)
+    return person_name_ok(text) or real_content_ok(text, "id")
 
 
 def _defect(character_id, display_name, field, issue):
@@ -306,12 +202,12 @@ def profile_defects(record):
                            "every substantive assertion needs an origin"))
     if not _text(record.get("display_name")):
         out.append(_defect(cid, name, "display_name", "required"))
-    elif _anonymous(str(name)):
+    elif not _person_reference(str(name)):
         out.append(_defect(cid, name, "display_name",
                            "a generic descriptor is not an identity"))
     if not _text(record.get("character_id")):
         out.append(_defect(cid, name, "character_id", "required stable ID"))
-    elif _anonymous(str(cid)):
+    elif not _person_reference(str(cid)):
         out.append(_defect(cid, name, "character_id",
                            "a generic descriptor is not an identity"))
     return out
@@ -393,8 +289,9 @@ def _ref_like(value):
             and not any(ch.isspace() for ch in value))
 
 def _add_person(value, bucket):
-    """A person reference: a stable id, or a short generic descriptor that the
-    anonymous rule must refuse. Prose longer than 64 characters is not a name."""
+    """A person reference: a stable id, or a personal name the person rule must
+    accept and a generic descriptor it must refuse. Prose longer than 64
+    characters is not a name."""
     if isinstance(value, str) and 0 < len(value) <= 64 and value not in bucket:
         bucket.append(value)
 
@@ -431,7 +328,7 @@ def _walk_refs(node, key, persons, crowds):
             _walk_refs(item, key, persons, crowds)
     elif _declares_people(key):
         # Crowd membership is always an id; a person may also be named by the
-        # generic descriptor the anonymous rule has to refuse.
+        # generic descriptor the person rule has to refuse.
         if "crowd" in (key or "").lower():
             if _ref_like(node) and node not in crowds:
                 crowds.append(node)
@@ -841,7 +738,7 @@ def author_cast(request, *, dispatch, model="", clock=None):
                                      "declares no such group" % crowd_id})
 
     for speaker in derive_speakers(scenes):
-        if _anonymous(str(speaker)):
+        if not _person_reference(str(speaker)):
             defects.append({"field": "speakers",
                             "issue": "'%s' is a generic descriptor; declare the person "
                                      "with explicit wants, fears and speech" % speaker})
