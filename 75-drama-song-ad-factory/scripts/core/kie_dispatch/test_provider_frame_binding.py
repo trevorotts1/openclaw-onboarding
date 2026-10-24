@@ -5,9 +5,12 @@ no reservation/transport may run in these tests.
 """
 from copy import deepcopy
 import hashlib
+import importlib
 import json
 from pathlib import Path
 import sys
+import socket
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -21,6 +24,12 @@ import production_process
 
 class ProviderFrameBindingTest(unittest.TestCase):
     def setUp(self):
+        # Retain pure cap checks while excluding their optional local adapter
+        # audit, exactly as the existing production-process fixture does.
+        for limits in {dispatch._PL, importlib.import_module('prompt_limits')}:
+            audit = patch.object(limits, '_TRAIL_DONE', True)
+            audit.start()
+            self.addCleanup(audit.stop)
         authorized = '/Volumes/mac mini m4/Downloads/git trees and automations'
         assert tempfile.gettempdir().startswith(authorized), tempfile.gettempdir()
         self.temp = tempfile.TemporaryDirectory(prefix='s75-frame-binding-')
@@ -48,7 +57,11 @@ class ProviderFrameBindingTest(unittest.TestCase):
                                            'check': {'verdict': 'PASS', 'reasons': []}}}
 
     def submit_until_plan(self, request):
-        with patch.object(dispatch.L, 'plan', return_value={'outcome': 'parked', 'reason_code': 'OFFLINE_ZERO_SPEND_TRAP', 'next_action': ''}) as plan, patch.object(dispatch.L, 'reserve', side_effect=AssertionError('no reserve')) as reserve, patch.object(dispatch, '_call', side_effect=AssertionError('no transport')) as transport:
+        with patch.object(dispatch.L, 'plan', return_value={'outcome': 'parked', 'reason_code': 'OFFLINE_ZERO_SPEND_TRAP', 'next_action': ''}) as plan, patch.object(dispatch.L, 'reserve', side_effect=AssertionError('no reserve')) as reserve, patch.object(dispatch, '_call', side_effect=AssertionError('no transport')) as transport, \
+                patch.object(subprocess, 'run', side_effect=AssertionError('external subprocess forbidden')) as processes, \
+                patch.object(subprocess, 'Popen', side_effect=AssertionError('external process forbidden')) as popen, \
+                patch.object(socket, 'socket', side_effect=AssertionError('network forbidden')) as sockets, \
+                patch.object(socket, 'create_connection', side_effect=AssertionError('network forbidden')) as connections:
             result = dispatch.dispatch(model=request['model'], request=request,
                                        save_dir=self.run / 'video', ledger_db=self.run / 'spend.sqlite3',
                                        run_id=self.run.name, logical_key='probe/video', attempt_id='',
@@ -57,6 +70,10 @@ class ProviderFrameBindingTest(unittest.TestCase):
                                        video_job=True)
         self.assertEqual(reserve.call_count, 0)
         self.assertEqual(transport.call_count, 0)
+        self.assertEqual(processes.call_count, 0, 'process/network blocker was invoked')
+        self.assertEqual(popen.call_count, 0, 'process/network blocker was invoked')
+        self.assertEqual(sockets.call_count, 0, 'process/network blocker was invoked')
+        self.assertEqual(connections.call_count, 0, 'process/network blocker was invoked')
         return result, plan.call_count
 
     def uploaded(self, sid='s1'):
@@ -68,8 +85,18 @@ class ProviderFrameBindingTest(unittest.TestCase):
             return 0, {'data': {'download_url': 'https://fixture.invalid/uploaded-picture-' + sid + '.png'}}, ''
         # Exercise the actual default uploader path, trapping only the lower
         # transport. This is a zero-network protocol test, not a live upload.
-        with patch.object(dispatch, '_call', side_effect=upload_transport):
-            binding = dispatch.upload_storyboard_frame(self.run, sid)
+        with patch.object(subprocess, 'run', side_effect=AssertionError('external subprocess forbidden')) as processes, \
+                patch.object(subprocess, 'Popen', side_effect=AssertionError('external process forbidden')) as popen, \
+                patch.object(socket, 'socket', side_effect=AssertionError('network forbidden')) as sockets, \
+                patch.object(socket, 'create_connection', side_effect=AssertionError('network forbidden')) as connections:
+            current_picture = importlib.import_module('lip_sync.lip_gate.picture_gate')
+            actual_transport = current_picture._dispatch()
+            with patch.object(actual_transport, '_call', side_effect=upload_transport):
+                binding = dispatch.upload_storyboard_frame(self.run, sid)
+            self.assertEqual(processes.call_count, 0, 'process/network blocker was invoked')
+            self.assertEqual(popen.call_count, 0, 'process/network blocker was invoked')
+            self.assertEqual(sockets.call_count, 0, 'process/network blocker was invoked')
+            self.assertEqual(connections.call_count, 0, 'process/network blocker was invoked')
         self.assertEqual(len(seen), 1)
         original = Path(json.loads((self.run / 'storyboard/stills.json').read_text())[sid])
         self.assertEqual(seen[0], original.read_bytes())

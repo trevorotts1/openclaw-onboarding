@@ -211,6 +211,8 @@ class ProcessGateTest(unittest.TestCase):
 
     def test_current_storyboard_allows_a_bound_subset_and_rejects_substitution(self):
         from test_production_process import complete_stage, approve_storyboard
+        import socket
+        import subprocess
         self.ready_for_music(song=False)
         for stage in ("music", "continuity-bible", "storyboard", "image-keyframes"):
             complete_stage(self.run, stage)
@@ -220,14 +222,40 @@ class ProcessGateTest(unittest.TestCase):
                        storyboard={"shots": gate["shots"][:1], "review": gate["review"]})
         arguments = dict(model=request["model"], request=request, stage="video-generation",
                          run_id="run", ledger_db=self.kwargs["ledger_db"], save_dir=self.kwargs["save_dir"])
-        with patch.object(D.L, "plan") as plan, patch.object(D.subprocess, "run") as transport:
+        source = Path(json.loads((self.run / "storyboard" / "stills.json").read_text())["s1"])
+        seen = []
+        def upload_transport(runner, adapter, argv):
+            self.assertEqual(argv[0], "upload")
+            copied = Path(argv[argv.index("--file") + 1])
+            self.assertNotEqual(copied.resolve(), source.resolve())
+            self.assertEqual(copied.read_bytes(), source.read_bytes())
+            seen.append(copied.read_bytes())
+            return 0, {"data": {"download_url": "https://fixture.invalid/approved-s1.png"}}, ""
+        with patch.object(D.L, "plan") as plan, patch.object(D.L, "reserve") as reserve, \
+                patch.object(subprocess, "run", side_effect=AssertionError("external subprocess forbidden")) as transport, \
+                patch.object(subprocess, "Popen", side_effect=AssertionError("external process forbidden")) as popen, \
+                patch.object(socket, "socket", side_effect=AssertionError("network forbidden")) as sockets, \
+                patch.object(socket, "create_connection", side_effect=AssertionError("network forbidden")) as connections:
+            # Resolve the live uploader consumer after any collection-time
+            # module purge; a cached D._call may belong to an older module.
+            current_picture = importlib.import_module("lip_sync.lip_gate.picture_gate")
+            actual_transport = current_picture._dispatch()
+            with patch.object(actual_transport, "_call", side_effect=upload_transport):
+                binding = D.upload_storyboard_frame(self.run, "s1")
+            self.assertEqual(len(seen), 1)
+            request["input"] = dict(request["input"], first_frame_url=binding["url"])
+            request["frame_bindings"] = {"first_frame_url": binding}
             admitted = D.production_process_admission(**arguments)
             self.assertTrue(admitted["ok"], admitted)
             request["storyboard"]["shots"][0]["visual_objective"] = "Unapproved substituted scene"
             refused = D.production_process_admission(**arguments)
         self.assertEqual(refused["reason_code"], "PRODUCTION_APPROVAL_SCOPE_MISMATCH", refused)
         plan.assert_not_called()
+        reserve.assert_not_called()
         self.assertEqual(transport.call_count, 0)
+        self.assertEqual(popen.call_count, 0, 'process/network blocker was invoked')
+        self.assertEqual(sockets.call_count, 0, 'process/network blocker was invoked')
+        self.assertEqual(connections.call_count, 0, 'process/network blocker was invoked')
 
     def test_real_runner_rechecks_current_artifact_authority_at_submit(self):
         doc = self.ready_for_music()
