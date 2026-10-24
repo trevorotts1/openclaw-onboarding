@@ -290,7 +290,9 @@ class IntakeSessionTest(unittest.TestCase):
         self.assertTrue(session.completion_status(self.run)["done"])
         import sqlite3
         with closing(sqlite3.connect(db)) as con:
-            self.assertEqual(con.execute("SELECT count(*) FROM stages").fetchone()[0], 0)
+            from batch_mode.batch import STAGES
+            self.assertEqual(con.execute("SELECT stage, state FROM stages ORDER BY rowid").fetchall(),
+                             [(stage, "NOT_STARTED") for stage, _ in STAGES])
 
     def test_completion_inspector_does_not_recreate_missing_model_store(self):
         qs, st = self.model_turns(2)
@@ -388,6 +390,97 @@ class IntakeSessionTest(unittest.TestCase):
                              [("actual-existing", "research", "NOT_STARTED")])
             self.assertEqual(con.execute("SELECT count(*) FROM sqlite_master WHERE name='video_model_lock'").fetchone()[0], 0)
         self.assertFalse(self.read()["done"])
+
+    def pair_and_model_turns(self, runtime=None):
+        qs = [next(q for q in card.QUESTIONS if q["id"] == qid) for qid in ("models", "model")]
+        session.process([], qs, run_dir=self.run, purpose_flow=False, runtime=runtime)
+        st = session.process(["opus-chain builds, haiku-chain checks"], qs,
+                             run_dir=self.run, purpose_flow=False, source_ref="message:synthetic-explicit-pair")
+        self.assertEqual(st["question_id"], "model", st)
+        st = session.process(["2"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["question_id"], "recap", st)
+        return qs
+
+    def test_confirmed_pair_binds_exact_aliases_and_initialises_pending_stages(self):
+        from choice_card.intake_card import ai_models
+        from batch_mode.batch import STAGES
+        qs = self.pair_and_model_turns(runtime="claude-nine")
+        st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertTrue(st["done"], st)
+        bound = ai_models.load_bindings(self.run)
+        self.assertEqual(bound["bindings"]["build"]["model_id"], "opus-chain")
+        self.assertEqual(bound["bindings"]["check"]["model_id"], "haiku-chain")
+        self.assertEqual(bound["bindings"]["build"]["dispatch"]["call_id"], "opus-chain")
+        self.assertEqual(bound["bindings"]["check"]["dispatch"]["call_id"], "haiku-chain")
+        self.assertEqual(bound["attempts"], [])
+        import sqlite3
+        db = self.run / "control" / "state.sqlite3"
+        with closing(sqlite3.connect(db)) as con:
+            self.assertEqual(con.execute("SELECT stage, state FROM stages ORDER BY rowid").fetchall(),
+                             [(stage, "NOT_STARTED") for stage, _ in STAGES])
+        self.assertTrue(session.completion_status(self.run)["done"])
+        # A confirmed resume never rebinds, reinitialises or invokes a provider.
+        binding_path = self.run / "model-bindings.json"
+        before_binding, before_db = binding_path.read_bytes(), db.read_bytes()
+        with patch.object(ai_models, "bind_roles", side_effect=AssertionError("must not rebind")):
+            self.assertTrue(session.process([], qs, run_dir=self.run, purpose_flow=False)["done"])
+            self.assertEqual(session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)["reason_code"], "INTAKE_ALREADY_CONFIRMED")
+        self.assertEqual(binding_path.read_bytes(), before_binding)
+        self.assertEqual(db.read_bytes(), before_db)
+
+    def test_identical_existing_pair_preserves_runtime_attempts_and_approval_bytes(self):
+        from choice_card.intake_card import ai_models
+        from batch_mode.batch import STAGES
+        import state_store
+        import sqlite3
+        ai_models.bind_roles(self.run, "opus-chain", "haiku-chain", runtime="claude-nine")
+        binding_path = self.run / "model-bindings.json"
+        binding = json.loads(binding_path.read_text())
+        binding["attempts"] = [{"attempt_id": "prior-synthetic-fixture", "fixture": True}]
+        binding_path.write_text(json.dumps(binding))
+        before = binding_path.read_bytes()
+        approval = self.run / "prior-artifact-approval.json"
+        approval.write_bytes(b"existing synthetic approval remains untouched")
+        db = self.run / "control" / "state.sqlite3"
+        db.parent.mkdir(parents=True)
+        with state_store.Store(db) as store:
+            store.init_run("existing-actual-id", ["research"])
+            store.con.execute("UPDATE stages SET state='COMPLETE' WHERE run_id='existing-actual-id'")
+            store.con.commit()
+        qs = self.pair_and_model_turns()
+        with patch.object(ai_models, "bind_roles", side_effect=AssertionError("existing pair must be reused")):
+            st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertTrue(st["done"], st)
+        self.assertEqual(st["run_id"], "existing-actual-id")
+        self.assertEqual(binding_path.read_bytes(), before)
+        self.assertEqual(approval.read_bytes(), b"existing synthetic approval remains untouched")
+        with closing(sqlite3.connect(db)) as con:
+            rows = dict(con.execute("SELECT stage, state FROM stages WHERE run_id='existing-actual-id'"))
+        self.assertEqual(rows.pop("research"), "COMPLETE")
+        self.assertEqual(rows, {stage: "NOT_STARTED" for stage, _ in STAGES if stage != "research"})
+
+    def test_conflicting_existing_pair_is_refused_before_stage_initialisation(self):
+        from choice_card.intake_card import ai_models
+        ai_models.bind_roles(self.run, "haiku-chain", "opus-chain", runtime="claude-nine")
+        path = self.run / "model-bindings.json"
+        before = path.read_bytes()
+        qs = self.pair_and_model_turns(runtime="claude-nine")
+        st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertFalse(st["done"])
+        self.assertEqual(st["reason_code"], "AI_MODEL_BINDING_CONFLICT")
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse((self.run / "control" / "state.sqlite3").exists())
+
+    def test_explicit_runtime_conflict_never_rewrites_existing_pair(self):
+        from choice_card.intake_card import ai_models
+        ai_models.bind_roles(self.run, "opus-chain", "haiku-chain", runtime="claude-nine")
+        path = self.run / "model-bindings.json"
+        before = path.read_bytes()
+        qs = self.pair_and_model_turns(runtime="openclaw")
+        st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertFalse(st["done"])
+        self.assertEqual(st["reason_code"], "AI_MODEL_BINDING_CONFLICT")
+        self.assertEqual(path.read_bytes(), before)
 
     def test_exact_original_questions_are_not_mutated(self):
         original = copy.deepcopy(self.qs)
