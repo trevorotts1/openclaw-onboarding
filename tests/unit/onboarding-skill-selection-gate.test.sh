@@ -249,15 +249,16 @@ printf '%s' "$out" | grep -q 'stale-check-not-possible-no-expected-version' \
 mkdir -p "$T/repo/01-demo" "$T/state"
 cp "$REPO/lib-onboarding-state.sh" "$T/repo/lib-onboarding-state.sh"
 printf 'v1.0.53\n' > "$T/repo/01-demo/skill-version.txt"
-gate_reason() { # gate_reason <repo-root> -- run oc_gate_skill with recording stubs
-  HOME="$T/h" PATH="$T/s12bin:$PATH" OC_CONFIG="$T/h/.openclaw" OC_SKILLS_DIR="$T/s12" \
+gate_reason() { # gate_reason <lib-dir> [skills-root] [bindir] -- run oc_gate_skill with recording stubs
+  local _gr_lib="$1" _gr_root="${2:-$T/s12}" _gr_bin="${3:-$T/s12bin}"
+  HOME="$T/h" PATH="$_gr_bin:$PATH" OC_CONFIG="$T/h/.openclaw" OC_SKILLS_DIR="$_gr_root" \
   bash -c '
     source "$1/lib-onboarding-state.sh" 2>/dev/null
     oc_state_mark_field() { return 0; }
     oc_state_set() { printf "STATE:%s:%s\n" "$1" "${2:-}${3:+ $3}"; return 0; }
     oc_gate_skill 01-demo; _grc=$?
     echo "gate_rc=$_grc"
-  ' _ "$1"
+  ' _ "$_gr_lib"
 }
 mk_tree "$T/s12" "1.0.52"
 mk_cli "$T/s12bin" "$T/s12/01-demo/SKILL.md"
@@ -285,5 +286,44 @@ printf '%s' "$out" | grep -q '^rc=1' && printf '%s' "$out" | grep -q '^FAIL no-i
   && ok "no version carrier and no declared entry -> FAIL no-identity-evidence" \
   || bad "expected FAIL no-identity-evidence: $out"
 never_success "no identity evidence" "$out"
+
+# ---- 2g. INSTALLED-CONTENT layouts: the gate runs from the installed tree ---
+# (i) lib INSIDE the skill tree, no source copy beside the lib: the gate must
+# PASS and the PASS reason must say the staleness check did not run.
+mk_tree "$T/i2" "1.0.53"
+cp "$REPO/lib-onboarding-state.sh" "$T/i2/01-demo/lib-onboarding-state.sh"
+mk_cli "$T/i2bin" "$T/i2/01-demo/SKILL.md"
+out="$(gate_reason "$T/i2/01-demo" "$T/i2" "$T/i2bin")"
+printf '%s' "$out" | grep -q 'gate_rc=0' && printf '%s' "$out" | grep -q '^PASS selection-verified' \
+  && ok "installed lib inside skill tree -> gate PASS" || bad "expected gate PASS: $out"
+printf '%s' "$out" | grep -q 'stale-check-not-possible-no-expected-version' \
+  && ok "installed tree, no source copy -> PASS discloses the staleness check did not run" \
+  || bad "expected staleness disclosure: $out"
+
+# (ii) the ~/.openclaw/skills fallback shape: the lib sits AT THE SKILLS ROOT,
+# beside the installed skill tree. The beside-copy the gate reads as the
+# shipment expectation is then the VERIFIED TREE'S OWN skill-version.txt — a
+# tree cannot vouch for itself. A stale tree must never pass as silently
+# verified against its own version; the expectation is discarded and the PASS
+# carries the staleness disclosure.
+mk_tree "$T/i1" "1.0.52"
+cp "$REPO/lib-onboarding-state.sh" "$T/i1/lib-onboarding-state.sh"
+mk_cli "$T/i1bin" "$T/i1/01-demo/SKILL.md"
+out="$(gate_reason "$T/i1" "$T/i1" "$T/i1bin")"
+printf '%s' "$out" | grep -q 'stale-check-not-possible-no-expected-version' \
+  && ok "self-supplied expectation discarded -> PASS discloses the staleness check did not run" \
+  || bad "expected staleness disclosure (tree vouching for itself): $out"
+printf '%s' "$out" | grep -q 'gate_rc=0' \
+  && ok "installed layout discloses instead of failing" || bad "expected gate_rc=0: $out"
+printf '%s' "$out" | grep -q '^PASS selection-verified:version=1.0.52$' \
+  && bad "stale tree silently verified against its own version: $out"
+
+# (iii) a REAL supplied expectation on the same stale installed tree still
+# FAILS — the discard only kills self-vouching, never a genuine expectation.
+out="$(sel "$T/i1bin" "$T/i1" "1.0.53")"
+printf '%s' "$out" | grep -q '^rc=1' && printf '%s' "$out" | grep -q 'FAIL selected-version-older' \
+  && ok "explicit expectation on stale installed tree -> FAIL selected-version-older" \
+  || bad "expected FAIL selected-version-older: $out"
+never_success "stale installed tree with a supplied expectation" "$out"
 
 exit $fail

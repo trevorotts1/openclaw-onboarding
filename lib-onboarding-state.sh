@@ -456,7 +456,11 @@ PYEOF
 }
 
 # ------------------------------------------------------------
-# oc_skill_selection_status <skill_name> [expected_version]
+# oc_skill_selection_status <skill_name> [expected_version] [expected_source]
+#   [expected_source] is the file [expected_version] was read from; when that
+#   file sits inside the selected tree the expectation is DISCARDED — the tree
+#   cannot vouch for itself — and a PASS then discloses the skipped staleness
+#   check instead of claiming a match.
 #   SHARED SELECTION GATE (WG1). Verifies the skill the INTENDED OpenClaw agent
 #   actually RESOLVES — not merely that a file, a folder or an install record
 #   exists somewhere on disk. Tri-state:
@@ -494,7 +498,7 @@ PYEOF
 #   the gate while the agent served the stale tree.
 # ------------------------------------------------------------
 oc_skill_selection_status() {
-  local folder="$1" expected="${2:-${OC_SKILL_EXPECTED_VERSION:-}}"
+  local folder="$1" expected="${2:-${OC_SKILL_EXPECTED_VERSION:-}}" expected_src="${3:-}"
   OC_SKILL_STATUS=""; OC_SKILL_REASON=""; OC_SKILL_SELECTED_PATH=""; OC_SKILL_RESOLVED_SOURCE=""
   # FIND THE CLI BEFORE DECLARING IT ABSENT (same known-location scan as
   # obs_verify_skill in scripts/onboarding-state.sh): `command -v` proves only
@@ -537,7 +541,8 @@ oc_skill_selection_status() {
   out=$("$cli" skills info "$reg_name" ${_ag:+--agent "$_ag"} 2>&1) || rc=$?
   local res rrc=0
   res=$(OC_SKILL_INFO_OUT="$out" OC_SKILL_INFO_RC="$rc" OC_SKILL_FOLDER="$folder" \
-        OC_SKILL_EXPECTED="$expected" OC_SKILL_REQUESTED="$folder" python3 - <<'PYEOF'
+        OC_SKILL_EXPECTED="$expected" OC_SKILL_EXPECTED_SRC="$expected_src" \
+        OC_SKILL_REQUESTED="$folder" python3 - <<'PYEOF'
 import hashlib, json, os, re, sys
 
 out = os.environ.get("OC_SKILL_INFO_OUT", "")
@@ -546,6 +551,7 @@ try:
 except ValueError:
     cli_rc = 1
 expected = os.environ.get("OC_SKILL_EXPECTED", "").strip()
+expected_src = os.environ.get("OC_SKILL_EXPECTED_SRC", "").strip()
 requested = os.environ.get("OC_SKILL_REQUESTED", "").strip()
 
 
@@ -663,6 +669,18 @@ if len(vals) > 1:
          sel, src)
 
 sel_ver = vals[0] if vals else ""
+# (2a) A tree cannot vouch for itself: an expectation read from a file INSIDE
+# the selected tree is that tree's own claim, not the shipped release (the
+# ~/.openclaw/skills fallback lib reads exactly the verified tree's own
+# skill-version.txt beside itself). Drop it, so an installed tree with no real
+# source copy PASSES only WITH the staleness disclosure — never as a silently
+# verified match of itself.
+if expected and expected_src:
+    try:
+        if os.path.realpath(os.path.dirname(expected_src)) == os.path.realpath(sel_dir):
+            expected = ""
+    except OSError:
+        pass
 if expected:
     e = norm(expected)
     if not sel_ver:
@@ -820,11 +838,16 @@ oc_gate_skill() {
   # bare "not-registered" and never as success. The shipment expectation is the
   # SOURCE copy beside this lib in a repo checkout (the install-time case);
   # when this lib runs from an installed tree there is no source copy, and the
-  # reason says the staleness comparison could not be made.
-  local _sel_rc=0 _exp=""
+  # reason says the staleness comparison could not be made. A copy of the
+  # expectation that lives INSIDE the tree being verified (the
+  # ~/.openclaw/skills fallback lib reads the tree's own skill-version.txt) is
+  # passed along with its source and discarded by the verifier: a tree cannot
+  # vouch for itself.
+  local _sel_rc=0 _exp="" _exp_src=""
   local _libdir; _libdir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
   if [ -f "$_libdir/$folder/skill-version.txt" ]; then
-    _exp="$(tr -d '[:space:]' < "$_libdir/$folder/skill-version.txt" 2>/dev/null || true)"
+    _exp_src="$_libdir/$folder/skill-version.txt"
+    _exp="$(tr -d '[:space:]' < "$_exp_src" 2>/dev/null || true)"
     if [ -z "$_exp" ]; then
       # A source copy exists but its version cannot be read: that is not a
       # licence to skip the staleness comparison.
@@ -834,7 +857,7 @@ oc_gate_skill() {
     fi
   fi
   if [ "$_sel_rc" -eq 0 ]; then
-    oc_skill_selection_status "$folder" "$_exp" || _sel_rc=$?
+    oc_skill_selection_status "$folder" "$_exp" "$_exp_src" || _sel_rc=$?
   fi
   oc_state_mark_field "$folder" selectionStatus "\"${OC_SKILL_STATUS:-unknown}\"" || _sw_ok=0
   if [ "$_sel_rc" -eq 0 ]; then
