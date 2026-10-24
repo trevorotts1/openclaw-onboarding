@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""Focused tests for cast_writer (S75-T06 / S75-A06).
+
+Every test uses the fixture in ``tests/fixtures/complete_cast.json`` and a fake
+dispatcher. No network, no provider, no paid generation.
+
+Run: python3 -m pytest -q scripts/core/character_bible/test_cast_writer_s75_t06.py
+ or: python3 scripts/core/character_bible/test_cast_writer_s75_t06.py
+"""
+import copy
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CORE = os.path.dirname(HERE)
+sys.path.insert(0, CORE)
+sys.path.insert(0, HERE)
+
+import cast_writer as W  # noqa: E402
+
+FIXTURE = os.path.join(os.path.dirname(os.path.dirname(CORE)),
+                       "tests", "fixtures", "complete_cast.json")
+
+
+def load():
+    with open(FIXTURE, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    return copy.deepcopy(data["request"]), copy.deepcopy(data["response"])
+
+
+def fake(response, calls=None):
+    """A dispatcher that records what it was asked and answers the fixture."""
+    def dispatch(prompt):
+        if calls is not None:
+            calls.append(copy.deepcopy(prompt))
+        return copy.deepcopy(response)
+    return dispatch
+
+
+def author(request=None, response=None, calls=None, **kwargs):
+    base_request, base_response = load()
+    return W.author_cast(request or base_request,
+                         dispatch=fake(response or base_response, calls),
+                         model="fake-author", **kwargs)
+
+
+def refuse(fn, *args, **kwargs):
+    try:
+        fn(*args, **kwargs)
+    except W.CastWriteError as exc:
+        return exc
+    raise AssertionError("expected CastWriteError, got a completed cast")
+
+
+# --- the authored cast ------------------------------------------------------
+
+def test_fixture_authors_a_complete_cast():
+    result = author()
+    assert result["state"] == "COMPLETE"
+    assert len(result["identities"]) == 3
+    roles = {e["character_id"]: e["episode_role"] for e in result["manifest"]["cast"]}
+    assert roles == {"char_mara_001": "lead",
+                     "char_levi_002": "supporting",
+                     "char_rosa_003": "recurring"}
+
+
+def test_every_identity_carries_wants_fears_beliefs_and_speech():
+    result = author()
+    for record in result["identities"]:
+        assert W.profile_defects(record) == [], record["character_id"]
+        assert record["wants"]["external"] and record["wants"]["internal"]
+        assert record["fears"] and record["beliefs"]
+        assert record["voice"]["rhythm"] and record["voice"]["restraint"]
+        assert record["emotional_wound"] and record["mistaken_belief"]
+        assert record["draft_state"] == "DRAFT_COMPLETE"
+        assert len(record["content_digest"]) == 64
+
+
+def test_manifest_binds_revision_and_digest_from_the_record():
+    result = author()
+    by_id = {c["character_id"]: c for c in result["identities"]}
+    for entry in result["manifest"]["cast"]:
+        record = by_id[entry["character_id"]]
+        assert entry["identity_revision"] == record["revision"]
+        assert entry["identity_digest"] == record["content_digest"]
+    assert result["manifest"]["library_digest"] == W.library_digest(result["library"])
+    assert result["manifest"]["research_binding"] == {
+        "revision": 4, "content_digest": "research-r4-3f9c1a05b7d24e68"}
+
+
+def test_text_identity_saves_with_no_image():
+    result = author()
+    assert all(record["reference_ids"] == [] for record in result["identities"])
+    assert result["state"] == "COMPLETE"
+
+
+# --- real dispatch, correlated ----------------------------------------------
+
+def test_dispatch_is_invoked_once_with_exact_revisions():
+    calls = []
+    author(calls=calls)
+    assert len(calls) == 1
+    prompt = calls[0]
+    assert prompt["task"] == "author_complete_episode_cast"
+    assert prompt["research"] == {"revision": 4,
+                                  "content_digest": "research-r4-3f9c1a05b7d24e68"}
+    assert prompt["library"]["revision"] == 2
+    assert prompt["library"]["content_digest"] == W.library_digest({
+        "schema_version": W.LIBRARY_SCHEMA_VERSION,
+        "client_id": "fiction_contract_demo",
+        "revision": 2,
+        "characters": load()[0]["library"]["characters"],
+    })
+    assert prompt["selection"] == "mixed"
+    assert prompt["scene_ids"] == ["sc_01", "sc_02"]
+    assert prompt["premise"].startswith("A neighborhood repair cooperative")
+    assert "wants" in prompt["requirements"]["full_profile_fields"]
+
+
+def test_receipt_correlates_output_to_the_captured_response():
+    _, response = load()
+    result = author()
+    receipt = result["dispatch_receipt"]
+    assert receipt["calls"] == 1
+    assert receipt["response_digest"] == W.canonical_digest(response)
+    assert receipt["selected_character_ids"] == [
+        "char_mara_001", "char_levi_002", "char_rosa_003"]
+    assert receipt["authored_character_ids"] == ["char_mara_001", "char_rosa_003"]
+    assert W.verify_receipt(result) is True
+
+
+def test_tampered_response_breaks_the_receipt():
+    result = author()
+    result["dispatch_response"]["cast"][0]["episode_role"] = "lead"
+    result["dispatch_response"]["extra"] = "not what the receipt recorded"
+    assert W.verify_receipt(result) is False
+
+
+def test_request_cannot_supply_a_prewritten_cast():
+    request, response = load()
+    request["cast"] = [{"character_id": "char_mara_001", "episode_role": "lead"}]
+    calls = []
+    result = author(request=request, response=response, calls=calls)
+    assert len(calls) == 1
+    # the answer is the dispatcher's, never the request's shortcut
+    assert len(result["manifest"]["cast"]) == 3
+
+
+# --- refusals ---------------------------------------------------------------
+
+def test_missing_dispatcher_refuses_before_any_work():
+    request, _ = load()
+    exc = refuse(W.author_cast, request, dispatch=None)
+    assert exc.code == "NO_DISPATCHER"
+
+
+def test_incomplete_cast_is_refused_by_name():
+    request, response = load()
+    del response["identities"][1]["beliefs"]
+    del response["identities"][1]["voice"]["restraint"]
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "char_rosa_003" in str(exc)
+    assert "Rosa Iyer" in str(exc)
+    assert "beliefs" in str(exc)
+    assert "voice.restraint" in str(exc)
+    named = {d["character_id"] for d in exc.packet["incomplete"]}
+    assert named == {"char_rosa_003"}
+
+
+def test_a_face_only_identity_is_not_a_cast_member():
+    request, response = load()
+    led = response["identities"][0]
+    for field in W.PROFILE_FIELDS:
+        led.pop(field, None)
+    led["appearance_traits"] = "Black woman, short natural curls."
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    named = [d for d in exc.packet["incomplete"] if d["character_id"] == "char_mara_001"]
+    fields = {d["field"] for d in named}
+    assert {"wants", "fears", "beliefs", "voice"} <= fields
+    assert "Mara Bell" in str(exc)
+
+
+def test_missing_cast_key_is_not_an_empty_cast():
+    request, response = load()
+    del response["cast"]
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "MISSING_CAST"
+
+
+def test_empty_cast_is_refused():
+    request, response = load()
+    response["cast"] = []
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "CAST_EMPTY"
+
+
+def test_anonymous_speaker_is_refused():
+    request, _ = load()
+    request["scenes"][1]["spoken_dialogue"].append(
+        {"line_id": "ln_09", "character_id": "a woman", "text": "She will not tell them."})
+    exc = refuse(W.author_cast, request, dispatch=fake(load()[1]), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "a woman" in str(exc)
+
+
+def test_undeclared_speaker_is_refused():
+    request, _ = load()
+    request["scenes"][0]["spoken_dialogue"].append(
+        {"line_id": "ln_10", "character_id": "char_ghost_009",
+         "text": "Nobody knows who I am."})
+    exc = refuse(W.author_cast, request, dispatch=fake(load()[1]), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "char_ghost_009" in str(exc)
+
+
+def test_crowd_group_may_not_speak():
+    request, response = load()
+    response["crowd_groups"][0]["dialogue"] = "murmured"
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "dialogue" in str(exc)
+
+
+def test_crowd_group_may_not_single_a_member_out():
+    request, response = load()
+    response["crowd_groups"][0]["singled_out"] = True
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "singled_out" in str(exc)
+
+
+def test_crowd_group_needs_placement_and_behavior_rules():
+    request, response = load()
+    del response["crowd_groups"][0]["location_placement"]
+    del response["crowd_groups"][0]["collective_behavior"]
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert "location_placement" in str(exc)
+    assert "collective_behavior" in str(exc)
+
+
+def test_stale_library_identity_is_refused():
+    request, response = load()
+    request["library"]["characters"][0]["content_digest"] = "0" * 64
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "STALE_IDENTITY"
+    assert "char_levi_002" in str(exc)
+
+
+def test_authored_identity_cannot_overwrite_an_existing_person():
+    request, response = load()
+    response["identities"].append(copy.deepcopy(
+        request["library"]["characters"][0]))
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "IDENTITY_OVERWRITE"
+    assert "char_levi_002" in str(exc)
+
+
+def test_duplicate_identity_ids_are_refused():
+    request, response = load()
+    response["identities"].append(copy.deepcopy(response["identities"][0]))
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "DUPLICATE_IDENTITY"
+
+
+def test_existing_selection_may_not_author_new_people():
+    request, response = load()
+    request["selection"] = "existing"
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "SELECTION_NEW_REFUSED"
+    assert "char_mara_001" in str(exc)
+
+
+def test_new_selection_may_not_reuse_library_people():
+    request, response = load()
+    request["selection"] = "new"
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "char_levi_002" in str(exc)
+
+
+def test_unknown_scene_reference_is_refused():
+    request, response = load()
+    response["cast"][2]["scene_ids"] = ["sc_99"]
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert "sc_99" in str(exc)
+
+
+def _people_free(response):
+    request, _ = load()
+    request["library"]["characters"] = []
+    request["scene_ids"] = []
+    request["scenes"] = []
+    response.update({"people_free": True, "cast": [], "crowd_groups": [],
+                     "identities": []})
+    return request, response
+
+
+def test_people_free_requires_a_stated_reason():
+    request, response = _people_free(load()[1])
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "PEOPLE_FREE"
+
+
+def test_people_free_with_a_reason_is_accepted():
+    request, response = _people_free(load()[1])
+    response["people_free_reason"] = "A landscape-only piece with no performers."
+    result = author(request=request, response=response)
+    assert result["manifest"]["people_free"] is True
+    assert result["manifest"]["cast"] == []
+
+
+def test_people_free_contradiction_is_refused():
+    request, response = load()
+    response["people_free"] = True
+    response["people_free_reason"] = "No performers."
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "PEOPLE_FREE_CONTRADICTION"
+
+
+def test_missing_input_is_named():
+    request, _ = load()
+    request.pop("research_bundle")
+    request["selection"] = "guess"
+    exc = refuse(W.author_cast, request, dispatch=fake(load()[1]), model="fake-author")
+    assert exc.code == "MISSING_INPUT"
+    assert "research_bundle" in str(exc)
+    assert "selection" in str(exc)
+
+
+def test_client_namespace_mismatch_is_refused():
+    request, response = load()
+    request["library"]["client_id"] = "another_client"
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "CLIENT_MISMATCH"
+
+
+def test_dangling_relationship_is_refused():
+    request, response = load()
+    response["identities"][0]["relationships"][0]["character_id"] = "char_ghost_010"
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    dangling = [d for d in exc.packet["incomplete"]
+                if d["field"] == "relationships" and "char_ghost_010" in d["issue"]]
+    assert dangling and dangling[0]["character_id"] == "char_mara_001"
+
+
+# --- adapters and purity ----------------------------------------------------
+
+def test_legacy_bible_is_a_seed_not_an_identity():
+    seed = W.seed_from_legacy_bible(
+        {"character_name": "Mara Bell", "character_description": "A mechanic.",
+         "character_background": "Built a cooperative.",
+         "character_ethnicity": "Black woman.", "voice_notes": "Short sentences.",
+         "reference_images": ["ref_1.png"]},
+        "fiction_contract_demo", "char_mara_001")
+    assert seed["seed_state"] == "SEED_ONLY_INCOMPLETE"
+    assert seed["reference_ids"] == ["ref_1.png"]
+    assert seed["story_status"] == "OWNER_SUPPLIED"
+    missing = {d["field"] for d in W.profile_defects(seed)}
+    assert {"wants", "fears", "beliefs", "voice"} <= missing
+
+
+def test_module_holds_no_provider_transport():
+    with open(os.path.join(HERE, "cast_writer.py"), "r", encoding="utf-8") as handle:
+        source = handle.read()
+    for forbidden in ("urllib", "http.client", "requests", "socket", "subprocess"):
+        assert forbidden not in source, forbidden
+
+
+if __name__ == "__main__":
+    failures = 0
+    tests = [(name, fn) for name, fn in sorted(globals().items())
+             if name.startswith("test_") and callable(fn)]
+    for name, fn in tests:
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001 - standalone runner
+            failures += 1
+            print("FAIL %s: %s: %s" % (name, type(exc).__name__, exc))
+        else:
+            print("ok   %s" % name)
+    print("\n%d passed, %d failed, %d total" % (len(tests) - failures, failures, len(tests)))
+    sys.exit(1 if failures else 0)

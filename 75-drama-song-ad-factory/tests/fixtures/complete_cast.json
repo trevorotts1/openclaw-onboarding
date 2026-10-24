@@ -1,0 +1,264 @@
+{
+  "_note": "Proposed fiction for S75-T06 tests only. Not approved client content, no real business or person is described, no provider call is made.",
+  "request": {
+    "client_id": "fiction_contract_demo",
+    "episode_id": "ep_workshop_001",
+    "premise": "A neighborhood repair cooperative discovers a payment shortfall at closing time, and the partner who hid the warning must choose whether to share it.",
+    "research_bundle": {
+      "revision": 4,
+      "content_digest": "research-r4-3f9c1a05b7d24e68"
+    },
+    "library": {
+      "client_id": "fiction_contract_demo",
+      "revision": 2,
+      "characters": [
+        {
+          "character_id": "char_levi_002",
+          "revision": 1,
+          "display_name": "Levi Bell",
+          "aliases": ["Levi"],
+          "story_status": "FICTION",
+          "identity_summary": "A 42-year-old mechanic who keeps the cooperative weekly accounts and refuses to be surprised twice in one lifetime.",
+          "relevant_background_history": [
+            "He watched his father's repair stall close without warning after a cash crisis.",
+            "He rebuilt the cooperative with his younger sister Mara and made shared warnings a condition of the partnership."
+          ],
+          "occupation": "Mechanic and part-time bookkeeper",
+          "competence": ["reads a ledger quickly", "rebuilds small engines", "plans weekly payroll"],
+          "social_context": "Older brother and equal partner in a four-person cooperative whose livelihoods depend on the books he keeps.",
+          "relationships": [
+            {
+              "character_id": "char_mara_001",
+              "type": "younger sister and cooperative partner",
+              "history": "They rebuilt the workshop together after their father closed his stall.",
+              "present_tension": "He has found a missing payment notice she has not shared.",
+              "dependency": "He needs her technical leadership; she needs his financial discipline."
+            }
+          ],
+          "wants": {
+            "external": "Get an honest book and a payroll plan the team can act on tonight.",
+            "internal": "Prove that silence can never again turn a solvable problem into a sudden closure."
+          },
+          "fears": ["Repeating his father's sudden closure", "Being the last person told"],
+          "beliefs": ["Shared warnings are the only proof that a partnership is real."],
+          "emotional_wound": "He was away when his father's stall closed and learned it from a padlocked door.",
+          "mistaken_belief": "If he personally checks every number, nobody can ever be blindsided.",
+          "contradictions": ["Preaches shared responsibility but grabs the ledger before asking for help."],
+          "habits": ["Rubs a grease stain on his thumb while choosing words", "Points at an empty total instead of accusing"],
+          "voice": {
+            "rhythm": "Measured, low, economical; short sentences that wait for an answer.",
+            "vocabulary": "Concrete workshop and bookkeeping words; no jargon.",
+            "restraint": "Asks one exact question rather than naming the feeling."
+          },
+          "behavior_under_pressure": "Becomes unusually quiet and turns toward the paperwork instead of the person.",
+          "appearance_traits": "Black man, close-cut hair, trimmed beard, steady planted stance.",
+          "identity_visual": {
+            "face": "Broad calm face, level eyes, trimmed beard",
+            "age": "42",
+            "hair": "close-cut black hair",
+            "wardrobe_rules": "Work shirt with sleeves rolled; no jewelry beyond a plain watch",
+            "continuity_constraints": "Same beard length and watch in every scene",
+            "prompt_block": "Levi Bell, Black man, 42, close-cut hair, trimmed beard, work shirt, steady stance."
+          },
+          "reference_ids": [],
+          "provenance_by_field": {"all_story_fields": "explicit proposed fiction for S75-T06 test fixture"},
+          "draft_state": "DRAFT_COMPLETE",
+          "approval_bindings": [],
+          "shared_source": null,
+          "local_cache": null,
+          "sync_state": "LOCAL_ONLY"
+        }
+      ]
+    },
+    "selection": "mixed",
+    "scene_ids": ["sc_01", "sc_02"],
+    "scenes": [
+      {
+        "scene_id": "sc_01",
+        "cast_ids": ["char_mara_001", "char_levi_002"],
+        "spoken_dialogue": [
+          {"line_id": "ln_01", "character_id": "char_levi_002", "text": "The total is short and you already knew."},
+          {"line_id": "ln_02", "character_id": "char_mara_001", "text": "I knew on Tuesday and I did not want to frighten the team."}
+        ]
+      },
+      {
+        "scene_id": "sc_02",
+        "cast_ids": ["char_mara_001", "char_levi_002", "char_rosa_003"],
+        "spoken_dialogue": [
+          {"line_id": "ln_03", "character_id": "char_rosa_003", "text": "I can wait one more week for my repair if it keeps your people paid."},
+          {"line_id": "ln_04", "character_id": "char_mara_001", "text": "Then I will tell everyone tonight before they hear it another way."}
+        ]
+      }
+    ]
+  },
+  "response": {
+    "people_free": false,
+    "identities": [
+      {
+        "character_id": "char_mara_001",
+        "revision": 1,
+        "display_name": "Mara Bell",
+        "aliases": ["Mara"],
+        "story_status": "FICTION",
+        "identity_summary": "A 38-year-old repair-cooperative owner who can fix a motor faster than she can admit a mistake.",
+        "relevant_background_history": [
+          "She helped her father close his repair stall after an avoidable cash crisis.",
+          "She built the cooperative with her older brother Levi and promised the team would never be surprised again."
+        ],
+        "occupation": "Repair-cooperative owner and working mechanic",
+        "competence": ["diagnoses small-engine failures", "trains apprentices", "keeps a job board moving"],
+        "social_context": "Responsible for a small team that has trusted her with its livelihoods.",
+        "relationships": [
+          {
+            "character_id": "char_levi_002",
+            "type": "older brother and cooperative partner",
+            "history": "They built the workshop together.",
+            "present_tension": "She has withheld a payment warning he needs for payroll.",
+            "dependency": "She trusts his judgment and fears his disappointment."
+          }
+        ],
+        "wants": {
+          "external": "Keep the cooperative open and pay the team on Friday.",
+          "internal": "Be trusted without having to appear infallible."
+        },
+        "fears": ["Repeating her father's failure", "Losing the team's respect"],
+        "beliefs": ["A good leader absorbs the bad news before anyone else feels it."],
+        "emotional_wound": "She was the last person told that her father's stall was closing.",
+        "mistaken_belief": "A good leader protects everyone by solving problems alone.",
+        "contradictions": ["Demands clear estimates from apprentices while hiding the warning from her own partner."],
+        "habits": ["Straightens tools when avoiding a question", "Taps the seam of a sealed envelope before opening it"],
+        "voice": {
+          "rhythm": "Short practical sentences; explanations speed up when she is afraid.",
+          "vocabulary": "Concrete workshop language; avoids corporate jargon.",
+          "restraint": "Admits the fact before naming the feeling."
+        },
+        "behavior_under_pressure": "Takes on more physical work and conceals paperwork until a concrete consequence forces disclosure.",
+        "appearance_traits": "Black woman, short natural curls, alert eyes, compact work-ready posture.",
+        "identity_visual": {
+          "face": "Angular alert face, quick level gaze",
+          "age": "38",
+          "hair": "short natural curls",
+          "wardrobe_rules": "Rolled-sleeve work shirt, canvas apron with pencil pocket",
+          "continuity_constraints": "Same curls and pencil pocket throughout the episode",
+          "prompt_block": "Mara Bell, Black woman, 38, short natural curls, canvas apron over work shirt."
+        },
+        "reference_ids": [],
+        "provenance_by_field": {"all_story_fields": "explicit proposed fiction for S75-T06 test fixture"},
+        "draft_state": "DRAFT_COMPLETE",
+        "approval_bindings": [],
+        "shared_source": null,
+        "local_cache": null,
+        "sync_state": "LOCAL_ONLY"
+      },
+      {
+        "character_id": "char_rosa_003",
+        "revision": 1,
+        "display_name": "Rosa Iyer",
+        "aliases": ["Ms. Iyer"],
+        "story_status": "FICTION",
+        "identity_summary": "A 61-year-old regular customer who counts every dollar out loud and offers the one concession that makes Mara's turn possible.",
+        "relevant_background_history": [
+          "She ran a market stall for twenty years and survived two thin seasons by scheduling payments instead of borrowing.",
+          "Her late husband's radio sits on her kitchen counter; she repairs it rather than replace it."
+        ],
+        "occupation": "Retired market-stall grocer, now a regular repair customer",
+        "competence": ["negotiates payment schedules", "spots a false reassurance", "keeps exact household accounts"],
+        "social_context": "A long-standing neighborhood customer who knows the cooperative's people by name and holds no formal power over it.",
+        "relationships": [
+          {
+            "character_id": "char_mara_001",
+            "type": "long-standing customer and informal elder",
+            "history": "Mara repaired her radio twice at cost.",
+            "present_tension": "She suspects the cooperative cannot make its payroll and dislikes being managed.",
+            "dependency": "She depends on the shop; the shop depends on customers like her."
+          }
+        ],
+        "wants": {
+          "external": "Get her radio repaired without pushing the cooperative under.",
+          "internal": "Be treated as an adult who can carry bad news."
+        },
+        "fears": ["Being handled with a cheerful half-truth", "Watching another small shop vanish quietly"],
+        "beliefs": ["People can bear the truth if you give them time to plan."],
+        "emotional_wound": "Her stall's landlord raised rent without notice and she lost the lease in a fortnight.",
+        "mistaken_belief": "If she offers to sacrifice first, nobody will have to lie to her.",
+        "contradictions": ["Insists on exact honesty while softening her own offer so it sounds smaller than it is."],
+        "habits": ["Counts bills twice before folding them", "Leaves her receipt on the counter as a small assertion"],
+        "voice": {
+          "rhythm": "Unhurried, one clause at a time, with a pause before any offer.",
+          "vocabulary": "Market and household words; names exact amounts.",
+          "restraint": "States her concession plainly and never mentions what it costs her."
+        },
+        "behavior_under_pressure": "Sits down, folds her hands and waits, forcing the other person to fill the silence.",
+        "appearance_traits": "South Asian woman, silver hair in a low bun, reading glasses on a chain, upright posture.",
+        "identity_visual": {
+          "face": "Rounded face, fine lines, attentive eyes behind thin frames",
+          "age": "61",
+          "hair": "silver hair in a low bun",
+          "wardrobe_rules": "Cardigan over a plain blouse; reading glasses on a chain",
+          "continuity_constraints": "Same glasses chain and bun in every appearance",
+          "prompt_block": "Rosa Iyer, South Asian woman, 61, silver bun, reading glasses on a chain, cardigan."
+        },
+        "reference_ids": [],
+        "provenance_by_field": {"all_story_fields": "explicit proposed fiction for S75-T06 test fixture"},
+        "draft_state": "DRAFT_COMPLETE",
+        "approval_bindings": [],
+        "shared_source": null,
+        "local_cache": null,
+        "sync_state": "LOCAL_ONLY"
+      }
+    ],
+    "cast": [
+      {
+        "character_id": "char_mara_001",
+        "episode_role": "lead",
+        "scene_ids": ["sc_01", "sc_02"],
+        "immediate_story_function": "The partner who hid the warning must choose to expose it.",
+        "choice_or_consequence": "She tells the whole team tonight, trading control for shared responsibility.",
+        "relationship_changes": [
+          {"character_id": "char_levi_002", "change": "From protected from the truth to a partner who is trusted with it."}
+        ]
+      },
+      {
+        "character_id": "char_levi_002",
+        "episode_role": "supporting",
+        "scene_ids": ["sc_01", "sc_02"],
+        "immediate_story_function": "He makes the missing money visible through the open ledger instead of accusing her.",
+        "choice_or_consequence": "His restrained offer of help makes Mara's disclosure survivable.",
+        "relationship_changes": [
+          {"character_id": "char_mara_001", "change": "Protective loyalty becomes a working partnership."}
+        ]
+      },
+      {
+        "character_id": "char_rosa_003",
+        "episode_role": "recurring",
+        "scene_ids": ["sc_02"],
+        "immediate_story_function": "She is singled out of the queue and offers a payment delay, proving the team can bear the truth.",
+        "choice_or_consequence": "Her concession turns Mara's private failure into a decision the room can share.",
+        "relationship_changes": [
+          {"character_id": "char_mara_001", "change": "From managed customer to a witness treated as an adult."}
+        ]
+      }
+    ],
+    "crowd_groups": [
+      {
+        "crowd_group_id": "crowd_workshop_queue_001",
+        "composition": "Three adult repair customers and one apprentice waiting near the counter.",
+        "count": 4,
+        "age_range": "20s to 60s",
+        "roles": ["customers", "apprentice"],
+        "location_placement": "Two seated beside the north wall, two standing at the counter, all outside the focus plane.",
+        "collective_behavior": "Quiet queue behavior; occasional low conversation that does not carry.",
+        "permitted_motion": "Shifting weight, looking toward the counter, checking a phone.",
+        "attention_direction": "Toward the counter and the ledger, never toward the camera.",
+        "interaction_with_leads": "No individual interaction; they remain background while Mara speaks.",
+        "wardrobe_palette": "Muted everyday clothes; no logos or uniforms implying a real company.",
+        "camera_limits": "Never in close-up, never holding a plot prop, never the focus of a shot.",
+        "entry_exit_rule": "Present at scene start; no individual entrance or exit is staged.",
+        "recurrence": "This episode only as a group; no member returns as an individual.",
+        "dialogue": "forbidden",
+        "reference_provenance": "Proposed fiction for this test fixture; no real customer is depicted.",
+        "scene_ids": ["sc_01"]
+      }
+    ]
+  }
+}
