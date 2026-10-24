@@ -66,6 +66,20 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Required-check contexts map to the behavior they name
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Every required status context (the eight names the merge gate reads
+          # off a PR rollup) must resolve to a workflow job that actually runs on
+          # this PR and exercises its named behavior. A context whose job is
+          # skipped on pull_request still reports SKIPPED, which the merge gate
+          # counts as PASS - green while proving nothing. G1 is the one declared
+          # such gap; any other skip, a renamed job, a workflow that stops
+          # triggering on pull_request, or a gutted step body fails here.
+          python3 -I scripts/ci/required_context_behaviors.py
+          python3 -I tests/unit/required-context-behaviors.test.py
+
       - name: Python syntax (shared-utils + Skill 22/23 scripts)
         shell: bash
         run: |
