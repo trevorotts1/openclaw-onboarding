@@ -569,6 +569,22 @@ class Store:
         """Acquire or renew a lease. Returns the fencing token (monotonic
         per resource) or None if a live lease is held by someone else.
         Renewal by the same holder keeps the token."""
+        token, _ = self._acquire(tenant_id, resource, holder, ttl_seconds)
+        return token
+
+    def acquire_effect_lease(self, tenant_id: str, resource: str,
+                             holder: str, ttl_seconds: float = 60.0):
+        """Like acquire_lease, but also reports takeover of a stale row.
+
+        Returns (token, took_over); (None, False) when a live lease is
+        held by someone else. took_over means the previous row expired
+        unreleased — its owner may have started the effect and died
+        mid-callback, so the outcome is uncertain and the caller must
+        park for reconciliation instead of executing."""
+        return self._acquire(tenant_id, resource, holder, ttl_seconds)
+
+    def _acquire(self, tenant_id: str, resource: str, holder: str,
+                 ttl_seconds: float):
         now = time.time()
         conn = self._conn()
         conn.execute("BEGIN IMMEDIATE")
@@ -584,10 +600,11 @@ class Store:
                     " AND resource=?",
                     (now + ttl_seconds, tenant_id, resource))
                 conn.execute("COMMIT")
-                return row[1]
+                return row[1], False
             if row is not None and row[2] > now:
                 conn.execute("COMMIT")
-                return None  # live lease held by someone else
+                return None, False  # live lease held by someone else
+            took_over = row is not None
             # New acquisition (no row, expired row, or a released lease whose
             # row is gone): the fencing token comes from the never-deleted
             # counter, so it is monotonic across the resource's whole
@@ -603,7 +620,7 @@ class Store:
                 "INSERT OR REPLACE INTO leases VALUES (?, ?, ?, ?, ?)",
                 (tenant_id, resource, holder, token, now + ttl_seconds))
             conn.execute("COMMIT")
-            return token
+            return token, took_over
         except Exception:
             conn.execute("ROLLBACK")
             raise
@@ -630,6 +647,69 @@ class Store:
                 " AND holder=? AND fencing_token=?",
                 (tenant_id, resource, holder, fencing_token))
             conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
+    def renew_lease(self, tenant_id: str, resource: str, holder: str,
+                    fencing_token: int,
+                    ttl_seconds: float = 60.0) -> bool:
+        """Heartbeat renewal: extend a lease only while its holder and
+        token still match. Succeeds even past expiry provided nobody
+        else took over (the row is still ours) — that is the heartbeat
+        semantic keeping a live owner fenced in. False when stolen,
+        released, or never acquired; nothing is changed then."""
+        now = time.time()
+        conn = self._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT holder, fencing_token FROM leases"
+                " WHERE tenant_id=? AND resource=?",
+                (tenant_id, resource)).fetchone()
+            if row is None or row[0] != holder or row[1] != fencing_token:
+                conn.execute("COMMIT")
+                return False
+            conn.execute(
+                "UPDATE leases SET expires_at=? WHERE tenant_id=?"
+                " AND resource=?",
+                (now + ttl_seconds, tenant_id, resource))
+            conn.execute("COMMIT")
+            return True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+
+    def complete_action_if_owner(self, key: tuple, state: str,
+                                 tenant_id: str, resource: str,
+                                 holder: str, fencing_token: int,
+                                 evidence_ref: Optional[str] = None) -> bool:
+        """Ownership-conditioned completion: move a claimed action to
+        done/unknown atomically with the fencing check, in one
+        transaction. True iff this call performed the transition. False
+        leaves everything untouched — a stale holder never completes
+        another owner's action and never clobbers a done row."""
+        assert state in ("done", "unknown"), state
+        now = time.time()
+        conn = self._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT holder, fencing_token, expires_at FROM leases"
+                " WHERE tenant_id=? AND resource=?",
+                (tenant_id, resource)).fetchone()
+            if not (row and row[0] == holder
+                    and row[1] == fencing_token and row[2] > now):
+                conn.execute("COMMIT")
+                return False
+            cur = conn.execute(
+                "UPDATE actions SET state=?, evidence_ref=?,"
+                " updated_at=? WHERE tenant_id=? AND txn_ref=?"
+                " AND line_ref=? AND action_type=? AND version=?"
+                " AND state='claimed'",
+                (state, evidence_ref, now, *key))
+            conn.execute("COMMIT")
+            return cur.rowcount == 1
         except Exception:
             conn.execute("ROLLBACK")
             raise
