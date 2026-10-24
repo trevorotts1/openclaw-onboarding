@@ -1,3 +1,22 @@
+## [2.0.24] - 2026-10-24 - fix(hooks): content-addressed hooks.mappings migration; repair rebinds a stale agentId
+
+Two demonstrated defects left an upgraded box with a permanently broken GHL inbound hook body:
+
+- **G-01 — "skipping merge" froze a pre-upgrade mapping forever.** `scripts/15-configure-hooks-mappings.sh` only merged a mapping when the id was absent, so an existing entry kept its nested `sessionKey` merge tokens (the GHL body sends a FLAT `{{session_key}}`), a `messageTemplate` with no send-directive (the agent drafts and never sends) and no conversation-log read-before/append-after (the agent has no memory mid-conversation) on every re-run.
+- **G-02 — the repair reported a stale `agentId` and never rebound it.** `scripts/repair/repair-inbound-hooks.py` rewrote only `hooks.maxBodyBytes` and `gateway.trustedProxies` and printed a "not a configured agent" note.
+
+Both are now one content-addressed migration:
+
+- `scripts/lib-docker-tenant.sh` owns the canonical mapping shape (`s38_canonical_mapping`), the mandatory send-directive and conversation-memory needle lists (`s38_send_directive_needles`, `s38_conversation_memory_needles`) and the key-level merge (`s38_merge_mapping_body`, `s38_mapping_changed_keys`, `s38_migrate_mapping`). Only divergent keys are upgraded: `id`, `action`, `deliver`, `match.path` are forced; `agentId` is kept while it names a configured agent and rebound to the resolved routing agent when stale; `sessionKey` is kept unless it is empty or carries a nested `{{a.b}}` token; `messageTemplate` is kept unless it is missing a required directive element; operator values for `name`, `wakeMode`, `timeoutSeconds` and any unknown operator key are left alone. A second run reports no changes and writes nothing. The canonical messageTemplate stays in a `.sh` under `scripts/` so `qc-send-directive.sh` and `qc-conversation-memory.sh` keep linting it.
+- `scripts/15-configure-hooks-mappings.sh` builds the mapping through that lib and, when the id already exists, migrates it instead of skipping: it reports exactly which keys changed and writes the upgraded body.
+- `scripts/repair/repair-inbound-hooks.py` now rewrites the mapping body through the same lib (single source of the required shape), including rebinding a stale `agentId`, and prints one line naming every changed key plus the `agentId` old -> new pair. When no rebind target can be resolved and the box has more than one configured agent it stops and asks for `ROUTING_AGENT_ID` rather than guessing.
+
+Safety on both paths: the pre-change mapping body is backed up next to the config (`openclaw.json.hooks-mapping-<id>.bak-<ts>.json`), the config is replaced by an atomic rename after `openclaw config validate`, and the installer refuses to commit (exit 11) when the file changed under the run.
+
+**T-10 contract note:** this writer emits no model key. The mapping body carries `agentId` only, and that id is now always a configured agent, so nothing here needs to agree with 24-self-test-hook.sh, qc-backend-ready.sh or install.sh about a model.
+
+Tests: `scripts/lib-docker-tenant.test.sh`, `tests/repair-inbound-hooks.test.sh` (selftest extended with the body-migration and stale-agentId-rebind cases).
+
 ## [2.0.19] - 2026-10-13 - refactor(models): client-choice model selection, no prescribed models
 
 Model selection doctrine applied across the skill: no surface prescribes a specific model by name anymore. Selection resolves as (1) the client's explicit choice, (2) the client's configured default model, (3) a stop with a clear ask-the-client message. Where an old prescription carried a real rationale (reasoning depth, context size, speed, cost), it is kept as a recommendation with its reason, as guidance the client can override, never wired as a fallback value in code or config.
