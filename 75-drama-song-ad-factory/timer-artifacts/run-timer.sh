@@ -34,8 +34,12 @@
 # no poll, no network. Exit 0 only when this box could poll right now.
 #
 # QUIET WHEN DISABLED (D34): a disabled optional capability is quiet. When
-# $STATE_DIR/capability.disabled exists (or DS_CAPABILITY_DISABLED=1) the timer
-# exits 0 without polling and without repeating any line. Unpaired notices are
+# $STATE_DIR/capability.json records `disabled` or `needs-enrollment`, or
+# $STATE_DIR/capability.disabled exists (or DS_CAPABILITY_DISABLED=1), the timer
+# exits 0 without polling and without repeating any line — and those checks run
+# BEFORE the machine.url/machine.key demand, so a chat-only box is never told it
+# is "not paired" on every tick. A recorded ready/degraded capability still needs
+# both credential files and is refused (exit 2) when they are missing. Unpaired notices are
 # TRANSITION-based: the state change is reported once, a steady state is silent.
 #
 # BOUNDED LOG RETENTION (D34): the scheduler redirects this script into
@@ -184,6 +188,54 @@ case "$PLATFORM" in
   contabo)   PATH="/home/node/.openclaw/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ;;
 esac
 export PATH
+
+# ---- 3b) Optional Studio capability: evaluated BEFORE any credential demand --
+# SPEC 9.3 / D24. The optional Studio capability is recorded in the CANONICAL
+# installation state file, capability.json (disabled | needs-enrollment | ready |
+# degraded), written by studio_bridge.py. A disabled or chat-only computer polls
+# nothing and says nothing — and must not be told it is "not paired" on every
+# tick, which is what happens when the credential demand below runs first. The
+# recorded capability is therefore read HERE, before section 4.
+#
+# A recorded ready/degraded capability falls through to the credential demand
+# UNCHANGED, so an enabled-but-broken install is refused (exit 2) rather than
+# silently skipped. With NO record, studio_bridge._capability_state's canonical
+# answer for "no key and no enrolment intent" is `disabled`, so an unpaired box
+# exits 0 in total silence and writes nothing — no record, no marker, no key.
+# This reads the canonical file and introduces no second state mechanism.
+# `--ready` is a readiness probe: it is never skipped here.
+CAP_FILE="${DS_CAPABILITY_FILE:-$STATE_DIR/capability.json}"
+CAP_RECORDED=""
+if [ -f "$CAP_FILE" ]; then
+  # Parse with a real JSON reader, not a line regex: a case variant, a
+  # duplicate key or a multi-line layout must not change the decision. json
+  # resolves a duplicate key deterministically (last wins) and rejects a
+  # truncated file, so the same record can never yield opposite outcomes.
+  CAP_RECORDED="$(python3 -c 'import json,sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+v = d.get("capability") if isinstance(d, dict) else None
+print(v.strip().lower() if isinstance(v, str) else "")' "$CAP_FILE" 2>/dev/null || true)"
+fi
+if [ "$READY" -eq 0 ]; then
+  case "$CAP_RECORDED" in
+    disabled|needs-enrollment)
+      ds_notice "$CAP_RECORDED" "studio capability $CAP_RECORDED - timer idle (quiet)"
+      exit 0 ;;
+    ready|degraded)
+      : ;;   # enabled: the credential demand below still decides (refusal kept)
+    "")
+      # No usable record: no key and no enrolment intent is the canonical
+      # `disabled` state. Silent, and writes nothing.
+      if [ ! -f "$KEY_FILE" ]; then
+        exit 0
+      fi ;;
+    *)
+      : ;;   # unrecognised value: fail CLOSED, let the credential demand decide
+  esac
+fi
 
 # ---- 4) The machine key + studio address (own store, never Claude settings) --
 # The pairing gate comes FIRST: an unpaired computer is not paired whether or
