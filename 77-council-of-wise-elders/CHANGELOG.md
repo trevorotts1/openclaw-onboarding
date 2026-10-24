@@ -1,5 +1,17 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.54: the selected-tree gate closes the false passes two independent reviews found (W77S)
+
+In plain English: three rounds of adversarial review found cases where the gate could still say OK without proving anything. Each is now refused with a specific reason instead of a pass.
+
+- Selection: an install-record or fallback directory is a candidate, not proof. More than one copy needs `--agent-selected PATH` from the agent resolver; evidence that contradicts the live install-record, or that names a tree outside every known agent root, fails. `wire.sh` forwards `COUNCIL_AGENT_SKILL_DIR` (unset on a multi-copy box = `NOT_READY TREE_GATE`, never a pass).
+- Version identity: `version`, `skill-version.txt`, SKILL.md frontmatter and manifest `skill_version` must agree, and each carrier must be a regular file of its own tree — a symlinked carrier cannot borrow another tree's identity.
+- Artifacts: an empty packaged entry, a directory entry, a non-zip archive, an archive member that is empty, not JavaScript, or not the recorded build (sha256/bytes) are all refused in the shared `scripts/entry-point-gate.mjs` and the archive path.
+- Records: a record whose reachable release entry is a directory, empty or absent fails; a record that cannot name its release is not a pass.
+- Two trees at the same version must be the same tree: full-tree identity (paths, content hashes, symlink targets) is compared, not only SKILL.md and the entry.
+- Symlink targets are pinned once and re-checked at the end, so a retargeted link cannot produce a mixed verdict.
+- Tests: `scripts/tests/selected-tree-gate.test.mjs` 27/27 and `scripts/tests/entry-point-gate.test.mjs` 5/5 (new: empty/absent/directory release entries, archive member hash, symlinked carriers, full-tree identity, pinned symlink target). Both reviewers' adversarial harnesses return no false pass; the one `ok:true` remaining is agent evidence naming the record's own tree through a symlink, which the reviewer classed as correct.
+
 ## v1.0.53: the selected-tree gate stops accepting substitutes for evidence (W77S)
 
 In plain English: the gate no longer treats "a record exists" as proof of what the agent reads, no longer prefers one version file when the carriers disagree, and no longer accepts an archive or an installed path just because it exists.
@@ -8,8 +20,7 @@ In plain English: the gate no longer treats "a record exists" as proof of what t
 - `wire.sh` passes that evidence through `COUNCIL_AGENT_SKILL_DIR` (the path the agent resolves, e.g. `~/.agents/skills/council-of-wise-elders` on OpenClaw). Unset on a multi-copy box means the step refuses with `NOT_READY TREE_GATE` — the honest outcome, never a pass.
 - Version identity: `version`, `skill-version.txt`, SKILL.md frontmatter and manifest `skill_version` must agree. A disagreement lists every carrier and fails; the reader never silently prefers the first file it can open.
 - Executables: an `archive` is verified as a zip that contains the entry, and an installed release's entry must be a non-empty JavaScript file that passes `node --check` when loading is enabled. Existence alone is not validity.
-- Independent adversarial review found and this revision closes: an empty packaged entry with a self-consistent manifest passed (now refused in the shared `scripts/entry-point-gate.mjs`); an archive whose entry member was empty passed (member bytes are now extracted, validated, and hashed against the recorded build); agent evidence could contradict the live install-record or name a tree outside every known agent root (both now fail); a recorded entry that is a directory crashed instead of reporting (now refused); equal versions on two different trees were warning-only (now a full-tree identity failure); a symlinked version carrier could borrow another tree's identity (carriers must be regular files of their own tree); a record whose reachable release entry is a directory, empty or absent passed unexamined (now verified); and a symlink retargeted mid-run could produce a mixed verdict (physical targets are pinned and re-checked at the end).
-- Tests: `scripts/tests/selected-tree-gate.test.mjs` 27/27 and `scripts/tests/entry-point-gate.test.mjs` 5/5 (new: empty/absent/directory release entries, archive member hash, symlinked carriers, full-tree identity, pinned symlink target).
+- Tests: `scripts/tests/selected-tree-gate.test.mjs` 17/17 (new: unproven selection, carrier disagreement incl. manifest, non-zip archive, empty entry, unparseable entry, agent evidence naming a non-skill path).
 - Checks on this branch (no-spend): `node scripts/doctor.mjs` PASS with `versions agree: version=1.0.53 skill-version.txt=v1.0.53 frontmatter=1.0.53`; `node scripts/verify-bundles.mjs` VERIFY: PASS (entry hash + load). Runtime bundle unchanged (`b10bb16b…`): this release carries no runtime code change.
 
 ## v1.0.52: Council: the packaged executable ships, and no installer ever says ready from source presence alone (W77R)
