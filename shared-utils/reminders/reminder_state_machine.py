@@ -20,17 +20,26 @@ What this module adds on top of them:
   BUDGET    at most three shared reminders. The slots belong to the contact
             sequence, not to a channel, so FB/IG/SMS share one budget.
   NO RESET  a returning or overlapping request, a restart, or a late reply
-            keeps t0, the used count and the existing refusals.
+            keeps t0, the used count and the existing refusals. Capture never
+            restarts once it has stopped: a late request is answered from the
+            stopped sequence and never mints a fresh budget.
+  SCOPE     a refusal stops only what it covers. A channel opt-out blocks that
+            channel and a field refusal suppresses that ask, so the shared
+            budget survives them; a global stop or a human fence stops the
+            whole sequence.
   RACE      pause, the quiet window and STOP are resolved when the slot is
-            reserved and again by the fresh gate at dispatch. Queue-time
+            reserved, and pause, human ownership, a reply and STOP are
+            re-checked immediately before the dispatch call. Queue-time
             consent is never permission.
   FINAL     one reserved final action under the contact lock. Only that exact
             action may pass the ordinary gate while closing_final; siblings
             are canceled; a crash reloads the reservation and never mints a
             second final.
-  STOP      provider acceptance closes stopped_final; STOP/refusal/handoff
-            closes stopped_complete; permanent nonexecution or an expired slot
-            closes stopped_ineligible without ever claiming "sent".
+  STOP      provider acceptance closes stopped_final; STOP, refusal, handoff
+            or a field completion closes stopped_complete; permanent
+            nonexecution or an expired slot closes stopped_ineligible without
+            ever claiming "sent". Provider admission is not acceptance: only
+            an ACK receipt proves the closing action landed.
 
 Storage is additive in the tenant identity database (the same file as
 tenant_identity/collection_lock/consent_gate) so one database stays one tenant
@@ -62,7 +71,14 @@ if __package__ in (None, ""):
         sys.path.insert(0, str(_UPSTREAM_TOOLS))
 
 from collection_lock import CollectionLock, LockError  # noqa: E402
-from consent_gate import ConsentStore, make_gate_evaluator  # noqa: E402
+from consent_gate import (  # noqa: E402
+    REASON_CHANNEL,
+    REASON_FIELD,
+    REASON_GLOBAL,
+    REASON_HUMAN,
+    ConsentStore,
+    make_gate_evaluator,
+)
 from durable_store import (  # noqa: E402
     STATE_CANCELED,
     STATE_NOT_REQUESTED,
@@ -141,6 +157,21 @@ DECISION_WAIT = "wait"
 
 REASON_NO_CATCH_UP = "no_catch_up_burst"
 REASON_FINAL_RESERVED = "final_reserved"
+REASON_FIELD_COMPLETION = "field_completion"
+
+# DATA-CONTRACTS section 7: "channel opt-out blocks that channel; ...
+# field refusal suppresses that ask ... Unknown refusal scope is not broader
+# permission." So only the two refusals whose scope is narrower than the
+# relationship suppress one ask; every other reason - a global stop, a human
+# fence, a channel opt-out recorded without a channel, or anything this module
+# does not recognise - stops the sequence. Fail closed, never broaden.
+NARROW_CONSENT_REASONS = frozenset({REASON_CHANNEL, REASON_FIELD})
+
+
+def _consent_is_terminal(reason: str) -> bool:
+    """DATA-CONTRACTS section 7 scope. Fail closed: unknown is never broader
+    permission, so only the two narrow refusals leave the sequence running."""
+    return reason not in NARROW_CONSENT_REASONS
 
 
 class ReminderError(Exception):
@@ -488,7 +519,10 @@ class ReminderStateMachine:
         A returning or overlapping request shares the existing sequence: its
         t0, used count and refusals are never reset. A terminal sequence is
         returned as-is; a late request may be served without restarting
-        capture, and capture is not restarted here.
+        capture, and capture is not restarted here. In particular a contact
+        that has already stopped keeps that stopped sequence: no second
+        sequence is ever minted for them, so no fresh t0, no fresh slots and
+        no fresh budget can appear behind a stopped capture.
         """
         key = _key(tenant_id, contact, seq)
         self.identity.verify(tenant_id, contact)
@@ -506,13 +540,26 @@ class ReminderStateMachine:
                     % ",".join("?" * len(TERMINAL_STATES)),
                     (tenant_id, contact) + tuple(sorted(TERMINAL_STATES))
                 ).fetchone()
+                if row is not None:
+                    existing = dict(row)
+                else:
+                    # Nothing live and nothing minted under this id: reuse the
+                    # stopped sequence rather than reopening capture.
+                    stopped = conn.execute(
+                        "SELECT * FROM reminder_sequences WHERE tenant_id=?"
+                        " AND canonical_contact_id=? AND state IN (%s)"
+                        " ORDER BY created_at LIMIT 1"
+                        % ",".join("?" * len(TERMINAL_STATES)),
+                        (tenant_id, contact) + tuple(sorted(TERMINAL_STATES))
+                    ).fetchone()
+                    if stopped is not None:
+                        existing = dict(stopped)
+                if existing is not None:
+                    key = (existing["tenant_id"],
+                           existing["canonical_contact_id"],
+                           existing["collection_sequence_id"])
             finally:
                 conn.close()
-            if row is not None:
-                existing = dict(row)
-                key = (existing["tenant_id"],
-                       existing["canonical_contact_id"],
-                       existing["collection_sequence_id"])
         conn = self._write()
         try:
             if existing is None:
@@ -718,9 +765,13 @@ class ReminderStateMachine:
                  now: Optional[float] = None) -> SlotDecision:
         """What is sendable right now, applying the contract's timing rules.
 
-        Side effect, by contract: when more than one slot is overdue the later
-        ones are recorded skipped ("no catch-up burst; skipped slots remain
-        recorded"). They are not rescheduled and no replacement slot is added.
+        Side effect, by contract: when a reminder actually goes out and more
+        than one slot is overdue, the later ones are recorded skipped ("no
+        catch-up burst; skipped slots remain recorded"). They are not
+        rescheduled and no replacement slot is added. A send that is only
+        DEFERRED consumes nothing: while the quiet interval holds every
+        overdue slot stays pending, so the skip follows a real send and never
+        a postponed one.
         """
         key = _key(tenant_id, contact, seq)
         row = self._require_row(*key)
@@ -742,11 +793,19 @@ class ReminderStateMachine:
         if not overdue:
             return SlotDecision(DECISION_NONE, "no_slot_due")
 
+        slot = overdue[0]
+        quiet = row["quiet_until"]
+        if quiet is not None and ts < float(quiet):
+            return SlotDecision(DECISION_WAIT, "quiet_interval",
+                                slot_index=slot["slot_index"],
+                                due_at=slot["due_at"],
+                                wait_until=float(quiet))
+
         if len(overdue) > 1:
             conn = self._write()
             try:
-                for slot in overdue[1:]:
-                    self._skip(conn, key, slot["slot_index"],
+                for later in overdue[1:]:
+                    self._skip(conn, key, later["slot_index"],
                                REASON_NO_CATCH_UP, ts)
                 conn.execute("COMMIT")
             except BaseException:
@@ -755,13 +814,6 @@ class ReminderStateMachine:
             finally:
                 conn.close()
 
-        slot = overdue[0]
-        quiet = row["quiet_until"]
-        if quiet is not None and ts < float(quiet):
-            return SlotDecision(DECISION_WAIT, "quiet_interval",
-                                slot_index=slot["slot_index"],
-                                due_at=slot["due_at"],
-                                wait_until=float(quiet))
         return SlotDecision(DECISION_DUE, "due", slot_index=slot["slot_index"],
                             due_at=slot["due_at"])
     # ── sending a reminder ─────────────────────────────────────────────────
@@ -809,30 +861,9 @@ class ReminderStateMachine:
                                       topic=topic, offer=offer,
                                       campaign=campaign)
             if not pre["allowed"]:
-                conn = self._write()
-                try:
-                    conn.execute(
-                        "UPDATE reminder_slots SET status=?, reason=?,"
-                        " channel=?, updated_at=? WHERE tenant_id=?"
-                        " AND canonical_contact_id=?"
-                        " AND collection_sequence_id=? AND slot_index=?"
-                        " AND status=?",
-                        (SLOT_SUPPRESSED, pre["reason"], channel, ts)
-                        + key + (slot_index, SLOT_PENDING))
-                    self._bump(conn, key, at=ts, state=STATE_STOPPED_COMPLETE)
-                    self._event(conn, key, "slot_suppressed", {
-                        "slot_index": slot_index,
-                        "channel": channel,
-                        "reason": pre["reason"],
-                    }, ts)
-                    conn.execute("COMMIT")
-                except BaseException:
-                    conn.execute("ROLLBACK")
-                    raise
-                finally:
-                    conn.close()
-                return SendResult("suppressed", slot_index=slot_index,
-                                  channel=channel, reason=pre["reason"])
+                return self._record_refused_slot(key, slot_index, channel,
+                                                 pre["reason"], ts,
+                                                 source="queue")
 
             intent = "reminder:%s:%s:%s" % (seq, slot_index, channel)
             row_out, created = self.store.create_intent(
@@ -865,6 +896,19 @@ class ReminderStateMachine:
             if before_dispatch is not None:
                 before_dispatch(aid)
 
+            # The race is re-checked here too, not only at reserve: a pause, a
+            # human takeover or a reply recorded between the reservation and
+            # this call must not be overtaken by the send. Nothing has been
+            # sent, so the slot stays pending and the budget is untouched.
+            blocked = self._block_reason(self._require_row(*key))
+            if blocked is not None:
+                self._event_write(key, "slot_aborted_before_dispatch", {
+                    "slot_index": slot_index, "channel": channel,
+                    "action_id": aid, "reason": blocked}, ts)
+                return SendResult("refused_race", slot_index=slot_index,
+                                  action_id=aid, channel=channel,
+                                  reason=blocked)
+
             evaluator = make_gate_evaluator(self.consent)
             outcome = dispatch(
                 self.store, evaluator, sender, aid, worker_id,
@@ -881,6 +925,85 @@ class ReminderStateMachine:
             except Exception:
                 # The lease expires on its own; never mask the send result.
                 pass
+
+    # ── shared race and refusal helpers ────────────────────────────────────
+
+    @staticmethod
+    def _block_reason(row: Dict[str, Any]) -> Optional[str]:
+        """Why this sequence may not send right now, or None when it may.
+
+        Read fresh at the moment of use. The consent gate re-checks STOP and
+        the fences itself; this covers the state a queue-time read can miss -
+        a pause, a human takeover or a reply recorded in between.
+        """
+        if row["state"] in TERMINAL_STATES:
+            return "sequence_terminal"
+        if row["state"] == STATE_CLOSING_FINAL:
+            return "closing_final"
+        if row["state"] in (STATE_PAUSED, STATE_HUMAN_OWNED):
+            return row["state"]
+        if not int(row["reply_eligible"]):
+            return "reply_recorded"
+        return None
+
+    def _event_write(self, key: Tuple[str, str, str], event: str,
+                     payload: Dict[str, Any], at: float) -> None:
+        """Append one event in its own transaction."""
+        conn = self._write()
+        try:
+            self._event(conn, key, event, payload, at)
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    def _record_refused_slot(self, key: Tuple[str, str, str], slot_index: int,
+                             channel: str, reason: str, ts: float, *,
+                             source: str) -> SendResult:
+        """Record a reminder the consent gate refused.
+
+        Scope follows DATA-CONTRACTS section 7: a refusal narrower than the
+        relationship - a channel opt-out or a field refusal - suppresses THIS
+        ask and leaves the shared budget live for the channels and asks it
+        does not cover. Anything else is not broader permission, so it stops
+        the sequence.
+        """
+        terminal = _consent_is_terminal(reason)
+        # ponytail: a narrow refusal spends the slot as "suppressed" rather
+        # than returning it to the pool, so a caller that only ever uses the
+        # opted-out channel spends the budget on refusals instead of sends.
+        # Ceiling is "at most three shared reminders" and slot order, both
+        # held. Upgrade path: a channel-capable scheduler that picks another
+        # eligible channel for the same slot before suppressing it.
+        conn = self._write()
+        try:
+            conn.execute(
+                "UPDATE reminder_slots SET status=?, reason=?, channel=?,"
+                " updated_at=? WHERE tenant_id=? AND canonical_contact_id=?"
+                " AND collection_sequence_id=? AND slot_index=? AND status=?",
+                (SLOT_SUPPRESSED, reason, channel, ts)
+                + key + (slot_index, SLOT_PENDING))
+            if terminal:
+                self._bump(conn, key, at=ts, state=STATE_STOPPED_COMPLETE)
+            else:
+                self._bump(conn, key, at=ts)
+            self._event(conn, key, "slot_suppressed", {
+                "slot_index": slot_index,
+                "channel": channel,
+                "reason": reason,
+                "source": source,
+                "scope": "sequence" if terminal else "that_ask",
+            }, ts)
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+        return SendResult("suppressed", slot_index=slot_index, channel=channel,
+                          reason=reason)
 
     def _apply_reminder_outcome(self, key: Tuple[str, str, str],
                                 slot_index: int, channel: str,
@@ -913,21 +1036,27 @@ class ReminderStateMachine:
                                   channel=channel)
 
             if status == ST_BLOCKED and outcome.verdict == "SUPPRESSED":
+                reason = outcome.note or "gate:suppressed"
+                terminal = _consent_is_terminal(reason)
                 conn.execute(
                     "UPDATE reminder_slots SET status=?, reason=?, action_id=?,"
                     " channel=?, updated_at=? WHERE tenant_id=?"
                     " AND canonical_contact_id=?"
                     " AND collection_sequence_id=? AND slot_index=?",
-                    (SLOT_SUPPRESSED, outcome.note or "gate:suppressed", aid,
-                     channel, ts) + key + (slot_index,))
-                self._bump(conn, key, at=ts, state=STATE_STOPPED_COMPLETE)
+                    (SLOT_SUPPRESSED, reason, aid, channel, ts)
+                    + key + (slot_index,))
+                if terminal:
+                    self._bump(conn, key, at=ts, state=STATE_STOPPED_COMPLETE)
+                else:
+                    self._bump(conn, key, at=ts)
                 self._event(conn, key, "slot_suppressed_at_gate", {
                     "slot_index": slot_index, "channel": channel,
-                    "action_id": aid, "reason": outcome.note}, ts)
+                    "action_id": aid, "reason": reason,
+                    "scope": "sequence" if terminal else "that_ask"}, ts)
                 conn.execute("COMMIT")
                 return SendResult("suppressed", slot_index=slot_index,
                                   action_id=aid, channel=channel,
-                                  reason=outcome.note or "gate:suppressed")
+                                  reason=reason)
 
             if status == ST_BLOCKED:  # WAIT_UNTIL or RECONCILE_UNKNOWN
                 self._event(conn, key, "slot_deferred_at_gate", {
@@ -996,6 +1125,12 @@ class ReminderStateMachine:
             row = self._require_row(*key)
             if row["state"] in TERMINAL_STATES:
                 raise SequenceTerminal("sequence is already %s" % row["state"])
+            # Pause and human ownership are part of the same race as STOP: a
+            # paused sequence cannot reserve a closing action, so the final
+            # path cannot slip past a pause the reminder path honours.
+            if row["state"] in (STATE_PAUSED, STATE_HUMAN_OWNED):
+                raise FinalRefused(row["state"], {
+                    "allowed": False, "reason": row["state"], "blocking": None})
 
             existing = self._reservation(key)
             if existing is not None:
@@ -1108,6 +1243,47 @@ class ReminderStateMachine:
                 (SLOT_CANCELED, REASON_FINAL_RESERVED, ts)
                 + key + (int(slot["slot_index"]),))
         return canceled
+
+    def _field_completed_after(self, key: Tuple[str, str, str],
+                               since: float) -> bool:
+        """A reply recorded after `since` is the contract's field completion.
+
+        The event log is the record: eligibility can be restored afterwards,
+        but the completion that happened while the final was reserved is what
+        section 8 step 3 says cancels it.
+        """
+        conn = self.identity.connection()
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM reminder_events WHERE tenant_id=?"
+                " AND canonical_contact_id=? AND collection_sequence_id=?"
+                " AND event='reply_recorded' AND at > ? LIMIT 1",
+                key + (float(since),)).fetchone()
+            return row is not None
+        finally:
+            conn.close()
+
+    def _cancel_final(self, key: Tuple[str, str, str], action_id: str,
+                      reason: str, ts: float) -> FinalOutcome:
+        """Cancel the reserved action and close without ever claiming a send."""
+        try:
+            self.store.cancel(action_id, reason, now=ts)
+        except DurableStoreError:
+            pass  # already dispatched or canceled: never claim it was unsent
+        conn = self._write()
+        try:
+            self._bump(conn, key, at=ts, state=STATE_STOPPED_COMPLETE)
+            self._event(conn, key, "final_canceled", {
+                "action_id": action_id, "reason": reason}, ts)
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+        return FinalOutcome("canceled", action_id, STATE_STOPPED_COMPLETE,
+                            reason=reason)
+
     def dispatch_final(self, tenant_id: str, contact: str, seq: str,
                        action_id: str,
                        sender: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
@@ -1138,6 +1314,9 @@ class ReminderStateMachine:
                 % reservation["action_id"])
         if row["state"] in TERMINAL_STATES:
             raise SequenceTerminal("sequence is already %s" % row["state"])
+        if row["state"] in (STATE_PAUSED, STATE_HUMAN_OWNED):
+            raise FinalRefused(row["state"], {
+                "allowed": False, "reason": row["state"], "blocking": None})
         if row["state"] != STATE_CLOSING_FINAL:
             raise ReminderError("bad_state: final dispatch requires closing_final,"
                                 " not %s" % row["state"])
@@ -1147,6 +1326,19 @@ class ReminderStateMachine:
             if not callable(before_dispatch):
                 raise ReminderError("bad_input: before_dispatch must be callable")
             before_dispatch(action_id)
+
+        # Re-read: the race is decided here, not at reserve time. A pause or a
+        # human takeover refuses the dispatch, and a field completion recorded
+        # since the reservation cancels the reserved action outright
+        # (DATA-CONTRACTS section 8 step 3: "STOP, field completion, refusal or
+        # handoff before dispatch cancels the reserved action").
+        fresh = self._require_row(*key)
+        if fresh["state"] in (STATE_PAUSED, STATE_HUMAN_OWNED):
+            raise FinalRefused(fresh["state"], {
+                "allowed": False, "reason": fresh["state"], "blocking": None})
+        if self._field_completed_after(key, float(reservation["reserved_at"])):
+            return self._cancel_final(key, action_id, REASON_FIELD_COMPLETION,
+                                      ts)
 
         evaluator = make_gate_evaluator(self.consent)
         outcome = dispatch(
@@ -1295,7 +1487,14 @@ class ReminderStateMachine:
 
     def expire_final(self, tenant_id: str, contact: str, seq: str, *,
                      now: Optional[float] = None) -> FinalOutcome:
-        """An expired final slot closes, without claiming it was sent."""
+        """An expired final slot closes, without claiming it was sent.
+
+        A closing action that earned an ACK before the deadline is accepted
+        and closes stopped_final. Anything less - including a bare dispatch
+        receipt, which durable_store records as "Provider admission is NOT
+        completion; ack is a separate receipt" - is not acceptance, so the
+        slot expires closed and never claims "sent".
+        """
         key = _key(tenant_id, contact, seq)
         row = self._require_row(*key)
         reservation = self._reservation(key)
@@ -1311,9 +1510,10 @@ class ReminderStateMachine:
         if ts < deadline:
             return FinalOutcome("reserved", reservation["action_id"],
                                 STATE_CLOSING_FINAL, reason="slot_not_expired")
-        # An accepted dispatch receipt is proof of acceptance, never of expiry.
+        # Acceptance is an ACK, never an admission. Expiry must not promote a
+        # bare dispatch receipt into a claimed send.
         receipts = self.store.receipts(reservation["action_id"])
-        if "dispatch" in receipts:
+        if "ack" in receipts:
             conn = self._write()
             try:
                 self._bump(conn, key, at=ts, state=STATE_STOPPED_FINAL)
@@ -1326,7 +1526,7 @@ class ReminderStateMachine:
             finally:
                 conn.close()
             return FinalOutcome("sent", reservation["action_id"],
-                                STATE_STOPPED_FINAL, reason="dispatch_receipt")
+                                STATE_STOPPED_FINAL, reason="ack_receipt")
         try:
             self.store.cancel(reservation["action_id"], "final_slot_expired",
                               now=ts)

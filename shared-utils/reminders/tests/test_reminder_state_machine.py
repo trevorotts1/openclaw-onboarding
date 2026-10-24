@@ -12,6 +12,11 @@ or directly:
 
 Every case is free: no network, no model, no paid call, no live send. The
 crash case uses a real child interpreter, not a thread.
+
+T08RepairProofs carries one test per defect the QC attack proved (A1-A9),
+each with its inverse leg. Those tests fail on the pre-repair module and pass
+after it: run them against `git show 5e8b38b9c:shared-utils/reminders/
+reminder_state_machine.py` and 12 of the 41 fail.
 """
 
 import json
@@ -372,16 +377,36 @@ class T04PauseWindowStopRace(_Base):
         self.ready(seq="seq-topic", contact=other)
         self.machine.consent.refuse(TENANT, other, scope_kind=cg.SCOPE_TOPIC,
                                     scope_value="email_ask", actor="person")
-        # The refused topic is blocked...
+        # The refused ask is blocked...
         blocked = self.machine.send_reminder(
             TENANT, other, "seq-topic", self.sender(), channel="sms",
             topic="email_ask", now=1020.0)
         self.assertFalse(blocked.sent)
         self.assertEqual(blocked.status, "suppressed")
-        # ...and because it is a refusal, the sequence stops; it does not
-        # silently continue on another topic.
+        self.assertEqual(blocked.reason, cg.REASON_FIELD)
+        self.assertEqual(self.sends, [])
+        self.assertEqual(self.snap("seq-topic", other)["slots"][0]["status"],
+                         "suppressed")
+        # ...and that is ALL it blocks. DATA-CONTRACTS s7: "field refusal
+        # suppresses that ask". It is not permission for any other ask, and it
+        # is not a stop for the whole shared sequence either.
+        self.assertNotEqual(self.snap("seq-topic", other)["state"],
+                            rsm.STATE_STOPPED_COMPLETE)
+        allowed = self.machine.send_reminder(
+            TENANT, other, "seq-topic", self.sender(), channel="sms",
+            topic="sms_access", now=1035.0)
+        self.assertTrue(allowed.sent)
+        self.assertEqual(len(self.sends), 1)
         self.assertEqual(self.snap("seq-topic", other)["state"],
-                         rsm.STATE_STOPPED_COMPLETE)
+                         rsm.STATE_INVITED)
+        # The refusal neither widened nor vanished: the refused ask is still
+        # refused on a later slot.
+        again = self.machine.send_reminder(
+            TENANT, other, "seq-topic", self.sender(), channel="sms",
+            topic="email_ask", now=1500.0)
+        self.assertFalse(again.sent)
+        self.assertEqual(again.reason, cg.REASON_FIELD)
+        self.assertEqual(len(self.sends), 1)
 class T05ReservedFinalAction(_Base):
     """Acceptance clause 5 + C-F05 / C-F19: one reserved final action."""
 
@@ -600,8 +625,12 @@ class T06ActualTerminalStop(_Base):
                 TENANT, self.contact, SEQ, invitation_id="inv-late",
                 now=9999.0)
         # A late request never restarts the stopped sequence: the same id
-        # returns the terminal row, and a new episode is a separate sequence
-        # that leaves the stopped one's counters untouched.
+        # returns the terminal row, and no sequence is ever minted behind a
+        # stopped capture. There is therefore no fresh t0, no fresh slots and
+        # no fresh budget for a late request to send with. DATA-CONTRACTS s8:
+        # "A late explicit request can receive useful help/fulfillment without
+        # restarting capture", and s1: a new request "cannot restart final or
+        # declined capture".
         same = self.machine.open_sequence(TENANT, self.contact, SEQ,
                                           request_id="req-late", now=9999.0)
         self.assertEqual(same["collection_sequence_id"], SEQ)
@@ -609,7 +638,25 @@ class T06ActualTerminalStop(_Base):
         self.assertEqual(same["reminders_used"], snap["reminders_used"])
         late = self.machine.open_sequence(TENANT, self.contact, "seq-late",
                                           request_id="req-late", now=9999.0)
-        self.assertEqual(late["collection_sequence_id"], "seq-late")
+        # The stopped sequence is served back, not replaced by a new episode.
+        self.assertEqual(late["collection_sequence_id"], SEQ)
+        self.assertEqual(late["state"], rsm.STATE_STOPPED_FINAL)
+        self.assertEqual(late["reminders_used"], snap["reminders_used"])
+        # No extra slot was minted behind the stopped capture either.
+        self.assertEqual(self.snap()["reminders_total"], snap["reminders_total"])
+        # No capture row exists under the late id, so nothing can be started
+        # or sent under it either.
+        with self.assertRaises(rsm.SequenceNotFound):
+            self.machine.snapshot(TENANT, self.contact, "seq-late")
+        with self.assertRaises(rsm.SequenceNotFound):
+            self.machine.record_initial_invitation(
+                TENANT, self.contact, "seq-late", invitation_id="inv-late",
+                now=9999.0)
+        with self.assertRaises(rsm.SequenceNotFound):
+            self.machine.send_reminder(TENANT, self.contact, "seq-late",
+                                       self.sender(), channel="sms",
+                                       now=9999.0)
+        self.assertEqual(len(self.sends), 1)
         stopped = self.snap()
         self.assertEqual(stopped["state"], rsm.STATE_STOPPED_FINAL)
         self.assertEqual(stopped["reminders_used"], snap["reminders_used"])
@@ -625,6 +672,269 @@ class T06ActualTerminalStop(_Base):
         self.assertEqual(len(self.sends), before)
 
 
+class T08RepairProofs(_Base):
+    """One proof per defect the QC attack proved, each with its inverse leg.
+
+    Attack ids (A1-A9) match the FAIL verdict for PBB-134 / T-17. Every test
+    here fails on the pre-repair module and passes after it; the inverse leg
+    proves a genuinely valid input still succeeds, so a blanket refusal cannot
+    masquerade as a fix. No assertion is weaker than the one it replaces.
+    """
+
+    def _admit(self, action_id, at=1301.0):
+        """Record provider ADMISSION only: a dispatch receipt, and no ACK."""
+        claim = self.store.claim_for_dispatch(action_id, "worker-x", now=at)
+        self.assertIsNotNone(claim, "action was not claimable for dispatch")
+        self.assertTrue(self.store.begin_attempt(
+            action_id, claim["fence"], "worker-x", now=at))
+        self.store.record_dispatch(
+            action_id, claim["fence"],
+            {"provider": "sms", "provider_receipt_id": "d1"}, now=at)
+
+    # A1 - a channel opt-out must not end the shared FB/IG/SMS budget.
+    def test_a1_channel_opt_out_blocks_that_channel_only(self):
+        other = self.fresh()
+        self.ready(seq="seq-shared", contact=other)
+        self.machine.consent.refuse(TENANT, other, scope_kind=cg.SCOPE_CHANNEL,
+                                    scope_value="sms", actor="person")
+        blocked = self.machine.send_reminder(
+            TENANT, other, "seq-shared", self.sender(), channel="sms",
+            now=1020.0)
+        self.assertFalse(blocked.sent)
+        self.assertEqual(blocked.reason, cg.REASON_CHANNEL)
+        self.assertEqual(self.snap("seq-shared", other)["slots"][0]["status"],
+                         "suppressed")
+        # The defect: this used to close the WHOLE sequence as stopped_complete,
+        # which ended the shared budget for facebook and instagram too.
+        self.assertNotEqual(self.snap("seq-shared", other)["state"],
+                            rsm.STATE_STOPPED_COMPLETE)
+        for at, channel in ((1035.0, "facebook"), (1500.0, "instagram")):
+            out = self.machine.send_reminder(
+                TENANT, other, "seq-shared", self.sender(), channel=channel,
+                now=at)
+            self.assertTrue(out.sent, "expected a send on %s: %r"
+                            % (channel, out))
+        self.assertEqual(len(self.sends), 2)
+        # Inverse leg: the opted-out channel stays opted out for good.
+        snap = self.snap("seq-shared", other)
+        self.assertEqual([s["channel"] for s in snap["slots"]
+                          if s["status"] == "sent"],
+                         ["facebook", "instagram"])
+        self.assertEqual(snap["slots"][0]["channel"], "sms")
+
+    # A2 - a field refusal suppresses that ask, not the sequence.
+    def test_a2_field_refusal_suppresses_that_ask_only(self):
+        other = self.fresh()
+        self.ready(seq="seq-ask", contact=other)
+        self.machine.consent.refuse(TENANT, other, scope_kind=cg.SCOPE_TOPIC,
+                                    scope_value="email_ask", actor="person")
+        blocked = self.machine.send_reminder(
+            TENANT, other, "seq-ask", self.sender(), channel="sms",
+            topic="email_ask", now=1020.0)
+        self.assertFalse(blocked.sent)
+        self.assertEqual(blocked.reason, cg.REASON_FIELD)
+        self.assertEqual(len(self.sends), 0)
+        # The defect: this used to stop the whole sequence terminally.
+        self.assertNotEqual(self.snap("seq-ask", other)["state"],
+                            rsm.STATE_STOPPED_COMPLETE)
+        # Inverse leg: a genuinely different ask still succeeds.
+        ok = self.machine.send_reminder(
+            TENANT, other, "seq-ask", self.sender(), channel="sms",
+            topic="sms_access", now=1035.0)
+        self.assertTrue(ok.sent)
+        self.assertEqual(len(self.sends), 1)
+
+    # A3 - a pause recorded after the slot was reserved must stop the send.
+    def test_a3_pause_between_reservation_and_dispatch_stops_the_send(self):
+        self.ready()
+
+        def pause_after_queue(_action_id):
+            self.machine.pause(TENANT, self.contact, SEQ, now=1019.0)
+
+        out = self.machine.send_reminder(
+            TENANT, self.contact, SEQ, self.sender(), channel="sms",
+            now=1020.0, before_dispatch=pause_after_queue)
+        # The defect: this used to return status='sent' and leave a message on
+        # the sender, because only STOP and the fence were re-checked.
+        self.assertFalse(out.sent)
+        self.assertEqual(out.reason, rsm.STATE_PAUSED)
+        self.assertEqual(self.sends, [])
+        # Nothing was sent, so neither the slot nor the budget was consumed.
+        self.assertEqual(self.snap()["slots"][0]["status"], "pending")
+        self.assertEqual(self.snap()["reminders_used"], 0)
+        # Inverse leg: lifting the pause lets the same slot go out.
+        self.machine.resume(TENANT, self.contact, SEQ, now=1021.0)
+        self.assertTrue(self.machine.send_reminder(
+            TENANT, self.contact, SEQ, self.sender(), channel="sms",
+            now=1021.0).sent)
+        self.assertEqual(len(self.sends), 1)
+
+    # A4 - a deferred send must not fast-forward a later slot.
+    def test_a4_quiet_window_defers_without_consuming_a_slot(self):
+        policy = rsm.ReminderPolicy(
+            version="pb/reminders/a4",
+            slot_offsets_seconds=(10.0, 20.0, 30.0),
+            quiet_interval_seconds=60.0,
+            final_slot_seconds=600.0)
+        seq = "seq-a4"
+        self.machine.open_sequence(TENANT, self.contact, seq, now=1000.0)
+        self.machine.adopt_policy(TENANT, self.contact, seq, policy, now=1001.0)
+        self.machine.record_initial_invitation(
+            TENANT, self.contact, seq, invitation_id="inv-a4", now=1010.0)
+        send = self.sender()
+        self.assertTrue(self.machine.send_reminder(
+            TENANT, self.contact, seq, send, channel="facebook",
+            now=1020.0).sent)
+        # Two slots are overdue and the quiet interval still holds.
+        decision = self.machine.due_slot(TENANT, self.contact, seq, now=1050.0)
+        self.assertEqual(decision.kind, rsm.DECISION_WAIT)
+        statuses = [s["status"] for s in self.snap(seq)["slots"]]
+        # The defect: this used to read ['sent','pending','skipped'], so a
+        # send that was only DEFERRED had burned a reminder slot.
+        self.assertEqual(statuses, ["sent", "pending", "pending"])
+        self.assertEqual(self.snap(seq)["reminders_used"], 1)
+        # Inverse leg: when the window really ends a send goes out, and only
+        # then does the no-catch-up rule skip what is genuinely left behind.
+        self.assertTrue(self.machine.send_reminder(
+            TENANT, self.contact, seq, send, channel="instagram",
+            now=1081.0).sent)
+        snap = self.snap(seq)
+        self.assertEqual([s["status"] for s in snap["slots"]],
+                         ["sent", "sent", "skipped"])
+        self.assertEqual(snap["slots"][2]["reason"], rsm.REASON_NO_CATCH_UP)
+
+    # A5 - capture never restarts behind a terminal stop.
+    def test_a5_terminal_stop_refuses_a_fresh_budget(self):
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        self.assertTrue(self.machine.dispatch_final(
+            TENANT, self.contact, SEQ, final.action_id, self.sender(),
+            channel="sms", now=1301.0).sent)
+        before = self.snap()
+        self.assertEqual(len(self.sends), 1)
+        late = self.machine.open_sequence(TENANT, self.contact, "seq-late",
+                                          request_id="req-late", now=2000.0)
+        # The defect: this used to mint a brand-new sequence carrying a new t0
+        # and three new slots, and the reminder really was sent.
+        self.assertEqual(late["collection_sequence_id"], SEQ)
+        self.assertEqual(late["state"], rsm.STATE_STOPPED_FINAL)
+        with self.assertRaises(rsm.SequenceNotFound):
+            self.machine.record_initial_invitation(
+                TENANT, self.contact, "seq-late", invitation_id="inv-late",
+                now=2001.0)
+        with self.assertRaises(rsm.SequenceNotFound):
+            self.machine.send_reminder(TENANT, self.contact, "seq-late",
+                                       self.sender(), channel="sms",
+                                       now=2002.0)
+        self.assertEqual(len(self.sends), 1)
+        after = self.snap()
+        self.assertEqual(after["t0"], before["t0"])
+        self.assertEqual(after["reminders_used"], before["reminders_used"])
+        self.assertEqual(after["reminders_total"], before["reminders_total"])
+
+    # A6 - a pause is honoured by the final path too.
+    def test_a6_pause_refuses_the_reservation_itself(self):
+        self.ready()
+        self.machine.pause(TENANT, self.contact, SEQ, now=1015.0)
+        with self.assertRaises(rsm.FinalRefused) as caught:
+            self.machine.reserve_final(
+                TENANT, self.contact, SEQ, channel="sms",
+                content_sha256="sha-final", now=1300.0)
+        self.assertEqual(caught.exception.reason, rsm.STATE_PAUSED)
+        self.assertEqual(self.sends, [])
+        self.assertIsNone(self.snap()["final_action_id"])
+        # Inverse leg: lifting the pause lets the ordinary path run.
+        self.machine.resume(TENANT, self.contact, SEQ, now=1301.0)
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1302.0)
+        self.assertTrue(self.machine.dispatch_final(
+            TENANT, self.contact, SEQ, final.action_id, self.sender(),
+            channel="sms", now=1303.0).sent)
+
+    def test_a6_pause_after_the_reservation_still_refuses_the_dispatch(self):
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+
+        def pause_after_reserve(_action_id):
+            self.machine.pause(TENANT, self.contact, SEQ, now=1300.5)
+
+        with self.assertRaises(rsm.FinalRefused):
+            self.machine.dispatch_final(
+                TENANT, self.contact, SEQ, final.action_id, self.sender(),
+                channel="sms", now=1301.0, before_dispatch=pause_after_reserve)
+        self.assertEqual(self.sends, [])
+
+    # A8 - provider admission is not acceptance.
+    def test_a8_admission_receipt_is_not_acceptance(self):
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        self._admit(final.action_id)
+        out = self.machine.expire_final(TENANT, self.contact, SEQ, now=2000.0)
+        # The defect: the bare dispatch receipt used to be promoted to
+        # status='sent' / stopped_final, claiming a closing that never landed.
+        self.assertFalse(out.sent)
+        self.assertEqual(out.status, "canceled")
+        self.assertEqual(out.state, rsm.STATE_STOPPED_INELIGIBLE)
+        self.assertNotEqual(self.snap()["state"], rsm.STATE_STOPPED_FINAL)
+
+    def test_a8_ack_receipt_still_proves_acceptance(self):
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        self._admit(final.action_id)
+        self.store.record_ack(
+            final.action_id,
+            {"provider": "sms", "provider_receipt_id": "a1"}, now=1302.0)
+        out = self.machine.expire_final(TENANT, self.contact, SEQ, now=2000.0)
+        self.assertTrue(out.sent)
+        self.assertEqual(out.state, rsm.STATE_STOPPED_FINAL)
+
+    # A9 - a field completion cancels the reserved final action.
+    def test_a9_field_completion_cancels_the_reserved_final(self):
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+
+        def reply_after_reserve(_action_id):
+            self.machine.record_reply(TENANT, self.contact, SEQ,
+                                      reply_id="rep-1", now=1300.5)
+
+        out = self.machine.dispatch_final(
+            TENANT, self.contact, SEQ, final.action_id, self.sender(),
+            channel="sms", now=1301.0, before_dispatch=reply_after_reserve)
+        # The defect: the closing message went out and claimed stopped_final,
+        # though DATA-CONTRACTS s8.3 says a field completion before dispatch
+        # cancels the reserved action.
+        self.assertFalse(out.sent)
+        self.assertEqual(out.status, "canceled")
+        self.assertEqual(out.state, rsm.STATE_STOPPED_COMPLETE)
+        self.assertEqual(out.reason, rsm.REASON_FIELD_COMPLETION)
+        self.assertEqual(self.sends, [])
+        self.assertEqual(self.store.get_action(final.action_id)["state"],
+                         "canceled")
+
+    def test_a9_a_final_with_no_completion_still_sends(self):
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        out = self.machine.dispatch_final(
+            TENANT, self.contact, SEQ, final.action_id, self.sender(),
+            channel="sms", now=1301.0)
+        self.assertTrue(out.sent)
+        self.assertEqual(out.state, rsm.STATE_STOPPED_FINAL)
+        self.assertEqual(len(self.sends), 1)
+
+
 class T07UpstreamReuse(unittest.TestCase):
     """T-17 must reuse the accepted guards, never a second copy."""
 
@@ -637,6 +947,14 @@ class T07UpstreamReuse(unittest.TestCase):
         self.assertFalse(hasattr(rsm, "SCOPE_GLOBAL"))
         self.assertTrue(hasattr(cg, "SCOPE_GLOBAL"))
         self.assertFalse(hasattr(rsm, "RECONCILE_OUTCOMES"))
+        # And the reasons this module scopes on are the upstream objects, not
+        # a copy that could drift away from them.
+        self.assertIs(rsm.REASON_GLOBAL, cg.REASON_GLOBAL)
+        self.assertIs(rsm.REASON_HUMAN, cg.REASON_HUMAN)
+        self.assertIs(rsm.REASON_CHANNEL, cg.REASON_CHANNEL)
+        self.assertIs(rsm.REASON_FIELD, cg.REASON_FIELD)
+        self.assertEqual(rsm.NARROW_CONSENT_REASONS,
+                         frozenset({cg.REASON_CHANNEL, cg.REASON_FIELD}))
 
 
 def _worker(cfg_path):
