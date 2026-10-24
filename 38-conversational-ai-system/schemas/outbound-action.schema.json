@@ -760,8 +760,10 @@
               ]
             },
             "trusted_contact_mapping_evidence_id": {
-              "type": "string",
-              "minLength": 1
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "inbound_dm_window": {
               "type": "boolean"

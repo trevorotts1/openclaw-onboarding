@@ -529,6 +529,18 @@ class GateRecordTests(Fixture):
         self.assertEqual(1, code, payload)
         self.assertEqual("ELIGIBILITY_NOT_REFRESHED_BY_OUTBOUND", payload["reason"])
 
+    def test_no_trusted_contact_mapping_is_a_named_refusal(self):
+        # DATA-CONTRACTS 3 lists "trusted contact mapping" as a person-branch check,
+        # and closes the gate's return at five decisions carried with supporting
+        # evidence. An absent mapping is a refused check, so it must name itself; it
+        # is never a malformed document and never an allow.
+        code, payload = dispatch(str(self.ledger_dir / "per5.json"), fixture("outbound", "person-gift.json"),
+                                 fixture("gates", "person-allow-no-mapping.json"))
+        self.assertEqual(1, code, payload)
+        self.assertEqual("SUPPRESSED", payload["decision"], payload)
+        self.assertEqual("NO_TRUSTED_CONTACT_MAPPING", payload["reason"])
+        self.assertEqual([], payload["errors"])
+
 
 def _iter_document_cases():
     """Yield (label, schema, document) for the jsonschema conformance pass."""
