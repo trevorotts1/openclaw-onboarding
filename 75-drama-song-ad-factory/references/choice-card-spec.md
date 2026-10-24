@@ -161,8 +161,12 @@ write them free hand and never carry them as one JSON string.
   check the work? OpenRouter is recommended because it's faster; Ollama works
   too." Option 1 is the recommended setup (an OpenRouter model builds, Claude
   Sonnet checks); option 2 is the client's own pair, e.g. "DeepSeek builds,
-  Sonnet checks". The answer is a recorded preference (`ai_models` in the
-  approved summary), not a model switch. Test: `choice_card/intake_card/test_ai_models.py`.
+  Sonnet checks". The explicit answer is bound to this run at recap
+  confirmation through `ai_models.bind_roles`; `admit_dispatch` requires build
+  work to use the chosen builder and QC/repair to use the chosen checker.
+  Configured aliases are preserved without changing chain members or global
+  settings. Admission is not proof that a provider executed a call. Test:
+  `choice_card/intake_card/test_ai_models.py`.
 - Plain text only: no Markdown, no HTML, no parse mode, so no sender can strip
   or escape the line breaks.
 - Claude Code chat: run `factory.py card` and show its stdout as is (raw text,

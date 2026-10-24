@@ -133,3 +133,37 @@ approval; keep the actual song-selection and storyboard approval records
 separate and bound to their artifacts. Existing budget, provider, creative,
 lip-sync and independent QC gates continue to apply. A statement such as
 "recorded" in an assistant recap is not an approval receipt.
+
+## Run-bound launch, bootstrap and model-role evidence
+
+A card call bound to `--run-dir` or `--run-state-file` uses the durable intake
+path even when `--step` is omitted. Continue to use `--step --format
+session-json` for the operator loop above. Explicit `studio-json` export and
+unbound previews remain static renderers; they do not record a completed
+intake. The prior missing-`--step` behavior is not a reason to alter method
+or purpose detection or to migrate an existing client project.
+
+Explicit recap confirmation binds the client's AI MODELS pair through
+`ai_models.bind_roles`. A client's explicit choice such as `deepseek-chain
+builds, opus-chain checks` keeps those literal configured aliases: build
+stages use that builder, QC and repair use that checker. The stage plan calls
+`admit_dispatch` against the saved run bindings and refuses a mismatched role
+or requested model. This does not select a chain member, change the client's
+provider choices or alter global session settings. Preserve existing run
+bindings and attempt records; a different pair is not silently substituted.
+
+The same confirmation prepares missing stages from canonical
+`batch_mode.batch.STAGES` through `Store.init_run`. Newly created stages are
+`NOT_STARTED`; existing run IDs, stage states, approvals, model bindings and
+attempts are preserved. Bootstrap and the next pending research command do
+not run a worker, call a language model or generate media.
+
+A model listed by the configured router's `/v1/models` endpoint is available
+to route, not proven to have executed. A stage plan marked
+`admitted_not_called` is admission evidence only. `record_attempt` refuses
+router-chain verification with `CHAIN_RESOLUTION_UNVERIFIED` until dedicated
+supported provider identity evidence proves the actual call; an alias name,
+model-list response or assistant assertion is not that evidence. Never claim
+that chain members or provider execution were verified by this no-generation
+intake/bootstrap check. Existing owner projects remain unchanged unless a
+separate authorized migration is actually performed and verified.
