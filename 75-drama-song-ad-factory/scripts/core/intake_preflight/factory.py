@@ -2231,8 +2231,9 @@ def _intake_session_gate(run_dir, sid):
     """A new durable intake must be explicitly confirmed before any stage.
 
     Runs without this session artifact keep their existing grandfathered path.
-    The core inspector validates its own schema and confirmation read-only;
-    this projection never consumes an answer or writes a preference/approval.
+    The core validates every saved answer and explicit confirmation before
+    preparing a missing handoff. It never replays preference/approval writers;
+    an already prepared run and incomplete intake require no handoff mutation.
     """
     path = run_dir / "control" / "intake-session.json"
     if not path.exists():
@@ -2241,10 +2242,13 @@ def _intake_session_gate(run_dir, sid):
         shlex.quote(str(Path(__file__).resolve())), shlex.quote(str(run_dir)))
     try:
         from choice_card.intake_card import intake_session
-        status = intake_session.completion_status(run_dir)
+        status = intake_session.ensure_handoff(run_dir)
         if not isinstance(status, dict) or not status.get("valid"):
-            return envelope("next", str(sid), "error", "INTAKE_SESSION_UNREADABLE",
-                            "The saved intake cannot be validated; preserve it and resume intake.",
+            return envelope("next", str(sid), "error",
+                            (status.get("reason_code") if isinstance(status, dict) else None)
+                            or "INTAKE_SESSION_UNREADABLE",
+                            (status.get("message") if isinstance(status, dict) else None)
+                            or "The saved intake cannot be validated; preserve it and resume intake.",
                             data={"stage": None, "command": None, "intake": status,
                                   "resume_command": resume}, evidence=[str(path)])
     except (ImportError, OSError, ValueError, TypeError, AttributeError) as exc:
@@ -2252,10 +2256,11 @@ def _intake_session_gate(run_dir, sid):
                         "The saved intake cannot be validated; preserve it and resume intake.",
                         data={"stage": None, "command": None, "detail": str(exc),
                               "resume_command": resume}, evidence=[str(path)])
-    if status.get("done"):
+    if status.get("done") and status.get("handoff_ready"):
         return None
-    return envelope("next", str(sid), "waiting", "INTAKE_NOT_CONFIRMED",
-                    "Finish the pending intake question and explicitly confirm its recap.",
+    return envelope("next", str(sid), status.get("outcome") or "waiting",
+                    status.get("reason_code") or "INTAKE_NOT_CONFIRMED",
+                    status.get("message") or "Finish the pending intake question and explicitly confirm its recap.",
                     data={"stage": None, "command": None, "intake": status,
                           "resume_command": resume}, evidence=[str(path)])
 
