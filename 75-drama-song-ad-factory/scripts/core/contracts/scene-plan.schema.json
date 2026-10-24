@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "blackceo.scene-plan/v1",
+  "title": "scene-plan",
+  "description": "Complete pre-song scene plan (S75-T09). Structural shape only: the causal chain, cast/location resolution, prose minimums and provisional-timing rules are enforced by scripts/core/story_planner.py:validate_scene_plan, which is authoritative.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["plan_id", "episode_id", "foundation", "foundation_revisions", "scenes"],
+  "properties": {
+    "schema_version": {"const": "blackceo.scene-plan/v1"},
+    "plan_id": {"type": "string", "minLength": 1},
+    "episode_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["complete", "draft"]},
+    "foundation": {
+      "type": "object",
+      "required": ["research_bundle", "character_identity_library_snapshot",
+                   "episode_cast_manifest", "episode_world"],
+      "properties": {
+        "research_bundle": {"$ref": "#/$defs/foundationArtifact"},
+        "character_identity_library_snapshot": {"$ref": "#/$defs/foundationArtifact"},
+        "episode_cast_manifest": {
+          "allOf": [
+            {"$ref": "#/$defs/foundationArtifact"},
+            {
+              "type": "object",
+              "required": ["cast"],
+              "properties": {
+                "cast": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["cast_id", "identity_revision"],
+                    "properties": {
+                      "cast_id": {"type": "string", "minLength": 1},
+                      "identity_revision": {"type": "integer", "minimum": 1}
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "episode_world": {
+          "allOf": [
+            {"$ref": "#/$defs/foundationArtifact"},
+            {
+              "type": "object",
+              "required": ["locations"],
+              "properties": {
+                "locations": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["location_id"],
+                    "properties": {"location_id": {"type": "string", "minLength": 1}}
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "foundation_revisions": {"type": "object", "minProperties": 1},
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "scene_id", "sequence", "causal_predecessor", "causal_outcome",
+          "dramatic_purpose", "time", "location_id", "world_revision",
+          "cast_roles", "immediate_want", "obstacle", "visible_action",
+          "consequential_choice", "emotion_before", "emotion_after",
+          "turn_trigger", "planned_dialogue_function", "claim_ids",
+          "sound_music_intention", "framing_movement_intention",
+          "estimated_duration_seconds", "timing_basis", "transition",
+          "lip_sync_intention"
+        ],
+        "properties": {
+          "scene_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+          "sequence": {"type": "integer", "minimum": 1},
+          "causal_predecessor": {
+            "type": "string", "minLength": 1,
+            "description": "What forced this scene. The first scene declares \"opening\"; every later scene repeats the previous scene's causal_outcome verbatim, so the plan is a because/therefore chain and not 'and then'."
+          },
+          "causal_outcome": {
+            "type": "string", "minLength": 1,
+            "description": "What this scene's outcome makes necessary next."
+          },
+          "dramatic_purpose": {"type": "string", "minLength": 1},
+          "time": {"type": "string", "minLength": 1},
+          "location_id": {"type": "string", "minLength": 1},
+          "world_revision": {"type": "integer", "minimum": 1},
+          "cast_roles": {
+            "type": "array", "minItems": 1,
+            "description": "Every declared participant, with the selected identity revision and the role/consequence. An undefined speaker is not a scene.",
+            "items": {
+              "type": "object",
+              "required": ["cast_id", "identity_revision", "role", "consequence"],
+              "properties": {
+                "cast_id": {"type": "string", "minLength": 1},
+                "identity_revision": {"type": "integer", "minimum": 1},
+                "role": {"type": "string", "minLength": 1},
+                "consequence": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "immediate_want": {"type": "string", "minLength": 1},
+          "obstacle": {"type": "string", "minLength": 1},
+          "visible_action": {"type": "string", "minLength": 1},
+          "consequential_choice": {"type": "string", "minLength": 1},
+          "emotion_before": {"type": "string", "minLength": 1},
+          "emotion_after": {"type": "string", "minLength": 1},
+          "turn_trigger": {"type": "string", "minLength": 1},
+          "planned_dialogue_function": {
+            "type": "string", "minLength": 1,
+            "description": "What the spoken/sung lines must DO. The plan carries no final words; those belong to S75-T10."
+          },
+          "claim_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "sound_music_intention": {"type": "string", "minLength": 1},
+          "framing_movement_intention": {"type": "string", "minLength": 1},
+          "estimated_duration_seconds": {"type": "number", "exclusiveMinimum": 0},
+          "timing_basis": {
+            "const": "provisional_pending_selected_music",
+            "description": "A pre-song plan may not claim measured timing."
+          },
+          "transition": {"type": "string", "minLength": 1},
+          "lip_sync_intention": {
+            "type": "string", "minLength": 1,
+            "description": "Expected lip-sync intention only; no measured interval before music exists."
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "foundationArtifact": {
+      "type": "object",
+      "required": ["revision", "digest"],
+      "properties": {
+        "revision": {"type": "integer", "minimum": 1},
+        "digest": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
