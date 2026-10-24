@@ -1,5 +1,6 @@
 """No-media regression checks for persisted, exact-menu intake turns."""
 import copy
+from contextlib import closing
 import json
 from types import SimpleNamespace
 from pathlib import Path
@@ -263,6 +264,96 @@ class IntakeSessionTest(unittest.TestCase):
         st = session.seed_answers(rows, self.qs, run_dir=self.run, purpose_flow=False)
         self.assertEqual(st["reason_code"], "SEED_DUPLICATE_OR_UNKNOWN_QUESTION")
         self.assertEqual(self.read()["answer_records"], {})
+
+    def model_turns(self, n=2):
+        qs = [next(q for q in card.QUESTIONS if q["id"] == "model")]
+        session.process([], qs, run_dir=self.run, purpose_flow=False)
+        st = session.process([str(n)], qs, run_dir=self.run, purpose_flow=False)
+        self.assertFalse(st["done"])
+        return qs, st
+
+    def test_confirmed_nondefault_model_persists_and_dispatch_reads_that_choice(self):
+        from choice_card.video_models import video_models as models
+        from kie_dispatch import model_lock
+        qs, st = self.model_turns(2)
+        st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False,
+                             question_id=st["question_id"], question_digest=st["question_digest"])
+        self.assertTrue(st["done"], st)
+        expected = models.model_for(2)
+        db = self.run / "control" / "state.sqlite3"
+        self.assertEqual(model_lock.read_locked_model(db, self.run.name),
+                         expected.get("lock", expected["kie_model"]))
+        request = models.request_for_run(db, st["run_id"], "A silent scene.", 5,
+                                         first_frame_url="https://example.com/frame.png")
+        self.assertEqual(request["model"], expected["kie_model"])
+        self.assertEqual(st["model_lock"]["provider_identity"]["kie_model"], expected["kie_model"])
+        self.assertTrue(session.completion_status(self.run)["done"])
+        import sqlite3
+        with closing(sqlite3.connect(db)) as con:
+            self.assertEqual(con.execute("SELECT count(*) FROM stages").fetchone()[0], 0)
+
+    def test_completion_inspector_does_not_recreate_missing_model_store(self):
+        qs, st = self.model_turns(2)
+        st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertTrue(st["done"])
+        db = self.run / "control" / "state.sqlite3"
+        db.unlink()
+        status = session.completion_status(self.run)
+        self.assertFalse(status["valid"])
+        self.assertFalse(db.exists())
+
+    def test_actual_existing_run_id_is_reused_and_conflicting_lock_refused(self):
+        import state_store
+        from choice_card.video_models import video_models as models
+        from kie_dispatch import model_lock
+        db = self.run / "control" / "state.sqlite3"
+        db.parent.mkdir(parents=True)
+        with state_store.Store(db) as store:
+            store.init_run("existing-real-run", ["research"])
+        expected = models.model_for(1)
+        old = expected.get("lock", expected["kie_model"])
+        model_lock.lock_run_model(db, "existing-real-run", old)
+        qs, st = self.model_turns(2)
+        st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertFalse(st["done"])
+        self.assertEqual(st["reason_code"], "VIDEO_MODEL_LOCK_CONFLICT")
+        self.assertEqual(model_lock.read_locked_model(db, "existing-real-run"), old)
+        import sqlite3
+        with closing(sqlite3.connect(db)) as con:
+            self.assertEqual(con.execute("SELECT state FROM stages WHERE run_id='existing-real-run'").fetchone()[0], "NOT_STARTED")
+
+    def test_multiple_existing_run_ids_are_rejected_without_a_lock(self):
+        import state_store
+        from kie_dispatch import model_lock
+        db = self.run / "control" / "state.sqlite3"
+        db.parent.mkdir(parents=True)
+        with state_store.Store(db) as store:
+            store.init_run("first", ["research"])
+            store.init_run("second", ["research"])
+        qs, st = self.model_turns(1)
+        st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertFalse(st["done"])
+        self.assertEqual(st["reason_code"], "VIDEO_MODEL_RUN_ID_AMBIGUOUS")
+        self.assertIsNone(model_lock.read_locked_model(db, "first"))
+
+    def test_provider_route_change_cannot_reuse_saved_name_and_price(self):
+        from choice_card.video_models import video_models as models
+        qs, st = self.model_turns(2)
+        row = models.model_for(2)
+        altered = dict(row, kie_model="veo-3-1")
+        with patch.object(models, "model_for", return_value=altered):
+            st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertFalse(st["done"])
+        self.assertEqual(st["reason_code"], "INTAKE_SESSION_UNREADABLE")
+        self.assertFalse((self.run / "control" / "state.sqlite3").exists())
+
+    def test_revision_cannot_reinterpret_bare_old_numeric_reply(self):
+        self.advance()
+        self.qs[-1]["options"].reverse()
+        self.call(["1"])
+        st = self.call(["1"])
+        self.assertEqual(st["reason_code"], "QUESTION_IDENTITY_REQUIRED")
+        self.assertEqual(st["answered_count"], 2)
 
     def test_exact_original_questions_are_not_mutated(self):
         original = copy.deepcopy(self.qs)

@@ -6,7 +6,7 @@ Every raw reply is journalled before advancing. A changed menu never reinterpret
 an earlier numeric selection. Existing asset-approval machinery is untouched.
 """
 import copy
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 from datetime import datetime, timezone
 try:
     import fcntl
@@ -16,6 +16,7 @@ except ImportError:  # native Windows
 import hashlib
 import json
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 
@@ -133,7 +134,77 @@ def _checked_parsed(rec, q):
     verified["id"] = q["id"]
     if _dump(verified) != _dump(parsed) or _dump(_option(q, verified)) != _dump(rec.get("option")):
         raise ValueError("stored answer differs from its raw client reply or option identity")
+    if q["id"] == "model":
+        if rec.get("provider_identity") != _provider_identity(parsed):
+            raise ValueError("saved video model route identity is missing or changed")
     return parsed
+
+
+def _provider_identity(parsed):
+    from choice_card.video_models import video_models as models
+    row = models.model_for(parsed["n"])
+    models.assert_resolvable(row)
+    return {k: copy.deepcopy(row.get(k)) for k in
+            ("name", "kie_model", "lock", "resolution", "shape", "shot_s", "kie_tier", "clip_s")}
+
+
+def _persist_model_lock(state, answers, run_dir):
+    selected = next((a for a in answers if a.get("id") == "model"), None)
+    if selected is None or not run_dir:
+        return None
+    from choice_card.video_models import video_models as models
+    from kie_dispatch import model_lock
+    import state_store
+    rec = state["answer_records"]["model"]
+    provider = _provider_identity(selected)
+    if rec.get("provider_identity") != provider:
+        return "VIDEO_MODEL_IDENTITY_CHANGED"
+    db = Path(run_dir) / "control" / "state.sqlite3"
+    ids, bindings = set(), []
+    if state.get("run_id"):
+        bindings.append((state["run_id"], "intake-session"))
+    run_state = Path(run_dir) / "control" / "run-state.json"
+    if run_state.exists():
+        saved = json.loads(run_state.read_text(encoding="utf-8"))
+        if saved.get("run_id"):
+            bindings.append((saved["run_id"], "control/run-state.json"))
+    if db.exists():
+        # Read identity before opening a writer; a foreign/multi-run store is
+        # never repaired or overwritten by intake.
+        from urllib.parse import quote
+        with closing(sqlite3.connect("file:" + quote(str(db.resolve())) + "?mode=ro", uri=True)) as con:
+            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            for table in ("stages", "video_model_lock"):
+                if table in tables:
+                    ids.update(r[0] for r in con.execute("SELECT DISTINCT run_id FROM " + table) if r[0])
+        if len(ids) > 1:
+            return "VIDEO_MODEL_RUN_ID_AMBIGUOUS"
+        if ids:
+            bindings.append((next(iter(ids)), "existing-state-store"))
+    if any(not isinstance(rid, str) or not rid for rid, _ in bindings):
+        return "VIDEO_MODEL_RUN_ID_AMBIGUOUS"
+    if len({rid for rid, _ in bindings}) > 1:
+        return "VIDEO_MODEL_RUN_ID_CONFLICT"
+    rid, identity_source = (bindings[0] if bindings else
+                            (Path(run_dir).resolve().name, "run_folder_basename"))
+    chosen = models.model_for(selected["n"])
+    expected = chosen.get("lock", chosen["kie_model"])
+    existing = model_lock.read_locked_model(db, rid) if db.exists() else None
+    if existing is not None and existing != expected:
+        return "VIDEO_MODEL_LOCK_CONFLICT"
+    # This only creates the store's standard empty tables. It does not claim,
+    # start or complete any stage, and it never submits a provider request.
+    with state_store.Store(db):
+        pass
+    receipt = (models.lock_choice(db, rid, selected["n"]) if existing is None else
+               {"run_id": rid, "model": existing, "reused": True})
+    if model_lock.read_locked_model(db, rid) != expected:
+        return "VIDEO_MODEL_LOCK_NOT_PERSISTED"
+    state["run_id"] = rid
+    state["model_lock"] = dict(receipt, provider_identity=provider,
+        identity_source=identity_source, question_digest=rec["question_digest"],
+        source=rec["source"], source_ref=rec.get("source_ref"))
+    return None
 
 
 def _pending(answers, qs, editing=None):
@@ -204,6 +275,9 @@ def _finish(state, answers, qs, run_dir, target, client_dir):
         blocked = card._wait_reason(answers, qs)
         if blocked:
             return blocked
+    model_problem = _persist_model_lock(state, answers, run_dir)
+    if model_problem:
+        return model_problem
     # These record PREFERENCES from intake. They do not approve a script,
     # storyboard or a selected song artifact; those existing gates still wait.
     if run_dir:
@@ -234,6 +308,7 @@ def _result(state, path, answers, qs, code="INTAKE_WAITING", outcome="ok", detai
               "answered_count": len(answers), "total_count": len(qs),
               "saved_answer_count": len(state.get("answer_records", {})),
               "session_path": str(path), "pending": copy.deepcopy(pending),
+              "run_id": state.get("run_id"), "model_lock": copy.deepcopy(state.get("model_lock")),
               "video_model": next((a.get("n") for a in answers if a.get("id") == "model"), None)}
     if state.get("legacy_answers"):
         result["legacy_answers"] = copy.deepcopy(state["legacy_answers"])
@@ -313,6 +388,8 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
         if old_pending:
             state.setdefault("superseded_questions", []).append(old_pending)
         state["pending"] = current
+        if changed:
+            state["pending"]["requires_identity"] = True
         state["done"] = False
         state["confirmation"] = None
         _write(path, state)
@@ -342,6 +419,9 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
     if not new:
         return _result(state, path, answers, qs, "INTAKE_REPLAYED")
     raw = new[0]
+    if (raw.strip().isdigit() and state["pending"].get("requires_identity") and
+            (question_id != current["id"] or question_digest != current["digest"])):
+        return _result(state, path, answers, qs, "QUESTION_IDENTITY_REQUIRED", "waiting")
     if state["done"]:
         return _result(state, path, answers, qs, "INTAKE_ALREADY_CONFIRMED", "waiting")
     event = {"sequence": len(state["events"]) + 1, "raw_answer": raw,
@@ -380,6 +460,8 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
             event.update(accepted=True, option=option, parsed=copy.deepcopy(parsed))
             record = dict(event, definition_digest=current["definition_digest"],
                           question=copy.deepcopy(q))
+            if q["id"] == "model":
+                record["provider_identity"] = _provider_identity(parsed)
             state["answer_records"][q["id"]] = record
             state["editing_question_id"] = None
     # Persist the raw event/accepted answer before constructing the next turn.
@@ -397,6 +479,24 @@ def _progress(state, answers, qs):
     state["active_question_ids"] = [a["id"] for a in answers]
     state["answered_count"] = len(answers)
     state["total_count"] = len(qs)
+
+
+def _inspect_model_lock(db, run_id):
+    """Strictly read-only projection: never creates a DB, journal or sidecar.
+
+    A not-yet-checkpointed concurrent WAL writer can make this projection
+    unavailable; completion remains fail-closed until the writer publishes it.
+    """
+    if not db.is_file():
+        return None
+    from urllib.parse import quote
+    try:
+        uri = "file:" + quote(str(db.resolve())) + "?mode=ro&immutable=1"
+        with closing(sqlite3.connect(uri, uri=True)) as con:
+            row = con.execute("SELECT model FROM video_model_lock WHERE run_id=?", (run_id,)).fetchone()
+            return row[0] if row else None
+    except sqlite3.Error:
+        return None
 
 
 def completion_status(run_dir):
@@ -457,6 +557,18 @@ def completion_status(run_dir):
                     conf.get("rendered_question") != pending["message"] or not conf.get("at_utc") or
                     not any(e == conf for e in state["events"])):
                 raise ValueError("completion has no matching explicit client recap confirmation")
+            if "model" in required:
+                selected = state["answer_records"]["model"]
+                binding = state.get("model_lock") or {}
+                provider = selected.get("provider_identity")
+                expected_model = provider.get("lock") or provider["kie_model"]
+                if (not state.get("run_id") or binding.get("run_id") != state["run_id"] or
+                        binding.get("provider_identity") != provider or
+                        binding.get("question_digest") != selected["question_digest"] or
+                        binding.get("source") != "client" or binding.get("model") != expected_model or
+                        _inspect_model_lock(Path(run_dir) / "control" / "state.sqlite3",
+                                            state["run_id"]) != expected_model):
+                    raise ValueError("completion has no matching persisted video-model choice")
         out.update(valid=True, done=state["done"],
                    reason_code="INTAKE_CONFIRMED" if state["done"] else "INTAKE_WAITING",
                    question_id=None if state["done"] else pending["id"],
@@ -524,6 +636,8 @@ def seed_answers(records, questions=None, *, run_dir=None, run_state_file=None,
                          "rendered_question": rendered, "accepted": True,
                          "option": _option(q, parsed), "parsed": parsed}
                 record = dict(event, definition_digest=_digest(q), question=copy.deepcopy(q))
+                if qid == "model":
+                    record["provider_identity"] = _provider_identity(parsed)
                 prior = state["answer_records"].get(qid)
                 if prior is not None and prior.get("raw_answer") != raw:
                     return _result(state, path, answers, qs, "SEED_CONFLICTS_WITH_SAVED_ANSWER", "waiting")
