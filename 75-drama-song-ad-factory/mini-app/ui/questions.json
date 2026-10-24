@@ -184,20 +184,27 @@
         },
         {
           "n": 3,
+          "text": "2 minutes",
+          "detail": "",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 4,
           "text": "3 minutes + 60s and 90s clips",
           "detail": "Plus a 60-second clip and a 90-second clip.",
           "price": null,
           "recommended": false
         },
         {
-          "n": 4,
+          "n": 5,
           "text": "5 minutes + 60s and 90s clips",
           "detail": "Plus a 60-second clip and a 90-second clip.",
           "price": null,
           "recommended": false
         },
         {
-          "n": 5,
+          "n": 6,
           "text": "10 minutes (the long version) + 60s and 90s clips",
           "detail": "Plus a 60-second clip and a 90-second clip.",
           "price": null,
@@ -307,37 +314,37 @@
     {
       "id": "model",
       "label": "VIDEO MODEL",
-      "question": "Which video model should make your shots? Prices are for your 60-second ad, with the song, pictures and a 20% redo allowance.",
-      "price": "Prices are for your 60-second ad, with the song, pictures and a 20% redo allowance.",
+      "question": "Which video model should make your shots? Prices are for your 60-second ad, with the song, pictures and a 50% redo allowance.",
+      "price": "Prices are for your 60-second ad, with the song, pictures and a 50% redo allowance.",
       "example": "\"Hailuo 02 Standard. Good quality at a fair price.\"",
       "typed": false,
       "options": [
         {
           "n": 1,
-          "text": "Hailuo 02 Standard",
-          "detail": "great quality, best value - about $2.28",
-          "price": "$2.28",
+          "text": "MiniMax H3",
+          "detail": "great quality, best value - about $4.02",
+          "price": "$4.02",
           "recommended": true
         },
         {
           "n": 2,
           "text": "Seedance 2.5",
-          "detail": "premium detail and motion - about $23.02",
-          "price": "$23.02",
+          "detail": "premium detail and motion - about $28.77",
+          "price": "$28.77",
           "recommended": false
         },
         {
           "n": 3,
           "text": "Seedance 2.0 Mini",
-          "detail": "quicker and cheaper - about $3.29",
-          "price": "$3.29",
+          "detail": "quicker and cheaper - about $4.11",
+          "price": "$4.11",
           "recommended": false
         },
         {
           "n": 4,
           "text": "Google Veo 3.1",
-          "detail": "top-tier realism - about $3.31",
-          "price": "$3.31",
+          "detail": "top-tier realism - about $4.14",
+          "price": "$4.14",
           "recommended": false
         }
       ],
@@ -527,27 +534,41 @@
       "options": [
         {
           "n": 1,
+          "text": "60 seconds",
+          "detail": "The standard ad length.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 2,
+          "text": "90 seconds",
+          "detail": "Room for a fuller story.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 3,
+          "text": "2 minutes",
+          "detail": "",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 4,
           "text": "3 minutes",
           "detail": "one full story with room for the turn and the offer.",
           "price": null,
           "recommended": true
         },
         {
-          "n": 2,
+          "n": 5,
           "text": "5 minutes",
           "detail": "a deeper story with more of the solution at work.",
           "price": null,
           "recommended": false
         },
         {
-          "n": 3,
-          "text": "7 minutes",
-          "detail": "a fuller episode with another real step of the solution. (made with KIE, not Agnes)",
-          "price": null,
-          "recommended": false
-        },
-        {
-          "n": 4,
+          "n": 6,
           "text": "10 minutes",
           "detail": "the long version, a full show episode. (made with KIE, not Agnes)",
           "price": null,
@@ -685,6 +706,13 @@
           "price": null,
           "recommended": false
         }
+      ],
+      "supplementary_explanation": [
+        "Option 1 - Agnes: You need a paid Agnes plan and working subscription API access. It makes the pictures and 720p motion clips using your remaining plan quota. The clips are 10 seconds each; this skill supports selected lengths up to 5 minutes on Agnes.",
+        "The daily planning limits here are 500 video seconds and 4,000 images, shared across keys of the same type. Remaining quota and provider limits still apply; the whole video must fit that day.",
+        "Option 2 - KIE.ai: Use KIE.ai's video models, including premium options. You'll choose the model next, see the estimated cost, and approve it before generation. KIE.ai also supplies the pictures; image and video usage is billed against your KIE.ai credits.",
+        "With either choice, the Suno song and Kling talking close-ups still use KIE.ai and are billed separately. Those charges are included in the estimate and must stay within your approved spending limit. Choosing Agnes does not make the whole production free.",
+        "Neither option is selected for you; choose 1 or 2."
       ],
       "shows_when": {
         "agnes_remembered": [
