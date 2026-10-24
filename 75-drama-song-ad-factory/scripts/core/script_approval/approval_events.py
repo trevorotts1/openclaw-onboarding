@@ -159,6 +159,67 @@ _KIND_TOKENS = frozenset(
     w for words in _KIND_WORDS.values() for w in re.findall(r"[a-z]+", " ".join(words)))
 
 
+# --------------------------------------------------------------------------- #
+# whole-reply closed grammar -- the character_approval._resolves_approve rule.
+#
+# A reply is a BARE APPROVAL only when the WHOLE of it is built from this closed
+# grammar AND at least one word in it approves. A substring hit anywhere, or an
+# affirmative first word, is never enough: any content word outside the grammar
+# -- an instruction, a condition, a negation, an opinion with substance -- makes
+# the reply something other than a bare approval, and anything other than a bare
+# approval never opens the gate.
+#
+# The approval vocabulary is DERIVED from _AFFIRM above; only words that carry no
+# decision of their own are named by hand. Negation, condition and revision words
+# are deliberately ABSENT from the grammar, so "no good", "not approved", "make
+# the story longer" and "all of this is wrong" cannot be read as approvals.
+# --------------------------------------------------------------------------- #
+
+def _tokens(text):
+    return [w for w in re.split(r"[^a-z0-9+']+", str(text or "")) if w]
+
+
+def _norm(text):
+    return re.sub(r"[^a-z0-9+' ]+", " ", str(text or "").strip().lower()).strip()
+
+
+#: words that carry an approval of their own
+_APPROVE_SIGNALS = frozenset("""
++1 absolutely amazing approve approved correct continue do exactly fine
+fantastic go good great kk lgtm love make ok okay perfect proceed ship sounds
+start sure work works wonderful ya yeah yep yes yup y
+""".split())
+
+#: words that carry no decision at all -- filler, politeness, scope and the
+#: displayed revision labels. Negation, condition, contrast and revision words
+#: are deliberately ABSENT.
+_NO_DECISION = frozenset("""
+a all an and as at ahead both by course creative entire everything artifact
+artifacts for i in is it its let's lets me my now of on our package please rev
+revision right thanks thank thx that the to us v ver version whole with
+""".split())
+
+#: never grammar, whatever phrase they arrived from: negation, contrast,
+#: condition, disjunction and revision verbs refuse the reply by their presence.
+#: "no changes" is an approval ONLY as a whole idiom; bare "no" never is.
+_BLOCKED = (frozenset(_NEGATE) | frozenset(_REVISE) | frozenset(_CHANGE_WORDS) |
+            frozenset("but however although though yet or unless until if when "
+                      "whenever once after before instead provided assuming "
+                      "supposing while because since".split()))
+
+#: every word an approval reply may be made of
+_GRAMMAR_WORDS = ((frozenset(w for phrase in _AFFIRM for w in _tokens(_norm(phrase)))
+                   | _NO_DECISION | _KIND_TOKENS) - _BLOCKED)
+
+#: exact whole-reply matches only -- "do it" is one approval phrase, never a
+#: question; "the villain's name is perfect as is, but ..." is NOT a phrase
+_AFFIRM_EXACT = frozenset(_AFFIRM) | frozenset(_norm(p) for p in _AFFIRM)
+
+#: the words that at least name or offer an approval (routing only)
+_MENTION_TOKENS = frozenset(
+    w for phrase in _AFFIRM for w in _tokens(_norm(phrase)))
+
+
 def utcnow():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -427,10 +488,6 @@ def _find_outbox(rec, key):
 # the pending approval cannot be resolved from the reply context
 # --------------------------------------------------------------------------- #
 
-def _norm(text):
-    return re.sub(r"[^a-z0-9+' ]+", " ", str(text or "").strip().lower()).strip()
-
-
 def _named_kinds(text):
     out = []
     for kind, words in _KIND_WORDS.items():
@@ -504,14 +561,60 @@ def _mask_idioms(t):
     return re.sub(r"\s+", " ", t).strip()
 
 def _reads_as_offer(t):
-    """The words are at least offering an approval (or naming one), so the
-    screens below decide what kind of offer it is."""
-    if _APPROVAL_RE.search(t) or t in _AFFIRM:
+    """ROUTING ONLY -- this never approves anything. True when the reply at
+    least names or offers an approval, so the screens below can say what kind of
+    offer it is. Acceptance is decided by ``_resolves_approve`` alone; there is
+    no first-word shortcut and no substring hit here either."""
+    return bool(_APPROVAL_RE.search(t)) or any(w in _MENTION_TOKENS for w in _tokens(t))
+
+
+def _resolves_approve(t):
+    """True when the WHOLE reply is a bare approval (the
+    character_approval._resolves_approve rule).
+
+    The reply must be one known approval phrase, or be built ENTIRELY from the
+    closed approval grammar with at least one word in it that approves. Any
+    content word outside that grammar -- an instruction, a condition, a negation,
+    a revision request, an opinion with substance -- means the reply is not a
+    bare approval. "All of this is wrong", "go back and revise", "make the story
+    longer" and "the villain's name is perfect as is, but make the story longer"
+    are therefore never approvals.
+    """
+    if t in _AFFIRM_EXACT:
         return True
-    words = t.split()
-    if words and words[0] in _AFFIRM:
-        return True
-    return any(re.search(r"\b%s\b" % re.escape(a), t) for a in _AFFIRM if len(a) > 3)
+    masked = _mask_idioms(t)
+    words = _tokens(masked)
+    if not words:
+        # only affirmation idioms were removed ("no changes", "no more edits")
+        return any(re.search(pattern, t) for pattern in _AFFIRM_IDIOMS)
+    if any(w not in _GRAMMAR_WORDS and not w.isdigit() for w in words):
+        return False
+    return any(w in _APPROVE_SIGNALS for w in words)
+
+
+#: the words a viewing request may be made of -- nothing else
+_VIEWING_WORDS = frozenset("""
+a an again first it let lets me please read review see send show that the this
+us before
+""".split())
+
+
+def _affirmative_answer(t):
+    """A "yes" to a question the system just asked, with a viewing request added
+    ("yes, show me first"). This is an ANSWER, never a bare artifact approval:
+    it only fires for a reply ``is_preference_reply`` already refuses, and every
+    approval path refuses a preference reply outright, so this can never open
+    the artifact gate. It exists because the one recovery question in
+    ``stage`` is answered with this same parser."""
+    if not is_preference_reply(t):
+        return False
+    for phrase in sorted(_AFFIRM_EXACT, key=len, reverse=True):
+        if t == phrase:
+            return True
+        if t.startswith(phrase + " "):
+            tail = _tokens(_mask_idioms(t[len(phrase):]))
+            return bool(tail) and all(w in _VIEWING_WORDS for w in tail)
+    return False
 
 def _scope_leftover(t):
     """The content word an approval is scoped to, when that word is NOT the
@@ -535,6 +638,8 @@ def _decision_screen(text, t):
     """
     if any(re.search(r"\b%s\b" % re.escape(n), _mask_idioms(t)) for n in _NEGATE):
         return "refusal"
+    if t in _AFFIRM_EXACT:
+        return None        # the whole reply IS one known approval phrase
     if not _reads_as_offer(t):
         return None                      # not an offer at all: the caller reads it as an edit
     raw = str(text or "")
@@ -556,19 +661,20 @@ def _decision_screen(text, t):
     return None
 
 def is_affirmative(text):
-    """True only for an unambiguous affirmative: not negated, not conditional,
-    not partial, not a question and not somebody else's words."""
+    """True only when the WHOLE reply is a bare approval: not negated, not
+    conditional, not partial, not a question, not somebody else's words, and
+    carrying nothing added to the approval itself.
+
+    The whole reply is classified -- approval, rejection or revision request --
+    by ``_resolves_approve``. There is no first-word shortcut and no substring
+    hit: an affirmative word anywhere in a reply that also asks for a change is
+    not an approval."""
     t = _norm(text)
     if not t:
         return False
     if _decision_screen(text, t):
         return False
-    if t in _AFFIRM:
-        return True
-    words = t.split()
-    if words and words[0] in _AFFIRM:      # preference recovery also uses this generic affirmative parser
-        return True
-    return any(re.search(r"\b%s\b" % re.escape(a), t) for a in _AFFIRM if len(a) > 3)
+    return _resolves_approve(t) or _affirmative_answer(t)
 
 
 def _needs_revision(rec, kind):
@@ -675,7 +781,6 @@ def interpret_reply(text, rec, ctx=None):
     asked = [k for a in asks for k in a.get("kinds") or []]
     named = [k for k in _named_kinds(t)
              if k in ("script", "lyrics", "character_images", "music", "storyboard")]
-    both = bool(re.search(r"\b(both|all|everything|script and lyrics)\b", t))
     affirmative = is_affirmative(raw)
     # "no changes" is an approval, not an edit request: edit words are read on
     # the text with affirmation idioms masked out
@@ -696,8 +801,20 @@ def interpret_reply(text, rec, ctx=None):
                 "What exactly are you approving? I hold the gate until you reply "
                 "with a plain yes to the whole script and lyrics exactly as sent."}
 
+    # The whole reply is one of three things: an approval, a rejection, or a
+    # revision request. Only a bare approval gets past this line -- an added
+    # instruction, a condition, a negation or an opinion with substance makes the
+    # reply a revision request, never a decision event. "All of this is wrong"
+    # lands here and is read as a rejection/revision request, never as approval
+    # of both script and lyrics.
     if revise_hit or not affirmative:
-        return {"intent": "revise", "kinds": [], "text": raw}
+        return {"intent": "revise", "kinds": [], "text": raw,
+                "reason_code": "REPLY_IS_NOT_A_BARE_APPROVAL"
+                if not revise_hit else "REPLY_NEGATED"}
+
+    # the all/both/everything flag only ever SCALES an approval that already
+    # passed the whole-reply gate; it can never set one
+    both = bool(re.search(r"\b(both|all|everything|script and lyrics)\b", t))
 
     # named kinds must have been presented; a generic yes cannot approve an
     # unseen artifact
