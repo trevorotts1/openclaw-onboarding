@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "s75.cross_flavor.receipt.v1",
+  "title": "S75-T32 cross-flavor exact-head acceptance receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_version", "unit_id", "flavor", "repository", "generated_at",
+    "candidate", "base", "contracts", "dependencies", "executed",
+    "not_executed", "literal_binding", "checks", "execution",
+    "unaffected_proof", "coverage", "author", "acceptance"
+  ],
+  "properties": {
+    "receipt_version": {"const": "s75.cross_flavor.receipt.v1"},
+    "unit_id": {"const": "S75-T32"},
+    "flavor": {"enum": ["onboarding", "999"]},
+    "repository": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "branch", "head_verified_at_execution", "worktree_clean_excluding_receipts"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$",
+                   "description": "The exact head the facets were executed at."},
+        "branch": {"type": "string"},
+        "head_verified_at_execution": {"type": "boolean",
+          "description": "true only when git rev-parse HEAD equalled candidate.commit during execution."},
+        "worktree_clean_excluding_receipts": {"type": "boolean",
+          "description": "tracked files clean; untracked receipt files are excluded on purpose."}
+      }
+    },
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "commit"],
+      "properties": {
+        "ref": {"type": "string"},
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "required": ["skill_root", "core_module", "adapter_module", "seam",
+                   "core_digest", "core_schema_version", "stage_count", "file_digests"],
+      "properties": {
+        "skill_root": {"type": ["string", "null"]},
+        "core_module": {"type": "string"},
+        "adapter_module": {"type": "string"},
+        "seam": {"type": ["string", "null"]},
+        "core_digest": {"type": ["string", "null"]},
+        "core_schema_version": {"type": ["string", "null"]},
+        "stage_count": {"type": ["integer", "null"]},
+        "file_digests": {"type": "object",
+          "additionalProperties": {"type": ["string", "null"]}}
+      }
+    },
+    "dependencies": {"type": "object"},
+    "executed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["facet", "ok", "checks", "negative_control"],
+        "properties": {
+          "facet": {"type": "string"},
+          "ok": {"type": "boolean"},
+          "checks": {"type": "integer", "minimum": 1},
+          "negative_control": {
+            "type": "object",
+            "required": ["unmet_condition", "facet_ok_on_unmet", "control_red"],
+            "properties": {
+              "unmet_condition": {"type": "string", "minLength": 1},
+              "facet_ok_on_unmet": {"type": "boolean"},
+              "control_red": {"type": "boolean"}
+            }
+          },
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "not_executed": {
+      "type": "array",
+      "description": "What did NOT run, and why. Every entry carries a reason.",
+      "items": {
+        "type": "object",
+        "required": ["facet", "reason"],
+        "properties": {
+          "facet": {"type": "string"},
+          "reason": {"type": "string", "minLength": 1},
+          "class": {"enum": ["CANDIDATE_NOT_LANDED", "NOT_MODELLED_BY_CONTRACTS"]}
+        }
+      }
+    },
+    "literal_binding": {
+      "type": "object",
+      "required": ["seam", "contract_module", "contract_files"],
+      "properties": {
+        "seam": {"type": "string"},
+        "contract_module": {"type": "string"},
+        "contract_files": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "checks": {
+      "type": "object",
+      "required": ["facets_green", "facets_red", "controls_red", "controls_green"],
+      "properties": {
+        "facets_green": {"type": "integer", "minimum": 0},
+        "facets_red": {"type": "integer", "minimum": 0},
+        "controls_red": {"type": "integer", "minimum": 0},
+        "controls_green": {"type": "integer", "minimum": 0,
+          "description": "must be 0 for execution PASS: a green control is a vacuous fixture."}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["verdict"],
+      "properties": {"verdict": {"enum": ["PASS", "FAIL", "UNAVAILABLE"]}}
+    },
+    "unaffected_proof": {
+      "type": "object",
+      "description": "Proves one flavor's facets do not block or contaminate the other's (S75-A36/A37).",
+      "required": ["method", "cross_flavor_blocking"],
+      "properties": {
+        "method": {"type": "string", "minLength": 1},
+        "this_flavor_executed": {"type": "array", "items": {"type": "string"}},
+        "cross_flavor_blocking": {"const": false},
+        "note": {"type": "string"}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["covered", "not_covered", "rows_touched"],
+      "properties": {
+        "covered": {"type": "object"},
+        "not_covered": {"type": "object"},
+        "rows_touched": {"type": "array", "items": {"type": "string"}},
+        "note": {"type": "string"}
+      }
+    },
+    "author": {"type": "string", "minLength": 1},
+    "acceptance": {
+      "type": "object",
+      "required": ["verdict", "checker", "checker_distinct_from_author"],
+      "description": "PASS is refused unless checker names an executing independent checker distinct from author.",
+      "properties": {
+        "verdict": {"enum": ["PASS", "FAIL", "PENDING_INDEPENDENT_CHECK", "UNAVAILABLE"]},
+        "checker": {"type": ["string", "null"]},
+        "checker_distinct_from_author": {"type": ["boolean", "null"]}
+      }
+    }
+  }
+}
