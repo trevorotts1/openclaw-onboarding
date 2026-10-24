@@ -128,7 +128,7 @@ def run(a, questions=None, purpose_flow=None, stdout=None):
                 run_state_file=getattr(a, "run_state_file", "") or None,
                 target=getattr(a, "target", "") or None,
                 client_dir=getattr(a, "client_dir", "") or None,
-                purpose_flow=purpose_flow)
+                purpose_flow=purpose_flow, runtime=getattr(a, "runtime", None))
             seed_file = getattr(a, "seed_answers_file", None)
             if seed_file:
                 if getattr(a, "reply", []) or getattr(a, "reply_source", "client") != "client":
