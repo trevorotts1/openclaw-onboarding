@@ -1166,6 +1166,27 @@ def build_fixtures() -> Dict[str, Any]:
                               "session-fixture-0001",
                 "question_id": "a5",
             },
+            # The L01 session contract requires these ledger keys and the
+            # access destination; no intake question produces them, so the
+            # fixture states them the way an operator would supply them.
+            **{
+                key: {"value": value, "state": "provided",
+                      "source_ref": "operator-supplied fixture fact %s" % key}
+                for key, value in (
+                    ("launch.a2p_ready", False),
+                    ("launch.access_delivery", True),
+                    ("launch.access_url", "https://momentum-method.example/access"),
+                    ("launch.channels", ["email"]),
+                    ("launch.conversation_ai", False),
+                    ("launch.doors_close_at", "2026-11-10T23:59:00-05:00"),
+                    ("launch.doors_open_at", "2026-11-03T09:00:00-05:00"),
+                    ("launch.launch_at", "2026-11-03T12:00:00-05:00"),
+                    ("launch.payment_plans", False),
+                    ("launch.reply_to_email", "hello@momentum-method.example"),
+                    ("launch.sender_name", "Jordan Marsh"),
+                    ("launch.timezone", "America/New_York"),
+                )
+            },
         },
         "plan_hash": plan_hash,
         "approval_id": "approval-fixture-0001",

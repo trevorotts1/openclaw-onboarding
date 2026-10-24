@@ -440,6 +440,14 @@ class RealProducerPipelineTests(unittest.TestCase):
                      test_only=True)
         session = li.new_session(**fixed)
         li.ingest_answers(session, answers)
+        # The full launch plan refuses without an access destination, and no
+        # intake question produces one (launch_plan.ACCESS_KEYS has no producer).
+        # The destination is an operator-supplied fact, so supply it here.
+        session["answers"]["launch.access_url"] = {
+            "value": "https://example.test/access",
+            "state": "provided",
+            "source_ref": "test:l06-access-destination",
+        }
         res = li.assemble_plan(session)
         self.assertNotEqual(res.get("state"), "awaiting_missing_fact",
                             res.get("missing"))
