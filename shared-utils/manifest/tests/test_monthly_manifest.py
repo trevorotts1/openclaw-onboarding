@@ -532,5 +532,159 @@ class DispatchBindingTests(unittest.TestCase):
         self.assertIn("approval_revision", payload["reason"])
 
 
+class RevisionOrderingTests(ManifestCase):
+    """Version enforcement: no rollback, and no revision scheme is unapprovable.
+
+    The 1.0.0 module read a counter out of the trailing digits only, so any
+    revision without a trailing digit was opaque and a differing value advanced.
+    That admitted the rollback ``rev-3`` -> ``rev-2-final`` and refused the
+    forward ``2026-11-01`` -> ``2026-12-01``. Both directions are pinned here.
+    """
+
+    def test_a_rollback_is_refused_even_when_a_word_trails_the_counter(self):
+        for revision in ("rev-2-final", "rev-2-approval", "rev-2"):
+            with self.subTest(revision):
+                self.assertEqual(
+                    ["$.revision: %r rolls back 'rev-3'" % (revision,)],
+                    mm.check_revision("rev-3", revision),
+                )
+        # The inverse: the same tagged scheme moving forward still approves.
+        self.assertEqual([], mm.check_revision("rev-2-final", "rev-3"))
+        self.assertEqual([], mm.check_revision("rev-3", "rev-4-final"))
+
+    def test_a_date_or_semver_revision_can_advance(self):
+        self.assertEqual([], mm.check_revision("2026-11-01", "2026-12-01"))
+        self.assertEqual([], mm.check_revision("2026-12-01", "2027-01-01"))
+        self.assertEqual([], mm.check_revision("v1.0", "v2.0"))
+        self.assertEqual([], mm.check_revision("v1.9.0", "v1.10.0"))
+        # The inverse: the same schemes walking backwards are still refused.
+        self.assertEqual(
+            ["$.revision: '2026-11-01' rolls back '2026-12-01'"],
+            mm.check_revision("2026-12-01", "2026-11-01"),
+        )
+        self.assertEqual(
+            ["$.revision: 'v1.0' rolls back 'v2.0'"],
+            mm.check_revision("v2.0", "v1.0"),
+        )
+
+    def test_the_whole_number_run_is_ordered_numerically(self):
+        # v1.10 is after v1.9: the numbers decide, not their spelling.
+        self.assertEqual([], mm.check_revision("v1.9.0", "v1.10.0"))
+        self.assertTrue(mm.check_revision("v1.10.0", "v1.9.0"))
+
+    def test_a_revision_that_cannot_be_ordered_is_refused_not_guessed(self):
+        # The module promises a revision never rolls back, so an order it cannot
+        # prove is not an advance. Neither of these is a blanket refusal: both
+        # schemes approve freely against their own kind (cases above).
+        for previous, revision in (("rev-3", "final"), ("final", "rev-3")):
+            with self.subTest(revision):
+                errs = mm.check_revision(previous, revision)
+                self.assertTrue(errs, "an unordered revision pair was accepted")
+                self.assertTrue(any("cannot be ordered" in err for err in errs), errs)
+
+    def test_the_revision_decision_table_is_pinned(self):
+        advancing = [
+            ("rev-3", "rev-4"),
+            ("rev-3", "2026-11-20-approval"),
+            ("rev-2-final", "rev-3"),
+            ("2026-11-01", "2026-12-01"),
+            ("v1.0", "v2.0"),
+            ("alpha", "beta"),
+        ]
+        refusing = [
+            ("rev-3", "rev-3"),
+            ("rev-3", "rev-2"),
+            ("rev-3", "rev-2-final"),
+            ("rev-3", "rev-2-approval"),
+            ("rev-3", "v3"),
+            ("2026-12-01", "2026-11-01"),
+            ("v2.0", "v1.0"),
+            ("alpha", "alpha"),
+            ("rev-3", "final"),
+            ("rev-3", "   "),
+        ]
+        for previous, revision in advancing:
+            with self.subTest(decision="advance", previous=previous, revision=revision):
+                self.assertEqual([], mm.check_revision(previous, revision))
+        for previous, revision in refusing:
+            with self.subTest(decision="refuse", previous=previous, revision=revision):
+                self.assertTrue(mm.check_revision(previous, revision))
+
+
+class MalformedDocumentTests(ManifestCase):
+    """The return contract holds at the JSON trust boundary: a wrong-shaped
+    manifest or field is refused with the field named, never raised at a caller
+    that is loading a file. Each refusal is paired with the same call on a valid
+    document succeeding, so a blanket refusal cannot pass here."""
+
+    def assertRefusedShape(self, returned, errs, before, needle):
+        self.assertTrue(errs, "the malformed shape was accepted without a reason")
+        self.assertTrue(any(needle in err for err in errs), "%r missing from %s" % (needle, errs))
+        self.assertEqual(before, returned)
+
+    def test_a_malformed_placements_shape_is_refused_not_raised(self):
+        for value in ("P-1", {"P-1": 1}, ["P-1"], [None], 5):
+            with self.subTest(value):
+                doc = draft()
+                doc["placements"] = value
+                before = copy.deepcopy(doc)
+                returned, errs = mm.approve(doc, "client-owner-1", AT, "rev-3", "rev-2")
+                self.assertRefusedShape(returned, errs, before, "$.placements")
+        # The inverse: the same call on a real placement list still approves.
+        doc, errs = mm.approve(draft(), "client-owner-1", AT, "rev-3", "rev-2")
+        self.assertEqual([], errs)
+        self.assertEqual([], mm.validate(doc))
+
+    def test_a_malformed_amendment_is_refused_not_raised(self):
+        for changes, needle in (
+            (None, "an amendment"),
+            (["keyword"], "an amendment"),
+            ("keyword", "an amendment"),
+            (5, "an amendment"),
+            # a well-shaped map with a null value is the term check's to name
+            ({"keyword": None}, "an approved term must be present"),
+        ):
+            with self.subTest(changes):
+                doc = signed()
+                before = copy.deepcopy(doc)
+                returned, errs = mm.amend(doc, "P-1", changes, "client edit", AT, "rev-3")
+                self.assertRefusedShape(returned, errs, before, needle)
+        # The inverse: a real amendment still invalidates exactly one placement.
+        doc, errs = mm.amend(signed(), "P-1", {"keyword": "VAULT"}, "client edit", AT, "rev-3")
+        self.assertEqual([], errs)
+        self.assertEqual("INVALIDATED", placement(doc, "P-1")["approval_status"])
+        self.assertEqual("APPROVED", placement(doc, "P-2")["approval_status"])
+
+    def test_a_malformed_window_names_the_field_not_the_interpreter(self):
+        doc = signed()
+        before = copy.deepcopy(doc)
+        returned, errs = mm.next_cycle(doc, "cycle-2026-12", "2026-12-01", None, "rev-4", "rev-3")
+        self.assertRefusedShape(returned, errs, before, "campaign_window")
+        self.assertFalse(
+            any("unsupported operand" in err for err in errs),
+            "the raw interpreter message leaked instead of naming the field: %s" % (errs,),
+        )
+        # The inverse: the same call with real dates still opens the cycle.
+        doc, errs = mm.next_cycle(
+            signed(), "cycle-2026-12", "2026-12-01", "2026-12-30", "rev-4", "rev-3"
+        )
+        self.assertEqual([], errs)
+        self.assertEqual("DRAFT", doc["status"])
+
+    def test_a_document_that_is_not_an_object_is_refused_not_raised(self):
+        for doc in (["P-1"], "manifest", 5, None):
+            with self.subTest(doc):
+                before = copy.deepcopy(doc)
+                for call in (
+                    lambda d: mm.approve(d, "client-owner-1", AT, "rev-3", "rev-2"),
+                    lambda d: mm.amend(d, "P-1", {"keyword": "VAULT"}, "r", AT, "rev-3"),
+                    lambda d: mm.reapprove(d, "P-1", "client-owner-1", AT, "rev-3"),
+                    lambda d: mm.next_cycle(d, "c-2", "2026-12-01", "2026-12-30", "rev-4", "rev-3"),
+                ):
+                    returned, errs = call(copy.deepcopy(doc))
+                    self.assertTrue(errs, "a non-object document was accepted")
+                    self.assertEqual(before, returned)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

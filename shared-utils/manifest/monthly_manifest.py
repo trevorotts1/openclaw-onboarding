@@ -12,8 +12,10 @@ This module owns the approval *lifecycle* the shared contract layer does not:
                        placement only, so unrelated approved placements continue
   reapprove()          put one amended placement back to APPROVED
   next_cycle()         open the next 30-day cycle as a fresh DRAFT revision
-  check_revision()     version enforcement: a new approval advances, never
-                       repeats or rolls back
+  check_revision()     version enforcement: a new approval advances its
+                       revision, never repeating it and never rolling back
+                       (see that function for exactly what "rolling back"
+                       can be proven to mean)
   validate()           the accepted approval contract, nothing re-implemented
   terms_errors()       every bound term present and informative, schedule inside
                        the joined window
@@ -27,7 +29,9 @@ it, so a term added upstream is enforced here without an edit.
 
 Every function copies the document and returns (new_doc, errors); on any error
 the original document comes back unchanged, so a caller persists only a clean
-result. stdlib only.
+result. That holds for a malformed document too: manifests are loaded from
+files, so a wrong-shaped document or field is refused with the field named and
+never raised at the caller. stdlib only.
 
   from monthly_manifest import approve, amend, reapprove, next_cycle
   doc, errs = approve(doc, "client-owner-1", "2026-10-20T18:00:00Z", "rev-3", "rev-2")
@@ -41,7 +45,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 _HERE = Path(__file__).resolve()
 _REPO_ROOT = _HERE.parents[2]
@@ -68,7 +72,7 @@ APPROVAL_TERMS = ("account_id", "account_binding_revision") + tuple(contracts.PL
 SIGNED_STATUSES = ("APPROVED", "PARTIAL_INVALIDATED")
 JOINED_WINDOW_DAYS = 30
 
-_TRAILING_COUNTER = re.compile(r"(\d+)\s*$")
+_NUMBER_RUN = re.compile(r"\d+")
 
 
 # --------------------------------------------------------------------------
@@ -91,9 +95,44 @@ def _missing(value):
     return False
 
 
-def _counter(revision):
-    match = _TRAILING_COUNTER.search(revision) if isinstance(revision, str) else None
-    return int(match.group(1)) if match else None
+def _number_run(revision):
+    """The revision's own digits, in order, as ints.
+
+    A revision scheme is whatever its publisher writes: a counter (``rev-3``),
+    a date (``2026-12-01``), a semantic version (``v2.0``). What is comparable
+    across those is the run of numbers inside the revision, compared position by
+    position. The run is read from the whole revision, never out of a trailing
+    word, so ``rev-2-final`` is the counter 2 however the tag ends.
+    """
+    if not isinstance(revision, str):
+        return ()
+    return tuple(int(part) for part in _NUMBER_RUN.findall(revision))
+
+
+def _placements(doc):
+    """Only placement objects are iterated; anything else is the contract's to name.
+
+    ``doc["placements"]`` is read from a file, so a caller can arrive with a
+    string, a map or a list holding a null. Those shapes are refused below; this
+    predicate keeps the loops from turning one into an AttributeError.
+    """
+    value = doc.get("placements")
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _placements_errors(doc):
+    value = doc.get("placements")
+    if value is None:
+        return []  # absent placements are the schema's to name, and approve() requires one
+    if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+        return []
+    return ["$.placements: must be a list of placement objects"]
+
+
+def _document_errors(doc):
+    if not isinstance(doc, dict):
+        return ["$: an approval manifest must be a JSON object, got %s" % type(doc).__name__]
+    return []
 
 
 def _stamp_errors(value, name):
@@ -116,7 +155,7 @@ def _cas_errors(doc, expected_revision):
 
 
 def _placement(doc, placement_id):
-    for placement in doc.get("placements") or []:
+    for placement in _placements(doc):
         if placement.get("placement_id") == placement_id:
             return placement
     return None
@@ -135,7 +174,10 @@ def _checked(doc, new):
 
 
 def _day(value, name):
-    return contracts.parse_ts(value + "T00:00:00Z", name)
+    """A YYYY-MM-DD day as UTC midnight. A non-string is named, never raised."""
+    if isinstance(value, str):
+        value = value + "T00:00:00Z"
+    return contracts.parse_ts(value, name)
 
 
 def _term_errors(placement, path):
@@ -163,20 +205,38 @@ def validate(doc):
 def check_revision(previous, revision):
     """Version enforcement: a new approval advances its revision.
 
-    Equal revisions never re-approve the same campaign. When both revisions end
-    in a counter, the counter must move forward. A revision with no trailing
-    counter is opaque: a differing value advances.
-    ponytail: opaque revisions are ordered by inequality only. Put an explicit
-    revision scheme in approval-manifest.schema.json if total ordering is
-    required across publishers.
+    Every revision that carries numbers is ordered by its number run, compared
+    position by position and numerically: ``2026-12-01`` advances
+    ``2026-11-01``, ``v2.0`` advances ``v1.0``, and ``rev-2-final`` or
+    ``rev-2-approval`` is a rollback of ``rev-3`` whatever word trails the
+    number. A number is never read out of a trailing word, so no suffix
+    heuristic can hide a rollback. A revision with no digits at all is opaque
+    and advances by inequality, as promised: any differing value is a new
+    approval, and only a repeat is refused.
+
+    Two revisions that cannot be ordered against each other — one numbered, one
+    not — are refused rather than guessed at. This function promises a revision
+    never rolls back, so an order it cannot prove is not an advance.
+
+    ponytail: opaque revisions are ordered by inequality only, and a scheme
+    change is refused rather than interpreted. Put an explicit revision scheme
+    in approval-manifest.schema.json if total ordering is required across
+    publishers.
     """
     if _missing(revision):
         return ["$.revision: an approval revision must be present"]
+    if not isinstance(revision, str):
+        return ["$.revision: an approval revision must be a string, got %s" % type(revision).__name__]
     if revision == previous:
         return ["$.revision: %r is already the current revision; an approval must advance it" % (revision,)]
-    before, after = _counter(previous), _counter(revision)
-    if before is None or after is None:
-        return []
+    before, after = _number_run(previous), _number_run(revision)
+    if not before and not after:
+        return []  # opaque revisions: a differing value advances
+    if not before or not after:
+        return [
+            "$.revision: %r does not advance %r; the two revisions cannot be ordered"
+            % (revision, previous)
+        ]
     if after == before:
         return ["$.revision: %r does not advance %r" % (revision, previous)]
     if after < before:
@@ -194,7 +254,7 @@ def terms_errors(doc):
         ends = _day(window.get("ends_on", ""), "campaign_window.ends_on") + timedelta(days=1)
     except (contracts.UsageError, TypeError):
         starts = ends = None  # the contract names the malformed window itself
-    for placement in doc.get("placements") or []:
+    for placement in _placements(doc):
         placement_id = placement.get("placement_id")
         path = "$.placements[%s]" % (placement_id,)
         errs.extend(_term_errors(placement, path))
@@ -217,8 +277,10 @@ def _window_errors(doc, starts_on, ends_on):
     try:
         starts = _day(starts_on, "campaign_window.starts_on")
         ends = _day(ends_on, "campaign_window.ends_on")
-    except (contracts.UsageError, TypeError) as exc:
+    except contracts.UsageError as exc:
         return [str(exc)]
+    except TypeError:
+        return ["$.campaign_window: starts_on and ends_on must be ISO dates"]
     span = (ends - starts).days + 1
     if span != JOINED_WINDOW_DAYS:
         errs.append(
@@ -233,7 +295,7 @@ def _window_errors(doc, starts_on, ends_on):
                     "$.campaign_window: %s starts on or before the previous cycle's last day %s"
                     % (starts_on, previous)
                 )
-        except contracts.UsageError:
+        except (contracts.UsageError, TypeError):
             pass  # the current window is the contract's to name
     return errs
 
@@ -245,7 +307,9 @@ def _window_errors(doc, starts_on, ends_on):
 
 def approve(doc, approver, approved_at, revision, expected_revision):
     """Join a DRAFT campaign into one approved revision covering every placement."""
-    errs = []
+    errs = _document_errors(doc)
+    if errs:
+        return _refuse(doc, errs)
     if doc.get("status") != "DRAFT":
         errs.append("$.status: only a DRAFT is joined into an approval")
     errs.extend(_cas_errors(doc, expected_revision))
@@ -254,8 +318,10 @@ def approve(doc, approver, approved_at, revision, expected_revision):
         errs.append("$.approved_by: an approval names its approver")
     errs.extend(_stamp_errors(approved_at, "approved_at"))
 
-    placements = doc.get("placements") or []
-    if not placements:
+    shape = _placements_errors(doc)
+    errs.extend(shape)
+    placements = _placements(doc)
+    if not placements and not shape:
         errs.append("$.placements: a joined monthly approval binds at least one placement")
     for placement in placements:
         state = placement.get("approval_status")
@@ -273,7 +339,7 @@ def approve(doc, approver, approved_at, revision, expected_revision):
     new["status"] = "APPROVED"
     new["approved_by"] = approver
     new["approved_at"] = approved_at
-    for placement in new["placements"]:
+    for placement in _placements(new):
         placement["approval_status"] = "APPROVED"
         placement["invalidated_at"] = None
         placement["invalidated_reason"] = None
@@ -290,16 +356,24 @@ def amend(doc, placement_id, changes, reason, at, expected_revision):
     changed placement stops dispatching because its approval_status is
     INVALIDATED and because its new terms no longer match any queued action.
     """
-    errs = []
+    errs = _document_errors(doc)
+    if errs:
+        return _refuse(doc, errs)
     if doc.get("status") not in SIGNED_STATUSES:
         errs.append("$.status: only an approved manifest has approved terms to amend")
     errs.extend(_cas_errors(doc, expected_revision))
+    errs.extend(_placements_errors(doc))
     placement = _placement(doc, placement_id)
     if placement is None:
         errs.append("$.placements: %r is not in the manifest" % (placement_id,))
-    if not changes:
+    if not isinstance(changes, dict):
+        errs.append(
+            "$.placements[%s]: an amendment is a map of approved term to its new value"
+            % (placement_id,)
+        )
+    elif not changes:
         errs.append("$.placements[%s]: an amendment changes at least one approved term" % (placement_id,))
-    unknown = sorted(set(changes) - set(APPROVAL_TERMS))
+    unknown = sorted(set(changes) - set(APPROVAL_TERMS)) if isinstance(changes, dict) else []
     if unknown:
         errs.append(
             "$.placements[%s]: %s is not an approved term"
@@ -316,7 +390,9 @@ def amend(doc, placement_id, changes, reason, at, expected_revision):
                 "$.placements[%s]: approval is %r, not an approved placement to amend"
                 % (placement_id, placement.get("approval_status"))
             )
-        if not unknown and all(placement.get(field) == value for field, value in changes.items()):
+        if isinstance(changes, dict) and not unknown and all(
+            placement.get(field) == value for field, value in changes.items()
+        ):
             errs.append(
                 "$.placements[%s]: the amendment changes nothing, so the placement stays approved"
                 % (placement_id,)
@@ -340,10 +416,13 @@ def amend(doc, placement_id, changes, reason, at, expected_revision):
 
 def reapprove(doc, placement_id, approver, at, expected_revision):
     """Put one amended placement back to APPROVED without disturbing the others."""
-    errs = []
+    errs = _document_errors(doc)
+    if errs:
+        return _refuse(doc, errs)
     if doc.get("status") != "PARTIAL_INVALIDATED":
         errs.append("$.status: only a partially invalidated manifest has a placement to re-approve")
     errs.extend(_cas_errors(doc, expected_revision))
+    errs.extend(_placements_errors(doc))
     placement = _placement(doc, placement_id)
     if placement is None:
         errs.append("$.placements: %r is not in the manifest" % (placement_id,))
@@ -377,11 +456,14 @@ def reapprove(doc, placement_id, approver, at, expected_revision):
 
 def next_cycle(doc, campaign_cycle_id, starts_on, ends_on, revision, expected_revision):
     """Open the next 30-day cycle as a fresh DRAFT at a new approval revision."""
-    errs = []
+    errs = _document_errors(doc)
+    if errs:
+        return _refuse(doc, errs)
     if doc.get("status") not in SIGNED_STATUSES:
         errs.append("$.status: a new cycle follows a signed campaign")
     errs.extend(_cas_errors(doc, expected_revision))
     errs.extend(check_revision(doc.get("revision"), revision))
+    errs.extend(_placements_errors(doc))
     if _missing(campaign_cycle_id):
         errs.append("$.campaign_cycle_id: a new cycle names itself")
     elif campaign_cycle_id == doc.get("campaign_cycle_id"):
@@ -397,7 +479,7 @@ def next_cycle(doc, campaign_cycle_id, starts_on, ends_on, revision, expected_re
     new["status"] = "DRAFT"
     new["approved_by"] = None
     new["approved_at"] = None
-    for placement in new["placements"]:
+    for placement in _placements(new):
         placement["approval_status"] = "DRAFT"
         placement["invalidated_at"] = None
         placement["invalidated_reason"] = None
