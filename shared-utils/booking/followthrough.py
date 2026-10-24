@@ -56,6 +56,7 @@ Assert-based self-check:  python3 -I followthrough.py
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sys
 from dataclasses import dataclass, field
@@ -106,6 +107,7 @@ R_NO_BOOKING = "NO_BOOKING"
 R_NO_EVIDENCE_SOURCE = "NO_EVIDENCE_SOURCE"
 R_NO_AUTHORITATIVE_SOURCE = "NO_AUTHORITATIVE_SOURCE"
 R_BAD_EVIDENCE_SOURCE = "BAD_EVIDENCE_SOURCE"
+R_CONTENT_MISMATCH = "CONTENT_MISMATCH"
 
 # Offer stages. Mirrors the booking playbook's decline ladder.
 STAGE_INITIAL = "initial"
@@ -448,14 +450,14 @@ class BookingFollowThrough:
                          self._offer_message(chosen))
 
         # Nothing in the window: the configured no-availability path only.
+        # Beyond the window is not outside the policy: the same bounds hold,
+        # so nothing past and nothing inside the min-lead floor is offered.
         if self.policy.offer_next_available_beyond_window:
             beyond_end = end + timedelta(days=self.policy.max_window_days)
             beyond = [
                 s for s in self._read_free(calendar_id, end, beyond_end)
-                if s.calendar_id == calendar_id
-                and not self._excluded(s)
-                and self._has_daily_capacity(calendar_id, s)
-                and self._verify_free(calendar_id, s)
+                if self._acceptable(calendar_id, s, end, beyond_end)
+                and s.start >= start
             ]
             beyond.sort(key=lambda s: s.start)
             if beyond:
@@ -525,7 +527,7 @@ class BookingFollowThrough:
             raise Refusal(R_OUTSIDE_POLICY, "the daily cap is already reached")
 
         intent_key = self._intent_key("book", calendar_id, contact_id,
-                                      slot.instant_key(), purpose)
+                                      slot, purpose)
         action_id, created = self._intent(intent_key, slot, contact_id, purpose,
                                           intent_note)
         existing = self.store.get_action(action_id)
@@ -623,12 +625,17 @@ class BookingFollowThrough:
         if new_slot.calendar_id not in set(self.policy.calendars.values()):
             raise Refusal(R_CALENDAR_UNMAPPED,
                           "new slot is not on an operator-approved calendar")
-        if self._excluded(new_slot):
-            raise Refusal(R_OUTSIDE_POLICY, "new slot hits an excluded time")
+        # The change path is held to the approved booking policy exactly as
+        # book() is: lead time, window, exclusions and real daily capacity.
+        if not self._within_policy(new_slot, now):
+            raise Refusal(R_OUTSIDE_POLICY,
+                          "new slot is outside lead time, window or exclusions")
+        if not self._has_daily_capacity(calendar_id, new_slot):
+            raise Refusal(R_OUTSIDE_POLICY, "the daily cap is already reached")
 
         intent_key = self._intent_key("change", calendar_id,
                                       prior["payload"].get("canonical_contact_id") or "",
-                                      new_slot.instant_key(), booking_action_id)
+                                      new_slot, booking_action_id)
         action_id, created = self._intent(intent_key, new_slot,
                                           prior["payload"].get("canonical_contact_id"),
                                           "reschedule", "")
@@ -660,7 +667,7 @@ class BookingFollowThrough:
         )
         contact = prior["payload"].get("canonical_contact_id")
         intent_key = self._intent_key("cancel", calendar_id, contact or "",
-                                      slot.instant_key(), booking_action_id)
+                                      slot, booking_action_id)
         action_id, created = self._intent(intent_key, slot, contact, "cancel",
                                           reason)
         existing = self.store.get_action(action_id)
@@ -705,14 +712,17 @@ class BookingFollowThrough:
             except Exception:
                 observed = None       # unreadable is unverified, not a guess
             if observed is True:
-                return Outcome(booking_action_id, kind, OUTCOME_VERIFIED,
-                               source, evidence_id)
+                return self._persist_outcome(
+                    Outcome(booking_action_id, kind, OUTCOME_VERIFIED,
+                            source, evidence_id))
             if observed is False:
-                return Outcome(booking_action_id, kind, OUTCOME_CONTRADICTED,
-                               source, evidence_id,
-                               note="provider says the opposite")
-            return Outcome(booking_action_id, kind, OUTCOME_UNVERIFIED, source,
-                           evidence_id, note="provider could not confirm")
+                return self._persist_outcome(
+                    Outcome(booking_action_id, kind, OUTCOME_CONTRADICTED,
+                            source, evidence_id,
+                            note="provider says the opposite"))
+            return self._persist_outcome(
+                Outcome(booking_action_id, kind, OUTCOME_UNVERIFIED, source,
+                        evidence_id, note="provider could not confirm"))
 
         if source == EVIDENCE_OWNER:
             if not owner or not evidence_id:
@@ -720,15 +730,50 @@ class BookingFollowThrough:
                     R_NO_EVIDENCE_SOURCE,
                     "labelled owner evidence needs the owner and an evidence id",
                 )
-            return Outcome(booking_action_id, kind, OUTCOME_LABELED, source,
-                           evidence_id, note=f"labelled by {owner}")
+            return self._persist_outcome(
+                Outcome(booking_action_id, kind, OUTCOME_LABELED, source,
+                        evidence_id, note=f"labelled by {owner}"))
 
         raise Refusal(R_BAD_EVIDENCE_SOURCE,
                       f"{source!r} is neither provider_verified nor owner_labeled")
 
+    def _persist_outcome(self, outcome: Outcome) -> Outcome:
+        """Write the observed outcome where it is durable and readable.
+
+        The T-12 store's append-only observation log (the reconciliation runs)
+        is where a fact observed about an action is recorded; it never moves the
+        booking action through its own state machine.
+        """
+        self.store.record_reconciliation(
+            outcome.booking_action_id,
+            outcome.state,
+            {"record": "booking_outcome", "schema": SCHEMA,
+             "kind": outcome.kind, "source": outcome.source,
+             "evidence_id": outcome.evidence_id, "note": outcome.note},
+        )
+        return outcome
+
     def outcome_state(self, booking_action_id: str) -> str:
-        """A booking by itself proves nothing about attendance or sale."""
-        return OUTCOME_UNVERIFIED
+        """What was last recorded about this booking's outcome.
+
+        A booking by itself proves nothing about attendance or sale: with no
+        recorded outcome this reads "unverified", and a recorded but
+        unconfirmable check reads the same. What it never does is forget a
+        verified or owner-labelled outcome.
+        """
+        # ponytail: this reads one state per booking -- the last outcome
+        # recorded. Rows already carry their kind, so when one booking must be
+        # read for attendance and sale apart, add a kind filter here.
+        recorded = None
+        for run in self.store.reconciliation_runs(booking_action_id):
+            try:
+                evidence = json.loads(run["evidence_json"])
+            except (TypeError, ValueError):
+                continue
+            if evidence.get("record") != "booking_outcome":
+                continue      # another subsystem's row in the same log
+            recorded = run["outcome"]
+        return recorded or OUTCOME_UNVERIFIED
 
     def attribute(self, *, keyword: Optional[str] = None,
                   touches: Iterable[str] = ()) -> Attribution:
@@ -759,9 +804,12 @@ class BookingFollowThrough:
     # ── internals ──────────────────────────────────────────────────────
 
     def _intent_key(self, verb: str, calendar_id: str, contact_id: str,
-                    instant: str, purpose: Optional[str]) -> str:
+                    slot: Slot, purpose: Optional[str]) -> str:
+        # Identity is the whole slot (calendar + start + end), not its start:
+        # two durations at the same start are two different bookings.
         return "|".join(("booking", self.tenant_id, verb, calendar_id,
-                         contact_id, instant, (purpose or "default").strip().lower()))
+                         contact_id, slot.fingerprint(),
+                         (purpose or "default").strip().lower()))
 
     def _intent(self, intent_key: str, slot: Slot, contact_id: Optional[str],
                 purpose: Optional[str], note: str) -> Tuple[str, bool]:
@@ -819,6 +867,14 @@ class BookingFollowThrough:
         return {"payload": payload, "row": completion}
 
     def _replay_completed(self, action_id: str, slot: Slot) -> Booking:
+        # Replay is a replay only when the stored content is this slot. A
+        # differing slot never claims booked on another slot's receipt.
+        stored = self.store.get_action(action_id).get("content_sha256")
+        if stored and stored != slot.fingerprint():
+            raise Refusal(
+                R_CONTENT_MISMATCH,
+                "the intent on file was completed for a different slot, so its "
+                "receipt does not describe this booking")
         payload = self._completion_receipt(action_id)["payload"]
         return Booking(action_id=action_id, claimed=True, state=STATE_COMPLETED,
                        slot=slot,

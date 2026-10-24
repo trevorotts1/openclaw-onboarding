@@ -126,6 +126,31 @@ class FakeProvider:
         return self.observed.get(kind)
 
 
+class CollidingIntentKeys(BookingFollowThrough):
+    """Test double that forces every booking onto one intent key.
+
+    That is exactly the identity the pre-repair key had (start only), so the
+    replay guard is exercised the way a real collision would exercise it. The
+    override takes its fifth argument positionally, so it holds for both the
+    instant-keyed and the fingerprint-keyed callers.
+    """
+
+    def _intent_key(self, verb, calendar_id, contact_id, slot, purpose):
+        return "forced-collision|" + verb
+
+
+class PermissiveAvailability(FakeAvailability):
+    """A calendar adapter whose read is wider than the window it was asked for
+    (a stale cache, or a provider that ignores the bounds). What gets offered
+    must be bounded by the module, never by the adapter's good behaviour."""
+
+    def free_slots(self, calendar_id, start, end):
+        self.reads += 1
+        if self.fail:
+            raise RuntimeError("freeBusy unavailable")
+        return [s for s in self.free if s.calendar_id == calendar_id]
+
+
 class BookingCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="t28-booking-")
@@ -218,7 +243,11 @@ class RecheckTests(BookingCase):
         self.assertEqual(self.provider.creates, [],
                          "no provider write may happen on a stale read")
         action = self.store.action_by_intent(
-            "booking|tenant-1|book|CAL_A|c1|" + offered.instant_key() + "|consult")
+            "booking|tenant-1|book|CAL_A|c1|" + offered.fingerprint() + "|consult")
+        self.assertIsNotNone(
+            action,
+            "the intent key is booking|tenant|verb|calendar|contact|"
+            "fingerprint|purpose; the fingerprint is the whole slot")
         self.assertEqual(action["state"], "canceled")
 
     def test_recheck_read_failure_refuses_and_writes_nothing(self):
@@ -264,6 +293,45 @@ class RecheckTests(BookingCase):
         self.avail.booked[(CAL_A, day)] = 1
         offer = eng.offer_slots("consult", now=NOW)
         self.assertNotIn(5, [s.local("America/New_York").day for s in offer.slots])
+
+    def test_the_beyond_window_path_never_offers_a_slot_that_already_passed(self):
+        past = Slot(datetime(2027, 4, 1, 14, 0, tzinfo=ZoneInfo("UTC")),
+                    datetime(2027, 4, 1, 15, 0, tzinfo=ZoneInfo("UTC")), CAL_A)
+        policy = BookingPolicy(
+            calendars={"default": CAL_A}, timezone="America/New_York",
+            location="x", change_path="y", max_window_days=7,
+            min_lead_hours=2, offer_next_available_beyond_window=True)
+        eng = BookingFollowThrough(
+            store=self.store, availability=PermissiveAvailability([past]),
+            provider=self.provider, policy=policy, tenant_id="tenant-1")
+        offer = eng.offer_slots("consult", now=NOW)
+        self.assertEqual(offer.slots, (),
+                         "a slot that already passed is never the next available")
+        self.assertEqual(offer.stage, "escalate")
+
+    def test_the_beyond_window_path_respects_the_min_lead_floor(self):
+        too_soon = Slot(NOW + timedelta(hours=2), NOW + timedelta(hours=3), CAL_A)
+        base = dict(calendars={"default": CAL_A},
+                    timezone="America/New_York", location="x", change_path="y",
+                    max_window_days=7, min_lead_hours=12)
+
+        control = BookingFollowThrough(
+            store=self.store, availability=PermissiveAvailability([too_soon]),
+            provider=self.provider,
+            policy=BookingPolicy(**base, offer_next_available_beyond_window=False),
+            tenant_id="tenant-1")
+        self.assertEqual(control.offer_slots("consult", now=NOW).slots, (),
+                         "control: the normal path already applies the floor")
+
+        eng = BookingFollowThrough(
+            store=self.store, availability=PermissiveAvailability([too_soon]),
+            provider=self.provider,
+            policy=BookingPolicy(**base, offer_next_available_beyond_window=True),
+            tenant_id="tenant-1")
+        offer = eng.offer_slots("consult", now=NOW)
+        self.assertEqual(offer.slots, (),
+                         "the beyond-window path is held to the same min lead")
+        self.assertEqual(offer.stage, "escalate")
 
 
 # ── decline ladder and no-availability paths ───────────────────────────────
@@ -405,6 +473,43 @@ class ReceiptTests(BookingCase):
         self.assertEqual(first.action_id, second.action_id)
         self.assertTrue(second.claimed)
 
+    def test_same_start_different_duration_is_two_bookings_not_one(self):
+        hour = Slot(datetime(2027, 5, 5, 10, 0, tzinfo=NY),
+                    datetime(2027, 5, 5, 11, 0, tzinfo=NY), CAL_A)
+        block = Slot(datetime(2027, 5, 5, 10, 0, tzinfo=NY),
+                     datetime(2027, 5, 5, 13, 0, tzinfo=NY), CAL_A)
+        self.avail.free = [hour, block]
+        first = self.eng.book(purpose="consult", slot=hour, contact_id="c1",
+                              confirmed=True, now=NOW)
+        second = self.eng.book(purpose="consult", slot=block, contact_id="c1",
+                               confirmed=True, now=NOW)
+        self.assertEqual(len(self.provider.creates), 2,
+                         "a different slot is a different booking")
+        self.assertNotEqual(first.action_id, second.action_id)
+        self.assertTrue(second.claimed)
+        self.assertEqual(second.receipt["end"], block.end.isoformat(),
+                         "the receipt must describe the slot that was booked")
+        self.assertEqual(second.slot.end, block.end)
+
+    def test_a_replay_never_claims_booked_on_a_different_slot(self):
+        hour = Slot(datetime(2027, 5, 5, 10, 0, tzinfo=NY),
+                    datetime(2027, 5, 5, 11, 0, tzinfo=NY), CAL_A)
+        block = Slot(datetime(2027, 5, 5, 10, 0, tzinfo=NY),
+                     datetime(2027, 5, 5, 13, 0, tzinfo=NY), CAL_A)
+        self.avail.free = [hour, block]
+        eng = CollidingIntentKeys(store=self.store, availability=self.avail,
+                                  provider=self.provider, policy=self.policy,
+                                  tenant_id="tenant-1")
+        first = eng.book(purpose="consult", slot=hour, contact_id="c1",
+                         confirmed=True, now=NOW)
+        self.assertTrue(first.claimed)
+        with self.assertRaises(Refusal) as ctx:
+            eng.book(purpose="consult", slot=block, contact_id="c1",
+                     confirmed=True, now=NOW)
+        self.assertEqual(ctx.exception.code, "CONTENT_MISMATCH")
+        self.assertEqual(len(self.provider.creates), 1,
+                         "nothing is written for a slot the receipt does not describe")
+
     def test_confirmation_text_refuses_without_a_receipt(self):
         booking = self.eng.book(purpose="consult", slot=slot(5, 10),
                                 contact_id="c1", confirmed=True, now=NOW)
@@ -490,6 +595,44 @@ class ChangePathTests(BookingCase):
                            booking_action_id="act_missing",
                            new_slot=slot(6, 14), now=NOW)
 
+    def test_reschedule_inside_the_min_lead_is_refused(self):
+        first = self.eng.book(purpose="consult", slot=slot(5, 10),
+                              contact_id="c1", confirmed=True, now=NOW)
+        too_soon = Slot(NOW + timedelta(minutes=10), NOW + timedelta(minutes=70),
+                        CAL_A)
+        self.avail.free.append(too_soon)
+        self.assertRefused(R_OUTSIDE_POLICY, self.eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=too_soon, now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_reschedule_beyond_the_booking_window_is_refused(self):
+        first = self.eng.book(purpose="consult", slot=slot(5, 10),
+                              contact_id="c1", confirmed=True, now=NOW)
+        far_out = Slot(NOW + timedelta(days=90), NOW + timedelta(days=90, hours=1),
+                       CAL_A)
+        self.avail.free.append(far_out)
+        self.assertRefused(R_OUTSIDE_POLICY, self.eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=far_out, now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_reschedule_over_the_daily_cap_is_refused(self):
+        policy = BookingPolicy(
+            calendars={"default": CAL_A}, timezone="America/New_York",
+            location="x", change_path="y", max_window_days=14,
+            min_lead_hours=2, daily_cap=1)
+        eng = BookingFollowThrough(store=self.store, availability=self.avail,
+                                   provider=self.provider, policy=policy,
+                                   tenant_id="tenant-1")
+        first = eng.book(purpose="consult", slot=slot(5, 10),
+                         contact_id="c1", confirmed=True, now=NOW)
+        self.avail.booked[(CAL_A, slot(6, 14).local("America/New_York").date())] = 1
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(6, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
 
 # ── outcomes: authoritative or labelled, never guessed ─────────────────────
 
@@ -558,6 +701,39 @@ class OutcomeTests(BookingCase):
             source="owner_labeled", owner="Trevor", evidence_id="ev-sale-1")
         self.assertEqual(out.state, "owner_labeled")
         self.assertIn("Trevor", out.note)
+
+    def test_a_recorded_outcome_is_readable_after_the_call(self):
+        booking = self._booked()
+        self.provider.observed["attended"] = True
+        out = self.eng.record_outcome(
+            booking_action_id=booking.action_id, kind="attended",
+            source="provider_verified", evidence_id="ev-att-1")
+        self.assertEqual(out.state, "verified")
+        self.assertEqual(self.eng.outcome_state(booking.action_id), "verified",
+                         "a verified attendance is not discarded on return")
+
+    def test_a_recorded_outcome_survives_a_new_reader(self):
+        booking = self._booked()
+        self.provider.observed["attended"] = True
+        self.eng.record_outcome(
+            booking_action_id=booking.action_id, kind="attended",
+            source="provider_verified", evidence_id="ev-att-1")
+        fresh = BookingFollowThrough(store=self.store, availability=self.avail,
+                                     provider=self.provider, policy=self.policy,
+                                     tenant_id="tenant-1")
+        self.assertEqual(fresh.outcome_state(booking.action_id), "verified",
+                         "the outcome lives in the durable store, not in memory")
+
+
+# ── the declared public surface ────────────────────────────────────────────
+
+class PublicSurfaceTests(unittest.TestCase):
+    def test_every_name_the_package_declares_exists(self):
+        import booking
+        missing = [name for name in booking.__all__
+                   if not hasattr(booking, name)]
+        self.assertEqual(missing, [],
+                         "names declared in __all__ must exist: %s" % (missing,))
 
 
 # ── attribution ────────────────────────────────────────────────────────────
