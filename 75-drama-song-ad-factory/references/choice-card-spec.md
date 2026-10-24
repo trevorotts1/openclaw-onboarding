@@ -52,7 +52,7 @@ Your drama song ad
                 the song underneath, no echo effect; not with Sketch to Life)
   Clips:        (3, 5 and 10 minutes) automatic 60-second and 90-second
                 clips to post on social media, included in the price
-  Video model:  Hailuo 02 Standard (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
+  Video model:  MiniMax H3 (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
                 Google Veo 3.1, each with its price for the chosen length
   Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
   Price:        computed by Skill 74 `price`   (+ the measured planning allowance)
@@ -521,29 +521,30 @@ Decision 32, plan 6.13.
 
 ### 3.8 Video model
 
-Default **Hailuo 02 Standard at 768P** (decision 5). No choice means
-Hailuo 02 Standard, and the card says so.
+Default **MiniMax H3 at 768P** (decision 5, restored 2026-10-24: the live KIE
+catalog carries `minimax-h3/image-to-video`). No choice means
+MiniMax H3, and the card says so.
 
 **The intake question (FU-VIDEO-MODEL-CHOICES, 2026-10-09).** After the
 client picks a length, the video model question lists four models, each with
-its price for THAT length, one plain descriptor each (about 8 words), and Hailuo
-02 Standard first and marked RECOMMENDED:
+its price for THAT length, one plain descriptor each (about 8 words), and MiniMax
+H3 first and marked RECOMMENDED:
 
 ```
 Question 4 of 6 - VIDEO MODEL
 Which video model should make your shots? Prices are for your 3-minute ad,
 with the song, pictures and a 50% redo allowance.
-1. Hailuo 02 Standard - great quality, best value - about $6.36 (RECOMMENDED)
-2. Seedance 2.5 - premium detail and motion - about $68.57
-3. Seedance 2.0 Mini - quicker and cheaper - about $9.38
-4. Google Veo 3.1 - top-tier realism - about $9.07
+1. MiniMax H3 - great quality, best value - about $11.46 (RECOMMENDED)
+2. Seedance 2.5 - premium detail and motion - about $85.71
+3. Seedance 2.0 Mini - quicker and cheaper - about $11.73
+4. Google Veo 3.1 - top-tier realism - about $11.34
 ```
 
 Seedance is ByteDance's VIDEO model (Seedream is its image model and cannot
 make shots). The four models, provider ids and rates live in ONE table,
 `scripts/core/choice_card/video_models/video_model_rates.json` (from
 the KIE live model list, checked 2026-10-09), each at the resolution the
-factory really renders: Hailuo 02 Standard 768P, Seedance 2.5 720p, Seedance 2.0 Mini 720p,
+factory really renders: MiniMax H3 768P, Seedance 2.5 720p, Seedance 2.0 Mini 720p,
 Google Veo 3.1 Fast 720p (per 8-second clip). The figure shown comes from the
 SAME function as the final card (`card_render.price_envelope`): video + one
 keyframe per shot + the character reference pictures + the song, then the
