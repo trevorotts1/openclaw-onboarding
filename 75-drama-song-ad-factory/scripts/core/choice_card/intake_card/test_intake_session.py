@@ -355,6 +355,20 @@ class IntakeSessionTest(unittest.TestCase):
         self.assertEqual(st["reason_code"], "QUESTION_IDENTITY_REQUIRED")
         self.assertEqual(st["answered_count"], 2)
 
+    def test_revision_identity_requirement_survives_invalid_reply(self):
+        self.advance()
+        self.qs[-1]["options"].reverse()
+        self.call(["1"])
+        self.call(["unoffered option"])
+        st = self.call(["1"])
+        self.assertEqual(st["reason_code"], "QUESTION_IDENTITY_REQUIRED")
+        self.assertEqual(st["answered_count"], 2)
+
+    def test_first_question_preface_is_exactly_the_existing_renderer_flow(self):
+        self.qs[0]["preface"] = card.NO_SAVED_LINE
+        expected = card.conversation([], self.qs, purpose_flow=False)["message"]
+        self.assertEqual(self.call()["message"], expected)
+
     def test_exact_original_questions_are_not_mutated(self):
         original = copy.deepcopy(self.qs)
         self.advance()
