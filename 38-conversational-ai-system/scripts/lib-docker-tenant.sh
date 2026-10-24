@@ -17,6 +17,20 @@
 #
 # The operator zone's Cloudflare token is NEVER given to a client box.
 
+# PBB-017: the mandatory send-directive and conversation-memory needles now live
+# in ONE place — scripts/lib-hook-mapping-contract.sh — and this file merely
+# prints them. FAIL CLOSED when it is missing: falling back to a duplicated
+# literal list here is exactly what let the writer and the two gates drift apart,
+# so an install without the contract is refused rather than silently guessed.
+_S38_CONTRACT="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/lib-hook-mapping-contract.sh"
+if [ ! -f "$_S38_CONTRACT" ]; then
+  echo "REFUSED: lib-hook-mapping-contract.sh not found at $_S38_CONTRACT — the directive needles have no source of truth. Install the full skill." >&2
+  return 1 2>/dev/null || exit 1
+fi
+# shellcheck source=/dev/null
+. "$_S38_CONTRACT"
+unset _S38_CONTRACT
+
 s38_in_container() {
   [ -f /.dockerenv ] || [ -f /run/.containerenv ] \
     || grep -qaE 'docker|containerd|kubepods|libpod' /proc/1/cgroup 2>/dev/null
@@ -135,22 +149,21 @@ s38_canonical_mapping() {
 }
 
 # Mandatory send-directive elements (qc-send-directive.sh Layer 3 enforces the
-# same list). Kept here so the installer guard and the mapping migration cannot
-# drift apart.
+# same list) and conversation-memory elements (qc-conversation-memory.sh).
+# PBB-017: the lists themselves live in lib-hook-mapping-contract.sh and are
+# SOURCED at the top of this file — these are printers over that one source, so
+# the installer guard, the mapping migration and the two gates cannot drift.
 s38_send_directive_needles() {
-  printf '%s\n' "MANDATORY" "SEND" "GHL Conversations API" "drafting" "NOT sending" \
-    "messageId" "SAME channel" "do NOT hardcode SMS" "conversations/search"
+  printf '%s\n' "$HOOK_MAPPING_SEND_DIRECTIVE_NEEDLES"
 }
 
-# Mandatory conversation-memory elements (qc-conversation-memory.sh enforces
-# the same list): read the per-contact log before replying, append after sending.
 s38_conversation_memory_needles() {
-  printf '%s\n' "conversational-logs" "read" "append"
+  printf '%s\n' "$HOOK_MAPPING_CONVERSATION_MEMORY_NEEDLES"
 }
 
 # Every needle a valid messageTemplate must carry.
 s38_required_template_needles() {
-  s38_send_directive_needles; s38_conversation_memory_needles
+  printf '%s\n' "$HOOK_MAPPING_DIRECTIVE_NEEDLES"
 }
 
 # True when the template carries every required needle.

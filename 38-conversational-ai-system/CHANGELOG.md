@@ -1,3 +1,67 @@
+## [2.0.25] - 2026-10-24 - fix(38/hooks): `model` is OPTIONAL on hooks.mappings — PBB-017 reconciliation
+
+Two accepted repairs contradicted each other, and the contradiction made a fresh install fail its own readiness gate:
+
+- **T-09** (`s38_canonical_mapping`) rewrites the inbound mapping and deliberately emits **no** `model` key.
+- **T-10** put the authoritative predicate in `scripts/lib-hook-mapping-contract.sh`, which listed `model` as a REQUIRED key. Its own fixture row `fresh-installer-today` proved the consequence: `GATEVERDICT=ERR`, reason `missing-key:model`. So `24-self-test-hook.sh` and `qc-backend-ready.sh` agreed with each other and both disagreed with the writer.
+
+**Ground truth (evidence, not preference): `model` is NOT required — `agentId` is sufficient.**
+
+| Evidence | Shows |
+|---|---|
+| Installed OpenClaw 2026.10.5 (1b58cb9), `dist/zod-schema-BVpLKnmq.mjs` | `HookMappingSchema = strictObject({ ... model: string().optional() ... })` — every mapping field is `.optional()`; `.strict()` only rejects unknown keys |
+| `openclaw config validate` (that same build) | mapping WITHOUT `model` -> "Config valid"; the same mapping with `fallbacks` -> "Unrecognized key: fallbacks" |
+| `docs/gateway/config-hooks.md`, "Mapping details" | `model` | default "agent/model defaults" | contract "Templated model override." |
+| `dist/hooks-STZ6dZJ5.mjs` | `renderOptional(mapping.model, ctx)` -> undefined when absent; `mergeAction` -> `override.model ?? baseAgent?.model`, i.e. the run falls back to the AGENT's configured model |
+| live `~/.openclaw/openclaw.json` on the operator box | 5 of 7 mappings carry no `model` and the config validates clean |
+| this skill's own `24-self-test-hook.sh` | resolves the self-test model from `agents.entries[].model` -> `agents.list[].model` -> `agents.defaults.model`, never from the mapping |
+| `references/GHL-INBOUND-AND-PLAYBOOKS.md` §12 | lists `model` among *valid* mapping keys, never as required; the "23 keys (exact)" is the GHL RAW BODY, a different object |
+
+Changes:
+
+- `scripts/lib-hook-mapping-contract.sh`: `model` removed from the required key set and kept as a valid optional key. A `model` key that is PRESENT but BLANK is still refused (`blank-model-override`) — harmless on the mapping path, but OpenClaw's own `normalizeAgentPayload` rejects a present-but-blank model with "model required", so a blank override is always a wiring mistake. Named as a SKILL-level strictness, not an OpenClaw requirement. `messageTemplate` is now also required NON-EMPTY (`no-messageTemplate`), because OpenClaw's `validateAction` refuses an agent action with no message — that is the key the evidence genuinely makes load-bearing.
+- The directive needles have ONE home. `HOOK_MAPPING_SEND_DIRECTIVE_NEEDLES` / `HOOK_MAPPING_CONVERSATION_MEMORY_NEEDLES` live in the contract; `scripts/lib-docker-tenant.sh` SOURCES it and its `s38_send_directive_needles` / `s38_conversation_memory_needles` / `s38_required_template_needles` are printers over it, failing closed when the contract file is absent. The test-side "needles asserted equal rather than sourced" ceiling is deleted.
+- `scripts/qc-backend-ready.sh` and `scripts/24-self-test-hook.sh` stop demanding `model`; both report the optionality explicitly.
+- `tests/hook-mapping-contract.test.sh`: 11 rows. `fresh-installer-today` now PASSes (it is a correctly-shaped fresh mapping); `missing-model` renamed `blank-model-override` (its body carries `"model":""`, a blank override, not a missing one); `decoy-model-elsewhere` now PASSes; two new rows — `missing-messageTemplate` (a genuinely-required key missing MUST fail in both gates with the reason naming the key) and `decoy-valid-elsewhere` (a complete decoy must not launder a broken target, the case the old whole-file grep passed). The writer checks now read the shape from `s38_canonical_mapping`, run that shape through the contract end to end, and assert the needles are SOURCED rather than compared.
+
+The 23-key GHL RAW BODY is unchanged and still carries `model` — it is a different object from a `hooks.mappings` entry.
+
+## [2.0.24] - 2026-10-24 - fix: one inbound-mapping contract shared by the self-test, the QC gate and the installer
+
+G-03 / G-04 / G-05. `24-self-test-hook.sh` evaluated one parsed hooks mapping and refused it without a `model`,
+while `qc-backend-ready.sh` grepped the WHOLE `openclaw.json` for `"model": "..."` and `"deliver": false` — so a
+model anywhere in the file made the QC gate PASS the exact mapping the self-test refused. Same fixture: self-test
+says `no-model`, qc-backend-ready says PASS. On top of that the installer skipped a Skill 38 copy on a matching
+`skill-version.txt` STRING ALONE, so a dest wearing the right version with wrong content was never refreshed.
+
+- New `scripts/lib-hook-mapping-contract.sh`: the ONE predicate for a valid inbound mapping, evaluated per mapping
+  id. Exact key set (required `id`, `match`, `action`, `agentId`, `model`, `deliver`, `messageTemplate`; optional
+  `wakeMode`, `name`, `sessionKey`, `timeoutSeconds`; anything else fails by name — the OpenClaw schema is `.strict()`
+  and rejects `fallbacks`), `action` exactly `agent`, a non-empty `match.path`, `agentId` listed in
+  `hooks.allowedAgentIds`, a non-empty `model`, `deliver` exactly `false`, and all twelve send/memory directive
+  needles in `messageTemplate`. Pure bash + POSIX awk: no jq, no python3, so it works on a fleet box and keeps
+  qc-backend-ready's "no python" claim true. It emits `MAPCONTRACT` / `MAPENABLED` / `MAPSELECT` / `GATEVERDICT`
+  lines and fails CLOSED when the evaluator itself errors.
+- `scripts/qc-backend-ready.sh` and `scripts/24-self-test-hook.sh` both source it and print the same verdict lines,
+  so the two gates cannot reach different verdicts on the same config. The whole-file greps are gone.
+  `24-self-test-hook.sh` gains `--mapping-only` (evaluate the mapping contract and stop) for the fixture matrix.
+  The private python predicate in the self-test is deleted.
+- `install.sh` `install_skill_38_conversational_ai_system` now skips ONLY when the version string AND the content
+  both match (cksum over the four contract-carrying scripts), reports `installed` / `already-current` /
+  `refreshed-content-drift` / `refreshed-version`, and writes a secret-free `provisioning-receipt.json` next to the
+  install recording what was actually installed.
+- Tests: `tests/hook-mapping-contract.test.sh` — a 9-row fixture matrix (known-good control, fresh installer
+  output, T-09-upgraded, stale agentId, missing model, missing directive, wrong shape, decoy model on a sibling
+  mapping, hooks disabled) driven through BOTH gates with byte-identical verdicts and matching exit codes on every
+  row, plus the known-good control so identical failure cannot masquerade as agreement. It also asserts the
+  writer's fail-closed directive needles equal the contract's needles, and runs the extracted installer function
+  to prove content drift is refreshed rather than skipped.
+
+Open: `15-configure-hooks-mappings.sh` (T-09 lane) still does not emit `model`, so a fresh mapping is refused
+`missing-key:model` — that is G-03 on the writer side and is the fix T-09 owns. The directive needles are asserted
+equal to the writer's rather than sourced from it, because that file is not editable from this lane; once the
+writer sources the contract too, the equality assertion can go.
+
 ## [2.0.24] - 2026-10-24 - fix(hooks): content-addressed hooks.mappings migration; repair rebinds a stale agentId
 
 Two demonstrated defects left an upgraded box with a permanently broken GHL inbound hook body:

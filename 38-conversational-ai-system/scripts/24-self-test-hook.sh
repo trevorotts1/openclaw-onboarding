@@ -10,7 +10,9 @@
 # WHAT IT DOES (in order; any failure => FIX and RE-TEST until green):
 #   (a) READINESS — confirm the backend is prepared to RECEIVE:
 #       - hooks.enabled is true
-#       - a live hooks.mappings entry for HOOK_NAME with action=agent + deliver:false + a model
+#       - a live hooks.mappings entry for HOOK_NAME with action=agent + deliver:false
+#         + a non-empty messageTemplate (PBB-017: `model` is an OPTIONAL override —
+#         the run falls back to the agent's own configured model)
 #       - GHL creds present in secrets/.env (GHL_PRIVATE_INTEGRATION_TOKEN + GHL_LOCATION_ID)
 #       - the conversational-logs dir exists and is writable (node-owned)
 #       - /healthz returns 200 (gateway up)
@@ -68,13 +70,32 @@ OS_NAME="$(uname -s 2>/dev/null || echo unknown)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DRY_RUN=0
+MAPPING_ONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --mapping-only) MAPPING_ONLY=1; shift ;;
     -h|--help) sed -n '1,60p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# --mapping-only: evaluate ONLY the hooks.mappings contract and stop. The
+# fixture matrix (tests/hook-mapping-contract.test.sh) drives this mode and
+# qc-backend-ready.sh against the same fixtures and diffs the MAPCONTRACT
+# lines, so the two gates are provably identical rather than merely similar.
+if [ "$MAPPING_ONLY" = "1" ]; then
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-hook-mapping-contract.sh"
+  _mc="${OPENCLAW_CONFIG:-}"
+  [ -n "$_mc" ] || { echo "OPENCLAW_CONFIG is required with --mapping-only" >&2; exit 2; }
+  [ -f "$_mc" ] || { echo "not found: $_mc" >&2; exit 2; }
+  HOOK_MAPPING_ID="${HOOK_NAME:-${ROUTE_ID:-}}"
+  export HOOK_MAPPING_ID
+  _mc_out="$(hook_mapping_contract_eval "$_mc")"
+  printf '%s\n' "$_mc_out"
+  if printf '%s\n' "$_mc_out" | grep '^GATEVERDICT|OK|' >/dev/null; then exit 0; fi
+  exit 1
+fi
 
 PUBLIC_HOSTNAME="${PUBLIC_HOSTNAME:-}"
 HOOK_NAME="${HOOK_NAME:-${ROUTE_ID:-}}"
@@ -132,35 +153,35 @@ sect "(a) Backend readiness — is the agent prepared to RECEIVE?"
 [ -n "$HOOKS_TOKEN" ]     || { bad "HOOKS_TOKEN could not be resolved"; fix "set hooks.token in openclaw.json or export HOOKS_TOKEN"; }
 [ -n "$OC_CONFIG" ]       || { bad "openclaw.json not found"; fix "run from a box with a live OpenClaw install"; }
 
-if [ -n "$OC_CONFIG" ] && command -v python3 >/dev/null 2>&1; then
-  READY="$(HOOK_NAME="$HOOK_NAME" python3 - "$OC_CONFIG" <<'PY' 2>/dev/null || true
-import json,os,sys
-try: d=json.load(open(sys.argv[1]))
-except Exception: print("ERR:cannot-parse-config"); sys.exit(0)
-hooks=d.get("hooks") or {}
-if hooks.get("enabled") is False: print("ERR:hooks-disabled"); sys.exit(0)
-maps=hooks.get("mappings") or []
-if isinstance(maps,dict): maps=list(maps.values())
-want=(os.environ.get("HOOK_NAME") or "").strip()
-chosen=None
-for m in maps:
-    if isinstance(m,dict) and str(m.get("id") or m.get("match") or "")==want: chosen=m; break
-if chosen is None:
-    for m in maps:
-        if isinstance(m,dict) and (m.get("action")=="agent" or m.get("agentId") or m.get("agent_id")): chosen=m; break
-if chosen is None: print("ERR:no-live-hooks-mapping"); sys.exit(0)
-probs=[]
-if chosen.get("deliver", None) is not False: probs.append("deliver-not-false")
-if not (chosen.get("model") or "").strip(): probs.append("no-model")
-print("OK:"+((chosen.get("model") or "").strip()) if not probs else "ERR:"+",".join(probs))
-PY
-)"
-  case "$READY" in
-    OK:*) ok "hooks.enabled + a live mapping for '$HOOK_NAME' (action=agent, deliver:false, model=${READY#OK:})" ;;
-    ERR:hooks-disabled)     bad "hooks.enabled is false"; fix "openclaw config set hooks.enabled true (or merge it into openclaw.json), then restart the gateway" ;;
-    ERR:no-live-hooks-mapping) bad "no live hooks.mappings agent entry"; fix "run scripts/15-configure-hooks-mappings.sh" ;;
-    ERR:*) bad "mapping not receive-ready: ${READY#ERR:}"; fix "need deliver:false + a working model on the '$HOOK_NAME' mapping" ;;
-    *) bad "could not evaluate hooks.mappings readiness" ;;
+# THE hook-mapping contract — the SAME predicate qc-backend-ready.sh runs, from
+# scripts/lib-hook-mapping-contract.sh. This used to be a private python snippet
+# with its own two-rule idea of a "valid" mapping (deliver not false, model
+# present), while qc-backend-ready.sh whole-file grepped for those same keys and
+# passed a mapping this one refused. One predicate now, per mapping id (G-03/G-04/G-05).
+. "$SCRIPT_DIR/lib-hook-mapping-contract.sh"
+
+if [ -n "$OC_CONFIG" ]; then
+  HOOK_MAPPING_ID="$HOOK_NAME"
+  export HOOK_MAPPING_ID
+  READY_OUT="$(hook_mapping_contract_eval "$OC_CONFIG")"
+  printf '%s\n' "$READY_OUT"
+
+  SEL_LINE="$(printf '%s\n' "$READY_OUT" | grep '^MAPSELECT|' | head -n1)"
+  SEL_ID="${SEL_LINE#MAPSELECT|}"; SEL_ID="${SEL_ID%%|*}"
+  GATE_LINE="$(printf '%s\n' "$READY_OUT" | grep '^GATEVERDICT|' | head -n1)"
+  SEL_VERDICT="$(printf '%s\n' "$READY_OUT" | awk -F'|' -v want="$SEL_ID" '$1=="MAPCONTRACT" && $2==want { print ($3=="OK" ? "OK" : $4); exit }')"
+
+  if [ -z "$SEL_ID" ]; then
+    bad "no live hooks.mappings agent entry"; fix "run scripts/15-configure-hooks-mappings.sh"
+  elif [ "$SEL_VERDICT" = "OK" ]; then
+    ok "hooks.enabled + a live mapping for '$HOOK_NAME' (id='$SEL_ID': exact key set, action=agent, deliver:false, non-empty messageTemplate, full send/memory directives, agentId bound)"
+  else
+    bad "mapping '$SEL_ID' not receive-ready: ${SEL_VERDICT:-cannot-parse-config}"
+    fix "fix the mapping per scripts/lib-hook-mapping-contract.sh (needs action=agent + deliver:false + a non-empty messageTemplate + every send/memory directive + agentId listed in hooks.allowedAgentIds; 'model' is an optional override), then re-run 15-configure-hooks-mappings.sh"
+  fi
+
+  case "$GATE_LINE" in
+    *hooks-disabled*) bad "hooks.enabled is false"; fix "openclaw config set hooks.enabled true (or merge it into openclaw.json), then restart the gateway" ;;
   esac
 fi
 
