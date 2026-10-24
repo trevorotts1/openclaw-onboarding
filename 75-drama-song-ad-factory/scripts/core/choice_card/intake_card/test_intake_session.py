@@ -4,6 +4,7 @@ from contextlib import closing
 import json
 from types import SimpleNamespace
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -481,6 +482,90 @@ class IntakeSessionTest(unittest.TestCase):
         self.assertFalse(st["done"])
         self.assertEqual(st["reason_code"], "AI_MODEL_BINDING_CONFLICT")
         self.assertEqual(path.read_bytes(), before)
+
+    def test_prior_confirmed_handoff_upgrade_is_provenanced_idempotent_and_preserves_assets(self):
+        from choice_card.intake_card import ai_models
+        from batch_mode.batch import STAGES
+        import sqlite3
+        qs = [next(q for q in card.QUESTIONS if q["id"] == qid) for qid in
+              ("offer", "audience", "models", "model", "storyboard", "song", "script")]
+        state = session.process([], qs, run_dir=self.run, purpose_flow=False, target="original-fixture-target")
+        replies = ["New Chapter Coaching", "Founders 45–60", "opus-chain builds, haiku-chain checks", "2", "yes", "yes", "yes", "yes"]
+        for raw in replies:
+            state = session.process([raw], qs, run_dir=self.run, purpose_flow=False,
+                                    target="original-fixture-target", source_ref="message:original-synthetic-source")
+        self.assertTrue(state["done"], state)
+        # Recreate the prior release's provenanced, confirmed protocol state:
+        # it had its exact model lock and approval preferences, but no AI or
+        # canonical-stage bootstrap. Actual prior-source reproduction is also
+        # recorded in private QC evidence; this fixture needs no Git checkout.
+        state_path = self.run / "control" / "intake-session.json"
+        old = json.loads(state_path.read_text())
+        old.pop("ai_model_binding")
+        old.pop("requested_runtime", None)
+        state_path.write_text(json.dumps(old))
+        (self.run / "model-bindings.json").unlink()
+        db = self.run / "control" / "state.sqlite3"
+        with closing(sqlite3.connect(db)) as con:
+            con.execute("DELETE FROM stages")
+            con.execute("DELETE FROM events WHERE kind='init'")
+            con.commit()
+        prior_copy = self.run.parent / "prior-release-copy"
+        shutil.copytree(self.run, prior_copy)
+
+        def snapshot(folder):
+            return {str(p.relative_to(folder)): (p.read_bytes(), p.stat().st_mtime_ns)
+                    for p in folder.rglob("*") if p.is_file()}
+
+        self.assertTrue(session.completion_status(self.run, require_handoff=False)["done"])
+        self.assertFalse(session.completion_status(self.run)["valid"])
+        before = snapshot(self.run)
+        with patch.object(session, "_finish", side_effect=AssertionError("approval/preference writers forbidden")):
+            result = session.ensure_handoff(self.run, runtime="claude-nine")
+        self.assertTrue(result["handoff_ready"], result)
+        self.assertTrue(result["changed"])
+        after = snapshot(self.run)
+        for rel, original in before.items():
+            if rel not in ("control/intake-session.json", "control/state.sqlite3"):
+                self.assertEqual(after[rel], original, rel)
+        upgraded = json.loads(state_path.read_text())
+        for key in ("answer_records", "confirmation", "events", "pending", "run_id"):
+            self.assertEqual(upgraded[key], old[key], key)
+        with closing(sqlite3.connect(db)) as con:
+            self.assertEqual(con.execute("SELECT stage, state FROM stages ORDER BY rowid").fetchall(),
+                             [(stage, "NOT_STARTED") for stage, _ in STAGES])
+        binding = ai_models.load_bindings(self.run)
+        self.assertEqual(binding["bindings"]["build"]["model_id"], "opus-chain")
+        self.assertEqual(binding["bindings"]["check"]["model_id"], "haiku-chain")
+        self.assertEqual(binding["attempts"], [])
+        ready_snapshot = snapshot(self.run)
+        with patch.object(session, "_persist_ai_roles", side_effect=AssertionError("must not rebind")), patch.object(session, "_persist_model_lock", side_effect=AssertionError("must not rewrite DB")):
+            again = session.ensure_handoff(self.run)
+        self.assertTrue(again["handoff_ready"])
+        self.assertFalse(again["changed"])
+        self.assertEqual(snapshot(self.run), ready_snapshot)
+
+        for condition in ("invalid_confirmation", "missing_db", "corrupt_db", "conflicting_roles"):
+            with self.subTest(condition=condition):
+                case = self.run.parent / condition
+                shutil.copytree(prior_copy, case)
+                case_state = case / "control" / "intake-session.json"
+                case_db = case / "control" / "state.sqlite3"
+                if condition == "invalid_confirmation":
+                    untrusted = json.loads(case_state.read_text())
+                    untrusted["confirmation"]["source"] = "assistant"
+                    case_state.write_text(json.dumps(untrusted))
+                elif condition == "missing_db":
+                    case_db.unlink()
+                elif condition == "corrupt_db":
+                    case_db.write_bytes(b"malformed database fixture")
+                else:
+                    ai_models.bind_roles(case, "haiku-chain", "opus-chain", runtime="claude-nine")
+                blocked_before = snapshot(case)
+                result = session.ensure_handoff(case)
+                self.assertFalse(result["handoff_ready"], result)
+                self.assertFalse(result["changed"])
+                self.assertEqual(snapshot(case), blocked_before)
 
     def test_exact_original_questions_are_not_mutated(self):
         original = copy.deepcopy(self.qs)

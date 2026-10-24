@@ -148,17 +148,17 @@ def _provider_identity(parsed):
             ("name", "kie_model", "lock", "resolution", "shape", "shot_s", "kie_tier", "clip_s")}
 
 
-def _persist_model_lock(state, answers, run_dir):
+def _persist_model_lock(state, answers, run_dir, *, prepare_only=False):
     import state_store
     try:
-        return _persist_model_lock_impl(state, answers, run_dir)
+        return _persist_model_lock_impl(state, answers, run_dir, prepare_only=prepare_only)
     except (state_store.StoreError, sqlite3.Error):
         # A malformed or recovery-required existing store is preserved, never
         # recreated, rebound to another run, or treated as completed intake.
         return "VIDEO_MODEL_STATE_UNAVAILABLE"
 
 
-def _persist_model_lock_impl(state, answers, run_dir):
+def _persist_model_lock_impl(state, answers, run_dir, *, prepare_only=False):
     selected = next((a for a in answers if a.get("id") == "model"), None)
     if selected is None or not run_dir:
         return None
@@ -182,7 +182,8 @@ def _persist_model_lock_impl(state, answers, run_dir):
         # Read identity before opening a writer; a foreign/multi-run store is
         # never repaired or overwritten by intake.
         from urllib.parse import quote
-        with closing(sqlite3.connect("file:" + quote(str(db.resolve())) + "?mode=ro", uri=True)) as con:
+        uri = "file:" + quote(str(db.resolve())) + "?mode=ro" + ("&immutable=1" if prepare_only else "")
+        with closing(sqlite3.connect(uri, uri=True)) as con:
             tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             for table in ("stages", "video_model_lock"):
                 if table in tables:
@@ -199,9 +200,12 @@ def _persist_model_lock_impl(state, answers, run_dir):
                             (Path(run_dir).resolve().name, "run_folder_basename"))
     chosen = models.model_for(selected["n"])
     expected = chosen.get("lock", chosen["kie_model"])
-    existing = model_lock.read_locked_model(db, rid) if db.exists() else None
+    existing = ((_inspect_model_lock(db, rid) if prepare_only else model_lock.read_locked_model(db, rid))
+                if db.exists() else None)
     if existing is not None and existing != expected:
         return "VIDEO_MODEL_LOCK_CONFLICT"
+    if prepare_only:
+        return None if _existing_store_verified(db) else "VIDEO_MODEL_STATE_UNAVAILABLE"
     # Initialise only missing canonical stages. Existing states, leases and
     # evidence stay intact; no stage is claimed, started or marked COMPLETE.
     from batch_mode.batch import STAGES
@@ -288,7 +292,7 @@ def _option(q, parsed):
             "description": description, "value": parsed.get("value"), "number_shown": n}
 
 
-def _persist_ai_roles(state, answers, run_dir):
+def _persist_ai_roles(state, answers, run_dir, *, prepare_only=False):
     selected = next((a for a in answers if a.get("id") == "models"), None)
     if selected is None or not run_dir:
         return None
@@ -319,10 +323,14 @@ def _persist_ai_roles(state, answers, run_dir):
         result = {"ok": True, "binding_id": existing.get("binding_id"),
                   "bindings": held, "runtime": existing.get("runtime"), "reused": True}
     else:
+        if prepare_only:
+            return None
         result = ai_models.bind_roles(run_dir, pair["build"], pair["check"],
                                      runtime=runtime, bound_by="confirmed-intake")
     if not result.get("ok"):
         return result.get("error_code") or "AI_MODEL_BINDING_REFUSED"
+    if prepare_only:
+        return None
     rec = state["answer_records"]["models"]
     state["ai_model_binding"] = {"binding_id": result.get("binding_id"),
         "bindings": copy.deepcopy(result["bindings"]), "runtime": result.get("runtime"),
@@ -575,11 +583,14 @@ def _inspect_model_lock(db, run_id):
         return None
 
 
-def completion_status(run_dir):
+def completion_status(run_dir, *, require_handoff=True):
     """Inspect persisted intake completion without changing any run artifact.
 
     Only this session's complete question IDs and its explicit client recap
     confirmation permit ``done``. A summary string or asset preference cannot.
+    ``require_handoff=False`` is for the narrow prior-version handoff repair:
+    it still verifies all raw answer provenance, confirmation and existing
+    video-model DB lock, while omitting only the newer AI/stage bootstrap.
     """
     path = _session_path(run_dir, None)
     out = {"exists": bool(path and path.exists()), "valid": True, "done": False,
@@ -633,7 +644,7 @@ def completion_status(run_dir):
                     conf.get("rendered_question") != pending["message"] or not conf.get("at_utc") or
                     not any(e == conf for e in state["events"])):
                 raise ValueError("completion has no matching explicit client recap confirmation")
-            if "models" in required:
+            if require_handoff and "models" in required:
                 from choice_card.intake_card import ai_models
                 selected_pair = state["answer_records"]["models"]["parsed"]["value"]
                 binding = state.get("ai_model_binding") or {}
@@ -656,6 +667,11 @@ def completion_status(run_dir):
                         _inspect_model_lock(Path(run_dir) / "control" / "state.sqlite3",
                                             state["run_id"]) != expected_model):
                     raise ValueError("completion has no matching persisted video-model choice")
+                if require_handoff:
+                    from batch_mode.batch import STAGES
+                    existing_stages = _inspect_stage_ids(Path(run_dir) / "control" / "state.sqlite3", state["run_id"])
+                    if existing_stages is None or any(stage not in existing_stages for stage, _ in STAGES):
+                        raise ValueError("confirmed intake still needs canonical stage handoff")
         out.update(valid=True, done=state["done"],
                    reason_code="INTAKE_CONFIRMED" if state["done"] else "INTAKE_WAITING",
                    question_id=None if state["done"] else pending["id"],
@@ -747,3 +763,102 @@ def seed_answers(records, questions=None, *, run_dir=None, run_state_file=None,
                     "reason_code": "INTAKE_SESSION_UNREADABLE", "detail": str(exc),
                     "session_path": str(path), "question_id": None, "question_digest": None,
                     "answered_count": 0, "total_count": 0}
+
+
+def _inspect_stage_ids(db, run_id):
+    if not db.is_file():
+        return None
+    from urllib.parse import quote
+    try:
+        uri = "file:" + quote(str(db.resolve())) + "?mode=ro&immutable=1"
+        with closing(sqlite3.connect(uri, uri=True)) as con:
+            return {r[0] for r in con.execute("SELECT stage FROM stages WHERE run_id=?", (run_id,))}
+    except sqlite3.Error:
+        return None
+
+
+def _existing_store_verified(db):
+    """Validate an existing standard store without creating it or sidecars."""
+    if not db.is_file():
+        return False
+    from urllib.parse import quote
+    import state_store
+    try:
+        uri = "file:" + quote(str(db.resolve())) + "?mode=ro&immutable=1"
+        with closing(sqlite3.connect(uri, uri=True)) as con:
+            if con.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                return False
+            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not {"meta", "stages", "events", "video_model_lock"} <= tables:
+                return False
+            version = con.execute("SELECT v FROM meta WHERE k='db_version'").fetchone()
+            return bool(version and version[0] == str(state_store.DB_SCHEMA_VERSION))
+    except sqlite3.Error:
+        return False
+
+
+def ensure_handoff(run_dir, *, runtime=None):
+    """Finish only the free handoff of an already-provenanced confirmed run.
+
+    This is not legacy-answer migration. It never asks/replays questions,
+    rewrites an approval or invokes a preference writer/provider. The original
+    confirmed answer/model lock must still be valid in an existing DB.
+    """
+    def refusal(status, reason, outcome="error"):
+        return dict(status, handoff_ready=False, changed=False,
+                    reason_code=reason, outcome=outcome)
+
+    current = completion_status(run_dir)
+    if current.get("valid") and current.get("done"):
+        return dict(current, handoff_ready=True, changed=False,
+                    outcome="ok", reason_code="INTAKE_HANDOFF_READY")
+    proven = completion_status(run_dir, require_handoff=False)
+    if not proven.get("valid"):
+        return refusal(proven, proven.get("reason_code") or "INTAKE_HANDOFF_UNVERIFIED")
+    if not proven.get("exists"):
+        return refusal(proven, "INTAKE_HANDOFF_UNVERIFIED")
+    if not proven.get("done"):
+        return refusal(proven, "INTAKE_NOT_CONFIRMED", "waiting")
+    db = Path(run_dir) / "control" / "state.sqlite3"
+    if not _existing_store_verified(db):
+        return refusal(proven, "VIDEO_MODEL_STATE_UNAVAILABLE")
+    path = _session_path(run_dir, None)
+    with session_lock(str(path) + ".lock"):
+        try:
+            # Revalidate under the same lock used by intake before writing.
+            current = completion_status(run_dir)
+            if current.get("valid") and current.get("done"):
+                return dict(current, handoff_ready=True, changed=False,
+                            outcome="ok", reason_code="INTAKE_HANDOFF_READY")
+            proven = completion_status(run_dir, require_handoff=False)
+            if not proven.get("valid") or not proven.get("done") or not _existing_store_verified(db):
+                return refusal(proven, "INTAKE_HANDOFF_UNVERIFIED")
+            state = json.loads(path.read_text(encoding="utf-8"))
+            if runtime is not None:
+                if runtime not in ("openclaw", "claude-nine", "openrouter-direct"):
+                    return refusal(proven, "AI_MODEL_RUNTIME_UNKNOWN", "waiting")
+                state["requested_runtime"] = runtime
+            answers = [copy.deepcopy(state["answer_records"][qid]["parsed"])
+                       for qid in state["active_question_ids"]]
+            # Both halves must pass read-only admission before either mutates.
+            for check in (_persist_ai_roles, _persist_model_lock):
+                blocked = check(state, answers, run_dir, prepare_only=True)
+                if blocked:
+                    return refusal(proven, blocked, "waiting")
+            if not db.is_file():
+                return refusal(proven, "VIDEO_MODEL_STATE_UNAVAILABLE")
+            for apply in (_persist_ai_roles, _persist_model_lock):
+                blocked = apply(state, answers, run_dir)
+                if blocked:
+                    return refusal(proven, blocked, "waiting")
+            # Preserve original answers, confirmation, target and approval data.
+            # Only the handoff receipts/runtime/run identity were added above.
+            _write(path, state)
+            verified = completion_status(run_dir)
+            if not verified.get("valid") or not verified.get("done"):
+                return dict(verified, handoff_ready=False, changed=True,
+                            outcome="error", reason_code="INTAKE_HANDOFF_NOT_VERIFIED")
+            return dict(verified, handoff_ready=True, changed=True,
+                        outcome="ok", reason_code="INTAKE_HANDOFF_READY")
+        except (OSError, ValueError, TypeError, KeyError, IndexError, sqlite3.Error) as exc:
+            return dict(refusal(proven, "INTAKE_HANDOFF_UNVERIFIED"), detail=str(exc))
