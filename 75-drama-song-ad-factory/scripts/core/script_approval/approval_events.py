@@ -88,7 +88,7 @@ _KIND_WORDS = {
     "music": ("music", "song", "audio"),
     "storyboard": ("storyboard", "shots"),
 }
-_REV_RE = re.compile(r"\b(?:rev(?:ision)?|ver|v)\s*[-:.]?\s*(\d+)\b", re.I)
+_REV_RE = re.compile(r"\b(?:rev(?:ision)?|ver(?:sion)?|v)\s*[-:.]?\s*(\d+)\b", re.I)
 
 #: idioms where a negation word is an affirmation ("approved, no changes").
 #: Masked BEFORE any screen, so a plain approval with no edits stays one.
@@ -190,13 +190,14 @@ fantastic go good great kk lgtm love make ok okay perfect proceed ship sounds
 start sure work works wonderful ya yeah yep yes yup y
 """.split())
 
-#: words that carry no decision at all -- filler, politeness, scope and the
-#: displayed revision labels. Negation, condition, contrast and revision words
-#: are deliberately ABSENT.
+#: words that carry no decision at all -- filler, politeness, the copulas, the
+#: scope words and the displayed revision labels. Negation, condition, contrast
+#: and revision words are deliberately ABSENT.
 _NO_DECISION = frozenset("""
-a all an and as at ahead both by course creative entire everything artifact
-artifacts for i in is it its let's lets me my now of on our package please rev
-revision right thanks thank thx that the to us v ver version whole with
+a all am an and are as at ahead be been both by course creative entire
+everything artifact artifacts else for i in is it its let's lets me my now of
+on our package please rest rev revision right so thanks thank thx that the to
+too us v ver version was were whole with
 """.split())
 
 #: never grammar, whatever phrase they arrived from: negation, contrast,
@@ -496,6 +497,14 @@ def _named_kinds(text):
     return out
 
 
+def named_revision(text):
+    """The revision number the reply itself names ("revision 2", "rev 2",
+    "version 2", "v2"), or None. A reply that names one binds ONLY that
+    revision: a presented revision the reply never named is never approved."""
+    m = _REV_RE.search(_norm(text))
+    return int(m.group(1)) if m else None
+
+
 def is_preference_reply(text):
     """Approval-process preferences and viewing requests are not decisions."""
     t = _norm(text)
@@ -553,11 +562,49 @@ def reply_context_status(rec, ctx=None):
     return result(True, "ARTIFACT_REPLY_PROVENANCE_CONFIRMED", "A new client reply is bound to the current presented artifacts.")
 
 
+#: every name a reply may give to what it approves, one phrase per unit. These
+#: carry no decision of their own: they are the OBJECT of an approval, never the
+#: approval. Each is consumed once and read as one word, so "drama song ad"
+#: never reads as the music and "song words" never reads as the soundtrack.
+#: approval_bindings names exactly these phrases when it binds scope; its test
+#: proves the two vocabularies are the same list.
+REFERENT_PHRASES = (
+    "the rest of it", "all of it", "causal story beats", "creative package manifest",
+    "drama song ad", "episode cast manifest", "the entire thing", "the whole thing",
+    "cast list", "cast manifest", "causal beats", "character images",
+    "character list", "character manifest", "character photos", "character pictures",
+    "creative manifest", "creative package", "episode world", "everything else",
+    "it all", "lyric sheet", "package manifest", "research bundle", "research notes",
+    "research pack", "scene list", "scene plan", "scene plans", "shot list",
+    "song ad", "song lyrics", "song text", "song words", "story beats", "the ad",
+    "world bible", "ad", "artifact", "artifacts", "audio", "beats", "cast",
+    "characters", "deliverable", "deliverables", "everything", "images", "lyric",
+    "lyrics", "manifest", "music", "package", "pictures", "research", "scene",
+    "scenes", "screenplay", "script", "setting", "shots", "soundtrack", "story",
+    "storyboard", "words", "world",
+)
+
+
+def _phrase_re(phrase):
+    return re.compile(r"\b%s\b" % re.escape(phrase).replace(r"\ ", r"\s+"))
+
+
 def _mask_idioms(t):
     """Drop affirmation idioms that contain a negation word ("no changes"), so
     the negation screen sees only real negation."""
     for pattern in _AFFIRM_IDIOMS:
         t = re.sub(pattern, " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _mask_units(t):
+    """One word per unit: the artifacts a reply names fold to "it" and its
+    affirmation idioms drop out, so the closed grammar reads only the words that
+    decide. "The package manifest is approved" is then "the it is approved" --
+    an approval, with the manifest still named for the scope that binds it."""
+    t = _mask_idioms(t)
+    for phrase in sorted(REFERENT_PHRASES, key=lambda p: (-len(p.split()), -len(p))):
+        t = _phrase_re(phrase).sub(" it ", t)
     return re.sub(r"\s+", " ", t).strip()
 
 def _reads_as_offer(t):
@@ -582,10 +629,10 @@ def _resolves_approve(t):
     """
     if t in _AFFIRM_EXACT:
         return True
-    masked = _mask_idioms(t)
+    masked = _mask_units(t)
     words = _tokens(masked)
     if not words:
-        # only affirmation idioms were removed ("no changes", "no more edits")
+        # only affirmation idioms and named artifacts were removed
         return any(re.search(pattern, t) for pattern in _AFFIRM_IDIOMS)
     if any(w not in _GRAMMAR_WORDS and not w.isdigit() for w in words):
         return False
@@ -627,21 +674,22 @@ def _scope_leftover(t):
             return w
     return None
 
-def _decision_screen(text, t):
-    """None when the reply can still be a plain decision; otherwise the reason
-    it cannot.
+def _negated(t):
+    return any(re.search(r"\b%s\b" % re.escape(n), _mask_idioms(t)) for n in _NEGATE)
 
-    "refusal"  the words negate something -- never an approval
-    "ambiguous" a question, a quote, a condition, a scope, a selection or an
-                edit request riding along with the approval. Holding the gate
-                beats guessing which artifact was meant.
+
+def _form_screens(text, t, whole_artifact=True):
+    """The form screens every approval must pass, in EVERY register -- bare
+    phrase or idiom alike: a question, a quote, a condition, a partial scope, a
+    selection or an edit request riding along with the approval holds the gate.
+
+    ``whole_artifact`` keeps the bare register's own last screen (an approval
+    scoped to a content word that is no whole artifact). An idiom approval is
+    checked against the words naming what it approves instead, so that screen
+    would only duplicate -- and misread -- that check.
     """
-    if any(re.search(r"\b%s\b" % re.escape(n), _mask_idioms(t)) for n in _NEGATE):
+    if _negated(t):
         return "refusal"
-    if t in _AFFIRM_EXACT:
-        return None        # the whole reply IS one known approval phrase
-    if not _reads_as_offer(t):
-        return None                      # not an offer at all: the caller reads it as an edit
     raw = str(text or "")
     if raw.strip().endswith("?") or any(re.search(r"\b%s\b" % re.escape(q), t.split(None, 1)[0])
                                         for q in _QUESTION_START if t.split(None, 1)):
@@ -656,9 +704,27 @@ def _decision_screen(text, t):
         return "REPLY_IS_A_SELECTION"
     if any(re.search(r"\b%s\b" % re.escape(w), _mask_idioms(t)) for w in _CHANGE_WORDS):
         return "REPLY_APPROVES_AND_REVISES"
-    if _scope_leftover(t):
+    if whole_artifact and _scope_leftover(t):
         return "REPLY_NAMES_NO_WHOLE_ARTIFACT"
     return None
+
+
+def _decision_screen(text, t):
+    """None when the reply can still be a plain decision; otherwise the reason
+    it cannot.
+
+    "refusal"  the words negate something -- never an approval
+    "ambiguous" a question, a quote, a condition, a scope, a selection or an
+                edit request riding along with the approval. Holding the gate
+                beats guessing which artifact was meant.
+    """
+    if _negated(t):
+        return "refusal"
+    if t in _AFFIRM_EXACT:
+        return None        # the whole reply IS one known approval phrase
+    if not _reads_as_offer(t):
+        return None                      # not an offer at all: the caller reads it as an edit
+    return _form_screens(text, t)
 
 def is_affirmative(text):
     """True only when the WHOLE reply is a bare approval: not negated, not
@@ -675,6 +741,100 @@ def is_affirmative(text):
     if _decision_screen(text, t):
         return False
     return _resolves_approve(t) or _affirmative_answer(t)
+
+
+# --------------------------------------------------------------------------- #
+# the idiom register -- a clear affirmative that is not a bare approval phrase
+# ("Green light the drama song ad package.", "Full steam ahead on the
+# package."). One idiom is ONE word of decision; its words are never read as
+# content outside the bare-approval grammar. The register accepts the same
+# replies the bare one does, judged by the same screens -- and nothing else.
+# --------------------------------------------------------------------------- #
+
+#: clear affirmative idioms, longest first at match time
+_IDIOM_AFFIRM = (
+    "green light", "greenlight", "give us the green light", "the green light",
+    "you have our blessing", "we give our blessing", "our blessing",
+    "move forward with", "moving forward with", "move ahead with",
+    "moving ahead with", "go forward with", "press on with", "carry on with",
+    "full steam ahead", "full speed ahead", "steam ahead",
+    "we are good to go", "we're good to go", "good to go", "ready to go",
+    "cleared to proceed", "cleared to go", "you are cleared", "you're cleared",
+    "all systems go", "systems are go", "all clear",
+    "fire away", "go for it", "have at it", "let it rip",
+    "consider this our yes", "consider it our yes", "this is our yes",
+    "behind this all the way", "behind it all the way", "behind you all the way",
+    "full support", "our support", "thumbs up", "two thumbs up",
+    "our sign off", "we sign off", "signed off", "sign off",
+    "count us in", "we are in", "we're in",
+    "this is a go", "it is a go", "we are a go", "we're a go", "a go on",
+    "happy to proceed", "happy for you to proceed", "excited to proceed",
+    "we approve", "we approved", "approved from our side", "approved on our end",
+    "from our side", "from our end", "on our end",
+    "we are happy with", "we are pleased with", "we are behind",
+)
+
+#: words that carry no decision and no substance of their own: determiners,
+#: pronouns, copulas, auxiliaries, prepositions, conjunctions, light verbs and
+#: discourse markers. An idiom approval is built from these plus the approval
+#: words and the words naming what it approves -- anything else (an
+#: instruction, an objection, an opinion with substance) makes the reply
+#: something other than an approval.
+_FUNCTION_WORDS = frozenset("""
+a about above across after again against along also am an and another any
+anyone anything are as at back be because been before being behind below
+beside between both but by came come comes did do does doing done down during
+each either else enough even ever every everybody everything except far few
+for from further get gets give gives given go goes going got had has have
+having he her here hers herself him himself his how i if in inside into is it
+its itself just let lets me might mine more most much must my myself near
+need needs neither never no nobody none nor nothing now of off often on once
+one only onto or other others our ours ourselves out outside over own per please
+rather really said same shall she should since so some somebody someone
+something still such sure than thank thanks that the their theirs them
+themselves then there therefore these they thing things this those though
+through thus to together too toward towards under until up upon us very via
+want wants was way ways we well were what when where whether which while who
+whom whose why will with within without would yes yet you your yours yourself
+""".split()) - _BLOCKED
+
+
+#: every word an idiom phrase may be made of -- allowed wherever the idiom
+#: register allows words of its own
+_IDIOM_WORDS = frozenset(w for phrase in _IDIOM_AFFIRM for w in _tokens(_norm(phrase)))
+
+
+def is_idiom_approval(text, scope_words=()):
+    """True when the WHOLE reply is a clear affirmative idiom naming what it
+    approves -- "Green light the drama song ad package and the script.",
+    "Full steam ahead on the creative package.".
+
+    Three things decide it, and all three are required: the reply carries an
+    affirmative (a phrase from ``_IDIOM_AFFIRM``, or a known approval word or
+    the word "approve"), every word in it is an approval word, a function word,
+    one of ``scope_words`` (the words that name what is approved) or a
+    displayed revision label, and it passes EVERY form screen -- negation,
+    question, quote, condition, partial scope, selection and edit request.
+
+    Nothing here approves anything on its own: a reply that names nothing
+    approves nothing, whatever idiom it arrives in, and an instruction, an
+    objection or an opinion with substance is never an approval.
+    """
+    t = _norm(text)
+    if not t:
+        return False
+    if _form_screens(text, t, whole_artifact=False):
+        return False
+    rest, idiom = _mask_idioms(t), False
+    for phrase in sorted(_IDIOM_AFFIRM, key=len, reverse=True):
+        rest, n = re.subn(r"\b%s\b" % re.escape(phrase), " ", rest)
+        idiom = idiom or bool(n)
+    rest = re.sub(r"\s+", " ", rest).strip()
+    if not (idiom or any(w in _APPROVE_SIGNALS for w in _tokens(rest))
+            or _APPROVAL_RE.search(rest)):
+        return False
+    allowed = _GRAMMAR_WORDS | _FUNCTION_WORDS | _IDIOM_WORDS | frozenset(scope_words)
+    return all(w in allowed or w.isdigit() for w in _tokens(rest))
 
 
 def _needs_revision(rec, kind):
@@ -821,7 +981,8 @@ def interpret_reply(text, rec, ctx=None):
     if named:
         unseen = [k for k in named if k not in asked]
         if unseen:
-            return {"intent": "unseen", "kinds": unseen, "question":
+            return {"intent": "unseen", "kinds": unseen, "reason_code":
+                    "REPLY_NAMES_UNSEEN_KIND", "question":
                     "I have not sent you %s to approve yet. Should I send it?"
                     % _list(unseen)}
         kinds = list(dict.fromkeys(named))
@@ -840,7 +1001,8 @@ def interpret_reply(text, rec, ctx=None):
         if not hits:
             shown = sorted({(k, v) for a in asks
                             for k, v in (a.get("revisions") or {}).items()})
-            return {"intent": "unseen", "kinds": [], "question":
+            return {"intent": "unseen", "kinds": [], "reason_code":
+                    "REPLY_NAMES_UNSEEN_REVISION", "question":
                     "I do not have a revision %d here to approve. The revisions I sent "
                     "are %s. Which one do you mean?"
                     % (want, "; ".join("%s rev %s" % (k, v) for k, v in shown) or "none")}
@@ -851,7 +1013,8 @@ def interpret_reply(text, rec, ctx=None):
         if by_msg:
             kinds = list(by_msg[0].get("kinds") or [])
         elif len(asks) != 1:
-            return {"intent": "unseen", "kinds": [], "question":
+            return {"intent": "unseen", "kinds": [], "reason_code":
+                    "REPLY_ANSWERED_AN_OLDER_ASK", "question":
                     "That reply answered an older message. Do you want to approve what "
                     "I sent most recently?"}
 

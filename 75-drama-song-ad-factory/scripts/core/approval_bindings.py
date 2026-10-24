@@ -265,6 +265,23 @@ def _norm_words(text):
                   re.sub(r"[^a-z0-9+' ]+", " ", str(text or "").lower())).strip()
 
 
+#: every word that NAMES what a reply may approve -- the artifact phrases, the
+#: package phrases and the canonical kinds. The idiom register allows exactly
+#: these as content words, so an approval can name its referent and nothing
+#: else can hide beside it.
+_SCOPE_WORDS = frozenset(
+    w for _, phrase in _ARTIFACT_PHRASES for w in phrase.split()) | frozenset(
+    w for phrase in _PACKAGE_PHRASES for w in phrase.split()) | frozenset(
+    w for name in _CANON_EQUIV for w in name.split("_"))
+
+
+def _presented_revision(pairs, token):
+    for kind, revision, _digest in pairs:
+        if _ae_kind(kind) == token:
+            return revision
+    return None
+
+
 def _phrase_re(phrase):
     return re.compile(r"\b%s\b" % re.escape(phrase).replace(r"\ ", r"\s+"))
 
@@ -297,6 +314,10 @@ def _resolve_scope(text, tokens):
     ("some", subset, [])    names part of the package -- mints exactly that
     ("unknown", [], names)  names an artifact that was never presented
     ("none", [], [])        names nothing -- approves nothing specific
+
+    An artifact that was never presented refuses the whole reply, even beside a
+    package name: naming one thing that exists never licenses another that does
+    not.
     """
     tokens = list(tokens)
     canon, package = _scan_scope(text)
@@ -307,10 +328,10 @@ def _resolve_scope(text, tokens):
             unknown.append(name)
         elif token not in named:
             named.append(token)
-    if package:
-        return "all", tokens, []
     if unknown:
         return "unknown", [], sorted(set(unknown))
+    if package:
+        return "all", tokens, []
     if named:
         return ("all" if set(named) >= set(tokens) else "some"), sorted(named), []
     return "none", [], []
@@ -439,16 +460,61 @@ class ApprovalBook:
                                {"intent": intent})
         tokens = list(presented["asks"][0]["kinds"])
         status, kinds, unknown = _resolve_scope(text, tokens)
+        # THE REFERENT IS BOUND IN BOTH DIRECTIONS. A revision the reply names
+        # must be one this presentation showed, for every artifact it approves:
+        # a receipt never binds a revision the reply did not name, and a reply
+        # that names a revision that was never presented mints nothing.
+        named_revision = AE.named_revision(text) if AE is not None else None
+        if named_revision is not None:
+            check = tokens if status == "all" else list(kinds)
+            off = sorted(t for t in check
+                         if _presented_revision(pairs, t) != named_revision)
+            if off:
+                raise BindingError(
+                    "APPROVAL_NAMES_UNSEEN_REVISION",
+                    read.get("question") or (
+                        "revision %d was never presented for %s"
+                        % (named_revision, ", ".join(off))),
+                    {"named_revision": named_revision, "kinds": off,
+                     "presented": {t: _presented_revision(pairs, t) for t in off},
+                     "intent": intent, "reason_code": reason})
+        if status == "unknown":
+            raise BindingError(
+                "APPROVAL_NAMES_UNKNOWN_ARTIFACT",
+                read.get("question") or ("%s is not part of the presented package"
+                                         % ", ".join(unknown)),
+                {"named": unknown, "components": list(COMPONENTS)})
+        if intent == "unseen":
+            # AN UNSEEN REFERENT IS A REFUSAL, NAMED. The interpreter's read
+            # stands. The single reply it does not refuse is the one whose
+            # referent IS presented under a name its own vocabulary cannot
+            # carry ("the characters", the package's own name): the scope above
+            # resolved those words to artifacts this exact presentation shows,
+            # and the reply named no revision of its own. Every other "unseen"
+            # names a revision or an artifact that was never presented.
+            name_gap = (reason == "REPLY_NAMES_UNSEEN_KIND"
+                        and status in ("all", "some") and named_revision is None)
+            if not name_gap:
+                raise BindingError(
+                    "APPROVAL_NAMES_UNSEEN_REVISION" if named_revision is not None
+                    else "APPROVAL_NAMES_UNSEEN_ARTIFACT",
+                    read.get("question")
+                    or "that reply names something that was never presented",
+                    {"intent": intent, "reason_code": reason,
+                     "named": list(unknown or kinds),
+                     "components": list(COMPONENTS)})
         # The interpreter's form screens still decide what KIND of reply this
         # is: a question, a quote, a condition, a selection, an edit request or
         # a negation never approves. Two of its reads are only its vocabulary
         # failing to name what the client named ("the scene plan", "the
         # characters") -- when the scope above resolves those words to a
-        # presented artifact, the reply stands.
+        # presented artifact, the reply stands. The third is its idiom register
+        # ("Green light the drama song ad package.") -- a clear affirmative
+        # that names its referent and passes the very same screens.
         reads_as_decision = (
             (intent == "approve" and AE.is_affirmative(text))
             or (reason == "REPLY_NAMES_NO_WHOLE_ARTIFACT" and status in ("all", "some"))
-            or (intent == "unseen" and status in ("all", "some")))
+            or (status in ("all", "some") and AE.is_idiom_approval(text, _SCOPE_WORDS)))
         if not reads_as_decision:
             raise BindingError("APPROVAL_NOT_ACTUAL",
                                "that reply is not an approval: %s" % (intent,),
@@ -458,11 +524,6 @@ class ApprovalBook:
                 "APPROVAL_SCOPE_AMBIGUOUS",
                 "that reply approves nothing specific: it names no artifact and no package",
                 {"named": [], "components": list(COMPONENTS)})
-        if status == "unknown":
-            raise BindingError(
-                "APPROVAL_NAMES_UNKNOWN_ARTIFACT",
-                "%s is not part of the presented package" % ", ".join(unknown),
-                {"named": unknown, "components": list(COMPONENTS)})
         return text.strip(), approver.strip(), timestamp.strip(), list(kinds)
 
     def approve(self, binding_id, ctx):

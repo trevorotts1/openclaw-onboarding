@@ -1061,6 +1061,150 @@
           "script"
         ]
       }
+    ],
+    "unseen_referent": [
+      {
+        "name": "brief_whole_package_revision_99",
+        "text": "I approve the whole package, revision 99.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "brief_scene_plan_revision_9",
+        "text": "The scene plan revision 9 is approved.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "brief_script_revision_2",
+        "text": "The script revision 2 is approved.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "lyrics_revision_7",
+        "text": "The lyrics revision 7 is approved.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "bare_revision_5",
+        "text": "Revision 5 is approved.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "music_never_in_the_package",
+        "text": "I approve the music.",
+        "expect_code": "APPROVAL_NAMES_UNKNOWN_ARTIFACT",
+        "covers": []
+      },
+      {
+        "name": "storyboard_never_in_the_package",
+        "text": "I approve the storyboard.",
+        "expect_code": "APPROVAL_NAMES_UNKNOWN_ARTIFACT",
+        "covers": []
+      },
+      {
+        "name": "unseen_artifact_beside_the_package",
+        "text": "I approve the whole package and the music.",
+        "expect_code": "APPROVAL_NAMES_UNKNOWN_ARTIFACT",
+        "covers": []
+      }
+    ],
+    "idiom_scope": [
+      {
+        "name": "brief_green_light",
+        "text": "Green light the drama song ad package and the script.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "brief_move_forward",
+        "text": "Let's move forward with the creative package and the script.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "brief_our_blessing",
+        "text": "You have our blessing on the creative package and the script.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "brief_full_steam_ahead",
+        "text": "Full steam ahead on the drama song ad package and the lyrics.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "green_light_one_artifact",
+        "text": "Green light the scene plan.",
+        "covers": [
+          "scene_plan"
+        ]
+      },
+      {
+        "name": "thumbs_up_two_artifacts",
+        "text": "Thumbs up on the script and the lyrics.",
+        "covers": [
+          "lyrics",
+          "script"
+        ]
+      },
+      {
+        "name": "full_steam_one_artifact",
+        "text": "Full steam ahead on the research bundle.",
+        "covers": [
+          "research_bundle"
+        ]
+      },
+      {
+        "name": "our_blessing_the_whole_package",
+        "text": "You have our blessing on the whole creative package.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      }
     ]
   }
 }

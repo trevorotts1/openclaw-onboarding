@@ -314,6 +314,76 @@ def test_partial_receipt_is_invalidated_by_its_own_component_only():
     assert moved["invalidated"] == [receipt["receipt_id"]], moved
 
 
+def test_unseen_referent_mints_nothing_and_names_the_refusal():
+    """A reply naming a revision or an artifact that was never presented mints
+    NOTHING, and its refusal names what was never presented."""
+    for case in _fixture()["reply_decisions"]["unseen_referent"]:
+        book = _bound_book()
+        exc = _raises(book.approve, "package", client_ctx(case["text"]))
+        assert exc.code == case["expect_code"], (
+            "%s refused as %s" % (case["name"], exc.code))
+        assert exc.code != "APPROVED", case["name"]
+        assert book.receipts_for("package") == [], case["name"]
+        assert book.receipt_for("package") is None, case["name"]
+        assert book.coverage("package")["approved"] == [], case["name"]
+        verdict = book.admissibility("package")
+        assert verdict["ok"] is False and verdict["code"] != "APPROVED", case["name"]
+
+
+def test_a_receipt_never_binds_a_revision_the_reply_did_not_name():
+    """The partial form of the same defect: "revision 9" must not mint rev 1."""
+    book = _bound_book()
+    receipt = book.approve("package", client_ctx("The scene plan is approved."))
+    assert receipt["components"]["scene_plan"] == {"revision": 1, "digest": "digest-scene_plan"}, receipt
+
+    moved = _bound_book()
+    moved.update_component("package", "scene_plan", 9, "digest-scene_plan-v9")
+    receipt = moved.approve("package", client_ctx("The scene plan revision 9 is approved."))
+    assert receipt["components"]["scene_plan"] == {"revision": 9, "digest": "digest-scene_plan-v9"}, (
+        receipt["components"])
+    assert sorted(receipt["components"]) == ["scene_plan"], receipt["components"]
+    exc = _raises(moved.approve, "package", client_ctx("The scene plan revision 1 is approved."))
+    assert exc.code == "APPROVAL_NAMES_UNSEEN_REVISION", exc.code
+
+
+def test_idiom_register_opens_on_the_named_scope():
+    """Clear idiom affirmatives that name what they approve open the gate at
+    exactly that scope -- the register that was refused 7 in 10."""
+    from script_approval import approval_events as AE
+    for case in _fixture()["reply_decisions"]["idiom_scope"]:
+        book = _bound_book()
+        receipt = book.approve("package", client_ctx(case["text"]))
+        assert receipt["decision"] == "approved" and receipt["state"] == B.ACTIVE, case["name"]
+        assert sorted(receipt["components"]) == case["covers"], (
+            "%s covered %s" % (case["name"], sorted(receipt["components"])))
+        whole = set(case["covers"]) == set(B.COMPONENTS)
+        assert receipt["scope"] == (B.PACKAGE_APPROVAL if whole else "partial"), case["name"]
+        assert AE.is_idiom_approval(case["text"], B._SCOPE_WORDS) is True, case["name"]
+        verdict = book.admissibility("package")
+        assert verdict["ok"] is whole, (case["name"], verdict)
+
+
+def test_no_negation_or_condition_word_enters_the_approval_vocabulary():
+    """"no", "not", "but" and "if" never become words an approval may be made
+    of, in any of the three registers."""
+    from script_approval import approval_events as AE
+    for name in ("_GRAMMAR_WORDS", "_FUNCTION_WORDS", "_IDIOM_WORDS"):
+        words = getattr(AE, name)
+        assert not ({"no", "not", "but", "if"} & set(words)), (name,)
+    for name in ("_GRAMMAR_WORDS", "_FUNCTION_WORDS", "_IDIOM_WORDS"):
+        assert not (set(AE._BLOCKED) & set(getattr(AE, name))), name
+
+
+def test_the_two_referent_vocabularies_are_one_list():
+    """approval_events names the artifacts a reply may name; approval_bindings
+    binds those same words to the presented components. One vocabulary."""
+    from script_approval import approval_events as AE
+    bound = {p for _, p in B._ARTIFACT_PHRASES} | set(B._PACKAGE_PHRASES)
+    assert set(AE.REFERENT_PHRASES) == bound, (
+        "only in events: %s / only in bindings: %s"
+        % (sorted(set(AE.REFERENT_PHRASES) - bound), sorted(bound - set(AE.REFERENT_PHRASES))))
+
+
 def _report():
     """Print decision / state / covered count per reply. A covered count of 8
     on an ambiguous or partial reply is the leak this battery exists to catch."""
