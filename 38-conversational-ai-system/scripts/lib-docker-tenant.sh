@@ -97,7 +97,10 @@ s38_trusted_proxies() {
 # Precedence: ROUTING_AGENT_ID (must exist) > the agent an existing hooks mapping
 # already uses > dept-communications > main. OpenClaw 2026.9.x keeps agents in
 # `agents.entries` (keyed by id) and often has NO `main`; routing to a missing id
-# silently falls back or fails, so an unknown id is a hard error here.
+# silently falls back or fails, so an unknown id is a hard error here. Every
+# failure NAMES the configured candidates, so the operator can set
+# ROUTING_AGENT_ID to one of them instead of hunting the roster (the repair
+# script reports the same list).
 s38_resolve_routing_agent() {
   local cfg="${1:-$(s38_config_path)}"
   if ! command -v jq >/dev/null 2>&1 || [ ! -f "$cfg" ]; then
@@ -110,12 +113,12 @@ s38_resolve_routing_agent() {
     | if ($ids | length) == 0 then (if $w != "" then $w else "main" end)
       elif $w != "" then
         (if ($ids | index($w)) != null then $w
-         else error("ROUTING_AGENT_ID \"\($w)\" is not a configured agent") end)
+         else error("ROUTING_AGENT_ID \"\($w)\" is not a configured agent — configured agents: \($ids | join(", "))") end)
       else
         ([(.hooks.mappings // [])[] | .agentId? // empty | select(. as $a | ($ids | index($a)) != null)][0]
          // (if ($ids | index("dept-communications")) != null then "dept-communications" else null end)
          // (if ($ids | index("main")) != null then "main" else null end)
-         // error("no routing agent found: set ROUTING_AGENT_ID to a configured agent id"))
+         // error("no routing agent found: set ROUTING_AGENT_ID to one of \($ids | join(", "))"))
       end' "$cfg" 2>&1)" || { echo "[skill 38] $out" >&2; return 1; }
   printf '%s\n' "$out"
 }
@@ -251,11 +254,12 @@ s38_migrate_mapping() {
   if ! agent="$(s38_resolve_routing_agent "$cfg" 2>/dev/null)"; then
     # No routing agent could be resolved. Rebind only when the box has exactly
     # one configured agent (then it is unambiguous); with several, leave the body
-    # alone and say so rather than guess which agent answers GHL inbound.
+    # alone and name the candidates rather than guess which agent answers GHL
+    # inbound.
     if [ "$(printf '%s' "$keep" | jq 'length')" = "1" ]; then
       agent="$(printf '%s' "$keep" | jq -r '.[0]')"
     else
-      echo "no routing agent resolvable and $(printf '%s' "$keep" | jq 'length') configured agents exist — set ROUTING_AGENT_ID" >&2
+      echo "no routing agent resolvable and $(printf '%s' "$keep" | jq 'length') configured agents exist — set ROUTING_AGENT_ID to one of $(printf '%s' "$keep" | jq -r 'join(", ")')" >&2
       return 1
     fi
   fi

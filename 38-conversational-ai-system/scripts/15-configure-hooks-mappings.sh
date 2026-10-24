@@ -37,7 +37,22 @@ append_secret() {
   printf '%s=%s\n' "$k" "$v" >> "$SECRETS_ENV_FILE"
 }
 
+# REFUSE to touch a config this user cannot write. rename(2) replaces the
+# DIRECTORY entry, not the file's own bits, so a mode-444 target in a WRITABLE
+# directory used to be silently replaced and reset to 0600 — the "read-only
+# target" shape passed instead of failing. Detect and refuse BEFORE any backup
+# or temp is created, so a refusal leaves the config untouched and nothing else
+# behind. Checked again in write_config, immediately before the rename.
+#   refuse_unwritable_config   (exit 12 = target not writable)
+refuse_unwritable_config() {
+  if [[ -e "$CONFIG_FILE" && ! -w "$CONFIG_FILE" ]]; then
+    echo "REFUSED: $CONFIG_FILE is not writable by this user — refusing to replace it (rename would silently clobber a read-only target). Live config left unchanged; no backup or temp written." >&2
+    exit 12
+  fi
+}
+
 backup_config() {
+  refuse_unwritable_config
   local ts
   ts="$(date +%Y%m%d-%H%M%S)"
   cp "$CONFIG_FILE" "${CONFIG_FILE}.bak.${ts}"
@@ -48,6 +63,7 @@ backup_config() {
 # roll back the pre-change shape without unpicking the whole config file.
 #   backup_mapping <route-id> <mapping-json>
 backup_mapping() {
+  refuse_unwritable_config
   local ts out
   ts="$(date +%Y%m%d-%H%M%S)"
   out="${CONFIG_FILE}.hooks-mapping-${1}.bak.${ts}.json"
@@ -71,6 +87,7 @@ _config_sha() {
 # the gateway's hot-reload to trip on. The commit is a rename (atomic on one
 # filesystem) and is REFUSED when the live file changed under this run.
 write_config() {
+  refuse_unwritable_config
   local new="$1" tmp="${CONFIG_FILE}.tmp" now
   now="$(_config_sha)"
   if [[ -n "${CONFIG_READ_SHA:-}" && "$now" != "$CONFIG_READ_SHA" ]]; then
@@ -188,7 +205,22 @@ if [[ "$HAS_MAPPING" == "true" ]]; then
   else
     backup_mapping "$ROUTE_ID" "$EXISTING_MAPPING"
     backup_config
-    echo "hooks.mappings entry id=$ROUTE_ID migrating — changed keys: $(printf '%s' "$CHANGED_KEYS" | tr '\n' ' ')" >&2
+    echo "hooks.mappings entry id=$ROUTE_ID migrating" >&2
+    # PER-KEY REPORTING: one line PER changed key, plus the agentId old -> new
+    # pair (folded into the agentId key line when agentId is one of them).
+    _old_aid="$(printf '%s' "$EXISTING_MAPPING" | jq -r '.agentId // ""')"
+    _new_aid="$(printf '%s' "$MERGED_MAPPING" | jq -r '.agentId // ""')"
+    _aid_reported=false
+    while IFS= read -r _key; do
+      [ -n "$_key" ] || continue
+      if [ "$_key" = "agentId" ]; then
+        echo "  changed key: agentId '$_old_aid' -> '$_new_aid'" >&2
+        _aid_reported=true
+      else
+        echo "  changed key: $_key" >&2
+      fi
+    done <<< "$CHANGED_KEYS"
+    [ "$_aid_reported" = "true" ] || echo "  agentId '$_old_aid' -> '$_new_aid' (unchanged)" >&2
     # NOTE (2026-05-29): jq 1.7+ REJECTS the `.hooks //= {};` update-assignment as
     # a TOP-LEVEL statement (the trailing `;` is parsed as a program separator and
     # jq errors "syntax error, unexpected ';'"). Use the valid `.hooks = (.hooks // {})`
