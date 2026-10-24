@@ -7,7 +7,7 @@
 set -uo pipefail
 
 ROOT="${1:?repo root required}"
-PIN="144ec54507695371b0eaea1e06a561d7cd76273b"
+PIN="9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
 
 echo "=== pin ==="
 echo "$PIN"

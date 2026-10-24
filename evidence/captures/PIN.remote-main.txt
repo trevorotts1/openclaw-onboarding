@@ -1,7 +1,7 @@
 # search: PIN.remote-main
 # command: git ls-remote origin refs/heads/main
 # scope: remote origin
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 1  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b	refs/heads/main
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865	refs/heads/main

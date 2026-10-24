@@ -1,10 +1,10 @@
 # search: R3.private-opener
-# command: git grep -nF COMMENT_PRIVATE_OPENER 144ec54507695371b0eaea1e06a561d7cd76273b -- .
+# command: git grep -nF COMMENT_PRIVATE_OPENER 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .
 # scope: all tracked paths
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 4  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/schemas/outbound-action.schema.json:788:            "COMMENT_PRIVATE_OPENER",
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:980:        if action["purpose"] == "COMMENT_PRIVATE_OPENER" and gate["inbound_dm_window"]:
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/outbound/person-comment-opener.json:4:  "logical_intent_key": "cycle-2026-11/contact-77/COMMENT_PRIVATE_OPENER",
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/outbound/person-comment-opener.json:28:  "purpose": "COMMENT_PRIVATE_OPENER",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/schemas/outbound-action.schema.json:788:            "COMMENT_PRIVATE_OPENER",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:980:        if action["purpose"] == "COMMENT_PRIVATE_OPENER" and gate["inbound_dm_window"]:
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/outbound/person-comment-opener.json:4:  "logical_intent_key": "cycle-2026-11/contact-77/COMMENT_PRIVATE_OPENER",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/outbound/person-comment-opener.json:28:  "purpose": "COMMENT_PRIVATE_OPENER",

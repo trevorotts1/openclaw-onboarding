@@ -1,7 +1,7 @@
 # search: G2.identity-questions
-# command: git grep -nF QUESTIONS = { 144ec54507695371b0eaea1e06a561d7cd76273b -- scripts/onboarding-identity.py
+# command: git grep -nF QUESTIONS = { 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- scripts/onboarding-identity.py
 # scope: scripts/onboarding-identity.py
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 1  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:scripts/onboarding-identity.py:16:QUESTIONS = {'ownerName': 'What is the name of the client or owner of this ZHC?',
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:scripts/onboarding-identity.py:16:QUESTIONS = {'ownerName': 'What is the name of the client or owner of this ZHC?',

@@ -1,12 +1,12 @@
 # search: J5.name-probe
-# command: git grep -niE stable keyword|promised-item|promised_item|keyword mapping|original promise 144ec54507695371b0eaea1e06a561d7cd76273b -- *.py *.sh
+# command: git grep -niE stable keyword|promised-item|promised_item|keyword mapping|original promise 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- *.py *.sh
 # scope: *.py and *.sh
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 6  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/direct_fulfillment.py:2:"""direct_fulfillment.py - deliver the original promised item directly.
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/direct_fulfillment.py:118:    """The immutable original promise. Hosting location is not identity."""
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/direct_fulfillment.py:136:                "not_approved: the original promised item is not approved")
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:69:    "promised_item_version",
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/test_direct_fulfillment.py:80:CONTENT = b"the original promised checklist, version one\n"
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/test_pb_contracts.py:448:        ("promised_item_version", "manifest-mut-promised-item-version.json"),
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/direct_fulfillment.py:2:"""direct_fulfillment.py - deliver the original promised item directly.
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/direct_fulfillment.py:118:    """The immutable original promise. Hosting location is not identity."""
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/direct_fulfillment.py:136:                "not_approved: the original promised item is not approved")
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:69:    "promised_item_version",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/test_direct_fulfillment.py:80:CONTENT = b"the original promised checklist, version one\n"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/test_pb_contracts.py:448:        ("promised_item_version", "manifest-mut-promised-item-version.json"),

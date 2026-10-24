@@ -1,7 +1,7 @@
 # search: G5.bootstrap-file
-# command: git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b 38-conversational-ai-system/tools/bootstrap_engine.py
+# command: git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 38-conversational-ai-system/tools/bootstrap_engine.py
 # scope: 38-conversational-ai-system/tools
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 1  verdict: present
 # --- stdout ---
 38-conversational-ai-system/tools/bootstrap_engine.py

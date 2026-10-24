@@ -1,11 +1,11 @@
 === pin ===
-144ec54507695371b0eaea1e06a561d7cd76273b
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 
 === run time (UTC) ===
-2026-10-24T21:06:52Z
+2026-10-24T22:13:47Z
 
 === open pull requests (gh, live at run time) ===
-2546	batch/s75-b1-finish	draft=false	2026-10-24T20:56:53Z	Skill 75 batch 1: story-first contracts, cast, world, music and duration units
+2549	batch/s75-b3	draft=false	2026-10-24T22:10:43Z	S75 batch 3: land accepted-but-unmerged T10 and T24
 2167	fix/update-skills-cp-r-preserve-symlinks	draft=false	2026-10-16T18:56:17Z	fix(update-skills): cp -R so macOS stops dereferencing a skill symlink and the version stamp can be written
 1889	fix/qc-falsefail-20261012	draft=false	2026-10-13T02:29:41Z	QC false-FAIL fix: personal-workspace skip + pointer-regex + Sunday owner-hold
 1702	fix/lipsync-process-LSP001	draft=false	2026-10-09T00:15:39Z	skill 75: approved lip-sync process (LSP001)
@@ -16,7 +16,7 @@
 pr_list_rc=0
 
 === remote heads ===
-    1884
+    1901
 -- of which pb/* --
        0
 
@@ -52,6 +52,10 @@ DETACHED	/Volumes/mac
 BRANCH	/Volumes/mac	refs/heads/pb/PBB-206/t01-inventory
 BRANCH	/Volumes/mac	refs/heads/pb/PBB-207/t-20-repair
 BRANCH	/Volumes/mac	refs/heads/pb/PBB-220/t-05
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-229/t-08
+DETACHED	/Volumes/mac
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-235/t-05
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-236/t01-inventory-rebase
 DETACHED	/Volumes/mac
 BRANCH	/Volumes/mac	refs/heads/pb/PBB-122/t-28
 DETACHED	/Volumes/mac
@@ -112,9 +116,9 @@ DETACHED	/Volumes/mac
 BRANCH	/Volumes/mac	refs/heads/pb/PBB-062/t01-inventory
 
 === local worktree totals ===
-total_worktrees=      89
-attached_to_branch=50
-detached=39
+total_worktrees=      93
+attached_to_branch=53
+detached=40
 
 === local pb/* branches ===
 pb/PBB-062/t01-inventory ad1a01ea25da26a94ec1ea679e05af1dfd7c77c0
@@ -164,9 +168,12 @@ pb/PBB-177/t-04 702d6e4cdb4e1b4737c48cd8359c8905d427e2bb
 pb/PBB-192/t-28 74ca36d59be4b4d9a6d852f676072e3dd33c8949
 pb/PBB-201/t-05 ec423c3e1533d010f8381e0da7c28e5507ff0ae4
 pb/PBB-202/t-38 868b89492c5e5ca8b321758f9426a3a19a299166
-pb/PBB-206/t01-inventory 2fb9165a8836f990afafc27f2643292ae360a1e7
+pb/PBB-206/t01-inventory f30866c1faab0f2624448eedc84fda617814b240
 pb/PBB-207/t-20-repair b6f8c3626c635904de28daa9722eed0dc00724fe
 pb/PBB-220/t-05 e7f5d98a7f586de249789047ebcd1ae6b3f0ba6f
+pb/PBB-229/t-08 b0e5ee7f3f7974df32121f437d0ce7e9e86ea4d7
+pb/PBB-235/t-05 27b5f15fb4c86a7e2773c73364c1554762fa997d
+pb/PBB-236/t01-inventory-rebase 9ed73df16ec55dacf503ab0d01603544ea58469f
 pb/QC-PBB-069/t42-qc 277a3f043851bac7dd521909e48daa6b49e8d754
 pb/T-06b/brief-approval-binding 2209b2870c2a4401ff6887ce230876c21f5158e1
 pb/T-06c/load-trust-boundary 4286832a9a8e9ae6362db2003fdc76e3b707610e
@@ -174,4 +181,4 @@ pb/T-08/shared-contracts 053c4fee91a3adc63231dc6212262e5c4e8b6a0d
 pb/T-08b2/f5-adjudication 7c05a16aaf28183b2c2cd8046691ab56d079d46f
 pb/T-08c/whitespace-gate aa1a27bcbaf8ba89e3c461566f731ba634bb0fbd
 pb/T-08d/format-chars 6b4e659e9eb915274156876dd966a68ab5545148
-local_pb_branch_count=      57
+local_pb_branch_count=      60

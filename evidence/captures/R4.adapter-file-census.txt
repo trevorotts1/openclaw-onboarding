@@ -1,8 +1,8 @@
 # search: R4.adapter-file-census
-# command: git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b
+# command: git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # scope: all tracked paths, case-insensitive substring on the path
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
-# rc: 0  count: 147  verdict: present
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 150  verdict: present
 # --- stdout ---
 06-ghl-install-pages/tests/test_cua_last_resort_adapter.py
 06-ghl-install-pages/tests/test_openclaw_browser_adapter.py
@@ -100,6 +100,9 @@
 74-kie-live-adapter/tests/test_sync_createtask.py
 74-kie-live-adapter/vendor-approval.json
 74-kie-live-adapter/wire.sh
+75-drama-song-ad-factory/scripts/core/character_library/notion_adapter.py
+75-drama-song-ad-factory/scripts/core/package_flavor_adapter.py
+75-drama-song-ad-factory/scripts/core/test_package_flavor_adapter.py
 75-drama-song-ad-factory/scripts/openclaw_adapter.py
 75-drama-song-ad-factory/scripts/two_strike_adapter.py
 75-drama-song-ad-factory/tests/test_openclaw_adapter.py

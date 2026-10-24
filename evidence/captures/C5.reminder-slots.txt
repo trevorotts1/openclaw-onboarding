@@ -1,26 +1,26 @@
 # search: C5.reminder-slots
-# command: git grep -nF reminder_slots 144ec54507695371b0eaea1e06a561d7cd76273b -- .
+# command: git grep -nF reminder_slots 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .
 # scope: all tracked paths
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 20  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/CHANGELOG.md:120:- **F7 — cardinality.** `reminder_slots` rejects duplicate slot numbers and out-of-order slots, `due_at` must increase across slots, `pending_request_ids` is unique, an APPROVED manifest with zero placements is rejected, and manifest placements must sit in schedule order.
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/schemas/collection-state.schema.json:127:    "reminder_slots": {
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/schemas/collection-state.schema.json:339:    "reminder_slots",
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:342:    slots = doc["reminder_slots"]
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:345:        errs.append("$.reminder_slots: duplicate slot number %s" % sorted(numbers))
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:347:        errs.append("$.reminder_slots: slot numbers must be listed in order")
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:350:        path = "$.reminder_slots[%d]" % index
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:358:                errs.append("$.reminder_slots: due_at must increase across slots")
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/after-add-item.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/capture-budget-exceeded.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/declined-add-item-after.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/declined-before.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/drop-item-after.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/duplicate-pending-ids.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/duplicate-reminder-slots.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/identity-change-after.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/non-timestamp.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/origin-reference-missing.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/valid.json:13:  "reminder_slots": [
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/test_pb_contracts.py:516:        ("duplicate reminder slots", "collection", "duplicate-reminder-slots.json", "reminder_slots"),
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/CHANGELOG.md:172:- **F7 — cardinality.** `reminder_slots` rejects duplicate slot numbers and out-of-order slots, `due_at` must increase across slots, `pending_request_ids` is unique, an APPROVED manifest with zero placements is rejected, and manifest placements must sit in schedule order.
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/schemas/collection-state.schema.json:127:    "reminder_slots": {
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/schemas/collection-state.schema.json:339:    "reminder_slots",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:342:    slots = doc["reminder_slots"]
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:345:        errs.append("$.reminder_slots: duplicate slot number %s" % sorted(numbers))
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:347:        errs.append("$.reminder_slots: slot numbers must be listed in order")
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:350:        path = "$.reminder_slots[%d]" % index
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:358:                errs.append("$.reminder_slots: due_at must increase across slots")
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/after-add-item.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/capture-budget-exceeded.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/declined-add-item-after.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/declined-before.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/drop-item-after.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/duplicate-pending-ids.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/duplicate-reminder-slots.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/identity-change-after.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/non-timestamp.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/origin-reference-missing.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/valid.json:13:  "reminder_slots": [
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/test_pb_contracts.py:516:        ("duplicate reminder slots", "collection", "duplicate-reminder-slots.json", "reminder_slots"),

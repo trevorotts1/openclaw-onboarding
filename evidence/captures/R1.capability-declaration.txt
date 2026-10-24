@@ -1,7 +1,7 @@
 # search: R1.capability-declaration
-# command: git grep -nF personal_profile_rule 144ec54507695371b0eaea1e06a561d7cd76273b -- 35-social-media-planner/config/profile-capabilities.json
+# command: git grep -nF personal_profile_rule 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 35-social-media-planner/config/profile-capabilities.json
 # scope: profile-capabilities.json
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 1  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:35-social-media-planner/config/profile-capabilities.json:8:    "personal_profile_rule": "Any account type with personal_profile=true declares mode assisted (or unavailable) and MUST NOT list any action under unattended. Unattended personal-profile posting or commenting is never supported.",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:35-social-media-planner/config/profile-capabilities.json:8:    "personal_profile_rule": "Any account type with personal_profile=true declares mode assisted (or unavailable) and MUST NOT list any action under unattended. Unattended personal-profile posting or commenting is never supported.",

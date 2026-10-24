@@ -1,17 +1,17 @@
 # search: D12.shared-contract-lib
-# command: git grep -nF lib-hook-mapping-contract.sh 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts
+# command: git grep -nF lib-hook-mapping-contract.sh 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts
 # scope: 38-conversational-ai-system/scripts
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 11  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/24-self-test-hook.sh:88:  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-hook-mapping-contract.sh"
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/24-self-test-hook.sh:157:# scripts/lib-hook-mapping-contract.sh. This used to be a private python snippet
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/24-self-test-hook.sh:161:. "$SCRIPT_DIR/lib-hook-mapping-contract.sh"
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/24-self-test-hook.sh:180:    fix "fix the mapping per scripts/lib-hook-mapping-contract.sh (needs action=agent + deliver:false + a non-empty messageTemplate + every send/memory directive + agentId listed in hooks.allowedAgentIds; 'model' is an optional override), then re-run 15-configure-hooks-mappings.sh"
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/lib-docker-tenant.sh:21:# in ONE place — scripts/lib-hook-mapping-contract.sh — and this file merely
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/lib-docker-tenant.sh:25:_S38_CONTRACT="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/lib-hook-mapping-contract.sh"
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/lib-docker-tenant.sh:27:  echo "REFUSED: lib-hook-mapping-contract.sh not found at $_S38_CONTRACT — the directive needles have no source of truth. Install the full skill." >&2
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/lib-docker-tenant.sh:156:# PBB-017: the lists themselves live in lib-hook-mapping-contract.sh and are
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/lib-hook-mapping-contract.sh:2:# lib-hook-mapping-contract.sh — THE single authoritative contract for a valid
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/qc-backend-ready.sh:73:# One authoritative predicate, sourced from scripts/lib-hook-mapping-contract.sh,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/qc-backend-ready.sh:79:. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-hook-mapping-contract.sh"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/24-self-test-hook.sh:88:  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-hook-mapping-contract.sh"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/24-self-test-hook.sh:157:# scripts/lib-hook-mapping-contract.sh. This used to be a private python snippet
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/24-self-test-hook.sh:161:. "$SCRIPT_DIR/lib-hook-mapping-contract.sh"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/24-self-test-hook.sh:180:    fix "fix the mapping per scripts/lib-hook-mapping-contract.sh (needs action=agent + deliver:false + a non-empty messageTemplate + every send/memory directive + agentId listed in hooks.allowedAgentIds; 'model' is an optional override), then re-run 15-configure-hooks-mappings.sh"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/lib-docker-tenant.sh:21:# in ONE place — scripts/lib-hook-mapping-contract.sh — and this file merely
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/lib-docker-tenant.sh:25:_S38_CONTRACT="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/lib-hook-mapping-contract.sh"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/lib-docker-tenant.sh:27:  echo "REFUSED: lib-hook-mapping-contract.sh not found at $_S38_CONTRACT — the directive needles have no source of truth. Install the full skill." >&2
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/lib-docker-tenant.sh:156:# PBB-017: the lists themselves live in lib-hook-mapping-contract.sh and are
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/lib-hook-mapping-contract.sh:2:# lib-hook-mapping-contract.sh — THE single authoritative contract for a valid
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/qc-backend-ready.sh:73:# One authoritative predicate, sourced from scripts/lib-hook-mapping-contract.sh,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/qc-backend-ready.sh:79:. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-hook-mapping-contract.sh"

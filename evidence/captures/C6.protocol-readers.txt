@@ -1,11 +1,11 @@
 # search: C6.protocol-readers
-# command: git grep -niE intelligent-followup-protocol|intelligent_followup 144ec54507695371b0eaea1e06a561d7cd76273b -- *.py *.sh
+# command: git grep -niE intelligent-followup-protocol|intelligent_followup 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- *.py *.sh
 # scope: *.py and *.sh
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 5  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:157:FUP="$SKILL_DIR/protocols/intelligent-followup-protocol.md"
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:163:      fail "intelligent-followup-protocol.md applies a BARE agent-created tag \`${bare}…\` — must be ZHC-${bare}…"
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:167:  [ "$fup_bare" -eq 0 ] && pass "intelligent-followup-protocol.md: all agent-created follow-up tags are ZHC- prefixed (no bare stalled-sales/cold-lead-released/followup-opted-out/followup-cadence-N)"
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:169:  fail "protocols/intelligent-followup-protocol.md MISSING (cannot check F29 follow-up tags)"
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:219:  "$SKILL_DIR/protocols/intelligent-followup-protocol.md"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:157:FUP="$SKILL_DIR/protocols/intelligent-followup-protocol.md"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:163:      fail "intelligent-followup-protocol.md applies a BARE agent-created tag \`${bare}…\` — must be ZHC-${bare}…"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:167:  [ "$fup_bare" -eq 0 ] && pass "intelligent-followup-protocol.md: all agent-created follow-up tags are ZHC- prefixed (no bare stalled-sales/cold-lead-released/followup-opted-out/followup-cadence-N)"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:169:  fail "protocols/intelligent-followup-protocol.md MISSING (cannot check F29 follow-up tags)"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:219:  "$SKILL_DIR/protocols/intelligent-followup-protocol.md"

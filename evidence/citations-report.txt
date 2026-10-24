@@ -1,4 +1,4 @@
-citation check at pin 144ec54507695371b0eaea1e06a561d7cd76273b
+citation check at pin 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 citations: 80   mismatches: 0
 
 G1     OK       ONBOARDING-TRIGGERS.md:3
@@ -125,7 +125,7 @@ D-13   OK       38-conversational-ai-system/tools/direct_fulfillment.py:20
         EVIDENCE.  Provider admission is labelled accepted/sent, never "delivered".
 D-15   OK       38-conversational-ai-system/launch/qc-launch-conversation-ai.sh:2
         # qc-launch-conversation-ai.sh — launch Conversation-AI completion gate.
-G5     OK       38-conversational-ai-system/CHANGELOG.md:14
+G5     OK       38-conversational-ai-system/CHANGELOG.md:66
         Adds one stdlib-only module, `tools/bootstrap_engine.py` (the T-36 `client-bootstrap-engine`), which provisions the objects a guided setup asks for into one target root. `plan()` is a pure scoped diff and writes nothing,
 J4     OK       38-conversational-ai-system/schemas/approval-manifest.schema.json:4
         "description": "Purple Billboard DATA-CONTRACTS section 10 and DEC-02. One client approval covers one joined 30-day campaign of exact placements. A mutation invalidates that placement only, so the manifest carries per-pl

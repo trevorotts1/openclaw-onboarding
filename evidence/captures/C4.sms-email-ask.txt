@@ -1,20 +1,21 @@
 # search: C4.sms-email-ask
-# command: git grep -nF max_sms_email_asks 144ec54507695371b0eaea1e06a561d7cd76273b -- .
+# command: git grep -nF max_sms_email_asks 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .
 # scope: all tracked paths
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
-# rc: 0  count: 14  verdict: present
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 15  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/schemas/collection-state.schema.json:79:        "max_sms_email_asks": {
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/schemas/collection-state.schema.json:95:        "max_sms_email_asks",
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:336:    if budget["sms_email_asks_used"] > budget["max_sms_email_asks"]:
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/after-add-item.json:78:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/capture-budget-exceeded.json:67:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/declined-add-item-after.json:77:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/declined-before.json:65:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/drop-item-after.json:57:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/duplicate-pending-ids.json:68:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/duplicate-reminder-slots.json:74:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/identity-change-after.json:67:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/non-timestamp.json:67:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/origin-reference-missing.json:67:    "max_sms_email_asks": 1,
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/valid.json:67:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/schemas/collection-state.schema.json:79:        "max_sms_email_asks": {
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/schemas/collection-state.schema.json:95:        "max_sms_email_asks",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:336:    if budget["sms_email_asks_used"] > budget["max_sms_email_asks"]:
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/after-add-item.json:78:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/capture-budget-exceeded.json:67:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/declined-add-item-after.json:77:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/declined-before.json:65:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/drop-item-after.json:57:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/duplicate-pending-ids.json:68:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/duplicate-reminder-slots.json:74:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/identity-change-after.json:67:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/non-timestamp.json:67:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/origin-reference-missing.json:67:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/tests/fixtures/pb-contracts/collection/valid.json:67:    "max_sms_email_asks": 1,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/capture/progressive_capture.py:596:            "max_sms_email_asks": MAX_SMS_EMAIL_ASKS,

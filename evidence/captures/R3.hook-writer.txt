@@ -1,8 +1,8 @@
 # search: R3.hook-writer
-# command: git grep -nF s38_canonical_mapping 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh
+# command: git grep -nF s38_canonical_mapping 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh
 # scope: 15-configure-hooks-mappings.sh
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 2  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh:174:#    s38_canonical_mapping in lib-docker-tenant.sh) or the agent drafts but never sends (zero GHL API calls
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh:190:NEW_MAPPING="$(s38_canonical_mapping "$ROUTE_ID" "$ROUTE_ID" "$ROUTING_AGENT_ID" "$SESSION_KEY")"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh:174:#    s38_canonical_mapping in lib-docker-tenant.sh) or the agent drafts but never sends (zero GHL API calls
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh:190:NEW_MAPPING="$(s38_canonical_mapping "$ROUTE_ID" "$ROUTE_ID" "$ROUTING_AGENT_ID" "$SESSION_KEY")"

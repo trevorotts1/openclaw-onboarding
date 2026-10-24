@@ -1,7 +1,7 @@
 # search: G5.bootstrap-run
-# command: git grep -nF def run 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/bootstrap_engine.py
+# command: git grep -nF def run 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/bootstrap_engine.py
 # scope: bootstrap_engine.py
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 1  verdict: present
 # --- stdout ---
-144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/bootstrap_engine.py:562:    def run(
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/bootstrap_engine.py:562:    def run(

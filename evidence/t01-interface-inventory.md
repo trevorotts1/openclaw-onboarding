@@ -1,6 +1,7 @@
 # T-01 — Current onboarding interfaces at pinned main
 
-Unit: **PBB-206** (rebuild of the refused PBB-182 revision). Ledger task: **T-01**, interface inventory.
+Unit: **PBB-206** (rebuild of the refused PBB-182 revision); re-stamped at the current pin by **PBB-237**
+on 2026-10-24. Ledger task: **T-01**, interface inventory.
 Repository: `trevorotts1/openclaw-onboarding`.
 Mode: read-only reconnaissance plus execution of the repository's own stdlib self-checks.
 No product code was changed. Nothing was pushed. No pull request was opened. No merge was performed.
@@ -22,32 +23,62 @@ Status vocabulary (unchanged from the earlier revisions):
 
 | Item | Value |
 |---|---|
-| Pin SHA | `144ec54507695371b0eaea1e06a561d7cd76273b` |
-| Commit subject | `Merge T-36 idempotent guided setup and crash-safe receipts (PBB-081); allocate Skill 38 v2.0.32 (#2545)` |
-| Commit date | 2026-10-24 16:50:53 -0400 |
-| Fetched (UTC) | 2026-10-24T21:01:33Z (build session PBB-206; an earlier pass in this lane recorded 20:51:05Z with the same SHA) |
-| How verified | `git fetch --prune origin main`, then `git rev-parse origin/main`; cross-checked with `gh api repos/trevorotts1/openclaw-onboarding/commits/main` at 2026-10-24T21:03:43Z, same SHA |
-| Remote truth at fetch | `144ec54507695371b0eaea1e06a561d7cd76273b refs/heads/main` (`PIN.remote-main`, rc=0) |
-| Worktree HEAD at run | equals the pin. The capture run was made in a **detached worktree checked out at the pin**, so the harness preflight records `worktree_at_pin: true` and `pin_is_ancestor_of_head: true`. The evidence commit that carries this document is a direct child of the pin, so a later checkout can never move the answers: every search command names the pin SHA itself. |
-| Tracked files | 13,636 (`PIN.tracked-files`, rc=0) |
-| Repo `version` | `v27.1.65` |
-| Skill 38 `skill-version.txt` | `v2.0.32` |
+| Pin SHA | `9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865` |
+| Commit subject | `Merge pull request #2548 from trevorotts1/batch/s75-b2` |
+| Commit date | 2026-10-24 17:56:32 -0400 |
+| Fetched (UTC) | 2026-10-24T22:12:40Z (re-stamp session PBB-237; the earlier PBB-206 revision was pinned at `144ec54507695371b0eaea1e06a561d7cd76273b` with fetch time 2026-10-24T21:01:33Z) |
+| How verified | `git fetch --prune origin main`, then `git rev-parse origin/main`; cross-checked with `gh api repos/trevorotts1/openclaw-onboarding/commits/main` at 2026-10-24T22:12:40Z, same SHA |
+| Remote truth at fetch | `9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 refs/heads/main` (`PIN.remote-main`, rc=0) |
+| Worktree HEAD at run | `9ed73df16ec55dacf503ab0d01603544ea58469f`, two evidence-only commits above the pin, so the harness preflight records `worktree_at_pin: false` and `pin_is_ancestor_of_head: true`. Every search command names the pin SHA itself, so the checkout cannot move the answers; only the pin's tracked content is read. |
+| Tracked files | 13,672 (`PIN.tracked-files`, rc=0) |
+| Repo `version` | `v27.1.65` (unchanged) |
+| Skill 38 `skill-version.txt` | `v2.0.33` (was `v2.0.32`) |
 
 The refused revision called `bccc4050f8ed98b2d9b55cfc087c27c924d62b03` "origin/main" and derived its
 absences there. It was not main even then, and main has moved twice since. Measured now:
 
 | Baseline | Commits ahead of it | Merges ahead of it | Search |
 |---|---|---|---|
-| `bccc4050f` (the refused revision's base) | **148** | **60** | `PIN.commits-ahead-of-bccc4050f` / `PIN.merges-ahead-of-bccc4050f`, rc=0 |
-| `f0a9c80e` (the SHA the FAIL verdict called current main) | **6** | **4** | `PIN.commits-ahead-of-f0a9c80e` / `PIN.merges-ahead-of-f0a9c80e`, rc=0 |
+| `bccc4050f` (the refused revision's base) | **183** | **77** | `PIN.commits-ahead-of-bccc4050f` / `PIN.merges-ahead-of-bccc4050f`, rc=0 |
+| `f0a9c80e` (the SHA the FAIL verdict called current main) | **41** | **21** | `PIN.commits-ahead-of-f0a9c80e` / `PIN.merges-ahead-of-f0a9c80e`, rc=0 |
 
-Main moved six more commits between the FAIL verdict being written and this fetch. That is the
+Main moved 41 commits (21 merges) between the FAIL verdict's `f0a9c80e` and this fetch. That is the
 argument for recording a fetch time alongside the SHA, and it is why this document cites
-`144ec545`, not the verdict's `f0a9c80e`.
+`9488ccbc8`, not the verdict's `f0a9c80e`.
+
+### Changed since `144ec545` (dated 2026-10-24, re-stamp PBB-237)
+
+The previous revision of this document was pinned at `144ec54507695371b0eaea1e06a561d7cd76273b`.
+Every probe was re-run at `9488ccbc8`. Seven results moved. Six are properties of the pin's tracked
+content; the `PIN.*` live rows are observations of GitHub and the local host at run time, not
+properties of any commit.
+
+| What | At `144ec545` | At `9488ccbc8` | Command (abridged) | rc |
+|---|---|---|---|---|
+| `O3.absent-handoff-lifecycle` | ABSENT (rc=1, n=0) | **PRESENT (rc=0, n=23)** | `git grep -niE handoff_accept\|handoff_due\|handoff-lifecycle\|backup_owner\|backup-owner <pin> -- .` | 0 |
+| `PIN.tracked-files` | 13,636 | 13,672 | `git ls-tree -r --name-only <pin>` | 0 |
+| `R4.adapter-file-census` | 147 | 150 | `git ls-tree -r --name-only <pin>`, case-insensitive `adapter` filter | 0 |
+| `C4.sms-email-ask` | 14 | 15 | `git grep -nF max_sms_email_asks <pin> -- .` | 0 |
+| Skill 38 `skill-version.txt` | `v2.0.32` | `v2.0.33` | `git show <pin>:38-conversational-ai-system/skill-version.txt` | 0 |
+| `PIN.remote-branches` (live) | 1,884 | 1,901 | `git ls-remote --heads origin` | 0 |
+| `PIN.worktree-count` (live) | 89 | 93 | `git worktree list` | 0 |
+
+Unchanged and re-derived: `PIN.open-pr-count` = **8** (`gh pr list … --json number --jq length`, rc=0;
+the set moved — PR 2546 closed and PR 2549 opened — but the count did not), and repo `version` =
+**v27.1.65** (`git show <pin>:version`, rc=0).
+
+O3 became PRESENT because `21f9be77a258debb382c093e39b420b54a199693` — `feat(handoff): owned human
+handoff with acceptance, due, backup and fence (T-29)` — added `shared-utils/handoff/handoff.py`
+(658 lines) and `shared-utils/handoff/tests/test_handoff.py` (522 lines). It is an ancestor of the pin
+(`git merge-base --is-ancestor 21f9be77a 9488ccbc8`, rc=0). The search id is kept unchanged so the
+absent → present history is legible; it is the same probe, answered at two pins.
+
+`PIN.remote-branches`, `PIN.worktrees` and `PIN.worktree-count` read live state at run time, so a later
+run will legitimately differ. They are recorded as observations, never as claims about the pin.
 
 ### Claims of absence that flipped, re-derived at the pin
 
-Each row below was an ABSENT claim in the refused revision. Each is now re-run at `144ec545` with the
+Each row below was an ABSENT claim in the refused revision. Each is now re-run at `9488ccbc8` with the
 actual exit code and match count from this session.
 
 | # | What flipped | Search id | Command (abridged) | rc | count | Verdict now |
@@ -65,7 +96,7 @@ only the five it listed:
 | # | What flipped | Search id | rc | count |
 |---|---|---|---|---|
 | G5 | `tools/bootstrap_engine.py` is the T-36 `client-bootstrap-engine` | `G5.bootstrap-file`, `G5.bootstrap-name` | 0 | 1, 2 |
-| C4 | the SMS/email ask and reminder budget exist as a validated collection contract | `C4.capture-budget`, `C4.sms-email-ask` | 0 | 2, 14 |
+| C4 | the SMS/email ask and reminder budget exist as a validated collection contract | `C4.capture-budget`, `C4.sms-email-ask` | 0 | 2, 15 |
 
 Nothing in the earlier revision's **substance** was invented. The defect was the pin: the contracts
 layer (commit `053c4fee9`, "feat(contracts): bind shared collection, outbound, approval, readiness and
@@ -78,8 +109,8 @@ that now exists.
 
 | Status | Count |
 |---|---|
-| PRESENT | 18 |
-| PARTIAL | 6 |
+| PRESENT | 19 |
+| PARTIAL | 5 |
 | ABSENT | 1 |
 | **Total interfaces inspected** | **25** |
 
@@ -96,7 +127,7 @@ now exists (R3, PRESENT); the adapter interface itself does not.
 | G2 | Owner / company / optional owner-email identity collection before resources | PRESENT | `install.sh:3077` — `collect_onboarding_identity() {`; `install.sh:3106` — `collect_onboarding_identity \|\| exit 8`; `scripts/onboarding-identity.py:16` — `QUESTIONS = {'ownerName': …`; `:143` — `return 8 if result['status'] == 'needs-input' else 0` | `G2.identity-def` rc=0 n=1; `G2.identity-exit8` rc=0 n=1; `G2.identity-questions` rc=0 n=1 |
 | G3 | Client intake question engine with resume (`next`/`record`/`help`/`check`/`finalize`) | PRESENT | `shared-utils/client_intake/engine.py:2` — `"""Client intake engine: one question bank, one answers file per run …`; `:333` — `def next_question(doc, bank=None):`; `:594` — `def record(doc, qid, value, *, source="client", …)`; `:829` — `def finalize(doc, bank=None):` | `G3.intake-engine` rc=0 n=1 |
 | G4 | Guided business/audience/offer discovery brief (T-06) | PRESENT | `38-conversational-ai-system/tools/acquisition_brief.py:2` — `"""Guided business, audience and offer discovery for Skill 38 (T-06).`; `:310` — `class AcquisitionBrief:`; `:456` `record_fact`, `:615` `next_questions`, `:769` `answer`, `:966` `is_campaign_ready` | `G4.acquisition-brief` rc=0 n=1 |
-| G5 | Idempotent client-bootstrap engine with provision diff and step receipts (T-36, output `client-bootstrap-engine`) | **PRESENT** (was ABSENT) | `38-conversational-ai-system/tools/bootstrap_engine.py:4` — `Contract basis: Purple-Billboard TODO T-36 ("client-bootstrap-engine") and`; `:460` — `def plan(self, specs: Sequence[ResourceSpec]) -> Plan:`; `:562` — `def run(`. The module's own doctrine separates the pure diff from the writer, and `CHANGELOG.md:14` binds the T-36 output name to this file. | `G5.bootstrap-file` rc=0 n=1; `G5.bootstrap-name` rc=0 n=2; `G5.bootstrap-plan` rc=0 n=1; `G5.bootstrap-run` rc=0 n=1 |
+| G5 | Idempotent client-bootstrap engine with provision diff and step receipts (T-36, output `client-bootstrap-engine`) | **PRESENT** (was ABSENT) | `38-conversational-ai-system/tools/bootstrap_engine.py:4` — `Contract basis: Purple-Billboard TODO T-36 ("client-bootstrap-engine") and`; `:460` — `def plan(self, specs: Sequence[ResourceSpec]) -> Plan:`; `:562` — `def run(`. The module's own doctrine separates the pure diff from the writer, and `CHANGELOG.md:66` binds the T-36 output name to this file. | `G5.bootstrap-file` rc=0 n=1; `G5.bootstrap-name` rc=0 n=2; `G5.bootstrap-plan` rc=0 n=1; `G5.bootstrap-run` rc=0 n=1 |
 
 There is still **no single guided-setup object** carrying these into a provisioning plan. `bootstrap_engine.py`
 consumes `ResourceSpec` values; G2/G3/G4 remain three separate stores. The engine is the writer, the
@@ -127,7 +158,7 @@ absent: `J4.absent-artifact-name` rc=1 n=0 (control 66) and `F2.absent-artifact-
 | R1 | Per-channel / account-type capability declaration and assisted-placement route (T-22) | PRESENT | `35-social-media-planner/config/profile-capabilities.json:2` — `"$schema_note": "T-22 honest personal-profile capability declaration and assisted contract. …`; `shared-utils/personal_profile_capability.py:154` — `def get_capability(`; `:226` — `def request_placement(`. Executed: the CLI returns `"mode": "assisted"` with `"forbidden_assisted_statuses": ["published-by-system","published"]` (see §10). | `R1.capability-declaration` rc=0 n=1 |
 | R2 | Comment-read route selection with per-channel honesty | PRESENT (FB/IG only; others explicitly unavailable) | `35-social-media-planner/scripts/comment_reader.py:75` — `CHANNEL_COMMENT_SURFACE = {`; `:221` — `if channel not in CHANNEL_COMMENT_SURFACE:`; `:225` — `surface = CHANNEL_COMMENT_SURFACE[channel]` | `R2.comment-surface` rc=0 n=4 |
 | R3 | DM entry route (GHL Conversations inbound hook) and DM call-to-action, including the private-opener purpose | **PRESENT** (was PARTIAL) | `38-conversational-ai-system/tools/pb_contracts.py:980` — `if action["purpose"] == "COMMENT_PRIVATE_OPENER" and gate["inbound_dm_window"]:`; the outbound schema enumerates the purpose (`schemas/outbound-action.schema.json:788` — `"COMMENT_PRIVATE_OPENER",`) and a fixture exercises it (`tools/tests/fixtures/pb-contracts/outbound/person-comment-opener.json:4`). Hook writer: `15-configure-hooks-mappings.sh` still builds `s38_canonical_mapping`. DM CTA documented: `35-social-media-planner/references/playbook.md:1042` — `The post itself contains BOTH a DM call-to-action (primary …`. | `R3.private-opener` rc=0 n=4; `R3.hook-writer` rc=0 n=2 |
-| R4 | Per-surface route adapters (T-20 Page comment/Messenger, T-21 Instagram, output `instagram-route-adapter`) | **ABSENT** | No adapter interface, module or file. All four output names return nothing: `instagram-route-adapter`, `page-comment-adapter`, `messenger-route-adapter`, `private-opener-adapter`. The filename census on `adapter` returns 147 paths; none is a Page-comment, Messenger, IG-DM or private-opener route adapter. The policy that a route *would* call now exists in `pb_contracts.py` (R3); the per-surface adapter layer does not. | `R4.absent-adapter-names` rc=1 n=0, control `book_appointment` n=66; `R4.adapter-file-census` rc=0 n=147 |
+| R4 | Per-surface route adapters (T-20 Page comment/Messenger, T-21 Instagram, output `instagram-route-adapter`) | **ABSENT** | No adapter interface, module or file. All four output names return nothing: `instagram-route-adapter`, `page-comment-adapter`, `messenger-route-adapter`, `private-opener-adapter`. The filename census on `adapter` returns 150 paths; none is a Page-comment, Messenger, IG-DM or private-opener route adapter. The policy that a route *would* call now exists in `pb_contracts.py` (R3); the per-surface adapter layer does not. | `R4.absent-adapter-names` rc=1 n=0, control `book_appointment` n=66; `R4.adapter-file-census` rc=0 n=150 |
 
 Scope note so the R4 negative is not read as broader than it is: `identity` mapping exists
 (`tenant_identity.py:48` maps `facebook`/`messenger` to `fb_psid`, `instagram` to `ig_psid`, `sms` to
@@ -155,7 +186,7 @@ is keyed to purchase events and entitlements. F2 is the conversation-side promis
 | C1 | Canonical contact identity across FB / IG / SMS / email | PRESENT | `38-conversational-ai-system/tools/tenant_identity.py:48` — `CHANNEL_IDENTIFIER_TYPES = {`; `:109` — `reminder_total       INTEGER NOT NULL DEFAULT 0,` | `C1.channel-identifier-types` rc=0 n=2; `C1.reminder-column` rc=0 n=6 |
 | C2 | Collection lock and durable capture cursor | PRESENT | `collection_lock.py:501` — `class CaptureStore:`; `:530` — `def begin(`; `:573` `def advance(`; `:633` `def complete(`; `:654` `def reject(` | `C2.capture-store` rc=0 n=1 |
 | C3 | Consent gate: refusal, channel opt-out, global stop, human precedence, partial capture | PRESENT | `consent_gate.py:85` — `SCOPE_OFFER = "offer"`; `:299` — `def human_takeover(self, tenant_id: str, canonical_contact_id: str, *,`; `:325` — `def human_release(self, tenant_id: str, canonical_contact_id: str, *,`; `:584` `make_gate_evaluator` | `C3.consent-offer-scope` rc=0 n=4; `C3.human-fence` rc=0 n=1 |
-| C4 | Mobile-first progressive capture with one logical SMS email ask (T-16, output `progressive-capture-candidate`) | PARTIAL | The contract exists and is validated: `schemas/collection-state.schema.json:72` — `"capture_budget": {`; `:79` — `"max_sms_email_asks": {`; `pb_contracts.py:333-339` refuses `reminders_used > max_reminders`, `sms_email_asks_used > max_sms_email_asks`, and `reminders_used < reminders_accepted`. Missing: the ask-state engine that would produce `progressive-capture-candidate` — the output name is absent. | `C4.capture-budget` rc=0 n=2; `C4.sms-email-ask` rc=0 n=14; `C4.absent-artifact-name` rc=1 n=0 (control 66) |
+| C4 | Mobile-first progressive capture with one logical SMS email ask (T-16, output `progressive-capture-candidate`) | PARTIAL | The contract exists and is validated: `schemas/collection-state.schema.json:72` — `"capture_budget": {`; `:79` — `"max_sms_email_asks": {`; `pb_contracts.py:333-339` refuses `reminders_used > max_reminders`, `sms_email_asks_used > max_sms_email_asks`, and `reminders_used < reminders_accepted`. Missing: the ask-state engine that would produce `progressive-capture-candidate` — the output name is absent. | `C4.capture-budget` rc=0 n=2; `C4.sms-email-ask` rc=0 n=15; `C4.absent-artifact-name` rc=1 n=0 (control 66) |
 | C5 | Reminder slots, final reserved action and terminal stop (T-17, output `reminder-state-machine`) | **PRESENT** (was ABSENT) | `pb_contracts.py:341` — `# Section 8: three distinct slots, in order.`; `:342` — `slots = doc["reminder_slots"]`; `:345`/`:347` refuse duplicate and out-of-order slot numbers; `:358` — `errs.append("$.reminder_slots: due_at must increase across slots")`. `reminder_slots` appears 20 times across the schema, validator, tests and fixtures. The `reminder_total` counter in `tenant_identity.py` is no longer the only reminder artefact. | `C5.reminder-slots` rc=0 n=20; `C5.slot-order-rule` rc=0 n=1; `C5.absent-artifact-name` rc=1 n=0 (control 66) |
 | C6 | Follow-up cadence after a stalled conversation | PARTIAL | The protocol exists: `38-conversational-ai-system/protocols/intelligent-followup-protocol.md:1` — `# Intelligent Follow-up Protocol`. The only code that reads it is a static QC linter: `scripts/qc-zhc-tag-prefix.sh:157,163,167,169,219`. No cron or schedule asset binds it to a run. | `C6.followup-protocol` rc=0 n=1; `C6.protocol-readers` rc=0 n=5 (control 34); `C6.runtime-scheduler` rc=1 n=0 (control 2625) |
 
@@ -171,10 +202,13 @@ returns 2,625 matches. The protocol being read is not the protocol being run.
 |---|---|---|---|---|
 | O1 | Offer interface (offer selection or routing) | PARTIAL | Offer is a first-class scoped value: `consent_gate.py:85` — `SCOPE_OFFER = "offer"` (6 matches under `tools/`); discovery questions in `acquisition_brief.py`. Missing: selection/routing inside the PBB conversation surface — `select_offer`, `offer_route`, `pick_offer`, `choose_offer`, `offer_select` return nothing across `38-`, `35-` and `57-`. | `O1.offer-scope` rc=0 n=6; `O1.offer-route-absent` rc=1 n=0 (control 55) |
 | O2 | Booking execution / follow-through adapter (T-28, output `booking-followthrough-adapter`) | PARTIAL | Documented protocol: `protocols/smart-booking-protocol.md:37` — `` `caf calendars book` first, Tier 3 `POST /calendars/events/appointments` as the ``. The adapter output name is absent. | `O2.booking-protocol` rc=0 n=1; `O2.absent-artifact-name` rc=1 n=0 (control 66) |
-| O3 | Human handoff fence | PARTIAL | Fence present: `consent_gate.py:299` `human_takeover`, `:325` `human_release`; loop lifecycle validated at `pb_contracts.py:74` — `LIFECYCLE_LADDER = ["NOT_INSTALLED", "ADOPTING", "RUNNING", "PAUSED_RESUMABLE", "CLOSING", "CLOSED"]`. Missing: acceptance, due time and backup-owner lifecycle — `handoff_accept`, `handoff_due`, `handoff-lifecycle`, `backup_owner` return nothing. | `O3.human-fence` rc=0 n=1; `O3.lifecycle-ladder` rc=0 n=1; `O3.absent-handoff-lifecycle` rc=1 n=0 (control 66) |
+| O3 | Owned human handoff: context, acceptance, due time, backup owner and fence (T-29) | **PRESENT** (was PARTIAL) | Executable module `shared-utils/handoff/handoff.py` with a runnable entry point (`:681` — `if __name__ == "__main__":`, `:682` — `_self_check()`). `HandoffStore.create` (`:266`), `.accept` (`:348`), `.escalate` (`:376`), `.backup_accept` (`:413`), `.release` (`:456`), `.get` (`:507`) expose the caller-visible lifecycle; `:434` — `if actor != row["backup_owner_id"]:`; `:529` — `"backup_owner_id": data["backup_owner_id"],`. Tests: `shared-utils/handoff/tests/test_handoff.py:113` — `def test_create_requires_a_distinct_backup_owner(self):`. Fence also present at `consent_gate.py:299` `human_takeover` and `:325` `human_release`; loop lifecycle at `pb_contracts.py:74` — `LIFECYCLE_LADDER = [...]`. Introduced by `21f9be77a` (T-29). | `O3.human-fence` rc=0 n=1; `O3.lifecycle-ladder` rc=0 n=1; `O3.absent-handoff-lifecycle` rc=0 n=23 (control 66) |
 
-The lifecycle ladder is the *engineering loop* lifecycle, not the handoff lifecycle. It is evidence
-that the fence has a state machine around it; it is not evidence of a handoff accept/due/backup flow.
+At the previous pin (`144ec545`) this row was PARTIAL and the handoff lifecycle was genuinely
+missing: `O3.absent-handoff-lifecycle` returned rc=1 n=0. It became PRESENT at `9488ccbc8` with
+`21f9be77a` (T-29), which added `shared-utils/handoff/handoff.py` and its test module. The
+`pb_contracts.py:74` `LIFECYCLE_LADDER` is a separate thing — the engineering-loop lifecycle — and is
+no longer the only lifecycle evidence for O3.
 
 ---
 
@@ -281,18 +315,18 @@ inventories the dirty work instead. Source: `evidence/captures/d3-work-in-progre
 | Dimension | Value |
 |---|---|
 | Open pull requests | **8** (`PIN.open-pr-count` rc=0, value `8`) |
-| Remote heads on `origin` | **1,884** (`PIN.remote-branches` rc=0) |
-| Remote heads under `refs/heads/pb/` | **0** (control: 1,884 heads total, so the pattern is live) |
-| Local worktrees | **89** at the D3 run recorded in `d3-work-in-progress.txt` (run time in that file). Worktree count is a live local property, not a property of the pinned commit, so this is a timed observation. |
-| — attached to a branch | 50 |
-| — detached HEAD | 39 |
-| Local `pb/*` branches | **57** |
+| Remote heads on `origin` | **1,901** (`PIN.remote-branches` rc=0) |
+| Remote heads under `refs/heads/pb/` | **0** (control: 1,901 heads total, so the pattern is live) |
+| Local worktrees | **93** at the D3 run recorded in `d3-work-in-progress.txt` (run time in that file). Worktree count is a live local property, not a property of the pinned commit, so this is a timed observation. |
+| — attached to a branch | 53 |
+| — detached HEAD | 40 |
+| Local `pb/*` branches | **60** |
 
 The open pull requests, newest first:
 
 | PR | Head branch | Draft | Updated | Title |
 |---|---|---|---|---|
-| 2546 | `batch/s75-b1-finish` | no | 2026-10-24T20:56:53Z | Skill 75 batch 1: story-first contracts, cast, world, music and duration units |
+| 2549 | `batch/s75-b3` | no | 2026-10-24T22:10:43Z | S75 batch 3: land accepted-but-unmerged T10 and T24 |
 | 2167 | `fix/update-skills-cp-r-preserve-symlinks` | no | 2026-10-16T18:56:17Z | fix(update-skills): cp -R so macOS stops dereferencing a skill symlink and the version stamp can be written |
 | 1889 | `fix/qc-falsefail-20261012` | no | 2026-10-13T02:29:41Z | QC false-FAIL fix: personal-workspace skip + pointer-regex + Sunday owner-hold |
 | 1702 | `fix/lipsync-process-LSP001` | no | 2026-10-09T00:15:39Z | skill 75: approved lip-sync process (LSP001) |
@@ -301,8 +335,8 @@ The open pull requests, newest first:
 | 1165 | `fix/pd169-copy-is-the-slides-text` | no | 2026-09-28T15:16:02Z | fix(pd-test-169): copy[] is the slide's TEXT, not a labelled form |
 | 1083 | `codex/social-planner-private-links-20260909` | yes | 2026-09-10T00:17:37Z | Add verified private planner sheets and mini-app delivery instructions |
 
-Read this way, the 89 worktrees and 57 local `pb/*` branches are the real in-flight surface; the 8
-open PRs are only what has been proposed. None of the 57 `pb/*` branches exists on `origin`, so a
+Read this way, the 93 worktrees and 60 local `pb/*` branches are the real in-flight surface; the 8
+open PRs are only what has been proposed. None of the 60 `pb/*` branches exists on `origin`, so a
 claim derived from `origin/main` alone would miss all of them — which is the D3 defect this section
 closes.
 
@@ -326,7 +360,7 @@ cwd = 38-conversational-ai-system/tools
 $ python3 -B -m unittest tests.test_pb_contracts tests.test_direct_fulfillment \
       tests.test_bootstrap_engine tests.test_compat_guard -q
 ----------------------------------------------------------------------
-Ran 118 tests in 9.181s
+Ran 118 tests in 9.089s
 
 OK
 rc=0
@@ -394,9 +428,12 @@ instrument-failed, 0 instrument-error**.
 | `C5.absent-artifact-name` | 1 | 0 | `-niF book_appointment -- .` | 66 |
 | `O1.offer-route-absent` | 1 | 0 | `-niE book_appointment -- 38- 35- 57-` | 55 |
 | `O2.absent-artifact-name` | 1 | 0 | `-niF book_appointment -- .` | 66 |
-| `O3.absent-handoff-lifecycle` | 1 | 0 | `-niE book_appointment -- .` | 66 |
 | `C6.runtime-scheduler` | 1 | 0 | `-niF cron -- *cron* *schedule* *04-register*` | 2,625 |
 | `D15.launch-gate-uninvoked` | 1 | 0 | `-niF qc-launch-conversation-ai -- …/launch/` | 18 |
+
+`O3.absent-handoff-lifecycle` is deliberately not in this table: at `9488ccbc8` it returns rc=0 with 23
+matches, so it is a presence row in the register, not a claim of absence. At the previous pin it was an
+absence row (rc=1 n=0) with the same control (66); the identical probe is kept so the flip stays legible.
 
 ### Coverage statement
 
@@ -411,7 +448,7 @@ reply-owner gate; Skill 44's reference to it; open branches, worktrees and pull 
 Not checked, and named so no negative above is read as broader than it is: any client box; any GitHub
 Actions run result (a workflow file existing is not a passing run); live GHL or provider behaviour;
 the `999-setup` and `blackceo-command-center` repositories (separate tasks T-02/T-03); branches other
-than the pin. Absence claims are claims about **tracked content at `144ec545`**, not about the fleet.
+than the pin. Absence claims are claims about **tracked content at `9488ccbc8`**, not about the fleet.
 
 ---
 
@@ -421,7 +458,7 @@ Every `file:line` quoted in this document was re-checked against the pinned blob
 `evidence/search/check_citations.py`, reading `git show <pin>:<path>` and never the working tree.
 
 ```
-pin=144ec54507695371b0eaea1e06a561d7cd76273b citations=80 mismatches=0
+pin=9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 citations=80 mismatches=0
 ```
 
 Full report: `evidence/citations-report.txt`.
@@ -430,7 +467,8 @@ Full report: `evidence/citations-report.txt`.
 
 ## 12. Deliverables and how to reproduce
 
-All on branch `pb/PBB-206/t01-inventory`, created from the pin.
+All on branch `pb/PBB-236/t01-inventory-rebase`, created from the pin (the PBB-206 revision lived on
+`pb/PBB-206/t01-inventory`; this re-stamp carries the same evidence files forward).
 
 | Path | What it is |
 |---|---|
@@ -467,7 +505,7 @@ included. This unit adds evidence documents and read-only search scripts only; i
 installer, updater, skill, protocol or script behaviour anywhere in the repository.
 
 The pin's own versions for reference: repo `version` = `v27.1.65`, Skill 38 `skill-version.txt` =
-`v2.0.32`. Neither is changed by this branch.
+`v2.0.33`. Neither is changed by this branch.
 
 ---
 
@@ -481,83 +519,83 @@ session against the pin. `rc` is git grep's own exit status (0 = match, 1 = no m
 
 | # | Search id | Interface | Command | Scope | rc | count | verdict | control |
 |---|---|---|---|---|---|---|---|---|
-| 1 | `PIN.pin-resolves` | PIN | `git rev-parse --verify 144ec54507695371b0eaea1e06a561d7cd76273b^{commit}` | object store | 0 | 1 | present | - |
-| 2 | `PIN.pin-is-commit` | PIN | `git cat-file -t 144ec54507695371b0eaea1e06a561d7cd76273b` | object store | 0 | 1 | present | - |
+| 1 | `PIN.pin-resolves` | PIN | `git rev-parse --verify 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865^{commit}` | object store | 0 | 1 | present | - |
+| 2 | `PIN.pin-is-commit` | PIN | `git cat-file -t 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865` | object store | 0 | 1 | present | - |
 | 3 | `PIN.remote-main` | PIN | `git ls-remote origin refs/heads/main` | remote origin | 0 | 1 | present | - |
-| 4 | `PIN.commits-ahead-of-bccc4050f` | PIN | `git rev-list --count bccc4050f8ed98b2d9b55cfc087c27c924d62b03..144ec54507695371b0eaea1e06a561d7cd76273b` | commit graph | 0 | 1 | present | - |
-| 5 | `PIN.merges-ahead-of-bccc4050f` | PIN | `git rev-list --count --merges bccc4050f8ed98b2d9b55cfc087c27c924d62b03..144ec54507695371b0eaea1e06a561d7cd76273b` | commit graph | 0 | 1 | present | - |
-| 6 | `PIN.commits-ahead-of-f0a9c80e` | PIN | `git rev-list --count f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..144ec54507695371b0eaea1e06a561d7cd76273b` | commit graph | 0 | 1 | present | - |
-| 7 | `PIN.merges-ahead-of-f0a9c80e` | PIN | `git rev-list --count --merges f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..144ec54507695371b0eaea1e06a561d7cd76273b` | commit graph | 0 | 1 | present | - |
-| 8 | `PIN.tracked-files` | PIN | `git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b` | all tracked paths | 0 | 13636 | present | - |
-| 9 | `PIN.remote-branches` | PIN | `git ls-remote --heads origin` | remote origin heads | 0 | 1884 | present | - |
+| 4 | `PIN.commits-ahead-of-bccc4050f` | PIN | `git rev-list --count bccc4050f8ed98b2d9b55cfc087c27c924d62b03..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865` | commit graph | 0 | 1 | present | - |
+| 5 | `PIN.merges-ahead-of-bccc4050f` | PIN | `git rev-list --count --merges bccc4050f8ed98b2d9b55cfc087c27c924d62b03..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865` | commit graph | 0 | 1 | present | - |
+| 6 | `PIN.commits-ahead-of-f0a9c80e` | PIN | `git rev-list --count f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865` | commit graph | 0 | 1 | present | - |
+| 7 | `PIN.merges-ahead-of-f0a9c80e` | PIN | `git rev-list --count --merges f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865` | commit graph | 0 | 1 | present | - |
+| 8 | `PIN.tracked-files` | PIN | `git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865` | all tracked paths | 0 | 13672 | present | - |
+| 9 | `PIN.remote-branches` | PIN | `git ls-remote --heads origin` | remote origin heads | 0 | 1901 | present | - |
 | 10 | `PIN.open-prs` | PIN | `gh pr list --repo trevorotts1/openclaw-onboarding --state open --limit 200 --json number,headRefName,isDraft,title,updatedAt` | GitHub pull requests | 0 | 1 | present | - |
-| 11 | `PIN.worktrees` | PIN | `git worktree list --porcelain` | local clone | 0 | 267 | present | - |
-| 12 | `PIN.worktree-count` | PIN | `git worktree list` | local clone | 0 | 89 | present | - |
+| 11 | `PIN.worktrees` | PIN | `git worktree list --porcelain` | local clone | 0 | 279 | present | - |
+| 12 | `PIN.worktree-count` | PIN | `git worktree list` | local clone | 0 | 93 | present | - |
 | 13 | `PIN.open-pr-count` | PIN | `gh pr list --repo trevorotts1/openclaw-onboarding --state open --limit 200 --json number --jq length` | GitHub pull requests | 0 | 1 | present | - |
-| 14 | `G1.trigger-count` | G1 | `git grep -nF 8 different ways to do it 144ec54507695371b0eaea1e06a561d7cd76273b -- ONBOARDING-TRIGGERS.md` | ONBOARDING-TRIGGERS.md | 0 | 1 | present | 78 matches |
-| 15 | `G1.install-entry` | G1 | `git grep -nF Run via: curl -fSL 144ec54507695371b0eaea1e06a561d7cd76273b -- install.sh` | install.sh | 0 | 1 | present | 13 matches |
-| 16 | `G2.identity-def` | G2 | `git grep -nF collect_onboarding_identity() { 144ec54507695371b0eaea1e06a561d7cd76273b -- install.sh` | install.sh | 0 | 1 | present | - |
-| 17 | `G2.identity-exit8` | G2 | `git grep -nF collect_onboarding_identity \|\| exit 8 144ec54507695371b0eaea1e06a561d7cd76273b -- install.sh` | install.sh | 0 | 1 | present | - |
-| 18 | `G2.identity-questions` | G2 | `git grep -nF QUESTIONS = { 144ec54507695371b0eaea1e06a561d7cd76273b -- scripts/onboarding-identity.py` | scripts/onboarding-identity.py | 0 | 1 | present | - |
-| 19 | `G3.intake-engine` | G3 | `git grep -nF def next_question 144ec54507695371b0eaea1e06a561d7cd76273b -- shared-utils/client_intake/engine.py` | shared-utils/client_intake/engine.py | 0 | 1 | present | - |
-| 20 | `G4.acquisition-brief` | G4 | `git grep -nF class AcquisitionBrief 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/acquisition_brief.py` | 38-conversational-ai-system/tools/acquisition_brief.py | 0 | 1 | present | - |
-| 21 | `G5.bootstrap-file` | G5 | `git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b 38-conversational-ai-system/tools/bootstrap_engine.py` | 38-conversational-ai-system/tools | 0 | 1 | present | - |
-| 22 | `G5.bootstrap-name` | G5 | `git grep -niF client-bootstrap-engine 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 0 | 2 | present | - |
-| 23 | `G5.bootstrap-plan` | G5 | `git grep -nF def plan 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/bootstrap_engine.py` | bootstrap_engine.py | 0 | 1 | present | - |
-| 24 | `G5.bootstrap-run` | G5 | `git grep -nF def run 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/bootstrap_engine.py` | bootstrap_engine.py | 0 | 1 | present | - |
-| 25 | `J1.publishing-cycle` | J1 | `git grep -nF run-publishing-cycle.sh 144ec54507695371b0eaea1e06a561d7cd76273b -- 35-social-media-planner/scripts/run-publishing-cycle.sh` | run-publishing-cycle.sh | 0 | 4 | present | - |
-| 26 | `J2.weekly-batch` | J2 | `git grep -nF Cron-driven weekly batch 144ec54507695371b0eaea1e06a561d7cd76273b -- 35-social-media-planner/scripts/weekly-batch.sh` | weekly-batch.sh | 0 | 1 | present | - |
-| 27 | `J3.campaign-mode` | J3 | `git grep -nF campaign 144ec54507695371b0eaea1e06a561d7cd76273b -- 57-social-media-in-a-box/modes.md` | 57-social-media-in-a-box/modes.md | 0 | 2 | present | - |
-| 28 | `J4.approval-schema` | J4 | `git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b 38-conversational-ai-system/schemas/approval-manifest.schema.json` | 38-conversational-ai-system/schemas | 0 | 1 | present | - |
-| 29 | `J4.approval-title` | J4 | `git grep -nF Revisioned monthly approval manifest 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/schemas/approval-manifest.schema.json` | approval-manifest.schema.json | 0 | 1 | present | - |
-| 30 | `J4.approval-semantic` | J4 | `git grep -nF def semantic_approval 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 1 | present | - |
-| 31 | `J4.approval-binding` | J4 | `git grep -nF def approval_errors 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 1 | present | - |
-| 32 | `J4.absent-artifact-name` | J4 | `git grep -niF monthly-approval-contract 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
-| 33 | `J5.promised-item` | J5 | `git grep -nF class PromisedItem 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
-| 34 | `J5.keyword-bound` | J5 | `git grep -nF keyword 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 2 | present | - |
-| 35 | `J5.immutable-item` | J5 | `git grep -nF IMMUTABLE. 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
-| 36 | `J5.name-probe` | J5 | `git grep -niE stable keyword\|promised-item\|promised_item\|keyword mapping\|original promise 144ec54507695371b0eaea1e06a561d7cd76273b -- *.py *.sh` | *.py and *.sh | 0 | 6 | present | - |
-| 37 | `R1.capability-declaration` | R1 | `git grep -nF personal_profile_rule 144ec54507695371b0eaea1e06a561d7cd76273b -- 35-social-media-planner/config/profile-capabilities.json` | profile-capabilities.json | 0 | 1 | present | - |
-| 38 | `R2.comment-surface` | R2 | `git grep -nF CHANNEL_COMMENT_SURFACE 144ec54507695371b0eaea1e06a561d7cd76273b -- 35-social-media-planner/scripts/comment_reader.py` | comment_reader.py | 0 | 4 | present | - |
-| 39 | `R3.private-opener` | R3 | `git grep -nF COMMENT_PRIVATE_OPENER 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 0 | 4 | present | - |
-| 40 | `R3.hook-writer` | R3 | `git grep -nF s38_canonical_mapping 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh` | 15-configure-hooks-mappings.sh | 0 | 2 | present | - |
-| 41 | `R4.absent-adapter-names` | R4 | `git grep -niE instagram-route-adapter\|page-comment-adapter\|messenger-route-adapter\|private-opener-adapter 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
-| 42 | `R4.adapter-file-census` | R4 | `git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b` | all tracked paths, case-insensitive substring on the path | 0 | 147 | present | - |
-| 43 | `F1.asset-registry` | F1 | `git grep -nF def record_present 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/asset_registry.py` | asset_registry.py | 0 | 1 | present | - |
-| 44 | `F2.fulfillment-file` | F2 | `git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b 38-conversational-ai-system/tools/direct_fulfillment.py` | 38-conversational-ai-system/tools | 0 | 1 | present | - |
-| 45 | `F2.fulfill-entry` | F2 | `git grep -nF def fulfill( 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
-| 46 | `F2.receipt` | F2 | `git grep -nF def record_delivery_proof 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
-| 47 | `F2.absent-artifact-name` | F2 | `git grep -niF direct-original-fulfillment 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
-| 48 | `C1.channel-identifier-types` | C1 | `git grep -nF CHANNEL_IDENTIFIER_TYPES 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/tenant_identity.py` | tenant_identity.py | 0 | 2 | present | - |
-| 49 | `C1.reminder-column` | C1 | `git grep -nF reminder_total 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/tenant_identity.py` | tenant_identity.py | 0 | 6 | present | - |
-| 50 | `C2.capture-store` | C2 | `git grep -nF class CaptureStore 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/collection_lock.py` | collection_lock.py | 0 | 1 | present | - |
-| 51 | `C3.consent-offer-scope` | C3 | `git grep -nF SCOPE_OFFER 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/consent_gate.py` | consent_gate.py | 0 | 4 | present | - |
-| 52 | `C3.human-fence` | C3 | `git grep -nF def human_takeover 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/consent_gate.py` | consent_gate.py | 0 | 1 | present | - |
-| 53 | `C4.capture-budget` | C4 | `git grep -nF capture_budget 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/schemas/collection-state.schema.json` | collection-state.schema.json | 0 | 2 | present | - |
-| 54 | `C4.sms-email-ask` | C4 | `git grep -nF max_sms_email_asks 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 0 | 14 | present | - |
-| 55 | `C4.absent-artifact-name` | C4 | `git grep -niF progressive-capture-candidate 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
-| 56 | `C5.reminder-slots` | C5 | `git grep -nF reminder_slots 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 0 | 20 | present | - |
-| 57 | `C5.slot-order-rule` | C5 | `git grep -nF due_at must increase across slots 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 1 | present | - |
-| 58 | `C5.absent-artifact-name` | C5 | `git grep -niF reminder-state-machine 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
-| 59 | `C6.followup-protocol` | C6 | `git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b 38-conversational-ai-system/protocols/intelligent-followup-protocol.md` | 38-conversational-ai-system/protocols | 0 | 1 | present | - |
-| 60 | `C6.protocol-readers` | C6 | `git grep -niE intelligent-followup-protocol\|intelligent_followup 144ec54507695371b0eaea1e06a561d7cd76273b -- *.py *.sh` | *.py and *.sh | 0 | 5 | present | 34 matches |
-| 61 | `C6.runtime-scheduler` | C6 | `git grep -niF intelligent-followup-protocol 144ec54507695371b0eaea1e06a561d7cd76273b -- *cron* *schedule* *04-register*` | paths whose name contains cron, schedule or 04-register | 1 | 0 | absent | 2625 matches |
-| 62 | `O1.offer-scope` | O1 | `git grep -nF SCOPE_OFFER 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools` | 38-conversational-ai-system/tools | 0 | 6 | present | - |
-| 63 | `O1.offer-route-absent` | O1 | `git grep -niE select_offer\|offer_route\|pick_offer\|choose_offer\|offer_select 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system 35-social-media-planner 57-social-media-in-a-box` | 38- / 35- / 57- skill directories | 1 | 0 | absent | 55 matches |
-| 64 | `O2.booking-protocol` | O2 | `git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b 38-conversational-ai-system/protocols/smart-booking-protocol.md` | 38-conversational-ai-system/protocols | 0 | 1 | present | - |
-| 65 | `O2.absent-artifact-name` | O2 | `git grep -niF booking-followthrough-adapter 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
-| 66 | `O3.human-fence` | O3 | `git grep -nF def human_release 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/consent_gate.py` | consent_gate.py | 0 | 1 | present | - |
-| 67 | `O3.lifecycle-ladder` | O3 | `git grep -nF LIFECYCLE_LADDER 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 1 | present | - |
-| 68 | `O3.absent-handoff-lifecycle` | O3 | `git grep -niE handoff_accept\|handoff_due\|handoff-lifecycle\|backup_owner\|backup-owner 144ec54507695371b0eaea1e06a561d7cd76273b -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
-| 69 | `D11.mapping-migrate` | D-11 | `git grep -nF s38_merge_mapping_body 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh` | 15-configure-hooks-mappings.sh | 0 | 1 | present | - |
-| 70 | `D11.repair-migrate` | D-11 | `git grep -nF migrate_mapping_body( 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py` | repair-inbound-hooks.py | 0 | 2 | present | - |
-| 71 | `D12.shared-contract-lib` | D-12 | `git grep -nF lib-hook-mapping-contract.sh 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts` | 38-conversational-ai-system/scripts | 0 | 11 | present | - |
-| 72 | `D12.model-optional` | D-12 | `git grep -nF model` is an OPTIONAL override 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts/lib-hook-mapping-contract.sh` | lib-hook-mapping-contract.sh | 0 | 1 | present | - |
-| 73 | `D13.admission-not-delivery` | D-13 | `git grep -nF never "delivered" 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
-| 74 | `D13.selftest-200-only` | D-13 | `git grep -nF hook returned HTTP 200 + {ok:true} 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts/24-self-test-hook.sh` | 24-self-test-hook.sh | 0 | 1 | present | - |
-| 75 | `D13.selftest-temp-contact-default` | D-13 | `git grep -nF CREATE_TEMP_CONTACT:-0 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts/24-self-test-hook.sh` | 24-self-test-hook.sh | 0 | 1 | present | - |
-| 76 | `D15.launch-gate-uninvoked` | D-15 | `git grep -nF qc-launch-conversation-ai 144ec54507695371b0eaea1e06a561d7cd76273b -- install.sh update-skills.sh .github/workflows/` | install.sh, update-skills.sh, .github/workflows/ | 1 | 0 | absent | 18 matches |
-| 77 | `D15.launch-gate-exists` | D-15 | `git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b 38-conversational-ai-system/launch/qc-launch-conversation-ai.sh` | 38-conversational-ai-system/launch | 0 | 1 | present | - |
-| 78 | `D15.skill44-consumer` | D-15 | `git grep -nF customer-replied-conversation-ai 144ec54507695371b0eaea1e06a561d7cd76273b -- 44-convert-and-flow-operator` | 44-convert-and-flow-operator | 0 | 4 | present | - |
+| 14 | `G1.trigger-count` | G1 | `git grep -nF 8 different ways to do it 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- ONBOARDING-TRIGGERS.md` | ONBOARDING-TRIGGERS.md | 0 | 1 | present | 78 matches |
+| 15 | `G1.install-entry` | G1 | `git grep -nF Run via: curl -fSL 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- install.sh` | install.sh | 0 | 1 | present | 13 matches |
+| 16 | `G2.identity-def` | G2 | `git grep -nF collect_onboarding_identity() { 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- install.sh` | install.sh | 0 | 1 | present | - |
+| 17 | `G2.identity-exit8` | G2 | `git grep -nF collect_onboarding_identity \|\| exit 8 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- install.sh` | install.sh | 0 | 1 | present | - |
+| 18 | `G2.identity-questions` | G2 | `git grep -nF QUESTIONS = { 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- scripts/onboarding-identity.py` | scripts/onboarding-identity.py | 0 | 1 | present | - |
+| 19 | `G3.intake-engine` | G3 | `git grep -nF def next_question 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- shared-utils/client_intake/engine.py` | shared-utils/client_intake/engine.py | 0 | 1 | present | - |
+| 20 | `G4.acquisition-brief` | G4 | `git grep -nF class AcquisitionBrief 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/acquisition_brief.py` | 38-conversational-ai-system/tools/acquisition_brief.py | 0 | 1 | present | - |
+| 21 | `G5.bootstrap-file` | G5 | `git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 38-conversational-ai-system/tools/bootstrap_engine.py` | 38-conversational-ai-system/tools | 0 | 1 | present | - |
+| 22 | `G5.bootstrap-name` | G5 | `git grep -niF client-bootstrap-engine 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 0 | 2 | present | - |
+| 23 | `G5.bootstrap-plan` | G5 | `git grep -nF def plan 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/bootstrap_engine.py` | bootstrap_engine.py | 0 | 1 | present | - |
+| 24 | `G5.bootstrap-run` | G5 | `git grep -nF def run 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/bootstrap_engine.py` | bootstrap_engine.py | 0 | 1 | present | - |
+| 25 | `J1.publishing-cycle` | J1 | `git grep -nF run-publishing-cycle.sh 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 35-social-media-planner/scripts/run-publishing-cycle.sh` | run-publishing-cycle.sh | 0 | 4 | present | - |
+| 26 | `J2.weekly-batch` | J2 | `git grep -nF Cron-driven weekly batch 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 35-social-media-planner/scripts/weekly-batch.sh` | weekly-batch.sh | 0 | 1 | present | - |
+| 27 | `J3.campaign-mode` | J3 | `git grep -nF campaign 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 57-social-media-in-a-box/modes.md` | 57-social-media-in-a-box/modes.md | 0 | 2 | present | - |
+| 28 | `J4.approval-schema` | J4 | `git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 38-conversational-ai-system/schemas/approval-manifest.schema.json` | 38-conversational-ai-system/schemas | 0 | 1 | present | - |
+| 29 | `J4.approval-title` | J4 | `git grep -nF Revisioned monthly approval manifest 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/schemas/approval-manifest.schema.json` | approval-manifest.schema.json | 0 | 1 | present | - |
+| 30 | `J4.approval-semantic` | J4 | `git grep -nF def semantic_approval 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 1 | present | - |
+| 31 | `J4.approval-binding` | J4 | `git grep -nF def approval_errors 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 1 | present | - |
+| 32 | `J4.absent-artifact-name` | J4 | `git grep -niF monthly-approval-contract 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
+| 33 | `J5.promised-item` | J5 | `git grep -nF class PromisedItem 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
+| 34 | `J5.keyword-bound` | J5 | `git grep -nF keyword 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 2 | present | - |
+| 35 | `J5.immutable-item` | J5 | `git grep -nF IMMUTABLE. 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
+| 36 | `J5.name-probe` | J5 | `git grep -niE stable keyword\|promised-item\|promised_item\|keyword mapping\|original promise 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- *.py *.sh` | *.py and *.sh | 0 | 6 | present | - |
+| 37 | `R1.capability-declaration` | R1 | `git grep -nF personal_profile_rule 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 35-social-media-planner/config/profile-capabilities.json` | profile-capabilities.json | 0 | 1 | present | - |
+| 38 | `R2.comment-surface` | R2 | `git grep -nF CHANNEL_COMMENT_SURFACE 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 35-social-media-planner/scripts/comment_reader.py` | comment_reader.py | 0 | 4 | present | - |
+| 39 | `R3.private-opener` | R3 | `git grep -nF COMMENT_PRIVATE_OPENER 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 0 | 4 | present | - |
+| 40 | `R3.hook-writer` | R3 | `git grep -nF s38_canonical_mapping 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh` | 15-configure-hooks-mappings.sh | 0 | 2 | present | - |
+| 41 | `R4.absent-adapter-names` | R4 | `git grep -niE instagram-route-adapter\|page-comment-adapter\|messenger-route-adapter\|private-opener-adapter 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
+| 42 | `R4.adapter-file-census` | R4 | `git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865` | all tracked paths, case-insensitive substring on the path | 0 | 150 | present | - |
+| 43 | `F1.asset-registry` | F1 | `git grep -nF def record_present 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/asset_registry.py` | asset_registry.py | 0 | 1 | present | - |
+| 44 | `F2.fulfillment-file` | F2 | `git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 38-conversational-ai-system/tools/direct_fulfillment.py` | 38-conversational-ai-system/tools | 0 | 1 | present | - |
+| 45 | `F2.fulfill-entry` | F2 | `git grep -nF def fulfill( 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
+| 46 | `F2.receipt` | F2 | `git grep -nF def record_delivery_proof 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
+| 47 | `F2.absent-artifact-name` | F2 | `git grep -niF direct-original-fulfillment 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
+| 48 | `C1.channel-identifier-types` | C1 | `git grep -nF CHANNEL_IDENTIFIER_TYPES 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/tenant_identity.py` | tenant_identity.py | 0 | 2 | present | - |
+| 49 | `C1.reminder-column` | C1 | `git grep -nF reminder_total 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/tenant_identity.py` | tenant_identity.py | 0 | 6 | present | - |
+| 50 | `C2.capture-store` | C2 | `git grep -nF class CaptureStore 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/collection_lock.py` | collection_lock.py | 0 | 1 | present | - |
+| 51 | `C3.consent-offer-scope` | C3 | `git grep -nF SCOPE_OFFER 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/consent_gate.py` | consent_gate.py | 0 | 4 | present | - |
+| 52 | `C3.human-fence` | C3 | `git grep -nF def human_takeover 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/consent_gate.py` | consent_gate.py | 0 | 1 | present | - |
+| 53 | `C4.capture-budget` | C4 | `git grep -nF capture_budget 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/schemas/collection-state.schema.json` | collection-state.schema.json | 0 | 2 | present | - |
+| 54 | `C4.sms-email-ask` | C4 | `git grep -nF max_sms_email_asks 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 0 | 15 | present | - |
+| 55 | `C4.absent-artifact-name` | C4 | `git grep -niF progressive-capture-candidate 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
+| 56 | `C5.reminder-slots` | C5 | `git grep -nF reminder_slots 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 0 | 20 | present | - |
+| 57 | `C5.slot-order-rule` | C5 | `git grep -nF due_at must increase across slots 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 1 | present | - |
+| 58 | `C5.absent-artifact-name` | C5 | `git grep -niF reminder-state-machine 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
+| 59 | `C6.followup-protocol` | C6 | `git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 38-conversational-ai-system/protocols/intelligent-followup-protocol.md` | 38-conversational-ai-system/protocols | 0 | 1 | present | - |
+| 60 | `C6.protocol-readers` | C6 | `git grep -niE intelligent-followup-protocol\|intelligent_followup 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- *.py *.sh` | *.py and *.sh | 0 | 5 | present | 34 matches |
+| 61 | `C6.runtime-scheduler` | C6 | `git grep -niF intelligent-followup-protocol 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- *cron* *schedule* *04-register*` | paths whose name contains cron, schedule or 04-register | 1 | 0 | absent | 2625 matches |
+| 62 | `O1.offer-scope` | O1 | `git grep -nF SCOPE_OFFER 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools` | 38-conversational-ai-system/tools | 0 | 6 | present | - |
+| 63 | `O1.offer-route-absent` | O1 | `git grep -niE select_offer\|offer_route\|pick_offer\|choose_offer\|offer_select 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system 35-social-media-planner 57-social-media-in-a-box` | 38- / 35- / 57- skill directories | 1 | 0 | absent | 55 matches |
+| 64 | `O2.booking-protocol` | O2 | `git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 38-conversational-ai-system/protocols/smart-booking-protocol.md` | 38-conversational-ai-system/protocols | 0 | 1 | present | - |
+| 65 | `O2.absent-artifact-name` | O2 | `git grep -niF booking-followthrough-adapter 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 1 | 0 | absent | 66 matches |
+| 66 | `O3.human-fence` | O3 | `git grep -nF def human_release 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/consent_gate.py` | consent_gate.py | 0 | 1 | present | - |
+| 67 | `O3.lifecycle-ladder` | O3 | `git grep -nF LIFECYCLE_LADDER 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/pb_contracts.py` | pb_contracts.py | 0 | 1 | present | - |
+| 68 | `O3.absent-handoff-lifecycle` | O3 | `git grep -niE handoff_accept\|handoff_due\|handoff-lifecycle\|backup_owner\|backup-owner 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .` | all tracked paths | 0 | 23 | present | 66 matches |
+| 69 | `D11.mapping-migrate` | D-11 | `git grep -nF s38_merge_mapping_body 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh` | 15-configure-hooks-mappings.sh | 0 | 1 | present | - |
+| 70 | `D11.repair-migrate` | D-11 | `git grep -nF migrate_mapping_body( 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py` | repair-inbound-hooks.py | 0 | 2 | present | - |
+| 71 | `D12.shared-contract-lib` | D-12 | `git grep -nF lib-hook-mapping-contract.sh 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts` | 38-conversational-ai-system/scripts | 0 | 11 | present | - |
+| 72 | `D12.model-optional` | D-12 | `git grep -nF model` is an OPTIONAL override 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts/lib-hook-mapping-contract.sh` | lib-hook-mapping-contract.sh | 0 | 1 | present | - |
+| 73 | `D13.admission-not-delivery` | D-13 | `git grep -nF never "delivered" 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/direct_fulfillment.py` | direct_fulfillment.py | 0 | 1 | present | - |
+| 74 | `D13.selftest-200-only` | D-13 | `git grep -nF hook returned HTTP 200 + {ok:true} 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts/24-self-test-hook.sh` | 24-self-test-hook.sh | 0 | 1 | present | - |
+| 75 | `D13.selftest-temp-contact-default` | D-13 | `git grep -nF CREATE_TEMP_CONTACT:-0 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts/24-self-test-hook.sh` | 24-self-test-hook.sh | 0 | 1 | present | - |
+| 76 | `D15.launch-gate-uninvoked` | D-15 | `git grep -nF qc-launch-conversation-ai 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- install.sh update-skills.sh .github/workflows/` | install.sh, update-skills.sh, .github/workflows/ | 1 | 0 | absent | 18 matches |
+| 77 | `D15.launch-gate-exists` | D-15 | `git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 38-conversational-ai-system/launch/qc-launch-conversation-ai.sh` | 38-conversational-ai-system/launch | 0 | 1 | present | - |
+| 78 | `D15.skill44-consumer` | D-15 | `git grep -nF customer-replied-conversation-ai 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 44-convert-and-flow-operator` | 44-convert-and-flow-operator | 0 | 4 | present | - |
 
 <!-- SEARCH-REGISTER:END -->

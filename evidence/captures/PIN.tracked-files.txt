@@ -1,8 +1,8 @@
 # search: PIN.tracked-files
-# command: git ls-tree -r --name-only 144ec54507695371b0eaea1e06a561d7cd76273b
+# command: git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # scope: all tracked paths
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
-# rc: 0  count: 13636  verdict: present
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 13672  verdict: present
 # --- stdout ---
 .gitattributes
 .githooks/pre-commit
@@ -9484,9 +9484,11 @@
 75-drama-song-ad-factory/scripts/core/character_bible/__init__.py
 75-drama-song-ad-factory/scripts/core/character_bible/character_approval.py
 75-drama-song-ad-factory/scripts/core/character_bible/character_bible.py
+75-drama-song-ad-factory/scripts/core/character_bible/identity.py
 75-drama-song-ad-factory/scripts/core/character_bible/pdf_writer.py
 75-drama-song-ad-factory/scripts/core/character_bible/test_character_approval_w06.py
 75-drama-song-ad-factory/scripts/core/character_bible/test_character_bible_del02.py
+75-drama-song-ad-factory/scripts/core/character_bible/test_identity_s75_t05.py
 75-drama-song-ad-factory/scripts/core/character_continuity/__init__.py
 75-drama-song-ad-factory/scripts/core/character_continuity/continuity.py
 75-drama-song-ad-factory/scripts/core/character_continuity/stage.py
@@ -9496,13 +9498,16 @@
 75-drama-song-ad-factory/scripts/core/character_images/test_character_images_del11.py
 75-drama-song-ad-factory/scripts/core/character_library/__init__.py
 75-drama-song-ad-factory/scripts/core/character_library/character_library.py
+75-drama-song-ad-factory/scripts/core/character_library/notion_adapter.py
 75-drama-song-ad-factory/scripts/core/character_library/test_character_library_i6.py
+75-drama-song-ad-factory/scripts/core/character_library/test_notion_discovery.py
 75-drama-song-ad-factory/scripts/core/character_library/test_saved_character_question.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/README-channel-send.md
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/__init__.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/agnes_explanation.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/ai_models.json
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/ai_models.py
+75-drama-song-ad-factory/scripts/core/choice_card/intake_card/answer_reuse.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/channel_send.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/delivery_outbox.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/intake_card.py
@@ -9511,6 +9516,7 @@
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/optional_extras.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/person_question.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/person_question_fixtures.json
+75-drama-song-ad-factory/scripts/core/choice_card/intake_card/style_help.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/style_samples.json
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_agnes_explanation.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_ai_models.py
@@ -9520,6 +9526,7 @@
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_duration_contract_owner.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_explicit_chain_contract.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_fit_card_u4.py
+75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_help_and_reuse.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_intake_card_h9.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_intake_session.py
 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_intake_step_i7.py
@@ -9554,6 +9561,7 @@
 75-drama-song-ad-factory/scripts/core/clip_cutdown/trailer.py
 75-drama-song-ad-factory/scripts/core/contracts/artifact-schema.json
 75-drama-song-ad-factory/scripts/core/contracts/campaign-schema.json
+75-drama-song-ad-factory/scripts/core/contracts/flavor-999.json
 75-drama-song-ad-factory/scripts/core/contracts/qc-schema.json
 75-drama-song-ad-factory/scripts/core/delivery_audio.py
 75-drama-song-ad-factory/scripts/core/delivery_checklist/__init__.py
@@ -9762,6 +9770,9 @@
 75-drama-song-ad-factory/scripts/core/method_plan/fixtures/blueprint-90s.json
 75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py
 75-drama-song-ad-factory/scripts/core/method_plan/test_method_plan.py
+75-drama-song-ad-factory/scripts/core/music/__init__.py
+75-drama-song-ad-factory/scripts/core/music/constraints.py
+75-drama-song-ad-factory/scripts/core/music/word_fit.py
 75-drama-song-ad-factory/scripts/core/music_director/__init__.py
 75-drama-song-ad-factory/scripts/core/music_director/test_blueprint_inputs_s75xw4u2.py
 75-drama-song-ad-factory/scripts/core/music_director/test_prompt_limits_u6.py
@@ -9772,14 +9783,27 @@
 75-drama-song-ad-factory/scripts/core/music_qc/test_ww1848f_rap_accept.py
 75-drama-song-ad-factory/scripts/core/music_qc/test_wwfix_u1.py
 75-drama-song-ad-factory/scripts/core/music_styles/__init__.py
+75-drama-song-ad-factory/scripts/core/music_styles/catalog.py
 75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py
+75-drama-song-ad-factory/scripts/core/music_styles/recipes.py
+75-drama-song-ad-factory/scripts/core/music_styles/recipes/acoustic-pop.json
+75-drama-song-ad-factory/scripts/core/music_styles/recipes/afro-soul.json
+75-drama-song-ad-factory/scripts/core/music_styles/recipes/alternative-rnb.json
+75-drama-song-ad-factory/scripts/core/music_styles/recipes/country-pop.json
+75-drama-song-ad-factory/scripts/core/music_styles/recipes/folk-storytelling.json
+75-drama-song-ad-factory/scripts/core/music_styles/recipes_s75_t22.py
+75-drama-song-ad-factory/scripts/core/music_styles/test_catalog_s75t18.py
 75-drama-song-ad-factory/scripts/core/music_styles/test_delivery_map.py
 75-drama-song-ad-factory/scripts/core/music_styles/test_dry_style_f13.py
+75-drama-song-ad-factory/scripts/core/music_styles/test_rap_recipes_t20.py
+75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_s75_t19.py
+75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_s75_t22.py
 75-drama-song-ad-factory/scripts/core/no_blur_fill/__init__.py
 75-drama-song-ad-factory/scripts/core/no_blur_fill/still_fill.py
 75-drama-song-ad-factory/scripts/core/onscreen_text/__init__.py
 75-drama-song-ad-factory/scripts/core/onscreen_text/onscreen_text.py
 75-drama-song-ad-factory/scripts/core/onscreen_text/test_onscreen_text.py
+75-drama-song-ad-factory/scripts/core/package_flavor_adapter.py
 75-drama-song-ad-factory/scripts/core/pdf_kit/__init__.py
 75-drama-song-ad-factory/scripts/core/pdf_kit/pdf_kit.py
 75-drama-song-ad-factory/scripts/core/pdf_kit/test_pdf_kit.py
@@ -9977,6 +10001,7 @@
 75-drama-song-ad-factory/scripts/core/story_coverage/test_story_coverage_markup.py
 75-drama-song-ad-factory/scripts/core/story_coverage/test_story_lexical_timeline.py
 75-drama-song-ad-factory/scripts/core/story_coverage/test_story_opening_media_zero.py
+75-drama-song-ad-factory/scripts/core/story_first_contracts.py
 75-drama-song-ad-factory/scripts/core/storyboard_director/__init__.py
 75-drama-song-ad-factory/scripts/core/storyboard_director/approval_package.py
 75-drama-song-ad-factory/scripts/core/storyboard_director/approval_runner.py
@@ -10047,11 +10072,13 @@
 75-drama-song-ad-factory/scripts/core/test_lipsync_evidence.py
 75-drama-song-ad-factory/scripts/core/test_music_clean_install_v2971.py
 75-drama-song-ad-factory/scripts/core/test_music_createtask_ww30.py
+75-drama-song-ad-factory/scripts/core/test_package_flavor_adapter.py
 75-drama-song-ad-factory/scripts/core/test_production_process.py
 75-drama-song-ad-factory/scripts/core/test_protected_names_h7.py
 75-drama-song-ad-factory/scripts/core/test_spend_attempts_w02u2.py
 75-drama-song-ad-factory/scripts/core/test_spend_utc_f11.py
 75-drama-song-ad-factory/scripts/core/test_state_store_s75w02u4.py
+75-drama-song-ad-factory/scripts/core/test_story_first_contracts.py
 75-drama-song-ad-factory/scripts/core/test_words_match_f7.py
 75-drama-song-ad-factory/scripts/core/timing_guard.py
 75-drama-song-ad-factory/scripts/core/video_router/__init__.py
@@ -10100,6 +10127,9 @@
 75-drama-song-ad-factory/shared-bridge/studio_claim.py
 75-drama-song-ad-factory/shared-bridge/wake_agent.sh
 75-drama-song-ad-factory/skill-version.txt
+75-drama-song-ad-factory/tests/fixtures/duration_and_lipsync.json
+75-drama-song-ad-factory/tests/fixtures/intake_resume.json
+75-drama-song-ad-factory/tests/fixtures/notion_discovery.json
 75-drama-song-ad-factory/tests/test_camera_vocabulary_rules/__init__.py
 75-drama-song-ad-factory/tests/test_camera_vocabulary_rules/test_client_guide.py
 75-drama-song-ad-factory/tests/test_camera_vocabulary_rules/test_drone_placement.py
@@ -10112,6 +10142,7 @@
 75-drama-song-ad-factory/tests/test_lipsync_preflight.py
 75-drama-song-ad-factory/tests/test_loud_failure.py
 75-drama-song-ad-factory/tests/test_model_choice.py
+75-drama-song-ad-factory/tests/test_music_constraints_t25.py
 75-drama-song-ad-factory/tests/test_no_blur_fill/README.md
 75-drama-song-ad-factory/tests/test_no_blur_fill/common.py
 75-drama-song-ad-factory/tests/test_no_blur_fill/test_fill_claim_gate.py
@@ -12402,6 +12433,9 @@ shared-utils/browser/iframe_router.py
 shared-utils/browser/runtime_adapters.py
 shared-utils/browser/test_runtime_adapters.py
 shared-utils/canonical_slug.py
+shared-utils/capture/__init__.py
+shared-utils/capture/progressive_capture.py
+shared-utils/capture/tests/test_progressive_capture.py
 shared-utils/cc-tunnel-ingress.sh
 shared-utils/cc/board_events.py
 shared-utils/cc/event_outbox.py
@@ -12518,6 +12552,8 @@ shared-utils/ghl/surveys.py
 shared-utils/ghl/website_adapter.py
 shared-utils/ghl_creds.py
 shared-utils/git_ff_sync.sh
+shared-utils/handoff/handoff.py
+shared-utils/handoff/tests/test_handoff.py
 shared-utils/hq_activity.py
 shared-utils/industry-detector.py
 shared-utils/industry-gate.sh

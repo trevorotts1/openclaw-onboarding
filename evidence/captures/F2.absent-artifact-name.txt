@@ -1,6 +1,6 @@
 # search: F2.absent-artifact-name
-# command: git grep -niF direct-original-fulfillment 144ec54507695371b0eaea1e06a561d7cd76273b -- .
+# command: git grep -niF direct-original-fulfillment 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .
 # scope: all tracked paths
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 1  count: 0  verdict: absent
 # --- stdout ---

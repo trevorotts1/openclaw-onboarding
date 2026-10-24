@@ -8,7 +8,7 @@ hooks mapping ghl-inbound-sms: changed key: sessionKey
 hooks mapping ghl-inbound-sms: changed key: timeoutSeconds
 hooks mapping ghl-inbound-sms: changed key: wakeMode
 hooks mapping ghl-inbound-sms: agentId 'main' -> 'main' (unchanged)
-backed up pre-change mapping ghl-inbound-sms -> openclaw.json.hooks-mapping-ghl-inbound-sms.bak-20261024T210310Z.json
+backed up pre-change mapping ghl-inbound-sms -> openclaw.json.hooks-mapping-ghl-inbound-sms.bak-20261024T221431Z.json
 repair_rc=0
 -- post-state (one JSON line) --
 {"id":"ghl-inbound-sms","sessionKey":"{{session_key}}","has_model":false,"nested_session_token":false,"template_has_send_directive":true,"template_has_conversation_log":true}

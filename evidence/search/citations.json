@@ -2,7 +2,7 @@
   "schema_version": 1,
   "unit": "PBB-206",
   "ledger_task": "T-01",
-  "pin": "144ec54507695371b0eaea1e06a561d7cd76273b",
+  "pin": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
   "note": "Every file:line citation used by evidence/t01-interface-inventory.md is listed here with the exact substring that must occur on that line of the pinned blob. check_citations.py reads git show <pin>:<path>, never the working tree.",
   "citations": [
     {
@@ -380,7 +380,7 @@
     {
       "interface": "G5",
       "path": "38-conversational-ai-system/CHANGELOG.md",
-      "line": 14,
+      "line": 66,
       "expect": "client-bootstrap-engine"
     },
     {

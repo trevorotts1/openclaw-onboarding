@@ -1,8 +1,8 @@
 # search: PIN.worktree-count
 # command: git worktree list
 # scope: local clone
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
-# rc: 0  count: 89  verdict: present
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 93  verdict: present
 # --- stdout ---
 /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/openclaw-onboarding        d619b5ea8 [main]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/build-t-29-lane/repo   3bb737341 [pb/PBB-123/t-29]
@@ -32,9 +32,13 @@
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-202-lane/wt        868b89492 [pb/PBB-202/t-38]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-203-lane/wt        ffd6cc970 (detached HEAD)
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-205-qc/wt          a8084d45c (detached HEAD)
-/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-206-lane/wt        2fb9165a8 [pb/PBB-206/t01-inventory]
+/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-206-lane/wt        f30866c1f [pb/PBB-206/t01-inventory]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-207-lane/wt        b6f8c3626 [pb/PBB-207/t-20-repair]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo      e7f5d98a7 [pb/PBB-220/t-05]
+/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-229-lane/repo      b0e5ee7f3 [pb/PBB-229/t-08]
+/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-234-lane/wt        b0e5ee7f3 (detached HEAD)
+/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-235-lane/repo      27b5f15fb [pb/PBB-235/t-05]
+/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-236-lane/repo      9ed73df16 [pb/PBB-236/t01-inventory-rebase]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/qc4-t-27-lane/wt       d4f0b1a48 (detached HEAD)
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/T-28-lane/repo         c1c991f8f [pb/PBB-122/t-28]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/qc2-t-16-pbb133/wt                               2f5c8cb16 (detached HEAD)

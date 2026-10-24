@@ -1,7 +1,7 @@
 # search: PIN.commits-ahead-of-f0a9c80e
-# command: git rev-list --count f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..144ec54507695371b0eaea1e06a561d7cd76273b
+# command: git rev-list --count f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # scope: commit graph
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
 # rc: 0  count: 1  verdict: present
 # --- stdout ---
-6
+41

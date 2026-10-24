@@ -1,8 +1,8 @@
 # search: PIN.worktrees
 # command: git worktree list --porcelain
 # scope: local clone
-# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
-# rc: 0  count: 267  verdict: present
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 279  verdict: present
 # --- stdout ---
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/openclaw-onboarding
 HEAD d619b5ea8862193c414a86418a9c907b496bb087
@@ -117,7 +117,7 @@ HEAD a8084d45cfba5474a458f36e091311c0539b77e4
 detached
 
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-206-lane/wt
-HEAD 2fb9165a8836f990afafc27f2643292ae360a1e7
+HEAD f30866c1faab0f2624448eedc84fda617814b240
 branch refs/heads/pb/PBB-206/t01-inventory
 
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-207-lane/wt
@@ -127,6 +127,22 @@ branch refs/heads/pb/PBB-207/t-20-repair
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo
 HEAD e7f5d98a7f586de249789047ebcd1ae6b3f0ba6f
 branch refs/heads/pb/PBB-220/t-05
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-229-lane/repo
+HEAD b0e5ee7f3f7974df32121f437d0ce7e9e86ea4d7
+branch refs/heads/pb/PBB-229/t-08
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-234-lane/wt
+HEAD b0e5ee7f3f7974df32121f437d0ce7e9e86ea4d7
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-235-lane/repo
+HEAD 27b5f15fb4c86a7e2773c73364c1554762fa997d
+branch refs/heads/pb/PBB-235/t-05
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-236-lane/repo
+HEAD 9ed73df16ec55dacf503ab0d01603544ea58469f
+branch refs/heads/pb/PBB-236/t01-inventory-rebase
 
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/qc4-t-27-lane/wt
 HEAD d4f0b1a48f642d0e3397b6d0b1f9888290858c15

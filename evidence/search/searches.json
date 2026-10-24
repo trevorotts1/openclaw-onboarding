@@ -3,8 +3,8 @@
   "unit": "PBB-206",
   "ledger_task": "T-01",
   "repository": "trevorotts1/openclaw-onboarding",
-  "pin": "144ec54507695371b0eaea1e06a561d7cd76273b",
-  "pin_fetched_utc": "2026-10-24T21:01:33Z",
+  "pin": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+  "pin_fetched_utc": "2026-10-24T22:12:40Z",
   "instrument_notes": [
     "Every search runs through `git grep` or `git ls-tree` against the pinned commit, never against a working tree.",
     "Extended-regex entries use plain `|` and never `\\b` or `\\|`; `\\b` is inert in this git grep ERE and manufactures false zeros.",
@@ -20,7 +20,7 @@
       "args": [
         "rev-parse",
         "--verify",
-        "144ec54507695371b0eaea1e06a561d7cd76273b^{commit}"
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865^{commit}"
       ],
       "scope": "object store",
       "expect": "nonempty"
@@ -33,7 +33,7 @@
       "args": [
         "cat-file",
         "-t",
-        "144ec54507695371b0eaea1e06a561d7cd76273b"
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
       ],
       "scope": "object store",
       "expect": "nonempty"
@@ -59,7 +59,7 @@
       "args": [
         "rev-list",
         "--count",
-        "bccc4050f8ed98b2d9b55cfc087c27c924d62b03..144ec54507695371b0eaea1e06a561d7cd76273b"
+        "bccc4050f8ed98b2d9b55cfc087c27c924d62b03..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
       ],
       "scope": "commit graph",
       "expect": "nonempty"
@@ -73,7 +73,7 @@
         "rev-list",
         "--count",
         "--merges",
-        "bccc4050f8ed98b2d9b55cfc087c27c924d62b03..144ec54507695371b0eaea1e06a561d7cd76273b"
+        "bccc4050f8ed98b2d9b55cfc087c27c924d62b03..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
       ],
       "scope": "commit graph",
       "expect": "nonempty"
@@ -86,7 +86,7 @@
       "args": [
         "rev-list",
         "--count",
-        "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..144ec54507695371b0eaea1e06a561d7cd76273b"
+        "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
       ],
       "scope": "commit graph",
       "expect": "nonempty"
@@ -100,7 +100,7 @@
         "rev-list",
         "--count",
         "--merges",
-        "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..144ec54507695371b0eaea1e06a561d7cd76273b"
+        "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
       ],
       "scope": "commit graph",
       "expect": "nonempty"
@@ -111,7 +111,7 @@
       "claim": "tracked file census at the pin",
       "kind": "lstree",
       "args": [
-        "144ec54507695371b0eaea1e06a561d7cd76273b"
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
       ],
       "scope": "all tracked paths",
       "expect": "nonempty"
@@ -204,7 +204,7 @@
       "args": [
         "-nF",
         "8 different ways to do it",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "ONBOARDING-TRIGGERS.md"
       ],
@@ -214,7 +214,7 @@
         "args": [
           "-nF",
           "install",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "ONBOARDING-TRIGGERS.md"
         ],
@@ -230,7 +230,7 @@
       "args": [
         "-nF",
         "Run via: curl -fSL",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "install.sh"
       ],
@@ -240,7 +240,7 @@
         "args": [
           "-nF",
           "OPENCLAW_PLATFORM",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "install.sh"
         ],
@@ -256,7 +256,7 @@
       "args": [
         "-nF",
         "collect_onboarding_identity() {",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "install.sh"
       ],
@@ -271,7 +271,7 @@
       "args": [
         "-nF",
         "collect_onboarding_identity || exit 8",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "install.sh"
       ],
@@ -286,7 +286,7 @@
       "args": [
         "-nF",
         "QUESTIONS = {",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "scripts/onboarding-identity.py"
       ],
@@ -301,7 +301,7 @@
       "args": [
         "-nF",
         "def next_question",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "shared-utils/client_intake/engine.py"
       ],
@@ -316,7 +316,7 @@
       "args": [
         "-nF",
         "class AcquisitionBrief",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/acquisition_brief.py"
       ],
@@ -329,7 +329,7 @@
       "claim": "client bootstrap engine module exists at the pin",
       "kind": "lstree",
       "args": [
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "38-conversational-ai-system/tools/bootstrap_engine.py"
       ],
       "scope": "38-conversational-ai-system/tools",
@@ -343,7 +343,7 @@
       "args": [
         "-niF",
         "client-bootstrap-engine",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -358,7 +358,7 @@
       "args": [
         "-nF",
         "def plan",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/bootstrap_engine.py"
       ],
@@ -373,7 +373,7 @@
       "args": [
         "-nF",
         "def run",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/bootstrap_engine.py"
       ],
@@ -388,7 +388,7 @@
       "args": [
         "-nF",
         "run-publishing-cycle.sh",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "35-social-media-planner/scripts/run-publishing-cycle.sh"
       ],
@@ -403,7 +403,7 @@
       "args": [
         "-nF",
         "Cron-driven weekly batch",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "35-social-media-planner/scripts/weekly-batch.sh"
       ],
@@ -418,7 +418,7 @@
       "args": [
         "-nF",
         "campaign",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "57-social-media-in-a-box/modes.md"
       ],
@@ -431,7 +431,7 @@
       "claim": "revisioned monthly approval manifest schema exists at the pin",
       "kind": "lstree",
       "args": [
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "38-conversational-ai-system/schemas/approval-manifest.schema.json"
       ],
       "scope": "38-conversational-ai-system/schemas",
@@ -445,7 +445,7 @@
       "args": [
         "-nF",
         "Revisioned monthly approval manifest",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/schemas/approval-manifest.schema.json"
       ],
@@ -460,7 +460,7 @@
       "args": [
         "-nF",
         "def semantic_approval",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/pb_contracts.py"
       ],
@@ -475,7 +475,7 @@
       "args": [
         "-nF",
         "def approval_errors",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/pb_contracts.py"
       ],
@@ -490,7 +490,7 @@
       "args": [
         "-niF",
         "monthly-approval-contract",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -500,7 +500,7 @@
         "args": [
           "-niF",
           "book_appointment",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "."
         ],
@@ -516,7 +516,7 @@
       "args": [
         "-nF",
         "class PromisedItem",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/direct_fulfillment.py"
       ],
@@ -531,7 +531,7 @@
       "args": [
         "-nF",
         "keyword",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/pb_contracts.py"
       ],
@@ -546,7 +546,7 @@
       "args": [
         "-nF",
         "IMMUTABLE.",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/direct_fulfillment.py"
       ],
@@ -561,7 +561,7 @@
       "args": [
         "-niE",
         "stable keyword|promised-item|promised_item|keyword mapping|original promise",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "*.py",
         "*.sh"
@@ -577,7 +577,7 @@
       "args": [
         "-nF",
         "personal_profile_rule",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "35-social-media-planner/config/profile-capabilities.json"
       ],
@@ -592,7 +592,7 @@
       "args": [
         "-nF",
         "CHANNEL_COMMENT_SURFACE",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "35-social-media-planner/scripts/comment_reader.py"
       ],
@@ -607,7 +607,7 @@
       "args": [
         "-nF",
         "COMMENT_PRIVATE_OPENER",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -622,7 +622,7 @@
       "args": [
         "-nF",
         "s38_canonical_mapping",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh"
       ],
@@ -637,7 +637,7 @@
       "args": [
         "-niE",
         "instagram-route-adapter|page-comment-adapter|messenger-route-adapter|private-opener-adapter",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -647,7 +647,7 @@
         "args": [
           "-niE",
           "book_appointment",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "."
         ],
@@ -661,7 +661,7 @@
       "claim": "every tracked path whose name contains adapter, for scope adjudication",
       "kind": "lstree_filter",
       "args": [
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "adapter"
       ],
       "scope": "all tracked paths, case-insensitive substring on the path",
@@ -675,7 +675,7 @@
       "args": [
         "-nF",
         "def record_present",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/asset_registry.py"
       ],
@@ -688,7 +688,7 @@
       "claim": "direct fulfillment module exists at the pin",
       "kind": "lstree",
       "args": [
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "38-conversational-ai-system/tools/direct_fulfillment.py"
       ],
       "scope": "38-conversational-ai-system/tools",
@@ -702,7 +702,7 @@
       "args": [
         "-nF",
         "def fulfill(",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/direct_fulfillment.py"
       ],
@@ -717,7 +717,7 @@
       "args": [
         "-nF",
         "def record_delivery_proof",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/direct_fulfillment.py"
       ],
@@ -732,7 +732,7 @@
       "args": [
         "-niF",
         "direct-original-fulfillment",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -742,7 +742,7 @@
         "args": [
           "-niF",
           "book_appointment",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "."
         ],
@@ -758,7 +758,7 @@
       "args": [
         "-nF",
         "CHANNEL_IDENTIFIER_TYPES",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/tenant_identity.py"
       ],
@@ -773,7 +773,7 @@
       "args": [
         "-nF",
         "reminder_total",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/tenant_identity.py"
       ],
@@ -788,7 +788,7 @@
       "args": [
         "-nF",
         "class CaptureStore",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/collection_lock.py"
       ],
@@ -803,7 +803,7 @@
       "args": [
         "-nF",
         "SCOPE_OFFER",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/consent_gate.py"
       ],
@@ -818,7 +818,7 @@
       "args": [
         "-nF",
         "def human_takeover",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/consent_gate.py"
       ],
@@ -833,7 +833,7 @@
       "args": [
         "-nF",
         "capture_budget",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/schemas/collection-state.schema.json"
       ],
@@ -848,7 +848,7 @@
       "args": [
         "-nF",
         "max_sms_email_asks",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -863,7 +863,7 @@
       "args": [
         "-niF",
         "progressive-capture-candidate",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -873,7 +873,7 @@
         "args": [
           "-niF",
           "book_appointment",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "."
         ],
@@ -889,7 +889,7 @@
       "args": [
         "-nF",
         "reminder_slots",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -904,7 +904,7 @@
       "args": [
         "-nF",
         "due_at must increase across slots",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/pb_contracts.py"
       ],
@@ -919,7 +919,7 @@
       "args": [
         "-niF",
         "reminder-state-machine",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -929,7 +929,7 @@
         "args": [
           "-niF",
           "book_appointment",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "."
         ],
@@ -943,7 +943,7 @@
       "claim": "a follow-up cadence protocol document exists",
       "kind": "lstree",
       "args": [
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "38-conversational-ai-system/protocols/intelligent-followup-protocol.md"
       ],
       "scope": "38-conversational-ai-system/protocols",
@@ -957,7 +957,7 @@
       "args": [
         "-niE",
         "intelligent-followup-protocol|intelligent_followup",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "*.py",
         "*.sh"
@@ -968,7 +968,7 @@
         "args": [
           "-niE",
           "book_appointment",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "*.py",
           "*.sh"
@@ -985,7 +985,7 @@
       "args": [
         "-niF",
         "intelligent-followup-protocol",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "*cron*",
         "*schedule*",
@@ -997,7 +997,7 @@
         "args": [
           "-niF",
           "cron",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "*cron*",
           "*schedule*",
@@ -1015,7 +1015,7 @@
       "args": [
         "-nF",
         "SCOPE_OFFER",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools"
       ],
@@ -1030,7 +1030,7 @@
       "args": [
         "-niE",
         "select_offer|offer_route|pick_offer|choose_offer|offer_select",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system",
         "35-social-media-planner",
@@ -1042,7 +1042,7 @@
         "args": [
           "-niE",
           "book_appointment",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "38-conversational-ai-system",
           "35-social-media-planner",
@@ -1058,7 +1058,7 @@
       "claim": "a booking protocol document exists",
       "kind": "lstree",
       "args": [
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "38-conversational-ai-system/protocols/smart-booking-protocol.md"
       ],
       "scope": "38-conversational-ai-system/protocols",
@@ -1072,7 +1072,7 @@
       "args": [
         "-niF",
         "booking-followthrough-adapter",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -1082,7 +1082,7 @@
         "args": [
           "-niF",
           "book_appointment",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "."
         ],
@@ -1098,7 +1098,7 @@
       "args": [
         "-nF",
         "def human_release",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/consent_gate.py"
       ],
@@ -1113,7 +1113,7 @@
       "args": [
         "-nF",
         "LIFECYCLE_LADDER",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/pb_contracts.py"
       ],
@@ -1128,7 +1128,7 @@
       "args": [
         "-niE",
         "handoff_accept|handoff_due|handoff-lifecycle|backup_owner|backup-owner",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "."
       ],
@@ -1138,7 +1138,7 @@
         "args": [
           "-niE",
           "book_appointment",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "."
         ],
@@ -1154,7 +1154,7 @@
       "args": [
         "-nF",
         "s38_merge_mapping_body",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh"
       ],
@@ -1169,7 +1169,7 @@
       "args": [
         "-nF",
         "migrate_mapping_body(",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py"
       ],
@@ -1184,7 +1184,7 @@
       "args": [
         "-nF",
         "lib-hook-mapping-contract.sh",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/scripts"
       ],
@@ -1199,7 +1199,7 @@
       "args": [
         "-nF",
         "model` is an OPTIONAL override",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/scripts/lib-hook-mapping-contract.sh"
       ],
@@ -1214,7 +1214,7 @@
       "args": [
         "-nF",
         "never \"delivered\"",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/tools/direct_fulfillment.py"
       ],
@@ -1229,7 +1229,7 @@
       "args": [
         "-nF",
         "hook returned HTTP 200 + {ok:true}",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/scripts/24-self-test-hook.sh"
       ],
@@ -1244,7 +1244,7 @@
       "args": [
         "-nF",
         "CREATE_TEMP_CONTACT:-0",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "38-conversational-ai-system/scripts/24-self-test-hook.sh"
       ],
@@ -1259,7 +1259,7 @@
       "args": [
         "-nF",
         "qc-launch-conversation-ai",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "install.sh",
         "update-skills.sh",
@@ -1271,7 +1271,7 @@
         "args": [
           "-nF",
           "qc-launch-conversation-ai",
-          "144ec54507695371b0eaea1e06a561d7cd76273b",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
           "--",
           "38-conversational-ai-system/launch/"
         ],
@@ -1285,7 +1285,7 @@
       "claim": "the launch reply-owner gate script exists",
       "kind": "lstree",
       "args": [
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "38-conversational-ai-system/launch/qc-launch-conversation-ai.sh"
       ],
       "scope": "38-conversational-ai-system/launch",
@@ -1299,7 +1299,7 @@
       "args": [
         "-nF",
         "customer-replied-conversation-ai",
-        "144ec54507695371b0eaea1e06a561d7cd76273b",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
         "--",
         "44-convert-and-flow-operator"
       ],
