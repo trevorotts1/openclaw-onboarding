@@ -22,7 +22,17 @@
 //       stale grant language ("Resolve a real purpose-bound run grant").
 //
 // Duplicates are loud warnings (never silently equated with the selected
-// copy); every selected-tree violation fails the gate. wire.sh runs this gate
+// copy); every selected-tree violation fails the gate. An install-record or a
+// fallback directory is NOT proof that the intended OpenClaw agent reads that
+// tree: when more than one copy exists, the gate requires agent-resolver
+// evidence (--agent-selected PATH) and otherwise reports the selection as
+// unproven instead of passing. Version identity is the agreement of every
+// carrier (version, skill-version.txt, SKILL.md frontmatter, manifest
+// skill_version) — a disagreement fails, it never silently prefers one file.
+// An archive or an installed path that merely exists is not a valid artifact:
+// the archive must be a zip that contains the entry, and the entry must be a
+// non-empty JavaScript file that passes node --check when loading is enabled.
+// wire.sh runs this gate
 // and exits 1 on failure, so update-skills.sh withholds the .wired sentinel
 // and no roll reports success for a stale or shadowed tree.
 //
@@ -31,13 +41,15 @@
 // auto-convergence when one supported mechanism owns all the roots.
 //
 // Usage: node scripts/selected-tree-gate.mjs --skill-dir DIR [--prefix DIR]
-//        [--home DIR] [--no-load]   (exit 0 ok, 1 problems, 2 usage)
+//        [--home DIR] [--no-load] [--agent-selected PATH] [--agent-source TEXT]
+//        (exit 0 ok, 1 problems, 2 usage)
 
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { closeSync, existsSync, lstatSync, openSync, readSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { checkEntryPoint } from "./entry-point-gate.mjs";
+import { ENTRY_PATH, checkEntryPoint } from "./entry-point-gate.mjs";
 
 export const SKILL_NAME = "council-of-wise-elders";
 // The convene contract carried by current SKILL.md (whitespace-normalized).
@@ -75,17 +87,55 @@ function listDir(dir) {
   }
 }
 
-/** Version of a copy: version file, then skill-version.txt (leading v stripped). */
-export function readVersion(dir) {
-  for (const name of ["version", "skill-version.txt"]) {
+function frontmatterVersion(dir) {
+  try {
+    const raw = readFileSync(join(dir, "SKILL.md"), "utf8");
+    const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+    if (!block) return null;
+    const line = /^version:\s*([0-9][^\s]*)\s*$/m.exec(block[1]);
+    return line ? line[1].replace(/^v/, "") : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Release identity of a copy: every carrier (version, skill-version.txt,
+ * SKILL.md frontmatter, manifest skill_version) must agree. Disagreement is a
+ * problem, never a preference for the first file that exists.
+ */
+export function readVersionEvidence(dir) {
+  const sources = {};
+  for (const [key, name] of [["versionFile", "version"], ["skillVersionFile", "skill-version.txt"]]) {
     try {
       const v = readFileSync(join(dir, name), "utf8").trim().replace(/^v/, "");
-      if (v) return v;
+      if (v) sources[key] = v;
     } catch {
-      // fall through
+      // carrier absent
     }
   }
-  return null;
+  const frontmatter = frontmatterVersion(dir);
+  if (frontmatter) sources.frontmatter = frontmatter;
+  const manifest = readJson(join(dir, "manifest.json"));
+  if (manifest && typeof manifest.skill_version === "string" && manifest.skill_version.trim()) {
+    sources.manifestSkillVersion = manifest.skill_version.trim().replace(/^v/, "");
+  }
+  const values = [...new Set(Object.values(sources))];
+  const problems = [];
+  if (values.length === 0) {
+    problems.push(`${dir}: no version marker (version, skill-version.txt, SKILL.md frontmatter or manifest skill_version)`);
+  } else if (values.length > 1) {
+    const listed = Object.entries(sources).map(([k, v]) => `${k}=${v}`).join(", ");
+    problems.push(
+      `${dir}: version carriers disagree (${listed}); release identity must be consistent before an update or a gate can pass`,
+    );
+  }
+  return { version: values.length === 1 ? values[0] : null, sources, problems };
+}
+
+/** Version of a copy, or null when the carriers disagree (evidence is authoritative). */
+export function readVersion(dir) {
+  return readVersionEvidence(dir).version;
 }
 
 function isSkillFolder(dir) {
@@ -263,11 +313,14 @@ function loadTreeInfo(dir) {
   const manifest = readJson(join(dir, "manifest.json"));
   const recorded = manifest?.runtime_entry ?? null;
   const text = normalizedText(join(dir, "SKILL.md"));
+  const versionEvidence = readVersionEvidence(dir);
   return {
     path: dir,
     physical,
     kind,
-    version: readVersion(dir),
+    version: versionEvidence.version,
+    versionSources: versionEvidence.sources,
+    versionProblems: versionEvidence.problems,
     hasManifest: !!manifest,
     hasArchive: existsSync(join(dir, `${SKILL_NAME}.skill`)),
     runtimeEntry: recorded,
@@ -306,14 +359,31 @@ export function inspectCopies({ home, claudeConfigDir, openclawRoot, extraDirs =
 
 // ------------------------------------------------------------------ selection
 /**
- * The copy the runtime resolver selects: the install-record the live CLI (or
- * the updater's prefix) consults first; otherwise the install-time resolver
- * order. A record that is unreadable fails closed rather than guessing.
+ * The copy the runtime resolver selects: agent-resolver evidence when the
+ * caller supplies it (the only proof of what the intended OpenClaw agent
+ * actually reads), then the install-record the live CLI consults, then the
+ * install-time resolver order. A record or a fallback directory is a candidate,
+ * not proof of agent selection.
  */
-export function resolveSelection({ home, claudeConfigDir, openclawRoot, prefix, skillDir, records } = {}) {
+export function resolveSelection({ home, claudeConfigDir, openclawRoot, prefix, skillDir, records, agentSelected, agentSource } = {}) {
+  if (agentSelected) {
+    const abs = resolve(agentSelected);
+    const source = agentSource ? ` (${agentSource})` : "";
+    if (!isSkillFolder(abs)) {
+      return {
+        selectedPath: null,
+        via: `agent-resolver${source}`,
+        problems: [
+          `the agent resolver reports ${abs}${source} but that path is not a ${SKILL_NAME} skill folder ` +
+          `(needs ${SIGNATURE.join(", ")}): the agent selection evidence is unusable`,
+        ],
+      };
+    }
+    return { selectedPath: safeReal(abs), via: `agent-resolver${source}`, problems: [] };
+  }
   const found = records ?? scanInstallRecords({ home, prefix });
   if (found.length >= 1) {
-    return { selectedPath: found[0].skillDir, via: `install-record ${found[0].recordPath}`, problems: [] };
+    return { selectedPath: found[0].skillDir, via: `install-record ${found[0].recordPath} (not agent evidence)`, problems: [] };
   }
   // No record: the install-time resolver order (council-runtime-install.sh /
   // install.sh candidate lists), then the tree being wired.
@@ -351,7 +421,88 @@ function executableStatus(copy, records) {
 }
 
 /**
- * Full gate. Returns {ok, problems, warnings, selected, copies, records}.
+ * An entry path that exists is not a valid artifact. Require a non-empty
+ * JavaScript file and, when `load` is on, a real `node --check` parse. Cheap,
+ * offline, no provider call.
+ */
+function verifyEntryFile(entry, { load }) {
+  const problems = [];
+  let st;
+  try {
+    st = statSync(entry);
+  } catch {
+    return [`entry ${entry} does not exist`];
+  }
+  if (!st.isFile()) return [`entry ${entry} is not a regular file`];
+  if (st.size === 0) return [`entry ${entry} is empty: an existing path is not a valid artifact`];
+  let head = "";
+  try {
+    head = readFileSync(entry, "utf8").slice(0, 400);
+  } catch (e) {
+    problems.push(`entry ${entry} is unreadable: ${String(e.message).split("\n")[0]}`);
+    return problems;
+  }
+  if (!head.startsWith("#!") && !/\b(import|export|const|let|function|process)\b/.test(head)) {
+    problems.push(`entry ${entry} does not look like a JavaScript entry point`);
+  }
+  if (load) {
+    try {
+      execFileSync(process.execPath, ["--check", entry], { stdio: "pipe" });
+    } catch (e) {
+      const detail = String(e.stderr ?? e.message).split("\n").find((l) => l.trim()) ?? "parse failed";
+      problems.push(`entry ${entry} fails node --check: ${detail.trim()}`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * A .skill archive must actually be a zip that carries the entry. Existence,
+ * size or a filename is not proof.
+ */
+function verifyArchive(copy) {
+  const archive = join(copy.path, `${SKILL_NAME}.skill`);
+  let st;
+  try {
+    st = statSync(archive);
+  } catch {
+    return [`archive ${archive} is unreadable`];
+  }
+  if (!st.isFile() || st.size === 0) return [`archive ${archive} is empty`];
+  try {
+    const fd = openSync(archive, "r");
+    const magic = Buffer.alloc(4);
+    readSync(fd, magic, 0, 4, 0);
+    closeSync(fd);
+    if (!(magic[0] === 0x50 && magic[1] === 0x4b)) return [`archive ${archive} is not a zip archive`];
+  } catch (e) {
+    return [`archive ${archive} is unreadable: ${String(e.message).split("\n")[0]}`];
+  }
+  let listing;
+  try {
+    listing = execFileSync("unzip", ["-Z1", archive], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  } catch (e) {
+    if (e && e.code === "ENOENT") return [`archive ${archive}: cannot verify contents (unzip unavailable)`];
+    return [`archive ${archive} cannot be listed: ${String(e.message).split("\n")[0]}`];
+  }
+  const entry = copy.runtimeEntry?.path ?? ENTRY_PATH;
+  const wanted = entry.split(/[\\/]/).pop();
+  const hasEntry = listing.split("\n").some((line) => line.trim().endsWith(entry) || (wanted && line.trim().endsWith(wanted)));
+  if (!hasEntry) return [`archive ${archive} does not contain the executable ${entry}`];
+  return [];
+}
+
+/** The installed release named by a record must carry a valid, non-empty entry. */
+function verifyInstalledEntry(rec, { load }) {
+  const entries = entryCandidatesForRecord(rec.recordPath);
+  if (!entries.length) return [`the installed release named by ${rec.recordPath} has no executable entry candidate`];
+  const perEntry = entries.map((e) => ({ e, problems: verifyEntryFile(e, { load }) }));
+  if (perEntry.some((x) => x.problems.length === 0)) return [];
+  return perEntry.flatMap((x) => x.problems);
+}
+
+/**
+ * Full gate. Returns {ok, selectionProven, agentSelected, problems, warnings, selected, copies, records}.
  * `load` runs the entry-point smoke load (node --check + --help); hash and
  * byte comparison always run for packaged artifacts.
  */
@@ -362,11 +513,13 @@ export function checkSelectedTree(opts = {}) {
   const prefix = opts.prefix ?? null;
   const skillDir = opts.skillDir ? resolve(opts.skillDir) : null;
   const load = opts.load !== false;
+  const agentSelected = opts.agentSelected ? resolve(opts.agentSelected) : null;
+  const agentSource = opts.agentSource ?? null;
   const problems = [];
   const warnings = [];
 
   const records = scanInstallRecords({ home, prefix });
-  const selection = resolveSelection({ home, claudeConfigDir, openclawRoot, prefix, skillDir, records });
+  const selection = resolveSelection({ home, claudeConfigDir, openclawRoot, prefix, skillDir, records, agentSelected, agentSource });
   problems.push(...selection.problems);
 
   const copies = inspectCopies({
@@ -390,9 +543,28 @@ export function checkSelectedTree(opts = {}) {
     }
   }
 
-  const canonicalVersion = opts.canonicalVersion ?? (skillDir ? readVersion(skillDir) : null);
+  const canonicalEvidence = opts.canonicalVersion
+    ? { version: opts.canonicalVersion, problems: [] }
+    : skillDir
+      ? readVersionEvidence(skillDir)
+      : { version: null, problems: [] };
+  const canonicalVersion = canonicalEvidence.version;
+  problems.push(...canonicalEvidence.problems.map((p) => `the tree this update maintains: ${p}`));
+
+  // Selection proof: one copy is unambiguous; more than one needs agent evidence.
+  const otherCopies = copies.filter((c) => !selected || !samePath(c.physical, selected.physical));
+  const selectionProven = Boolean(agentSelected) || copies.length <= 1;
+  if (!selectionProven) {
+    problems.push(
+      `agent selection unproven: ${copies.length} ${SKILL_NAME} copies exist on this box ` +
+      `(${copies.map((c) => `${c.path}@${c.version ?? "version-unknown"}`).join(", ")}) and no agent-resolver evidence ` +
+      `names the one the intended OpenClaw agent reads; an install-record or a fallback directory is not proof — ` +
+      `pass --agent-selected PATH from the agent resolver, or report this as UNKNOWN`,
+    );
+  }
 
   if (selected) {
+    problems.push(...selected.versionProblems.map((p) => `SELECTED copy: ${p}`));
     // (a) the selected copy must be the version this update ships
     if (canonicalVersion && selected.version !== canonicalVersion) {
       problems.push(
@@ -438,6 +610,15 @@ export function checkSelectedTree(opts = {}) {
         `source-only artifact at ${selected.path}: no runtime/dist entry, no manifest runtime_entry, ` +
         `no archive, and no installed release naming this tree — every shipped artifact includes its executable`,
       );
+    } else if (state === "archive") {
+      problems.push(...verifyArchive(selected).map((p) => `SELECTED copy ${selected.path}: ${p}`));
+    } else if (state === "installed") {
+      const rec = records.find((r) => samePath(r.skillDir, selected.physical));
+      if (!rec) {
+        problems.push(`the selected copy ${selected.path} was classified installed without a matching install-record`);
+      } else {
+        problems.push(...verifyInstalledEntry(rec, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
+      }
     }
     // "archive" (executable ships inside the .skill archive) and "installed"
     // (a release named by the resolver's own install-record carries it) both
@@ -474,6 +655,8 @@ export function checkSelectedTree(opts = {}) {
 
   return {
     ok: problems.length === 0,
+    selectionProven,
+    agentSelected,
     problems,
     warnings,
     selected: selected ? { ...selected, via: selection.via } : null,
@@ -486,13 +669,15 @@ export function checkSelectedTree(opts = {}) {
 
 // ----------------------------------------------------------------------- CLI
 function parseArgs(argv) {
-  const out = { skillDir: null, prefix: null, home: null, load: true };
+  const out = { skillDir: null, prefix: null, home: null, load: true, agentSelected: null, agentSource: null };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = argv[i + 1];
     if (a === "--skill-dir" && next) { out.skillDir = next; i += 1; }
     else if (a === "--prefix" && next) { out.prefix = next; i += 1; }
     else if (a === "--home" && next) { out.home = next; i += 1; }
+    else if (a === "--agent-selected" && next) { out.agentSelected = next; i += 1; }
+    else if (a === "--agent-source" && next) { out.agentSource = next; i += 1; }
     else if (a === "--no-load") { out.load = false; }
     else return null;
   }
@@ -502,7 +687,7 @@ function parseArgs(argv) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = parseArgs(process.argv.slice(2));
   if (!args || !args.skillDir) {
-    console.log("usage: node scripts/selected-tree-gate.mjs --skill-dir DIR [--prefix DIR] [--home DIR] [--no-load]");
+    console.log("usage: node scripts/selected-tree-gate.mjs --skill-dir DIR [--prefix DIR] [--home DIR] [--no-load] [--agent-selected PATH] [--agent-source TEXT]");
     process.exit(2);
   }
   const result = checkSelectedTree({
@@ -510,6 +695,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     skillDir: args.skillDir,
     prefix: args.prefix,
     load: args.load,
+    agentSelected: args.agentSelected,
+    agentSource: args.agentSource,
   });
   for (const p of result.problems) console.log(`  ✗ ERROR: ${p}`);
   for (const w of result.warnings) console.log(`  ⚠️  ${w}`);

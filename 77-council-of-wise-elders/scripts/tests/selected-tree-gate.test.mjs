@@ -30,15 +30,31 @@ function fixtureHome(t) {
   return home;
 }
 
-// A council skill copy: version + SKILL.md + manifest.json + advisors/,
-// with a packaged executable when `entry` is true (and an entry recorded but
-// absent when entry is "recorded-only").
-function makeCopy(dir, { version = "1.0.51", contract = CURRENT_CONTRACT, entry = true } = {}) {
+// A council skill copy: every version carrier + SKILL.md + manifest.json +
+// advisors/, with a packaged executable when `entry` is true (and an entry
+// recorded but absent when entry is "recorded-only"). Carrier overrides exist
+// so a disagreement can be exercised explicitly.
+function makeCopy(
+  dir,
+  {
+    version = "1.0.51",
+    contract = CURRENT_CONTRACT,
+    entry = true,
+    skillVersion = version,
+    frontmatterVersion = version,
+    manifestVersion = null,
+  } = {},
+) {
   mkdirSync(join(dir, "advisors"), { recursive: true });
   mkdirSync(join(dir, "runtime", "dist"), { recursive: true });
   writeFileSync(join(dir, "version"), `${version}\n`);
-  writeFileSync(join(dir, "SKILL.md"), `---\nname: council-of-wise-elders\n---\n\n${contract}\n`);
+  writeFileSync(join(dir, "skill-version.txt"), `v${skillVersion}\n`);
+  writeFileSync(
+    join(dir, "SKILL.md"),
+    `---\nname: council-of-wise-elders\nversion: ${frontmatterVersion}\n---\n\n${contract}\n`,
+  );
   const manifest = {};
+  if (manifestVersion) manifest.skill_version = manifestVersion;
   if (entry) {
     writeFileSync(join(dir, ENTRY_PATH), GOOD_ENTRY);
     manifest.runtime_entry = {
@@ -143,13 +159,30 @@ test("(b) competing copies are detected and reported loudly, never equated", (t)
     entry: false,
   });
   makePrefix(home, wired);
-  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  // Agent-resolver evidence names the wired tree: only now may the duplicate be
+  // treated as unused. Without it the same fixture must not pass.
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false, agentSelected: wired, agentSource: "openclaw resolver test" });
   assert.equal(gate.ok, true, gate.problems.join(" | "));
   const warnings = gate.warnings.join("\n");
   assert.match(warnings, new RegExp(`DUPLICATE council-of-wise-elders at ${dup.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.match(warnings, /NOT what the resolver selects/);
   assert.match(warnings, /STALE-CONTRACT-TEXT/);
   assert.match(warnings, /CONFLICT: .* is at version 1\.0\.24/);
+});
+
+test("(b) a duplicate with no agent-resolver evidence is UNPROVEN, never a pass", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  makeCopy(join(home, ".agents", "skills", "council-of-wise-elders"), {
+    version: "1.0.24",
+    contract: STALE_CONTRACT,
+    entry: false,
+  });
+  makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.equal(gate.selectionProven, false);
+  assert.match(gate.problems.join("\n"), /agent selection unproven/);
 });
 
 test("(c) the record the LIVE executable consults wins over the updater's prefix", (t) => {
@@ -172,10 +205,87 @@ test("(c) the record the LIVE executable consults wins over the updater's prefix
     `#!/bin/bash\nENTRY="$PROFILE_ROOT/runtime/current/run-council.mjs"\nexec "$NODE_BIN" "$ENTRY" "$@"\n`,
   );
   makePrefix(home, wired); // the updater's own prefix names the wired tree
-  const gate = checkSelectedTree({ home, skillDir: wired, prefix: join(home, "p1"), load: false });
+  const gate = checkSelectedTree({
+    home,
+    skillDir: wired,
+    prefix: join(home, "p1"),
+    load: false,
+    agentSelected: live,
+    agentSource: "blackceo-council.profile shim",
+  });
   assert.ok(gate.selected, gate.problems.join(" | "));
   assert.match(gate.selected.path, /\.claude[\\/]skills[\\/]council-of-wise-elders$/);
   assert.match(gate.warnings.join("\n"), /the resolver selects .* while this update maintains/);
+  // The updater maintains 1.0.52 while the agent reads 1.0.51: that is a real
+  // failure, not a warning-only condition.
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /updating only an unused directory/);
+});
+
+test("(a) version carriers that disagree fail; the reader never prefers one file", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), {
+    version: "1.0.52",
+    skillVersion: "1.0.53",
+  });
+  makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  const problems = gate.problems.join("\n");
+  assert.match(problems, /version carriers disagree/);
+  assert.match(problems, /versionFile=1\.0\.52/);
+  assert.match(problems, /skillVersionFile=1\.0\.53/);
+});
+
+test("(a) a manifest skill_version that disagrees is part of the same failure", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), {
+    version: "1.0.53",
+    manifestVersion: "1.0.52",
+  });
+  makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /manifestSkillVersion=1\.0\.52/);
+});
+
+test("(d) an archive that merely exists is not a valid artifact", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), { entry: "recorded-only" });
+  writeFileSync(join(wired, "council-of-wise-elders.skill"), "not a zip\n");
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /is not a zip archive/);
+});
+
+test("(d) an installed entry that is empty fails even though the path exists", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), { entry: "recorded-only" });
+  const prefix = makePrefix(home, wired);
+  writeFileSync(join(prefix, "releases", "r1", "dist", "blackceo-council.mjs"), "");
+  const gate = checkSelectedTree({ home, skillDir: wired, prefix, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /is empty: an existing path is not a valid artifact/);
+});
+
+test("(d) an installed entry that is not JavaScript fails node --check", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), { entry: "recorded-only" });
+  const prefix = makePrefix(home, wired);
+  writeFileSync(join(prefix, "releases", "r1", "dist", "blackceo-council.mjs"), "#!/usr/bin/env node\nthis is not js (\n");
+  const gate = checkSelectedTree({ home, skillDir: wired, prefix, load: true });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /fails node --check/);
+});
+
+test("(b) agent evidence that names a non-skill path fails closed", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  makePrefix(home, wired);
+  mkdirSync(join(home, "not-a-skill"), { recursive: true });
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false, agentSelected: join(home, "not-a-skill") });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /agent selection evidence is unusable/);
 });
 
 test("(e) the shipped SKILL.md carries the current convene contract, not grant text", () => {
