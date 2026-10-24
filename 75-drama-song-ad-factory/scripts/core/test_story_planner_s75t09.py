@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Tests for story_planner (S75-T09). stdlib only, no network, no model spend.
 
-Run: python3 scripts/core/test_story_planner_s75t09.py
+Run: python3 -m pytest --collect-only -q test_story_planner_s75t09.py
+     python3 -m pytest -q test_story_planner_s75t09.py
+     python3 story_planner.py selftest   (same cases, hand-rolled runner)
 
 Required cases (S75-A09):
   * a complete plan authored through a fake dispatcher passes, and the
@@ -14,7 +16,8 @@ Required cases (S75-A09):
     whole-scene placeholder floor), while a DIFFERENT valid scene from another
     setting passes -- proving the validator is not rejecting all variation;
   * undefined cast / stale identity revision / undefined location / stale world
-    revision are refused;
+    revision are refused, and an EMPTY location (or cast / claim) set fails
+    closed instead of silently disabling resolution;
   * timing stays provisional: measured lip-sync or a non-provisional timing
     basis is refused;
   * the music gate refuses an incomplete plan and a plan that already carries
@@ -29,15 +32,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import story_planner as SP  # noqa: E402
-
-FAILS = []
-
-
-def check(name, cond, detail=""):
-    print("%s: %s%s" % ("ok" if cond else "FAIL", name,
-                        (" (%s)" % detail) if not cond and detail else ""))
-    if not cond:
-        FAILS.append(name)
 
 
 def codes(result):
@@ -263,28 +257,26 @@ def workshop_plan():
 
 
 # --------------------------------------------------------------------------- #
-# cases
+# cases -- every case is a pytest-collectable test_* function with real asserts,
+# and run() below re-executes the same functions for `story_planner.py selftest`
 # --------------------------------------------------------------------------- #
-def run():
-    FAILS.clear()
+def test_foundation_and_beats_complete():
+    assert SP.validate_foundation(workshop_foundation())["outcome"] == "ok"
+    assert SP.validate_causal_beats(BEATS)["outcome"] == "ok"
 
-    # 0. both valid neighbouring foundations are complete
-    check("foundation-complete", SP.validate_foundation(workshop_foundation())["outcome"] == "ok")
-    check("beats-complete", SP.validate_causal_beats(BEATS)["outcome"] == "ok")
 
-    # 1. valid workshop plan passes
+def test_valid_plans_accepted():
     plan = workshop_plan()
     res = SP.validate_scene_plan(plan)
-    check("valid-plan-accepted", res["outcome"] == "ok",
-          "errors=%r" % (res["errors"][:3],))
-    check("valid-plan-scene-count", res.get("scene_count") == 2, res.get("scene_count"))
+    assert res["outcome"] == "ok", "errors=%r" % (res["errors"][:3],)
+    assert res.get("scene_count") == 2, res.get("scene_count")
 
-    # 2. a DIFFERENT valid plan is accepted too (not rejecting all variation)
+    # a DIFFERENT valid plan is accepted too (not rejecting all variation)
     res2 = SP.validate_scene_plan(diner_plan())
-    check("neighbour-valid-plan-accepted", res2["outcome"] == "ok",
-          "errors=%r" % (res2["errors"][:3],))
+    assert res2["outcome"] == "ok", "errors=%r" % (res2["errors"][:3],)
 
-    # 3. dispatcher route: dispatch happened with the pinned revisions
+
+def test_dispatched_plan_carries_pinned_revisions():
     seen = {}
 
     def fake_submit(request):
@@ -295,20 +287,17 @@ def run():
                 "status": "complete"}
 
     auth = SP.build_scene_plan(workshop_foundation(), BEATS, fake_submit, attempt_key="att-1")
-    check("authored-plan-ok", auth["outcome"] == "ok",
-          "errors=%r" % (auth["errors"][:3],))
-    check("authored-dispatch-recorded", auth.get("dispatched") is True)
-    check("authored-receipt-attempt", (auth.get("receipt") or {}).get("attempt_key") == "att-1")
-    check("authored-request-has-cast-revision",
-          ((seen.get("request") or {}).get("foundation") or {}).get(
-              "episode_cast_manifest", {}).get("revision") == 2)
-    check("authored-request-has-world-digest",
-          ((seen.get("request") or {}).get("foundation") or {}).get(
-              "episode_world", {}).get("digest") == "sha256:dd44")
-    check("authored-request-carries-all-beats",
-          set((seen.get("request") or {}).get("causal_story_beats") or {}) == set(SP.BEAT_FIELDS))
+    assert auth["outcome"] == "ok", "errors=%r" % (auth["errors"][:3],)
+    assert auth.get("dispatched") is True
+    assert (auth.get("receipt") or {}).get("attempt_key") == "att-1"
+    assert ((seen.get("request") or {}).get("foundation") or {}).get(
+        "episode_cast_manifest", {}).get("revision") == 2
+    assert ((seen.get("request") or {}).get("foundation") or {}).get(
+        "episode_world", {}).get("digest") == "sha256:dd44"
+    assert set((seen.get("request") or {}).get("causal_story_beats") or {}) == set(SP.BEAT_FIELDS)
 
-    # 4. missing foundation stops the writer BEFORE the dispatcher
+
+def test_missing_foundation_blocks_before_dispatch():
     calls = {"n": 0}
 
     def counting_submit(request):
@@ -319,48 +308,43 @@ def run():
         broken = workshop_foundation()
         del broken[key]
         out = SP.build_scene_plan(broken, BEATS, counting_submit, attempt_key="att-x")
-        check("missing-%s-blocks" % key,
-              out["outcome"] == "rejected" and out.get("dispatched") is False,
-              out["reason_code"])
-    check("dispatcher-never-called-on-missing-foundation", calls["n"] == 0, calls["n"])
+        assert out["outcome"] == "rejected" and out.get("dispatched") is False, \
+            "missing-%s did not block: %s" % (key, out["reason_code"])
+    assert calls["n"] == 0, calls["n"]
 
     bad_beats = dict(BEATS)
     del bad_beats["choice"]
     out = SP.build_scene_plan(workshop_foundation(), bad_beats, counting_submit)
-    check("missing-causal-beat-blocks", out["outcome"] == "rejected"
-          and out.get("dispatched") is False, out["reason_code"])
-    check("dispatcher-never-called-on-missing-beat", calls["n"] == 0, calls["n"])
+    assert out["outcome"] == "rejected" and out.get("dispatched") is False, out["reason_code"]
+    assert calls["n"] == 0, calls["n"]
 
-    # 5. no causal link -> refused
+
+def test_broken_causal_link_refused():
     p = workshop_plan()
     p["scenes"][1]["causal_predecessor"] = "something unrelated happened earlier"
-    check("broken-causal-link-refused",
-          "causal-link-broken" in codes(SP.validate_scene_plan(p)))
+    assert "causal-link-broken" in codes(SP.validate_scene_plan(p))
 
     p = workshop_plan()
     p["scenes"][0]["causal_predecessor"] = "scene_workshop_000"
-    check("opening-unlinked-refused",
-          "opening-unlinked" in codes(SP.validate_scene_plan(p)))
+    assert "opening-unlinked" in codes(SP.validate_scene_plan(p))
 
     p = workshop_plan()
     p["scenes"][0]["causal_outcome"] = "   "
-    check("blank-outcome-refused",
-          "scene-field-blank" in codes(SP.validate_scene_plan(p)))
+    assert "scene-field-blank" in codes(SP.validate_scene_plan(p))
 
-    # 6. below the contract minimum detail -> refused
+
+def test_below_contract_minimum_detail_refused():
     p = workshop_plan()
     p["scenes"][0]["dramatic_purpose"] = "Make it emotional."
     c = codes(SP.validate_scene_plan(p))
-    check("one-line-purpose-refused",
-          "scene-detail-below-minimum" in c or "purpose-quality-only" in c, c)
+    assert "scene-detail-below-minimum" in c or "purpose-quality-only" in c, c
 
     p = workshop_plan()
     for f in ("visible_action", "consequential_choice", "obstacle", "immediate_want",
               "turn_trigger", "causal_outcome", "planned_dialogue_function",
               "sound_music_intention", "framing_movement_intention", "transition"):
         p["scenes"][0][f] = "stuff happens"
-    check("per-field-floor-refused",
-          "scene-detail-below-minimum" in codes(SP.validate_scene_plan(p)))
+    assert "scene-detail-below-minimum" in codes(SP.validate_scene_plan(p))
 
     # bare-floor compliance: every prose field at exactly its own minimum still
     # fails the whole-scene floor -- 65 words is a placeholder, not a scene
@@ -370,79 +354,103 @@ def run():
         sc[f] = " ".join(["word"] * floor)
     body = sum(SP._words(sc.get(f)) for f in SP.MIN_WORDS)
     c = codes(SP.validate_scene_plan(p))
-    check("thin-scene-placeholder-refused",
-          "scene-placeholder-thin" in c and body < SP.SCENE_MIN_WORDS,
-          "words=%d codes=%r" % (body, c))
+    assert "scene-placeholder-thin" in c and body < SP.SCENE_MIN_WORDS, \
+        "words=%d codes=%r" % (body, c)
 
     p = workshop_plan()
     del p["scenes"][0]["visible_action"]
-    check("missing-field-refused", "scene-field-missing" in codes(SP.validate_scene_plan(p)))
+    assert "scene-field-missing" in codes(SP.validate_scene_plan(p))
 
-    # 7. undefined cast / stale revisions / undefined location
+
+def test_undefined_cast_and_stale_revision_refused():
     p = workshop_plan()
     p["scenes"][0]["cast_roles"][0]["cast_id"] = "char_ghost_999"
-    check("undefined-cast-refused", "cast-undefined" in codes(SP.validate_scene_plan(p)))
+    assert "cast-undefined" in codes(SP.validate_scene_plan(p))
 
     p = workshop_plan()
     p["scenes"][0]["cast_roles"][0]["identity_revision"] = 7
-    check("stale-identity-revision-refused",
-          "cast-revision-mismatch" in codes(SP.validate_scene_plan(p)))
+    assert "cast-revision-mismatch" in codes(SP.validate_scene_plan(p))
 
+
+def test_undefined_location_and_stale_world_revision_refused():
     p = workshop_plan()
     p["scenes"][1]["location_id"] = "loc_basement_999"
-    check("undefined-location-refused",
-          "location-undefined" in codes(SP.validate_scene_plan(p)))
+    assert "location-undefined" in codes(SP.validate_scene_plan(p))
 
     p = workshop_plan()
     p["scenes"][0]["world_revision"] = 9
-    check("stale-world-revision-refused",
-          "world-revision-mismatch" in codes(SP.validate_scene_plan(p)))
+    assert "world-revision-mismatch" in codes(SP.validate_scene_plan(p))
 
+
+def test_undefined_claim_refused():
     p = workshop_plan()
     p["scenes"][0]["claim_ids"] = ["claim_invented_999"]
-    check("undefined-claim-refused", "claim-undefined" in codes(SP.validate_scene_plan(p)))
+    assert "claim-undefined" in codes(SP.validate_scene_plan(p))
 
-    # 8. timing stays provisional until the selected music
+
+def test_empty_reference_sets_fail_closed():
+    """An empty/absent set must NOT switch validation off (S75-A09 class fix)."""
+    for mutate, code in (
+            (lambda f: f["episode_world"].update(locations=[]), "world-locations-empty"),
+            (lambda f: f["episode_world"].update(locations=None), "world-locations-empty"),
+            (lambda f: f["episode_world"].pop("locations"), "world-locations-empty"),
+            (lambda f: f["episode_cast_manifest"].update(cast=[]), "cast-manifest-empty"),
+            (lambda f: f["research_bundle"].update(claims=[]), "research-claims-empty")):
+        p = workshop_plan()
+        mutate(p["foundation"])
+        c = codes(SP.validate_scene_plan(p))
+        assert code in c, "expected %s, got %r" % (code, c)
+        assert "location-undefined" in c or code != "world-locations-empty", \
+            "empty locations must fail every scene reference: %r" % (c,)
+        assert SP.validate_scene_plan(p)["outcome"] == "rejected"
+
+    # blank / missing location_id is refused as well as an unknown one
+    for bad in ("", None, 7):
+        p = workshop_plan()
+        p["scenes"][0]["location_id"] = bad
+        assert "location-undefined" in codes(SP.validate_scene_plan(p)), bad
+
+
+def test_timing_stays_provisional():
     p = workshop_plan()
     p["scenes"][0]["timing_basis"] = "measured_after_alignment"
-    check("non-provisional-timing-refused",
-          "timing-not-provisional" in codes(SP.validate_scene_plan(p)))
+    assert "timing-not-provisional" in codes(SP.validate_scene_plan(p))
 
     p = workshop_plan()
     p["scenes"][0]["lip_sync_intention"] = "measured intervals locked at 0-4s"
-    check("measured-lipsync-refused",
-          "timing-claims-measured" in codes(SP.validate_scene_plan(p)))
+    assert "timing-claims-measured" in codes(SP.validate_scene_plan(p))
 
-    # 9. sequence integrity
+
+def test_sequence_integrity():
     p = workshop_plan()
     p["scenes"][1]["sequence"] = 3
-    check("sequence-gap-refused", "sequence-gap" in codes(SP.validate_scene_plan(p)))
+    assert "sequence-gap" in codes(SP.validate_scene_plan(p))
 
     p = workshop_plan()
     p["scenes"][1]["scene_id"] = p["scenes"][0]["scene_id"]
-    check("duplicate-scene-id-refused",
-          "scene-id-duplicate" in codes(SP.validate_scene_plan(p)))
+    assert "scene-id-duplicate" in codes(SP.validate_scene_plan(p))
 
-    # 10. music gate
+
+def test_music_gate():
     gate = SP.music_gate(workshop_plan())
-    check("music-gate-allows-complete-plan", gate["allowed"] is True, gate["reason_code"])
+    assert gate["allowed"] is True, gate["reason_code"]
 
     p = workshop_plan()
     p["status"] = "draft"
-    check("music-gate-refuses-incomplete-plan",
-          SP.music_gate(p)["allowed"] is False)
+    assert SP.music_gate(p)["allowed"] is False
 
     p = workshop_plan()
     p["lyrics"] = {"line_1": "placeholder"}
-    check("music-gate-refuses-plan-carrying-song",
-          SP.music_gate(p)["allowed"] is False)
+    assert SP.music_gate(p)["allowed"] is False
 
     p = workshop_plan()
     p.pop("foundation")
     p.pop("foundation_revisions")
-    check("unbound-plan-refused", "foundation-not-bound" in codes(SP.validate_scene_plan(p)))
+    assert "foundation-not-bound" in codes(SP.validate_scene_plan(p))
 
-    # 11. the neighbouring writers' row keys resolve (S75-T06/S75-T08 own them)
+
+def test_neighbour_row_keys_resolve():
+    """S75-T06/S75-T08 own those row keys; both spellings resolve."""
     f = workshop_foundation()
     f["episode_world"] = dict(f["episode_world"],
                               locations=[{"id": "loc_workshop_front_001"}])
@@ -452,28 +460,41 @@ def run():
     ])
     p = workshop_plan()
     p["foundation"] = f
-    check("neighbour-row-keys-resolve", SP.validate_scene_plan(p)["outcome"] == "ok",
-          "errors=%r" % (SP.validate_scene_plan(p)["errors"][:3],))
+    res = SP.validate_scene_plan(p)
+    assert res["outcome"] == "ok", "errors=%r" % (res["errors"][:3],)
 
-    # 12. the shipped schema and the validator cannot drift apart
+
+def test_schema_matches_validator():
     with open(os.path.join(HERE, "contracts", "scene-plan.schema.json"),
               "r", encoding="utf-8") as fh:
         schema = json.load(fh)
     required = set(schema["properties"]["scenes"]["items"]["required"])
-    check("schema-required-matches-validator",
-          required == set(SP.SCENE_FIELDS),
-          "schema-only=%r validator-only=%r"
-          % (sorted(required - set(SP.SCENE_FIELDS)),
-             sorted(set(SP.SCENE_FIELDS) - required)))
-    check("schema-version-matches",
-          schema["properties"]["schema_version"]["const"] == SP.SCHEMA_VERSION)
-    check("schema-timing-basis-matches",
-          schema["properties"]["scenes"]["items"]["properties"]["timing_basis"]["const"]
-          == SP.TIMING_BASIS_PROVISIONAL)
+    assert required == set(SP.SCENE_FIELDS), \
+        "schema-only=%r validator-only=%r" % (sorted(required - set(SP.SCENE_FIELDS)),
+                                              sorted(set(SP.SCENE_FIELDS) - required))
+    assert schema["properties"]["schema_version"]["const"] == SP.SCHEMA_VERSION
+    assert (schema["properties"]["scenes"]["items"]["properties"]["timing_basis"]["const"]
+            == SP.TIMING_BASIS_PROVISIONAL)
 
+
+TESTS = [v for k, v in sorted(globals().items())
+         if k.startswith("test_") and callable(v)]
+
+
+def run():
+    """Selftest entry point (`python3 story_planner.py selftest`)."""
+    fails = []
+    for fn in TESTS:
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001 - report and keep going
+            fails.append("%s: %s" % (fn.__name__, exc))
+            print("FAIL: %s (%s)" % (fn.__name__, exc))
+        else:
+            print("ok: %s" % fn.__name__)
     print()
-    if FAILS:
-        print("FAILED %d check(s): %s" % (len(FAILS), ", ".join(FAILS)))
+    if fails:
+        print("FAILED %d test(s)" % len(fails))
         return 1
     print("all checks passed")
     return 0

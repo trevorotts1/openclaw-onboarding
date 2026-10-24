@@ -404,6 +404,17 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
     claim_by_id = _index((research or {}).get("claims"), "claim_id", "id")
     world_rev = (world or {}).get("revision")
 
+    # reference sets fail closed: an empty, absent or malformed set must NOT
+    # silently switch resolution off the way a populated one enforces it
+    for code, rows, detail in (
+            ("cast-manifest-empty", (cast_manifest or {}).get("cast"), "episode_cast_manifest.cast"),
+            ("world-locations-empty", (world or {}).get("locations"), "episode_world.locations"),
+            ("research-claims-empty", (research or {}).get("claims"), "research_bundle.claims")):
+        if not isinstance(rows, list) or not rows:
+            errors.append(_err(code,
+                               "%s is empty or absent; every scene reference must resolve "
+                               "against a declared set" % detail, field=detail))
+
     scenes = plan.get("scenes")
     if not isinstance(scenes, list) or not scenes:
         errors.append(_err("scenes-missing",
@@ -473,7 +484,7 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
 
         # world/location references resolve, and to the bound revision
         loc = scene.get("location_id")
-        if loc_by_id and loc not in loc_by_id:
+        if not isinstance(loc, str) or not loc or loc not in loc_by_id:
             errors.append(_err("location-undefined",
                                "scene %r location_id %r is not in the episode world"
                                % (sid, loc), scene_id=sid, field="location_id",
@@ -489,7 +500,7 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
             errors.append(_err("claim-ids-invalid",
                                "scene %r claim_ids must be a list of strings, got %r"
                                % (sid, claims), scene_id=sid, field="claim_ids"))
-        elif claim_by_id:
+        else:
             for cid in claims:
                 if cid not in claim_by_id:
                     errors.append(_err("claim-undefined",
