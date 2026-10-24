@@ -63,6 +63,37 @@ class InitHandoffContract(unittest.TestCase):
                 return state
         self.fail("the exact rendered intake never reached explicit confirmation")
 
+    def test_bound_method_run_without_step_keeps_its_purpose_flow(self):
+        control = self.run / "control"
+        control.mkdir(parents=True)
+        method = control / "method.json"
+        prior = json.dumps({"purpose": "paid_ad", "owner_fact": "preserve this record"}, sort_keys=True)
+        method.write_text(prior, encoding="utf-8")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = factory.main(["card", "--run-dir", str(self.run)])
+        self.assertEqual(code, 0)
+        message = out.getvalue()
+        self.assertIn("- PURPOSE", message.splitlines()[0])
+        self.assertNotIn("Question 2 of", message)
+        session_path = control / "intake-session.json"
+        session = json.loads(session_path.read_text())
+        self.assertTrue(session["purpose_flow"])
+        self.assertEqual(session["pending"]["id"], "purpose")
+        self.assertEqual(session["answer_records"], {})
+        self.assertEqual(method.read_text(), prior)
+        self.assertFalse((control / "state.sqlite3").exists())
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(factory.main(["card", "--run-dir", str(self.run)]), 0)
+        self.assertEqual(out.getvalue(), message)
+        self.assertEqual(method.read_text(), prior)
+        # The explicit all-screen export is still a read-only export.
+        before = session_path.read_bytes()
+        _, export = self.invoke("card", "--run-dir", str(self.run), "--format", "studio-json")
+        self.assertEqual(export["format"], "studio-json")
+        self.assertEqual(session_path.read_bytes(), before)
+
     def test_confirm_initializes_real_stages_and_exposes_exact_admitted_aliases(self):
         confirmed = self.confirm()
         db = self.run / "control" / "state.sqlite3"
