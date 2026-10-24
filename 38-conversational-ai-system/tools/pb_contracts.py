@@ -32,6 +32,7 @@ import json
 import os
 import sys
 import tempfile
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -808,16 +809,42 @@ def lifecycle_transition_errors(before, after):
     return errs
 
 
+def _is_blank_mark(character):
+    """True for a character an id can carry while carrying no id.
+
+    ``character.isspace()`` is exactly the set ``str.strip()`` removes (verified
+    over the whole code space, 29 characters on both sides), so the whitespace
+    half of the rule is unchanged. Category Cf is what the previous fix missed:
+    zero width space (U+200B), the byte order mark (U+FEFF) and the other 168
+    format marks are not whitespace, are invisible, and must not make a blank id
+    look attached.
+    """
+    return character.isspace() or unicodedata.category(character) == "Cf"
+
+
 def normalise_evidence_id(value):
     """Trim an evidence id and treat a blank one as absent.
 
-    None and a whitespace-only id both mean "no evidence is attached", so the
-    gate refuses on either. Non-strings are handed back untouched: the schema
-    layer names those INVALID_GATE and this presence check must not swallow
-    them into a refusal.
+    None and a blank id both mean "no evidence is attached", so the gate refuses
+    on either. Blank covers whitespace-only and format-mark-only values: a single
+    U+200B or U+FEFF carries no information and was still reaching the allow
+    path. Only the two ends are trimmed, exactly as ``str.strip()`` always did for
+    whitespace: the normaliser removes decoration from an id, it never rewrites
+    the id itself, so a real id dispatches, a padded real id dispatches, and a
+    format mark buried inside an id stays part of that literal id.
+    ponytail: end-trim only; a format mark inside an id is left in place rather
+    than silently retargeting the reference. Add a byte-exact check where the id
+    is resolved against the evidence store if internal marks must refuse.
+    Non-strings are handed back untouched: the schema layer names those
+    INVALID_GATE and this presence check must not swallow them into a refusal.
     """
     if isinstance(value, str):
-        return value.strip() or None
+        start, end = 0, len(value)
+        while start < end and _is_blank_mark(value[start]):
+            start += 1
+        while end > start and _is_blank_mark(value[end - 1]):
+            end -= 1
+        return value[start:end] or None
     return value
 
 def cmd_dispatch(args):

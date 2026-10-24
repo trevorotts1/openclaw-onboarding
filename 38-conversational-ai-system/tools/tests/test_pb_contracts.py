@@ -634,6 +634,70 @@ class GateRecordTests(Fixture):
                                 payload["errors"])
 
 
+    # Characters under test, as code points so nothing invisible lives in this
+    # source: U+200B zero width space and U+FEFF byte order mark (category Cf),
+    # U+00A0 no-break space and U+3000 ideographic space (category Zs).
+    ZWSP = chr(0x200B)
+    BOM = chr(0xFEFF)
+    NBSP = chr(0x00A0)
+    IDEO = chr(0x3000)
+
+    def test_an_invisible_only_trusted_contact_mapping_is_absent(self):
+        # The residual the whitespace fix left: str.strip() removes category Zs
+        # but not category Cf, so a gate whose mapping id was one zero width
+        # space or one byte order mark still dispatched. A value that carries no
+        # information is absent no matter how it is spelled.
+        blanks = [self.ZWSP, self.BOM, self.ZWSP + self.BOM, self.ZWSP + " " + self.BOM + self.IDEO + "\t "]
+        for index, value in enumerate(blanks):
+            with self.subTest(repr(value)):
+                gate = self._gate_with_mapping(value, "invisible-mapping-%d.json" % index)
+                code, payload = dispatch(str(self.ledger_dir / ("invisible-%d.json" % index)),
+                                         fixture("outbound", "person-gift.json"), gate)
+                self.assertEqual(1, code, payload)
+                self.assertEqual("SUPPRESSED", payload["decision"], payload)
+                self.assertEqual("NO_TRUSTED_CONTACT_MAPPING", payload["reason"])
+                self.assertEqual([], payload["errors"])
+
+    def test_non_breaking_and_ideographic_spaces_are_still_absent(self):
+        # Control on the instrument that fixes the case above must not move the
+        # case the whitespace fix already closed: category Zs keeps refusing.
+        for index, value in enumerate([self.NBSP, self.IDEO, self.NBSP + self.IDEO]):
+            with self.subTest(repr(value)):
+                gate = self._gate_with_mapping(value, "space-mapping-%d.json" % index)
+                code, payload = dispatch(str(self.ledger_dir / ("space-%d.json" % index)),
+                                         fixture("outbound", "person-gift.json"), gate)
+                self.assertEqual(1, code, payload)
+                self.assertEqual("SUPPRESSED", payload["decision"], payload)
+                self.assertEqual("NO_TRUSTED_CONTACT_MAPPING", payload["reason"])
+                self.assertEqual([], payload["errors"])
+
+    def test_a_real_id_decorated_with_format_marks_still_dispatches(self):
+        # Decision recorded: a format mark around a real id is decoration, not a
+        # different id. The id is a reference to the mapping evidence, its
+        # meaning is the identifier it spells, and an invisible mark carries no
+        # information of its own -- so it is trimmed like whitespace padding and
+        # the id dispatches. Known-good control beside the refusals above.
+        values = ["id" + self.ZWSP, self.BOM + "ev-tcm-1", self.ZWSP + "ev-tcm-1" + self.BOM, " ev-tcm-1 " + self.ZWSP]
+        for index, value in enumerate(values):
+            with self.subTest(repr(value)):
+                gate = self._gate_with_mapping(value, "decorated-mapping-%d.json" % index)
+                code, payload = dispatch(str(self.ledger_dir / ("decorated-%d.json" % index)),
+                                         fixture("outbound", "person-gift.json"), gate)
+                self.assertEqual(0, code, payload)
+                self.assertEqual("DISPATCHED", payload["decision"], payload)
+                self.assertEqual("GATE_ALLOWED", payload["reason"])
+
+    def test_the_normaliser_trims_format_marks_but_never_rewrites_the_id(self):
+        # Unit-level statement of the decision the dispatch cases above read
+        # back: blank is absent, decoration is trimmed, the id body is literal.
+        self.assertIsNone(contracts.normalise_evidence_id(self.ZWSP))
+        self.assertIsNone(contracts.normalise_evidence_id(self.BOM))
+        self.assertIsNone(contracts.normalise_evidence_id(self.ZWSP + " " + self.IDEO))
+        self.assertEqual("ev-tcm-1", contracts.normalise_evidence_id(self.ZWSP + "ev-tcm-1" + self.BOM))
+        self.assertEqual("ev-tcm-1", contracts.normalise_evidence_id("  ev-tcm-1  "))
+        self.assertEqual("ev" + self.ZWSP + "-tcm-1", contracts.normalise_evidence_id("ev" + self.ZWSP + "-tcm-1"))
+
+
 def _iter_document_cases():
     """Yield (label, schema, document) for the jsonschema conformance pass."""
     for kind, directory in KIND_DIRS.items():
