@@ -9,7 +9,12 @@
 #      (the inbound webhook has somewhere to route).
 #   2. deliver:false on the inbound mapping(s) — the agent SENDS via the GHL
 #      Conversations API itself (deliver:true would double-send / mis-deliver).
-#   3. a WORKING model is set on the inbound mapping (a non-empty "model" string).
+#   3. no BLANK model override on the inbound mapping(s). A `model` key is
+#      OPTIONAL on a hooks.mappings entry — the effective model is the ROUTING
+#      AGENT's own (agents.entries / agents.list / agents.defaults), which
+#      24-self-test-hook.sh resolves in its section (b). This gate never greps
+#      the whole config for "some model somewhere" and never claims a working
+#      model is set on the mapping.
 #   4. the gateway answers healthz with HTTP 200 (it is up and listening).
 #
 # This is a LIVE check (reads openclaw.json + curls the gateway). It is run from
@@ -101,7 +106,7 @@ while IFS='|' read -r _tag _id _verdict _reasons; do
   [ "$_tag" = "MAPCONTRACT" ] || continue
   [ -n "$_id" ] || continue
   if [ "$_verdict" = "OK" ]; then
-    pass "mapping '$_id': valid inbound mapping (exact key set, model, directives, agentId bound)"
+    pass "mapping '$_id': valid inbound mapping (exact key set, directives, action=agent, deliver:false, agentId bound)"
   else
     fail "mapping '$_id': ${_reasons}"
   fi
@@ -116,11 +121,17 @@ else
   pass "deliver:false set on every inbound mapping (agent sends via the GHL Conversations API)"
 fi
 
-# a working model on the inbound mapping (G-03: the installer never wrote one).
-if reason_seen "no-model" || reason_seen "missing-key:model"; then
-  fail "inbound mapping has no model set (the agent cannot answer)"
+# model override, read from the parsed mapping per id (never a whole-file grep).
+# `model` is OPTIONAL on a hooks.mappings entry (evidence E-PBB017-MODEL-KEY:
+# OpenClaw's HookMappingSchema has it .optional() and mergeAction falls back to
+# baseAgent.model), so a mapping with no `model` is valid and the real writer
+# emits exactly that. What is refused is a PRESENT-but-BLANK override. The
+# effective model is NOT on the mapping and is NOT checked here: the self-test's
+# section (b) resolves it from the routing agent.
+if reason_seen "blank-model-override"; then
+  fail "inbound mapping carries a blank model override (drop the key, or set it non-empty)"
 else
-  pass "a working model is set on every inbound mapping"
+  pass "no blank model override on any inbound mapping (model is optional here; the effective model is the agent's own, resolved by the self-test)"
 fi
 
 # hooks.enabled must be true or nothing routes at all.

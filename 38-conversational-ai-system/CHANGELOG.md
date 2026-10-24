@@ -1,3 +1,45 @@
+## [2.0.25] - 2026-10-24 - fix: `model` is optional on a hooks.mappings entry — the predicate accepts what the installer writes
+
+T-10's shared predicate fixed the two-gates-two-contracts defect but got the direction wrong: it made BOTH gates
+demand `model`, so both refused the mapping the real installer emits (which has no `model` key) and a fresh install
+was still rejected `missing-key:model`. Agreement is not correctness.
+
+Ground truth (evidence `E-PBB017-MODEL-KEY`, PBB-017-operator lane): the installed OpenClaw `HookMappingSchema`
+declares `model: string().optional()` (every mapping field is optional; `.strict()` only rejects unknown keys),
+`openclaw config validate` accepts a mapping with no `model`, `buildActionFromMapping`/`mergeAction` do
+`override.model ?? baseAgent?.model`, the live `~/.openclaw/openclaw.json` runs 5 of 7 mappings with no `model`, and
+this skill's own self-test has always resolved its model from the AGENT (`agents.entries` -> `agents.list` ->
+`agents.defaults`), never from the mapping key. `agentId` alone routes.
+
+- `scripts/lib-hook-mapping-contract.sh`: `model` moves from the required key set to the optional one. Required is
+  now `id, match, action, agentId, deliver, messageTemplate`; optional is `wakeMode, name, sessionKey,
+  timeoutSeconds, model`. A `model` that is PRESENT but BLANK is still refused, reason `blank-model-override`
+  (was `no-model`): harmless on the mapping path, but OpenClaw's `normalizeAgentPayload` rejects a
+  present-but-blank model on the direct `/agent` path, so a blank override is always a wiring mistake. That refusal
+  is SKILL-level strictness, named as such — not an OpenClaw requirement. Everything else is unchanged: the exact
+  key set still fails unknown keys by name, `agentId` must still be listed in `hooks.allowedAgentIds`, `deliver`
+  must still be exactly `false`, and all twelve send/memory directive needles are still required. Still evaluated
+  per mapping id, never a whole-file grep, and still fail-closed when the evaluator itself errors.
+- `scripts/qc-backend-ready.sh` no longer claims "a working model is set on the inbound mapping" — that claim was
+  never what it checked (it grepped the whole config for any `model`). It now reports exactly what it knows: no
+  blank model override on any parsed mapping, and the effective model is the routing agent's own, resolved by the
+  self-test's section (b).
+- `scripts/24-self-test-hook.sh` section (a) is aligned with section (b): readiness no longer demands a `model` on
+  the mapping and no longer tells the operator to add one.
+- `install.sh` is unchanged. Its `install_skill_38_conversational_ai_system` already fingerprints all four
+  contract-carrying scripts (including `lib-hook-mapping-contract.sh`), so this predicate change is picked up as
+  `refreshed-content-drift` on an existing box, and it makes no model claim of its own.
+
+Proven (`lanes/PBB-041-lane/prove-predicate.sh`, hermetic fixture + a local stand-in for the tunnel probe, live box
+untouched): the mapping written by the REAL `15-configure-hooks-mappings.sh` against a fixture config is accepted
+by BOTH gates and by `openclaw config validate`; the known-good control passes both; four invalid mappings are
+refused by both with a reason naming the key; all 9 fixture-matrix rows report byte-identical verdicts in both
+gates, decoy-model-elsewhere included; and re-running the writer converges to a no-op.
+
+Hand-off: `tests/hook-mapping-contract.test.sh` is owned by the T-09 lane and was NOT edited here. Three of its
+MATRIX expectations encode the old contract and are updated by the apply-checked patch at
+`lanes/PBB-041-lane/0001-tests-align-matrix-with-model-optional.patch` (see `HANDOFF.md`).
+
 ## [2.0.24] - 2026-10-24 - fix: one inbound-mapping contract shared by the self-test, the QC gate and the installer
 
 G-03 / G-04 / G-05. `24-self-test-hook.sh` evaluated one parsed hooks mapping and refused it without a `model`,

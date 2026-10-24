@@ -9,18 +9,35 @@
 #   refused. Two scripts, two definitions of "valid", one install that could
 #   never pass its own gate. Both now source THIS file and cannot drift.
 #
+#   The first repair of that defect got the direction wrong: it made THIS
+#   predicate demand `model` too, so both gates agreed and both refused the
+#   mapping the real writer emits (which has no `model` key). Agreement is not
+#   correctness. The writer is right, this predicate is now right with it.
+#
 # CONTRACT (evaluated per mapping id — never a whole-file grep):
-#   required keys  : id, match, action, agentId, model, deliver, messageTemplate
-#   optional keys  : wakeMode, name, sessionKey, timeoutSeconds
+#   required keys  : id, match, action, agentId, deliver, messageTemplate
+#   optional keys  : wakeMode, name, sessionKey, timeoutSeconds, model
 #   exact key set  : any other key fails, reported by name. The OpenClaw schema
 #                    is .strict() and rejects `fallbacks` outright.
 #   action         : exactly "agent"
 #   agentId        : non-empty AND listed in hooks.allowedAgentIds (the binding)
-#   model          : non-empty string                       (G-03)
+#   model          : OPTIONAL. Absent is VALID. When PRESENT it must be a
+#                    non-empty string (else blank-model-override).  (G-03 repair)
 #   deliver        : present and exactly false
 #   match          : an object carrying a non-empty "path"
 #   directives     : every HOOK_MAPPING_DIRECTIVE_NEEDLE present in
 #                    messageTemplate (send-directive + conversation-memory)
+#
+# WHY `model` IS OPTIONAL (evidence E-PBB017-MODEL-KEY, PBB-017-operator lane):
+#   the installed OpenClaw HookMappingSchema declares `model: string().optional()`
+#   (and every mapping field optional; .strict() only rejects UNKNOWN keys), and
+#   `openclaw config validate` accepts a mapping with no model. At runtime
+#   `mergeAction` does `override.model ?? baseAgent?.model`, so agentId alone
+#   routes. A fresh install is refused no more. A model that is PRESENT but BLANK
+#   is still refused: harmless on the mapping path, but OpenClaw's
+#   normalizeAgentPayload rejects a present-but-blank model on the direct /agent
+#   path, so a blank override is always a wiring mistake and never meaningful.
+#   That refusal is SKILL-level strictness named as such — not an OpenClaw rule.
 #
 # PURE BASH + POSIX awk. No jq, no python3 — jq can be absent on a fleet box, and
 # this keeps qc-backend-ready.sh's "no python" claim true. bash -n clean.
@@ -77,7 +94,7 @@ hook_mapping_contract_reasons() {
     'no-agentId' \
     'allowedAgentIds-missing' \
     'agentId-not-allowed' \
-    'no-model' \
+    'blank-model-override' \
     'deliver-not-false' \
     'missing-directive:<needle>'
 }
@@ -285,7 +302,6 @@ hook_mapping_contract_eval() {
       if (!haskey("match"))           r = r ",missing-key:match"
       if (!haskey("action"))          r = r ",missing-key:action"
       if (!haskey("agentId"))         r = r ",missing-key:agentId"
-      if (!haskey("model"))           r = r ",missing-key:model"
       if (!haskey("deliver"))         r = r ",missing-key:deliver"
       if (!haskey("messageTemplate")) r = r ",missing-key:messageTemplate"
       for (q = 1; q <= NKEY; q++) {
@@ -307,7 +323,11 @@ hook_mapping_contract_eval() {
         if (bound == 0) r = r ",agentId-not-allowed"
       }
 
-      if (keyval("model") == "")     r = r ",no-model"
+      # model is OPTIONAL — see the WHY `model` IS OPTIONAL block at the top. Only
+      # a PRESENT-but-BLANK override is refused. haskey() matters here: keyval()
+      # returns "" both when the key is absent (valid) and when it is blank
+      # (refused), so the two cases must be told apart explicitly.
+      if (haskey("model") && keyval("model") == "") r = r ",blank-model-override"
       if (keyval("deliver") != "false") r = r ",deliver-not-false"
 
       mt = tolower(keyval("messageTemplate"))

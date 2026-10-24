@@ -10,7 +10,9 @@
 # WHAT IT DOES (in order; any failure => FIX and RE-TEST until green):
 #   (a) READINESS — confirm the backend is prepared to RECEIVE:
 #       - hooks.enabled is true
-#       - a live hooks.mappings entry for HOOK_NAME with action=agent + deliver:false + a model
+#       - a live hooks.mappings entry for HOOK_NAME with action=agent + deliver:false
+#         (a `model` override is OPTIONAL on the mapping — section (b) resolves the
+#         EFFECTIVE model from the ROUTING AGENT, never from the mapping key)
 #       - GHL creds present in secrets/.env (GHL_PRIVATE_INTEGRATION_TOKEN + GHL_LOCATION_ID)
 #       - the conversational-logs dir exists and is writable (node-owned)
 #       - /healthz returns 200 (gateway up)
@@ -153,9 +155,13 @@ sect "(a) Backend readiness — is the agent prepared to RECEIVE?"
 
 # THE hook-mapping contract — the SAME predicate qc-backend-ready.sh runs, from
 # scripts/lib-hook-mapping-contract.sh. This used to be a private python snippet
-# with its own two-rule idea of a "valid" mapping (deliver not false, model
-# present), while qc-backend-ready.sh whole-file grepped for those same keys and
-# passed a mapping this one refused. One predicate now, per mapping id (G-03/G-04/G-05).
+# with its own two-rule idea of a "valid" mapping, while qc-backend-ready.sh
+# whole-file grepped for those same keys and passed a mapping this one refused.
+# One predicate now, per mapping id (G-03/G-04/G-05).
+# `model` is NOT part of what makes a mapping valid here: it is OPTIONAL on a
+# hooks.mappings entry, and section (b) below resolves the effective model from
+# the routing agent (agents.entries -> agents.list -> agents.defaults). The only
+# model rule left on the mapping is that a PRESENT-but-BLANK override is refused.
 . "$SCRIPT_DIR/lib-hook-mapping-contract.sh"
 
 if [ -n "$OC_CONFIG" ]; then
@@ -172,10 +178,10 @@ if [ -n "$OC_CONFIG" ]; then
   if [ -z "$SEL_ID" ]; then
     bad "no live hooks.mappings agent entry"; fix "run scripts/15-configure-hooks-mappings.sh"
   elif [ "$SEL_VERDICT" = "OK" ]; then
-    ok "hooks.enabled + a live mapping for '$HOOK_NAME' (id='$SEL_ID': exact key set, action=agent, deliver:false, model, full send/memory directives, agentId bound)"
+    ok "hooks.enabled + a live mapping for '$HOOK_NAME' (id='$SEL_ID': exact key set, action=agent, deliver:false, full send/memory directives, agentId bound; model override optional)"
   else
     bad "mapping '$SEL_ID' not receive-ready: ${SEL_VERDICT:-cannot-parse-config}"
-    fix "fix the mapping per scripts/lib-hook-mapping-contract.sh (needs action=agent + deliver:false + a non-empty model + every send/memory directive + agentId listed in hooks.allowedAgentIds), then re-run 15-configure-hooks-mappings.sh"
+    fix "fix the mapping per scripts/lib-hook-mapping-contract.sh (needs action=agent + deliver:false + every send/memory directive + agentId listed in hooks.allowedAgentIds; a model override is optional but must be non-empty when present), then re-run 15-configure-hooks-mappings.sh"
   fi
 
   case "$GATE_LINE" in
