@@ -18,7 +18,20 @@ from pathlib import Path
 import sqlite3
 import shutil
 import tempfile
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
+
+
+def validate_upload_url(value):
+    """Parse an HTTPS upload URL locally; this never opens a connection."""
+    if not isinstance(value, str) or not value or any(c.isspace() or ord(c) < 32 for c in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return bool(parsed.scheme == "https" and parsed.netloc and parsed.hostname
+                    and parsed.username is None and parsed.password is None
+                    and (parsed.port is None or parsed.port > 0))
+    except ValueError:
+        return False
 
 
 def _read(path):

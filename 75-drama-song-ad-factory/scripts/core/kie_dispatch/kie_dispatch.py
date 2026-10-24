@@ -1298,7 +1298,7 @@ def upload_storyboard_frame(run_dir, shot_id, *, stage="video-generation", run_i
     claiming that the remote provider fetched the image. Explicitly injected
     uploaders are offline receipts and cannot authorize paid frame dispatch.
     """
-    from production_process import admit_production
+    from production_process import admit_production, validate_upload_url
     from lip_sync.lip_gate import picture_gate as PG
     import shutil
     root = Path(run_dir).expanduser().resolve()
@@ -1321,7 +1321,7 @@ def upload_storyboard_frame(run_dir, shot_id, *, stage="video-generation", run_i
         url = (uploader or PG.adapter_uploader(adapter_path=adapter_path))(str(copied))
         if PG.sha256_file(str(copied)) != sha or PG.sha256_file(str(source)) != sha:
             raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The uploader or source changed the approved frame bytes.")
-    if not isinstance(url, str) or not url.startswith("https://"):
+    if not validate_upload_url(url):
         raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The upload returned no HTTPS image URL.")
     current = admit_production(root, stage, run_id=authority["run_id"])
     if not current.get("ok") or (current.get("approved_storyboard", {}).get("revisions") or {}).get(shot_id) != revision:
@@ -1353,6 +1353,7 @@ def provider_frame_refusal(model, request, root, approved, selected):
     if ML.is_locked_lipsync(model):
         return None  # its existing picture/stem gates remain authoritative
     from video_router.video_router import FIRST_FRAME_FIELDS, LAST_FRAME_FIELDS
+    from production_process import validate_upload_url
     from lip_sync.lip_gate import picture_gate as PG
     req = request if isinstance(request, dict) else {}
     inp = req.get("input") if isinstance(req.get("input"), dict) else {}
@@ -1384,7 +1385,7 @@ def provider_frame_refusal(model, request, root, approved, selected):
         if not isinstance(bindings, dict):
             raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "Frame bindings must be producer receipts keyed by provider field.")
         for field, url in frames:
-            if not isinstance(url, str) or not url.startswith("https://"):
+            if not validate_upload_url(url):
                 raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The actual provider frame must be an uploaded HTTPS URL.")
             binding = bindings.get(field)
             if binding is None:

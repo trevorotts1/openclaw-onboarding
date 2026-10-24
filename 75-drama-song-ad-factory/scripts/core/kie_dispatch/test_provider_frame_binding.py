@@ -6,6 +6,7 @@ no reservation/transport may run in these tests.
 from copy import deepcopy
 import hashlib
 import importlib
+import os
 import json
 from pathlib import Path
 import sys
@@ -30,8 +31,9 @@ class ProviderFrameBindingTest(unittest.TestCase):
             audit = patch.object(limits, '_TRAIL_DONE', True)
             audit.start()
             self.addCleanup(audit.stop)
-        authorized = '/Volumes/mac mini m4/Downloads/git trees and automations'
-        assert tempfile.gettempdir().startswith(authorized), tempfile.gettempdir()
+        authorized = os.environ.get('S75_TEST_TMP_ROOT')
+        if authorized:
+            assert Path(tempfile.gettempdir()).resolve().is_relative_to(Path(authorized).resolve()), tempfile.gettempdir()
         self.temp = tempfile.TemporaryDirectory(prefix='s75-frame-binding-')
         self.addCleanup(self.temp.cleanup)
         self.run = Path(self.temp.name) / 'run'
@@ -183,6 +185,16 @@ class ProviderFrameBindingTest(unittest.TestCase):
         result, calls = self.submit_until_plan(request)
         self.assertEqual(result['reason_code'], 'PROVIDER_FRAME_REQUIRED', result)
         self.assertEqual(calls, 0)
+
+
+class UploadURLValidationTest(unittest.TestCase):
+    def test_url_validation_requires_https_and_a_real_host_without_network(self):
+        for value in ('https://fixture.invalid/picture.png', 'https://cdn.example.invalid:443/image?sig=abc'):
+            self.assertTrue(production_process.validate_upload_url(value), value)
+        for value in (None, 42, '', 'https://', 'https:///image', 'http://fixture.invalid/image',
+                      'https://host with spaces/image', 'https://user:password@host/image',
+                      'https://host:bad/image', 'https://[bad/image'):
+            self.assertFalse(production_process.validate_upload_url(value), repr(value))
 
 
 if __name__ == '__main__':
