@@ -402,9 +402,15 @@ class NativeGhlOwnerTests(unittest.TestCase):
         bundle = self.write_bundle({"kind": "openclaw_inbound"})
         doc = self.native_doc(bundle.name)
         launch_owner = owner.load_launch_owner(bundle.name, self.tmp)
+        # The read has to have landed before the refusal means anything: a
+        # bundle that names OpenClaw and a bundle that yielded no owner at all
+        # are refused with the same code, so only the record itself separates
+        # "the gate refused a real verdict" from "nothing was ever read".
+        self.assertEqual(launch_owner, {"kind": "openclaw_inbound"})
         errors = owner.validate_contract(doc, launch_owner)
         self.assertTrue(errors)
         self.assertTrue(errors[0].startswith(owner.OWNER_NOT_VERIFIED), errors)
+        self.assertIn("does not name native_ghl", errors[0])
 
     def test_native_ghl_is_allowed_when_the_bundle_names_it(self):
         bundle = self.write_bundle({"kind": "native_ghl"})
@@ -458,6 +464,12 @@ class OwnershipDocumentTests(unittest.TestCase):
 
 
 class CliTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="interactive-owner-cli-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
     def run_cli(self, *argv):
         buffer = io.StringIO()
         err = io.StringIO()
@@ -515,6 +527,49 @@ class CliTests(unittest.TestCase):
         code, _, err = self.run_cli("nonsense")
         self.assertEqual(code, 2)
         self.assertIn("unknown command", err)
+
+    def test_an_unparseable_inline_event_is_a_usage_exit_not_a_traceback(self):
+        # The inline --event value is caller-controlled text at a trust
+        # boundary. Unparseable input must reach the documented exit 2 with the
+        # usage error; a raw json traceback is exit 1 and prints no verdict at
+        # all, which is neither of the two answers the contract documents.
+        code, out, err = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", "{not json"
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("invalid JSON event", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(out.strip(), "")
+
+    def test_the_same_bad_json_is_the_same_exit_inline_or_in_a_file(self):
+        path = self.tmp / "bad-event.json"
+        path.write_text("{not json", encoding="utf-8")
+        code, out, err = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", str(path)
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("invalid JSON", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(out.strip(), "")
+
+    def test_resolve_still_reads_a_valid_event_from_a_file(self):
+        # Inverse: the file branch of _parse_event is untouched and still
+        # routes, so the fix did not narrow what counts as a usable event.
+        path = self.tmp / "event.json"
+        path.write_text(
+            json.dumps({
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "wed_2pm",
+                "generation": 3,
+            }),
+            encoding="utf-8",
+        )
+        code, out, _ = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", str(path)
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
 
 
 if __name__ == "__main__":

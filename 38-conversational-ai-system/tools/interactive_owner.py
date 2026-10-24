@@ -288,7 +288,13 @@ def _parse_event(value):
     candidate = Path(value)
     if candidate.is_file():
         return contracts.load_json(candidate)
-    return json.loads(value)
+    # Caller-controlled text: a parse failure is a usage error, the same verdict
+    # contracts.load_json gives the same bytes supplied as a file path. A raw
+    # json traceback would exit 1 with no verdict at all.
+    try:
+        return json.loads(value)
+    except ValueError as exc:
+        raise contracts.UsageError("invalid JSON event: %s" % exc)
 
 
 def main(argv=None):
