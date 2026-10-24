@@ -51,6 +51,7 @@ __all__ = [
     "verify_receipt",
     "seed_from_legacy_bible", "MANIFEST_SCHEMA_VERSION", "LIBRARY_SCHEMA_VERSION",
     "ROLES", "SELECTIONS", "PROFILE_FIELDS", "ANONYMOUS_SPEAKERS", "CROWD_REQUIRED",
+    "GENERIC_DESCRIPTOR_HEADS",
 ]
 
 MANIFEST_SCHEMA_VERSION = "s75.cast_manifest.v1"
@@ -68,13 +69,6 @@ _BOOKKEEPING = frozenset({
     "content_digest", "approval_bindings", "draft_state",
     "shared_source", "local_cache", "sync_state",
 })
-
-#: Generic descriptors that hide an undeclared individual.
-ANONYMOUS_SPEAKERS = (
-    "a woman", "a man", "a worker", "a customer", "someone", "somebody",
-    "a person", "the crowd", "people in background", "background people",
-    "a bystander", "the manager", "a voice", "narrator",
-)
 
 #: A crowd group is allowed only with every one of these rules present.
 CROWD_REQUIRED = (
@@ -149,40 +143,121 @@ def _text_list(value):
 _DRESSING = string.punctuation + "“”‘’«»‹›—– "
 
 _POSSESSIVE = re.compile(r"(?:'s|’s)\s*$")
+_POSSESSIVE_LEAD = re.compile(r"^\s*(?:'s|’s)")
 _SPACES = re.compile(r"\s+")
 
+#: Determiners, articles and quantifiers dress a descriptor; they never name a
+#: person, so they come off the front of a candidate, repeatedly.
+_DETERMINERS = frozenset({"a", "an", "the", "some", "any", "another", "one"})
 
-def _normalise_identity(value):
-    """Case-folded form of a name or id, with its dressing removed.
+#: Function words. A personal name has none of them, so one anywhere inside a
+#: candidate means the words describe a person instead of naming one.
+_FUNCTION_WORDS = _DETERMINERS | frozenset({
+    "of", "in", "on", "at", "to", "for", "with", "by", "from", "into", "onto",
+    "over", "under", "behind", "beside", "near", "across", "through", "during",
+    "before", "after", "above", "below", "between", "against", "about", "around",
+    "along", "among", "within", "without", "toward", "towards", "per", "via",
+    "and", "or", "but", "as", "than", "that", "which", "who", "whose", "when",
+    "where", "while", "if", "then", "this", "these", "those", "there", "here",
+    "her", "his", "their", "its", "my", "your", "our", "is", "was", "are", "were",
+    "be", "been", "out", "up", "down", "off", "again", "very", "just", "also",
+    "only", "not", "no",
+})
 
-    Surrounding punctuation, quotes and brackets, a trailing possessive and
-    any run of whitespace all vanish before comparison, so no dressing turns a
-    generic descriptor into an identity.
+#: The closed vocabulary of generic person-descriptor heads. Not a phrase list:
+#: whatever the dressing, a candidate is refused when it IS one of these, or
+#: when it opens on one and never becomes a personal name.
+GENERIC_DESCRIPTOR_HEADS = frozenset({
+    "woman", "women", "man", "men", "girl", "girls", "boy", "boys",
+    "person", "persons", "people", "child", "children", "kid", "kids",
+    "guy", "guys", "lady", "ladies", "fellow", "fellows",
+    "narrator", "narrators", "manager", "managers", "boss", "bosses",
+    "guard", "guards", "officer", "officers", "driver", "drivers",
+    "waiter", "waiters", "waitress", "waitresses", "server", "servers",
+    "host", "hosts", "clerk", "clerks", "nurse", "nurses", "doctor", "doctors",
+    "teacher", "teachers", "student", "students", "stranger", "strangers",
+    "figure", "figures", "silhouette", "silhouettes", "voice", "voices",
+    "character", "characters",
+    "worker", "workers", "customer", "customers", "bystander", "bystanders",
+    "someone", "somebody", "anyone", "anybody", "crowd", "crowds",
+})
+
+#: Descriptor heads that may stand in front of a personal name as its title
+#: ("Officer Dan Whitfield"). Any other head at the front is refused outright,
+#: so "the manager East Wing" cannot borrow a name's shape.
+_TITLE_HEADS = frozenset({"officer", "doctor", "nurse"})
+
+#: Exported name kept for callers of the round-3 surface; it is now the
+#: descriptor-head vocabulary above rather than a list of dressed phrases.
+ANONYMOUS_SPEAKERS = GENERIC_DESCRIPTOR_HEADS
+
+
+def _strip_dressing(text):
+    """Punctuation, quotes, brackets and possessives off BOTH ends, to stability.
+
+    The dressing is peeled from whichever end carries it, over and over, until
+    a pass changes nothing — so no amount of padding at the front survives.
     """
-    text = _SPACES.sub(" ", (value or "").casefold()).strip()
-    text = text.strip(_DRESSING)
-    text = _POSSESSIVE.sub("", text).strip(_DRESSING)
-    return _SPACES.sub(" ", text).strip()
+    while True:
+        new = _POSSESSIVE_LEAD.sub("", _POSSESSIVE.sub("", text.strip(_DRESSING)))
+        new = _SPACES.sub(" ", new).strip(_DRESSING)
+        if new == text:
+            return text
+        text = new
 
 
 def _bare(text):
-    """``_normalise_identity`` with the inner punctuation gone too, so
-    ``"a woman, leader"`` cannot hide from the descriptor rule behind a comma."""
+    """Inner punctuation flattened to spaces too, so ``"a woman, leader"``
+    cannot hide from the descriptor rule behind a comma."""
     return _SPACES.sub(" ",
                        "".join(" " if ch in _DRESSING else ch for ch in text)).strip()
+
+
+def _identity_tokens(value):
+    """The core words of a candidate, dressing gone from both ends.
+
+    Case is kept: a name is judged on its shape, and shape needs the capitals.
+    """
+    return [tok for tok in _bare(_strip_dressing(value or "")).split(" ") if tok]
+
+
+def _normalise_identity(value):
+    """Case-folded core of a name or id, dressing gone from both ends."""
+    return " ".join(_identity_tokens(value)).casefold()
+
+
+def _personal_name(tokens, heads):
+    """A given name plus a surname is a person, even when a word inside it is a
+    descriptor (``"Dana Woman"``). The shape says so: every word capitalised,
+    no function words, and not every word a descriptor."""
+    return (len(tokens) >= 2
+            and all(tok[:1].isupper() for tok in tokens)
+            and all(tok.casefold() not in _FUNCTION_WORDS for tok in tokens)
+            and not all(heads))
 
 
 def _anonymous(value):
     """A generic descriptor is not an identity, whatever it is wearing.
 
+    Structural, never a list of dressed strings: determiners come off the
+    front, dressing comes off both ends, and what remains is refused when it is
+    a descriptor head, or opens on one without turning into a personal name.
+
     Both positions — ``display_name`` and ``character_id`` — ask this same
     question, so a descriptor refused as a name is refused as an id.
     """
-    normal = _normalise_identity(value)
-    for form in (normal, _bare(normal)):
-        if any(form == p or form.startswith(p + " ") for p in ANONYMOUS_SPEAKERS):
-            return True
-    return False
+    tokens = _identity_tokens(value)
+    while tokens and tokens[0].casefold() in _DETERMINERS:
+        tokens = tokens[1:]
+    if not tokens:
+        return True
+    lowered = [tok.casefold() for tok in tokens]
+    heads = [tok in GENERIC_DESCRIPTOR_HEADS for tok in lowered]
+    if not any(heads):
+        return False
+    if heads[0] and lowered[0] not in _TITLE_HEADS:
+        return True
+    return not _personal_name(tokens, heads)
 
 
 def _defect(character_id, display_name, field, issue):
@@ -289,7 +364,8 @@ _PARTICIPANT_KEYS = frozenset({
     "speakers", "speaker_ids", "performers", "performer_ids",
     "actors", "actor_ids", "singers", "singer_ids", "voices", "voice_ids",
     "onlookers", "witnesses", "audience_ids", "member_ids",
-    "subjects", "subject_ids", "shot_subjects",
+    "subjects", "subject_ids", "shot_subjects", "id_to_detail_map",
+    "detail_map",
 })
 
 #: A person reference written as a per-line or per-shot binding.
@@ -329,16 +405,24 @@ def _walk_refs(node, key, persons, crowds):
         # people as its keys.
         if _declares_people(key):
             bucket = crowds if "crowd" in (key or "").lower() else persons
-            for sub_key in node:
-                if _ref_like(sub_key) and sub_key not in bucket:
-                    bucket.append(sub_key)
-            if all(not isinstance(v, (dict, list)) for v in node.values()):
-                return
-            # A nested binding carries its own keys; the outer key is a role,
-            # not a person, so the descent drops it.
-            for value in node.values():
+            crowd_map = "crowd" in (key or "").lower()
+            for sub_key, value in node.items():
+                # The keys of a declared-person map name people, so they meet
+                # the same rule as a value: a descriptor written as a key with
+                # a space in it cannot slip past a whitespace-free id check.
+                if crowd_map:
+                    if _ref_like(sub_key) and sub_key not in bucket:
+                        bucket.append(sub_key)
+                else:
+                    _add_person(sub_key, bucket)
                 if isinstance(value, (dict, list)):
+                    # A nested binding carries its own keys; the outer key is a
+                    # role, not a person, so the descent drops it.
                     _walk_refs(value, "", persons, crowds)
+                elif not crowd_map and _declares_people(sub_key):
+                    # A per-line or per-shot binding carries its person as the
+                    # VALUE under a person-id key; that value is a reference.
+                    _add_person(value, bucket)
             return
         for sub_key, value in node.items():
             _walk_refs(value, str(sub_key), persons, crowds)

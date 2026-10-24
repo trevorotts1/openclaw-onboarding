@@ -436,7 +436,6 @@ REAL_NAMES = ["Dana Woman", "Theresa Manager", "Wanda Manager",
 #: the module already refuses that shape ("a customer in line").
 ROLE_DESCRIPTIONS = ["the manager of the east wing", "a customer in line"]
 
-
 def test_punctuation_dressed_descriptor_is_refused_as_display_name():
     for dressed in DRESSED:
         request, response = load()
@@ -495,6 +494,100 @@ def test_a_role_description_is_still_not_an_identity():
         assert exc.code == "INCOMPLETE_CAST", described
 
 
+# --- the rule is structural, so no dressing of any descriptor gets through
+#     (S75-A06 r4) -----------------------------------------------------------
+
+#: The false-positive controls, in full: real people every one of them. What
+#: makes them people is SHAPED into the rule and pinned here — a descriptor
+#: word is allowed as a surname (``"Dana Woman"``) or as a title in front of a
+#: name (``"Officer Dan Whitfield"``), never as the whole name.
+CONTROL_NAMES = [
+    "Dana Woman", "Theresa Manager", "Wanda Manager", "Aisha Womack",
+    "Manny Persons", "Erik Narratorsson", "Mara Bell", "Dr. Amina Osei",
+    "Siobhan O'Keefe", "Officer Dan Whitfield", "The Reverend Thomas Hale",
+    "A. J. Marchetti", "Renata Cruz-Whitfield", "Ms. Elena Vasquez",
+]
+
+#: Role descriptions in every casing a dressing can reach. A role description
+#: that OPENS on a descriptor is refused even when it continues into more words.
+ROLE_DESCRIPTIONS_ANY_CASE = [
+    "the manager of the east wing", "a customer in line",
+    "The Manager Of The East Wing", "Manager East Wing", "Manager, East Wing",
+    "the officer of the watch", "a doctor on call",
+    "background people", "people in background", "the crowd", "a voice",
+    "someone", "somebody", "a bystander", "the narrator;",
+]
+
+#: The whole dressing space a descriptor can wear.
+_DETERMINERS = ["", "a", "an", "the", "some"]
+_TRAILING = ["", ".", ",", ";", "!", "?", ")", '"', "'"]
+_CASES = ("lower", "Title", "UPPER")
+_WHITESPACE = ("none", "leading", "trailing", "double")
+
+
+def _dress(det, word, punct, mode, ws):
+    def cased(text):
+        return {"lower": text.lower(), "Title": text.capitalize(),
+                "UPPER": text.upper()}[mode]
+
+    body = (cased(det) + ("  " if ws == "double" else " ") + cased(word)) if det \
+        else cased(word)
+    body += punct
+    return {"none": body, "leading": "  " + body, "trailing": body + "  ",
+            "double": "  " + body + "  "}[ws]
+
+
+def test_every_descriptor_is_refused_in_every_dressing():
+    """determiner x trailing punctuation x case x whitespace, over every head."""
+    got_through = []
+    for head in sorted(W.GENERIC_DESCRIPTOR_HEADS):
+        for det in _DETERMINERS:
+            for punct in _TRAILING:
+                for mode in _CASES:
+                    for ws in _WHITESPACE:
+                        candidate = _dress(det, head, punct, mode, ws)
+                        if not W._anonymous(candidate):
+                            got_through.append(candidate)
+    assert got_through == [], got_through[:5]
+
+
+def test_the_whole_control_list_is_accepted():
+    for name in CONTROL_NAMES:
+        request, response = load()
+        response["identities"][0]["display_name"] = name
+        result = author(request=request, response=response)
+        assert result["state"] == "COMPLETE", name
+        assert W.profile_defects(result["identities"][0]) == [], name
+
+
+def test_a_role_description_stays_refused_in_any_casing():
+    for described in ROLE_DESCRIPTIONS_ANY_CASE:
+        request, response = load()
+        response["identities"][0]["display_name"] = described
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", described
+        named = [d for d in exc.packet["incomplete"]
+                 if d["character_id"] == "char_mara_001"
+                 and d["field"] == "display_name"
+                 and "generic descriptor" in d["issue"]]
+        assert named, described
+
+
+def test_the_descriptor_rule_is_the_same_in_both_positions():
+    for dressed in ("a narrator.", "the narrator;", "the man.", "the woman,"):
+        request, response = load()
+        response["identities"][0]["character_id"] = dressed
+        response["cast"][0]["character_id"] = dressed
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", dressed
+        named = [d for d in exc.packet["incomplete"]
+                 if d["field"] == "character_id"
+                 and "generic descriptor" in d["issue"]]
+        assert named, dressed
+
+
 # --- nested per-shot bindings (S75-A06 r3) ----------------------------------
 
 def _with_shots(scene_shots):
@@ -526,6 +619,26 @@ def test_nested_shot_subject_of_a_declared_person_is_accepted():
                   "subjects": ["char_mara_001", {"char_levi_002": {"frame": 3}}]}])(request)
     result = author(request=request, response=response)
     assert result["state"] == "COMPLETE"
+
+
+def test_nested_shot_subject_refuses_a_descriptor_in_every_shape():
+    shapes = [
+        [{"shot_id": "sh_01", "subjects": ["the narrator;"]}],
+        [{"shot_id": "sh_01", "subjects": ["a woman!"]}],
+        [{"shot_id": "sh_01", "subjects": {"the manager.": {"frame": 3}}}],
+        [{"shot_id": "sh_01", "subject_id": "  A WOMAN.  "}],
+        [{"shot_id": "sh_01", "subjects": {"subject_id": "(the manager)"}}],
+        [{"shot_id": "sh_01", "subjects": [{"subject_id": "'a voice'"}]}],
+        [{"shot_id": "sh_01", "subjects": {"a woman": {"frame": 3}}}],
+        [{"shot_id": "sh_01", "id_to_detail_map": {"the narrator;": {"f": 1}}}],
+    ]
+    for shots in shapes:
+        request, response = load()
+        _with_shots(shots)(request)
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", shots
+        assert "generic descriptor" in str(exc), shots
 
 # --- adapters and purity ----------------------------------------------------
 
