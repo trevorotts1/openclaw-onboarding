@@ -5,7 +5,10 @@ The suite proves the doctrine, not just the plumbing: a plan writes nothing,
 a second run is a byte-identical no-op, an unpermitted resource is refused with
 a named reason and never appears in the provisioned set, an interrupted run
 resumes from the failed step without duplicating a created resource, and a
-partially failed run leaves a resumable receipt state on disk.
+partially failed run leaves a resumable receipt state on disk. A real child
+interpreter is hard-killed at every write boundary to prove a created object is
+never left without its receipt, and two real concurrent runs prove a resource is
+never created twice and no receipt is lost.
 
 Run from the skill root:
   python3 -m unittest discover -s tools/tests -p 'test_*.py'
@@ -17,6 +20,7 @@ import datetime
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -65,6 +69,78 @@ def tree_digest(root):
 def read(path):
     with open(path, "rb") as handle:
         return handle.read()
+
+
+# Child driver for the crash and concurrency tests: a real second interpreter,
+# so os._exit in it is a hard kill of a real run, not a simulated one. argv:
+# tools dir, target root, kill-at write-call (0 = never), specs JSON, go file.
+CHILD_RUN = r"""
+import json, os, sys, time
+tools, root, kill_at, rows, go = (sys.argv[1], sys.argv[2], int(sys.argv[3]),
+                                 json.loads(sys.argv[4]), sys.argv[5])
+sys.path.insert(0, tools)
+import bootstrap_engine as be
+
+specs = [be.ResourceSpec(r[0], "knowledgebase", r[1], r[2]) for r in rows]
+if kill_at:
+    real = be._atomic_write
+    count = {"n": 0}
+    def gated(path, data, mode=None):
+        count["n"] += 1
+        if count["n"] == kill_at:
+            os._exit(9)  # hard kill: no flush, no cleanup, no last words
+        return real(path, data, mode)
+    be._atomic_write = gated
+if go:
+    deadline = time.time() + 30
+    while not os.path.exists(go) and time.time() < deadline:
+        time.sleep(0.002)
+engine = be.BootstrapEngine(root, permissions=("kind:knowledgebase",))
+report = engine.run(specs)
+print(json.dumps({
+    "created": [c["resource_id"] for c in report.created],
+    "adopted": [a["resource_id"] for a in report.adopted],
+    "blocked": [b["resource_id"] for b in report.blocked],
+    "failed": [f["resource_id"] for f in report.failed],
+}))
+"""
+
+# Three resources -> six write calls (write-ahead receipt, then artifact).
+CRASH_ROWS = [
+    ["kb.one", "kb/one.txt", "one"],
+    ["kb.two", "kb/two.txt", "two"],
+    ["kb.three", "kb/three.txt", "three"],
+]
+
+
+def child(root, kill_at=0, rows=CRASH_ROWS, go=""):
+    return subprocess.run(
+        [sys.executable, "-I", "-c", CHILD_RUN, str(TOOLS_DIR), root,
+         str(kill_at), json.dumps(rows), go],
+        capture_output=True, text=True, timeout=60,
+    )
+
+
+def specs_from(rows):
+    return [be.ResourceSpec(r[0], "knowledgebase", r[1], r[2]) for r in rows]
+
+
+def receipts_of(root):
+    path = os.path.join(root, ".bootstrap-state.json")
+    if not os.path.exists(path):
+        return {}
+    return json.loads(read(path).decode("utf-8"))["receipts"]
+
+
+def tree_files(root):
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if name.startswith(".bootstrap-state"):
+                continue
+            out.append(os.path.relpath(os.path.join(dirpath, name), root))
+    return sorted(out)
 
 
 class EngineTestCase(unittest.TestCase):
@@ -433,6 +509,133 @@ class IsolationTests(EngineTestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("self-check: OK", result.stdout)
+
+
+class CrashDurabilityTests(EngineTestCase):
+    """A hard kill can never leave a created object unrecorded (PBB-081)."""
+
+    @staticmethod
+    def engine_at(root):
+        return be.BootstrapEngine(
+            root, permissions=("kind:knowledgebase",), clock=fixed_clock
+        )
+
+    def test_hard_kill_at_every_write_boundary_leaves_no_unrecorded_artifact(self):
+        # Six write calls: a write-ahead receipt and its artifact per step. A
+        # real child is killed before call 1..6; every surviving artifact must
+        # already have a receipt, and a resume must continue without blocking,
+        # without adoption and without recreating anything on disk.
+        for kill_at in range(1, 2 * len(CRASH_ROWS) + 1):
+            with self.subTest(kill_at=kill_at):
+                root = tempfile.mkdtemp(prefix="pbb-bootstrap-crash-")
+                self.addCleanup(shutil.rmtree, root, True)
+                proc = child(root, kill_at=kill_at)
+                self.assertEqual(proc.returncode, 9, proc.stderr)
+
+                on_disk = tree_files(root)
+                recorded_paths = {v["path"] for v in receipts_of(root).values()}
+                self.assertEqual(
+                    [r for r in on_disk if r not in recorded_paths], [],
+                    "a created object was left without its receipt",
+                )
+                survived = {
+                    rel: (read(os.path.join(root, rel)),
+                          os.stat(os.path.join(root, rel)).st_mtime_ns)
+                    for rel in on_disk
+                }
+                missing = [r[0] for r in CRASH_ROWS if r[1] not in on_disk]
+
+                engine = self.engine_at(root)
+                resumed = engine.run(specs_from(CRASH_ROWS))
+                self.assertEqual(resumed.blocked, [])
+                self.assertEqual(resumed.failed, [])
+                self.assertEqual(resumed.adopted, [])
+                self.assertEqual(
+                    sorted(i["resource_id"] for i in resumed.created), sorted(missing)
+                )
+                for rel, (body, mtime) in survived.items():
+                    self.assertEqual(read(os.path.join(root, rel)), body)
+                    self.assertEqual(
+                        os.stat(os.path.join(root, rel)).st_mtime_ns, mtime
+                    )
+                self.assertEqual(
+                    sorted(receipts_of(root)), ["kb.one", "kb.three", "kb.two"]
+                )
+                for row in CRASH_ROWS:
+                    self.assertEqual(read(os.path.join(root, row[1])), row[2].encode())
+
+                # It settles: the next run is a byte-identical no-op.
+                tree_before = tree_digest(root)
+                state_before = read(engine.state_path)
+                again = engine.run(specs_from(CRASH_ROWS))
+                self.assertEqual(again.created, [])
+                self.assertFalse(again.state_written)
+                self.assertEqual(tree_digest(root), tree_before)
+                self.assertEqual(read(engine.state_path), state_before)
+
+
+class ConcurrencyTests(EngineTestCase):
+    """Two runs at once never duplicate a resource and never lose a receipt."""
+
+    def _run_two(self, rows_a, rows_b):
+        go_fd, go = tempfile.mkstemp(prefix="pbb-bootstrap-go-")
+        os.close(go_fd)
+        os.unlink(go)
+        self.addCleanup(lambda: os.path.exists(go) and os.unlink(go))
+        args = lambda rows: [  # noqa: E731 - one-shot arg builder
+            sys.executable, "-I", "-c", CHILD_RUN, str(TOOLS_DIR), self.root,
+            "0", json.dumps(rows), go,
+        ]
+        first = subprocess.Popen(
+            args(rows_a), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        second = subprocess.Popen(
+            args(rows_b), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        with open(go, "wb") as handle:
+            handle.write(b"go")
+        out_a, err_a = first.communicate(timeout=60)
+        out_b, err_b = second.communicate(timeout=60)
+        self.assertEqual(first.returncode, 0, err_a)
+        self.assertEqual(second.returncode, 0, err_b)
+        return json.loads(out_a), json.loads(out_b)
+
+    def test_two_concurrent_runs_never_create_a_resource_twice(self):
+        run_a, run_b = self._run_two(CRASH_ROWS, CRASH_ROWS)
+        created_total = len(run_a["created"]) + len(run_b["created"])
+        self.assertEqual(created_total, len(CRASH_ROWS))
+        self.assertEqual(run_a["blocked"], [])
+        self.assertEqual(run_b["blocked"], [])
+        self.assertEqual(tree_files(self.root), sorted(r[1] for r in CRASH_ROWS))
+        self.assertEqual(
+            sorted(receipts_of(self.root)), ["kb.one", "kb.three", "kb.two"]
+        )
+
+    def test_concurrent_runs_with_different_specs_lose_no_receipts(self):
+        rows_x = [["x.one", "x/one.txt", "one"], ["x.two", "x/two.txt", "two"]]
+        rows_y = [["y.one", "y/one.txt", "uno"], ["y.two", "y/two.txt", "dos"]]
+        run_a, run_b = self._run_two(rows_x, rows_y)
+        self.assertEqual(len(run_a["created"]) + len(run_b["created"]), 4)
+        self.assertEqual(
+            sorted(receipts_of(self.root)),
+            ["x.one", "x.two", "y.one", "y.two"],
+        )
+        self.assertEqual(
+            tree_files(self.root),
+            ["x/one.txt", "x/two.txt", "y/one.txt", "y/two.txt"],
+        )
+
+    def test_run_refuses_when_another_run_holds_the_state_lock(self):
+        engine = self.engine(("kb.one",), lock_timeout=0.2)
+        with be._StateLock(engine.lock_path, 1.0):
+            with self.assertRaises(be.BootstrapError) as caught:
+                engine.run([spec("kb.one")])
+        self.assertIn("lock", str(caught.exception))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "kb/one.txt")))
+        self.assertFalse(os.path.exists(engine.state_path))
+        # Once the other run is done, the same call goes through.
+        report = engine.run([spec("kb.one")])
+        self.assertEqual([i["resource_id"] for i in report.created], ["kb.one"])
 
 
 if __name__ == "__main__":

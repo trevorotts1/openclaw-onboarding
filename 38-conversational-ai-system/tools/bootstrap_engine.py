@@ -23,10 +23,17 @@ Doctrine, enforced in code:
   * An object this engine created is never rewritten with different content.
     Content drift blocks with a named reason instead of silently overwriting a
     hand-edit.
-  * A completed step is recorded in the state file before the next step runs.
-    A failure stops the run and leaves the completed receipts in place, so a
+  * A step's receipt is written and fsynced BEFORE its artifact, and the record
+    is durable before the next step runs. A crash can never leave a created
+    object unrecorded: recovery finds either the receipt and the artifact
+    together, or the receipt alone, which the next run restores idempotently.
+  * A failure stops the run and leaves the completed receipts in place, so a
     resume continues from the failed step: completed resources are unchanged
-    and nothing is created twice.
+    and nothing is created twice. A failed step keeps no receipt - its
+    write-ahead record is retracted before the run reports the failure.
+  * Concurrent runs over one state file are serialised for the whole run by an
+    exclusive lock on <state>.lock, so two setups never create the same
+    resource twice and neither run loses the other run's receipts.
   * A second run over unchanged inputs is a no-op: no file is written, so the
     state file and the provisioned tree are byte-identical before and after.
   * All writes are atomic (temp file + os.replace) and confined to the target
@@ -47,11 +54,13 @@ Assert-based self-check:  python3 -I bootstrap_engine.py
 from __future__ import annotations
 
 import datetime as _datetime
+import fcntl
 import hashlib
 import json
 import os
 import posixpath
 import tempfile
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -220,6 +229,48 @@ def _canonical_state(receipts: Dict[str, Dict[str, Any]]) -> bytes:
     return (text + "\n").encode("utf-8")
 
 
+class _StateLock:
+    """Exclusive advisory lock on <state>.lock, held for a whole run().
+
+    Two runs over one state file read-modify-write the same receipts. Without
+    the lock the later write clobbers the earlier one. The lock file is a
+    sibling of the state file and is kept (never unlinked) so a lock always
+    names one inode; flock is released by the kernel if the holder dies.
+    """
+
+    def __init__(self, path: str, timeout: float) -> None:
+        self.path = path
+        self.timeout = timeout
+        self._fd: Optional[int] = None
+
+    def __enter__(self) -> "_StateLock":
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        deadline = time.monotonic() + self.timeout
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    os.close(fd)
+                    raise BootstrapError(
+                        "state lock %s is held by another bootstrap run "
+                        "(waited %.1fs); retry when that run finishes"
+                        % (self.path, self.timeout)
+                    )
+                time.sleep(0.02)
+        self._fd = fd
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        if self._fd is not None:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            os.close(self._fd)
+            self._fd = None
+        return None
+
+
 class BootstrapEngine:
     """Idempotent, permitted-only, resumable provisioning into one target root.
 
@@ -230,6 +281,8 @@ class BootstrapEngine:
                    not permitted.
     state_path   - receipts file; defaults to <target_root>/.bootstrap-state.json
     clock        - injectable for deterministic tests.
+    lock_timeout - seconds to wait for the exclusive run lock before refusing;
+                   the lock is <state_path>.lock and serialises concurrent runs.
     """
 
     def __init__(
@@ -238,6 +291,7 @@ class BootstrapEngine:
         permissions: Iterable[str] = (),
         state_path: Optional[str] = None,
         clock: Callable[[], _datetime.datetime] = _utc_now,
+        lock_timeout: float = 30.0,
     ) -> None:
         if not target_root:
             raise BootstrapError("target_root is required")
@@ -248,6 +302,8 @@ class BootstrapEngine:
             if state_path
             else os.path.join(self.target_root, DEFAULT_STATE_NAME)
         )
+        self.lock_path = self.state_path + ".lock"
+        self.lock_timeout = float(lock_timeout)
         self._clock = clock
 
     # ------------------------------------------------------------------ input
@@ -362,6 +418,9 @@ class BootstrapEngine:
 
     def _write_state(self, receipts: Dict[str, Dict[str, Any]]) -> None:
         _atomic_write(self.state_path, _canonical_state(receipts))
+
+    def _state_lock(self) -> "_StateLock":
+        return _StateLock(self.lock_path, self.lock_timeout)
 
     # -------------------------------------------------------------- discovery
 
@@ -505,8 +564,6 @@ class BootstrapEngine:
     ) -> Report:
         """Execute the plan. Atomic per step; resumable by calling run again."""
         validated = self._validate(specs)
-        steps = self.plan(validated).steps
-        receipts = self._load_state()
 
         created: List[Dict[str, str]] = []
         adopted: List[Dict[str, str]] = []
@@ -517,73 +574,93 @@ class BootstrapEngine:
         failed: List[Dict[str, str]] = []
         not_attempted: List[Dict[str, str]] = []
 
-        dirty = False
+        state_written = False
         stopped = False
         now = _iso(self._clock())
 
-        for step, spec in zip(steps, validated):
-            if stopped:
-                not_attempted.append(step.as_dict())
-                continue
+        with self._state_lock():
+            steps = self.plan(validated).steps
+            receipts = self._load_state()
 
-            if step.action == ACTION_NOOP:
-                unchanged.append(step.as_dict())
-                continue
-            if step.action == ACTION_SKIP:
-                skipped.append(step.as_dict())
-                continue
-            if step.action == ACTION_REFUSE:
-                refused.append(step.as_dict())
-                continue
-            if step.action == ACTION_BLOCK:
-                blocked.append(step.as_dict())
-                continue
+            for step, spec in zip(steps, validated):
+                if stopped:
+                    not_attempted.append(step.as_dict())
+                    continue
 
-            target = self._target_path(spec.path)
-            payload = _payload_bytes(spec.payload)
-            try:
+                if step.action == ACTION_NOOP:
+                    unchanged.append(step.as_dict())
+                    continue
+                if step.action == ACTION_SKIP:
+                    skipped.append(step.as_dict())
+                    continue
+                if step.action == ACTION_REFUSE:
+                    refused.append(step.as_dict())
+                    continue
+                if step.action == ACTION_BLOCK:
+                    blocked.append(step.as_dict())
+                    continue
+
+                target = self._target_path(spec.path)
+                payload = _payload_bytes(spec.payload)
+                prior = receipts.get(spec.resource_id)
+                receipts[spec.resource_id] = {
+                    "kind": spec.kind,
+                    "path": spec.path,
+                    "digest": _digest(payload),
+                    "outcome": (
+                        "created" if step.action == ACTION_CREATE else "adopted"
+                    ),
+                    "at": now,
+                }
+                receipt_landed = False
+                try:
+                    # Write-ahead record: the receipt is durable before the
+                    # artifact exists, so a crash at any point leaves either
+                    # both or a receipt the next run restores - never an
+                    # unrecorded object.
+                    self._write_state(receipts)
+                    receipt_landed = True
+                    state_written = True
+                    if step.action == ACTION_CREATE:
+                        _atomic_write(target, payload)
+                    else:  # adopt: pure receipt, bytes are already correct
+                        if not os.path.isfile(target):
+                            raise OSError("adoption target disappeared")
+                except OSError as exc:
+                    # A failed step keeps no receipt: retract the write-ahead
+                    # record so a resume retries the step instead of treating
+                    # it as provisioned.
+                    if prior is None:
+                        receipts.pop(spec.resource_id, None)
+                    else:
+                        receipts[spec.resource_id] = prior
+                    if receipt_landed:
+                        try:
+                            self._write_state(receipts)
+                            state_written = True
+                        except OSError:
+                            pass  # a later state write carries the retraction
+                    failed.append(
+                        {
+                            "resource_id": spec.resource_id,
+                            "action": step.action,
+                            "reason": REASON_WRITE_FAILED,
+                            "detail": "%s: %s" % (type(exc).__name__, exc),
+                        }
+                    )
+                    if stop_on_failure:
+                        stopped = True
+                    continue
+
+                record = {
+                    "resource_id": spec.resource_id,
+                    "path": spec.path,
+                    "digest": receipts[spec.resource_id]["digest"],
+                }
                 if step.action == ACTION_CREATE:
-                    _atomic_write(target, payload)
-                else:  # adopt: pure receipt, bytes are already correct
-                    if not os.path.isfile(target):
-                        raise OSError("adoption target disappeared")
-            except OSError as exc:
-                failed.append(
-                    {
-                        "resource_id": spec.resource_id,
-                        "action": step.action,
-                        "reason": REASON_WRITE_FAILED,
-                        "detail": "%s: %s" % (type(exc).__name__, exc),
-                    }
-                )
-                if stop_on_failure:
-                    stopped = True
-                continue
-
-            receipts[spec.resource_id] = {
-                "kind": spec.kind,
-                "path": spec.path,
-                "digest": _digest(payload),
-                "outcome": (
-                    "created" if step.action == ACTION_CREATE else "adopted"
-                ),
-                "at": now,
-            }
-            dirty = True
-            record = {
-                "resource_id": spec.resource_id,
-                "path": spec.path,
-                "digest": receipts[spec.resource_id]["digest"],
-            }
-            if step.action == ACTION_CREATE:
-                created.append(record)
-            else:
-                adopted.append(record)
-
-        state_written = False
-        if dirty:
-            self._write_state(receipts)
-            state_written = True
+                    created.append(record)
+                else:
+                    adopted.append(record)
 
         return Report(
             created=created,
