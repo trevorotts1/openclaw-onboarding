@@ -1,3 +1,18 @@
+## [2.0.34] - 2026-10-24 - evidence(T-04): verified external storage binding, child temp propagation and measured global capacity (PBB-177)
+
+Evidence only. No runtime, installer, schema or provider behaviour changes; the artifact is a receipt, not enforcement.
+
+- `evidence/storage-and-resource-receipt.json` (new, repo root): 11 clauses and 8 explicit unknowns, each clause carrying the exact command, exit code and raw output that produced it.
+- Mount identity: `/Volumes/mac mini m4` is a live external APFS USB mount on `/dev/disk7s1`, `st_dev 16777244`, and its IOMedia UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA` equals the pinned value.
+- Recorded device pin is stale: `config/storage.json` still says `/dev/disk5s1` / `16777240`, and `tools/control.py` never reads either key (0 matches, control `minimum_free_bytes` = 1). Identity is anchored by UUID, so this is a stale record, not a wrong volume.
+- Destinations: all configured worktree, scratch, temp, cache and output parents resolve with no symlink component on the mount device.
+- Child propagation: `TMPDIR`/`TMP`/`TEMP` reach a distinct child shell (PID 86707), a Python child and its grandchild, and Node; the real temp file's parent and device match the mount.
+- Tool paths, measured gaps: npm and pip default to the internal disk and are external only with their documented overrides; macOS `mktemp` ignores `TMPDIR` and writes to the internal disk (`dev 16777232`); `PYTHONPYCACHEPREFIX` is ignored by the `-I` interpreter the engineering loop runs.
+- Run-root audit: 4 `node_modules` links under worktrees and 5 under scratch resolve off-volume to the internal disk; 24 PATH-shim links under the temp root point at system executables.
+- Capacity: filesystem total 4000770232320 bytes / avail 2524230701056 bytes at the sample; memory 24 GiB with 5254676480 bytes reclaimable; platform ceilings 10 agents per workflow / 50 workflows / 500 agents read live and mirrored in the package. Provider quota, memory admission and non-probed tool caches stay UNKNOWN.
+- Deliberately not done: no storage guard was added to `tools/control.py` and no config value was changed. Fixing the stale pin or enforcing a reserve floor is separate work against the package's own control code.
+- Risk level: LOW (evidence artifact and bookkeeping only).
+
 ## [2.0.33] - 2026-10-24 - fix(capture): an outcome, a plan and an unknown id answer only for this ask (T-16 repair 2, PBB-168)
 
 Repair round for QC PBB-157 (FAIL on `2f5c8cb16`). Three defects, all reproduced on the reviewed bytes before any edit with the reviewer's own probes (`probe_t16.py` 5/8, `probe_b.py` T-16 half 2/4), all closed here. Files: `shared-utils/capture/` plus this changelog and `skill-version.txt`, in this one commit. Nothing else changed.
