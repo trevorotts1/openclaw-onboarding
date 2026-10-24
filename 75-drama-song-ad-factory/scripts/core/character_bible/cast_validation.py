@@ -15,7 +15,14 @@ checks that need the whole cast and every scene at once:
 * a crowd referenced by a scene must list that scene in its own ``scene_ids``:
   existence is not permission;
 * every substantive cast and crowd field is judged by TYPE AND CONTENT, never
-  by presence -- a boolean, a number, ``""`` and a one-character token fail.
+  by presence -- a boolean, a number, ``""`` and a one-character token fail;
+* there is exactly ONE content predicate (``_token_ok`` / ``_real_text``) and
+  every string-content judgement is routed through it. Length is not content:
+  "zzz", "abc", "asdf", "x y z" and any filler token fail, and a dict is judged
+  on its VALUES so ``age_range={"a": 1}`` is refused;
+* closed-vocabulary fields are validated by MEMBERSHIP, never by length:
+  ``episode_role`` against EPISODE_ROLE_VOCABULARY, crowd ``dialogue`` against
+  CROWD_DIALOGUE_VOCABULARY.
 
 Standard library only, no IO on import, no provider or network call.
 """
@@ -29,8 +36,11 @@ from story_first_contracts import CAST_ENTRY_FIELDS, validate_cast_manifest
 __all__ = [
     "CastValidationError",
     "CROWD_REQUIRED",
+    "CROWD_DIALOGUE_VOCABULARY",
+    "FILLER_TOKENS",
     "ANONYMOUS_SPEAKER_PATTERNS",
     "SPEAKER_SOURCES",
+    "SPEAKER_CONTENT_KEYS",
     "EPISODE_ROLE_HEADS",
     "EPISODE_ROLE_VOCABULARY",
     "validate_crowd_group",
@@ -79,6 +89,36 @@ SPEAKER_SOURCES = (
 )
 
 _CROWD_DIALOGUE_PROHIBITED = ("PROHIBITED", "NONE", "SILENT")
+
+#: Closed crowd-dialogue policy. Membership, never length: an unknown token
+#: ("zzz", "ALLOW ANYTHING") is refused even though it is non-empty text.
+CROWD_DIALOGUE_VOCABULARY = (
+    "PROHIBITED", "NONE", "SILENT", "INDIVIDUALIZED_ONLY", "ALLOWED",
+)
+
+#: The content-bearing key of each speaker-source entry, judged by the ONE
+#: content predicate. ``performance_order`` entries carry references only and
+#: therefore have no content surface -- that is deliberate, not an oversight.
+SPEAKER_CONTENT_KEYS = {
+    "spoken_dialogue": ("text",),
+    "sung_lyrics": ("text",),
+    "named_actions": ("action",),
+    "featured_reactions": ("reaction",),
+    "singled_out": ("reason", "note", "detail"),
+}
+
+#: The ONE content predicate. A token is real content only if it is alphabetic,
+#: at least 3 characters, carries a vowel, is not one repeated character, is not
+#: a keyboard run and is not filler. Length alone never counts: every
+#: string-content surface routes through ``_token_ok`` / ``_real_text``.
+FILLER_TOKENS = frozenset((
+    "zzz", "abc", "aaa", "bbb", "foo", "bar", "baz", "test", "stuff",
+    "things", "blah", "lorem", "ipsum", "placeholder", "tbd", "na",
+    "none", "xyz",
+))
+_VOWELS = frozenset("aeiou")
+_KEYBOARD_RUNS = ("qwertyuiop", "asdfghjkl", "zxcvbnm",
+                  "qaz", "wsx", "edc", "rfv", "tgb", "yhn", "ujm")
 
 #: Every substantive cast and crowd field is judged by TYPE AND CONTENT, never
 #: by presence alone: a boolean, a number, ``""`` and a one-character token are
@@ -141,10 +181,6 @@ def _text(value):
     return isinstance(value, str) and value.strip() != ""
 
 
-def _word_count(value):
-    return len(value.split()) if _text(value) else 0
-
-
 def _is_anonymous(value):
     if not _text(value):
         return False
@@ -152,9 +188,46 @@ def _is_anonymous(value):
     return any(lowered == p or lowered.startswith(p + " ") for p in ANONYMOUS_SPEAKER_PATTERNS)
 
 
+def _token_ok(token):
+    """THE content predicate. One token is real content only if it passes all of:
+    alphabetic, >= 3 characters, has a vowel, not one repeated character, not a
+    keyboard run, not filler. This is the only test of "does this say something".
+    """
+    if not isinstance(token, str):
+        return False
+    t = token.strip().lower()
+    if len(t) < 3 or not t.isalpha():
+        return False
+    if not (_VOWELS & set(t)) or len(set(t)) == 1:
+        return False
+    if t in FILLER_TOKENS:
+        return False
+    for run in _KEYBOARD_RUNS:
+        if t in run or t in run[::-1]:
+            return False
+    return True
+
+
+def _tokens(value):
+    return re.findall(r"[A-Za-z]+", value) if isinstance(value, str) else []
+
+
+def _pure_filler(value):
+    """A single filler-shaped token: filler set, one repeated character, a
+    keyboard run or a stub under 3 characters. Never real content in a list."""
+    if not _text(value):
+        return True
+    words = _tokens(value)
+    if len(words) != 1:
+        return False
+    t = words[0].lower()
+    return not _token_ok(t)
+
+
 def _real_text(value):
-    """Real content: text that says something. Booleans, numbers and "x" fail."""
-    return _text(value) and (len(value.strip()) >= 3 or _word_count(value) >= 2)
+    """Real content: text that says something. Booleans, numbers, "x", "zzz",
+    "abc" and "x y z" all fail because no token in them passes ``_token_ok``."""
+    return _text(value) and any(_token_ok(t) for t in _tokens(value))
 
 
 def _episode_role_ok(value):
@@ -166,15 +239,38 @@ def _episode_role_ok(value):
         and any(w in EPISODE_ROLE_HEADS for w in words)
 
 
+def _id_ok(value):
+    """An identifier is opaque SHAPE, not prose.
+
+    A coded id ("identity-digest-1", "3f2a9c") is judged on shape, because a
+    digest is real without being a word. A purely alphabetic id must still look
+    like a word, so it goes through the one content predicate: "bdf", "gym",
+    "zzz", "asdf" are refused. Whitespace, stubs under 3 characters and bare
+    filler are refused in every case.
+    """
+    if not _text(value):
+        return False
+    t = value.strip()
+    if any(c.isspace() for c in t):
+        return False
+    if len(t) < 3 or t.lower() in FILLER_TOKENS or len(set(t.lower())) == 1:
+        return False
+    if t.isalpha():
+        return _token_ok(t)
+    return re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]*", t) is not None
+
+
 def _content_issue(value, kind):
     """The named reason ``value`` fails to be ``kind`` of real content, else None.
 
-    Kinds: ``text`` (non-empty prose), ``id`` (a non-empty string), ``text_list``
+    Kinds: ``id`` (an identifier string), ``text`` (non-empty prose), ``text_list``
     (non-empty list of real strings), ``text_or_list``, ``prose`` (text, a list
-    of real strings, or a non-empty record). Presence never counts as content.
+    of real strings, or a record judged on its VALUES). Every kind routes its
+    string judgements through the one predicate, ``_token_ok``. Presence never
+    counts as content, and a record is never content merely for being non-empty.
     """
     if kind == "id":
-        return None if _text(value) else "not an id string"
+        return None if _id_ok(value) else "not an id string"
     if kind == "text":
         if not _text(value):
             return "not a string"
@@ -184,7 +280,12 @@ def _content_issue(value, kind):
             return "not a list"
         if not value:
             return "empty"
-        return None if all(_real_text(v) for v in value) \
+        # Every entry must be a string that is not bare filler, and the list as
+        # a whole must carry at least one token that passes the predicate. A
+        # one-item list of filler is refused by both limbs.
+        if not all(isinstance(v, str) and not _pure_filler(v) for v in value):
+            return "list entries must be strings with real content"
+        return None if any(_real_text(v) for v in value) \
             else "list entries must be strings with real content"
     if kind == "text_or_list":
         if isinstance(value, (list, tuple)):
@@ -192,7 +293,12 @@ def _content_issue(value, kind):
         return _content_issue(value, "text")
     if kind == "prose":
         if isinstance(value, dict):
-            return None if not _blank(value) else "no real content"
+            if not value:
+                return "no real content"
+            # Judge the VALUES, not the container: {"a": 1} is refused because
+            # no value says anything, however non-empty the record looks.
+            return None if any(_content_issue(v, "prose") is None
+                               for v in value.values()) else "no real content"
         if isinstance(value, (list, tuple)):
             return _content_issue(value, "text_list")
         return _content_issue(value, "text")
@@ -244,10 +350,7 @@ def validate_crowd_group(group, scene_ids=None, cast_ids=None):
                                    "crowd_groups.crowd_group_id: a crowd group id is a non-empty string"))
 
     composition = group.get("composition")
-    if isinstance(composition, list):
-        composition_ok = _content_issue(composition, "text_list") is None
-    else:
-        composition_ok = _word_count(composition) >= 3
+    composition_ok = _content_issue(composition, "prose") is None
     if not composition_ok:
         defects.append(_defect("crowd_groups.composition",
                                "no explicit composition of the crowd", ref,
@@ -262,11 +365,11 @@ def validate_crowd_group(group, scene_ids=None, cast_ids=None):
         if issue:
             defects.append(_defect("crowd_groups.age_range", issue, ref))
     roles = group.get("roles")
-    if not (isinstance(roles, list) and roles and all(_real_text(r) for r in roles)):
+    if _content_issue(roles, "text_list") is not None:
         defects.append(_defect("crowd_groups.roles", "no relevant roles", ref))
 
     group_scenes = group.get("scene_ids")
-    if not (isinstance(group_scenes, list) and group_scenes and all(_text(s) for s in group_scenes)):
+    if not (isinstance(group_scenes, list) and group_scenes and all(_id_ok(s) for s in group_scenes)):
         defects.append(_defect("crowd_groups.scene_ids", "no allowed scene", ref))
         group_scenes = []
     elif scene_ids is not None:
@@ -284,7 +387,7 @@ def validate_crowd_group(group, scene_ids=None, cast_ids=None):
             if _blank(placements.get(sid)):
                 defects.append(_defect("crowd_groups.location_placement",
                                        "no placement for scene", dict(ref, scene_id=sid)))
-            elif not _real_text(placements.get(sid)):
+            elif _content_issue(placements.get(sid), "prose") is not None:
                 defects.append(_defect("crowd_groups.location_placement",
                                        "placement is not real text", dict(ref, scene_id=sid)))
 
@@ -300,9 +403,22 @@ def validate_crowd_group(group, scene_ids=None, cast_ids=None):
             defects.append(_defect("crowd_groups." + field, issue, ref))
 
     # A crowd may not carry dialogue unless every speaking member is individualized.
-    individual = group.get("individualized_member_ids") or group.get("singled_out_members") or []
-    if not isinstance(individual, list):
-        individual = [individual]
+    raw_individual = group.get("individualized_member_ids")
+    if raw_individual is None:
+        raw_individual = group.get("singled_out_members")
+    if raw_individual is None:
+        individual = []
+    elif isinstance(raw_individual, (list, tuple)):
+        individual = list(raw_individual)
+        if not individual:
+            defects.append(_defect("crowd_groups.individualized_member_ids",
+                                   "empty", ref,
+                                   "crowd_groups.individualized_member_ids: listed but empty; "
+                                   "name the members or drop the key"))
+    else:
+        individual = [raw_individual]
+        defects.append(_defect("crowd_groups.individualized_member_ids",
+                               "not a list of character ids", ref))
     dialogue = group.get("dialogue")
     dialogue_value = dialogue.strip().upper() if _text(dialogue) else None
     if _blank(dialogue):
@@ -311,18 +427,25 @@ def validate_crowd_group(group, scene_ids=None, cast_ids=None):
     elif not _text(dialogue):
         defects.append(_defect("crowd_groups.dialogue",
                                "dialogue rule is not a string", ref))
+    elif dialogue_value not in CROWD_DIALOGUE_VOCABULARY:
+        # Membership, not length: "zzz" and "ALLOW ANYTHING" are non-empty text
+        # and are still refused because neither is a declared dialogue policy.
+        defects.append(_defect("crowd_groups.dialogue",
+                               "dialogue rule is not a declared dialogue policy", ref,
+                               "crowd_groups.dialogue: '%s' is not a dialogue policy; use one of %s"
+                               % (dialogue_value, ", ".join(CROWD_DIALOGUE_VOCABULARY))))
     elif dialogue_value not in _CROWD_DIALOGUE_PROHIBITED and not individual:
         defects.append(_defect("crowd_groups.dialogue",
                                "dialogue permits members never individualized", ref))
     for member in individual:
-        if not _text(member):
-            defects.append(_defect("crowd_groups.individualized_member_ids",
-                                   "member is not an individual character_id", ref))
-        elif _is_anonymous(member):
+        if _is_anonymous(member):
             defects.append(_defect("crowd_groups.individualized_member_ids",
                                    "anonymous description where a character_id is required",
                                    dict(ref, member=member),
                                    "promote '%s' to a full identity with a stable ID" % member))
+        elif _content_issue(member, "id") is not None:
+            defects.append(_defect("crowd_groups.individualized_member_ids",
+                                   "member is not an individual character_id", ref))
         elif cast_ids is not None and member not in cast_ids:
             defects.append(_defect("crowd_groups.individualized_member_ids",
                                    "singled-out member is not in the cast",
@@ -358,10 +481,14 @@ def _scene_defects(scene, cast_ids, crowd_ids, crowd_scenes=None):
     sid = scene.get("scene_id") if isinstance(scene, dict) else None
     if not isinstance(scene, dict):
         return [_defect("scene_plan", "scene not an object")]
-    if not _text(sid):
+    if _blank(sid):
         defects.append(_defect("scene.scene_id", "empty",
                                {"scene_id": sid},
                                "scene: scene_id must be a non-empty string"))
+    elif _content_issue(sid, "id") is not None:
+        defects.append(_defect("scene.scene_id", "not an id string",
+                               {"scene_id": sid},
+                               "scene: scene_id must be a real identifier, not filler"))
     # The scene cast field fails closed: absent, empty and malformed are each
     # refused by name. A scene that names real people can never hide behind an
     # omitted cast list.
@@ -382,14 +509,14 @@ def _scene_defects(scene, cast_ids, crowd_ids, crowd_scenes=None):
                                    {"scene_id": sid},
                                    "scene %s: cast field must be a list of character_ids" % sid))
             scene_cast = []
-    scene_cast_set = {c for c in scene_cast if _text(c)}
+    scene_cast_set = {c for c in scene_cast if _id_ok(c)}
 
     for cid in scene_cast:
         if _blank(cid):
             defects.append(_defect("scene.cast_ids", "cast id empty",
                                    {"scene_id": sid, "character_id": cid},
                                    "scene %s: cast_ids entry is empty; each entry is a declared character_id" % sid))
-        elif not _text(cid) or cid not in cast_ids:
+        elif not _id_ok(cid) or cid not in cast_ids:
             defects.append(_defect("scene.cast_ids", "cast id not declared in manifest",
                                    {"scene_id": sid, "character_id": cid}))
 
@@ -401,7 +528,7 @@ def _scene_defects(scene, cast_ids, crowd_ids, crowd_scenes=None):
         crowd_refs = []
     for cgid in crowd_refs:
         ref = {"scene_id": sid, "crowd_group_id": cgid}
-        if not _text(cgid):
+        if not _id_ok(cgid):
             defects.append(_defect("scene.crowd_group_ids", "crowd group id is not text", ref))
         elif cgid not in crowd_ids:
             defects.append(_defect("scene.crowd_group_ids", "undefined crowd group", ref))
@@ -419,6 +546,26 @@ def _scene_defects(scene, cast_ids, crowd_ids, crowd_scenes=None):
                                        "crowd group not permitted in this scene", ref,
                                        "scene %s: crowd group %s allows only %s; a crowd may not sit "
                                        "in a scene its own record forbids" % (sid, cgid, sorted(allowed))))
+
+    # The words on screen are content too: a line, an action or a reaction whose
+    # payload is filler is refused on the same predicate as everything else.
+    for field, keys in SPEAKER_CONTENT_KEYS.items():
+        for index, entry in enumerate(scene.get(field) or []):
+            if not isinstance(entry, dict):
+                continue
+            for key in keys:
+                if key not in entry:
+                    continue
+                if _blank(entry[key]):
+                    defects.append(_defect("scene." + field, "empty " + key,
+                                           {"scene_id": sid, "line_id": entry.get("line_id")},
+                                           "scene %s: %s has no %s; write the words or drop the entry"
+                                           % (sid, field, key)))
+                elif _content_issue(entry[key], "prose") is not None:
+                    defects.append(_defect("scene." + field, "no real content in " + key,
+                                           {"scene_id": sid, "line_id": entry.get("line_id"),
+                                            "index": index},
+                                           "scene %s: %s %s is filler, not content" % (sid, field, key)))
 
     for entry in derive_speakers([scene]):
         cid = entry.get("character_id")
@@ -451,7 +598,14 @@ def validate_cast(manifest, scenes=None):
         return {"ok": False, "defect_count": 1,
                 "defects": [_defect("cast_manifest", "missing; cast fields cannot be omitted")]}
 
-    defects = list(validate_cast_manifest(manifest, scenes))
+    try:
+        defects = list(validate_cast_manifest(manifest, scenes))
+    except TypeError:
+        # The S75-T03 envelope hashes character_id, so a list or record there
+        # raises instead of reporting. A bad id is a defect, never a crash.
+        defects = [_defect("cast.character_id", "not a usable id", {"character_id": None},
+                           "cast entry: character_id must be a plain string id; "
+                           "a list or record is refused, not coerced")]
     # The S75-T03 envelope reports field/issue; this packet adds one message.
     for defect in defects:
         defect.setdefault("message", "%s: %s" % (defect.get("field"), defect.get("issue")))
@@ -493,7 +647,7 @@ def validate_cast(manifest, scenes=None):
                     defects.append(_defect("cast.immediate_story_function", "not a string", ref,
                                            "cast entry %s: immediate_story_function must be a string, "
                                            "never a boolean" % ref["character_id"]))
-                elif not _real_text(value):
+                elif _content_issue(value, "text") is not None:
                     defects.append(_defect("cast.immediate_story_function", "no real content", ref,
                                            "cast entry %s: immediate_story_function must say what the "
                                            "character does in this episode" % ref["character_id"]))
@@ -503,20 +657,29 @@ def validate_cast(manifest, scenes=None):
                     defects.append(_defect("cast.choice_or_consequence", issue, ref,
                                            "cast entry %s: choice_or_consequence must be a string or a "
                                            "list of strings with real content" % ref["character_id"]))
-            elif field == "scene_ids" and not (isinstance(value, list) and all(_text(s) for s in value)):
+            elif field == "scene_ids" and not (isinstance(value, list) and value
+                                               and all(_id_ok(s) for s in value)):
                 defects.append(_defect("cast.scene_ids", "not a list of scene ids", ref,
                                        "cast entry %s: scene_ids must be a non-empty list of scene ids" % ref["character_id"]))
-            elif field == "identity_revision" and (isinstance(value, bool) or not isinstance(value, int)) \
-                    and not (isinstance(value, dict) and not _blank(value)):
-                defects.append(_defect("cast.identity_revision", "not a revision", ref,
-                                       "cast entry %s: identity_revision must be an integer or a revision record" % ref["character_id"]))
-    cast_ids = {e.get("character_id") for e in entries if _text(e.get("character_id"))}
+            elif field == "identity_revision":
+                is_int = isinstance(value, int) and not isinstance(value, bool)
+                # A revision record is judged on its VALUES: {"a": 1} is refused.
+                is_record = isinstance(value, dict) and _content_issue(value, "prose") is None
+                if not (is_int or is_record):
+                    defects.append(_defect("cast.identity_revision", "not a revision", ref,
+                                           "cast entry %s: identity_revision must be an integer or a revision record" % ref["character_id"]))
+    cast_ids = {e.get("character_id") for e in entries if _id_ok(e.get("character_id"))}
     scene_ids = {s.get("scene_id") for s in scenes
                  if isinstance(s, dict) and _text(s.get("scene_id"))}
 
     for entry in entries:
-        for sid in entry.get("scene_ids") or []:
-            if scene_ids and sid not in scene_ids:
+        listed = entry.get("scene_ids")
+        for sid in (listed if isinstance(listed, (list, tuple)) else []):
+            if not _id_ok(sid):
+                defects.append(_defect("cast.scene_ids", "not a scene id",
+                                       {"character_id": entry.get("character_id"),
+                                        "scene_id": sid if isinstance(sid, str) else None}))
+            elif scene_ids and sid not in scene_ids:
                 defects.append(_defect("cast.scene_ids", "undefined scene",
                                        {"character_id": entry.get("character_id"),
                                         "scene_id": sid}))
@@ -529,13 +692,14 @@ def validate_cast(manifest, scenes=None):
     crowd_scenes = {}
     for group in groups:
         gid = group.get("crowd_group_id") if isinstance(group, dict) else None
+        gid = gid if _id_ok(gid) else None
         if gid and gid in crowd_ids:
             defects.append(_defect("crowd_groups", "duplicate crowd_group_id", gid))
         if gid:
             crowd_ids.add(gid)
             listed = group.get("scene_ids") if isinstance(group, dict) else None
             crowd_scenes[gid] = set(listed) if (isinstance(listed, (list, tuple))
-                                                and listed and all(_text(s) for s in listed)) else None
+                                                and listed and all(_id_ok(s) for s in listed)) else None
         defects.extend(validate_crowd_group(group, scene_ids or None, cast_ids))
 
     for scene in scenes:
@@ -544,7 +708,8 @@ def validate_cast(manifest, scenes=None):
     seen = set()
     unique = []
     for defect in defects:
-        key = (defect["field"], defect["issue"], repr(sorted((defect.get("ref") or {}).items())))
+        key = (defect["field"], defect["issue"],
+               repr(sorted((str(k), repr(v)) for k, v in (defect.get("ref") or {}).items())))
         if key not in seen:
             seen.add(key)
             unique.append(defect)

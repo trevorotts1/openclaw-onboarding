@@ -264,6 +264,178 @@ def test_crowd_fields_refuse_numbers_booleans_and_token_lists():
         assert any(d["field"] == field for d in packet["defects"]), (patch, packet["defects"])
 
 
+# --- round 4: filler is not content, on every surface ----------------------
+#
+# These proofs are written against FILLER SHAPES, not against the strings one
+# particular reviewer happened to type: repeated characters, keyboard runs,
+# 3-character consonant clusters, token soup, one-item filler lists, records
+# whose VALUES are filler, and nested filler. Each is paired with a positive
+# control so the predicate cannot pass by refusing everything.
+
+FILLER_STRINGS = (
+    "zzz", "abc", "aaa", "bbb", "foo", "bar", "baz", "test", "stuff", "things",
+    "blah", "lorem", "ipsum", "placeholder", "tbd", "na", "none", "xyz",
+    "xxx", "qqq", "asdf", "qwer", "zxcv", "bdf", "str", "png", "gym",
+    "x y z", "x", "ab", "", "   ",
+)
+FILLER_STRUCTS = (
+    ["zzz"], ["abc"], ["foo", "bar"], ["x"], ["zzz", "She tells the truth."],
+    {"a": "zzz"}, {"a": 1}, {"a": {"b": "zzz"}}, [{"x": "zzz"}],
+)
+
+#: Every string-content surface: (label, patch builder).
+def _cast_surface(field):
+    return ("cast." + field,
+            lambda v: {"cast_entry_patch": {"index": 0, "set": {field: v}}})
+
+
+def _crowd_surface(field):
+    return ("crowd_groups." + field, lambda v: {"crowd_patch": {field: v}})
+
+
+def _scene_surface(field, key):
+    def patch(v):
+        entry = {"line_id": "line_probe", "character_id": "char_mara_001", key: v}
+        return {"scene_patch": {field: [entry]}}
+    return ("scene." + field + "." + key, patch)
+
+
+CONTENT_SURFACES = [
+    _cast_surface("character_id"), _cast_surface("identity_digest"),
+    _cast_surface("episode_role"), _cast_surface("scene_ids"),
+    _cast_surface("immediate_story_function"), _cast_surface("choice_or_consequence"),
+    _cast_surface("identity_revision"),
+    _crowd_surface("crowd_group_id"), _crowd_surface("composition"),
+    _crowd_surface("age_range"), _crowd_surface("roles"),
+    _crowd_surface("collective_behavior"), _crowd_surface("permitted_motion"),
+    _crowd_surface("attention_direction"), _crowd_surface("interaction_with_leads"),
+    _crowd_surface("wardrobe_palette"), _crowd_surface("camera_limits"),
+    _crowd_surface("entry_exit_rule"), _crowd_surface("recurrence"),
+    _crowd_surface("reference_provenance"), _crowd_surface("scene_ids"),
+    _crowd_surface("individualized_member_ids"),
+    _scene_surface("spoken_dialogue", "text"), _scene_surface("sung_lyrics", "text"),
+    _scene_surface("named_actions", "action"), _scene_surface("featured_reactions", "reaction"),
+]
+
+REAL_SENTENCE = "Disclosure shifts her from isolation to shared responsibility."
+REAL_SENTENCE_2 = "Must choose to expose the hidden warning."
+
+
+def test_filler_is_refused_on_every_string_content_surface():
+    """Presence is not content and length is not content: no surface takes filler."""
+    data = _fixture()
+    holes = []
+    for label, patch in CONTENT_SURFACES:
+        for value in FILLER_STRINGS + FILLER_STRUCTS:
+            packet = CV.validate_cast(*_case(data, patch(value)))
+            if packet["ok"]:
+                holes.append((label, repr(value)))
+    for value in FILLER_STRINGS + FILLER_STRUCTS:
+        packet = CV.validate_cast(*_case(data, {"crowd_patch":
+                                                {"location_placement":
+                                                 {"scene_workshop_001": value}}}))
+        if packet["ok"]:
+            holes.append(("crowd_groups.location_placement", repr(value)))
+    assert not holes, holes
+
+
+def test_repeated_characters_keyboard_runs_and_consonant_clusters_are_filler():
+    """The named filler shapes, each refused as a bare token."""
+    data = _fixture()
+    for value in ("xxx", "qqq", "aaa", "bbb", "asdf", "qwer", "zxcv",
+                  "bdf", "str", "png", "gym", "x y z"):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch":
+                                                {"index": 0,
+                                                 "set": {"immediate_story_function": value}}}))
+        assert packet["ok"] is False, value
+        assert _matching(packet, {"field": "cast.immediate_story_function",
+                                  "issue_contains": "no real content"}), (value, packet["defects"])
+
+
+def test_one_item_filler_lists_and_filler_records_are_refused():
+    """A one-item filler list and a record whose values are filler are both out."""
+    data = _fixture()
+    for value in (["zzz"], ["abc"], ["aaa"], ["foo"], {"a": "zzz"}, {"a": 1},
+                  {"a": {"b": "zzz"}}, [{"x": "zzz"}], ["zzz", "She tells the truth."]):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch":
+                                                {"index": 0, "set": {"choice_or_consequence": value}}}))
+        assert packet["ok"] is False, value
+        assert _matching(packet, {"field": "cast.choice_or_consequence",
+                                  "issue_contains": ""}), (value, packet["defects"])
+
+
+def test_records_are_judged_on_their_values_not_on_being_non_empty():
+    """age_range={"a": 1} is a non-empty record and still has no content."""
+    data = _fixture()
+    for value in ({"a": 1}, {"a": "zzz"}, {"a": {"b": "zzz"}}, {"count": 4}):
+        packet = CV.validate_cast(*_case(data, {"crowd_patch": {"age_range": value}}))
+        assert packet["ok"] is False, value
+        assert _matching(packet, {"field": "crowd_groups.age_range",
+                                  "issue_contains": "no real content"}), (value, packet["defects"])
+    good = CV.validate_cast(*_case(data, {"crowd_patch":
+                                          {"age_range": {"youngest": "late twenties",
+                                                         "oldest": "early sixties"}}}))
+    assert good["ok"] is True, good["defects"]
+
+
+def test_positive_controls_accept_real_content():
+    """No over-refusal: real sentences, roles, consequences and ids still pass."""
+    data = _fixture()
+    positives = (
+        {"cast_entry_patch": {"index": 0, "set": {"immediate_story_function": REAL_SENTENCE}}},
+        {"cast_entry_patch": {"index": 0, "set": {"choice_or_consequence": REAL_SENTENCE}}},
+        {"cast_entry_patch": {"index": 0, "set": {"choice_or_consequence":
+                                                  ["She tells the truth.", "The ledger opens."]}}},
+        {"cast_entry_patch": {"index": 0, "set": {"episode_role": "supporting partner"}}},
+        {"cast_entry_patch": {"index": 1, "set": {"episode_role": "antagonist"}}},
+        {"crowd_patch": {"composition": "four adult repair customers waiting in an ordinary queue"}},
+        {"crowd_patch": {"composition": ["repair customers", "waiting couriers"]}},
+        {"crowd_patch": {"age_range": "adults 25-60"}},
+        {"crowd_patch": {"roles": ["waiting customers"]}},
+        {"crowd_patch": {"location_placement": {"scene_workshop_001":
+                                                "two seated beside the north wall"}}},
+        {"scene_patch": {"spoken_dialogue": [{"line_id": "line_probe",
+                                              "character_id": "char_mara_001",
+                                              "text": "If I lock that door, their checks bounce tomorrow."}]}},
+        {"scene_patch": {"named_actions": [{"character_id": "char_levi_002",
+                                            "action": "opens the ledger where Mara can read it"}]}},
+    )
+    for patch in positives:
+        packet = CV.validate_cast(*_case(data, patch))
+        assert packet["ok"] is True, (patch, packet["defects"])
+
+
+def test_crowd_dialogue_is_membership_in_a_closed_vocabulary():
+    """Length never qualifies a policy token; only membership does."""
+    data = _fixture()
+    for value in ("zzz", "abc", "ALLOW ANYTHING", "asdf", "blah"):
+        packet = CV.validate_cast(*_case(data, {"crowd_patch": {"dialogue": value}}))
+        assert packet["ok"] is False, value
+        assert _matching(packet, {"field": "crowd_groups.dialogue",
+                                  "issue_contains": "dialogue policy"}), (value, packet["defects"])
+    for value in ("PROHIBITED", "INDIVIDUALIZED_ONLY"):
+        patch = {"dialogue": value}
+        if value != "PROHIBITED":
+            patch["individualized_member_ids"] = ["char_mara_001"]
+        packet = CV.validate_cast(*_case(data, {"crowd_patch": patch}))
+        assert packet["ok"] is True, (value, packet["defects"])
+
+
+def test_identifiers_are_shape_not_prose_but_filler_is_still_refused():
+    """A digest is opaque and need not be a word; a word-like id still must be one."""
+    data = _fixture()
+    for value in ("identity-digest-2", "3f2a9c7b", "char_levi_002"):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch":
+                                                {"index": 0, "set": {"identity_digest": value}}}))
+        assert packet["ok"] is True, (value, packet["defects"])
+    for value in ("zzz", "abc", "xxx", "asdf", "bdf", "gym", "x y z", "ab", ""):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch":
+                                                {"index": 0, "set": {"identity_digest": value}}}))
+        assert packet["ok"] is False, value
+        assert _matching(packet, {"field": "cast.identity_digest",
+                                  "issue_contains": ""}), (value, packet["defects"])
+
+
 if __name__ == "__main__":
     tests = [(name, fn) for name, fn in sorted(globals().items())
              if name.startswith("test_") and callable(fn)]
