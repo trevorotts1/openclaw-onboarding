@@ -187,15 +187,37 @@ def _models_q():
             "recommended": 0}
 
 
+def _duration_options(episode=False):
+    """The owner's six durations, in the canonical registry's order.
+
+    Retained card labels and descriptions are unchanged. The restored 120 s
+    row uses the registry's existing "2 minutes" label; no new story claim is
+    invented for it. A purpose never removes a chosen canonical duration.
+    """
+    from music_styles import music_styles as MS
+    rows = {
+        60: ("60 seconds", "The standard ad length."),
+        90: ("90 seconds", "Room for a fuller story."),
+        120: ("2 minutes", None),
+        180: ("3 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
+        300: ("5 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
+        600: ("10 minutes (the long version) + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
+    }
+    if episode:
+        rows.update({
+            180: ("3 minutes", "one full story with room for the turn and the offer."),
+            300: ("5 minutes", "a deeper story with more of the solution at work."),
+            600: ("10 minutes", "the long version, a full show episode. "
+                  "(made with KIE, not Agnes)"),
+        })
+    return [rows[seconds] for seconds in MS.CANONICAL_DURATION_S]
+
+
 def _questions():
     return [
         _models_q(),
         {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long do you want your ad to be? The longer ads also come with short clips you can post on social media.",
-         "options": [("60 seconds", "The standard ad length."),
-                     ("90 seconds", "Room for a fuller story."),
-                     ("3 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
-                     ("5 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
-                     ("10 minutes (the long version) + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip.")],
+         "options": _duration_options(),
          "recommended": 0},
         {"id": "music", "why": "The song carries the feeling of the whole ad.", "reason": "it is the style that tests best for emotional stories.", "label": "MUSIC STYLE", "ask": "Which sound fits your story?",
          "options": _musics(), "recommended": 0},
@@ -294,11 +316,6 @@ _OUTPUT_TYPES = {
     "paid_ad": ["STANDALONE_SALES_EDIT"],
     "short_post": ["STANDALONE_SALES_EDIT"],
 }
-
-#: The LENGTH seconds each use offers (SPEC B2). 30 seconds is Trevor's
-#: 2026-10-13 paid-ad addition; the campaign is asked as EPISODE LENGTH instead.
-_LENGTH_KEEP = {"testimonial": (60, 90, 180), "lesson": (60, 90, 180),
-                "paid_ad": (30, 60, 90), "short_post": (60, 90)}
 
 #: Trevor 2026-10-13: Agnes is capped at five minutes, so the AGNES question is
 #: asked only when the chosen length can be made with it (SPEC A15).
@@ -433,19 +450,15 @@ def _purpose_q():
 def _episode_length_q():
     """The campaign's one follow-up (METHOD-INTEGRATION 3.2). It takes LENGTH's
     own slot, so a campaign grows by the PURPOSE question and nothing else."""
+    from music_styles import music_styles as MS
     return {"id": "episode_length", "label": "EPISODE LENGTH",
             "why": "The full episode lives on your YouTube channel; the trailers bring "
                    "people to it.",
             "reason": "it is the shortest episode that still earns two good trailers.",
             "ask": "How long should the full episode be? Your 60-second and 90-second "
                    "trailers and ad clips are included.",
-            "options": [("3 minutes", "one full story with room for the turn and the offer."),
-                        ("5 minutes", "a deeper story with more of the solution at work."),
-                        ("7 minutes", "a fuller episode with another real step of the "
-                         "solution. (made with KIE, not Agnes)"),
-                        ("10 minutes", "the long version, a full show episode. "
-                         "(made with KIE, not Agnes)")],
-            "recommended": 0}
+            "options": _duration_options(episode=True),
+            "recommended": MS.CANONICAL_DURATION_S.index(180)}
 
 
 def _shape_q():
@@ -507,25 +520,9 @@ def _agnes_q(remembered):
             "closing": "Reply with a number."}
 
 
-_LENGTH_30 = ("30 seconds", "the shortest length that still tells the whole story.")
-
-
 def _length_q(key):
-    """LENGTH, filtered to the options the use really offers (SPEC B2). The
-    option text comes from the card's own LENGTH question, so the two can never
-    drift; only the 30-second paid-ad option is new."""
-    base = next(q for q in QUESTIONS if q["id"] == "length")
-    keep = _LENGTH_KEEP.get(key)
-    if not keep:
-        return base
-    opts = ([_LENGTH_30] if 30 in keep else []) + list(base["options"])
-    opts = [o for o in opts if _vm().length_seconds(o[0]) in keep]
-    return dict(base, options=opts,
-                #: the standard length stays the recommendation on every use
-                #: (METHOD-INTEGRATION 3.2); the 30-second ad is an option, not
-                #: a new recommendation.
-                recommended=next(i for i, o in enumerate(opts)
-                                 if _vm().length_seconds(o[0]) == 60))
+    """Every purpose retains the owner's six canonical duration choices."""
+    return next(q for q in QUESTIONS if q["id"] == "length")
 
 
 def _answered(answers, ids, qid):
@@ -721,7 +718,7 @@ def _shaped(qs, answers, client_dir=None):
         if q["id"] == "look":
             remembered = (_agnes_remembered(client_dir) if length_text
                           and _vm().length_seconds(length_text) <= _AGNES_MAX_LENGTH_S
-                          else None)         # 7 and 10 minute episodes are KIE-only
+                          else None)         # episodes over five minutes are KIE-only
             if remembered and remembered != "no":
                 place(_agnes_q(remembered))
             agnes_yes = _pick(pos, answers, "agnes") == 1
@@ -866,6 +863,9 @@ def render_step(i, questions=None):
         lines += [q["why"], ""]
     lines.append(q["ask"])
     lines += _option_lines(q)
+    if q["id"] == "agnes":
+        from choice_card.intake_card.agnes_explanation import lines as explanation_lines
+        lines += [""] + explanation_lines()
     r = q.get("recommended", 0)
     if r is None:
         # nothing to recommend: the BUDGET asks for an amount, a yes/no
@@ -1552,7 +1552,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Print the intake card (%d questions, the same total with "
                     "a saved character)." % len(QUESTIONS))
-    ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json", "studio-json"),
+    ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json", "studio-json", "session-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "
                          "openclaw-json / telegram-json: one send payload per message. "
@@ -1563,6 +1563,12 @@ def main(argv=None):
                          "given every --reply the client has sent so far (I7)")
     ap.add_argument("--reply", action="append", default=[],
                     help="a client reply, in order (repeat the flag)")
+    ap.add_argument("--question-id", default=None,
+                    help="Question identity from the last rendered session response.")
+    ap.add_argument("--question-digest", default=None,
+                    help="Digest of the exact question and options being answered.")
+    ap.add_argument("--reply-source", default="client",
+                    help="Answer provenance; client choices require client evidence.")
     ap.add_argument("--run-state-file", default="",
                     help="with --step and no replies: send the one-time intro as its "
                          "own message first (recorded as intro_shown in this file)")
@@ -1609,6 +1615,9 @@ def main(argv=None):
             return 1                               # refuse loudly, never a half file
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         return 0
+    if a.format == "session-json" or (a.step and (a.run_dir or a.run_state_file)):
+        from intake_preflight.card_session_cli import run
+        return run(a, questions=qs, purpose_flow=purpose_flow)
     if a.step:
         st = conversation(a.reply, qs, run_dir=a.run_dir or None, target=a.target or None,
                           client_dir=a.client_dir or None, purpose_flow=purpose_flow)
