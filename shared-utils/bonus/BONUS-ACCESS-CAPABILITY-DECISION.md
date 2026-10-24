@@ -63,10 +63,21 @@ completes with no email address.
   workflow action types** in Skill 44's engine
   (`44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py`,
   `VERIFIED_ACTIONS`).
-- The public interface cannot build or edit a workflow at all — its only workflow
-  operation is the read-only list; every automation build routes through the internal
-  engine, which requires the location's **Firebase refresh token**, not the PIT
-  (`44-convert-and-flow-operator/automation-templates/launch-ghl-probe/GHL-CAPABILITY-NOTE.md`).
+- In the **frozen v3 production spec** the public interface cannot create, update,
+  publish or delete a workflow definition at all — but it is not read-only either.
+  The registry carries three v3 workflow rows: a read, plus contact enrollment and
+  unenrollment against an **existing** workflow, which is neither authoring nor a
+  membership grant (`workflows.list`, `workflows.enroll`, `workflows.remove`,
+  documented level `D`, in
+  `44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py`).
+  Definition authoring — create, update, publish, delete and definition read —
+  appears only as v4 rows documented at **staging-doc** level (`S`), which the tenant
+  receipt does not verify. Every automation build therefore routes through the
+  internal engine, which requires the location's **Firebase refresh token**, not the
+  PIT
+  (`44-convert-and-flow-operator/automation-templates/launch-ghl-probe/GHL-CAPABILITY-NOTE.md`,
+  which scopes its own ceiling to the v2 and v3 specs and admits the enrollment row
+  is "enrollment only, not authoring").
 - The retired Tier-2 community MCP had the membership tool family (~15 courses /
   memberships tools) and its create/delete entries are documented as **possibly
   unverified shells** (`36-ghl-mcp-setup/ghl-mcp-setup-full.md`).
@@ -123,7 +134,7 @@ recovery completing without an email address.
 |---|---|---|
 | Public REST | Location Private Integration Token + per-operation `Version` header | No membership operation in the frozen registry |
 | Official MCP | OAuth only; a PIT sent to an MCP endpoint is **not** an equivalent auth path | Dynamic catalog; account grant and on-box observation not held |
-| CAF CLI / internal engine | PIT for standard operations; **location Firebase refresh token** for workflow build writes | Only `membership_grant_offer` as a workflow action type; workflows read-only on the public API |
+| CAF CLI / internal engine | PIT for standard operations; **location Firebase refresh token** for workflow build writes | Only `membership_grant_offer` as a workflow action type; no workflow authoring in the frozen v3 production spec — the public workflow rows there are a read plus contact enrollment and unenrollment against an existing workflow |
 | Managed browser | Gated singleton builder, one session, capture-locked anchors | Memberships area is UI; capture-pending anchors stop a live build |
 | Community MCP | **RETIRED** — absence is the required state | Never a route and never a fallback |
 | CUA | Approval-gated, bundled owner approval only | Not used |
@@ -131,8 +142,9 @@ recovery completing without an email address.
 **Tenant reality:** the installed capability receipt (`recorded_at: 2026-10-19`, tenant
 `Mct54Bwi1KlNouGXQcDX`) contains six verified reads —
 `locations.get`, `contacts.list`, `contacts.search`, `custom_fields.list`,
-`pipelines.list`, `media.files.list`. **No membership, course or community operation is
-tenant-verified.** An unverified route is reported incomplete, never as done.
+`pipelines.list`, `media.files.list`. **No membership, course, community or workflow
+operation is tenant-verified.** An unverified route is reported incomplete, never as
+done.
 
 ---
 
@@ -193,29 +205,52 @@ optional vendor, while **advertised bonus readiness still requires the capabilit
 |---|---|---|
 | "Is there a membership route?" | `shared-utils/ghl/capability_inventory.py` (`select_route`, `OpClass`, `Transport`) | One honest route table in the repo; `membership_inventory_routes()` reads it live and the test asserts `[]` |
 | Workflow action vocabulary | `44-convert-and-flow-operator/.../workflow_builder.py` (`VERIFIED_ACTIONS`) | The `membership_grant_offer` fact lives there already |
-| Read-only workflow ceiling | `44-convert-and-flow-operator/.../GHL-CAPABILITY-NOTE.md` | The API-ceiling table already pinned it |
+| Workflow authoring ceiling | `44-convert-and-flow-operator/.../GHL-CAPABILITY-NOTE.md` | The API-ceiling table already pinned it, scoped there to the v2 and v3 specs |
 
-No guard is reimplemented: the no-URL / no-verb-path scan is specific to this module's
-route surface, and it is a test, not a second production guard.
+No guard is reimplemented: the fabricated-API scan is specific to this module's route
+surface and source, and it is a test, not a second production guard. It catches every
+known smuggle shape — scheme URL, verb plus path in any case, a bare operation path, a
+schemeless host with a path, and a dotted operation id — and its own table pins both
+that each of those is caught and that ordinary repo paths and prose are not.
 
 ---
 
 ## 7. Proof
 
-Suite: `shared-utils/bonus/tests/test_access_capability.py` — **27 tests, OK**.
+Suite: `shared-utils/bonus/tests/test_access_capability.py` — **39 tests, OK**. The repair
+round added 12 tests to the original 27; the test file changed by **231 insertions and 0
+deletions**, so no existing assertion was weakened, changed or deleted.
 
-Mutation controls (each mutation applied to a throwaway copy, one thing at a time):
+### 7.1 Repair round — before and after, per defect
 
-| Mutation | Result |
-|---|---|
-| Every step promoted to `proved` | **8 failures** |
-| A fabricated membership URL returned as `api` | **4 failures** |
-| Original readiness coupled to the bonus lane | **2 failures** |
-| Restored control | **27 OK** |
+Independent QC reviewed the committed bytes at `2d5942e28` and returned FAIL on one scope
+clause plus five attack findings. The scope clause is resolved by the ledger owner's
+corrected wording: `38-conversational-ai-system/CHANGELOG.md` and `skill-version.txt` are
+repository-mandated release bookkeeping, carried in the same commit by every prior task
+commit in this repo. The five findings below were genuine defects and are repaired here.
+Each proof test runs against the pre-change bytes and fails there.
 
-Upstream suites re-run unchanged: `38-conversational-ai-system/scripts/qc-pb-contracts.sh`
-and `qc-playbook-engine.sh` (counts in the task report). No existing assertion was
-weakened or deleted.
+| Defect | Before (bytes at `2d5942e28`) | After | Proof test (fails before) |
+|---|---|---|---|
+| **D1 — a broken reuse path looked like a capability block.** `membership_inventory_routes()` swallowed `ImportError` and returned `[]`. | With `ghl` blocked at `sys.meta_path`, the call returned `[]`. The pinning test passed both with `shared-utils/ghl` present and with it removed — a broken reuse path and a real block were indistinguishable. | `BonusCapabilityError`, failing closed. The pinning test now carries an instrument control: the same call path returns 2 routes for the `workflows` family, so the memberships zero is discriminating. | `test_a_broken_reuse_path_fails_closed_and_is_never_a_capability_block` |
+| **D2 — the no-fabricated-API scan was evadable.** It pinned only "no scheme URL and no UPPER verb+path". | 2 of 6 smuggle shapes caught. Uncaught: a lowercase verb plus path, a bare quoted operation path, a schemeless host with a path, and a dotted operation id. | `_fabricated_api_hits` catches **6 of 6** and flags none of 10 legitimate strings (repo provenance paths, filenames, a shebang, an f-string path continuation, plain prose). | `test_the_scan_catches_every_known_smuggle_shape`, `test_the_scan_leaves_legitimate_text_alone` |
+| **D3 — the coupling guard leaked the wrong exception.** | `assert_original_not_gated_by_bonus(None / [] / "plan" / 1)` raised `AttributeError: 'X' object has no attribute 'get'`. | `BonusCapabilityError: plan must be a dict, got X`; a well-formed plan still returns `True`. | `test_the_guard_refuses_a_malformed_plan_with_the_domain_error` |
+| **D4 — a non-ready reason was silently coerced.** | `original_reason=None` accepted and stored the literal `"None"`; `original_reason=12345` stored `"12345"`. | Both refused with `BonusCapabilityError: original_reason must be a str`; a real reason still plans and is stored verbatim, padding trimmed. | `test_a_not_ready_original_reason_must_be_a_real_string` |
+| **D5 — the workflow ceiling was overstated.** Section 2.2 stated the ceiling as an absolute: that the public interface cannot build or edit a workflow, and that its only workflow operation is a read. The module claim called workflows read-only. | Both contradicted the registry they cite as authority: three v3 workflow rows exist (a read plus contact enrollment and unenrollment against an existing workflow) and five authoring rows sit at staging-doc level. | Both scoped to the **frozen v3 production spec**, with the enrollment rows named as not authoring and the authoring rows named as staging-doc level, which the tenant receipt does not verify. The `grant` step stays `retired_rail_only` — scoping the wording does not soften the block. | `test_the_evidence_doc_does_not_overstate_the_workflow_ceiling`, `test_the_module_claim_is_scoped_the_same_way`, `test_the_scoped_ceiling_does_not_change_the_block` |
+
+Mutation controls, each applied to one throwaway copy built with `git archive` (never inside
+a worktree), one mutation at a time, and refused unless the target string occurs the expected
+number of times:
+
+| Mutation | Shape | Result |
+|---|---|---|
+| Every step promoted to `proved` | `state=UNPROVED,` / `state=RETIRED_RAIL_ONLY,` → `state=PROVED,` (5 sites) | **9 failures** |
+| A fabricated membership URL returned as `api` | `"api": None,` → the vendor membership URL | **7 failures** |
+| Original readiness coupled to the bonus lane | `"blocked_by_bonus": False,` → `bool(route["blocked_steps"])` | **6 errors** — the coupling guard firing |
+| Restored control | — | **39 OK** |
+
+Upstream suites re-run unchanged and green: `38-conversational-ai-system/scripts/qc-pb-contracts.sh`
+**42 tests OK**, `qc-playbook-engine.sh` **44 tests OK**.
 
 ---
 

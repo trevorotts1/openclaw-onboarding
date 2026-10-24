@@ -132,9 +132,15 @@ EVIDENCE: Tuple[StepEvidence, ...] = (
         claim=(
             "Granting an offer exists only as an internal-workflow action type "
             "(`membership_grant_offer` / `membership_revoke_offer`) and as retired "
-            "community-MCP tools. The public interface cannot create or update a "
-            "workflow (workflows are read-only there), and the internal engine needs "
-            "the location's Firebase refresh token, not the PIT."
+            "community-MCP tools. In the frozen v3 production spec the public "
+            "interface cannot create, update, publish or delete a workflow "
+            "definition at all: its workflow rows are a read plus contact "
+            "enrollment and unenrollment against an EXISTING workflow, which is "
+            "not authoring and is not a membership grant. Definition authoring "
+            "appears only as v4 rows documented at staging-doc level, which the "
+            "tenant receipt does not verify. Every automation build routes "
+            "through the internal engine, which needs the location's Firebase "
+            "refresh token, not the PIT."
         ),
         provenance=(_ACTIONS, _MCPDOC, _CAPNOTE),
         authority=("R-13", "D-19", "DEC-16"),
@@ -222,11 +228,18 @@ def membership_inventory_routes() -> List[str]:
     Reuses `shared-utils/ghl/capability_inventory.py` instead of keeping a
     second table. Returns [] while the family is undocumented there, which is
     the honest answer, never "probably works".
+
+    Fails closed when the reuse path itself cannot be reached. A broken import
+    is an instrument failure, not a capability block: returning [] for it would
+    make a broken reuse path indistinguishable from a proven "no route".
     """
     try:
         from ghl import capability_inventory as inventory
-    except ImportError:  # pragma: no cover - import path is set by the caller
-        return []
+    except ImportError as exc:
+        raise BonusCapabilityError(
+            "the shared GHL capability inventory could not be imported "
+            f"({exc}); failing closed instead of reporting a capability block"
+        ) from exc
     routes = inventory.select_route(
         inventory.OpClass.EXECUTE,
         resource=MEMBERSHIP_RESOURCE,
@@ -326,6 +339,10 @@ def plan_fulfillment(
     The original lane is derived from its own inputs only. The bonus lane is
     always the capability decision. A non-ready original is reported for its
     own reason and never as "blocked by the bonus".
+
+    `original_reason` must be a real string. A non-string is refused, never
+    coerced: `str(None)` would store the literal "None" as the member-facing
+    reason a not-ready lane is required to name.
     """
     if not isinstance(original_ready, bool):
         raise BonusCapabilityError(
@@ -335,14 +352,18 @@ def plan_fulfillment(
         raise BonusCapabilityError(
             f"bonus_requested must be a bool, got {type(bonus_requested).__name__}"
         )
-    if not original_ready and not str(original_reason).strip():
+    if not isinstance(original_reason, str):
+        raise BonusCapabilityError(
+            f"original_reason must be a str, got {type(original_reason).__name__}"
+        )
+    if not original_ready and not original_reason.strip():
         raise BonusCapabilityError("a non-ready original lane must name its own reason")
 
     route = supported_route()
     original = {
         "route": "direct_chat",
         "ready": original_ready,
-        "reason": str(original_reason).strip(),
+        "reason": original_reason.strip(),
         "blocked_by_bonus": False,
         "depends_on_bonus": False,
     }
@@ -365,7 +386,14 @@ def plan_fulfillment(
 
 
 def assert_original_not_gated_by_bonus(plan: dict) -> bool:
-    """Guard: a plan may never gate the original gift on the bonus lane."""
+    """Guard: a plan may never gate the original gift on the bonus lane.
+
+    A malformed plan is refused with the domain error. The guard's job is to
+    reject a bad plan, so it must not answer a bad plan with a bare
+    `AttributeError` from duck-typed attribute access.
+    """
+    if not isinstance(plan, dict):
+        raise BonusCapabilityError(f"plan must be a dict, got {type(plan).__name__}")
     original = plan.get("original")
     if not isinstance(original, dict):
         raise BonusCouplingError("plan has no original lane")

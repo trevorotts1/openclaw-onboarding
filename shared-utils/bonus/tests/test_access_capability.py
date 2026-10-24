@@ -34,6 +34,94 @@ for _p in (str(_SHARED), str(_REPO)):
 from bonus import access_capability as ac  # noqa: E402
 
 
+# --------------------------------------------------------------------------
+# Fabricated-API detector
+# --------------------------------------------------------------------------
+# One place decides what an invented interface looks like. The route surface is
+# searched for every shape; Python source is searched for the four that cannot
+# be legitimate there. A dotted token is NOT searched in Python source because
+# attribute access (`cap.transport.value`) is real Python — a smuggled operation
+# id has to reach the returned surface to matter, and that surface is covered.
+
+_URL = re.compile(r"https?://", re.I)
+_VERB_PATH = re.compile(r"\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/\S*", re.I)
+# A bare operation path: a token delimited by whitespace, a quote or a value
+# separator. `assisted/operator`, `{BASE}/tools/...` and a shebang are joined
+# text or path continuations, not operation tokens, and stay unflagged.
+_BARE_PATH = re.compile(r"(?:^|(?<=[\s\"'=(:,]))/[A-Za-z0-9_{][A-Za-z0-9_\-{}/.]*")
+_SCHEMELESS_HOST = re.compile(r"\b(?:[a-z0-9][a-z0-9-]*\.)+[a-z][a-z0-9-]*(?::\d+)?/[A-Za-z0-9]")
+_DOTTED_OPERATION = re.compile(r"\b[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\b")
+_FILE_SUFFIXES = (
+    ".py", ".md", ".json", ".txt", ".sh", ".yml", ".yaml", ".toml", ".cfg",
+    ".ini", ".html", ".js", ".ts", ".css", ".csv", ".xml", ".png", ".jpg",
+)
+
+# Every smuggle shape a fabricated interface has been seen to take. The scan
+# must catch all of them; the table below is the proof it does.
+#
+# FIXTURES, NOT DELIVERABLE: these literals are attack inputs, and this test
+# file is the only file in shared-utils/bonus/ allowed to carry an API-shaped
+# string. `test_the_evidence_doc_carries_no_api_shape` and
+# `test_module_source_carries_no_api_shape` keep the other files at zero.
+SMUGGLE_SHAPES = (
+    ("scheme url", "https://api.leadconnectorhq.com/v1/memberships/grant"),
+    ("uppercase verb+path", "GET  /memberships/grant"),
+    ("lowercase verb+path", "post /memberships/grant"),
+    ("bare operation path", '"api": "/memberships/grant"'),
+    ("schemeless host+path", "api.leadconnectorhq.com/v1/memberships/grant"),
+    ("dotted operation id", '"api": "memberships.grant"'),
+)
+
+# Text that must NOT be flagged: real repo provenance and plain prose.
+LEGITIMATE_TEXT = (
+    "#!/usr/bin/env python3",
+    '    _REGISTRY = f"{_GHL}/tools/engine/cli_anything/gohighlevel/public/operations.py"',
+    "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py",
+    "shared-utils/ghl/capability_inventory.py",
+    "05-ghl-setup/INSTRUCTIONS.md",
+    "06-ghl-install-pages/tools/SELECTORS-LIVE-course.md",
+    "36-ghl-mcp-setup/ghl-mcp-setup-full.md",
+    "the assisted/operator path and the R-13 / DEC-16 authority",
+    "select_route(OpClass.EXECUTE, resource=\"memberships\") returns []",
+    "in the frozen v3 production spec, contact enrollment against an existing "
+    "workflow is not authoring",
+)
+
+
+def _dotted_operation_hits(text):
+    hits = []
+    for match in _DOTTED_OPERATION.finditer(text):
+        token = match.group(0)
+        if token.lower().endswith(_FILE_SUFFIXES):
+            continue  # a filename is provenance, not an operation id
+        hits.append(token)
+    return hits
+
+
+def _api_shape_hits(text):
+    """API shapes that cannot be legitimate in this module's source or surface."""
+    hits = [f"url:{m.group(0)}" for m in _URL.finditer(text)]
+    hits += [f"verb+path:{m.group(0)}" for m in _VERB_PATH.finditer(text)]
+    hits += [f"bare-path:{m.group(0)}" for m in _BARE_PATH.finditer(text)]
+    hits += [f"host+path:{m.group(0)}" for m in _SCHEMELESS_HOST.finditer(text)]
+    return hits
+
+
+def _fabricated_api_hits(text):
+    return _api_shape_hits(text) + [
+        f"operation-id:{t}" for t in _dotted_operation_hits(text)
+    ]
+
+
+class _BlockImport:
+    """meta_path finder that makes `import ghl...` genuinely raise ImportError."""
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "ghl" or fullname.startswith("ghl."):
+            raise ImportError(f"blocked for this test: {fullname}")
+        return None
+
+
 class TestCapabilityBlock(unittest.TestCase):
     """C-14: the exact block, announced rather than an invented interface."""
 
@@ -93,6 +181,78 @@ class TestNoFabricatedApi(unittest.TestCase):
     def test_membership_family_has_no_route_in_the_shared_inventory(self):
         # Reuse of the upstream inventory, not a second local table.
         self.assertEqual(ac.membership_inventory_routes(), [])
+        # Instrument control on the negative: the SAME call path answers
+        # non-empty for a family the inventory does document, so the zero above
+        # is discriminating and not a broken instrument reported as a block.
+        from ghl import capability_inventory as inventory
+
+        control = inventory.select_route(
+            inventory.OpClass.EXECUTE, resource="workflows", dynamic_confirmed=False
+        )
+        self.assertTrue(
+            control,
+            "shared inventory answered nothing for a documented family — "
+            "the memberships zero is a broken instrument, not a capability block",
+        )
+
+    def test_a_broken_reuse_path_fails_closed_and_is_never_a_capability_block(self):
+        # A missing inventory is an instrument failure. Returning [] for it would
+        # make a broken reuse path indistinguishable from a proven "no route".
+        # The cached modules are dropped first so the import genuinely re-runs
+        # and the blocker is what fails it, not a stale sys.modules entry.
+        saved = {k: v for k, v in sys.modules.items() if k == "ghl" or k.startswith("ghl.")}
+        for name in saved:
+            del sys.modules[name]
+        sys.meta_path.insert(0, _BlockImport())
+        try:
+            with self.assertRaises(ac.BonusCapabilityError):
+                ac.membership_inventory_routes()
+        finally:
+            sys.meta_path.pop(0)
+            sys.modules.update(saved)
+        # Inverse: with the inventory reachable again, the honest answer is
+        # still the empty list — the block is real, not an import artifact.
+        self.assertEqual(ac.membership_inventory_routes(), [])
+
+    def test_route_surface_carries_no_api_shape_at_all(self):
+        # `api` is None, so any API-shaped token anywhere in what the module
+        # hands back is a fabrication. Zero tolerance, every shape.
+        for name, blob in (
+            ("supported_route", json.dumps(ac.supported_route(), sort_keys=True)),
+            ("decision_document", json.dumps(ac.decision_document(), sort_keys=True)),
+        ):
+            self.assertEqual(_fabricated_api_hits(blob), [], name)
+
+    def test_module_source_carries_no_api_shape(self):
+        source = Path(ac.__file__).read_text(encoding="utf-8")
+        self.assertEqual(_api_shape_hits(source), [], "module source carries an API shape")
+
+    def test_the_evidence_doc_carries_no_api_shape(self):
+        doc = (_BONUS / "BONUS-ACCESS-CAPABILITY-DECISION.md").read_text(encoding="utf-8")
+        self.assertEqual(_api_shape_hits(doc), [], "evidence doc carries an API shape")
+
+    def test_no_other_bonus_file_carries_an_api_shape(self):
+        # The whole deliverable is scanned, so nothing can hide beside the
+        # module. The attack fixtures above are the single sanctioned exception.
+        for path in sorted(_BONUS.rglob("*")):
+            if not path.is_file() or path.name == "test_access_capability.py":
+                continue
+            if path.suffix not in (".py", ".md", ".json", ".txt"):
+                continue
+            text = path.read_text(encoding="utf-8")
+            self.assertEqual(_api_shape_hits(text), [], str(path.relative_to(_REPO)))
+
+    def test_the_scan_catches_every_known_smuggle_shape(self):
+        for name, shape in SMUGGLE_SHAPES:
+            self.assertTrue(
+                _fabricated_api_hits(shape), f"{name} passes the scan uncaught"
+            )
+
+    def test_the_scan_leaves_legitimate_text_alone(self):
+        # The inverse: a stricter scan must not become a blanket refusal. Real
+        # provenance paths, filenames and plain prose carry no fabricated API.
+        for text in LEGITIMATE_TEXT:
+            self.assertEqual(_fabricated_api_hits(text), [], text[:60])
 
     def test_supported_route_reports_the_block_reason(self):
         route = ac.supported_route()
@@ -203,6 +363,31 @@ class TestOriginalGiftIndependence(unittest.TestCase):
             with self.assertRaises(ac.BonusCapabilityError):
                 ac.plan_fulfillment(**kwargs)  # type: ignore[arg-type]
 
+    def test_the_guard_refuses_a_malformed_plan_with_the_domain_error(self):
+        # The guard's job is to reject a bad plan. It must not answer a bad plan
+        # with a bare AttributeError from duck-typed attribute access.
+        for bad in (None, [], "plan", 1, object()):
+            with self.assertRaises(ac.BonusCapabilityError):
+                ac.assert_original_not_gated_by_bonus(bad)  # type: ignore[arg-type]
+        # Inverse: a well-formed plan still passes the guard.
+        self.assertTrue(
+            ac.assert_original_not_gated_by_bonus(ac.plan_fulfillment(original_ready=True))
+        )
+
+    def test_a_not_ready_original_reason_must_be_a_real_string(self):
+        # No silent coercion: str(None) would store the literal "None" as the
+        # member-facing reason a not-ready lane is required to name.
+        for reason in (None, 12345, [], {}, True):
+            with self.assertRaises(ac.BonusCapabilityError):
+                ac.plan_fulfillment(
+                    original_ready=False, original_reason=reason
+                )  # type: ignore[arg-type]
+        # Inverse: a real reason still plans, and is stored verbatim minus padding.
+        plan = ac.plan_fulfillment(
+            original_ready=False, original_reason="  asset pending release  "
+        )
+        self.assertEqual(plan["original"]["reason"], "asset pending release")
+
 
 class TestCredentialVersusResource(unittest.TestCase):
     """R-13: an expired credential is not expired guides."""
@@ -261,6 +446,52 @@ class TestDecisionDocument(unittest.TestCase):
         self.assertTrue(round_trip["original_gift_independent"])
         self.assertIsNone(round_trip["route"]["api"])
         self.assertEqual(set(round_trip["evidence"]), set(ac.STEP_ORDER))
+
+
+class TestEvidenceWording(unittest.TestCase):
+    """The workflow ceiling is scoped, not stated as an absolute.
+
+    The frozen registry carries v3 workflow rows that are NOT read-only (contact
+    enrollment and unenrollment against an existing workflow), and the
+    definition-authoring rows sit at staging-doc level. An absolute "read-only"
+    claim overstates the registry it cites as authority. The ceiling that is
+    true is the authoring ceiling in the frozen v3 production spec.
+    """
+
+    UNQUALIFIED_CLAIMS = (
+        "cannot build or edit a workflow at all",
+        "its only workflow operation is the read-only list",
+        "workflows are read-only there",
+        "workflows read-only on the public API",
+    )
+    QUALIFIERS = ("frozen v3 production spec", "not authoring", "staging")
+
+    def _doc(self):
+        raw = (_BONUS / "BONUS-ACCESS-CAPABILITY-DECISION.md").read_text(encoding="utf-8")
+        return re.sub(r"\s+", " ", raw)  # prose wraps across lines
+
+    def test_the_evidence_doc_does_not_overstate_the_workflow_ceiling(self):
+        doc = self._doc()
+        for phrase in self.UNQUALIFIED_CLAIMS:
+            self.assertNotIn(phrase, doc, f"unqualified claim left in the doc: {phrase}")
+        for qualifier in self.QUALIFIERS:
+            self.assertIn(qualifier, doc, f"scope qualifier missing from the doc: {qualifier}")
+
+    def test_the_module_claim_is_scoped_the_same_way(self):
+        source = Path(ac.__file__).read_text(encoding="utf-8")
+        for phrase in self.UNQUALIFIED_CLAIMS:
+            self.assertNotIn(phrase, source, f"unqualified claim left in the module: {phrase}")
+        claim = ac.capability_evidence()["grant"]["claim"]
+        self.assertIn("frozen v3 production spec", claim)
+        self.assertIn("not authoring", claim)
+
+    def test_the_scoped_ceiling_does_not_change_the_block(self):
+        # Scoping the wording is not softening the decision: the enrollment rows
+        # are not a membership grant, so the grant step stays blocked.
+        evidence = ac.capability_evidence()
+        self.assertEqual(evidence["grant"]["state"], ac.RETIRED_RAIL_ONLY)
+        self.assertFalse(evidence["grant"]["routable"])
+        self.assertEqual(ac.decision_document()["verdict"], "BLOCKED")
 
 
 class _patched_route:
