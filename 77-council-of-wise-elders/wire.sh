@@ -335,8 +335,16 @@ CHANGED=0
 # loudly; a stale, contract-drifted or executable-less SELECTED copy fails
 # here and exits 1, so update-skills.sh withholds the .wired sentinel and no
 # roll reports success after updating only an unused directory.
+# On a box with more than one copy the gate needs agent-resolver evidence:
+# export COUNCIL_AGENT_SKILL_DIR=<the path the agent resolves> (for OpenClaw the
+# shadowing root, e.g. ~/.agents/skills/council-of-wise-elders). Without it the
+# gate reports the selection as unproven and this step refuses — by design.
 GT_RC=0
-GT_OUT="$( "$NODE" "$SKILL_DIR/scripts/selected-tree-gate.mjs" --skill-dir "$SKILL_DIR" --prefix "$P" --home "$HOME" 2>&1 )" || GT_RC=$?
+GT_ARGS=(--skill-dir "$SKILL_DIR" --prefix "$P" --home "$HOME")
+if [ -n "${COUNCIL_AGENT_SKILL_DIR:-}" ]; then
+  GT_ARGS+=(--agent-selected "$COUNCIL_AGENT_SKILL_DIR" --agent-source "COUNCIL_AGENT_SKILL_DIR")
+fi
+GT_OUT="$( "$NODE" "$SKILL_DIR/scripts/selected-tree-gate.mjs" "${GT_ARGS[@]}" 2>&1 )" || GT_RC=$?
 [ -n "$GT_OUT" ] && printf '%s\n' "$GT_OUT"
 if [ "$GT_RC" -ne 0 ]; then
   say "NOT_READY TREE_GATE the copy the resolver selects failed verification (lines above); success is withheld"

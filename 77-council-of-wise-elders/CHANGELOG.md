@@ -5,6 +5,7 @@
 In plain English: the gate no longer treats "a record exists" as proof of what the agent reads, no longer prefers one version file when the carriers disagree, and no longer accepts an archive or an installed path just because it exists.
 
 - Selection: the gate verifies the copy the intended OpenClaw agent resolves. An install-record or a fallback directory is a candidate, not evidence. When more than one copy exists, `--agent-selected PATH` (from the agent resolver) is required; without it the run reports `agent selection unproven` and fails instead of passing.
+- `wire.sh` passes that evidence through `COUNCIL_AGENT_SKILL_DIR` (the path the agent resolves, e.g. `~/.agents/skills/council-of-wise-elders` on OpenClaw). Unset on a multi-copy box means the step refuses with `NOT_READY TREE_GATE` — the honest outcome, never a pass.
 - Version identity: `version`, `skill-version.txt`, SKILL.md frontmatter and manifest `skill_version` must agree. A disagreement lists every carrier and fails; the reader never silently prefers the first file it can open.
 - Executables: an `archive` is verified as a zip that contains the entry, and an installed release's entry must be a non-empty JavaScript file that passes `node --check` when loading is enabled. Existence alone is not validity.
 - Tests: `scripts/tests/selected-tree-gate.test.mjs` 17/17 (new: unproven selection, carrier disagreement incl. manifest, non-zip archive, empty entry, unparseable entry, agent evidence naming a non-skill path).
