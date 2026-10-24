@@ -412,9 +412,10 @@ def _access_block(launch: Dict[str, Any], answers: Dict[str, Any],
     login = fact(answers, "launch.login_url")
     login_url = login.strip() if isinstance(login, str) and login.strip() else None
 
-    if not destination:
-        # Every welcome/access action needs a usable approved destination, even on
-        # the free route; a purchase or a registration may never land nowhere.
+    if not destination and deliver_access:
+        # A delivery that actually hands something over needs a usable approved
+        # destination: a purchase or a registration may never land nowhere. When
+        # the client said there is nothing to deliver, no destination is owed.
         missing.append("the access destination members use after purchase or registration "
                        "(launch.access_url, launch.login_url or an approved thank-you page)")
     return {

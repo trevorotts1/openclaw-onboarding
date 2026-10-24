@@ -1640,6 +1640,32 @@
       }
     },
     {
+      "id": "access_url",
+      "group": "launch",
+      "text": "Where should buyers land after they pay — the access page or log-in link?",
+      "why": "The full launch plan refuses without a usable access destination; it is where the access email and the welcome message send people.",
+      "answer_type": "text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Paste the address buyers reach after payment, for example a member log-in page or a download page on your own site.",
+        "examples": []
+      },
+      "default": null,
+      "never_default": true,
+      "required": "optional",
+      "condition": "mode != legacy",
+      "targets": [
+        "access_url",
+        "delivery_bindings"
+      ],
+      "legacy_ids": [],
+      "required_by": [],
+      "area_id": "access_delivery",
+      "choice_explanations": {}
+    },
+    {
       "id": "payment_plans",
       "group": "launch",
       "text": "Will this offer be paid in full, or do you offer payment plans?",
