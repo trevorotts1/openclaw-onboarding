@@ -92,19 +92,96 @@ def _reason(unit_id, rule_id, reason):
     return {"unit_id": str(unit_id), "rule_id": rule_id, "reason": reason}
 
 
+_HEX_DIGITS = "0123456789abcdef"
+CONSUMER_STATES = ("active", "released")
+
+
+def _is_hex_sha(value):
+    """Exact 40-char lowercase hex git SHA. Shape only, no lookup."""
+    return (isinstance(value, str) and len(value) == 40
+            and all(c in _HEX_DIGITS for c in value))
+
+
+def _as_mapping(value):
+    """A record mapping, or None when the shape was not observed."""
+    return value if isinstance(value, dict) else None
+
+
+def _as_records(value):
+    """A sequence of records, or None when the shape was not observed.
+
+    Strings and mappings are NOT record sequences: ``"nobody"`` iterating as
+    characters is a malformed record, never an observed list of consumers.
+    """
+    if isinstance(value, (list, tuple)):
+        return value
+    return None
+
+
 def _normalise_units(units):
-    out = []
-    for raw in units or ():
-        unit = dict(raw)
-        unit["unit_id"] = str(unit.get("unit_id") or "")
-        unit["sha"] = str(unit.get("sha") or "")
-        unit["files"] = tuple(str(f) for f in unit.get("files") or ())
-        unit["depends_on"] = tuple(str(d) for d in unit.get("depends_on") or ())
-        unit["state"] = str(unit.get("state") or "green")
-        unit["schema"] = dict(unit.get("schema") or {})
-        unit["repo"] = str(unit.get("repo") or "")
+    """Normalise unit records. Returns ``(units, problems)``.
+
+    A field that was not observed is a ``problems`` entry rendering
+    ``UNKNOWN`` — never a silent default. In particular an absent ``files``
+    list is NOT "touches nothing" (BC-02 never ran) and an absent ``state``
+    is NOT "green" (BC-07 never isolated a red unit).
+    """
+    out, problems = [], []
+    for index, raw in enumerate(units or ()):
+        record = _as_mapping(raw)
+        if record is None:
+            problems.append(_reason("", RULE_SEPARATE_FILES,
+                                    "unit_record_malformed:%d" % index))
+            continue
+        uid = record.get("unit_id")
+        if uid is None or not str(uid):
+            problems.append(_reason("", RULE_SEPARATE_FILES,
+                                    "unit_id_unobserved"))
+            continue
+        sha = record.get("sha")
+        if sha is None or not str(sha):
+            problems.append(_reason(str(uid), RULE_SEPARATE_FILES,
+                                    "candidate_sha_unobserved"))
+            continue
+        if record.get("files") is None:
+            problems.append(_reason(str(uid), RULE_SHARED_FILE,
+                                    "unit_files_unobserved"))
+            continue
+        files = _as_records(record.get("files"))
+        if files is None:
+            problems.append(_reason(str(uid), RULE_SHARED_FILE,
+                                    "unit_files_malformed"))
+            continue
+        if record.get("depends_on") is None:
+            deps = ()
+        else:
+            deps = _as_records(record.get("depends_on"))
+            if deps is None:
+                problems.append(_reason(str(uid), RULE_DEPENDENCY,
+                                        "unit_depends_on_malformed"))
+                continue
+        if record.get("schema") is None:
+            schema = {}
+        else:
+            schema = _as_mapping(record.get("schema"))
+            if schema is None:
+                problems.append(_reason(str(uid), RULE_BREAKING_WRITER,
+                                        "schema_record_malformed"))
+                continue
+        if record.get("state") is None:
+            problems.append(_reason(str(uid), RULE_RED_SUBSET,
+                                    "unit_state_unobserved"))
+            continue
+        unit = dict(record)
+        unit["unit_id"] = str(uid)
+        unit["sha"] = str(sha)
+        unit["files"] = tuple(str(f) for f in files)
+        unit["depends_on"] = tuple(str(d) for d in deps)
+        unit["state"] = str(record.get("state"))
+        unit["schema"] = dict(schema)
+        unit["repo"] = str(record.get("repo") or "")
         out.append(unit)
-    return out
+    return out, problems
 
 
 def _schema_verdict(unit):
@@ -202,27 +279,26 @@ def evaluate_cohort(units, *, repository="onboarding", combined_owner=(),
     dependencies outside this cohort.
 
     A held unit holds its true dependents (BC-07 for red, BC-03 otherwise);
-    unrelated green candidates stay admitted.
+    unrelated green candidates stay admitted. A unit that does not declare
+    ``files`` or ``state`` renders ``UNKNOWN`` — an unobserved field is
+    never a silent default, so BC-02 and BC-07 always run. A cohort that was
+    not observed at all renders ``UNKNOWN``, never ``ADMITTED``.
     """
-    norm = _normalise_units(units)
-    unknown, hold, valid = [], [], []
+    raw_units = _as_records(units)
+    problems = [] if raw_units is not None else [
+        _reason("", RULE_SEPARATE_FILES, "cohort_unobserved")]
+    norm, normalised_problems = _normalise_units(raw_units or ())
+    unknown = problems + normalised_problems
+    if not norm and not unknown:
+        unknown.append(_reason("", RULE_SEPARATE_FILES, "cohort_empty"))
+    hold, valid = [], []
     seen = set()
     for unit in norm:
         uid = unit["unit_id"]
-        if not uid:
-            unknown.append(_reason("", RULE_SEPARATE_FILES, "unit_id_unobserved"))
-            continue
         if uid in seen:
             unknown.append(_reason(uid, RULE_SEPARATE_FILES, "duplicate_unit_id"))
             continue
         seen.add(uid)
-        if not unit["sha"]:
-            unknown.append(_reason(uid, RULE_SEPARATE_FILES, "candidate_sha_unobserved"))
-            continue
-        if unit["state"] not in ("green", "red"):
-            unknown.append(_reason(uid, RULE_RED_SUBSET,
-                                   "unit_state_unobserved:%s" % unit["state"]))
-            continue
         valid.append(unit)
 
     by_id = {unit["unit_id"]: unit for unit in valid}
@@ -339,11 +415,29 @@ def exact_independent_gate(unit, receipt, required_checks=("unit", "integration"
     refused. Missing receipt or missing required-check results render
     ``UNKNOWN``; a failure renders ``CONTRADICTED``.
     """
-    unit_id = str((unit or {}).get("unit_id") or "")
+    record = _as_mapping(unit)
+    if record is None:
+        return {"unit_id": "", "state": UNKNOWN,
+                "reason": "unit_record_malformed", "checks": []}
+    unit_id = str(record.get("unit_id") or "")
+    unit_sha = record.get("sha")
     if not isinstance(receipt, dict) or not receipt:
         return {"unit_id": unit_id, "state": UNKNOWN,
                 "reason": "qc_receipt_unobserved", "checks": []}
-    entry = {"sha": (unit or {}).get("sha"), "qc_receipt": receipt}
+    receipt_sha = receipt.get("sha")
+    if unit_sha is None or not str(unit_sha):
+        return {"unit_id": unit_id, "state": UNKNOWN,
+                "reason": "candidate_sha_unobserved", "checks": []}
+    if receipt_sha is None or not str(receipt_sha):
+        return {"unit_id": unit_id, "state": UNKNOWN,
+                "reason": "qc_sha_unobserved", "checks": []}
+    if not _is_hex_sha(str(unit_sha)):
+        return {"unit_id": unit_id, "state": UNKNOWN,
+                "reason": "candidate_sha_not_exact_40_hex", "checks": []}
+    if not _is_hex_sha(str(receipt_sha)):
+        return {"unit_id": unit_id, "state": UNKNOWN,
+                "reason": "qc_sha_not_exact_40_hex", "checks": []}
+    entry = {"sha": unit_sha, "qc_receipt": receipt}
     ok, reason = validate_qc_receipt(entry)
     if not ok:
         return {"unit_id": unit_id, "state": CONTRADICTED,
@@ -400,7 +494,10 @@ def prove_named_repair(repair, observation):
     owed incorporation). Every unobserved fact renders ``UNKNOWN`` with a
     reason; only an observed match renders ``PROVEN``.
     """
-    repair = dict(repair or {})
+    record = _as_mapping(repair)
+    if record is None:
+        return _repair_verdict(UNKNOWN, "repair_record_malformed")
+    repair = dict(record)
     repair_id = str(repair.get("repair_id") or "")
     sha = str(repair.get("sha") or "")
     if not repair_id:
@@ -434,7 +531,11 @@ def prove_named_repair(repair, observation):
         return _repair_verdict(UNKNOWN, "ancestry_unobserved",
                                repair_id=repair_id)
     if method in ("content_equivalence", "squash"):
-        expected = {str(k): str(v) for k, v in (repair.get("files") or {}).items()}
+        files = _as_mapping(repair.get("files"))
+        if repair.get("files") is not None and files is None:
+            return _repair_verdict(UNKNOWN, "repair_content_malformed",
+                                   repair_id=repair_id)
+        expected = {str(k): str(v) for k, v in (files or {}).items()}
         if not expected:
             return _repair_verdict(UNKNOWN, "repair_content_unobserved",
                                    repair_id=repair_id)
@@ -518,10 +619,33 @@ def merge_due(state, repository, now, *, new_events=False, busy_until=None,
     immediately make the owner due. A busy target stays due and rechecks
     within ten minutes or on release. Otherwise the backlog sweep is at
     most hourly. ``first_due`` is persisted so restart preserves age.
+
+    ``state`` is ``PROVEN`` when the schedule was determined from observed
+    inputs and ``UNKNOWN`` when the caller's state store was unobserved or
+    malformed — a malformed store renders ``UNKNOWN``, it never raises and
+    never schedules.
     """
     repo = str(repository)
-    record = state.setdefault("merge_due", {}).setdefault(
-        repo, {"first_due": None, "last_sweep": None, "last_reason": None})
+    unknown_result = {"repository": repo, "due": False, "immediate": False,
+                      "next_check": None, "reason": "merge_state_unobserved",
+                      "first_due": None, "state": UNKNOWN}
+    store = _as_mapping(state)
+    if store is None:
+        return dict(unknown_result)
+    root = store.get("merge_due")
+    if root is None:
+        root = {}
+        store["merge_due"] = root
+    root = _as_mapping(root)
+    if root is None:
+        return dict(unknown_result)
+    record = root.get(repo)
+    if record is None:
+        record = {"first_due": None, "last_sweep": None, "last_reason": None}
+        root[repo] = record
+    record = _as_mapping(record)
+    if record is None:
+        return dict(unknown_result)
     if record.get("first_due") is None:
         record["first_due"] = now
     if busy_until is not None and busy_until > now:
@@ -529,25 +653,25 @@ def merge_due(state, repository, now, *, new_events=False, busy_until=None,
         record["last_reason"] = "target_busy_remains_due"
         return {"repository": repo, "due": True, "immediate": False,
                 "next_check": next_check, "reason": record["last_reason"],
-                "first_due": record["first_due"]}
+                "first_due": record["first_due"], "state": PROVEN}
     if new_events:
         record["last_reason"] = "event_requests_owner"
         record["last_sweep"] = now
         return {"repository": repo, "due": True, "immediate": True,
                 "next_check": now, "reason": record["last_reason"],
-                "first_due": record["first_due"]}
+                "first_due": record["first_due"], "state": PROVEN}
     last_sweep = record.get("last_sweep")
     if last_sweep is not None and now - last_sweep < sweep_interval:
         record["last_reason"] = "hourly_sweep_not_due"
         return {"repository": repo, "due": False, "immediate": False,
                 "next_check": last_sweep + sweep_interval,
                 "reason": record["last_reason"],
-                "first_due": record["first_due"]}
+                "first_due": record["first_due"], "state": PROVEN}
     record["last_sweep"] = now
     record["last_reason"] = "backlog_sweep_due"
     return {"repository": repo, "due": True, "immediate": False,
             "next_check": now, "reason": record["last_reason"],
-            "first_due": record["first_due"]}
+            "first_due": record["first_due"], "state": PROVEN}
 
 
 def cleanup_disposition(resource):
@@ -558,29 +682,42 @@ def cleanup_disposition(resource):
     disposal belongs to T-46; this is the integration-side handoff record.
     An unobserved consumer/clean state is ``UNKNOWN``, never ``eligible``.
     """
-    resource = dict(resource or {})
-    resource_id = str(resource.get("id") or "")
+    record = _as_mapping(resource)
+    if record is None:
+        return {"id": "", "disposition": UNKNOWN,
+                "reason": "resource_record_malformed"}
+    resource_id = str(record.get("id") or "")
     if not resource_id:
         return {"id": "", "disposition": UNKNOWN,
                 "reason": "resource_id_unobserved"}
-    consumers = resource.get("consumers")
+    if record.get("consumers") is None:
+        return {"id": resource_id, "disposition": UNKNOWN,
+                "reason": "consumer_state_unobserved"}
+    consumers = _as_records(record.get("consumers"))
     if consumers is None:
         return {"id": resource_id, "disposition": UNKNOWN,
                 "reason": "consumer_state_unobserved"}
-    active = sorted(str(c.get("id")) for c in consumers
-                    if isinstance(c, dict) and c.get("state") == "active")
+    active = []
+    for raw in consumers:
+        consumer = _as_mapping(raw)
+        state = str(consumer.get("state")) if consumer is not None else ""
+        if consumer is None or state not in CONSUMER_STATES:
+            return {"id": resource_id, "disposition": UNKNOWN,
+                    "reason": "consumer_state_unobserved"}
+        if state == "active":
+            active.append(str(consumer.get("id")))
     if active:
         return {"id": resource_id, "disposition": "deferred",
-                "reason": "consumer_active:%s" % ",".join(active)}
-    unique = resource.get("has_unique_unmerged_work")
+                "reason": "consumer_active:%s" % ",".join(sorted(active))}
+    unique = record.get("has_unique_unmerged_work")
     if unique is True:
         return {"id": resource_id, "disposition": "deferred",
                 "reason": "unique_unmerged_work_preserved"}
     if unique is not False:
         return {"id": resource_id, "disposition": UNKNOWN,
                 "reason": "unique_work_state_unobserved"}
-    clean_state = resource.get("clean_state")
-    resource_type = str(resource.get("resource_type") or "")
+    clean_state = record.get("clean_state")
+    resource_type = str(record.get("resource_type") or "")
     if resource_type == "disposable_scratch":
         return {"id": resource_id, "disposition": "eligible",
                 "reason": "disposable_scratch"}
@@ -588,7 +725,7 @@ def cleanup_disposition(resource):
         if clean_state != "CLEAN":
             return {"id": resource_id, "disposition": UNKNOWN,
                     "reason": "clean_state_unobserved"}
-        if not resource.get("remote_merge_proof_ids"):
+        if not record.get("remote_merge_proof_ids"):
             return {"id": resource_id, "disposition": UNKNOWN,
                     "reason": "remote_merge_proof_unobserved"}
         return {"id": resource_id, "disposition": "eligible",
@@ -598,13 +735,40 @@ def cleanup_disposition(resource):
 
 
 def _merge_component_states(components):
-    """Fold component states: any contradiction wins, then any unknown, else proven."""
-    states = [str(c.get("state")) for c in components if c]
+    """Fold component states: any contradiction wins, then any unknown, else proven.
+
+    A component whose state is absent or unrecognised folds to ``UNKNOWN``:
+    an unobserved component state is never a proof.
+    """
+    states = [str(c.get("state")) for c in components if isinstance(c, dict)]
     if any(state == CONTRADICTED for state in states):
         return CONTRADICTED
-    if any(state == UNKNOWN or state == HELD for state in states):
+    if any(state not in (PROVEN, ADMITTED) for state in states):
         return UNKNOWN
     return PROVEN
+
+
+def _records_or_reason(value, label, reasons):
+    """Records from ``value``; anything else renders ``UNKNOWN``.
+
+    A missing collection is an observed empty set; a non-sequence or a
+    non-record entry is a malformation and always carries a reason, so the
+    fold can never turn it into success.
+    """
+    records = _as_records(value) if value is not None else ()
+    if records is None:
+        reasons.append("%s_unobserved" % label)
+        return []
+    out, malformed = [], False
+    for raw in records:
+        record = _as_mapping(raw)
+        if record is None:
+            malformed = True
+            continue
+        out.append(dict(record))
+    if malformed:
+        reasons.append("%s_record_malformed" % label)
+    return out
 
 
 def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
@@ -613,19 +777,37 @@ def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
 
     ``PROVEN`` requires every clause proven: the shared owner, the frozen
     compatible cohort, the exact independent gates, the remote target
-    proof, every named repair, and every cleanup handoff. Anything
-    unobserved is ``UNKNOWN`` with reasons; a contradiction is
-    ``CONTRADICTED``. No aggregate ``ALL_PASS`` is ever emitted.
+    proof, every named repair, and every cleanup handoff already
+    ``eligible``. A ``deferred`` cleanup handoff is unresolved and blocks
+    ``PROVEN`` exactly like ``UNKNOWN``. Every candidate carries the exact
+    40-hex SHA the cohort froze. Anything unobserved or malformed is
+    ``UNKNOWN`` with reasons; a contradiction is ``CONTRADICTED``. No
+    aggregate ``ALL_PASS`` is ever emitted.
     """
-    owner = dict(owner or {})
-    target = dict(target or {})
-    cohort = dict(cohort or {})
-    gates = [dict(gate) for gate in gates or ()]
-    named_repairs = [dict(repair) for repair in named_repairs or ()]
-    cleanup = [dict(item) for item in cleanup or ()]
-    proof = dict(proof or {})
-
     reasons = []
+    owner = _as_mapping(owner)
+    target = _as_mapping(target)
+    cohort = _as_mapping(cohort)
+    proof = _as_mapping(proof)
+    if owner is None:
+        reasons.append("owner_unobserved")
+        owner = {}
+    if target is None:
+        reasons.append("target_unobserved")
+        target = {}
+    if cohort is None:
+        reasons.append("cohort_unobserved")
+        cohort = {}
+    if proof is None:
+        reasons.append("remote_proof:proof_unobserved")
+        proof = {"state": UNKNOWN, "reason": "proof_unobserved"}
+
+    gates = _records_or_reason(gates, "gate", reasons)
+    named_repairs = _records_or_reason(named_repairs, "named_repair", reasons)
+    cleanup = _records_or_reason(cleanup, "cleanup", reasons)
+
+    if owner.get("state") != PROVEN:
+        reasons.append("owner:%s" % (owner.get("reason") or "owner_unobserved"))
     if not target.get("remote"):
         reasons.append("remote_target_unobserved")
     if not target.get("before"):
@@ -634,10 +816,11 @@ def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
         reasons.append("target_after_unobserved")
     if not cohort.get("admit"):
         reasons.append("cohort_membership_empty")
-    for entry in cohort.get("unknown") or ():
+    for entry in _records_or_reason(cohort.get("unknown"), "cohort_unknown",
+                                    reasons):
         reasons.append("cohort_unknown:%s:%s"
                        % (entry.get("unit_id"), entry.get("reason")))
-    for entry in cohort.get("hold") or ():
+    for entry in _records_or_reason(cohort.get("hold"), "cohort_hold", reasons):
         reasons.append("cohort_held:%s:%s"
                        % (entry.get("unit_id"), entry.get("reason")))
     for gate in gates:
@@ -649,15 +832,26 @@ def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
             reasons.append("named_repair:%s:%s"
                            % (repair.get("repair_id"), repair.get("reason")))
     for item in cleanup:
-        if item.get("disposition") == UNKNOWN:
+        if item.get("disposition") != "eligible":
             reasons.append("cleanup:%s:%s" % (item.get("id"), item.get("reason")))
     if proof.get("state") != PROVEN:
         reasons.append("remote_proof:%s" % (proof.get("reason")
                                            or "proof_unobserved"))
 
+    candidates = []
+    order = _as_records(cohort.get("order")) if cohort.get("order") is not None else ()
+    if order is None:
+        reasons.append("candidate_unobserved")
+        order = ()
+    for uid in order:
+        sha = _sha_for(cohort, uid)
+        candidates.append({"unit_id": uid, "sha": sha})
+        if not _is_hex_sha(sha):
+            reasons.append("candidate_sha_unobserved:%s" % uid)
+
     components = [owner, cohort, proof] + gates + named_repairs
-    components += [{"state": UNKNOWN} if item.get("disposition") == UNKNOWN
-                   else {"state": PROVEN} for item in cleanup]
+    components += [{"state": PROVEN if item.get("disposition") == "eligible"
+                    else UNKNOWN} for item in cleanup]
     cohort_state = (UNKNOWN if cohort.get("unknown") else
                     UNKNOWN if cohort.get("hold") else
                     ADMITTED if cohort.get("admit") else UNKNOWN)
@@ -672,8 +866,7 @@ def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
         "repository": str(repository),
         "owner": copy.deepcopy(owner),
         "target": copy.deepcopy(target),
-        "candidates": [{"unit_id": uid, "sha": _sha_for(cohort, uid)}
-                       for uid in cohort.get("order") or ()],
+        "candidates": candidates,
         "cohort": copy.deepcopy(cohort),
         "gates": copy.deepcopy(gates),
         "named_repairs": copy.deepcopy(named_repairs),
@@ -686,10 +879,11 @@ def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
 
 
 def _sha_for(cohort, unit_id):
-    """Look up the exact SHA the cohort froze for a unit, else UNKNOWN."""
-    for candidate in cohort.get("candidates") or ():
-        if candidate.get("unit_id") == unit_id:
-            return candidate.get("sha")
+    """Look up the exact SHA the cohort froze for a unit, else None."""
+    for candidate in _as_records(cohort.get("candidates")) or ():
+        record = _as_mapping(candidate)
+        if record is not None and record.get("unit_id") == unit_id:
+            return record.get("sha")
     return None
 
 
@@ -697,8 +891,11 @@ def verify_receipt(receipt):
     """Re-check a receipt: shape, known state, and no false PROVEN.
 
     Returns ``(ok, reason)``. A ``PROVEN`` receipt must carry the artifact
-    name, an owner, a target with before/after, at least one candidate and
-    gate, and no reasons. An ``UNKNOWN`` receipt must name a reason.
+    name, an owner, a target with before/after, at least one candidate
+    carrying an exact 40-hex SHA, and at least one gate, and no reasons.
+    Every cleanup handoff must already be ``eligible`` — ``deferred`` and
+    ``UNKNOWN`` are both unresolved. An ``UNKNOWN`` receipt must name a
+    reason.
     """
     if not isinstance(receipt, dict):
         return False, "receipt must be an object"
@@ -710,18 +907,25 @@ def verify_receipt(receipt):
     if state == PROVEN:
         if receipt.get("reasons"):
             return False, "proven receipt carries reasons"
-        owner = receipt.get("owner") or {}
+        owner = _as_mapping(receipt.get("owner")) or {}
         if owner.get("state") != PROVEN:
             return False, "proven receipt lacks a proven owner"
-        target = receipt.get("target") or {}
+        target = _as_mapping(receipt.get("target")) or {}
         if not (target.get("remote") and target.get("before")
                 and target.get("after")):
             return False, "proven receipt lacks target before/after"
-        if not receipt.get("candidates"):
+        candidates = _as_records(receipt.get("candidates"))
+        if not candidates:
             return False, "proven receipt has no candidates"
+        for candidate in candidates:
+            record = _as_mapping(candidate) or {}
+            if not record.get("unit_id"):
+                return False, "proven receipt carries a candidate without a unit id"
+            if not _is_hex_sha(record.get("sha")):
+                return False, "proven receipt carries a candidate without an exact sha"
         if not receipt.get("gates"):
             return False, "proven receipt has no gates"
-        cohort = receipt.get("cohort") or {}
+        cohort = _as_mapping(receipt.get("cohort")) or {}
         if (cohort.get("hold") or cohort.get("unknown")
                 or not cohort.get("admit")):
             return False, "proven receipt carries a non-admitted cohort"
@@ -731,6 +935,8 @@ def verify_receipt(receipt):
         for item in receipt.get("cleanup") or ():
             if item.get("disposition") == UNKNOWN:
                 return False, "proven receipt carries an unknown cleanup"
+            if item.get("disposition") != "eligible":
+                return False, "proven receipt carries a deferred cleanup"
         for repair in receipt.get("named_repairs") or ():
             if repair.get("state") != PROVEN:
                 return False, "proven receipt carries a non-proven repair"

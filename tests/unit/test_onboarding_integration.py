@@ -54,6 +54,7 @@ from decision_engine_train import (  # noqa: E402
     prove_named_repair,
     save_state,
     target_owner,
+    validate_qc_receipt,
     verify_receipt,
 )
 
@@ -293,6 +294,58 @@ class Compatibility(unittest.TestCase):
         self.assertEqual(report["state"], UNKNOWN)
         self.assertEqual(report["unknown"][0]["reason"], "duplicate_unit_id")
 
+    def test_unobserved_files_is_unknown_not_touches_nothing(self):
+        """BC-02: an unobserved ``files`` list is UNKNOWN, never "touches nothing"."""
+        report = evaluate_cohort([
+            {"unit_id": "A", "sha": SHA_A},
+            {"unit_id": "B", "sha": SHA_B, "files": ["x.py"]},
+        ])
+        self.assertEqual(report["state"], UNKNOWN)
+        self.assertEqual(report["admit"], [])
+        self.assertIn("unit_files_unobserved",
+                      [e["reason"] for e in report["unknown"]])
+        control = evaluate_cohort([
+            {"unit_id": "A", "sha": SHA_A, "state": "green"},
+            {"unit_id": "B", "sha": SHA_B, "files": ["x.py"], "state": "green"},
+        ])
+        self.assertEqual(control["state"], UNKNOWN)
+        self.assertEqual([e["reason"] for e in control["unknown"]],
+                         ["unit_files_unobserved"])
+
+    def test_explicit_empty_files_still_admits(self):
+        report = evaluate_cohort([
+            {"unit_id": "A", "sha": SHA_A, "files": [], "state": "green"},
+        ])
+        self.assertEqual(report["state"], ADMITTED)
+
+    def test_unobserved_state_is_unknown_not_green(self):
+        """BC-07: a red unit with an unobserved state is never admitted."""
+        report = evaluate_cohort([
+            {"unit_id": "A", "sha": SHA_A, "files": ["a.py"]},
+        ])
+        self.assertEqual(report["state"], UNKNOWN)
+        self.assertEqual(report["admit"], [])
+        self.assertEqual(report["unknown"][0]["reason"], "unit_state_unobserved")
+
+    def test_unobserved_cohort_is_unknown_never_admitted(self):
+        for raw in (None, [], "units", {"A": {}}):
+            with self.subTest(raw):
+                report = evaluate_cohort(raw)
+                self.assertEqual(report["state"], UNKNOWN)
+                self.assertEqual(report["admit"], [])
+                self.assertTrue(report["unknown"])
+
+    def test_malformed_unit_records_render_unknown_never_raise(self):
+        for raw in (["A"], [None], [{"unit_id": "A", "sha": SHA_A,
+                                     "files": [], "state": "green",
+                                     "schema": "additive"}],
+                    [{"unit_id": "A", "sha": SHA_A, "files": 5,
+                      "state": "green"}]):
+            with self.subTest(raw):
+                report = evaluate_cohort(raw)
+                self.assertEqual(report["state"], UNKNOWN)
+                self.assertTrue(report["unknown"])
+
 
 class RedSubset(unittest.TestCase):
     """Clause: red-subset isolation keeps unrelated green work moving."""
@@ -388,6 +441,49 @@ class ExactGates(unittest.TestCase):
         result = exact_independent_gate(unit("A", SHA_A), receipt(SHA_A, checks=[]))
         self.assertEqual(result["state"], UNKNOWN)
         self.assertEqual(result["reason"], "required_check_results_unobserved")
+
+    def test_gate_without_any_sha_is_unknown_not_proven(self):
+        """An 'exact' gate with no SHA on either side is not exact evidence."""
+        result = exact_independent_gate(
+            {"unit_id": "A"},
+            {"verdict": "PASS", "reviewer": "sonnet-qc-1",
+             "reviewer_route": INDEPENDENT_ROUTE,
+             "checks": [{"name": "unit", "status": "pass"},
+                        {"name": "integration", "status": "pass"}]})
+        self.assertEqual(result["state"], UNKNOWN)
+        self.assertTrue(result["reason"])
+
+    def test_gate_with_non_hex_sha_is_unknown_not_proven(self):
+        result = exact_independent_gate(unit("A", "zzz"), receipt("zzz"))
+        self.assertEqual(result["state"], UNKNOWN)
+        self.assertTrue(result["reason"])
+
+    def test_gate_with_malformed_unit_record_renders_unknown(self):
+        result = exact_independent_gate("A", receipt(SHA_A))
+        self.assertEqual(result["state"], UNKNOWN)
+        self.assertTrue(result["reason"])
+
+
+class ExactShaLaw(unittest.TestCase):
+    """Clause: the exact-SHA law is enforced, never a None == None pass."""
+
+    def test_missing_sha_on_both_sides_loses_eligibility(self):
+        entry = {"unit_id": "A", "sha": None,
+                 "qc_receipt": {"sha": None, "verdict": "PASS",
+                                "reviewer": "sonnet-qc-1",
+                                "reviewer_route": INDEPENDENT_ROUTE}}
+        ok, reason = validate_qc_receipt(entry)
+        self.assertFalse(ok)
+        self.assertTrue(reason)
+
+    def test_empty_sha_on_both_sides_loses_eligibility(self):
+        entry = {"unit_id": "A", "sha": "",
+                 "qc_receipt": {"sha": "", "verdict": "PASS",
+                                "reviewer": "sonnet-qc-1",
+                                "reviewer_route": INDEPENDENT_ROUTE}}
+        ok, reason = validate_qc_receipt(entry)
+        self.assertFalse(ok)
+        self.assertTrue(reason)
 
 
 class NamedRepair(unittest.TestCase):
@@ -519,6 +615,12 @@ class MergeDue(unittest.TestCase):
             self.assertEqual(later["first_due"], first["first_due"])
             self.assertFalse(later["due"])
 
+    def test_malformed_state_store_renders_unknown_never_raises(self):
+        result = merge_due({"merge_due": []}, "onb", 1000)
+        self.assertEqual(result["state"], UNKNOWN)
+        self.assertFalse(result["due"])
+        self.assertTrue(result["reason"])
+
 
 class CleanupDispositions(unittest.TestCase):
     """Clause: the four cleanup dispositions (T-46 acts; this classifies)."""
@@ -568,6 +670,22 @@ class CleanupDispositions(unittest.TestCase):
             "clean_state": "CLEAN", "remote_merge_proof_ids": []})
         self.assertEqual(result["disposition"], UNKNOWN)
         self.assertEqual(result["reason"], "remote_merge_proof_unobserved")
+
+    def test_malformed_consumers_is_unknown_never_eligible(self):
+        """A consumer string iterates as chars; that is UNKNOWN, not a green light."""
+        result = cleanup_disposition({
+            "id": "x", "resource_type": "disposable_scratch",
+            "consumers": "nobody", "has_unique_unmerged_work": False})
+        self.assertEqual(result["disposition"], UNKNOWN)
+        self.assertEqual(result["reason"], "consumer_state_unobserved")
+
+    def test_unrecognised_consumer_state_is_unknown(self):
+        result = cleanup_disposition({
+            "id": "x", "resource_type": "disposable_scratch",
+            "consumers": [{"id": "checker"}],
+            "has_unique_unmerged_work": False})
+        self.assertEqual(result["disposition"], UNKNOWN)
+        self.assertEqual(result["reason"], "consumer_state_unobserved")
 
 
 class Receipts(unittest.TestCase):
@@ -694,6 +812,66 @@ class Receipts(unittest.TestCase):
                                      "reasons": []})
         self.assertFalse(ok)
         self.assertEqual(reason, "UNKNOWN receipt must name a reason")
+
+    def test_deferred_cleanup_blocks_a_proven_receipt(self):
+        owner, cohort, gates = self._proven_parts()
+        receipt_doc = build_receipt(
+            owner=owner, target={"remote": "origin", "before": HEAD_BEFORE,
+                                 "after": HEAD_AFTER},
+            cohort=cohort, gates=gates,
+            proof={"state": PROVEN, "reason": "target_head_observed"},
+            cleanup=[{"id": "c", "disposition": "deferred",
+                      "reason": "consumer_active:checker"}])
+        self.assertEqual(receipt_doc["state"], UNKNOWN)
+        self.assertTrue([r for r in receipt_doc["reasons"]
+                         if r.startswith("cleanup:c:")])
+
+    def test_verify_receipt_rejects_proven_with_a_deferred_cleanup(self):
+        forged = {"artifact": ARTIFACT, "state": PROVEN, "reasons": [],
+                  "owner": {"state": PROVEN},
+                  "target": {"remote": "origin", "before": "1", "after": "2"},
+                  "candidates": [{"unit_id": "A", "sha": SHA_A}],
+                  "cohort": {"admit": ["A"], "hold": [], "unknown": []},
+                  "gates": [{"unit_id": "A", "state": PROVEN}],
+                  "cleanup": [{"id": "c", "disposition": "deferred",
+                               "reason": "consumer_active:checker"}],
+                  "proof": {"state": PROVEN}}
+        ok, reason = verify_receipt(forged)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "proven receipt carries a deferred cleanup")
+
+    def test_verify_receipt_rejects_candidates_without_exact_sha(self):
+        forged = {"artifact": ARTIFACT, "state": PROVEN, "reasons": [],
+                  "owner": {"state": PROVEN},
+                  "target": {"remote": "origin", "before": "1", "after": "2"},
+                  "candidates": [{"unit_id": "A", "sha": None}],
+                  "cohort": {"admit": ["A"], "hold": [], "unknown": []},
+                  "gates": [{"unit_id": "A", "state": PROVEN}],
+                  "proof": {"state": PROVEN}}
+        ok, reason = verify_receipt(forged)
+        self.assertFalse(ok)
+        self.assertTrue(reason)
+
+    def test_build_receipt_refuses_candidates_without_exact_sha(self):
+        owner, cohort, gates = self._proven_parts()
+        cohort = dict(cohort)
+        cohort["candidates"] = [{"unit_id": "A", "sha": None},
+                                {"unit_id": "B", "sha": "zzz"}]
+        receipt_doc = build_receipt(
+            owner=owner, target={"remote": "origin", "before": HEAD_BEFORE,
+                                 "after": HEAD_AFTER},
+            cohort=cohort, gates=gates,
+            proof={"state": PROVEN, "reason": "target_head_observed"})
+        self.assertNotEqual(receipt_doc["state"], PROVEN)
+        self.assertTrue([r for r in receipt_doc["reasons"]
+                         if r.startswith("candidate_sha")])
+
+    def test_malformed_receipt_inputs_render_unknown_never_raise(self):
+        receipt_doc = build_receipt(owner="x", target={}, cohort={},
+                                    gates="x", named_repairs="y",
+                                    cleanup="z", proof={})
+        self.assertEqual(receipt_doc["state"], UNKNOWN)
+        self.assertTrue(receipt_doc["reasons"])
 
 
 class ReuseAndIsolation(unittest.TestCase):
