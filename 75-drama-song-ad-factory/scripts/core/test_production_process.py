@@ -4,10 +4,8 @@ TemporaryDirectory respects TMPDIR; no fixed /tmp path, provider or media call.
 The fixture uses the real full card and existing Store/approval event writers.
 """
 from contextlib import closing
-import copy
 import hashlib
 import json
-import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -23,7 +21,6 @@ from choice_card.intake_card import intake_card as card
 from choice_card.intake_card import intake_session as session
 from intake_preflight import preflight
 from script_approval import script_approval as approval
-from script_approval import approval_events
 
 
 def write_json(path, value):
@@ -314,6 +311,28 @@ class ProductionProcessTest(unittest.TestCase):
         gate_path.write_bytes(original)
         (self.run / "storyboard" / "s1.png").write_bytes(b"changed still")
         self.assertEqual(process.admit_production(self.run, "video-generation")["reason_code"], "PRODUCTION_STORYBOARD_APPROVAL_UNVERIFIED")
+
+    def test_planning_uses_reduced_dependencies_but_still_requires_governed_intake(self):
+        confirmed_run(self.run)
+        payload = {"storage_dir": self.temp.name, "run_dir": str(self.run), "env": {}}
+        with patch.object(preflight, "check_requirement", return_value={"ok": True, "detail": "offline dependency probe"}):
+            planned = preflight.check(payload)
+            self.assertEqual(planned["reason_code"], "preflight-pass-planning")
+            self.assertEqual(planned["checks"]["mode"], "planning")
+            self.assertTrue(planned["checks"]["card_recorded"])
+            self.assertFalse(planned["checks"]["generating"])
+            self.assertEqual({r["id"] for r in planned["checks"]["requirements"]},
+                             {"platform-arch", "python-interpreter", "storage-capacity", "temp-capacity"})
+            payload["stage"] = "research"
+            self.assertEqual(preflight.check(payload)["reason_code"], "preflight-pass")
+            (self.run / "control" / "intake-session.json").unlink()
+            blocked = preflight.check(payload)
+            self.assertFalse(blocked["production_admitted"])
+            self.assertEqual(blocked["reason_code"], "PRODUCTION_LEGACY_AUTHORITY_UNVERIFIED")
+            payload["mode"] = "diagnostic"
+            diagnostic = preflight.check(payload)
+            self.assertEqual(diagnostic["reason_code"], "preflight-pass-diagnostic")
+            self.assertFalse(diagnostic["production_admitted"])
 
     def test_preflight_bare_files_are_dependencies_only_and_confirmed_run_is_planning_only(self):
         receipt = {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad", "length": 120,

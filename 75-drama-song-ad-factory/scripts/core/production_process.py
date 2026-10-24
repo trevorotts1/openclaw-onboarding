@@ -254,6 +254,19 @@ def _ancestors(stage, registry):
     return seen
 
 
+def needs_media_dependencies(stage):
+    """The validated graph's initial planning prefix has no media generation.
+
+    Unknown stages fail closed; this is not an authorization decision.
+    """
+    if stage is None:
+        return False
+    order, registry = _graph()
+    if stage not in order:
+        raise ValueError("unknown canonical production stage")
+    return stage == "music" or "music" in _ancestors(stage, registry)
+
+
 def _storyboard_proof(run_dir, *, required, events):
     from storyboard_director import approval_runner as runner
     from storyboard_director import approval_package as package

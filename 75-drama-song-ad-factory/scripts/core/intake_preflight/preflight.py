@@ -755,6 +755,19 @@ def check(payload):
     # via PREREQS.json, so empty tool/module/credential lists can never pass a
     # media production. A gate that requires a package marks it required.
     ctx = capability_context(p)
+    planning = False
+    if p.get("run_dir") and ctx["generating"]:
+        import production_process
+        try:
+            planning = not production_process.needs_media_dependencies(p.get("stage"))
+        except (ImportError, ValueError, TypeError, KeyError) as exc:
+            return {"outcome": "error", "reason_code": "PRODUCTION_PROCESS_UNVERIFIED",
+                    "checks": checks, "production_admitted": False,
+                    "next_action": "The canonical planning dependency graph cannot be verified: " + str(exc)}
+        if planning:
+            # Initial intake/research/script planning checks its own runtime;
+            # it cannot require future media keys or approve future assets.
+            ctx.update(mode="planning", generating=False, media=[])
     checks["mode"] = ctx["mode"]
     checks["generating"] = ctx["generating"]
     checks["interpreter"] = interpreter_identity()
@@ -775,11 +788,11 @@ def check(payload):
     checks["requirements"] = [{"id": r["id"], "severity": r["severity"],
                                "manifest_severity": r["manifest_severity"],
                                "why": r["why"]} for r in derived]
-    if not ctx["generating"]:
+    if not ctx["generating"] and not planning:
         # Non-generating diagnostic mode: reduced requirements, declares itself.
         return {"outcome": "ok", "reason_code": "preflight-pass-diagnostic",
                 "checks": checks, "mode": "diagnostic", "generating": False,
-                "readiness": "diagnostic-only",
+                "readiness": "diagnostic-only", "production_admitted": False,
                 "next_action": "Diagnostic only (non-generating): reduced "
                                "requirements verified; this is NOT paid-work readiness."}
 
@@ -866,6 +879,7 @@ def check(payload):
         return {"outcome": "waiting", "reason_code": authority["reason_code"],
                 "checks": checks, "readiness": "unverified", "production_admitted": False,
                 "next_action": authority["detail"] + " " + authority["next_action"]}
+    checks["card_recorded"] = True  # full authoritative intake supersedes the old four-pick projection
     paid = bool(stage)
     checks["readiness"] = "stage-admitted" if paid else "planning-only"
     return {"outcome": "ok", "reason_code": "preflight-pass" if paid else "preflight-pass-planning",
