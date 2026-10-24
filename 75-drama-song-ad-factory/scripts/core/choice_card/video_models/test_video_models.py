@@ -58,7 +58,14 @@ def _expect(rate, per_clip, shot_s, seconds):
 EXPECT = {  # (rate, per_clip, shot_s) -> the four models in order
     "MiniMax H3": (0.04, False, 15), "Seedance 2.5": (0.315, False, 15),
     "Seedance 2.0 Mini": (0.041, False, 15), "Google Veo 3.1": (0.30, True, 8)}
-LENGTHS = (("1", 60, "60 seconds"), ("3", 180, "3 minutes"))
+def _length_reply(seconds):
+    question = next(q for q in IC.QUESTIONS if q["id"] == "length")
+    return str(next(i for i, option in enumerate(question["options"], 1)
+                    if VM.length_seconds(option[0]) == seconds))
+
+
+LENGTHS = ((_length_reply(60), 60, "60 seconds"),
+           (_length_reply(180), 180, "3 minutes"))
 
 
 def _card_total(n, label, price_fn, **kw):
@@ -105,7 +112,7 @@ def test_question_price_equals_card_with_real_skill_74_registry_prices():
 
 
 def test_recap_line_is_plain_and_priced():
-    msg = IC.conversation(BRIEF + ["1", "3", "1", "1", "2", "$25", "1", "1", "1"])["message"]
+    msg = IC.conversation(BRIEF + ["1", _length_reply(180), "1", "1", "2", "$25", "1", "1", "1"])["message"]
     cents = _expect(*EXPECT["Seedance 2.5"], 180)
     assert ("%d. Video model: Seedance 2.5 - about $%d.%02d" % (MODEL_N, cents // 100, cents % 100)) in msg, msg
 
@@ -113,7 +120,7 @@ def test_recap_line_is_plain_and_priced():
 def test_changing_length_reprices_the_recap():
     # fourteen answers (60 s, Seedance 2.5), recap, change LENGTH_N, pick 3 minutes
     msg = IC.conversation(BRIEF + ["1", "1", "1", "1", "2", "$25", "1", "1", "1"]
-                          + [str(LENGTH_N), "3"])["message"]
+                          + [str(LENGTH_N), _length_reply(180)])["message"]
     cents = _expect(*EXPECT["Seedance 2.5"], 180)
     assert ("%d. Video model: Seedance 2.5 - about $%d.%02d" % (MODEL_N, cents // 100, cents % 100)) in msg, msg
 
