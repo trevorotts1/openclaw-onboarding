@@ -292,6 +292,11 @@
       "value": "People read the sales page but do not buy.",
       "status": "provided",
       "source": "client"
+    },
+    "access_url": {
+      "value": "https://example.test/access",
+      "status": "provided",
+      "source": "client"
     }
   },
   "to_confirm": [

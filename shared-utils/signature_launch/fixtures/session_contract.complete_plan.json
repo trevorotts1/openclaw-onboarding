@@ -157,10 +157,126 @@
       "price_usd": 297.0,
       "currency": "USD",
       "payment_plans": false,
+      "packages": [
+        {
+          "offer_id": "MAIN-A",
+          "slot": "main",
+          "display_name": "Starter",
+          "price_id": "MAIN-A-USD",
+          "amount_minor": 29700,
+          "amount_raw": 29700,
+          "currency": "USD",
+          "billing_type": "one_time",
+          "billing_schedule": [],
+          "billing_schedule_raw": [],
+          "terms_source": null,
+          "native_product_id": null,
+          "entitlements": [
+            "main-a"
+          ],
+          "prerequisites": [],
+          "provenance": {
+            "source": "launch.offers",
+            "offer_index": 0,
+            "source_kind": "test_fixture",
+            "source_ref": "intake:l01fixture001",
+            "test_only": true,
+            "price_approval_status": "provided",
+            "amount_state": "provided"
+          }
+        },
+        {
+          "offer_id": "MAIN-B",
+          "slot": "main",
+          "display_name": "Premium",
+          "price_id": "MAIN-B-USD",
+          "amount_minor": 49700,
+          "amount_raw": 49700,
+          "currency": "USD",
+          "billing_type": "one_time",
+          "billing_schedule": [],
+          "billing_schedule_raw": [],
+          "terms_source": null,
+          "native_product_id": null,
+          "entitlements": [
+            "main-b"
+          ],
+          "prerequisites": [],
+          "provenance": {
+            "source": "launch.offers",
+            "offer_index": 1,
+            "source_kind": "test_fixture",
+            "source_ref": "intake:l01fixture001",
+            "test_only": true,
+            "price_approval_status": "provided",
+            "amount_state": "provided"
+          }
+        },
+        {
+          "offer_id": "U1",
+          "slot": "upsell_1",
+          "display_name": "VIP Strategy Day",
+          "price_id": "U1-USD",
+          "amount_minor": 99700,
+          "amount_raw": 99700,
+          "currency": "USD",
+          "billing_type": "one_time",
+          "billing_schedule": [],
+          "billing_schedule_raw": [],
+          "terms_source": null,
+          "native_product_id": null,
+          "entitlements": [
+            "u1"
+          ],
+          "prerequisites": [],
+          "provenance": {
+            "source": "launch.offers",
+            "offer_index": 2,
+            "source_kind": "test_fixture",
+            "source_ref": "intake:l01fixture001",
+            "test_only": true,
+            "price_approval_status": "provided",
+            "amount_state": "provided"
+          }
+        },
+        {
+          "offer_id": "D1",
+          "slot": "downsell_1",
+          "display_name": "VIP Strategy Day, 3 payments",
+          "price_id": "D1-USD",
+          "amount_minor": 39900,
+          "amount_raw": 39900,
+          "currency": "USD",
+          "billing_type": "one_time",
+          "billing_schedule": [],
+          "billing_schedule_raw": [],
+          "terms_source": null,
+          "native_product_id": null,
+          "entitlements": [
+            "d1"
+          ],
+          "prerequisites": [],
+          "provenance": {
+            "source": "launch.offers",
+            "offer_index": 3,
+            "source_kind": "test_fixture",
+            "source_ref": "intake:l01fixture001",
+            "test_only": true,
+            "price_approval_status": "provided",
+            "amount_state": "provided"
+          }
+        }
+      ],
       "landing_url": null,
       "sales_page_url": null,
       "checkout_url": null,
-      "thank_you_url": null
+      "thank_you_url": null,
+      "billing_conversion": {
+        "owner": "launch_bridge",
+        "lane": "L14",
+        "requested": true,
+        "reason": "billing/route conversion belongs to the bridge; the planner keeps the approved minor units, currency and schedule verbatim"
+      }
     },
     "launch_calendar": {
       "launch_at": "2026-11-03T12:00:00-05:00",
@@ -168,6 +284,50 @@
       "doors_close_at": "2026-11-10T23:59:00-05:00",
       "timezone": "America/New_York"
     },
+    "event": {
+      "eligible": false,
+      "type": null,
+      "starts_at": null,
+      "sale_opens_at": "2026-11-03T09:00:00-05:00",
+      "sale_closes_at": "2026-11-10T23:59:00-05:00",
+      "reminders_planned": false,
+      "facts": {
+        "product_type": null,
+        "event_type": null
+      },
+      "reason": "no approved event facts: webinar, reminder, replay and no-show units are not planned"
+    },
+    "access": {
+      "resolved": true,
+      "destination": "https://elevationcoaching.com/access",
+      "destination_source": "launch.access_url",
+      "login_url": null,
+      "entitlements": [
+        "main-a",
+        "main-b",
+        "u1",
+        "d1"
+      ],
+      "base_entitlements": [
+        "main-a",
+        "main-b"
+      ],
+      "upsell_entitlements": {
+        "upsell_1": [
+          "u1"
+        ],
+        "downsell_1": [
+          "d1"
+        ]
+      },
+      "prerequisites": [],
+      "deliver_access": true,
+      "delivery_choice": true,
+      "delivery": "access_link_email_and_text"
+    },
+    "warnings": [
+      "event units are not planned — no approved event facts: webinar, reminder, replay and no-show units are not planned"
+    ],
     "a2p_ready": false,
     "conversation_ai": {
       "requested": false,
@@ -266,6 +426,9 @@
         "draft_only": true,
         "waits_for": [
           "page_upsell_1"
+        ],
+        "entitlements": [
+          "u1"
         ]
       },
       {
@@ -276,6 +439,9 @@
         "draft_only": true,
         "waits_for": [
           "page_downsell_1"
+        ],
+        "entitlements": [
+          "d1"
         ]
       },
       {
@@ -296,7 +462,13 @@
         "draft_only": true,
         "waits_for": [
           "page_thank_you"
-        ]
+        ],
+        "access_destination": "https://elevationcoaching.com/access",
+        "entitlements": [
+          "main-a",
+          "main-b"
+        ],
+        "prerequisites": []
       }
     ],
     "text_sets": [],
@@ -332,20 +504,6 @@
         ]
       },
       {
-        "id": "auto_event_reminders",
-        "family": "event_reminders",
-        "template": "webinar-registration-reminder-replay-stack",
-        "build_rail": "skill44_engine",
-        "draft_only": true,
-        "trigger": {
-          "type": "registration",
-          "detail": "confirm, 1 week / 3 days / 1 day / 1 hour / 15 minutes before, then replay and no-show follow-up"
-        },
-        "waits_for": [
-          "email_pre_launch"
-        ]
-      },
-      {
         "id": "auto_post_sale",
         "family": "post_sale",
         "template": "new",
@@ -358,7 +516,13 @@
         "waits_for": [
           "email_welcome_access",
           "page_thank_you"
-        ]
+        ],
+        "access_destination": "https://elevationcoaching.com/access",
+        "entitlements": [
+          "main-a",
+          "main-b"
+        ],
+        "prerequisites": []
       },
       {
         "id": "auto_upsell_branch",
@@ -572,7 +736,7 @@
   "plan_digest": {
     "algorithm": "sha256",
     "canonicalization": "json.dumps(plan, sort_keys=True, separators=(',',':'), ensure_ascii=False).encode('utf-8')",
-    "value": "73a6a8dfe09712dee9c714fb998f53d480b9c7bcc3df5fb7cfc3100a5fdd53ea"
+    "value": "c9a629fecd401200c50608fa690de20c4a5f4a19c6d926cd7771bb2a150b13d1"
   },
   "required_behavior": [
     "channels is an array; text work only when 'text' is present",
