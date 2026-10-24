@@ -22,10 +22,11 @@ Three outcomes, never a silent pass:
 Case, Unicode accents, apostrophes (straight and curly) and punctuation are
 normalized before matching, so ``CÉLINE DION``, ``Celine Dion.`` and
 ``Celine Dion’s`` all hit the same alias.  The spaces between a reference's
-words may also be absent or replaced by any punctuation run, so ``andraday``,
-``ANDRA-DAY`` and ``EdSheeran groove`` hit the same alias their spaced
-spelling does -- and a squashed hit still has to be the WHOLE alias-shaped
-word run, never a substring of a longer word.
+words may also be absent or replaced by any punctuation run -- a hyphen, an
+underscore, an apostrophe, any of them, doubled or mixed -- so ``andraday``,
+``ANDRA-DAY``, ``Bad_Bunny``, ``Jelly'Roll`` and ``EdSheeran groove`` hit the
+same alias their spaced spelling does -- and a squashed hit still has to be
+the WHOLE alias-shaped word run, never a substring of a longer word.
 
 Object KEYS are outbound text too: every key at any depth is normalized and
 matched exactly like a value, so a name can never ride out of the payload
@@ -92,6 +93,9 @@ def normalize(text, keep_hyphens=False):
 
     ``keep_hyphens=True`` keeps ``-`` as a separator of its own, so the
     HYPHENATED spelling of a reference is matchable exactly like the spaced one.
+    Every separator between words folds to a space -- including a JOIN carried
+    by ``_`` or an apostrophe (straight or curly), in any run, so ``Bad_Bunny``,
+    ``Bad'Bunny`` and ``Bad__Bunny`` all fold to ``bad bunny``.
     """
     if not isinstance(text, str):
         return ""
@@ -102,6 +106,12 @@ def normalize(text, keep_hyphens=False):
         folded = folded.replace(curly, "'")
     folded = re.sub(r"[^\w'\s-]+" if keep_hyphens else r"[^\w'\s]+", " ",
                     folded, flags=re.UNICODE)
+    # ``\w`` keeps ``_`` and the class above keeps ``'``; both are JOINS
+    # between words, not word characters here, so a join is a separator like
+    # any other punctuation -- in any run.  This is the difference between
+    # "Bad_Bunny" reaching the matcher as one word and reaching it as the two
+    # words every alias form is built from.
+    folded = re.sub(r"[_']+", " ", folded)
     folded = re.sub(r"\s+", " ", folded).strip()
     return folded
 
@@ -112,10 +122,12 @@ def _alias_forms(name):
     Matching runs on normalized text, so the forms are the spellings that
     survive it: the spaced CASE-FOLDED form (``luther vandross``), the
     PUNCTUATION-STRIPPED form (``p diddy`` -> ``pdiddy``), the HYPHENATED form
-    (``luther-vandross``) and the SPACE-REMOVED form (``luthervandross``).
-    A squashed or hyphenated spelling is the SAME reference, not a new one, and
-    a squashed form is only ever matched as a whole alias-shaped run (see
-    ``_matcher``) -- never as an arbitrary substring.
+    (``luther-vandross``), the SPACE-REMOVED form (``luthervandross``) and the
+    JOINED forms a spelling may present (``luther_vandross``,
+    ``luther'vandross``).  A squashed, hyphenated or joined spelling is the
+    SAME reference, not a new one, and a squashed form is only ever matched as
+    a whole alias-shaped run (see ``_matcher``) -- never as an arbitrary
+    substring.
     """
     forms = set()
     norm = normalize(name)
@@ -126,11 +138,12 @@ def _alias_forms(name):
     if norm.endswith(" s"):
         bases.append(norm[:-2])
     for base in bases:
-        for run in (base, base.replace("'", "")):
-            forms.add(run)
-            if " " in run:
-                forms.add(run.replace(" ", ""))    # space-removed: "andraday"
-                forms.add(run.replace(" ", "-"))   # hyphenated: "ed-sheeran"
+        forms.add(base)
+        if " " in base:
+            forms.add(base.replace(" ", ""))     # space-removed: "andraday"
+            forms.add(base.replace(" ", "-"))    # hyphenated: "ed-sheeran"
+            forms.add(base.replace(" ", "_"))    # joined: "ed_sheeran"
+            forms.add(base.replace(" ", "'"))    # joined: "ed'sheeran"
     return forms
 
 

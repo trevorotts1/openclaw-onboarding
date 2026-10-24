@@ -542,6 +542,12 @@ class SquashedSpellings(unittest.TestCase):
         ("soul-rise", "negative_tags", "andraday beat"),
         ("acoustic-pop", "style", "warm strings, EdSheeran groove"),
         ("soul-ballad", "style", "warm strings, avoid LutherVandross tone"),
+        # a JOIN between words is the same reference: underscore-joined and
+        # apostrophe-joined spellings used to dispatch verbatim (S75-T41 r5)
+        ("pop-rap", "style", "warm strings, Maroon_5 groove"),
+        ("reggaeton", "negative_tags", "do not sound like Cardi_B"),
+        ("trap-rap", "style_suffix", "avoid Jelly'Roll grit"),
+        ("country-pop", "mix", "avoid Bad_Bunny grit"),
     )
 
     def setUp(self):
@@ -550,10 +556,12 @@ class SquashedSpellings(unittest.TestCase):
 
     def test_every_spelling_form_is_generated_per_alias(self):
         forms = G._alias_forms("Ed Sheeran")
-        for form in ("ed sheeran", "edsheeran", "ed-sheeran"):
+        for form in ("ed sheeran", "edsheeran", "ed-sheeran",
+                     "ed_sheeran", "ed'sheeran"):
             self.assertIn(form, forms)
         self.assertIn("pdiddy", G._alias_forms("P. Diddy"))
         self.assertIn("dangelo", G._alias_forms("D’Angelo"))
+        self.assertIn("bad_bunny", G._alias_forms("Bad Bunny"))
 
     def test_squashed_leaks_are_caught_and_never_dispatched(self):
         for style_id, field, text in self.LEAKS:
@@ -571,12 +579,16 @@ class SquashedSpellings(unittest.TestCase):
     def test_squashed_hit_is_alias_shaped_never_a_substring(self):
         for text in ("andradaybeat drums", "bandraday groove",
                      "luthervandrossville tone", "bedsheeran groove",
-                     "the day beat", "warm piano and strings"):
+                     "the day beat", "the_day_beat", "warm piano and strings"):
             self.assertEqual(G.find_matches(text, self.aliases), [], text)
         for text in ("andraday beat", "andraday_beat", "ANDRA-DAY beat",
                      "EdSheeran groove", "avoid LutherVandross tone",
                      "Luther-Vandross tone", "PDiddy groove",
-                     "CÉLINE DION", "jelly-roll"):
+                     "CÉLINE DION", "jelly-roll",
+                     "Bad_Bunny groove", "Jelly_Roll groove",
+                     "Maroon_5 groove", "Cardi_B groove", "Celine_Dion groove",
+                     "Jelly'Roll groove", "Bad’Bunny groove",
+                     "Bad__Bunny groove", "Puff_Daddy groove"):
             self.assertTrue(G.find_matches(text, self.aliases), text)
 
     def test_no_alias_set_matches_nothing(self):
@@ -643,7 +655,9 @@ class DispatchSeam(unittest.TestCase):
     def test_leaking_payload_is_refused_at_the_seam_and_never_dispatched(self):
         for field, text in (("lyrics", APPROVED_LYRICS + "\n[Sung] Jelly Roll"),
                             ("style", "EdSheeran groove"),
-                            ("style", "avoid LutherVandross tone")):
+                            ("style", "avoid LutherVandross tone"),
+                            ("style", "avoid Puff_Daddy tone"),
+                            ("style", "avoid Bad_Bunny tone")):
             def mutate(inp, field=field, text=text):
                 inp[field] = text
             sent, err = self._dispatch(mutate)
