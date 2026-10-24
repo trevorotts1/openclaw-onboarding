@@ -218,6 +218,8 @@ def _pending(answers, qs, editing=None):
     if at < len(qs):
         q = qs[at]
         message = card.render_step(at + 1, qs)
+        if at == 0 and q.get("preface"):
+            message = q["preface"] + "\n\n" + message
         return {"id": q["id"], "definition": copy.deepcopy(q),
                 "definition_digest": _digest(q), "position": at + 1,
                 "message": message, "digest": _digest({"id": q["id"],
@@ -469,7 +471,10 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
     _write(path, state)
     answers, qs, drift = _active(state, base, client_dir)
     _progress(state, answers, qs)
-    state["pending"] = _pending(answers, qs, state.get("editing_question_id"))
+    next_pending = _pending(answers, qs, state.get("editing_question_id"))
+    if state["pending"].get("requires_identity") and next_pending["digest"] == state["pending"]["digest"]:
+        next_pending["requires_identity"] = True
+    state["pending"] = next_pending
     _write(path, state)
     return _result(state, path, answers, qs, code, outcome)
 
