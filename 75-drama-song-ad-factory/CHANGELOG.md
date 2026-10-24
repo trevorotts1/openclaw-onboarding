@@ -4,6 +4,25 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.109 - 2026-10-24 - explicit router roles and free run-state handoff
+
+The AI catalog accepts the existing configured deepseek-chain alias literally.
+Each confirmed intake binds its own selected builder and checker; repair uses
+that checker. Existing bindings and attempt evidence are preserved. Conflicting
+or unavailable dispatches refuse instead of selecting another provider or model.
+No client's chain members or global model defaults are changed.
+
+Confirmed intake initializes missing canonical stage rows through Store.init_run
+without rendering or provider calls. Existing run IDs, stage statuses, approvals
+and saved answers remain intact. The pending-stage plan exposes admitted worker
+identities separately from proof of an actual call. Router-member execution is
+not claimed without supported evidence.
+
+Run-bound card calls use the durable flow even when --step is omitted; explicit
+Studio exports and unbound previews retain their existing behavior. The four
+legacy CI fixtures now render and confirm individual turns against real store
+schemas while preserving script/song approval and delivery-target assertions.
+
 ## v2.9.108 - 2026-10-24 - durable intake bound to the exact rendered questions
 
 Intake now persists every raw client answer with its source and exact rendered

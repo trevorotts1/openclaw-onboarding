@@ -637,3 +637,14 @@ raw answer has its stable question ID and actual source reference; unknown
 legacy numbers and unprovenanced Studio bulk replies cannot be accepted.
 The complete flags, seed format, refusals, resume behavior and artifact
 approval boundaries are in [the intake session contract](references/intake-session-contract.md).
+
+**Run binding and bootstrap.** A run-bound `card` call is durable even without
+`--step`; explicit Studio exports and unbound previews stay static. Confirming
+the recap binds the exact client-selected builder/checker pair to this run;
+build admission uses the builder, QC and repair use the checker. Configured
+aliases stay literal, with no chain-member or global-setting change. Missing
+canonical stages start `NOT_STARTED`; existing run state, approvals, bindings
+and attempts are preserved. A pending research command or
+`admitted_not_called` plan is not provider execution. Router-chain attempts
+remain `CHAIN_RESOLUTION_UNVERIFIED` until supported identity evidence proves
+the actual call. See the intake session contract's model-role evidence section.

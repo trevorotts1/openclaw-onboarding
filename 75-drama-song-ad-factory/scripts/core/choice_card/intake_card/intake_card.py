@@ -1580,6 +1580,8 @@ def main(argv=None):
                     help="JSON list of explicit prior raw client answers with source references.")
     ap.add_argument("--answer-source-ref", default=None,
                     help="Source reference for this explicit client answer.")
+    ap.add_argument("--runtime", choices=("openclaw", "claude-nine", "openrouter-direct"),
+                    default=None, help="Runtime that consumes the selected model bindings.")
     ap.add_argument("--run-state-file", default="",
                     help="with --step and no replies: send the one-time intro as its "
                          "own message first (recorded as intro_shown in this file)")
@@ -1626,8 +1628,10 @@ def main(argv=None):
             return 1                               # refuse loudly, never a half file
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         return 0
+    # A run-bound card is an intake turn, even when the caller omits --step.
+    # The unbound preview and the Studio export above retain their own shapes.
     if (a.seed_answers_file or a.format == "session-json"
-            or (a.step and (a.run_dir or a.run_state_file))):
+            or a.run_dir or a.run_state_file):
         from intake_preflight.card_session_cli import run
         return run(a, questions=qs, purpose_flow=purpose_flow)
     if a.step:
