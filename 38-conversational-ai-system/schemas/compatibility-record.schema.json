@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Compatibility record: schema, protocol, reader/writer versions, migration checkpoint, writer generation, config revision",
+  "description": "Purple Billboard DATA-CONTRACTS section 10. Rollback compares the revision the upgrade wrote; a newer client fix causes a conflict that is resolved by forward repair, never by rolling data back. Sent effects, contact facts, consent/suppression, counters and unknown-send reconciliation are never rolled back.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "protocol_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reader_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "writer_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "migration_checkpoint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "writer_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "config_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "upgrade_wrote_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "client_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "NONE",
+            "ROLLBACK",
+            "FORWARD_REPAIR"
+          ]
+        },
+        "target_revision": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "mode",
+        "target_revision",
+        "reason"
+      ]
+    },
+    "never_rolled_back": {
+      "type": "array",
+      "minItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "sent_effects",
+          "contact_facts",
+          "consent_suppression",
+          "counters",
+          "unknown_send_reconciliation"
+        ]
+      }
+    },
+    "updated_at": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "protocol_version",
+    "reader_version",
+    "writer_version",
+    "migration_checkpoint",
+    "writer_generation",
+    "config_revision",
+    "upgrade_wrote_revision",
+    "client_revision",
+    "rollback",
+    "never_rolled_back",
+    "updated_at"
+  ]
+}

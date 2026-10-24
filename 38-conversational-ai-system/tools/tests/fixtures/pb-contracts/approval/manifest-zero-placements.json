@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "manifest_id": "manifest-2026-11",
+  "tenant_id": "tenant-alpha",
+  "campaign_cycle_id": "cycle-2026-11",
+  "revision": "rev-3",
+  "status": "APPROVED",
+  "approved_by": "client-owner-1",
+  "approved_at": "2026-10-20T18:00:00Z",
+  "campaign_window": {
+    "starts_on": "2026-11-01",
+    "ends_on": "2026-11-30"
+  },
+  "placements": []
+}

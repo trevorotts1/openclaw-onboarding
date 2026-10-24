@@ -1,0 +1,326 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shared readiness evidence, keyed per surface and per stage",
+  "description": "Purple Billboard DATA-CONTRACTS section 10. Installed, configured, running, replied and fulfilled are separate claims with their own evidence and evidence time, so one stage can never stand in for another. Disconnect, rebind and relevant upgrade invalidate the affected claims by name in all three consumers.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "surface": {
+      "type": "string",
+      "minLength": 1
+    },
+    "account_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "environment": {
+      "enum": [
+        "sandbox",
+        "owner_test",
+        "production"
+      ]
+    },
+    "adapter_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "config_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "account_binding_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "code_protocol_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "installed": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "READY",
+                "NOT_READY",
+                "UNVERIFIED",
+                "INVALIDATED"
+              ]
+            },
+            "evidence_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "evidence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "limitations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "status",
+            "evidence_timestamp",
+            "evidence_ids",
+            "limitations"
+          ]
+        },
+        "configured": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "READY",
+                "NOT_READY",
+                "UNVERIFIED",
+                "INVALIDATED"
+              ]
+            },
+            "evidence_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "evidence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "limitations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "status",
+            "evidence_timestamp",
+            "evidence_ids",
+            "limitations"
+          ]
+        },
+        "running": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "READY",
+                "NOT_READY",
+                "UNVERIFIED",
+                "INVALIDATED"
+              ]
+            },
+            "evidence_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "evidence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "limitations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "status",
+            "evidence_timestamp",
+            "evidence_ids",
+            "limitations"
+          ]
+        },
+        "replied": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "READY",
+                "NOT_READY",
+                "UNVERIFIED",
+                "INVALIDATED"
+              ]
+            },
+            "evidence_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "evidence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "limitations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "status",
+            "evidence_timestamp",
+            "evidence_ids",
+            "limitations"
+          ]
+        },
+        "fulfilled": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "READY",
+                "NOT_READY",
+                "UNVERIFIED",
+                "INVALIDATED"
+              ]
+            },
+            "evidence_timestamp": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "evidence_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "limitations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "status",
+            "evidence_timestamp",
+            "evidence_ids",
+            "limitations"
+          ]
+        }
+      },
+      "required": [
+        "installed",
+        "configured",
+        "running",
+        "replied",
+        "fulfilled"
+      ]
+    },
+    "invalidated": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "enum": [
+            "disconnect",
+            "rebind",
+            "upgrade"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "installed",
+              "configured",
+              "running",
+              "replied",
+              "fulfilled"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "evidence_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "reason",
+        "at",
+        "keys",
+        "evidence_id"
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "surface",
+    "account_id",
+    "environment",
+    "adapter_revision",
+    "config_revision",
+    "account_binding_revision",
+    "code_protocol_version",
+    "claims",
+    "invalidated",
+    "limitations"
+  ]
+}

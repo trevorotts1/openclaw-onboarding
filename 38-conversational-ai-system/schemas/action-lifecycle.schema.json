@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Control action lifecycle with separate acknowledgement and completion receipts",
+  "description": "Purple Billboard DATA-CONTRACTS section 9. The ladder is not_requested, queued, dispatched, acknowledged, completed; unknown, failed and canceled are explicit dispositions rather than missing states. Acknowledgement and completion are different receipts: a host stop ACK never closes anything.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "logical_intent_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "kind": {
+      "enum": [
+        "CONTROL",
+        "SHUTDOWN",
+        "CLIENT_RUNTIME_JOB"
+      ]
+    },
+    "state": {
+      "enum": [
+        "not_requested",
+        "queued",
+        "dispatched",
+        "acknowledged",
+        "completed",
+        "unknown",
+        "failed",
+        "canceled"
+      ]
+    },
+    "stop_requested": {
+      "type": "boolean"
+    },
+    "state_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "updated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dispatch_receipt": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "dispatched_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "dispatched_at",
+        "evidence_id"
+      ]
+    },
+    "ack_receipt": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "acknowledged_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "HOST_STOP_ACK",
+            "PROVIDER_ACCEPT"
+          ]
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "acknowledged_at",
+        "kind",
+        "evidence_id"
+      ]
+    },
+    "completion_receipt": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "STOP_COMPLETED_FINALIZER",
+            "PROVIDER_JOB_COMPLETED"
+          ]
+        },
+        "terminal_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "completed_at",
+        "kind",
+        "terminal_status",
+        "evidence_id"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "action_id",
+    "logical_intent_key",
+    "revision",
+    "kind",
+    "state",
+    "stop_requested",
+    "state_reason",
+    "updated_at",
+    "dispatch_receipt",
+    "ack_receipt",
+    "completion_receipt"
+  ]
+}

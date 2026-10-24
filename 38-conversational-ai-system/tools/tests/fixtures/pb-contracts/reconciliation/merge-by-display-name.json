@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "tenant_id": "tenant-alpha",
+  "canonical_contact_id": "contact-77",
+  "display_name": "Sam",
+  "verified_identifiers": [
+    {
+      "kind": "provider_id",
+      "value": "prov-77",
+      "tenant_id": "tenant-alpha",
+      "verified_at": "2026-10-24T08:00:00Z",
+      "evidence_id": "ev-id-1"
+    }
+  ],
+  "merge": {
+    "mode": "MERGE",
+    "basis": "DISPLAY_NAME",
+    "source_canonical_contact_ids": [
+      "contact-55"
+    ],
+    "target_canonical_contact_id": "contact-77"
+  },
+  "preserved": {
+    "unknown_send_ids": [
+      "unk-1"
+    ],
+    "prior_reminders_accepted": 2,
+    "suppression_kept": "STRICTER"
+  },
+  "updated_at": "2026-10-24T08:30:00Z"
+}
