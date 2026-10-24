@@ -8,10 +8,15 @@ Contract, in this order:
    ELIGIBLE, DEFERRED, BLOCKED or UNKNOWN. Only ELIGIBLE is dispatchable.
 2. UNKNOWN outranks BLOCKED, which outranks DEFERRED. An input this module
    cannot determine is UNKNOWN with a reason code -- never success, never a
-   silent ELIGIBLE, never a guessed default.
+   silent ELIGIBLE, never a guessed default. A record that is not a mapping, or
+   whose list fields are the wrong shape, types as UNKNOWN_MALFORMED_ITEM and
+   one such record never aborts a batch.
 3. Eligible resources are disposed inside the same call (immediate, no queue),
-   content is preserved first, the receipt records the exact external path,
-   and absence is proven by a real lstat after removal.
+   content is preserved first -- a verified immediate copy when preserve_content
+   is set, otherwise a caller copy only when the resource names its own
+   preservation receipts and the preserved location exists outside the resource
+   -- the receipt records the exact external path, and absence is proven by a
+   real lstat after removal.
 4. Deletion never forces. `git worktree remove` is taken from the repository's
    accepted cleanup transaction module (scripts/lib/cleanup_transaction.py) and
    must not carry --force; direct tree removal calls shutil.rmtree with default
@@ -29,6 +34,7 @@ import secrets
 import shutil
 import subprocess
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 SCHEMA_VERSION = 1
@@ -69,6 +75,11 @@ UNKNOWN_VOLUME_IDENTITY = 'UNKNOWN_VOLUME_IDENTITY'
 UNKNOWN_CLEAN_STATE = 'UNKNOWN_CLEAN_STATE'
 UNKNOWN_CONSUMER_STATE = 'UNKNOWN_CONSUMER_STATE'
 UNKNOWN_ABSENT_WITHOUT_RECEIPT = 'UNKNOWN_ABSENT_WITHOUT_RECEIPT'
+UNKNOWN_MALFORMED_ITEM = 'UNKNOWN_MALFORMED_ITEM'
+
+# List-shaped contract fields. A wrong shape is malformed data, never a default.
+LIST_FIELDS = ('consumers', 'lease_ids', 'remote_merge_proof_ids',
+               'preservation_receipt_ids')
 
 PRECEDENCE = (UNKNOWN, BLOCKED, DEFERRED, ELIGIBLE)
 
@@ -80,6 +91,33 @@ class Refused(Exception):
 class CleanupAuthorityUnavailable(Exception):
     """The repository's accepted no-force deletion module could not be loaded.
     Deletion is refused rather than reimplemented here."""
+
+
+def _as_list(value):
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _receipt_ref(value):
+    """A receipt reference names real receipts. Anything else is no receipt at
+    all, and no receipt means no right to delete."""
+    if isinstance(value, str):
+        return value.strip() != ''
+    return (isinstance(value, (list, tuple)) and bool(value)
+            and all(isinstance(entry, str) and entry.strip() != ''
+                    for entry in value))
+
+
+def _malformed_record(detail):
+    """Typed UNKNOWN for a record this module cannot read. Fail closed: a record
+    nobody can type is never ELIGIBLE and never deleted."""
+    finding = {'disposition': UNKNOWN, 'code': UNKNOWN_MALFORMED_ITEM,
+               'detail': detail}
+    return {
+        'id': '', 'resource_type': '', 'path': '', 'canonical_path': None,
+        'device': None, 'present': None, 'checks': {},
+        'disposition': UNKNOWN, 'reasons': [UNKNOWN_MALFORMED_ITEM],
+        'reason': f'{UNKNOWN_MALFORMED_ITEM}: {detail}', 'findings': [finding],
+    }
 
 
 def _module_path():
@@ -227,6 +265,16 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
         findings.append({'disposition': disposition, 'code': code,
                          'detail': detail})
 
+    if not isinstance(item, Mapping):
+        return _malformed_record(
+            f'resource record is {type(item).__name__}, not a mapping')
+    malformed = [name for name in LIST_FIELDS
+                 if item.get(name) is not None
+                 and not isinstance(item.get(name), (list, tuple))]
+    if malformed:
+        return _malformed_record(
+            f'list fields with the wrong shape: {sorted(malformed)}')
+
     resource_id = item.get('id')
     resource_type = item.get('resource_type')
     raw_path = item.get('path')
@@ -247,8 +295,8 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
         note(UNKNOWN, UNKNOWN_RESOURCE_TYPE,
              f'resource_type {resource_type!r} is not one of {sorted(RESOURCE_TYPES)}')
 
-    # Ownership is a definite fact: no receipt means no right to delete.
-    if not item.get('ownership_receipt_id'):
+    # Ownership is a definite fact: no usable receipt means no right to delete.
+    if not _receipt_ref(item.get('ownership_receipt_id')):
         note(BLOCKED, BLOCKED_UNOWNED, 'no ownership receipt for this resource')
 
     if record['path']:
@@ -284,9 +332,14 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
                 record['device'] = None
             except OSError as exc:
                 note(UNKNOWN, UNKNOWN_VOLUME_IDENTITY, f'stat failed: {exc}')
-            root_device = os.stat(str(approved_root)).st_dev
+            try:
+                root_device = os.stat(str(approved_root)).st_dev
+            except OSError as exc:
+                root_device = None
+                note(UNKNOWN, UNKNOWN_VOLUME_IDENTITY,
+                     f'approved root stat failed: {exc}')
             record['checks']['root_device'] = root_device
-            if root_device != expected_device:
+            if root_device is not None and root_device != expected_device:
                 note(BLOCKED, BLOCKED_VOLUME_IDENTITY_MISMATCH,
                      f'approved root device {root_device} != expected {expected_device}')
             if record['device'] is not None and record['device'] != expected_device:
@@ -307,10 +360,10 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
             note(UNKNOWN, UNKNOWN_CLEAN_STATE,
                  f'clean_state {clean_state!r} is not one of {sorted(CLEAN_STATES)}')
 
-        consumers = item.get('consumers') or []
+        consumers = _as_list(item.get('consumers'))
         active = []
         for consumer in consumers:
-            state = consumer.get('state') if isinstance(consumer, dict) else None
+            state = consumer.get('state') if isinstance(consumer, Mapping) else None
             if state not in CONSUMER_STATES:
                 note(UNKNOWN, UNKNOWN_CONSUMER_STATE,
                      f'consumer {consumer!r} has no determinate state')
@@ -322,27 +375,39 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
             note(DEFERRED, DEFERRED_ACTIVE_CONSUMER,
                  f'consumers still active: {sorted(str(c) for c in active)}')
 
-        leases = item.get('lease_ids') or []
+        leases = _as_list(item.get('lease_ids'))
         if leases:
-            note(DEFERRED, DEFERRED_LEASE_HELD, f'live leases: {sorted(leases)}')
+            note(DEFERRED, DEFERRED_LEASE_HELD,
+                 f'live leases: {sorted(str(x) for x in leases)}')
 
         if item.get('has_unique_unmerged_work') or clean_state == 'DIRTY_UNIQUE':
             note(DEFERRED, DEFERRED_UNIQUE_UNMERGED_WORK,
                  'unique unmerged work must be preserved, never deleted')
 
-        if resource_type in WORKTREE_TYPES and not (item.get('remote_merge_proof_ids') or []):
+        remote_proofs = _as_list(item.get('remote_merge_proof_ids'))
+        if resource_type in WORKTREE_TYPES and not remote_proofs:
             note(BLOCKED, BLOCKED_MISSING_REMOTE_MERGE_PROOF,
                  'merged work is not proven present in the remote target')
 
+        # Preservation proof, strongest first. preserve_content is a promise the
+        # module keeps itself, so it outranks a caller copy; a caller copy is only
+        # proof when the resource names its own preservation receipts and the
+        # preserved location really exists outside the resource. A directory
+        # merely existing is never proof.
+        receipts = _as_list(item.get('preservation_receipt_ids'))
         proof = None
-        if resource_type in WORKTREE_TYPES and item.get('remote_merge_proof_ids'):
+        if resource_type in WORKTREE_TYPES and remote_proofs:
             proof = 'remote_merge_proof'
-        existing = [p for p in (preserved_paths or ())
-                    if os.path.lexists(str(p)) and not _beneath(str(p), record['path'])]
-        if proof is None and existing:
-            proof = 'caller_preserved'
+            record['checks']['remote_merge_proof_ids'] = list(remote_proofs)
         if proof is None and preserve_content:
             proof = 'immediate_copy'
+        if proof is None:
+            existing = [p for p in (preserved_paths or ())
+                        if os.path.lexists(str(p))
+                        and not _beneath(str(p), record['path'])]
+            if receipts and existing:
+                proof = 'caller_preserved'
+                record['checks']['preservation_receipt_ids'] = list(receipts)
         record['checks']['preservation'] = proof
         if proof is None:
             note(BLOCKED, BLOCKED_MISSING_PRESERVATION,
@@ -416,10 +481,13 @@ def dispatch(items, *, approved_root, expected_device, receipt_path,
     preservation = []
 
     for item in items:
-        record = evaluate(
-            item, approved_root=approved_root, expected_device=expected_device,
-            preserved_paths=[preserved_root] if preserved_root else (),
-            preserve_content=preserve_content)
+        try:
+            record = evaluate(
+                item, approved_root=approved_root, expected_device=expected_device,
+                preserved_paths=[preserved_root] if preserved_root else (),
+                preserve_content=preserve_content)
+        except Exception as exc:  # one bad record never aborts the batch
+            record = _malformed_record(f'record could not be typed: {exc}')
         record['disposed'] = False
 
         if record['disposition'] != ELIGIBLE:
@@ -440,18 +508,25 @@ def dispatch(items, *, approved_root, expected_device, receipt_path,
             continue
 
         try:
-            if record['checks'].get('preservation') == 'immediate_copy':
+            proof = record['checks'].get('preservation')
+            if proof == 'immediate_copy':
                 if preserved_root is None:
                     raise Refused('preserve_content requires preserved_root')
                 preserved = preserve(record['path'], preserved_root, record['id'])
                 record['preserved'] = preserved
                 preservation.append(preserved)
-            elif record['checks'].get('preservation') == 'remote_merge_proof':
+            elif proof == 'remote_merge_proof':
                 record['preserved'] = {
                     'proof': 'remote_merge_proof',
-                    'proof_ids': list(item.get('remote_merge_proof_ids') or [])}
+                    'proof_ids': list(
+                        record['checks'].get('remote_merge_proof_ids') or [])}
+            elif proof == 'caller_preserved':
+                record['preserved'] = {
+                    'proof': 'caller_preserved',
+                    'receipt_ids': list(
+                        record['checks'].get('preservation_receipt_ids') or [])}
             else:
-                record['preserved'] = {'proof': 'caller_preserved'}
+                raise Refused('no preservation proof was selected')
         except (Refused, OSError, shutil.Error) as exc:
             record['disposition'] = BLOCKED
             record['reasons'].append(BLOCKED_PRESERVATION_FAILED)
@@ -486,6 +561,15 @@ def dispatch(items, *, approved_root, expected_device, receipt_path,
             record['disposition'] = BLOCKED
             record['reasons'].append(BLOCKED_REMOVAL_FAILED)
             record['reason'] = f'{BLOCKED_REMOVAL_FAILED}: {exc}'
+            records.append(record)
+            continue
+        except subprocess.TimeoutExpired as exc:
+            record['disposition'] = BLOCKED
+            record['reasons'].append(BLOCKED_REMOVAL_FAILED)
+            record['absence'] = prove_absence(record['path'])
+            record['reason'] = (f'{BLOCKED_REMOVAL_FAILED}: removal timed out '
+                                f'after {exc.timeout}s; observed state '
+                                f'{record["absence"]}')
             records.append(record)
             continue
         except OSError as exc:
