@@ -20,7 +20,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export const ENTRY_PATH = "runtime/dist/blackceo-council.mjs";
@@ -39,7 +39,43 @@ export function readEntryPoint(root, { load = true } = {}) {
       entry: null,
     };
   }
-  const bytes = readFileSync(abs);
+  let st;
+  try {
+    st = statSync(abs);
+  } catch (error) {
+    return {
+      ok: false,
+      problems: [`entry point unreadable: ${ENTRY_PATH}: ${String(error.message).split("\n")[0]}; ${REBUILD}`],
+      entry: null,
+    };
+  }
+  if (!st.isFile()) {
+    return {
+      ok: false,
+      problems: [`entry point is not a regular file: ${ENTRY_PATH} is a directory or special file; ${REBUILD}`],
+      entry: null,
+    };
+  }
+  if (st.size === 0) {
+    return {
+      ok: false,
+      problems: [
+        `entry point is empty (0 bytes): ${ENTRY_PATH} exists but carries no executable — ` +
+        `an existing path is not a valid artifact; ${REBUILD}`,
+      ],
+      entry: { path: ENTRY_PATH, sha256: createHash("sha256").update(Buffer.alloc(0)).digest("hex"), bytes: 0 },
+    };
+  }
+  let bytes;
+  try {
+    bytes = readFileSync(abs);
+  } catch (error) {
+    return {
+      ok: false,
+      problems: [`entry point unreadable: ${ENTRY_PATH}: ${String(error.message).split("\n")[0]}; ${REBUILD}`],
+      entry: null,
+    };
+  }
   const entry = {
     path: ENTRY_PATH,
     sha256: createHash("sha256").update(bytes).digest("hex"),
