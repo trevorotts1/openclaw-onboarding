@@ -3014,7 +3014,8 @@ def main(argv=None):
             if not limit:
                 limit = limit_from(doc)
                 from_brief = bool(limit)
-        if a.format == "session-json" or a.seed_answers_file or (a.step and (a.run_dir or a.run_state_file)):
+        if a.format != "studio-json" and (a.format == "session-json" or a.seed_answers_file
+                                             or a.run_dir or a.run_state_file):
             try:
                 from .card_session_cli import run as _card_session
             except ImportError:                 # direct factory.py invocation
