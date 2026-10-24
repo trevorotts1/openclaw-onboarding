@@ -6,39 +6,186 @@
   "cases": [
     {
       "name": "script_edit_invalidates_only_the_package",
-      "changed": ["script"],
-      "expect_invalidated": ["package"],
-      "expect_active": ["storyboard_approval"]
+      "changed": [
+        "script"
+      ],
+      "expect_invalidated": [
+        "package"
+      ],
+      "expect_active": [
+        "storyboard_approval"
+      ]
     },
     {
       "name": "lyrics_edit_invalidates_only_the_package",
-      "changed": ["lyrics"],
-      "expect_invalidated": ["package"],
-      "expect_active": ["storyboard_approval"]
+      "changed": [
+        "lyrics"
+      ],
+      "expect_invalidated": [
+        "package"
+      ],
+      "expect_active": [
+        "storyboard_approval"
+      ]
     },
     {
       "name": "cast_edit_invalidates_only_the_package",
-      "changed": ["episode_cast_manifest"],
-      "expect_invalidated": ["package"],
-      "expect_active": ["storyboard_approval"]
+      "changed": [
+        "episode_cast_manifest"
+      ],
+      "expect_invalidated": [
+        "package"
+      ],
+      "expect_active": [
+        "storyboard_approval"
+      ]
     },
     {
       "name": "world_edit_invalidates_only_the_package",
-      "changed": ["episode_world"],
-      "expect_invalidated": ["package"],
-      "expect_active": ["storyboard_approval"]
+      "changed": [
+        "episode_world"
+      ],
+      "expect_invalidated": [
+        "package"
+      ],
+      "expect_active": [
+        "storyboard_approval"
+      ]
     },
     {
       "name": "music_choice_touches_no_receipt",
-      "changed": ["selected_music"],
+      "changed": [
+        "selected_music"
+      ],
       "expect_invalidated": [],
-      "expect_active": ["package", "storyboard_approval"]
+      "expect_active": [
+        "package",
+        "storyboard_approval"
+      ]
     },
     {
       "name": "storyboard_edit_invalidates_only_the_elected_receipt",
-      "changed": ["storyboard_approval"],
-      "expect_invalidated": ["storyboard_approval"],
-      "expect_active": ["package"]
+      "changed": [
+        "storyboard_approval"
+      ],
+      "expect_invalidated": [
+        "storyboard_approval"
+      ],
+      "expect_active": [
+        "package"
+      ]
     }
-  ]
+  ],
+  "reply_decisions": {
+    "note": "Client replies that must NEVER open the whole-package gate, and the plain approvals that must. Each entry records the interpreter's non-approve read: 'revise' (refusal/edit) or 'ambiguous' (held, never guessed).",
+    "must_not_open": [
+      {
+        "name": "approves_nothing",
+        "text": "I approve nothing",
+        "intent": "revise"
+      },
+      {
+        "name": "approve_nothing",
+        "text": "approve nothing",
+        "intent": "revise"
+      },
+      {
+        "name": "approves_none_of_it",
+        "text": "I approve none of it",
+        "intent": "revise"
+      },
+      {
+        "name": "approves_then_revise",
+        "text": "I approve the script and revise the lyrics",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_but_change",
+        "text": "I approve, but change the ending",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "everything_except",
+        "text": "approve everything except the ending",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_option_two",
+        "text": "I approve option 2",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_the_foley",
+        "text": "approve the foley",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "double_negation_disapprove",
+        "text": "I do not disapprove",
+        "intent": "revise"
+      },
+      {
+        "name": "double_negation_not_saying_no",
+        "text": "I am not saying no",
+        "intent": "revise"
+      },
+      {
+        "name": "question_should_i",
+        "text": "should I approve this?",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "conditional_would_if",
+        "text": "I would approve if the ending were happier",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "third_party_said",
+        "text": "my friend said approve it",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "third_party_quoted",
+        "text": "the note said \"approve it\"",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_then_change_chorus",
+        "text": "yes, but please change the chorus first",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_but_not_lyrics",
+        "text": "I approve this but not the lyrics",
+        "intent": "revise"
+      },
+      {
+        "name": "not_yet",
+        "text": "not yet, ask me tomorrow",
+        "intent": "revise"
+      },
+      {
+        "name": "refuse_plain",
+        "text": "no, do not make it",
+        "intent": "revise"
+      }
+    ],
+    "must_open": [
+      {
+        "name": "plain_i_approve",
+        "text": "I approve",
+        "intent": "approve"
+      },
+      {
+        "name": "plain_yes_approved",
+        "text": "yes, approved",
+        "intent": "approve"
+      },
+      {
+        "name": "plain_approved_no_changes",
+        "text": "approved, no changes",
+        "intent": "approve"
+      }
+    ]
+  }
 }

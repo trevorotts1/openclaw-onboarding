@@ -184,6 +184,46 @@ def test_digest_drift_is_refused_not_permission():
     assert verdict["ok"] is False
     assert verdict["code"] == "APPROVAL_STALE"
 
+def _fixture():
+    with open(FIXTURE, encoding="utf-8") as f:
+        return json.load(f)
+
+def _presented():
+    """The one presentation, as the interpreter reads it: nothing approved."""
+    arts = {k: {"revision": 1, "sha256": "digest-" + k} for k in ("script", "lyrics")}
+    return ({"artifacts": arts, "approvals": [], "sent": True,
+             "asks": [{"ask_id": "ask-1", "kinds": ["script", "lyrics"], "state": "open",
+                       "revisions": {"script": 1, "lyrics": 1}}]},
+            {"source": "client", "source_ref": "tg-msg-9", "presentation_ask_id": "ask-1"})
+
+def test_nothing_short_of_an_unambiguous_approval_opens_the_gate():
+    """The coverage failure: every refusal, condition, scope, selection,
+    question and quote must leave the gate closed and record nothing."""
+    from script_approval import approval_events as AE
+    rec, ctx = _presented()
+    for case in _fixture()["reply_decisions"]["must_not_open"]:
+        read = AE.interpret_reply(case["text"], rec, ctx)
+        assert read["intent"] == case["intent"], "%s read as %s" % (case["name"], read["intent"])
+        assert AE.is_affirmative(case["text"]) is False, case["name"]
+        book = B.ApprovalBook()
+        book.bind("package", components(), tenant_id="t1", run_id="r1")
+        exc = _raises(book.approve, "package", client_ctx(case["text"]))
+        assert exc.code != "APPROVED", case["name"]
+        verdict = book.admissibility("package")
+        assert verdict["ok"] is False and book.receipt_for("package") is None, case["name"]
+
+def test_plain_approvals_still_open_the_gate():
+    from script_approval import approval_events as AE
+    rec, ctx = _presented()
+    for case in _fixture()["reply_decisions"]["must_open"]:
+        read = AE.interpret_reply(case["text"], rec, ctx)
+        assert read["intent"] == case["intent"], "%s read as %s" % (case["name"], read["intent"])
+        book = B.ApprovalBook()
+        book.bind("package", components(), tenant_id="t1", run_id="r1")
+        receipt = book.approve("package", client_ctx(case["text"]))
+        assert receipt["decision"] == "approved" and receipt["state"] == B.ACTIVE, case["name"]
+        assert book.admissibility("package")["ok"] is True, case["name"]
+
 
 if __name__ == "__main__":
     failures = 0

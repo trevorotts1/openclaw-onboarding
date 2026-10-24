@@ -506,8 +506,12 @@ def _mask_idioms(t):
 def _reads_as_offer(t):
     """The words are at least offering an approval (or naming one), so the
     screens below decide what kind of offer it is."""
-    return bool(_APPROVAL_RE.search(t)) or any(
-        re.search(r"\b%s\b" % re.escape(a), t) for a in _AFFIRM if len(a) > 3)
+    if _APPROVAL_RE.search(t) or t in _AFFIRM:
+        return True
+    words = t.split()
+    if words and words[0] in _AFFIRM:
+        return True
+    return any(re.search(r"\b%s\b" % re.escape(a), t) for a in _AFFIRM if len(a) > 3)
 
 def _scope_leftover(t):
     """The content word an approval is scoped to, when that word is NOT the
