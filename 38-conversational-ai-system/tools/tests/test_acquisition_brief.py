@@ -431,17 +431,27 @@ class AssetRegistryTests(unittest.TestCase):
                 ab.ASSET_ABSENT,
                 detail="no original photography",
             )
+            brief.assess_asset(
+                "testimonials",
+                ab.ASSET_ABSENT,
+                detail="no written reviews yet",
+            )
             report = brief.asset_report()
 
             self.assertEqual(
                 [entry["kind"] for entry in report["present"]], ["logo"]
             )
             self.assertEqual(
-                [entry["kind"] for entry in report["missing"]], ["photos"]
+                [entry["kind"] for entry in report["missing"]],
+                ["photos", "testimonials"],
             )
             self.assertEqual(report["must_prepare"], ["photos"])
+            self.assertEqual(
+                [entry["kind"] for entry in report["optional_missing"]],
+                ["testimonials"],
+            )
             self.assertNotIn("photos", report["unassessed"])
-            self.assertIn("testimonials", report["unassessed"])
+            self.assertIn("offer_documents", report["unassessed"])
 
     def test_unassessed_asset_is_not_treated_as_missing_or_preparable(self):
         with tempfile.TemporaryDirectory() as directory:

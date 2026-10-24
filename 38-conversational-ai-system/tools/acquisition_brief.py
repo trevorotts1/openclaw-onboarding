@@ -911,11 +911,12 @@ class AcquisitionBrief:
             }
             if record.get("status") == ASSET_PRESENT:
                 report["present"].append(entry)
-            elif required:
-                report["missing"].append(entry)
-                report["must_prepare"].append(kind)
             else:
-                report["optional_missing"].append(entry)
+                report["missing"].append(entry)
+                if required:
+                    report["must_prepare"].append(kind)
+                else:
+                    report["optional_missing"].append(entry)
         return report
 
     # ------------------------------------------------------------- readiness
