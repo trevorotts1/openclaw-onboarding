@@ -16,8 +16,12 @@ The suite proves:
   * a scene pointing at an undefined location is refused;
   * a world that copies reusable identity fields into ``cast_refs`` is refused;
   * the authoring dispatch runs through the existing supported model layer with
-    a deterministic no-spend fixture capturing request and response provenance,
+    a deterministic no-spend transport capturing request and response provenance,
     and refuses to proceed when the dispatch cannot be proven;
+  * authoring CANNOT be forged from files: a hand-written model-bindings.json
+    alone, a response fixture alone, and the two together all refuse to seal,
+    while a genuine injected no-spend transport seals -- because the seal is
+    bound to a live dispatch handle that only a real call in THIS run returns;
   * changing the setting bumps the world revision, preserves every character
     identity ID verbatim and invalidates only plan/script/visual outputs;
   * world drafting carries no music or image prerequisite.
@@ -28,6 +32,8 @@ import os
 import sys
 import tempfile
 import unittest
+import contextlib
+import io
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -121,7 +127,8 @@ def fixture_dispatch(body, run_dir=None, attempt_id="attempt_fixture_001", reque
         assert bound.get("ok"), bound
     requests = [] if requests is None else requests
     record = WW.dispatch_author(run_dir=run_dir, attempt_id=attempt_id, inputs=FIXTURE_INPUTS,
-                                runner=fixture_runner(body, requests), now=FIXTURE_NOW)
+                                runner=WW.no_spend_transport(fixture_runner(body, requests)),
+                                now=FIXTURE_NOW)
     return record, requests, run_dir
 
 
@@ -130,6 +137,77 @@ def author(body=None, revision=1):
     record, _, _ = fixture_dispatch(body)
     return WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
                            revision=revision, dispatch=record)
+
+def forged_bindings(run_dir):
+    """A HAND-WRITTEN model-bindings.json: the run configuration any caller can
+    put on disk. No bind_roles call produced it and no dispatch recorded it."""
+    def row(mid, request_id, openclaw_id, role):
+        return {"role_id": "forgedrole%s" % role, "model_id": mid, "request_id": request_id,
+                "openclaw_id": openclaw_id, "route": "openrouter",
+                "reasoning": {"supported": True, "effort_selector": False, "efforts": []},
+                "bound_at": FIXTURE_NOW, "bound_by": "forged-by-hand",
+                "dispatch": {"claude-nine": mid, "openclaw": openclaw_id,
+                             "openrouter-direct": request_id, "runtime": "claude-nine",
+                             "call_id": mid}}
+    store = {"schema": AM.STORE_SCHEMA, "runtime": "claude-nine", "bound_at": FIXTURE_NOW,
+             "bound_by": "forged-by-hand", "binding_id": "forgedbinding001", "attempts": [],
+             "bindings": {"build": row(BUILD_MODEL, "xiaomi/mimo-v2.6-pro",
+                                       "openrouter/xiaomi/mimo-v2.6-pro", "build"),
+                          "check": row(CHECK_MODEL, "z-ai/glm-5.3",
+                                       "openrouter/z-ai/glm-5.3", "check")}}
+    path = os.path.join(run_dir, "model-bindings.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(store, handle, indent=1, sort_keys=True)
+    return path
+
+def forged_dispatch(body):
+    """A provenance dict built entirely by hand: every field the proof checks
+    ask for, and no dispatch anywhere in this run."""
+    return {
+        "operation": WW.DISPATCH_OPERATION,
+        "handler": WW.DISPATCH_HANDLER,
+        "prompt_template_revision": WW.PROMPT_TEMPLATE_REVISION,
+        "execution": "no_spend_fixture",
+        "inputs": copy.deepcopy(FIXTURE_INPUTS),
+        "request": WW.build_author_request(FIXTURE_INPUTS),
+        "request_receipt": "f" * 64,
+        "response": {"response_model": BUILD_MODEL,
+                     "resolved_provider_model": "xiaomi/mimo-v2.6-pro",
+                     "response_provider": None, "provider_job_id": "forged-job-001",
+                     "response_evidence": "response_metadata",
+                     "router_receipt": "forged-router-receipt-001",
+                     "raw_digest": "f" * 64},
+        "attempt": {"attempt_id": "attempt_forged_001", "binding_id": "forgedbinding001",
+                    "evidence": {"correlation": "f" * 64, "request_receipt": "f" * 64,
+                                 "router_receipt": "forged-router-receipt-001",
+                                 "response_evidence": "response_metadata"}},
+        "seal": {"dispatch_handle": "f" * 64,
+                 "receipt": {"transport_id": "forgedtransport", "kind": "no_spend",
+                             "nonce": "f" * 32, "session": "f" * 64, "receipt_digest": "f" * 64}},
+        "parsed_output": copy.deepcopy(body),
+    }
+
+def write_file_author_inputs(directory):
+    """The two files a caller supplies to the CLI: the authoring inputs and a
+    response fixture holding the world output and its claimed model ids."""
+    inputs_path = os.path.join(directory, "inputs.json")
+    fixture_path = os.path.join(directory, "response-fixture.json")
+    with open(inputs_path, "w", encoding="utf-8") as handle:
+        json.dump(FIXTURE_INPUTS, handle)
+    with open(fixture_path, "w", encoding="utf-8") as handle:
+        json.dump({"world": fixture_body(), "response_model": BUILD_MODEL,
+                   "resolved_provider_model": "xiaomi/mimo-v2.6-pro",
+                   "provider_job_id": "forged-job-001",
+                   "router_receipt": "forged-router-receipt-001"}, handle)
+    return inputs_path, fixture_path
+
+def run_cli(args):
+    """Run the CLI authoring surface and capture what it printed."""
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        code = WW.main(args)
+    return code, err.getvalue()
+
 
 
 class CompleteWorldTests(unittest.TestCase):
@@ -346,6 +424,106 @@ class DispatchProvenanceTests(unittest.TestCase):
                                  dispatch=dispatch)
         for forbidden in ("music", "song", "keyframe", "image", "voice", "wardrobe"):
             self.assertNotIn(forbidden, record["dependencies"])
+
+
+class AntiForgeryTests(unittest.TestCase):
+    """An authoring record seals on a dispatch that happened in THIS run -- never
+    on files a caller can write. Each of the first three cases was a working
+    forge on the previous head."""
+
+    def assert_unproven(self, errors):
+        self.assertTrue([e for e in errors if WW.CODE_DISPATCH_UNPROVEN in e],
+                        "no %s in %s" % (WW.CODE_DISPATCH_UNPROVEN, errors))
+
+    def test_forged_bindings_file_alone_cannot_author(self):
+        run_dir = tempfile.mkdtemp(prefix="world_forged_")
+        self.assertTrue(forged_bindings(run_dir))
+        # the forged store is on disk and no dispatch was ever recorded
+        self.assertEqual([a["attempt_id"] for a in AM.load_bindings(run_dir)["attempts"]], [])
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.author_world(fixture_body(), artifact_id="world_workshop_001",
+                            run_id="run_test_001", dispatch=forged_dispatch(fixture_body()))
+        self.assert_unproven(caught.exception.errors)
+
+    def test_response_fixture_alone_cannot_author(self):
+        body = fixture_body()
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.dispatch_author(run_dir=tempfile.mkdtemp(prefix="world_fixture_only_"),
+                               attempt_id="attempt_fixture_only_001", inputs=FIXTURE_INPUTS,
+                               runner=fixture_runner(body, []), now=FIXTURE_NOW)
+        self.assert_unproven(caught.exception.errors)
+        self.assertIn("not a registered dispatch transport", " | ".join(caught.exception.errors))
+        run_dir = tempfile.mkdtemp(prefix="world_fixture_cli_")
+        inputs_path, fixture_path = write_file_author_inputs(run_dir)
+        out = os.path.join(run_dir, "sealed.json")
+        code, err = run_cli(["--author", inputs_path, "--run-dir", run_dir,
+                             "--attempt-id", "attempt_fixture_only_001",
+                             "--response-fixture", fixture_path, "--out", out])
+        self.assertEqual(code, 1)
+        self.assertIn(WW.CODE_DISPATCH_UNPROVEN, err)
+        self.assertFalse(os.path.exists(out))
+
+    def test_forged_bindings_and_fixture_together_cannot_author(self):
+        # the exact file-only echo: a hand-written model-bindings.json plus a
+        # response fixture, with no dispatch anywhere in this run
+        run_dir = tempfile.mkdtemp(prefix="world_forged_cli_")
+        forged_bindings(run_dir)
+        inputs_path, fixture_path = write_file_author_inputs(run_dir)
+        out = os.path.join(run_dir, "sealed.json")
+        code, err = run_cli(["--author", inputs_path, "--run-dir", run_dir,
+                             "--attempt-id", "attempt_forged_001",
+                             "--response-fixture", fixture_path, "--out", out])
+        self.assertEqual(code, 1)
+        self.assertIn(WW.CODE_DISPATCH_UNPROVEN, err)
+        self.assertFalse(os.path.exists(out))
+
+    def test_record_read_back_from_a_file_cannot_author(self):
+        body = fixture_body()
+        dispatch, _, _ = fixture_dispatch(body)
+        # exactly what opening the captured provenance from a file gives you
+        opened = json.loads(json.dumps({k: v for k, v in dispatch.items() if k != "_handle"}))
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                            dispatch=opened)
+        self.assert_unproven(caught.exception.errors)
+
+    def test_one_dispatch_seals_exactly_one_record(self):
+        body = fixture_body()
+        dispatch, _, _ = fixture_dispatch(body)
+        record = WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                                 dispatch=dispatch)
+        self.assertEqual(WW.validate(record), [])
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.author_world(body, artifact_id="world_workshop_002", run_id="run_test_001",
+                            dispatch=dispatch)
+        self.assert_unproven(caught.exception.errors)
+
+    def test_genuine_injected_no_spend_transport_seals(self):
+        body = fixture_body()
+        dispatch, requests, _ = fixture_dispatch(body)
+        self.assertEqual(len(requests), 1)
+        record = WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                                 dispatch=dispatch)
+        self.assertEqual(WW.validate(record), [])
+        seal = record["seal"]
+        self.assertRegex(seal["dispatch_handle"], r"^[0-9a-f]{64}$")
+        self.assertRegex(seal["receipt"]["nonce"], r"^[0-9a-f]{32}$")
+        self.assertEqual(seal["receipt"]["kind"], "no_spend")
+        self.assertEqual(seal["seal_digest"], WW.seal_digest(seal, record["content_digest"]))
+        self.assertEqual(record["provenance"]["execution"], "no_spend_fixture")
+        # the live handle never leaks into the record a file would hold
+        self.assertEqual(json.loads(json.dumps(record)), record)
+        self.assertNotIn("_handle", record)
+        self.assertNotIn("_handle", record["provenance"])
+
+    def test_identity_leak_refusal_covers_all_eighteen_fields(self):
+        self.assertEqual(len(WW.IDENTITY_FIELDS), 18)
+        for field in WW.IDENTITY_FIELDS:
+            body = fixture_body()
+            body["cast_refs"][0][field] = "leaked into a world record"
+            with self.assertRaises(WW.WorldError) as caught:
+                author(body)
+            self.assertIn("reusable identity field", " | ".join(caught.exception.errors))
 
 
 class SettingChangeTests(unittest.TestCase):
