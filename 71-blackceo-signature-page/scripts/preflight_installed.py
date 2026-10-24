@@ -15,11 +15,15 @@ Usage:
 
 Exit codes:
     0  installed runtime is ready: layout, imports, local assets and the
-       representative dry run all passed (shared cross-tree gaps may still be
-       reported as GAP lines when they are unreachable from the dry run)
+       representative dry run passed, and no demonstrated dependency is missing
     1  a runtime gap was demonstrated: something a production script needs is
        missing or fails
     2  the preflight could not complete a section (named in the output)
+
+A demonstrated gap is fatal to the verdict even when the exercised path never
+reached it — a dependency does not stop being missing because this run did not
+call it. Optional imaging/render capabilities are reported SKIP, matching
+`verify.sh --capabilities`, and never flip the verdict.
 """
 from __future__ import annotations
 
@@ -31,6 +35,10 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# Importing the installation's modules must not litter it with bytecode.
+sys.dont_write_bytecode = True
+_ENV = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
 
 # Shared components this skill reaches for beside its own tree. Each entry is
 # (relative path, consumer, what breaks when it is absent).
@@ -57,8 +65,13 @@ REQUIRED_LOCAL = (
     "scripts/two_strike_adapter.py",
     "references/copy-specs/standard-v6.json",
     "references/copy-specs/long-form-v6.json",
+    "references/section-image-prompt.md",
     "repo-integration/skill71-sync-allowlist.json",
 )
+
+# Optional capabilities. verify.sh --capabilities reports these as SKIP-IMAGE /
+# SKIP-RENDER when absent, so their absence is a skip here, never a gap.
+OPTIONAL_MODULES = ("PIL", "cv2", "numpy", "playwright", "jsonschema", "pypdf")
 
 REPO_ONLY_MARKER = "REPO_ROOT"
 
@@ -102,9 +115,17 @@ def check_imports(root: Path):
                          f"import {path.name}", f"SystemExit {exc.code}"))
             ok = ok and exc.code in (0, None)
         except Exception as exc:                       # noqa: BLE001
-            rows.append(("FAIL", f"import {path.name}",
-                         f"{type(exc).__name__}: {exc}"))
-            ok = False
+            # Optional imaging/render libraries are capabilities, not packaging:
+            # verify.sh --capabilities reports them as SKIP-IMAGE / SKIP-RENDER,
+            # so a lean host must not turn this preflight red for their absence.
+            missing = getattr(exc, "name", None) or ""
+            if isinstance(exc, ImportError) and missing.split(".")[0] in OPTIONAL_MODULES:
+                rows.append(("SKIP", f"import {path.name}",
+                             f"optional capability absent: {missing}"))
+            else:
+                rows.append(("FAIL", f"import {path.name}",
+                             f"{type(exc).__name__}: {exc}"))
+                ok = False
         finally:
             sys.modules.pop(mod, None)
     sys.path.remove(str(scripts))
@@ -160,6 +181,41 @@ def check_shared(root: Path):
     return rows
 
 
+PACKAGING_TOKENS = ("No such file", "Errno 2", "ModuleNotFoundError", "ImportError")
+
+
+def classify_build_failure(text: str) -> str:
+    """'gap', 'refused' or 'error' for a failed build_production_request run.
+
+    build_production_request prints REFUSED for OSError too, and OSError
+    includes a missing packaged file. A packaging break must never be read as a
+    polite refusal, so the file/module signature is tested first and wins.
+    """
+    if any(tok in text for tok in PACKAGING_TOKENS):
+        return "gap"
+    if "REFUSED" in text:
+        return "refused"
+    return "gap"
+
+
+def self_check() -> int:
+    cases = (
+        ("REFUSED: brand colors unresolved, no image stage may start. Ask the client", "refused"),
+        ("REFUSED: [Errno 2] No such file or directory: 'references/planted.md'", "gap"),
+        ("REFUSED: ModuleNotFoundError: No module named 'jsonschema'", "gap"),
+        ("Traceback (most recent call last): ValueError: boom", "gap"),
+    )
+    bad = [(t, want, classify_build_failure(t)) for t, want in cases
+           if classify_build_failure(t) != want]
+    for text, want, got in bad:
+        print(f"  [FAIL] classify {text[:60]!r}: want {want}, got {got}")
+    if bad:
+        print("SELF-CHECK FAIL")
+        return 1
+    print(f"SELF-CHECK PASS — {len(cases)} build-failure classifications")
+    return 0
+
+
 def check_dry_run(root: Path):
     """One representative production path, offline: build a request, preflight it.
 
@@ -187,18 +243,23 @@ def check_dry_run(root: Path):
             [sys.executable, str(root / "scripts" / "build_production_request.py"),
              "--copy-version", "standard", "--manuscript", str(ms),
              "--stage", "visual-mockup", "--out", str(out)],
-            cwd=str(root), capture_output=True, text=True, timeout=120)
+            cwd=str(root), capture_output=True, text=True, timeout=120, env=_ENV)
         build_text = (build.stdout + build.stderr).strip()
         if build.returncode != 0 or not out.is_file():
             last = [ln for ln in build_text.splitlines() if ln.strip()][-1:] or ["no output"]
-            # A refusal that names missing CLIENT data is correct fail-closed
-            # behaviour: the module loaded, resolved its own assets, and stopped
-            # for an input this preflight deliberately does not invent.
-            if "REFUSED" in build_text:
+            detail = last[0][:200]
+            verdict = classify_build_failure(build_text)
+            if verdict == "gap":
+                rows.append(("GAP", "dry run: build_production_request", detail))
+                return rows, False
+            if verdict == "refused":
                 rows.append(("PASS", "dry run: build_production_request (refused on client data)",
-                             last[0][:160]))
+                             detail[:160]))
+                rows.append(("SKIP", "dry run: stage_executor --preflight",
+                             "not reached: the build stopped for missing client data, which "
+                             "this preflight does not invent"))
                 return rows, True
-            rows.append(("GAP", "dry run: build_production_request", last[0][:200]))
+            rows.append(("GAP", "dry run: build_production_request", detail))
             return rows, False
         rows.append(("PASS", "dry run: build_production_request", ""))
 
@@ -206,7 +267,7 @@ def check_dry_run(root: Path):
             [sys.executable, str(root / "scripts" / "stage_executor.py"),
              str(tmp), "--request", str(out), "--preflight",
              "--stages", "visual-mockup", "--provider", "stub"],
-            cwd=str(root), capture_output=True, text=True, timeout=120)
+            cwd=str(root), capture_output=True, text=True, timeout=120, env=_ENV)
         tail = [ln for ln in (pre.stdout + pre.stderr).splitlines() if ln.strip()][-3:]
         # A preflight that fails closed on the request's own content is a correct
         # runtime: the modules loaded and resolved their assets. A traceback that
@@ -248,7 +309,11 @@ def main(argv=None) -> int:
     ap.add_argument("--target", default=None,
                     help="installation to inspect (default: the tree holding this script)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--self-check", action="store_true",
+                    help="test the build-failure classifier and exit")
     args = ap.parse_args(argv)
+    if args.self_check:
+        return self_check()
 
     root = Path(args.target).resolve() if args.target else skill_root_for(Path(__file__))
     rows = []
