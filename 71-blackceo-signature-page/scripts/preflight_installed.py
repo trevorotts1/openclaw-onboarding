@@ -281,12 +281,17 @@ def classify_executor_exit(returncode: int, text: str) -> str:
         return "gap"
     if any(tok in text for tok in PACKAGING_TOKENS):
         return "gap"
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not any(sig in line for sig in EXECUTOR_FAIL_CLOSED):
-            continue
-        if line.startswith("FAIL: ") or " REFUSED: " in line:
-            return "fail-closed"
+    if TRACEBACK_MARKER in text:
+        return "gap"
+    # Same terminal-evidence rule as the build path: a refusal followed by a
+    # crash is a crash, so the last non-empty line must itself be the refusal
+    # carrying a client-data literal. Multiple refusal lines still pass (the
+    # last one is a refusal); a trailer or exception line does not.
+    last = _last_nonempty_line(text)
+    if not (last.startswith("FAIL: ") or " REFUSED: " in last):
+        return "gap"
+    if any(sig in last for sig in EXECUTOR_FAIL_CLOSED):
+        return "fail-closed"
     return "gap"
 
 
@@ -349,6 +354,21 @@ def self_check() -> int:
         (1, "FAIL: cannot read production request /x: [Errno 2] No such file or directory",
          "gap"),
         (1, "PREFLIGHT visual-mockup part-1.png REFUSED: something else entirely", "gap"),
+        # A crash after a legitimate refusal is a crash, exactly as on the
+        # build path: the refusal must be the terminal evidence.
+        (1, "PREFLIGHT visual-mockup desktop/part-01.png REFUSED: prompt budget: "
+            "visual-mockup section 1: 3611 chars, 12389 below the 16000-char floor "
+            "(19000-char target); add genuine specification\n"
+            "Traceback (most recent call last):\nValueError: boom after a legitimate refusal",
+         "gap"),
+        (1, "PREFLIGHT visual-mockup desktop/part-01.png REFUSED: prompt budget: "
+            "visual-mockup section 1: 3611 chars, 12389 below the 16000-char floor "
+            "(19000-char target); add genuine specification\n"
+            "PermissionError: [Errno 13] denied", "gap"),
+        (1, "PREFLIGHT visual-mockup a.png REFUSED: prompt budget: 1 chars, 1 below the "
+            "16000-char floor; add genuine specification\n"
+            "PREFLIGHT visual-mockup b.png REFUSED: prompt budget: 2 chars, 2 below the "
+            "16000-char floor; add genuine specification", "fail-closed"),
     )
     verdict_cases = (
         (True, True, True, [("PASS", "x", "")], True),
