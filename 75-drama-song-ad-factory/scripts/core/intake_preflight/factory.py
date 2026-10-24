@@ -26,8 +26,11 @@ and the client answered Yes, it first runs script_approval.stage.run_stage: send
 the script through the client-delivery path (`openclaw message send` to --target,
 or, with no --target, the messages come back in data.messages for the chat),
 records the run as waiting and answers outcome "waiting" (exit 2) with no music
-command. `script-reply --run-dir D --reply TEXT` carries the client's answer:
-approve -> `next` hands out music; anything else -> the edit is re-checked and re-sent.
+command. `script-reply --run-dir D --reply TEXT --reply-source client
+--answer-source-ref REF --presentation-ask-id ASK --run-id RUN` carries the actual
+new client answer for a modern run. ASK and RUN are exposed in approval_context;
+the caller must supply them from the reply's presentation, never from a default.
+Approval -> `next` hands out music; an edit is re-checked and re-sent.
 """
 import argparse
 import json
@@ -482,17 +485,59 @@ def _deliverer(a, out):
     return deliver
 
 
+def _script_reply_context(a):
+    """Only the caller can identify an incoming client artifact reply."""
+    fields = (("source", "reply_source"), ("source_ref", "answer_source_ref"),
+              ("presentation_ask_id", "presentation_ask_id"), ("run_id", "run_id"))
+    return {field: getattr(a, flag) for field, flag in fields
+            if getattr(a, flag, None) not in (None, "")}
+
+
+def _script_presentation_context(run_dir, approval, events):
+    """Expose saved presentation identity; never fill an incoming reply from it."""
+    record = approval.record_for(str(run_dir))
+    if not isinstance(record, dict):
+        return {"run_id": None, "sent": False, "asks": [], "artifacts": {}}
+    return {"run_id": (record.get("run") or {}).get("run_id") or
+                       (record.get("reply_contract") or {}).get("run_id"),
+            "sent": record.get("sent") is True,
+            "asks": events.open_asks(record),
+            "artifacts": record.get("artifacts") or {}}
+
+
 def _script_gate(run_dir, a, reply):
     core = Path(__file__).resolve().parent.parent
     if str(core) not in sys.path:
         sys.path.insert(0, str(core))
     from script_approval import stage as _stage  # noqa: PLC0415
+    from script_approval import script_approval as _approval  # noqa: PLC0415
+    from script_approval import approval_events as _events  # noqa: PLC0415
     out = []
+    context = _script_reply_context(a) if reply is not None else {}
+    if reply is not None:
+        try:
+            admitted = _approval.reply_provenance(str(run_dir), context=context, reply=reply)
+            if not isinstance(admitted, dict) or type(admitted.get("ok")) is not bool:
+                raise ValueError("artifact reply admission returned no typed decision")
+        except (AttributeError, OSError, ValueError, TypeError, KeyError) as exc:
+            admitted = {"ok": False, "reason_code": "ARTIFACT_REPLY_PROVENANCE_UNAVAILABLE",
+                        "detail": str(exc)}
+        if not admitted["ok"]:
+            return {"outcome": "waiting", "reason_code": admitted.get("reason_code"),
+                    "detail": admitted.get("detail"), "messages": [], "delivered": [],
+                    "approval_context": _script_presentation_context(run_dir, _approval, _events)}
+    else:
+        # An outgoing presentation may carry the verified Store identity. It
+        # supplies no incoming client source or approval evidence.
+        admission = _production_admission(run_dir)
+        if admission.get("ok") and admission.get("run_id"):
+            context["run_id"] = admission["run_id"]
     try:
-        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply)
+        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply, context=context)
     except Exception as e:  # noqa: BLE001 - delivery failed: stay paused, resume re-sends
         return {"outcome": "error", "problems": [str(e)[:200]], "messages": out}
     r["delivered"] = out
+    r["approval_context"] = _script_presentation_context(run_dir, _approval, _events)
     return r
 
 
@@ -506,9 +551,12 @@ def _sa_envelope(cmd, sid, r):
         return envelope(cmd, sid, "rejected", "script-checks-failed",
                         "Fix: %s" % "; ".join(r["problems"]), data=r)
     if oc == "waiting":
+        if str(r.get("reason_code") or "").startswith("ARTIFACT_REPLY_"):
+            return envelope(cmd, sid, "waiting", r["reason_code"],
+                            r.get("detail") or "Carry the actual client reply and presentation identity.", data=r)
         return envelope(cmd, sid, "waiting", "SCRIPT_AWAITING_APPROVAL",
-                        "The client has the script. No song until they reply. When they do, "
-                        "run script-reply --run-dir <dir> --reply <their words>.", data=r)
+                        "The client has the script. No song until they reply. Use script-reply "
+                        "with their words, client source reference, run ID and presentation ask ID.", data=r)
     return envelope(cmd, sid, "ok", "script-approved",
                     "Script approved (or not asked for). Run `next` for the music stage.", data=r)
 
@@ -3000,6 +3048,14 @@ def main(argv=None):
                                              "(SCRIPT APPROVAL): approve, or an edit.")
     sr.add_argument("--run-dir", required=True)
     sr.add_argument("--reply", required=True)
+    sr.add_argument("--reply-source", default=None,
+                    help="Actual origin of this artifact reply; client is required for modern runs.")
+    sr.add_argument("--answer-source-ref", default=None,
+                    help="Distinct originating client message/event reference; never an intake answer reference.")
+    sr.add_argument("--presentation-ask-id", default=None,
+                    help="Exact current presented whole-script/lyrics ask ID from approval_context.asks.")
+    sr.add_argument("--run-id", default=None,
+                    help="Actual run ID carried by this client reply; never inferred from the folder.")
     sr.add_argument("--target", default="")
     fr = sub.add_parser("final-recap", help="Gate 4: build the ONE final "
                         "scene/music/cost recap by MEASURING the run (scenes, "
