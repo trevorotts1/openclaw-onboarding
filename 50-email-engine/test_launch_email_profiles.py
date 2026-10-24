@@ -297,5 +297,310 @@ class LaunchEmailProfileTests(unittest.TestCase):
                 worker_identity_ref=self.fx["worker_identity_ref"])
 
 
+def _l01_modules():
+    """The real L01 producer modules (read-only) plus the published contract.
+
+    Order: (1) this repo checkout when it carries the L01 producer files and
+    the published session contract; (2) otherwise the L01 head da0de21a3 via
+    read-only `git show`, materialized into a temp dir (never edited, never
+    committed). Returns (base_dir, engine, launch_intake, contract_path) or
+    None when neither source is available — the real-pipeline tests skip
+    then, and the handcrafted tests above still prove the consumer. Never a
+    handcrafted substitute producer.
+    """
+    import importlib.util
+    repo = SKILL_DIR.parent
+    engine_path = (repo / "shared-utils" / "client_intake" / "engine.py")
+    intake_path = (repo / "49-signature-funnel" / "scripts"
+                   / "launch_intake.py")
+    contract_path = (repo / "shared-utils" / "signature_launch"
+                     / "session_contract.json")
+    if (engine_path.is_file() and intake_path.is_file()
+            and contract_path.is_file()):
+        return _load_l01(engine_path.parent, intake_path.parent,
+                          contract_path)
+    return _l01_from_published_head()
+
+
+def _load_l01(engine_dir, intake_dir, contract_path):
+    import importlib.util
+    for d in (str(engine_dir), str(intake_dir)):
+        if d not in sys.path:
+            sys.path.insert(0, d)
+    try:
+        import engine as e  # noqa: E402
+        li = importlib.import_module("launch_intake")  # noqa: E402
+    except ImportError:
+        return None
+    if not all(hasattr(e, n) for n in ("new_doc", "record")):
+        return None
+    if not all(hasattr(li, n) for n in ("new_session", "ingest_answers",
+                                        "assemble_plan", "approve")):
+        return None
+    return e, li, contract_path
+
+
+#: The published L01 head carrying the session contract (read-only).
+L01_HEAD = "da0de21a3"
+
+#: L01-owned files the real pipeline reads (never edited, never committed).
+L01_FILES = (
+    "shared-utils/client_intake/engine.py",
+    "shared-utils/client_intake/palette_help.py",
+    "shared-utils/client_intake/question-bank.json",
+    "shared-utils/client_intake/palette-defaults.json",
+    "shared-utils/client_intake/fixtures/answers.elevation.json",
+    "shared-utils/signature_launch/session_contract.json",
+)
+
+
+def _l01_from_published_head():
+    """Materialize the real L01 producer files from the published head."""
+    import tempfile
+    repo = SKILL_DIR.parent
+    tmp = Path(tempfile.mkdtemp(prefix="l06-real-l01-"))
+    for tree in ("49-signature-funnel/scripts",
+                 "49-signature-funnel/structure",
+                 "shared-utils/client_intake",
+                 "shared-utils/signature_launch",
+                 "shared-utils/signature_launch_contract"):
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "archive",
+             "%s:%s" % (L01_HEAD, tree)],
+            capture_output=True)
+        if proc.returncode != 0:
+            return None
+        (tmp / tree).mkdir(parents=True, exist_ok=True)
+        unpack = subprocess.run(
+            ["tar", "-x", "-C", str(tmp / tree)],
+            input=proc.stdout, capture_output=True)
+        if unpack.returncode != 0:
+            return None
+    loaded = _load_l01(tmp / "shared-utils" / "client_intake",
+                       tmp / "49-signature-funnel" / "scripts",
+                       tmp / "shared-utils" / "signature_launch"
+                       / "session_contract.json")
+    if loaded is None:
+        return None
+    e, li, contract_path = loaded
+    return (e, li, contract_path, tmp)
+
+
+class RealProducerPipelineTests(unittest.TestCase):
+    """(f) the real L01 producer output end to end — never handcrafted.
+
+    new_session -> ingest_answers -> assemble_plan -> approve -> the L06
+    consumer -> the emitter. Skips when this checkout does not carry the L01
+    producer modules; fails closed otherwise (a refusal is a failure, an
+    empty typed:{} is a failure, an invented date is a failure).
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        mods = _l01_modules()
+        if mods is None:
+            self.skipTest("L01 producer modules not in this checkout")
+        if len(mods) == 4:
+            self.e, self.li, contract_src, self._l01_tmp = mods
+        else:
+            self.e, self.li, contract_src = mods
+            self._l01_tmp = None
+        if not contract_src.is_file():
+            self.skipTest("L01 session contract not published in checkout")
+        self.contract_path = self._write(
+            "session_contract.real.json",
+            json.loads(contract_src.read_text(encoding="utf-8")))
+        self._saved = adapter._session_contract_path
+        adapter._session_contract_path = lambda: self.contract_path
+
+    def tearDown(self) -> None:
+        adapter._session_contract_path = self._saved
+        self._tmp.cleanup()
+
+    def _write(self, name: str, doc) -> Path:
+        path = self.dir / name
+        path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+        return path
+
+    def _approved_producer_output(self):
+        li, e = self.li, self.e
+        answers_path = (SKILL_DIR.parent / "shared-utils" / "client_intake"
+                        / "fixtures" / "answers.elevation.json")
+        if self._l01_tmp is not None:
+            answers_path = (self._l01_tmp / "shared-utils" / "client_intake"
+                            / "fixtures" / "answers.elevation.json")
+        if not answers_path.is_file():
+            self.skipTest("L01 answers fixture not in this checkout")
+        answers = json.loads(answers_path.read_text(encoding="utf-8"))
+        fixed = dict(tenant_id="tenant-l01", location_id="loc-l01",
+                     launch_id="elevation-2026-11",
+                     client_identity_ref="client:l01-fixture",
+                     brand_ref="brand:l01-fixture", brand_hash="0" * 64,
+                     test_only=True)
+        session = li.new_session(**fixed)
+        li.ingest_answers(session, answers)
+        # The full launch plan refuses without an access destination, and no
+        # intake question produces one (launch_plan.ACCESS_KEYS has no producer).
+        # The destination is an operator-supplied fact, so supply it here.
+        session["answers"]["launch.access_url"] = {
+            "value": "https://example.test/access",
+            "state": "provided",
+            "source_ref": "test:l06-access-destination",
+        }
+        res = li.assemble_plan(session)
+        self.assertNotEqual(res.get("state"), "awaiting_missing_fact",
+                            res.get("missing"))
+        approval = {
+            "schema_version": "1.0", "approval_id": "APPR-L01",
+            "subject_type": "launch_plan_build",
+            "subject_hash": session["plan_hash"],
+            "owner_identity_ref": session["client_identity_ref"],
+            "source_message_ref": "msg-l01", "recorded_at": li._now(),
+            "scope": ["launch_plan_build"], "revoked": False,
+            "verification_class":
+                "recorded_consent_not_cryptographically_sealed",
+        }
+        li.approve(session, approval, worker_identity_ref="worker:l06-test")
+        # The producer's own digest rule pins the full plan at approval.
+        full = session.get("launch_plan")
+        self.assertIsInstance(full, dict)
+        canon = json.dumps(full, sort_keys=True, separators=(",", ":"),
+                           ensure_ascii=False).encode("utf-8")
+        import hashlib
+        pinned = (session.get("approved_launch_plan_digest")
+                  or session.get("plan_digest"))
+        if pinned is not None:
+            self.assertEqual(hashlib.sha256(canon).hexdigest(), pinned)
+        return session, approval
+
+    def _facts(self, launch):
+        offer = launch["offers"][0]["display_name"]
+        return (
+            {"brand_ref": "brand:l01-fixture", "brand_hash": "0" * 64,
+             "founder_name": "Elevation Coaching Co",
+             "brand_voice": "bold, warm, direct",
+             "provenance": {"state": "provided", "source_kind": "owner",
+                             "source_ref": "brand file",
+                             "approval_ref": "APPR-L01"}},
+            {"launch_id": launch["launch_id"], "offer": offer,
+             "landing": {
+                 "section_5_why": "After 6 weeks a clear offer.",
+                 "section_6_who": {
+                     "audience": "new coaches",
+                     "pains": [{"ref": "p1", "pain": "No steady income"},
+                               {"ref": "p2", "pain": "Feeling like a fraud"},
+                               {"ref": "p3",
+                                "pain": "Family asking for a real job"}]},
+                 "section_8_what_is_inside": ["12 video lessons"],
+                 "section_9_how_it_works": ["weekly calls"],
+                 "section_10_support": ["email support"],
+                 "round_timing": {"ref": "r", "fact": "rolling 30-day rounds"},
+                 "testimonial_evidence": None},
+             "provenance": {"state": "provided", "source_kind": "owner",
+                             "source_ref": "landing file",
+                             "approval_ref": "APPR-L01"}},
+        )
+
+    def test_real_session_adapts_to_a_consumed_brief(self) -> None:
+        session, approval = self._approved_producer_output()
+        # The real new_session keys the lifecycle as `state`, never `status`.
+        self.assertEqual(session.get("state"), "approved")
+        launch = session["plan"]
+        brand_facts, landing_facts = self._facts(launch)
+        brief = adapter.adapt(
+            session, launch, approval, brand_facts, landing_facts,
+            worker_identity_ref="worker:l06-test")
+        sc = brief.get("session_contract")
+        self.assertEqual(sc.get("state"), "consumed")
+        # No consumed typed:{} — every L01 ledger key is present and typed.
+        self.assertTrue(sc.get("typed"), "typed block must not be empty")
+        self.assertIs(sc["typed"]["launch.a2p_ready"], False)
+        self.assertIs(sc["typed"]["launch.conversation_ai"], False)
+        # The string "No, not yet" never reads as truthy.
+        self.assertFalse(sc["readiness"]["launch.a2p_ready"])
+        self.assertEqual(sc["typed"]["launch.timezone"],
+                         "America/New_York")
+        self.assertEqual(sc["launch_calendar"]["launch_at"],
+                         "2026-11-03T12:00:00-05:00")
+
+    def test_real_booleans_are_never_coerced(self) -> None:
+        session, approval = self._approved_producer_output()
+        session["answers"]["launch.a2p_ready"] = {
+            "value": "No", "state": "provided",
+            "source_ref": "answers-file:a2p_ready", "question_id": None}
+        if isinstance(session.get("launch_plan"), dict):
+            session["launch_plan"]["launch_answers"]["launch.a2p_ready"] = {
+                "value": "No", "state": "provided",
+                "source_ref": "answers-file:a2p_ready", "question_id": None}
+        launch = session["plan"]
+        brand_facts, landing_facts = self._facts(launch)
+        with self.assertRaises(adapter.Refusal):
+            adapter.adapt(session, launch, approval, brand_facts,
+                          landing_facts,
+                          worker_identity_ref="worker:l06-test")
+
+    def test_real_missing_answer_is_named_never_empty(self) -> None:
+        session, approval = self._approved_producer_output()
+        del session["answers"]["launch.sender_name"]
+        if isinstance(session.get("launch_plan"), dict):
+            (session["launch_plan"].get("launch_answers") or {}).pop(
+                "launch.sender_name", None)
+        launch = session["plan"]
+        brand_facts, landing_facts = self._facts(launch)
+        with self.assertRaises(adapter.Refusal) as ctx:
+            adapter.adapt(session, launch, approval, brand_facts,
+                          landing_facts,
+                          worker_identity_ref="worker:l06-test")
+        self.assertIn("launch.sender_name", str(ctx.exception))
+
+    def test_real_calendar_survives_to_emission(self) -> None:
+        import importlib.util as _ilu
+        spec = _ilu.spec_from_file_location(
+            "l06_emit_build_plan", str(EMITTER))
+        emitter = _ilu.module_from_spec(spec)
+        sys.modules["l06_emit_build_plan"] = emitter
+        spec.loader.exec_module(emitter)
+        session, approval = self._approved_producer_output()
+        launch = session["plan"]
+        brand_facts, landing_facts = self._facts(launch)
+        brief = adapter.adapt(
+            session, launch, approval, brand_facts, landing_facts,
+            worker_identity_ref="worker:l06-test")
+        fam = brief["family"]
+        objective = brief["answers"]["objective"]
+        emails = {
+            "sequence_type": fam["profile"], "profile": fam["profile"],
+            "sequence_id": fam["sequence_id"],
+            "founder_name": "Elevation Coaching Co",
+            "emails": [
+                {"e_slot": slot,
+                 "framework": fam["framework_map"][str(slot)]
+                 if "framework_map" in fam else "email",
+                 "objective": objective,
+                 "subjects": ["Subject A %d" % slot,
+                              "Subject B %d" % slot],
+                 "previews": ["Preview A %d" % slot,
+                              "Preview B %d" % slot]
+                 [:fam["preview_count"]],
+                 "body": "{{contact.first_name}},\n\nBody %d.\n\n"
+                         "Elevation Coaching Co" % slot,
+                 "ctas": ["[Go ->]"]}
+                for slot in range(1, fam["email_count"] + 1)],
+        }
+        plan = emitter.build_plan(brief, emails)
+        self.assertFalse(emitter.validate_plan(plan), emitter.validate_plan(plan))
+        ta = plan["_meta"]["timing_anchors"]
+        self.assertEqual(ta.get("calendar_state"), "approved")
+        self.assertEqual(ta.get("timezone"), "America/New_York")
+        self.assertEqual(ta["launch_calendar"]["launch_at"],
+                         "2026-11-03T12:00:00-05:00")
+        # Saved-draft read-back keeps the absolute dates.
+        readback = json.loads(json.dumps(plan))
+        self.assertEqual(
+            readback["_meta"]["timing_anchors"]["launch_calendar"]
+            ["doors_close_at"], "2026-11-10T23:59:00-05:00")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
