@@ -1,5 +1,18 @@
 # Changelog — Skill 50 (email-engine)
 
+## Unreleased - 2026-10-24 - audit-v3 L06: session-contract consumer and launch-fact coverage
+
+### Changed
+- **`tools/launch_intake_adapter.py`** — the synthetic session fixture now states the
+  ledger facts the published L01 session contract requires (`launch.a2p_ready`,
+  `launch.access_delivery`, `launch.access_url`, `launch.channels`,
+  `launch.conversation_ai`, the three calendar timestamps, `launch.payment_plans`,
+  `launch.reply_to_email`, `launch.sender_name`, `launch.timezone`) with their real
+  types. No intake question produces them; an operator supplies them, and the fixture
+  now says so instead of leaving the consumer to refuse by name.
+- **`test_launch_email_profiles.py`** — the real-pipeline helper supplies the access
+  destination the full launch plan now requires.
+
 ## Unreleased - 2026-10-14 - Presentations FIX-PLAN Item 33c: election-gated delivery option (doctrine only)
 
 ### Added

@@ -226,6 +226,60 @@ def _wait_after(index, objective, family=None):
     return (1, "days")
 
 
+def _launch_calendar_from_brief(brief):
+    """The approved launch_calendar, validated where L06 owns the data.
+
+    Source: brief session_contract.launch_calendar (the L01 full-plan block
+    the consumer carried through). Absolute ISO dates, the IANA zone name and
+    the phase order survive emission toward the L07 compiler — never a bare
+    timezone_ref placeholder when the calendar is known. Fail closed: a bad
+    zone, a missing offset or doors_open >= launch >= doors_close refuses the
+    plan here, before Skill 44 ever sees it. The full calendar compile
+    (DST gap/overlap, absolute+relative schedule nodes) lives in L07's
+    plan_reader.read_calendar — this carries the validated inputs to it.
+    """
+    sc = (brief or {}).get("session_contract") if isinstance(brief, dict) else None
+    cal = sc.get("launch_calendar") if isinstance(sc, dict) else None
+    if not isinstance(cal, dict) or not cal:
+        return None, None
+    zone_name = cal.get("timezone")
+    try:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    except ImportError:  # pragma: no cover — stdlib ships zoneinfo
+        return None, ["launch_calendar: zoneinfo is unavailable"]
+    if not (isinstance(zone_name, str) and zone_name.strip()):
+        return None, ["launch_calendar.timezone is empty — a real IANA zone "
+                      "is required, never an invented one"]
+    try:
+        ZoneInfo(zone_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None, ["launch_calendar.timezone %r is not a valid IANA zone"
+                      % (zone_name,)]
+    from datetime import datetime as _dt
+    parsed = {}
+    for field in ("doors_open_at", "launch_at", "doors_close_at"):
+        raw = cal.get(field)
+        if not (isinstance(raw, str) and raw.strip()):
+            return None, ["launch_calendar.%s is missing" % field]
+        try:
+            dt = _dt.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None, ["launch_calendar.%s %r is not an ISO-8601 date-time"
+                          % (field, raw)]
+        if dt.tzinfo is None or dt.utcoffset() is None:
+            return None, ["launch_calendar.%s %r carries no UTC offset"
+                          % (field, raw)]
+        parsed[field] = dt
+    if not (parsed["doors_open_at"] < parsed["launch_at"]
+            < parsed["doors_close_at"]):
+        return None, ["launch_calendar violates strict phase order: "
+                      "doors_open_at < launch_at < doors_close_at is required"]
+    return {"doors_open_at": parsed["doors_open_at"].isoformat(),
+            "launch_at": parsed["launch_at"].isoformat(),
+            "doors_close_at": parsed["doors_close_at"].isoformat(),
+            "timezone": zone_name}, None
+
+
 def build_plan(brief, emails_doc, folder=None, workflow_slug=None):
     answers = (brief or {}).get("answers", {}) if isinstance(brief, dict) else {}
     if not isinstance(answers, dict):
@@ -334,6 +388,33 @@ def build_plan(brief, emails_doc, folder=None, workflow_slug=None):
         eligibility = said.get("eligibility") or family["eligibility"]
         lifecycle = said.get("lifecycle") or family["lifecycle"]
         sender_metadata = said.get("sender") or family["sender"]
+        # Absolute timing: the approved launch_calendar travels with the plan
+        # toward the L07 compiler (absolute dates + the real IANA zone), with
+        # the L06-owned validation above. No calendar on the brief (legacy
+        # path) keeps the old placeholder and says so.
+        calendar, calendar_errors = _launch_calendar_from_brief(brief)
+        if calendar_errors:
+            raise ValueError("; ".join(calendar_errors))
+        if calendar is None:
+            timing_anchors = {
+                "anchor_event": family["timing"]["anchor"],
+                "scheduling_basis": "enrollment",
+                "anchor_rule": family["timing"]["rule"],
+                "timezone_ref": "skill44_location_timezone",
+                "calendar_state": "absent",
+                "steps": wait_anchors,
+            }
+        else:
+            timing_anchors = {
+                "anchor_event": family["timing"]["anchor"],
+                "scheduling_basis": "enrollment",
+                "anchor_rule": family["timing"]["rule"],
+                "timezone": calendar["timezone"],
+                "timezone_ref": "skill44_location_timezone",
+                "launch_calendar": calendar,
+                "calendar_state": "approved",
+                "steps": wait_anchors,
+            }
         meta.update({
             "profile": family["profile"],
             "family": family["kind"],
@@ -376,13 +457,7 @@ def build_plan(brief, emails_doc, folder=None, workflow_slug=None):
             },
             "enrollment_conditions": enrollment or _DEFAULT_ENROLLMENT_CONDITIONS,
             "eligibility": eligibility,
-            "timing_anchors": {
-                "anchor_event": family["timing"]["anchor"],
-                "scheduling_basis": "enrollment",
-                "anchor_rule": family["timing"]["rule"],
-                "timezone_ref": "skill44_location_timezone",
-                "steps": wait_anchors,
-            },
+            "timing_anchors": timing_anchors,
             "lifecycle": lifecycle,
             "sender": sender_metadata,
             "sender_config_refs": {
@@ -498,6 +573,19 @@ def _validate_launch_plan(plan, meta, family):
     if not anchors.get("anchor_event") or not anchors.get("anchor_rule") \
             or not isinstance(anchors.get("steps"), list):
         errors.append("launch plan: timing_anchors missing anchor_event/anchor_rule/steps")
+    # Absolute timing: a calendar_state of "approved" must carry the validated
+    # launch_calendar (ISO dates + real IANA zone); a placeholder
+    # timezone_ref alone is a refusal when the calendar was known.
+    if anchors.get("calendar_state") == "approved":
+        cal = anchors.get("launch_calendar") or {}
+        if not (isinstance(cal.get("timezone"), str) and cal["timezone"].strip()):
+            errors.append("launch plan: timing_anchors carries calendar_state "
+                          "'approved' but no IANA timezone")
+        for field in ("doors_open_at", "launch_at", "doors_close_at"):
+            if not (isinstance(cal.get(field), str) and cal[field].strip()):
+                errors.append("launch plan: timing_anchors.launch_calendar.%s "
+                              "missing (absolute dates must survive emission)"
+                              % field)
     sender_refs = meta.get("sender_config_refs") or {}
     if not sender_refs.get("sender_profile_ref"):
         errors.append("launch plan: sender_config_refs.sender_profile_ref "
@@ -704,6 +792,60 @@ def _selftest():
     checks.append(("sig-validate-rejects-flattened", bool(validate_plan(flattened)), None))
     checks.append(("sig-plan-json-roundtrip",
                    json.loads(json.dumps(sig_plan))["_meta"]["profile"] == "signature_launch_landing_10", None))
+    # ---- L06 timing slice: the approved launch_calendar survives emission
+    #      toward the L07 compiler as absolute dates + the real IANA zone.
+    #      Without a calendar on the brief (legacy path) the placeholder
+    #      stays and says "absent"; with one, the dates are carried and a
+    #      bad zone / missing offset / broken phase order refuses here.
+    checks.append(("sig-legacy-timing-absent",
+                   sig_meta["timing_anchors"].get("calendar_state") == "absent"
+                   and sig_meta["timing_anchors"].get("timezone_ref")
+                   == "skill44_location_timezone", None))
+    cal_brief = _copy.deepcopy(sig_brief)
+    cal_brief["session_contract"] = {
+        "state": "consumed",
+        "launch_calendar": {
+            "doors_open_at": "2026-11-03T09:00:00-05:00",
+            "launch_at": "2026-11-03T12:00:00-05:00",
+            "doors_close_at": "2026-11-10T23:59:00-05:00",
+            "timezone": "America/New_York",
+        },
+    }
+    cal_plan = build_plan(cal_brief, sig_emails, folder="Email Engine — Selftest")
+    cal_ta = cal_plan["_meta"]["timing_anchors"]
+    checks.append(("sig-calendar-carried",
+                   cal_ta.get("calendar_state") == "approved"
+                   and cal_ta.get("timezone") == "America/New_York"
+                   and cal_ta["launch_calendar"]["launch_at"]
+                   == "2026-11-03T12:00:00-05:00"
+                   and cal_ta["launch_calendar"]["doors_open_at"]
+                   == "2026-11-03T09:00:00-05:00"
+                   and cal_ta["launch_calendar"]["doors_close_at"]
+                   == "2026-11-10T23:59:00-05:00"
+                   and not validate_plan(cal_plan), None))
+    bad_zone_brief = _copy.deepcopy(cal_brief)
+    bad_zone_brief["session_contract"]["launch_calendar"]["timezone"] = "Mars/Olympus"
+    try:
+        build_plan(bad_zone_brief, sig_emails)
+        checks.append(("sig-bad-zone-refused", False, "no refusal"))
+    except ValueError:
+        checks.append(("sig-bad-zone-refused", True, None))
+    bad_order_brief = _copy.deepcopy(cal_brief)
+    bad_order_brief["session_contract"]["launch_calendar"]["launch_at"] = \
+        "2026-11-11T12:00:00-05:00"
+    try:
+        build_plan(bad_order_brief, sig_emails)
+        checks.append(("sig-bad-phase-order-refused", False, "no refusal"))
+    except ValueError:
+        checks.append(("sig-bad-phase-order-refused", True, None))
+    no_offset_brief = _copy.deepcopy(cal_brief)
+    no_offset_brief["session_contract"]["launch_calendar"]["launch_at"] = \
+        "2026-11-03T12:00:00"
+    try:
+        build_plan(no_offset_brief, sig_emails)
+        checks.append(("sig-naive-datetime-refused", False, "no refusal"))
+    except ValueError:
+        checks.append(("sig-naive-datetime-refused", True, None))
     # ---- UL-007: EVERY registry family emits the same paired DRAFT shape, and
     #      the pairs survive a save + read-back (JSON round-trip). The old
     #      emitter only did this for the main landing profile, so a pre-launch,
@@ -786,7 +928,11 @@ def main(argv=None):
 
     brief = _load(args.brief, "brief.json") if args.brief else {}
     emails_doc = _load(args.emails, "emails.json")
-    plan = build_plan(brief, emails_doc, folder=args.folder, workflow_slug=args.workflow_slug)
+    try:
+        plan = build_plan(brief, emails_doc, folder=args.folder, workflow_slug=args.workflow_slug)
+    except ValueError as exc:
+        print("FATAL: launch calendar refused (fail-closed): %s" % exc, file=sys.stderr)
+        return EXIT_INVALID
     errs = validate_plan(plan)
     if errs:
         print("FATAL: emitted plan failed structural validation (fail-closed):", file=sys.stderr)
