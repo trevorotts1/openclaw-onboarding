@@ -1,9 +1,9 @@
 {
  "minimax-h3/image-to-video": {
   "unit": "per-second",
-  "tier_credits": 13,
+  "tier_credits": 8,
   "source": "registry",
-  "note": "Skill 74 estimate = highest listed tier (2K 13 credits/s) x units; conservative by contract"
+  "note": "Skill 74 estimate = 768P tier 8 credits/s x units, matching the card's client-facing rate ($0.04/s); the 2K tier is 13 credits/s and is not what the card quotes"
  },
  "bytedance/seedance-2-mini": {
   "unit": "per-second",

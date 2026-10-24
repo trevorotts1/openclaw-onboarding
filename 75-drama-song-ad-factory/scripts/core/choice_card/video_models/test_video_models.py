@@ -19,7 +19,7 @@ import kie_dispatch.model_lock as ML  # noqa: E402
 import spend_ledger as L  # noqa: E402
 from catalog_calculator import card_render as CR  # noqa: E402
 
-NAMES = ["Hailuo 02 Standard", "Seedance 2.5", "Seedance 2.0 Mini", "Google Veo 3.1"]
+NAMES = ["MiniMax H3", "Seedance 2.5", "Seedance 2.0 Mini", "Google Veo 3.1"]
 
 #: DSR-105: the five typed story-brief answers that open the card, plus the
 #: 1-based line numbers of the two questions these tests move around.
@@ -56,9 +56,9 @@ def _expect(rate, per_clip, shot_s, seconds):
 
 
 EXPECT = {  # (rate, per_clip, shot_s) -> the four models in order
-    "Hailuo 02 Standard": (0.025, False, 6), "Seedance 2.5": (0.315, False, 15),
+    "MiniMax H3": (0.04, False, 15), "Seedance 2.5": (0.315, False, 15),
     "Seedance 2.0 Mini": (0.041, False, 15), "Google Veo 3.1": (0.30, True, 8)}
-LENGTHS = (("1", 60, "60 seconds"), ("3", 180, "3 minutes"))
+LENGTHS = (("1", 60, "60 seconds"), ("4", 180, "3 minutes"))
 
 
 def _card_total(n, label, price_fn, **kw):
@@ -81,7 +81,7 @@ def test_four_options_in_order_h3_first_and_recommended():
     for line, name in zip(opts, NAMES):
         assert line[3:].startswith(name + " - "), line
     assert "(RECOMMENDED)" in opts[0] and sum("(RECOMMENDED)" in l for l in opts) == 1
-    assert "I recommend option 1 (Hailuo 02 Standard)" in msg
+    assert "I recommend option 1 (MiniMax H3)" in msg
     assert "Prices are for your 60-second ad" in msg
 
 
@@ -105,7 +105,7 @@ def test_question_price_equals_card_with_real_skill_74_registry_prices():
 
 
 def test_recap_line_is_plain_and_priced():
-    msg = IC.conversation(BRIEF + ["1", "3", "1", "1", "2", "$25", "1", "1", "1"])["message"]
+    msg = IC.conversation(BRIEF + ["1", "4", "1", "1", "2", "$25", "1", "1", "1"])["message"]
     cents = _expect(*EXPECT["Seedance 2.5"], 180)
     assert ("%d. Video model: Seedance 2.5 - about $%d.%02d" % (MODEL_N, cents // 100, cents % 100)) in msg, msg
 
@@ -113,7 +113,7 @@ def test_recap_line_is_plain_and_priced():
 def test_changing_length_reprices_the_recap():
     # fourteen answers (60 s, Seedance 2.5), recap, change LENGTH_N, pick 3 minutes
     msg = IC.conversation(BRIEF + ["1", "1", "1", "1", "2", "$25", "1", "1", "1"]
-                          + [str(LENGTH_N), "3"])["message"]
+                          + [str(LENGTH_N), "4"])["message"]
     cents = _expect(*EXPECT["Seedance 2.5"], 180)
     assert ("%d. Video model: Seedance 2.5 - about $%d.%02d" % (MODEL_N, cents // 100, cents % 100)) in msg, msg
 
@@ -122,7 +122,7 @@ def test_changing_length_reprices_the_recap():
 
 #: input fields and enums from the live createTask schemas (Skill 74 `schema`, 2026-10-09)
 SCHEMA = {
-    "hailuo/02-image-to-video-standard": {"prompt", "first_frame_url", "last_frame_url", "duration", "resolution"},
+    "minimax-h3/image-to-video": {"prompt", "first_frame_url", "last_frame_url", "duration", "resolution"},
     "bytedance/seedance-2-5": {"prompt", "first_frame_url", "last_frame_url", "resolution", "aspect_ratio",
                                "generate_audio", "duration"},
     "bytedance/seedance-2-mini": {"prompt", "first_frame_url", "last_frame_url", "resolution", "aspect_ratio",
@@ -161,7 +161,7 @@ def _dispatch_choice(n, first_frame=None):
     state, ledger = os.path.join(tmp, "state.db"), os.path.join(tmp, "spend.db")
     L.init_run(ledger, "run-vm", 10000)
     IC.conversation(BRIEF + ["1", "1", "1", "1", str(n)], state_store=state, run_id="run-vm")   # the client answers; run state is written
-    shot_s = 6 if n == 1 else 8   # Hailuo 02 clips run 6 or 10 s only
+    shot_s = 6 if n == 1 else 8   # H3/Seedance take any whole second; Veo only 4, 6 or 8
     req = VM.request_for_run(state, "run-vm", "A woman sings at a kitchen window. " * 6, shot_s, "9:16", first_frame)
     req["storyboard"] = {"shots": [{"shot_id": "s1", "status": "storyboard_approved"}],
                          "review": {"outcome": "pass", "reason_code": "storyboard-accepted"}}
@@ -214,14 +214,14 @@ def test_payload_google_veo_3_1_fast():
     _check_fields(sub)
 
 
-def test_payload_h3_unchanged():
+def test_payload_minimax_h3():
     env, sub = _dispatch_choice(1)
     assert env["outcome"] == "ok", env
-    assert sub["model"] == "hailuo/02-image-to-video-standard" and sub["input"]["resolution"] == "768P"
+    assert sub["model"] == "minimax-h3/image-to-video" and sub["input"]["resolution"] == "768P"
 
 
 def test_unsupported_durations_refused_before_any_call():
-    for n, d in ((4, 5), (4, 9), (2, 31), (3, 16)):
+    for n, d in ((4, 5), (4, 9), (1, 16), (2, 31), (3, 16)):
         try:
             VM.build_request(VM.model_for(n), "p", d)
         except ValueError:
@@ -230,7 +230,7 @@ def test_unsupported_durations_refused_before_any_call():
 
 
 def test_client_pick_reaches_card_row_and_dispatch_payload_for_every_model():
-    want = {1: ("hailuo/02-image-to-video-standard", "768P", "Hailuo 02 Standard 768P (RECOMMENDED)"),
+    want = {1: ("minimax-h3/image-to-video", "768P", "MiniMax H3 768P (RECOMMENDED)"),
             2: ("bytedance/seedance-2-5", "720p", "Seedance 2.5 720p"),
             3: ("bytedance/seedance-2-mini", "720p", "Seedance 2.0 Mini 720p"),
             4: ("veo-3-1", "720p", "Google Veo 3.1 720p")}
