@@ -531,6 +531,59 @@ class DisplayMetadataBoundary(unittest.TestCase):
         self.assertNotIn("Whitney", wire)
         self.assertEqual(G.find_matches(wire, self.aliases), [])
 
+class SquashedSpellings(unittest.TestCase):
+    """S75-T41 defect 1: a squashed / hyphenated / punctuation-stripped
+    spelling of a catalog reference is the SAME reference, in BOTH directions
+    -- the leak is caught on both createTask directions (``input.style`` and
+    ``input.negative_tags``), and a word that merely CONTAINS a squashed alias
+    is not one."""
+
+    LEAKS = (
+        ("soul-rise", "negative_tags", "andraday beat"),
+        ("acoustic-pop", "style", "warm strings, EdSheeran groove"),
+        ("soul-ballad", "style", "warm strings, avoid LutherVandross tone"),
+    )
+
+    def setUp(self):
+        self.catalog = load_catalog()
+        self.aliases = G.alias_set(self.catalog)
+
+    def test_every_spelling_form_is_generated_per_alias(self):
+        forms = G._alias_forms("Ed Sheeran")
+        for form in ("ed sheeran", "edsheeran", "ed-sheeran"):
+            self.assertIn(form, forms)
+        self.assertIn("pdiddy", G._alias_forms("P. Diddy"))
+        self.assertIn("dangelo", G._alias_forms("D’Angelo"))
+
+    def test_squashed_leaks_are_caught_and_never_dispatched(self):
+        for style_id, field, text in self.LEAKS:
+            payload = envelope(self.catalog, style_id, **{field: text})
+            self.assertTrue(G.find_matches(text, self.aliases), text)
+            receipt = G.guard(payload, self.catalog)
+            self.assertIn(receipt["decision"], ("SANITIZED", "BLOCKED"), text)
+            self.assertNotEqual(receipt["decision"], "PASS", text)
+            if receipt["sendable"]:
+                wire = json.dumps(receipt["payload"], ensure_ascii=False)
+                self.assertNotIn(text, wire, (field, text))
+                self.assertEqual(G.find_matches(wire, self.aliases), [],
+                                 (field, text))
+
+    def test_squashed_hit_is_alias_shaped_never_a_substring(self):
+        for text in ("andradaybeat drums", "bandraday groove",
+                     "luthervandrossville tone", "bedsheeran groove",
+                     "the day beat", "warm piano and strings"):
+            self.assertEqual(G.find_matches(text, self.aliases), [], text)
+        for text in ("andraday beat", "andraday_beat", "ANDRA-DAY beat",
+                     "EdSheeran groove", "avoid LutherVandross tone",
+                     "Luther-Vandross tone", "PDiddy groove",
+                     "CÉLINE DION", "jelly-roll"):
+            self.assertTrue(G.find_matches(text, self.aliases), text)
+
+    def test_no_alias_set_matches_nothing(self):
+        self.assertEqual(G.find_matches("andraday beat", {}), [])
+        receipt = G.guard(envelope(self.catalog, "soul-rise"), {"styles": {}})
+        self.assertEqual(receipt["decision"], "PASS")
+
 class Hygiene(unittest.TestCase):
     def test_modules_are_stdlib_only_and_never_touch_a_provider(self):
         forbidden = ("socket", "urllib", "requests", "http.client",

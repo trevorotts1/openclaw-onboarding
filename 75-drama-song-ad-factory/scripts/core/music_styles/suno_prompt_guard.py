@@ -21,7 +21,11 @@ Three outcomes, never a silent pass:
 
 Case, Unicode accents, apostrophes (straight and curly) and punctuation are
 normalized before matching, so ``CÉLINE DION``, ``Celine Dion.`` and
-``Celine Dion’s`` all hit the same alias.
+``Celine Dion’s`` all hit the same alias.  The spaces between a reference's
+words may also be absent or replaced by any punctuation run, so ``andraday``,
+``ANDRA-DAY`` and ``EdSheeran groove`` hit the same alias their spaced
+spelling does -- and a squashed hit still has to be the WHOLE alias-shaped
+word run, never a substring of a longer word.
 
 Object KEYS are outbound text too: every key at any depth is normalized and
 matched exactly like a value, so a name can never ride out of the payload
@@ -83,8 +87,12 @@ class PromptGuardError(ValueError):
 
 
 # ------------------------------------------------------------------ alias ---
-def normalize(text):
-    """Comparable form: NFKD, accents dropped, casefolded, punctuation -> space."""
+def normalize(text, keep_hyphens=False):
+    """Comparable form: NFKD, accents dropped, casefolded, punctuation -> space.
+
+    ``keep_hyphens=True`` keeps ``-`` as a separator of its own, so the
+    HYPHENATED spelling of a reference is matchable exactly like the spaced one.
+    """
     if not isinstance(text, str):
         return ""
     folded = unicodedata.normalize("NFKD", text)
@@ -92,21 +100,37 @@ def normalize(text):
     folded = folded.casefold()
     for curly in ("’", "‘", "ʼ", "`", "´"):
         folded = folded.replace(curly, "'")
-    folded = re.sub(r"[^\w'\s]+", " ", folded, flags=re.UNICODE)
+    folded = re.sub(r"[^\w'\s-]+" if keep_hyphens else r"[^\w'\s]+", " ",
+                    folded, flags=re.UNICODE)
     folded = re.sub(r"\s+", " ", folded).strip()
     return folded
 
 
 def _alias_forms(name):
-    """Every comparable spelling of one display reference."""
+    """Every comparable spelling of one display reference.
+
+    Matching runs on normalized text, so the forms are the spellings that
+    survive it: the spaced CASE-FOLDED form (``luther vandross``), the
+    PUNCTUATION-STRIPPED form (``p diddy`` -> ``pdiddy``), the HYPHENATED form
+    (``luther-vandross``) and the SPACE-REMOVED form (``luthervandross``).
+    A squashed or hyphenated spelling is the SAME reference, not a new one, and
+    a squashed form is only ever matched as a whole alias-shaped run (see
+    ``_matcher``) -- never as an arbitrary substring.
+    """
     forms = set()
     norm = normalize(name)
     if not norm:
         return forms
-    forms.add(norm)
+    bases = [norm]
     # a possessive/inflected display form ("Adele's") folds to "adele s"
     if norm.endswith(" s"):
-        forms.add(norm[:-2])
+        bases.append(norm[:-2])
+    for base in bases:
+        for run in (base, base.replace("'", "")):
+            forms.add(run)
+            if " " in run:
+                forms.add(run.replace(" ", ""))    # space-removed: "andraday"
+                forms.add(run.replace(" ", "-"))   # hyphenated: "ed-sheeran"
     return forms
 
 
@@ -180,12 +204,21 @@ def _strings(value):
 
 # ------------------------------------------------------------------ match ---
 def find_matches(text, aliases):
-    """Aliases present in one text, whole-word on the normalized form."""
-    norm = normalize(text)
-    if not norm:
+    """Aliases present in one text, alias-shaped on the normalized form.
+
+    Both normalized views are matched: the spaced view (punctuation -> space)
+    and the hyphen-preserving one, so every spelling a form can take is
+    reachable.  A hit is always a whole alias-shaped word run -- the boundary
+    in ``_matcher`` is what keeps ``andraday`` from matching inside
+    ``andradaybeat`` or ``bandraday``.
+    """
+    if not isinstance(text, str):
         return []
     regex, _known = _matcher(aliases)
-    return sorted({match.group(0) for match in regex.finditer(norm)})
+    hits = set()
+    for view in (normalize(text), normalize(text, keep_hyphens=True)):
+        hits.update(match.group(0) for match in regex.finditer(view))
+    return sorted(hits)
 
 
 #: One compiled alternation per alias set: the guard runs over every field of
@@ -199,6 +232,13 @@ def _matcher(aliases):
     if cached is None:
         alternatives = "|".join(re.escape(alias) for alias in
                                 sorted(key, key=len, reverse=True))
+        if not alternatives:
+            alternatives = r"(?!)"   # no aliases: the empty alternation never matches
+        # The boundaries are what make a hit ALIAS-SHAPED: a form matches only
+        # as a whole word run, so the space-removed "andraday" hits "andraday
+        # beat", "andraday_beat" and "ANDRA-DAY" while never matching inside
+        # "andradaybeat" or "bandraday" (a substring of a longer word is a
+        # different word, not this reference).
         cached = (re.compile(r"(?<![0-9a-z])(?:%s)(?![0-9a-z])"
                              % alternatives), set(key))
         _MATCHER_CACHE[key] = cached
