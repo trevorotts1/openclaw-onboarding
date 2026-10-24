@@ -420,6 +420,113 @@ def test_generic_descriptor_refused_in_either_position():
               if d["character_id"] == "char_manager_002"}
     assert "display_name" in fields
 
+# --- a generic descriptor is not an identity, whatever it wears (S75-A06 r3) -
+
+#: The same descriptor dressed in punctuation, quoting, brackets, a
+#: possessive or a trailing period. Every one is the same evasion.
+DRESSED = ["a woman,", "the manager.", "a woman!", "a woman;", "(the manager)",
+           "'the manager'", '"a woman"', "[the manager]", "the manager's",
+           "  A WOMAN.  ", "a woman, leader"]
+
+#: Real people whose names merely contain descriptor words: a name is a name.
+REAL_NAMES = ["Dana Woman", "Theresa Manager", "Wanda Manager",
+              "Aisha Womack", "Manny Persons"]
+
+#: A role description, not a person: it opens on the generic descriptor, and
+#: the module already refuses that shape ("a customer in line").
+ROLE_DESCRIPTIONS = ["the manager of the east wing", "a customer in line"]
+
+
+def test_punctuation_dressed_descriptor_is_refused_as_display_name():
+    for dressed in DRESSED:
+        request, response = load()
+        response["identities"][0]["display_name"] = dressed
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", dressed
+        named = [d for d in exc.packet["incomplete"]
+                 if d["character_id"] == "char_mara_001"
+                 and d["field"] == "display_name"
+                 and "generic descriptor" in d["issue"]]
+        assert named, dressed
+
+
+def test_punctuation_dressed_descriptor_is_refused_as_character_id():
+    for dressed in DRESSED:
+        request, response = load()
+        response["identities"][0]["character_id"] = dressed
+        response["cast"][0]["character_id"] = dressed
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", dressed
+        named = [d for d in exc.packet["incomplete"]
+                 if d["field"] == "character_id"
+                 and "generic descriptor" in d["issue"]]
+        assert named, dressed
+
+
+def test_punctuation_dressed_descriptor_is_refused_in_a_scene_binding():
+    for dressed in ("a woman,", "(the manager)", "'the manager'"):
+        request, _ = load()
+        request["scenes"][0]["spoken_dialogue"].append(
+            {"line_id": "ln_09", "character_id": dressed,
+             "text": "She will not tell them."})
+        exc = refuse(W.author_cast, request, dispatch=fake(load()[1]),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", dressed
+        assert "generic descriptor" in str(exc), dressed
+
+
+def test_real_names_containing_descriptor_words_still_pass():
+    for name in REAL_NAMES:
+        request, response = load()
+        response["identities"][0]["display_name"] = name
+        result = author(request=request, response=response)
+        assert result["state"] == "COMPLETE", name
+        assert W.profile_defects(result["identities"][0]) == [], name
+
+
+def test_a_role_description_is_still_not_an_identity():
+    for described in ROLE_DESCRIPTIONS:
+        request, response = load()
+        response["identities"][0]["display_name"] = described
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", described
+
+
+# --- nested per-shot bindings (S75-A06 r3) ----------------------------------
+
+def _with_shots(scene_shots):
+    def mutate(request):
+        request["scenes"][0]["shots"] = copy.deepcopy(scene_shots)
+    return mutate
+
+
+def test_nested_shot_subject_binding_must_be_declared():
+    shapes = [
+        [{"shot_id": "sh_01", "subjects": ["char_ghost_015"]}],
+        [{"shot_id": "sh_01", "subjects": {"char_ghost_016": {"frame": 3}}}],
+        [{"shot_id": "sh_01", "subject_id": "char_ghost_017"}],
+        [{"shot_id": "sh_01", "subjects": ["a woman,"]}],
+    ]
+    for shots in shapes:
+        request, response = load()
+        _with_shots(shots)(request)
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", shots
+        assert ("generic descriptor" in str(exc)
+                or "char_ghost_0" in str(exc)), shots
+
+
+def test_nested_shot_subject_of_a_declared_person_is_accepted():
+    request, response = load()
+    _with_shots([{"shot_id": "sh_01",
+                  "subjects": ["char_mara_001", {"char_levi_002": {"frame": 3}}]}])(request)
+    result = author(request=request, response=response)
+    assert result["state"] == "COMPLETE"
+
 # --- adapters and purity ----------------------------------------------------
 
 def test_legacy_bible_is_a_seed_not_an_identity():

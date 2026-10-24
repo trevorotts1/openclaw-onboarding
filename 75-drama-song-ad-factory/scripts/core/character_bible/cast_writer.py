@@ -35,6 +35,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import string
 import sys
 
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -142,9 +144,45 @@ def _text_list(value):
             and all(_text(item) for item in value))
 
 
+#: Punctuation and quoting that can dress a descriptor up without changing
+#: what it is: brackets, quotes, dashes, sentence marks, underscores.
+_DRESSING = string.punctuation + "“”‘’«»‹›—– "
+
+_POSSESSIVE = re.compile(r"(?:'s|’s)\s*$")
+_SPACES = re.compile(r"\s+")
+
+
+def _normalise_identity(value):
+    """Case-folded form of a name or id, with its dressing removed.
+
+    Surrounding punctuation, quotes and brackets, a trailing possessive and
+    any run of whitespace all vanish before comparison, so no dressing turns a
+    generic descriptor into an identity.
+    """
+    text = _SPACES.sub(" ", (value or "").casefold()).strip()
+    text = text.strip(_DRESSING)
+    text = _POSSESSIVE.sub("", text).strip(_DRESSING)
+    return _SPACES.sub(" ", text).strip()
+
+
+def _bare(text):
+    """``_normalise_identity`` with the inner punctuation gone too, so
+    ``"a woman, leader"`` cannot hide from the descriptor rule behind a comma."""
+    return _SPACES.sub(" ",
+                       "".join(" " if ch in _DRESSING else ch for ch in text)).strip()
+
+
 def _anonymous(value):
-    low = (value or "").strip().lower()
-    return any(low == p or low.startswith(p + " ") for p in ANONYMOUS_SPEAKERS)
+    """A generic descriptor is not an identity, whatever it is wearing.
+
+    Both positions — ``display_name`` and ``character_id`` — ask this same
+    question, so a descriptor refused as a name is refused as an id.
+    """
+    normal = _normalise_identity(value)
+    for form in (normal, _bare(normal)):
+        if any(form == p or form.startswith(p + " ") for p in ANONYMOUS_SPEAKERS):
+            return True
+    return False
 
 
 def _defect(character_id, display_name, field, issue):
@@ -251,12 +289,13 @@ _PARTICIPANT_KEYS = frozenset({
     "speakers", "speaker_ids", "performers", "performer_ids",
     "actors", "actor_ids", "singers", "singer_ids", "voices", "voice_ids",
     "onlookers", "witnesses", "audience_ids", "member_ids",
+    "subjects", "subject_ids", "shot_subjects",
 })
 
 #: A person reference written as a per-line or per-shot binding.
 _PERSON_ID_KEYS = frozenset({
     "character_id", "performer_id", "speaker_id", "actor_id",
-    "person_id", "singer_id", "member_id",
+    "person_id", "singer_id", "member_id", "subject_id",
 })
 
 #: Any other scene key that plausibly carries a participant.
@@ -286,13 +325,20 @@ def _add_person(value, bucket):
 def _walk_refs(node, key, persons, crowds):
     """Collect every participant reference in a scene's declared surface."""
     if isinstance(node, dict):
-        # A map like ``identity_revisions`` names its people as its keys.
-        if _declares_people(key) and all(
-                not isinstance(v, (dict, list)) for v in node.values()):
+        # A map like ``identity_revisions`` or ``shots[].subjects`` names its
+        # people as its keys.
+        if _declares_people(key):
             bucket = crowds if "crowd" in (key or "").lower() else persons
             for sub_key in node:
                 if _ref_like(sub_key) and sub_key not in bucket:
                     bucket.append(sub_key)
+            if all(not isinstance(v, (dict, list)) for v in node.values()):
+                return
+            # A nested binding carries its own keys; the outer key is a role,
+            # not a person, so the descent drops it.
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    _walk_refs(value, "", persons, crowds)
             return
         for sub_key, value in node.items():
             _walk_refs(value, str(sub_key), persons, crowds)
