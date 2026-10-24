@@ -4,6 +4,58 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.106 - 2026-10-23 - optional Studio capability is evaluated before credential demand
+
+The persistent timer (`timer-artifacts/run-timer.sh`) demanded `machine.url` and
+`machine.key` in section 4 and only evaluated the optional Studio capability in
+section 6b. A chat-only or disabled installation therefore refused every tick
+with "this computer is not paired" instead of staying quiet: on Mac box
+`rescue-maria-anderson` the launchd job produced 5,326 identical lines /
+569,882 bytes before the repair, one every 120 seconds.
+
+The canonical `capability.json` record (`disabled | needs-enrollment | ready |
+degraded`, written by `studio_bridge.py`) is now read in a new section 3b, BEFORE
+any credential demand:
+
+- `disabled` / `needs-enrollment` -> `exit 0` quietly (one transition line, then
+  steady silence), before any credential is demanded.
+- `ready` / `degraded` -> fall through to the unchanged credential demand, so an
+  enabled-but-broken installation is still REFUSED with exit 2 rather than
+  silently skipped. Authentication is not weakened for enabled Studio use.
+- No record at all -> `studio_bridge._capability_state`'s canonical answer for
+  "no key and no enrolment intent" is `disabled`, so an unpaired box exits 0 in
+  total silence and writes nothing: no record, no marker, no key. This closes the
+  per-tick failure for a freshly installed chat-only box, not only for one whose
+  record already says disabled.
+
+The record is parsed with a JSON reader, not a line regex. A case variant
+(`"DISABLED"`, `"READY"`), a duplicate key or a multi-line layout previously
+flipped the decision: an uppercase `disabled` on a box with a key fell through to
+the credential demand and refused every tick, while an uppercase `ready` with no
+key idled instead of refusing. `json.load` now resolves a duplicate key
+deterministically and lowercases the value; an unrecognised value fails CLOSED
+into the credential demand. Truncated or unreadable files resolve to "no usable
+record", which is the canonical `disabled` path when no key is present.
+
+The `capability.disabled` sentinel and `DS_CAPABILITY_DISABLED=1` keep their
+existing behaviour. `--ready` is a readiness probe and is never skipped. No
+second state mechanism is introduced and no authentication check is removed.
+
+Checks updated to the corrected contract:
+`timer-artifacts/checks/test_seam_retention_quiet.py` T3/T4 now assert that an
+unpaired box is silent and writes nothing, and T6/T7/T8 were added (capability.json
+disabled/needs-enrollment quiet with no credentials; recorded ready still
+refused without credentials; `--ready` not skipped; ordinary chat intake
+independent of pairing). `timer-artifacts/checks/run_checks.py` check G expects
+the quiet skip it always described and now passes.
+
+On the unpatched tree: 7 seam checks fail and check G fails (21/22). On this
+release: seam checks 18/18, timer checks 22/22.
+
+This release changes the optional Studio poller only. It does not enrol a
+computer, does not generate or rotate a key, and does not alter chat intake,
+media generation, approvals or budgets.
+
 ## v2.9.98 - 2026-10-23 - lip-sync evidence follows the final delivery
 
 Missing lip-sync markers, speaker/line identities or approved storyboard evidence
