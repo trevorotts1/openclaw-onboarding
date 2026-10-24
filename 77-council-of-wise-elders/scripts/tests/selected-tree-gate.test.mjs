@@ -444,4 +444,18 @@ test("(e) the shipped SKILL.md carries the current convene contract, not grant t
   for (const phrase of STALE_CONTRACT_PHRASES) {
     assert.ok(!text.includes(phrase), `canonical SKILL.md carries stale grant text: ${phrase}`);
   }
+  // Route resolution is caller-first: the runtime's routes are never offered
+  // as if they were the calling agent's models (the OpenClaw mis-presentation).
+  assert.ok(
+    text.includes("they are NOT the calling agent's models"),
+    "canonical SKILL.md no longer states that runtime routes are not the caller's models",
+  );
+  assert.ok(
+    text.includes("None of those is your agent's model"),
+    "canonical SKILL.md lost the no-matching-route refusal sentence",
+  );
+  assert.ok(
+    !text.includes("the claude-nine configured default on claude-nine, Sonnet on Claude Code"),
+    "canonical SKILL.md reintroduced the hardcoded harness menu",
+  );
 });
