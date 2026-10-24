@@ -52,6 +52,7 @@ import delivery_package.packaging as P          # noqa: E402
 import protected_names as PN                     # noqa: E402
 import script_approval as SA                     # noqa: E402
 from sung_hook import sung_hook as SH            # noqa: E402
+from storyboard_director import approval_runner as AR  # noqa: E402
 
 # --------------------------------------------------------------- run inputs ---
 #: Generic fixture material only -- no client name ever enters the repository.
@@ -188,7 +189,7 @@ def build_real_run(run_dir):
                       "story_stage": "setup" if i < 3 else "rise",
                       "location_id": "kitchen" if i % 2 == 0 else "window",
                       "character_ids": ["sample-character"],
-                      "status": "storyboard_approved"})
+                      "status": "planned"})
         contracts[sid] = {
             "lyric_text": SHEET[i % len(SHEET)]["lines"][0],
             "viewer_understanding": "the morning routine carries on",
@@ -202,10 +203,17 @@ def build_real_run(run_dir):
     _w(run_dir, "storyboard/shot-list.json", {"shots": shots})
     _w(run_dir, "storyboard/contracts.json", contracts)
     _w(run_dir, "storyboard/stills.json", stills)
-    _w(run_dir, "storyboard/gate.json",
-       {"shots": shots, "review": {"outcome": "pass"}})
-    _w(run_dir, "storyboard/approval.json",
-       {"state": "approved", "choice": "yes"})
+    # Obtain actual current shot/contract/still revision proof from the
+    # existing whole-package presentation and client reply producer.
+    AR.record_card_answer(str(run_dir), [{"id": "storyboard", "n": 1}],
+                          [{"id": "storyboard"}])
+    shown = []
+    pending = AR.run(str(run_dir), lambda message, images: shown.append((message, images)))
+    if pending["action"] != "waiting" or not shown or AR.gate_open(str(run_dir)):
+        raise AssertionError("the storyboard was not presented and held for approval")
+    accepted = AR.run(str(run_dir), lambda *_: None, reply="GO")
+    if accepted["action"] != "approved" or not AR.gate_open(str(run_dir)):
+        raise AssertionError("the current whole storyboard package was not approved")
 
     # character: the brief's reference pictures + the library record
     ref_dir = run_dir / "character" / "reference"

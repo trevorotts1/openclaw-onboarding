@@ -18,11 +18,30 @@ import test_song_choices_fu_song as T                           # noqa: E402  (f
 from choice_card.intake_card import intake_card as IC           # noqa: E402
 from song_choices import song_choices as SC                     # noqa: E402
 import factory as F                                             # noqa: E402
-from state_store import Store                                  # noqa: E402
+from test_production_process import complete_stage, approve_script  # noqa: E402
+from pathlib import Path
 
 YES = T.ANS("1") + ["yes"]                # all recommended; SONG APPROVAL = Yes
 NO = T.ANS("2") + ["yes"]                 # SONG APPROVAL = No
 SN = str(T.SONG_N)
+
+
+def _governed_stage_run(tmp):
+    """Supported legacy protocol with real intake, stage and artifact history.
+
+    The retained modern ledger is a test snapshot, not migrated or rewritten.
+    This suite exercises the pre-existing legacy recap/replay preference APIs.
+    """
+    run = os.path.join(tmp, "run")
+    _confirm_cli_card(run, NO)
+    for stage in F._stages()[:4]:
+        complete_stage(Path(run), stage)
+    approve_script(Path(run))
+    ledger = Path(run) / "control" / "intake-session.json"
+    ledger.rename(ledger.with_name("retained-legacy-test-ledger.json"))
+    # A legacy No preference does not need an elected song-choice artifact.
+    Path(run, "song-choices", "state.json").unlink()
+    return run
 
 
 def _gate(run):
@@ -37,7 +56,7 @@ def _offer(tmp, run, target=None, send=None):
 
 def test_yes_card_to_gate_closed_until_pick_then_open():
     with tempfile.TemporaryDirectory() as tmp:
-        run = T._stage_run(tmp)
+        run = _governed_stage_run(tmp)
         assert _gate(run) == "open"                                  # nothing recorded yet
         IC.conversation(T.ANS("1"), run_dir=run)                      # recap shown, not confirmed
         assert SC._state(run) is None and _gate(run) == "open"
@@ -52,14 +71,14 @@ def test_yes_card_to_gate_closed_until_pick_then_open():
 
 def test_no_card_records_no_and_no_gate():
     with tempfile.TemporaryDirectory() as tmp:
-        run = T._stage_run(tmp)
+        run = _governed_stage_run(tmp)
         IC.conversation(NO, run_dir=run)
         assert SC._state(run)["required"] is False and _gate(run) == "open"
 
 
 def test_recap_change_updates_the_recorded_answer():
     with tempfile.TemporaryDirectory() as tmp:
-        run = T._stage_run(tmp)
+        run = _governed_stage_run(tmp)
         IC.conversation(NO, run_dir=run)
         assert _gate(run) == "open"
         IC.conversation(T.ANS("2") + [SN, "1", "yes"], run_dir=run)   # changed the song line to Yes
@@ -70,7 +89,7 @@ def test_recap_change_updates_the_recorded_answer():
 
 def test_resume_keeps_the_answer_offered_songs_and_pick():
     with tempfile.TemporaryDirectory() as tmp:
-        run = T._stage_run(tmp)
+        run = _governed_stage_run(tmp)
         IC.conversation(YES, run_dir=run)
         _offer(tmp, run)
         before = SC._state(run)
@@ -84,22 +103,12 @@ def test_resume_keeps_the_answer_offered_songs_and_pick():
 
 
 def _cli_stage_run(tmp):
-    """The real store schema required by the CLI's persisted video-model lock."""
-    run = os.path.join(tmp, "run")
-    os.makedirs(os.path.join(run, "control"), exist_ok=True)
-    stages = F._stages()
-    with Store(os.path.join(run, "control", "state.sqlite3")) as store:
-        store.init_run("R", stages)
-        for stage in stages[:4]:
-            store.transition("R", stage, "READY", "fixture")
-            store.claim("R", stage, "fixture")
-            store.transition("R", stage, "COMPLETE", "fixture")
-    return run
+    return os.path.join(tmp, "run")
 
 
 def _confirm_cli_card(run, replies, target=None):
     """Present each renderer receipt before its one client reply, then confirm."""
-    args = ["card", "--step", "--run-dir", run, "--format", "session-json"]
+    args = ["card", "--step", "--run-dir", run, "--no-purpose-flow", "--format", "session-json"]
     if target is not None:
         args += ["--target", target]
 
@@ -126,7 +135,7 @@ def test_cli_card_step_with_run_dir_records_the_answer():
 
 def test_message_and_three_files_reach_the_sink_in_order_before_any_video_stage():
     with tempfile.TemporaryDirectory() as tmp:
-        run = T._stage_run(tmp)
+        run = _governed_stage_run(tmp)
         IC.conversation(YES, run_dir=run)
         sent = []
 
@@ -144,7 +153,7 @@ def test_message_and_three_files_reach_the_sink_in_order_before_any_video_stage(
         assert all(os.path.isfile(m) for m in media)
         assert SC.send_choices(run, "555", lambda a: None) == argv   # the CLI/resend path builds the same argv
         try:
-            SC.send_choices(T._stage_run(tempfile.mkdtemp()), "555", lambda a: None)
+            SC.send_choices(_governed_stage_run(tempfile.mkdtemp()), "555", lambda a: None)
         except SC.ChoiceError:
             pass
         else:
@@ -167,7 +176,7 @@ def test_card_target_is_used_with_no_target_passed_by_the_caller():
 
 def test_no_target_anywhere_prints_message_and_paths_never_silent():
     with tempfile.TemporaryDirectory() as tmp:
-        run = T._stage_run(tmp)
+        run = _governed_stage_run(tmp)
         IC.conversation(YES, run_dir=run)                            # CLI-only: no target
         sent, out = [], io.StringIO()
         with redirect_stdout(out):

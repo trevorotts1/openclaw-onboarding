@@ -661,7 +661,7 @@ def check(payload):
     """payload keys: tools, modules, storage_dir, min_free_bytes, approved_root,
     references[], profile, allowed_profiles[], schema_version, allowed_schemas[],
     credentials[], env{}, auth{}, summary_digest, run_state, card_receipt,
-    mode, capabilities{}, manifest_path. Returns outcome/reason/checks.
+    mode, capabilities{}, manifest_path, run_dir, run_id, stage. Returns outcome/reason/checks.
 
     D05: after the explicit lists (whose behaviour is unchanged), the effective
     dependency set is derived from the selected production mode, media choices,
@@ -755,6 +755,19 @@ def check(payload):
     # via PREREQS.json, so empty tool/module/credential lists can never pass a
     # media production. A gate that requires a package marks it required.
     ctx = capability_context(p)
+    planning = False
+    if p.get("run_dir") and ctx["generating"]:
+        import production_process
+        try:
+            planning = not production_process.needs_media_dependencies(p.get("stage"))
+        except (ImportError, ValueError, TypeError, KeyError) as exc:
+            return {"outcome": "error", "reason_code": "PRODUCTION_PROCESS_UNVERIFIED",
+                    "checks": checks, "production_admitted": False,
+                    "next_action": "The canonical planning dependency graph cannot be verified: " + str(exc)}
+        if planning:
+            # Initial intake/research/script planning checks its own runtime;
+            # it cannot require future media keys or approve future assets.
+            ctx.update(mode="planning", generating=False, media=[])
     checks["mode"] = ctx["mode"]
     checks["generating"] = ctx["generating"]
     checks["interpreter"] = interpreter_identity()
@@ -775,38 +788,37 @@ def check(payload):
     checks["requirements"] = [{"id": r["id"], "severity": r["severity"],
                                "manifest_severity": r["manifest_severity"],
                                "why": r["why"]} for r in derived]
-    if not ctx["generating"]:
+    if not ctx["generating"] and not planning:
         # Non-generating diagnostic mode: reduced requirements, declares itself.
         return {"outcome": "ok", "reason_code": "preflight-pass-diagnostic",
                 "checks": checks, "mode": "diagnostic", "generating": False,
-                "readiness": "diagnostic-only",
+                "readiness": "diagnostic-only", "production_admitted": False,
                 "next_action": "Diagnostic only (non-generating): reduced "
                                "requirements verified; this is NOT paid-work readiness."}
 
+    # Scope/expiry can RESTRICT a run; a caller-authored auth object cannot
+    # create client authority. Initial dependency checks and unpaid planning
+    # do not require approval of a script/storyboard that does not yet exist.
     auth = p.get("auth") or {}
-    if not auth:
-        return {"outcome": "rejected", "reason_code": "approval-missing",
-                "checks": checks, "next_action": "Record authorization scope before paid work."}
-    import time
-    exp = auth.get("expires_unix")
-    if isinstance(exp, (int, float)) and int(time.time()) > exp:
-        return {"outcome": "rejected", "reason_code": "approval-expired",
-                "checks": checks, "next_action": "Renew expired authorization."}
-    scope = auth.get("scope")
-    dgst = p.get("summary_digest")
-    if scope not in ("campaign", dgst):
-        return {"outcome": "rejected", "reason_code": "approval-out-of-scope",
-                "checks": checks, "next_action": "Bind authorization to this campaign summary digest."}
+    if auth:
+        import time
+        exp = auth.get("expires_unix")
+        if isinstance(exp, (int, float)) and int(time.time()) > exp:
+            return {"outcome": "rejected", "reason_code": "approval-expired",
+                    "checks": checks, "next_action": "Renew expired authorization."}
+        scope = auth.get("scope")
+        dgst = p.get("summary_digest")
+        if scope not in ("campaign", dgst):
+            return {"outcome": "rejected", "reason_code": "approval-out-of-scope",
+                    "checks": checks, "next_action": "Bind authorization to this campaign summary digest."}
+    # Retain F15's useful missing-answer diagnostic for old callers. Passing
+    # it is only data completeness, never permission to spend or accept stages.
     card_refusal = check_card_receipt(p.get("run_state"), p.get("card_receipt"))
-    # F15: paid work (which is what preflight gates) never starts on an
-    # unanswered card, whichever entry path launched the run.
-    if card_refusal is not None:
-        checks["card_recorded"] = False
+    checks["card_recorded"] = card_refusal is None
+    if card_refusal is not None and not p.get("run_dir"):
         return {"outcome": "waiting", "reason_code": card_refusal["reason_code"],
                 "checks": checks, "missing": card_refusal.get("missing", []),
-                "next_action": card_refusal.get(
-                    "next_action", "Show and answer the choice card first.")}
-    checks["card_recorded"] = True
+                "next_action": card_refusal.get("next_action", "Show and answer the choice card first.")}
     # F15 precedence: the card gate is the paid-work precondition, so it is
     # answered BEFORE any capability-derived refusal. A dependency refusal in
     # a credential-free environment must never stand in for "answer the card".
@@ -849,9 +861,32 @@ def check(payload):
                                   for u in plan["unsupported"])
                                   or "Unsupported interpreter/host; no install is attempted.")
         return out
-    checks["readiness"] = "full"
-    return {"outcome": "ok", "reason_code": "preflight-pass",
-            "checks": checks, "next_action": "Proceed to claim eligible stage."}
+    # Dependencies may be checked before a run exists. Declare that reduced
+    # result explicitly: manual scope/receipt files must never yield paid
+    # readiness. A production caller must name the existing run and stage.
+    if not p.get("run_dir"):
+        checks["readiness"] = "dependencies-only"
+        return {"outcome": "ok", "reason_code": "preflight-pass-dependencies",
+                "checks": checks, "readiness": "dependencies-only", "production_admitted": False,
+                "next_action": "Dependencies checked. Resume governed intake, then name the run and stage for production admission."}
+    import production_process
+    stage = p.get("stage")
+    authority = (production_process.admit_production(p["run_dir"], stage, run_id=p.get("run_id"))
+                 if stage else production_process.inspect_intake(p["run_dir"], run_id=p.get("run_id")))
+    checks["production_process"] = authority
+    if not authority["ok"]:
+        checks["readiness"] = "unverified"
+        return {"outcome": "waiting", "reason_code": authority["reason_code"],
+                "checks": checks, "readiness": "unverified", "production_admitted": False,
+                "next_action": authority["detail"] + " " + authority["next_action"]}
+    checks["card_recorded"] = True  # full authoritative intake supersedes the old four-pick projection
+    paid = bool(stage)
+    checks["readiness"] = "stage-admitted" if paid else "planning-only"
+    return {"outcome": "ok", "reason_code": "preflight-pass" if paid else "preflight-pass-planning",
+            "checks": checks, "readiness": checks["readiness"], "production_admitted": paid,
+            "next_action": "Proceed through the admitted stage runner." if paid else
+                           "Intake confirmed. Unpaid planning may proceed; each paid stage still needs current production admission."}
+
 
 
 def recheck(payload, prior=None, only=None):

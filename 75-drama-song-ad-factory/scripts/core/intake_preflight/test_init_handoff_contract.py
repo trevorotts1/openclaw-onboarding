@@ -159,8 +159,17 @@ class InitHandoffContract(unittest.TestCase):
         self.confirm()
         provider = {"stage": "video-generation", "command": "fixture-provider --model minimax-h3/image-to-video",
                     "provider_model": "minimax-h3/image-to-video"}
+        # Isolate routing for an already admitted provider stage. The real
+        # intake still validates; production stage prerequisites have their
+        # own full-flow acceptance tests rather than this mocked stage walk.
+        actual_admission = factory._production_admission
+        def admitted_provider(run_dir, stage=None, run_id=None):
+            if stage == provider["stage"]:
+                return dict(actual_admission(run_dir, run_id=run_id), stage=stage)
+            return actual_admission(run_dir, stage, run_id)
         with mock.patch.object(factory, "_next_stage", return_value=factory.envelope(
-                "next", "fixture", "ok", "next-stage", "fixture", data=dict(provider))):
+                "next", "fixture", "ok", "next-stage", "fixture", data=dict(provider))), \
+                mock.patch.object(factory, "_production_admission", side_effect=admitted_provider):
             code, nxt = self.invoke("next", "--run-dir", str(self.run))
         self.assertEqual(code, 0)
         self.assertEqual(nxt["data"]["command"], provider["command"])

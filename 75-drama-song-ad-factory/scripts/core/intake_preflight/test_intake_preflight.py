@@ -142,8 +142,9 @@ def test_default_profile_known():
 def test_cli_done_when():
     """The manual's Done-when, run verbatim through the real CLI.
 
-    F15 (owner order 2026-10-08) added the choice-card gate: paid preflight
-    also needs the recorded card receipt, so this test records one."""
+    This unbound dependency check carries the legacy four-pick receipt.
+    Its auth/card JSON does not establish authoritative production intake;
+    passing dependencies must explicitly withhold production readiness."""
     with tempfile.TemporaryDirectory() as tmp:
         auth = os.path.join(tmp, "auth.json")
         with open(auth, "w", encoding="utf-8") as fh:
@@ -178,9 +179,13 @@ def test_cli_done_when():
               env.get("reason_code") != "delivery-profile-unknown",
               "%s (exit %s, stderr %s)" % (env.get("reason_code"), run.returncode,
                                            run.stderr.strip()[:200]))
-        check("CLI: preflight passes end to end",
-              env.get("outcome") == "ok" and env.get("reason_code") == "preflight-pass",
+        check("CLI: dependency preflight passes end to end",
+              env.get("outcome") == "ok" and
+              env.get("reason_code") == "preflight-pass-dependencies",
               "%s/%s" % (env.get("outcome"), env.get("reason_code")))
+        check("CLI: unbound auth/card JSON does not grant production readiness",
+              (env.get("data") or {}).get("checks", {}).get("readiness") == "dependencies-only",
+              repr(env.get("data")))
         # and the F15 refusal still fires when the receipt is absent
         run2 = subprocess.run(
             [sys.executable, FACTORY, "preflight",
