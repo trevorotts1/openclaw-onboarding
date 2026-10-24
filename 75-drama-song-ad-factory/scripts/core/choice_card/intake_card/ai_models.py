@@ -37,8 +37,8 @@ EXCLUDED = tuple(_T.get("excluded_families") or ())
 #: The run-configuration file bind_roles() writes and every dispatch reads.
 STORE_NAME = "model-bindings.json"
 STORE_SCHEMA = "blackceo.skill75.model-bindings/v1"
-ROLE_BUILD, ROLE_CHECK = "build", "check"
-ROLES = (ROLE_BUILD, ROLE_CHECK)
+ROLE_BUILD, ROLE_CHECK, ROLE_REPAIR = "build", "check", "repair"
+ROLES = (ROLE_BUILD, ROLE_CHECK, ROLE_REPAIR)
 #: The two plain-language selection questions (spec 7.3).
 BUILD_QUESTION = "Which available model should build and develop this?"
 CHECK_QUESTION = "Which available model should check quality and fix problems?"
@@ -355,6 +355,21 @@ def bind_roles(run_dir, build, checker, *, runtime="claude-nine", bound_by="inta
     if not res["ok"]:
         res["message"] = _message(res, res.get("role") or ROLE_BUILD)
         return res
+    existing = _read_store(run_dir)
+    if existing is not None:
+        bindings = existing.get("bindings") or {}
+        same_pair = all((bindings.get(role) or {}).get("model_id") == res[role]
+                        for role in (ROLE_BUILD, ROLE_CHECK))
+        if (existing.get("schema") == STORE_SCHEMA and same_pair
+                and existing.get("runtime") == runtime):
+            return {"ok": True, "binding_id": existing.get("binding_id"),
+                    "bindings": bindings, "store": _store_path(run_dir),
+                    "runtime": runtime, "reused": True, "message": None}
+        return _selection_result(
+            {"build": build, "check": checker, "runtime": runtime},
+            "ROLE_BINDING_CONFLICT",
+            "This run already has different model-role bindings. Existing bindings "
+            "and attempts are preserved; an intake reply cannot replace them.")
     at = _now(now)
     doc = {"schema": STORE_SCHEMA, "runtime": runtime, "bound_at": at, "bound_by": bound_by,
            "bindings": {ROLE_BUILD: _binding_row(res["build"], runtime, bound_by, at),
@@ -472,8 +487,10 @@ def admit_dispatch(run_dir, role, requested_model=None, *, route=None, reasoning
             "the run's stored bindings (bind_roles first).", role or ROLE_BUILD)
     if role not in ROLES:
         return _selection_result(requested_model, "ROLE_UNKNOWN",
-                                 'Unknown role "%s"; the roles are build and check.' % role, ROLE_BUILD)
-    scan = [requested_model, cached_model, doc.get("bindings", {}).get(role, {}).get("model_id")]
+                                 'Unknown role "%s"; the roles are build, check and repair.' % role, ROLE_BUILD)
+    # Repair is the existing QC choice, never a third model or intake question.
+    binding_role = ROLE_CHECK if role == ROLE_REPAIR else role
+    scan = [requested_model, cached_model, doc.get("bindings", {}).get(binding_role, {}).get("model_id")]
     scan += [str(f) for f in (fallbacks or [])]
     for s in scan:
         if banned_hits(s):
@@ -481,7 +498,7 @@ def admit_dispatch(run_dir, role, requested_model=None, *, route=None, reasoning
                 s, "MODEL_NOT_PERMITTED",
                 "Claude Sonnet is excluded from Skill 75 selectable, recommended and fallback "
                 "routes in both distributions.", role)
-    binding = doc.get("bindings", {}).get(role)
+    binding = doc.get("bindings", {}).get(binding_role)
     if not binding:
         return _selection_result(requested_model, "NO_ROLE_BINDING",
                                  "This run has no stored binding for role %s." % role, role)
@@ -511,7 +528,7 @@ def admit_dispatch(run_dir, role, requested_model=None, *, route=None, reasoning
                 "rationale": REC_RATIONALE,
                 "next_action": "Send only the reasoning settings this model exposes; see the "
                                "catalog's reasoning policy for %s." % m["label"], "message": note}
-    return {"ok": True, "decision": "admit", "role": role,
+    return {"ok": True, "decision": "admit", "role": role, "binding_role": binding_role,
             "binding_id": doc.get("binding_id"), "binding": binding,
             "dispatch": dict(binding["dispatch"]),
             "reasoning_request": verified_req, "reasoning_verification": note,
@@ -548,6 +565,14 @@ def record_attempt(run_dir, role, attempt_id, *, requested_model, resolved_provi
         return _selection_result(response_model or resolved_provider_model, "MODEL_NOT_PERMITTED",
                                  "Claude Sonnet is excluded from Skill 75 routes in both "
                                  "distributions.", role)
+    if m["route"] == "router-alias":
+        return _selection_result(
+            mid, "CHAIN_RESOLUTION_UNVERIFIED",
+            "The literal router alias remains bound, but no supported correlated "
+            "chain-member receipt reader has verified the resolved provider and "
+            "response identity. No attempt is recorded as verified.", role,
+            next_action="Keep the requested chain alias unchanged; provide supported "
+                        "correlated router evidence before recording a verified attempt.")
     if _key(resolved_provider_model) not in canon:
         return _selection_result(resolved_provider_model, "RESOLVED_MISMATCH",
                                  "The resolved provider model does not match the model bound "

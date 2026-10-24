@@ -1580,6 +1580,8 @@ def main(argv=None):
                     help="JSON list of explicit prior raw client answers with source references.")
     ap.add_argument("--answer-source-ref", default=None,
                     help="Source reference for this explicit client answer.")
+    ap.add_argument("--runtime", choices=("openclaw", "claude-nine", "openrouter-direct"),
+                    default=None, help="Runtime that consumes the selected model bindings.")
     ap.add_argument("--run-state-file", default="",
                     help="with --step and no replies: send the one-time intro as its "
                          "own message first (recorded as intro_shown in this file)")
