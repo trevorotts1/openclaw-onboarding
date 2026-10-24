@@ -209,3 +209,43 @@ These checks enforce supported entrypoints and application evidence. They do
 not establish an operating-system security boundary against a party able to
 rewrite the code and all histories. Do not claim an absolute filesystem lock or
 that admission proves a provider call occurred.
+
+## Actual artifact replies and uploaded frames
+
+The pending script response exposes `data.approval_context`: its actual run ID,
+open `ask_id` values and current artifact revisions. Send the whole returned
+script and lyrics package. When the client replies, carry that new raw message
+and its real source reference separately from the presentation identity:
+
+```bash
+python3 scripts/core/intake_preflight/factory.py script-reply --run-dir "$RUN" \
+  --run-id "<actual saved run_id>" --presentation-ask-id "<actual open ask_id>" \
+  --reply-source client --answer-source-ref "<new client message reference>" \
+  --reply "<the client's exact artifact reply>"
+```
+
+An intake preference such as “yes, show me first”, a reused intake message, or
+an assistant assertion cannot approve the artifact. Missing or mismatched
+provenance waits without changing the run. Existing contextless Studio apply
+commands also wait; supply real channel evidence, never invented source IDs.
+A valid client edit rechecks and re-presents the current whole package; it does
+not approve a changed script or lyrics.
+
+For an image-to-video first frame, upload the current approved shot still
+through the governed producer:
+
+```bash
+python3 scripts/core/kie_dispatch/kie_dispatch.py upload-storyboard-frame \
+  --run-dir "$RUN" --shot-id "<approved shot_id>" --stage video-generation
+```
+
+Use the returned `frame_binding.url` as the existing request builder's
+`first_frame_url`, and attach that binding at
+`request.frame_bindings.first_frame_url`. The producer reuses Skill 74 upload
+transport and binds its actual byte hash, URL, shot and storyboard revision.
+An arbitrary URL with approved storyboard metadata is insufficient. Injected
+offline uploaders cannot grant paid admission. A separately specified last
+frame waits for an approved end-state contract; it is never silently replaced
+by the first frame or another still. No generation is performed by this upload
+step. Existing text-to-video and measured lip-sync routes retain their own
+contracts.
