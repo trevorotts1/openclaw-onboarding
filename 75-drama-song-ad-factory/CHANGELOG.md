@@ -4,6 +4,22 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.107 - 2026-10-24 - MiniMax H3 restored as the card's recommended video model
+
+Commit 9f7bb25c3 removed MiniMax H3 from the VIDEO MODEL question on the
+claim that "the live catalog never carried MiniMax H3". That claim was
+false: `74-kie-live-adapter/references/kie-model-registry.json` carries
+`minimax-h3/image-to-video` (8 credits/s = $0.04/s at 768P, 4-15 second
+generations), and KIE lists it at `kie.ai/minimax-h3`. The card had been
+rendering `1. Hailuo 02 Standard (RECOMMENDED)` with H3 nowhere.
+
+H3 is restored as row 1 with `recommended: true` at its existing registry
+rate, and the false `source_note` is corrected. The question order is again
+1 MiniMax H3 (RECOMMENDED), 2 Seedance 2.5, 3 Seedance 2.0 Mini, 4 Google
+Veo 3.1; Hailuo 02 Standard stays on the price menu, no longer recommended.
+No question wording, label, option sentence, length, music style or video
+style changed. Goldens follow the data.
+
 ## v2.9.106 - 2026-10-23 - optional Studio capability is evaluated before credential demand
 
 The persistent timer (`timer-artifacts/run-timer.sh`) demanded `machine.url` and
