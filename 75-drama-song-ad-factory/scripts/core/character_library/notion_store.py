@@ -37,7 +37,7 @@ __all__ = [
 IDENTITY_DOC_PREFIX = "identity"
 REGISTRY_DOC = "notion_registry"
 #: The only forward order. Skipping or going back is refused.
-DRAFT_ORDER = ("DRAFT_INCOMPLETE", "DRAFT_COMPLETE", "APPROVED")
+DRAFT_ORDER = identity.DRAFT_ORDER
 
 
 class StoreError(ValueError):
@@ -46,6 +46,16 @@ class StoreError(ValueError):
 
 def _doc(character_id):
     return "%s-%s" % (IDENTITY_DOC_PREFIX, character_id)
+
+
+def _validated(record):
+    """Seal and validate, refusing every defect as a plain StoreError."""
+    sealed = identity.seal_identity(record)
+    try:
+        identity.validate_identity(sealed)
+    except identity.IdentityDefect as defect:
+        raise StoreError(str(defect)) from defect
+    return sealed
 
 
 class NotionStore:
@@ -102,7 +112,9 @@ class NotionStore:
 
         The record is sealed and validated. An image is not required: a text
         identity is complete on its own. The draft state is never advanced by a
-        save — only :meth:`promote` moves it, and only explicitly.
+        save — only :meth:`promote` moves it, and only explicitly. A save never
+        stores APPROVED and never writes an approval receipt: those exist only
+        on the record the promotion step approved, with the receipt it produced.
         """
         if not isinstance(record, dict):
             raise StoreError("An identity record must be an object.")
@@ -121,24 +133,39 @@ class NotionStore:
         prepared.setdefault("reference_ids", [])
         # The local copy always declares what it is: a cache of Notion.
         prepared["local_cache"] = cache_mod.describe()
-        if existing is not None:
+        if prepared.get("draft_state") not in DRAFT_ORDER:
+            raise StoreError("draft_state must be one of %s." % (DRAFT_ORDER,))
+        supplied = prepared.get("approval_bindings")
+        if not isinstance(supplied, list):
+            raise StoreError(
+                "approval_bindings must be a list of approval receipts.")
+        if existing is None:
+            if prepared.get("draft_state") == "APPROVED":
+                raise StoreError(
+                    "A character cannot be created already approved. Approval "
+                    "is an explicit step, never a default, and a save never "
+                    "stores APPROVED.")
+            if supplied:
+                raise StoreError(
+                    "A draft carries no approval receipt. A receipt is written "
+                    "only by the explicit promotion step, so one cannot be "
+                    "parked on a record at save time.")
+        else:
             if prepared.get("draft_state") != existing.get("draft_state"):
                 raise StoreError(
                     "A draft state changes only through an explicit approval "
                     "step; refusing an implicit transition from %r to %r."
                     % (existing.get("draft_state"), prepared.get("draft_state")))
-            prepared["approval_bindings"] = list(existing.get("approval_bindings") or [])
+            held = list(existing.get("approval_bindings") or [])
+            if "approval_bindings" in record and supplied != held:
+                raise StoreError(
+                    "An approval binding changes only through the explicit "
+                    "promotion step; refusing a save that forges, edits or "
+                    "drops a receipt.")
+            prepared["approval_bindings"] = held
             prepared["revision"] = max(
                 int(prepared.get("revision") or 1), int(existing.get("revision") or 1))
-        if prepared.get("draft_state") not in DRAFT_ORDER:
-            raise StoreError("draft_state must be one of %s." % (DRAFT_ORDER,))
-        if prepared.get("draft_state") == "APPROVED" \
-                and not prepared.get("approval_bindings"):
-            raise StoreError(
-                "A character cannot be created already approved. Approval is an "
-                "explicit step, never a default.")
-        sealed = identity.seal_identity(prepared)
-        identity.validate_identity(sealed)
+        sealed = _validated(prepared)
         self.cache.store(_doc(character_id), sealed,
                          revision=revision if revision is not None else sealed["revision"])
         return sealed
@@ -160,13 +187,17 @@ class NotionStore:
         references.append(reference)
         updated["reference_ids"] = references
         updated["revision"] = int(existing.get("revision") or 1) + 1
-        sealed = identity.seal_identity(updated)
-        identity.validate_identity(sealed)
+        sealed = _validated(updated)
         self.cache.store(_doc(character_id), sealed, revision=sealed["revision"])
         return sealed
 
     def promote(self, character_id, to_state, *, approval=None):
-        """Move a draft forward one explicit step. Implicit promotion refused."""
+        """Move a draft forward one explicit step. Implicit promotion refused.
+
+        Approving is the only place an approval receipt is ever written: the
+        receipt is built here, in its closed shape, bound to this character and
+        to this one promotion step. Nothing else can mint one.
+        """
         existing = self.get_identity(character_id)
         if existing is None:
             raise StoreError("No identity %r in this client's library." % (character_id,))
@@ -192,13 +223,14 @@ class NotionStore:
         updated["approval_bindings"] = bindings
         if to_state == "APPROVED":
             bindings.append({
+                "kind": identity.RECEIPT_KIND,
+                "receipt_id": str(approval["receipt_id"]).strip(),
+                "approver": str(approval["approver"]).strip(),
+                "character_id": str(existing.get("character_id") or "").strip(),
                 "from_state": current,
                 "to_state": to_state,
-                "approver": str(approval["approver"]).strip(),
-                "receipt_id": str(approval["receipt_id"]).strip(),
             })
-        sealed = identity.seal_identity(updated)
-        identity.validate_identity(sealed)
+        sealed = _validated(updated)
         self.cache.store(_doc(character_id), sealed, revision=sealed["revision"])
         return sealed
 
@@ -227,8 +259,7 @@ class NotionStore:
                     "A Notion record for another client cannot be restored here.")
             prepared = dict(remote)
             prepared["local_cache"] = cache_mod.describe()
-            sealed = identity.seal_identity(prepared)
-            identity.validate_identity(sealed)
+            sealed = _validated(prepared)
             self.cache.recover(_doc(sealed["character_id"]), sealed,
                                revision=sealed["revision"])
             restored.append(sealed["character_id"])

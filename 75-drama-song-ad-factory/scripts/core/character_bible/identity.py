@@ -32,9 +32,10 @@ import json
 __all__ = [
     "CastDefect", "IdentityDefect", "canonical_digest", "library_digest",
     "validate_episode_setting", "validate_identity", "validate_library",
-    "validate_cast", "seal_identity", "SCHEMA_VERSION", "MANIFEST_SCHEMA_VERSION",
-    "EPISODE_SCHEMA_VERSION", "EPISODE_ONLY_FIELDS", "ROLES", "CROWD_REQUIRED",
-    "ANONYMOUS_SPEAKER_PATTERNS",
+    "validate_cast", "seal_identity", "receipt_digest", "resolve_receipt",
+    "SCHEMA_VERSION", "MANIFEST_SCHEMA_VERSION", "EPISODE_SCHEMA_VERSION",
+    "EPISODE_ONLY_FIELDS", "ROLES", "CROWD_REQUIRED",
+    "ANONYMOUS_SPEAKER_PATTERNS", "APPROVAL_BINDING_KEYS",
 ]
 
 SCHEMA_VERSION = "s75.identity.v1"
@@ -50,7 +51,9 @@ EPISODE_ONLY_FIELDS = frozenset({
 })
 
 STORY_STATUS = frozenset({"FICTION", "OWNER_SUPPLIED", "REAL_PERSON"})
-DRAFT_STATES = frozenset({"DRAFT_INCOMPLETE", "DRAFT_COMPLETE", "APPROVED"})
+#: The only forward order. Skipping or going back is refused everywhere.
+DRAFT_ORDER = ("DRAFT_INCOMPLETE", "DRAFT_COMPLETE", "APPROVED")
+DRAFT_STATES = frozenset(DRAFT_ORDER)
 SYNC_STATES = frozenset({"PENDING", "OFFLINE", "CONFLICTED", "SYNCED", "LOCAL_ONLY"})
 
 #: Every cast role that entitles a person to individual lines, reactions or
@@ -135,6 +138,102 @@ def seal_identity(record):
 def library_digest(snapshot):
     """Digest of the selected library snapshot the manifest binds to."""
     return canonical_digest(snapshot, exclude=frozenset({"local_cache", "sync_state"}))
+
+
+# --- approval receipts ------------------------------------------------------
+
+#: One approval binding is ONE receipt, and a receipt is a closed shape. Any
+#: other key is a forged or hand-written object, not a record of an approval.
+APPROVAL_BINDING_KEYS = frozenset({
+    "kind", "receipt_id", "approver", "character_id", "from_state", "to_state",
+})
+RECEIPT_KIND = "approval_receipt"
+
+
+def _receipt_body(receipt):
+    return {k: receipt[k] for k in sorted(APPROVAL_BINDING_KEYS) if k in receipt}
+
+
+def receipt_digest(receipt):
+    """The digest a receipt is addressed by. Stable across key order."""
+    return canonical_digest(_receipt_body(receipt),
+                            exclude=frozenset({"content_digest"}))
+
+
+def resolve_receipt(binding, record):
+    """Resolve one binding against the approval record it claims.
+
+    Returns ``None`` when the binding is a real receipt for THIS record: right
+    shape, right kind, an approved id, and exactly the promotion step that put
+    the record into its current state. Otherwise the plain-English reason the
+    binding is refused. A non-empty list is never enough.
+    """
+    if not isinstance(binding, dict):
+        return ("an approval binding must be a receipt object, not %s"
+                % type(binding).__name__)
+    unknown = sorted(set(binding) - APPROVAL_BINDING_KEYS)
+    if unknown:
+        return ("an approval receipt carries only %s; %s is not a receipt"
+                % (sorted(APPROVAL_BINDING_KEYS), unknown))
+    if binding.get("kind") != RECEIPT_KIND:
+        return "an approval binding must declare kind %r" % (RECEIPT_KIND,)
+    for field in ("receipt_id", "approver"):
+        if not _text(binding.get(field)):
+            return "an approval receipt needs a non-empty %s" % field
+    owner = binding.get("character_id")
+    if not _text(owner):
+        return "an approval receipt must name the character it approves"
+    if owner != record.get("character_id"):
+        return ("approval receipt %r belongs to %r, not %r"
+                % (binding.get("receipt_id"), owner, record.get("character_id")))
+    if record.get("draft_state") != "APPROVED":
+        return ("approval receipt %r claims an approved identity, but this record "
+                "is %r" % (binding.get("receipt_id"), record.get("draft_state")))
+    start, end = binding.get("from_state"), binding.get("to_state")
+    if start not in DRAFT_ORDER[:-1]:
+        return "an approval receipt must name the draft state it promotes from"
+    if end != "APPROVED":
+        return "an approval receipt approves; its to_state must be 'APPROVED'"
+    if end != DRAFT_ORDER[DRAFT_ORDER.index(start) + 1]:
+        return ("approval receipt %r claims %r to %r, which is not one promotion "
+                "step" % (binding.get("receipt_id"), start, end))
+    return None
+
+
+def _validate_approval_bindings(record):
+    """Every binding must resolve as a real receipt; a draft carries none."""
+    out = []
+    approvals = record.get("approval_bindings", [])
+    if not isinstance(approvals, list):
+        return [_defect("approval_bindings", "APPROVALS",
+                        "approval_bindings must be a list of approval receipts; "
+                        "never synthesize receipts")]
+    if not approvals:
+        if record.get("draft_state") == "APPROVED":
+            out.append(_defect("approval_bindings", "APPROVALS",
+                               "an approved identity must carry the receipt that "
+                               "approved it; approval is never a default"))
+        return out
+    if record.get("draft_state") != "APPROVED":
+        out.append(_defect("approval_bindings", "APPROVALS",
+                           "only an approved identity carries approval receipts; "
+                           "a draft carries none, so a receipt cannot be parked "
+                           "on a draft"))
+    seen = {}
+    for index, binding in enumerate(approvals):
+        where = "approval_bindings[%d]" % index
+        reason = resolve_receipt(binding, record)
+        if reason is not None:
+            out.append(_defect(where, "APPROVALS", "%s: %s" % (where, reason)))
+            continue
+        key = binding["receipt_id"]
+        if key in seen:
+            out.append(_defect(where, "APPROVALS",
+                               "%s: receipt id %r is already bound at "
+                               "approval_bindings[%d]" % (where, key, seen[key])))
+            continue
+        seen[key] = index
+    return out
 
 
 # --- identity ---------------------------------------------------------------
@@ -242,10 +341,8 @@ def _validate_identity(record):
     if record.get("draft_state") not in DRAFT_STATES:
         out.append(_defect("draft_state", "DRAFT_STATE",
                            f"draft_state must be one of {sorted(DRAFT_STATES)}"))
-    approvals = record.get("approval_bindings", [])
-    if not isinstance(approvals, list):
-        out.append(_defect("approval_bindings", "APPROVALS",
-                           "approval_bindings must be a list; never synthesize receipts"))
+    # A binding is a receipt or it is refused: never "a non-empty list".
+    out.extend(_validate_approval_bindings(record))
     for key in ("shared_source", "local_cache"):
         if record.get(key) is not None and not isinstance(record.get(key), dict):
             out.append(_defect(key, "SYNC", f"{key} must be an object or null"))
