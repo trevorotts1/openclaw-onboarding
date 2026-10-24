@@ -685,6 +685,77 @@ class MalformedDocumentTests(ManifestCase):
                     self.assertTrue(errs, "a non-object document was accepted")
                     self.assertEqual(before, returned)
 
+class WindowShapeTests(ManifestCase):
+    """PBB-163: campaign_window is read from the same file, so the return
+    contract covers it too. Each refusal is paired with the same call on the
+    real window succeeding, so a blanket refusal cannot pass here."""
+
+    NOT_AN_OBJECT = ("2026-11-01..2026-11-30", 5, ["2026-11-01"], True, 1.5)
+    assertRefusedShape = MalformedDocumentTests.assertRefusedShape
+
+    def calls(self):
+        return (
+            ("approve", draft, lambda d: mm.approve(d, "client-owner-1", AT, "rev-3", "rev-2")),
+            ("amend", signed, lambda d: mm.amend(d, "P-1", {"keyword": "VAULT"}, "r", AT, "rev-3")),
+            ("reapprove", invalidated, lambda d: mm.reapprove(d, "P-1", "client-owner-1", AT, "rev-3")),
+            ("next_cycle", signed, lambda d: mm.next_cycle(
+                d, "cycle-2026-12", "2026-12-01", "2026-12-30", "rev-4", "rev-3")),
+        )
+
+    def test_a_window_that_is_not_an_object_is_refused_not_raised(self):
+        for name, base, call in self.calls():
+            for value in self.NOT_AN_OBJECT:
+                with self.subTest(call=name, window=value):
+                    doc = base()
+                    doc["campaign_window"] = value
+                    before = copy.deepcopy(doc)
+                    returned, errs = call(doc)
+                    self.assertRefusedShape(returned, errs, before, "$.campaign_window")
+            with self.subTest(call=name, window="inverse"):
+                _, errs = call(base())
+                self.assertEqual([], errs)
+
+    def test_terms_errors_names_a_wrong_window_or_document_never_raises(self):
+        for value in self.NOT_AN_OBJECT:
+            with self.subTest(window=value):
+                doc = draft()
+                doc["campaign_window"] = value
+                errs = mm.terms_errors(doc)
+                self.assertTrue(any("$.campaign_window" in err for err in errs), errs)
+        for doc in (["P-1"], "manifest", 5, None):
+            with self.subTest(document=doc):
+                self.assertTrue(any(err.startswith("$:") for err in mm.terms_errors(doc)))
+        self.assertEqual([], mm.terms_errors(draft()))
+
+    def test_an_unreadable_window_day_is_refused_not_raised(self):
+        # A string window day is the right type, so the schema passes it and
+        # the accepted contract then raised UsageError parsing it.
+        for name, base, call in self.calls():
+            for key in ("starts_on", "ends_on"):
+                with self.subTest(call=name, field=key):
+                    doc = base()
+                    doc["campaign_window"][key] = "2026-11-01..2026-11-30"
+                    before = copy.deepcopy(doc)
+                    returned, errs = call(doc)
+                    self.assertRefusedShape(returned, errs, before, "campaign_window." + key)
+        doc = signed()
+        doc["campaign_window"]["ends_on"] = "2026-11-01..2026-11-30"
+        self.assertTrue(any("campaign_window.ends_on" in err for err in mm.validate(doc)))
+        self.assertEqual([], mm.validate(signed()))
+
+    def test_an_unreadable_previous_window_cannot_prove_no_overlap(self):
+        # Before: the overlap check was skipped and the next cycle opened.
+        doc = signed()
+        doc["campaign_window"]["ends_on"] = "not-a-day"
+        before = copy.deepcopy(doc)
+        returned, errs = mm.next_cycle(doc, "cycle-2026-12", "2026-12-01", "2026-12-30", "rev-4", "rev-3")
+        self.assertRefusedShape(returned, errs, before, "campaign_window.ends_on")
+        # The inverse: a readable previous window still decides the overlap.
+        _, errs = mm.next_cycle(signed(), "cycle-2026-12", "2026-12-01", "2026-12-30", "rev-4", "rev-3")
+        self.assertEqual([], errs)
+        _, errs = mm.next_cycle(signed(), "cycle-2026-12", "2026-11-30", "2026-12-29", "rev-4", "rev-3")
+        self.assertTrue(any("previous cycle's last day" in err for err in errs), errs)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

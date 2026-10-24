@@ -5,6 +5,43 @@ not a numbered skill folder: it has no `skill-version.txt` and is outside the
 `[0-9]*` content-hash gate documented in `VERSION-ARCHITECTURE.md`, so the
 module version is the local version signal.
 
+## 1.0.2 — 2026-10-24 (PBB-166 / T-23 repair of the PBB-163 verdict)
+
+One defect from the PBB-163 / qc2-t-23 verdict, reproduced on the committed
+1.0.1 bytes (`8f49e6d2b`) before any edit. `monthly_manifest.py` and its tests
+only; no contract-layer file, no schema, no dispatch behaviour changes.
+
+- **The return contract did not cover `campaign_window`.** The header promises
+  a wrong-shaped document or field "is refused with the field named and never
+  raised", but `terms_errors` and `_window_errors` read the window with
+  `doc.get("campaign_window") or {}` and then called `.get` on it, so a window
+  of `"2026-11-01..2026-11-30"`, `5`, `["2026-11-01"]`, `True` or `1.5` raised
+  `AttributeError` from `approve`, `amend`, `reapprove`, `next_cycle` and
+  `terms_errors`. `terms_errors` on a non-object document raised the same way.
+  A right-typed but unreadable window day (`"2026-11-01..2026-11-30"` as
+  `starts_on` or `ends_on`) passed the schema and then raised `UsageError` out
+  of the accepted contract's own semantic check, from every lifecycle call and
+  from `validate`. And `next_cycle` silently skipped the no-overlap check when
+  the previous window's last day could not be read, so it opened a cycle it
+  could not prove did not overlap.
+- **Fix.** One reader, `_window`, refuses a non-object window and an
+  unreadable day with the field named; `terms_errors` refuses a non-object
+  document and a malformed `placements`; `validate` returns the contract's
+  `UsageError` as an error instead of raising it; `_window_errors` refuses an
+  unreadable previous window instead of skipping the overlap check.
+
+**Proof — before -> after.** A sweep of 1,914 wrong shapes (11 values across
+the document, every top-level field, both window days and every placement field)
+through `approve`, `amend`, `reapprove`, `next_cycle`, `terms_errors` and
+`validate`: **42 raised -> 0 raised**, with the six calls clean on the valid
+fixture both times (`probe_shapes.py`, `probe-before.log`, `probe-after.log` in
+the PBB-166 lane). Four tests added in `WindowShapeTests`; run against the 1.0.1
+module they give **3 failures and 36 errors**, all inside the new class, and
+every pre-existing case still passes; against 1.0.2 all **56 tests OK**
+(52 -> 56, no existing assertion changed). Each refusal is paired with the same
+call on the real window succeeding, and the overlap test keeps the readable
+case deciding overlap both ways.
+
 ## 1.0.1 — 2026-10-24 (PBB-136 / T-23 repair)
 
 Three defects from the T-23 quality-control verdict, each reproduced on the

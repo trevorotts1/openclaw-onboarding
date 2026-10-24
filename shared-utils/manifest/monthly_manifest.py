@@ -45,7 +45,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 _HERE = Path(__file__).resolve()
 _REPO_ROOT = _HERE.parents[2]
@@ -167,7 +167,7 @@ def _refuse(doc, errs):
 
 def _checked(doc, new):
     """Hand back the built document only if it still satisfies the contract."""
-    errs = contracts.check_document("approval", new)
+    errs = validate(new)
     if errs:
         return _refuse(doc, ["approval manifest: " + err for err in errs])
     return new, []
@@ -178,6 +178,30 @@ def _day(value, name):
     if isinstance(value, str):
         value = value + "T00:00:00Z"
     return contracts.parse_ts(value, name)
+
+
+def _window(doc):
+    """The joined window as (first day, last day), or the errors naming why not.
+
+    ``campaign_window`` is read from a file like the rest of the manifest, so a
+    string, a number, a list or an unreadable day is refused with the field
+    named, never raised. The accepted contract raises on an unreadable day
+    rather than naming it, so the window is read here before the contract sees
+    it.
+    """
+    window = doc.get("campaign_window")
+    if not isinstance(window, dict):
+        return None, [
+            "$.campaign_window: must be an object holding starts_on and ends_on, got %s"
+            % type(window).__name__
+        ]
+    try:
+        return (
+            _day(window.get("starts_on"), "campaign_window.starts_on"),
+            _day(window.get("ends_on"), "campaign_window.ends_on"),
+        ), []
+    except contracts.UsageError as exc:
+        return None, [str(exc)]
 
 
 def _term_errors(placement, path):
@@ -198,8 +222,15 @@ def _term_errors(placement, path):
 
 
 def validate(doc):
-    """The accepted approval contract: schema plus DATA-CONTRACTS section 10."""
-    return contracts.check_document("approval", doc)
+    """The accepted approval contract: schema plus DATA-CONTRACTS section 10.
+
+    The contract raises UsageError on a well-typed but unreadable window day;
+    that is a refusal with the field named, so it is returned, not raised.
+    """
+    try:
+        return contracts.check_document("approval", doc)
+    except contracts.UsageError as exc:
+        return [str(exc)]
 
 
 def check_revision(previous, revision):
@@ -245,21 +276,24 @@ def check_revision(previous, revision):
 
 
 def terms_errors(doc):
-    """Every bound term on every placement is present, informative and in window."""
-    errs = []
-    window = doc.get("campaign_window") or {}
-    starts = ends = None
-    try:
-        starts = _day(window.get("starts_on", ""), "campaign_window.starts_on")
-        ends = _day(window.get("ends_on", ""), "campaign_window.ends_on") + timedelta(days=1)
-    except (contracts.UsageError, TypeError):
-        starts = ends = None  # the contract names the malformed window itself
+    """Every bound term on every placement is present, informative and in window.
+
+    A schedule cannot be proven inside a window that cannot be read, so a
+    wrong-shaped document, window or placement list is an error here too.
+    """
+    errs = _document_errors(doc)
+    if errs:
+        return errs
+    window, errs = _window(doc)
+    errs.extend(_placements_errors(doc))
+    if window is not None:
+        starts, ends = window[0], window[1] + timedelta(days=1)
     for placement in _placements(doc):
         placement_id = placement.get("placement_id")
         path = "$.placements[%s]" % (placement_id,)
         errs.extend(_term_errors(placement, path))
         slot = placement.get("scheduled_at")
-        if starts is not None and not _missing(slot):
+        if window is not None and not _missing(slot):
             try:
                 when = contracts.parse_ts(slot, "placements[%s].scheduled_at" % (placement_id,))
             except contracts.UsageError:
@@ -267,7 +301,7 @@ def terms_errors(doc):
             if not (starts <= when < ends):
                 errs.append(
                     "%s.scheduled_at: %r is outside the joined campaign window %s..%s"
-                    % (path, slot, window.get("starts_on"), window.get("ends_on"))
+                    % (path, slot, doc["campaign_window"]["starts_on"], doc["campaign_window"]["ends_on"])
                 )
     return errs
 
@@ -287,16 +321,16 @@ def _window_errors(doc, starts_on, ends_on):
             "$.campaign_window: a joined campaign spans %d days, got %d"
             % (JOINED_WINDOW_DAYS, span)
         )
-    previous = (doc.get("campaign_window") or {}).get("ends_on")
-    if previous:
-        try:
-            if starts <= _day(previous, "previous campaign_window.ends_on"):
-                errs.append(
-                    "$.campaign_window: %s starts on or before the previous cycle's last day %s"
-                    % (starts_on, previous)
-                )
-        except (contracts.UsageError, TypeError):
-            pass  # the current window is the contract's to name
+    # No overlap with the cycle being closed. An unreadable previous window
+    # cannot prove that, so it is refused rather than skipped.
+    previous, window_errs = _window(doc)
+    if previous is None:
+        return errs + window_errs
+    if starts <= previous[1]:
+        errs.append(
+            "$.campaign_window: %s starts on or before the previous cycle's last day %s"
+            % (starts_on, doc["campaign_window"]["ends_on"])
+        )
     return errs
 
 
@@ -318,8 +352,7 @@ def approve(doc, approver, approved_at, revision, expected_revision):
         errs.append("$.approved_by: an approval names its approver")
     errs.extend(_stamp_errors(approved_at, "approved_at"))
 
-    shape = _placements_errors(doc)
-    errs.extend(shape)
+    shape = _placements_errors(doc)  # named by terms_errors below
     placements = _placements(doc)
     if not placements and not shape:
         errs.append("$.placements: a joined monthly approval binds at least one placement")
