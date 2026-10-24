@@ -1,0 +1,372 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Collection state, serialized at (tenant_id, canonical_contact_id, collection_sequence_id)",
+  "description": "Purple Billboard DATA-CONTRACTS section 1. The tuple is the lock and capture budget boundary; a conversation id is a channel reference, not the boundary. Requested items are separate request/fulfillment records so a new post or keyword can add one without restarting a final or declined capture.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonical_contact_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "collection_sequence_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state_version": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ownership_fence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "originating_channel": {
+      "enum": [
+        "FB_DM",
+        "IG_DM",
+        "SMS",
+        "EMAIL",
+        "WEBCHAT"
+      ]
+    },
+    "originating_conversation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "channel_references": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "enum": [
+              "FB_DM",
+              "IG_DM",
+              "SMS",
+              "EMAIL",
+              "WEBCHAT"
+            ]
+          },
+          "conversation_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "channel",
+          "conversation_id"
+        ]
+      }
+    },
+    "capture_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_reminders": {
+          "const": 3
+        },
+        "max_sms_email_asks": {
+          "const": 1
+        },
+        "reminders_used": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "sms_email_asks_used": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "max_reminders",
+        "max_sms_email_asks",
+        "reminders_used",
+        "sms_email_asks_used"
+      ]
+    },
+    "state": {
+      "enum": [
+        "idle",
+        "invited",
+        "awaiting_mobile",
+        "preparing_access",
+        "awaiting_email",
+        "paused_active",
+        "human_owned",
+        "closing_final",
+        "stopped_complete",
+        "stopped_declined",
+        "stopped_final",
+        "stopped_ineligible"
+      ]
+    },
+    "t0": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reminders_accepted": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "reminder_slots": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3
+          },
+          "due_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "reserved",
+              "accepted",
+              "unknown",
+              "skipped",
+              "suppressed"
+            ]
+          },
+          "action_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "slot",
+          "due_at",
+          "status",
+          "action_id",
+          "reason"
+        ]
+      }
+    },
+    "sms_email_ask": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "logical_action_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "enum": [
+            "not_created",
+            "queued",
+            "dispatching",
+            "accepted",
+            "failed_not_sent",
+            "unknown",
+            "suppressed"
+          ]
+        },
+        "provider_message_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "logical_action_id",
+        "state",
+        "provider_message_id",
+        "evidence_id"
+      ]
+    },
+    "requested_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "item_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "item_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "enum": [
+              "post",
+              "keyword",
+              "dm"
+            ]
+          },
+          "requested_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "fulfilled",
+              "declined",
+              "failed"
+            ]
+          },
+          "fulfilled_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "item_id",
+          "item_version",
+          "source",
+          "requested_at",
+          "status",
+          "fulfilled_at",
+          "evidence_id"
+        ]
+      }
+    },
+    "field_refusals": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "mobile",
+          "email"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "sequence_stop_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "channel_optouts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "global_stop": {
+      "type": "boolean"
+    },
+    "human_owner_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "final_action_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pending_request_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "canonical_contact_id",
+    "collection_sequence_id",
+    "state_version",
+    "ownership_fence",
+    "originating_channel",
+    "originating_conversation_id",
+    "channel_references",
+    "capture_budget",
+    "state",
+    "t0",
+    "reminders_accepted",
+    "reminder_slots",
+    "sms_email_ask",
+    "requested_items",
+    "field_refusals",
+    "sequence_stop_reason",
+    "channel_optouts",
+    "global_stop",
+    "human_owner_id",
+    "final_action_id",
+    "pending_request_ids"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "closing_final"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "final_action_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

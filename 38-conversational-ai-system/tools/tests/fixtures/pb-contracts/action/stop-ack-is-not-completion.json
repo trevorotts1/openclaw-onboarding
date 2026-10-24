@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "tenant_id": "tenant-alpha",
+  "action_id": "act-stop-1",
+  "logical_intent_key": "loop-1/SHUTDOWN",
+  "revision": 4,
+  "kind": "SHUTDOWN",
+  "state": "completed",
+  "stop_requested": true,
+  "state_reason": "host acknowledged the stop",
+  "updated_at": "2026-10-24T10:00:00Z",
+  "dispatch_receipt": {
+    "dispatched_at": "2026-10-24T09:50:00Z",
+    "evidence_id": "ev-dispatch-1"
+  },
+  "ack_receipt": {
+    "acknowledged_at": "2026-10-24T09:51:00Z",
+    "kind": "HOST_STOP_ACK",
+    "evidence_id": "ev-ack-1"
+  },
+  "completion_receipt": null
+}

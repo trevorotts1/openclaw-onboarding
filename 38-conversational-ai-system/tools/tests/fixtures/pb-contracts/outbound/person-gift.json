@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "action_id": "act-person-1",
+  "logical_intent_key": "cycle-2026-11/contact-77/ORIGINAL_GIFT",
+  "tenant_id": "tenant-alpha",
+  "channel": "FB_DM",
+  "account_id": "acct-1",
+  "account_binding_revision": "binding-7",
+  "policy_version": "policy-3",
+  "playbook_revision": "playbook-5",
+  "knowledge_revision": "kb-2",
+  "ownership_fence": 4,
+  "expected_state_version": 3,
+  "content_revision": "content-9",
+  "asset_version_id": "asset-2",
+  "not_before": "2026-10-24T09:55:00Z",
+  "expires_at": null,
+  "status": "queued",
+  "attempts": [],
+  "receipt": {
+    "provider_message_id": null,
+    "supported_status": null,
+    "recorded_at": null,
+    "evidence_id": null
+  },
+  "dispatch_gate": null,
+  "scope": "person_directed",
+  "purpose": "ORIGINAL_GIFT",
+  "precondition": {
+    "request_active": true,
+    "field_still_missing": null,
+    "approval_manifest_id": null,
+    "approval_revision": null,
+    "reserved_final_action_id": null
+  },
+  "canonical_contact_id": "contact-77",
+  "collection_sequence_id": "seq-1",
+  "request_id": "REQ-1"
+}

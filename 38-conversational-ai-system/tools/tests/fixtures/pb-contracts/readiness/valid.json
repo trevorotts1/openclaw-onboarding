@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "tenant_id": "tenant-alpha",
+  "surface": "conversation_ai",
+  "account_id": "acct-1",
+  "environment": "owner_test",
+  "adapter_revision": "adapter-4",
+  "config_revision": "config-2",
+  "account_binding_revision": "binding-7",
+  "code_protocol_version": "proto-1",
+  "claims": {
+    "installed": {
+      "status": "READY",
+      "evidence_timestamp": "2026-10-24T09:00:00Z",
+      "evidence_ids": [
+        "ev-i1"
+      ],
+      "limitations": []
+    },
+    "configured": {
+      "status": "READY",
+      "evidence_timestamp": "2026-10-24T09:05:00Z",
+      "evidence_ids": [
+        "ev-c1"
+      ],
+      "limitations": []
+    },
+    "running": {
+      "status": "READY",
+      "evidence_timestamp": "2026-10-24T09:10:00Z",
+      "evidence_ids": [
+        "ev-r1"
+      ],
+      "limitations": []
+    },
+    "replied": {
+      "status": "READY",
+      "evidence_timestamp": "2026-10-24T09:20:00Z",
+      "evidence_ids": [
+        "ev-p1"
+      ],
+      "limitations": []
+    },
+    "fulfilled": {
+      "status": "UNVERIFIED",
+      "evidence_timestamp": null,
+      "evidence_ids": [],
+      "limitations": []
+    }
+  },
+  "invalidated": null,
+  "limitations": [
+    "bonus access unproven"
+  ]
+}

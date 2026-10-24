@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Same-tenant contact reconciliation: verified identifiers, supported merge handling, preserved unknown sends",
+  "description": "Purple Billboard DATA-CONTRACTS section 1. Same-tenant contact reconciliation requires verified identifiers and supported merge handling. Preserve stricter suppression, unknown sends and prior reminder totals; never merge by display name and never merge across tenants.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonical_contact_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "display_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verified_identifiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "provider_id",
+              "mobile",
+              "email",
+              "handle"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tenant_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "verified_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "kind",
+          "value",
+          "tenant_id",
+          "verified_at",
+          "evidence_id"
+        ]
+      }
+    },
+    "merge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "NO_MERGE",
+            "MERGE"
+          ]
+        },
+        "basis": {
+          "enum": [
+            "VERIFIED_IDENTIFIER",
+            "DISPLAY_NAME",
+            "CROSS_TENANT"
+          ]
+        },
+        "source_canonical_contact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "target_canonical_contact_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "mode",
+        "basis",
+        "source_canonical_contact_ids",
+        "target_canonical_contact_id"
+      ]
+    },
+    "preserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unknown_send_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "prior_reminders_accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "suppression_kept": {
+          "enum": [
+            "STRICTER",
+            "LOOSEST"
+          ]
+        }
+      },
+      "required": [
+        "unknown_send_ids",
+        "prior_reminders_accepted",
+        "suppression_kept"
+      ]
+    },
+    "updated_at": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "canonical_contact_id",
+    "display_name",
+    "verified_identifiers",
+    "merge",
+    "preserved",
+    "updated_at"
+  ]
+}
