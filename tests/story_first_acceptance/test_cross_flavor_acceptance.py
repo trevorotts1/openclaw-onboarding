@@ -41,12 +41,14 @@ def _receipt(**overrides):
     fields = dict(
         flavor="onboarding",
         repository="trevorotts1/openclaw-onboarding",
-        candidate_commit=HEAD,
-        candidate_branch="s75/T32",
-        head_verified=True,
-        worktree_clean=True,
-        base_ref="origin/main",
-        base_commit=BASE,
+        candidate={"repository": "trevorotts1/openclaw-onboarding", "commit": HEAD,
+                   "branch": "s75/T32", "checkout_commit": HEAD,
+                   "head_verified_at_execution": True,
+                   "worktree_clean_excluding_receipts": True},
+        harness={"repository": "trevorotts1/openclaw-onboarding",
+                 "commit": HEAD, "branch": "s75/T32"},
+        base={"repository": "trevorotts1/openclaw-onboarding",
+              "ref": "origin/main", "commit": BASE},
         contracts={"skill_root": ONB_ROOT, "core_module": "story_first_contracts",
                    "adapter_module": "package_flavor_adapter", "seam": "package_flavor_adapter.resolve",
                    "core_digest": "d", "core_schema_version": "v", "stage_count": 11,
@@ -116,11 +118,37 @@ def test_receipt_accepts_named_distinct_checker():
 
 def test_receipt_refuses_unverified_head():
     try:
-        _receipt(head_verified=False)
+        _receipt(candidate={"repository": "r", "commit": HEAD, "branch": "b",
+                            "checkout_commit": HEAD,
+                            "head_verified_at_execution": False,
+                            "worktree_clean_excluding_receipts": True})
     except R.ReceiptError as exc:
         assert "head_verified" in str(exc)
     else:
         raise AssertionError("a receipt about another head was accepted")
+
+
+def test_unavailable_receipt_records_null_candidate():
+    receipt = _receipt(execution_verdict="UNAVAILABLE",
+                       candidate={"repository": "trevorotts1/999-setup", "commit": None,
+                                  "branch": "unit/W77S-999-vendor",
+                                  "checkout_commit": "2" * 40,
+                                  "head_verified_at_execution": False,
+                                  "worktree_clean_excluding_receipts": True},
+                       not_executed=[{"facet": "all", "reason": "candidate skill root lacks contracts"}])
+    assert receipt["candidate"]["commit"] is None
+    assert receipt["acceptance"]["verdict"] == "UNAVAILABLE"
+    try:
+        _receipt(execution_verdict="UNAVAILABLE",
+                 candidate={"repository": "trevorotts1/999-setup", "commit": HEAD,
+                            "branch": "b", "checkout_commit": HEAD,
+                            "head_verified_at_execution": False,
+                            "worktree_clean_excluding_receipts": True},
+                 not_executed=[{"facet": "all", "reason": "x"}])
+    except R.ReceiptError as exc:
+        assert "null" in str(exc)
+    else:
+        raise AssertionError("UNAVAILABLE was allowed to claim a candidate commit it never ran")
 
 
 def test_receipt_refuses_green_control():

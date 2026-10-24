@@ -101,12 +101,35 @@ def run_flavor(flavor, flavor_info):
     return payload
 
 
-def build_receipt(flavor, repo_root, args, payload, contracts):
+def _repo_state(path):
+    """(head, branch, clean) for the git repository containing `path`."""
+    if not path:
+        return None, None, None
+    probe = path if os.path.isdir(path) else os.path.dirname(path)
+    while probe and not os.path.isdir(probe):
+        probe = os.path.dirname(probe)
+    _, head, _ = _git(probe, "rev-parse", "HEAD")
+    _, branch, _ = _git(probe, "rev-parse", "--abbrev-ref", "HEAD")
+    _, dirty, _ = _git(probe, "status", "--porcelain", "--untracked-files=no")
+    if not head:
+        return None, None, None
+    return head, branch, not bool(dirty)
+
+
+def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
     _, head, _ = _git(repo_root, "rev-parse", "HEAD")
     _, branch, _ = _git(repo_root, "rev-parse", "--abbrev-ref", "HEAD")
     _, base_commit, _ = _git(repo_root, "rev-parse", args.base_ref)
-    _, dirty, _ = _git(repo_root, "status", "--porcelain", "--untracked-files=no")
-    head_verified = head == args.candidate if args.candidate else True
+    status = payload.get("status")
+    if flavor == "onboarding":
+        candidate_head, candidate_branch, candidate_clean = head, branch, _repo_state(repo_root)[2]
+    else:
+        candidate_head, candidate_branch, candidate_clean = _repo_state(
+            flavor_info.get("skill_root") or next(iter(flavor_info["sources_checked"]), None))
+    checkout_head = candidate_head
+    if status == "UNAVAILABLE":
+        candidate_head = None  # no executed candidate skill root; null, never the harness head
+    head_verified = candidate_head is not None
 
     facets = payload.get("facets") or []
     executed = []
@@ -141,12 +164,18 @@ def build_receipt(flavor, repo_root, args, payload, contracts):
     return R.build(
         flavor=flavor,
         repository=contracts.get("repository", "unknown"),
-        candidate_commit=head,
-        candidate_branch=branch,
-        head_verified=head_verified,
-        worktree_clean=not bool(dirty),
-        base_ref=args.base_ref,
-        base_commit=base_commit,
+        candidate={
+            "repository": contracts.get("repository"),
+            "commit": candidate_head,
+            "branch": candidate_branch,
+            "checkout_commit": checkout_head,
+            "head_verified_at_execution": head_verified,
+            "worktree_clean_excluding_receipts": candidate_clean,
+        },
+        harness={"repository": "trevorotts1/openclaw-onboarding",
+                 "commit": head, "branch": branch},
+        base={"repository": "trevorotts1/openclaw-onboarding",
+              "ref": args.base_ref, "commit": base_commit},
         contracts={
             "skill_root": payload.get("skill_root") or (contracts.get("skill_root")),
             "core_module": "scripts/core/story_first_contracts.py",
@@ -232,7 +261,7 @@ def main(argv=None):
         receipt = build_receipt(flavor, repo_root, args, payload, {
             "repository": repositories[flavor],
             "skill_root": flavors[flavor]["skill_root"],
-        })
+        }, flavors[flavor])
         path = R.write(os.path.join(out_dir, "%s.json" % flavor), receipt)
         written.append(path)
         verdict = receipt["execution"]["verdict"]

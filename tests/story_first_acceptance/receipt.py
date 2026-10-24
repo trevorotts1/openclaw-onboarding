@@ -30,8 +30,9 @@ ACCEPTANCE_VERDICTS = ("PASS", "FAIL", "PENDING_INDEPENDENT_CHECK", "UNAVAILABLE
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _REQUIRED = (
     "receipt_version", "unit_id", "flavor", "repository", "candidate", "base",
-    "contracts", "dependencies", "executed", "not_executed", "literal_binding",
-    "checks", "execution", "unaffected_proof", "coverage", "author", "acceptance",
+    "harness", "contracts", "dependencies", "executed", "not_executed",
+    "literal_binding", "checks", "execution", "unaffected_proof", "coverage",
+    "author", "acceptance",
 )
 
 
@@ -39,8 +40,7 @@ class ReceiptError(Exception):
     pass
 
 
-def build(*, flavor, repository, candidate_commit, candidate_branch,
-          head_verified, worktree_clean, base_ref, base_commit, contracts,
+def build(*, flavor, repository, candidate, harness, base, contracts,
           dependencies, executed, not_executed, literal_binding, checks,
           execution_verdict, unaffected_proof, coverage, author, checker=None,
           generated_at=None):
@@ -51,13 +51,9 @@ def build(*, flavor, repository, candidate_commit, candidate_branch,
         "flavor": flavor,
         "repository": repository,
         "generated_at": generated_at or _now(),
-        "candidate": {
-            "commit": candidate_commit,
-            "branch": candidate_branch,
-            "head_verified_at_execution": bool(head_verified),
-            "worktree_clean_excluding_receipts": bool(worktree_clean),
-        },
-        "base": {"ref": base_ref, "commit": base_commit},
+        "candidate": candidate,
+        "base": base,
+        "harness": harness,
         "contracts": contracts,
         "dependencies": dependencies,
         "executed": executed,
@@ -103,16 +99,25 @@ def validate(receipt):
 
     candidate = receipt["candidate"] or {}
     base = receipt["base"] or {}
-    if not _HEX40.match(str(candidate.get("commit", ""))):
-        defects.append("candidate.commit must be a full 40-hex commit")
-    if not _HEX40.match(str(base.get("commit", ""))):
-        defects.append("base.commit must be a full 40-hex commit")
-    if candidate.get("head_verified_at_execution") is not True:
-        defects.append("candidate.head_verified_at_execution must be true; a receipt about another head does not count")
-
+    harness = receipt["harness"] or {}
     execution = (receipt.get("execution") or {}).get("verdict")
     if execution not in EXECUTION_VERDICTS:
         defects.append("execution.verdict must be one of %s" % (EXECUTION_VERDICTS,))
+    if not _HEX40.match(str(harness.get("commit", ""))):
+        defects.append("harness.commit must be a full 40-hex commit naming the fixtures that ran")
+    if not _HEX40.match(str(base.get("commit", ""))):
+        defects.append("base.commit must be a full 40-hex commit")
+    if execution == "UNAVAILABLE":
+        # No candidate skill root existed; the candidate commit is explicitly null.
+        if candidate.get("commit") is not None:
+            defects.append("UNAVAILABLE must record candidate.commit as null, not the harness head")
+        if candidate.get("head_verified_at_execution") is not False:
+            defects.append("UNAVAILABLE must record head_verified_at_execution as false")
+    else:
+        if not _HEX40.match(str(candidate.get("commit", ""))):
+            defects.append("candidate.commit must be a full 40-hex commit")
+        if candidate.get("head_verified_at_execution") is not True:
+            defects.append("candidate.head_verified_at_execution must be true; a receipt about another head does not count")
 
     checks = receipt["checks"] or {}
     if execution == "PASS":

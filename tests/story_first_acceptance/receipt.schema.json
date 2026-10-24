@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": [
     "receipt_version", "unit_id", "flavor", "repository", "generated_at",
-    "candidate", "base", "contracts", "dependencies", "executed",
+    "candidate", "base", "harness", "contracts", "dependencies", "executed",
     "not_executed", "literal_binding", "checks", "execution",
     "unaffected_proof", "coverage", "author", "acceptance"
   ],
@@ -19,11 +19,15 @@
     "candidate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["commit", "branch", "head_verified_at_execution", "worktree_clean_excluding_receipts"],
+      "required": ["repository", "commit", "branch", "checkout_commit",
+                   "head_verified_at_execution", "worktree_clean_excluding_receipts"],
       "properties": {
-        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$",
-                   "description": "The exact head the facets were executed at."},
-        "branch": {"type": "string"},
+        "repository": {"type": "string"},
+        "commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$",
+                   "description": "The exact candidate head the facets were executed at; null when UNAVAILABLE."},
+        "branch": {"type": ["string", "null"]},
+        "checkout_commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$",
+                   "description": "Head of the local checkout inspected, even when its skill root lacks the contracts."},
         "head_verified_at_execution": {"type": "boolean",
           "description": "true only when git rev-parse HEAD equalled candidate.commit during execution."},
         "worktree_clean_excluding_receipts": {"type": "boolean",
@@ -33,10 +37,22 @@
     "base": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "commit"],
+      "required": ["repository", "ref", "commit"],
       "properties": {
+        "repository": {"type": "string"},
         "ref": {"type": "string"},
         "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "branch"],
+      "description": "The fixture code that ran; always a real 40-hex head.",
+      "properties": {
+        "repository": {"type": "string"},
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "branch": {"type": ["string", "null"]}
       }
     },
     "contracts": {
