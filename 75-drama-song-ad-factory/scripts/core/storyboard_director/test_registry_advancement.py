@@ -294,6 +294,11 @@ def test_seven_downstream_stages_really_advance():
         env = nxt(run)
         check("registry traverses to run-complete",
               env["reason_code"] == "run-complete", env)
+        check("no approval cache was fabricated",
+              not os.path.exists(os.path.join(run, "control", "approvals.json")))
+        check("current decisions, independent QC and actual receipts prove delivery",
+              env["data"].get("completion", {}).get("delivered") is True,
+              env["data"].get("completion"))
     finally:
         FACTORY._RECONCILIERS.pop("continuity-bible", None)
 
