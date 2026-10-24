@@ -25,7 +25,7 @@ Status vocabulary (unchanged from the earlier revisions):
 | Pin SHA | `144ec54507695371b0eaea1e06a561d7cd76273b` |
 | Commit subject | `Merge T-36 idempotent guided setup and crash-safe receipts (PBB-081); allocate Skill 38 v2.0.32 (#2545)` |
 | Commit date | 2026-10-24 16:50:53 -0400 |
-| Fetched (UTC) | 2026-10-24T21:01:33Z (build session PBB-206; the same SHA was independently observed at 20:51:05Z) |
+| Fetched (UTC) | 2026-10-24T21:01:33Z (build session PBB-206; an earlier pass in this lane recorded 20:51:05Z with the same SHA) |
 | How verified | `git fetch --prune origin main`, then `git rev-parse origin/main`; cross-checked with `gh api repos/trevorotts1/openclaw-onboarding/commits/main` at 2026-10-24T21:03:43Z, same SHA |
 | Remote truth at fetch | `144ec54507695371b0eaea1e06a561d7cd76273b refs/heads/main` (`PIN.remote-main`, rc=0) |
 | Worktree HEAD at run | equals the pin. The capture run was made in a **detached worktree checked out at the pin**, so the harness preflight records `worktree_at_pin: true` and `pin_is_ancestor_of_head: true`. The evidence commit that carries this document is a direct child of the pin, so a later checkout can never move the answers: every search command names the pin SHA itself. |

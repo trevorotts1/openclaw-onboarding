@@ -101,7 +101,7 @@ HEAD 702d6e4cdb4e1b4737c48cd8359c8905d427e2bb
 detached
 
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-201-lane/wt
-HEAD 144ec54507695371b0eaea1e06a561d7cd76273b
+HEAD ec423c3e1533d010f8381e0da7c28e5507ff0ae4
 branch refs/heads/pb/PBB-201/t-05
 
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-202-lane/wt
@@ -117,7 +117,7 @@ HEAD a8084d45cfba5474a458f36e091311c0539b77e4
 detached
 
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-206-lane/wt
-HEAD b7874f1aca1a94419444213739231db018e2dbc5
+HEAD 2fb9165a8836f990afafc27f2643292ae360a1e7
 branch refs/heads/pb/PBB-206/t01-inventory
 
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-207-lane/wt
@@ -125,7 +125,7 @@ HEAD b6f8c3626c635904de28daa9722eed0dc00724fe
 branch refs/heads/pb/PBB-207/t-20-repair
 
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo
-HEAD 702d6e4cdb4e1b4737c48cd8359c8905d427e2bb
+HEAD e7f5d98a7f586de249789047ebcd1ae6b3f0ba6f
 branch refs/heads/pb/PBB-220/t-05
 
 worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/qc4-t-27-lane/wt

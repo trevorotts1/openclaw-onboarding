@@ -2,7 +2,7 @@
 144ec54507695371b0eaea1e06a561d7cd76273b
 
 === run time (UTC) ===
-2026-10-24T21:05:40Z
+2026-10-24T21:06:52Z
 
 === open pull requests (gh, live at run time) ===
 2546	batch/s75-b1-finish	draft=false	2026-10-24T20:56:53Z	Skill 75 batch 1: story-first contracts, cast, world, music and duration units
@@ -164,9 +164,9 @@ pb/PBB-177/t-04 702d6e4cdb4e1b4737c48cd8359c8905d427e2bb
 pb/PBB-192/t-28 74ca36d59be4b4d9a6d852f676072e3dd33c8949
 pb/PBB-201/t-05 ec423c3e1533d010f8381e0da7c28e5507ff0ae4
 pb/PBB-202/t-38 868b89492c5e5ca8b321758f9426a3a19a299166
-pb/PBB-206/t01-inventory b7874f1aca1a94419444213739231db018e2dbc5
+pb/PBB-206/t01-inventory 2fb9165a8836f990afafc27f2643292ae360a1e7
 pb/PBB-207/t-20-repair b6f8c3626c635904de28daa9722eed0dc00724fe
-pb/PBB-220/t-05 702d6e4cdb4e1b4737c48cd8359c8905d427e2bb
+pb/PBB-220/t-05 e7f5d98a7f586de249789047ebcd1ae6b3f0ba6f
 pb/QC-PBB-069/t42-qc 277a3f043851bac7dd521909e48daa6b49e8d754
 pb/T-06b/brief-approval-binding 2209b2870c2a4401ff6887ce230876c21f5158e1
 pb/T-06c/load-trust-boundary 4286832a9a8e9ae6362db2003fdc76e3b707610e

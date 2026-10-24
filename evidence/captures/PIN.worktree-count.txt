@@ -28,13 +28,13 @@
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-197-qc/wt          b6f8c3626 (detached HEAD)
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-199-qc/wt          a8084d45c (detached HEAD)
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-200-lane/repo      702d6e4cd (detached HEAD)
-/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-201-lane/wt        144ec5450 [pb/PBB-201/t-05]
+/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-201-lane/wt        ec423c3e1 [pb/PBB-201/t-05]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-202-lane/wt        868b89492 [pb/PBB-202/t-38]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-203-lane/wt        ffd6cc970 (detached HEAD)
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-205-qc/wt          a8084d45c (detached HEAD)
-/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-206-lane/wt        b7874f1ac [pb/PBB-206/t01-inventory]
+/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-206-lane/wt        2fb9165a8 [pb/PBB-206/t01-inventory]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-207-lane/wt        b6f8c3626 [pb/PBB-207/t-20-repair]
-/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo      702d6e4cd [pb/PBB-220/t-05]
+/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo      e7f5d98a7 [pb/PBB-220/t-05]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/qc4-t-27-lane/wt       d4f0b1a48 (detached HEAD)
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/T-28-lane/repo         c1c991f8f [pb/PBB-122/t-28]
 /Volumes/mac mini m4/Downloads/git trees and automations/scratch/qc2-t-16-pbb133/wt                               2f5c8cb16 (detached HEAD)
