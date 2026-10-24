@@ -158,6 +158,53 @@ def test_unsupported_business_claim_is_refused():
     assert any("unsupported business claim" in e for e in errors), errors
 
 
+def test_quantified_business_claim_is_refused_in_any_phrasing():
+    fx = _fx()["reject_business_phrasings"]
+    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"]))
+    by_id = [e for e in errors if "unsupported business claim" in e]
+    assert len(by_id) >= 3, errors
+    # variants the verdict did not name: digits with a magnitude, a spelled-out
+    # count, and a growth number — none of them share a fixed phrase.
+    src = [{"id": "src-1", "url": "https://example.invalid/r", "retrieved": "2026-10-20"}]
+    for text in ("Our Dallas clinic has helped 250 clients since 2019.",
+                 "More than four thousand families have trusted our coaches.",
+                 "Since 2020 the program has enrolled 4,000 students."):
+        claim = _plain("public-fact", text, source="src-1")
+        errors = C.validate_bundle(_bundle([claim], src))
+        assert any("unsupported business claim" in e for e in errors), (text, errors)
+
+
+def test_superlative_business_claim_is_refused_in_any_phrasing():
+    src = [{"id": "src-1", "url": "https://example.invalid/r", "retrieved": "2026-10-20"}]
+    for text in ("This program is the most trusted sleep coaching service in Dallas.",
+                 "The premier coaching service and the fastest growing program in Texas.",
+                 "We run the leading sleep clinic in the city.",
+                 "Dallas families call our coaching the best they have used."):
+        claim = _plain("public-fact", text, source="src-1")
+        errors = C.validate_bundle(_bundle([claim], src))
+        assert any("unsupported business claim" in e for e in errors), (text, errors)
+
+
+def test_sentence_level_keyword_stuffing_is_refused_without_commas():
+    fx = _fx()["reject_sentence_keyword_stuffing"]
+    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"]))
+    assert sum("keyword stuffing" in e for e in errors) >= 2, errors
+    src = [{"id": "src-1", "url": "https://example.invalid/r", "retrieved": "2026-10-20"}]
+    for text in ("sleep coach | sleep coaching | best sleep coach | sleep coach near me",
+                 "sleep coach insomnia treatment shift work fatigue sleep clinic downtown",
+                 "sleep coach, sleep coach near me, best sleep supplement, buy now, backlinks, seo services."):
+        claim = _plain("public-fact", text, source="src-1")
+        errors = C.validate_bundle(_bundle([claim], src))
+        assert any("keyword stuffing" in e for e in errors), (text, errors)
+
+
+def test_market_facts_still_pass_the_same_instrument():
+    """Quantified and comparative market research is not a business claim."""
+    fx = _fx()["accept_market_facts"]
+    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"]))
+    assert errors == [], errors
+
+
 def test_repeated_text_is_refused_and_deduped_at_authoring():
     dupe = "Nurses on rotating shifts sleep less than day staff."
     claims = [_plain("owner-fact", dupe, id="a", owner_ref="answer:q1"),

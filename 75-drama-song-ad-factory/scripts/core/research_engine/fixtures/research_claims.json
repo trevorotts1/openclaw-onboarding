@@ -46,5 +46,28 @@
     "sources": [],
     "claims": [],
     "padding": "research research research research research research research research"
+  },
+  "reject_business_phrasings": {
+    "sources": [{"id": "src-1", "url": "https://example.invalid/market-report", "retrieved": "2026-10-20"}],
+    "claims": [
+      {"id": "p1", "text": "Over 4,000 customers have enrolled in this program since 2024.", "provenance": "public-fact", "source": "src-1", "sections": ["market"]},
+      {"id": "p2", "text": "This program is the most trusted sleep coaching service in Dallas.", "provenance": "public-fact", "source": "src-1", "sections": ["audience"]},
+      {"id": "p3", "text": "Our program has served thousands of families since 2019.", "provenance": "public-fact", "source": "src-1", "sections": ["competitors"]}
+    ]
+  },
+  "reject_sentence_keyword_stuffing": {
+    "sources": [{"id": "src-1", "url": "https://example.invalid/stuffed", "retrieved": "2026-10-20"}],
+    "claims": [
+      {"id": "k1", "text": "Best sleep coach near me best sleep coaching program best sleep coach for nurses best sleep coaching.", "provenance": "public-fact", "source": "src-1", "sections": ["market", "audience", "competitors"]},
+      {"id": "k2", "text": "sleep coach near me sleep coaching Dallas sleep coach Fort Worth sleep coach Plano sleep coach Frisco sleep coach Arlington", "provenance": "public-fact", "source": "src-1", "sections": ["market", "audience", "competitors"]}
+    ]
+  },
+  "accept_market_facts": {
+    "sources": [{"id": "src-1", "url": "https://example.invalid/report", "retrieved": "2026-10-20"}],
+    "claims": [
+      {"id": "m1", "text": "Over fifty percent of night-shift nurses report short sleep.", "provenance": "public-fact", "source": "src-1", "sections": ["audience"]},
+      {"id": "m2", "text": "Registered nursing is one of the larger occupations in the United States.", "provenance": "public-fact", "source": "src-1", "sections": ["market"]},
+      {"id": "m3", "text": "Most competing sleep programs are built around office schedules rather than hospital shift rotations.", "provenance": "public-fact", "source": "src-1", "sections": ["competitors"]}
+    ]
   }
 }

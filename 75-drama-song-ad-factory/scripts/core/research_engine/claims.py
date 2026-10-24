@@ -24,6 +24,7 @@ Stdlib only, same as the rest of research_engine.
 from __future__ import annotations
 
 import re
+from collections import Counter
 
 PROVENANCE = ("owner-fact", "public-fact", "fiction")
 SECTIONS = ("market", "audience", "competitors")
@@ -44,6 +45,122 @@ BUSINESS_RE = re.compile(
     re.IGNORECASE)
 TERMINATOR_RE = re.compile(r"[.!?][\"')\]]?\s*$")
 TOKEN_RE = re.compile(r"[a-z0-9]{3,}")
+
+# --- the unsupported-business-claim class, in any phrasing -----------------
+# A public-fact may describe the market, the audience or the competitors. It
+# may never assert the named business's own size, results or standing, because
+# no market source can verify those. That class cannot be enumerated as one
+# phrase list, so it is detected structurally: WHO the sentence is about (the
+# business, its offering, or its own customers) plus WHAT KIND of assertion it
+# makes (a quantity, or a rank/preeminence). Either pairing is refused, and the
+# flat outcome/price/guarantee alternation above still fires on its own.
+SELF_RE = re.compile(
+    r"\b(?:this|that|our|my|the)\s+(?:program|service|company|business|practice"
+    r"|clinic|studio|academy|course|coaching|method|system|product|offer(?:ing)?"
+    r"|app|team|staff|brand|firm|agency|clients?|customers?|students?|patients?"
+    r"|members|users|families)\b"
+    r"|\b(?:we|us|our|ours|ourselves)\b",
+    re.IGNORECASE)
+OFFERING_NOUN_RE = re.compile(
+    r"\b(?:programs?|services?|companies|business(?:es)?|practices?|clinics?"
+    r"|studios?|academ(?:y|ies)|courses?|coach(?:es|ing)?|providers?|brands?"
+    r"|products?|apps?|methods?|systems?)\b",
+    re.IGNORECASE)
+OUTCOME_NOUN_RE = re.compile(
+    r"\b(?:customers?|clients?|students?|patients?|members|users|families"
+    r"|enrol(?:lees?|ments?)|enrolled|graduates?|reviews?|testimonials?"
+    r"|revenue|sales|conversions?|bookings?|appointments?|locations?"
+    r"|years in business)\b",
+    re.IGNORECASE)
+QUANTITY_RE = re.compile(
+    r"\b(?:over|more than|less than|nearly|almost|about|around|up to|at least"
+    r"|just under|just over)\s+(?:[$]?\d|one|two|three|four|five|six|seven|eight"
+    r"|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred|thousand"
+    r"|million|billion)"
+    r"|\b\d{1,3}(?:,\d{3})+\b"
+    r"|\b\d+(?:\.\d+)?\s*(?:%|percent|x)\b"
+    r"|\b(?:dozens|hundreds|thousands|millions|billions)\s+of\b"
+    r"|\bsince\s+(?:19|20)\d{2}\b"
+    r"|\b\d+\s*(?:\+|plus)\b",
+    re.IGNORECASE)
+SUPERLATIVE_RE = re.compile(
+    r"\b(?:best|top[- ]?(?:rated|ranked|reviewed)|leading|premier|foremost"
+    r"|number[- ]?one|#1|no\.?\s?1|largest|biggest|greatest|fastest(?:[- ]growing)?"
+    r"|cheapest|highest[- ]?rated"
+    r"|most\s+(?:trusted|popular|effective|recommended|loved|successful|complete"
+    r"|comprehensive|advanced|experienced|reviewed|awarded|chosen|sought[- ]after)"
+    r"|unbeatable|unmatched|unparalleled|unsurpassed|world[- ]class"
+    r"|award[- ]winning|best[- ]selling|bestselling)\b",
+    re.IGNORECASE)
+
+# --- the keyword-stuffing class, at sentence level -------------------------
+# A research claim asserts something. A keyword list does not, whether it is
+# comma-separated or run together as a fake sentence. Detected by what repeats
+# (the same keyword or phrase over and over), by list shape in any separator,
+# and by a run of keywords with no assertion in it at all.
+LIST_SPLIT_RE = re.compile(r"[,;/|·•]")
+# Assertive verbs only — words that are also plain nouns (sleep, work, report,
+# cost, buy) stay out, or a keyword list made of those nouns would read as a
+# claim. Nouns that merely look verb-like are still caught by the suffix check.
+ASSERTIVE_RE = re.compile(
+    r"\b(?:is|are|was|were|be|been|being|has|have|had|do|does|did|can|could|may"
+    r"|might|will|would|should|must|show(?:s|ed)?|find(?:s)?|found|suggest(?:s|ed)?"
+    r"|indicat(?:e|es|ed)|link(?:s|ed)?|associat(?:e|es|ed)"
+    r"|affect(?:s|ed)?|caus(?:e|es|ed)|increas(?:e|es|ed)|reduc(?:e|es|ed)"
+    r"|improv(?:e|es|ed)|help(?:s|ed)?|build(?:s|ing)?|built|us(?:e|es|ed)"
+    r"|mak(?:e|es)|made|need(?:s|ed)?|target(?:s|ed)?|serv(?:e|es|ed)"
+    r"|operat(?:e|es|ed)|prefer(?:s|red)?|experienc(?:e|es|ed)|tend(?:s|ed)?"
+    r"|ris(?:e|es|ing)|risen|grow(?:s|ing)?|grown|fell|fall(?:s|ing)?|feel(?:s|ing)?"
+    r"|felt|slept|giv(?:e|es)|gave|keep(?:s|ing)?|kept|chang(?:e|es|ed)"
+    r"|becom(?:e|es|ing)|became|com(?:e|es|ing)|came|go(?:es|ing)?|went"
+    r"|tak(?:e|es|ing)|took|bought|sold|offer(?:s|ed)?"
+    r"|provid(?:e|es|ed)|deliver(?:s|ed)?|result(?:s|ed)?|depend(?:s|ed)?"
+    r"|var(?:y|ies)|differ(?:s|ed)?|rank(?:s|ed)?|rat(?:e|es|ed)|survey(?:s|ed)?"
+    r"|stud(?:y|ies)|measur(?:e|es|ed)|estimat(?:e|es|ed)|predict(?:s|ed)?)\b",
+    re.IGNORECASE)
+VERB_SUFFIX_RE = re.compile(r"(?:ed|ing|en|s)$", re.IGNORECASE)
+STOPWORDS = frozenset(
+    "a an and or but of to in on for with from that this these those is are was "
+    "were be been being it its as at by our your their they them we you i he she "
+    "his her not no if then than so such can could may might will would should "
+    "must have has had do does did".split())
+
+
+def _content_tokens(text):
+    return [t for t in TOKEN_RE.findall(str(text or "").lower())
+            if t not in STOPWORDS]
+
+
+def _list_stuffing(text):
+    """A run of short keyword items in any separator, asserting nothing."""
+    items = [i for i in LIST_SPLIT_RE.split(text) if i.strip()]
+    if len(items) < 4 or ASSERTIVE_RE.search(text):
+        return False
+    sizes = [len(TOKEN_RE.findall(i)) for i in items]
+    return sum(sizes) / float(len(sizes)) <= 3.0
+
+
+def _repetition_stuffing(text):
+    """The same keyword or phrase repeated inside one claim."""
+    content = _content_tokens(text)
+    if len(content) >= 8 and (len(content) - len(set(content))
+                              >= 0.35 * len(content)):
+        return True
+    if any(n >= 4 for n in Counter(content).values()):
+        return True
+    for size in (2, 3):
+        grams = Counter(tuple(content[i:i + size])
+                        for i in range(len(content) - size + 1))
+        if any(n >= 3 for n in grams.values()):
+            return True
+    return False
+
+
+def _assertionless_stuffing(text):
+    """A sentence-shaped run of keywords: no verb, no verb form, no claim."""
+    content = _content_tokens(text)
+    return (len(content) >= 6 and ASSERTIVE_RE.search(text) is None
+            and not any(VERB_SUFFIX_RE.search(t) for t in content))
 
 
 def _nonempty(v):
@@ -223,6 +340,15 @@ def validate_bundle(bundle):
         if TERMINATOR_RE.search(text) is None and text.count(",") >= 3:
             errors.append("%s: keyword stuffing — comma list without a "
                           "sentence, not a research claim" % ref)
+        elif _list_stuffing(text):
+            errors.append("%s: keyword stuffing — a list of search keywords, "
+                          "not a research claim" % ref)
+        elif _repetition_stuffing(text):
+            errors.append("%s: keyword stuffing — the same keyword repeated "
+                          "through the sentence, not a research claim" % ref)
+        elif _assertionless_stuffing(text):
+            errors.append("%s: keyword stuffing — a run of keywords with no "
+                          "assertion in it, not a research claim" % ref)
         key = text.lower()
         if key in seen_text:
             errors.append("%s: duplicate of %s" % (ref, seen_text[key]))
@@ -254,6 +380,20 @@ def validate_bundle(bundle):
                     "verify the client's own results/price/guarantee; make it "
                     "an owner-fact with its raw answer identity, or remove or "
                     "qualify it" % ref)
+            subject = (SELF_RE.search(text) or OFFERING_NOUN_RE.search(text)
+                       or OUTCOME_NOUN_RE.search(text))
+            if subject and QUANTITY_RE.search(text):
+                errors.append(
+                    "%s: unsupported business claim — a quantified claim about "
+                    "the business's own size, counts or results cannot come "
+                    "from market evidence; make it an owner-fact with its raw "
+                    "answer identity, or remove or qualify it" % ref)
+            if subject and SUPERLATIVE_RE.search(text):
+                errors.append(
+                    "%s: unsupported business claim — a superlative claim about "
+                    "the business's own standing cannot come from market "
+                    "evidence; make it an owner-fact with its raw answer "
+                    "identity, or remove or qualify it" % ref)
         elif prov == "owner-fact":
             if not _nonempty(claim.get("owner_ref")):
                 errors.append("%s: owner-fact with no raw answer identity "
