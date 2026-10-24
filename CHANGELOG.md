@@ -1,3 +1,7 @@
+## [v27.1.66]  -  2026-10-24  -  Cleanup (PBB-131 T-46): typed disposal decisions for scratch, merged, dirty and shared-consumer resources, with immediate eligible removal, preserved content and proven absence
+
+- In plain English: a new `shared-utils/cleanup/` module decides what may be deleted and then deletes it straight away, but only when it can prove the resource is owned, outside-only, on the expected drive, free of live consumers and already preserved. Anything it cannot determine comes back as UNKNOWN with a reason, never as success, and nothing is ever force-deleted.
+
 ## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
 
 ## [v27.1.64]  -  2026-10-22  -  W10 canary: A12 runtime-proof harness and the A-row execution runner
