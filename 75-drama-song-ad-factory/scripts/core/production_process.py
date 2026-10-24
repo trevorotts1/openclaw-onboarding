@@ -422,12 +422,14 @@ def admit_production(run_dir, stage, *, run_id=None):
                 return dict(proof, **context)
             proofs["approved_script"] = proof["approved_script"]
         if "music" in predecessors:
+            from intake_preflight import factory
             from song_choices import song_choices as songs
             if prefs["song"]:
                 state = songs._state(str(root))
                 if not state or state.get("required") is not True:
                     return _result(False, "PRODUCTION_SONG_PREFERENCE_MISMATCH", "The client elected song choice, but its artifact gate is missing or disabled.", **context)
-            hold = songs.refusal(str(root))
+            # Reuse the decision-aware gate used by music completion and next.
+            hold = factory._song_hold(str(root))
             if hold:
                 return _result(False, hold["reason_code"], hold.get("detail") or hold.get("next_action") or "Song choice is still pending.", **context)
         if stage == "video-generation" or "video-generation" in predecessors:
