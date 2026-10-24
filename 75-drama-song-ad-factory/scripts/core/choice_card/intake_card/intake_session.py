@@ -6,8 +6,13 @@ Every raw reply is journalled before advancing. A changed menu never reinterpret
 an earlier numeric selection. Existing asset-approval machinery is untouched.
 """
 import copy
+from contextlib import contextmanager
 from datetime import datetime, timezone
-import fcntl
+try:
+    import fcntl
+except ImportError:  # native Windows
+    fcntl = None
+    import msvcrt
 import hashlib
 import json
 import os
@@ -17,6 +22,29 @@ import tempfile
 from . import intake_card as card
 
 SCHEMA = "blackceo.intake-session/v1"
+
+
+@contextmanager
+def session_lock(lock_path):
+    """One cross-process lock on POSIX and native Windows; no optional package."""
+    with open(lock_path, "a+b") as lock:
+        if fcntl is not None:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        else:
+            lock.seek(0, os.SEEK_END)
+            if lock.tell() == 0:
+                lock.write(b"0")
+                lock.flush()
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            else:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 def _dump(value):
@@ -41,11 +69,12 @@ def _write(path, state):
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, path)
-        dfd = os.open(str(path.parent), os.O_RDONLY)
-        try:
-            os.fsync(dfd)
-        finally:
-            os.close(dfd)
+        if os.name != "nt":
+            dfd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
@@ -83,24 +112,28 @@ def _active(state, base, client_dir):
             return answers, qs, None
         if rec["definition_digest"] != _digest(q):
             return answers, qs, q["id"]
-        parsed = copy.deepcopy(rec["parsed"])
-        if parsed.get("id") != q["id"] or rec.get("question_id") != q["id"]:
-            raise ValueError("stored answer has a mismatched question id")
-        if rec.get("source") != "client" or not rec.get("accepted") or not rec.get("at_utc"):
-            raise ValueError("stored answer has no client provenance")
-        original_q = rec.get("question")
-        if (_digest(original_q) != rec["definition_digest"] or
-                _digest({"id": q["id"], "definition": original_q,
-                         "message": rec.get("rendered_question")}) != rec.get("question_digest")):
-            raise ValueError("stored answer is not bound to its rendered question")
-        verified = _parse(rec["raw_answer"], q)
-        if not verified or verified.get("error"):
-            raise ValueError("saved raw answer is not an offered option")
-        verified["id"] = q["id"]
-        if _dump(verified) != _dump(parsed) or _dump(_option(q, verified)) != _dump(rec.get("option")):
-            raise ValueError("stored answer differs from its raw client reply or option identity")
-        answers.append(parsed)
+        answers.append(_checked_parsed(rec, q))
     raise ValueError("question flow did not converge")
+
+
+def _checked_parsed(rec, q):
+    parsed = copy.deepcopy(rec["parsed"])
+    if parsed.get("id") != q["id"] or rec.get("question_id") != q["id"]:
+        raise ValueError("stored answer has a mismatched question id")
+    if rec.get("source") != "client" or not rec.get("accepted") or not rec.get("at_utc"):
+        raise ValueError("stored answer has no client provenance")
+    original_q = rec.get("question")
+    if (_digest(original_q) != rec["definition_digest"] or
+            _digest({"id": q["id"], "definition": original_q,
+                     "message": rec.get("rendered_question")}) != rec.get("question_digest")):
+        raise ValueError("stored answer is not bound to its rendered question")
+    verified = _parse(rec["raw_answer"], q)
+    if not verified or verified.get("error"):
+        raise ValueError("saved raw answer is not an offered option")
+    verified["id"] = q["id"]
+    if _dump(verified) != _dump(parsed) or _dump(_option(q, verified)) != _dump(rec.get("option")):
+        raise ValueError("stored answer differs from its raw client reply or option identity")
+    return parsed
 
 
 def _pending(answers, qs, editing=None):
@@ -131,10 +164,14 @@ def _parse(raw, q):
     # "yes" never means a recommendation on an unrelated question. Recognise
     # it only when the menu actually names an affirmative option.
     if low in card._YES:
+        def starts_word(label, word):
+            label = label.casefold()
+            return label == word or (label.startswith(word) and
+                                     len(label) > len(word) and not label[len(word)].isalnum())
+        has_no = any(starts_word(o[0], "no") for o in q["options"])
         affirmative = [i for i, o in enumerate(q["options"], 1)
                        if o[0].casefold() == low or
-                       (low in ("yes", "y", "yep") and
-                        (o[0].casefold() == "yes" or o[0].casefold().startswith("yes -")))]
+                       (low in ("yes", "y", "yep") and has_no and starts_word(o[0], "yes"))]
         if len(affirmative) != 1:
             return None
         return card._parse(str(affirmative[0]), q)
@@ -198,6 +235,8 @@ def _result(state, path, answers, qs, code="INTAKE_WAITING", outcome="ok", detai
               "saved_answer_count": len(state.get("answer_records", {})),
               "session_path": str(path), "pending": copy.deepcopy(pending),
               "video_model": next((a.get("n") for a in answers if a.get("id") == "model"), None)}
+    if state.get("legacy_answers"):
+        result["legacy_answers"] = copy.deepcopy(state["legacy_answers"])
     if detail:
         result["detail"] = detail
     return result
@@ -205,7 +244,7 @@ def _result(state, path, answers, qs, code="INTAKE_WAITING", outcome="ok", detai
 
 def process(replies, questions=None, *, run_dir=None, run_state_file=None,
             target=None, client_dir=None, purpose_flow=None, question_id=None,
-            question_digest=None, source="client"):
+            question_digest=None, source="client", source_ref=None):
     """One persistent intake turn; a reply needs a previously emitted question.
 
     ``source`` must name the client. Identity arguments, when supplied, must
@@ -220,24 +259,21 @@ def process(replies, questions=None, *, run_dir=None, run_state_file=None,
                 "question_id": None, "question_digest": None,
                 "answered_count": 0, "total_count": 0}
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(str(path) + ".lock", "a", encoding="utf-8") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with session_lock(str(path) + ".lock"):
         try:
             return _process_locked(path, replies, questions, run_dir, run_state_file,
                                    target, client_dir, purpose_flow, question_id,
-                                   question_digest, source)
+                                   question_digest, source, source_ref)
         except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
             return {"done": False, "answers": [], "message": "",
                     "outcome": "error", "reason_code": "INTAKE_SESSION_UNREADABLE",
                     "detail": str(exc), "session_path": str(path),
                     "question_id": None, "question_digest": None,
                     "answered_count": 0, "total_count": 0}
-        finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def _process_locked(path, replies, questions, run_dir, run_state_file, target,
-                    client_dir, purpose_flow, question_id, question_digest, source):
+                    client_dir, purpose_flow, question_id, question_digest, source, source_ref):
     base = questions or card.QUESTIONS
     if not isinstance(replies, (list, tuple)) or any(not isinstance(r, str) for r in replies):
         raise ValueError("replies must be strings")
@@ -258,8 +294,19 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
                  "answer_records": {}, "events": [], "done": False,
                  "editing_question_id": None, "confirmation": None,
                  "base_definition_digest": _digest(base)}
+        if run_dir:
+            legacy = Path(run_dir) / "card-answers.json"
+            if legacy.exists():
+                try:
+                    old = json.loads(legacy.read_text(encoding="utf-8"))
+                    state["legacy_answers"] = {"status": "unverified_preserved",
+                        "path": str(legacy), "data": old,
+                        "reason": "Prior answers need explicit raw client provenance; no numeric menu mapping was imported."}
+                except (OSError, ValueError):
+                    state["legacy_answers"] = {"status": "unreadable_preserved", "path": str(legacy)}
     answers, qs, drift = _active(state, base, client_dir)
     current = _pending(answers, qs, state.get("editing_question_id"))
+    _progress(state, answers, qs)
     old_pending = state.get("pending")
     changed = bool(old_pending and old_pending.get("digest") != current["digest"])
     if not old_pending or changed:
@@ -298,7 +345,7 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
     if state["done"]:
         return _result(state, path, answers, qs, "INTAKE_ALREADY_CONFIRMED", "waiting")
     event = {"sequence": len(state["events"]) + 1, "raw_answer": raw,
-             "source": source, "at_utc": _now(), "question_id": current["id"],
+             "source": source, "source_ref": source_ref, "at_utc": _now(), "question_id": current["id"],
              "question_digest": current["digest"], "rendered_question": current["message"],
              "accepted": False}
     state["events"].append(event)
@@ -339,6 +386,163 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
     state["updated_at"] = _now()
     _write(path, state)
     answers, qs, drift = _active(state, base, client_dir)
+    _progress(state, answers, qs)
     state["pending"] = _pending(answers, qs, state.get("editing_question_id"))
     _write(path, state)
     return _result(state, path, answers, qs, code, outcome)
+
+
+def _progress(state, answers, qs):
+    state["required_question_ids"] = [q["id"] for q in qs]
+    state["active_question_ids"] = [a["id"] for a in answers]
+    state["answered_count"] = len(answers)
+    state["total_count"] = len(qs)
+
+
+def completion_status(run_dir):
+    """Inspect persisted intake completion without changing any run artifact.
+
+    Only this session's complete question IDs and its explicit client recap
+    confirmation permit ``done``. A summary string or asset preference cannot.
+    """
+    path = _session_path(run_dir, None)
+    out = {"exists": bool(path and path.exists()), "valid": True, "done": False,
+           "reason_code": "INTAKE_SESSION_MISSING", "question_id": None,
+           "question_digest": None, "message": "", "answered_count": 0,
+           "total_count": 0, "pending": {}}
+    if not out["exists"]:
+        return out
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+        if state.get("schema") != SCHEMA:
+            raise ValueError("unrecognised intake session schema")
+        required = state["required_question_ids"]
+        active = state["active_question_ids"]
+        if (not isinstance(required, list) or not required or
+                any(not isinstance(q, str) or not q for q in required) or
+                len(set(required)) != len(required) or not isinstance(active, list) or
+                active != required[:len(active)] or len(active) > len(required) or
+                type(state["answered_count"]) is not int or
+                type(state["total_count"]) is not int or
+                state["answered_count"] != len(active) or state["total_count"] != len(required)):
+            raise ValueError("stored completion counts or question identities do not agree")
+        for qid in active:
+            rec = state["answer_records"][qid]
+            question = copy.deepcopy(rec["question"])
+            if isinstance(question.get("values"), dict):
+                question["values"] = {int(k) if str(k).isdigit() else k: v
+                                      for k, v in question["values"].items()}
+            _checked_parsed(rec, question)
+        pending = state["pending"]
+        if not isinstance(pending.get("id"), str) or not pending.get("message") or not pending.get("digest"):
+            raise ValueError("no exact pending renderer receipt")
+        if pending["id"] == "recap":
+            expected = _digest({"id": "recap", "message": pending["message"]})
+        else:
+            if pending["id"] not in required:
+                raise ValueError("pending question is not in the required question list")
+            expected = _digest({"id": pending["id"], "definition": pending["definition"],
+                                "message": pending["message"]})
+        if pending["digest"] != expected:
+            raise ValueError("pending renderer receipt does not match its exact text")
+        if type(state.get("done")) is not bool:
+            raise ValueError("completion state is not boolean")
+        if state["done"]:
+            conf = state["confirmation"]
+            if (len(active) != len(required) or pending["id"] != "recap" or
+                    conf.get("source") != "client" or conf.get("accepted") is not True or
+                    conf.get("question_id") != "recap" or
+                    conf.get("raw_answer", "").strip().lower() not in card._YES or
+                    conf.get("question_digest") != pending["digest"] or
+                    conf.get("rendered_question") != pending["message"] or not conf.get("at_utc") or
+                    not any(e == conf for e in state["events"])):
+                raise ValueError("completion has no matching explicit client recap confirmation")
+        out.update(valid=True, done=state["done"],
+                   reason_code="INTAKE_CONFIRMED" if state["done"] else "INTAKE_WAITING",
+                   question_id=None if state["done"] else pending["id"],
+                   question_digest=None if state["done"] else pending["digest"],
+                   message=pending["message"], answered_count=len(active),
+                   total_count=len(required), pending=copy.deepcopy(pending))
+    except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError) as exc:
+        out.update(valid=False, done=False, reason_code="INTAKE_SESSION_UNREADABLE", detail=str(exc))
+    return out
+
+
+def seed_answers(records, questions=None, *, run_dir=None, run_state_file=None,
+                 target=None, client_dir=None, purpose_flow=None):
+    """Import explicit prior client raw answers, never an assistant recap.
+
+    Each row requires question_id, raw_answer and source_ref. Typed business
+    facts (and an explicit dollar amount) can be preserved before PURPOSE is
+    known. Menu choices require the exact pending renderer digest and cannot
+    be old numeric selections. Unprovenanced legacy files are never imported.
+    """
+    first = process([], questions, run_dir=run_dir, run_state_file=run_state_file,
+                    target=target, client_dir=client_dir, purpose_flow=purpose_flow)
+    if first.get("outcome") == "error":
+        return first
+    path = _session_path(run_dir, run_state_file)
+    with session_lock(str(path) + ".lock"):
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+            base = questions or card.QUESTIONS
+            answers, qs, _ = _active(state, base, client_dir)
+            if not isinstance(records, list) or not records:
+                return _result(state, path, answers, qs, "SEED_ANSWERS_REQUIRED", "waiting")
+            if state.get("done"):
+                return _result(state, path, answers, qs, "INTAKE_ALREADY_CONFIRMED", "waiting")
+            candidates, seen = [], set()
+            for row in records:
+                if (not isinstance(row, dict) or row.get("source", "client") != "client" or
+                        not isinstance(row.get("raw_answer"), str) or
+                        not isinstance(row.get("source_ref"), str) or not row["source_ref"].strip()):
+                    return _result(state, path, answers, qs, "SEED_PROVENANCE_REQUIRED", "waiting")
+                qid, raw = row.get("question_id"), row["raw_answer"]
+                if not isinstance(qid, str) or qid in seen:
+                    return _result(state, path, answers, qs, "SEED_DUPLICATE_OR_UNKNOWN_QUESTION", "waiting")
+                seen.add(qid)
+                possible = [q for q in qs if q["id"] == qid]
+                if len(possible) != 1:
+                    return _result(state, path, answers, qs, "SEED_QUESTION_UNKNOWN", "waiting")
+                q = possible[0]
+                is_fact = q.get("free_text") or (qid == "spend" and raw.strip().startswith("$"))
+                current = state["pending"]
+                if not is_fact and (raw.strip().isdigit() or qid != current["id"] or
+                                    row.get("question_digest") != current["digest"]):
+                    return _result(state, path, answers, qs, "SEED_MENU_IDENTITY_REQUIRED", "waiting")
+                parsed = _parse(raw, q)
+                if not parsed or parsed.get("error"):
+                    return _result(state, path, answers, qs, "INVALID_OPTION", "waiting")
+                parsed["id"] = qid
+                at = next(i for i, entry in enumerate(qs) if entry["id"] == qid)
+                rendered = card.render_step(at + 1, qs)
+                receipt = {"id": qid, "definition": q, "message": rendered}
+                event = {"sequence": len(state["events"]) + len(candidates) + 1,
+                         "raw_answer": raw, "source": "client", "source_ref": row["source_ref"],
+                         "provenance_kind": "explicit_prior_client_answer", "at_utc": _now(),
+                         "question_id": qid, "question_digest": _digest(receipt),
+                         "rendered_question": rendered, "accepted": True,
+                         "option": _option(q, parsed), "parsed": parsed}
+                record = dict(event, definition_digest=_digest(q), question=copy.deepcopy(q))
+                prior = state["answer_records"].get(qid)
+                if prior is not None and prior.get("raw_answer") != raw:
+                    return _result(state, path, answers, qs, "SEED_CONFLICTS_WITH_SAVED_ANSWER", "waiting")
+                if prior is None:
+                    candidates.append(record)
+            for record in candidates:
+                state["events"].append({k: v for k, v in record.items()
+                                        if k not in ("question", "definition_digest")})
+                state["answer_records"][record["question_id"]] = record
+            # Save imported facts before deriving a new pending question.
+            _write(path, state)
+            answers, qs, _ = _active(state, base, client_dir)
+            _progress(state, answers, qs)
+            state["pending"] = _pending(answers, qs, state.get("editing_question_id"))
+            state["updated_at"] = _now()
+            _write(path, state)
+            return _result(state, path, answers, qs, "INTAKE_ANSWERS_SEEDED")
+        except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
+            return {"done": False, "answers": [], "message": "", "outcome": "error",
+                    "reason_code": "INTAKE_SESSION_UNREADABLE", "detail": str(exc),
+                    "session_path": str(path), "question_id": None, "question_digest": None,
+                    "answered_count": 0, "total_count": 0}

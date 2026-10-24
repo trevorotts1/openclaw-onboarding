@@ -1,6 +1,7 @@
 """No-media regression checks for persisted, exact-menu intake turns."""
 import copy
 import json
+from types import SimpleNamespace
 from pathlib import Path
 import sys
 import tempfile
@@ -162,6 +163,106 @@ class IntakeSessionTest(unittest.TestCase):
         refused = self.call(["yes"])
         self.assertEqual(refused["reason_code"], "INTAKE_SESSION_UNREADABLE")
         self.assertEqual(p.read_text(), before)
+
+    def test_true_yes_no_approval_menus_accept_explicit_yes_only(self):
+        for qid, label in (("storyboard", "Yes, show me first"),
+                           ("script", "Yes, show me first"),
+                           ("song", "Yes, send me 3 versions to choose from")):
+            q = _menu(qid, [label, "No, continue without showing me"])
+            self.assertEqual(session._parse("yes", q)["n"], 1)
+        self.assertIsNone(session._parse("yes", self.qs[-1]))
+
+    def test_read_only_completion_inspects_exact_confirmation(self):
+        self.advance()
+        st = self.call(["1"])
+        status = session.completion_status(self.run)
+        self.assertTrue(status["valid"])
+        self.assertFalse(status["done"])
+        with patch.object(session, "_finish", return_value=None):
+            self.call(["yes"])
+        p = self.run / "control" / "intake-session.json"
+        before, mtime = p.read_bytes(), p.stat().st_mtime_ns
+        status = session.completion_status(self.run)
+        self.assertTrue(status["valid"])
+        self.assertTrue(status["done"])
+        self.assertEqual(p.read_bytes(), before)
+        self.assertEqual(p.stat().st_mtime_ns, mtime)
+        corrupt = self.read()
+        corrupt["confirmation"]["source"] = "assistant"
+        p.write_text(json.dumps(corrupt))
+        status = session.completion_status(self.run)
+        self.assertFalse(status["valid"])
+        self.assertFalse(status["done"])
+
+    def test_completion_rejects_false_counts_and_missing_answers(self):
+        self.advance()
+        state = self.read()
+        state["done"] = True
+        state["answered_count"] = state["total_count"]
+        (self.run / "control" / "intake-session.json").write_text(json.dumps(state))
+        status = session.completion_status(self.run)
+        self.assertFalse(status["valid"])
+        self.assertFalse(status["done"])
+
+    def test_seed_prior_business_facts_before_unknown_purpose(self):
+        qs = self.qs
+        st = session.seed_answers([
+            {"question_id": "audience", "raw_answer": "Founders 45–60", "source_ref": "message:explicit-client-12"},
+        ], qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["question_id"], "offer")
+        self.assertEqual(st["saved_answer_count"], 1)
+        st = self.call(["New Chapter Coaching"])
+        self.assertEqual(st["question_id"], "music")
+        self.assertEqual(st["answers"][1]["value"], "Founders 45–60")
+        self.assertEqual(self.read()["answer_records"]["audience"]["source_ref"], "message:explicit-client-12")
+
+    def test_seed_refuses_unprovenanced_recaps_old_numbers_and_conflicts(self):
+        st = session.seed_answers([{"question_id": "audience", "raw_answer": "Founders"}],
+                                  self.qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["reason_code"], "SEED_PROVENANCE_REQUIRED")
+        self.advance()
+        st = session.seed_answers([{"question_id": "music", "raw_answer": "1",
+                                   "source_ref": "message:old-menu", "question_digest": self.call()["question_digest"]}],
+                                  self.qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["reason_code"], "SEED_MENU_IDENTITY_REQUIRED")
+        st = session.seed_answers([{"question_id": "offer", "raw_answer": "Different offer",
+                                   "source_ref": "message:other-answer"}],
+                                  self.qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["reason_code"], "SEED_CONFLICTS_WITH_SAVED_ANSWER")
+
+    def test_seed_menu_needs_exact_current_identity_and_keeps_provenance(self):
+        st = self.advance()
+        st = session.seed_answers([{"question_id": "music", "raw_answer": "Soul Ballad",
+                                   "source_ref": "message:explicit-music", "question_digest": st["question_digest"]}],
+                                  self.qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["question_id"], "recap")
+        self.assertFalse(st["done"])
+        self.assertEqual(self.read()["answer_records"]["music"]["option"]["label"], "Soul Ballad")
+
+    def test_legacy_numeric_answers_are_preserved_and_flagged_never_imported(self):
+        legacy = self.run / "card-answers.json"
+        data = {"schema_version": 2, "answers": [{"id": "music", "n": 3, "text": "assistant recap"}]}
+        legacy.write_text(json.dumps(data))
+        st = self.call()
+        self.assertEqual(st["answers"], [])
+        self.assertEqual(st["legacy_answers"]["status"], "unverified_preserved")
+        self.assertEqual(json.loads(legacy.read_text()), data)
+
+    def test_lock_has_native_windows_stdlib_branch(self):
+        calls = []
+        fake = SimpleNamespace(LK_LOCK=1, LK_UNLCK=2,
+                               locking=lambda fd, kind, count: calls.append((kind, count)))
+        with patch.object(session, "fcntl", None), patch.object(session, "msvcrt", fake, create=True):
+            with session.session_lock(str(self.run / "windows.lock")):
+                self.assertEqual(calls, [(1, 1)])
+        self.assertEqual(calls, [(1, 1), (2, 1)])
+
+    def test_seed_rejects_conflicting_duplicate_question_rows(self):
+        rows = [{"question_id": "audience", "raw_answer": "Founders 45–60", "source_ref": "message:first"},
+                {"question_id": "audience", "raw_answer": "Founders 30–40", "source_ref": "message:second"}]
+        st = session.seed_answers(rows, self.qs, run_dir=self.run, purpose_flow=False)
+        self.assertEqual(st["reason_code"], "SEED_DUPLICATE_OR_UNKNOWN_QUESTION")
+        self.assertEqual(self.read()["answer_records"], {})
 
     def test_exact_original_questions_are_not_mutated(self):
         original = copy.deepcopy(self.qs)
