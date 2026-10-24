@@ -223,6 +223,8 @@
     ]
   },
   "accept_market_facts": {
+    "offer": "a 12-week sleep coaching program for shift workers",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work",
     "sources": [
       {
         "id": "src-1",
@@ -623,6 +625,8 @@
   },
   "accept_market_claims": {
     "_comment": "Legitimate market claims — competitor pricing and market growth — pass through the allow-list when each is cited for that exact claim.",
+    "offer": "a 12-week sleep coaching program for shift workers",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work",
     "sources": [
       {
         "id": "src-1",
@@ -707,6 +711,8 @@
   },
   "accept_similar_vocabulary": {
     "_comment": "A genuine sourced bundle carrying the spam's own vocabulary (backlinks, buy, best, listings) — accepted, because each entry asserts something about this run's owner facts and is cited for that claim.",
+    "offer": "a 12-week sleep coaching program for shift workers",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work",
     "sources": [
       {
         "id": "src-1",

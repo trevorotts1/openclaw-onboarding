@@ -39,6 +39,12 @@ def _bundle(claims, sources=None, **extra):
     return {"schema_version": C.BUNDLE_SCHEMA_VERSION,
             "sources": sources or [], "claims": claims, **extra}
 
+def _facts(fx):
+    """The owner facts the run recorded — the fixture declares them at the top
+    level, exactly as `author_bundle` writes them out of the brief. A claim's
+    own `about.fact_text` is never the record: it is checked against this."""
+    return {k: fx[k] for k in ("offer", "audience", "action") if k in fx}
+
 
 def _refused(errors, needle=None):
     assert errors, "expected refusal, bundle was accepted"
@@ -159,19 +165,19 @@ def test_allow_list_does_not_launder_self_claims():
 
 def test_competitor_pricing_and_market_growth_pass_when_cited():
     fx = _fx()["accept_market_claims"]
-    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"]))
+    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"], **_facts(fx)))
     assert errors == [], errors
 
 
 def test_genuine_bundle_with_the_spams_own_vocabulary_passes():
     fx = _fx()["accept_similar_vocabulary"]
-    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"]))
+    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"], **_facts(fx)))
     assert errors == [], errors
 
 
 def test_market_facts_still_pass():
     fx = _fx()["accept_market_facts"]
-    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"]))
+    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"], **_facts(fx)))
     assert errors == [], errors
 
 

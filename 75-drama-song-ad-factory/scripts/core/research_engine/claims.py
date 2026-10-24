@@ -26,9 +26,25 @@ manufacture:
 
   2. SUPPORT TO AN OWNER FACT. The claim names the run's owner fact it informs
      (`about`: {fact, anchor}) and the anchor is verified in three places at
-     once: the claim text, every sentence of it, and the owner fact's own text.
-     A run of keywords typed over the business's vocabulary has no such
-     relation; a sentence about something else has none either.
+     once: the claim text, every sentence of it, and the owner fact's own text
+     AS THE RUN RECORDED IT — the bundle's own `offer`/`audience`/`action` or
+     its `facts[]` entries tagged `role: "owner-fact"`. A text carried inside
+     the claim (`about.fact_text`) is never evidence: it is only ever checked
+     as a copy of the recorded owner fact, and a copy that disagrees is
+     refused. If the validator can be satisfied by the thing it is validating,
+     no wording of the claim can fail. A run of keywords typed over the
+     business's vocabulary has no such relation; a sentence about something
+     else has none either.
+
+  2b. ON THE RUN'S OWN SUBJECT. The words the sentence asserts are read
+     against what the run records — the owner facts and the cited source's own
+     recorded `excerpts` — plus the closed research vocabulary below. A
+     sentence that predicates words grounded nowhere in the run is a sentence
+     about something else (it sells the domain's nouns to the domain's nouns),
+     and no reshaping of the wording makes it one. And the sentence must be a
+     clause: a predicate AND a word that binds it (determiner, pronoun,
+     preposition, auxiliary, numeral). A term run with one verb in it is still
+     a term run.
 
   3. ESCALATED CLAIMS — superlative, ranking, count, guarantee, and "$"/"#"
      styled price and rank claims — additionally declare an ALLOW-LIST class
@@ -276,28 +292,215 @@ def _verb_forms():
 
 VERB_FORMS = _verb_forms()
 
+# the words that bind a clause together. A run of terms has none of them, which
+# is what makes it a run of terms even when one of its terms is also a verb.
+FUNCTION_WORDS = frozenset(
+    "a an the this that these those there it its i you he she we they me him "
+    "her us them my your our their his hers whose who whom which what when "
+    "where why how in on at to from by with for of as than into onto over "
+    "under below beneath between among through across after before during "
+    "since until against without within upon about above near and or nor but "
+    "yet so because if though although while whereas unless whether not no "
+    "rather very more most less least much many few several some any all each "
+    "every both half one two three four five six seven eight nine ten eleven "
+    "twelve twenty thirty forty fifty hundred thousand million billion first "
+    "second third fourth fifth once twice again also only just even still "
+    "already per via despite except besides instead last next previous "
+    "current ago myself yourself himself herself itself ourselves yourselves "
+    "themselves oneself".split())
+
+# Closed research vocabulary: the words market and audience research prose is
+# made of. They describe a market, an audience or an evidence method; none of
+# them asserts anything about the named business's own results. Content the
+# run records (its owner facts, the cited source's own excerpts) grounds the
+# rest; content grounded nowhere is a sentence about something else.
+RESEARCH_WORDS = frozenset("""
+market markets industry industries sector sectors category categories segment
+segments audience audiences demand supply growth grow growing grown trend
+trends rate rates level levels share shares volume volumes sized size sizes
+larger largest smaller smallest bigger biggest higher highest lower lowest
+wider narrow greater greatest more most fewer fewest less least many much
+several numerous majority minority average median mean total totals overall
+percent percentage percentages point points proportion proportions ratio
+ratios half double doubled twice thrice nearly roughly approximately almost
+exactly survey surveys surveyed report reports reported reporting study
+studies studied research data evidence sample samples respondent respondents
+statistic statistics figure figures finding findings source sources
+occupation occupations job jobs role roles position positions employment
+workforce population populations adult adults people persons family families
+patient patients client clients customer customers student students member
+members user users employee employees staff workers nurse nurses doctor
+doctors parent parents mother mothers father fathers caregiver caregivers
+price prices pricing cost costs charge charges fee fees paid pay paying
+spending budget budgets cheap cheaper cheapest expensive premium discount
+discounts competitor competitors competing compete competition rival rivals
+alternatives alternative local national regional nearby city cities town
+towns area areas region regions state states country countries location
+locations place places practice practices clinic clinics studio studios
+program programs service services course courses session sessions coach
+coaches coaching provider providers brand brands product products company
+companies business businesses firm firms agency agencies listing listings
+listed directory directories review reviews rating ratings ranked ranking
+rankings referral referrals channel channels search searches online website
+websites site sites page pages web digital month months year years week weeks
+day days hour hours minute minutes night nights morning mornings evening
+evenings season seasons decade decades schedule schedules shift shifts
+rotation rotations short shorter shortest long longer longest duration
+durations frequency quality quantity pattern patterns effect effects impact
+impacts risk risks factor factors cause causes correlate correlated
+associated association linked relate related relation relations difference
+differences change changes increase increases increased decrease decreases
+decreased rise rises fall falls improve improves improved improvement
+improvements sleep sleeps sleeping slept asleep insomnia awake alert rest
+rested resting wellness health healthcare hospital hospitals office offices
+school schools home homes documented published cited measured recorded tracked
+enquiries enrollment enrolment enrolled enrollments graduates results outcome
+outcomes benefit benefits need needs habit habits behavior behaviour
+preference preferences better best good poor high low strong weak steady
+rapid slow tired fatigue chronic exhausted restless plan plans payment
+payments deposit deposits installment installments consultation
+consultations appointment appointments booking bookings insurance warranty
+warranties commuter commuters traveler travelers traveller travellers
+sliding scale winter summer spring autumn""".split())
+
 
 def _asserts(text):
-    """Every sentence of the claim carries a predicate."""
+    """Every sentence of the claim is a clause: it carries a predicate AND a
+    word that binds one (determiner, pronoun, preposition, auxiliary, numeral).
+    A run of terms with one verb typed into it is still a run of terms."""
     sentences = _sentences(text)
     return bool(sentences) and all(
-        any(w in VERB_FORMS for w in _words(s)) for s in sentences)
+        any(w in VERB_FORMS for w in _words(s))
+        and any(w in FUNCTION_WORDS for w in _words(s))
+        for s in sentences)
 
+
+# ---------------------------------------------------------------------------
+# grounding: is this sentence about this run at all? The words a sentence
+# asserts are read against what THE RUN RECORDS — the owner facts it captured
+# and the cited source's own recorded excerpts — plus the closed research
+# vocabulary above. Content grounded nowhere in the run is content about
+# something else: 'Sleep coaches sell backlinks to tired clinics.' predicates
+# the run's own subject onto words no part of this run holds. Wording it
+# differently cannot change that, and neither can filing it with a source.
+PROPER_RE = re.compile(r"[A-Za-z][A-Za-z'’-]*")
+
+# The verbs of transfer and sale: what a business does TO something it sells.
+# A sentence that has the run's own subject doing one of these to content no
+# part of the run records ('Sleep coaches sell backlinks to nurses.') is the
+# spam shape, and one unrecorded word in it is enough.
+COMMERCIAL_HINTS = (
+    "sell", "buy", "rent", "leas", "trad", "swap", "barter", "pric", "charg",
+    "cost", "offe", "suppl", "deliv", "purchas", "purc", "wholesale",
+    "retail", "dropship", "bundle", "merch", "advertis", "promot", "market",
+    "recommend", "list", "provide", "promise", "give", "gave", "given",
+    "send", "sent", "ship", "hand", "order", "quote", "stock", "carry",
+    "distribut", "licen", "subscrib", "vendor", "push")
+
+def _proper_words(text):
+    """Naming material — words written with a capital letter (places, people,
+    organisations). They name; they do not assert."""
+    return {w.lower() for w in PROPER_RE.findall(_clean(text)) if w[:1].isupper()}
+
+def _grounded_stems(facts, source):
+    """Everything the run records as content, plus the research vocabulary."""
+    texts = list(facts.values())
+    excerpts = source.get("excerpts") if isinstance(source, dict) else None
+    for item in excerpts if isinstance(excerpts, list) else []:
+        if isinstance(item, str):
+            texts.append(item)
+    stems = set()
+    for text in texts:
+        stems.update(_stem(w) for w in _content_tokens(text))
+    stems.update(_stem(w) for w in RESEARCH_WORDS)
+    return stems
+
+def _content_stems(words, proper):
+    """Content stems: everything that asserts rather than names, counts or
+    binds — no function words, no numerals, no proper nouns, no predicate, and
+    no manner adverb (it modifies an assertion, it does not add one)."""
+    out = []
+    for w in words:
+        if len(w) < 3 or w in STOPWORDS or w in FUNCTION_WORDS:
+            continue
+        if w in VERB_FORMS or w in proper or w.isdigit():
+            continue
+        if w.endswith("ly") and len(w) >= 5:
+            continue
+        out.append(_stem(w))
+    return out
+
+def _check_topic(claim, ref, text, facts, source, errors):
+    """Every sentence stays on the run's own subject. Checked twice: the words
+    the sentence asserts (what follows its first predicate) and the sentence as
+    a whole. A sentence fails when the words grounded nowhere in the run
+    outweigh the words grounded in it, when two or more of them tie with the
+    grounded ones, or when what it asserts is an unbound run of terms — no
+    binding word, and content the run does not hold.
+
+    One sentence shape is refused on a single unrecorded word: a subject made
+    of the run's own recorded owner-fact words, doing one of the commercial
+    verbs (sell, offer, list, price, ...) to content the run does not record.
+    That is what 'Sleep coaches sell backlinks to nurses.' is."""
+    grounded = _grounded_stems(facts, source)
+    fact_stems = set()
+    for owner_text in facts.values():
+        fact_stems.update(_stem(w) for w in _content_tokens(owner_text))
+    proper = _proper_words(text)
+    for sentence in _sentences(text):
+        words = _words(sentence)
+        cut = 0
+        for i, w in enumerate(words):
+            if w in VERB_FORMS:
+                cut = i + 1
+                break
+        sells = bool(cut) and any(h in words[cut - 1] for h in COMMERCIAL_HINTS)
+        subject = _content_stems(words[:cut], proper)
+        own_subject = bool(subject) and all(s in fact_stems for s in subject)
+        for label, span in (("what it asserts", words[cut:]), ("the sentence", words)):
+            stems = _content_stems(span, proper)
+            off = [s for s in stems if s not in grounded]
+            on = len(stems) - len(off)
+            if not off:
+                continue
+            bound = any(w in FUNCTION_WORDS for w in span)
+            unbound_run = label == "what it asserts" and not bound
+            sold = label == "what it asserts" and sells and own_subject
+            tie = len(off) == on
+            if not unbound_run and not sold and (
+                    len(off) < on or (tie and len(off) < 2)):
+                continue
+            errors.append(
+                "%s: not about this run — %s carries %s, which appear in "
+                "nothing the run records (its owner facts, or source %s's own "
+                "excerpts) and in no research term. Ground the words in the "
+                "run's own record or drop the claim"
+                % (ref, label, ", ".join(sorted(set(off))),
+                   (source or {}).get("id", "?")))
+            break
 
 # ---------------------------------------------------------------------------
 # owner-fact relations
 def _fact_texts(record):
+    """The owner facts THE RUN RECORDED: the brief's own offer/audience/action
+    fields, and `facts[]` entries that carry their provenance tag. An entry
+    without `role: "owner-fact"` is not an owner statement and grounds
+    nothing — a claim cannot add an owner fact to the record it is checked
+    against."""
     out = {}
     for field in FACT_FIELDS:
         text = _norm(record.get(field))
         if text:
             out[field] = text
     for rec in record.get("facts") or []:
-        if isinstance(rec, dict):
-            field = _norm(rec.get("field")).lower()
-            text = _norm(rec.get("text"))
-            if field and text:
-                out.setdefault(field, text)
+        if not isinstance(rec, dict):
+            continue
+        if _norm(rec.get("role")).lower() != "owner-fact":
+            continue
+        field = _norm(rec.get("field")).lower()
+        text = _norm(rec.get("text"))
+        if field and text:
+            out.setdefault(field, text)
     return out
 
 
@@ -321,7 +524,15 @@ def _derive_about(text, facts):
 
 def _check_about(claim, ref, facts, errors):
     """The owner-fact relation, verified in the claim, in every sentence of it,
-    and in the owner fact's own text. Returns True when it holds."""
+    and in the owner fact's own text AS THE RUN RECORDED IT. Returns True when
+    it holds.
+
+    `about.fact_text` is the claim talking about its own evidence, so it is
+    never consulted as evidence: when present it is checked as a copy of the
+    recorded owner fact, and anything else — a text the claim invented, or one
+    contradicting the record — is refused. When the run recorded no owner fact
+    for the named field there is nothing to check the anchor against, and the
+    claim is refused rather than checked against itself."""
     about = claim.get("about")
     if about is None:
         errors.append("%s: no checkable relation to any owner fact — a research "
@@ -343,11 +554,28 @@ def _check_about(claim, ref, facts, errors):
         errors.append("%s: about.anchor %r is not a checkable subject term"
                       % (ref, about.get("anchor")))
         return False
-    fact = _norm(about.get("fact_text"))
-    candidates = [facts.get(name, "") for name in FACT_ALIASES[field]]
-    candidates.append(fact)
-    named = [c for c in candidates if c]
-    if named and not any(_anchor_in(c, anchor) for c in named):
+    recorded = [facts[name] for name in FACT_ALIASES[field] if facts.get(name)]
+    supplied = about.get("fact_text")
+    if supplied is not None:
+        if not isinstance(supplied, str):
+            errors.append("%s: about.fact_text must be a string, not %s"
+                          % (ref, type(supplied).__name__))
+            return False
+        copy = _norm(supplied).lower()
+        if not recorded or copy not in {_norm(r).lower() for r in recorded}:
+            errors.append("%s: about.fact_text is this claim's own evidence — the "
+                          "%s owner fact is read from what the run recorded "
+                          "(offer/audience/action, or facts[] tagged role "
+                          "owner-fact), never from a text the claim carries"
+                          % (ref, field))
+            return False
+    if not recorded:
+        errors.append("%s: the run records no %s owner fact to check about.anchor "
+                      "%r against — record the owner's own words (facts[] tagged "
+                      "role owner-fact) or drop the claim"
+                      % (ref, field, anchor))
+        return False
+    if not any(_anchor_in(c, anchor) for c in recorded):
         errors.append("%s: about.anchor %r is not in the %s fact text"
                       % (ref, anchor, field))
         return False
@@ -700,11 +928,18 @@ def validate_bundle(bundle):
 
         if not is_fiction_claim(claim):
             if not _asserts(text):
-                errors.append("%s: keyword stuffing — a run of keywords asserts "
-                              "nothing (no predicate), not a research claim"
-                              % ref)
-            if facts:
+                errors.append("%s: keyword stuffing — a run of keywords is not a "
+                              "research claim: no predicate binds it into a "
+                              "clause" % ref)
+            if facts or claim.get("about") is not None:
                 _check_about(claim, ref, facts, errors)
+            src_ref = claim.get("source")
+            if not isinstance(src_ref, str):
+                support = claim.get("support")
+                src_ref = support.get("source") if isinstance(support, dict) else None
+            _check_topic(claim, ref, text, facts,
+                         by_id.get(src_ref) if isinstance(src_ref, str) else None,
+                         errors)
 
         source = None
         if prov == "public-fact":

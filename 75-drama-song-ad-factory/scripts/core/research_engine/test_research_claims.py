@@ -36,6 +36,13 @@ def _bundle(claims, sources=None, **extra):
             "sources": sources or [], "claims": claims, **extra}
 
 
+def _facts(fx):
+    """The owner facts the run recorded — the fixture declares them at the top
+    level, exactly as `author_bundle` writes them out of the brief. A claim's
+    own `about.fact_text` is never the record: it is checked against this."""
+    return {k: fx[k] for k in ("offer", "audience", "action") if k in fx}
+
+
 def _plain(prov, text, **kw):
     claim = {"id": kw.pop("id", "x1"), "text": text, "provenance": prov,
              "sections": kw.pop("sections", ["market", "audience", "competitors"])}
@@ -201,7 +208,7 @@ def test_sentence_level_keyword_stuffing_is_refused_without_commas():
 def test_market_facts_still_pass_the_same_instrument():
     """Quantified and comparative market research is not a business claim."""
     fx = _fx()["accept_market_facts"]
-    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"]))
+    errors = C.validate_bundle(_bundle(fx["claims"], fx["sources"], **_facts(fx)))
     assert errors == [], errors
 
 
