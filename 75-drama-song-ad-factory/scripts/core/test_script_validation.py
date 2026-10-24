@@ -333,6 +333,290 @@ def test_specific_coherent_neighbouring_scene_accepted():
     assert verdict["scene_count"] == 2
 
 
+# --- A: a declaration never launders content ------------------------------
+
+def _with(**over):
+    scene = _good_scene()
+    for key, value in over.items():
+        scene[key] = value
+    return scene
+
+
+def test_silent_scene_flag_with_performed_lines_is_a_contradiction():
+    scene = _with(silent_scene=True)
+    verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+    assert verdict["ok"] is False
+    assert "SILENT_SCENE_CONTRADICTION" in _codes(verdict)
+
+
+def test_silent_scene_flag_with_sung_lines_is_a_contradiction():
+    scene = _with(silent_scene=True, spoken_dialogue=[])
+    verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+    assert verdict["ok"] is False
+    assert "SILENT_SCENE_CONTRADICTION" in _codes(verdict)
+
+
+def test_silent_scene_flag_with_one_line_is_still_a_contradiction():
+    scene = _with(silent_scene=True, sung_lyrics=[],
+                  spoken_dialogue=[{"line_id": "l1", "character_id": "char_mara_001",
+                                    "text": "If I lock that door, their checks bounce tomorrow."}])
+    verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+    assert verdict["ok"] is False
+    assert "SILENT_SCENE_CONTRADICTION" in _codes(verdict)
+
+
+def test_silent_scene_flag_must_be_a_typed_declaration():
+    for value in ("true", "True", 1, 0, [], {}, ["true"], 0.0):
+        scene = _with(silent_scene=value)
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is False, value
+        assert "SILENT_SCENE_FLAG" in _codes(verdict), value
+
+
+def test_silent_false_with_real_lines_accepted():
+    scene = _with(silent_scene=False)
+    verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+    assert verdict["ok"] is True, verdict["defects"]
+
+
+# --- B: statement fields typed strict and content-validated ---------------
+
+_STATEMENT_SAMPLES = ("causal_outcome", "timing_basis", "dramatic_purpose",
+                      "time", "obstacle", "immediate_want", "subtext_and_behavior",
+                      "consequential_choice", "turn_trigger", "visible_action",
+                      "framing_movement_intent", "transition")
+
+_KEYWORD_RUNS = (
+    "buy backlinks cheap seo signals crypto pump diet tea mattress",
+    "cheap seo backlinks high da pa guest post links",
+    "crypto pump dump moon gem signals buy sell hold",
+    "weight loss detox tea diet pills fast burn",
+    "seo sem ppc backlinks anchor text ranking traffic funnel",
+    "the buy backlinks cheap seo signals crypto pump diet tea",
+    "the buy backlinks and cheap seo signals for the crypto pump",
+    "we buy the backlinks and cheap seo signals for the crypto pump",
+    "sell backlinks cheap seo signals crypto pump diet tea mattress now",
+)
+
+
+def test_statement_fields_refuse_non_text_values():
+    for field in _STATEMENT_SAMPLES:
+        for value in (0, 0.0, True, False, [], {}, None, ["a statement"], {"a": 1}):
+            scene = _with(**{field: value})
+            verdict = V.validate_script(_single_scene_script(scene), world=WORLD,
+                                        cast_manifest=CAST)
+            assert verdict["ok"] is False, (field, value)
+            assert "CLAIM_NOT_WRITTEN" in _codes(verdict), (field, value, verdict["defects"])
+
+
+def test_statement_fields_refuse_keyword_runs():
+    for field in _STATEMENT_SAMPLES:
+        for run in _KEYWORD_RUNS:
+            scene = _with(**{field: run})
+            verdict = V.validate_script(_single_scene_script(scene), world=WORLD,
+                                        cast_manifest=CAST)
+            assert verdict["ok"] is False, (field, run)
+            assert "KEYWORD_ONLY_CLAIM" in _codes(verdict), (field, run, verdict["defects"])
+
+
+def test_real_written_statements_accepted():
+    """Positive controls: the rule must refuse keyword runs and accept writing."""
+    cases = (
+        {"causal_outcome": "Because Levi hands over the ledger, the next scene must open on "
+                           "the repair schedule."},
+        {"causal_outcome": "She admits the debt, so the next scene has to end the silence."},
+        {"timing_basis": "authoring estimate before music"},
+        {"timing_basis": "measured against the master track"},
+        {"time": "evening, closing time"},
+        {"time": "dawn, first light"},
+        {"obstacle": "The empty ledger and his direct question block that escape."},
+        {"immediate_want": "Mara wants Levi to accept one more vague promise without "
+                           "reading the warning."},
+        {"subtext_and_behavior": "She admits the fact before naming the feeling, and stills "
+                                 "her hands on the open page."},
+        {"consequential_choice": "She gives up control of the information."},
+        {"turn_trigger": "Putting the notice where Levi can read it."},
+        {"transition": "Cut to black, then the shop at dawn."},
+        {"framing_movement_intent": "Medium shot of the empty room, then a slow push toward "
+                                    "the door."},
+    )
+    for over in cases:
+        scene = _with(**over)
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is True, (over, verdict["defects"])
+
+
+# --- C: placeholder detection by meaning, not by punctuation --------------
+
+_LINE_STUBS = (
+    "The words for this part are still to be written.",
+    "Insert the spoken line here after the editing.",
+    "To be filled in later.",
+    "Placeholder",
+    "TBD",
+    "TK",
+    "Lorem ipsum dolor sit amet.",
+    "Written later.",
+    "The dialogue for this part remains unwritten.",
+    "Copy to follow once the edit is locked.",
+    "Words will be added after the review.",
+    "Needs words about the argument between them.",
+    "The words for this section are awaiting the writer.",
+    "This section is awaiting the final line from the writer.",
+    "Something about the argument between them goes in this part.",
+    "…",
+    "...",
+    "[line goes here]",
+    "The words for this part are still to be written by the writer.",
+)
+
+
+def test_reworded_stubs_refused_as_lines():
+    for stub in _LINE_STUBS:
+        scene = _with(sung_lyrics=[], spoken_dialogue=[
+            {"line_id": "l1", "character_id": "char_mara_001", "text": stub},
+            {"line_id": "l2", "character_id": "char_levi_002",
+             "text": "Then why is the ledger empty tonight?"}])
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is False, stub
+        assert "PLACEHOLDER_CLAIM" in _codes(verdict) or "PLACEHOLDER_SCENE" in _codes(verdict), \
+            (stub, verdict["defects"])
+
+
+def test_reworded_stubs_refused_as_statements():
+    for stub in _LINE_STUBS:
+        for field in ("obstacle", "causal_outcome", "subtext_and_behavior"):
+            scene = _with(**{field: stub})
+            verdict = V.validate_script(_single_scene_script(scene), world=WORLD,
+                                        cast_manifest=CAST)
+            assert verdict["ok"] is False, (field, stub)
+            assert "PLACEHOLDER_CLAIM" in _codes(verdict) or "CLAIM_NOT_WRITTEN" in _codes(verdict), \
+                (field, stub, verdict["defects"])
+
+
+def test_writer_instructions_refused():
+    for instruction in (
+        "Insert the spoken line here after the editing.",
+        "Write your own line here before the shoot.",
+        "Add the dialogue for this part later.",
+        "Replace this with the real line before the shoot.",
+        "Describe the room in more detail here.",
+    ):
+        scene = _with(obstacle=instruction)
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is False, instruction
+        assert "PLACEHOLDER_CLAIM" in _codes(verdict), (instruction, verdict["defects"])
+
+
+def test_real_dialogue_with_writer_words_accepted():
+    """A character may say "writer", "line" or "copy"; that is not a stub."""
+    for line in ("Don't you dare come back here without the money tonight.",
+                 "You should build your own line of work out of this.",
+                 "I need the words to be true before we sing them.",
+                 "This part of the road floods every spring, so we leave early."):
+        scene = _with(sung_lyrics=[], spoken_dialogue=[
+            {"line_id": "l1", "character_id": "char_mara_001", "text": line},
+            {"line_id": "l2", "character_id": "char_levi_002",
+             "text": "Then tell me everything before the doors open."}])
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is True, (line, verdict["defects"])
+
+
+# --- D: one normaliser for every text comparison --------------------------
+
+_HOMOGLYPH_AFTER = (
+    "аfrаid",        # Cyrillic a (U+0430)
+    "αfrαid",        # Greek alpha
+    "ａfrａid",       # fullwidth a
+    "áfráid",        # combining accents
+    "AFRAID",
+    " a f r a i d ",
+    "a-f-r-a-i-d",
+)
+
+
+def test_emotion_stagnation_beats_homoglyphs():
+    for after in _HOMOGLYPH_AFTER:
+        scene = _with(emotion_before="afraid", emotion_after=after)
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is False, after
+        assert "EMOTION_STAGNANT" in _codes(verdict), (after, verdict["defects"])
+    for before in _HOMOGLYPH_AFTER:
+        scene = _with(emotion_before=before, emotion_after="afraid")
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is False, before
+        assert "EMOTION_STAGNANT" in _codes(verdict), (before, verdict["defects"])
+
+
+def test_emotion_stagnation_beats_lookalike_letters_anywhere():
+    for before, after in (("committed", "cοmmitted"),     # Greek omicron
+                          ("committed", "cоmmittеd"),     # Cyrillic o and e
+                          ("defensive and ashamed", "dеfensive and ashamed"),
+                          ("afraid", "аfrаid")):           # lookalikes in both
+        scene = _with(emotion_before=before, emotion_after=after)
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is False, (before, after)
+        assert "EMOTION_STAGNANT" in _codes(verdict), (before, after, verdict["defects"])
+
+
+def test_genuine_emotion_change_accepted():
+    for before, after in (("defensive and ashamed", "still afraid but less isolated"),
+                          ("guarded", "committed"),
+                          ("quiet and watchful", "furious and loud about it"),
+                          ("afraid", "afraid and ashamed")):
+        scene = _with(emotion_before=before, emotion_after=after)
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is True, (before, after, verdict["defects"])
+
+
+# --- the named bypasses stay refused --------------------------------------
+
+_NAMED_BYPASSES = (
+    ("one-line placeholder scene", {"sung_lyrics": [], "spoken_dialogue": [
+        {"line_id": "b1", "character_id": "char_mara_001", "text": "..."}]}),
+    ("single short line scene", {"sung_lyrics": [], "spoken_dialogue": [
+        {"line_id": "b2", "character_id": "char_mara_001", "text": "She sings."}]}),
+    ("silent_scene short-circuit flag", {"silent_scene": True}),
+    ("trivial claim", {"immediate_want": "wants stuff"}),
+    ("one-word time", {"time": "sometime"}),
+    ("numeric written statement", {"causal_outcome": 0}),
+    ("false values as an emotion change", {"emotion_before": False, "emotion_after": False}),
+    ("keyword-list dramatic purpose", {"dramatic_purpose": "grief longing stakes release closure"}),
+    ("empty lip-sync intervals with performed lines", {"visible_lip_sync": {"intervals": []}}),
+    ("keyword sound/framing/transition run", {
+        "sound_music_cues": ["tension drone pulse riser silence"],
+        "framing_movement_intent": "close push drift",
+        "transition": "hard cut whip fade"}),
+    ("single long line scene", {"sung_lyrics": [], "spoken_dialogue": [
+        {"line_id": "b3", "character_id": "char_mara_001",
+         "text": "She tells him everything about the warning tonight."}]}),
+    ("reworded stub lines", {"sung_lyrics": [], "spoken_dialogue": [
+        {"line_id": "b4", "character_id": "char_mara_001",
+         "text": "The words for this part are still to be written."},
+        {"line_id": "b5", "character_id": "char_levi_002",
+         "text": "Insert the spoken line here after the editing."}]}),
+)
+
+
+def test_named_bypasses_refused():
+    for label, over in _NAMED_BYPASSES:
+        scene = _with(**over)
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD, cast_manifest=CAST)
+        assert verdict["ok"] is False, label
+        assert verdict["defects"], label
+
+
+def test_unstructured_scene_and_beat_only_bypass_refused():
+    verdict = V.validate_script(_single_scene_script("A sad owner sings about her business."))
+    assert verdict["ok"] is False
+    assert "PLACEHOLDER_SCENE" in _codes(verdict)
+    script = {"schema_version": "s75.script.v1", "artifact_id": "s_beats",
+              "beats": [{"beat_id": "b1", "because": "x", "therefore": "y"}]}
+    verdict = V.validate_script(script, world=WORLD, cast_manifest=CAST)
+    assert verdict["ok"] is False
+    assert "BEAT_ONLY_BYPASS" in _codes(verdict)
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failures = 0
