@@ -2231,8 +2231,9 @@ def _intake_session_gate(run_dir, sid):
     """A new durable intake must be explicitly confirmed before any stage.
 
     Runs without this session artifact keep their existing grandfathered path.
-    The core inspector validates its own schema and confirmation read-only;
-    this projection never consumes an answer or writes a preference/approval.
+    The core validates every saved answer and explicit confirmation before
+    preparing a missing handoff. It never replays preference/approval writers;
+    an already prepared run and incomplete intake require no handoff mutation.
     """
     path = run_dir / "control" / "intake-session.json"
     if not path.exists():
@@ -2241,10 +2242,13 @@ def _intake_session_gate(run_dir, sid):
         shlex.quote(str(Path(__file__).resolve())), shlex.quote(str(run_dir)))
     try:
         from choice_card.intake_card import intake_session
-        status = intake_session.completion_status(run_dir)
+        status = intake_session.ensure_handoff(run_dir)
         if not isinstance(status, dict) or not status.get("valid"):
-            return envelope("next", str(sid), "error", "INTAKE_SESSION_UNREADABLE",
-                            "The saved intake cannot be validated; preserve it and resume intake.",
+            return envelope("next", str(sid), "error",
+                            (status.get("reason_code") if isinstance(status, dict) else None)
+                            or "INTAKE_SESSION_UNREADABLE",
+                            (status.get("message") if isinstance(status, dict) else None)
+                            or "The saved intake cannot be validated; preserve it and resume intake.",
                             data={"stage": None, "command": None, "intake": status,
                                   "resume_command": resume}, evidence=[str(path)])
     except (ImportError, OSError, ValueError, TypeError, AttributeError) as exc:
@@ -2252,15 +2256,100 @@ def _intake_session_gate(run_dir, sid):
                         "The saved intake cannot be validated; preserve it and resume intake.",
                         data={"stage": None, "command": None, "detail": str(exc),
                               "resume_command": resume}, evidence=[str(path)])
-    if status.get("done"):
+    if status.get("done") and status.get("handoff_ready"):
         return None
-    return envelope("next", str(sid), "waiting", "INTAKE_NOT_CONFIRMED",
-                    "Finish the pending intake question and explicitly confirm its recap.",
+    return envelope("next", str(sid), status.get("outcome") or "waiting",
+                    status.get("reason_code") or "INTAKE_NOT_CONFIRMED",
+                    status.get("message") or "Finish the pending intake question and explicitly confirm its recap.",
                     data={"stage": None, "command": None, "intake": status,
                           "resume_command": resume}, evidence=[str(path)])
 
 
+def _next_ai_roles(run_dir):
+    """Admit the run's persisted AI bindings without calling any model.
+
+    Existing runs without either a durable session or model bindings retain
+    their legacy path. New confirmed intake cannot acquire a default pair by
+    skipping its recorded answer. Media-provider selection remains independent.
+    """
+    session_path = run_dir / "control" / "intake-session.json"
+    binding_path = run_dir / "model-bindings.json"
+    if not session_path.exists() and not binding_path.exists():
+        return None, None
+    try:
+        from choice_card.intake_card import ai_models as models
+        doc = models.load_bindings(run_dir)
+        if not isinstance(doc, dict) or doc.get("schema") != models.STORE_SCHEMA:
+            return None, {"error_code": "AI_ROLE_BINDINGS_MISSING",
+                          "reason": "No validated AI role bindings were saved by confirmed intake."}
+        runtime = doc.get("runtime")
+        if not isinstance(runtime, str) or not runtime or not doc.get("binding_id"):
+            raise ValueError("AI role bindings have no runtime or binding identity")
+        plans = {}
+        for role in (models.ROLE_BUILD, models.ROLE_CHECK, models.ROLE_REPAIR):
+            binding_role = models.ROLE_CHECK if role == models.ROLE_REPAIR else role
+            binding = doc.get("bindings", {}).get(binding_role)
+            if not isinstance(binding, dict) or binding.get("model_id") not in models.MODELS:
+                raise ValueError("No known persisted AI binding for role " + role)
+            mid = binding["model_id"]
+            route = models.MODELS[mid]["route"]
+            admission = models.admit_dispatch(run_dir, role, requested_model=mid,
+                                               route=route, runtime=runtime)
+            if not admission.get("ok"):
+                return None, admission
+            dispatch = admission.get("dispatch") or {}
+            call_id = models.dispatch_id(mid, runtime)
+            if (dispatch.get("call_id") != call_id or dispatch.get("runtime") != runtime
+                    or admission.get("binding_id") != doc["binding_id"]
+                    or admission.get("binding", {}).get("model_id") != mid
+                    or admission.get("binding", {}).get("route") != route):
+                raise ValueError("Persisted dispatch identity does not match its exact admitted binding for " + role)
+            plans[role] = {"role": role, "binding_role": binding_role,
+                           "model_id": mid, "call_id": call_id, "route": route,
+                           "admission": admission}
+        return {"binding_id": doc["binding_id"], "runtime": runtime,
+                "store": str(binding_path), "execution": "admitted_not_called",
+                "roles": plans}, None
+    except (ImportError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        return None, {"error_code": "AI_ROLE_BINDINGS_UNREADABLE", "reason": str(exc)}
+
+
 def cmd_next(a):
+    """Expose the admitted role dispatch alongside the existing stage plan."""
+    run_dir = Path(a.run_dir or ".").expanduser().resolve()
+    # An incomplete intake remains the primary gate; it has not bound its AI
+    # answer yet and must not be told to replace it with a default model pair.
+    if _intake_session_gate(run_dir, run_dir.name or "run") is not None:
+        return _next_stage(a)
+    roles, refused = _next_ai_roles(run_dir)
+    if refused is not None:
+        return envelope("next", run_dir.name or "run", "error",
+                        refused.get("error_code") or "AI_ROLE_BINDINGS_REFUSED",
+                        refused.get("reason") or refused.get("message") or "The recorded AI role binding was refused.",
+                        data={"stage": None, "command": None, "admission": refused},
+                        evidence=[str(run_dir / "model-bindings.json")])
+    result = _next_stage(a)
+    if roles is not None:
+        data = result.setdefault("data", {})
+        data["ai_role_bindings"] = roles
+        stage = data.get("method_stage") or data.get("stage")
+        # These stages delegate their text/planning/QC work to an AI worker.
+        # A provider request or a local assembly command never receives an LLM
+        # alias in place of its own chosen provider model or deterministic tool.
+        role = ("build" if stage in {"research", "creative-strategy", "script-lyrics",
+                                     "continuity-bible", "storyboard"} else
+                "check" if stage in {"qc-retakes", "final-qc"} else None)
+        if role and data.get("command") and result.get("outcome") == "ok":
+            plan = roles["roles"][role]
+            data["llm_dispatch"] = {"stage": stage, "role": role,
+                "worker_role": (STAGE_REGISTRY.get(stage) or {}).get("worker_role"),
+                "binding_id": roles["binding_id"], "model_id": plan["model_id"],
+                "call_id": plan["call_id"], "route": plan["route"],
+                "admission": plan["admission"], "execution": "admitted_not_called"}
+    return result
+
+
+def _next_stage(a):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     # L4.2: a process whose skill was updated since it started refuses to
     # continue ANY run — silently running stale code is how merged fixes
@@ -2880,6 +2969,9 @@ def main(argv=None):
                    help="Answer provenance; only explicit client replies are accepted.")
     c.add_argument("--answer-source-ref", default=None,
                    help="Message/transcript reference for this exact raw client reply.")
+    c.add_argument("--runtime", default=None,
+                   choices=("openclaw", "claude-nine", "openrouter-direct"),
+                   help="Operator runtime for the exact selected AI role bindings; preserves an existing binding when omitted.")
     c.add_argument("--seed-answers-file", default=None,
                    help="Explicit raw owner facts with stable question IDs and source references; never a recap or old menu numbers.")
     c.add_argument("--fit", action="store_true",
@@ -2927,7 +3019,8 @@ def main(argv=None):
             if not limit:
                 limit = limit_from(doc)
                 from_brief = bool(limit)
-        if a.format == "session-json" or a.seed_answers_file or (a.step and (a.run_dir or a.run_state_file)):
+        if a.format != "studio-json" and (a.format == "session-json" or a.seed_answers_file
+                                             or a.run_dir or a.run_state_file):
             try:
                 from .card_session_cli import run as _card_session
             except ImportError:                 # direct factory.py invocation

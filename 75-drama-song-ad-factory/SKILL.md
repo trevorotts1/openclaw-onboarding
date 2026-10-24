@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.108
+version: v2.9.109
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -912,12 +912,16 @@ This skill never picks, forces or recommends a model, an alias or an agent.
   model the user has not set up.
 - If the user names a model or agent, use exactly that one.
 
-The one AI MODELS question on the intake card (first question) asks which AI
-builds and which AI checks, with OpenRouter recommended and Ollama allowed. It
-only RECORDS the answer as `ai_models` in the approved intake summary, as a
-preference for the operator. The run itself still uses the session's own model;
-nothing here switches models. Names that are not routable are refused, and the
-checker must differ from the builder. Code: `scripts/core/choice_card/intake_card/ai_models.py`.
+The AI MODELS question records the client's exact builder/checker pair and
+requires different, routable choices. Explicit recap confirmation binds that
+pair to this run through `ai_models.bind_roles`; stage dispatch admission reads
+those bindings through `admit_dispatch`. Build work uses the selected builder;
+QC and repair use the selected checker. Literal configured aliases stay intact:
+no chain member is selected for the client, and no global model setting changes.
+An admitted dispatch is `admitted_not_called`, not proof of provider execution.
+Router-chain attempts remain `CHAIN_RESOLUTION_UNVERIFIED` until supported
+provider identity evidence proves the actual call. Code:
+`scripts/core/choice_card/intake_card/ai_models.py`.
 
 ## Main window: orchestrate only, all work visible, no silent failure
 
