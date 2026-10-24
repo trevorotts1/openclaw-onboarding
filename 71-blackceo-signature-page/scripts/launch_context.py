@@ -257,11 +257,14 @@ def _shared_candidates(skill_root, rel, allow_vendored=True):
     root = Path(skill_root)
     name = Path(rel).name
     parent_rel = Path(rel).relative_to("shared-utils") if rel.startswith("shared-utils/") else Path(rel)
-    candidates = [root.parent / rel, root / rel]
-    if allow_vendored:
-        candidates += [root / "repo-integration" / "shared" / parent_rel,
-                       root / "repo-integration" / "shared" / name]
-    return tuple(candidates)
+    if not allow_vendored:
+        # Authority artifacts are read from the shared tree only. The skill's
+        # own folder is not a candidate at all: a copy shipped inside it could
+        # certify the skill's own citations.
+        return (root.parent / rel,)
+    return (root.parent / rel, root / rel,
+            root / "repo-integration" / "shared" / parent_rel,
+            root / "repo-integration" / "shared" / name)
 
 
 def _registry_policy_ids(skill_root):

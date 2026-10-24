@@ -196,6 +196,15 @@ CLIENT_DATA_REFUSALS = (
     "supply --design-prose with the run's measured design system",
 )
 
+# The executor's own fail-closed wording, read from the emitter it actually
+# prints (stage_executor.py:1044, surfaced as "PREFLIGHT ... REFUSED: ..." at
+# :1694). It differs from the build's rewording above, so mixing the two makes
+# a healthy install look broken.
+EXECUTOR_FAIL_CLOSED = (
+    "brand colors unresolved, no image stage may start.",
+    "add genuine specification",
+)
+
 
 def classify_build_failure(text: str) -> str:
     """'refused' or 'gap' for a failed build_production_request run.
@@ -230,7 +239,7 @@ def classify_executor_exit(returncode: int, text: str) -> str:
         return "gap"
     for raw in text.splitlines():
         line = raw.strip()
-        if not any(sig in line for sig in CLIENT_DATA_REFUSALS):
+        if not any(sig in line for sig in EXECUTOR_FAIL_CLOSED):
             continue
         if line.startswith("FAIL: ") or " REFUSED: " in line:
             return "fail-closed"
@@ -263,9 +272,14 @@ def self_check() -> int:
         (1, "FAIL: brand colors unresolved, no image stage may start. Tried: run brand pin "
             "private/brand.json: file not found. Ask the client: What are your brand colors?",
          "fail-closed"),
+        # Captured verbatim from stage_executor.py:1044/:1694 — the executor has
+        # no design-prose rewording, so the build's phrasing must not pass here.
+        (1, "PREFLIGHT visual-mockup desktop/part-01.png REFUSED: prompt budget: "
+            "visual-mockup section 1: 3611 chars, 12389 below the 16000-char floor "
+            "(19000-char target); add genuine specification", "fail-closed"),
         (1, "PREFLIGHT visual-mockup part-1.png REFUSED: prompt budget: section 1 below the "
-            "16000-char floor; add genuine specification (supply --design-prose with the "
-            "run's measured design system)", "fail-closed"),
+            "16000-char floor (supply --design-prose with the run's measured design system)",
+         "gap"),
         (1, "Traceback (most recent call last):\nKeyError: 'sections'", "gap"),
         (2, "usage: stage_executor.py [-h] ...\nstage_executor.py: error: unrecognized arguments",
          "gap"),
