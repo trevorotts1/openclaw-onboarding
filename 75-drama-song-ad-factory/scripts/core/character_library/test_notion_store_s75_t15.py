@@ -188,5 +188,215 @@ class StoreTest(unittest.TestCase):
             empty.cache.recover("identity-chr-ghost", None)
 
 
+def receipt(over=None):
+    """A receipt in its real shape, bound to this fixture character."""
+    binding = {
+        "kind": identity.RECEIPT_KIND,
+        "receipt_id": "receipt-001",
+        "approver": "client",
+        "character_id": CHAR,
+        "from_state": "DRAFT_COMPLETE",
+        "to_state": "APPROVED",
+    }
+    binding.update(over or {})
+    return binding
+
+
+def with_bindings(bindings, state="APPROVED", namespace=NS_A):
+    record = for_client(namespace)
+    record["draft_state"] = state
+    record["approval_bindings"] = bindings
+    record.pop("content_digest", None)
+    return record
+
+
+class ForgedApprovalTest(unittest.TestCase):
+    """A binding is a verified receipt or it is refused. Never a bare list."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="s75-t15-")
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def store(self, namespace=NS_A):
+        return store_mod.NotionStore(self.root, namespace)
+
+    def refused(self, record, contains=None):
+        """The save raises and NOTHING is stored."""
+        store = self.store()
+        with self.assertRaises(store_mod.StoreError) as caught:
+            store.put_identity(record)
+        self.assertIsNone(store.get_identity(record["character_id"]))
+        if contains:
+            self.assertIn(contains, str(caught.exception))
+        return str(caught.exception)
+
+    # --- the reported probes ---------------------------------------------
+
+    def test_probe_list_of_junk_is_refused(self):
+        self.refused(with_bindings([{"not": "a receipt"}]))
+
+    def test_probe_empty_object_binding_is_refused(self):
+        self.refused(with_bindings([{}]))
+
+    def test_probe_hand_forged_receipt_is_refused(self):
+        self.refused(with_bindings([receipt({"receipt_id": "forged-001"})]))
+        # the shape a hand-written forgery takes: no kind, no binding to a record
+        self.refused(with_bindings([{"from_state": "DRAFT_COMPLETE",
+                                    "to_state": "APPROVED",
+                                    "approver": "nobody",
+                                    "receipt_id": "forged-005"}]))
+
+    def test_probe_forged_receipt_parked_on_a_draft_is_refused(self):
+        self.refused(with_bindings([receipt({"receipt_id": "forged-002"})],
+                                  state="DRAFT_INCOMPLETE"))
+
+    def test_a_save_never_stores_approved(self):
+        message = self.refused(with_bindings([]))
+        self.assertIn("never stores APPROVED", message)
+
+    # --- type confusion on the binding -----------------------------------
+
+    def test_binding_type_confusion_is_refused(self):
+        for bogus in ("receipt-001", "receipt", {"receipt_id": "r"},
+                      [["receipt-001"]], ["receipt-001"], [None], [False],
+                      [0], [[]], [""], [set()], {"a": {"b": []}}):
+            with self.subTest(binding=bogus):
+                self.refused(with_bindings(bogus))
+
+    def test_binding_with_unknown_keys_is_not_a_receipt(self):
+        self.refused(with_bindings([receipt({"note": "hand written"})]))
+        self.refused(with_bindings([receipt({"kind": "gift_card"})]))
+        self.refused(with_bindings([receipt({"kind": None})]))
+        self.refused(with_bindings([receipt({"character_id": ""})]))
+
+    def test_binding_must_resolve_to_the_record_it_claims(self):
+        self.refused(with_bindings([receipt({"character_id": "chr-someone-else"})]))
+        self.refused(with_bindings([receipt({"from_state": "DRAFT_INCOMPLETE"})]))
+        self.refused(with_bindings([receipt({"from_state": "APPROVED"})]))
+        self.refused(with_bindings([receipt({"to_state": "DRAFT_COMPLETE"})]))
+        self.refused(with_bindings([receipt({"approver": "   "})]))
+        self.refused(with_bindings([receipt({"receipt_id": 7})]))
+        self.refused(with_bindings([receipt(), receipt({"receipt_id": "receipt-001"})]))
+
+    def test_a_draft_carries_no_receipt_at_all(self):
+        self.refused(with_bindings([receipt()], state="DRAFT_COMPLETE"))
+        self.refused(with_bindings([receipt()], state="DRAFT_INCOMPLETE"))
+
+    # --- validate_identity rejects the binding itself --------------------
+
+    def sealed(self, bindings, state="APPROVED"):
+        return identity.seal_identity(with_bindings(bindings, state))
+
+    def test_validate_identity_rejects_a_malformed_binding(self):
+        for bogus in ([{"not": "a receipt"}], [{}], [receipt({"kind": "cash"})],
+                      [receipt({"character_id": "chr-other"})],
+                      [receipt({"from_state": "DRAFT_INCOMPLETE"})],
+                      ["receipt-001"], "receipt-001", {"receipt_id": "r"},
+                      [["r"]], [[]], [None], [False]):
+            with self.subTest(binding=bogus):
+                with self.assertRaises(identity.IdentityDefect) as caught:
+                    identity.validate_identity(self.sealed(bogus))
+                self.assertTrue(caught.exception.defects)
+
+    def test_validate_identity_accepts_only_a_resolved_receipt(self):
+        identity.validate_identity(self.sealed([receipt()]))
+        with self.assertRaises(identity.IdentityDefect):
+            identity.validate_identity(self.sealed([]))  # approved, no receipt
+
+    # --- the honest path still works -------------------------------------
+
+    def test_promotion_writes_one_resolvable_receipt(self):
+        store = self.store()
+        store.put_identity(load_fixture())
+        store.promote(CHAR, "DRAFT_COMPLETE")
+        approved = store.promote(CHAR, "APPROVED",
+                                approval={"approver": "client",
+                                          "receipt_id": "receipt-001"})
+        self.assertEqual(approved["draft_state"], "APPROVED")
+        self.assertEqual(approved["approval_bindings"], [receipt()])
+        self.assertIsNone(identity.resolve_receipt(approved["approval_bindings"][0],
+                                                   approved))
+        identity.validate_identity(approved)
+
+    def test_a_saved_approved_record_cannot_gain_or_lose_a_receipt(self):
+        store = self.store()
+        store.put_identity(load_fixture())
+        store.promote(CHAR, "DRAFT_COMPLETE")
+        approved = store.promote(CHAR, "APPROVED",
+                                 approval={"approver": "client",
+                                           "receipt_id": "receipt-001"})
+
+        for bogus in (with_bindings([receipt({"receipt_id": "forged-003"})]),
+                      with_bindings([receipt(), receipt({"receipt_id": "extra"})]),
+                      with_bindings([])):
+            with self.subTest(bindings=bogus["approval_bindings"]):
+                with self.assertRaises(store_mod.StoreError):
+                    store.put_identity(bogus)
+                self.assertEqual(store.get_identity(CHAR), approved)
+
+        # the one receipt the promotion wrote is kept exactly, never re-minted
+        self.assertEqual(store.put_identity(with_bindings([receipt()])), approved)
+
+    def test_restore_refuses_a_notion_record_with_a_forged_receipt(self):
+        store = self.store()
+        hand_forged = {"from_state": "DRAFT_COMPLETE", "to_state": "APPROVED",
+                       "approver": "nobody", "receipt_id": "forged-004"}
+        for bogus in ([{"not": "a receipt"}], [{}], [hand_forged],
+                      [receipt({"character_id": "chr-someone-else"})]):
+            with self.subTest(binding=bogus):
+                with self.assertRaises(store_mod.StoreError):
+                    store.restore_from_notion([with_bindings(bogus)])
+                self.assertEqual(store.identities(), [])
+
+    def test_restore_accepts_a_notion_record_with_a_real_receipt(self):
+        source = self.store()
+        source.put_identity(load_fixture())
+        source.promote(CHAR, "DRAFT_COMPLETE")
+        approved = source.promote(CHAR, "APPROVED",
+                                  approval={"approver": "client",
+                                            "receipt_id": "receipt-001"})
+        self.assertTrue(source.cache.drop(store_mod._doc(CHAR)))
+
+        target = self.store("fixture-client-restored")
+        record = dict(approved)
+        record["client_id"] = "fixture-client-restored"
+        self.assertEqual(target.restore_from_notion([record]), [CHAR])
+        self.assertEqual(target.get_identity(CHAR)["approval_bindings"], [receipt()])
+
+    # --- the rest of the row stays intact --------------------------------
+
+    def test_no_credential_is_hardcoded_in_the_store(self):
+        store = self.store()
+        registry = {"schema": notion_adapter.SCHEMA_REGISTRY,
+                    "client_namespace": NS_A,
+                    "connection_ref": "secure-connection-handle-only",
+                    "library_page_id": "lib-a",
+                    "data_source_id": "ds-a",
+                    "catalog_revision": ""}
+        store.save_registry(registry)
+        self.assertEqual(store.load_registry(), registry)   # a handle, never a token
+
+        with self.assertRaises(notion_adapter.DiscoveryError):
+            store.save_registry({**registry, "notion_token": "ntn_deadbeef"})
+
+        for name in ("notion_store.py", "cache.py"):
+            with open(os.path.join(HERE, name), encoding="utf-8") as f:
+                source = f.read()
+            self.assertNotRegex(source, r"ntn_[A-Za-z0-9]|sk-[A-Za-z0-9]{8}|"
+                                        r"secret_[A-Za-z0-9]|Bearer\s+\S+")
+
+    def test_adapter_is_reused_and_namespaces_stay_separate(self):
+        self.assertIs(store_mod.adapter.list_character_revisions,
+                      notion_adapter.list_character_revisions)
+        a, b = self.store(NS_A), self.store(NS_B)
+        a.put_identity(load_fixture())
+        self.assertIsNone(b.get_identity(CHAR))
+        self.assertEqual(b.identities(), [])
+        self.assertIsNone(b.load_registry())
+        self.assertRaises(store_mod.StoreError, b.put_identity, load_fixture())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
