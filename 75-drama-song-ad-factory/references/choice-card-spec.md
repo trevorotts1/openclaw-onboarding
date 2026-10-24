@@ -52,7 +52,7 @@ Your drama song ad
                 the song underneath, no echo effect; not with Sketch to Life)
   Clips:        (3, 5 and 10 minutes) automatic 60-second and 90-second
                 clips to post on social media, included in the price
-  Video model:  Hailuo 02 Standard (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
+  Video model:  MiniMax H3 (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
                 Google Veo 3.1, each with its price for the chosen length
   Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
   Price:        computed by Skill 74 `price`   (+ the measured planning allowance)
@@ -435,14 +435,19 @@ Decision 27 and decision 31, plan 6.12 and 6.12.1:
 
 Owner decision D10, superseded 2026-10-07, plan 6.3 and decision 33.
 
-Lip-sync is applied to **selected lines only** - doubled 2026-10-08, more
-pieces and not longer ones: 6 to 8 clips of 4 to 6 seconds per 60 s ad (30 to
-40 seconds), scaled linearly with the ad length, no clip over 6 seconds,
-chosen by the factory and listed on the approval card. Enforced at the final
-edit QC gate (Part E E6): at least 6 lip-sync clips and at least 30 s in a 60 s
-ad (never fewer than 3 clips), scaling linearly (50% of runtime) for longer or
-shorter ads. Clips go first on every sung hook, the spoken opener and the
-spoken closing line, then on:
+Lip-sync is applied to **selected lines only**. Approved direction 2026-10-23
+(supersedes the 2026-10-08 doubling): coverage is **25-30% of the selected
+duration with a 35% HARD MAXIMUM**, in 4 to 6 second clips, no clip over 6
+seconds, never fewer than 3 clips, and the first **12 seconds** clearly
+articulated, chosen by the factory and listed on the approval card. Enforced at
+the final edit QC gate (Part E E6): at least 3 lip-sync clips and at least 25%
+of runtime in a 60 s ad, scaling with runtime for longer or shorter ads. The
+35% maximum, the 6 s per-clip cap and the spend cap are enforced where the
+clips are planned, priced and dispatched (`core/lipsync_clips.py`); a duration
+whose bounds collide fails `LIPSYNC_DURATION_CONFLICT` and is never re-planned
+silently. The historical FREE / no-lip-sync route stays an explicit owner
+opt-in and is never the default. Clips go first on every sung hook, the spoken
+opener and the spoken closing line, then on:
 
 1. the most painful moment (`pain_peak` on the highest-scoring wound beat),
 2. the product line,
@@ -516,29 +521,30 @@ Decision 32, plan 6.13.
 
 ### 3.8 Video model
 
-Default **Hailuo 02 Standard at 768P** (decision 5). No choice means
-Hailuo 02 Standard, and the card says so.
+Default **MiniMax H3 at 768P** (decision 5, restored 2026-10-24: the live KIE
+catalog carries `minimax-h3/image-to-video`). No choice means
+MiniMax H3, and the card says so.
 
 **The intake question (FU-VIDEO-MODEL-CHOICES, 2026-10-09).** After the
 client picks a length, the video model question lists four models, each with
-its price for THAT length, one plain descriptor each (about 8 words), and Hailuo
-02 Standard first and marked RECOMMENDED:
+its price for THAT length, one plain descriptor each (about 8 words), and MiniMax
+H3 first and marked RECOMMENDED:
 
 ```
 Question 4 of 6 - VIDEO MODEL
 Which video model should make your shots? Prices are for your 3-minute ad,
 with the song, pictures and a 50% redo allowance.
-1. Hailuo 02 Standard - great quality, best value - about $6.36 (RECOMMENDED)
-2. Seedance 2.5 - premium detail and motion - about $68.57
-3. Seedance 2.0 Mini - quicker and cheaper - about $9.38
-4. Google Veo 3.1 - top-tier realism - about $9.07
+1. MiniMax H3 - great quality, best value - about $11.46 (RECOMMENDED)
+2. Seedance 2.5 - premium detail and motion - about $85.71
+3. Seedance 2.0 Mini - quicker and cheaper - about $11.73
+4. Google Veo 3.1 - top-tier realism - about $11.34
 ```
 
 Seedance is ByteDance's VIDEO model (Seedream is its image model and cannot
 make shots). The four models, provider ids and rates live in ONE table,
 `scripts/core/choice_card/video_models/video_model_rates.json` (from
 the KIE live model list, checked 2026-10-09), each at the resolution the
-factory really renders: Hailuo 02 Standard 768P, Seedance 2.5 720p, Seedance 2.0 Mini 720p,
+factory really renders: MiniMax H3 768P, Seedance 2.5 720p, Seedance 2.0 Mini 720p,
 Google Veo 3.1 Fast 720p (per 8-second clip). The figure shown comes from the
 SAME function as the final card (`card_render.price_envelope`): video + one
 keyframe per shot + the character reference pictures + the song, then the
