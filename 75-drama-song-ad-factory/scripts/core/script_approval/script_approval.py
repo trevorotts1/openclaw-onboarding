@@ -261,6 +261,61 @@ def mark_sent(run_dir):
     return _save(run_dir, rec)
 
 
+def _reply_contract(run_dir):
+    """Read current intake provenance; never seed or rewrite the owner run."""
+    path = os.path.join(run_dir, "control", "intake-session.json")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as stream:
+        intake = json.load(stream)
+    if (not isinstance(intake, dict) or intake.get("schema") != "blackceo.intake-session/v1" or
+            not isinstance(intake.get("run_id"), str) or not intake["run_id"]):
+        raise ValueError("The modern intake run/source identity cannot be verified.")
+    records = list((intake.get("answer_records") or {}).values()) + list(intake.get("events") or [])
+    records.append(intake.get("confirmation") or {})
+    refs = sorted({r["source_ref"] for r in records if isinstance(r, dict) and
+                   isinstance(r.get("source_ref"), str) and r["source_ref"]})
+    return {"schema": "blackceo.artifact-reply/v1", "run_id": intake["run_id"], "intake_source_refs": refs}
+
+
+def reply_provenance(run_dir, record=None, context=None, reply=None):
+    """Read-only modern reply admission; actual decisions remain in AE.
+
+    The source reference identifies a NEW client message; presentation_ask_id
+    identifies the outgoing whole-package ask. Neither is an intake choice.
+    This application protocol does not authenticate unrestricted file writers.
+    """
+    rec = record if isinstance(record, dict) else (record_for(run_dir) or {})
+    ctx = dict(context or {})
+    if reply is not None:
+        ctx["reply_text_sha"] = hashlib.sha256(str(reply).strip().lower().encode("utf-8")).hexdigest()
+    try:
+        contract = _reply_contract(run_dir)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return {"ok": False, "required": True, "reason_code": "ARTIFACT_REPLY_INTAKE_UNREADABLE", "detail": str(exc)}
+    if contract:
+        rec = dict(rec, reply_contract=contract)
+    provenance = AE.reply_context_status(rec, ctx)
+    if provenance["ok"] and reply is not None and AE.is_preference_reply(reply):
+        return {"ok": False, "required": provenance["required"], "reason_code": "ARTIFACT_REPLY_IS_PREFERENCE",
+                "detail": "Choosing to see the work first or giving an intake option is not approval of the presented whole script and lyrics."}
+    if provenance["ok"] and provenance["required"]:
+        try:
+            with open(os.path.join(run_dir, "creative", "script.json"), encoding="utf-8") as stream:
+                doc = json.load(stream)
+            sheet = doc["sheet"]
+            lyrics = doc.get("lyrics") or "\n".join(line for section in sheet for line in section.get("lines") or [])
+            current = {"script": script_sha(doc.get("title") or "Your song", doc.get("story") or [], sheet),
+                       "lyrics": lyrics_sha(lyrics)}
+            if not sheet or any((rec.get("artifacts", {}).get(kind) or {}).get("sha256") != sha
+                                for kind, sha in current.items()):
+                raise ValueError("The script or lyrics changed after the presentation.")
+        except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+            return {"ok": False, "required": True, "reason_code": "ARTIFACT_REPLY_ARTIFACT_CHANGED",
+                    "detail": "Present the current whole script and lyrics before approving them: " + str(exc)}
+    return provenance
+
+
 def request_approval(run_dir, title, story, sheet, lyrics, maker=None,
                      context=None, kinds=("script", "lyrics"), message_id=None,
                      elements=None):
@@ -276,6 +331,9 @@ def request_approval(run_dir, title, story, sheet, lyrics, maker=None,
     if maker is not None:
         rec["maker"] = str(maker)
     ctx = dict(context or {})
+    contract = _reply_contract(run_dir)
+    if contract:
+        rec["reply_contract"] = contract
     if ctx.get("run_id") or ctx.get("tenant_id"):
         rec["run"] = {"run_id": ctx.get("run_id"), "tenant_id": ctx.get("tenant_id")}
     if ctx.get("conversation_id") or ctx.get("channel"):
@@ -353,6 +411,7 @@ def handle_reply(run_dir, reply, title, story, sheet, lyrics, apply_edit, rechec
     ctx = dict(context or {})
     if approved_by is not None:
         ctx["approved_by"] = str(approved_by)
+    ctx["reply_text"] = str(reply or "")
     ctx["reply_text_sha"] = hashlib.sha256(
         str(reply or "").strip().lower().encode("utf-8")).hexdigest()
     state, rec = AE.load_record(run_dir)
@@ -362,6 +421,18 @@ def handle_reply(run_dir, reply, title, story, sheet, lyrics, apply_edit, rechec
                 "problems": [], "asked": UNKNOWN_QUESTION}
     rec = AE.ensure_record(rec)
     prior_sent = bool(rec.get("sent"))
+    provenance = reply_provenance(run_dir, rec, ctx, reply)
+    if provenance["ok"] and provenance["required"]:
+        actual = {"script": script_sha(title, story, sheet), "lyrics": lyrics_sha(lyrics)}
+        if any((rec.get("artifacts", {}).get(k) or {}).get("sha256") != sha for k, sha in actual.items()):
+            provenance = {"ok": False, "required": True, "reason_code": "ARTIFACT_REPLY_ARTIFACT_CHANGED",
+                          "detail": "The reply payload differs from the whole script and lyrics that were presented."}
+    if not provenance["ok"] or AE.is_preference_reply(reply):
+        detail = (provenance["detail"] if not provenance["ok"] else
+                  "Choosing to see the work first is an approval preference, not approval of this whole script and lyrics.")
+        return {"status": "pending", "approval_state": "unknown",
+                "reason_code": provenance["reason_code"] if not provenance["ok"] else "ARTIFACT_REPLY_IS_PREFERENCE",
+                "messages": [detail], "problems": [], "asked": detail}
 
     replay = AE.find_replay(rec, ctx)
     if replay is not None:
@@ -383,7 +454,7 @@ def handle_reply(run_dir, reply, title, story, sheet, lyrics, apply_edit, rechec
         _save(run_dir, rec)
         return {"status": rec["status"], "messages": _ack_messages(rec, ctx),
                 "problems": []}
-    if verdict["intent"] in ("ambiguous", "unseen", "foreign"):
+    if verdict["intent"] in ("ambiguous", "unseen", "foreign", "preference", "unproven"):
         return {"status": "pending", "messages": [verdict["question"]], "problems": [],
                 "asked": verdict["question"]}
 

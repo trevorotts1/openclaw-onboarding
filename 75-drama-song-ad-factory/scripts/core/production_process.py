@@ -12,6 +12,7 @@ change the checks; no filesystem/credential security boundary is claimed here.
 from __future__ import annotations
 
 from contextlib import closing
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -172,6 +173,15 @@ def _script_proof(run_dir, run_id, *, required=True):
     # Legacy aggregate status/hash alone does not establish a client decision.
     # Existing revision-aware decisions remain valid, including local channels
     # that did not provide a message id or an identity to their old writer.
+    preference_hashes = set()
+    intake_path = Path(run_dir) / "control" / "intake-session.json"
+    if intake_path.exists():
+        intake = _read(intake_path)
+        row = (intake.get("answer_records") or {}).get("script") or {}
+        candidates = [row.get("raw_answer"), (row.get("parsed") or {}).get("text")]
+        for candidate in candidates:
+            if events.is_preference_reply(candidate):
+                preference_hashes.add(hashlib.sha256(str(candidate).strip().lower().encode("utf-8")).hexdigest())
     for kind, sha in hashes.items():
         art = (rec.get("artifacts") or {}).get(kind) or {}
         ev = events.active_approval(rec, kind, sha)
@@ -188,6 +198,29 @@ def _script_proof(run_dir, run_id, *, required=True):
                         for ask in rec.get("asks") or [])):
             return _result(False, "PRODUCTION_SCRIPT_APPROVAL_UNVERIFIED",
                            "The %s decision is not bound to this presented current artifact and run." % kind)
+        if ev.get("reply_text_sha") in preference_hashes or events.is_preference_reply(ev.get("reply_text")):
+            return _result(False, "ARTIFACT_REPLY_IS_PREFERENCE", "A saved intake option or viewing preference is not approval of this script and lyrics.")
+        presented = next((a for a in rec.get("asks") or [] if
+                          kind in a.get("kinds", []) and
+                          (a.get("revisions") or {}).get(kind) == art.get("revision") and
+                          a.get("ask_id") == ev.get("presentation_ask_id")), None)
+        modern = False
+        if (ev.get("source") == "client" and ev.get("source_ref") and presented and
+                isinstance(ev.get("reply_text"), str) and ev["reply_text"].strip()):
+            proof = approval.reply_provenance(run_dir, rec, {
+                "source": ev["source"], "source_ref": ev["source_ref"],
+                "presentation_ask_id": ev["presentation_ask_id"], "run_id": ev.get("run_id"),
+                "reply_text_sha": ev.get("reply_text_sha")}, ev["reply_text"])
+            modern = proof["ok"]
+        legacy = (not ev.get("source") and not ev.get("source_ref") and bool(ev.get("approved_by")) and
+                  ev.get("run_id") == run_id and bool(origin) and ev.get("conversation_id") == origin and
+                  ev.get("requesting_conversation_id") == origin and rec.get("sent") is True and
+                  any(a.get("message_id") and a["message_id"] == ev.get("reply_to_message_id") and
+                      kind in a.get("kinds", []) and (a.get("revisions") or {}).get(kind) == art.get("revision")
+                      for a in rec.get("asks") or []))
+        if not modern and not legacy:
+            return _result(False, "ARTIFACT_REPLY_PROVENANCE_UNVERIFIED",
+                           "The current artifact decision has no verifiable new client reply and presented-revision binding; preserve it for source verification.")
     return _result(True, "PRODUCTION_SCRIPT_APPROVED", "The whole script and lyrics have current revision-bound decisions.",
                    approved_script=dict(script_sha256=hashes["script"], lyrics_sha256=hashes["lyrics"], path=str(Path(run_dir) / "creative" / "script.json"), required=True))
 

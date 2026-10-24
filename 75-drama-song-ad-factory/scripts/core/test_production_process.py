@@ -78,10 +78,13 @@ def approve_script(run):
            "lyrics": "I choose my new chapter today"}
     write_json(run / "creative" / "script.json", doc)
     context = {"run_id": run.name, "conversation_id": "offline-owner-conversation",
-               "approved_by": "fixture-client", "reply_to_message_id": "fixture-owner-approval"}
+               "approved_by": "fixture-client", "reply_to_message_id": "fixture-script-presented"}
     approval.request_approval(run, doc["title"], doc["story"], doc["sheet"], doc["lyrics"],
                               maker="fixture-builder", context=context, message_id="fixture-script-presented")
     approval.mark_sent(run)
+    rec = approval.record_for(run)
+    context.update(source="client", source_ref="fixture-owner-approval",
+                   presentation_ask_id=next(a["ask_id"] for a in rec["asks"] if a["state"] == "open"))
     result = approval.handle_reply(run, "I approve both", doc["title"], doc["story"], doc["sheet"], doc["lyrics"],
                                    lambda reply, story, sheet: (story, sheet, doc["lyrics"]),
                                    lambda story, sheet: [], context=context)
