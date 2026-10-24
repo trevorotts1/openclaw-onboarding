@@ -808,6 +808,18 @@ def lifecycle_transition_errors(before, after):
     return errs
 
 
+def normalise_evidence_id(value):
+    """Trim an evidence id and treat a blank one as absent.
+
+    None and a whitespace-only id both mean "no evidence is attached", so the
+    gate refuses on either. Non-strings are handed back untouched: the schema
+    layer names those INVALID_GATE and this presence check must not swallow
+    them into a refusal.
+    """
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
 def cmd_dispatch(args):
     action = load_json(args.action)
     errs = check_document("outbound", action)
@@ -936,7 +948,7 @@ def cmd_dispatch(args):
             if gate["reveal_order_verified"] is not True:
                 return refuse("SUPPRESSED", "REVEAL_ORDER_NOT_VERIFIED")
     else:
-        if not gate["trusted_contact_mapping_evidence_id"]:
+        if normalise_evidence_id(gate["trusted_contact_mapping_evidence_id"]) is None:
             return refuse("SUPPRESSED", "NO_TRUSTED_CONTACT_MAPPING")
         if action["purpose"] == "COMMENT_PRIVATE_OPENER" and gate["inbound_dm_window"]:
             return refuse("SUPPRESSED", "COMMENT_OPENER_IS_NOT_AN_INBOUND_DM_WINDOW")

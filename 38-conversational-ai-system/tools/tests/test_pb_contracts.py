@@ -342,6 +342,52 @@ class LifecycleTests(unittest.TestCase):
                 if not expected:
                     self.assertTrue(payload["errors"], "%s failed without a reason" % label)
 
+    # The edge table IS the rule, and every behavioural case above reads it, so a
+    # widened table would rewrite its own expectations and still pass. Pin it in
+    # full: any widening, narrowing or deletion must fail here instead.
+    EXPECTED_EDGES = {
+        "NOT_INSTALLED": frozenset({"ADOPTING"}),
+        "ADOPTING": frozenset({"RUNNING", "CANCELED"}),
+        "RUNNING": frozenset({"PAUSED_RESUMABLE", "CLOSING", "CANCELED"}),
+        "PAUSED_RESUMABLE": frozenset({"RUNNING", "CLOSING", "CANCELED"}),
+        "CLOSING": frozenset({"CLOSED", "CANCELED"}),
+        "CLOSED": frozenset(),
+        "CANCELED": frozenset(),
+    }
+
+    def test_the_lifecycle_edge_table_is_pinned(self):
+        actual = {
+            state: frozenset(next_states) for state, next_states in contracts.LIFECYCLE_EDGES.items()
+        }
+        self.assertEqual(self.EXPECTED_EDGES, actual)
+
+    def test_a_closed_loop_cannot_reopen(self):
+        # CLOSED is terminal. The fixture set had no transition out of a terminal
+        # state, so widening that row was invisible to the suite.
+        base = json.loads(Path(fixture("lifecycle", "loop-closed.json")).read_text(encoding="utf-8"))
+        targets = ["NOT_INSTALLED", "ADOPTING", "RUNNING", "PAUSED_RESUMABLE", "CLOSING"]
+        with tempfile.TemporaryDirectory(prefix="pb-contracts-") as tmp:
+            for index, state in enumerate(targets):
+                with self.subTest(state):
+                    after = copy.deepcopy(base)
+                    after["state"] = state
+                    after["applied_event_revision"] = base["applied_event_revision"] + 1
+                    after["closed_event_revision"] = None
+                    after["stop_action_id"] = base["stop_action_id"] if state == "CLOSING" else None
+                    after["finalizer_evidence_id"] = None
+                    path = Path(tmp) / ("reopen-%d.json" % index)
+                    path.write_text(json.dumps(after), encoding="utf-8")
+                    code, payload = run(
+                        "transition", "--kind", "lifecycle",
+                        "--before", fixture("lifecycle", "loop-closed.json"), "--after", str(path),
+                    )
+                    self.assertEqual(1, code, payload)
+                    self.assertFalse(payload["ok"], "CLOSED reopened to %s" % state)
+                    self.assertTrue(
+                        any("unsupported transition 'CLOSED' -> %r" % state in e for e in payload["errors"]),
+                        payload["errors"],
+                    )
+
 
 class CompatibilityTests(unittest.TestCase):
     """DATA-CONTRACTS section 10: rollback compares the revision the upgrade wrote."""
@@ -540,6 +586,52 @@ class GateRecordTests(Fixture):
         self.assertEqual("SUPPRESSED", payload["decision"], payload)
         self.assertEqual("NO_TRUSTED_CONTACT_MAPPING", payload["reason"])
         self.assertEqual([], payload["errors"])
+
+    def _gate_with_mapping(self, value, name):
+        gate = copy.deepcopy(json.loads(Path(fixture("gates", "person-allow.json")).read_text(encoding="utf-8")))
+        gate["trusted_contact_mapping_evidence_id"] = value
+        path = self.ledger_dir / name
+        path.write_text(json.dumps(gate), encoding="utf-8")
+        return str(path)
+
+    def test_a_blank_trusted_contact_mapping_is_absent(self):
+        # The gate schema admits any string here, so whitespace is a document the
+        # gate must refuse by name — not malformed, never an allow. A falsy-only
+        # presence test dispatched on "   ".
+        for index, value in enumerate(["   ", " \t\n", ""]):
+            with self.subTest(repr(value)):
+                gate = self._gate_with_mapping(value, "blank-mapping-%d.json" % index)
+                code, payload = dispatch(str(self.ledger_dir / ("blank-%d.json" % index)),
+                                         fixture("outbound", "person-gift.json"), gate)
+                self.assertEqual(1, code, payload)
+                self.assertEqual("SUPPRESSED", payload["decision"], payload)
+                self.assertEqual("NO_TRUSTED_CONTACT_MAPPING", payload["reason"])
+                self.assertEqual([], payload["errors"])
+
+    def test_a_real_trusted_contact_mapping_still_dispatches(self):
+        # Known-good control on the same instrument: the refusal above is the
+        # blank case, not a check that refuses everything.
+        for index, value in enumerate(["ev-tcm-1", "  ev-tcm-1  "]):
+            with self.subTest(repr(value)):
+                gate = self._gate_with_mapping(value, "real-mapping-%d.json" % index)
+                code, payload = dispatch(str(self.ledger_dir / ("real-%d.json" % index)),
+                                         fixture("outbound", "person-gift.json"), gate)
+                self.assertEqual(0, code, payload)
+                self.assertEqual("DISPATCHED", payload["decision"], payload)
+                self.assertEqual("GATE_ALLOWED", payload["reason"])
+
+    def test_a_non_string_trusted_contact_mapping_is_still_invalid_gate(self):
+        # Presence must not swallow a wrong type: only the schema layer may call
+        # a document malformed, and it must name the field.
+        for index, value in enumerate([123, {}, [], True]):
+            with self.subTest(repr(value)):
+                gate = self._gate_with_mapping(value, "typed-mapping-%d.json" % index)
+                code, payload = dispatch(str(self.ledger_dir / ("typed-%d.json" % index)),
+                                         fixture("outbound", "person-gift.json"), gate)
+                self.assertEqual(1, code, payload)
+                self.assertEqual("INVALID_GATE", payload["decision"], payload)
+                self.assertTrue(any("trusted_contact_mapping_evidence_id" in e for e in payload["errors"]),
+                                payload["errors"])
 
 
 def _iter_document_cases():
