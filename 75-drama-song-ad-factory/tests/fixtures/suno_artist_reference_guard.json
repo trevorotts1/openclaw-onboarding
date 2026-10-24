@@ -1,0 +1,384 @@
+{
+  "revision": "s75-t41-fixture-2026-10-24",
+  "note": "Synthetic, explicitly fictional fixture data. Client references are DISPLAY ONLY; production_traits are the only compiler input. No live client, no provider call.",
+  "styles": {
+    "soul-ballad": {
+      "style_id": "soul-ballad",
+      "label": "Soul Ballad",
+      "client_references": {
+        "artists": ["Luther Vandross", "Whitney Houston"],
+        "aliases": ["Vandross", "Whitney"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "warm felt piano, rounded bass, brushed drums, restrained string pad",
+        "avoided_instrumentation": "no distorted guitars, no trap hi-hat bed",
+        "rhythm": "slow 4/4",
+        "tempo": "62-68 bpm",
+        "vocal_delivery": "close dry lead, vulnerable near-conversational verses into a full-voiced chorus",
+        "mood": "heartfelt, restrained opening earning a big emotional chorus",
+        "arrangement": "sparse piano under the consequence, bass and brushes at the obstacle, harmony widens after the choice",
+        "story_dynamics": "pull back at the costly decision, open the chorus after the earned change",
+        "hook_guidance": "one memorable sung refrain that gains meaning after the choice",
+        "constraints": "business words remain intelligible; the musical body after the spoken opener is fully sung"
+      }
+    },
+    "rnb-flow": {
+      "style_id": "rnb-flow",
+      "label": "R&B Flow",
+      "client_references": {
+        "artists": ["Lauryn Hill", "Missy Elliott"],
+        "aliases": ["Lauryn", "Missy"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "Rhodes chord stabs, deep controlled sub bass, crisp programmed drums, tight hi-hats, selective synth plucks",
+        "avoided_instrumentation": "no stray vocal pad in the opener",
+        "rhythm": "contemporary R&B pocket, 4/4",
+        "tempo": "84-94 bpm",
+        "vocal_delivery": "metered conversational rap verses and a recognizably sung hook with sustained notes",
+        "mood": "confident, rhythmic tension easing into warmth",
+        "arrangement": "rap carries obstacle and choice, harmonic space opens for the hook, drums strip at the wound then return",
+        "story_dynamics": "controlled bass and drum lift after the decision",
+        "hook_guidance": "sung hook, not chant",
+        "constraints": "sparse ad-libs outside names and claim language"
+      }
+    },
+    "soul-rise": {
+      "style_id": "soul-rise",
+      "label": "Soul Rise",
+      "client_references": {
+        "artists": ["Andra Day", "Bill Withers"],
+        "aliases": ["Andra", "Withers"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "brooding piano, round bass, hand claps, warm horn accents",
+        "avoided_instrumentation": "no spliced unrelated tracks",
+        "rhythm": "two-part continuous 4/4 feel",
+        "tempo": "62-68 bpm opening lifting to 100-112 bpm at the turn",
+        "vocal_delivery": "restrained soulful lead rising in register and confidence after the turn",
+        "mood": "slow and sad first, earned hopeful groove second",
+        "arrangement": "percussion thickens at the narrative turn, single coherent performance",
+        "story_dynamics": "the groove lift lands exactly on the change beat",
+        "hook_guidance": "refrain starts unresolved and returns hopeful after visible action",
+        "constraints": "never celebratory before the problem is felt"
+      }
+    },
+    "acoustic-pop": {
+      "style_id": "acoustic-pop",
+      "label": "Acoustic Pop",
+      "client_references": {
+        "artists": ["Ed Sheeran", "Jason Mraz"],
+        "aliases": ["Sheeran", "Mraz"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "fingerpicked steel-string acoustic guitar, warm bass, hand percussion, restrained kick and snare",
+        "avoided_instrumentation": "no wall of electric guitars, no orchestral trailer percussion",
+        "rhythm": "relaxed 4/4 pocket",
+        "tempo": "80-112 bpm",
+        "vocal_delivery": "close conversational melodic lead with crisp words",
+        "mood": "warm and direct",
+        "arrangement": "small guitar figure under the spoken consequence, clearer strum and bass when action is needed",
+        "story_dynamics": "chorus opens after a specific decision",
+        "hook_guidance": "compact repeated melodic phrase carrying the emotional change",
+        "constraints": "no machine-gun delivery to meet duration"
+      }
+    },
+    "folk-storytelling": {
+      "style_id": "folk-storytelling",
+      "label": "Folk Storytelling",
+      "client_references": {
+        "artists": ["Tracy Chapman", "Bob Dylan"],
+        "aliases": ["Chapman", "Dylan"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "spare picked acoustic guitar, upright bass, light shaker, small harmonica answer",
+        "avoided_instrumentation": "no stadium-pop drop, no trap rolls, no dense choir",
+        "rhythm": "4/4 or deliberate narrative 6/8",
+        "tempo": "68-100 bpm",
+        "vocal_delivery": "direct unvarnished lead letting character language carry the weight",
+        "mood": "intimate and detail-rich",
+        "arrangement": "sparse throughout, silence or reduced accompaniment marks the turn",
+        "story_dynamics": "concrete visible details accumulate into cause and consequence",
+        "hook_guidance": "short recurring refrain whose meaning changes as choices accumulate",
+        "constraints": "no imitation of a particular singer's rasp, accent or phrasing"
+      }
+    },
+    "country-pop": {
+      "style_id": "country-pop",
+      "label": "Country Pop",
+      "client_references": {
+        "artists": ["Shania Twain", "Carrie Underwood"],
+        "aliases": ["Twain", "Underwood"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "acoustic rhythm guitar, restrained clean electric guitar, steady bass, live-feeling drum kit, tasteful fiddle punctuation",
+        "avoided_instrumentation": "no bluegrass virtuosity, no generic dance synth",
+        "rhythm": "steady 4/4",
+        "tempo": "88-120 bpm",
+        "vocal_delivery": "clear grounded narrative lead with a strong sung chorus",
+        "mood": "plainspoken and polished",
+        "arrangement": "verse names behavior and friction, pre-chorus tightens, chorus opens after the character acts",
+        "story_dynamics": "bridge exposes the mistaken belief before a resolved final chorus",
+        "hook_guidance": "chorus repeats the emotional proposition",
+        "constraints": "no imposed accent, biography or regional stereotype"
+      }
+    },
+    "melodic-rap": {
+      "style_id": "melodic-rap",
+      "label": "Melodic Rap",
+      "client_references": {
+        "artists": ["Drake", "Rod Wave"],
+        "aliases": ["Drake", "Rod Wave"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "restrained minor-key piano motif, warm pad, controlled 808 bass, sparse kick and snare, selective hi-hat movement",
+        "avoided_instrumentation": "no doubled actual tempo",
+        "rhythm": "70-90 bpm felt half-time",
+        "tempo": "70-90 bpm half-time, one documented interpretation",
+        "vocal_delivery": "clear rap moving into a pitched melodic hook, emotion through dynamics",
+        "mood": "emotional and restrained",
+        "arrangement": "beat thins at the costly admission, harmonic width after the choice",
+        "story_dynamics": "rap reveals contradiction, melodic anchor follows the turn",
+        "hook_guidance": "melodic hook is required",
+        "constraints": "names and offer words stay readable"
+      }
+    },
+    "trap-rap": {
+      "style_id": "trap-rap",
+      "label": "Trap Rap",
+      "client_references": {
+        "artists": ["Cardi B", "Future"],
+        "aliases": {"Future": ["Future (artist)"]},
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "controlled 808 low end, punchy kick, dry snare and clap, crisp rolling hi-hats, sparse dark synth motif",
+        "avoided_instrumentation": "no automatic triplet density",
+        "rhythm": "half-time with one explicit counted feel",
+        "tempo": "65-85 bpm half-time",
+        "vocal_delivery": "rhythmic confident intelligible lead using short emphatic phrases and purposeful rests",
+        "mood": "dark escalating pressure",
+        "arrangement": "bass and percussion escalate after the spoken opening, beat drop underlines the choice",
+        "story_dynamics": "remove bass briefly for the emotional admission",
+        "hook_guidance": "compact hook with a rhythmic anchor",
+        "constraints": "no invented profanity, violence or street biography; ad-libs cannot mask names or the CTA"
+      }
+    },
+    "pop-rap": {
+      "style_id": "pop-rap",
+      "label": "Pop Rap",
+      "client_references": {
+        "artists": ["Nelly", "Flo Rida", "Puff Daddy"],
+        "aliases": {"Puff Daddy": ["P. Diddy", "Diddy"]},
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "bright bass, crisp hip-hop pop drums, buoyant piano stabs, clean melodic chorus",
+        "avoided_instrumentation": "no unbroken ominous trap texture, no instrumental dance drop",
+        "rhythm": "4/4 with open subdivisions",
+        "tempo": "92-118 bpm",
+        "vocal_delivery": "easy-to-follow rhythmic verses and a clearly sung or deliberately chant-like hook",
+        "mood": "upbeat and accessible",
+        "arrangement": "verse-to-chorus contrast, pre-hook clears space, bright hook arrives after the choice",
+        "story_dynamics": "action-focused rap builds pressure before the hook",
+        "hook_guidance": "immediately memorable hook without borrowing a known tune",
+        "constraints": "brand name not repeated as chorus filler"
+      }
+    },
+    "pop-rock": {
+      "style_id": "pop-rock",
+      "label": "Pop Rock",
+      "client_references": {
+        "artists": ["Maroon 5", "Paramore"],
+        "aliases": [],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "rhythmic electric guitars, defined electric bass, live-feeling kick and snare, tight acoustic support",
+        "avoided_instrumentation": "no continuous maximal distortion, no automatic EDM drop",
+        "rhythm": "driving 4/4",
+        "tempo": "100-142 bpm",
+        "vocal_delivery": "forward melodic lead with controlled edge and clear words",
+        "mood": "driving and cathartic",
+        "arrangement": "restrained pulse under the consequence, tighter groove under the obstacle, short stop at the choice, full guitars after action",
+        "story_dynamics": "bridge reduces texture for the mistaken belief",
+        "hook_guidance": "compact hook, one slogan only",
+        "constraints": "no forced screaming, no imitated singer"
+      }
+    },
+    "reggaeton": {
+      "style_id": "reggaeton",
+      "label": "Reggaeton",
+      "client_references": {
+        "artists": ["Daddy Yankee", "Bad Bunny"],
+        "aliases": ["Yankee", "Bad Bunny"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "dembow kick and snare pattern, rounded controlled sub bass, syncopated percussion, economical pluck figure",
+        "avoided_instrumentation": "no generic four-on-the-floor, no trap hats alone",
+        "rhythm": "rolling dembow, 4/4",
+        "tempo": "88-105 bpm",
+        "vocal_delivery": "articulate rhythmic lines alternating with a tuneful repeatable hook",
+        "mood": "danceable without trivializing the consequence",
+        "arrangement": "percussion low under the spoken consequence, groove grows as choices create movement",
+        "story_dynamics": "rhythm pulls back for the admission, fuller percussion returns for visible change",
+        "hook_guidance": "open sung hook after the change",
+        "constraints": "preserve the client's language; no automatic Spanish, accent or slang"
+      }
+    },
+    "cinematic-orchestral-song": {
+      "style_id": "cinematic-orchestral-song",
+      "label": "Cinematic Orchestral Song",
+      "client_references": {
+        "artists": ["Adele", "Celine Dion"],
+        "aliases": ["Céline Dion"],
+        "reference_songs": ["Skyfall", "My Heart Will Go On"]
+      },
+      "production_traits": {
+        "instruments": "expressive lead over piano, low strings, violas, violins, warm brass, controlled cinematic percussion",
+        "avoided_instrumentation": "no instrumental score or trailer sound-effect reel",
+        "rhythm": "common 4/4 or a justified 6/8",
+        "tempo": "60-88 bpm",
+        "vocal_delivery": "clear diction with a strong earned melodic chorus",
+        "mood": "dramatic and sweeping",
+        "arrangement": "sparse piano and low strings frame the opening loss, full chorus after the consequential choice",
+        "story_dynamics": "brief reduction reveals the turning point",
+        "hook_guidance": "final refrain resolves the same emotional proposition",
+        "constraints": "keep the singing and spoken words clear and easy to hear, even when the music gets big and powerful"
+      }
+    },
+    "musical-theater": {
+      "style_id": "musical-theater",
+      "label": "Musical Theater",
+      "client_references": {
+        "artists": ["Idina Menzel", "Cynthia Erivo"],
+        "aliases": ["Menzel", "Erivo"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "piano-led theatrical orchestration, strings, woodwinds, selective brass, responsive rhythm section",
+        "avoided_instrumentation": "no copied belt or celebrity voice",
+        "rhythm": "planned rubato and scene-linked tempo changes",
+        "tempo": "72-132 bpm with supported rubato",
+        "vocal_delivery": "character-specific articulate intentional singing",
+        "mood": "dramatic and want-driven",
+        "arrangement": "spoken consequence opens, want-driven verse responds to the obstacle, motif changes at the choice",
+        "story_dynamics": "harmonic pivot for the turn, earned final payoff",
+        "hook_guidance": "reprise changes meaning after an honest choice",
+        "constraints": "dialogue and reprises only when already elected; stage directions are not sung"
+      }
+    },
+    "contemporary-gospel": {
+      "style_id": "contemporary-gospel",
+      "label": "Contemporary Gospel",
+      "client_references": {
+        "artists": ["Kirk Franklin"],
+        "aliases": ["Franklin"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "piano and warm organ foundation, live-feeling bass and drums, tasteful strings, expressive choir supporting the lead",
+        "avoided_instrumentation": "no generic inspirational pop substitute",
+        "rhythm": "deliberate 4/4 or 6/8 gospel feel",
+        "tempo": "68-100 bpm",
+        "vocal_delivery": "clear conviction, choir answers and harmony that do not drown the words",
+        "mood": "faith-centered testimony building to uplift",
+        "arrangement": "restrained under the spoken consequence, piano organ and choir build after the chosen action",
+        "story_dynamics": "earned statement of faith grounded in the approved narrative",
+        "hook_guidance": "uplifting chorus after the testimony",
+        "constraints": "no fabricated real-client faith, history or testimony"
+      }
+    },
+    "urban-gospel": {
+      "style_id": "urban-gospel",
+      "label": "Urban Gospel",
+      "client_references": {
+        "artists": ["Kirk Franklin"],
+        "aliases": ["Franklin"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "R&B and hip-hop drum pocket, deep controlled bass, Rhodes, selective organ and synth texture, responsive choir harmonies",
+        "avoided_instrumentation": "no ordinary secular R&B copy",
+        "rhythm": "4/4 with optional documented half-time feel",
+        "tempo": "78-110 bpm",
+        "vocal_delivery": "rhythmic speech or rap passages and sung gospel hooks per the approved delivery map",
+        "mood": "faith-centered with rhythmic production",
+        "arrangement": "sparse groove under the spoken consequence, choir response grows after the turn",
+        "story_dynamics": "brief reduction at the costly admission makes the lift earned",
+        "hook_guidance": "unmistakably vocal gospel hook",
+        "constraints": "no stereotype, automatic slang or invented church affiliation"
+      }
+    },
+    "alternative-rnb": {
+      "style_id": "alternative-rnb",
+      "label": "Alternative R&B",
+      "client_references": {
+        "artists": ["Tems"],
+        "aliases": ["Tems"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "spacious R&B harmony, restrained bass, dry unusual percussion, atmospheric guitar and synth textures",
+        "avoided_instrumentation": "no instrumental meandering",
+        "rhythm": "4/4 with a syncopated flexible pocket",
+        "tempo": "68-112 bpm",
+        "vocal_delivery": "expressive close lead with purposeful rests and original melodic shapes",
+        "mood": "intimate and inventive, energy chosen from the approved story",
+        "arrangement": "small textural gesture under the consequence, negative space exposes contradiction",
+        "story_dynamics": "change in harmony or density follows the consequential choice",
+        "hook_guidance": "understated but recognizable hook expressing the earned change",
+        "constraints": "not automatically slow, sad or whispered"
+      }
+    },
+    "afro-soul": {
+      "style_id": "afro-soul",
+      "label": "Afro-Soul",
+      "client_references": {
+        "artists": ["Tems"],
+        "aliases": ["Tems"],
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "warm organic ensemble, rounded bass, acoustic and electric guitar figures, keys, interlocking hand percussion",
+        "avoided_instrumentation": "no bright dance-pop, no full club production, no dembow track",
+        "rhythm": "4/4 pulse with syncopated interlocking subdivisions",
+        "tempo": "80-108 bpm",
+        "vocal_delivery": "soulful melodic clear lead with controlled call and response",
+        "mood": "warm and reflective or gently energetic as the story requires",
+        "arrangement": "spoken consequence close over a light organic figure, complementary percussion as pressure grows",
+        "story_dynamics": "reduce for the intimate realization, restore warmer interlock after the choice",
+        "hook_guidance": "refrain gains emotional warmth through the action already in the scene plan",
+        "constraints": "no fabricated dialect, ethnic identity or cultural claim"
+      }
+    },
+    "country-rap": {
+      "style_id": "country-rap",
+      "label": "Country Rap",
+      "client_references": {
+        "artists": ["Jelly Roll"],
+        "aliases": {"Jelly Roll": ["JellyRoll"]},
+        "reference_songs": []
+      },
+      "production_traits": {
+        "instruments": "picked acoustic guitar, understated country guitar figure, heavy controlled hip-hop kick and snare, deep bass, defined electric-guitar lift",
+        "avoided_instrumentation": "no forced accent or voice clone",
+        "rhythm": "4/4 with a documented half-time pocket",
+        "tempo": "74-100 bpm",
+        "vocal_delivery": "clear conversational rap verses into gritty soulful singing in a strongly sung chorus",
+        "mood": "struggle, regret, resilience and redemption drawn from the approved story",
+        "arrangement": "restrained opening supports twelve seconds of articulated speech, bass and drums grow, arrangement strips for admission",
+        "story_dynamics": "electric guitars and a fully sung chorus deliver the payoff after changed action",
+        "hook_guidance": "big emotional chorus earned by following through",
+        "constraints": "preserve elected voice, language, gender, accent and explicitness; grit is texture, not an imitation"
+      }
+    }
+  }
+}
