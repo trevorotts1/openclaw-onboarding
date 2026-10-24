@@ -131,9 +131,10 @@ RULE 8 — Send the summary as a single Telegram message to CLIENT_CHAT (the ope
   openclaw message send --channel telegram --target "$CLIENT_CHAT" --message "<the summary composed in RULE 6>"
   (If CLIENT_CHAT is empty per RULE 1, do NOT send — log-only; the AGENTS.md UPDATE flag still surfaces the pending update.)
 
-RULE 9 — Wait for the client's reply. Do not exit. Stay alive until they respond OR until 2 hours pass with no response. Every client-facing send in this rule goes to CLIENT_CHAT (resolved in RULE 1 — NEVER allowFrom[0]). On 2-hour timeout, behavior depends on the combined risk level of all pending updates:
-  • LOW or MEDIUM risk — auto-apply the FULL update (DO run the install — the exact command in RULE 10(a); it is the same path the operator's fleet roll runs: onboarding + 999-setup if installed + Command Center + health check with automatic rollback) then send: "You didn't reply in 2 hours so I went ahead and applied the [LOW/MEDIUM]-risk update. Done. Here's what changed: [summary]. Let me know if anything looks off."
-  • HIGH risk — do NOT auto-apply. Send: "I didn't hear back and this update is HIGH risk, so I made no changes. I'll ask again next Sunday. If you want it sooner, just tell me 'install all'." and exit.
+RULE 9 — Wait for the client's reply. Do not exit. Stay alive until they respond OR until 2 hours pass with no response. Every client-facing send in this rule goes to CLIENT_CHAT (resolved in RULE 1 — NEVER allowFrom[0]). On 2-hour timeout with no reply, DO NOT auto-apply anything — OWNER-HOLD POLICY (2026-10-12, owner's explicit instruction): regardless of risk level (LOW, MEDIUM or HIGH), send ONE reminder and exit without installing:
+  • Send: "I didn't hear back about this week's update(s), so I made no changes. I'll ask again next Sunday. If you want it sooner, reply 'install all'."
+  • Write a note in MEMORY.md under "## System Updates": "[DATE]: weekly update offered, no reply within 2h — NOT applied (owner-hold policy). Pending: [list]."
+  • Exit. NEVER run the RULE 10(a) install command from a timeout path, for ANY risk level. The ONLY path that may run an install is the client's (or operator's) explicit reply per RULE 10.
   (Risk level = the highest risk level among all repos that have an available update.)
   If RULE 5.6 found this box's standing verdict to be "blocked", this rule is never reached — RULE 5.6
   already sent the client the explanation and exited the whole cron run before RULE 6. If RULE 5.6 was
@@ -166,7 +167,8 @@ RULE 12 — After install completes, send a final Telegram summary to CLIENT_CHA
 RULE 13 — Forbidden:
   • Do NOT install anything before the client (or the operator) explicitly says yes
   • Do NOT use --force, --no-verify, --break-system-packages, or any shortcut flag
-  • Do NOT silently auto-update HIGH-risk updates without explicit owner approval — see RULE 9 for the LOW/MEDIUM auto-apply exception
+  • Do NOT silently auto-update HIGH-risk updates without explicit owner approval
+  • Do NOT auto-apply on the 2-hour timeout for ANY risk level — installs happen ONLY on the client's explicit reply (see RULE 9 owner-hold policy, 2026-10-12) — see RULE 9 for the LOW/MEDIUM auto-apply exception
   • Do NOT push to GitHub
   • Do NOT message anyone other than the configured client target and (optionally per Rule 10f) the operator (resolved via env.vars.OPERATOR_ESCALATION_CHAT_ID; OPT-IN — if unset, do NOT message any operator; there is no hardcoded operator chat)
   • Do NOT offer install options, and do NOT apply any update, for a client whose standing gate verdict (RULE 5.6) is "blocked" — send the RULE 5.6 message and exit instead

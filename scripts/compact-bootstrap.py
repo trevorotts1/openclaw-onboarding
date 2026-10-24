@@ -194,9 +194,16 @@ build_pointer = _PTR.build_pointer
 POINTER_SENTINEL = _PTR.POINTER_SENTINEL          # "**Full text:**"
 
 # A stamped pointer reads: "**Full text:** /abs/path.md §anchor — read it ..."
-# The path is the first non-space run, exactly as validate-core-references.py's
-# own _POINTER_RE reads it, so the two can never disagree about what resolves.
-POINTER_RE = re.compile(re.escape(POINTER_SENTINEL) + r'\s+(/\S+)(?:\s+§([A-Za-z0-9\-_]+))?')
+# The path can contain SPACES (e.g. ".../References 4 Bootstrap/memory-history.md"),
+# and every stamper ends the pointer with the same em-dash prose tail
+# ("— read it BEFORE acting on this surface; never work from memory."), so the
+# path is everything between the sentinel and that tail (optional " §anchor"
+# directly after the path). A first-non-space-run pattern truncates at the first
+# space and false-FAILs ~90 live pointers per box as "target file missing".
+POINTER_RE = re.compile(
+    re.escape(POINTER_SENTINEL)
+    + r'\s+(/.+?)(?:\s+§([^\s—]+))?\s+—\s'
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
