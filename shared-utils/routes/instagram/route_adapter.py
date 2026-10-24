@@ -9,6 +9,8 @@ What this module exists to guarantee (task T-21 acceptance):
 SEPARATE ACCOUNT.  An Instagram account is its own record: tenant_id,
 account_id, ig_user_id and binding_revision. A Facebook page id never
 resolves an Instagram account and never satisfies an Instagram binding.
+When both Instagram identity keys are supplied they must name the same
+binding; a disagreeing pair is refused, never silently narrowed to one key.
 A changed binding quarantines queued work; it is never rerouted silently.
 
 SEPARATE FILTER.  Comment filters are Instagram-scoped and account-scoped.
@@ -20,17 +22,25 @@ Instagram COMMENT and an inbound Instagram DIRECT message. Facebook Page
 comments, Messenger events and unknown kinds are refused, not adapted.
 
 SEPARATE ELIGIBILITY.  Instagram eligibility is computed from Instagram
-facts only. A comment public reply has its own basis. A comment private
-opener has its own platform permission, and a comment alone is NOT a normal
-inbound-DM window (`inbound_dm_window` is False). A direct message needs an
-actual inbound customer DM. Outbound and cross-channel messages never
-refresh Instagram eligibility, and an eligibility basis carried over from
-Facebook is refused.
+facts only. Each route carries its own basis AND its own granted Instagram
+capability: a public comment reply needs IG_PUBLIC_REPLY, a comment private
+opener needs IG_COMMENT_PRIVATE_OPENER, a DM needs IG_DM_SEND, and a
+capability whose `granted` flag is False is no permission at all. A comment
+alone is NOT a normal inbound-DM window (`inbound_dm_window` is False). A
+direct message needs an actual inbound customer DM. Outbound and
+cross-channel messages never refresh Instagram eligibility, and an
+eligibility basis carried over from Facebook is refused.
 
 IGNORED OPENER, NO DRIP.  Once a private opener is recorded for a thread,
 every follow-up direct message is suppressed until the customer actually
-interacts (a verified inbound DM on that thread). There is no timed drip and
-no second opener. The state is durable, so a restart changes nothing.
+interacts: a verified inbound DM on that thread, proven by the event and the
+durable inbox admission that carries it. There is no timed drip and no second
+opener. The state is durable, so a restart changes nothing.
+
+STOP AND HUMAN OWNER.  The upstream consent gate (consent_gate) decides every
+Instagram dispatch first: a global stop or a human taking the conversation
+suppresses these routes exactly as it does every other one. This adapter
+never decides consent and never sends without that gate's answer.
 
 No second send guard is written here: outbound_gate.dispatch() remains the
 only dispatcher and durable_store remains the only durable outbox. This
@@ -145,6 +155,7 @@ IG_CAPABILITIES = (CAP_COMMENT_PUBLIC_REPLY, CAP_COMMENT_PRIVATE_OPENER,
 # Eligibility refusal reasons. Stable strings so tests and logs can pin them.
 R_ACCOUNT_FB = "ig:no_inferred_fb_parity"
 R_ACCOUNT_BINDING = "ig:account_rebinding"
+R_ACCOUNT_IDENTITY_CONFLICT = "ig:account_identity_conflict"
 R_UNKNOWN_ROUTE = "ig:unsupported_route"
 R_UNSUPPORTED_EVENT = "ig:unsupported_event"
 R_EVENT_ACCOUNT_MISMATCH = "ig:event_account_mismatch"
@@ -152,7 +163,10 @@ R_EVENT_WRONG_KIND = "ig:event_wrong_kind"
 R_FILTER_ACCOUNT_MISMATCH = "ig:filter_account_mismatch"
 R_FILTER_NOT_MATCHED = "ig:comment_filter_not_matched"
 R_CAPABILITY_MISSING = "ig:capability_missing"
+R_CAPABILITY_NOT_GRANTED = "ig:capability_not_granted"
 R_CAPABILITY_FB = "ig:no_inferred_fb_parity"
+R_CONSENT_GATE_REQUIRED = "ig:consent_gate_required"
+R_UNVERIFIED_INTERACTION = "ig:unverified_inbound_interaction"
 R_CHANNEL_PURPOSE_MISMATCH = "ig:channel_purpose_mismatch"
 R_BASIS_NOT_REFRESHING = "ig:eligibility_not_refreshed_by_outbound_or_cross_channel"
 R_OPENER_ALREADY_SENT = "ig:opener_already_sent"
@@ -223,7 +237,9 @@ def resolve_account(accounts: Iterable[InstagramAccount], *,
     """Resolve an Instagram account by Instagram identity only.
 
     A facebook page id is refused even when an account is otherwise supplied:
-    accepting it would infer parity from a Facebook identity.
+    accepting it would infer parity from a Facebook identity. When both
+    Instagram keys are supplied they must name the SAME binding; a pair that
+    disagrees is refused, never silently narrowed to whichever key matched.
     """
     if fb_page_id is not None:
         raise InstagramRouteError(
@@ -232,14 +248,26 @@ def resolve_account(accounts: Iterable[InstagramAccount], *,
     if account_id is None and ig_user_id is None:
         raise InstagramRouteError(
             "bad_input: account_id or ig_user_id is required")
-    matches: List[InstagramAccount] = []
+    rows: List[InstagramAccount] = []
     for account in accounts:
         if not isinstance(account, InstagramAccount):
             raise InstagramRouteError("bad_input: accounts must be InstagramAccount")
-        if account_id is not None and account.account_id == account_id:
-            matches.append(account)
-        elif ig_user_id is not None and account.ig_user_id == ig_user_id:
-            matches.append(account)
+        rows.append(account)
+    if account_id is not None and ig_user_id is not None:
+        for account in rows:
+            if account.account_id == account_id and account.ig_user_id != ig_user_id:
+                raise InstagramRouteError(
+                    "bad_input: %s (account_id %r is bound to ig_user_id %r,"
+                    " not %r)" % (R_ACCOUNT_IDENTITY_CONFLICT, account_id,
+                                  account.ig_user_id, ig_user_id))
+            if account.ig_user_id == ig_user_id and account.account_id != account_id:
+                raise InstagramRouteError(
+                    "bad_input: %s (ig_user_id %r is bound to account_id %r,"
+                    " not %r)" % (R_ACCOUNT_IDENTITY_CONFLICT, ig_user_id,
+                                  account.account_id, account_id))
+    matches = [account for account in rows
+               if (account_id is None or account.account_id == account_id)
+               and (ig_user_id is None or account.ig_user_id == ig_user_id)]
     if len(matches) != 1:
         raise InstagramRouteError(
             "not_found: expected exactly one Instagram account, got %d"
@@ -535,16 +563,19 @@ def evaluate_eligibility(
                        now=ts, detail={"channel": channel})
 
     if purpose in PUBLIC_REPLY_PURPOSES:
+        denied = _capability_denied(capability, CAP_COMMENT_PUBLIC_REPLY,
+                                    purpose, channel, basis, now=ts)
+        if denied is not None:
+            return denied
         return _comment_eligibility(
             account=account, purpose=purpose, channel=channel, route=route,
-            event=event, filter_=filter_, opener=opener, now=ts,
-            require_capability=None)
+            event=event, filter_=filter_, opener=opener, now=ts)
 
     if purpose == PURPOSE_COMMENT_PRIVATE_OPENER:
-        if capability is None or capability.name != CAP_COMMENT_PRIVATE_OPENER:
-            return _denied(R_CAPABILITY_MISSING, purpose, channel, basis,
-                           now=ts,
-                           detail={"required": CAP_COMMENT_PRIVATE_OPENER})
+        denied = _capability_denied(capability, CAP_COMMENT_PRIVATE_OPENER,
+                                    purpose, channel, basis, now=ts)
+        if denied is not None:
+            return denied
         if opener is not None and opener.opener_sent:
             return _denied(R_OPENER_ALREADY_SENT, purpose, channel, basis,
                            now=ts,
@@ -552,12 +583,13 @@ def evaluate_eligibility(
         return _comment_eligibility(
             account=account, purpose=purpose, channel=channel, route=route,
             event=event, filter_=filter_, opener=opener, now=ts,
-            require_capability=None, inbound_dm_window=False)
+            inbound_dm_window=False)
 
     # Follow-up direct messages.
-    if capability is None or capability.name != CAP_DM_SEND:
-        return _denied(R_CAPABILITY_MISSING, purpose, channel, basis,
-                       now=ts, detail={"required": CAP_DM_SEND})
+    denied = _capability_denied(capability, CAP_DM_SEND, purpose, channel,
+                                basis, now=ts)
+    if denied is not None:
+        return denied
 
     if opener is not None and opener.opener_sent and not opener.customer_responded:
         # The opener was ignored: no drip, no second attempt, no timer.
@@ -588,12 +620,30 @@ def evaluate_eligibility(
     )
 
 
+def _capability_denied(capability: Optional[InstagramCapability],
+                       required: str, purpose: str, channel: str, basis: str,
+                       *, now: float) -> Optional[EligibilityVerdict]:
+    """The refusal when the ONE Instagram capability this route needs is off.
+
+    A capability is its name AND its grant: an ungranted capability is not a
+    lesser permission, it is no permission. Returns None when it is granted.
+    """
+    if (not isinstance(capability, InstagramCapability)
+            or capability.name != required):
+        return _denied(R_CAPABILITY_MISSING, purpose, channel, basis, now=now,
+                       detail={"required": required})
+    if not capability.granted:
+        return _denied(R_CAPABILITY_NOT_GRANTED, purpose, channel, basis,
+                       now=now, detail={"required": required,
+                                        "granted": False})
+    return None
+
+
 def _comment_eligibility(*, account: InstagramAccount, purpose: str,
                          channel: str, route: str,
                          event: Optional[InstagramEvent],
                          filter_: Optional[InstagramCommentFilter],
                          opener: Optional[OpenerState], now: float,
-                         require_capability: Optional[str],
                          inbound_dm_window: bool = False) -> EligibilityVerdict:
     if event is None:
         return _denied(R_UNSUPPORTED_EVENT, purpose, channel,
@@ -680,6 +730,28 @@ def _denied(reason: str, purpose: str, channel: str, basis: str, *,
     )
 
 
+def _consent_verdict(consent_evaluator: Any, ctx: Dict[str, Any], *,
+                     now: float,
+                     binding_revision: Optional[str] = None
+                     ) -> Optional[Dict[str, Any]]:
+    """The upstream consent gate's suppression, or None when it says ALLOW.
+
+    The global STOP and the human-ownership fence live upstream in
+    consent_gate; this adapter never decides consent itself. It never sends
+    without that answer either: no evaluator, or an answer that is not the
+    gate's own ALLOW, fails closed to SUPPRESSED.
+    """
+    raw = consent_evaluator(ctx) if callable(consent_evaluator) else None
+    if isinstance(raw, dict) and raw.get("verdict") == ALLOW:
+        return None
+    evidence = (dict(raw.get("evidence"))
+                if isinstance(raw, dict) and isinstance(raw.get("evidence"), dict)
+                else {})
+    evidence.setdefault("reason", R_CONSENT_GATE_REQUIRED)
+    return {"verdict": SUPPRESSED, "checked_at": now,
+            "binding_revision": binding_revision, "evidence": evidence}
+
+
 # ── durable route state (openers and customer interactions) ────────────────
 
 _SCHEMA = """
@@ -703,6 +775,55 @@ CREATE TABLE IF NOT EXISTS ig_customer_interactions (
     PRIMARY KEY (tenant_id, account_id, provider_event_id)
 );
 """
+
+
+def _verified_inbound_interaction(*, tenant_id: str, account_id: str,
+                                  thread_key: str, provider_event_id: str,
+                                  event: Optional[InstagramEvent],
+                                  admission: Any,
+                                  own_actor_ids: Iterable[str]) -> InstagramEvent:
+    """Return the event only when the durable inbox proves it is a customer's.
+
+    The proof is `admission`: the answer admit_instagram_event() got from
+    durable_store for this very event. The inbox row it names must be the same
+    tenant and event id, inbound, and not one of our own actors. No proof, no
+    un-suppression: an outbound event, an own-actor event, an event id the
+    inbox never admitted, or another event's admission is refused.
+    """
+    def refuse(why: str) -> InstagramRouteError:
+        return InstagramRouteError(
+            "bad_input: %s (%s)" % (R_UNVERIFIED_INTERACTION, why))
+
+    if not isinstance(event, InstagramEvent):
+        raise refuse("an Instagram event plus its inbox admission is required")
+    if (event.provider_event_id != provider_event_id
+            or event.tenant_id != tenant_id or event.account_id != account_id
+            or event.thread_key != thread_key):
+        raise refuse("the event does not describe this interaction")
+    if event.direction != DIRECTION_INBOUND:
+        raise refuse("direction %r is not a customer's inbound message"
+                     % event.direction)
+    own = {str(actor) for actor in own_actor_ids}
+    if event.actor_id in own:
+        raise refuse("actor %r is one of our own" % event.actor_id)
+    if not isinstance(admission, dict):
+        raise refuse("no durable inbox admission was supplied")
+    row = admission.get("row")
+    if admission.get("reason") not in ("admitted", "duplicate"):
+        raise refuse("the inbox did not admit this event: %r"
+                     % admission.get("reason"))
+    if not isinstance(row, dict):
+        raise refuse("the inbox admission carries no event row")
+    if (row.get("provider_event_id") != provider_event_id
+            or row.get("tenant_id") != tenant_id):
+        raise refuse("the admission belongs to another event")
+    if row.get("direction") != DIRECTION_INBOUND:
+        raise refuse("the inbox recorded direction %r" % row.get("direction"))
+    if str(row.get("decision_ref") or "").startswith("excluded:"):
+        raise refuse("the inbox excluded this event: %s" % row.get("decision_ref"))
+    if row.get("actor_id") is not None and row.get("actor_id") in own:
+        raise refuse("the inbox recorded our own actor")
+    return event
 
 
 class InstagramRouteStore:
@@ -764,22 +885,27 @@ class InstagramRouteStore:
 
     def record_customer_interaction(self, *, tenant_id: str, account_id: str,
                                     thread_key: str, provider_event_id: str,
-                                    kind: str = EVENT_DIRECT,
+                                    event: Optional[InstagramEvent] = None,
+                                    admission: Any = None,
+                                    own_actor_ids: Iterable[str] = (),
                                     now: Optional[float] = None) -> bool:
-        """Record a verified inbound customer interaction for a thread.
+        """Record a VERIFIED inbound customer interaction for a thread.
 
-        Deduped by provider event id. Returns True only for the first record.
-        This is the only thing that ends the ignored-opener state.
+        Proof is required, not caller convention: pass the customer's own
+        inbound `event` and the `admission` record admit_instagram_event()
+        returned for it. Anything else is refused and NEVER ends the
+        ignored-opener state. Deduped by provider event id, so the same
+        delivered event keeps one row and returns False from then on.
         """
         for name, value in (("tenant_id", tenant_id),
                             ("account_id", account_id),
                             ("thread_key", thread_key),
                             ("provider_event_id", provider_event_id)):
             _id(value, name)
-        if kind not in EVENT_KINDS:
-            raise InstagramRouteError(
-                "bad_input: %s (interaction kind %r not in %s)"
-                % (R_UNSUPPORTED_EVENT, kind, EVENT_KINDS))
+        proven = _verified_inbound_interaction(
+            tenant_id=tenant_id, account_id=account_id, thread_key=thread_key,
+            provider_event_id=provider_event_id, event=event,
+            admission=admission, own_actor_ids=own_actor_ids)
         ts = _ts(now)
         self._db.execute("BEGIN IMMEDIATE")
         try:
@@ -787,7 +913,8 @@ class InstagramRouteStore:
                 "INSERT OR IGNORE INTO ig_customer_interactions"
                 " (tenant_id, account_id, thread_key, provider_event_id,"
                 " kind, received_at) VALUES (?,?,?,?,?,?)",
-                (tenant_id, account_id, thread_key, provider_event_id, kind, ts),
+                (tenant_id, account_id, thread_key, provider_event_id,
+                 proven.kind, ts),
             )
             created = cur.rowcount == 1
             if created:
@@ -839,11 +966,18 @@ def make_gate_evaluator(
     The evaluator reads durable opener state on every call, so a customer
     reply or an ignored opener changes the answer without a restart. It never
     caches a verdict and never returns ALLOW by default.
+
+    `consent_evaluator` is the upstream consent gate (`consent_gate.
+    make_gate_evaluator`): the global STOP and the human-ownership fence
+    decide first. This adapter never decides consent itself and never sends
+    without that answer — none, or anything but its ALLOW, is SUPPRESSED.
     """
     if not isinstance(account, InstagramAccount):
         raise InstagramRouteError("bad_input: account must be InstagramAccount")
     if not isinstance(route_store, InstagramRouteStore):
         raise InstagramRouteError("bad_input: route_store must be InstagramRouteStore")
+    if consent_evaluator is not None and not callable(consent_evaluator):
+        raise InstagramRouteError("bad_input: consent_evaluator must be callable")
     _id(thread_key, "thread_key")
     _route_for(purpose, channel)  # fail loudly on an unsupported pairing
     clock = now_fn or time.time
@@ -862,10 +996,11 @@ def make_gate_evaluator(
                              "action_binding_revision": bound,
                              "current_binding_revision": account.binding_revision},
             }
-        if consent_evaluator is not None:
-            consent = consent_evaluator(dict(ctx, channel=channel))
-            if consent.get("verdict") != ALLOW:
-                return consent
+        blocked = _consent_verdict(
+            consent_evaluator, dict(ctx, channel=channel), now=ts,
+            binding_revision=account.binding_revision)
+        if blocked is not None:
+            return blocked
         opener = route_store.opener_state(
             account.tenant_id, account.account_id, thread_key)
         verdict = evaluate_eligibility(
@@ -985,6 +1120,18 @@ def _selfcheck() -> int:
     except InstagramRouteError as exc:
         ok(R_ACCOUNT_FB in str(exc), "fb page id refused")
 
+    # separate account: two identity keys that disagree are refused.
+    try:
+        resolve_account([account], account_id="ig-acct-1",
+                        ig_user_id="1784-DOES-NOT-MATCH")
+        ok(False, "disagreeing identity keys refused")
+    except InstagramRouteError as exc:
+        ok(R_ACCOUNT_IDENTITY_CONFLICT in str(exc),
+           "disagreeing identity keys refused")
+    ok(resolve_account([account], account_id="ig-acct-1",
+                       ig_user_id="17841400000000001") is account,
+       "agreeing identity keys still resolve")
+
     # separate filter: foreign platform and foreign account match nothing.
     try:
         InstagramCommentFilter(filter_id="x", account_id="a", revision="r",
@@ -1014,9 +1161,18 @@ def _selfcheck() -> int:
         "thread_key": "c1", "comment_id": "c1", "received_at": 10})
     v_public = evaluate_eligibility(
         account=account, purpose=PURPOSE_PUBLIC_REPLY,
-        channel=CHANNEL_IG_PUBLIC, event=event, filter_=filter_)
+        channel=CHANNEL_IG_PUBLIC, event=event, filter_=filter_,
+        capability=InstagramCapability(CAP_COMMENT_PUBLIC_REPLY))
     ok(v_public.allowed and v_public.inbound_dm_window is False,
        "public reply allowed without a DM window")
+    ungranted = evaluate_eligibility(
+        account=account, purpose=PURPOSE_PUBLIC_REPLY,
+        channel=CHANNEL_IG_PUBLIC, event=event, filter_=filter_,
+        capability=InstagramCapability(CAP_COMMENT_PUBLIC_REPLY,
+                                       granted=False))
+    ok(not ungranted.allowed
+       and ungranted.reason == R_CAPABILITY_NOT_GRANTED,
+       "an ungranted capability authorizes nothing")
     v_open = evaluate_eligibility(
         account=account, purpose=PURPOSE_COMMENT_PRIVATE_OPENER,
         channel=CHANNEL_IG_DM, event=event, filter_=filter_,
@@ -1030,9 +1186,10 @@ def _selfcheck() -> int:
     ok(not v_fb_basis.allowed and v_fb_basis.reason == R_BASIS_NOT_REFRESHING,
        "outbound basis never refreshes eligibility")
 
-    # ignored opener: no drip until a verified customer interaction.
-    route_path = Path(tempfile.mkdtemp(prefix="ig-route-selfcheck-")) / "r.sqlite"
-    route_store = InstagramRouteStore(str(route_path))
+    # ignored opener: no drip until a VERIFIED customer interaction.
+    workdir = Path(tempfile.mkdtemp(prefix="ig-route-selfcheck-"))
+    inbox = _upstream("durable_store").DurableStore(str(workdir / "inbox.sqlite"))
+    route_store = InstagramRouteStore(str(workdir / "r.sqlite"))
     route_store.record_opener(tenant_id="t1", account_id="ig-acct-1",
                               thread_key="th1", opener_action_id="act-1",
                               comment_id="c1", now=20)
@@ -1043,18 +1200,34 @@ def _selfcheck() -> int:
         capability=InstagramCapability(CAP_DM_SEND), now=30)
     ok(not drip.allowed and drip.reason == R_IGNORED_OPENER,
        "ignored opener blocks every follow-up")
-    route_store.record_customer_interaction(
+    try:
+        route_store.record_customer_interaction(
+            tenant_id="t1", account_id="ig-acct-1", thread_key="th1",
+            provider_event_id="dm-1", now=35)
+        ok(False, "an unverified interaction is refused")
+    except InstagramRouteError as exc:
+        ok(R_UNVERIFIED_INTERACTION in str(exc),
+           "an unverified interaction is refused")
+    dm = normalise_event({
+        "provider": "instagram", "provider_event_id": "dm-1", "tenant_id": "t1",
+        "account_id": "ig-acct-1", "kind": "DIRECT", "direction": "inbound",
+        "actor_id": "customer-1", "text": "yes", "thread_key": "th1",
+        "received_at": 38})
+    admission = admit_instagram_event(inbox, dm)
+    ok(route_store.record_customer_interaction(
         tenant_id="t1", account_id="ig-acct-1", thread_key="th1",
-        provider_event_id="dm-1", now=40)
+        provider_event_id="dm-1", event=dm, admission=admission, now=40),
+       "a verified interaction ends the ignored state")
     state = route_store.opener_state("t1", "ig-acct-1", "th1")
     ok(state.opener_sent and state.customer_responded,
-       "customer interaction ends the ignored state")
+       "the verified interaction is on the thread's durable state")
     second_opener = route_store.record_opener(
         tenant_id="t1", account_id="ig-acct-1", thread_key="th1",
         opener_action_id="act-2", now=50)
     ok(second_opener[1] is False and second_opener[0]["opener_action_id"] == "act-1",
        "a thread never gets a second opener")
     route_store.close()
+    inbox.close()
 
     print("OK %d PASS" % passed)
     return 0
