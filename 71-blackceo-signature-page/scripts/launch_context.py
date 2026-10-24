@@ -241,23 +241,27 @@ def _load_schema(skill_root, kind):
             f"without it")
 
 
-def _shared_candidates(skill_root, rel):
+def _shared_candidates(skill_root, rel, allow_vendored=True):
     """Where a shared component may live, most-canonical first.
 
     Beside the skill's tree is the repository layouts (onboarding and 999).
     A lone-directory install has no sibling tree, so a distributor may vendor
-    the component inside the skill instead; both are accepted, and the refusal
-    names every place that was searched.
+    a *component* inside the skill; both are accepted, and the refusal names
+    every place that was searched.
+
+    ``allow_vendored=False`` is for authority artifacts: the prompt-policy
+    registry of record decides whether a citation is valid, so a copy shipped
+    inside the skill could certify the skill's own citations. That one is read
+    from the shared tree only.
     """
     root = Path(skill_root)
     name = Path(rel).name
     parent_rel = Path(rel).relative_to("shared-utils") if rel.startswith("shared-utils/") else Path(rel)
-    return (
-        root.parent / rel,
-        root / rel,
-        root / "repo-integration" / "shared" / parent_rel,
-        root / "repo-integration" / "shared" / name,
-    )
+    candidates = [root.parent / rel, root / rel]
+    if allow_vendored:
+        candidates += [root / "repo-integration" / "shared" / parent_rel,
+                       root / "repo-integration" / "shared" / name]
+    return tuple(candidates)
 
 
 def _registry_policy_ids(skill_root):
@@ -267,7 +271,8 @@ def _registry_policy_ids(skill_root):
     registry that can be read, so an unreadable or malformed registry
     refuses the import rather than letting the citation pass
     unverified."""
-    candidates = _shared_candidates(skill_root, PROMPT_POLICY_REGISTRY_REF)
+    candidates = _shared_candidates(skill_root, PROMPT_POLICY_REGISTRY_REF,
+                                    allow_vendored=False)
     path = next((c for c in candidates if c.is_file()), candidates[0])
     try:
         registry = json.loads(path.read_text(encoding="utf-8"))
