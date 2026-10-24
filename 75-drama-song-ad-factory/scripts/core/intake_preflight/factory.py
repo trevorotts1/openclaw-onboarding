@@ -2421,6 +2421,10 @@ def _next_ai_roles(run_dir):
 
 def cmd_next(a):
     """Expose the admitted role dispatch alongside the existing stage plan."""
+    # Restart an outdated process before intake handoff, authority inspection
+    # or reconciliation can inspect or change any run state.
+    if _stale_session()[0]:
+        return _next_stage(a)
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
     # An incomplete intake remains the primary gate; it has not bound its AI
     # answer yet and must not be told to replace it with a default model pair.
