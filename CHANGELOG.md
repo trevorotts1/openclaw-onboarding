@@ -1,3 +1,10 @@
+## [Unreleased]  -  2026-10-24  -  PBB-070 / T-47: cross-repository compatibility manifest and deployment evidence
+
+- Adds `implementation/pbb-070/compatibility-manifest.json` and `implementation/pbb-070/DEPLOYMENT-EVIDENCE.md`. The manifest binds openclaw-onboarding `bccc4050f`, 999-setup `1d1545fc8`, and blackceo-command-center `ef6b9364e` (pinned tag v7.6.112) by exact commit, names the interfaces that were checked, and marks every interface that is not proven.
+- In plain English: a human can now see which three code checkouts were checked against each other, how each commit was read, and where the pairing still has a hole.
+- Nothing is deployed. Two gaps are recorded, not papered over: the Skill 71 `/api/skill-runs/ingest` receiver is absent at the Command Center pin (present only on unpinned main), and the 999-setup vendored skill trees lag canonical main.
+- Risk level: LOW (documentation only; no runtime, installer, or skill-behavior change).
+
 ## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
 
 ## [v27.1.64]  -  2026-10-22  -  W10 canary: A12 runtime-proof harness and the A-row execution runner
