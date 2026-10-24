@@ -51,6 +51,21 @@ class DurationOwnerContract(unittest.TestCase):
                 encoded = json.dumps(q, sort_keys=True, separators=(",", ":")).encode()
                 self.assertEqual(hashlib.sha256(encoded).hexdigest(), QUESTION_SHA256[q["id"]])
 
+    def test_agnes_supplement_reaches_each_renderer_without_changing_choices(self):
+        from choice_card.intake_card.agnes_explanation import lines
+        q = IC._agnes_q("unknown")
+        expected_options = list(q["options"])
+        expected = lines()
+        full = IC.render_card([q])
+        step = IC.render_step(1, [q])
+        screen = IC.studio_questions([q])[0]
+        self.assertEqual(screen["supplementary_explanation"], expected)
+        for paragraph in expected:
+            self.assertIn(paragraph, full)
+            self.assertIn(paragraph, step)
+        self.assertEqual(q["options"], expected_options)
+        self.assertEqual([o["text"] for o in screen["options"]], [o[0] for o in expected_options])
+
     def test_ordinary_menu_is_canonical_six(self):
         q = next(q for q in IC.QUESTIONS if q["id"] == "length")
         self.assertEqual(seconds(q), MS.CANONICAL_DURATION_S)

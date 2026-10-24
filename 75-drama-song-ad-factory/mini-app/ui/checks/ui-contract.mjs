@@ -13,7 +13,9 @@
 //
 //   node checks/ui-contract.mjs
 // =============================================================================
-import { DEFAULT_OPTIONS, PAGES } from "../studio.js";
+import { DEFAULT_OPTIONS, PAGES, state, render } from "../studio.js";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { ENTRYPOINTS } from "../api-client.js";
 import { encode, toSvg, toElement } from "../qr.js";
 import { verifyDownload, verifyBytes, triggerSave } from "../download.js";
@@ -62,6 +64,39 @@ const goodVerdict = verifyBytes({
 rule("verifier accepts a real 200 + attachment + matching length", goodVerdict.ok === true);
 rule("a save is only offered through triggerSave()", typeof triggerSave === "function");
 rule("verifyDownload() is exported for the delivery page", typeof verifyDownload === "function");
+
+// Exercise the actual question renderer with the canonical Agnes export.
+// No browser service or provider is called, and neither option is selected.
+const cardPath = fileURLToPath(new URL("../../../scripts/core/choice_card/intake_card/intake_card.py", import.meta.url));
+const exported = JSON.parse(execFileSync("python3", [cardPath, "--format", "studio-json"], { encoding: "utf8" }));
+const agnes = exported.questions.find((q) => q.id === "agnes");
+const walk = (n) => [n, ...(n.children || []).flatMap(walk)];
+function element(tag) {
+  return {
+    tagName: tag.toUpperCase(), children: [], attrs: {}, style: {}, textContent: "", listeners: {},
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    append(...nodes) { this.children.push(...nodes.filter(Boolean)); },
+    replaceChildren(...nodes) { this.children = nodes.filter(Boolean); },
+    addEventListener(k, fn) { this.listeners[k] = fn; },
+    querySelector(selector) { return walk(this).find((n) => n.tagName === selector.toUpperCase()); },
+    focus() {},
+  };
+}
+const nodes = Object.fromEntries(["main", "steps-nav", "rail", "rail-fill", "step-label", "status"].map((id) => [id, element("div")]));
+globalThis.document = { createElement: element, getElementById: (id) => nodes[id] || null };
+Object.assign(state, { page: "questions", questions: [agnes], visible: [agnes], visibleFrom: null, qIndex: 0, picks: [], texts: [], replies: [] });
+state.visibleFrom = state.questions;
+render();
+const drawn = walk(nodes.main);
+const paragraphs = drawn.filter((n) => n.tagName === "P").map((n) => n.textContent);
+const radios = drawn.filter((n) => n.tagName === "INPUT" && n.attrs.type === "radio");
+rule("Agnes supplementary explanation is drawn by the actual consumer",
+  Array.isArray(agnes.supplementary_explanation) && agnes.supplementary_explanation.length > 0
+    && agnes.supplementary_explanation.every((text) => paragraphs.includes(text)));
+rule("Agnes retains both exact option identities and no automatic pick",
+  radios.length === 2 && radios.map((n) => n.attrs.value).join(",") === "1,2"
+    && radios.every((n) => !n.checked) && state.picks.length === 0);
+delete globalThis.document;
 
 console.log(results.join("\n"));
 if (failures > 0) {

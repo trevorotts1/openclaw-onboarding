@@ -15,6 +15,8 @@ Nothing here calls a provider: the card builds text and reads one local guide.
 
 Run: python3 -m pytest -q S75/scripts/core/choice_card/intake_card/test_purpose_agnes.py
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -69,6 +71,25 @@ def _plan(purpose=None, where=None, client_dir=None, overrides=None):
         replies.append(r)
         qs = IC._shaped(IC.QUESTIONS, answers, client_dir)
     return qs, replies
+
+
+def _run_interactive_card(run, replies):
+    """Each explicit answer follows the exact rendered session receipt."""
+    args = ["--step", "--purpose-flow", "--run-dir", run, "--format", "session-json"]
+
+    def turn(extra=()):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rc = IC.main(args + list(extra))
+        state = json.loads(output.getvalue())
+        assert rc == 0, state
+        return state
+
+    state = turn()
+    for reply in replies:
+        state = turn(["--question-id", state["question_id"],
+                      "--question-digest", state["question_digest"], "--reply", reply])
+    return state
 
 
 def _ids(qs):
@@ -253,9 +274,8 @@ def test_run_dir_writes_method_json_and_the_agnes_block(tmp_path, monkeypatch):
     run = str(tmp_path / "run")
     os.makedirs(run)
     _, replies = _plan(purpose=4, where=1)
-    assert IC.main(["--step", "--purpose-flow", "--run-dir", run, "--format", "text"]
-                   + [x for r in replies for x in ("--reply", r)]
-                   + ["--reply", "yes"]) == 0
+    state = _run_interactive_card(run, replies + ["yes"])
+    assert state["done"] is True
 
     with open(os.path.join(run, "control", "method.json"), encoding="utf-8") as fh:
         method = json.load(fh)
@@ -278,15 +298,32 @@ def test_a_testimonial_run_records_its_permission_answer(tmp_path, monkeypatch):
     run = str(tmp_path / "run")
     os.makedirs(run)
     _, replies = _plan(purpose=2)
-    assert IC.main(["--step", "--purpose-flow", "--run-dir", run, "--format", "text"]
-                   + [x for r in replies for x in ("--reply", r)]
-                   + ["--reply", "yes"]) == 0
+    state = _run_interactive_card(run, replies + ["yes"])
+    assert state["done"] is True
     with open(os.path.join(run, "control", "method.json"), encoding="utf-8") as fh:
         method = json.load(fh)
     assert method["purpose"] == "testimonial"
     assert method["platform"] is None
     assert method["output_types"] == ["MASTER_EPISODE"]
     assert method["testimonial_permission"] == "yes"
+
+
+def test_stateful_cli_refuses_unseen_and_bulk_answers(tmp_path):
+    run = str(tmp_path / "run")
+    args = ["--step", "--purpose-flow", "--run-dir", run, "--format", "session-json"]
+    _, replies = _plan(purpose=4, where=1)
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        rc = IC.main(args + [x for reply in replies for x in ("--reply", reply)])
+    state = json.loads(output.getvalue())
+    assert rc == 2 and state["reason_code"] == "QUESTION_NOT_PRESENTED"
+    assert state["answered_count"] == 0 and state["done"] is False
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        rc = IC.main(args + [x for reply in replies for x in ("--reply", reply)])
+    state = json.loads(output.getvalue())
+    assert rc == 2 and state["reason_code"] == "ONE_REPLY_AT_A_TIME"
+    assert state["answered_count"] == 0 and state["done"] is False
 
 
 def test_permission_not_yet_waits_and_writes_nothing(tmp_path, monkeypatch):
