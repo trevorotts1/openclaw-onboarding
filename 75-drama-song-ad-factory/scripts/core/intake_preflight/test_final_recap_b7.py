@@ -40,9 +40,11 @@ import spend_ledger as SL                            # noqa: E402
 import state_store as SS                             # noqa: E402
 from batch_mode.batch import STAGES                  # noqa: E402
 from kie_dispatch import model_lock as ML            # noqa: E402
+from test_factory_method_agnes import confirmed_fixture, complete_fixture_stage, storyboard_fixture
+from test_production_process import approve_script
 
 RID = "b7-recap-60s"
-MODEL = "minimax-h3/image-to-video"
+MODEL = "minimax-h3/*"  # the exact H3 family lock written by the approved card
 VIDEO = "video-generation"
 OWNER = "b7-test"
 
@@ -73,31 +75,26 @@ def _seed(tmp):
     """A run whose next stage is video-generation, built only from real
     run-dir sources: shot list, a picked song on disk, the ledger, the state
     store and the locked video model."""
-    run = os.path.join(tempfile.mkdtemp(dir=tmp, prefix="b7-"), "run")
-    os.makedirs(os.path.join(run, "control"))
-    os.makedirs(os.path.join(run, "music"))
+    run = os.path.join(tempfile.mkdtemp(dir=tmp, prefix="b7-"), RID)
+    confirmed_fixture(run, video_model="minimax-h3/image-to-video")
+    for stage, _ in STAGES:
+        if stage == VIDEO:
+            break
+        complete_fixture_stage(run, stage)
+        if stage == "script-lyrics":
+            approve_script(run)
+    os.makedirs(os.path.join(run, "music"), exist_ok=True)
     with open(os.path.join(run, "music", "picked-song.mp3"), "wb") as f:
         f.write(b"the picked master, as the song stage leaves it")
     _w(os.path.join(run, "song-choices", "pick.json"),
        {"pick": 2, "label": "warm-live-band",
         "sha256": _sha(os.path.join(run, "music", "picked-song.mp3"))})
-    _w(os.path.join(run, "storyboard", "shot-list.json"),
-       {"shots": [{"shot_id": "s1", "song_start": 0.0, "song_end": 30.0,
-                   "action": "open on the two leads"},
-                  {"shot_id": "s2", "song_start": 30.0, "song_end": 60.0,
-                   "action": "close on the empty room"}]})
-    _w(os.path.join(run, "storyboard", "approval.json"), {"state": "approved"})
-    SL.init_run(os.path.join(run, "spend.sqlite3"), RID, ceiling=50000,
-                currency="USD")
-    ids = [s for s, _ in STAGES]
-    with SS.Store(os.path.join(run, "control", "state.sqlite3")) as st:
-        st.init_run(RID, ids)
-        for s in ids[:ids.index(VIDEO)]:
-            st.transition(RID, s, "READY", "seed")
-            st.claim(RID, s, "seed")
-            st.transition(RID, s, "COMPLETE", "seed")
-        st.transition(RID, VIDEO, "READY", "seed")
-    ML.lock_run_model(os.path.join(run, "control", "state.sqlite3"), RID, MODEL)
+    storyboard_fixture(run, shots=[
+        {"shot_id": "s1", "song_start": 0.0, "song_end": 30.0,
+         "action": "open on the two leads"},
+        {"shot_id": "s2", "song_start": 30.0, "song_end": 60.0,
+         "action": "close on the empty room"}], approve=True)
+    SL.init_run(os.path.join(run, "spend.sqlite3"), RID, ceiling=50000, currency="USD")
     return run
 
 
@@ -211,6 +208,9 @@ def main():
         shots = json.load(f)
     shots["shots"].append({"shot_id": "s3", "song_start": 60.0, "song_end": 75.0})
     _w(shots_path, shots)
+    # The client sees/approves the changed storyboard through its own gate;
+    # the separate production Go still binds the OLD recap and must stay stale.
+    storyboard_fixture(run, shots=shots["shots"], approve=True)
     check("a run changed after the recap refuses the video stage",
           _next(run).get("reason_code") == FR.RECAP_STALE,
           "reason_code=%r" % _next(run).get("reason_code"))
