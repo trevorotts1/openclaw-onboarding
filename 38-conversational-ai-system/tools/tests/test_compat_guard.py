@@ -4,9 +4,14 @@
 Run: python3 -m unittest discover -s tools/tests  (from the skill root)
  or: python3 tools/tests/test_compat_guard.py
 
-Proves the four refusals the unit exists for:
+Proves the refusals the unit exists for:
 
   * compare-and-swap refuses a stale writer and leaves the record untouched;
+  * two real processes holding the same generation produce exactly one write
+    and one StaleWriteError - the check and the write are one atomic step;
+  * a migration racing a CAS write never regresses the generation, never eats
+    the CAS payload, and a replay with the consumed generation is refused;
+  * a write that would lower the on-disk generation is refused by name;
   * a migration run twice is idempotent and the second run is a byte-identical
     no-op (sha256 compared, not assumed);
   * a record newer than this code understands is refused with a named error
@@ -20,6 +25,8 @@ valid record, so a passing suite cannot come from a check that always fails.
 
 import hashlib
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -264,6 +271,136 @@ class TestForwardRepair(_Base):
         self.assertEqual(second["status"], "ok")
         self.assertFalse(second["wrote"])
         self.assertEqual(second["action"], "none")
+
+
+# A real second interpreter per writer. It stalls after its read at a
+# two-party barrier (and, for the migrate side, until the CAS write lands), so
+# the check-then-write interleaving that used to lose data is reproduced
+# deterministically instead of by luck. Under the record lock the stall simply
+# times out and the second writer sees the first writer's generation.
+_CHILD_SRC = '''
+import json, os, sys, time
+sys.path.insert(0, os.environ["CG_TOOLS"])
+import compat_guard as guard
+
+record = os.environ["CG_RECORD"]
+barrier = os.environ["CG_BARRIER"]
+name = os.environ["CG_NAME"]
+role = os.environ["CG_ROLE"]
+expect = int(os.environ["CG_EXPECT"])
+os.makedirs(barrier, exist_ok=True)
+original_read = guard.read_record
+
+
+def read_then_stall(path):
+    rec = original_read(path)                # the snapshot the writer keeps
+    open(os.path.join(barrier, name + ".ready"), "w").close()
+    deadline = time.time() + 2.0
+    while time.time() < deadline and len(os.listdir(barrier)) < 2:
+        time.sleep(0.02)
+    if role == "migrate":                    # let the CAS write land first
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            with open(record, encoding="utf-8") as handle:
+                if json.load(handle)["writer_generation"] >= expect + 1:
+                    break
+            time.sleep(0.02)
+    return rec
+
+
+guard.read_record = read_then_stall
+try:
+    if role == "cas":
+        out = guard.cas_update(record, expect,
+                               lambda d: {**d, "payload": name},
+                               known_version=3)
+        print("WROTE gen=%d payload=%s"
+              % (out["writer_generation"], out["data"].get("payload")))
+    else:
+        guard.migrate(record, {2: lambda d: {**d, "migrated": True}},
+                      known_version=3)
+        with open(record, encoding="utf-8") as handle:
+            print("MIGRATED gen=%d" % json.load(handle)["writer_generation"])
+except Exception as exc:
+    print("REFUSED %s: %s" % (type(exc).__name__, exc))
+'''
+
+
+class TestAtomicCheckAndWrite(_Base):
+    """The generation check and the write are one atomic step."""
+
+    def _run_two(self, roles):
+        barrier = self.dir / "barrier"
+        base_env = dict(os.environ)
+        base_env["PYTHONDONTWRITEBYTECODE"] = "1"
+        base_env["CG_TOOLS"] = str(TOOLS_DIR)
+        base_env["CG_RECORD"] = str(self.path)
+        base_env["CG_BARRIER"] = str(barrier)
+        base_env["CG_EXPECT"] = "7"
+        procs = [
+            subprocess.Popen(
+                [sys.executable, "-I", "-c", _CHILD_SRC],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                env=dict(base_env, CG_NAME=name, CG_ROLE=role),
+            )
+            for name, role in roles
+        ]
+        out = []
+        for proc in procs:
+            text, _ = proc.communicate(timeout=60)
+            self.assertEqual(proc.returncode, 0, text)
+            out.append(text.strip())
+        return out
+
+    def test_two_writers_at_one_generation_produce_exactly_one_write(self):
+        self.good(generation=7, data={"payload": "original"})
+        out = self._run_two([("A", "cas"), ("B", "cas")])
+        wrote = [line for line in out if line.startswith("WROTE")]
+        refused = [line for line in out if line.startswith("REFUSED StaleWriteError")]
+        self.assertEqual(len(wrote), 1, "exactly one writer may win: %r" % out)
+        self.assertEqual(
+            len(refused), 1, "the loser must be refused by name: %r" % out
+        )
+        winner = wrote[0].split("payload=")[1]
+        final = self.read()
+        self.assertEqual(final["writer_generation"], 8)
+        self.assertEqual(
+            final["data"]["payload"], winner, "the winning payload must survive"
+        )
+        self.assertNotEqual(final["data"]["payload"], "original")
+
+    def test_migration_racing_cas_never_regresses_the_generation(self):
+        self.good(generation=7, data={"payload": "original"})
+        out = self._run_two([("A", "cas"), ("B", "migrate")])
+        self.assertTrue(any(line.startswith("WROTE") for line in out), out)
+        self.assertTrue(any(line.startswith("MIGRATED") for line in out), out)
+        final = self.read()
+        self.assertEqual(
+            final["writer_generation"], 8, "the generation must never regress: %r" % out
+        )
+        self.assertTrue(final["data"].get("migrated"))
+        self.assertEqual(
+            final["data"]["payload"], "A", "the CAS payload must survive the migration"
+        )
+        with self.assertRaises(guard.StaleWriteError):
+            guard.cas_update(self.path, 7, lambda d: d, known_version=3)
+
+    def test_write_that_lowers_the_generation_is_refused(self):
+        self.good(generation=5, data={"n": 1})
+        before = _sha(self.path)
+        with self.assertRaises(guard.GenerationRegressionError) as ctx:
+            # the write-time generation guard itself
+            guard._commit(
+                self.path, {"version": 1, "writer_generation": 4, "data": {"n": 1}}
+            )
+        self.assertEqual((ctx.exception.attempted, ctx.exception.on_disk), (4, 5))
+        self.assertEqual(_sha(self.path), before, "a refused regression must not write")
+
+    def test_migration_carries_the_generation_forward_unchanged(self):
+        self.good(version=1, generation=5, data={"n": 1})
+        guard.migrate(self.path, {2: lambda d: {**d, "m": True}}, known_version=2)
+        self.assertEqual(self.read()["writer_generation"], 5)
+        self.assertTrue(self.read()["data"]["m"])
 
 
 if __name__ == "__main__":
