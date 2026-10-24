@@ -250,6 +250,8 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
     never synthesized defaults. dispatch_kwargs supplies normal ledger, budget,
     attempt and adapter credentials through the dispatch API. Its menu/approval
     refusal is returned unchanged; this wrapper never bypasses those gates.
+    Real execution requires dispatch_kwargs.stage to name video-generation or
+    qc-retakes; vocal separation does not restart the completed music stage.
     """
     import shutil
     import tempfile
@@ -259,6 +261,11 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
     _need(not ({"model", "request", "save_dir", "run_id"} & set(dispatch_kwargs)),
           "LIPSYNC_PROVIDER_MAPPING_MISSING", "dispatcher identity cannot be overridden")
     def run(request):
+        production_stage = dispatch_kwargs.get("stage")
+        if dispatch_fn is None or production_stage is not None:
+            _need(production_stage in ("video-generation", "qc-retakes"),
+                  "LIPSYNC_PRODUCTION_STAGE_REQUIRED",
+                  "name the actual video-generation or qc-retakes stage before vocal separation")
         # F15: this run's own recorded card approval is required on EVERY
         # dispatch path, injected dispatcher or not -- the gate never depends
         # on which callable is handed in.
@@ -285,7 +292,10 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
         if dispatch is None:
             from kie_dispatch.kie_dispatch import dispatch
         payload = {"model": MODEL, "input": inp, "run_dir": str(root),
+                   "request_kind": "lipsync-vocal-separation",
                    "card_receipt": approval}
+        if production_stage is not None:
+            payload["production_stage"] = production_stage
         result = dispatch(model=MODEL, request=payload,
                           save_dir=str(output_dir), run_id=request["run_id"], **dispatch_kwargs)
         if result.get("outcome") != "ok":

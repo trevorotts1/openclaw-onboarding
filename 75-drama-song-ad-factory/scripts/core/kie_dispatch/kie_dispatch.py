@@ -1008,9 +1008,32 @@ def resolve_adapter(explicit=None):
 GENERATION_CMDS = frozenset({"submit", "create", "generate", "extend"})
 
 
-def make_runner(timeout=300):
-    """Real Skill 74 subprocess. The tests never use this."""
+def make_runner(timeout=300, *, process_context=None):
+    """Real Skill 74 subprocess; paid commands require current run authority.
+
+    Injected test runners are an offline seam, not production evidence. The
+    real runner independently checks authority, including when passed back to
+    dispatch as an injected callable or wrapped by another Python function.
+    """
     def _run(argv):
+        cmd = str(argv[1]) if len(argv) > 1 else ""
+        if cmd in GENERATION_CMDS:
+            if not isinstance(process_context, dict):
+                raise DispatchError("PRODUCTION_CONTEXT_REQUIRED: use governed dispatch")
+            args = list(argv)
+            try:
+                req_path = args[args.index("--request") + 1]
+                with open(req_path, encoding="utf-8") as f:
+                    current_request = json.load(f)
+            except (ValueError, IndexError, OSError) as exc:
+                raise DispatchError("PRODUCTION_REQUEST_UNREADABLE: %s" % exc) from exc
+            if L.digest_request(current_request) != process_context["request_digest"]:
+                raise DispatchError("PRODUCTION_REQUEST_CHANGED: prepare the request again")
+            receipt = production_process_admission(
+                request=current_request, **process_context["arguments"])
+            if not receipt.get("ok"):
+                raise DispatchError("%s: %s" % (
+                    receipt.get("reason_code"), receipt.get("detail")))
         def once():
             r = subprocess.run([sys.executable] + list(argv),
                                capture_output=True, text=True, timeout=timeout,
@@ -1019,9 +1042,10 @@ def make_runner(timeout=300):
         # Load governor: only NEW generation requests (submit) draw from the
         # 20-per-10-s bucket; health/preflight/wait/save use the gentle poll
         # limiter. A 429 means the job did not run: back off and resubmit.
-        cmd = str(argv[1]) if len(argv) > 1 else ""
         return _LG.kie_request(once, label=" ".join(str(a) for a in argv[1:4]),
                                generation=cmd in GENERATION_CMDS)
+    _run._s75_live_runner = True
+    _run._s75_bind = lambda context: make_runner(timeout, process_context=context)
     return _run
 
 
@@ -1208,7 +1232,10 @@ def check_script_approval_gate(model, request, save_dir=None):
     """SCRIPT APPROVAL: a music job for a run whose client asked to approve the
     script first refuses until the script is approved. Others untouched."""
     req = request if isinstance(request, dict) else {}
-    if _modality(model) != "music" or _SA is None:
+    if _modality(model) != "music" or _SA is None or model == "ai-music-api/separate-vocals":
+        # Separating the already selected song is not new lyric generation.
+        # Its actual production stage still requires the authoritative script,
+        # song and storyboard gates in production_process_admission below.
         return None
     inp = req.get("input") if isinstance(req.get("input"), dict) else {}
     # The record rides the request, else it is found in the run folder (request
@@ -1236,10 +1263,137 @@ def _saved_hashes(paths):
     return result
 
 
+def _process_refusal(code, detail):
+    return {"ok": False, "reason_code": code, "detail": detail,
+            "next_action": "Resume the governed factory entrypoint; preserve existing run evidence."}
+
+
+def production_process_admission(*, model, request, save_dir, ledger_db,
+                                 run_id, stage="kie", state_store=None,
+                                 adapter_path=None):
+    """Read-only admission; caller-authored receipt JSON is never authority."""
+    req = request if isinstance(request, dict) else {}
+    if req.get("model") and req["model"] != model:
+        return _process_refusal("PRODUCTION_MODEL_MISMATCH",
+                                "The provider payload model differs from the dispatched model.")
+    def enclosing_root(path):
+        p = Path(path).expanduser().resolve()
+        for root in (p, *p.parents):
+            if (root / "control" / "state.sqlite3").is_file():
+                return root
+        return None
+    try:
+        if str(ledger_db) == ":memory:":
+            return _process_refusal("PRODUCTION_LEDGER_REQUIRED",
+                                    "Production requires this run's persistent spend ledger.")
+        ledger = Path(ledger_db).expanduser().resolve()
+        state_path = getattr(state_store, "path", state_store)
+        state_path = Path(state_path).expanduser().resolve() if state_path else None
+        root = (Path(req["run_dir"]).expanduser().resolve() if req.get("run_dir")
+                else enclosing_root(state_path) if state_path else None)
+        root = root or enclosing_root(ledger.parent)
+        if root is None:
+            return _process_refusal("PRODUCTION_RUN_AUTHORITY_MISSING",
+                                    "No canonical run state binds this production request.")
+        if not ledger.is_relative_to(root) or not Path(save_dir).expanduser().resolve().is_relative_to(root):
+            return _process_refusal("PRODUCTION_RUN_SCOPE_MISMATCH",
+                                    "The spend ledger and saved outputs must belong to the admitted run.")
+        if state_path and state_path != root / "control" / "state.sqlite3":
+            return _process_refusal("PRODUCTION_RUN_SCOPE_MISMATCH",
+                                    "The model-lock store is not this run's canonical stage store.")
+        kind = "video" if ML.is_locked_lipsync(model) else _modality(model, adapter_path)
+        allowed_stages = {"music": ("music", "qc-retakes"),
+                          "image": ("continuity-bible", "image-keyframes", "qc-retakes"),
+                          "video": ("video-generation", "qc-retakes")}[kind]
+        separation = model == "ai-music-api/separate-vocals"
+        picture_repair = kind == "image" and req.get("request_kind") == "lipsync-picture-regeneration"
+        if separation:
+            allowed_stages = ("music", "video-generation", "qc-retakes")
+        elif picture_repair:
+            allowed_stages = ("video-generation", "qc-retakes")
+        requested_stage = req.get("production_stage")
+        if requested_stage and stage != "kie" and requested_stage != stage:
+            return _process_refusal("PRODUCTION_STAGE_MISMATCH",
+                                    "The request and dispatch name different production stages.")
+        paid_stage = requested_stage if stage == "kie" else stage
+        if not paid_stage:
+            if kind == "image" or separation:
+                return _process_refusal("PRODUCTION_STAGE_REQUIRED",
+                                        "Name the actual governed stage for this image or vocal-separation job.")
+            paid_stage = allowed_stages[0]
+        if paid_stage not in allowed_stages:
+            return _process_refusal("PRODUCTION_STAGE_MISMATCH",
+                                    "%s generation cannot run as %s." % (kind, paid_stage))
+        from production_process import admit_production
+        receipt = admit_production(root, paid_stage, run_id=run_id)
+        if not isinstance(receipt, dict) or not receipt.get("ok"):
+            return receipt if isinstance(receipt, dict) else _process_refusal(
+                "PRODUCTION_AUTHORITY_UNREADABLE", "The production authority returned no admission.")
+        approved_script = receipt.get("approved_script") or {}
+        inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+        lyrics = inp.get("lyrics", req.get("lyrics"))
+        if kind == "music" and lyrics is not None:
+            if not approved_script.get("lyrics_sha256"):
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISSING",
+                                        "The admitted run has no current lyric artifact identity.")
+            if _SA is None or _SA.lyrics_sha(lyrics) != approved_script["lyrics_sha256"]:
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISMATCH",
+                                        "The provider lyrics differ from the approved lyric artifact.")
+        approved_board = receipt.get("approved_storyboard") or {}
+        if kind == "video":
+            if not approved_board:
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISSING",
+                                        "The admitted run has no current storyboard artifact identity.")
+            with open(approved_board["gate_path"], encoding="utf-8") as f:
+                authoritative = json.load(f)
+            with open(approved_board["shot_list_path"], encoding="utf-8") as f:
+                source = json.load(f)
+            shots = source.get("shots") if isinstance(source, dict) else source
+            approved_shots = {s["shot_id"]: dict(s, status="storyboard_approved") for s in shots}
+            requested = req.get("storyboard") or {}
+            selected = requested.get("shots")
+            if (not isinstance(selected, list) or not selected or
+                    any(s != approved_shots.get(s.get("shot_id")) for s in selected) or
+                    requested.get("review") != authoritative.get("review")):
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISMATCH",
+                                        "The requested storyboard differs from this run's approved artifact.")
+        return receipt
+    except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        return _process_refusal("PRODUCTION_AUTHORITY_UNREADABLE", str(exc))
+
+
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
              timeout=300, state_store=None, video_job=None):
+    """Governed production, or explicitly identified offline runner simulation.
+
+    A fake injected runner exercises the existing protocol without conferring
+    production authority. An arbitrary Python callable is trusted test code;
+    this API does not sandbox code or defend against filesystem/code rewrites.
+    """
+    execution = {"mode": "production" if runner is None or
+                 getattr(runner, "_s75_live_runner", False) else "offline"}
+    result = _dispatch_pipeline(
+        model=model, request=request, save_dir=save_dir, ledger_db=ledger_db,
+        run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+        estimated_cost=estimated_cost, prompt=prompt, units=units, stage=stage,
+        owner=owner, adapter_path=adapter_path, runner=runner, timeout=timeout,
+        state_store=state_store, video_job=video_job, _execution=execution)
+    evidence = result.setdefault("evidence", {})
+    evidence["execution_mode"] = execution["mode"]
+    evidence["production_admitted"] = bool((execution.get("admission") or {}).get("ok"))
+    evidence["accepted_production"] = bool(evidence["production_admitted"] and
+                                           result.get("outcome") == "ok")
+    if execution.get("admission"):
+        evidence["process_admission"] = execution["admission"]
+    return result
+
+
+def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_key,
+             attempt_id, estimated_cost, prompt="", units=1, stage="kie",
+             owner="kie-dispatch", adapter_path=None, runner=None,
+             timeout=300, state_store=None, video_job=None, _execution=None):
     """Run the plan 5.4 pipeline once. Returns one envelope; never raises.
 
     F14 video-model lock: video jobs (video_job=True, or a video model on
@@ -1475,7 +1629,27 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
             run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
             evidence={"placeholder_path": ph[0], "placeholder_token": ph[1],
                       "generated": False})
-    run = runner or make_runner(timeout)
+    # Authoritative intake, artifact scope and predecessor state are checked
+    # before even planning/reserving spend. A caller's card/approval JSON is
+    # only a projection and cannot replace the governed run's authority.
+    process_context = None
+    if _execution["mode"] == "production":
+        arguments = dict(model=model, save_dir=save_dir, ledger_db=ledger_db,
+                         run_id=run_id, stage=stage, state_store=state_store,
+                         adapter_path=adapter_path)
+        admission = production_process_admission(request=request, **arguments)
+        _execution["admission"] = admission
+        if not admission.get("ok"):
+            return envelope("dispatch", "rejected", admission["reason_code"],
+                            admission.get("detail", "") + " " + admission.get("next_action", ""),
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id, evidence={"generated": False})
+        stage = admission["stage"]  # the ledger names the admitted canonical stage
+        process_context = {"arguments": arguments,
+                           "request_digest": L.digest_request(request)}
+        if runner is not None:
+            runner = runner._s75_bind(process_context)
+    run = runner or make_runner(timeout, process_context=process_context)
 
     # ---- 1. ledger reserve -------------------------------------------------
     digest = L.digest_request(request)
@@ -1629,7 +1803,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
         wait_s = _wait_budget_s(request, model, adapter)
         # Injected runners (tests) already stand in for Skill 74; the real
         # wait subprocess gets W+120 so the inner wait always returns first.
-        wait_run = run if runner is not None else make_runner(wait_s + 120)
+        wait_run = run if runner is not None else make_runner(wait_s + 120, process_context=process_context)
 
         def _unknown_at(stage, extra, task=""):
             ev = {"stage": stage, "wait_timeout_s": wait_s}
@@ -1881,7 +2055,8 @@ def main(argv=None):
     x.add_argument("--units", type=int, default=1)
     x.add_argument("--prompt", default=None)
     x.add_argument("--prompt-file", default=None)
-    x.add_argument("--stage", default="kie")
+    x.add_argument("--stage", default="kie",
+                   help="Canonical production stage; required for ambiguous image jobs.")
     x.add_argument("--owner", default="kie-dispatch")
     x.add_argument("--adapter", default=None,
                    help="Path to kie_live_adapter.py (default: search).")
