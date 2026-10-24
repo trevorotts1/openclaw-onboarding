@@ -1,0 +1,691 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Strict outbound envelope: public placement or person-directed",
+  "description": "Purple Billboard DATA-CONTRACTS section 2. A strict oneOf: a public placement never carries a canonical contact, and a person-directed action always does. Each branch carries its own dispatch-gate shape (DATA-CONTRACTS section 3) because the checks are different; a gate record is evidence of one check, never a standing permission.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "action_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logical_intent_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "enum": [
+            "FB_PUBLIC",
+            "IG_PUBLIC"
+          ]
+        },
+        "account_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "account_binding_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "playbook_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "knowledge_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ownership_fence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_state_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "asset_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "not_before": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "dispatching",
+            "accepted",
+            "sent",
+            "delivered",
+            "failed_not_sent",
+            "failed_after_acceptance",
+            "unknown",
+            "suppressed",
+            "quarantined",
+            "expired"
+          ]
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "attempt_id",
+              "provider_object_id",
+              "status",
+              "evidence_id"
+            ],
+            "properties": {
+              "attempt_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provider_object_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "receipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider_post_id",
+            "provider_comment_id",
+            "supported_status",
+            "recorded_at",
+            "evidence_id"
+          ],
+          "properties": {
+            "provider_post_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "provider_comment_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "supported_status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "recorded_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "evidence_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "dispatch_gate": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "checked_at",
+            "decision",
+            "publication_paused",
+            "parent_post_verified",
+            "approval_revision",
+            "suppression_revision",
+            "owner_fence",
+            "binding_revision"
+          ],
+          "properties": {
+            "checked_at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "decision": {
+              "enum": [
+                "ALLOW",
+                "WAIT_UNTIL",
+                "SUPPRESSED",
+                "QUARANTINED",
+                "RECONCILE_UNKNOWN"
+              ]
+            },
+            "publication_paused": {
+              "type": "boolean"
+            },
+            "parent_post_verified": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "approval_revision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "suppression_revision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "owner_fence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "binding_revision": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "scope": {
+          "const": "public_placement"
+        },
+        "purpose": {
+          "enum": [
+            "SCHEDULED_POST",
+            "REVEAL_COMMENT",
+            "BONUS_COMMENT"
+          ]
+        },
+        "placement_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "campaign_cycle_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approval_manifest_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approval_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_post_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "precondition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "placement_approved",
+            "tenant_publication_active",
+            "parent_post_verified"
+          ],
+          "properties": {
+            "placement_approved": {
+              "const": true
+            },
+            "tenant_publication_active": {
+              "type": "boolean"
+            },
+            "parent_post_verified": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "action_id",
+        "logical_intent_key",
+        "tenant_id",
+        "channel",
+        "account_id",
+        "account_binding_revision",
+        "policy_version",
+        "playbook_revision",
+        "knowledge_revision",
+        "ownership_fence",
+        "expected_state_version",
+        "content_revision",
+        "asset_version_id",
+        "not_before",
+        "expires_at",
+        "status",
+        "attempts",
+        "receipt",
+        "dispatch_gate",
+        "scope",
+        "purpose",
+        "placement_id",
+        "campaign_cycle_id",
+        "approval_manifest_id",
+        "approval_revision",
+        "parent_post_id",
+        "precondition"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "purpose": {
+                "enum": [
+                  "REVEAL_COMMENT",
+                  "BONUS_COMMENT"
+                ]
+              }
+            },
+            "required": [
+              "purpose"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parent_post_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "precondition": {
+                "properties": {
+                  "parent_post_verified": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "purpose": {
+                "const": "SCHEDULED_POST"
+              }
+            },
+            "required": [
+              "purpose"
+            ]
+          },
+          "then": {
+            "properties": {
+              "parent_post_id": {
+                "const": null
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "action_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logical_intent_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "enum": [
+            "FB_PUBLIC",
+            "FB_DM",
+            "IG_PUBLIC",
+            "IG_DM",
+            "SMS",
+            "EMAIL",
+            "WEBCHAT"
+          ]
+        },
+        "account_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "account_binding_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "playbook_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "knowledge_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ownership_fence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_state_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "asset_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "not_before": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "dispatching",
+            "accepted",
+            "sent",
+            "delivered",
+            "failed_not_sent",
+            "failed_after_acceptance",
+            "unknown",
+            "suppressed",
+            "quarantined",
+            "expired"
+          ]
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "attempt_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provider_message_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "attempt_id",
+              "provider_message_id",
+              "status",
+              "evidence_id"
+            ]
+          }
+        },
+        "receipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider_message_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "supported_status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "recorded_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "evidence_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "provider_message_id",
+            "supported_status",
+            "recorded_at",
+            "evidence_id"
+          ]
+        },
+        "dispatch_gate": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "checked_at",
+            "decision",
+            "eligibility_evidence_id",
+            "consent_evidence_id",
+            "suppression_revision",
+            "owner_fence",
+            "binding_revision"
+          ],
+          "properties": {
+            "checked_at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "decision": {
+              "enum": [
+                "ALLOW",
+                "WAIT_UNTIL",
+                "SUPPRESSED",
+                "QUARANTINED",
+                "RECONCILE_UNKNOWN"
+              ]
+            },
+            "eligibility_evidence_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "consent_evidence_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "suppression_revision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "owner_fence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "binding_revision": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "scope": {
+          "const": "person_directed"
+        },
+        "purpose": {
+          "enum": [
+            "PUBLIC_REPLY",
+            "COMMENT_PRIVATE_OPENER",
+            "AI_REPLY",
+            "ORIGINAL_GIFT",
+            "ACCESS_PASS",
+            "SMS_EMAIL_ASK",
+            "EMAIL_BACKUP",
+            "CAPTURE_REMINDER",
+            "BOOKING_CONFIRMATION",
+            "HANDOFF_NOTICE"
+          ]
+        },
+        "precondition": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "request_active": {
+              "type": "boolean"
+            },
+            "field_still_missing": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "approval_manifest_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "approval_revision": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reserved_final_action_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "request_active",
+            "field_still_missing",
+            "approval_manifest_id",
+            "approval_revision",
+            "reserved_final_action_id"
+          ]
+        },
+        "canonical_contact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "collection_sequence_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "action_id",
+        "logical_intent_key",
+        "tenant_id",
+        "channel",
+        "account_id",
+        "account_binding_revision",
+        "policy_version",
+        "playbook_revision",
+        "knowledge_revision",
+        "ownership_fence",
+        "expected_state_version",
+        "content_revision",
+        "asset_version_id",
+        "not_before",
+        "expires_at",
+        "status",
+        "attempts",
+        "receipt",
+        "dispatch_gate",
+        "scope",
+        "purpose",
+        "precondition",
+        "canonical_contact_id",
+        "collection_sequence_id",
+        "request_id"
+      ]
+    }
+  ]
+}

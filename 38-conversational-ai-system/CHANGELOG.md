@@ -1,3 +1,14 @@
+## [2.0.24] - 2026-10-24 - feat(contracts): shared collection, outbound, approval, readiness and action-lifecycle contracts (T-08)
+
+Adds the typed contract layer the Purple Billboard build needs before any provider transport is written. No runtime behaviour changes, no live actions, no network code.
+
+- `schemas/` (new): five JSON Schemas authored from Purple Billboard `DATA-CONTRACTS.md` sections 1, 2, 3, 9, 10. `collection-state.schema.json` keys the serialized lock on `(tenant_id, canonical_contact_id, collection_sequence_id)` and records each requested item separately so partial capture is preserved. `outbound-action.schema.json` is a strict `oneOf` — a public placement can never carry a canonical contact, a person-directed action always must — and carries a branch-specific dispatch gate. `approval-manifest.schema.json` binds one joined 30-day campaign, revisioned, with per-placement invalidation. `readiness-evidence.schema.json` separates installed, configured, running, replied and fulfilled with a per-key evidence time. `action-lifecycle.schema.json` keeps acknowledgement and completion as separate receipts.
+- `tools/pb_contracts.py` (new): stdlib-only validator and dispatch gate. `validate`, `transition`, `dispatch` and `receipt` subcommands. Enforces the rules JSON Schema cannot: a stale gate cannot authorise a retry, a duplicate logical intent collapses instead of sending twice, an unknown effect is reconciled and never replayed, a changed account binding quarantines queued work, and a terminal collection state cannot be restarted by a new request.
+- `tools/tests/test_pb_contracts.py` + `tools/tests/fixtures/pb-contracts/` (new): 26 fixtures exercised as 13 tests in both directions, with a known-good control per contract kind, a vacuity control on the engine, and a Draft 2020-12 cross-validation that reports a named skip when `jsonschema` is unavailable. A mutation control (schema rule removed in a throwaway copy) was run to prove the suite fails rather than passing vacuously.
+- `scripts/qc-pb-contracts.sh` (new): thin QC entry point so the repo's existing QC scripts can run the suite.
+
+Deliberately not implemented: provider transport, durable store, outbox worker, and the onboarding/999/CC write-side propagation of readiness invalidation. Those are separate tasks; this release binds the contracts only.
+
 ## [2.0.19] - 2026-10-13 - refactor(models): client-choice model selection, no prescribed models
 
 Model selection doctrine applied across the skill: no surface prescribes a specific model by name anymore. Selection resolves as (1) the client's explicit choice, (2) the client's configured default model, (3) a stop with a clear ask-the-client message. Where an old prescription carried a real rationale (reasoning depth, context size, speed, cost), it is kept as a recommendation with its reason, as guidance the client can override, never wired as a fallback value in code or config.

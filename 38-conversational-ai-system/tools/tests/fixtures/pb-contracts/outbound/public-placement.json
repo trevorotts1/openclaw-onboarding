@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "action_id": "act-public-1",
+  "logical_intent_key": "cycle-2026-11/P-1/SCHEDULED_POST",
+  "tenant_id": "tenant-alpha",
+  "channel": "FB_PUBLIC",
+  "account_id": "acct-1",
+  "account_binding_revision": "binding-7",
+  "policy_version": "policy-3",
+  "playbook_revision": null,
+  "knowledge_revision": null,
+  "ownership_fence": 4,
+  "expected_state_version": 0,
+  "content_revision": "content-9",
+  "asset_version_id": "asset-2",
+  "not_before": "2026-11-01T15:00:00Z",
+  "expires_at": null,
+  "status": "queued",
+  "attempts": [],
+  "receipt": {
+    "provider_post_id": null,
+    "provider_comment_id": null,
+    "supported_status": null,
+    "recorded_at": null,
+    "evidence_id": null
+  },
+  "dispatch_gate": null,
+  "scope": "public_placement",
+  "purpose": "SCHEDULED_POST",
+  "placement_id": "P-1",
+  "campaign_cycle_id": "cycle-2026-11",
+  "approval_manifest_id": "manifest-2026-11",
+  "approval_revision": "rev-3",
+  "parent_post_id": null,
+  "precondition": {
+    "placement_approved": true,
+    "tenant_publication_active": true,
+    "parent_post_verified": false
+  }
+}

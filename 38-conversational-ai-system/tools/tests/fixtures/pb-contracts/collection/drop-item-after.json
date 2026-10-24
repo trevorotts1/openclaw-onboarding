@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "tenant_id": "tenant-alpha",
+  "canonical_contact_id": "contact-77",
+  "collection_sequence_id": "seq-1",
+  "state_version": 5,
+  "ownership_fence": 4,
+  "originating_channel": "FB_DM",
+  "originating_conversation_id": "conv-9",
+  "state": "awaiting_email",
+  "t0": "2026-10-24T09:00:00Z",
+  "reminders_accepted": 1,
+  "reminder_slots": [
+    {
+      "slot": 1,
+      "due_at": "2026-10-24T11:00:00Z",
+      "status": "accepted",
+      "action_id": "act-rem-1",
+      "reason": null
+    }
+  ],
+  "sms_email_ask": {
+    "logical_action_id": "act-ask-1",
+    "state": "accepted",
+    "provider_message_id": "sms-1",
+    "evidence_id": "ev-ask-1"
+  },
+  "requested_items": [
+    {
+      "request_id": "REQ-2",
+      "item_id": "item-guide-1",
+      "item_version": "v3",
+      "source": "keyword",
+      "requested_at": "2026-10-24T09:00:00Z",
+      "status": "pending",
+      "fulfilled_at": null,
+      "evidence_id": null
+    }
+  ],
+  "field_refusals": [],
+  "sequence_stop_reason": null,
+  "channel_optouts": [],
+  "global_stop": false,
+  "human_owner_id": null,
+  "final_action_id": null,
+  "pending_request_ids": [
+    "REQ-2"
+  ]
+}

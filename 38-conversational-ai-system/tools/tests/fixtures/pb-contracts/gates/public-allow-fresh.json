@@ -1,0 +1,10 @@
+{
+  "checked_at": "2026-10-24T10:05:00Z",
+  "decision": "ALLOW",
+  "publication_paused": false,
+  "parent_post_verified": null,
+  "approval_revision": "rev-3",
+  "suppression_revision": "sup-1",
+  "owner_fence": 4,
+  "binding_revision": "binding-7"
+}

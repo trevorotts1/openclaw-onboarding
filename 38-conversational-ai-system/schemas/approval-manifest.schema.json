@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Revisioned monthly approval manifest, one joined 30-day campaign",
+  "description": "Purple Billboard DATA-CONTRACTS section 10 and DEC-02. One client approval covers one joined 30-day campaign of exact placements. A mutation invalidates that placement only, so the manifest carries per-placement invalidation rather than a single manifest-wide flag.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "manifest_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "campaign_cycle_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "DRAFT",
+        "APPROVED",
+        "PARTIAL_INVALIDATED",
+        "REVOKED"
+      ]
+    },
+    "approved_by": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "approved_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "campaign_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "starts_on": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ends_on": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "starts_on",
+        "ends_on"
+      ]
+    },
+    "placements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "placement_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "account_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "account_binding_revision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "channel": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scheduled_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content_revision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cta_text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "keyword": {
+            "type": "string",
+            "minLength": 1
+          },
+          "promised_item_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bonus_asset_versions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "conversation_policy_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "allowed_spare_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "approval_status": {
+            "enum": [
+              "DRAFT",
+              "APPROVED",
+              "INVALIDATED",
+              "REVOKED"
+            ]
+          },
+          "invalidated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "invalidated_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "placement_id",
+          "account_id",
+          "account_binding_revision",
+          "channel",
+          "scheduled_at",
+          "timezone",
+          "content_revision",
+          "cta_text",
+          "keyword",
+          "promised_item_version",
+          "bonus_asset_versions",
+          "conversation_policy_version",
+          "allowed_spare_ids",
+          "approval_status",
+          "invalidated_at",
+          "invalidated_reason"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "approval_status": {
+                  "const": "INVALIDATED"
+                }
+              },
+              "required": [
+                "approval_status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "invalidated_at": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "invalidated_reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "invalidated_at": {
+                  "const": null
+                },
+                "invalidated_reason": {
+                  "const": null
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "manifest_id",
+    "tenant_id",
+    "campaign_cycle_id",
+    "revision",
+    "status",
+    "approved_by",
+    "approved_at",
+    "campaign_window",
+    "placements"
+  ]
+}

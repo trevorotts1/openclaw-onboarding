@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "tenant_id": "tenant-alpha",
+  "action_id": "act-stop-1",
+  "logical_intent_key": "loop-1/SHUTDOWN",
+  "revision": 2,
+  "kind": "SHUTDOWN",
+  "state": "dispatched",
+  "stop_requested": false,
+  "state_reason": null,
+  "updated_at": "2026-10-24T09:50:00Z",
+  "dispatch_receipt": {
+    "dispatched_at": "2026-10-24T09:50:00Z",
+    "evidence_id": "ev-dispatch-1"
+  },
+  "ack_receipt": null,
+  "completion_receipt": null
+}
