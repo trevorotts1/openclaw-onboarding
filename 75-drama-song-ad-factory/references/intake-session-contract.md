@@ -144,9 +144,9 @@ intake. The prior missing-`--step` behavior is not a reason to alter method
 or purpose detection or to migrate an existing client project.
 
 Explicit recap confirmation binds the client's AI MODELS pair through
-`ai_models.bind_roles`. A client's explicit choice such as `deepseek-chain
-builds, opus-chain checks` keeps those literal configured aliases: build
-stages use that builder, QC and repair use that checker. The stage plan calls
+`ai_models.bind_roles`. Each client's explicit builder and checker choices keep their literal
+configured aliases: build stages use that builder, QC and repair use that
+checker. The stage plan calls
 `admit_dispatch` against the saved run bindings and refuses a mismatched role
 or requested model. This does not select a chain member, change the client's
 provider choices or alter global session settings. Preserve existing run
