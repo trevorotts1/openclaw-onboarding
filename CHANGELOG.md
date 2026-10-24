@@ -1,6 +1,7 @@
 ## [v27.1.66]  -  2026-10-24  -  Cleanup (PBB-131 T-46): typed disposal decisions for scratch, merged, dirty and shared-consumer resources, with immediate eligible removal, preserved content and proven absence
 
 - In plain English: a new `shared-utils/cleanup/` module decides what may be deleted and then deletes it straight away, but only when it can prove the resource is owned, outside-only, on the expected drive, free of live consumers and already preserved. Anything it cannot determine comes back as UNKNOWN with a reason, never as success, and nothing is ever force-deleted.
+- Repair after QC (c-t-46): a record the module cannot read now types as UNKNOWN_MALFORMED_ITEM instead of raising, an unstatable approved root types as UNKNOWN_VOLUME_IDENTITY, a preserved-root directory on its own is no longer preservation proof (a caller copy needs the resource's own preservation receipts, and `preserve_content` outranks it), a malformed ownership receipt is not ownership, and one bad record can no longer abort a batch and strand a committed deletion without its receipt and absence proof.
 
 ## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
 
