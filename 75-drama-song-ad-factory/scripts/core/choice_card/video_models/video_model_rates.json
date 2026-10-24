@@ -1,7 +1,7 @@
 {
  "_doc": "The one table behind the VIDEO MODEL question. KIE list prices, 1 credit = $0.005, silent shots, no video input, before any top-up bonus.",
  "source_url": "https://docs.kie.ai/market/bytedance/seedance-2-5",
- "source_note": "MiniMax H3: 8 credits ($0.04) per second at 768P, 4-15 second generations (KIE registry minimax-h3/image-to-video; https://kie.ai/minimax-h3?model=minimax-h3%2Fimage-to-video). Restored as row 1 on 2026-10-24: the live KIE catalog DOES carry minimax-h3/image-to-video, so the 2026-10-21 removal under the claim that it never did was wrong. Hailuo 02 Standard (5 credits, $0.025/s at 768P) stays on the price menu but is no longer the card's recommended row.",
+ "source_note": "MiniMax H3: 8 credits ($0.04) per second at 768P, 4-15 second generations (KIE registry minimax-h3/image-to-video, checked 2026-10-24). Restored as row 1 on 2026-10-24: the live KIE catalog DOES carry minimax-h3/image-to-video, so the 2026-10-21 removal under the claim that it never did was wrong. Hailuo 02 Standard (5 credits, $0.025/s at 768P) stays on the price menu but is no longer the card's recommended row.",
  "checked": "2026-10-09",
  "keyframe_usd": 0.02,
  "song_usd": 0.06,
