@@ -305,6 +305,7 @@ def adapt_launch_plan(session: Dict[str, Any], launch: Dict[str, Any],
                       approval: Dict[str, Any], brand_facts: Dict[str, Any],
                       landing_facts: Dict[str, Any], launch_plan: Dict[str, Any],
                       *, sequence_id: Optional[str] = None,
+                      full_launch_plan: Optional[Dict[str, Any]] = None,
                       **adapt_kwargs: Any) -> list:
     """Launch mode: read the shared launch answers and the shared launch plan,
     and emit one locked brief per planned Skill 50 sequence.
@@ -313,6 +314,11 @@ def adapt_launch_plan(session: Dict[str, Any], launch: Dict[str, Any],
     each brief carries intake_mode "signature_launch" and the same approved
     provenance the single-profile path emits. Returns
     [{"sequence_id", "kind", "brief"}, ...] in plan order.
+
+    `full_launch_plan` is the L01 full launch plan beside the launch record
+    (typed `launch_answers` + `launch_calendar`); the session's own
+    `launch_plan` is the fallback, so the real producer output is consumed
+    without the caller threading it twice.
     """
     _validate_launch_plan(launch_plan)
     plan_launch_id = launch_plan.get("launch_id")
@@ -321,11 +327,17 @@ def adapt_launch_plan(session: Dict[str, Any], launch: Dict[str, Any],
         raise Refusal(
             "launch plan launch_id does not match the launch record: the "
             "plan belongs to another launch")
+    full = full_launch_plan
+    if full is None and isinstance(session, dict):
+        cand = session.get("launch_plan")
+        if isinstance(cand, dict) and cand.get("launch_answers"):
+            full = cand
     briefs = []
     for unit in _launch_sequences(launch_plan, sequence_id):
         profile, objective = LAUNCH_SEQUENCE_PROFILES[unit["kind"]]
         brief = adapt(session, launch, approval, brand_facts, landing_facts,
-                      profile=profile, objective=objective, **adapt_kwargs)
+                      profile=profile, objective=objective,
+                      full_launch_plan=full, **adapt_kwargs)
         briefs.append({"sequence_id": unit["id"], "kind": unit["kind"],
                        "brief": brief})
     return briefs
@@ -343,7 +355,8 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
           brand_facts_ref: str = "brand-facts document",
           landing_facts_ref: str = "landing-facts document",
           profile: str = PROFILE,
-          objective: Optional[str] = None) -> Dict[str, Any]:
+          objective: Optional[str] = None,
+          full_launch_plan: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Validate the five launch artifacts and emit the locked brief.
 
     `profile` selects which approved launch family the brief locks (launch mode
@@ -351,11 +364,18 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
     profile registry, so an unknown profile is a refusal, never a guess. The
     default is the main landing-10 family, so the original single-brief CLI path
     is unchanged. `objective` defaults to the family's objective and may not
-    contradict it.
+    contradict it. `full_launch_plan` is the L01 full launch plan beside the
+    launch record (pages + emails + texts + automations, carrying the typed
+    `launch_answers` block and `launch_calendar`); when present the session
+    consumer reads its typed block, otherwise the session ledger.
 
     Raises Refusal on any defect. The emitted brief is the shape
     tools/prove-email.py consumes under intake_mode signature_launch.
     """
+    if full_launch_plan is None and isinstance(session, dict):
+        cand = session.get("launch_plan")
+        if isinstance(cand, dict) and cand.get("launch_answers"):
+            full_launch_plan = cand
     _load_contract()
     registry = _registry()
     family = launch_profiles.family_for(profile, registry)
@@ -386,9 +406,13 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             f"intake session schema is {session.get('schema')!r}, expected "
             f"{s49.SESSION_SCHEMA!r}: this adapter consumes only the S49 "
             "launch intake session shape")
-    if session.get("status") not in s49.BUILDABLE_SESSION_STATES:
+    # Real L01 new_session() keys the lifecycle as `state` (collecting -> ...
+    # -> approved); the handcrafted adapter fixtures use `status`. Read the
+    # real key first, fall back to the legacy alias — never the reverse.
+    session_state = session.get("state", session.get("status"))
+    if session_state not in s49.BUILDABLE_SESSION_STATES:
         raise Refusal(
-            f"intake session status is {session.get('status')!r}: only an "
+            f"intake session state is {session_state!r}: only an "
             "approved or building session can produce a locked brief")
     client_ref = session.get("client_identity_ref")
     if not _nonempty_str(client_ref):
@@ -711,7 +735,7 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
             },
             "session": {
                 "session_id": session.get("session_id"),
-                "status": session.get("status"),
+                "status": session.get("state", session.get("status")),
                 "client_identity_ref": client_ref,
             },
             "fields": fields,
@@ -725,7 +749,8 @@ def adapt(session: Dict[str, Any], launch: Dict[str, Any],
         },
         "answers": answers,
         "family": _family_block(family, registry),
-        "session_contract": _consume_session_contract(session, family),
+        "session_contract": _consume_session_contract(
+            session, family, full_launch_plan),
     }
     return brief
 
@@ -832,14 +857,24 @@ def _metadata_sources(session: Dict[str, Any], family: Dict[str, Any]) -> Dict[s
 
 
 def _consume_session_contract(session: Dict[str, Any],
-                              family: Dict[str, Any]) -> Dict[str, Any]:
+                              family: Dict[str, Any],
+                              full_launch_plan: Optional[Dict[str, Any]] = None,
+                              ) -> Dict[str, Any]:
     """Consume the versioned L01 session contract when it is published.
 
     Absent contract: the brief says so explicitly and names the blocked
     acceptance, rather than inventing a version or silently skipping the
-    consumer. Present contract: the declared version is checked, every declared
-    required answer must exist in the approved session ledger, and every
-    declared typed field is validated (booleans stay booleans).
+    consumer. Present contract, two shapes:
+      * legacy (agreed-shape): `required_answers` + `typed_fields`;
+      * real L01 (signature-launch-session-contract/v1, contract_version
+        1.0.0): `launch_answers[]` descriptors (id + ledger_keys) with the
+        required behavior under `consumer_requirements.L06_skill50`, and the
+        fixture at `fixtures/session_contract.complete_plan.json`.
+    Both shapes: the declared version is checked, every declared required
+    answer must exist in the approved session ledger, and every declared
+    typed field is validated (booleans stay booleans — the string "No" is
+    never truthy). A present contract with missing required answers is a
+    refusal, never an empty typed:{}.
     """
     path = _session_contract_path()
     metadata = _metadata_sources(session, family)
@@ -865,11 +900,16 @@ def _consume_session_contract(session: Dict[str, Any],
     if doc.get("contract") not in (None, "signature-launch-session"):
         raise Refusal("session contract at %s declares contract %r, not "
                       "'signature-launch-session'" % (path, doc.get("contract")))
+    # Real L01 contract identifies as schema
+    # signature-launch-session-contract/v1 with contract_version "1.0.0".
     version = doc.get("contract_version")
     if not (isinstance(version, str)
             and version.split(".")[0] == SUPPORTED_SESSION_CONTRACT_MAJOR):
         raise Refusal("session contract version %r is not supported (major %s)"
                       % (version, SUPPORTED_SESSION_CONTRACT_MAJOR))
+    if "launch_answers" in doc:
+        return _consume_l01_contract(doc, session, family, metadata,
+                                     full_launch_plan)
     answers = s49.session_answers(session)
     missing = [name for name in (doc.get("required_answers") or [])
                if name not in answers]
@@ -889,6 +929,132 @@ def _consume_session_contract(session: Dict[str, Any],
         "typed": typed,
         "typed_metadata": metadata,
     }
+
+
+# The eight launch answers, keyed by the session-ledger key the consumer
+# reads and the Python type the contract demands. States gate separately:
+# only `provided` (or verified_existing) counts as ready — a
+# recommended_unapproved or unknown entry is carried, never approved.
+_L01_LEDGER_TYPES = {
+    "launch.launch_at": "timestamp",
+    "launch.doors_open_at": "timestamp",
+    "launch.doors_close_at": "timestamp",
+    "launch.timezone": "string",
+    "launch.channels": "array",
+    "launch.conversation_ai": "boolean",
+    "launch.access_delivery": "boolean",
+    "launch.payment_plans": "boolean",
+    "launch.sender_name": "string",
+    "launch.reply_to_email": "string",
+    "launch.a2p_ready": "boolean",
+}
+_L01_READY_STATES = ("provided", "verified_existing")
+_L01_BOOLEAN_ANSWERS = ("launch.conversation_ai", "launch.access_delivery",
+                        "launch.payment_plans", "launch.a2p_ready")
+
+
+def _l01_ledger(session: Dict[str, Any],
+                full_launch_plan: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The typed launch_answers block: the full plan's block wins (it is the
+    assembled, digest-bound record), the session ledger is the fallback."""
+    if isinstance(full_launch_plan, dict):
+        block = full_launch_plan.get("launch_answers")
+        if isinstance(block, dict) and block:
+            return block
+    answers = s49.session_answers(session)
+    return answers if isinstance(answers, dict) else {}
+
+
+def _consume_l01_contract(doc: Dict[str, Any], session: Dict[str, Any],
+                          family: Dict[str, Any], metadata: Dict[str, Any],
+                          full_launch_plan: Optional[Dict[str, Any]]
+                          ) -> Dict[str, Any]:
+    """Consume the real L01 session contract (contract_version 1.0.0).
+
+    Required coverage comes from `launch_answers[].ledger_keys`: every key
+    must exist in the session/full-plan ledger or the consumer refuses by
+    name — never an empty typed:{}. Typed values are validated by the
+    contract's own rules (booleans are real booleans; the string "No" is
+    never truthy; recommended_unapproved/unknown is never ready); sender
+    names and reply-to mailboxes must be present and non-empty; deadlines
+    come from launch_calendar ISO timestamps with a real IANA zone.
+    """
+    req = doc.get("consumer_requirements") or {}
+    l06_req = req.get("L06_skill50") or {}
+    descriptors = doc.get("launch_answers") or []
+    if not isinstance(descriptors, list) or not descriptors:
+        raise Refusal("session contract declares no launch_answers: "
+                      "required coverage cannot be proven")
+    ledger = _l01_ledger(session, full_launch_plan)
+    required_keys = sorted(
+        {k for d in descriptors if isinstance(d, dict)
+         for k in (d.get("ledger_keys") or [])})
+    missing = [k for k in required_keys if k not in ledger]
+    if missing:
+        raise Refusal(
+            "approved session carries no answer for L01 session-contract "
+            "requirement(s): %s" % ", ".join(missing))
+    typed: Dict[str, Any] = {}
+    for key in required_keys:
+        entry = ledger.get(key)
+        if not isinstance(entry, dict) or "value" not in entry:
+            raise Refusal(
+                "session-contract answer %r is not a ledger entry "
+                "(value is required)" % key)
+        expected = _L01_LEDGER_TYPES.get(key)
+        state = entry.get("state")
+        value = entry.get("value")
+        if expected is not None:
+            typed[key] = _typed_value(key, value, expected)
+        else:
+            typed[key] = _deep_copy(value)
+        ready = state in _L01_READY_STATES
+        typed[key + ".state"] = state
+        typed[key + ".ready"] = ready
+        if key in _L01_BOOLEAN_ANSWERS and not isinstance(value, bool):
+            raise Refusal(
+                "session contract field %r is declared boolean but carries "
+                "%r — a typed value is never coerced" % (key, type(value).__name__))
+        if key in ("launch.sender_name", "launch.reply_to_email") \
+                and not _nonempty_str(value):
+            raise Refusal(
+                "session contract field %r must be present and non-empty "
+                "before any email is composed — a missing sender blocks by "
+                "name, never a placeholder" % key)
+    # Text work only when 'text' is present in the channels array — never
+    # from a display string. a2p_ready/conversation_ai/access_delivery/
+    # payment_plans that are non-boolean or not ready count as NOT ready.
+    channels = typed.get("launch.channels")
+    text_planned = isinstance(channels, list) and "text" in channels
+    readiness = {}
+    for key in _L01_BOOLEAN_ANSWERS:
+        readiness[key] = typed.get(key + ".ready") is True \
+            and isinstance(typed.get(key), bool) and typed[key] is True
+    out: Dict[str, Any] = {
+        "state": "consumed",
+        "ref": "/".join(SESSION_CONTRACT_REL),
+        "contract_version": doc.get("contract_version"),
+        "family": family["profile"],
+        "typed": typed,
+        "typed_metadata": metadata,
+        "channels": channels,
+        "text_planned": text_planned,
+        "readiness": readiness,
+    }
+    calendar = (full_launch_plan.get("launch_calendar")
+                if isinstance(full_launch_plan, dict) else None)
+    if isinstance(calendar, dict) and calendar:
+        out["launch_calendar"] = _deep_copy(calendar)
+    if isinstance(l06_req, dict) and l06_req.get("reads"):
+        out["contract_reads"] = list(l06_req["reads"])
+    digest_doc = doc.get("digest") or {}
+    if isinstance(digest_doc, dict) and digest_doc.get("value_shape"):
+        out["digest_rule"] = {
+            "algorithm": digest_doc.get("algorithm"),
+            "canonicalization": digest_doc.get("canonicalization"),
+            "value_shape": digest_doc.get("value_shape"),
+        }
+    return out
 
 
 # ---------------------------------------------------------------------------
