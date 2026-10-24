@@ -537,7 +537,7 @@ oc_skill_selection_status() {
   out=$("$cli" skills info "$reg_name" ${_ag:+--agent "$_ag"} 2>&1) || rc=$?
   local res rrc=0
   res=$(OC_SKILL_INFO_OUT="$out" OC_SKILL_INFO_RC="$rc" OC_SKILL_FOLDER="$folder" \
-        OC_SKILL_EXPECTED="$expected" OC_SKILL_REQUESTED="$reg_name" python3 - <<'PYEOF'
+        OC_SKILL_EXPECTED="$expected" OC_SKILL_REQUESTED="$folder" python3 - <<'PYEOF'
 import hashlib, json, os, re, sys
 
 out = os.environ.get("OC_SKILL_INFO_OUT", "")
@@ -608,7 +608,9 @@ if os.path.isfile(_sk):
     if _m:
         _mn = re.search(r"^name:\s*[\"']?([^\"'\n]+?)[\"']?\s*$", _m.group(1), re.M)
         if _mn:
-            names.add(norm_name(_mn.group(1)))
+            # The declared name is authoritative: a matching directory name
+            # must not rescue a tree whose SKILL.md says it is another skill.
+            names = {norm_name(_mn.group(1))}
 if requested and norm_name(requested) not in names:
     emit("FAIL",
          "selected-tree-name-mismatch:requested-%s-selected-%s" % (norm_name(requested), ",".join(sorted(names))),
@@ -814,9 +816,16 @@ oc_gate_skill() {
 
   # (a) registration — verified against the tree the INTENDED agent RESOLVES
   # (WG1): tri-state so a BLOCKED selection is recorded as blocked, never as a
-  # bare "not-registered" and never as success.
-  local _sel_rc=0
-  oc_skill_selection_status "$folder" || _sel_rc=$?
+  # bare "not-registered" and never as success. The shipment expectation is the
+  # SOURCE copy beside this lib in a repo checkout (the install-time case);
+  # when this lib runs from an installed tree there is no source copy, and the
+  # reason says the staleness comparison could not be made.
+  local _sel_rc=0 _exp=""
+  local _libdir; _libdir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  if [ -f "$_libdir/$folder/skill-version.txt" ]; then
+    _exp="$(tr -d '[:space:]' < "$_libdir/$folder/skill-version.txt" 2>/dev/null || true)"
+  fi
+  oc_skill_selection_status "$folder" "$_exp" || _sel_rc=$?
   oc_state_mark_field "$folder" selectionStatus "\"${OC_SKILL_STATUS:-unknown}\"" || _sw_ok=0
   if [ "$_sel_rc" -eq 0 ]; then
     oc_state_mark_field "$folder" registered true || _sw_ok=0

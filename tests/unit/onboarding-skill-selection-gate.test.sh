@@ -225,6 +225,17 @@ printf '%s' "$out" | grep -q '^rc=1' && printf '%s' "$out" | grep -q '^FAIL sele
   || bad "expected FAIL name mismatch: $out"
 never_success "wrong skill selected" "$out"
 
+# a matching DIRECTORY name must not rescue a tree whose SKILL.md says it is
+# another skill: the declared name is authoritative.
+mk_tree "$T/s10b" "1.0.53"
+printf -- '---\nname: other\nversion: 1.0.53\n---\n' > "$T/s10b/01-demo/SKILL.md"
+mk_cli "$T/s10bbin" "$T/s10b/01-demo/SKILL.md"
+out="$(sel "$T/s10bbin" "$T/s10b" "1.0.53")"
+printf '%s' "$out" | grep -q '^rc=1' && printf '%s' "$out" | grep -q '^FAIL selected-tree-name-mismatch' \
+  && ok "matching folder name with a different SKILL.md name -> FAIL" \
+  || bad "expected FAIL name mismatch (declared name): $out"
+never_success "declared name mismatch" "$out"
+
 # ---- 2e. no identity evidence at all -> FAIL -------------------------------
 # No version carrier and no declared runtime entry: silence is not evidence.
 mkdir -p "$T/s11/01-demo/advisors"
