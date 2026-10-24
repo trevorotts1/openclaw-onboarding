@@ -256,8 +256,10 @@ class EscalationTests(Base):
         self.assertTrue(str(caught.exception).startswith("refused:"))
         self.assertIsNone(self.store.get(row["handoff_id"])["escalated_at"])
 
-    def test_escalation_requires_an_accepted_handoff(self):
-        row = self.open()
+    def test_escalation_is_refused_once_the_handoff_is_released(self):
+        row = self.accepted()
+        self.store.release(row["handoff_id"], actor=OWNER, reason="done",
+                           now=self.t0 + 60)
         with self.assertRaises(h.HandoffError) as caught:
             self.store.escalate(row["handoff_id"], now=self.t0 + 7200)
         self.assertTrue(
@@ -464,6 +466,161 @@ class ReleaseTests(Base):
         self.assertEqual(events[-1]["reason"], "done")
 
 
+class LapsedOfferTests(Base):
+    """A lapsed offer must still have a route out: escalate to the backup."""
+
+    def test_an_overdue_unaccepted_offer_is_escalated_to_the_backup(self):
+        row = self.open()
+        row = self.store.escalate(row["handoff_id"], now=self.t0 + 7200)
+        self.assertIsNotNone(row["escalated_at"])
+        self.assertEqual(row["state"], h.STATE_OFFERED)
+        self.assertIsNone(row["actual_owner_id"])
+        self.assertTrue(row["bot_paused"])
+        self.assertEqual(
+            [e["action"] for e in self.store.events(row["handoff_id"])],
+            [h.ACTION_CREATED, h.ACTION_ESCALATED])
+
+    def test_the_backup_accepts_a_lapsed_offer_and_becomes_the_owner(self):
+        row = self.open()
+        self.store.escalate(row["handoff_id"], now=self.t0 + 7200)
+        row = self.store.backup_accept(row["handoff_id"], actor=BACKUP,
+                                       now=self.t0 + 7210)
+        self.assertEqual(row["state"], h.STATE_ACTIVE)
+        self.assertEqual(row["actual_owner_id"], BACKUP)
+        self.assertTrue(row["accepted"])
+        self.assertTrue(row["backup_accepted"])
+        self.assertTrue(row["bot_paused"])
+        self.assertEqual(
+            [e["action"] for e in self.store.events(row["handoff_id"])],
+            [h.ACTION_CREATED, h.ACTION_ESCALATED, h.ACTION_BACKUP_ACCEPTED])
+
+    def test_the_backup_release_resumes_the_bot_after_a_lapsed_offer(self):
+        row = self.open()
+        self.store.escalate(row["handoff_id"], now=self.t0 + 7200)
+        self.store.backup_accept(row["handoff_id"], actor=BACKUP,
+                                 now=self.t0 + 7210)
+        row = self.store.release(row["handoff_id"], actor=BACKUP,
+                                 reason="the backup closed it",
+                                 now=self.t0 + 7220)
+        self.assertEqual(row["state"], h.STATE_RELEASED)
+        self.assertFalse(row["bot_paused"])
+        self.assertEqual(
+            self.store.gate_decision("t1", self.contact)["verdict"],
+            h.GATE_ALLOW)
+
+    def test_only_the_named_backup_can_take_a_lapsed_offer(self):
+        row = self.open()
+        self.store.escalate(row["handoff_id"], now=self.t0 + 7200)
+        for actor in (OWNER, "someone-else", "system:handoff"):
+            with self.subTest(actor=actor):
+                with self.assertRaises(h.HandoffError) as caught:
+                    self.store.backup_accept(row["handoff_id"], actor=actor,
+                                             now=self.t0 + 7210)
+                self.assertTrue(
+                    str(caught.exception).startswith("refused:"),
+                    caught.exception)
+        after = self.store.get(row["handoff_id"])
+        self.assertEqual(after["state"], h.STATE_OFFERED)
+        self.assertIsNone(after["actual_owner_id"])
+        self.assertTrue(after["bot_paused"])
+
+    def test_a_lapsed_offer_still_refuses_the_offered_owner(self):
+        row = self.open()
+        with self.assertRaises(h.HandoffError):
+            self.store.accept(row["handoff_id"], actor=OWNER,
+                              now=self.t0 + 7200)
+        with self.assertRaises(h.HandoffError) as caught:
+            self.store.release(row["handoff_id"], actor=OWNER,
+                               reason="giving up", now=self.t0 + 7201)
+        self.assertTrue(str(caught.exception).startswith("refused:"))
+        after = self.store.get(row["handoff_id"])
+        self.assertEqual(after["state"], h.STATE_OFFERED)
+        self.assertIsNone(after["actual_owner_id"])
+        self.assertTrue(after["bot_paused"])
+
+    def test_escalation_of_an_unaccepted_offer_before_the_due_time_is_refused(self):
+        row = self.open()
+        with self.assertRaises(h.HandoffError) as caught:
+            self.store.escalate(row["handoff_id"], now=self.t0 + 20)
+        self.assertTrue(str(caught.exception).startswith("refused:"))
+        self.assertIsNone(self.store.get(row["handoff_id"])["escalated_at"])
+
+    def test_backup_acceptance_before_escalation_is_refused(self):
+        row = self.open()
+        with self.assertRaises(h.HandoffError) as caught:
+            self.store.backup_accept(row["handoff_id"], actor=BACKUP,
+                                     now=self.t0 + 7200)
+        self.assertTrue(str(caught.exception).startswith("refused:"))
+        after = self.store.get(row["handoff_id"])
+        self.assertIsNone(after["actual_owner_id"])
+        self.assertEqual(after["state"], h.STATE_OFFERED)
+
+    def test_the_due_reads_agree_that_a_lapsed_offer_is_escalatable(self):
+        row = self.open()
+        before = self.store.get(row["handoff_id"], now=self.t0 + 10)
+        self.assertFalse(before["overdue"])
+        self.assertFalse(before["escalation_due"])
+        lapsed = self.store.get(row["handoff_id"], now=self.t0 + 7200)
+        self.assertTrue(lapsed["overdue"])
+        self.assertTrue(lapsed["escalation_due"])
+        self.store.escalate(row["handoff_id"], now=self.t0 + 7201)
+        after = self.store.get(row["handoff_id"], now=self.t0 + 7202)
+        self.assertTrue(after["overdue"])
+        self.assertFalse(after["escalation_due"])
+
+
+class ConcurrentHandoffFenceTests(Base):
+    """One contact, two open handoffs: the fence belongs to the contact."""
+
+    def test_releasing_one_handoff_keeps_the_fence_while_a_sibling_is_open(self):
+        a = self.open(context_ref="conversation:a")
+        b = self.open(context_ref="conversation:b", now=self.t0 + 1)
+        self.store.accept(a["handoff_id"], actor=OWNER, now=self.t0 + 2)
+        row = self.store.release(a["handoff_id"], actor=OWNER, reason="a served",
+                                 now=self.t0 + 3)
+        self.assertEqual(row["state"], h.STATE_RELEASED)
+        sibling = self.store.get(b["handoff_id"])
+        self.assertNotEqual(sibling["state"], h.STATE_RELEASED)
+        self.assertTrue(
+            sibling["bot_paused"],
+            "releasing one handoff must not unpause the bot while a sibling"
+            " is still open")
+        decision = self.store.gate_decision("t1", self.contact)
+        self.assertEqual(decision["verdict"], h.GATE_SUPPRESSED)
+        self.assertTrue(decision["bot_paused"])
+
+    def test_the_last_release_alone_resumes_the_bot(self):
+        a = self.open(context_ref="conversation:a")
+        b = self.open(context_ref="conversation:b", now=self.t0 + 1)
+        self.store.accept(a["handoff_id"], actor=OWNER, now=self.t0 + 2)
+        self.store.accept(b["handoff_id"], actor=OWNER, now=self.t0 + 3)
+        self.store.release(a["handoff_id"], actor=OWNER, reason="a served",
+                           now=self.t0 + 4)
+        self.assertTrue(self.store.get(b["handoff_id"])["bot_paused"])
+        row = self.store.release(b["handoff_id"], actor=OWNER, reason="b served",
+                                 now=self.t0 + 5)
+        self.assertEqual(row["state"], h.STATE_RELEASED)
+        self.assertFalse(row["bot_paused"])
+        self.assertEqual(
+            self.store.gate_decision("t1", self.contact)["verdict"],
+            h.GATE_ALLOW)
+
+    def test_the_fence_survives_a_release_while_a_lapsed_offer_is_open(self):
+        a = self.open(context_ref="conversation:a")
+        b = self.open(context_ref="conversation:b", now=self.t0 + 1)
+        self.store.accept(a["handoff_id"], actor=OWNER, now=self.t0 + 2)
+        self.store.release(a["handoff_id"], actor=OWNER, reason="a served",
+                           now=self.t0 + 3)
+        self.assertTrue(self.store.get(b["handoff_id"])["bot_paused"])
+        self.store.escalate(b["handoff_id"], now=self.t0 + 7200)
+        self.store.backup_accept(b["handoff_id"], actor=BACKUP,
+                                 now=self.t0 + 7210)
+        row = self.store.release(b["handoff_id"], actor=BACKUP,
+                                 reason="backup closed it", now=self.t0 + 7220)
+        self.assertEqual(row["state"], h.STATE_RELEASED)
+        self.assertFalse(row["bot_paused"])
+
+
 class RefusalIsNotAChangeTests(Base):
     def test_failed_operations_change_nothing(self):
         row = self.open()
@@ -471,7 +628,9 @@ class RefusalIsNotAChangeTests(Base):
         for call in (
             lambda: self.store.accept(row["handoff_id"], actor=BACKUP,
                                       now=self.t0 + 5),
-            lambda: self.store.escalate(row["handoff_id"], now=self.t0 + 7200),
+            # escalation of a lapsed offer is legal now, so the refused call
+            # here is the one before the due time
+            lambda: self.store.escalate(row["handoff_id"], now=self.t0 + 20),
             lambda: self.store.release(row["handoff_id"], actor=OWNER,
                                        reason="x"),
             lambda: self.store.backup_accept(row["handoff_id"], actor=BACKUP,

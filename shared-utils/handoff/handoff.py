@@ -16,7 +16,8 @@ What this module exists to guarantee (R-19 / C-29):
                accepted has no actual owner, so nobody can release it.
 
   DUE/BACKUP   Once the due time passes the handoff is overdue. Escalation
-               offers it to the backup, who must then accept it. Escalation
+               offers it to the backup, whether or not the offered owner ever
+               accepted, and the backup must then accept it. Escalation
                changes the actual owner only through that explicit acceptance.
 
   FENCE        Opening a handoff pauses the bot for that contact, and the bot
@@ -375,7 +376,11 @@ class HandoffStore:
     def escalate(self, handoff_id: str, *, now: Optional[float] = None,
                  reason: str = "",
                  expect_version: Optional[int] = None) -> Dict[str, Any]:
-        """Offer an overdue accepted handoff to the backup. Fence unchanged.
+        """Offer an overdue handoff to the backup. Fence unchanged.
+
+        An offer whose owner never accepted is reachable too: once the due
+        time lapses the backup is the only route out, and the bot stays
+        paused until that backup accepts and releases.
 
         ponytail: escalation is a caller-driven operation, never a wall-clock
         timer. The scheduler that owns handoffs calls this when it sweeps;
@@ -387,10 +392,10 @@ class HandoffStore:
         with self._write() as conn:
             row = self._locked(conn, handoff_id)
             self._expect_version(row, expect_version)
-            if row["state"] != STATE_ACTIVE:
+            if row["state"] not in (STATE_ACTIVE, STATE_OFFERED):
                 raise HandoffError(
-                    f"illegal_transition: escalate requires state {STATE_ACTIVE},"
-                    f" found {row['state']}")
+                    f"illegal_transition: escalate requires state"
+                    f" {STATE_ACTIVE} or {STATE_OFFERED}, found {row['state']}")
             if ts < row["due_at"]:
                 raise HandoffError("refused: the handoff is not overdue")
             if row["escalated_at"] is not None:
@@ -408,17 +413,21 @@ class HandoffStore:
     def backup_accept(self, handoff_id: str, *, actor: str,
                       now: Optional[float] = None,
                       expect_version: Optional[int] = None) -> Dict[str, Any]:
-        """The backup accepts an escalated handoff and becomes the owner."""
+        """The backup accepts an escalated handoff and becomes the owner.
+
+        Reachable from an accepted handoff and from an offer that lapsed
+        unaccepted; either way the owner changes only through this call.
+        """
         handoff_id = _text(handoff_id, "handoff_id")
         actor = _text(actor, "actor")
         ts = _now(now)
         with self._write() as conn:
             row = self._locked(conn, handoff_id)
             self._expect_version(row, expect_version)
-            if row["state"] != STATE_ACTIVE:
+            if row["state"] not in (STATE_ACTIVE, STATE_OFFERED):
                 raise HandoffError(
                     "illegal_transition: backup_accept requires state"
-                    f" {STATE_ACTIVE}, found {row['state']}")
+                    f" {STATE_ACTIVE} or {STATE_OFFERED}, found {row['state']}")
             if row["escalated_at"] is None:
                 raise HandoffError(
                     "refused: the handoff was not escalated to the backup")
@@ -426,10 +435,19 @@ class HandoffStore:
                 raise HandoffError("refused: only the named backup can accept")
             if row["actual_owner_id"] == row["backup_owner_id"]:
                 raise HandoffError("illegal_transition: the backup already owns it")
-            conn.execute(
-                "UPDATE handoffs SET actual_owner_id=?, backup_accepted_at=?,"
-                " version=version+1, updated_at=? WHERE handoff_id=?",
-                (actor, ts, ts, handoff_id))
+            if row["state"] == STATE_OFFERED:
+                # Nobody accepted the offer, so the backup's acceptance is
+                # what makes the handoff owned at all.
+                conn.execute(
+                    "UPDATE handoffs SET state=?, actual_owner_id=?,"
+                    " backup_accepted_at=?, version=version+1, updated_at=?"
+                    " WHERE handoff_id=?",
+                    (STATE_ACTIVE, actor, ts, ts, handoff_id))
+            else:
+                conn.execute(
+                    "UPDATE handoffs SET actual_owner_id=?, backup_accepted_at=?,"
+                    " version=version+1, updated_at=? WHERE handoff_id=?",
+                    (actor, ts, ts, handoff_id))
             self._event(conn, handoff_id, ACTION_BACKUP_ACCEPTED, actor,
                         "backup_accepted", ts,
                         {"previous_owner_id": row["actual_owner_id"]})
@@ -486,8 +504,10 @@ class HandoffStore:
 
     # -- reads ------------------------------------------------------------
 
-    def get(self, handoff_id: str) -> Dict[str, Any]:
+    def get(self, handoff_id: str, *,
+            now: Optional[float] = None) -> Dict[str, Any]:
         handoff_id = _text(handoff_id, "handoff_id")
+        ts = _now(now)
         with self._read() as conn:
             row = conn.execute(
                 "SELECT * FROM handoffs WHERE handoff_id = ?",
@@ -495,9 +515,9 @@ class HandoffStore:
         if row is None:
             raise HandoffError(f"unknown_handoff: {handoff_id}")
         data = dict(row)
-        now = time.time()
         paused = bool(self.fence.is_paused(
             data["tenant_id"], data["canonical_contact_id"]))
+        open_state = data["state"] in (STATE_ACTIVE, STATE_OFFERED)
         return {
             "handoff_id": data["handoff_id"],
             "tenant_id": data["tenant_id"],
@@ -511,15 +531,14 @@ class HandoffStore:
             "due_at": data["due_at"],
             "state": data["state"],
             "actual_owner_id": data["actual_owner_id"],
-            "accepted": data["accepted_at"] is not None,
+            "accepted": (data["accepted_at"] is not None
+                         or data["backup_accepted_at"] is not None),
             "accepted_at": data["accepted_at"],
             "escalated_at": data["escalated_at"],
             "backup_accepted": data["backup_accepted_at"] is not None,
-            "overdue": (data["state"] == STATE_ACTIVE
-                        and now >= data["due_at"]),
-            "escalation_due": (data["state"] == STATE_ACTIVE
-                               and data["escalated_at"] is None
-                               and now >= data["due_at"]),
+            "overdue": (open_state and ts >= data["due_at"]),
+            "escalation_due": (open_state and data["escalated_at"] is None
+                               and ts >= data["due_at"]),
             "released_at": data["released_at"],
             "release_reason": data["release_reason"],
             "release_key": data["release_key"],
@@ -616,6 +635,11 @@ class HandoffStore:
         tenant_id = row["tenant_id"]
         contact = row["canonical_contact_id"]
         if not self.fence.is_paused(tenant_id, contact):
+            return
+        # A concurrent open handoff for the same contact keeps the fence:
+        # releasing it would unpause a live one. The same guard create()'s
+        # rollback path uses.
+        if self._other_open(tenant_id, contact):
             return
         self.fence.release(tenant_id, contact, actor=row["actual_owner_id"],
                            reason=reason, now=at)
