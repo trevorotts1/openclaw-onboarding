@@ -456,15 +456,67 @@ PYEOF
 }
 
 # ------------------------------------------------------------
-# oc_skill_registered <skill_name>
-#   (a) of the GATE: returns 0 if `openclaw skills info <name>` shows the skill
-#   as Ready/visible. The skill's REGISTERED NAME is its SKILL.md `name:` field
-#   (which can differ from the folder, e.g. 35-social-media-planner →
-#   name social-media-planner), so we resolve that first.
+# oc_skill_selection_status <skill_name> [expected_version]
+#   SHARED SELECTION GATE (WG1). Verifies the skill the INTENDED OpenClaw agent
+#   actually RESOLVES — not merely that a file, a folder or an install record
+#   exists somewhere on disk. Tri-state:
+#
+#     exit 0  PASS    the resolver's own evidence (openclaw skills info
+#                     Details: Source/Path for the intended agent) names the
+#                     selected tree, and that tree is verified correct:
+#                     runtime distribution present (declared built entry point
+#                     exists and matches its recorded digest/size — a source-only
+#                     or unrecorded copy is not proof), and artifact/version
+#                     identity consistent across ALL carriers present (version
+#                     file, skill-version.txt, SKILL.md frontmatter,
+#                     manifest.json skill_version) — disagreement is a FAILURE,
+#                     never a preference — and not older than expected_version.
+#     exit 1  FAIL    resolver evidence proves the selection wrong (skill not
+#                     found for the agent, selected tree missing, carriers
+#                     disagree, selected tree older than expected_version,
+#                     declared entry point missing or mismatched).
+#     exit 2  BLOCKED selection CANNOT be established through the access
+#                     actually available (no openclaw CLI, agent selection
+#                     unresolved, no resolver Path evidence). NEVER success:
+#                     an installation record, a fallback directory
+#                     (~/.openclaw/skills, ~/.agents/skills, …) or a copy that
+#                     merely exists is NOT proof of agent selection.
+#
+#   Prints one line "PASS|FAIL|BLOCKED <reason>" (BLOCKED lines never print
+#   "registered" or "ok"). Sets:
+#     OC_SKILL_STATUS  OC_SKILL_REASON  OC_SKILL_SELECTED_PATH
+#     OC_SKILL_RESOLVED_SOURCE
+#
+#   v26 gate repair. The old oc_skill_registered counted ANY positive substring
+#   ("ready|enabled|visible|installed|name:") in `openclaw skills info` as
+#   success without ever reading WHICH tree the agent resolved, so an old copy
+#   in a shadowing root (~/.agents/skills shadowing ~/.openclaw/skills) passed
+#   the gate while the agent served the stale tree.
 # ------------------------------------------------------------
-oc_skill_registered() {
-  local folder="$1"
-  command -v openclaw >/dev/null 2>&1 || return 1
+oc_skill_selection_status() {
+  local folder="$1" expected="${2:-${OC_SKILL_EXPECTED_VERSION:-}}"
+  OC_SKILL_STATUS=""; OC_SKILL_REASON=""; OC_SKILL_SELECTED_PATH=""; OC_SKILL_RESOLVED_SOURCE=""
+  # FIND THE CLI BEFORE DECLARING IT ABSENT (same known-location scan as
+  # obs_verify_skill in scripts/onboarding-state.sh): `command -v` proves only
+  # that a NAME resolves on the CURRENT PATH, which under cron/launchd is not
+  # the box. If no CLI can be found at all, selection cannot be established.
+  local cli=""
+  cli="$(command -v openclaw 2>/dev/null || true)"
+  if [ -z "$cli" ]; then
+    local _c
+    for _c in "$HOME/.local/bin/openclaw" "$HOME/.npm-global/bin/openclaw" \
+              /usr/local/bin/openclaw /opt/homebrew/bin/openclaw \
+              /usr/bin/openclaw; do
+      [ -x "$_c" ] && { cli="$_c"; break; }
+    done
+    unset _c
+  fi
+  if [ -z "$cli" ]; then
+    OC_SKILL_STATUS=BLOCKED
+    OC_SKILL_REASON="skill-selection-blocked:openclaw-cli-absent-selection-cannot-be-established"
+    printf '%s %s\n' "$OC_SKILL_STATUS" "$OC_SKILL_REASON"
+    return 2
+  fi
   local reg_name
   # v16.2.13: `|| true` — awk exits non-zero (rc 2) when SKILL.md is absent
   # (2>/dev/null hides the message, NOT the code); this plain assignment (local
@@ -473,16 +525,190 @@ oc_skill_registered() {
   reg_name=$(awk -F': ' '/^name:/{gsub(/[[:space:]]/,"",$2);print $2;exit}' \
                "$OC_SKILLS_DIR/$folder/SKILL.md" 2>/dev/null || true)
   [ -z "$reg_name" ] && reg_name="$folder"
-  local out
-  # Multi-agent boxes need --agent (bare `skills info` reports not-visible).
-  # obs_default_agent comes from scripts/onboarding-state.sh; absent when this lib
-  # is sourced alone, which keeps single-agent behaviour unchanged.
+  # Multi-agent boxes need --agent (bare `skills info` reports not-visible and
+  # the intended agent cannot be told apart). obs_default_agent comes from
+  # scripts/onboarding-state.sh; absent when this lib is sourced alone, which
+  # keeps single-agent behaviour unchanged.
   local _ag=""
-  command -v obs_default_agent >/dev/null 2>&1 && _ag="$(obs_default_agent)"
-  out=$(openclaw skills info "$reg_name" ${_ag:+--agent "$_ag"} 2>/dev/null) || return 1
-  # Ready / visible / enabled — any positive signal counts; empty/Not found fails.
-  printf '%s' "$out" | grep -qiE "ready|enabled|visible|installed|name:" || return 1
-  printf '%s' "$out" | grep -qiE "not found|unknown skill|no such skill" && return 1
+  if command -v obs_default_agent >/dev/null 2>&1; then
+    _ag="$(obs_default_agent)"
+  fi
+  local out rc=0
+  out=$("$cli" skills info "$reg_name" ${_ag:+--agent "$_ag"} 2>&1) || rc=$?
+  local res rrc=0
+  res=$(OC_SKILL_INFO_OUT="$out" OC_SKILL_INFO_RC="$rc" OC_SKILL_FOLDER="$folder" \
+        OC_SKILL_EXPECTED="$expected" python3 - <<'PYEOF'
+import hashlib, json, os, re, sys
+
+out = os.environ.get("OC_SKILL_INFO_OUT", "")
+try:
+    cli_rc = int(os.environ.get("OC_SKILL_INFO_RC", "0"))
+except ValueError:
+    cli_rc = 1
+expected = os.environ.get("OC_SKILL_EXPECTED", "").strip()
+
+
+def emit(status, reason, path="", source="", code=1):
+    print("\t".join([status, reason, path, source]))
+    raise SystemExit(code)
+
+
+def norm(v):
+    v = v.strip().strip('"').strip("'").strip()
+    return v[1:] if re.match(r"^[vV]\d", v) else v
+
+
+def vkey(v):
+    key = []
+    for p in re.split(r"[.\-+_]", v):
+        if not p:
+            continue
+        key.append((0, int(p), "") if p.isdigit() else (1, 0, p.lower()))
+    return key
+
+
+def cmp_ver(a, b):
+    ka, kb = vkey(a), vkey(b)
+    return (ka > kb) - (ka < kb)
+
+
+# (1) RESOLUTION EVIDENCE — the product's own answer for the INTENDED agent.
+if re.search(r"no explicit owner|multiple agents are configured|AgentSelectionRequiredError", out):
+    emit("BLOCKED", "skill-selection-blocked:agent-selection-unresolved-selection-cannot-be-established", code=2)
+m_src = re.search(r"^\s*Source:\s*(.+?)\s*$", out, re.M)
+m_path = re.search(r"^\s*Path:\s*(.+?)\s*$", out, re.M)
+if re.search(r"not found|unknown skill|no such skill", out, re.I) and not m_path:
+    emit("FAIL", "not-registered:resolver-reports-skill-absent-for-intended-agent")
+if not m_path:
+    # Ready text without a resolver Path proves nothing about WHICH tree the
+    # agent serves. Fallback roots and install records are not proof.
+    emit("BLOCKED", "skill-selection-blocked:no-resolver-path-selection-cannot-be-established", code=2)
+
+src = m_src.group(1) if m_src else ""
+sel = os.path.expanduser(m_path.group(1))
+sel_dir = os.path.dirname(sel)
+if not os.path.isfile(sel):
+    emit("FAIL", "selected-tree-missing:resolver-names-" + sel, sel, src)
+
+# (2) ARTIFACT/VERSION IDENTITY across every carrier PRESENT in the selected
+# tree. Disagreement is a failure, not a preference.
+carriers = {}
+for n in ("version", "VERSION", "skill-version.txt"):
+    p = os.path.join(sel_dir, n)
+    if os.path.isfile(p):
+        try:
+            first = open(p, encoding="utf-8", errors="ignore").read().strip().splitlines()[0]
+        except OSError:
+            first = ""
+        if first.strip():
+            carriers["version-file:" + n] = norm(first)
+
+sk = os.path.join(sel_dir, "SKILL.md")
+if os.path.isfile(sk):
+    try:
+        txt = open(sk, encoding="utf-8", errors="ignore").read()
+    except OSError:
+        txt = ""
+    m = re.match(r"^---\n(.*?)\n---", txt, re.S)
+    if m:
+        fm = m.group(1)
+        mv = re.search(r"^version:\s*[\"']?([^\"'\n#]+?)[\"']?\s*$", fm, re.M)
+        if not mv:
+            mv = re.search(r"^\s+version:\s*[\"']?([^\"'\n#]+?)[\"']?\s*$", fm, re.M)
+        if mv:
+            carriers["SKILL.md"] = norm(mv.group(1))
+
+manifest = None
+mf = os.path.join(sel_dir, "manifest.json")
+if os.path.isfile(mf):
+    try:
+        manifest = json.load(open(mf, encoding="utf-8"))
+    except (OSError, ValueError):
+        emit("FAIL", "manifest-unreadable:" + mf, sel, src)
+    if isinstance(manifest, dict):
+        v = manifest.get("skill_version") or (manifest.get("manifest") or {}).get("skill_version")
+        if v:
+            carriers["manifest.skill_version"] = norm(str(v))
+
+vals = sorted(set(carriers.values()))
+if len(vals) > 1:
+    emit("FAIL",
+         "version-carriers-disagree:" + ";".join("%s=%s" % kv for kv in sorted(carriers.items())),
+         sel, src)
+
+sel_ver = vals[0] if vals else ""
+if expected:
+    e = norm(expected)
+    if not sel_ver:
+        emit("FAIL", "no-version-evidence:cannot-confirm-shipped-artifact", sel, src)
+    c = cmp_ver(sel_ver, e)
+    if c < 0:
+        emit("FAIL", "selected-version-older:%s<%s" % (sel_ver, e), sel, src)
+    if c > 0:
+        emit("FAIL", "selected-version-mismatch:%s!=%s" % (sel_ver, e), sel, src)
+
+# (2b) RUNTIME DISTRIBUTION. A declared built entry point must be present in
+# the selected tree and match its recorded identity (digest/size). An archive
+# or executable merely EXISTING is not proof it is valid, and a source-only
+# tree is not the built distribution.
+entry = None
+if isinstance(manifest, dict):
+    re_entry = manifest.get("runtime_entry")
+    if isinstance(re_entry, dict) and re_entry.get("path"):
+        entry = re_entry
+if entry is None:
+    irec = os.path.join(sel_dir, "install-record.json")
+    if os.path.isfile(irec):
+        try:
+            rec = json.load(open(irec, encoding="utf-8"))
+        except (OSError, ValueError):
+            rec = None
+        if isinstance(rec, dict):
+            e2 = rec.get("runtime_entry")
+            if not isinstance(e2, dict) and rec.get("entry"):
+                e2 = {"path": rec["entry"]}
+            if isinstance(e2, dict) and e2.get("path"):
+                entry = e2
+if entry:
+    rel = str(entry.get("path"))
+    ap = os.path.join(sel_dir, rel)
+    if not os.path.isfile(ap):
+        emit("FAIL", "runtime-entry-missing:%s (tree is source-only or not built)" % rel, sel, src)
+    if entry.get("bytes") not in (None, "") and os.path.getsize(ap) != int(entry["bytes"]):
+        emit("FAIL", "runtime-entry-size-mismatch:%s" % rel, sel, src)
+    if entry.get("sha256"):
+        h = hashlib.sha256(open(ap, "rb").read()).hexdigest()
+        if h.lower() != str(entry["sha256"]).lower():
+            emit("FAIL", "runtime-entry-digest-mismatch:%s" % rel, sel, src)
+
+emit("PASS", "selection-verified" + (":version=" + sel_ver if sel_ver else ""), sel, src, code=0)
+PYEOF
+  ) || rrc=$?
+  OC_SKILL_STATUS=$(printf '%s' "$res" | cut -f1)
+  OC_SKILL_REASON=$(printf '%s' "$res" | cut -f2)
+  OC_SKILL_SELECTED_PATH=$(printf '%s' "$res" | cut -f3)
+  OC_SKILL_RESOLVED_SOURCE=$(printf '%s' "$res" | cut -f4)
+  : "${OC_SKILL_STATUS:=BLOCKED}"
+  : "${OC_SKILL_REASON:=skill-selection-blocked:verification-did-not-run}"
+  printf '%s %s\n' "$OC_SKILL_STATUS" "$OC_SKILL_REASON"
+  case "$OC_SKILL_STATUS" in
+    PASS) return 0 ;;
+    FAIL) return 1 ;;
+    *)    return 2 ;;
+  esac
+}
+
+# ------------------------------------------------------------
+# oc_skill_registered <skill_name> [expected_version]
+#   (a) of the GATE: boolean wrapper kept at its original name, signature and
+#   0/1 contract for existing call sites. Returns 0 ONLY when
+#   oc_skill_selection_status verifies the tree the intended OpenClaw agent
+#   resolves (see above). FAIL and BLOCKED both return 1 — a selection that
+#   cannot be established is never success. Silent on stdout (the tri-state
+#   beside it is the details-bearing API).
+# ------------------------------------------------------------
+oc_skill_registered() {
+  oc_skill_selection_status "$@" >/dev/null || return 1
   return 0
 }
 
@@ -531,7 +757,10 @@ PYEOF
 # ------------------------------------------------------------
 # oc_gate_skill <skill_name>
 #   THE VERIFICATION GATE. A skill counts INSTALLED only if ALL apply:
-#     (a) openclaw skills info <name> → Ready/visible
+#     (a) the skill the intended OpenClaw agent RESOLVES is verified correct
+#         (oc_skill_selection_status: resolver path, runtime distribution,
+#         version identity — selection that cannot be established is BLOCKED,
+#         never success)
 #     (b) its CORE_UPDATES sentinel is present in workspace files (if it has one)
 #     (c) its qc-*.sh exits 0 (if it ships one)
 #   Records registered / coreUpdatesSentinelPresent / qcExit and sets status to
@@ -554,12 +783,17 @@ oc_gate_skill() {
   local ok=1 reason=""
   local _sw_ok=1          # state-write health; 0 once any field failed to record
 
-  # (a) registration
-  if oc_skill_registered "$folder"; then
+  # (a) registration — verified against the tree the INTENDED agent RESOLVES
+  # (WG1): tri-state so a BLOCKED selection is recorded as blocked, never as a
+  # bare "not-registered" and never as success.
+  local _sel_rc=0
+  oc_skill_selection_status "$folder" || _sel_rc=$?
+  oc_state_mark_field "$folder" selectionStatus "\"${OC_SKILL_STATUS:-unknown}\"" || _sw_ok=0
+  if [ "$_sel_rc" -eq 0 ]; then
     oc_state_mark_field "$folder" registered true || _sw_ok=0
   else
     oc_state_mark_field "$folder" registered false || _sw_ok=0
-    ok=0; reason="not-registered"
+    ok=0; reason="${OC_SKILL_REASON:-not-registered}"
   fi
 
   # (b) CORE_UPDATES sentinel
