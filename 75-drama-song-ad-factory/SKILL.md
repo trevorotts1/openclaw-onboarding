@@ -912,12 +912,16 @@ This skill never picks, forces or recommends a model, an alias or an agent.
   model the user has not set up.
 - If the user names a model or agent, use exactly that one.
 
-The one AI MODELS question on the intake card (first question) asks which AI
-builds and which AI checks, with OpenRouter recommended and Ollama allowed. It
-only RECORDS the answer as `ai_models` in the approved intake summary, as a
-preference for the operator. The run itself still uses the session's own model;
-nothing here switches models. Names that are not routable are refused, and the
-checker must differ from the builder. Code: `scripts/core/choice_card/intake_card/ai_models.py`.
+The AI MODELS question records the client's exact builder/checker pair and
+requires different, routable choices. Explicit recap confirmation binds that
+pair to this run through `ai_models.bind_roles`; stage dispatch admission reads
+those bindings through `admit_dispatch`. Build work uses the selected builder;
+QC and repair use the selected checker. Literal configured aliases stay intact:
+no chain member is selected for the client, and no global model setting changes.
+An admitted dispatch is `admitted_not_called`, not proof of provider execution.
+Router-chain attempts remain `CHAIN_RESOLUTION_UNVERIFIED` until supported
+provider identity evidence proves the actual call. Code:
+`scripts/core/choice_card/intake_card/ai_models.py`.
 
 ## Main window: orchestrate only, all work visible, no silent failure
 
