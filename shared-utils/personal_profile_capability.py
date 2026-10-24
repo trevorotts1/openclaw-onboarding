@@ -16,7 +16,10 @@ Assisted contract:
      keyword, CTA, timing) and a one-step operator instruction. Status is
      "awaiting-operator"; there is no receipt.
   3. record_operator_confirmation() turns it into "operator-confirmed" ONLY when
-     the operator explicitly confirms. The receipt is the only proof.
+     the operator explicitly confirms. The receipt is the only proof, and it is
+     proof only for a placement whose id recomputes from that placement's own
+     (channel, account_type, action, placement) — a carried placement_id is never
+     trusted on its own.
   4. status_surface() reports awaiting-operator / operator-confirmed and never
      published-by-system for an assisted placement.
   5. assert_truthful_publication() raises UntruthfulPublication when a record
@@ -335,6 +338,38 @@ def _placement_id(channel: str, account_type: str, action: str, placement: dict)
     return "plc_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def _placement_provenance(package: Any) -> str:
+    """Recompute the placement digest — the ONE source of truth for a placement_id.
+
+    prepare_assisted_placement() mints its id through here and
+    record_operator_confirmation() re-derives it through here, so the two cannot
+    drift. Nothing is ever accepted on a carried placement_id alone: the caller
+    must supply what the digest is computed from (channel, account_type, action,
+    placement) and the id must be the digest of exactly that.
+    """
+    if not isinstance(package, dict):
+        raise CapabilityError("placement package must be an object")
+    for field in ("channel", "account_type", "action"):
+        value = package.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise CapabilityError(
+                f"placement package carries no '{field}'; without the digest "
+                "inputs there is no placement_id this receipt could prove"
+            )
+    if "placement" not in package:
+        raise CapabilityError(
+            "placement package carries no 'placement'; without the digest "
+            "inputs there is no placement_id this receipt could prove"
+        )
+    clean = _validate_placement(package["placement"])
+    return _placement_id(
+        package["channel"].strip(),
+        package["account_type"].strip(),
+        package["action"].strip().lower(),
+        clean,
+    )
+
+
 def _validate_placement(placement: dict) -> dict:
     if not isinstance(placement, dict):
         raise CapabilityError("placement must be an object")
@@ -342,11 +377,18 @@ def _validate_placement(placement: dict) -> dict:
         if field not in placement:
             raise CapabilityError(f"placement missing required field '{field}'")
         value = placement[field]
-        empty = value is None or (
-            isinstance(value, str) and not value.strip()
-        ) or (isinstance(value, (list, dict)) and not value)
+        if not isinstance(value, (str, dict, list)):
+            raise CapabilityError(
+                f"placement field '{field}' must be a string, object or list, "
+                f"not {type(value).__name__}"
+            )
+        empty = (isinstance(value, str) and not value.strip()) or (
+            isinstance(value, (list, dict)) and not value
+        )
         if empty:
             raise CapabilityError(f"placement field '{field}' must not be empty")
+    # ponytail: shape is checked shallowly (top-level type per field); deepen to
+    # per-field schemas if a placement ever carries nested operator input.
     return copy.deepcopy(placement)
 
 
@@ -377,19 +419,25 @@ def prepare_assisted_placement(
             f"{capability['channel']}/{capability['account_type']}"
         )
     clean = _validate_placement(placement)
-    placement_id = _placement_id(
-        capability["channel"], capability["account_type"], action_id, clean
-    )
-    return {
-        "placement_id": placement_id,
+    package = {
         "channel": capability["channel"],
         "channel_label": capability["channel_label"],
         "account_type": capability["account_type"],
         "account_label": capability["label"],
         "action": action_id,
+        "placement": clean,
+    }
+    placement_id = _placement_provenance(package)
+    return {
+        "placement_id": placement_id,
+        "channel": package["channel"],
+        "channel_label": package["channel_label"],
+        "account_type": package["account_type"],
+        "account_label": package["account_label"],
+        "action": package["action"],
         "route": "assisted",
         "status": "awaiting-operator",
-        "placement": clean,
+        "placement": package["placement"],
         "operator_action": {
             "step": "one-step-manual-action",
             "instruction": capability["operator_instruction"],
@@ -413,21 +461,31 @@ def _now_utc() -> str:
     )
 
 
-def _valid_receipt(receipt: Any, placement_id: Optional[str] = None) -> bool:
-    """A receipt is proof only when it binds to a real placement.
+def _valid_receipt(receipt: Any, record: Any) -> bool:
+    """A receipt is proof only when it binds to a placement that is REAL.
 
-    The binding is NOT optional: a receipt naming no placement, or offered for a
-    record that names none, proves nothing and is refused.
+    Real means provenance, not self-consistency: the record's placement_id must
+    be the digest recomputed from the record's own (channel, account_type,
+    action, placement), and the receipt must name exactly that id. A receipt
+    that merely agrees with the record's own field proves nothing and is
+    refused, as does a receipt naming no placement or offered for a record that
+    names none. The binding is NOT optional.
     """
-    if not isinstance(receipt, dict):
+    if not isinstance(receipt, dict) or not isinstance(record, dict):
         return False
     caps = load_capabilities()
     for field in caps["policy"]["receipt_required_fields"]:
         value = receipt.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
             return False
-    bound = placement_id if isinstance(placement_id, str) else None
-    if not bound or not bound.strip():
+    bound = record.get("placement_id")
+    if not isinstance(bound, str) or not bound.strip():
+        return False
+    try:
+        provenance = _placement_provenance(record)
+    except CapabilityError:
+        return False
+    if provenance != bound:
         return False
     return receipt.get("placement_id") == bound
 
@@ -478,7 +536,13 @@ def record_operator_confirmation(
             f"placement {placement_id} claims a publication; a claim cannot be "
             "turned into an operator receipt"
         )
-    _validate_placement(package.get("placement"))
+    provenance_id = _placement_provenance(package)
+    if provenance_id != placement_id:
+        raise CapabilityError(
+            f"placement_id '{placement_id}' is not the digest of this placement "
+            f"(it recomputes to '{provenance_id}'); an operator confirmation "
+            "binds only to a placement the id can be recomputed from"
+        )
     stamp = confirmed_at or _now_utc()
     if _parse_timestamp(stamp) is None:
         raise CapabilityError(f"confirmed_at '{stamp}' is not an ISO-8601 timestamp")
@@ -558,7 +622,7 @@ def _truth_of(record: dict, path: Optional[str] = None) -> dict:
                 "never be reported as published by the system"
             )
         if status == "operator-confirmed":
-            if not _valid_receipt(receipt, placement_id):
+            if not _valid_receipt(receipt, record):
                 raise UntruthfulPublication(
                     f"record {placement_id} is operator-confirmed without a "
                     "valid operator receipt"

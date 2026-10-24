@@ -146,21 +146,16 @@ class TestStatusGuardAgreement(unittest.TestCase):
                 "status": "published-by-system",
                 "receipt": None,
             },
-            # a page placement the operator confirmed, with a bound receipt
-            {
-                "placement_id": PLACEMENT_ID,
-                "route": "assisted",
-                "channel": "facebook",
-                "account_type": "page",
-                "personal_profile": False,
-                "status": "operator-confirmed",
-                "receipt": {
-                    "placement_id": PLACEMENT_ID,
-                    "operator": "Operator Name",
-                    "confirmed_at": "2026-10-24T15:00:00Z",
-                    "method": "operator-asserted",
-                },
-            },
+            # a non-personal (page-class) placement the operator confirmed, with a
+            # bound receipt. T-22c: this control is built through the real
+            # workflow instead of hand-written, because a hand-written one with a
+            # fabricated placement_id and no placement is exactly the mint this
+            # suite now refuses.
+            ppc.record_operator_confirmation(
+                ppc.prepare_assisted_placement("threads", "business", PLACEMENT),
+                "Operator Name",
+                confirmed_at="2026-10-24T15:00:00Z",
+            ),
             # an honest personal placement, awaiting the operator
             {
                 "placement_id": PLACEMENT_ID,
@@ -259,6 +254,47 @@ class TestOperatorConfirmationHardening(unittest.TestCase):
         self.assertEqual(surface["claim"], "operator-confirmed")
         self.assertFalse(surface["published_by_system"])
         self.assertEqual(surface["receipt"]["placement_id"], package["placement_id"])
+
+    def test_fabricated_placement_id_is_refused_everywhere(self):
+        """T-22c: a receipt is proof only when the placement_id recomputes."""
+        package = ppc.prepare_assisted_placement("facebook", "personal", PLACEMENT)
+        for fake_id in ("plc_minted", "anything-at-all", "plc_matrix"):
+            forged_package = dict(package, placement_id=fake_id)
+            with self.assertRaises(ppc.CapabilityError, msg=fake_id):
+                ppc.record_operator_confirmation(forged_package, "Operator Name")
+            forged = dict(
+                forged_package,
+                status="operator-confirmed",
+                receipt={
+                    "placement_id": fake_id,
+                    "operator": "Operator Name",
+                    "confirmed_at": "2026-10-24T15:00:00Z",
+                    "method": "operator-asserted",
+                },
+            )
+            for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+                with self.assertRaises(
+                    ppc.UntruthfulPublication, msg=f"{fn.__name__}/{fake_id}"
+                ):
+                    fn(forged)
+
+    def test_confirm_requires_the_digest_inputs(self):
+        package = ppc.prepare_assisted_placement("facebook", "personal", PLACEMENT)
+        for field in ("channel", "account_type", "action", "placement"):
+            stripped = dict(package)
+            stripped.pop(field)
+            with self.assertRaises(ppc.CapabilityError, msg=field):
+                ppc.record_operator_confirmation(stripped, "Operator Name")
+
+    def test_placement_field_types_are_enforced(self):
+        typed = {"text": 1, "asset": 1, "keyword": 1, "cta": 1, "timing": 1}
+        with self.assertRaises(ppc.CapabilityError):
+            ppc.prepare_assisted_placement("facebook", "personal", typed)
+        package = ppc.prepare_assisted_placement("facebook", "personal", PLACEMENT)
+        with self.assertRaises(ppc.CapabilityError):
+            ppc.record_operator_confirmation(
+                dict(package, placement=dict(typed)), "Operator Name"
+            )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,39 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.8.2] - 2026-10-24 - T-22c repair: a receipt is proof only when the placement_id recomputes
+
+- The receipt is now provable, not self-consistent. `prepare_assisted_placement`
+  and `record_operator_confirmation` both derive `placement_id` through one
+  function (`_placement_provenance` -> `_placement_id`, a SHA-256 digest of
+  channel, account_type, action, placement), so the two cannot drift, and
+  `record_operator_confirmation` recomputes the digest and REFUSES unless it
+  equals the supplied `placement_id`. Before this, any arbitrary dict carrying a
+  well-formed `placement` was bound to whatever non-empty string sat in
+  `placement_id` — `'anything-at-all'` bound happily.
+- The package must carry what the digest is computed from: `channel`,
+  `account_type`, `action` and `placement` are required, so there is nothing left
+  for a carried id to stand in for.
+- Placement field types are enforced: each of text, asset, keyword, cta, timing
+  must be a non-empty string, object or list. `{text: 1, asset: 1, keyword: 1,
+  cta: 1, timing: 1}` used to be accepted and is now refused at prepare AND at
+  confirm.
+- `_valid_receipt` now checks provenance instead of string equality with the
+  record's own field: the record's `placement_id` must be the digest recomputed
+  from that record's own inputs, and the receipt must name exactly that id. A
+  hand-built `operator-confirmed` record with a fabricated id and a self-consistent
+  receipt is refused on BOTH the status surface and the guard, with the same
+  reason.
+- Tests: `test_t22_status_guard_matrix.py` gains fabricated-id / missing
+  digest-input / wrong-field-type refusals. Its `known-good` control for an
+  operator-confirmed non-personal placement is now built through the real
+  workflow (threads/business, prepared then confirmed) instead of hand-written
+  with a fabricated `placement_id` and no placement — that hand-written record was
+  itself the mint this release closes. No assertion was weakened: the control
+  still requires that an operator-confirmed page-class placement passes both
+  surfaces, now with a receipt that is actually provable.
+- Suites: T-22 16 tests OK, status/guard matrix 10 tests OK (was 23 combined).
+- skill-version v3.8.1 -> v3.8.2.
+
 ## [3.8.1] - 2026-10-24 - T-22 repair: one truth path for the status surface and the guard
 
 - `status_surface` now refuses a personal-profile or personal-account record on the
