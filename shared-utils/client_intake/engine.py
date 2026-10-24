@@ -1092,6 +1092,15 @@ def launch_answers(doc):
         if e is not None:
             raw = e.get("value")
             put(qid, key, str(raw).strip() if isinstance(raw, str) and raw.strip() else None)
+    # The full launch plan refuses without a usable access destination, so the
+    # intake has to be able to produce one. Anything that is not an http(s)
+    # address is recorded as unknown rather than passed through.
+    e = get(doc, "access_url")
+    if e is not None:
+        raw = e.get("value")
+        url = raw.strip() if isinstance(raw, str) else ""
+        put("access_url", "launch.access_url",
+            url if url.startswith(("http://", "https://")) else None)
     return out
 
 
