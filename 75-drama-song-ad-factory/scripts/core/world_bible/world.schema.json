@@ -6,32 +6,100 @@
   "type": "object",
   "additionalProperties": true,
   "required": [
-    "schema_version", "kind", "artifact_id", "run_id", "revision",
-    "premise", "fiction_classification", "era", "locations", "light",
-    "palette", "texture", "sound", "never_list", "cast_refs", "continuity",
+    "schema_version",
+    "kind",
+    "artifact_id",
+    "run_id",
+    "revision",
+    "premise",
+    "fiction_classification",
+    "era",
+    "locations",
+    "light",
+    "palette",
+    "texture",
+    "sound",
+    "never_list",
+    "cast_refs",
+    "continuity",
     "content_digest"
   ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "kind": {"const": "episode_world"},
-    "artifact_id": {"type": "string", "minLength": 1},
-    "run_id": {"type": "string", "minLength": 1},
-    "revision": {"type": "integer", "minimum": 1},
-    "previous_revision": {"type": "integer", "minimum": 1},
-    "change_reason": {"type": "string"},
-    "content_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "provenance": {"type": "object"},
-    "dependencies": {"type": "object"},
-    "premise": {"type": "string", "minLength": 1},
-    "fiction_classification": {"enum": ["proposed_fiction", "sourced"]},
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "kind": {
+      "const": "episode_world"
+    },
+    "artifact_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "previous_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "change_reason": {
+      "type": "string"
+    },
+    "content_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provenance": {
+      "type": "object"
+    },
+    "dependencies": {
+      "type": "object"
+    },
+    "premise": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fiction_classification": {
+      "enum": [
+        "proposed_fiction",
+        "sourced"
+      ]
+    },
     "era": {
       "type": "object",
-      "required": ["period", "time_of_day", "time_jumps"],
+      "required": [
+        "period",
+        "time_of_day",
+        "time_jumps",
+        "span_minutes"
+      ],
       "properties": {
-        "period": {"type": "string", "minLength": 1},
-        "time_of_day": {"type": "string", "minLength": 1},
-        "season_weather": {"type": "string"},
-        "time_jumps": {"type": "array", "items": {"type": "object"}}
+        "period": {
+          "type": "string",
+          "minLength": 1
+        },
+        "time_of_day": {
+          "type": "string",
+          "minLength": 1
+        },
+        "season_weather": {
+          "type": "string"
+        },
+        "time_jumps": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "span_minutes": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "locations": {
@@ -39,84 +107,246 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["location_id", "name", "function", "interior"],
+        "required": [
+          "location_id",
+          "name",
+          "function",
+          "interior",
+          "layout",
+          "reality"
+        ],
         "properties": {
-          "location_id": {"type": "string", "pattern": "^loc_[A-Za-z0-9][A-Za-z0-9_.-]*$"},
-          "name": {"type": "string", "minLength": 1},
-          "function": {"type": "string", "minLength": 1},
-          "interior": {"type": "boolean"},
-          "access": {"type": "string"},
-          "entrances": {"type": "array", "items": {"type": "string"}},
-          "geography": {"type": "string"}
+          "location_id": {
+            "type": "string",
+            "pattern": "^loc_[A-Za-z0-9][A-Za-z0-9_.-]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "function": {
+            "type": "string",
+            "minLength": 1
+          },
+          "interior": {
+            "type": "boolean"
+          },
+          "access": {
+            "type": "string"
+          },
+          "entrances": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "geography": {
+            "type": "string"
+          },
+          "layout": {
+            "type": "object",
+            "required": [
+              "features"
+            ],
+            "properties": {
+              "features": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "reality": {
+            "enum": [
+              "fiction",
+              "real"
+            ]
+          },
+          "claim_source": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
     "light": {
       "type": "object",
-      "required": ["doctrine", "sources"],
+      "required": [
+        "doctrine",
+        "sources"
+      ],
       "properties": {
-        "doctrine": {"type": "string", "minLength": 1},
+        "doctrine": {
+          "type": "string",
+          "minLength": 1
+        },
         "sources": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["source", "direction"],
+            "required": [
+              "source",
+              "direction"
+            ],
             "properties": {
-              "source": {"type": "string", "minLength": 1},
-              "direction": {"type": "string", "minLength": 1},
-              "motivated_change": {"type": "string"}
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "direction": {
+                "type": "string",
+                "minLength": 1
+              },
+              "motivated_change": {
+                "type": "string"
+              }
             }
           }
         }
       }
     },
-    "palette": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-    "texture": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "palette": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "texture": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "sound": {
       "type": "object",
-      "required": ["ambience"],
+      "required": [
+        "ambience"
+      ],
       "properties": {
-        "ambience": {"type": "string", "minLength": 1},
-        "off_screen": {"type": "array", "items": {"type": "string"}},
-        "silence": {"type": "array", "items": {"type": "string"}}
+        "ambience": {
+          "type": "string",
+          "minLength": 1
+        },
+        "off_screen": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "silence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "never_list": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {"type": "string", "minLength": 1}
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "cast_refs": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["character_id", "identity_revision"],
+        "required": [
+          "character_id",
+          "identity_revision"
+        ],
         "additionalProperties": false,
         "properties": {
-          "character_id": {"type": "string", "minLength": 1},
-          "identity_revision": {"type": "integer", "minimum": 1}
+          "character_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "identity_revision": {
+            "type": "integer",
+            "minimum": 1
+          }
         }
       }
     },
     "continuity": {
       "type": "object",
-      "required": ["must_persist"],
+      "required": [
+        "must_persist"
+      ],
       "properties": {
-        "must_persist": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-        "may_change": {"type": "array", "items": {"type": "string"}},
-        "exceptions": {"type": "array", "items": {"type": "string"}}
+        "must_persist": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "may_change": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exceptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "scenes": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["scene_id", "location_id"],
+        "required": [
+          "scene_id",
+          "location_id",
+          "action",
+          "uses",
+          "minutes_from_start"
+        ],
         "properties": {
-          "scene_id": {"type": "string", "minLength": 1},
-          "location_id": {"type": "string", "minLength": 1}
+          "scene_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "location_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "minutes_from_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     }
