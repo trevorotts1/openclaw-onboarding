@@ -125,8 +125,9 @@ def validate_claims(claims, source_ids):
             # not by a URL. It is filed unverified, never as public fact.
             rec = {"id": cid, "text": text.strip(), "provenance": "owner-fact",
                    "owner_ref": c["owner_ref"].strip(), "status": "PASS"}
-            if c.get("sections"):
-                rec["sections"] = c["sections"]
+            for field in ("sections", "about"):
+                if c.get(field):
+                    rec[field] = c[field]
             ok.append(rec)
         elif not _nonempty(src) or src.strip() not in source_ids:
             unavailable.append({"id": cid, "text": text.strip() if _nonempty(text) else text,
@@ -135,7 +136,8 @@ def validate_claims(claims, source_ids):
             rec = {"id": cid, "text": text.strip(), "source": src.strip(), "status": "PASS"}
             if _nonempty(c.get("provenance")):
                 rec["provenance"] = c["provenance"].strip()
-            for field in ("owner_ref", "sections", "locator", "capture_date"):
+            for field in ("owner_ref", "sections", "locator", "capture_date",
+                          "about", "class", "support", "claim_type"):
                 if c.get(field):
                     rec[field] = c[field]
             ok.append(rec)
@@ -369,6 +371,9 @@ def _gather_or_reason(brief, transport, gather_opts, run_id):
     merged = dict(brief)
     merged["sources"] = g["sources"]
     merged["claims"] = g["claims"]
+    # marker: these claims were matched verbatim against fetched page bodies
+    # (claim_validation records the match as each claim's citation quote).
+    merged["_gathered"] = {"urls": len(g["urls"]), "fetched": g["fetched"]}
     return merged, None
 
 

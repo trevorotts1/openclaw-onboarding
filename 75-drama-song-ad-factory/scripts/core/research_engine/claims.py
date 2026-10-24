@@ -10,10 +10,44 @@ Three provenance classes, no others:
   owner-fact   what the business owner said. Retains the raw answer identity
                (`owner_ref`) and is never presented as independently verified.
   public-fact  an independently sourced claim. Needs a source id that resolves
-               to a recorded {url, retrieved} and may not assert the named
-               client's own results, prices, guarantees or testimonials.
+               to a recorded {url, retrieved}.
   fiction      proposed story content. Allowed and expected; labelled fiction
                can never be re-read as a real-business fact.
+
+THE SUFFICIENCY RULE (semantic, not pattern matching). A bundle entry is a
+research claim only when it carries both support relations the contract names,
+and each relation is re-checked against content that a placeholder cannot
+manufacture:
+
+  1. SUPPORT TO A SOURCE. public-fact: the `source` id resolves to a recorded
+     {url, retrieved}. When the claim carries a citation quote, that quote must
+     appear verbatim in text recorded for that source (`excerpts`), so the
+     citation is checkable, not decorative.
+
+  2. SUPPORT TO AN OWNER FACT. The claim names the run's owner fact it informs
+     (`about`: {fact, anchor}) and the anchor is verified in three places at
+     once: the claim text, every sentence of it, and the owner fact's own text.
+     A run of keywords typed over the business's vocabulary has no such
+     relation; a sentence about something else has none either.
+
+  3. ESCALATED CLAIMS — superlative, ranking, count, guarantee, and "$"/"#"
+     styled price and rank claims — additionally declare an ALLOW-LIST class
+     (market-size, market-growth, competitor-pricing, ...) and carry a source
+     quote that is checked against the source record AND that itself carries
+     the claim's escalated markers. A citation for some other sentence is not
+     a citation for this claim.
+
+  4. A claim about the named business's own results, price, guarantee or
+     standing is never a public-fact, however it is classed or cited: market
+     evidence cannot verify it. It becomes an owner-fact with its raw answer
+     identity, or it is refused.
+
+And a claim must assert: every sentence carries a predicate from the closed
+assertion-verb lexicon below. A keyword list does not, whether it is comma
+separated or run together as fake sentences.
+
+Nothing here decides anything by counting separators, by word endings, or by
+repetition, so one-character reshaping of a keyword run cannot buy a pass.
 
 `validate_bundle` refuses an artifact whose claims carry no provenance tag and
 refuses section bodies that hold only a brief echo. It never looks at byte
@@ -24,7 +58,7 @@ Stdlib only, same as the rest of research_engine.
 from __future__ import annotations
 
 import re
-from collections import Counter
+import unicodedata
 
 PROVENANCE = ("owner-fact", "public-fact", "fiction")
 SECTIONS = ("market", "audience", "competitors")
@@ -32,35 +66,312 @@ PREMISE = "premise"
 VALID_SECTIONS = SECTIONS + (PREMISE,)
 BUNDLE_SCHEMA_VERSION = "blackceo.research.bundle/v1"
 
-# Assertions about the named client's own commercial outcome. General market
-# evidence cannot verify these, so they may only come from the owner (with the
-# raw answer identity kept) or be explicitly fictional.
-BUSINESS_RE = re.compile(
-    r"(?:\$\s?\d"
-    r"|\b\d{1,3}\s?%"
-    r"|\bguarantee[ds]?\b|\bmoney[- ]back\b|\brisk[- ]free\b"
-    r"|\bour\s+(?:clients?|customers?|students?|patients?)\b"
-    r"|\bwe\s+(?:helped|increased|doubled|tripled|generated|earned|grew)\b"
-    r"|\bnumber one\b|\b#1\b)",
-    re.IGNORECASE)
-TERMINATOR_RE = re.compile(r"[.!?][\"')\]]?\s*$")
-TOKEN_RE = re.compile(r"[a-z0-9]{3,}")
+# The owner facts of a run: the brief's own offer, audience and action. A
+# research claim must say which of these it informs.
+FACT_FIELDS = ("offer", "audience", "action")
+FACT_ALIASES = {"offer": ("offer",), "audience": ("audience",),
+                "action": ("action",), "competitors": ("offer", "audience"),
+                "market": ("offer", "audience")}
 
-# --- the unsupported-business-claim class, in any phrasing -----------------
-# A public-fact may describe the market, the audience or the competitors. It
-# may never assert the named business's own size, results or standing, because
-# no market source can verify those. That class cannot be enumerated as one
-# phrase list, so it is detected structurally: WHO the sentence is about (the
-# business, its offering, or its own customers) plus WHAT KIND of assertion it
-# makes (a quantity, or a rank/preeminence). Either pairing is refused, and the
-# flat outcome/price/guarantee alternation above still fires on its own.
-SELF_RE = re.compile(
-    r"\b(?:this|that|our|my|the)\s+(?:program|service|company|business|practice"
-    r"|clinic|studio|academy|course|coaching|method|system|product|offer(?:ing)?"
-    r"|app|team|staff|brand|firm|agency|clients?|customers?|students?|patients?"
-    r"|members|users|families)\b"
-    r"|\b(?:we|us|our|ours|ourselves)\b",
+# The explicit allow-list path: the classes a price/rank/count/superlative
+# claim may declare. A legitimate market claim — competitor pricing, market
+# growth, an audience statistic — passes here when it is cited for that claim.
+ALLOWED_MARKET_CLASSES = (
+    "market-size", "market-growth", "market-fact",
+    "competitor-pricing", "competitor-ranking", "competitor-fact",
+    "audience-evidence")
+
+TOKEN_RE = re.compile(r"[a-z0-9]{3,}")
+WORD_RE = re.compile(r"[a-z0-9]+")
+SENTENCE_RE = re.compile(r"[.!?]+")
+STOPWORDS = frozenset(
+    "a an and or but of to in on for with from that this these those is are was "
+    "were be been being it its as at by our your their they them we you i he she "
+    "his her not no if then than so such can could may might will would should "
+    "must have has had do does did".split())
+
+# ---------------------------------------------------------------------------
+# text normalization. "$" and "#" styled claims are claims: fullwidth and
+# look-alike glyphs are folded before anything is read, and invisible
+# characters are dropped, so a claim cannot dress itself as prose.
+INVISIBLE_RE = re.compile(r"[​-‏‪-‮﻿­]")
+
+
+def _clean(text):
+    s = unicodedata.normalize("NFKC", str(text if text is not None else ""))
+    return " ".join(INVISIBLE_RE.sub("", s).split()).strip()
+
+
+def _norm(text):
+    return _clean(text)
+
+
+def _nonempty(v):
+    return isinstance(v, str) and bool(v.strip())
+
+
+def _words(text):
+    return WORD_RE.findall(_clean(text).lower())
+
+
+def _stem(word):
+    return word[:4] if len(word) >= 4 else word
+
+
+def _sentences(text):
+    parts = [p for p in SENTENCE_RE.split(_clean(text)) if p.strip()]
+    return parts or ([_clean(text)] if _clean(text) else [])
+
+
+def _content_tokens(text):
+    return [t for t in TOKEN_RE.findall(_clean(text).lower())
+            if t not in STOPWORDS]
+
+
+def _tokens(text):
+    return set(TOKEN_RE.findall(_clean(text).lower()))
+
+
+# ---------------------------------------------------------------------------
+# escalation markers: superlative, ranking, count, guarantee, and "$"/"#"
+# styled price and rank claims. These DETECT the claim class the contract
+# names; validity is never decided from them alone.
+_NUMWORD = ("one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
+            "|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen"
+            "|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety"
+            "|hundred|thousand|million|billion")
+_NUMPHRASE = (r"(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+              r"|" + _NUMWORD + r"(?:\s+(?:hundred|thousand|million|billion))?)")
+_UNIT = ("families|family|clients?|customers?|students?|patients?|members?"
+         "|users?|people|guests?|orders?|sales|reviews?|graduates?"
+         "|enrollees?|enrolments?|employees?|coaches|years?|months?|weeks?"
+         "|days?|hours?|sessions?|calls?|clinics?|locations?|cities|states"
+         "|programs?|schools?|businesses?|practices?|companies")
+COUNT_RE = re.compile(r"\b(" + _NUMPHRASE + r")\s*(?:\+|plus)?\s+(?:" + _UNIT
+                      + r")\b", re.IGNORECASE)
+MANY_RE = re.compile(r"\b(dozens|hundreds|thousands|millions|billions)\s+of\b",
+                     re.IGNORECASE)
+PCT_RE = re.compile(r"\b(" + _NUMPHRASE
+                    + r")\s*(?:%|percent|per\s?cent)", re.IGNORECASE)
+MONEY_RE = re.compile(r"[$]\s?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)")
+RANK_RE = re.compile(
+    r"#\s*([0-9OoIl]{1,3})"
+    r"|\b(?:no|number|nr)\.?\s*(\d+|one|two|three|four|five|six|seven|eight"
+    r"|nine|ten)"
+    r"|№\s*(\d+)"
+    r"|\b(\d+)(?:st|nd|rd|th)\b"
+    r"|\btop\s*-?\s*(\d+)\b",
     re.IGNORECASE)
+RANK_WORD_RE = re.compile(
+    r"\b(?:rated|ranked|voted|named|awarded|elected|featured|chosen|listed)\b",
+    re.IGNORECASE)
+SUPERLATIVE_RE = re.compile(
+    r"\b(?:best|top[- ]?(?:rated|ranked|reviewed)|leading|premier|foremost"
+    r"|number[- ]?one|largest|biggest|greatest|fastest(?:[- ]growing)?"
+    r"|cheapest|highest[- ]?rated"
+    r"|most\s+(?:trusted|popular|effective|recommended|loved|successful"
+    r"|complete|comprehensive|advanced|experienced|reviewed|awarded|chosen"
+    r"|sought[- ]after|cited|documented|loved)"
+    r"|unbeatable|unmatched|unparalleled|unsurpassed|world[- ]class"
+    r"|award[- ]winning|best[- ]selling|bestselling)\b",
+    re.IGNORECASE)
+GUARANTEE_RE = re.compile(
+    r"\b(?:guarantee[ds]?|money[- ]back|risk[- ]free|refund(?:able|s)?)\b",
+    re.IGNORECASE)
+
+_WORDNUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+            "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+
+
+def _mnorm(value):
+    return re.sub(r"\s+", " ", str(value).strip().lower().replace(",", ""))
+
+
+def _rank_core(raw):
+    core = _mnorm(raw).replace(" ", "")
+    core = core.replace("o", "0").replace("l", "1").replace("i", "1")
+    core = core.lstrip("#№").lstrip("0") or "0"
+    return _WORDNUM.get(core, core)
+
+
+def _markers(text):
+    """(kind, core) pairs for every escalated assertion in the text."""
+    out = []
+    for m in MONEY_RE.finditer(text):
+        out.append(("money", _mnorm(m.group(1))))
+    for m in PCT_RE.finditer(text):
+        out.append(("pct", _mnorm(m.group(1))))
+    for m in COUNT_RE.finditer(text):
+        out.append(("count", _mnorm(m.group(1))))
+    for m in MANY_RE.finditer(text):
+        out.append(("count", _mnorm(m.group(1))))
+    for m in RANK_RE.finditer(text):
+        out.append(("rank", _rank_core(next(g for g in m.groups() if g))))
+    for m in RANK_WORD_RE.finditer(text):
+        out.append(("rank", _mnorm(m.group(0))))
+    for m in SUPERLATIVE_RE.finditer(text):
+        out.append(("super", _mnorm(m.group(0))))
+    for m in GUARANTEE_RE.finditer(text):
+        out.append(("guar", _mnorm(m.group(0))))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# the assertion test. A research claim predicates something of its subject.
+# Closed lexicon of ASSERTION stems — verbs that state, measure or report —
+# with their inflected forms derived from the stem only. A plural noun is
+# never a verb form: "backlinks", "signals", "coaches", "pump" are not stems,
+# so no keyword run conjures a predicate out of its own vocabulary. Directive
+# verbs (buy, get, order, call) are deliberately absent: a research claim
+# asserts, it does not instruct. Words that are chiefly nouns in this domain
+# (sleep, work, coach, service, plan) are absent for the same reason.
+ASSERT_STEMS = """
+act affect agree allow appear apply ask associate assume attract avoid become
+begin believe build cause change charge choose cite claim come compare complete
+conclude consider continue cost create cut deliver depend design detail differ
+discover discuss drive drop earn elect emerge enable encounter end enrol enroll
+estimate examine exceed exist expand expect experience explain face fall feel
+find finish follow form gain generate give go grow guarantee happen help hold
+identify illustrate impact imply improve include increase indicate influence
+involve keep lack last lead learn limit link list live look lose maintain make
+manage mean measure mention move name need note observe occur offer operate
+outpace outweigh outperform overcome perform prefer predict prevent price
+produce promise propose provide publish rank rate reach receive record reduce
+reflect remain report require respond result reveal review rise say score search
+seem sell serve show solve spend start state stay stop study suggest support
+survey take target tend test think trade treat trust turn use vary vote wake want
+warn win worry write
+""".split()
+IRREGULAR_FORMS = {
+    "become": "became", "begin": "began", "build": "built", "choose": "chose",
+    "come": "came", "drive": "drove", "fall": "fell", "feel": "felt",
+    "find": "found", "give": "gave", "go": "went", "grow": "grew",
+    "hold": "held", "keep": "kept", "lead": "led", "lose": "lost",
+    "make": "made", "rise": "rose", "say": "said", "sell": "sold",
+    "spend": "spent", "take": "took", "think": "thought", "wake": "woke",
+    "write": "wrote", "show": "showed", "drive": "drove",
+}
+AUX_FORMS = frozenset(
+    "is are was were be been being am has have had do does did can could "
+    "will would shall should must may might".split())
+
+
+def _verb_forms():
+    forms = set(AUX_FORMS)
+    for stem in ASSERT_STEMS:
+        forms.add(stem)
+        forms.add(stem + "s")
+        if stem.endswith(("s", "x", "z", "ch", "sh")):
+            forms.add(stem + "es")
+        if stem.endswith("y"):
+            forms.add(stem[:-1] + "ies")
+            forms.add(stem[:-1] + "ied")
+        else:
+            forms.add(stem + "ed")
+        forms.add(stem[:-1] + "ing" if stem.endswith("e") else stem + "ing")
+    for stem, past in IRREGULAR_FORMS.items():
+        forms.add(past)
+    return frozenset(forms)
+
+
+VERB_FORMS = _verb_forms()
+
+
+def _asserts(text):
+    """Every sentence of the claim carries a predicate."""
+    sentences = _sentences(text)
+    return bool(sentences) and all(
+        any(w in VERB_FORMS for w in _words(s)) for s in sentences)
+
+
+# ---------------------------------------------------------------------------
+# owner-fact relations
+def _fact_texts(record):
+    out = {}
+    for field in FACT_FIELDS:
+        text = _norm(record.get(field))
+        if text:
+            out[field] = text
+    for rec in record.get("facts") or []:
+        if isinstance(rec, dict):
+            field = _norm(rec.get("field")).lower()
+            text = _norm(rec.get("text"))
+            if field and text:
+                out.setdefault(field, text)
+    return out
+
+
+def _anchor_in(text, anchor):
+    a = _stem(_clean(anchor).lower())
+    return any(_stem(w) == a for w in _words(text))
+
+
+def _derive_about(text, facts):
+    """The owner fact this claim informs, recorded as {fact, anchor}."""
+    claim_words = {_stem(w) for w in _words(text)}
+    for field in FACT_FIELDS:
+        fact = facts.get(field)
+        if not fact:
+            continue
+        for word in _words(fact):
+            if len(word) >= 3 and _stem(word) in claim_words:
+                return {"fact": field, "anchor": word}
+    return None
+
+
+def _check_about(claim, ref, facts, errors):
+    """The owner-fact relation, verified in the claim, in every sentence of it,
+    and in the owner fact's own text. Returns True when it holds."""
+    about = claim.get("about")
+    if about is None:
+        errors.append("%s: no checkable relation to any owner fact — a research "
+                      "claim must say which owner fact (offer, audience, action) "
+                      "it informs" % ref)
+        return False
+    if not isinstance(about, dict):
+        errors.append("%s: about must be an object naming the owner fact "
+                      "({\"fact\": ..., \"anchor\": ...}), not %s"
+                      % (ref, type(about).__name__))
+        return False
+    field = _norm(about.get("fact")).lower()
+    anchor = _norm(about.get("anchor")).lower()
+    if field not in FACT_ALIASES:
+        errors.append("%s: about.fact %r is not an owner fact field"
+                      % (ref, about.get("fact")))
+        return False
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,}", anchor):
+        errors.append("%s: about.anchor %r is not a checkable subject term"
+                      % (ref, about.get("anchor")))
+        return False
+    fact = _norm(about.get("fact_text"))
+    candidates = [facts.get(name, "") for name in FACT_ALIASES[field]]
+    candidates.append(fact)
+    named = [c for c in candidates if c]
+    if named and not any(_anchor_in(c, anchor) for c in named):
+        errors.append("%s: about.anchor %r is not in the %s fact text"
+                      % (ref, anchor, field))
+        return False
+    if not _anchor_in(claim.get("text", ""), anchor):
+        errors.append("%s: about.anchor %r is not in the claim text"
+                      % (ref, anchor))
+        return False
+    for sentence in _sentences(claim.get("text", "")):
+        if not _anchor_in(sentence, anchor):
+            errors.append("%s: about.anchor %r is not in every sentence of the "
+                          "claim — one subject per claim" % (ref, anchor))
+            return False
+    return True
+
+
+def _is_self_claim(text):
+    """Assertions about the named business's own size, results, standing,
+    price or guarantees. Structural: WHO the sentence is about (the business,
+    its offering, or its own people) plus WHAT it asserts (an escalation)."""
+    subject = (SELF_RE.search(text) or OFFERING_NOUN_RE.search(text)
+               or OUTCOME_NOUN_RE.search(text))
+    return bool(subject)
+
+
 OFFERING_NOUN_RE = re.compile(
     r"\b(?:programs?|services?|companies|business(?:es)?|practices?|clinics?"
     r"|studios?|academ(?:y|ies)|courses?|coach(?:es|ing)?|providers?|brands?"
@@ -72,109 +383,42 @@ OUTCOME_NOUN_RE = re.compile(
     r"|revenue|sales|conversions?|bookings?|appointments?|locations?"
     r"|years in business)\b",
     re.IGNORECASE)
-QUANTITY_RE = re.compile(
-    r"\b(?:over|more than|less than|nearly|almost|about|around|up to|at least"
-    r"|just under|just over)\s+(?:[$]?\d|one|two|three|four|five|six|seven|eight"
-    r"|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred|thousand"
-    r"|million|billion)"
-    r"|\b\d{1,3}(?:,\d{3})+\b"
-    r"|\b\d+(?:\.\d+)?\s*(?:%|percent|x)\b"
-    r"|\b(?:dozens|hundreds|thousands|millions|billions)\s+of\b"
-    r"|\bsince\s+(?:19|20)\d{2}\b"
-    r"|\b\d+\s*(?:\+|plus)\b",
+SELF_WORD_RE = re.compile(
+    r"\b(?:we|us|our|ours|ourselves|my)\b", re.IGNORECASE)
+SELF_DEM_RE = re.compile(
+    r"\b(?:this|that|the)\s+(?:program|service|company|business|practice"
+    r"|clinic|studio|academy|course|coaching|method|system|product|offer(?:ing)?"
+    r"|app|team|staff|brand|firm|agency|clients?|customers?|students?|patients?"
+    r"|members|users|families)\b",
     re.IGNORECASE)
-SUPERLATIVE_RE = re.compile(
-    r"\b(?:best|top[- ]?(?:rated|ranked|reviewed)|leading|premier|foremost"
-    r"|number[- ]?one|#1|no\.?\s?1|largest|biggest|greatest|fastest(?:[- ]growing)?"
-    r"|cheapest|highest[- ]?rated"
-    r"|most\s+(?:trusted|popular|effective|recommended|loved|successful|complete"
-    r"|comprehensive|advanced|experienced|reviewed|awarded|chosen|sought[- ]after)"
-    r"|unbeatable|unmatched|unparalleled|unsurpassed|world[- ]class"
-    r"|award[- ]winning|best[- ]selling|bestselling)\b",
+OTHER_SIDE_RE = re.compile(
+    r"\b(?:compet(?:e|ing|ition|itors?)|rival(?:s)?|other|alternative(?:s)?"
+    r"|local|national|similar|competing)\b(?:\s+\w+){0,2}\s+"
+    r"(?:program|service|companies|business(?:es)?|practices?|clinics?"
+    r"|studios?|academ(?:y|ies)|courses?|coach(?:es|ing)?|providers?|brands?"
+    r"|products?|apps?|methods?|systems?)\b",
     re.IGNORECASE)
 
-# --- the keyword-stuffing class, at sentence level -------------------------
-# A research claim asserts something. A keyword list does not, whether it is
-# comma-separated or run together as a fake sentence. Detected by what repeats
-# (the same keyword or phrase over and over), by list shape in any separator,
-# and by a run of keywords with no assertion in it at all.
-LIST_SPLIT_RE = re.compile(r"[,;/|·•]")
-# Assertive verbs only — words that are also plain nouns (sleep, work, report,
-# cost, buy) stay out, or a keyword list made of those nouns would read as a
-# claim. Nouns that merely look verb-like are still caught by the suffix check.
-ASSERTIVE_RE = re.compile(
-    r"\b(?:is|are|was|were|be|been|being|has|have|had|do|does|did|can|could|may"
-    r"|might|will|would|should|must|show(?:s|ed)?|find(?:s)?|found|suggest(?:s|ed)?"
-    r"|indicat(?:e|es|ed)|link(?:s|ed)?|associat(?:e|es|ed)"
-    r"|affect(?:s|ed)?|caus(?:e|es|ed)|increas(?:e|es|ed)|reduc(?:e|es|ed)"
-    r"|improv(?:e|es|ed)|help(?:s|ed)?|build(?:s|ing)?|built|us(?:e|es|ed)"
-    r"|mak(?:e|es)|made|need(?:s|ed)?|target(?:s|ed)?|serv(?:e|es|ed)"
-    r"|operat(?:e|es|ed)|prefer(?:s|red)?|experienc(?:e|es|ed)|tend(?:s|ed)?"
-    r"|ris(?:e|es|ing)|risen|grow(?:s|ing)?|grown|fell|fall(?:s|ing)?|feel(?:s|ing)?"
-    r"|felt|slept|giv(?:e|es)|gave|keep(?:s|ing)?|kept|chang(?:e|es|ed)"
-    r"|becom(?:e|es|ing)|became|com(?:e|es|ing)|came|go(?:es|ing)?|went"
-    r"|tak(?:e|es|ing)|took|bought|sold|offer(?:s|ed)?"
-    r"|provid(?:e|es|ed)|deliver(?:s|ed)?|result(?:s|ed)?|depend(?:s|ed)?"
-    r"|var(?:y|ies)|differ(?:s|ed)?|rank(?:s|ed)?|rat(?:e|es|ed)|survey(?:s|ed)?"
-    r"|stud(?:y|ies)|measur(?:e|es|ed)|estimat(?:e|es|ed)|predict(?:s|ed)?)\b",
-    re.IGNORECASE)
-VERB_SUFFIX_RE = re.compile(r"(?:ed|ing|en|s)$", re.IGNORECASE)
-STOPWORDS = frozenset(
-    "a an and or but of to in on for with from that this these those is are was "
-    "were be been being it its as at by our your their they them we you i he she "
-    "his her not no if then than so such can could may might will would should "
-    "must have has had do does did".split())
 
-
-def _content_tokens(text):
-    return [t for t in TOKEN_RE.findall(str(text or "").lower())
-            if t not in STOPWORDS]
-
-
-def _list_stuffing(text):
-    """A run of short keyword items in any separator, asserting nothing."""
-    items = [i for i in LIST_SPLIT_RE.split(text) if i.strip()]
-    if len(items) < 4 or ASSERTIVE_RE.search(text):
-        return False
-    sizes = [len(TOKEN_RE.findall(i)) for i in items]
-    return sum(sizes) / float(len(sizes)) <= 3.0
-
-
-def _repetition_stuffing(text):
-    """The same keyword or phrase repeated inside one claim."""
-    content = _content_tokens(text)
-    if len(content) >= 8 and (len(content) - len(set(content))
-                              >= 0.35 * len(content)):
+def _is_self_claim(text):
+    """The claim asserts something of the named business itself. First person
+    is always the business; a demonstrative plus an offering noun is the
+    business unless the sentence is explicitly about the other side of the
+    market — 'competing sleep programs charge $2,400' is a competitor claim,
+    and stays one."""
+    if SELF_WORD_RE.search(text):
         return True
-    if any(n >= 4 for n in Counter(content).values()):
-        return True
-    for size in (2, 3):
-        grams = Counter(tuple(content[i:i + size])
-                        for i in range(len(content) - size + 1))
-        if any(n >= 3 for n in grams.values()):
-            return True
-    return False
+    return bool(SELF_DEM_RE.search(text)) and not OTHER_SIDE_RE.search(text)
 
 
-def _assertionless_stuffing(text):
-    """A sentence-shaped run of keywords: no verb, no verb form, no claim."""
-    content = _content_tokens(text)
-    return (len(content) >= 6 and ASSERTIVE_RE.search(text) is None
-            and not any(VERB_SUFFIX_RE.search(t) for t in content))
+def _about_business(text):
+    """The claim names the business, its offering or its own people at all —
+    the class market evidence can never verify when it is escalated."""
+    return bool(SELF_DEM_RE.search(text) or OFFERING_NOUN_RE.search(text)
+                or OUTCOME_NOUN_RE.search(text))
 
 
-def _nonempty(v):
-    return isinstance(v, str) and bool(v.strip())
-
-
-def _norm(text):
-    return " ".join(str(text or "").split()).strip()
-
-
-def _tokens(text):
-    return set(TOKEN_RE.findall(str(text or "").lower()))
-
-
+# ---------------------------------------------------------------------------
 def _brief_claim_ids(brief):
     """Ids of claims the owner supplied in the brief — their raw answer
     identity even when the brief did not spell one out."""
@@ -268,15 +512,18 @@ def _dedupe(tagged):
 def author_bundle(brief, evidence):
     """Author the research_bundle for this run.
 
-    Tags every claim, assigns it to the research sections it supports, keeps
-    the owner's premise as explicitly fictional, and records the brief facts
-    as owner statements. No network, no model call, no byte-size gate.
+    Tags every claim, records the owner-fact relation each one carries (or can
+    prove against the brief's own facts), assigns it to the research sections
+    it supports, keeps the owner's premise as explicitly fictional, and records
+    the brief facts as owner statements. No network, no model call, no
+    byte-size gate.
     """
     brief = brief or {}
     evidence = evidence or {}
-    sources = evidence.get("sources") or []
+    sources = evidence.get("sources") or brief.get("sources") or []
     tagged, errors = tag_claims(evidence.get("claims") or brief.get("claims"),
-                                brief, {s.get("id") for s in sources})
+                                brief, {s.get("id") for s in sources
+                                        if isinstance(s, dict)})
     premise = brief.get("premise")
     if premise:
         text = premise.get("text") if isinstance(premise, dict) else premise
@@ -285,8 +532,40 @@ def author_bundle(brief, evidence):
             tagged.append({"id": "premise-1", "text": _norm(text),
                            "provenance": "fiction", "sections": [PREMISE],
                            "label": "proposed-fiction"})
+    facts = _fact_texts(brief)
+    # Claims the gatherer attached to a source were matched verbatim against
+    # the fetched page — that match IS the citation, so it is recorded here as
+    # a per-claim quote. A claim the caller filed themselves is never given
+    # one: an escalated claim they did not cite is refused by the validator.
+    gathered = bool((brief or {}).get("_gathered")) or (
+        isinstance(evidence, dict) and ("urls" in evidence or "fetched" in evidence))
     for claim in tagged:
         claim.setdefault("sections", _sections_for(claim))
+        if isinstance(claim, dict) and not is_fiction_claim(claim) \
+                and not claim.get("about"):
+            derived = _derive_about(claim.get("text", ""), facts)
+            if derived:
+                claim["about"] = derived
+        if gathered and isinstance(claim, dict) \
+                and claim.get("provenance") == "public-fact" \
+                and _nonempty(claim.get("source")):
+            text = _norm(claim.get("text"))
+            support = claim.get("support")
+            support = dict(support) if isinstance(support, dict) else {}
+            if text and not support.get("quote"):
+                support.setdefault("source", claim.get("source"))
+                support.setdefault("locator", "fetched page body, verbatim match")
+                support["quote"] = text
+                claim["support"] = support
+            if _markers(text) and not _allowed_market_class(claim) \
+                    and not _is_self_claim(text):
+                sections = claim.get("sections") or []
+                claim["class"] = ("audience-evidence" if "audience" in sections
+                                  else "market-fact" if "market" in sections
+                                  else "competitor-fact")
+        support = claim.get("support")
+        if isinstance(support, dict) and _nonempty(support.get("locator")):
+            claim.setdefault("locator", support["locator"])
     tagged = _dedupe(tagged)
     bundle = {
         "schema_version": BUNDLE_SCHEMA_VERSION,
@@ -294,9 +573,9 @@ def author_bundle(brief, evidence):
         "audience": _norm(brief.get("audience")),
         "action": _norm(brief.get("action") or brief.get("cta")),
         "facts": [{"role": "owner-fact", "field": f, "text": _norm(brief.get(f))}
-                  for f in ("offer", "audience")
+                  for f in FACT_FIELDS
                   if _nonempty(brief.get(f))],
-        "sources": [dict(s) for s in sources],
+        "sources": [dict(s) for s in sources if isinstance(s, dict)],
         "claims": tagged,
         "tagging_errors": errors,
         "generated": evidence.get("generated"),
@@ -304,12 +583,72 @@ def author_bundle(brief, evidence):
     return bundle
 
 
+def _check_support(claim, ref, source, errors):
+    """The citation is checked against text recorded for that source when the
+    source records any: a quote the source does not hold is decoration, not
+    support. A source that records no excerpt text leaves the quote checkable
+    by opening the source — so the quote must at least name this claim."""
+    support = claim.get("support")
+    if support is None:
+        return
+    if not isinstance(support, dict):
+        errors.append("%s: support must be an object ({{\"source\", \"locator\", "
+                      "\"quote\"}}), not %s" % (ref, type(support).__name__))
+        return
+    for key in ("locator", "quote"):
+        if key in support and not isinstance(support[key], str):
+            errors.append("%s: support.%s must be a string, not %s"
+                          % (ref, key, type(support[key]).__name__))
+    quote = support.get("quote")
+    if not isinstance(quote, str) or not quote.strip() or not source:
+        return
+    excerpts = source.get("excerpts")
+    if not isinstance(excerpts, list) or not excerpts:
+        return
+    haystack = " ".join(_clean(x) for x in excerpts if isinstance(x, str))
+    if _clean(quote).lower() not in haystack.lower():
+        errors.append("%s: citation cannot be checked — the quoted text is not "
+                      "in what source %s records" % (ref, support.get("source")))
+
+
+def _check_escalation(claim, ref, text, source, errors):
+    """Superlative, ranking, count, guarantee and "$"/"#" claims need an
+    allow-listed class and a source citation for THIS claim: a quote that the
+    source record holds and that itself carries the claim's markers."""
+    markers = _markers(text)
+    if not markers:
+        return
+    cls = claim.get("class")
+    if not isinstance(cls, str) or _norm(cls).lower() not in ALLOWED_MARKET_CLASSES:
+        errors.append(
+            "%s: uncited claim — a superlative, ranking, count, guarantee or "
+            "price claim must declare an allowed market class (%s) and carry a "
+            "source citation for this claim"
+            % (ref, ", ".join(ALLOWED_MARKET_CLASSES)))
+        return
+    support = claim.get("support")
+    quote = support.get("quote") if isinstance(support, dict) else None
+    if not isinstance(quote, str) or not quote.strip():
+        errors.append("%s: uncited claim — a superlative, ranking, count, "
+                      "guarantee or price claim must carry the source quote "
+                      "that backs this exact claim" % ref)
+        return
+    quoted = set(_markers(quote))
+    missing = sorted({(kind, core) for kind, core in markers} - quoted)
+    if missing:
+        errors.append(
+            "%s: the citation is not for this claim — the quote does not carry "
+            "%s" % (ref, ", ".join("%s %s" % m for m in missing)))
+
+
 def validate_bundle(bundle):
     """Refuse a research bundle that is not real research.
 
     Returns a list of error strings; empty list == accepted. Every rule is
-    about content and provenance. Nothing here counts bytes or lines, so a
-    padded file cannot buy a pass.
+    about content and provenance — support to a source, support to an owner
+    fact, a cited basis for an escalated claim. Nothing here counts bytes,
+    separators, word endings or repetitions, so a padded or reshaped keyword
+    run cannot buy a pass.
     """
     errors = []
     if not isinstance(bundle, dict):
@@ -318,7 +657,11 @@ def validate_bundle(bundle):
     sources = bundle.get("sources") or []
     if not isinstance(claims, list) or not claims:
         return ["claims: empty research bundle (at least one claim required)"]
+    if not isinstance(sources, list):
+        return ["sources: not a list"] + [
+            "claims: empty research bundle (at least one claim required)"]
     by_id = {s.get("id"): s for s in sources if isinstance(s, dict)}
+    facts = _fact_texts(bundle)
     for err in bundle.get("tagging_errors") or []:
         errors.append("tagging: %s" % err)
 
@@ -333,22 +676,15 @@ def validate_bundle(bundle):
         if prov not in PROVENANCE:
             errors.append("%s: no provenance tag (expected one of %s)"
                           % (ref, ", ".join(PROVENANCE)))
-        text = _norm(claim.get("text"))
+        raw_text = claim.get("text")
+        if not isinstance(raw_text, str):
+            errors.append("%s: claim text must be a string, not %s"
+                          % (ref, type(raw_text).__name__))
+            continue
+        text = _norm(raw_text)
         if not text:
             errors.append("%s: claim text is empty" % ref)
             continue
-        if TERMINATOR_RE.search(text) is None and text.count(",") >= 3:
-            errors.append("%s: keyword stuffing — comma list without a "
-                          "sentence, not a research claim" % ref)
-        elif _list_stuffing(text):
-            errors.append("%s: keyword stuffing — a list of search keywords, "
-                          "not a research claim" % ref)
-        elif _repetition_stuffing(text):
-            errors.append("%s: keyword stuffing — the same keyword repeated "
-                          "through the sentence, not a research claim" % ref)
-        elif _assertionless_stuffing(text):
-            errors.append("%s: keyword stuffing — a run of keywords with no "
-                          "assertion in it, not a research claim" % ref)
         key = text.lower()
         if key in seen_text:
             errors.append("%s: duplicate of %s" % (ref, seen_text[key]))
@@ -362,38 +698,45 @@ def validate_bundle(bundle):
                 if s not in VALID_SECTIONS:
                     errors.append("%s: unknown section %r" % (ref, s))
 
+        if not is_fiction_claim(claim):
+            if not _asserts(text):
+                errors.append("%s: keyword stuffing — a run of keywords asserts "
+                              "nothing (no predicate), not a research claim"
+                              % ref)
+            if facts:
+                _check_about(claim, ref, facts, errors)
+
+        source = None
         if prov == "public-fact":
             src_id = claim.get("source")
-            source = by_id.get(src_id) if isinstance(src_id, str) else None
-            if not source:
+            support = claim.get("support")
+            if isinstance(support, dict):
+                if src_id is None:
+                    src_id = support.get("source")
+                elif support.get("source") not in (None, src_id):
+                    errors.append("%s: support.source %r disagrees with source %r"
+                                  % (ref, support.get("source"), src_id))
+            if not isinstance(src_id, str) or src_id not in by_id:
                 errors.append("%s: public-fact with no resolvable source" % ref)
             else:
+                source = by_id[src_id]
                 if not _nonempty(source.get("url")):
                     errors.append("%s: source %s has no url" % (ref, src_id))
                 if not _nonempty(source.get("retrieved")):
                     errors.append("%s: source %s has no capture date"
                                   % (ref, src_id))
                 claim.setdefault("capture_date", source.get("retrieved"))
-            if BUSINESS_RE.search(text):
+            _check_support(claim, ref, source, errors)
+            _check_escalation(claim, ref, text, source, errors)
+            if _markers(text) and (
+                    _is_self_claim(text)
+                    or (_about_business(text)
+                        and not _allowed_market_class(claim))):
                 errors.append(
                     "%s: unsupported business claim — market evidence cannot "
                     "verify the client's own results/price/guarantee; make it "
                     "an owner-fact with its raw answer identity, or remove or "
                     "qualify it" % ref)
-            subject = (SELF_RE.search(text) or OFFERING_NOUN_RE.search(text)
-                       or OUTCOME_NOUN_RE.search(text))
-            if subject and QUANTITY_RE.search(text):
-                errors.append(
-                    "%s: unsupported business claim — a quantified claim about "
-                    "the business's own size, counts or results cannot come "
-                    "from market evidence; make it an owner-fact with its raw "
-                    "answer identity, or remove or qualify it" % ref)
-            if subject and SUPERLATIVE_RE.search(text):
-                errors.append(
-                    "%s: unsupported business claim — a superlative claim about "
-                    "the business's own standing cannot come from market "
-                    "evidence; make it an owner-fact with its raw answer "
-                    "identity, or remove or qualify it" % ref)
         elif prov == "owner-fact":
             if not _nonempty(claim.get("owner_ref")):
                 errors.append("%s: owner-fact with no raw answer identity "
@@ -419,6 +762,11 @@ def validate_bundle(bundle):
                 "%s: no claim supports this section — a header that echoes the "
                 "brief is not research" % section)
     return errors
+
+
+def _allowed_market_class(claim):
+    cls = claim.get("class")
+    return isinstance(cls, str) and _norm(cls).lower() in ALLOWED_MARKET_CLASSES
 
 
 def section_claims(bundle, section):
