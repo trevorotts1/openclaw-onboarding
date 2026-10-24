@@ -78,8 +78,18 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROVER="$SELF_DIR/tools/prove-email.py"
 RUNNER="$SELF_DIR/run_email_engine.py"
 MANIFEST="$SELF_DIR/EMAIL-MANIFEST.json"
+# The prover's own dependency closure: importing or reading any of these can
+# change a verdict without touching the three files above, so they are pinned
+# too (UL-021 dependency closure).
+PROFILES="$SELF_DIR/tools/launch_profiles.py"
+PERSONA="$SELF_DIR/tools/persona_canonical.py"
+FAMILIES="$SELF_DIR/profiles/launch-email-families.json"
+SCHEMA="$SELF_DIR/schema/email.schema.json"
+INTAKE="$SELF_DIR/intake/email-intake-questions.json"
+PINNED=("$PROVER" "$RUNNER" "$MANIFEST" "$PROFILES" "$PERSONA" "$FAMILIES" "$SCHEMA" "$INTAKE")
 [ -f "$PROVER" ] || die "prove-email.py not found at $PROVER"
 [ -f "$RUNNER" ] || die "run_email_engine.py not found at $RUNNER"
+for f in "${PINNED[@]}"; do [ -f "$f" ] || die "pinned file not found at $f"; done
 [ -f "$MANIFEST" ] || die "EMAIL-MANIFEST.json not found at $MANIFEST"
 
 if [ "$PLAN" -eq 0 ]; then
@@ -207,19 +217,22 @@ fi
 # GATE 3 — VERSION/HASH PIN (content hash of the enforcement set)
 # The pinned set is the prover + orchestrator + the manifest that DRIVES the
 # phases/checkers — pinning EMAIL-MANIFEST.json stops a silent edit that drops the
-# declared-required P1 selection gate (_chk_email_match) from disabling it.
+# declared-required P1 selection gate (_chk_email_match) from disabling it. The
+# prover's dependency closure is pinned with them: launch_profiles.py and
+# persona_canonical.py are imported, and the profile families, the email schema
+# and the intake contract are read, so any of them can change a verdict.
 # ===========================================================================
-note "GATE 3/3 — VERSION/HASH PIN (prove-email.py + run_email_engine.py + EMAIL-MANIFEST.json)"
+note "GATE 3/3 — VERSION/HASH PIN (prover + orchestrator + manifest + prover dependency closure)"
 version_hash_pin() {
     local computed=""
     if command -v sha256sum >/dev/null 2>&1; then
-        computed="$(cat "$PROVER" "$RUNNER" "$MANIFEST" | sha256sum | awk '{print $1}')"
+        computed="$(cat "${PINNED[@]}" | sha256sum | awk '{print $1}')"
     elif command -v shasum >/dev/null 2>&1; then
-        computed="$(cat "$PROVER" "$RUNNER" "$MANIFEST" | shasum -a 256 | awk '{print $1}')"
+        computed="$(cat "${PINNED[@]}" | shasum -a 256 | awk '{print $1}')"
     else
         echo "  (no sha256 tool; hash pin skipped)"; return 0
     fi
-    echo "  enforcement hash (sha256 of prove-email.py+run_email_engine.py+EMAIL-MANIFEST.json): $computed"
+    echo "  enforcement hash (sha256 of ${#PINNED[@]} pinned files): $computed"
     local pin="$SELF_DIR/ENGINE-PIN.sha256"
     if [ -f "$pin" ]; then
         local expected; expected="$(tr -d ' \t\n' < "$pin")"

@@ -1,5 +1,19 @@
 # Changelog — Skill 50 (email-engine)
 
+## Unreleased - 2026-10-24 - UL-021: pin the prover's dependency closure
+
+### Changed
+- **`email-engine-entry.sh` GATE 3** now hashes eight files instead of three. A file
+  the prover imports or reads can change a verdict without touching
+  `prove-email.py`, `run_email_engine.py` or `EMAIL-MANIFEST.json`, so
+  `tools/launch_profiles.py`, `tools/persona_canonical.py`,
+  `profiles/launch-email-families.json`, `schema/email.schema.json` and
+  `intake/email-intake-questions.json` are pinned with them.
+- **`ENGINE-PIN.sha256`** re-derived from the new concatenation
+  (`a4ea1eac68a50f0bd5af73604493a392f7326e53b137d797ae9556ada6e03b14`).
+- Negative control: appending one byte to `profiles/launch-email-families.json`
+  now fails GATE 3 with `AF-ENGINE-HASH-PIN` (rc=7); before this change it passed.
+
 ## Unreleased - 2026-10-24 - audit-v3 L06: session-contract consumer and launch-fact coverage
 
 ### Changed
