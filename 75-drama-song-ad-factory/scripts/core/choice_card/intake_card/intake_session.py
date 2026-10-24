@@ -149,6 +149,16 @@ def _provider_identity(parsed):
 
 
 def _persist_model_lock(state, answers, run_dir):
+    import state_store
+    try:
+        return _persist_model_lock_impl(state, answers, run_dir)
+    except (state_store.StoreError, sqlite3.Error):
+        # A malformed or recovery-required existing store is preserved, never
+        # recreated, rebound to another run, or treated as completed intake.
+        return "VIDEO_MODEL_STATE_UNAVAILABLE"
+
+
+def _persist_model_lock_impl(state, answers, run_dir):
     selected = next((a for a in answers if a.get("id") == "model"), None)
     if selected is None or not run_dir:
         return None
