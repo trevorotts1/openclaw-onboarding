@@ -2423,8 +2423,9 @@ def cmd_next(a):
     """Expose the admitted role dispatch alongside the existing stage plan."""
     # Restart an outdated process before intake handoff, authority inspection
     # or reconciliation can inspect or change any run state.
-    if _stale_session()[0]:
-        return _next_stage(a)
+    boot_snapshot = _stale_session()
+    if boot_snapshot[0]:
+        return _next_stage(a, boot_snapshot=boot_snapshot)
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
     # An incomplete intake remains the primary gate; it has not bound its AI
     # answer yet and must not be told to replace it with a default model pair.
@@ -2471,12 +2472,12 @@ def cmd_next(a):
     return result
 
 
-def _next_stage(a):
+def _next_stage(a, *, boot_snapshot=None):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     # L4.2: a process whose skill was updated since it started refuses to
     # continue ANY run — silently running stale code is how merged fixes
     # missed 17-20 h sessions. Both versions are named; restart is the remedy.
-    stale, boot_v, disk_v = _stale_session()
+    stale, boot_v, disk_v = boot_snapshot if boot_snapshot is not None else _stale_session()
     if stale:
         env = envelope("next", "",
                        "error", "SKILL_UPDATED",

@@ -93,13 +93,23 @@ def main():
     from test_production_process import run_hashes
     before = run_hashes(run)
     original_intake, original_authority = F._intake_session_gate, F._production_admission
+    original_stale, version_reads = F._stale_session, []
+    def changing_version():
+        # The first comparison is real. A changed second read must not send
+        # cmd_next into private stage selection without its admission checks.
+        value = original_stale() if not version_reads else (False, INSTALLED, INSTALLED)
+        version_reads.append(value)
+        return value
     def forbidden_state_access(*args, **kwargs):
         raise AssertionError("stale code reached intake or production state inspection")
     F._intake_session_gate = F._production_admission = forbidden_state_access
+    F._stale_session = changing_version
     try:
         env = F.cmd_next(A())
     finally:
         F._intake_session_gate, F._production_admission = original_intake, original_authority
+        F._stale_session = original_stale
+    check("stale refusal uses its initial version snapshot", len(version_reads) == 1)
     check("stale refusal leaves every run file unchanged", run_hashes(run) == before)
     check("older boot refuses: error SKILL_UPDATED",
           env["outcome"] == "error" and env["reason_code"] == "SKILL_UPDATED",
