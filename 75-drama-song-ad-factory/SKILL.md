@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.97
+version: v2.9.104
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -1301,10 +1301,11 @@ SOP named above.
   line: never a narrator, never another character. Narrator, phone,
   voicemail and laptop voices may play as voice-over but are never lip-synced
   onto a person. Lip-sync applies to the pain peak, the product line, the
-  call to action and the chorus hook, now DOUBLED (owner order 2026-10-08): more
-  pieces, not longer ones. A 60 s ad carries 6 to 8 short clips of 4 to 6 seconds
-  (30 to 40 seconds in all, was 15 to 20), scaled linearly with the ad length, no
-  clip over 6 seconds (`core/lipsync_clips.py`). Clips go on every sung hook, the
+  call to action and the chorus hook. Approved direction 2026-10-23 (supersedes
+  the 2026-10-08 doubling): coverage is **25-30% of the selected duration with a
+  35% HARD MAXIMUM**, in 4 to 6 second clips, no clip over 6 seconds, never
+  fewer than 3 clips, and the first **12 seconds** clearly articulated
+  (`core/lipsync_clips.py` is the one source). Clips go on every sung hook, the
   spoken opener and the spoken closing line first. Each clip is a paid
   `kling/ai-avatar-standard` job, so the lip-sync cost roughly doubles: the card
   prices it through Skill 74 and a plan that would pass the spend cap is refused
@@ -1453,6 +1454,67 @@ ad is still planned, priced, approved and delivered on its own, exactly as
 the choice card, the price menu and the stage runbook describe today. When
 this direction is picked up it becomes its own unit with its own intake,
 contract and tests; it is never bolted onto an existing stage.
+
+## Release v2.9.103: what changed in behaviour
+
+Seven behaviours changed in this release. Each one names the code that holds
+it and the check that proves it; nothing below describes a plan.
+
+1. **A story may open on the consequence.** The twelve canonical beats keep
+   their ids and their causal order. A record may also declare how those same
+   beats are told (`presentation.order`, or a flat `presentation_order`), so a
+   consequence-first opening is a declared order, not a relabelled beat. Code:
+   `story_arc.story_arc` (`declares_presentation`, `check_presentation_order`).
+   Check: `story_arc/test_presentation_order_u1.py`.
+2. **One presentation order, checked against three views.** When a record
+   declares a presentation, the script, the performed lines and the shots must
+   be that same order, and every beat must still state its five parts (action,
+   change, understood, question, carrier). The performed-beat manifest is
+   emitted in the presented order, keeps every beat id, and adds
+   `causal_position` / `presentation_position`. A record that declares no
+   presentation is judged exactly as before.
+3. **Script validation knows what the run is for.** The story check reads the
+   purpose recorded in `$RUN/control/method.json` (written by the intake card)
+   and hands it to the validator, so a lesson, testimonial or sales run is
+   judged by its own purpose's rules. The purpose is never guessed from the
+   script's text; a run with no recorded purpose is judged exactly as before.
+   When the launcher captured PURPOSE but the file is missing, the record is
+   rebuilt once from the run's own saved card answers. Code:
+   `script_approval/stage.py`, `intake_preflight/factory.py`.
+4. **Approval is one package, not per scene.** The script and lyric
+   presentation stays one package with one approval action (`approve` /
+   `approve both`); the purpose rides that same package and every edit is
+   re-checked. Code: `script_approval/script_approval.py`,
+   `script_approval/stage.py`.
+5. **The opening is carried into the shot plan.** The opening scene is derived
+   from the approved script and written into the first shot in song order as
+   `shot["opening"]` (line, action, intended emotion, reading context,
+   ambiguity), with the same line and action on its 14.3 contract. Shot order
+   is never changed and no other shot is touched; a missing scene or a shot
+   without `song_start` refuses. Code: `shot_planner/opening_scene.py`. Check:
+   `shot_planner/test_opening_scene_w4.py`.
+6. **Music requests are built from the blueprint.**
+   `music_director.blueprint_request_inputs` turns the blueprint's own
+   `music_cues` into the request inputs: the instrumental flag, the delivered
+   length, the two-seam pace order and the hook's `true_at_beat`. The four
+   turns stay distinct (spoken attention hook, first singing at the ERM Drop,
+   the Hero Shift, the later Solution Signature Hook). A collapsed blueprint
+   raises `BLUEPRINT_CUES_MISSING` / `BLUEPRINT_DIRECTION_MISSING` instead of
+   sending a request that follows a different story. Check:
+   `music_director/test_blueprint_inputs_s75xw4u2.py`.
+7. **Lip-sync coverage is a share of the ad, not a fixed block.** Target
+   25-30% of the selected duration, 35% HARD maximum, clips 4-6 s, never fewer
+   than 3, and the first 12 s clearly articulated (the first clip must start
+   inside the opening window, else `LIPSYNC_OPENING_NOT_ARTICULATED`; a plan
+   over the maximum fails `LIPSYNC_OVER_CAP`; bounds that cannot all hold fail
+   `LIPSYNC_DURATION_CONFLICT`). The numbers live in `core/lipsync_clips.py`
+   and supersede the 2026-10-08 doubling order. Checks:
+   `test_lipsync_clips.py`, `final_assembler/test_lipsync_coverage_e6.py`,
+   `shot_planner/test_face_speaks_h4.py`,
+   `catalog_calculator/extensions/test_lipsync_cap.py`.
+
+This note covers the canonical OpenClaw tree only; distribution parity is not
+claimed here.
 
 ## Sections marked TODO (refresh when the named unit lands)
 

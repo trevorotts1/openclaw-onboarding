@@ -4,6 +4,26 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.104 - 2026-10-24 - MiniMax H3 restored, 2-minute length restored
+
+- **VIDEO MODEL: MiniMax H3 is row 1 and RECOMMENDED again.** The 2026-10-21
+  removal (`9f7bb25c3`) was justified by "the live catalog never carried
+  MiniMax H3". That claim was false: KIE serves `minimax-h3/image-to-video`
+  (https://kie.ai/minimax-h3), and the skill's own v2.9.9 changelog
+  (`9cdb44b94`) lists H3 first and recommended. Row 1 is H3 at 768P, $0.04/s
+  (8 credits/s); Hailuo 02 Standard stays on the price menu and is no longer
+  recommended.
+- **Pricing reconciled.** The H3 catalog fixture carried the 2K tier
+  (13 credits/s) while the card quotes 768P, so the question price and the
+  final card total disagreed. The fixture now carries the 768P tier the card
+  quotes, and the "question price equals final card total" invariant holds.
+- **LENGTH: the 2-minute option is restored** at position 3, and
+  `_LENGTH_KEEP` keeps 120 s in every purpose path that asks for a length
+  (testimonial, lesson, paid ad, social post). No question wording, label or
+  option sentence changed; only which options exist.
+- Tests: 227 passed, 0 failed across `choice_card/`, `style_defaults/` and
+  `catalog_calculator/`.
+
 ## v2.9.93 - 2026-10-22 - batch 8d: spatial subject motion, Skill 75 interrupt-state preservation
 
 1. D3 spatial motion (`scripts/core/shot_planner/motion_score.py`): motion is
