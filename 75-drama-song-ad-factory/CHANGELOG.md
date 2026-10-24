@@ -4,6 +4,20 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.110 - 2026-10-24 - governed production admission
+
+Production entrypoints and paid dispatch require authoritative intake, the
+validated canonical predecessor graph and current artifact approval scope.
+Manual authorization/four-pick JSON and manually initialized stage rows cannot
+grant production admission. Paid requests are rechecked before submission;
+offline runner receipts remain explicitly non-authoritative.
+
+Initial research and planning work without future media dependencies or unseen
+artifact approvals. Current revision-aware legacy approvals remain supported;
+unverified evidence is preserved behind a specific hold. Script/lyrics, song
+selection and storyboard package gates retain their intended timing. Question
+text, creative dramatization and lip-sync policy are unchanged.
+
 ## v2.9.109 - 2026-10-24 - explicit router roles and free run-state handoff
 
 The AI catalog accepts the existing configured deepseek-chain alias literally.

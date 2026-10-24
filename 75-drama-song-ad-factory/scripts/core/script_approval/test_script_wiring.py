@@ -14,6 +14,7 @@ import stat
 import sys
 import tempfile
 from contextlib import redirect_stdout
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -24,6 +25,7 @@ import factory as F  # noqa: E402
 from state_store import Store  # noqa: E402
 import script_approval as SA  # noqa: E402
 import test_kie_dispatch as TK  # noqa: E402
+from test_production_process import complete_stage  # noqa: E402
 
 N = len(IC.QUESTIONS)
 SHEET = [{"tag": "Intro", "lines": ["One closed door."]},
@@ -43,21 +45,14 @@ def ones():
     return IC.example_replies()
 
 
-def make_run(yes=True):
-    run = tempfile.mkdtemp(prefix="sa-wire-")
-    os.makedirs(os.path.join(run, "control"))
+def make_run(yes=True, *, confirmed=True):
+    run = tempfile.mkdtemp(prefix="run-sa-wire-")
     os.makedirs(os.path.join(run, "creative"))
-    with Store(os.path.join(run, "control", "state.sqlite3")) as store:
-        store.init_run("R", STAGES)
-        for stage in STAGES[:3]:
-            store.transition("R", stage, "READY", "fixture")
-            store.claim("R", stage, "fixture")
-            store.transition("R", stage, "COMPLETE", "fixture")
     shutil.copy(SAMPLES[0], os.path.join(run, "creative", "story.json"))
     shutil.copy(SAMPLES[1], os.path.join(run, "creative", "lyrics.json"))
-    answers = IC.conversation(ones()[:-1] + ["1" if yes else "2"])["answers"]
-    json.dump(answers, open(os.path.join(run, "card-answers.json"), "w"))
     write_script(run, SHEET)
+    if confirmed:
+        confirm_card(run, "1" if yes else "2")
     return run
 
 
@@ -72,13 +67,27 @@ def next_(run, target=""):
 
 
 def reply(run, text, target=""):
-    return F.cmd_script_reply(argparse.Namespace(run_dir=run, reply=text, target=target))
+    """An explicit synthetic NEW client event answers the actually saved ask.
+
+    Production callers receive no such defaults; contextless CLI replies are
+    covered separately by the artifact provenance refusal tests.
+    """
+    from script_approval import approval_events as AE
+    with open(os.path.join(run, "control", "intake-session.json")) as stream:
+        run_id = json.load(stream)["run_id"]
+    ask_id = AE.open_asks(SA.record_for(run))[-1]["ask_id"]
+    reply.sequence = getattr(reply, "sequence", 0) + 1
+    return F.cmd_script_reply(argparse.Namespace(
+        run_dir=run, reply=text, target=target, reply_source="client",
+        answer_source_ref="script-wiring-client-event:%d" % reply.sequence,
+        presentation_ask_id=ask_id, run_id=run_id))
 
 
 def music(run, lyrics):
     """The mocked music submit: a real dispatch against the fake Skill 74. -> (envelope, calls)."""
     req = {"model": "m", "input": {"prompt": "p" * 200}, "lyrics": lyrics, "run_dir": run}
-    env, db, fake, tmp = TK.run_case(TK.BASE_SCRIPT, "sa-wire", model="suno-music-v6", request=req)
+    label = os.path.basename(run).removeprefix("run-")
+    env, db, fake, tmp = TK.run_case(TK.BASE_SCRIPT, label, model="suno-music-v6", request=req)
     return env, fake.calls
 
 
@@ -202,9 +211,8 @@ def test_delivery_uses_openclaw_send_and_failure_resends_on_resume():
 
 def confirm_card(run, script_answer):
     """Drive the REAL card (factory.py card --step --run-dir) to a confirmed recap."""
-    os.remove(os.path.join(run, "card-answers.json"))
     replies = ones()[:-1] + [script_answer] + ["yes"]
-    args = ["card", "--step", "--run-dir", run, "--format", "session-json"]
+    args = ["card", "--step", "--run-dir", run, "--no-purpose-flow", "--format", "session-json"]
 
     def turn(extra=()):
         out = io.StringIO()
@@ -218,10 +226,12 @@ def confirm_card(run, script_answer):
         state = turn(["--question-id", state["question_id"],
                       "--question-digest", state["question_digest"], "--reply", reply])
     assert state["done"] is True             # the final reply explicitly confirms the recap
+    for stage in STAGES[:3]:
+        complete_stage(Path(run), stage)
 
 
 def test_confirmed_recap_writes_answers_yes_pauses():
-    run = make_run()
+    run = make_run(confirmed=False)
     confirm_card(run, "1")
     rows = json.load(open(os.path.join(run, "card-answers.json")))
     if isinstance(rows, dict):                 # the versioned envelope
@@ -234,15 +244,14 @@ def test_confirmed_recap_writes_answers_yes_pauses():
 
 
 def test_confirmed_recap_no_goes_to_music():
-    run = make_run()
+    run = make_run(confirmed=False)
     confirm_card(run, "2")
     env = next_(run)
     assert env["outcome"] == "ok" and env["data"]["stage"] == "music", env
 
 
 def test_unconfirmed_recap_writes_nothing():
-    run = make_run()
-    os.remove(os.path.join(run, "card-answers.json"))
+    run = make_run(confirmed=False)
     args = ["card", "--step", "--run-dir", run] + [x for r in ones() for x in ("--reply", r)]
     F.main(args)
     assert not os.path.exists(os.path.join(run, "card-answers.json"))

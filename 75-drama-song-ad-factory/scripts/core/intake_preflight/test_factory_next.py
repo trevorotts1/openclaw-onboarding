@@ -23,7 +23,6 @@ stdlib only, no network, no provider, writes only under a temp dir.
 """
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -32,6 +31,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SKILL = HERE.parent.parent.parent          # 75-drama-song-ad-factory/
 FACTORY = HERE / "factory.py"
+CORE = HERE.parent
+sys.path.insert(0, str(CORE))
+from test_production_process import confirmed_run, complete_stage  # noqa: E402
 
 STAGES = ("research", "creative-strategy", "script-lyrics", "music",
           "continuity-bible", "storyboard", "image-keyframes",
@@ -40,56 +42,28 @@ STAGES = ("research", "creative-strategy", "script-lyrics", "music",
 
 
 def make_run(tmp, *, done=False):
-    """Run folder like B1 acceptance expects: control/state.sqlite3 with
-    stage-0 COMPLETE (or all COMPLETE when done) and the rest NOT_STARTED."""
-    import uuid as _u
-    run = tmp / ("run1-%s" % _u.uuid4().hex[:6])
-    run.mkdir(parents=True)
-    (run / "control").mkdir(parents=True)
+    """Real confirmed intake and legal stage history, with research complete."""
+    run = make_fresh(tmp)
     (run / "brief.json").write_text(
         json.dumps({"title": "T", "author": "A",
                     "offer": "o", "audience": "a",
                     "budget_minor": 2500, "budget_currency": "USD"}), "utf-8")
-    db = run / "control" / "state.sqlite3"
-    with sqlite3.connect(str(db)) as con:
-        con.execute("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT)")
-        con.execute("INSERT INTO meta(k, v) VALUES('db_version', '1')")
-        con.execute("CREATE TABLE stages(run_id TEXT, stage TEXT,"
-                    " state TEXT, version INTEGER, owner TEXT,"
-                    " lease_expires REAL, reason TEXT, updated_at REAL,"
-                    " PRIMARY KEY(run_id, stage))")
-        con.execute("CREATE TABLE events(id TEXT PRIMARY KEY, run_id TEXT,"
-                    " stage TEXT, kind TEXT, detail TEXT, at REAL)")
-        for i, s in enumerate(STAGES):
-            state = "COMPLETE" if done else ("NOT_STARTED" if i else "COMPLETE")
-            con.execute("INSERT INTO stages VALUES('R1', ?, ?, 1, NULL,"
-                        " NULL, NULL, 12345.6)", (s, state))
-    # make_run (selftest): the second stage's READY state is written by the
-    # table above, so `next` has a READY row to pick as soon as
-    # research is COMPLETE; the acceptance fixture flips that one bit.
+    for stage in STAGES if done else STAGES[:1]:
+        complete_stage(run, stage)
+    if done:
+        # Empty receipts are a well-shaped, explicitly unproven delivery set.
+        # Stage completion alone must never fabricate destination delivery.
+        (run / "delivery" / "receipts.json").write_text("[]", "utf-8")
     return run
 
 
 def make_fresh(tmp):
-    """Acceptance copy: stage 0 still NOT_STARTED (fresh run, nothing done)."""
+    """Actual full renderer-bound confirmation creates the canonical Store."""
     import uuid as _u
     run = tmp / ("run2-%s" % _u.uuid4().hex[:6])
-    run.mkdir(parents=True)
-    (run / "control").mkdir(parents=True)
-    db = run / "control" / "state.sqlite3"
-    with sqlite3.connect(str(db)) as con:
-        con.execute("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT)")
-        con.execute("INSERT INTO meta(k, v) VALUES('db_version', '1')")
-        con.execute("CREATE TABLE stages(run_id TEXT, stage TEXT,"
-                    " state TEXT, version INTEGER, owner TEXT,"
-                    " lease_expires REAL, reason TEXT, updated_at REAL,"
-                    " PRIMARY KEY(run_id, stage))")
-        con.execute("CREATE TABLE events(id TEXT PRIMARY KEY, run_id TEXT,"
-                    " stage TEXT, kind TEXT, detail TEXT, at REAL)")
-        for s in STAGES:
-            con.execute("INSERT INTO stages VALUES('R1', ?, 'NOT_STARTED',"
-                        " 1, NULL, NULL, NULL, 12345.6)", (s,))
+    confirmed_run(run, script=False, song=False, storyboard=False)
     return run
+
 
 def run_next(run_dir, cwd=None):
     return subprocess.run([sys.executable, str(FACTORY), "next",
