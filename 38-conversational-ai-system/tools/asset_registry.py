@@ -26,7 +26,9 @@ Doctrine, enforced in code:
     absence of a complaint;
   * an asset claim must carry a source (client-provided or discovered) and an
     evidence pointer. A claim with no provenance, or one resting on an
-    assumption, is refused;
+    assumption, is refused. The pointer itself must be real shape: an existing
+    path, a usable http/https URL, or a named source. A string that merely
+    contains "://" proves nothing;
   * the preparation worklist names the exact deliverable and the inputs it
     needs. It plans preparation only: nothing here generates, downloads or
     fabricates an asset;
@@ -46,8 +48,10 @@ import dataclasses
 import datetime as _datetime
 import json
 import os
+import re
 import tempfile
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import urlsplit
 
 try:  # the tools directory is normally on sys.path
     import acquisition_brief as _brief
@@ -96,9 +100,21 @@ if not set(_brief.ASSET_KINDS) <= set(ASSET_KINDS):
 SOURCE_CLIENT_PROVIDED = "client_provided"
 SOURCE_DISCOVERED = "discovered"
 SOURCE_MUST_PREPARE = "must_prepare"
-SOURCES = (SOURCE_CLIENT_PROVIDED, SOURCE_DISCOVERED, SOURCE_MUST_PREPARE)
+# An asset this registry's own preparation worklist produced. It is never
+# relabelled client_provided: the client did not supply it.
+SOURCE_PREPARED = "prepared"
+SOURCES = (
+    SOURCE_CLIENT_PROVIDED,
+    SOURCE_DISCOVERED,
+    SOURCE_MUST_PREPARE,
+    SOURCE_PREPARED,
+)
 # Sources that assert an asset exists. must_prepare asserts the opposite.
-PRESENT_SOURCES = (SOURCE_CLIENT_PROVIDED, SOURCE_DISCOVERED)
+PRESENT_SOURCES = (
+    SOURCE_CLIENT_PROVIDED,
+    SOURCE_DISCOVERED,
+    SOURCE_PREPARED,
+)
 
 _BRIEF_SOURCE_MAP = {
     _brief.PROVENANCE_CLIENT_STATED: SOURCE_CLIENT_PROVIDED,
@@ -275,6 +291,84 @@ def _iso(moment: _datetime.datetime) -> str:
     )
 
 
+# ----------------------------------------------------------- evidence shapes
+# An evidence pointer names where the asset really is. Three shapes are
+# accepted: an existing path on this machine, a genuine web URL, or -- for a
+# claim the client or a discovery source states -- a named source such as the
+# person or system that holds it. Every other string is a fabricated pointer
+# and is refused. A bare "://" is never proof of anything.
+#
+# The achievable bar for a URL, stated honestly: OFFLINE EXISTENCE CANNOT BE
+# VERIFIED. What can be verified is that the string is structurally a URL that
+# could name a real asset -- scheme http or https, a host with a dot, and a
+# host that is not a special-use name (RFC 2606/6761 reserve test, example,
+# invalid, localhost, local and example.com/net/org precisely because they can
+# never resolve to a real asset). Whether that URL serves the asset is checked
+# by whoever consumes it, never claimed here.
+_URL_SCHEMES = ("http", "https")
+_URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*:")
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
+_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9]{1,8}$")
+_RESERVED_TLDS = frozenset({"test", "example", "invalid", "localhost", "local"})
+_RESERVED_HOSTS = frozenset(
+    {"example.com", "example.net", "example.org", "localhost"}
+)
+
+
+def _looks_like_url(evidence: str) -> bool:
+    """True when the string claims to be a URI rather than a path or a name."""
+    if "://" in evidence:
+        return True
+    if _WINDOWS_DRIVE_RE.match(evidence):
+        return False
+    return bool(_URL_SCHEME_RE.match(evidence))
+
+
+def _looks_like_path(evidence: str) -> bool:
+    """True when the string claims to be a file location rather than a name."""
+    separators = ["/", "\\", os.sep]
+    if os.altsep:
+        separators.append(os.altsep)
+    if any(separator in evidence for separator in separators):
+        return True
+    if evidence.startswith(("~", ".")):
+        return True
+    return bool(_FILENAME_RE.match(evidence))
+
+
+def _check_url_shape(evidence: str) -> str:
+    try:
+        parts = urlsplit(evidence)
+        host = (parts.hostname or "").strip().lower()
+    except ValueError as exc:  # malformed bracketed host, bad port
+        raise UnprovenancedClaimError(
+            "evidence %r is not a usable URL: %s" % (evidence, exc)
+        ) from exc
+    scheme = (parts.scheme or "").lower()
+    if scheme not in _URL_SCHEMES:
+        raise UnprovenancedClaimError(
+            "evidence %r is not a usable URL: only http and https can point at "
+            "a web asset" % evidence
+        )
+    if not parts.netloc or not host or "." not in host:
+        raise UnprovenancedClaimError(
+            "evidence %r is not a usable URL: it names no dotted host"
+            % evidence
+        )
+    if (
+        host.rsplit(".", 1)[-1] in _RESERVED_TLDS
+        or any(
+            host == reserved or host.endswith("." + reserved)
+            for reserved in _RESERVED_HOSTS
+        )
+    ):
+        raise UnprovenancedClaimError(
+            "evidence %r is not a usable URL: host %r is a reserved special-use "
+            "name that can never name a real asset" % (evidence, host)
+        )
+    return evidence
+
+
 class AssetRegistry:
     """Per-tenant asset registry with a preparation worklist and a gate.
 
@@ -447,6 +541,36 @@ class AssetRegistry:
         return cleaned
 
     @staticmethod
+    def _check_evidence_shape(evidence: str, *, allow_named: bool) -> str:
+        """Refuse a fabricated pointer. Shape discipline, not existence faith.
+
+        Accepted: an existing path, a URL that clears `_check_url_shape`, and
+        (when `allow_named`) a named source -- a plain name of who or what
+        holds the asset. Everything else claims to be a location while naming
+        nothing that exists, which is a placeholder, not evidence.
+        """
+        if os.path.exists(evidence):
+            return evidence
+        if _looks_like_url(evidence):
+            return _check_url_shape(evidence)
+        if _looks_like_path(evidence):
+            raise UnprovenancedClaimError(
+                "evidence %r names no file that exists; a path pointing at "
+                "nothing is a placeholder, not an asset" % evidence
+            )
+        if not allow_named:
+            raise UnprovenancedClaimError(
+                "evidence %r is neither an existing path nor a usable http/"
+                "https URL; the finished asset must be pointed at" % evidence
+            )
+        if not any(character.isalnum() for character in evidence):
+            raise UnprovenancedClaimError(
+                "evidence %r is not a name of anything; a named source must "
+                "actually name one" % evidence
+            )
+        return evidence
+
+    @staticmethod
     def _check_detail(detail: Any) -> Optional[str]:
         if detail is None:
             return None
@@ -468,8 +592,12 @@ class AssetRegistry:
         """Record an asset the client has, with its provenance.
 
         Refused: no source, a source that asserts something else (must_prepare),
-        an assumed provenance, or an empty evidence pointer. Re-recording the
-        identical claim is a no-op: same record, no new event, same timestamp.
+        an assumed provenance, an empty evidence pointer, and any pointer that
+        only looks like one -- a URL-shaped string that is not a usable
+        http/https URL, or a path that names no file that exists. A named
+        source (who holds it, where it came from) is accepted as evidence for a
+        stated claim. Re-recording the identical claim is a no-op: same record,
+        no new event, same timestamp.
         """
         kind = self._check_kind(kind)
         if source not in PRESENT_SOURCES:
@@ -478,6 +606,7 @@ class AssetRegistry:
                 % (" or ".join(PRESENT_SOURCES), source)
             )
         evidence = self._check_evidence(evidence)
+        evidence = self._check_evidence_shape(evidence, allow_named=True)
         detail = self._check_detail(detail)
 
         with self._locked():
@@ -620,18 +749,17 @@ class AssetRegistry:
         """Promote a prepared asset once it actually exists on disk.
 
         This is the only path from must_prepare to ready, and it demands an
-        evidence pointer to the finished file or link. Nothing is generated
-        here; the caller must already have produced the real asset.
+        evidence pointer to the finished file or link: an existing path, or a
+        usable http/https URL. A named source is not enough here -- preparation
+        produced something, so it must be pointed at. Nothing is generated here;
+        the caller must already have produced the real asset. The asset keeps
+        source `prepared`: it was not client-provided.
         """
         kind = self._check_kind(kind)
         evidence = self._check_evidence(evidence)
-        if not os.path.exists(evidence) and "://" not in evidence:
-            raise UnprovenancedClaimError(
-                "prepared asset evidence %r is neither an existing path nor a "
-                "URL; a placeholder is not an asset" % evidence
-            )
+        evidence = self._check_evidence_shape(evidence, allow_named=False)
         return self.record_present(
-            kind, source=SOURCE_CLIENT_PROVIDED, evidence=evidence
+            kind, source=SOURCE_PREPARED, evidence=evidence
         )
 
     # ---------------------------------------------------------------- links

@@ -48,14 +48,26 @@ def new_registry(directory, *, brief=None, name="assets.json", clock=fixed_clock
     return ar.AssetRegistry(os.path.join(directory, name), brief=brief, clock=clock)
 
 
+def evidence_file(directory, name="evidence.txt"):
+    """A real file on disk, so a path-shaped evidence pointer is a real one."""
+    path = os.path.join(directory, name)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("real evidence\n")
+    return path
+
+
+GENUINE_URL = "https://assets.acme-brand.com/brand/logo.png"
+
+
 def record_complete_set(registry, *, testimonial=True):
+    directory = os.path.dirname(registry.path)
     for kind in REQUIRED_KINDS:
         if kind == "testimonials" and not testimonial:
             continue
         registry.record_present(
             kind,
             source=ar.SOURCE_CLIENT_PROVIDED,
-            evidence="/evidence/%s" % kind,
+            evidence=evidence_file(directory, "%s.txt" % kind),
             detail="client supplied %s" % kind,
         )
 
@@ -208,15 +220,16 @@ class ProvenanceTests(unittest.TestCase):
     def test_present_claim_without_source_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             registry = new_registry(directory)
+            named = "the client's brand pack"
             with self.assertRaises(ar.UnprovenancedClaimError):
-                registry.record_present("logo", source=None, evidence="/x/logo.png")
+                registry.record_present("logo", source=None, evidence=named)
             with self.assertRaises(ar.UnprovenancedClaimError):
                 registry.record_present(
-                    "logo", source=ar.SOURCE_MUST_PREPARE, evidence="/x/logo.png"
+                    "logo", source=ar.SOURCE_MUST_PREPARE, evidence=named
                 )
             with self.assertRaises(ar.UnprovenancedClaimError):
                 registry.record_present(
-                    "logo", source=ab.PROVENANCE_ASSUMED, evidence="/x/logo.png"
+                    "logo", source=ab.PROVENANCE_ASSUMED, evidence=named
                 )
 
     def test_present_claim_without_evidence_is_refused(self):
@@ -248,7 +261,7 @@ class ProvenanceTests(unittest.TestCase):
             registry.record_present(
                 "testimonials",
                 source=ar.SOURCE_CLIENT_PROVIDED,
-                evidence="/evidence/testimonials",
+                evidence=evidence_file(directory, "testimonials.txt"),
             )
             with self.assertRaises(ar.UntrustedProvenanceError):
                 registry.link_to_brief_fact("testimonials", "proof.proof_assets")
@@ -260,7 +273,7 @@ class ProvenanceTests(unittest.TestCase):
             registry.record_present(
                 "testimonials",
                 source=ar.SOURCE_CLIENT_PROVIDED,
-                evidence="/evidence/testimonials",
+                evidence=evidence_file(directory, "testimonials.txt"),
             )
             with self.assertRaises(ar.UnknownBriefFactError):
                 registry.link_to_brief_fact("testimonials", "proof.invented_fact")
@@ -374,12 +387,12 @@ class WorklistTests(unittest.TestCase):
             with self.assertRaises(ar.UnprovenancedClaimError):
                 registry.mark_ready("logo", evidence=os.path.join(directory, "no.png"))
 
-            real = os.path.join(directory, "logo.png")
-            with open(real, "w", encoding="utf-8") as handle:
-                handle.write("PNG")
+            real = evidence_file(directory, "logo.png")
             record = registry.mark_ready("logo", evidence=real)
             self.assertEqual(record["readiness"], "ready")
             self.assertEqual(record["evidence"], real)
+            # A prepared asset is never relabelled as the client's own work.
+            self.assertEqual(record["source"], ar.SOURCE_PREPARED)
 
 
 class IntegrationTests(unittest.TestCase):
@@ -395,13 +408,13 @@ class IntegrationTests(unittest.TestCase):
             brief.assess_asset(
                 "logo",
                 ab.ASSET_PRESENT,
-                detail="/evidence/logo.png",
+                detail=evidence_file(directory, "logo.png"),
                 source=ab.PROVENANCE_CLIENT_STATED,
             )
             brief.assess_asset(
                 "photos",
                 ab.ASSET_PRESENT,
-                detail="https://example.test/gallery",
+                detail="https://assets.acme-brand.com/gallery",
                 source=ab.PROVENANCE_DISCOVERED,
             )
             brief.assess_asset(
@@ -437,20 +450,21 @@ class IntegrationTests(unittest.TestCase):
                 provenance=ab.PROVENANCE_CLIENT_STATED,
             )
             registry = new_registry(directory, brief=brief)
+            testimonial_evidence = evidence_file(directory, "testimonials.txt")
             registry.record_present(
                 "testimonials",
                 source=ar.SOURCE_CLIENT_PROVIDED,
-                evidence="/evidence/testimonials",
+                evidence=testimonial_evidence,
             )
             registry.record_present(
                 "offer_documents",
                 source=ar.SOURCE_CLIENT_PROVIDED,
-                evidence="/evidence/offer.pdf",
+                evidence=evidence_file(directory, "offer.pdf"),
             )
             registry.record_present(
                 "logo",
                 source=ar.SOURCE_CLIENT_PROVIDED,
-                evidence="/evidence/logo.png",
+                evidence=evidence_file(directory, "logo.png"),
             )
 
             links = registry.link_defaults()
@@ -467,7 +481,7 @@ class IntegrationTests(unittest.TestCase):
             # The fact's own value is never copied over the asset evidence.
             self.assertEqual(
                 registry.snapshot()["assets"]["testimonials"]["evidence"],
-                "/evidence/testimonials",
+                testimonial_evidence,
             )
 
     def test_link_defaults_refuses_an_assumed_fact(self):
@@ -482,7 +496,7 @@ class IntegrationTests(unittest.TestCase):
             registry.record_present(
                 "testimonials",
                 source=ar.SOURCE_CLIENT_PROVIDED,
-                evidence="/evidence/testimonials",
+                evidence=evidence_file(directory, "testimonials.txt"),
             )
             with self.assertRaises(ar.UntrustedProvenanceError):
                 registry.link_defaults()
@@ -508,10 +522,11 @@ class PersistenceTests(unittest.TestCase):
     def test_repeated_operations_are_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
             registry = new_registry(directory)
+            logo_evidence = evidence_file(directory, "logo.png")
             registry.record_present(
                 "logo",
                 source=ar.SOURCE_CLIENT_PROVIDED,
-                evidence="/evidence/logo.png",
+                evidence=logo_evidence,
                 detail="brand pack",
             )
             registry.record_missing("photos", "no usable photos")
@@ -522,7 +537,7 @@ class PersistenceTests(unittest.TestCase):
             registry.record_present(
                 "logo",
                 source=ar.SOURCE_CLIENT_PROVIDED,
-                evidence="/evidence/logo.png",
+                evidence=logo_evidence,
                 detail="brand pack",
             )
             registry.record_missing("photos", "no usable photos")
@@ -534,15 +549,18 @@ class PersistenceTests(unittest.TestCase):
 
     def test_two_separate_processes_produce_identical_bytes(self):
         child = r"""
-import sys
+import os, sys
 from datetime import datetime, timezone
 sys.path.insert(0, sys.argv[1])
 import asset_registry as ar
 
 clock = lambda: datetime(2026, 10, 24, 12, 0, 0, 0, tzinfo=timezone.utc)
 registry = ar.AssetRegistry(sys.argv[2], clock=clock)
+evidence = os.path.join(os.path.dirname(os.path.abspath(sys.argv[2])), "logo-evidence.txt")
+with open(evidence, "w", encoding="utf-8") as handle:
+    handle.write("PNG")
 registry.record_present("logo", source=ar.SOURCE_CLIENT_PROVIDED,
-                        evidence="/evidence/logo.png", detail="brand pack")
+                        evidence=evidence, detail="brand pack")
 registry.record_missing("photos", "no usable photos")
 registry.supply_input("logo", "brand colours, if any", evidence="/brand/palette.txt")
 print(registry.campaign_readiness()["sufficient"])
@@ -569,17 +587,20 @@ print(registry.campaign_readiness()["sufficient"])
 
     def test_two_concurrent_processes_both_keep_their_writes(self):
         child = r"""
-import sys, time
+import os, sys, time
 from datetime import datetime, timezone
 sys.path.insert(0, sys.argv[1])
 import asset_registry as ar
 
 clock = lambda: datetime.now(timezone.utc)
 registry = ar.AssetRegistry(sys.argv[2], clock=clock)
+directory = os.path.dirname(os.path.abspath(sys.argv[2]))
 kind = sys.argv[3]
 for index in range(10):
-    registry.record_present(kind, source=ar.SOURCE_DISCOVERED,
-                            evidence="/evidence/%s-%d" % (kind, index))
+    evidence = os.path.join(directory, "%s-%d.txt" % (kind, index))
+    with open(evidence, "w", encoding="utf-8") as handle:
+        handle.write("PNG")
+    registry.record_present(kind, source=ar.SOURCE_DISCOVERED, evidence=evidence)
     time.sleep(0.02)
 """
         with tempfile.TemporaryDirectory() as directory:
@@ -620,7 +641,7 @@ for index in range(10):
             registry.record_present(
                 "logo",
                 source=ar.SOURCE_CLIENT_PROVIDED,
-                evidence="/evidence/logo.png",
+                evidence=evidence_file(directory, "logo.png"),
             )
             leftovers = [
                 name for name in os.listdir(directory) if name.endswith(".tmp")
@@ -639,6 +660,133 @@ for index in range(10):
             self.assertFalse(snapshot["readiness"]["sufficient"])
             self.assertEqual(snapshot["preparation_worklist"], [])
             self.assertFalse(snapshot["brief_attached"])
+
+
+class EvidenceShapeTests(unittest.TestCase):
+    """Every refused pointer shape, each with a known-good control.
+
+    The literal attacks: a string containing "://" was accepted as proof, and
+    `https://invented.invalid/nope.png` was accepted as a link. Both are now
+    refused. The achievable bar is shape, not reachability: a URL is checked
+    offline for being a real http/https URL naming a host that could exist.
+    """
+
+    FABRICATED_URLS = (
+        "totally://made.up",
+        "://",
+        "ftp://files.acme-brand.com/logo.png",
+        "https:logo.png",
+        "https://no-dot-host/logo.png",
+        "https://invented.invalid/nope.png",
+        "https://assets.example.com/logo.png",
+    )
+
+    FABRICATED_PATHS = (
+        "/no/such/directory/pb045-evidence.png",
+        "pb045-evidence.png",
+        "./pb045-evidence.png",
+        "~/pb045-evidence.png",
+    )
+
+    BLANK_NAMELESS_AND_NON_STRINGS = (
+        "",
+        "   ",
+        "\t\n",
+        "!!!",
+        "---",
+        None,
+        7,
+        3.5,
+        b"bytes",
+        ["x"],
+        {"evidence": "x"},
+    )
+
+    def assert_refused(self, registry, bad):
+        with self.assertRaises(ar.UnprovenancedClaimError):
+            registry.mark_ready("logo", evidence=bad)
+        with self.assertRaises(ar.UnprovenancedClaimError):
+            registry.record_present(
+                "logo", source=ar.SOURCE_CLIENT_PROVIDED, evidence=bad
+            )
+        self.assertEqual(registry.classify()["logo"]["readiness"], "unassessed")
+
+    def test_url_shaped_fabrications_are_refused(self):
+        for bad in self.FABRICATED_URLS:
+            with self.subTest(evidence=bad):
+                with tempfile.TemporaryDirectory() as directory:
+                    self.assert_refused(new_registry(directory), bad)
+
+    def test_a_genuine_url_is_the_accepted_url_control(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = new_registry(directory)
+            record = registry.mark_ready("logo", evidence=GENUINE_URL)
+            self.assertEqual(record["readiness"], "ready")
+            self.assertEqual(record["evidence"], GENUINE_URL)
+            self.assertEqual(record["source"], ar.SOURCE_PREPARED)
+
+    def test_paths_that_name_nothing_are_refused(self):
+        for bad in self.FABRICATED_PATHS:
+            with self.subTest(evidence=bad):
+                with tempfile.TemporaryDirectory() as directory:
+                    self.assert_refused(new_registry(directory), bad)
+
+    def test_an_existing_file_is_the_accepted_path_control(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = new_registry(directory)
+            real = evidence_file(directory, "pb045-real.png")
+            record = registry.mark_ready("logo", evidence=real)
+            self.assertEqual(record["readiness"], "ready")
+            self.assertEqual(record["evidence"], real)
+            self.assertEqual(record["source"], ar.SOURCE_PREPARED)
+
+    def test_blank_nameless_and_non_string_evidence_is_refused(self):
+        for bad in self.BLANK_NAMELESS_AND_NON_STRINGS:
+            with self.subTest(evidence=bad):
+                with tempfile.TemporaryDirectory() as directory:
+                    self.assert_refused(new_registry(directory), bad)
+
+    def test_a_named_source_is_the_accepted_named_control(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = new_registry(directory)
+            named = "the client's shared Google Drive folder"
+            record = registry.record_present(
+                "logo", source=ar.SOURCE_CLIENT_PROVIDED, evidence=named
+            )
+            self.assertEqual(record["readiness"], "ready")
+            self.assertEqual(record["evidence"], named)
+            self.assertEqual(record["source"], ar.SOURCE_CLIENT_PROVIDED)
+
+            # A prepared asset is pointed at, never merely named.
+            registry.record_missing("photos", "no usable photos")
+            with self.assertRaises(ar.UnprovenancedClaimError):
+                registry.mark_ready("photos", evidence="the photo studio's contact")
+
+    def test_a_refused_pointer_never_promotes_the_asset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = new_registry(directory)
+            registry.record_missing("logo", "client has no logo file")
+            for bad in (
+                "totally://made.up",
+                "https://invented.invalid/nope.png",
+                "/no/such/directory/pb045-evidence.png",
+            ):
+                with self.subTest(evidence=bad):
+                    with self.assertRaises(ar.UnprovenancedClaimError):
+                        registry.mark_ready("logo", evidence=bad)
+
+            entry = registry.classify()["logo"]
+            self.assertEqual(entry["readiness"], "must_prepare")
+            self.assertIsNone(entry["evidence"])
+            self.assertIsNone(registry.snapshot()["assets"]["logo"]["evidence"])
+            self.assertFalse(registry.is_campaign_ready())
+            self.assertEqual(
+                [
+                    item["kind"]
+                    for item in registry.campaign_readiness()["blockers"]
+                ],
+                REQUIRED_KINDS,
+            )
 
 
 if __name__ == "__main__":
