@@ -54,28 +54,29 @@ def approx(a, b, abs_tol=0.01):
 
 
 #: What card_render prints for card {} with this fixture on this branch
-#: (v2.9.73 — the shipped video model is Hailuo 02 Standard at $0.025/s, the
-#: KIE catalog carries it; the card total moved with the data): every rerun
-#: must stay byte-identical to THIS text (BUILD-PLAN W1-agnes-core-U7).
+#: (v2.9.107 — the shipped video model is MiniMax H3 at $0.04/s, 15-second
+#: generations, the KIE catalog carries it; the card total moved with the
+#: data): every rerun must stay byte-identical to THIS text (BUILD-PLAN
+#: W1-agnes-core-U7).
 GOLDEN_PLAIN_CARD = (
-    "  Length:      60 seconds   $1.50\n"
-    "  Shape:       9:16   $0.34\n"
-    "  Style:       Lifelike 3D   $0.34\n"
+    "  Length:      60 seconds   $2.40\n"
+    "  Shape:       9:16   $0.22\n"
+    "  Style:       Lifelike 3D   $0.22\n"
     "  Music:       Soul Ballad   $0.06\n"
     "  Voice:       All Suno   $0.06\n"
     "  Clips:       not offered (60/90-second lengths only)   $0.00\n"
-    "  Video model: Hailuo 02 Standard 768P (RECOMMENDED)   $1.50\n"
-    "  Images:      7 character reference pictures + 10 shot pictures "
+    "  Video model: MiniMax H3 768P (RECOMMENDED)   $2.40\n"
+    "  Images:      7 character reference pictures + 4 shot pictures "
     "(added $0.14 for the reference pictures, included in the total)\n"
     "  Storyboard:  8 storyboard pictures (cap 120 from configuration; "
-    "separate from the 10 video shots above)\n"
+    "separate from the 4 video shots above)\n"
     "\n"
-    "  Total:       $1.90 + $0.95 retake allowance (50%) = $2.85")
+    "  Total:       $2.68 + $1.34 retake allowance (50%) = $4.02")
 
-#: quote(1, "90 seconds") on this branch (table rates, no adapter; Hailuo
-#: 02 Standard's $0.025/s x 90 = $2.25 + music + voice rows = $2.75 base,
-#: + $1.38 planning allowance = $4.13).
-GOLDEN_QUOTE_90 = 4.13
+#: quote(1, "90 seconds") on this branch (table rates, no adapter; MiniMax
+#: H3's $0.04/s x 90 = $3.60 + music + voice rows, plus the planning
+#: allowance = $5.88).
+GOLDEN_QUOTE_90 = 5.88
 
 
 class FakePrice:
@@ -165,7 +166,7 @@ class AgnesPriceTests(unittest.TestCase):
         self.assertIs(priced, True)
         # the Skill 74 questions the card asked on the base, unchanged
         self.assertEqual(fake.calls, [("ai-music-api/generate", 1),
-                                      ("google/imagen4-fast", 17)])
+                                      ("google/imagen4-fast", 11)])
 
         def never(card, price_fn):          # the Agnes path must not be entered
             raise AssertionError("agnes_price.envelope used on a non-Agnes card")
@@ -210,10 +211,10 @@ class AgnesPriceTests(unittest.TestCase):
             self.assertEqual(by_component["image"]["agnes_seconds"], 90)
             self.assertGreater(by_component["music"]["usd"], 0)
             self.assertGreater(by_component["lip_sync"]["usd"], 0)
-            # 90 s ad -> 12 clips of the planned 60 s ceiling (lipsync_clips.budget)
+            # 90 s ad -> 32 s (the 35% hard ceiling) in 7 clips (lipsync_clips.budget)
             self.assertEqual(priced_card["lip_sync"], {
-                "model_id": "kling/ai-avatar-standard", "seconds": 60, "lines": 12,
-                "seconds_per_shape": 60, "lines_per_shape": 12, "shape_count": 1})
+                "model_id": "kling/ai-avatar-standard", "seconds": 32, "lines": 7,
+                "seconds_per_shape": 32, "lines_per_shape": 7, "shape_count": 1})
             # the total is the song plus the close-ups, nothing else
             self.assertTrue(approx(
                 priced_card["price_usd"],
@@ -232,7 +233,7 @@ class AgnesPriceTests(unittest.TestCase):
             env = agnes_price.envelope(card, fake)
             self.assertEqual(env["card"]["agnes_seconds"], 180)
             # both shapes run lip-sync
-            self.assertEqual(env["card"]["lip_sync"]["seconds"], 120)
+            self.assertEqual(env["card"]["lip_sync"]["seconds"], 64)
 
     # ----------------------------------------------- 3. price fails closed
     def test_failing_price_fn_says_price_unavailable(self):

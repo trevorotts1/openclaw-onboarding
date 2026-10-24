@@ -241,6 +241,29 @@ def _load_schema(skill_root, kind):
             f"without it")
 
 
+def _shared_candidates(skill_root, rel, allow_vendored=True):
+    """Where a shared component may live, most-canonical first.
+
+    Beside the skill's tree is the repository layouts (onboarding and 999).
+    A lone-directory install has no sibling tree, so a distributor may vendor
+    a *component* inside the skill; both are accepted, and the refusal names
+    every place that was searched.
+
+    ``allow_vendored=False`` is for authority artifacts: the prompt-policy
+    registry of record decides whether a citation is valid, so a copy shipped
+    inside the skill could certify the skill's own citations. That one is read
+    from the shared tree only.
+    """
+    root = Path(skill_root)
+    name = Path(rel).name
+    parent_rel = Path(rel).relative_to("shared-utils") if rel.startswith("shared-utils/") else Path(rel)
+    candidates = [root.parent / rel, root / rel]
+    if allow_vendored:
+        candidates += [root / "repo-integration" / "shared" / parent_rel,
+                       root / "repo-integration" / "shared" / name]
+    return tuple(candidates)
+
+
 def _registry_policy_ids(skill_root):
     """The active policy ids minted by the prompt-policy registry of
     record (Q13). Fail-closed, with the same discipline as
@@ -248,7 +271,9 @@ def _registry_policy_ids(skill_root):
     registry that can be read, so an unreadable or malformed registry
     refuses the import rather than letting the citation pass
     unverified."""
-    path = Path(skill_root).parent / PROMPT_POLICY_REGISTRY_REF
+    candidates = _shared_candidates(skill_root, PROMPT_POLICY_REGISTRY_REF,
+                                    allow_vendored=False)
+    path = next((c for c in candidates if c.is_file()), candidates[0])
     try:
         registry = json.loads(path.read_text(encoding="utf-8"))
         return {entry["policy_id"] for entry in registry["entries"]
@@ -256,11 +281,12 @@ def _registry_policy_ids(skill_root):
                 and entry.get("entry_status") == "active"
                 and isinstance(entry.get("policy_id"), str)}
     except (OSError, ValueError, KeyError, TypeError) as exc:
+        searched = "; ".join(str(c) for c in candidates)
         raise LaunchContextError(
             f"prompt-policy registry of record unreadable at {path}: "
-            f"{exc}; a 1.1 request's prompt_policy_id is a citation "
-            f"minted by that registry only, and the import cannot "
-            f"verify the citation without it")
+            f"{exc}; searched: {searched}; a 1.1 request's prompt_policy_id "
+            f"is a citation minted by that registry only, and the import "
+            f"cannot verify the citation without it")
 
 
 def _load_document(path, label):
@@ -418,7 +444,8 @@ def derive_next_role(request, graph, launch):
 # ---------------------------------------------------------------------------
 
 def tokens_component_path(skill_root):
-    return Path(skill_root).parent / TOKENS_COMPONENT_REF
+    candidates = _shared_candidates(skill_root, TOKENS_COMPONENT_REF)
+    return next((c for c in candidates if c.is_file()), candidates[0])
 
 
 def emit_design_tokens(skill_root, brand_file):

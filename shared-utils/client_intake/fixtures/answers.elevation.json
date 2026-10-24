@@ -274,6 +274,21 @@
       "value": "No, not yet",
       "status": "provided",
       "source": "client"
+    },
+    "business_outcome": {
+      "value": "Fill all 12 seats in my coaching program this November.",
+      "status": "provided",
+      "source": "client"
+    },
+    "difficulty": {
+      "value": "My list is small and few visitors book a call.",
+      "status": "provided",
+      "source": "client"
+    },
+    "access_url": {
+      "value": "https://elevationcoaching.com/access",
+      "status": "provided",
+      "source": "client"
     }
   },
   "to_confirm": [],

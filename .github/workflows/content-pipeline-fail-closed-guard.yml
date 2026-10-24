@@ -263,7 +263,10 @@ jobs:
         run: |
           set -euo pipefail
           cd 50-email-engine
-          computed="$(cat tools/prove-email.py run_email_engine.py EMAIL-MANIFEST.json | sha256sum | awk '{print $1}')"
+          computed="$(cat tools/prove-email.py run_email_engine.py EMAIL-MANIFEST.json \
+            tools/launch_profiles.py tools/persona_canonical.py \
+            profiles/launch-email-families.json schema/email.schema.json \
+            intake/email-intake-questions.json | sha256sum | awk '{print $1}')"
           pinned="$(tr -d ' \t\n' < ENGINE-PIN.sha256)"
           if [ "$computed" != "$pinned" ]; then
             echo "FAIL: ENGINE-PIN.sha256 drift — computed $computed, pinned $pinned"

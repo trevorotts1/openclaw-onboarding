@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -101,7 +102,12 @@ class T(unittest.TestCase):
                                          "beat_cut": True,
                                          "lip_sync": True}] * 3}, f)
             out = os.path.join(tmp, "master.mp4")
-            rc = A.assemble(tl, out)
+            # This fixture tests producer stamps, not the independently tested
+            # approved lip-sync evidence contract. Keep its isolation scoped.
+            with patch.object(A, "lipsync_gate", return_value=None), \
+                    patch("lipsync_evidence.check_plan",
+                          return_value={"pass": True, "evidence": {}}):
+                rc = A.assemble(tl, out)
             self.assertEqual(rc["outcome"], "ok", rc)
             self.assertEqual(rc["produced_by"], M.producer_stamp())
             self.assertEqual(rc["master_sha256"], M.sha256_file(out))

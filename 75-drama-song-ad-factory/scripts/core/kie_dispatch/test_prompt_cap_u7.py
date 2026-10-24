@@ -100,7 +100,7 @@ STAMPED_CARD = {"answers": {"video_style": "Lifelike 3D",
                 "at": "2026-10-09T09:00:00Z"}
 
 
-def disp(label, model, input_body, lock=None):
+def disp(label, model, input_body, lock=None, extra=None, script=None):
     """One dispatch against a fake Skill 74. request['model'] stays 'm' (an
     image id by cue) so the F6 storyboard gate does not mask the cap gate."""
     tmp = tempfile.mkdtemp(prefix="pu7-")
@@ -109,7 +109,7 @@ def disp(label, model, input_body, lock=None):
     state_db = os.path.join(tmp, "state.db")
     if lock:
         ML.lock_run_model(state_db, "run-u7", lock)
-    fake = Fake74(BASE_SCRIPT)
+    fake = Fake74(script or BASE_SCRIPT)
     # U15b (merged with U7 in v2.7.28): an H3 job dispatches only with a PASS
     # prompt receipt for the exact prompt bytes; the cap gate runs before it.
     import hashlib
@@ -117,6 +117,7 @@ def disp(label, model, input_body, lock=None):
     req = {"model": "m", "input": dict(input_body), "card_receipt": STAMPED_CARD,
            "prompt_receipt": {"prompt_sha256": sha,
                               "check": {"verdict": "PASS", "reasons": []}}}
+    req.update(extra or {})
     env = MODULE.dispatch(
         model=model, request=req, save_dir=tmp, ledger_db=db,
         run_id="run-u7", logical_key=label, attempt_id="att-1",
@@ -225,8 +226,78 @@ def test_table():
           PL.video_caps("hailuo/02-image-to-video-pro")["negative_prompt"] is None)
 
 
+def test_lipsync_binding_before_spend():
+    env, fake, db, _ = disp("unbound-lipsync", "kling/ai-avatar-standard", {"prompt": "test"})
+    check("unbound lipsync refused before adapter calls",
+          env["reason_code"] == "LIPSYNC_EVIDENCE_MISSING" and fake.calls == [], env)
+    check("unbound lipsync reserves no job", ledger_rows(db, "unbound-lipsync") == 0)
+
+
+def test_lipsync_receipt_binds_materialized_file():
+    from pathlib import Path
+    import copy
+    import hashlib
+    from unittest.mock import patch
+    from test_lipsync_evidence import fixture, fixture_request
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = fixture(tmp)
+        seg = plan["segments"][0]
+        script = copy.deepcopy(BASE_SCRIPT)
+        source = str(Path(seg["artifact"]["path"]).resolve())
+        script["save"] = (0, {"state": "success", "task_id": "t-u7", "saved_paths": [source]})
+        extra = dict(fixture_request(plan, run_id="run-u7"), run_dir=plan["run_dir"])
+        body = dict(extra.pop("input"), prompt="test")
+        env, fake, _, _ = disp("bound-lipsync", "kling/ai-avatar-standard",
+                               body, extra=extra, script=script)
+        ev = env["evidence"]
+        check("bound fake dispatch succeeds", env["outcome"] == "ok", env)
+        check("receipt preserves approved shot identity",
+              ev.get("lipsync_binding", {}).get("shot_id") == seg["shot_id"], ev)
+        check("receipt hashes actual saved file at completion",
+              ev.get("saved_sha256", {}).get(source) == hashlib.sha256(Path(source).read_bytes()).hexdigest(), ev)
+        check("receipt binds actual provider input URLs",
+              ev.get("lipsync_inputs") is not None, ev)
+        check("receipt identifies locked lipsync model",
+              ev.get("lipsync_model") == "kling/ai-avatar-standard", ev)
+
+
+def test_lipsync_input_substitution_before_spend():
+    from test_lipsync_evidence import fixture, fixture_request
+    for field in ("image_url", "audio_url"):
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = fixture(tmp)
+            extra = dict(fixture_request(plan, run_id="run-u7"), run_dir=plan["run_dir"])
+            body = dict(extra.pop("input"), prompt="test")
+            body[field] = "https://fake.invalid/substitute"
+            env, fake, db, _ = disp("substitute-" + field, "kling/ai-avatar-standard", body, extra=extra)
+            check(field + " substitution rejected before transport", env["outcome"] == "rejected" and not fake.calls, env)
+            check(field + " substitution reserves no job", ledger_rows(db, "substitute-" + field) == 0)
+
+
+def test_lipsync_inputs_changed_during_preflight():
+    from pathlib import Path
+    from unittest.mock import patch
+    from test_lipsync_evidence import fixture, fixture_request
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = fixture(tmp)
+        extra = dict(fixture_request(plan, run_id="run-u7"), run_dir=plan["run_dir"])
+        body = dict(extra.pop("input"), prompt="test")
+        original = Fake74.__call__
+        def change_audio(fake, argv):
+            result = original(fake, argv)
+            if argv[1] == "prompt-budget":
+                Path(extra["lipsync_stems"][0]["path"]).write_bytes(b"changed-after-validation")
+            return result
+        with patch.object(Fake74, "__call__", change_audio):
+            env, fake, _, _ = disp("changed-input", "kling/ai-avatar-standard", body, extra=extra)
+        check("changed audio refused before submit", env["outcome"] == "rejected" and "submit" not in fake.order(), env)
+        check("changed audio never generated", env["evidence"].get("generated") is False)
+
+
 TESTS = [test_h3_cap, test_kling25_caps, test_avatar_cap,
-         test_kling30_and_hailuo_caps, test_table]
+         test_kling30_and_hailuo_caps, test_table,
+         test_lipsync_binding_before_spend, test_lipsync_receipt_binds_materialized_file,
+         test_lipsync_input_substitution_before_spend, test_lipsync_inputs_changed_during_preflight]
 
 
 def main():

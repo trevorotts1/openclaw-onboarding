@@ -1220,6 +1220,22 @@ def check_script_approval_gate(model, request, save_dir=None):
                                      req.get("lyrics") or inp.get("lyrics") or "")
 
 
+def _saved_hashes(paths):
+    """Receipt-time file identity; missing/unreadable saves never gain evidence."""
+    import hashlib
+    result = {}
+    for path in paths:
+        try:
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(chunk)
+            result[os.path.realpath(path)] = h.hexdigest()
+        except (OSError, TypeError):
+            continue
+    return result
+
+
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
@@ -1250,6 +1266,23 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id,
                         evidence=cap_refusal["evidence"])
+
+    # Bind lip-sync generation to the CURRENT approved shot before any spend.
+    # This uses the storyboard's existing approval; it creates no new approval.
+    lipsync_binding = None
+    lipsync_inputs = None
+    if ML.is_locked_lipsync(model):
+        from lipsync_evidence import binding_for_request, inputs_for_request, LipsyncEvidenceError
+        try:
+            lipsync_binding = binding_for_request(
+                request.get("run_dir"),
+                {**(request.get("lipsync_binding") or {}), "run_id": run_id})
+            lipsync_inputs = inputs_for_request(request.get("run_dir"), {**request, "run_id": run_id})
+        except (LipsyncEvidenceError, TypeError, ValueError) as exc:
+            return envelope("dispatch", "rejected",
+                            getattr(exc, "code", "LIPSYNC_EVIDENCE_MISSING"),
+                            str(exc), run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id, evidence={"generated": False})
 
     # ---- 0. WW-30 music contract (retired legacy route / envelope) --------
     # Before ANY other gate, ledger row or paid call: a music job rides the
@@ -1580,6 +1613,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
         # Split of the old single `run` call (manual C2): the outer subprocess
         # timer used to fire before Skill 74's own wait, so a long video left
         # an unknown row with no task id and the resolver zero-settled spend.
+        if lipsync_inputs is not None:
+            try:
+                current_inputs = inputs_for_request(request.get("run_dir"), {**request, "run_id": run_id})
+                if current_inputs != lipsync_inputs:
+                    raise LipsyncEvidenceError("LIPSYNC_INPUT_CHANGED", "inputs changed before submit")
+            except (LipsyncEvidenceError, TypeError, ValueError) as exc:
+                return stop("rejected", getattr(exc, "code", "LIPSYNC_EVIDENCE_MISSING"),
+                            str(exc), {"generated": False})
         req_file = os.path.join(tmp, "request.json")
         with open(req_file, "w", encoding="utf-8") as f:
             json.dump(request, f, sort_keys=True)
@@ -1798,6 +1839,10 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
             evidence={"adapter_mode": mode, "generated": True,
                       "task_id": task_id,
                       "saved_paths": saved,
+                      "lipsync_binding": lipsync_binding,
+                      "lipsync_inputs": lipsync_inputs,
+                      "lipsync_model": model if lipsync_binding else None,
+                      "saved_sha256": _saved_hashes(saved) if lipsync_binding else {},
                       "credits_consumed": credits,
                       "actual_cost": actual, "warnings": warn,
                       "wait_timeout_s": wait_s, "retries": 0,

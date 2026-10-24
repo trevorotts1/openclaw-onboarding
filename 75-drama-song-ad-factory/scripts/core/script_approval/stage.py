@@ -18,6 +18,11 @@ run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None, context=No
 The card answers live in `$RUN/card-answers.json`, read by STABLE QUESTION ID
 with a schema version (D17): reordering the questions can never turn a saved
 Yes into a No, and missing/corrupt data is unknown, never "not asked".
+The story check reads the run's recorded purpose from `$RUN/control/method.json`
+(the intake card writes it) and hands it to the story validator, so a lesson,
+testimonial or sales run is judged by its own purpose's rules. The purpose is
+never inferred from the script's text, and a run with no readable purpose is
+judged exactly as before.
 The script lives in `$RUN/creative/script.json`: {"title", "story": [[act, [lines]]],
 "sheet": [{"tag", "lines"}], "lyrics": "<exact text sent to the music request>"}.
 `deliver(text)` is the client-delivery sink; it raises if the message did not go out.
@@ -39,6 +44,7 @@ except ImportError:  # loaded as a plain module
 
 ANSWERS = card_answers.ANSWERS
 SCRIPT = os.path.join("creative", "script.json")
+METHOD = os.path.join("control", "method.json")     # the run's recorded purpose
 
 
 def _load(path):
@@ -47,6 +53,24 @@ def _load(path):
             return json.load(f)
     except (OSError, ValueError):
         return None
+
+
+def _purpose(run_dir, SARC):
+    """The ONE purpose this run recorded in ``control/method.json``, validated
+    against the story validator's own accepted set; None otherwise.
+
+    Only a recorded purpose is ever used. A run with no method record, an
+    unreadable one, or a value the validator does not know carries no purpose
+    and is judged exactly as before -- the purpose is never guessed from the
+    script's text, so a lesson, testimonial or sales variant gets its rules
+    solely because the card recorded what the run is for.
+    """
+    method = _load(os.path.join(run_dir, METHOD))
+    value = method.get("purpose") if isinstance(method, dict) else None
+    if not isinstance(value, str):
+        return None
+    value = value.strip().lower()
+    return value if value in SARC.METHOD_PURPOSES else None
 
 
 def _problems(run_dir):
@@ -62,7 +86,7 @@ def _problems(run_dir):
         return ["creative/story.json and creative/lyrics.json must exist and be readable"]
     from story_arc import story_arc as SARC  # noqa: PLC0415
     from lyric_writer import lyric_writer as LW  # noqa: PLC0415
-    r = SARC.validate_story(story)
+    r = SARC.validate_story(story, purpose=_purpose(run_dir, SARC))
     if r["outcome"] != "ok":
         out.append("story: %s" % r["reason_code"])
     brief = _load(os.path.join(run_dir, "brief.json"))

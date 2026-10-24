@@ -1,6 +1,13 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v27.1.64 - Council (Skill 77) v1.0.30: the verdict says why.** Under the verdict the Council screen now lists what has to happen first, how strong the evidence is and where the elders disagree, and Key Points show what each named elder argued instead of only phase headings.
+> **Skill 75 v2.9.98 — lip-sync delivery evidence.** The skill version is pinned in
+> `75-drama-song-ad-factory/skill-version.txt` and the `SKILL.md` frontmatter. Approved shot,
+> speaker and line identities must survive generation and the final timeline;
+> delivery verifies the packaged clean video against the export receipt. Missing
+> or unused evidence fails closed. This release does not change numeric quotas
+> or the duration formula, and does not update active client runs.
+
+> **v27.1.65 - Council (Skill 77) v1.0.30: the verdict says why.** Under the verdict the Council screen now lists what has to happen first, how strong the evidence is and where the elders disagree, and Key Points show what each named elder argued instead of only phase headings.
 >
 > **v27.1.46 - Council (Skill 77) v1.0.29: client polish on the live screen.** The New question window uses plain wording, every model route has a friendly name and a plain "not available yet" note, all six steps show on a phone, and the status page and operator help no longer carry stale notices.
 >
@@ -29,13 +36,13 @@
 > **v26.4.7 — Drama song ad factory batch (Skill 75 v2.8.0).** One batch release of 24 units: Part H (lip-sync offset and measured gate, fades and long gaps, pictures planned from real song timestamps, one singing rule with the 5/10 point band, readable intake card, protected names in captions, delivery checklist Q8-Q11, no hand-written pipeline scripts, song files MP3 320 and WAV), Part I (caption spelling and website, scenes match the song and faces, character reference sets, master length L-2, clean endings, character library, one-question-at-a-time intake, one sung hook by a length formula), the Suno song recipe default, the F1/F14/F15/E7 amendments, and the runtime-parity alias fix. Builds on v26.4.6. Paired Command Center: **v7.6.111**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v27.1.64.
+> **Version:** see `/version` - this repo at v27.1.65.
 
 
 
 Private interview invitation validity follows the issuing Command Center. With paired v7.6.123, links remain reusable until completion, then expire **24 hours after the first completion**; older issuers retain their declared expiry and reuse rules. Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v27.1.64
+## Current release: v27.1.65
 
 ### Standard company placeholder (v26.4.9)
 If a client's AI Workforce interview is still incomplete 14 days after onboarding started
@@ -207,7 +214,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v27.1.64** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v27.1.65** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
@@ -338,7 +345,7 @@ That file is the master instruction file. It contains:
 | 72-motion-video-plus | **Motion Video Plus (v1.0.0)**: deterministic motion-graphics video production: model-written HTML/JS scene animation honoring the window.__setTime(t) contract, headless-Chromium frame rendering at 30fps with chunked auto-resume and per-scene frame cleanup, Fish Audio chunked voiceover (s2.1-pro default, drama-3-preview opt-in) with audio-first timing, FFmpeg assembly with crossfaded joins and a sidechain-ducked music bed, automated QC with contact sheet. Scene-based manifests scale from 30 seconds to 2 hours. Proven stack only (FFmpeg, Chromium, playwright-core, Fish Audio); Diffusion Studio, Hyperframes, Remotion documented as untested. |
 | 73-diagnose-explain-fix | **Diagnose / Explain / Fix (v1.0.0)** — the `/def` command: finds the actual root cause of a named problem, explains it in fifth-grader plain language, then hands the repair to a subagent carrying the full diagnosis, plan, and reason; asks exactly one question (which model performs the fix). Instruction-only; no binaries, keys, or config writes. Moved here from a hand-installed slot-70 folder that collided with 70-lean-core-file-system; `update-skills.sh` retires the old `70-diagnose-explain-fix` folder. |
 | 74-kie-live-adapter | **KIE Live Adapter (v1.0.0)** — infrastructure for skills 66, 67 and 68: a standard-library Python tool that reads KIE's live model catalog and schema, validates payloads, uploads files, submits to the schema-declared path, polls and saves results, and reads the credit balance. Shadow mode by default (records drift, never dispatches a paid job); never picks or changes a model. |
-| 75-drama-song-ad-factory | **Drama Song Ad Factory (v1.0.0)** — end-to-end drama-song advertisement factory: intake preflight, shared canonical core (state/ledger/qc/assembler), Command Center ad-campaigns integration, 999 Claude-Nine/Claude Code distribution, fault-boundary suite, operating docs. |
+| 75-drama-song-ad-factory | **Drama Song Ad Factory (v2.9.98)** — end-to-end drama-song advertisement factory: intake preflight, shared canonical core (state/ledger/qc/assembler), Command Center ad-campaigns integration, 999 Claude-Nine/Claude Code distribution, fault-boundary suite, operating docs. |
 | 76-local-embedder | **Local Embedder (v1.3.0)**: client Macs only. Free local embeddings for OpenClaw memory search: reuses a running Ollama 0.36.0 or newer untouched, upgrades an older one in place only when idle, or installs the checksum-verified headless Ollama CLI 0.40.0 under the LaunchAgent `com.blackceo.ollama-serve` (no GUI, no sudo). Pulls `embeddinggemma-2:740m`, pins `num_ctx 8192` on that same tag, then (after every guard passes) writes only `memory.search.*` with fallback `none` and re-indexes each agent once, time-bounded. Ollama Cloud sign-in, cloud tags, key files, `OLLAMA_*` env and chat-model config are verified unchanged (fail closed). VPS and Contabo boxes skip it. |
 | 77-council-of-wise-elders | **Council of Wise Elders (v1.0.0)**: nine fixed advisory seats (Simon Sinek, T. D. Jakes, Oprah Winfrey, Tiffany Aliche, Russell Brunson, Michelle Obama, Brené Brown, Dr. Dennis Kimbro, Les Brown) deliberate on consequential decisions through the AI CEO front door and return one recommendation with its conditions, the strongest objection, and the next useful step; every seat is an AI perspective and is labeled exactly as one. Company-level capability, registered as platform-owned in the skill-department map. Scaffold stage: the package, installer registration, and update-flow safety are complete, while the deliberation runtime and the nine advisor packs are built by their own units and are not yet built, so the front door reports the council as not ready rather than simulating a session. No council state is stored inside the skill folder, so update sync can replace the folder without touching sessions. |
 | 78-signature-product-selection | **Signature Product Selection (v0.1.0)** — builds the Product Selection page for a Signature Launch with multiple meaningful packages or tiers: normalizes the approved offers into an accurate comparison matrix (included, not included, limited, conditional), an optional evidence-backed recommendation, an accessible selection UI model, and a validated `selection.json` intent that preserves the native product/price mapping into Skill 79 checkout. Invoked only when the approved launch has multiple meaningful choices; one simple offer skips this skill and uses Skill 79 combined explanation/checkout mode. Never collects payment, never trusts a URL price, never invents tiers, prices, popularity or savings claims. |

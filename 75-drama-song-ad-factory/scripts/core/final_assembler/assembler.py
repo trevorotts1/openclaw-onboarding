@@ -406,13 +406,10 @@ def lipsync_gate(plan):
     counts distinct marked LINES as segments (each whole line one segment,
     per E5's atomicity) and totals their snapped footage.
 
-    RL1: the gate is opt-in by data, mirroring face_speaks_gate. A plan
-    that declares NO lip_sync markers AND line-free (no "speaker" key on
-    any line) has nothing to cover: the check advances with an explicit
-    NOT_APPLICABLE record (reason code LIPSYNC_NOT_IN_PLAN + the coverage
-    numbers) — never a silent pass, never a refusal. A plan that DOES
-    declare lip-sync lines keeps the hard gate unchanged and a short
-    coverage still refuses.
+    Missing markers and speaker metadata are missing evidence, never an
+    exemption. An applicable, plan-bound exception must be implemented through
+    the existing approval mechanism before a no-lip-sync plan can advance.
+    This guard does not choose or change the numeric coverage policy.
     """
     marked = [s for s in plan["segments"]
               if s.get("lip_sync") or s.get("lip_sync_line_ids")]
@@ -424,13 +421,18 @@ def lipsync_gate(plan):
                 "lipsync_lines_count": lines,
                 "lipsync_total_s": total,
                 "speaker_lines": len(speaker_lines)}
-    if not marked and not speaker_lines:
-        return {"outcome": "not_applicable", "verdict": LIPSYNC_NOT_APPLICABLE,
-                "reason_code": LIPSYNC_NOT_IN_PLAN,
-                "next_action": "the plan declares no lip_sync markers and no "
-                               "speaker lines; lip-sync coverage does not "
-                               "apply to this ad",
-                "evidence": evidence}
+    known_lines = {l.get("line_id"): l for l in speaker_lines
+                   if l.get("line_id")}
+    incomplete = not speaker_lines or any(
+        not s.get("lip_sync_line_ids") or any(
+            lid not in known_lines for lid in s.get("lip_sync_line_ids", []))
+        for s in marked)
+    if incomplete:
+        return _fail("LIPSYNC_EVIDENCE_MISSING",
+                     next_action="restore the approved lip-sync plan, line and "
+                                 "speaker metadata; missing evidence is not "
+                                 "an approved no-lip-sync exception",
+                     evidence=evidence)
     res = check_lipsync_coverage(plan["total_dur"], lines, total)
     if res["pass"]:
         return None
@@ -808,7 +810,7 @@ def plan_timeline(tl, base_dir=".", probe=None):
         if s.get("shows_line_ids"):
             item["shows_line_ids"] = list(s["shows_line_ids"])
         # Part H H4: who is on screen / visibly speaking, for the face gate.
-        for k in ("shot_id", "faces_on_screen", "speaking_faces"):
+        for k in ("shot_id", "faces_on_screen", "speaking_faces", "speaker", "artifact"):
             if s.get(k) is not None:
                 item[k] = s[k]
         items.append(item)
@@ -829,6 +831,8 @@ def plan_timeline(tl, base_dir=".", probe=None):
         off += it["frames"] - it.get("xfade_frames", 0)
     return {"fps": fps, "width": width, "height": height,
             "song_path": tl.get("song_path"),
+            "run_dir": tl.get("run_dir"), "run_id": tl.get("run_id"),
+            "chosen_length_s": tl.get("chosen_length_s"),
             "segments": items, "total_frames": total_frames,
             "total_dur": total_frames / fps,
             # F8: card marker + line windows ride the plan so
@@ -1329,6 +1333,8 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     if qc["outcome"] != "ok":
         return qc
     base = os.path.dirname(os.path.abspath(str(timeline_path))) or base_dir
+    if tl.get("run_dir"):
+        tl["run_dir"] = os.path.abspath(os.path.join(base, tl["run_dir"]))
 
     def abspath(p):
         return p if os.path.isabs(p) else os.path.join(base, p)
@@ -1400,6 +1406,7 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # checked here (qc_gate still demands it at final_edit).
     chosen = chosen_length_s if chosen_length_s is not None \
         else tl.get("chosen_length_s")
+    plan["chosen_length_s"] = chosen
     if chosen is not None:
         try:
             mp = master_length.plan(chosen)
@@ -1475,6 +1482,12 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # E6 lip-sync coverage result rides in every receipt; only a FAIL
     # blocks the render. The dry-run receipt exists for exactly this.
     cov = lipsync_gate(plan)
+    from lipsync_evidence import check_plan
+    export_check = check_plan(plan, require_measured=not dry_run)
+    export_fail = None if export_check["pass"] else _fail(
+        export_check["reason_code"], next_action="restore the approved storyboard, "
+        "matching generation receipts and included materialized clips",
+        evidence=export_check["evidence"])
     face = face_speaks_gate(plan)        # Part H H4
     # F9 frame-text check runs on EVERY lip-sync clip (stub mode when
     # there is no real ffmpeg or on dry runs; extract mode on real
@@ -1496,12 +1509,13 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                "next_action": "rerun without dry_run to render",
                "evidence": {"argv": argv, "plan": plan,
                             "timeout_s": timeout, "lipsync": cov,
+                            "lipsync_export": export_check,
                             "frame_text": frows,
                             "excerpt_overlay": _excerpt,
                             "motion": motion, "h5": _h5_ev,
                             "qc_no_blur": nb},
                "state_version": 0}
-        blocked = next((b for b in (cov, face, ffail) if b is not None
+        blocked = next((b for b in (cov, face, ffail, export_fail) if b is not None
                         and b.get("outcome") == "error"), None)
         if blocked is not None:  # blocked before spend, but evidence stays
             out["outcome"] = "error"
@@ -1516,10 +1530,8 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             return _fail("DISHONEST_SUNG_PCT", next_action=str(exc),
                          evidence={"detector_result": detector_result})
         return out
-    for blocked in (cov, face, ffail):   # gate FAILs: no render spend (17.5)
-        # RL1: a NOT_APPLICABLE lip-sync record (outcome not_applicable)
-        # carries its verdict and numbers on the receipt and ADVANCES —
-        # only a measured failure blocks.
+    for blocked in (cov, face, ffail, export_fail):   # gate FAILs: no render spend (17.5)
+        # Missing lip-sync evidence is a failure and blocks before rendering.
         if blocked is not None and blocked.get("outcome") == "error":
             return blocked
     try:
@@ -1636,10 +1648,10 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     reg.register("assemble", [abspath(p) for p in tl.get("intermediates", [])])
     evid["cleanup"] = reg.consumed("assemble", output)
     evid["load_governor"] = _LG.receipt()
-    # RL1: the lip-sync gate's verdict rides the rendered receipt too
-    # (None = measured pass, NOT_APPLICABLE record = not applicable to
-    # this plan's data) — a gate result is never silently absent.
+    # Preserve the lip-sync gate evidence on the rendered receipt.
     evid["lipsync"] = cov
+    evid["lipsync_export"] = export_check
+    evid["lipsync_plan"] = plan
     receipt = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                "tool_version": TOOL_VERSION, "command": "assemble",
                "outcome": "ok", "reason_code": "ASSEMBLED",

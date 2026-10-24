@@ -16,7 +16,11 @@
 #      cloudflared-council, `cloudflared tunnel run --token-file <file>`. It is
 #      restarted only when the token file or the cloudflared path changes; the
 #      Command Center's own connector is never touched; the token value is
-#      never printed or logged. No token file = no-op (most boxes).
+#      never printed or logged. No token file = no-op (most boxes),
+#   5. verifies the copy the runtime RESOLVER selects
+#      (scripts/selected-tree-gate.mjs): competing copies are reported loudly
+#      and a stale, contract-drifted or executable-less selected copy exits 1,
+#      so no roll reports success after updating only an unused directory.
 # It writes nothing inside the skill folder and touches no credential, model,
 # openclaw.json, AGENTS.md, gateway or Command Center.
 #
@@ -300,12 +304,52 @@ REL_ID="$(jget "$P/active.json" releaseId)"
 REL_PATH="$(jget "$P/active.json" releasePath)"
 NODE_EXE="$(jget "$P/active.json" nodeExecutable)"
 DATA_DIR="$(jget "$P/active.json" dataDir)"
-if [ -z "$REL_ID" ] || [ ! -f "$REL_PATH/scripts/service-launch.mjs" ] || [ ! -f "$REL_PATH/node_modules/tsx/dist/cli.mjs" ] || [ -z "$NODE_EXE" ]; then
-  say "NOT_READY RUNTIME_BUILD_FAILED active.json does not describe a usable release (id=$REL_ID path=$REL_PATH)"
+if [ -z "$REL_ID" ] || [ ! -f "$REL_PATH/scripts/service-launch.mjs" ] || [ ! -f "$REL_PATH/node_modules/tsx/dist/cli.mjs" ] || [ ! -f "$REL_PATH/dist/blackceo-council.mjs" ] || [ -z "$NODE_EXE" ]; then
+  say "NOT_READY RUNTIME_BUILD_FAILED active.json does not describe a usable release (id=$REL_ID path=$REL_PATH; the release must carry dist/blackceo-council.mjs)"
+  exit 1
+fi
+# Installer truth: verify the ACTUAL entry point the shim execs -- byte hash
+# against the release's artifact receipt, plus a parse-level load check.
+# Never 'ready' from SKILL.md presence or source match alone: a missing or
+# unloadable entry is a visible NOT_READY with an actionable error, and an
+# old bundle is never silently treated as the installed one.
+ENTRY="$REL_PATH/dist/blackceo-council.mjs"
+EXP_SHA="$("$NODE" -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const e=(r.entries||[]).find(x=>x.path===process.argv[2]);if(e)process.stdout.write(e.sha256)}catch(e){}' "$P/receipts/$REL_ID.artifact.json" "dist/blackceo-council.mjs" 2>/dev/null)"
+GOT_SHA="$(sha_file "$ENTRY")"
+if [ -z "$EXP_SHA" ] || [ "$EXP_SHA" != "$GOT_SHA" ]; then
+  say "NOT_READY RUNTIME_BUILD_FAILED entry point hash mismatch for $ENTRY (receipt ${EXP_SHA:-missing} != installed ${GOT_SHA:-missing}); previous files preserved, nothing switched"
+  exit 1
+fi
+if ! "$NODE_EXE" --check "$ENTRY" >/dev/null 2>&1; then
+  say "NOT_READY RUNTIME_BUILD_FAILED entry point $ENTRY does not load (node --check failed); previous files preserved, nothing switched"
   exit 1
 fi
 CHANGED=0
 [ "$REL_ID" != "$PREV_REL" ] && CHANGED=1
+
+# --------------------------------------- 5b. selected-tree gate (truth rule)
+# verify-what-the-resolver-selects (scripts/selected-tree-gate.mjs): the
+# update must verify the copy the runtime RESOLVER selects (its
+# install-record, else the install-time resolver order), never just the
+# directory it happens to have written. Competing copies are reported
+# loudly; a stale, contract-drifted or executable-less SELECTED copy fails
+# here and exits 1, so update-skills.sh withholds the .wired sentinel and no
+# roll reports success after updating only an unused directory.
+# On a box with more than one copy the gate needs agent-resolver evidence:
+# export COUNCIL_AGENT_SKILL_DIR=<the path the agent resolves> (for OpenClaw the
+# shadowing root, e.g. ~/.agents/skills/council-of-wise-elders). Without it the
+# gate reports the selection as unproven and this step refuses — by design.
+GT_RC=0
+GT_ARGS=(--skill-dir "$SKILL_DIR" --prefix "$P" --home "$HOME")
+if [ -n "${COUNCIL_AGENT_SKILL_DIR:-}" ]; then
+  GT_ARGS+=(--agent-selected "$COUNCIL_AGENT_SKILL_DIR" --agent-source "COUNCIL_AGENT_SKILL_DIR")
+fi
+GT_OUT="$( "$NODE" "$SKILL_DIR/scripts/selected-tree-gate.mjs" "${GT_ARGS[@]}" 2>&1 )" || GT_RC=$?
+[ -n "$GT_OUT" ] && printf '%s\n' "$GT_OUT"
+if [ "$GT_RC" -ne 0 ]; then
+  say "NOT_READY TREE_GATE the copy the resolver selects failed verification (lines above); success is withheld"
+  exit 1
+fi
 
 # ---------------------------------------------- 6. public origin (hostname rule)
 # Every source below is populated at INSTALL time (the Command Center ships first,

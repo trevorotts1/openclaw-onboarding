@@ -228,14 +228,23 @@ it, not an authority.
 
 ## 3. Lip-sync close-ups
 
-Lip-sync runs on 6 to 8 short clips of 4 to 6 seconds per 60 s ad, 30 to 40
-seconds of footage per shape (choice card section 3.6), doubled 2026-10-08:
-more pieces, not longer ones, scaled linearly with ad length, no clip over 6
-seconds. Enforced at the final edit QC gate (Part E E6): at least 6 lip-sync
-clips and 30 s of lip-sync in a 60 s ad (never fewer than 3 clips), scaling
-linearly (50% of runtime) for longer or shorter ads.
+Lip-sync covers **25-30%** of the selected duration, with a **35% HARD
+MAXIMUM** nothing may cross, and the first **12 seconds** clearly articulated
+(the spoken opener / first sung hook is lip-synced inside that window). Approved
+direction 2026-10-23, superseding the 2026-10-08 doubling (which had said 30-40
+seconds per 60 s). Still more pieces, not longer ones: 4 to 6 seconds per clip,
+no clip over 6 seconds, never fewer than 3 clips, as footage per shape (choice
+card section 3.6).
 
-Every clip is its own paid job, so the lip-sync line is about twice what it was.
+The numbers live in `core/lipsync_clips.py` (one source): `TARGET_SHARE`,
+`MAX_SHARE`, `OPENING_WINDOW_S`, `CLIP_MIN_S`, `CLIP_MAX_S`,
+`MIN_CLIPS_FLOOR`. `TOTAL_PER_REF_S` and `CLIPS_PER_REF` are DERIVED 60 s
+references (15-18 s, 3-5 clips), outputs of the policy and never a second one.
+When a duration cannot satisfy the shares, the 3-clip / 4-s floor and the 6 s
+clip cap at once, `lipsync_clips.duration_conflicts()` names both colliding
+bounds and the run fails `LIPSYNC_DURATION_CONFLICT` instead of being silently
+re-planned. The historical FREE / no-lip-sync route stays an explicit opt-in
+(`ROUTE_NO_LIPSYNC`, zero paid jobs); it is never the default.
 Per-ad cap math: `lipsync_clips.check_budget(total_s, usd_per_s, remaining_usd,
 shapes, attempts)` multiplies seconds x the Skill 74 rate x shapes x attempts (attempts defaults to 2, the
 two-try rule: worst case is double the snapshot below) and
@@ -245,8 +254,8 @@ plan with a clip over 6 s (`LIPSYNC_CLIP_OVER_CAP`).
 
 | Order | Model (KIE id) | Rate | Snapshot for one ad, one shape |
 |---|---|---|---|
-| 1 (first) | Kling avatar (`kling/ai-avatar-standard`) | 8 cr/s = $0.04/s at 720P; 16 cr/s = $0.08/s at 1080P; up to 15 s per generation | one 6-second clip ≈ **$0.24** at 720P; a 60 s ad's 30-40 s (6-8 clips) ≈ **$1.20-$1.60** at 720P (double at 1080P) |
-| manual backup only, not on by default | InfiniTalk (`infinitalk/from-audio`) | 12 cr/s = $0.06/s at 720P; 3 cr/s = $0.015/s at 480P; up to 15 s per generation | a 60 s ad's 30-40 s ≈ **$1.80-$2.40** at 720P |
+| 1 (first) | Kling avatar (`kling/ai-avatar-standard`) | 8 cr/s = $0.04/s at 720P; 16 cr/s = $0.08/s at 1080P; up to 15 s per generation | one 6-second clip ≈ **$0.24** at 720P; a 60 s ad's 25-30% (15-18 s, 3-5 clips) ≈ **$0.60-$0.72** at 720P, **$0.84** at the 35% maximum (double at 1080P) |
+| manual backup only, not on by default | InfiniTalk (`infinitalk/from-audio`) | 12 cr/s = $0.06/s at 720P; 3 cr/s = $0.015/s at 480P; up to 15 s per generation | a 60 s ad's 15-18 s ≈ **$0.90-$1.08** at 720P, **$1.26** at the 35% maximum |
 | dropped | Volcengine | not offered | **Dropped** (decision 33) - it barely moves a closed mouth, so it carries no price and never appears on the card |
 
 The card's own figure comes from `Skill 74 price --model

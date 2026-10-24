@@ -142,6 +142,69 @@ def _right_key(event: dict, line: dict, action_type: str,
             action_type, entitlement)
 
 
+def effect_resource_for_tag(txn_ref: str) -> str:
+    """The stable idempotency key for the verified-purchase tag effect:
+    one namespace per transaction, constant across retries, workers,
+    and restarts, so a provider that dedupes on it applies the effect
+    at most once no matter how many times the callback runs."""
+    return f"effect:apply_verified_purchase_tag:{txn_ref}"
+
+
+def effect_resource_for_action(action_type: str, txn_ref: str,
+                               line_ref: str) -> str:
+    """The stable idempotency key for a per-line fulfillment effect:
+    one namespace per (action, transaction, line). Same dedupe
+    contract as the tag key."""
+    return f"effect:{action_type}:{txn_ref}:{line_ref}"
+
+
+class LeaseHeartbeat:
+    """Renew an effect lease while its side effect is running.
+
+    Guarded completion already refuses a stale owner, so a callback that
+    outlives its lease cannot record a success it no longer owns — but
+    without renewal a live owner loses the lease mid-flight and the effect
+    parks as ``unknown``. This renews at a third of the TTL and stops as
+    soon as the store reports the lease is no longer ours, so a stolen
+    lease is never fought over.
+    """
+
+    def __init__(self, store, tenant: str, resource: str, holder: str,
+                 fencing_token: int, ttl_seconds: float):
+        self._store = store
+        self._args = (tenant, resource, holder, fencing_token)
+        self._ttl = float(ttl_seconds)
+        self._interval = max(0.05, self._ttl / 3.0)
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self.renewals = 0
+        self.lost = False
+
+    def __enter__(self) -> "LeaseHeartbeat":
+        self._thread = threading.Thread(target=self._run, daemon=True,
+                                        name="siglaunch-lease-heartbeat")
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=self._interval + 2.0)
+        return False
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval):
+            try:
+                renewed = self._store.renew_lease(
+                    *self._args, ttl_seconds=self._ttl)
+            except Exception:
+                return
+            if not renewed:
+                self.lost = True
+                return
+            self.renewals += 1
+
+
 class DurableProcessor:
     def __init__(self, store, tag_applier: Optional[Callable] = None,
                  purchase_tag: Optional[str] = None, version: str = "v1",
@@ -169,17 +232,54 @@ class DurableProcessor:
         box's worker would be."""
         return f"{self.holder}:t{threading.get_ident()}"
 
-    def _lease(self, tenant: str, resource: str):
-        return self.store.acquire_lease(
-            tenant, resource, self._holder(),
-            ttl_seconds=self.lease_ttl_seconds)
-
     def _still_owner(self, tenant: str, resource: str, token: int) -> bool:
         return self.store.check_fencing(tenant, resource, self._holder(),
                                         token)
 
     def _release(self, tenant: str, resource: str, token: int) -> None:
         self.store.release_lease(tenant, resource, self._holder(), token)
+
+    def _heartbeat(self, tenant: str, resource: str, holder: str,
+                   token: int) -> LeaseHeartbeat:
+        """Renew the lease while a side effect runs, so a callback longer
+        than the TTL keeps its ownership instead of parking unknown."""
+        return LeaseHeartbeat(self.store, tenant, resource, holder, token,
+                              self.lease_ttl_seconds)
+
+    def _park_takeover(self, key: tuple, tenant: str, resource: str,
+                       holder: str, token: int) -> str:
+        """Park after taking over an expired unreleased lease. Never
+        execute: the prior owner may have started the effect and died
+        mid-callback, so the outcome is uncertain and only
+        reconciliation may clear it."""
+        current = self.store.get_action(key)
+        if current is None:
+            return "not_found"
+        if current["state"] == "done":
+            return "already_done"
+        if current["state"] == "unknown":
+            return "parked_unknown"
+        self.store.complete_action_if_owner(
+            key, "unknown", tenant, resource, holder, token,
+            evidence_ref="takeover/expired-unreleased-lease")
+        return "parked_takeover"
+
+    def _settle_lost_ownership(self, key: tuple) -> str:
+        """The lease died mid-callback, so the guarded completion
+        refused. Re-read: done means the effect is recorded; unknown
+        stays parked; a still-claimed row is parked by us — the effect
+        may have landed, so it goes through reconciliation, never a
+        blind retry."""
+        current = self.store.get_action(key)
+        if current is None:
+            return "not_found"
+        if current["state"] == "done":
+            return "already_done"
+        if current["state"] == "unknown":
+            return "parked_unknown"
+        self.store.mark_action(key, "unknown",
+                               evidence_ref="lease-lost-mid-callback")
+        return "parked_unknown"
 
     def process(self, event: dict,
                 contact_ref: Optional[str] = None) -> dict:
@@ -307,15 +407,26 @@ class DurableProcessor:
     def _run_tag_effect(self, key: tuple, event: dict,
                         contact_ref: str) -> str:
         """Apply the verified-purchase tag as the leased owner. The
-        action state is re-read under the lease, so a worker that lost
-        the race — or resumed after the owner already parked or
-        completed the effect — never repeats it."""
+        lease resource is the stable idempotency key for this effect
+        (one namespace per transaction), so a provider that dedupes on
+        it applies the effect at most once. Taking over an expired
+        unreleased lease parks for reconciliation instead of executing
+        — the prior owner may have started the effect. Completion is
+        ownership-conditioned and atomic with the fencing check, so a
+        callback that outlives its lease can never record success it
+        no longer owns."""
         tenant, txn = event["tenant_id"], key[1]
-        resource = f"effect:apply_verified_purchase_tag:{txn}"
-        token = self._lease(tenant, resource)
+        resource = effect_resource_for_tag(txn)
+        holder = self._holder()
+        token, took_over = self.store.acquire_effect_lease(
+            tenant, resource, holder,
+            ttl_seconds=self.lease_ttl_seconds)
         if token is None:
             return "held_elsewhere"
         try:
+            if took_over:
+                return self._park_takeover(key, tenant, resource,
+                                           holder, token)
             if not self._still_owner(tenant, resource, token):
                 return "fenced_out"
             current = self.store.get_action(key)
@@ -326,13 +437,19 @@ class DurableProcessor:
             if current["state"] == "unknown":
                 return "parked_unknown"
             try:
-                self.tag_applier(contact_ref, self.purchase_tag)
+                with self._heartbeat(tenant, resource, holder, token):
+                    self.tag_applier(contact_ref, self.purchase_tag)
             except Exception:
                 # outcome unknown: park, never claim success
-                self.store.mark_action(key, "unknown")
+                if not self.store.complete_action_if_owner(
+                        key, "unknown", tenant, resource, holder,
+                        token):
+                    return self._settle_lost_ownership(key)
                 return "parked_unknown"
-            self.store.mark_action(key, "done",
-                                   evidence_ref=event["evidence_ref"])
+            if not self.store.complete_action_if_owner(
+                    key, "done", tenant, resource, holder, token,
+                    evidence_ref=event["evidence_ref"]):
+                return self._settle_lost_ownership(key)
             return "done"
         finally:
             self._release(tenant, resource, token)
@@ -389,11 +506,18 @@ class DurableProcessor:
                 current = self.store.get_action(key)
                 return current["state"] if current else "not_found"
         tenant, txn_ref, line_ref, action_type, _version = key
-        resource = f"effect:{action_type}:{txn_ref}:{line_ref}"
-        token = self._lease(tenant, resource)
+        resource = effect_resource_for_action(action_type, txn_ref,
+                                             line_ref)
+        holder = self._holder()
+        token, took_over = self.store.acquire_effect_lease(
+            tenant, resource, holder,
+            ttl_seconds=self.lease_ttl_seconds)
         if token is None:
             return "held_elsewhere"
         try:
+            if took_over:
+                return self._park_takeover(key, tenant, resource,
+                                           holder, token)
             if not self._still_owner(tenant, resource, token):
                 return "fenced_out"
             current = self.store.get_action(key)
@@ -404,11 +528,17 @@ class DurableProcessor:
             if current["state"] == "unknown":
                 return "parked_unknown"
             try:
-                executor(current["payload"])
+                with self._heartbeat(tenant, resource, holder, token):
+                    executor(current["payload"])
             except Exception:
-                self.store.mark_action(key, "unknown")
+                if not self.store.complete_action_if_owner(
+                        key, "unknown", tenant, resource, holder,
+                        token):
+                    return self._settle_lost_ownership(key)
                 return "parked_unknown"
-            self.store.mark_action(key, "done")
+            if not self.store.complete_action_if_owner(
+                    key, "done", tenant, resource, holder, token):
+                return self._settle_lost_ownership(key)
             return "done"
         finally:
             self._release(tenant, resource, token)

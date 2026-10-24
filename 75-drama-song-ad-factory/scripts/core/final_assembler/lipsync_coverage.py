@@ -7,15 +7,15 @@ live only in docs; the 2026-10-08 failed ad cut ~6 s of lip-sync out of a
 2-minute ad and nobody failed it. This module is the code that enforces the
 rule at the FINAL edit QC gate (17.5, qc_gate check "final_edit"):
 
-  * DOUBLED (owner order 2026-10-08): more pieces, not longer ones. A 60 s
-    ad carries 6-8 short lip-sync clips (4-6 s each, 30-40 s in total),
-    scaled linearly with the ad length; the numbers live in
+  * COVERAGE IS A SHARE (approved direction 2026-10-23): 25-30% of the ad,
+    35% HARD MAXIMUM, first 12 s articulated. The numbers live in
     core/lipsync_clips.py. The floor here is the clip count (never fewer
-    than 3) and the minimum seconds (50% of runtime, 30 s at 60 s);
-  * the upper 40 s (at 60 s) is planning guidance, not a gate: only the two
+    than 3) and the minimum seconds (25% of runtime, 15 s at 60 s), which
+    supersedes the 2026-10-08 30-40 s order;
+  * the upper bound is planning guidance here, not a gate: only the two
     documented failure codes exist, and neither fires on "too much"
-    lip-sync. The 6 s per-clip cap and the cost cap are enforced where the
-    clips are planned and dispatched (lipsync_clips).
+    lip-sync. The 35% hard maximum, the 6 s per-clip cap and the cost cap
+    are enforced where the clips are planned and dispatched (lipsync_clips).
 
 Wiring: evaluate() -> to_qc_record() emits a qc-schema 1.0.0 record with
 check="final_edit" for core/qc_gate.py, exactly like sibling checkers do
@@ -88,7 +88,7 @@ def _numbers(profile=None):
 
 
 def required_lines(ad_length_s, profile=None):
-    """Minimum lip-sync clips for one ad length: 6 per 60 s, scaled, never
+    """Minimum lip-sync clips for one ad length: 3 per 60 s, scaled, never
     below the profile floor (3)."""
     return max(_numbers(profile)["min_lines"],
                _LC.budget(float(ad_length_s))["min_clips"])
@@ -104,8 +104,8 @@ def load_profile(path=None):
 
 
 def required_total_s(ad_length_s, profile=None):
-    """The lip-sync duration floor for one ad length (seconds): 50% of
-    runtime, so 30 s in a 60 s ad. Linear, monotone in ad length."""
+    """The lip-sync duration floor for one ad length (seconds): 25% of
+    runtime, so 15 s in a 60 s ad. Linear, monotone in ad length."""
     return _numbers(profile)["scale_share"] * float(ad_length_s)
 
 

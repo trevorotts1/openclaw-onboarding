@@ -268,6 +268,160 @@ def test_true_at_beat_is_the_solution_introduction_or_later():
     assert MP.pace_order(_blueprint())["true_at_beat"] == "the_turn"
 
 
+# ---- the production projection (method 10.3-10.4) --------------------------
+
+def _beats():
+    import story_arc.story_arc as SA
+    return SA.BEATS
+
+
+def _turns(report):
+    return [t["turn"] for t in report["turns"]]
+
+
+def test_teaching_map_is_the_twelve_production_beats_not_a_second_arc():
+    """One row per canonical beat, in the arc module's own order -- the map
+    projects onto the twelve, it never adds a beat or a second scheme."""
+    rows = MP.teaching_map("campaign")
+    assert [r["production_beat"] for r in rows] == list(_beats())
+    assert len(rows) == 12
+    assert all(r["teaching_function"] and r["cue_id"] for r in rows)
+    ranks = [MP._required_cues("campaign").index(r["cue_id"]) for r in rows]
+    assert ranks == sorted(ranks)                 # cues never run backwards
+
+
+def test_lesson_map_swaps_only_the_hook_and_recap():
+    lesson = MP.teaching_map("lesson")
+    assert lesson[-1]["cue_id"] == "RECAP"
+    assert lesson[-2]["cue_id"] == "MEMORY_HOOK"
+    assert ([r["cue_id"] for r in lesson[:-2]]
+            == [r["cue_id"] for r in MP.teaching_map("campaign")[:-2]])
+
+
+def test_the_four_turns_record_a_reason_and_an_audible_change():
+    turns = MP.musical_turns(_blueprint(), _method())
+    assert [t["turn"] for t in turns] == [
+        "attention_hook", "first_singing", "hero_shift",
+        "solution_signature_hook"]
+    for turn in turns:
+        assert turn["reason"], turn
+        assert turn["audible_change"]["to"], turn
+        assert turn["production_beat"] in _beats(), turn
+    assert turns[0]["vocal_status"] == "instrumental"      # spoken, not sung
+    assert turns[1]["vocal_status"] == "first_sung"        # the ERM Drop
+    assert (turns[2]["audible_change"]["rhythm"]
+            != turns[1]["audible_change"]["rhythm"])       # a distinct second turn
+    assert turns[3]["at_s"] > turns[2]["at_s"]             # hook comes later
+
+
+def test_validate_records_the_turns():
+    report = MP.validate(_blueprint(), _method())
+    assert _turns(report) == ["attention_hook", "first_singing", "hero_shift",
+                              "solution_signature_hook"]
+    json.dumps(report)
+
+
+def test_attention_hook_must_be_spoken():
+    bp = _blueprint()
+    _cue(bp, "BASELINE")["lyric_or_dialogue"] = ""
+    report = MP.validate(bp, _method())
+    assert report["reason_code"] == "ATTENTION_HOOK_NOT_SPOKEN", report["errors"]
+
+
+def test_attention_hook_must_sound_first():
+    bp = _blueprint()
+    _cue(bp, "BASELINE")["start_s"] = 2
+    _cue(bp, "PAIN_BUILD")["start_s"] = 1
+    report = MP.validate(bp, _method())
+    assert report["reason_code"] == "ATTENTION_HOOK_NOT_SPOKEN", report["errors"]
+    assert "first thing heard" in report["errors"][0]["detail"]
+
+
+def test_turn_without_a_reason_is_refused():
+    bp = _blueprint()
+    _cue(bp, "SOLUTION_HOOK")["trigger"] = ""
+    _beat(bp, "SB-07")["why_it_belongs"] = ""
+    report = MP.validate(bp, _method())
+    assert report["reason_code"] == "TURN_REASON_MISSING", report["errors"]
+    assert "solution_signature_hook" in report["errors"][0]["detail"]
+
+
+def test_turn_without_an_audible_change_is_refused():
+    bp = _blueprint()
+    cue = _cue(bp, "ERM_DROP")
+    cue["pace_after"] = cue["rhythmic_change"] = cue["emotional_direction"] = ""
+    report = MP.validate(bp, _method())
+    assert report["reason_code"] == "TURN_AUDIBLE_CHANGE_MISSING", report["errors"]
+    assert "first_singing" in report["errors"][0]["detail"]
+
+
+def test_hero_shift_must_state_pace_rhythm_and_emotional_direction():
+    bp = _blueprint()
+    _cue(bp, "HERO_SHIFT")["emotional_direction"] = ""
+    report = MP.validate(bp, _method())
+    assert report["reason_code"] == "TURN_AUDIBLE_CHANGE_MISSING", report["errors"]
+    assert "emotional_direction" in report["errors"][0]["detail"]
+
+
+def test_hero_shift_that_repeats_the_erm_is_not_distinct():
+    bp = _blueprint()
+    erm, hero = _cue(bp, "ERM_DROP"), _cue(bp, "HERO_SHIFT")
+    for field in ("pace_after", "rhythmic_change", "emotional_direction"):
+        hero[field] = erm[field]
+    report = MP.validate(bp, _method())
+    assert report["reason_code"] == "HERO_SHIFT_NOT_DISTINCT", report["errors"]
+
+
+def test_shot_seeds_use_the_planner_field_names():
+    seeds = MP.shot_seeds(_blueprint(), _method())
+    assert len(seeds) == len(_blueprint()["story_beats"])
+    assert all(s["story_stage"] in _beats() for s in seeds)
+    first = seeds[0]
+    assert first["shot_id"] == "SB-01"
+    assert first["song_start"] == 0.0 and first["song_end"] == 8.0
+    assert first["contract"]["viewer_understanding"] \
+        == _beat(_blueprint(), "SB-01")["viewer_understanding"]
+    assert "lyric_line_ids" in first["unresolved"]     # the timing map's job
+    assert "treatment" in first["unresolved"]          # the planner's choice
+
+
+def test_shot_seeds_mark_the_turn_cuts_and_the_product_stage():
+    seeds = {s["shot_id"]: s for s in MP.shot_seeds(_blueprint(), _method())}
+    assert seeds["SB-01"]["beat_cut"] is True          # the spoken attention hook
+    assert seeds["SB-03"]["beat_cut"] is True          # the ERM Drop
+    assert seeds["SB-05"]["beat_cut"] is True          # the Hero Shift
+    assert seeds["SB-07"]["beat_cut"] is True          # the Solution Hook
+    assert seeds["SB-02"]["beat_cut"] is False
+    assert seeds["SB-01"]["product_visibility"] == "none"
+    assert seeds["SB-07"]["product_visibility"] == "featured"
+
+
+def test_storyboard_cards_carry_what_the_14_1_gate_needs():
+    board = MP.storyboard_input(_blueprint(), _method())
+    assert board["ready"] is True
+    assert len(board["cards"]) == 8
+    for card in board["cards"]:
+        assert card["story_stage"] and card["viewer_understanding"]
+        assert card["contract"]["necessity"]
+
+
+def test_music_request_carries_the_method_keys():
+    request = MP.music_request_input(_blueprint(), _method())
+    assert request["true_at_beat"] == "the_turn"
+    assert request["hook_plan_seed"] == {"true_at_beat": "the_turn"}
+    assert PC.check_pace_plan(request["pace_order"]) == []
+    assert [t["turn"] for t in request["turns"]] == _turns(
+        MP.validate(_blueprint(), _method()))
+    assert MP.music_request_input({}, _method()) == {}   # never invents a seam
+
+
+def test_production_map_bundles_every_input():
+    bundle = MP.production_map(_blueprint(), _method())
+    assert sorted(bundle) == ["music_request", "shot_seeds", "storyboard",
+                              "teaching_functions", "turns"]
+    json.dumps(bundle)
+
+
 if __name__ == "__main__":
     import traceback
 

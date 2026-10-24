@@ -968,6 +968,61 @@ def _clip_reason(c):
     return None
 
 
+def _package_root(receipt, ans):
+    """Resolve the package consistently for export identity and completeness."""
+    folder = (ans or {}).get("delivery_folder")
+    if not isinstance(folder, str) or not folder.strip():
+        raise ValueError("PACKAGE_COMPLETE missing delivery_folder")
+    root = Path(folder.strip())
+    if not root.is_absolute():
+        base = receipt.get("run_root") or receipt.get("root") or ""
+        if base:
+            root = Path(str(base)) / root
+    return root
+
+
+def _q8_export(receipt, ans, codes, details):
+    """Only lip-sync evidence for the hash-bound final export can answer Q8."""
+    from final_assembler.master_provenance import sha256_file
+    from lipsync_evidence import check_plan
+    try:
+        master = Path(ans["master_path"]).resolve(strict=True)
+        rc = json.loads(Path(str(master) + ".receipt.json").read_text())
+        if (rc.get("outcome") != "ok" or
+                rc.get("produced_by", {}).get("module") != "final_assembler.assembler" or
+                rc.get("master_sha256") != sha256_file(master)):
+            raise ValueError("final export or producer receipt does not match")
+        package_root = _package_root(receipt, _answer(receipt, "PACKAGE_COMPLETE"))
+        clean_video = package_root / package_contract.ITEMS_BY_KEY["video"].files[1]
+        if sha256_file(clean_video) != rc["master_sha256"]:
+            raise ValueError("package clean video differs from the verified final export")
+        evidence = rc["evidence"]
+        plan = evidence["lipsync_plan"]
+        output_dur = float(evidence["output_dur"])
+        if not math.isfinite(output_dur) or output_dur <= 0:
+            raise ValueError("final export duration must be finite and positive")
+        if abs(output_dur - float(plan["total_dur"])) > 1 / plan["fps"]:
+            raise ValueError("final export duration does not match the included timeline")
+        checked = check_plan(plan, require_measured=True)
+        if not checked["pass"]:
+            raise ValueError(checked["reason_code"])
+        if evidence.get("lipsync_export") != checked:
+            raise ValueError("export evidence changed since assembly")
+        included = checked["evidence"]["included"]
+        def identity(row):
+            return (row["shot_id"], row["task_id"], row["sha256"])
+        expected = {identity(row) for row in included}
+        supplied = [identity(row) for row in ans["clips"]]
+        if len(supplied) != len(set(supplied)) or set(supplied) != expected:
+            raise ValueError("per-clip QC evidence differs from the clips included in the export")
+        details["lipsync_export"] = checked["evidence"]
+        return True
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, ZeroDivisionError) as exc:
+        codes.append("%s:LIP_SYNC export evidence: %s" %
+                     (CHECKLIST_NO_MEASUREMENT, exc))
+        return False
+
+
 def _q8_lip_sync(receipt, ans, codes, details):
     """Every lip-sync clip carries its lip_gate verdict and numbers. PASS and
     ACCEPT_WITH_FLAG clips pass. UNDETERMINED / UNMEASURABLE (a sung line) pass
@@ -988,7 +1043,7 @@ def _q8_lip_sync(receipt, ans, codes, details):
         codes.append("%s:LIP_SYNC no per-clip lip_gate verdict list"
                      % CHECKLIST_NO_MEASUREMENT)
         return False
-    ok = src is not None
+    ok = _q8_export(receipt, ans, codes, details) and src is not None
     flagged = []
     flags, tagged, tag_names = [], 0, set()
     for i, c in enumerate(clips):
@@ -1326,11 +1381,7 @@ def _q12_package(receipt, ans, codes, qdetails):
                      % CHECKLIST_NO_MEASUREMENT)
         return False
     named = folder.strip()
-    root = Path(named)
-    if not root.is_absolute():
-        base = receipt.get("run_root") or receipt.get("root") or ""
-        if base:
-            root = Path(str(base)) / root
+    root = _package_root(receipt, ans)
     qdetails["folder"] = str(root)
     qdetails["items_expected"] = len(package_contract.PACKAGE_ITEMS)
     qdetails["items_present"] = 0

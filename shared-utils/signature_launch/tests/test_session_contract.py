@@ -72,6 +72,7 @@ class TypedAdapters(unittest.TestCase):
                 ("channels", "Email only"),
                 ("conversation_ai", "No, not this launch"),
                 ("access_delivery", "Yes, send access after purchase"),
+                ("access_url", "https://elevationcoaching.com/access"),
                 ("payment_plans", "Paid in full"),
                 ("sender_name", "Elevation Coaching Co"),
                 ("reply_to_email", "hello@elevationcoaching.com"),
@@ -153,6 +154,7 @@ def collected_transcript():
                                 "doors close 10 Nov 2026 11:59 p.m."),
             ("channels", "Email only"), ("conversation_ai", "No, not this launch"),
             ("access_delivery", "Yes, send access after purchase"),
+            ("access_url", "https://brightpath.example/access"),
             ("payment_plans", "Paid in full"), ("sender_name", "Bright Path Studio"),
             ("reply_to_email", "hello@brightpath.example"), ("a2p_ready", "No, not yet")):
         assert e.record(d, qid, value).get("ok"), (qid, value)

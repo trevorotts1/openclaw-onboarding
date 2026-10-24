@@ -389,6 +389,69 @@ class AnswersFile(unittest.TestCase):
         self.assertEqual(known["image_provider"]["state"], "recommended_unapproved")
 
 
+class TopicsModesAndEstimates(unittest.TestCase):
+    def test_the_eight_launch_topics_are_wired_with_their_contract_ids(self):
+        self.assertEqual(set(e.LAUNCH_TOPICS), {"timing", "channels", "conversation_ai",
+                                                "access_delivery", "payment_plans", "sender_name",
+                                                "reply_email", "texting_readiness"})
+        d = e.new_doc("bf")
+        t = e.topics(d)
+        self.assertEqual(t["timing"]["question_id"], "launch_calendar")
+        self.assertEqual(t["reply_email"]["question_id"], "reply_to_email")
+        self.assertEqual(t["texting_readiness"]["question_id"], "a2p_ready")
+        self.assertTrue(t["timing"]["applicable"])  # the launch areas are conditional, never legacy
+        self.assertEqual(e.topics(e.new_doc("legacy"))["timing"]["applicable"], False)
+
+    def test_the_question_object_keeps_help_default_and_topic_to_the_surface(self):
+        d = e.new_doc()
+        h = e.hydrate(d, e.question("launch_calendar"))
+        self.assertEqual(h["topic"], "timing")
+        self.assertEqual(e.hydrate(d, e.question("channels"))["topic"], "channels")
+        self.assertTrue(h["help"]["examples"] is not None and h["help"]["explain"])
+        ch = e.hydrate(d, e.question("channels"))
+        self.assertIn("value", ch["default"])  # default.value survives to the surface
+        self.assertEqual(ch["choices"], e.question("channels")["choices"])  # per-option text survives
+
+    def test_mode_a_asks_only_what_is_missing_and_proposes_the_rest(self):
+        d = e.new_doc()
+        e.record(d, "interview_mode", "Set it up for me to review")
+        q = e.next_question(d)
+        self.assertEqual(q["assistance_mode"], "A")
+        self.assertEqual(q["id"], "business_name")  # a never-default fact is still asked
+        self.assertEqual(e.get(d, "brand_colors")["status"], "default_to_confirm")  # proposed, flagged
+        self.assertIn("brand_colors", [t["id"] for t in d["to_confirm"]])
+
+    def test_the_preference_is_changeable_mid_flow(self):
+        d = e.new_doc()
+        e.record(d, "interview_mode", "Set it up for me to review")
+        self.assertEqual(e.assistance_mode(d), "A")
+        e.record(d, "interview_mode", "Help me choose")
+        self.assertEqual(e.assistance_mode(d), "B")
+        self.assertEqual(e.next_question(d)["assistance_mode"], "B")
+        e.record(d, "interview_mode", "I know what I want")
+        self.assertEqual(e.assistance_mode(d), "C")
+
+    def test_the_estimate_is_computed_and_a_change_is_explained(self):
+        d = e.new_doc()
+        e.record(d, "interview_mode", "Help me choose")
+        before = e.next_question(d)
+        self.assertIsNone(before["estimate"]["note"])
+        e.record(d, "funnel_shape", "One offer")  # opens the price question, closes packages
+        after = e.next_question(d)
+        self.assertEqual(after["estimate"]["questions"], before["estimate"]["questions"] + 1)
+        self.assertIn("was", after["estimate"]["note"])
+        self.assertEqual(after["progress"]["of"], after["estimate"]["questions"])
+
+    def test_help_phrases_are_requests_and_real_answers_are_not(self):
+        d = e.new_doc()
+        for phrase in ("?", "I don't know", "no clue what to pick", "not sure"):
+            self.assertTrue(e.wants_help(e.question("voice"), phrase), phrase)
+        self.assertFalse(e.wants_help(e.question("audience"), "I help moms lose weight"))
+        r = e.record(d, "voice", "?")
+        self.assertEqual(r["action"], "help")
+        self.assertIsNone(e.val(d, "voice"))  # a help request is never a recorded answer
+
+
 class LegacyMapping(unittest.TestCase):
     def test_legacy_answers_cover_what_the_sf_prover_requires(self):
         sys.path.insert(0, str(REPO / "49-signature-funnel/scripts"))

@@ -15,7 +15,9 @@
 //   3. Staged install into <prefix>/staging/: copy source, `npm ci
 //      --no-audit --no-fund`, `npm run build`. The active release is untouched.
 //   4. Independent generated-artifact receipt over dist/.
-//   5. Verification of the staged artifact (sources + artifact bytes).
+//   5. Verification of the staged artifact (sources + artifact bytes, plus a
+//      load check of the real entry point: hash + load, never 'ready' from
+//      SKILL.md presence or source match alone).
 //   6. Atomic activation via an atomically replaced <prefix>/active.json.
 //      The previous receipt is preserved and ROLLBACK.md is rewritten.
 //   7. Idempotence: an identical source/artifact/node combination is a no-op.
@@ -80,7 +82,8 @@ export const SOURCE_IGNORED_NAMES = new Set([
   ".DS_Store",
 ]);
 
-export const REQUIRED_ARTIFACTS = ["dist/index.js", "dist/blackceo-council.mjs"];
+export const ENTRY_ARTIFACT = "dist/blackceo-council.mjs";
+export const REQUIRED_ARTIFACTS = ["dist/index.js", ENTRY_ARTIFACT];
 
 const PROBE_TIMEOUT_MS = 60_000;
 const NPM_TIMEOUT_MS = 15 * 60_000;
@@ -327,6 +330,26 @@ export function computeArtifactManifest(releaseDir) {
   return { entries, digest: canonicalDigest(entries), fileCount: entries.length };
 }
 
+/**
+ * Parse-level load check of the real entry point (the byte hash is covered by
+ * the artifact receipt). The installer is never 'ready' from source match or
+ * SKILL.md presence alone: the installed entry must actually load.
+ */
+export function verifyEntryLoad(nodeExecutable, entryPath) {
+  const run = spawnSync(nodeExecutable, ["--check", entryPath], {
+    encoding: "utf8",
+    timeout: PROBE_TIMEOUT_MS,
+  });
+  if (run.error) {
+    throw new Error(`entry load check could not start under ${nodeExecutable}: ${run.error.message}`);
+  }
+  if (run.status !== 0) {
+    throw new Error(
+      `entry load check failed for ${entryPath} (exit ${run.status}): ${(run.stderr || run.stdout || "").trim()}`
+    );
+  }
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
@@ -350,9 +373,11 @@ export function activePaths(prefix) {
 
 /**
  * Verify a release tree against its receipts. Corruption or drift fails.
- * Never touches the active pointer.
+ * The actual entry point is hash-covered by the artifact receipt AND load
+ * checked here, so a known-broken bundle never verifies as healthy. Never
+ * touches the active pointer.
  */
-export function verifyRelease(prefix, releaseDir) {
+export function verifyRelease(prefix, releaseDir, nodeExecutable = process.execPath) {
   const releaseId = basename(resolve(releaseDir));
   const paths = receiptPaths(prefix, releaseId);
   const problems = [];
@@ -392,6 +417,16 @@ export function verifyRelease(prefix, releaseDir) {
     }
   } catch (error) {
     problems.push(`artifact verification failed: ${error.message}`);
+  }
+  try {
+    const entryPath = join(releaseDir, ...ENTRY_ARTIFACT.split("/"));
+    if (!existsSync(entryPath)) {
+      problems.push(`entry point missing: ${ENTRY_ARTIFACT}`);
+    } else {
+      verifyEntryLoad(nodeExecutable, entryPath);
+    }
+  } catch (error) {
+    problems.push(`entry load check failed: ${error.message}`);
   }
   return { ok: problems.length === 0, releaseId, problems };
 }
@@ -572,7 +607,7 @@ export async function main(argv) {
 
   // ---- Verify an existing release without activating anything ----
   if (options.verifyRelease) {
-    const result = verifyRelease(prefix, options.verifyRelease);
+    const result = verifyRelease(prefix, options.verifyRelease, probe.executable);
     if (!result.ok) {
       console.log(`FAIL verify-release: ${result.problems.join("; ")}`);
       return 1;
@@ -596,7 +631,7 @@ export async function main(argv) {
       return 1;
     }
     const previousDir = join(prefix, "releases", current.previousReleaseId);
-    const checked = verifyRelease(prefix, previousDir);
+    const checked = verifyRelease(prefix, previousDir, probe.executable);
     if (!checked.ok) {
       console.log(`FAIL rollback: previous release is not usable: ${checked.problems.join("; ")}`);
       return 1;
@@ -648,7 +683,7 @@ export async function main(argv) {
       const sameSource = active.sourceManifestDigest === sourceManifest.digest;
       const sameNode = active.nodeExecutable === probe.executable && active.nodeVersion === probe.version;
       if (sameSource && sameNode && existsSync(active.releasePath)) {
-        const checked = verifyRelease(prefix, active.releasePath);
+        const checked = verifyRelease(prefix, active.releasePath, probe.executable);
         if (checked.ok) {
           console.log(`NOOP: release ${active.releaseId} already matches ${sourceManifest.digest} and verifies; nothing changed`);
           return 0;
@@ -669,7 +704,7 @@ export async function main(argv) {
   if (existsSync(activePath)) {
     const active = readJson(activePath);
     if (active.releaseId === releaseId && existsSync(finalDir)) {
-      const checked = verifyRelease(prefix, finalDir);
+      const checked = verifyRelease(prefix, finalDir, probe.executable);
       if (checked.ok) {
         console.log(`NOOP: release ${releaseId} is active and verifies; nothing changed`);
         return 0;
@@ -727,7 +762,7 @@ export async function main(argv) {
     writeJsonAtomic(receiptPaths(prefix, releaseId).source, sourceReceipt);
     writeJsonAtomic(receiptPaths(prefix, releaseId).artifact, artifactReceipt);
 
-    const checked = verifyRelease(prefix, finalDir);
+    const checked = verifyRelease(prefix, finalDir, probe.executable);
     if (!checked.ok) {
       throw new Error(`staged release failed verification without activation: ${checked.problems.join("; ")}`);
     }
@@ -771,6 +806,7 @@ export async function main(argv) {
     } else {
       console.log("INFO no release was activated");
     }
+    console.log("INSTALL-RUNTIME: DEGRADED install incomplete (previous files preserved; never report this state as ready). Fix the error above and re-run.");
     return 1;
   }
 }
