@@ -338,6 +338,44 @@ class TrueReceiptTests(Base):
             [{"item": entry["logical_intent_key"], "reason": "EFFECT_WITHOUT_TRUE_RECEIPT"}],
         )
 
+    def test_a_decorated_local_id_echo_is_not_a_provider_receipt(self):
+        # The echo defence compares identities, not spellings: a local id padded
+        # with a space or a format mark is still the local id.
+        entry = item("P-01", "SCHEDULED_POST", 1, "post")
+        entry["idempotency_key"] = "idem-P-01-post-1"
+        for field in receipts.LOCAL_ID_FIELDS:
+            local = entry[field]
+            for decorated in (" " + local + " ", "​" + local, local + "﻿"):
+                errors = receipts.validate_provider_receipt(
+                    entry, post_receipt(object_id=decorated)
+                )
+                self.assertTrue(
+                    any("echoes the local %s" % field in e for e in errors),
+                    "a decorated echo of %s must refuse, got %r" % (field, errors),
+                )
+        reversed_entry = dict(entry)
+        reversed_entry["action_id"] = " " + entry["action_id"] + " "
+        self.assertTrue(
+            any(
+                "echoes the local action_id" in e
+                for e in receipts.validate_provider_receipt(
+                    reversed_entry, post_receipt(object_id=entry["action_id"])
+                )
+            ),
+            "decoration on the local field must not hide the echo either",
+        )
+
+        echo = post_receipt(object_id=" " + entry["action_id"] + " ")
+        self.publish(entry, echo)
+        self.assertIsNone(
+            receipts.true_receipt(self.store, entry),
+            "a padded local id persisted as a provider object is still not a receipt",
+        )
+        self.assertEqual(
+            receipts.validate_provider_receipt(entry, post_receipt(object_id="fb-post-7")), [],
+            "control: a real provider id is still accepted",
+        )
+
     def test_a_blank_provider_object_id_is_not_a_receipt(self):
         entry = item("P-01", "SCHEDULED_POST", 1, "post")
         for blank in ("", "   ", "​", "﻿", "​ ﻿　\t "):
@@ -495,6 +533,37 @@ class ResumeTests(Base):
         after = self.plan([p1_post, p1_reveal, extra])
         self.assertEqual(after["resume"], [], "the published comment is not resumed again")
         self.assertIn(extra["logical_intent_key"], after["already_received"])
+
+    def test_an_in_flight_attempt_is_never_resumed(self):
+        entry = item("P-01", "SCHEDULED_POST", 1, "post")
+        row = self.admit(entry)
+        self.assertEqual(
+            self.plan([entry])["resume"],
+            [entry["logical_intent_key"]],
+            "control: an admitted item with no attempt is resumable",
+        )
+
+        self.store.queue(row["action_id"], now=1000.0)
+        claim = self.store.claim_for_dispatch(row["action_id"], "worker-1", now=1000.0)
+        self.assertIsNotNone(claim)
+        self.assertTrue(
+            self.store.begin_attempt(row["action_id"], claim["fence"], "worker-1", now=1000.0)
+        )
+        self.assertIsNotNone(
+            self.store.unresolved_attempt(row["action_id"]), "the fixture needs an open attempt"
+        )
+        plan = self.plan([entry])
+        self.assertEqual(plan["resume"], [], "a possibly-sent effect is never re-issued")
+        self.assertEqual(
+            plan["blocked"],
+            [{"item": entry["logical_intent_key"], "reason": "ATTEMPT_IN_FLIGHT"}],
+        )
+
+        # Once reconciled with a true provider receipt it is received, not resumed.
+        self.store.record_dispatch(row["action_id"], claim["fence"], post_receipt(), now=1001.0)
+        after = self.plan([entry])
+        self.assertEqual(after["resume"], [])
+        self.assertEqual(after["already_received"], [entry["logical_intent_key"]])
 
     def test_resume_excludes_a_possibly_sent_effect(self):
         entry = item("P-01", "SCHEDULED_POST", 1, "post")

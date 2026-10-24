@@ -129,9 +129,16 @@ def validate_provider_receipt(
     elif not isinstance(object_id, str):
         errs.append("$.provider_object_id: must be a string, got %r" % (type(object_id).__name__,))
     else:
+        # Compare identities, not spellings: the normaliser strips the padding a
+        # locally generated "receipt" would decorate an echo with.
+        normalised_id = contracts.normalise_evidence_id(object_id)
         for field in LOCAL_ID_FIELDS:
             local = item.get(field)
-            if isinstance(local, str) and local and object_id == local:
+            if (
+                isinstance(local, str)
+                and local
+                and normalised_id == contracts.normalise_evidence_id(local)
+            ):
                 errs.append(
                     "$.provider_object_id: %r echoes the local %s, not a provider object"
                     % (object_id, field)
@@ -341,6 +348,11 @@ def resume_plan(
 
         row = store.action_by_intent(key)
         reason = _resume_block_reason(row)
+        if reason is None and store.unresolved_attempt(row["action_id"]) is not None:
+            # An open attempt is a send already in flight: it may or may not have
+            # reached the provider, so re-issuing it could double-post. Reconcile
+            # it first; the next pass either finds a receipt or blocks it.
+            reason = "ATTEMPT_IN_FLIGHT"
         if reason is not None:
             blocked.append({"item": key, "reason": reason})
             continue
