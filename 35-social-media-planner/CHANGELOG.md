@@ -1,5 +1,15 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.8.0] - 2026-10-24 - T-22 honest personal-profile capability and assisted contract
+
+- Added `config/profile-capabilities.json`: the single machine-readable declaration of what each channel and account type can do `unattended`, what needs one `operator_action`, and what is `unavailable`. Personal profiles are always assisted or unavailable, never unattended; the declaration validator fails closed if a personal profile lists any unattended action.
+- Added `shared-utils/personal_profile_capability.py`: capability lookup, refusal path, assisted placement preparation (text, asset, keyword, CTA, timing), operator-confirmation receipt, truthful status surface and `assert_truthful_publication` guard. An assisted/personal placement can never report `published-by-system`; `operator-confirmed` requires a valid receipt.
+- Added `scripts/profile_capability.py` operator CLI (`capabilities`, `request`, `confirm`, `status`, `guard`).
+- Added `PROFILE-CAPABILITIES.md` (declaration table, assisted contract, refusal language, status surface, CLI).
+- Added `tests/social-planner/test_t22_profile_capability.py`: unattended personal-profile refusal, receipt only after operator confirmation, guard failure on a system-claimed publication without a receipt, and capability-data round-trip as the single source.
+- `INSTRUCTIONS.md` and `SKILL.md` now route account-type decisions through the declaration; the Facebook gotcha points at the assisted contract.
+- skill-version v3.7.3 -> v3.8.0.
+
 ## [3.7.2] - 2026-10-13 - model doctrine cleanup
 
 - Per-role model tiering no longer prescribes named models: each role uses the client's selected model, or the client's configured default model, with tier recommendations stated as guidance. Spawn examples use client-selected placeholders and stop to ask the client when no model is selected or configured.
