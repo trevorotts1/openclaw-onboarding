@@ -1,0 +1,72 @@
+{
+  "style_id": "afro-soul",
+  "label": "Afro-Soul",
+  "description": "soulful vocals over warm, organic instruments and interlocking African-influenced rhythms.",
+  "catalog_revision": "2026-10-24",
+  "recipe_revision": "1.0.0",
+  "deliveries": ["spoken", "sung"],
+  "client_references": {
+    "artists": ["Tems"],
+    "explanation": "Broad soulful, African-influenced facet of a genre-blending sound; not an exclusive artist definition and not a voice to copy."
+  },
+  "production_traits": {
+    "musical_identity": "afro-soul: soulful melodic vocals over a warm organic ensemble with interlocking African-influenced hand-percussion rhythms and a gentle sway",
+    "instrumentation": [
+      "rounded warm bass",
+      "acoustic and clean electric guitar figures",
+      "warm electric keys or a small acoustic piano",
+      "interlocking hand percussion, conga, shaker and rim patterns",
+      "light kit joining only after the story opens"
+    ],
+    "avoided_instrumentation": [
+      "bright club dance-pop production",
+      "dembow pattern",
+      "programmed trap percussion",
+      "synthesized pan-flute or generic world-music decoration"
+    ],
+    "rhythm": "warm 4/4 pulse with syncopated interlocking subdivisions; parts answer each other rather than all playing the same accent",
+    "tempo": {
+      "min_bpm": 80,
+      "max_bpm": 108,
+      "meter": "4/4",
+      "note": "gentle sway; no acceleration to fit words and no default club tempo"
+    },
+    "vocal_delivery": "soulful, melodic and clear lead with controlled call and response or one voice of harmony only when the approved material calls for it, dry upfront vocal",
+    "energy_map": {
+      "consequence": "spoken consequence stays close over a light organic guitar figure",
+      "obstacle": "complementary percussion parts enter as pressure grows",
+      "choice": "percussion reduces for an intimate realization",
+      "change": "warmer interlock and vocal lift restore after the consequential choice",
+      "hook": "refrain gains emotional warmth from the action already in the scene plan",
+      "cta": "final refrain settles into the warm interlock under the CTA"
+    },
+    "hook_guidance": "one soulful refrain whose warmth is earned by the action in the scene plan; no unrelated celebration and no repetitive chanting",
+    "spoken_sung_split": "spoken lines carry the consequence; verses and the refrain are sung; call and response only when approved, no rap by default",
+    "delivery_constraints": "preserve the client's language and accent; no fabricated dialect, ethnic identity, chant, instrument tradition or cultural claim follows from choosing the style",
+    "word_fit": "place stresses against the interlock with space for vowels and consonants; keep the lead clear over percussion instead of fitting extra words through speed",
+    "mood_policy": "story_selected",
+    "story_energy": "reflective or gently energetic as the story requires; neither automatically slow and sad nor automatically club dance-pop",
+    "duration_guidance": {
+      "60": "spoken consequence, one groove section, one refrain and the CTA; the interlock stays exposed",
+      "90": "two sections with percussion entering on the obstacle, refrain returns warmer",
+      "120": "three beats, one percussion reduction at the choice, warmer interlock after",
+      "180": "add a second guitar figure and one instrumental interlock passage that advances the story",
+      "300": "four consequential beats, a stripped middle section, a re-harmonized final refrain",
+      "600": "long-form with developed scenes and evolving percussion conversations; no repetitive chanting and no filler"
+    },
+    "examples": [
+      "A returned apron lies by the door; the lead speaks the cost over guitar, and a warm percussion weave grows when they choose to return."
+    ]
+  },
+  "section_hint": "[Verse] spoken consequence, [Groove] interlocking percussion, [Hook] soulful lift, [Outro] warm interlock",
+  "negative_constraints": [
+    "no automatic dance-pop production",
+    "no dembow rhythm",
+    "no invented dialect, chant or cultural claim",
+    "no artist name or alias in any production field"
+  ],
+  "test_ids": [
+    "test_afro_soul_compiles_organic_interlocking_traits",
+    "test_afro_soul_is_not_automatically_dance_pop"
+  ]
+}
