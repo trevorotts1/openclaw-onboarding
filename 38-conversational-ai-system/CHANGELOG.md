@@ -2,6 +2,34 @@
 
 Adds one stdlib-only module, `tools/consent_gate.py`, on top of the accepted T-11 identity/collection lock (4e5ffa7ca) and T-12 durable store/gate (a2d8b3720); neither dependency module is modified. `ConsentStore` keeps an append-only decision log and the human-ownership fence in the same SQLite file as identity, and implements DATA-CONTRACTS section 7 precedence at the section 3 gate: global stop, then channel opt-out, then human ownership, then field (topic/offer/campaign) refusal. A refusal is never broader than its recorded scope, the latest decision wins per exact scope, a narrow grant lifts only its own scope and never a global stop, and an unresolved channel with an existing channel opt-out blocks rather than assuming a different channel ("unknown refusal scope is not broader permission"). A global stop blocks every channel for that contact, immediately and after restart, and is also honoured when it appears in the identity module's `contacts.suppression` column. Human takeover fences every send until an explicit `human_release(actor=...)`, which is audited; a grant never releases the fence. `make_gate_evaluator()` is the `outbound_gate.dispatch()` evaluator, so consent is re-evaluated on every dispatch and retry and a suppression recorded after queueing still blocks the send. `ConsentCapture` wraps `collection_lock.CaptureStore`: the decision for a step is written once (unique per capture+step) before the cursor moves, so a crash between the two replays idempotently, a mid-capture failure resumes at its own cursor in a new process, and a rejected capture stays rejected and cannot be advanced. `fold()` carries consent onto the surviving contact of a merge, keeping the stricter human fence. Tests: `tools/tests/test_consent_gate.py` (24), including real second interpreters for a stop passed between processes, human takeover/dispatch/release, a capture crashed mid-way with `os._exit` and resumed by a second process after the lock handover, and a rejected capture re-checked from a third process; 143 across the skill suite.
 
+## [2.0.25] - 2026-10-24 - fix(38/hooks): `model` is OPTIONAL on hooks.mappings — PBB-017 reconciliation
+
+Two accepted repairs contradicted each other, and the contradiction made a fresh install fail its own readiness gate:
+
+- **T-09** (`s38_canonical_mapping`) rewrites the inbound mapping and deliberately emits **no** `model` key.
+- **T-10** put the authoritative predicate in `scripts/lib-hook-mapping-contract.sh`, which listed `model` as a REQUIRED key. Its own fixture row `fresh-installer-today` proved the consequence: `GATEVERDICT=ERR`, reason `missing-key:model`. So `24-self-test-hook.sh` and `qc-backend-ready.sh` agreed with each other and both disagreed with the writer.
+
+**Ground truth (evidence, not preference): `model` is NOT required — `agentId` is sufficient.**
+
+| Evidence | Shows |
+|---|---|
+| Installed OpenClaw 2026.10.5 (1b58cb9), `dist/zod-schema-BVpLKnmq.mjs` | `HookMappingSchema = strictObject({ ... model: string().optional() ... })` — every mapping field is `.optional()`; `.strict()` only rejects unknown keys |
+| `openclaw config validate` (that same build) | mapping WITHOUT `model` -> "Config valid"; the same mapping with `fallbacks` -> "Unrecognized key: fallbacks" |
+| `docs/gateway/config-hooks.md`, "Mapping details" | `model` | default "agent/model defaults" | contract "Templated model override." |
+| `dist/hooks-STZ6dZJ5.mjs` | `renderOptional(mapping.model, ctx)` -> undefined when absent; `mergeAction` -> `override.model ?? baseAgent?.model`, i.e. the run falls back to the AGENT's configured model |
+| live `~/.openclaw/openclaw.json` on the operator box | 5 of 7 mappings carry no `model` and the config validates clean |
+| this skill's own `24-self-test-hook.sh` | resolves the self-test model from `agents.entries[].model` -> `agents.list[].model` -> `agents.defaults.model`, never from the mapping |
+| `references/GHL-INBOUND-AND-PLAYBOOKS.md` §12 | lists `model` among *valid* mapping keys, never as required; the "23 keys (exact)" is the GHL RAW BODY, a different object |
+
+Changes:
+
+- `scripts/lib-hook-mapping-contract.sh`: `model` removed from the required key set and kept as a valid optional key. A `model` key that is PRESENT but BLANK is still refused (`blank-model-override`) — harmless on the mapping path, but OpenClaw's own `normalizeAgentPayload` rejects a present-but-blank model with "model required", so a blank override is always a wiring mistake. Named as a SKILL-level strictness, not an OpenClaw requirement. `messageTemplate` is now also required NON-EMPTY (`no-messageTemplate`), because OpenClaw's `validateAction` refuses an agent action with no message — that is the key the evidence genuinely makes load-bearing.
+- The directive needles have ONE home. `HOOK_MAPPING_SEND_DIRECTIVE_NEEDLES` / `HOOK_MAPPING_CONVERSATION_MEMORY_NEEDLES` live in the contract; `scripts/lib-docker-tenant.sh` SOURCES it and its `s38_send_directive_needles` / `s38_conversation_memory_needles` / `s38_required_template_needles` are printers over it, failing closed when the contract file is absent. The test-side "needles asserted equal rather than sourced" ceiling is deleted.
+- `scripts/qc-backend-ready.sh` and `scripts/24-self-test-hook.sh` stop demanding `model`; both report the optionality explicitly.
+- `tests/hook-mapping-contract.test.sh`: 11 rows. `fresh-installer-today` now PASSes (it is a correctly-shaped fresh mapping); `missing-model` renamed `blank-model-override` (its body carries `"model":""`, a blank override, not a missing one); `decoy-model-elsewhere` now PASSes; two new rows — `missing-messageTemplate` (a genuinely-required key missing MUST fail in both gates with the reason naming the key) and `decoy-valid-elsewhere` (a complete decoy must not launder a broken target, the case the old whole-file grep passed). The writer checks now read the shape from `s38_canonical_mapping`, run that shape through the contract end to end, and assert the needles are SOURCED rather than compared.
+
+The 23-key GHL RAW BODY is unchanged and still carries `model` — it is a different object from a `hooks.mappings` entry.
+
 ## [2.0.25] - 2026-10-24 - fix: five T-11 defects — identity-root allowlist, no channel fusion, generated owner identity, fenced captures (T-11 QC repair)
 
 Independent QC FAILED the 2.0.24 T-11 modules on five reproduced defects. All five are repaired here, each with its own test, including real multi-process races; the original 70043d040 commit is left intact as evidence of what failed.
@@ -27,6 +55,60 @@ Adds two stdlib-only modules under `tools/`. `tenant_identity.py` resolves one p
 ## [2.0.24] - 2026-10-24 - feat: guided business, audience and offer discovery (T-06)
 
 Adds `tools/acquisition_brief.py`, a stdlib-only acquisition front door for the 30-day campaign: one persistent brief covering business, offers, audience, proof, constraints, channels, geography and seasonality, plus the client's real asset inventory. Every fact carries provenance (client-stated, discovered, assumed) and a UTC recording timestamp. The next-question set is the minimal ordered remainder of unanswered required facts; a recorded fact is never asked again, an assumed fact raises a confirmation question and blocks readiness until confirmed, and an explicitly missing fact is recorded as missing and blocks readiness rather than being defaulted to a plausible value. The interview persists by atomic replace after every answer, so an interrupted or killed process resumes on the same unanswered question with no data loss and no repeated questions; a corrupt brief fails loudly and is never overwritten. The asset registry records present and confirmed-absent assets only, never generates or fabricates one, and publishes `must_prepare` for T-07. Tests: `tools/tests/test_acquisition_brief.py` (23), including resume after an abrupt child-process exit, a six-known-fact no-repeat proof, a no-default negative, and an asset-registry no-generation negative.
+## [2.0.24] - 2026-10-24 - fix: one inbound-mapping contract shared by the self-test, the QC gate and the installer
+
+G-03 / G-04 / G-05. `24-self-test-hook.sh` evaluated one parsed hooks mapping and refused it without a `model`,
+while `qc-backend-ready.sh` grepped the WHOLE `openclaw.json` for `"model": "..."` and `"deliver": false` — so a
+model anywhere in the file made the QC gate PASS the exact mapping the self-test refused. Same fixture: self-test
+says `no-model`, qc-backend-ready says PASS. On top of that the installer skipped a Skill 38 copy on a matching
+`skill-version.txt` STRING ALONE, so a dest wearing the right version with wrong content was never refreshed.
+
+- New `scripts/lib-hook-mapping-contract.sh`: the ONE predicate for a valid inbound mapping, evaluated per mapping
+  id. Exact key set (required `id`, `match`, `action`, `agentId`, `model`, `deliver`, `messageTemplate`; optional
+  `wakeMode`, `name`, `sessionKey`, `timeoutSeconds`; anything else fails by name — the OpenClaw schema is `.strict()`
+  and rejects `fallbacks`), `action` exactly `agent`, a non-empty `match.path`, `agentId` listed in
+  `hooks.allowedAgentIds`, a non-empty `model`, `deliver` exactly `false`, and all twelve send/memory directive
+  needles in `messageTemplate`. Pure bash + POSIX awk: no jq, no python3, so it works on a fleet box and keeps
+  qc-backend-ready's "no python" claim true. It emits `MAPCONTRACT` / `MAPENABLED` / `MAPSELECT` / `GATEVERDICT`
+  lines and fails CLOSED when the evaluator itself errors.
+- `scripts/qc-backend-ready.sh` and `scripts/24-self-test-hook.sh` both source it and print the same verdict lines,
+  so the two gates cannot reach different verdicts on the same config. The whole-file greps are gone.
+  `24-self-test-hook.sh` gains `--mapping-only` (evaluate the mapping contract and stop) for the fixture matrix.
+  The private python predicate in the self-test is deleted.
+- `install.sh` `install_skill_38_conversational_ai_system` now skips ONLY when the version string AND the content
+  both match (cksum over the four contract-carrying scripts), reports `installed` / `already-current` /
+  `refreshed-content-drift` / `refreshed-version`, and writes a secret-free `provisioning-receipt.json` next to the
+  install recording what was actually installed.
+- Tests: `tests/hook-mapping-contract.test.sh` — a 9-row fixture matrix (known-good control, fresh installer
+  output, T-09-upgraded, stale agentId, missing model, missing directive, wrong shape, decoy model on a sibling
+  mapping, hooks disabled) driven through BOTH gates with byte-identical verdicts and matching exit codes on every
+  row, plus the known-good control so identical failure cannot masquerade as agreement. It also asserts the
+  writer's fail-closed directive needles equal the contract's needles, and runs the extracted installer function
+  to prove content drift is refreshed rather than skipped.
+
+Open: `15-configure-hooks-mappings.sh` (T-09 lane) still does not emit `model`, so a fresh mapping is refused
+`missing-key:model` — that is G-03 on the writer side and is the fix T-09 owns. The directive needles are asserted
+equal to the writer's rather than sourced from it, because that file is not editable from this lane; once the
+writer sources the contract too, the equality assertion can go.
+
+## [2.0.24] - 2026-10-24 - fix(hooks): content-addressed hooks.mappings migration; repair rebinds a stale agentId
+
+Two demonstrated defects left an upgraded box with a permanently broken GHL inbound hook body:
+
+- **G-01 — "skipping merge" froze a pre-upgrade mapping forever.** `scripts/15-configure-hooks-mappings.sh` only merged a mapping when the id was absent, so an existing entry kept its nested `sessionKey` merge tokens (the GHL body sends a FLAT `{{session_key}}`), a `messageTemplate` with no send-directive (the agent drafts and never sends) and no conversation-log read-before/append-after (the agent has no memory mid-conversation) on every re-run.
+- **G-02 — the repair reported a stale `agentId` and never rebound it.** `scripts/repair/repair-inbound-hooks.py` rewrote only `hooks.maxBodyBytes` and `gateway.trustedProxies` and printed a "not a configured agent" note.
+
+Both are now one content-addressed migration:
+
+- `scripts/lib-docker-tenant.sh` owns the canonical mapping shape (`s38_canonical_mapping`), the mandatory send-directive and conversation-memory needle lists (`s38_send_directive_needles`, `s38_conversation_memory_needles`) and the key-level merge (`s38_merge_mapping_body`, `s38_mapping_changed_keys`, `s38_migrate_mapping`). Only divergent keys are upgraded: `id`, `action`, `deliver`, `match.path` are forced; `agentId` is kept while it names a configured agent and rebound to the resolved routing agent when stale; `sessionKey` is kept unless it is empty or carries a nested `{{a.b}}` token; `messageTemplate` is kept unless it is missing a required directive element; operator values for `name`, `wakeMode`, `timeoutSeconds` and any unknown operator key are left alone. A second run reports no changes and writes nothing. The canonical messageTemplate stays in a `.sh` under `scripts/` so `qc-send-directive.sh` and `qc-conversation-memory.sh` keep linting it.
+- `scripts/15-configure-hooks-mappings.sh` builds the mapping through that lib and, when the id already exists, migrates it instead of skipping: it reports exactly which keys changed and writes the upgraded body.
+- `scripts/repair/repair-inbound-hooks.py` now rewrites the mapping body through the same lib (single source of the required shape), including rebinding a stale `agentId`, and prints one line naming every changed key plus the `agentId` old -> new pair. When no rebind target can be resolved and the box has more than one configured agent it stops and asks for `ROUTING_AGENT_ID` rather than guessing.
+
+Safety on both paths: the pre-change mapping body is backed up next to the config (`openclaw.json.hooks-mapping-<id>.bak-<ts>.json`), the config is replaced by an atomic rename after `openclaw config validate`, and the installer refuses to commit (exit 11) when the file changed under the run.
+
+**T-10 contract note:** this writer emits no model key. The mapping body carries `agentId` only, and that id is now always a configured agent, so nothing here needs to agree with 24-self-test-hook.sh, qc-backend-ready.sh or install.sh about a model.
+
+Tests: `scripts/lib-docker-tenant.test.sh`, `tests/repair-inbound-hooks.test.sh` (selftest extended with the body-migration and stale-agentId-rebind cases).
 
 ## [2.0.19] - 2026-10-13 - refactor(models): client-choice model selection, no prescribed models
 

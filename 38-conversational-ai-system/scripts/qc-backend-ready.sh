@@ -9,7 +9,9 @@
 #      (the inbound webhook has somewhere to route).
 #   2. deliver:false on the inbound mapping(s) — the agent SENDS via the GHL
 #      Conversations API itself (deliver:true would double-send / mis-deliver).
-#   3. a WORKING model is set on the inbound mapping (a non-empty "model" string).
+#   3. a non-empty messageTemplate on the inbound mapping (OpenClaw refuses an
+#      agent action with no message). `model` is OPTIONAL — PBB-017: the run
+#      falls back to the agent's own configured model when the key is absent.
 #   4. the gateway answers healthz with HTTP 200 (it is up and listening).
 #
 # This is a LIVE check (reads openclaw.json + curls the gateway). It is run from
@@ -67,36 +69,70 @@ fail() { echo "  [FAIL] $*"; FAIL=1; }
 echo "=== qc-backend-ready: backend ready to RECEIVE ==="
 echo "config: $CONFIG"
 
-# Extract the hooks.mappings block textually (no jq dependency; jq may be absent
-# on a fleet box). We work on a flattened view: pull lines between "mappings"
-# and the matching close. A pragmatic grep over the whole file is enough to
-# assert presence/values for this gate.
-MAP_PRESENT=0
-if grep -Eq '"mappings"[[:space:]]*:' "$CONFIG"; then
-  # require at least one object inside it (an "id"/"match" key somewhere in hooks)
-  if grep -Eq '"(id|match|action)"[[:space:]]*:' "$CONFIG"; then
-    MAP_PRESENT=1
-  fi
-fi
-if [ "$MAP_PRESENT" = "1" ]; then
-  pass "hooks.mappings is live (at least one inbound mapping present)"
+# ── THE hook-mapping contract ──────────────────────────────────────────────────
+# One authoritative predicate, sourced from scripts/lib-hook-mapping-contract.sh,
+# evaluated PER MAPPING ID. This used to be a whole-file grep for `"model": "..."`
+# and `"deliver": false`, which PASSED the exact mapping 24-self-test-hook.sh
+# refused whenever some other key in the file happened to carry a model (G-04).
+# Both gates now call the same predicate and print the same MAPCONTRACT lines,
+# so they cannot reach different verdicts on the same config (G-05).
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-hook-mapping-contract.sh"
+
+CONTRACT_OUT="$(hook_mapping_contract_eval "$CONFIG")"
+
+# Machine-comparable report. 24-self-test-hook.sh prints these same four line
+# kinds from the same function; the fixture matrix diffs them.
+printf '%s\n' "$CONTRACT_OUT" | grep -E '^(MAPCONTRACT|MAPENABLED|MAPSELECT|GATEVERDICT)\|' || true
+
+# reason_seen <token> — true when any mapping reports exactly this reason.
+reason_seen() {
+  printf '%s\n' "$CONTRACT_OUT" \
+    | awk -F'|' -v pat="$1" '$1=="MAPCONTRACT" && index("," $4 ",", "," pat ",") > 0 { f=1 } END { exit f ? 0 : 1 }'
+}
+
+MAP_COUNT="$(printf '%s\n' "$CONTRACT_OUT" | grep -c '^MAPCONTRACT|' || true)"
+if [ "${MAP_COUNT:-0}" -gt 0 ]; then
+  pass "hooks.mappings is live (${MAP_COUNT} inbound mapping(s) parsed and evaluated per id)"
 else
   fail "hooks.mappings has no inbound mapping — the GHL webhook has nowhere to route"
 fi
 
-# deliver:false present (the agent sends via the GHL API itself).
-if grep -Eq '"deliver"[[:space:]]*:[[:space:]]*false' "$CONFIG"; then
-  pass "deliver:false set on the inbound mapping (agent sends via the GHL Conversations API)"
-else
+# Per-mapping detail. The here-doc keeps the loop in THIS shell so `fail` sets
+# FAIL; a `| while` would run it in a subshell and lose the flag.
+while IFS='|' read -r _tag _id _verdict _reasons; do
+  [ "$_tag" = "MAPCONTRACT" ] || continue
+  [ -n "$_id" ] || continue
+  if [ "$_verdict" = "OK" ]; then
+    pass "mapping '$_id': valid inbound mapping (exact key set, directives, agentId bound)"
+  else
+    fail "mapping '$_id': ${_reasons}"
+  fi
+done <<EOF
+$CONTRACT_OUT
+EOF
+
+# deliver:false — the double-send guard, now read from the parsed mapping.
+if reason_seen "deliver-not-false" || reason_seen "missing-key:deliver"; then
   fail "inbound mapping must set deliver:false (deliver:true double-sends / mis-delivers)"
+else
+  pass "deliver:false set on every inbound mapping (agent sends via the GHL Conversations API)"
 fi
 
-# a non-empty model string on a mapping.
-if grep -Eq '"model"[[:space:]]*:[[:space:]]*"[^"]+"' "$CONFIG"; then
-  pass "a working model is set on the inbound mapping"
+# PBB-017: `model` is OPTIONAL on a hooks.mappings entry (OpenClaw schema
+# HookMappingSchema: model: string().optional(); the run falls back to the
+# agent's own configured model). Only a present-but-BLANK override is refused.
+if reason_seen "blank-model-override"; then
+  fail "inbound mapping carries an empty 'model' override — drop the key or set a real model id"
 else
-  fail "inbound mapping has no model set (the agent cannot answer)"
+  pass "model override either absent (agent's configured model is used) or a non-empty string"
 fi
+
+# hooks.enabled must be true or nothing routes at all.
+case "$(printf '%s\n' "$CONTRACT_OUT" | grep '^MAPENABLED|' | head -n1 | cut -d'|' -f2)" in
+  true)  pass "hooks.enabled is true" ;;
+  false) fail "hooks.enabled is false" ;;
+  *)     fail "hooks.enabled is not set" ;;
+esac
 
 # ── healthz 200 ───────────────────────────────────────────────────────────────
 # Derive a healthz URL if not passed: prefer the gateway's local port. Default to
