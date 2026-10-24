@@ -195,7 +195,8 @@ def _deliveries(recipe, choices):
                 "BAD_CHOICE",
                 "delivery %r is not offered by this style %r"
                 % (outside, allowed))
-    return deliveries
+    order = {name: i for i, name in enumerate(("spoken", "rap", "sung"))}
+    return tuple(sorted(set(deliveries), key=order.get))
 
 
 def delivery_map(deliveries):
