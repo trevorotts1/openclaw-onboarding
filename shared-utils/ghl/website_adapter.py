@@ -26,10 +26,15 @@ Website semantics (GHL-DELIVERY-SPEC.md, delivery contract):
     never assumed atomic and is out of scope entirely.
   * Identity allocation FIRST (read before create; reuse on an exact single
     match; ambiguous matches refused, never the first row), content SECOND,
-    URL/action binding LAST (W7 link_resolution owns binding). Confirmed
-    native IDs are persisted immediately into the checkpoint store so a
-    resume never duplicates pages and reused business objects stay
-    distinguishable from new scratch.
+    URL/action binding LAST (W7 link_resolution owns binding). With a
+    checkpoint store, a durable PLANNED record precedes EVERY platform write
+    and each create runs as an in-flight operation completed only on a
+    confirmed outcome. A kill between the write and its confirmation -- or
+    any uncertain outcome -- leaves the identity PLANNED with a pending
+    reconciliation: resume then neither re-creates nor reuses it (blocked,
+    needs-reconcile) until the reconcile path decides, because website
+    surfaces have no verified independent read route to reconcile against.
+    Reused business objects stay distinguishable from new scratch.
   * A missing write route is a capture request -- the smallest missing
     authorized operation to capture. It is reported as incomplete, never as
     done, never with a guessed selector or an "enabled" flag. Website
@@ -56,6 +61,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -78,7 +84,7 @@ except ImportError:  # script execution: python3 shared-utils/ghl/website_adapte
 
 
 SITE_LOGICAL_ID = "site"
-ADAPTER_VERSION = "w5c-u1.v1"
+ADAPTER_VERSION = "w5c-u2.v1"
 
 # The states this adapter may ever reach. PUBLISHED/VERIFIED are W7's.
 _EXECUTABLE_STATES = (pr.DeliveryState.PLANNED, pr.DeliveryState.CREATED, pr.DeliveryState.CONFIGURED)
@@ -330,11 +336,17 @@ def execute_website(
 
     Never publishes. Every page yields exactly one result row -- a missing
     capability is a reported restriction, never a silently dropped page.
-    When a checkpoint store is supplied, confirmed identities are persisted
-    immediately and reused objects are provenance-marked (reused vs
-    new-scratch) so a resume never duplicates pages.
+    When a checkpoint store is supplied, a durable record precedes every
+    platform write and a create is completed in the store only on a confirmed
+    outcome; an uncertain or interrupted create stays PLANNED with a pending
+    operation, so a resume refuses both re-create and silent reuse of that
+    identity until it is reconciled (checkpointed_existing). Reused objects
+    are provenance-marked (reused vs new-scratch).
     """
-    report = pr.execute_plan(wplan.plan, executor)
+    runner: pr.Executor = executor
+    if store is not None:
+        runner = _DurableWriteGuard(executor, store, wplan)
+    report = pr.execute_plan(wplan.plan, runner)
     doc = wplan.doc
     restrictions: List[str] = []
 
@@ -388,6 +400,13 @@ def execute_website(
             restrictions.append(
                 f"{b.structure_id}: {b.capture_request} [{b.provenance}] "
                 "-- capability incomplete, never done"
+            )
+    for row in report.rows:
+        if row.status == "uncertain_unreconciled":
+            restrictions.append(
+                f"{row.logical_id}: outcome uncertain and unreconciled -- reconcile "
+                "before any retry or reuse (no verified independent read route; an "
+                "unverified id is never a confirmed create and never a silent REUSE)"
             )
     if any(p.desired_state == nc.DESIRED_PUBLISHED for p in doc.pages):
         restrictions.append(
@@ -470,20 +489,29 @@ def _folder_of(doc: nc.PageSet, page_logical_id: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Durable identity (W4A checkpoints): read before create, resume never dupes
+# Durable identity (W4A checkpoints): read before create; uncertain identities
+# reconcile before any reuse
 # ---------------------------------------------------------------------------
 
 
 def checkpointed_existing(
     store: "ck.CheckpointStore", location: str, doc: nc.PageSet
-) -> Tuple[List[pr.ExistingObject], Dict[str, str]]:
-    """(existing listing, native_id hints) from checkpointed identities.
+) -> Tuple[List[pr.ExistingObject], Dict[str, str], List[str]]:
+    """(existing listing, native_id hints, keys needing reconciliation).
 
     Reused as `existing`/`site_native_id`/PageNode hints on a re-plan, so a
-    resume binds to the same native objects instead of creating duplicates.
+    resume binds to the same CONFIRMED native objects instead of creating
+    duplicates. Resume reconciles first: an identity whose checkpoint
+    operation is unresolved (an uncertain or interrupted write) is never
+    handed out for reuse -- it comes back in needs_reconcile (key tokens) and
+    the re-plan must block on it until store.reconcile_op(op_id, outcome=...)
+    decides. Website surfaces have no verified independent read route, so the
+    honest outcome is blocked/needs-reconcile, never a silent REUSE.
     """
+    store.stale_ops()  # restart surface: overdue operations become uncertain, durably
     existing: List[pr.ExistingObject] = []
     hints: Dict[str, str] = {}
+    needs_reconcile: List[str] = []
     nodes: List[Tuple[str, pr.PrimitiveKind, Optional[str], str]] = []
     for f in doc.admin_folders:
         nodes.append((f.logical_id, pr.PrimitiveKind.FOLDER, f.parent_logical_id, f.name))
@@ -491,7 +519,11 @@ def checkpointed_existing(
     for p in doc.pages:
         nodes.append((p.logical_id, pr.PrimitiveKind.PAGE, SITE_LOGICAL_ID, p.name))
     for logical_id, kind, parent, _name in nodes:
-        cp = store.read(ck.CheckpointKey(location, kind.value, parent, logical_id))
+        key = ck.CheckpointKey(location, kind.value, parent, logical_id)
+        mode, cp = store.plan_create(key)
+        if mode == "blocked-pending":
+            needs_reconcile.append(key.token())  # never a hint: identity unresolved
+            continue
         if cp is not None and cp.native_id:
             hints[logical_id] = cp.native_id
     for logical_id, kind, parent, name in nodes:
@@ -506,7 +538,80 @@ def checkpointed_existing(
                 parent_native_id=hints.get(parent) if parent else None,
             )
         )
-    return existing, hints
+    return existing, hints, needs_reconcile
+
+
+def _spec_for(wplan: WebsitePlan, logical_id: str) -> pr.PrimitiveSpec:
+    return next(s for s in wplan.plan.specs if s.logical_id == logical_id)
+
+
+class _DurableWriteGuard:
+    """Durable-first wrapper: the checkpoint record PRECEDES every platform
+    write, and a create runs as an in-flight operation completed only on a
+    confirmed outcome (so the W4A reconcile path can run on it).
+
+    A kill between the write and its confirmation -- or an uncertain outcome
+    -- leaves the key PLANNED with an open operation; plan_create then says
+    blocked-pending and this guard refuses further writes on it, so a resume
+    neither re-creates nor silently reuses that identity until
+    store.reconcile_op(op_id, outcome=...) decides (never a guessed id).
+    """
+
+    def __init__(self, inner: pr.Executor, store: "ck.CheckpointStore", wplan: WebsitePlan) -> None:
+        self._inner = inner
+        self._store = store
+        self._wplan = wplan
+        self._opened: Dict[str, str] = {}  # primitive op_id -> checkpoint op_id
+
+    def run(self, op: pr.PrimitiveOp) -> pr.OpResult:
+        if op.action == "readback":
+            return self._inner.run(op)  # readback is not a platform write
+        spec = _spec_for(self._wplan, op.logical_id)
+        key = ck.CheckpointKey(
+            self._wplan.location, spec.kind.value, spec.parent_logical_id, spec.logical_id
+        )
+        mode, cp = self._store.plan_create(key)
+        if mode == "blocked-pending":
+            return pr.OpResult(
+                pr.Outcome.REFUSED,
+                note=(
+                    f"{op.logical_id}: write refused -- checkpoint operation is "
+                    "pending reconciliation (never re-create, never a silent REUSE "
+                    "of an unresolved identity)"
+                ),
+            )
+        if op.action == "create" and cp is not None and cp.native_id:
+            return pr.OpResult(
+                pr.Outcome.REFUSED,
+                note=(
+                    f"{op.logical_id}: already checkpointed as {cp.native_id}; "
+                    "re-create refused (never re-create a key)"
+                ),
+            )
+        if cp is None:
+            # durable record BEFORE the platform write; no native_id here --
+            # an unconfirmed id is never persisted as a confirmed create
+            alloc = self._wplan.plan.allocation(op.logical_id)
+            if alloc.disposition is pr.Disposition.REUSE and alloc.native_id:
+                self._store.adopt(key, native_id=alloc.native_id, name=spec.name, slug=spec.slug)
+            else:
+                self._store.record_create(key, name=spec.name, slug=spec.slug)
+        if op.action == "create":
+            op_token = f"{op.op_id}-w5c-{uuid.uuid4().hex[:8]}"
+            self._store.begin_op(key, op_token, action="create")
+            self._opened[op.op_id] = op_token
+        result = self._inner.run(op)
+        if op.action == "create":
+            token = self._opened.get(op.op_id)
+            if token and result.outcome is pr.Outcome.OK and result.native_id and result.readback:
+                self._store.complete_op(token, native_id=result.native_id)
+            # any other outcome: the operation stays open -- PLANNED with
+            # pending reconciliation, reconciled before any retry
+        elif result.outcome is pr.Outcome.OK and result.readback:
+            cp = self._store.read(key)
+            if cp is not None and cp.state == ck.STATE_CREATED:
+                self._store.set_state(key, ck.STATE_CONFIGURED, cp.revision)
+        return result
 
 
 def _persist(
@@ -515,14 +620,21 @@ def _persist(
     report: pr.ExecutionReport,
     restrictions: List[str],
 ) -> List[str]:
-    """Persist confirmed identities immediately; never re-create a key."""
+    """Checkpoint identities durably; never re-create a key; never confirm an
+    unverified id.
+
+    A confirmed create lands with its native_id and a reused object is adopted
+    (PROVENANCE_REUSED). An uncertain/unreconciled row is persisted PLANNED
+    with a pending operation -- never with a native_id as a confirmed create
+    -- so resume reconciles that identity before any reuse decision.
+    """
     saved: List[str] = []
     for row in report.rows:
-        spec = next(s for s in wplan.plan.specs if s.logical_id == row.logical_id)
+        spec = _spec_for(wplan, row.logical_id)
         key = ck.CheckpointKey(
             wplan.location, spec.kind.value, spec.parent_logical_id, spec.logical_id
         )
-        plan_mode, _ = store.plan_create(key)
+        plan_mode, cp = store.plan_create(key)
         if plan_mode == "blocked-pending":
             restrictions.append(
                 f"{spec.logical_id}: checkpoint has an unresolved operation; "
@@ -532,8 +644,24 @@ def _persist(
         if plan_mode == "reuse":
             saved.append(key.token())  # already checkpointed: resume, no duplicate
             continue
-        if row.status == "reused" and row.native_id:
+        disposition = wplan.plan.allocation(row.logical_id).disposition
+        if disposition is pr.Disposition.REUSE and row.native_id:
             store.adopt(key, native_id=row.native_id, name=spec.name, slug=spec.slug)
+            saved.append(key.token())
+        elif row.status == "uncertain_unreconciled":
+            # F1 invariant: an uncertain identity is NEVER persisted as a
+            # confirmed create. PLANNED + a pending operation: the reconcile
+            # path runs before any reuse (no verified read route exists, so
+            # the honest state is blocked/needs-reconcile, never silent REUSE).
+            store.record_create(key, name=spec.name, slug=spec.slug)
+            store.begin_op(
+                key, f"w5c-reconcile-{uuid.uuid4().hex[:8]}", action="reconcile-identity"
+            )
+            restrictions.append(
+                f"{spec.logical_id}: identity uncertain and unreconciled -- held "
+                "PLANNED with pending reconciliation (never a confirmed create on "
+                "an unverified id, never a silent REUSE)"
+            )
             saved.append(key.token())
         elif row.native_id:
             cp = store.record_create(key, name=spec.name, slug=spec.slug, native_id=row.native_id)
@@ -890,7 +1018,8 @@ def self_check() -> None:
         wplan5 = plan_website(doc, location="loc-1", site_native_id="site-77")
         delivery6 = execute_website(wplan5, pr.FakeExecutor(), store=store)
         assert delivery6.checkpointed, "confirmed identities must persist"
-        existing, hints = checkpointed_existing(store, "loc-1", doc)
+        existing, hints, needs12 = checkpointed_existing(store, "loc-1", doc)
+        assert needs12 == [], needs12
         assert hints.get(SITE_LOGICAL_ID) == "site-77"
         assert hints.get("home") == "native-home"
         wplan6 = plan_website(doc, location="loc-1", site_native_id=hints.get(SITE_LOGICAL_ID), existing=existing)
@@ -903,6 +1032,7 @@ def self_check() -> None:
         cp = store.read(ck.CheckpointKey("loc-1", "page", SITE_LOGICAL_ID, "home"))
         assert cp is not None and cp.native_id == "native-home"
         assert cp.provenance in (ck.PROVENANCE_REUSED, ck.PROVENANCE_NEW_SCRATCH)
+        assert cp.state == ck.STATE_CONFIGURED
     finally:
         for suffix in ("", ".tmp"):
             if os.path.exists(tmp + suffix):
@@ -929,6 +1059,116 @@ def self_check() -> None:
     )
     found2 = validate_website_document(poisoned)
     assert any("iframe_src" in e for e in found2), found2
+
+    # 15. NEGATIVE CONTROL (F1): an uncertain row must NOT yield a REUSE plan
+    #     entry against an unverified id. The unverified id is never persisted
+    #     as a confirmed create; resume surfaces the key as needs-reconcile and
+    #     blocks (never re-create, never silent REUSE) until the attached
+    #     operation is reconciled. Pre-fix this FAILS: _persist wrote
+    #     record_create(native_id=...) for the uncertain row and resume reused
+    #     the unverified id silently.
+    tmp15 = tempfile.mktemp(prefix="lane-W5C-U2-ctrl-a-", suffix=".json")
+    try:
+        store15 = ck.CheckpointStore(tmp15)
+        doc15 = nc.PageSet(
+            set_id="elevation-site",
+            kind=nc.SET_KIND_WEBSITE,
+            pages=[
+                _page("home", "Home", "home", "/", approved_content={"html": "<h1>hi</h1>"}),
+                _page("about", "About", "about", "/about"),
+            ],
+        )
+        wplan15 = plan_website(doc15, location="loc-1", site_native_id="site-77")
+        uncertain = pr.FakeExecutor(
+            script={
+                ("create", "home"): [
+                    pr.OpResult(pr.Outcome.UNCERTAIN, native_id="unverified-home", readback={})
+                ]
+            }
+        )
+        execute_website(wplan15, uncertain, store=store15)
+        home_key = ck.CheckpointKey("loc-1", "page", SITE_LOGICAL_ID, "home")
+        cp15 = store15.read(home_key)
+        assert cp15 is None or cp15.native_id is None, (
+            f"uncertain row persisted as confirmed create with native_id {cp15.native_id!r}"
+        )
+        assert cp15 is None or cp15.state == ck.STATE_PLANNED, cp15.state
+        existing15, hints15, needs15 = checkpointed_existing(store15, "loc-1", doc15)
+        assert hints15.get("home") is None, hints15.get("home")
+        plan15 = plan_website(doc15, location="loc-1", site_native_id="site-77", existing=existing15)
+        alloc15 = plan15.plan.allocation("home")
+        assert alloc15.disposition is not pr.Disposition.REUSE, alloc15
+        assert alloc15.native_id != "unverified-home", alloc15
+        assert home_key.token() in needs15, needs15
+        fake15 = pr.FakeExecutor()
+        d15 = execute_website(plan15, fake15, store=store15)
+        assert not [c for c in fake15.calls if c.action == "create" and c.logical_id == "home"]
+        assert any("unresolved operation" in r for r in d15.restrictions), d15.restrictions
+        open15 = [o for o in store15.ops.values() if o["key"] == home_key.token() and o["status"] != "done"]
+        assert len(open15) == 1, open15
+        store15.reconcile_op(open15[0]["op_id"], outcome="confirmed", native_id="unverified-home")
+        existing15b, hints15b, needs15b = checkpointed_existing(store15, "loc-1", doc15)
+        assert hints15b.get("home") == "unverified-home", hints15b
+        assert home_key.token() not in needs15b, needs15b
+        plan15b = plan_website(doc15, location="loc-1", site_native_id="site-77", existing=existing15b)
+        assert plan15b.plan.allocation("home").disposition is pr.Disposition.REUSE
+    finally:
+        for suffix in ("", ".tmp"):
+            if os.path.exists(tmp15 + suffix):
+                os.remove(tmp15 + suffix)
+
+    # 16. NEGATIVE CONTROL (F2): a simulated kill after a platform create but
+    #     before persistence must NOT produce a second create on resume. The
+    #     durable PLANNED record + in-flight operation precede the write, so
+    #     resume blocks on it. Pre-fix this FAILS: nothing durable existed at
+    #     the kill and resume re-created the page (1 + 1 platform creates).
+    tmp16 = tempfile.mktemp(prefix="lane-W5C-U2-ctrl-b-", suffix=".json")
+    try:
+        store16 = ck.CheckpointStore(tmp16)
+        doc16 = nc.PageSet(
+            set_id="kill-site", kind=nc.SET_KIND_WEBSITE,
+            pages=[_page("only", "Only", "only", "/only")],
+        )
+        wplan16 = plan_website(doc16, location="loc-1", site_native_id="site-9")
+
+        class _KillingExecutor:
+            """The platform write LANDS, then the process dies before anything
+            else runs (the pre-fix persistence window)."""
+
+            def __init__(self) -> None:
+                self.create_calls = 0
+
+            def run(self, op: pr.PrimitiveOp) -> pr.OpResult:
+                if op.action == "create":
+                    self.create_calls += 1
+                    raise RuntimeError("simulated kill after platform create, before persistence")
+                return pr.OpResult(pr.Outcome.OK, readback={})
+
+        killer = _KillingExecutor()
+        killed = False
+        try:
+            execute_website(wplan16, killer, store=store16)
+        except RuntimeError:
+            killed = True
+        assert killed and killer.create_calls == 1, (killed, killer.create_calls)
+        existing16, _hints16, needs16 = checkpointed_existing(store16, "loc-1", doc16)
+        plan16 = plan_website(doc16, location="loc-1", site_native_id="site-9", existing=existing16)
+        fake16 = pr.FakeExecutor()
+        d16 = execute_website(plan16, fake16, store=store16)
+        run16_creates = [c for c in fake16.calls if c.action == "create"]
+        assert killer.create_calls + len(run16_creates) == 1, (
+            f"resume duplicated the create: {killer.create_calls} + {len(run16_creates)}"
+        )
+        assert d16.contract_violations == [], d16.contract_violations
+        key16 = ck.CheckpointKey("loc-1", "page", SITE_LOGICAL_ID, "only")
+        cp16 = store16.read(key16)
+        assert cp16 is not None and cp16.native_id is None and cp16.state == ck.STATE_PLANNED, cp16
+        assert key16.token() in needs16, needs16
+        assert any("unresolved operation" in r for r in d16.restrictions), d16.restrictions
+    finally:
+        for suffix in ("", ".tmp"):
+            if os.path.exists(tmp16 + suffix):
+                os.remove(tmp16 + suffix)
 
 
 if __name__ == "__main__":
