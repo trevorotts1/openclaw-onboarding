@@ -67,6 +67,18 @@ PINNED_FILES=(
   "scripts/delegation_receipt.py"
   # Skill 74 evidence writer + allow-list check used by the bypass scan below.
   "scripts/kie74_receipt.py"
+  # The launch dispatch chain: these decide which pages, routes and prompts are
+  # built and dispatched, so a swapped copy changes behaviour without touching
+  # any prover above.
+  "scripts/dispatch_launch.py"
+  "scripts/compile_launch_route.py"
+  "scripts/page_set.py"
+  "scripts/page_swarm.py"
+  "scripts/validate_launch_plan.py"
+  "scripts/agnes_dispatch.py"
+  "scripts/agnes_gates.py"
+  "scripts/agnes_orchestrator.py"
+  "scripts/agnes_response.py"
 )
 
 # Forbidden patterns in a run's working files — a hand-rolled GHL/sender bypass.
