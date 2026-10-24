@@ -1,0 +1,337 @@
+{
+  "acceptance": {
+    "checker": null,
+    "checker_distinct_from_author": null,
+    "verdict": "PENDING_INDEPENDENT_CHECK"
+  },
+  "author": "S75-T32 builder (deepseek-chain)",
+  "base": {
+    "commit": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+    "ref": "origin/main",
+    "repository": "trevorotts1/openclaw-onboarding"
+  },
+  "candidate": {
+    "branch": "s75/T32",
+    "checkout_commit": "81c6d51b9ac1d12f5167f15d21bddee5a43ca42a",
+    "commit": "81c6d51b9ac1d12f5167f15d21bddee5a43ca42a",
+    "head_verified_at_execution": true,
+    "repository": "trevorotts1/openclaw-onboarding",
+    "worktree_clean_excluding_receipts": true
+  },
+  "checks": {
+    "controls_green": 0,
+    "controls_red": 10,
+    "facets_green": 10,
+    "facets_red": 0
+  },
+  "contracts": {
+    "adapter_module": "scripts/core/package_flavor_adapter.py",
+    "core_digest": "56796e0c43142431cadb6d285b95025d93411e2a42262f99f043e306499f5e50",
+    "core_module": "scripts/core/story_first_contracts.py",
+    "core_schema_version": "s75.contracts.v1",
+    "file_digests": {
+      "scripts/core/contracts/flavor-999.json": "55dd3c66dfe434fc6663f7f4191333e89a1ef179ac14bd5d4bdba45638d1ef7b",
+      "scripts/core/package_flavor_adapter.py": "f68054e96d654417ef7378f83f9ca59f72ac6ef24952941db5c66498754364e3",
+      "scripts/core/story_first_contracts.py": "56796e0c43142431cadb6d285b95025d93411e2a42262f99f043e306499f5e50"
+    },
+    "seam": "package_flavor_adapter.resolve",
+    "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75-t103/t32wt/75-drama-song-ad-factory",
+    "stage_count": 11
+  },
+  "coverage": {
+    "covered": {
+      "approval_ordering_and_binding": {
+        "clause": "preference is not artifact approval; full-script approval before music; storyboard approval before video; bindings must match current digests",
+        "rows": [
+          "S75-A12",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "complete_fixture_validates": {
+        "clause": "schema validates a complete fixture (identity, world, cast, scene)",
+        "rows": [
+          "S75-A03",
+          "S75-A05",
+          "S75-A08",
+          "S75-A09"
+        ]
+      },
+      "identity_survives_world_revision": {
+        "clause": "identity record has no world binding, so a setting change cannot rewrite it (structural only)",
+        "rows": [
+          "S75-A05",
+          "S75-A08",
+          "S75-A32"
+        ]
+      },
+      "invalid_scene_reference_refused": {
+        "clause": "valid cast/location references; stale world revision refused",
+        "rows": [
+          "S75-A09",
+          "S75-A32"
+        ]
+      },
+      "missing_cast_refused": {
+        "clause": "absent cast fields fail closed; missing cast prevents script",
+        "rows": [
+          "S75-A07",
+          "S75-A09",
+          "S75-A32"
+        ]
+      },
+      "missing_foundation_refused": {
+        "clause": "missing foundations cannot bypass the gate; missing world/story plan prevents script",
+        "rows": [
+          "S75-A09",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "no_future_artifact_deadlock": {
+        "clause": "runtime graph has no future-artifact deadlock",
+        "rows": [
+          "S75-A03",
+          "S75-A32"
+        ]
+      },
+      "one_line_scene_refused": {
+        "clause": "one-line placeholders and beat-only records fail new generation",
+        "rows": [
+          "S75-A09",
+          "S75-A11",
+          "S75-A32"
+        ]
+      },
+      "package_seam_and_differences": {
+        "clause": "adapters preserve package differences; each flavor resolves through one seam",
+        "rows": [
+          "S75-A03",
+          "S75-A32"
+        ]
+      },
+      "undefined_speaker_refused": {
+        "clause": "undefined speakers fail closed",
+        "rows": [
+          "S75-A07",
+          "S75-A32"
+        ]
+      }
+    },
+    "not_covered": {
+      "18 style end-to-end paths": "the 18-style catalog is not defined in the shared contract modules",
+      "Notion offline snapshot / new-existing-mixed / retry / conflict / migration": "Notion sync is not modelled in story_first_contracts or package_flavor_adapter",
+      "affected-only invalidation of plan/script/visual outputs": "the shared contracts declare stage dependencies and approval bindings but implement no output invalidation",
+      "elected full-script-before-music via user election": "ordering is enforced; the election record itself is outside these modules",
+      "exact original description bytes": "byte-preservation of intake text is not stated in the shared contract modules",
+      "genuine writing dispatch": "no dispatch call exists in the shared contract modules; asserting it here would invent a criterion",
+      "old paid output / raw answer / approval preservation": "paid-asset compatibility is not modelled in the shared contract modules"
+    },
+    "note": "a row is touched only for the named clause; no row is claimed fully covered",
+    "rows_touched": [
+      "S75-A03",
+      "S75-A05",
+      "S75-A07",
+      "S75-A08",
+      "S75-A09",
+      "S75-A11",
+      "S75-A12",
+      "S75-A13",
+      "S75-A32"
+    ]
+  },
+  "dependencies": {
+    "model_calls": "none",
+    "network": "none",
+    "python": "3.14.7",
+    "spend": "none"
+  },
+  "executed": [
+    {
+      "checks": 5,
+      "facet": "package_seam_and_differences",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "N999 layout collapsed onto the ONB layout, erasing a declared package difference"
+      },
+      "ok": true,
+      "reason": "seam=package_flavor_adapter.resolve"
+    },
+    {
+      "checks": 5,
+      "facet": "complete_fixture_validates",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a required identity field (occupation) removed"
+      },
+      "ok": true,
+      "reason": "{}"
+    },
+    {
+      "checks": 2,
+      "facet": "missing_cast_refused",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a valid non-empty cast supplied"
+      },
+      "ok": true,
+      "reason": "ORDER"
+    },
+    {
+      "checks": 1,
+      "facet": "undefined_speaker_refused",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "an undeclared performer removed from the scene"
+      },
+      "ok": true,
+      "reason": "[{\"field\": \"cast_ids\", \"issue\": \"undefined speaker\", \"ref\": {\"scene_id\": \"scene_workshop_001\", \"character_id\": \"char_unlisted_999\"}}, {\"field\": \"performance_order\", \"issue\": \"undefined performer\", \"ref\": {\"scene_id\": \"scene_workshop_001\", \"character_id\": \"char_unlisted_999\"}}]"
+    },
+    {
+      "checks": 1,
+      "facet": "invalid_scene_reference_refused",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a valid location and current world revision supplied"
+      },
+      "ok": true,
+      "reason": "[{\"field\": \"location_id\", \"issue\": \"undefined location\", \"ref\": \"loc_does_not_exist\"}, {\"field\": \"world_revision\", \"issue\": \"stale world revision\", \"ref\": {\"scene\": 2, \"world\": 1}}]"
+    },
+    {
+      "checks": 2,
+      "facet": "missing_foundation_refused",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "the missing foundation artifact supplied"
+      },
+      "ok": true,
+      "reason": "ORDER"
+    },
+    {
+      "checks": 3,
+      "facet": "one_line_scene_refused",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a rich scene supplied in place of the one-line record"
+      },
+      "ok": true,
+      "reason": "[{\"field\": \"dramatic_purpose\", \"issue\": \"not a specific dramatic job\"}, {\"field\": \"visible_action\", \"issue\": \"not a filmable action\"}, {\"field\": \"consequential_choice\", \"issue\": \"no consequential choice\"}, {\"field\": \"spoken_dialogue\", \"issue\": \"placeholder or one-word line\", \"ref\": \"l1\"}]"
+    },
+    {
+      "checks": 3,
+      "facet": "approval_ordering_and_binding",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a bound, digest-matched APPROVED package approval supplied"
+      },
+      "ok": true,
+      "reason": "ORDER"
+    },
+    {
+      "checks": 2,
+      "facet": "no_future_artifact_deadlock",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a future-artifact requirement injected into a synthetic stage graph"
+      },
+      "ok": true,
+      "reason": "[]"
+    },
+    {
+      "checks": 3,
+      "facet": "identity_survives_world_revision",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a required identity field removed between revisions"
+      },
+      "ok": true,
+      "reason": "[]"
+    }
+  ],
+  "execution": {
+    "verdict": "PASS"
+  },
+  "flavor": "onboarding",
+  "generated_at": "2026-10-24T22:11:36Z",
+  "harness": {
+    "branch": "s75/T32",
+    "commit": "81c6d51b9ac1d12f5167f15d21bddee5a43ca42a",
+    "repository": "trevorotts1/openclaw-onboarding"
+  },
+  "literal_binding": {
+    "contract_files": [
+      "scripts/core/story_first_contracts.py",
+      "scripts/core/package_flavor_adapter.py",
+      "scripts/core/contracts/flavor-999.json"
+    ],
+    "contract_module": "scripts/core/story_first_contracts.py",
+    "seam": "package_flavor_adapter.resolve"
+  },
+  "not_executed": [
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "18 style end-to-end paths",
+      "reason": "not stated by the shared contracts: the 18-style catalog is not defined in the shared contract modules"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "Notion offline snapshot / new-existing-mixed / retry / conflict / migration",
+      "reason": "not stated by the shared contracts: Notion sync is not modelled in story_first_contracts or package_flavor_adapter"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "affected-only invalidation of plan/script/visual outputs",
+      "reason": "not stated by the shared contracts: the shared contracts declare stage dependencies and approval bindings but implement no output invalidation"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "elected full-script-before-music via user election",
+      "reason": "not stated by the shared contracts: ordering is enforced; the election record itself is outside these modules"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "exact original description bytes",
+      "reason": "not stated by the shared contracts: byte-preservation of intake text is not stated in the shared contract modules"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "genuine writing dispatch",
+      "reason": "not stated by the shared contracts: no dispatch call exists in the shared contract modules; asserting it here would invent a criterion"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "old paid output / raw answer / approval preservation",
+      "reason": "not stated by the shared contracts: paid-asset compatibility is not modelled in the shared contract modules"
+    }
+  ],
+  "receipt_version": "s75.cross_flavor.receipt.v1",
+  "repository": "trevorotts1/openclaw-onboarding",
+  "unaffected_proof": {
+    "cross_flavor_blocking": false,
+    "method": "one subprocess and one receipt per flavor; each flavor loads only its own scripts/core, so neither flavor's absence can block or contaminate the other",
+    "note": "S75-A36 and S75-A37 require each release to proceed without the other flavor's fixtures",
+    "this_flavor_executed": [
+      "package_seam_and_differences",
+      "complete_fixture_validates",
+      "missing_cast_refused",
+      "undefined_speaker_refused",
+      "invalid_scene_reference_refused",
+      "missing_foundation_refused",
+      "one_line_scene_refused",
+      "approval_ordering_and_binding",
+      "no_future_artifact_deadlock",
+      "identity_survives_world_revision"
+    ]
+  },
+  "unit_id": "S75-T32"
+}

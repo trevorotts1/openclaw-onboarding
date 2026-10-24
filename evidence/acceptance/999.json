@@ -1,0 +1,261 @@
+{
+  "acceptance": {
+    "checker": null,
+    "checker_distinct_from_author": null,
+    "verdict": "UNAVAILABLE"
+  },
+  "author": "S75-T32 builder (deepseek-chain)",
+  "base": {
+    "commit": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+    "ref": "origin/main",
+    "repository": "trevorotts1/openclaw-onboarding"
+  },
+  "candidate": {
+    "branch": "unit/W77S-999-vendor",
+    "checkout_commit": "d056770b4a3e62e6fa52e5c300a999bf6dd0e69f",
+    "commit": null,
+    "head_verified_at_execution": false,
+    "repository": "trevorotts1/999-setup",
+    "worktree_clean_excluding_receipts": true
+  },
+  "checks": {
+    "controls_green": 0,
+    "controls_red": 0,
+    "facets_green": 0,
+    "facets_red": 0
+  },
+  "contracts": {
+    "adapter_module": "scripts/core/package_flavor_adapter.py",
+    "core_digest": null,
+    "core_module": "scripts/core/story_first_contracts.py",
+    "core_schema_version": null,
+    "file_digests": {},
+    "seam": null,
+    "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+    "stage_count": null
+  },
+  "coverage": {
+    "covered": {
+      "approval_ordering_and_binding": {
+        "clause": "preference is not artifact approval; full-script approval before music; storyboard approval before video; bindings must match current digests",
+        "rows": [
+          "S75-A12",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "complete_fixture_validates": {
+        "clause": "schema validates a complete fixture (identity, world, cast, scene)",
+        "rows": [
+          "S75-A03",
+          "S75-A05",
+          "S75-A08",
+          "S75-A09"
+        ]
+      },
+      "identity_survives_world_revision": {
+        "clause": "identity record has no world binding, so a setting change cannot rewrite it (structural only)",
+        "rows": [
+          "S75-A05",
+          "S75-A08",
+          "S75-A32"
+        ]
+      },
+      "invalid_scene_reference_refused": {
+        "clause": "valid cast/location references; stale world revision refused",
+        "rows": [
+          "S75-A09",
+          "S75-A32"
+        ]
+      },
+      "missing_cast_refused": {
+        "clause": "absent cast fields fail closed; missing cast prevents script",
+        "rows": [
+          "S75-A07",
+          "S75-A09",
+          "S75-A32"
+        ]
+      },
+      "missing_foundation_refused": {
+        "clause": "missing foundations cannot bypass the gate; missing world/story plan prevents script",
+        "rows": [
+          "S75-A09",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "no_future_artifact_deadlock": {
+        "clause": "runtime graph has no future-artifact deadlock",
+        "rows": [
+          "S75-A03",
+          "S75-A32"
+        ]
+      },
+      "one_line_scene_refused": {
+        "clause": "one-line placeholders and beat-only records fail new generation",
+        "rows": [
+          "S75-A09",
+          "S75-A11",
+          "S75-A32"
+        ]
+      },
+      "package_seam_and_differences": {
+        "clause": "adapters preserve package differences; each flavor resolves through one seam",
+        "rows": [
+          "S75-A03",
+          "S75-A32"
+        ]
+      },
+      "undefined_speaker_refused": {
+        "clause": "undefined speakers fail closed",
+        "rows": [
+          "S75-A07",
+          "S75-A32"
+        ]
+      }
+    },
+    "not_covered": {
+      "18 style end-to-end paths": "the 18-style catalog is not defined in the shared contract modules",
+      "Notion offline snapshot / new-existing-mixed / retry / conflict / migration": "Notion sync is not modelled in story_first_contracts or package_flavor_adapter",
+      "affected-only invalidation of plan/script/visual outputs": "the shared contracts declare stage dependencies and approval bindings but implement no output invalidation",
+      "elected full-script-before-music via user election": "ordering is enforced; the election record itself is outside these modules",
+      "exact original description bytes": "byte-preservation of intake text is not stated in the shared contract modules",
+      "genuine writing dispatch": "no dispatch call exists in the shared contract modules; asserting it here would invent a criterion",
+      "old paid output / raw answer / approval preservation": "paid-asset compatibility is not modelled in the shared contract modules"
+    },
+    "note": "a row is touched only for the named clause; no row is claimed fully covered",
+    "rows_touched": [
+      "S75-A03",
+      "S75-A05",
+      "S75-A07",
+      "S75-A08",
+      "S75-A09",
+      "S75-A11",
+      "S75-A12",
+      "S75-A13",
+      "S75-A32"
+    ]
+  },
+  "dependencies": {
+    "model_calls": "none",
+    "network": "none",
+    "python": null,
+    "spend": "none"
+  },
+  "executed": [],
+  "execution": {
+    "verdict": "UNAVAILABLE"
+  },
+  "flavor": "999",
+  "generated_at": "2026-10-24T22:11:36Z",
+  "harness": {
+    "branch": "s75/T32",
+    "commit": "81c6d51b9ac1d12f5167f15d21bddee5a43ca42a",
+    "repository": "trevorotts1/openclaw-onboarding"
+  },
+  "literal_binding": {
+    "contract_files": [
+      "scripts/core/story_first_contracts.py",
+      "scripts/core/package_flavor_adapter.py",
+      "scripts/core/contracts/flavor-999.json"
+    ],
+    "contract_module": "scripts/core/story_first_contracts.py",
+    "seam": "package_flavor_adapter.resolve"
+  },
+  "not_executed": [
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "package_seam_and_differences",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "complete_fixture_validates",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "missing_cast_refused",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "undefined_speaker_refused",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "invalid_scene_reference_refused",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "missing_foundation_refused",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "one_line_scene_refused",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "approval_ordering_and_binding",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "no_future_artifact_deadlock",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "identity_survives_world_revision",
+      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "18 style end-to-end paths",
+      "reason": "not stated by the shared contracts: the 18-style catalog is not defined in the shared contract modules"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "Notion offline snapshot / new-existing-mixed / retry / conflict / migration",
+      "reason": "not stated by the shared contracts: Notion sync is not modelled in story_first_contracts or package_flavor_adapter"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "affected-only invalidation of plan/script/visual outputs",
+      "reason": "not stated by the shared contracts: the shared contracts declare stage dependencies and approval bindings but implement no output invalidation"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "elected full-script-before-music via user election",
+      "reason": "not stated by the shared contracts: ordering is enforced; the election record itself is outside these modules"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "exact original description bytes",
+      "reason": "not stated by the shared contracts: byte-preservation of intake text is not stated in the shared contract modules"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "genuine writing dispatch",
+      "reason": "not stated by the shared contracts: no dispatch call exists in the shared contract modules; asserting it here would invent a criterion"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "old paid output / raw answer / approval preservation",
+      "reason": "not stated by the shared contracts: paid-asset compatibility is not modelled in the shared contract modules"
+    }
+  ],
+  "receipt_version": "s75.cross_flavor.receipt.v1",
+  "repository": "trevorotts1/999-setup",
+  "unaffected_proof": {
+    "cross_flavor_blocking": false,
+    "method": "one subprocess and one receipt per flavor; each flavor loads only its own scripts/core, so neither flavor's absence can block or contaminate the other",
+    "note": "S75-A36 and S75-A37 require each release to proceed without the other flavor's fixtures",
+    "this_flavor_executed": []
+  },
+  "unit_id": "S75-T32"
+}
