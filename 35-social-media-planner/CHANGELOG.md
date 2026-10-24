@@ -1,5 +1,37 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.8.1] - 2026-10-24 - T-22 repair: one truth path for the status surface and the guard
+
+- `status_surface` now refuses a personal-profile or personal-account record on the
+  `unattended` route, instead of rendering `claim: published-by-system`,
+  `published_by_system: true` and `receipt: null` for it. That was the exact defect
+  T-22 exists to prevent: the honesty rule was enforced on the assisted branch and
+  on the guard, but not on the read path's unattended branch.
+- The read path and the guard are now ONE code path. `status_surface` returns what
+  `_truth_of()` returns and `assert_truthful_publication` only checks that it does
+  not raise, so the two cannot drift apart again; the personal-profile/unattended
+  rule is written once in `_reject_personal_on_unattended` and called by both. The
+  guard no longer silently relabels a record the status surface refuses, and the
+  status surface no longer silently relabels `published_by_system: true` on an
+  assisted record.
+- `assert_truthful_publication` now also refuses records outside the truthful
+  status vocabulary or with no declared route (previously the guard passed what the
+  status surface refused).
+- Receipt binding is no longer optional: `_valid_receipt` refuses a receipt that
+  names no placement or that is offered for a record naming none, so a receipt can
+  never stand in for a placement it is not about.
+- `record_operator_confirmation` refuses anything it could not honestly attest: no
+  `placement_id`, a package that is not a prepared placement, a `confirmed_at` that
+  is not an ISO-8601 timestamp, and a package that already claims publication. The
+  minted record is checked by `_truth_of()` before it is returned, so confirmation
+  can never produce a record the guard or the status surface would refuse.
+- Added `tests/social-planner/test_t22_status_guard_matrix.py`: 480-row matrix of
+  route x account_type x personal_profile x status x receipt proving the read path
+  and the guard agree in both directions, a known-good page-publication control that
+  passes both, the 36/36 unattended personal-profile refusal triples, and the
+  operator-confirmation hardening.
+- skill-version v3.8.0 -> v3.8.1.
+
 ## [3.8.0] - 2026-10-24 - T-22 honest personal-profile capability and assisted contract
 
 - Added `config/profile-capabilities.json`: the single machine-readable declaration of what each channel and account type can do `unattended`, what needs one `operator_action`, and what is `unavailable`. Personal profiles are always assisted or unavailable, never unattended; the declaration validator fails closed if a personal profile lists any unattended action.

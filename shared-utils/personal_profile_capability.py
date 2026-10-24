@@ -22,6 +22,11 @@ Assisted contract:
   5. assert_truthful_publication() raises UntruthfulPublication when a record
      claims a system publication without an operator receipt.
 
+4 and 5 are ONE code path: both delegate to _truth_of(), so the read path and
+the guard cannot disagree about any record. The personal-profile/ unattended
+rule is likewise written once (_reject_personal_on_unattended) and called by
+both.
+
 STDLIB ONLY. No network.
 """
 
@@ -409,6 +414,11 @@ def _now_utc() -> str:
 
 
 def _valid_receipt(receipt: Any, placement_id: Optional[str] = None) -> bool:
+    """A receipt is proof only when it binds to a real placement.
+
+    The binding is NOT optional: a receipt naming no placement, or offered for a
+    record that names none, proves nothing and is refused.
+    """
     if not isinstance(receipt, dict):
         return False
     caps = load_capabilities()
@@ -416,9 +426,18 @@ def _valid_receipt(receipt: Any, placement_id: Optional[str] = None) -> bool:
         value = receipt.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
             return False
-    if placement_id is not None and receipt.get("placement_id") != placement_id:
+    bound = placement_id if isinstance(placement_id, str) else None
+    if not bound or not bound.strip():
         return False
-    return True
+    return receipt.get("placement_id") == bound
+
+
+def _parse_timestamp(value: Any):
+    """Return the parsed ISO-8601 instant, or None when it is not one."""
+    try:
+        return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
 
 
 def record_operator_confirmation(
@@ -429,7 +448,11 @@ def record_operator_confirmation(
 ) -> dict:
     """Record an explicit operator confirmation as the receipt.
 
-    Refuses without a named operator. Never produces 'published-by-system'.
+    Refuses without a named operator. Never produces 'published-by-system', and
+    never launders a publication claim into a receipt: a package that already
+    claims publication is refused, not relabelled. The result is checked against
+    _truth_of() before it is returned, so a confirmation can never mint a record
+    that the status surface or the guard would refuse.
     """
     if not isinstance(package, dict) or package.get("route") != "assisted":
         raise CapabilityError("only an assisted placement can receive an operator confirmation")
@@ -444,37 +467,83 @@ def record_operator_confirmation(
             "operator confirmation requires a named operator; the system cannot "
             "confirm on the operator's behalf"
         )
+    placement_id = package.get("placement_id")
+    if not isinstance(placement_id, str) or not placement_id.strip():
+        raise CapabilityError(
+            "an operator confirmation must bind to a placement_id; there is no "
+            "placement for this receipt to be proof of"
+        )
+    if package.get("published_by_system") is True or package.get("published") is True:
+        raise CapabilityError(
+            f"placement {placement_id} claims a publication; a claim cannot be "
+            "turned into an operator receipt"
+        )
+    _validate_placement(package.get("placement"))
+    stamp = confirmed_at or _now_utc()
+    if _parse_timestamp(stamp) is None:
+        raise CapabilityError(f"confirmed_at '{stamp}' is not an ISO-8601 timestamp")
     confirmed = copy.deepcopy(package)
     receipt = {
-        "placement_id": confirmed.get("placement_id"),
+        "placement_id": placement_id,
         "operator": name,
-        "confirmed_at": confirmed_at or _now_utc(),
+        "confirmed_at": stamp,
         "method": "operator-asserted",
         "evidence": evidence,
     }
     confirmed["receipt"] = receipt
     confirmed["status"] = "operator-confirmed"
     confirmed["published_by_system"] = False
+    _truth_of(confirmed)
     return confirmed
 
 
-def status_surface(record: dict, path: Optional[str] = None) -> dict:
-    """Render the truthful status. Assisted never reports published-by-system."""
+def _is_personal_record(record: dict) -> bool:
+    """The ONE predicate for "this record is a personal profile / personal account"."""
+    return bool(record.get("personal_profile")) or record.get("account_type") == "personal"
+
+
+def _reject_personal_on_unattended(record: dict) -> None:
+    """The ONE honesty rule the read path and the guard must both enforce.
+
+    PROFILE-CAPABILITIES.md lists "a personal profile record uses the unattended
+    route at all" as fail closed. This is its only implementation: status_surface
+    and assert_truthful_publication both call it, so the two cannot drift apart.
+    """
+    if record.get("route") == "unattended" and _is_personal_record(record):
+        raise UntruthfulPublication(
+            f"record {record.get('placement_id')} is a personal profile on the "
+            "unattended route; a personal profile can never use the unattended "
+            "publication route"
+        )
+
+
+def _truth_of(record: dict, path: Optional[str] = None) -> dict:
+    """The ONE truth evaluator behind both the status surface and the guard.
+
+    status_surface() returns what this returns; assert_truthful_publication()
+    only checks that it does not raise. One record therefore gets one verdict and
+    one exception, in both directions. Nothing here relabels a claim: an
+    untruthful or malformed record is refused.
+    """
     caps = load_capabilities(path)
     policy = caps["policy"]
     if not isinstance(record, dict):
-        raise CapabilityError("status_surface requires a placement record")
+        raise CapabilityError("a placement record is required")
     route = record.get("route")
     status = record.get("status")
     channel = record.get("channel")
     account_type = record.get("account_type")
-    label = None
-    if route == "assisted":
+    placement_id = record.get("placement_id")
+    receipt = record.get("receipt") if isinstance(record.get("receipt"), dict) else None
+
+    _reject_personal_on_unattended(record)
+
+    if route == "assisted" or _is_personal_record(record):
         forbidden = policy["assisted_forbidden_statuses"]
         if status in forbidden:
             raise UntruthfulPublication(
-                f"assisted placement {record.get('placement_id')} cannot report "
-                f"'{status}': {forbidden[status]}"
+                f"record {placement_id} claims '{status}' for an "
+                f"assisted/personal placement: {forbidden[status]}"
             )
         allowed = policy["assisted_statuses"]
         if status not in allowed:
@@ -482,40 +551,45 @@ def status_surface(record: dict, path: Optional[str] = None) -> dict:
                 f"assisted placement status '{status}' is not in the truthful "
                 f"vocabulary {sorted(allowed)}"
             )
-        receipt = record.get("receipt")
+        if record.get("published_by_system") is True or record.get("published") is True:
+            raise UntruthfulPublication(
+                f"record {placement_id} claims a system publication; an "
+                "assisted/personal placement requires an operator receipt and may "
+                "never be reported as published by the system"
+            )
         if status == "operator-confirmed":
-            if not _valid_receipt(receipt, record.get("placement_id")):
+            if not _valid_receipt(receipt, placement_id):
                 raise UntruthfulPublication(
-                    f"placement {record.get('placement_id')} reports operator-confirmed "
-                    "without a valid operator receipt"
+                    f"record {placement_id} is operator-confirmed without a "
+                    "valid operator receipt"
                 )
             claim = "operator-confirmed"
         else:
             if receipt is not None:
                 raise UntruthfulPublication(
-                    f"placement {record.get('placement_id')} is awaiting-operator and "
-                    "must not carry a receipt"
+                    f"record {placement_id} is awaiting-operator but carries "
+                    "a receipt"
                 )
             claim = "nothing-posted"
-        label = allowed[status]
         return {
-            "placement_id": record.get("placement_id"),
+            "placement_id": placement_id,
             "channel": channel,
             "account_type": account_type,
             "route": "assisted",
             "status": status,
-            "label": label,
+            "label": allowed[status],
             "claim": claim,
             "published_by_system": False,
             "receipt": receipt,
         }
+
     if route == "unattended":
         if status != "published-by-system":
             raise CapabilityError(
                 f"unattended placement status '{status}' is not supported"
             )
         return {
-            "placement_id": record.get("placement_id"),
+            "placement_id": placement_id,
             "channel": channel,
             "account_type": account_type,
             "route": "unattended",
@@ -523,71 +597,24 @@ def status_surface(record: dict, path: Optional[str] = None) -> dict:
             "label": "Published by the system through the declared unattended path.",
             "claim": "published-by-system",
             "published_by_system": True,
-            "receipt": record.get("receipt"),
+            "receipt": receipt,
         }
-    raise CapabilityError(f"unknown placement route '{route}'")
+
+    raise UntruthfulPublication(
+        f"record {placement_id} has no declared route; publication "
+        "cannot be claimed"
+    )
+
+
+def status_surface(record: dict, path: Optional[str] = None) -> dict:
+    """Render the truthful status. Assisted never reports published-by-system."""
+    return _truth_of(record, path)
 
 
 def assert_truthful_publication(record: dict, path: Optional[str] = None) -> bool:
     """Guard: a publication claim without an operator receipt is a failure."""
-    if not isinstance(record, dict):
-        raise CapabilityError("publication guard requires a record")
-    route = record.get("route")
-    status = record.get("status")
-    personal = bool(record.get("personal_profile")) or (
-        record.get("account_type") == "personal"
-    )
-    claims_publication = (
-        record.get("published_by_system") is True
-        or record.get("published") is True
-        or status in ("published-by-system", "published")
-    )
-    receipt = record.get("receipt") if isinstance(record.get("receipt"), dict) else None
-
-    if route == "assisted" or personal:
-        caps = load_capabilities(path)
-        forbidden = caps["policy"]["assisted_forbidden_statuses"]
-        if status in forbidden:
-            raise UntruthfulPublication(
-                f"record {record.get('placement_id')} claims '{status}' for an "
-                f"assisted/personal placement: {forbidden[status]}"
-            )
-        if record.get("published_by_system") is True or record.get("published") is True:
-            raise UntruthfulPublication(
-                f"record {record.get('placement_id')} claims a system publication; "
-                "an assisted/personal placement requires an operator receipt and may "
-                "never be reported as published by the system"
-            )
-        if claims_publication and not _valid_receipt(receipt, record.get("placement_id")):
-            raise UntruthfulPublication(
-                f"record {record.get('placement_id')} claims publication without an "
-                "operator receipt"
-            )
-        if status == "operator-confirmed" and not _valid_receipt(
-            receipt, record.get("placement_id")
-        ):
-            raise UntruthfulPublication(
-                f"record {record.get('placement_id')} is operator-confirmed without a "
-                "valid operator receipt"
-            )
-        if status == "awaiting-operator" and receipt is not None:
-            raise UntruthfulPublication(
-                f"record {record.get('placement_id')} is awaiting-operator but carries "
-                "a receipt"
-            )
-        return True
-
-    if route == "unattended":
-        if record.get("personal_profile") or record.get("account_type") == "personal":
-            raise UntruthfulPublication(
-                "a personal profile can never use the unattended publication route"
-            )
-        return True
-
-    raise UntruthfulPublication(
-        f"record {record.get('placement_id')} has no declared route; publication "
-        "cannot be claimed"
-    )
+    _truth_of(record, path)
+    return True
 
 
 def capability_summary(path: Optional[str] = None) -> dict:

@@ -63,6 +63,11 @@ source changes; never guess a capability into existence.
 4. **Record the receipt.** `record_operator_confirmation` requires a named operator
    and an explicit confirmation. It sets `operator-confirmed` and writes the receipt
    (`placement_id`, `operator`, `confirmed_at`, `method`, optional `evidence`).
+   It also refuses anything it could not honestly attest: a package with no
+   `placement_id`, a package that is not a prepared placement, a `confirmed_at` that
+   is not an ISO-8601 timestamp, and a package that already claims publication —
+   a claim is never laundered into a receipt. The record it returns must pass its
+   own truth check before it is handed back.
 5. **Never claim system publication.** `published-by-system` and bare `published` are
    forbidden statuses for an assisted placement.
 
@@ -103,7 +108,9 @@ with no Business Profile) refuses with `capability_unavailable` and `offer: null
 | unattended | `published-by-system` | published-by-system |
 
 Any assisted record that reports `published-by-system`, `published`, or
-`operator-confirmed` without a valid receipt raises `UntruthfulPublication`.
+`operator-confirmed` without a valid receipt raises `UntruthfulPublication`. A
+personal profile record on the `unattended` route is refused here too — the status
+surface never renders that claim.
 
 ## Truth guard
 
@@ -111,9 +118,17 @@ Any assisted record that reports `published-by-system`, `published`, or
 
 - an assisted or personal record claims `published-by-system`, `published`, or
   `published_by_system: true`;
-- `operator-confirmed` has no valid receipt;
+- `operator-confirmed` has no valid receipt bound to that placement;
 - `awaiting-operator` carries a receipt;
 - a personal profile record uses the unattended route at all.
+
+The status surface and the truth guard are ONE code path: both call
+`_truth_of()`, and the personal-profile/unattended rule lives in one place
+(`_reject_personal_on_unattended`). One record therefore gets one verdict and one
+exception, in both directions — the read path can never bless a claim the guard
+refuses, and the guard can never bless a claim the read path refuses. The matrix
+in `tests/social-planner/test_t22_status_guard_matrix.py` proves it over every
+combination of route, account type, personal flag, status and receipt.
 
 Command Center can consume `capability_summary()` (or read the JSON directly); both
 come from the same file, so the declaration has one source of truth.
