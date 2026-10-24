@@ -20,6 +20,8 @@ written.
 
 Run: python3 -m pytest -q scripts/core/choice_card/intake_card/test_opening_flow_default_s75x.py
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -93,8 +95,29 @@ def test_confirming_a_new_run_writes_the_method_record(tmp_path):
     qs, replies = _plan(purpose=1)
     run = tmp_path / "run"
     run.mkdir()
-    assert IC.main(["--step", "--run-dir", str(run), "--format", "text"]
-                   + _flatten(replies) + ["--reply", "yes"]) == 0
+    args = ["--step", "--run-dir", str(run), "--format", "session-json"]
+
+    def turn(extra=()):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rc = IC.main(args + list(extra))
+        state = json.loads(output.getvalue())
+        assert rc == 0, state
+        return state
+
+    method_path = run / "control" / "method.json"
+    state = turn()                                 # present the first exact question
+    assert state["question_id"] == "purpose"
+    assert not method_path.exists()
+    for reply in replies:
+        state = turn(["--question-id", state["question_id"],
+                      "--question-digest", state["question_digest"], "--reply", reply])
+        assert not method_path.exists()             # intake preferences are not approval
+    assert state["question_id"] == "recap" and state["done"] is False
+    assert state["answered_count"] == state["total_count"] == len(qs)
+    state = turn(["--question-id", state["question_id"],
+                  "--question-digest", state["question_digest"], "--reply", "yes"])
+    assert state["done"] is True
     with open(os.path.join(str(run), "control", "method.json"), encoding="utf-8") as fh:
         method = json.load(fh)
     assert method["purpose"] == "campaign"
