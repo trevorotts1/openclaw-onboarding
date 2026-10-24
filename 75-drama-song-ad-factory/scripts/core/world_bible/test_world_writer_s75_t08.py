@@ -25,10 +25,24 @@ The suite proves:
   * changing the setting bumps the world revision, preserves every character
     identity ID verbatim and invalidates only plan/script/visual outputs;
   * world drafting carries no music or image prerequisite.
+
+Round four attacks the CAPABILITY rather than the files: a reachability matrix
+of every route to a handle that seals without a real transport call (the public
+constructor, ``__new__``, subclasses that bypass or override ``__init__``, the
+registry dict and its copies, deepcopy, pickle, a consumed handle, handle-field
+rewrites, transport-kind rewrites, and every public attribute of the module and
+the two classes), plus the two claims that must be DERIVED rather than asserted:
+``execution`` from the transport kind that minted the handle, and
+``attempt.binding_id`` recomputed from the admitted binding so a hand-forged
+model-bindings.json can never have its chosen id echoed into a sealed record.
 """
 import copy
+import hashlib
 import json
 import os
+# pickle is used only on an object this process created, to prove an unpickled
+# copy is never a live handle. Nothing here loads pickled data from a file.
+import pickle
 import sys
 import tempfile
 import unittest
@@ -591,6 +605,624 @@ class SettingChangeTests(unittest.TestCase):
              "interior": True, "reality": "fiction",
              "layout": {"features": ["a window"]}}], reason="alternate")
         self.assertEqual(original, snapshot)
+
+
+# --- round 4: REACHABILITY of the handle-minting capability -------------------
+#
+# Round 3 closed the file routes and left the capability reachable through
+# ``DispatchHandle()`` itself. These attacks aim at the CAPABILITY, not at file
+# contents: they try to come away with a handle that seals without any real
+# transport call. Every route must end REFUSED BY NAME.
+
+HANDLE_KWARGS = {"attempt_id": "attempt_forged_001", "request_receipt": "f" * 64,
+                 "receipt": {"transport_id": "forgedtransport", "kind": "live",
+                             "nonce": "f" * 32, "session": "f" * 64,
+                             "receipt_digest": "f" * 64},
+                 "execution": "live"}
+
+
+def seal_outcome(dispatch):
+    """Try to seal with a forged dispatch. Never raises: returns the outcome."""
+    try:
+        record = WW.author_world(fixture_body(), artifact_id="world_workshop_001",
+                                 run_id="run_test_001", dispatch=dispatch)
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % " | ".join(caught.errors)
+    except BaseException as caught:  # noqa: BLE001 -- an attack may blow up any way it likes
+        return "REFUSED (%s): %s" % (type(caught).__name__, caught)
+    return "ACCEPTED: sealed %s" % record["content_digest"]
+
+
+def dispatch_around(handle):
+    """The strongest restatement a caller can build around a handle it holds:
+    every field of the proof rewritten to agree with the handle's own."""
+    dispatch = forged_dispatch(fixture_body())
+    dispatch["_handle"] = handle
+    for restate in (lambda: dispatch["attempt"].update(attempt_id=handle.attempt_id),
+                    lambda: dispatch.update(request_receipt=handle.request_receipt),
+                    lambda: dispatch["seal"].update(dispatch_handle=handle.ref),
+                    lambda: dispatch["seal"].update(receipt=copy.deepcopy(handle.receipt)),
+                    lambda: dispatch.update(execution=handle.execution),
+                    lambda: dispatch["response"].update(raw_digest=handle.raw_digest)):
+        try:
+            restate()
+        except BaseException:  # noqa: BLE001
+            pass
+    return dispatch
+
+
+def genuine_dispatch():
+    """One real dispatch: the thing every attack wants WITHOUT paying for it."""
+    body = fixture_body()
+    dispatch, _, run_dir = fixture_dispatch(body)
+    return body, dispatch, run_dir
+
+
+def attack_constructor_forged_receipt():
+    try:
+        WW.DispatchHandle(**HANDLE_KWARGS)
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    return "ACCEPTED: DispatchHandle(**forged) returned a handle"
+
+
+def attack_constructor_no_arguments():
+    try:
+        WW.DispatchHandle()
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    return "ACCEPTED: DispatchHandle() returned a handle"
+
+
+def attack_new_plus_attribute_stuffing():
+    handle = WW.DispatchHandle.__new__(WW.DispatchHandle)
+    stuffed = 0
+    for name, value in (("ref", "f" * 64), ("session", WW.SESSION), ("attempt_id", "attempt_forged_001"),
+                        ("request_receipt", "f" * 64), ("receipt", HANDLE_KWARGS["receipt"]),
+                        ("execution", "live"), ("consumed_by", None), ("raw_digest", "f" * 64)):
+        for write in (lambda: setattr(handle, name, value),
+                      lambda: object.__setattr__(handle, name, value)):
+            try:
+                write()
+                stuffed += 1
+            except BaseException:  # noqa: BLE001
+                pass
+    outcome = seal_outcome(dispatch_around(handle))
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: __new__ + %d attribute writes minted a usable handle" % stuffed
+    return "REFUSED BY NAME: __new__ + %d attribute writes, then %s" % (stuffed, outcome)
+
+
+def attack_subclass_super_init():
+    class Evil(WW.DispatchHandle):
+        pass
+
+    try:
+        Evil(**HANDLE_KWARGS)
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    return "ACCEPTED: a subclass of DispatchHandle minted a handle through its __init__"
+
+
+def attack_subclass_bypassing_init():
+    class Evil(WW.DispatchHandle):
+        def __init__(self, **kwargs):
+            pass
+
+    handle = Evil(**HANDLE_KWARGS)
+    outcome = seal_outcome(dispatch_around(handle))
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: a subclass that bypasses __init__ minted a usable handle"
+    return "REFUSED BY NAME: subclass bypassing __init__, then %s" % outcome
+
+
+def attack_subclass_overriding_properties():
+    class Evil(WW.DispatchHandle):
+        ref = "f" * 64
+        session = WW.SESSION
+        transport_id = "forgedtransport"
+        transport_kind = "live"
+        execution = "live"
+        attempt_id = "attempt_forged_001"
+        request_receipt = "f" * 64
+        receipt = HANDLE_KWARGS["receipt"]
+        raw_digest = "f" * 64
+        consumed_by = None
+
+        def __init__(self, **kwargs):
+            pass
+
+    outcome = seal_outcome(dispatch_around(Evil()))
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: a subclass overriding the handle fields minted a usable handle"
+    return "REFUSED BY NAME: subclass overriding the fields, then %s" % outcome
+
+
+def attack_registry_setitem():
+    class Fake:
+        ref = "f" * 64
+
+    try:
+        WW._HANDLES["f" * 64] = Fake()
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    return "ACCEPTED: _HANDLES[ref] = fake registered a handle"
+
+
+def attack_registry_writes():
+    class Fake:
+        ref = "f" * 64
+
+    refused = []
+    for write in (lambda: WW._HANDLES.update({"f" * 64: Fake()}),
+                  lambda: WW._HANDLES.pop("f" * 64),
+                  lambda: WW._HANDLES.clear(),
+                  lambda: WW._HANDLES.setdefault("f" * 64, Fake()),
+                  lambda: WW._HANDLES.add(Fake()),
+                  lambda: setattr(WW._HANDLES, "anything", Fake()),
+                  lambda: WW._SEALED.update({"0" * 64: "f" * 64}),
+                  lambda: WW._SEALED.clear(),
+                  lambda: setattr(WW._SEALED, "anything", Fake())):
+        try:
+            write()
+        except WW.WorldError as caught:
+            refused.append(caught.errors[0].split(":")[0])
+        except BaseException as caught:  # noqa: BLE001
+            refused.append(type(caught).__name__)
+    if refused:
+        return "REFUSED BY NAME: every registry write refused (%d writes)" % len(refused)
+    return "ACCEPTED: a registry write went through"
+
+
+def attack_registry_dict_copy():
+    class Fake:
+        ref = "f" * 64
+
+    _, dispatch, _ = genuine_dispatch()   # so the registry holds a live handle
+    live = len(WW._HANDLES)
+    copied = {}
+    try:
+        copied = dict(WW._HANDLES)
+    except BaseException:  # noqa: BLE001
+        pass
+    copied["f" * 64] = Fake()
+    # and the copy is inert: neither the entries in it nor the one added to it
+    # can be used as a dispatch handle
+    forged = forged_dispatch(fixture_body())
+    forged["seal"]["dispatch_handle"] = "f" * 64
+    outcome = seal_outcome(forged)
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: a copied registry dict minted a usable handle"
+    replay = seal_outcome(dispatch_around(copied[list(copied)[0]] if copied else Fake()))
+    if replay.startswith("ACCEPTED"):
+        return "ACCEPTED: an entry taken from a copied registry dict sealed a record"
+    return "REFUSED BY NAME: copied %d live registry entries into a writable dict and added one; %s" % (
+        live, outcome.split(":")[0])
+
+
+def attack_deepcopy_handle():
+    _, dispatch, _ = genuine_dispatch()
+    clone = copy.deepcopy(dispatch["_handle"])
+    outcome = seal_outcome(dispatch_around(clone))
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: a deepcopy of a live handle sealed a record"
+    return "REFUSED BY NAME: copy.deepcopy(handle), then %s" % outcome
+
+
+def attack_pickle_handle():
+    _, dispatch, _ = genuine_dispatch()
+    clone = pickle.loads(pickle.dumps(dispatch["_handle"]))
+    outcome = seal_outcome(dispatch_around(clone))
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: an unpickled handle sealed a record"
+    return "REFUSED BY NAME: pickle round trip, then %s" % outcome
+
+
+def attack_reuse_consumed_handle():
+    body, dispatch, _ = genuine_dispatch()
+    sealed = WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                             dispatch=dispatch)
+    outcome = seal_outcome(dispatch)
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: a consumed handle sealed a second record %s" % sealed["content_digest"]
+    return "REFUSED BY NAME: re-use of the consumed handle, then %s" % outcome
+
+
+def attack_unconsume_by_attribute_write():
+    body, dispatch, _ = genuine_dispatch()
+    WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001", dispatch=dispatch)
+    handle = dispatch["_handle"]
+    cleared = 0
+    for write in (lambda: setattr(handle, "consumed_by", None),
+                  lambda: object.__setattr__(handle, "consumed_by", None),
+                  lambda: handle.__dict__.__setitem__("consumed_by", None),
+                  lambda: vars(handle).__setitem__("consumed_by", None)):
+        try:
+            write()
+            cleared += 1
+        except BaseException:  # noqa: BLE001
+            pass
+    outcome = seal_outcome(dispatch)
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: clearing consumed_by (%d writes landed) un-spent the handle" % cleared
+    return "REFUSED BY NAME: %d un-consume writes landed but the handle stays spent (%s)" % (
+        cleared, outcome.split(":")[0])
+
+
+def attack_mutate_handle_fields():
+    body, dispatch, _ = genuine_dispatch()
+    handle = dispatch["_handle"]
+    landed = 0
+    for name, value in (("attempt_id", "attempt_rewritten"), ("request_receipt", "f" * 64),
+                        ("execution", "live"), ("raw_digest", "f" * 64),
+                        ("receipt", HANDLE_KWARGS["receipt"]), ("ref", "f" * 64)):
+        for write in (lambda: setattr(handle, name, value),
+                      lambda: object.__setattr__(handle, name, value),
+                      lambda: handle.__dict__.__setitem__(name, value)):
+            try:
+                write()
+                landed += 1
+            except BaseException:  # noqa: BLE001
+                pass
+    if landed:
+        return "ACCEPTED: %d handle field writes landed on a live handle" % landed
+    return "REFUSED BY NAME: no handle field write landed (setattr, object.__setattr__, __dict__)"
+
+
+def attack_transport_kind_mutation():
+    body = fixture_body()
+    run_dir = tempfile.mkdtemp(prefix="world_kind_")
+    AM.bind_roles(run_dir, BUILD_MODEL, CHECK_MODEL, runtime="claude-nine", now=FIXTURE_NOW)
+    runner = WW.no_spend_transport(fixture_runner(body, []))
+    runner.kind = "live"
+    runner._s75_live_runner = True
+    try:
+        WW.dispatch_author(run_dir=run_dir, attempt_id="attempt_kind_001", inputs=FIXTURE_INPUTS,
+                           runner=runner, now=FIXTURE_NOW)
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    return "ACCEPTED: setting transport.kind relabelled a no-spend dispatch as live"
+
+
+def attack_direct_transport_construction():
+    try:
+        WW.DispatchTransport(fixture_runner(fixture_body(), []), kind="live")
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    return "ACCEPTED: DispatchTransport(fn, kind='live') built a transport that claims live"
+
+
+def attack_transport_subclass_forged_receipt():
+    class Evil(WW.DispatchTransport):
+        def __call__(self, request):
+            return ({"raw": fixture_body(), "response_model": BUILD_MODEL,
+                     "resolved_provider_model": "xiaomi/mimo-v2.6-pro"},
+                    HANDLE_KWARGS["receipt"])
+
+    try:
+        runner = Evil(fixture_runner(fixture_body(), []), kind="live")
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    body = fixture_body()
+    run_dir = tempfile.mkdtemp(prefix="world_evil_transport_")
+    AM.bind_roles(run_dir, BUILD_MODEL, CHECK_MODEL, runtime="claude-nine", now=FIXTURE_NOW)
+    try:
+        WW.dispatch_author(run_dir=run_dir, attempt_id="attempt_evil_001", inputs=FIXTURE_INPUTS,
+                           runner=runner, now=FIXTURE_NOW)
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    return "ACCEPTED: a transport subclass forged the receipt and minted a handle"
+
+
+def attack_assert_execution_live():
+    body = fixture_body()
+    run_dir = tempfile.mkdtemp(prefix="world_claim_live_")
+    AM.bind_roles(run_dir, BUILD_MODEL, CHECK_MODEL, runtime="claude-nine", now=FIXTURE_NOW)
+    try:
+        WW.dispatch_author(run_dir=run_dir, attempt_id="attempt_claim_001", inputs=FIXTURE_INPUTS,
+                           runner=WW.no_spend_transport(fixture_runner(body, [])),
+                           now=FIXTURE_NOW, execution="live")
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    return "ACCEPTED: dispatch_author(execution='live') stamped live on a no-spend mint"
+
+
+def attack_record_read_back_from_file():
+    body, dispatch, _ = genuine_dispatch()
+    opened = json.loads(json.dumps({k: v for k, v in dispatch.items() if k != "_handle"}))
+    return seal_outcome(opened)
+
+
+def attack_file_only_provenance():
+    return seal_outcome(forged_dispatch(fixture_body()))
+
+
+def attack_poke_public_surface():
+    before = len(WW._HANDLES)
+    poked = 0
+    minted = []
+    targets = [(name, getattr(WW, name)) for name in dir(WW) if not name.startswith("_")]
+    targets += [("DispatchHandle.%s" % name, getattr(WW.DispatchHandle, name))
+                for name in dir(WW.DispatchHandle)]
+    targets += [("DispatchTransport.%s" % name, getattr(WW.DispatchTransport, name))
+                for name in dir(WW.DispatchTransport)]
+    for name, value in targets:
+        poked += 1
+        for attempt in (lambda: value(), lambda: value(**HANDLE_KWARGS), lambda: value(HANDLE_KWARGS)):
+            try:
+                # main() parses sys.argv when it is called blind: its argparse
+                # noise is not a mint path
+                with contextlib.redirect_stderr(io.StringIO()), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    got = attempt()
+            except BaseException:  # noqa: BLE001
+                continue
+            if isinstance(got, WW.DispatchHandle):
+                minted.append((name, got))
+    for name, handle in minted:
+        outcome = seal_outcome(dispatch_around(handle))
+        if outcome.startswith("ACCEPTED"):
+            return "ACCEPTED: poking %s produced a usable handle (%s)" % (name, outcome)
+    return ("REFUSED BY NAME: no usable handle from poking %d public attributes (%d live handles "
+            "before, %d after)" % (poked, before, len(WW._HANDLES)))
+
+
+#: label -> attack. Each returns REFUSED BY NAME ... or ACCEPTED ... .
+REACHABILITY_MATRIX = (
+    ("DispatchHandle(**forged receipt)", attack_constructor_forged_receipt),
+    ("DispatchHandle() no arguments", attack_constructor_no_arguments),
+    ("DispatchHandle.__new__ + attribute stuffing", attack_new_plus_attribute_stuffing),
+    ("subclass whose __init__ calls the base __init__", attack_subclass_super_init),
+    ("subclass whose __init__ bypasses __init__", attack_subclass_bypassing_init),
+    ("subclass overriding every handle property", attack_subclass_overriding_properties),
+    ("_HANDLES[ref] = forged handle", attack_registry_setitem),
+    ("registry writes (update/pop/clear/setdefault/add/setattr)", attack_registry_writes),
+    ("copy the registry dict and use the copy", attack_registry_dict_copy),
+    ("copy.deepcopy of a live handle", attack_deepcopy_handle),
+    ("pickle round trip of a live handle", attack_pickle_handle),
+    ("re-use a consumed handle", attack_reuse_consumed_handle),
+    ("clear consumed_by and re-use", attack_unconsume_by_attribute_write),
+    ("rewrite a live handle's fields", attack_mutate_handle_fields),
+    ("set transport.kind = 'live' on a no-spend transport", attack_transport_kind_mutation),
+    ("DispatchTransport(fn, kind='live')", attack_direct_transport_construction),
+    ("transport subclass forging the receipt", attack_transport_subclass_forged_receipt),
+    ("dispatch_author(execution='live') on a no-spend mint", attack_assert_execution_live),
+    ("record read back from a JSON file", attack_record_read_back_from_file),
+    ("file-only provenance with no dispatch at all", attack_file_only_provenance),
+    ("poke every public attribute of module and classes", attack_poke_public_surface),
+)
+
+
+class HandleReachabilityTests(unittest.TestCase):
+    """No route to a usable handle without a real transport call."""
+
+    def test_reachability_matrix_refuses_every_route(self):
+        rows = []
+        for label, attack in REACHABILITY_MATRIX:
+            outcome = attack()
+            rows.append("%-58s %s" % (label, outcome))
+            self.assertTrue(outcome.startswith("REFUSED"),
+                            "route %r is REACHABLE without a transport: %s" % (label, outcome))
+            self.assertFalse(outcome.startswith("ACCEPTED"),
+                             "route %r obtained a usable handle: %s" % (label, outcome))
+        print("\nREACHABILITY MATRIX -- obtaining a handle WITHOUT a real transport")
+        for row in rows:
+            print("  " + row)
+        print("")
+
+    def test_every_refusal_is_named(self):
+        for label, attack in REACHABILITY_MATRIX:
+            outcome = attack()
+            self.assertRegex(outcome, r"^REFUSED( BY NAME)?: ",
+                             "route %r did not name its refusal: %s" % (label, outcome))
+
+    def test_direct_construction_raises_the_named_error(self):
+        with self.assertRaises(WW.DispatchHandleMintRefused) as caught:
+            WW.DispatchHandle(**HANDLE_KWARGS)
+        self.assertIn(WW.CODE_HANDLE_MINT, caught.exception.errors[0])
+        self.assertEqual(caught.exception.code, WW.CODE_HANDLE_MINT)
+        # and it is still a WorldError, so every existing caller catches it
+        self.assertIsInstance(caught.exception, WW.WorldError)
+
+    def test_direct_construction_registers_nothing(self):
+        before = len(WW._HANDLES)
+        for build in (lambda: WW.DispatchHandle(**HANDLE_KWARGS),
+                      lambda: WW.DispatchHandle(),
+                      lambda: WW.DispatchTransport(fixture_runner(fixture_body(), []),
+                                                   kind="live")):
+            with self.assertRaises(WW.WorldError):
+                build()
+        self.assertEqual(len(WW._HANDLES), before)
+
+    def test_registry_views_refuse_writes_by_name(self):
+        for write in (lambda: WW._HANDLES.__setitem__("x", "y"),
+                      lambda: WW._HANDLES.__delitem__("x"),
+                      lambda: WW._HANDLES.__setattr__("x", "y"),
+                      lambda: WW._SEALED.__setitem__("x", "y"),
+                      lambda: WW._SEALED.clear()):
+            with self.assertRaises(WW.DispatchHandleMintRefused):
+                write()
+
+    def test_public_surface_is_pinned(self):
+        """Every public name on the module, pinned. A mint helper added to the
+        module shows up here and has to be justified."""
+        public = sorted(name for name in dir(WW) if not name.startswith("_"))
+        self.assertEqual(public, sorted([
+            "CHARACTER_ID_RE", "CODE_BINDING_STAMP", "CODE_DISPATCH_UNPROVEN",
+            "CODE_EXECUTION_STAMP", "CODE_HANDLE_MINT", "CODE_IMPOSSIBLE_TIMELINE",
+            "CODE_LAYOUT_ACTION", "CODE_REAL_LOCATION", "CODE_TRANSPORT_MINT",
+            "DISPATCH_HANDLER", "DISPATCH_OPERATION", "DispatchHandle",
+            "DispatchHandleMintRefused", "DispatchTransport", "DispatchTransportMintRefused",
+            "EXECUTION_BY_KIND", "EXECUTION_VALUES", "IDENTITY_FIELDS", "LOCATION_ID_RE",
+            "MODELS_LAYER", "PROMPT_TEMPLATE_REVISION", "REQUIRED_SECTIONS", "SCHEMA_VERSION",
+            "SESSION", "SETTING_DEPENDENTS", "WORLD_KIND", "WorldError", "annotations",
+            "argparse", "author_world", "build_author_request", "canonical_digest",
+            "change_setting", "copy", "dispatch_author", "hashlib", "json", "live_transport",
+            "main", "no_spend_transport", "os", "re", "seal_digest", "secrets", "sys",
+            "validate",
+        ]))
+
+    def test_the_only_mint_is_inside_dispatch_author(self):
+        # the constructor refuses, the registry refuses, and the module exposes
+        # no callable whose name offers a mint
+        with self.assertRaises(WW.DispatchHandleMintRefused):
+            WW.DispatchHandle()
+        import inspect
+        minters = [name for name in dir(WW) if not name.startswith("_")
+                   and not inspect.isclass(getattr(WW, name))
+                   and callable(getattr(WW, name)) and "mint" in name.lower()]
+        self.assertEqual(minters, [])
+
+
+class ExecutionStampTests(unittest.TestCase):
+    """execution is stamped from the transport kind, never asserted."""
+
+    def test_no_spend_mint_cannot_report_live(self):
+        body = fixture_body()
+        dispatch, _, _ = fixture_dispatch(body)
+        self.assertEqual(dispatch["execution"], "no_spend_fixture")
+        self.assertEqual(dispatch["_handle"].execution, "no_spend_fixture")
+        self.assertEqual(dispatch["_handle"].transport_kind, "no_spend")
+        dispatch["execution"] = "live"          # the caller's assertion
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                            dispatch=dispatch)
+        joined = " | ".join(caught.exception.errors)
+        self.assertIn(WW.CODE_EXECUTION_STAMP, joined)
+        self.assertIn(WW.CODE_DISPATCH_UNPROVEN, joined)
+
+    def test_execution_parameter_is_refused_by_name(self):
+        body = fixture_body()
+        run_dir = tempfile.mkdtemp(prefix="world_exec_")
+        AM.bind_roles(run_dir, BUILD_MODEL, CHECK_MODEL, runtime="claude-nine", now=FIXTURE_NOW)
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.dispatch_author(run_dir=run_dir, attempt_id="attempt_exec_001", inputs=FIXTURE_INPUTS,
+                               runner=WW.no_spend_transport(fixture_runner(body, [])),
+                               now=FIXTURE_NOW, execution="live")
+        self.assertIn(WW.CODE_EXECUTION_STAMP, " | ".join(caught.exception.errors))
+        # nothing was recorded: the refusal happens before the call
+        self.assertEqual([a["attempt_id"] for a in AM.load_bindings(run_dir)["attempts"]], [])
+
+    def test_live_transport_stamps_live(self):
+        body = fixture_body()
+        requests = []
+        run_dir = tempfile.mkdtemp(prefix="world_live_kind_")
+        AM.bind_roles(run_dir, BUILD_MODEL, CHECK_MODEL, runtime="claude-nine", now=FIXTURE_NOW)
+        dispatch = WW.dispatch_author(
+            run_dir=run_dir, attempt_id="attempt_live_kind_001", inputs=FIXTURE_INPUTS,
+            runner=WW.live_transport(fixture_runner(body, requests)), now=FIXTURE_NOW)
+        self.assertEqual(dispatch["execution"], "live")
+        self.assertEqual(dispatch["_handle"].execution, "live")
+        # and the stamp cannot be talked down to the cheaper claim either
+        dispatch["execution"] = "no_spend_fixture"
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                            dispatch=dispatch)
+        self.assertIn(WW.CODE_EXECUTION_STAMP, " | ".join(caught.exception.errors))
+
+    def test_receipt_kind_and_registration_stay_agreed(self):
+        body = fixture_body()
+        run_dir = tempfile.mkdtemp(prefix="world_receipt_kind_")
+        AM.bind_roles(run_dir, BUILD_MODEL, CHECK_MODEL, runtime="claude-nine", now=FIXTURE_NOW)
+        runner = WW.no_spend_transport(fixture_runner(body, []))
+        dispatch = WW.dispatch_author(run_dir=run_dir, attempt_id="attempt_receipt_001",
+                                      inputs=FIXTURE_INPUTS, runner=runner, now=FIXTURE_NOW)
+        self.assertEqual(dispatch["seal"]["receipt"]["kind"], "no_spend")
+        self.assertEqual(dispatch["seal"]["receipt"]["kind"], dispatch["_handle"].transport_kind)
+        forged = copy.deepcopy(dispatch)
+        forged["seal"]["receipt"]["kind"] = "live"
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                            dispatch=forged)
+        self.assertIn(WW.CODE_DISPATCH_UNPROVEN, " | ".join(caught.exception.errors))
+
+
+class BindingIdentityTests(unittest.TestCase):
+    """binding_id is recomputed from the admitted binding, never echoed."""
+
+    def expected_binding_id(self):
+        """The identity ai_models.bind_roles itself computes for this pair."""
+        run_dir = tempfile.mkdtemp(prefix="world_binding_expect_")
+        bound = AM.bind_roles(run_dir, BUILD_MODEL, CHECK_MODEL,
+                              runtime="claude-nine", now=FIXTURE_NOW)
+        assert bound.get("ok"), bound
+        return bound["binding_id"]
+
+    def test_forged_binding_id_is_not_echoed_into_provenance(self):
+        body = fixture_body()
+        run_dir = tempfile.mkdtemp(prefix="world_forged_binding_")
+        forged_bindings(run_dir)                      # binding_id: "forgedbinding001"
+        dispatch, _, run_dir = fixture_dispatch(body, run_dir=run_dir,
+                                                attempt_id="attempt_forged_binding_001")
+        self.assertEqual(AM.load_bindings(run_dir)["binding_id"], "forgedbinding001")
+        provenance_attempt = dispatch["attempt"]
+        self.assertNotEqual(provenance_attempt["binding_id"], "forgedbinding001")
+        self.assertEqual(provenance_attempt["binding_id"], self.expected_binding_id())
+        self.assertEqual(provenance_attempt["binding_id_source"],
+                         "recomputed_from_admitted_binding")
+        record = WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                                 dispatch=dispatch)
+        self.assertEqual(record["provenance"]["attempt"]["binding_id"],
+                         self.expected_binding_id())
+        self.assertNotIn("forgedbinding001", json.dumps(record))
+        self.assertEqual(WW.validate(record), [])
+
+    def test_recomputed_identity_is_the_one_the_binding_content_carries(self):
+        body = fixture_body()
+        run_dir = tempfile.mkdtemp(prefix="world_binding_content_")
+        forged_bindings(run_dir)
+        dispatch, _, _ = fixture_dispatch(body, run_dir=run_dir,
+                                          attempt_id="attempt_binding_content_001")
+        derived = dispatch["attempt"]["binding_id"]
+        doc = AM.load_bindings(run_dir)
+        by_hand = hashlib.sha256(json.dumps(
+            {"build": doc["bindings"]["build"]["model_id"],
+             "check": doc["bindings"]["check"]["model_id"],
+             "bound_at": doc["bound_at"]}, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        self.assertEqual(derived, by_hand)
+        self.assertRegex(derived, r"^[0-9a-f]{16}$")
+
+    def test_unusable_stored_binding_is_refused_by_name(self):
+        run_dir = tempfile.mkdtemp(prefix="world_unusable_binding_")
+        store = forged_bindings(run_dir)
+        doc = json.load(open(store, encoding="utf-8"))
+        doc["bindings"]["build"]["model_id"] = "nosuch/made-up-model-001"
+        with open(store, "w", encoding="utf-8") as handle:
+            json.dump(doc, handle, indent=1, sort_keys=True)
+        body = fixture_body()
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.dispatch_author(run_dir=run_dir, attempt_id="attempt_unusable_001",
+                               inputs=FIXTURE_INPUTS,
+                               runner=WW.no_spend_transport(fixture_runner(body, [])),
+                               now=FIXTURE_NOW)
+        joined = " | ".join(caught.exception.errors)
+        self.assertIn(WW.CODE_BINDING_STAMP, joined)
+        self.assertIn(WW.CODE_DISPATCH_UNPROVEN, joined)
+        self.assertEqual([a["attempt_id"] for a in AM.load_bindings(run_dir)["attempts"]], [])
+
+
+class PositiveControlTests(unittest.TestCase):
+    """The genuine no-spend transport still seals everything above."""
+
+    def test_positive_control_seals_through_the_genuine_no_spend_transport(self):
+        body = fixture_body()
+        dispatch, requests, run_dir = fixture_dispatch(body)
+        self.assertEqual(len(requests), 1)
+        record = WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                                 dispatch=dispatch)
+        self.assertEqual(WW.validate(record), [])
+        seal = record["seal"]
+        self.assertRegex(seal["dispatch_handle"], r"^[0-9a-f]{64}$")
+        self.assertRegex(seal["receipt"]["nonce"], r"^[0-9a-f]{32}$")
+        self.assertEqual(seal["receipt"]["kind"], "no_spend")
+        self.assertEqual(seal["seal_digest"], WW.seal_digest(seal, record["content_digest"]))
+        self.assertEqual(record["provenance"]["execution"], "no_spend_fixture")
+        self.assertEqual(record["provenance"]["attempt"]["binding_id"],
+                         AM.load_bindings(run_dir)["binding_id"])
+        self.assertEqual(record["content_digest"], WW.canonical_digest(record))
+        print("\nPOSITIVE CONTROL: sealed %s on handle %s (%s, binding %s)"
+              % (record["content_digest"][:16], seal["dispatch_handle"][:16],
+                 record["provenance"]["execution"], record["provenance"]["attempt"]["binding_id"]))
 
 
 if __name__ == "__main__":

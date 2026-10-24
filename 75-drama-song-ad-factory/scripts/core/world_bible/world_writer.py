@@ -43,6 +43,27 @@ this run. A dispatch that cannot be proven is refused with
 proven dispatch actually produced. Tests inject a deterministic no-spend
 transport (``no_spend_transport``); no provider is called.
 
+MINTING IS NOT A CONSTRUCTOR. The handle and the registry it lands in are minted
+inside ``dispatch_author`` and held in that call path's closure: there is no
+public (or private) constructor, class attribute, registry write or subclass
+that produces one. ``DispatchHandle()`` from anywhere else raises
+``WORLD_DISPATCH_HANDLE_MINT_REFUSED`` instead of registering itself, and the
+module's ``_HANDLES``/``_SEALED`` names are read-only views of process memory.
+A handle is registered by OBJECT IDENTITY, so a copy (``copy.deepcopy``, pickle
+round trip, subclass rebuild) is a different object and can never pass as the
+live one.
+
+Two further claims are DERIVED, never asserted:
+
+  * ``provenance.execution`` is stamped from the transport kind that minted the
+    handle (``live`` -> ``live``, ``no_spend`` -> ``no_spend_fixture``) and
+    ``author_world`` refuses a dispatch that claims anything else
+    (``WORLD_DISPATCH_EXECUTION_STAMP_MISMATCH``);
+  * ``provenance.attempt.binding_id`` is recomputed from the ADMITTED binding
+    content (the same digest ``ai_models.bind_roles`` computes), so a
+    hand-forged ``model-bindings.json`` can never have its chosen id echoed
+    into a sealed record.
+
 Standard library only.
 """
 from __future__ import annotations
@@ -64,6 +85,13 @@ CODE_LAYOUT_ACTION = "WORLD_LAYOUT_ACTION_CONTRADICTION"
 CODE_IMPOSSIBLE_TIMELINE = "WORLD_IMPOSSIBLE_TIMELINE"
 CODE_REAL_LOCATION = "WORLD_UNSUPPORTED_REAL_LOCATION_CLAIM"
 CODE_DISPATCH_UNPROVEN = "WORLD_AUTHORING_DISPATCH_UNPROVEN"
+#: Named refusals for the three claims a caller must never be able to make:
+#: that it minted a handle, that a no-spend call ran live, that its own
+#: model-bindings.json is the run's binding identity.
+CODE_HANDLE_MINT = "WORLD_DISPATCH_HANDLE_MINT_REFUSED"
+CODE_TRANSPORT_MINT = "WORLD_DISPATCH_TRANSPORT_MINT_REFUSED"
+CODE_EXECUTION_STAMP = "WORLD_DISPATCH_EXECUTION_STAMP_MISMATCH"
+CODE_BINDING_STAMP = "WORLD_DISPATCH_BINDING_IDENTITY_UNPROVEN"
 
 #: The real authoring dispatch identity (SPEC 56: operation + implemented
 #: handler + prompt/template revision are part of the captured provenance).
@@ -94,7 +122,6 @@ SETTING_DEPENDENTS = ("scene_plan", "script", "visual_outputs")
 LOCATION_ID_RE = re.compile(r"^loc_[A-Za-z0-9][A-Za-z0-9_.-]*$")
 CHARACTER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
-
 class WorldError(ValueError):
     """Raised when a world record is refused by the validator."""
 
@@ -102,14 +129,11 @@ class WorldError(ValueError):
         self.errors = list(errors)
         super().__init__("; ".join(self.errors))
 
-
 def _nonempty(value):
     return isinstance(value, str) and value.strip() != ""
 
-
 def _nonempty_list(value):
     return isinstance(value, list) and len(value) > 0
-
 
 def canonical_digest(record):
     """SHA-256 over canonical JSON, excluding ``content_digest`` and the
@@ -120,14 +144,12 @@ def canonical_digest(record):
     blob = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
-
 def seal_digest(seal, content_digest):
     """The digest that binds a record's content to the dispatch receipt and the
     handle that produced it: edit either and the seal stops verifying."""
     blob = json.dumps([content_digest, seal.get("dispatch_handle"), seal.get("receipt")],
                       sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
-
 
 def _validate_locations(record, errors):
     locations = record.get("locations")
@@ -172,7 +194,6 @@ def _validate_locations(record, errors):
                 "without a claim/source/owner-answer link"
                 % (CODE_REAL_LOCATION, pointer, loc_id, pointer))
 
-
 def _validate_light(record, errors):
     light = record.get("light")
     if not isinstance(light, dict):
@@ -194,7 +215,6 @@ def _validate_light(record, errors):
     if not _nonempty(light.get("doctrine")):
         errors.append("light.doctrine is required: the rule every scene's light must obey")
 
-
 def _validate_era(record, errors):
     era = record.get("era")
     if not isinstance(era, dict):
@@ -209,7 +229,6 @@ def _validate_era(record, errors):
     if not isinstance(span, int) or isinstance(span, bool) or span < 1:
         errors.append("era.span_minutes must be a positive integer (the elapsed time the world allows)")
 
-
 def _validate_atmosphere(record, errors):
     for key in ("palette", "texture"):
         values = record.get(key)
@@ -220,7 +239,6 @@ def _validate_atmosphere(record, errors):
             errors.append("%s entries must be non-empty strings" % key)
         elif len({v.strip().lower() for v in values}) != len(values):
             errors.append("%s repeats a value; repetition cannot stand in for the atmosphere" % key)
-
 
 def _validate_sound(record, errors):
     sound = record.get("sound")
@@ -233,7 +251,6 @@ def _validate_sound(record, errors):
         if key in sound and not isinstance(sound[key], list):
             errors.append("sound.%s must be a list" % key)
 
-
 def _validate_never_list(record, errors):
     never = record.get("never_list")
     if not _nonempty_list(never):
@@ -243,7 +260,6 @@ def _validate_never_list(record, errors):
         errors.append("never_list entries must be non-empty strings")
     elif len({v.strip().lower() for v in never}) != len(never):
         errors.append("never_list repeats an entry")
-
 
 def _validate_cast(record, errors):
     cast = record.get("cast_refs")
@@ -266,7 +282,6 @@ def _validate_cast(record, errors):
                 "%s copies reusable identity field(s) %s; a world holds reference IDs only"
                 % (pointer, ", ".join(leaked))
             )
-
 
 def _validate_scenes(record, errors):
     scenes = record.get("scenes")
@@ -334,7 +349,6 @@ def _validate_scenes(record, errors):
         if minutes is not None:
             previous = (minutes, loc_id)
 
-
 def validate(record):
     """Return the list of refusal reasons. Empty list means the world is usable."""
     errors = []
@@ -371,7 +385,6 @@ def validate(record):
     _validate_scenes(record, errors)
     return errors
 
-
 def _seal(record):
     """Stamp the record: the content digest over the authored body, then the
     seal digest binding that digest to this dispatch's receipt and handle."""
@@ -393,12 +406,23 @@ def _seal(record):
 #: advance.
 SESSION = secrets.token_hex(16)
 
-#: Process memory only. Nothing here is ever serialized, so a fixture, a forged
-#: bindings file or a record read back from disk can neither mint nor replay a
-#: dispatch handle.
-_HANDLES = {}   # handle ref -> live DispatchHandle
-_SEALED = {}    # sealed content digest -> ref of the handle that sealed it
+#: The provenance ``execution`` value each transport kind stamps at mint. The
+#: value comes from which transport minted the handle -- never from a caller.
+EXECUTION_BY_KIND = {"live": "live", "no_spend": "no_spend_fixture"}
+EXECUTION_VALUES = ("live", "no_spend_fixture")
 
+class DispatchHandleMintRefused(WorldError):
+    """Raised when anything OUTSIDE ``dispatch_author`` tries to mint a handle."""
+
+    code = CODE_HANDLE_MINT
+
+    def __init__(self, message):
+        super().__init__([message])
+
+class DispatchTransportMintRefused(DispatchHandleMintRefused):
+    """Raised when anything OUTSIDE the two transport factories builds one."""
+
+    code = CODE_TRANSPORT_MINT
 
 class DispatchTransport:
     """The dispatch seam: an object that really calls a model in THIS process.
@@ -407,19 +431,19 @@ class DispatchTransport:
     caller, never a file -- mints the receipt at the moment of the call: a fresh
     nonce from OS entropy bound to this process's session identity. That receipt
     cannot be pre-created, and the handle the call returns lives only here.
+
+    The transport is built by ``no_spend_transport`` (tests) or
+    ``live_transport`` (production); its ``kind`` -- the one thing that decides
+    what ``execution`` a handle may claim -- is stamped by WHICH OF THE TWO built
+    it and kept in the mint path's closure, so setting ``kind`` on the object
+    afterwards changes nothing.
     """
 
-    def __init__(self, fn, *, kind):
-        if not callable(fn):
-            raise WorldError(["a dispatch transport must wrap a callable"])
-        if kind not in ("live", "no_spend"):
-            raise WorldError(["dispatch transport kind must be 'live' or 'no_spend'"])
-        self.fn = fn
-        self.kind = kind
-        self.transport_id = hashlib.sha256(
-            (SESSION + ":" + kind + ":" + secrets.token_hex(8)).encode("utf-8")).hexdigest()[:16]
-        # the convention the other stages read: a live worker is marked
-        self._s75_live_runner = (kind == "live")
+    def __init__(self, *args, **kwargs):
+        raise DispatchTransportMintRefused(
+            "%s: DispatchTransport() is not a mint path; a transport comes from "
+            "no_spend_transport() (tests) or live_transport() (production), and its kind is "
+            "stamped by which of the two created it" % CODE_TRANSPORT_MINT)
 
     def __call__(self, request):
         response = self.fn(request)
@@ -431,18 +455,6 @@ class DispatchTransport:
         ).hexdigest()
         return response, receipt
 
-
-def no_spend_transport(fn):
-    """Register a deterministic, zero-cost transport (tests and dry runs). It is
-    a real dispatch in this process; the only thing it skips is the spend."""
-    return DispatchTransport(fn, kind="no_spend")
-
-
-def live_transport(fn):
-    """Register the production transport that actually calls the model."""
-    return DispatchTransport(fn, kind="live")
-
-
 class DispatchHandle:
     """Live, single-use proof that a dispatch ran in THIS process.
 
@@ -450,53 +462,437 @@ class DispatchHandle:
     process memory and consumed by the one record it seals. It is never written
     to any file and never copied into a record, so no fixture and no bindings
     file can produce one or replay one.
+
+    This class has NO usable constructor. ``DispatchHandle()`` raises
+    :class:`DispatchHandleMintRefused`; the only mint lives inside
+    ``dispatch_author``. The object itself carries no state at all: every field
+    is read from the mint path's registry, keyed by object identity, so a copy,
+    an unpickled copy or a subclass rebuild is a different object with no entry
+    and reads as "not a handle this run minted".
     """
 
-    def __init__(self, *, attempt_id, request_receipt, receipt):
-        self.ref = hashlib.sha256(
-            (SESSION + ":" + secrets.token_hex(16)).encode("utf-8")).hexdigest()
-        self.session = SESSION
-        self.transport_id = receipt.get("transport_id")
-        self.attempt_id = attempt_id
-        self.request_receipt = request_receipt
-        self.receipt = copy.deepcopy(receipt)
-        self.consumed_by = None
-        _HANDLES[self.ref] = self
+    __slots__ = ()
 
+    def __init__(self, *args, **kwargs):
+        raise DispatchHandleMintRefused(
+            "%s: DispatchHandle() is not a mint path and never registers a handle. A handle is "
+            "minted only by the dispatch that ran in THIS process; author through "
+            "dispatch_author() with a transport from no_spend_transport() (tests) or "
+            "live_transport() (production)" % CODE_HANDLE_MINT)
+
+    def _state(self):
+        state = _GUARD.lookup(self)
+        if state is None:
+            raise DispatchHandleMintRefused(
+                "%s: this object is not a dispatch handle this run minted; a constructed, copied, "
+                "unpickled or rebuilt object is never a live handle" % CODE_HANDLE_MINT)
+        return state
+
+    @property
+    def ref(self):
+        return self._state()["ref"]
+
+    @property
+    def session(self):
+        return self._state()["session"]
+
+    @property
+    def transport_id(self):
+        return self._state()["transport_id"]
+
+    @property
+    def transport_kind(self):
+        return self._state()["transport_kind"]
+
+    @property
+    def execution(self):
+        return self._state()["execution"]
+
+    @property
+    def attempt_id(self):
+        return self._state()["attempt_id"]
+
+    @property
+    def request_receipt(self):
+        return self._state()["request_receipt"]
+
+    @property
+    def receipt(self):
+        return copy.deepcopy(self._state()["receipt"])
+
+    @property
+    def raw_digest(self):
+        return self._state()["raw_digest"]
+
+    @property
+    def consumed_by(self):
+        return self._state()["consumed_by"]
+
+    def __repr__(self):
+        state = _GUARD.lookup(self)
+        return "<DispatchHandle %s>" % ((state or {}).get("ref") or "not minted in this run")
+
+def _json_digest(value):
+    return hashlib.sha256(json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+
+def _binding_identity(models, run_dir, admission):
+    """The run's binding identity, RECOMPUTED from the binding content that was
+    admitted -- never the ``binding_id`` string a caller can write into
+    ``model-bindings.json``.
+
+    When the store carries both role rows and its ``bound_at`` the value is
+    exactly the digest ``ai_models.bind_roles`` computes, so an honest store is
+    stamped with its own identity and a hand-forged store cannot have its chosen
+    id echoed into provenance. Otherwise the identity falls back to a digest of
+    the admitted binding row itself. Returns ``None`` only when the admitted
+    binding carries nothing to derive from.
+    """
+    binding = admission.get("binding") if isinstance(admission.get("binding"), dict) else {}
+    doc = models.load_bindings(run_dir) if callable(getattr(models, "load_bindings", None)) else None
+    bindings = (doc or {}).get("bindings") if isinstance(doc, dict) else {}
+    bindings = bindings if isinstance(bindings, dict) else {}
+    build = (bindings.get(models.ROLE_BUILD) or {}).get("model_id")
+    check = (bindings.get(models.ROLE_CHECK) or {}).get("model_id")
+    bound_at = (doc or {}).get("bound_at") if isinstance(doc, dict) else None
+    if not _nonempty(bound_at):
+        bound_at = binding.get("bound_at")
+    if _nonempty(build) and _nonempty(check) and _nonempty(bound_at):
+        return hashlib.sha256(json.dumps(
+            {"build": build, "check": check, "bound_at": bound_at}, sort_keys=True
+        ).encode("utf-8")).hexdigest()[:16]
+    if binding:
+        return _json_digest({"model_id": binding.get("model_id"),
+                             "route": binding.get("route"),
+                             "bound_at": binding.get("bound_at"),
+                             "bound_by": binding.get("bound_by"),
+                             "role_id": binding.get("role_id")})[:16]
+    return None
+
+def _dispatch_machinery():
+    """The mint path and the process memory it owns, closed over by
+    ``dispatch_author`` alone.
+
+    Nothing returned here can register anything: the two module registries are
+    read-only views, and the only writer is the code inside ``dispatch_author``.
+    The registries are keyed by object identity, so nothing that is copied can
+    ever come back as the live entry.
+    """
+    records = {}       # handle OBJECT -> its state (identity-keyed)
+    transports = {}    # registered transport OBJECT -> {"kind", "transport_id"}
+    sealed = {}        # sealed content digest -> ref of the handle that sealed it
+    #: captured now: re-binding ``DispatchTransport.__call__`` on the class later
+    #: cannot redirect what the mint path calls
+    transport_call = DispatchTransport.__call__
+
+    def mint(*, attempt_id, request_receipt, receipt, execution, raw_digest):
+        handle = DispatchHandle.__new__(DispatchHandle)
+        records[handle] = {
+            "ref": hashlib.sha256(
+                (SESSION + ":" + secrets.token_hex(16)).encode("utf-8")).hexdigest(),
+            "session": SESSION,
+            "transport_id": receipt.get("transport_id"),
+            "transport_kind": receipt.get("kind"),
+            "execution": execution,
+            "attempt_id": attempt_id,
+            "request_receipt": request_receipt,
+            "receipt": copy.deepcopy(receipt),
+            "raw_digest": raw_digest,
+            "consumed_by": None,
+        }
+        return handle
+
+    class Guard:
+        """Read-and-advance access to the registry. Nothing here mints, and
+        nothing here un-consumes: a handle can only ever become MORE spent."""
+
+        __slots__ = ()
+
+        def lookup(self, handle):
+            state = records.get(handle) if isinstance(handle, DispatchHandle) else None
+            return dict(state) if state else None
+
+        def by_ref(self, ref):
+            for handle, state in list(records.items()):
+                if state["ref"] == ref:
+                    return handle
+            return None
+
+        def consume(self, handle, digest):
+            state = records.get(handle)
+            if state is None:
+                raise DispatchHandleMintRefused(
+                    "%s: only a handle this run's dispatch minted can be consumed" % CODE_HANDLE_MINT)
+            state["consumed_by"] = digest
+
+        def note_sealed(self, digest, ref):
+            sealed[digest] = ref
+
+        def live_count(self):
+            return len(records)
+
+    def readonly_map(data, name):
+        """A registry a caller can read and copy but never write. Every write
+        route -- item, attribute, update, pop, clear -- refuses by name."""
+
+        def refuse(*args, **kwargs):
+            raise DispatchHandleMintRefused(
+                "%s: %s is this process's memory, not a mint path; writing it, clearing it or "
+                "copying it into another registry can neither mint nor un-mint a dispatch handle"
+                % (CODE_HANDLE_MINT, name))
+
+        class View:
+            __slots__ = ()
+
+            def get(self, key, default=None):
+                return data.get(key, default)
+
+            def __contains__(self, key):
+                return key in data
+
+            def __len__(self):
+                return len(data)
+
+            def __iter__(self):
+                return iter(list(data))
+
+            def keys(self):
+                return list(data)
+
+            def values(self):
+                return [data[k] for k in list(data)]
+
+            def items(self):
+                return [(k, data[k]) for k in list(data)]
+
+            def copy(self):
+                return {k: data[k] for k in list(data)}
+
+            def __repr__(self):
+                return "<%s, read-only, %d live entries>" % (name, len(data))
+
+            __setitem__ = refuse
+            __delitem__ = refuse
+            __setattr__ = refuse
+            pop = refuse
+            popitem = refuse
+            update = refuse
+            clear = refuse
+            setdefault = refuse
+            add = refuse
+            append = refuse
+            extend = refuse
+
+        return View()
+
+    def make_transport(fn, kind):
+        if not callable(fn):
+            raise WorldError(["a dispatch transport must wrap a callable"])
+        if kind not in ("live", "no_spend"):
+            raise WorldError(["dispatch transport kind must be 'live' or 'no_spend'"])
+        transport = DispatchTransport.__new__(DispatchTransport)
+        transport.fn = fn
+        transport.kind = kind
+        transport.transport_id = hashlib.sha256(
+            (SESSION + ":" + kind + ":" + secrets.token_hex(8)).encode("utf-8")).hexdigest()[:16]
+        # the convention the other stages read: a live worker is marked
+        transport._s75_live_runner = (kind == "live")
+        transports[transport] = {"kind": kind, "transport_id": transport.transport_id}
+        return transport
+
+    def no_spend_transport(fn):
+        """Register a deterministic, zero-cost transport (tests and dry runs). It is
+        a real dispatch in this process; the only thing it skips is the spend."""
+        return make_transport(fn, kind="no_spend")
+
+    def live_transport(fn):
+        """Register the production transport that actually calls the model."""
+        return make_transport(fn, kind="live")
+
+    def dispatch_author(*, run_dir, attempt_id, inputs, runner, route=None,
+                        runtime="claude-nine", router_receipt=None,
+                        response_provider=None, now=None, execution=None):
+        """Author through the existing supported model layer.
+
+        Admits the run's persisted role binding (``ai_models.admit_dispatch``),
+        sends ``build_author_request(inputs)`` to the registered transport and
+        records the attempt through ``ai_models.record_attempt``, which verifies
+        the requested, resolved and response model and stores correlated
+        request/router/response evidence. ``runner`` must be a
+        :class:`DispatchTransport` created by ``no_spend_transport`` (tests) or
+        ``live_transport`` (production): a bare callable or a fixture closure is
+        refused, because it is not a call that happened in this run. The
+        transport mints the receipt and the call returns a live, single-use
+        :class:`DispatchHandle` -- minted HERE and nowhere else. The provenance
+        ``execution`` is stamped from the transport kind and
+        ``attempt.binding_id`` is recomputed from the admitted binding, so
+        neither claim is the caller's to make. Returns the captured
+        request/response provenance and that seal. Raises :class:`WorldError`
+        with ``WORLD_AUTHORING_DISPATCH_UNPROVEN`` whenever the dispatch cannot
+        be proven.
+        """
+        if type(runner) is not DispatchTransport or runner not in transports:
+            raise WorldError(["%s: dispatch.runner is not a registered dispatch transport; a "
+                              "response fixture, a hand-written model-bindings.json or any "
+                              "caller-written callable is not a dispatch. Register the transport "
+                              "with no_spend_transport() (tests) or live_transport() (production)."
+                              % CODE_DISPATCH_UNPROVEN])
+        transport = transports[runner]
+        stamp = EXECUTION_BY_KIND[transport["kind"]]
+        if execution is not None and execution != stamp:
+            raise WorldError(["%s: %s: dispatch.execution asserts %r but the handle would be "
+                              "minted by the %r transport; execution is stamped from the "
+                              "transport kind and never asserted by the caller"
+                              % (CODE_DISPATCH_UNPROVEN, CODE_EXECUTION_STAMP,
+                                 execution, transport["kind"])])
+        core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from choice_card.intake_card import ai_models as models
+
+        try:
+            admission = models.admit_dispatch(run_dir, models.ROLE_BUILD,
+                                              route=route, runtime=runtime)
+        except (KeyError, TypeError, AttributeError, IndexError) as refused:
+            # ai_models indexes the catalog from whatever the store file claims;
+            # a hand-written model-bindings.json naming a model that does not
+            # exist is refused here BY NAME instead of blowing up mid-dispatch.
+            raise WorldError(["%s: %s: the stored role binding is not a usable binding (%s: %s); "
+                              "a hand-written model-bindings.json is not proof of a binding"
+                              % (CODE_DISPATCH_UNPROVEN, CODE_BINDING_STAMP,
+                                 type(refused).__name__, refused)])
+        if not admission.get("ok"):
+            raise WorldError(["%s: dispatch admission refused (%s): %s"
+                              % (CODE_DISPATCH_UNPROVEN, admission.get("error_code"),
+                                 admission.get("reason") or admission.get("message"))])
+        # The binding identity is DERIVED from the binding content that was
+        # admitted, never taken from the file's own binding_id field.
+        identity = _binding_identity(models, run_dir, admission)
+        if identity is None:
+            raise WorldError(["%s: %s: the admitted role binding carries no derivable binding "
+                              "identity; a hand-written model-bindings.json cannot name its own "
+                              "binding" % (CODE_DISPATCH_UNPROVEN, CODE_BINDING_STAMP)])
+        request = build_author_request(inputs)
+        response, receipt = transport_call(runner, request)
+        if receipt.get("kind") != transport["kind"] or \
+                receipt.get("transport_id") != transport["transport_id"]:
+            raise WorldError(["%s: %s: the receipt is not the one this transport minted; the kind "
+                              "that stamps execution is the one recorded at registration, never a "
+                              "value set on the transport afterwards"
+                              % (CODE_DISPATCH_UNPROVEN, CODE_EXECUTION_STAMP)])
+        if not isinstance(response, dict) or not isinstance(response.get("raw"), dict):
+            raise WorldError(["%s: dispatch.response.raw must be the model's structured world output"
+                              % CODE_DISPATCH_UNPROVEN])
+        for key in ("response_model", "resolved_provider_model"):
+            if not _nonempty(response.get(key)):
+                raise WorldError(["%s: dispatch.response.%s is missing; the response model is never assumed"
+                                  % (CODE_DISPATCH_UNPROVEN, key)])
+        request_receipt = _json_digest(request)
+        raw = response["raw"]
+        raw_digest = _json_digest(raw)
+        recorded = models.record_attempt(
+            run_dir, models.ROLE_BUILD, attempt_id,
+            requested_model=admission["binding"]["model_id"],
+            resolved_provider_model=response["resolved_provider_model"],
+            response_model=response["response_model"],
+            route=admission["binding"]["route"],
+            request_receipt=request_receipt,
+            router_receipt=router_receipt,
+            response_evidence="response_metadata",
+            response_provider=response_provider,
+            runtime=runtime, now=now)
+        if not recorded.get("ok"):
+            raise WorldError(["%s: the dispatch cannot be proven (%s): %s"
+                              % (CODE_DISPATCH_UNPROVEN, recorded.get("error_code"),
+                                 recorded.get("reason") or recorded.get("message"))])
+        attempt = copy.deepcopy(recorded["attempt"])
+        # Never echo the store's own binding_id: it is a string a caller can
+        # write into model-bindings.json. The provenance carries the identity
+        # recomputed from the admitted binding itself.
+        attempt["binding_id"] = identity
+        attempt["binding_id_source"] = "recomputed_from_admitted_binding"
+        # The handle only exists because the call above really ran: it is minted
+        # here, kept in this process and returned to the caller as a live object.
+        handle = mint(attempt_id=attempt_id, request_receipt=request_receipt, receipt=receipt,
+                      execution=stamp, raw_digest=raw_digest)
+        return {
+            "operation": DISPATCH_OPERATION,
+            "handler": DISPATCH_HANDLER,
+            "prompt_template_revision": PROMPT_TEMPLATE_REVISION,
+            "execution": stamp,
+            "inputs": copy.deepcopy(inputs),
+            "request": request,
+            "request_receipt": request_receipt,
+            "response": {"response_model": response["response_model"],
+                         "resolved_provider_model": response["resolved_provider_model"],
+                         "response_provider": response_provider,
+                         "provider_job_id": response.get("provider_job_id"),
+                         "response_evidence": "response_metadata",
+                         "router_receipt": router_receipt,
+                         "raw_digest": raw_digest},
+            "attempt": attempt,
+            "seal": {"dispatch_handle": handle.ref, "receipt": copy.deepcopy(receipt)},
+            "parsed_output": copy.deepcopy(raw),
+            "_handle": handle,
+        }
+
+    return (Guard(), readonly_map(records, "_HANDLES"), readonly_map(sealed, "_SEALED"),
+            no_spend_transport, live_transport, dispatch_author)
+
+
+_GUARD, _HANDLES, _SEALED, no_spend_transport, live_transport, dispatch_author = \
+    _dispatch_machinery()
 
 def _live_dispatch_reason(dispatch):
     """Why this dispatch cannot be shown to be a call that ran in THIS process.
 
-    Files hold strings; the handle exists only in this process's memory. That is
-    the difference between authoring and echoing a fixture.
+    Files hold strings; the handle exists only in this process's memory and is
+    registered by object identity. That is the difference between authoring and
+    echoing a fixture. The handle also carries what the TRANSPORT minted -- its
+    receipt and the execution stamped from its kind -- so no caller can restate
+    those claims.
     """
     if not isinstance(dispatch, dict):
         return "%s: dispatch is missing; authoring requires a proven model dispatch" \
             % CODE_DISPATCH_UNPROVEN
     handle = dispatch.get("_handle")
-    if not isinstance(handle, DispatchHandle) or _HANDLES.get(handle.ref) is not handle:
+    if not isinstance(handle, DispatchHandle):
         return ("%s: dispatch carries no live dispatch handle; a response fixture, a hand-written "
                 "model-bindings.json or a record read back from a file is not a dispatch"
                 % CODE_DISPATCH_UNPROVEN)
+    state = _GUARD.lookup(handle)
+    if state is None:
+        return ("%s: dispatch._handle is not a handle this run's dispatch minted; a constructed, "
+                "copied, unpickled, subclassed or rebuilt object is never a live dispatch handle"
+                % CODE_DISPATCH_UNPROVEN)
+    if state["execution"] != dispatch.get("execution"):
+        return ("%s: %s: dispatch.execution claims %r but the handle was minted by the %r "
+                "transport; execution is stamped from the transport kind and never asserted by "
+                "the caller" % (CODE_DISPATCH_UNPROVEN, CODE_EXECUTION_STAMP,
+                                dispatch.get("execution"), state["transport_kind"]))
     attempt = dispatch.get("attempt") if isinstance(dispatch.get("attempt"), dict) else {}
     seal = dispatch.get("seal") if isinstance(dispatch.get("seal"), dict) else {}
     for ok, why in (
-            (handle.session == SESSION, "the dispatch handle was not minted in this run"),
-            (handle.ref == seal.get("dispatch_handle"),
+            (state["session"] == SESSION, "the dispatch handle was not minted in this run"),
+            (state["execution"] in EXECUTION_VALUES, "the minted execution is not a known value"),
+            (state["ref"] == seal.get("dispatch_handle"),
              "dispatch.seal.dispatch_handle does not match the live handle"),
-            (handle.attempt_id == attempt.get("attempt_id"),
+            (state["attempt_id"] == attempt.get("attempt_id"),
              "the live handle does not belong to this attempt"),
-            (handle.request_receipt == dispatch.get("request_receipt"),
+            (state["request_receipt"] == dispatch.get("request_receipt"),
              "the live handle does not belong to this request"),
-            (handle.receipt == seal.get("receipt"),
-             "dispatch.seal.receipt is not the receipt the transport minted")):
+            (state["receipt"] == seal.get("receipt"),
+             "dispatch.seal.receipt is not the receipt the transport minted"),
+            (state["raw_digest"] == (dispatch.get("response") or {}).get("raw_digest"),
+             "dispatch.response.raw_digest is not the digest of the dispatched output"),
+            (state["raw_digest"] == _json_digest(dispatch.get("parsed_output")),
+             "dispatch.parsed_output is not the output the transport returned")):
         if not ok:
             return "%s: %s" % (CODE_DISPATCH_UNPROVEN, why)
-    if handle.consumed_by:
+    if state["consumed_by"]:
         return ("%s: the dispatch handle already sealed %s; one dispatch proves one authoring "
-                "record" % (CODE_DISPATCH_UNPROVEN, handle.consumed_by))
+                "record" % (CODE_DISPATCH_UNPROVEN, state["consumed_by"]))
     return None
-
 
 def build_author_request(inputs):
     """The exact authoring request: operation, implemented handler, prompt
@@ -507,7 +903,6 @@ def build_author_request(inputs):
             "handler": DISPATCH_HANDLER,
             "prompt_template_revision": PROMPT_TEMPLATE_REVISION,
             "inputs": copy.deepcopy(inputs)}
-
 
 def _dispatch_proof_errors(provenance, where):
     """The proof a captured dispatch must carry. A world that cannot show it is
@@ -544,7 +939,6 @@ def _dispatch_proof_errors(provenance, where):
                       "evidence is not correlated" % (CODE_DISPATCH_UNPROVEN, where))
     return errors
 
-
 def _seal_proof_errors(seal, where, record=None):
     """The seal proof a record must carry: the handle the dispatch returned, the
     receipt the transport minted at call time, and a seal digest that verifies
@@ -568,97 +962,6 @@ def _seal_proof_errors(seal, where, record=None):
             errors.append("%s: %s.seal_digest does not verify against the record's content digest"
                           % (CODE_DISPATCH_UNPROVEN, where))
     return errors
-
-
-def dispatch_author(*, run_dir, attempt_id, inputs, runner, route=None,
-                    runtime="claude-nine", router_receipt=None,
-                    response_provider=None, now=None):
-    """Author through the existing supported model layer.
-
-    Admits the run's persisted role binding (``ai_models.admit_dispatch``), sends
-    ``build_author_request(inputs)`` to the registered transport and records the
-    attempt through ``ai_models.record_attempt``, which verifies the requested,
-    resolved and response model and stores correlated request/router/response
-    evidence. ``runner`` must be a :class:`DispatchTransport` created by
-    ``no_spend_transport`` (tests) or ``live_transport`` (production): a bare
-    callable or a fixture closure is refused, because it is not a call that
-    happened in this run. The transport mints the receipt and the call returns a
-    live, single-use :class:`DispatchHandle`. Returns the captured
-    request/response provenance and that seal. Raises :class:`WorldError` with
-    ``WORLD_AUTHORING_DISPATCH_UNPROVEN`` whenever the dispatch cannot be proven.
-    """
-    if not isinstance(runner, DispatchTransport):
-        raise WorldError(["%s: dispatch.runner is not a registered dispatch transport; a "
-                          "response fixture, a hand-written model-bindings.json or any "
-                          "caller-written callable is not a dispatch. Register the transport "
-                          "with no_spend_transport() (tests) or live_transport() (production)."
-                          % CODE_DISPATCH_UNPROVEN])
-    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if core not in sys.path:
-        sys.path.insert(0, core)
-    from choice_card.intake_card import ai_models as models
-
-    admission = models.admit_dispatch(run_dir, models.ROLE_BUILD,
-                                      route=route, runtime=runtime)
-    if not admission.get("ok"):
-        raise WorldError(["%s: dispatch admission refused (%s): %s"
-                          % (CODE_DISPATCH_UNPROVEN, admission.get("error_code"),
-                             admission.get("reason") or admission.get("message"))])
-    request = build_author_request(inputs)
-    response, receipt = runner(request)
-    if not isinstance(response, dict) or not isinstance(response.get("raw"), dict):
-        raise WorldError(["%s: dispatch.response.raw must be the model's structured world output"
-                          % CODE_DISPATCH_UNPROVEN])
-    for key in ("response_model", "resolved_provider_model"):
-        if not _nonempty(response.get(key)):
-            raise WorldError(["%s: dispatch.response.%s is missing; the response model is never assumed"
-                              % (CODE_DISPATCH_UNPROVEN, key)])
-    request_receipt = hashlib.sha256(json.dumps(
-        request, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
-    raw = response["raw"]
-    raw_digest = hashlib.sha256(json.dumps(
-        raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
-    recorded = models.record_attempt(
-        run_dir, models.ROLE_BUILD, attempt_id,
-        requested_model=admission["binding"]["model_id"],
-        resolved_provider_model=response["resolved_provider_model"],
-        response_model=response["response_model"],
-        route=admission["binding"]["route"],
-        request_receipt=request_receipt,
-        router_receipt=router_receipt,
-        response_evidence="response_metadata",
-        response_provider=response_provider,
-        runtime=runtime, now=now)
-    if not recorded.get("ok"):
-        raise WorldError(["%s: the dispatch cannot be proven (%s): %s"
-                          % (CODE_DISPATCH_UNPROVEN, recorded.get("error_code"),
-                             recorded.get("reason") or recorded.get("message"))])
-    # The handle only exists because the call above really ran: it is minted
-    # here, kept in this process and returned to the caller as a live object.
-    handle = DispatchHandle(attempt_id=attempt_id, request_receipt=request_receipt,
-                            receipt=receipt)
-    return {
-        "operation": DISPATCH_OPERATION,
-        "handler": DISPATCH_HANDLER,
-        "prompt_template_revision": PROMPT_TEMPLATE_REVISION,
-        "execution": "live" if runner.kind == "live" else "no_spend_fixture",
-        "inputs": copy.deepcopy(inputs),
-        "request": request,
-        "request_receipt": request_receipt,
-        "response": {"response_model": response["response_model"],
-                     "resolved_provider_model": response["resolved_provider_model"],
-                     "response_provider": response_provider,
-                     "provider_job_id": response.get("provider_job_id"),
-                     "response_evidence": "response_metadata",
-                     "router_receipt": router_receipt,
-                     "raw_digest": raw_digest},
-        "attempt": copy.deepcopy(recorded["attempt"]),
-        "seal": {"dispatch_handle": handle.ref, "receipt": copy.deepcopy(receipt)},
-        "parsed_output": copy.deepcopy(raw),
-        "_handle": handle,
-    }
-
 
 def author_world(payload, *, artifact_id, run_id, revision=1, dispatch=None,
                  dependencies=None):
@@ -704,10 +1007,11 @@ def author_world(payload, *, artifact_id, run_id, revision=1, dispatch=None,
     errors = validate(record)
     if errors:
         raise WorldError(errors)
-    handle.consumed_by = record["content_digest"]
-    _SEALED[record["content_digest"]] = handle.ref
+    # Consuming is advance-only state in the mint path's registry: clearing an
+    # attribute on the handle cannot un-spend it.
+    _GUARD.consume(handle, record["content_digest"])
+    _GUARD.note_sealed(record["content_digest"], record["seal"]["dispatch_handle"])
     return record
-
 
 def _parent_seal_reason(record):
     """Why this run cannot attribute the world record to a real dispatch.
@@ -725,12 +1029,12 @@ def _parent_seal_reason(record):
     if digest != canonical_digest(record):
         return ("%s: the world record does not match its own content_digest; a setting change "
                 "must not launder a record edited after it was sealed" % CODE_DISPATCH_UNPROVEN)
-    if _SEALED.get(digest) not in _HANDLES:
+    ref = _SEALED.get(digest)
+    if ref is None or _GUARD.by_ref(ref) is None:
         return ("%s: this run cannot attribute the world record to a live dispatch; a setting "
                 "change derives from an authored world, and a record opened from a file proves "
                 "nothing about who authored it" % CODE_DISPATCH_UNPROVEN)
     return None
-
 
 def change_setting(record, *, locations, reason, era=None):
     """Move the story to a new setting without touching reusable character identity.
@@ -767,7 +1071,7 @@ def change_setting(record, *, locations, reason, era=None):
         raise WorldError(errors)
     if sealed["cast_refs"] != record["cast_refs"]:
         raise WorldError(["a setting change must not rewrite reusable character identity"])
-    _SEALED[sealed["content_digest"]] = _SEALED[record["content_digest"]]
+    _GUARD.note_sealed(sealed["content_digest"], _SEALED.get(record["content_digest"]))
 
     return {
         "world": sealed,
@@ -780,11 +1084,9 @@ def change_setting(record, *, locations, reason, era=None):
         "reason": reason,
     }
 
-
 def _load(path):
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
-
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Author or validate an episode world (S75-T08).")
