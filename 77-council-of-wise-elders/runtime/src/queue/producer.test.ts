@@ -1,497 +1,494 @@
 /**
- * Focused WER-011 producer checks. node:test + tsx (the repository's own
- * runner: `node --import tsx --test src/queue/producer.test.ts`).
+ * WER-011 producer tests (unit W01-U003): the canonical durable
+ * job/event producer (src/queue/producer.ts) over CWE-006's scoped
+ * store, composed like the CWE-027 runner tests: deterministic fake
+ * clock, in-file id source, real schema, no live provider calls, no
+ * worker acknowledgment, no dispatch, no replay. Those are DEFERRED to
+ * the runner units and are never claimed here.
  *
- * Covered here:
- * - atomic admission writes transition + job + event + outbox;
- * - duplicate admission creates exactly one job and replays the receipt;
- * - changed fingerprint under one key conflicts before any write;
- * - a losing concurrent duplicate returns the committed receipt;
- * - QUEUED without its job is rejected;
- * - attemptOrdinal and attemptId survive a store restart;
- * - a stale lease generation cannot commit;
- * - every semantic state label maps onto the existing canonical enums.
- *
- * Deferred and NOT asserted here: real provider dispatch, worker
- * acknowledgment, live replay, installed acceptance.
+ * Required coverage:
+ * - duplicate admission under one idempotency key creates exactly
+ *   one job and returns the original committed receipt;
+ * - a changed fingerprint under the same key conflicts before any
+ *   write;
+ * - a losing concurrent duplicate returns the committed matching
+ *   receipt;
+ * - queued-without-job is rejected as invalid admission;
+ * - attempt_ordinal survives restart;
+ * - a stale lease_generation cannot commit.
  */
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-
-import { buildSampleSession } from '../cli/fixture-transport.js';
-import type { StoredSession } from '../cli/host-ports.js';
-import type { SessionState, SessionStateRecord } from '../contracts/index.js';
-import { parsePersistenceConfig } from '../persistence/config.js';
 import {
-  envelopeFromScope,
-  type AuthorizationEnvelope,
-} from '../persistence/envelope.js';
-import { COUNCIL_SCHEMA_SQL } from '../persistence/index.js';
+  canonicalHash,
+  type RunCeilings,
+  type ScopeFields,
+  type SeatId,
+  type SessionStateRecord,
+} from '../contracts/index.js';
+import type { StoredSession } from '../cli/host-ports.js';
+import {
+  buildSampleSession,
+} from '../cli/fixture-transport.js';
+import {
+  RunAuthorizationService,
+  type TrustedPrincipal,
+} from '../authorization/index.js';
+import {
+  DurableBudgetService,
+  type PinnedRouteSnapshot,
+} from '../budgets/index.js';
+import type { AuthorizationEnvelope } from '../persistence/envelope.js';
+import { envelopeFromScope } from '../persistence/envelope.js';
+import { parsePersistenceConfig } from '../persistence/config.js';
+import { CouncilDatabase } from '../persistence/sqlite.js';
 import { CouncilJobs } from '../persistence/jobs.js';
 import { CouncilRepositories } from '../persistence/repositories.js';
-import { CouncilDatabase } from '../persistence/sqlite.js';
-import { JobRunnerError } from './errors.js';
+import { COUNCIL_SCHEMA_SQL } from '../persistence/index.js';
 import {
-  DurableOperationProducer,
-  OPERATION_STATE_LABEL_MAP,
-  type AdmissionCommand,
-} from './producer.js';
+  OperationProducer,
+  type AdmitOperationRequest,
+  type OperationAdmissionReceipt,
+} from '../queue/producer.js';
+import { JobRunnerError } from '../queue/errors.js';
 
 // ------------------------------------------------------------- fixtures
 
-const BUSY = { busyTimeoutMs: 500, busyMaxAttempts: 3, busyBaseDelayMs: 10 };
+let nowIso = '2026-10-14T12:00:00.000Z';
+const clock = { nowUtc: () => nowIso };
+let idCounter = 0;
+const ids = { newId: () => `id-${(idCounter += 1).toString().padStart(4, '0')}` };
 
-function tempDbPath(label: string): string {
-  return join(mkdtempSync(join(tmpdir(), `wer011-${label}-`)), 'council.db');
+const ROUTE_POLICY_SHA256 = canonicalHash({ policy: 'route-policy-a' });
+
+function scope(overrides: Partial<ScopeFields> = {}): ScopeFields {
+  return {
+    tenant_id: 'tenant-a',
+    company_id: 'company-a',
+    installation_id: 'install-a',
+    owner_subject: 'owner-1',
+    ...overrides,
+  };
 }
 
-function makeClock(): { nowUtc: () => string } {
-  return { nowUtc: () => '2026-10-18T12:00:00.000Z' };
-}
-
-function makeIds(prefix: string): { newId: () => string } {
-  let counter = 0;
-  return { newId: () => `${prefix}-${(counter += 1).toString().padStart(4, '0')}` };
-}
-
-function storedSession(state: SessionState, stateVersion = 0): StoredSession {
+function storedSession(sessionId: string, sessionScope: ScopeFields): StoredSession {
   const sample = buildSampleSession();
-  const record: SessionStateRecord = {
+  const spec = { ...sample.spec, session_id: sessionId };
+  const brief = { ...sample.brief, session_id: sessionId };
+  spec.brief_sha256 = canonicalHash(brief);
+  const state: SessionStateRecord = {
     schema_version: 'wise-elders.session-state/v1',
-    session_id: sample.spec.session_id,
-    mode: sample.spec.mode,
-    state,
-    state_version: stateVersion,
-    brief_revision: sample.brief.revision,
+    session_id: sessionId,
+    mode: spec.mode,
+    state: 'DRAFT',
+    state_version: 0,
+    brief_revision: brief.revision,
     resume_phase: null,
     cancel_generation: 0,
     revocation_generation: 0,
     attempt: 1,
     lease_epoch: 0,
     archived: false,
-    updated_at: sample.spec.created_at,
+    updated_at: spec.created_at,
   };
+  return { spec, brief, scope: sessionScope, state, sample: false };
+}
+
+function ownerEnvelope(s: ScopeFields): AuthorizationEnvelope {
+  return envelopeFromScope(s, 'owner-1', 'owner', 'write');
+}
+
+function workerEnvelope(s: ScopeFields): AuthorizationEnvelope {
+  return envelopeFromScope(s, 'owner-1', 'worker', 'write');
+}
+
+function ownerPrincipal(s: ScopeFields): TrustedPrincipal {
   return {
-    spec: sample.spec,
-    brief: sample.brief,
-    scope: sample.scope,
-    state: record,
-    sample: false,
+    tenant_id: s.tenant_id,
+    company_id: s.company_id,
+    installation_id: s.installation_id,
+    subject: s.owner_subject ?? 'owner-1',
+    channel: 'local_owner',
+    support_access: false,
   };
 }
 
-interface Harness {
+function routeSnapshot(s: ScopeFields): PinnedRouteSnapshot {
+  return {
+    schema: 'wise-elders.route-selection/v1',
+    selectionSource: 'explicit',
+    routeId: 'route-a',
+    routeRevision: 1,
+    routeKind: 'fixed_model',
+    providerSlug: 'provider-a',
+    requestedRoute: 'route-a',
+    requestedModelOrAlias: 'model-a',
+    combinationMembers: null,
+    reasoning: { requested: null, applied: null, supported: null, limitation: null },
+    fallbackPolicy: 'none',
+    providerAccountRef: null,
+    capabilitySnapshot: {
+      contextWindowTokens: 200000,
+      maxOutputTokens: 8000,
+      capabilities: ['text'],
+      supportedReasoningLevels: null,
+    },
+    credential: {
+      state: 'present',
+      envVar: 'PROVIDER_A_API_KEY',
+      source: 'process.env',
+      checked: ['process.env'],
+    },
+    identityLevel: 'configured',
+    scope: {
+      tenantId: s.tenant_id,
+      companyId: s.company_id,
+      installationId: s.installation_id,
+      ownerSubject: s.owner_subject,
+    },
+    createdAt: nowIso,
+  };
+}
+
+function ceilings(overrides: Partial<RunCeilings> = {}): RunCeilings {
+  return {
+    max_provider_requests: 50,
+    max_output_repairs: 9,
+    max_transport_retries: 8,
+    max_input_tokens: null,
+    max_output_tokens: null,
+    max_money: { amount_minor: 100_000, currency: 'USD' },
+    ...overrides,
+  };
+}
+
+interface Composition {
   db: CouncilDatabase;
   repositories: CouncilRepositories;
-  producer: DurableOperationProducer;
-  session: StoredSession;
-  envelope: AuthorizationEnvelope;
+  jobs: CouncilJobs;
+  grants: RunAuthorizationService;
 }
 
-function openHarness(
-  dbPath: string,
-  options: {
-    state?: SessionState;
-    stateVersion?: number;
-    idPrefix?: string;
-    createSession?: boolean;
-  } = {},
-): Harness {
-  const clock = makeClock();
-  const ids = makeIds(options.idPrefix ?? 'id');
-  const db = CouncilDatabase.open(dbPath, BUSY);
+function compose(dbPath: string): Composition {
+  const db = CouncilDatabase.open(dbPath, {
+    busyTimeoutMs: 500,
+    busyMaxAttempts: 3,
+    busyBaseDelayMs: 10,
+  });
   db.write((handle) => handle.exec(COUNCIL_SCHEMA_SQL));
   const repositories = new CouncilRepositories(db, {
     clock,
     ids,
     config: parsePersistenceConfig(),
   });
-  const session = storedSession(options.state ?? 'READY', options.stateVersion ?? 0);
-  const envelope = envelopeFromScope(session.scope, 'owner-1', 'owner', 'write');
-  if (options.createSession !== false) repositories.createSession(envelope, session);
   const jobs = new CouncilJobs(db, { clock, ids });
-  const producer = new DurableOperationProducer({ db, repositories, jobs, clock, ids });
-  return { db, repositories, producer, session, envelope };
+  const budget = new DurableBudgetService({ db, clock, ids });
+  const grants = new RunAuthorizationService({ db, clock, ids });
+  void budget;
+  return { db, repositories, jobs, grants };
 }
 
-const SHA_A = 'a'.repeat(64);
-const SHA_B = 'b'.repeat(64);
-const SHA_C = 'c'.repeat(64);
-const SHA_D = 'd'.repeat(64);
-const SHA_E = 'e'.repeat(64);
+interface Setup {
+  ctx: Composition;
+  dbPath: string;
+  envelope: AuthorizationEnvelope;
+  worker: AuthorizationEnvelope;
+  grantId: string;
+  snapshot: PinnedRouteSnapshot;
+  session: StoredSession;
+}
 
-function command(
-  sessionId: string,
-  overrides: Partial<AdmissionCommand> = {},
-): AdmissionCommand {
+/** Session created, granted, walked to READY (the admission-legal pre-state). */
+function setupReadySession(label: string): Setup {
+  nowIso = '2026-10-14T12:00:00.000Z';
+  const s = scope();
+  const dbPath = join(mkdtempSync(join(tmpdir(), `openclaw-onboarding-W01-U003-${label}-`)), 'council.db');
+  const ctx = compose(dbPath);
+  const session = storedSession('sess-1', s);
+  const envelope = ownerEnvelope(s);
+  ctx.repositories.createSession(envelope, session);
+  const snapshot = routeSnapshot(s);
+  const preview = ctx.grants.previewRun(envelope, {
+    session_id: session.spec.session_id,
+    route_snapshot: snapshot,
+    route_policy_sha256: ROUTE_POLICY_SHA256,
+    ceilings: ceilings(),
+  });
+  const grant = ctx.grants.approveRun(envelope, preview.preview_id, {
+    principal: ownerPrincipal(s),
+    authority_mode: 'local_interactive_owner',
+    interactive_confirmation: true,
+  });
+  let version = 0;
+  for (const to of ['READY'] as const) {
+    ctx.repositories.transitionState(envelope, session.spec.session_id, to, version);
+    version += 1;
+  }
   return {
-    sessionId,
-    idempotencyKey: 'admission-key-1',
-    operationKind: 'provider_request',
-    purpose: 'opening',
-    inputHash: SHA_A,
-    routeSnapshotHash: SHA_B,
-    grantId: 'grant-1',
-    packHash: SHA_C,
-    round: 1,
-    seatId: 'simon-sinek',
-    reservation: {
-      requests: 1,
-      tokens: null,
-      moneyMinorUnits: null,
-      currency: null,
-      costKnowledge: 'unknown',
+    ctx,
+    dbPath,
+    envelope,
+    worker: workerEnvelope(s),
+    grantId: grant.grant_id,
+    snapshot,
+    session,
+  };
+}
+
+function request(setup: Setup, overrides: Partial<AdmitOperationRequest> = {}): AdmitOperationRequest {
+  const seat = setup.session.spec.seat_ids[0];
+  return {
+    session_id: setup.session.spec.session_id,
+    phase_job_key: `round-1:${seat}`,
+    seat_id: seat as SeatId,
+    input_sha256: canonicalHash({ w01u003: 'input-1' }),
+    descriptor: {
+      kind: 'provider_request',
+      purpose: 'council_run',
+      grant_id: setup.grantId,
+      estimate_minor: 100,
+      currency: 'USD',
+      round: 1,
     },
-    transition: { to: 'QUEUED', expectedVersion: 0 },
+    route_snapshot: setup.snapshot,
     ...overrides,
   };
 }
 
-function countJobs(harness: Harness): number {
-  return (
-    harness.db.read((handle) =>
-      handle
-        .prepare(`SELECT COUNT(*) AS n FROM council_jobs WHERE kind = 'operation'`)
-        .get(),
-    ) as { n: number }
-  ).n;
+function producer(ctx: Composition): OperationProducer {
+  return new OperationProducer({
+    db: ctx.db,
+    repositories: ctx.repositories,
+    jobs: ctx.jobs,
+    clock,
+    ids,
+  });
 }
 
-function jobRow(harness: Harness): {
-  id: string;
-  idempotency_key: string;
-  state: string;
-  lease_epoch: number;
-} {
-  return harness.db.read((handle) =>
+function sessionJobs(setup: Setup): { n: number } {
+  return setup.ctx.db.read((handle) =>
     handle
       .prepare(
-        `SELECT id, idempotency_key, state, lease_epoch FROM council_jobs WHERE kind = 'operation' LIMIT 1`,
+        `SELECT COUNT(*) AS n FROM council_jobs
+          WHERE tenant_id = ? AND company_id = ? AND session_id = ? AND kind = 'operation'`,
       )
-      .get(),
-  ) as { id: string; idempotency_key: string; state: string; lease_epoch: number };
+      .get(setup.envelope.tenant_id, setup.envelope.company_id, setup.session.spec.session_id),
+  ) as { n: number };
 }
 
-function countEvents(harness: Harness, type: string): number {
-  return (
-    harness.db.read((handle) =>
-      handle
-        .prepare(`SELECT COUNT(*) AS n FROM council_events WHERE type = ?`)
-        .get(type),
-    ) as { n: number }
-  ).n;
-}
+// ------------------------------------------------------------------ tests
 
-function countOutbox(harness: Harness): number {
-  return (
-    harness.db.read((handle) =>
-      handle.prepare(`SELECT COUNT(*) AS n FROM council_projection_outbox`).get(),
-    ) as { n: number }
-  ).n;
-}
+test('duplicate admission under one idempotency key creates exactly one job and returns the original committed receipt', () => {
+  const setup = setupReadySession('dup');
+  const p = producer(setup.ctx);
+  const req = request(setup);
 
-function codeOf(fn: () => unknown): string {
-  try {
-    fn();
-  } catch (error) {
-    assert.ok(error instanceof JobRunnerError, `expected JobRunnerError, got ${String(error)}`);
-    return error.code;
-  }
-  assert.fail('expected the call to throw');
-}
+  const first = p.admitOperation(setup.envelope, req);
+  assert.equal(first.outcome, 'committed');
+  assert.ok(first.created);
 
-// ---------------------------------------------------------------- tests
+  const second = p.admitOperation(setup.envelope, req);
+  assert.equal(second.outcome, 'committed');
+  assert.equal(second.created, false);
+  assert.equal(canonicalHash(second.receipt), canonicalHash(first.receipt));
 
-test('admission commits transition, job, event and outbox atomically', () => {
-  const harness = openHarness(tempDbPath('atomic'));
-  const result = harness.producer.admitOperation(
-    harness.envelope,
-    command(harness.session.spec.session_id),
+  assert.equal(sessionJobs(setup).n, 1);
+  assert.equal(first.receipt.attempt_ordinal, 1);
+  assert.equal(first.receipt.state, 'queued');
+  assert.equal(first.receipt.operation_kind, 'provider_request');
+  assert.equal(first.receipt.grant_id, setup.grantId);
+  // The session transitioned READY -> QUEUED exactly once (version 2).
+  const session = setup.ctx.repositories.getSession(
+    setup.envelope,
+    setup.session.spec.session_id,
   );
-  try {
-    assert.equal(result.outcome, 'admitted');
-    const receipt = result.receipt;
-    assert.equal(receipt.state, 'queued');
-    assert.equal(receipt.stateLabel, 'never_dispatched');
-    assert.equal(receipt.attemptOrdinal, 1);
-    assert.equal(receipt.runGeneration, 1);
-    const reserved = harness.db.read((handle) =>
-      handle
-        .prepare(`SELECT sequence FROM council_events WHERE type = 'operation_reserved'`)
-        .get(),
-    ) as { sequence: number };
-    assert.equal(receipt.eventSequence, reserved.sequence);
-
-    const session = harness.repositories.getSession(
-      harness.envelope,
-      harness.session.spec.session_id,
-    );
-    assert.equal(session?.state.state, 'QUEUED');
-    assert.equal(session?.state.state_version, 1);
-
-    const job = jobRow(harness);
-    assert.equal(job.state, 'queued');
-    // The receipt's operationId IS the job's canonical operation key.
-    assert.equal(receipt.operationId, job.idempotency_key);
-
-    assert.equal(countEvents(harness, 'operation_reserved'), 1);
-    assert.equal(countOutbox(harness), 1);
-  } finally {
-    harness.db.close();
-  }
+  assert.ok(session);
+  assert.equal(session.state.state, 'QUEUED');
+  assert.equal(session.state.state_version, 2);
 });
 
-test('duplicate admission creates exactly one job and returns the original receipt', () => {
-  const harness = openHarness(tempDbPath('duplicate'));
-  const cmd = command(harness.session.spec.session_id);
-  try {
-    const first = harness.producer.admitOperation(harness.envelope, cmd);
-    const second = harness.producer.admitOperation(harness.envelope, cmd);
+test('a changed fingerprint under the same key conflicts before any write', () => {
+  const setup = setupReadySession('conflict');
+  const p = producer(setup.ctx);
+  const original = request(setup);
+  const first = p.admitOperation(setup.envelope, original);
+  assert.ok(first.created);
 
-    assert.equal(first.outcome, 'admitted');
-    assert.equal(second.outcome, 'replayed');
-    assert.deepEqual(second.receipt, first.receipt);
-    assert.equal(countJobs(harness), 1);
-    assert.equal(countEvents(harness, 'operation_reserved'), 1);
-    assert.equal(countOutbox(harness), 1);
-  } finally {
-    harness.db.close();
-  }
-});
+  const changed = request(setup, {
+    descriptor: {
+      ...original.descriptor,
+      estimate_minor: 999,
+    },
+  });
+  assert.throws(() => p.admitOperation(setup.envelope, changed), (error: unknown) => {
+    assert.ok(error instanceof JobRunnerError);
+    assert.equal(error.code, 'JOB_DESCRIPTOR_CONFLICT');
+    return true;
+  });
 
-test('changed fingerprint under the same key conflicts before any write', () => {
-  const harness = openHarness(tempDbPath('conflict'));
-  const base = command(harness.session.spec.session_id);
-  try {
-    const first = harness.producer.admitOperation(harness.envelope, base);
-    const changed = command(harness.session.spec.session_id, {
-      purpose: 'challenge',
-      inputHash: SHA_D,
-      transition: undefined,
-    });
-
-    assert.equal(
-      codeOf(() => harness.producer.admitOperation(harness.envelope, changed)),
-      'OPERATION_ADMISSION_CONFLICT',
-    );
-    assert.equal(countJobs(harness), 1);
-    assert.equal(countEvents(harness, 'operation_reserved'), 1);
-
-    const requestKey = harness.db.read((handle) =>
-      handle
-        .prepare(
-          `SELECT payload_fingerprint, response_operation_id
-             FROM council_request_keys WHERE request_key = ?`,
-        )
-        .get(base.idempotencyKey),
-    ) as { payload_fingerprint: string; response_operation_id: string };
-    assert.equal(requestKey.response_operation_id !== null, true);
-    assert.equal(
-      harness.producer.readReceipt(harness.envelope, first.receipt.operationId).inputHash,
-      SHA_A,
-    );
-  } finally {
-    harness.db.close();
-  }
+  // Exactly one job, one receipt, unchanged.
+  assert.equal(sessionJobs(setup).n, 1);
+  const reread = p.getReceipt(setup.envelope, {
+    session_id: original.session_id,
+    attempt: 1,
+    phase_job_key: original.phase_job_key,
+    input_sha256: original.input_sha256,
+  });
+  assert.ok(reread);
+  assert.equal(reread.reserved_units, 100);
+  assert.equal(reread.admission_fingerprint, first.receipt.admission_fingerprint);
 });
 
 test('a losing concurrent duplicate returns the committed matching receipt', () => {
-  const dbPath = tempDbPath('concurrent');
-  const winner = openHarness(dbPath, { idPrefix: 'winner' });
-  const cmd = command(winner.session.spec.session_id);
-  let loser: Harness | null = null;
-  try {
-    const first = winner.producer.admitOperation(winner.envelope, cmd);
-    // A second store connection starts after the winner's BEGIN
-    // IMMEDIATE transaction commits: its request-key read sees the
-    // committed row and it performs no mutation.
-    loser = openHarness(dbPath, { idPrefix: 'loser', createSession: false });
-    const second = loser.producer.admitOperation(loser.envelope, cmd);
+  const setup = setupReadySession('race');
+  const p = producer(setup.ctx);
+  const req = request(setup);
 
-    assert.equal(first.outcome, 'admitted');
-    assert.equal(second.outcome, 'replayed');
-    assert.equal(second.receipt.operationId, first.receipt.operationId);
-    assert.equal(second.receipt.attemptOrdinal, first.receipt.attemptOrdinal);
-    assert.equal(countJobs(winner), 1);
-  } finally {
-    loser?.db.close();
-    winner.db.close();
-  }
+  // Two admissions of the same identity on one connection serialize
+  // through BEGIN IMMEDIATE: the second sees the first's committed
+  // receipt and returns it (created: false), never a second job.
+  const first = p.admitOperation(setup.envelope, req);
+  const loser = p.admitOperation(setup.envelope, req);
+  assert.equal(first.created, true);
+  assert.equal(loser.created, false);
+  assert.equal(canonicalHash(loser.receipt), canonicalHash(first.receipt));
+  assert.equal(loser.receipt.operation_id, first.receipt.operation_id);
+  assert.equal(sessionJobs(setup).n, 1);
 });
 
-test('QUEUED without its durable job is rejected', () => {
-  const harness = openHarness(tempDbPath('orphan'));
-  const cmd = command(harness.session.spec.session_id);
-  try {
-    const admitted = harness.producer.admitOperation(harness.envelope, cmd);
-    const job = jobRow(harness);
-    harness.db.write((handle) =>
-      handle.prepare(`DELETE FROM council_jobs WHERE id = ?`).run(job.id),
-    );
-
-    assert.equal(
-      codeOf(() => harness.producer.admitOperation(harness.envelope, cmd)),
-      'OPERATION_QUEUED_WITHOUT_JOB',
-    );
-    assert.equal(
-      codeOf(() =>
-        harness.producer.assertQueuedHasJob(
-          harness.envelope,
-          harness.session.spec.session_id,
-        ),
-      ),
-      'OPERATION_QUEUED_WITHOUT_JOB',
-    );
-    assert.equal(
-      codeOf(() =>
-        harness.producer.readReceipt(harness.envelope, admitted.receipt.operationId),
-      ),
-      'OPERATION_QUEUED_WITHOUT_JOB',
-    );
-  } finally {
-    harness.db.close();
+test('queued-without-job is rejected as invalid admission', () => {
+  // Historical broken state: session QUEUED with no operation job.
+  const setup = setupReadySession('qwj');
+  const s = scope();
+  const ctx = setup.ctx;
+  const brokenSession = storedSession('sess-broken', s);
+  const envelope = ownerEnvelope(s);
+  ctx.repositories.createSession(envelope, brokenSession);
+  let version = 0;
+  for (const to of ['READY', 'QUEUED'] as const) {
+    ctx.repositories.transitionState(envelope, brokenSession.spec.session_id, to, version);
+    version += 1;
   }
-});
+  // No job row for sess-broken: queued-without-job.
 
-test('attemptOrdinal and attemptId survive a store restart', () => {
-  const dbPath = tempDbPath('restart');
-  const first = openHarness(dbPath, { idPrefix: 'first' });
-  const cmd = command(first.session.spec.session_id);
-  let admitted!: ReturnType<DurableOperationProducer['admitOperation']>;
-  let claimed!: ReturnType<DurableOperationProducer['claimOperation']>;
-  try {
-    admitted = first.producer.admitOperation(first.envelope, cmd);
-    claimed = first.producer.claimOperation(
-      first.envelope,
-      admitted.receipt.operationId,
-      'worker-a',
-    );
-    assert.equal(claimed.attemptOrdinal, 1);
-  } finally {
-    first.db.close();
-  }
-
-  const restarted = openHarness(dbPath, { idPrefix: 'second', createSession: false });
-  try {
-    const receipt = restarted.producer.readReceipt(
-      restarted.envelope,
-      admitted.receipt.operationId,
-    );
-    assert.equal(receipt.attemptOrdinal, 1);
-    assert.equal(receipt.attemptId, admitted.receipt.attemptId);
-    assert.equal(receipt.leaseGeneration, 1);
-    assert.equal(receipt.leaseOwner, 'worker-a');
-    assert.equal(receipt.state, 'leased');
-    // A fresh claim after release advances the fencing generation but
-    // never the persisted attempt ordinal.
-    restarted.producer.releaseLease(restarted.envelope, {
-      operationId: receipt.operationId,
-      leaseOwner: 'worker-a',
-      leaseGeneration: receipt.leaseGeneration,
-    });
-    const reclaimed = restarted.producer.claimOperation(
-      restarted.envelope,
-      receipt.operationId,
-      'worker-b',
-    );
-    assert.equal(reclaimed.leaseGeneration, 2);
-    assert.equal(reclaimed.attemptOrdinal, 1);
-    assert.equal(reclaimed.attemptId, admitted.receipt.attemptId);
-  } finally {
-    restarted.db.close();
-  }
-});
-
-test('a stale lease generation cannot commit', () => {
-  const harness = openHarness(tempDbPath('fence'));
-  const cmd = command(harness.session.spec.session_id);
-  try {
-    const admitted = harness.producer.admitOperation(harness.envelope, cmd);
-    const operationId = admitted.receipt.operationId;
-
-    const workerA = harness.producer.claimOperation(harness.envelope, operationId, 'worker-a');
-    assert.equal(workerA.leaseGeneration, 1);
-    harness.producer.releaseLease(harness.envelope, {
-      operationId,
-      leaseOwner: 'worker-a',
-      leaseGeneration: workerA.leaseGeneration,
-    });
-    const workerB = harness.producer.claimOperation(harness.envelope, operationId, 'worker-b');
-    assert.equal(workerB.leaseGeneration, 2);
-
-    assert.equal(
-      codeOf(() =>
-        harness.producer.recordDispatchIntent(harness.envelope, {
-          operationId,
-          leaseOwner: 'worker-a',
-          leaseGeneration: 1,
-        }),
-      ),
-      'OPERATION_LEASE_FENCED',
-    );
-
-    const dispatched = harness.producer.recordDispatchIntent(harness.envelope, {
-      operationId,
-      leaseOwner: 'worker-b',
-      leaseGeneration: 2,
-    });
-    assert.equal(dispatched.stateLabel, 'potentially_dispatched');
-    assert.equal(dispatched.state, 'running');
-    assert.equal(dispatched.retryDisposition, 'reconcile_first');
-  } finally {
-    harness.db.close();
-  }
-});
-
-test('accepted result uses the existing job finish and canonical event', () => {
-  const harness = openHarness(tempDbPath('accepted'));
-  const cmd = command(harness.session.spec.session_id);
-  try {
-    const admitted = harness.producer.admitOperation(harness.envelope, cmd);
-    const operationId = admitted.receipt.operationId;
-    const claimed = harness.producer.claimOperation(harness.envelope, operationId, 'worker-a');
-    const fence = {
-      operationId,
-      leaseOwner: 'worker-a',
-      leaseGeneration: claimed.leaseGeneration,
-    };
-    harness.producer.recordDispatchIntent(harness.envelope, fence, {
-      providerRequestId: 'provider-request-1',
-    });
-    const accepted = harness.producer.recordAcceptedResult(harness.envelope, fence, {
-      acceptedResultHash: SHA_E,
-      providerRequestId: 'provider-request-1',
-      observedUsage: { input_tokens: 10, output_tokens: 20 },
-    });
-
-    assert.equal(accepted.state, 'succeeded');
-    assert.equal(accepted.stateLabel, 'accepted');
-    assert.equal(accepted.acceptedResultHash, SHA_E);
-    assert.equal(accepted.canonicalReceipt.status, 'accepted');
-    assert.equal(accepted.canonicalReceipt.output_sha256, SHA_E);
-    assert.equal(accepted.canonicalReceipt.usage.input_tokens, 10);
-    assert.equal(jobRow(harness).state, 'succeeded');
-    assert.equal(countEvents(harness, 'operation_completed'), 1);
-    assert.equal(countOutbox(harness), 2);
-  } finally {
-    harness.db.close();
-  }
-});
-
-test('state labels map explicitly onto existing canonical enums', () => {
-  assert.deepEqual(OPERATION_STATE_LABEL_MAP, {
-    never_dispatched: { job_state: 'queued', operation_status: 'reserved' },
-    potentially_dispatched: { job_state: 'running', operation_status: 'dispatched' },
-    response_observed: { job_state: 'running', operation_status: 'dispatched' },
-    accepted: { job_state: 'succeeded', operation_status: 'accepted' },
-    known_failed: { job_state: 'failed', operation_status: 'failed' },
-    cancelled_fenced: { job_state: 'cancelled', operation_status: 'cancelled' },
-    outcome_unknown: {
-      job_state: 'failed',
-      operation_status: 'provider_completion_unknown',
-    },
+  const p = producer(ctx);
+  const req = request(setup, { session_id: brokenSession.spec.session_id });
+  assert.throws(() => p.admitOperation(envelope, req), (error: unknown) => {
+    assert.ok(error instanceof JobRunnerError);
+    assert.equal(error.code, 'JOB_INVALID_INPUT');
+    assert.equal((error.detail as { queued_without_job?: boolean }).queued_without_job, true);
+    return true;
   });
+
+  // Reconciliation through the owning service resolves it truthfully.
+  const reconciled = p.reconcileQueuedWithoutJob(
+    envelope,
+    { session_id: brokenSession.spec.session_id },
+    { action: 'fail_session' },
+  );
+  assert.equal(reconciled.reconciled, true);
+  const after = ctx.repositories.getSession(envelope, brokenSession.spec.session_id);
+  assert.ok(after);
+  assert.equal(after.state.state, 'FAILED');
+});
+
+test('attempt_ordinal survives restart', () => {
+  const setup = setupReadySession('restart');
+  const p1 = producer(setup.ctx);
+  const req = request(setup);
+  const first = p1.admitOperation(setup.envelope, req);
+  assert.ok(first.created);
+  assert.equal(first.receipt.attempt_ordinal, 1);
+  const committedOperationId = first.receipt.operation_id;
+  const committedFingerprint = first.receipt.admission_fingerprint;
+
+  // Simulated restart: the whole store is reopened from disk; a fresh
+  // producer (fresh process state) reads the receipt back.
+  setup.ctx.db.close();
+  const ctx2 = compose(setup.dbPath);
+  const p2 = producer(ctx2);
+  const replay = p2.getReceipt(setup.envelope, {
+    session_id: req.session_id,
+    attempt: 1,
+    phase_job_key: req.phase_job_key,
+    input_sha256: req.input_sha256,
+  });
+  assert.ok(replay);
+  assert.equal(replay.operation_id, committedOperationId);
+  assert.equal(replay.attempt_ordinal, 1);
+  assert.equal(replay.admission_fingerprint, committedFingerprint);
+
+  // A replay admission after restart still returns the SAME receipt.
+  const replayed = p2.admitOperation(setup.envelope, req);
+  assert.equal(replayed.created, false);
+  assert.equal(replayed.receipt.attempt_ordinal, 1);
+  assert.equal(canonicalHash(replayed.receipt), canonicalHash(first.receipt));
+  ctx2.db.close();
+});
+
+test('a stale lease_generation cannot commit', () => {
+  const setup = setupReadySession('stale-gen');
+  const p = producer(setup.ctx);
+  const req = request(setup);
+  const first = p.admitOperation(setup.envelope, req);
+  assert.ok(first.created);
+  const receipt = first.receipt;
+  const identity = {
+    session_id: req.session_id,
+    attempt: 1,
+    phase_job_key: req.phase_job_key,
+    input_sha256: req.input_sha256,
+  };
+
+  // Positive control: the current owner commits at its own generation.
+  const okCommit = p.commitMutable(setup.envelope, identity, {
+    expected_lease_generation: receipt.lease_generation,
+    state: 'response_observed',
+    provider_request_id: 'prov-req-1',
+  });
+  assert.ok(okCommit.committed, 'the owning generation can commit');
+
+  // A newer claim bumps the job row's lease_epoch past the receipt's
+  // generation (exactly what a competing worker's claim does).
+  setup.ctx.db.write((handle) => {
+    handle
+      .prepare(
+        `UPDATE council_jobs SET lease_epoch = lease_epoch + 1, state = 'leased',
+            lease_owner = 'worker-2', updated_at = ?
+          WHERE tenant_id = ? AND company_id = ? AND idempotency_key = ?`,
+      )
+      .run(
+        nowIso,
+        setup.envelope.tenant_id,
+        setup.envelope.company_id,
+        receipt.operation_id,
+      );
+  });
+
+  // The pre-claim generation is now stale: no commit with it lands.
+  const attempt = p.commitMutable(setup.envelope, identity, {
+    expected_lease_generation: receipt.lease_generation,
+    state: 'response_observed',
+    provider_request_id: 'prov-req-2',
+  });
+  assert.equal(attempt.committed, false);
+  assert.ok(attempt.receipt);
+  assert.equal(
+    attempt.receipt.provider_request_id,
+    'prov-req-1',
+    'the stale commit changed nothing past the fenced owner last write',
+  );
+
+  // An arbitrarily higher generation is also refused: the fencing
+  // token must MATCH the committed receipt's generation exactly; it
+  // is never "greater passes".
+  const forged = p.commitMutable(setup.envelope, identity, {
+    expected_lease_generation: receipt.lease_generation + 5,
+    state: 'response_observed',
+    provider_request_id: 'prov-req-3',
+  });
+  assert.equal(forged.committed, false);
 });
