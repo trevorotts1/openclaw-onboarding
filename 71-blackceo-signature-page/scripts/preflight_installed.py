@@ -14,16 +14,29 @@ Usage:
     python3 scripts/preflight_installed.py [--target DIR] [--json]
 
 Exit codes:
-    0  installed runtime is ready: layout, imports, local assets and the
-       representative dry run passed, and no demonstrated dependency is missing
+    0  installed runtime is ready: layout and imports passed, every declared
+       local asset resolves, and the representative dry run behaved as expected
     1  a runtime gap was demonstrated: something a production script needs is
        missing or fails
     2  the preflight could not complete a section (named in the output)
+
+What the dry run normally shows. This tree carries no client brand data, so in
+the normal case `build_production_request.py` REFUSES ("brand colors
+unresolved, ...") before writing a request, and the `stage_executor --preflight`
+row is SKIP -- not PASS -- because the executor was never reached. A PASS on
+that row means the build produced a request AND the executor printed its own
+PREFLIGHT markers; exit status alone is never proof that it ran.
 
 A demonstrated gap is fatal to the verdict even when the exercised path never
 reached it — a dependency does not stop being missing because this run did not
 call it. Optional imaging/render capabilities are reported SKIP, matching
 `verify.sh --capabilities`, and never flip the verdict.
+
+Rows reported but NOT gating the verdict: DEGRADED (the shared design tokens
+component resolves outside this tree -- emit_design_tokens records
+`component_not_in_tree` and carries on) and REF (the shared design.css is a
+component reference recorded in a produced page, with no read path in this
+tree). Only GAP and FAIL gate.
 """
 from __future__ import annotations
 
@@ -206,18 +219,39 @@ EXECUTOR_FAIL_CLOSED = (
 )
 
 
+TRACEBACK_MARKER = "Traceback (most recent call last)"
+
+
+def _last_nonempty_line(text: str) -> str:
+    for raw in reversed(text.splitlines()):
+        if raw.strip():
+            return raw.strip()
+    return ""
+
+
 def classify_build_failure(text: str) -> str:
     """'refused' or 'gap' for a failed build_production_request run.
 
     build_production_request prints REFUSED for OSError too, and OSError
     includes a missing packaged file. A packaging break must never be read as a
-    polite refusal, so the file/module signature is tested first and wins. A
-    REFUSED that is not one of the allowlisted client-data refusals is a gap:
-    arbitrary refusal text proves nothing about the installation.
+    polite refusal, so the file/module signature is tested first and wins.
+
+    A refusal must also be the TERMINAL evidence, not a substring anywhere:
+    the builder prints one `REFUSED: <reason>` line and returns 1, so the last
+    non-empty line has to be that line, carrying an allowlisted client-data
+    literal. A refusal followed by a traceback or an Errno 13 line, and a
+    wrapper error that merely quotes the literal mid-text, are both gaps --
+    the run crashed or failed for a reason that cannot be attributed to missing
+    client data.
     """
     if any(tok in text for tok in PACKAGING_TOKENS):
         return "gap"
-    if "REFUSED" in text and any(sig in text for sig in CLIENT_DATA_REFUSALS):
+    if TRACEBACK_MARKER in text:
+        return "gap"
+    last = _last_nonempty_line(text)
+    if not last.startswith("REFUSED: "):
+        return "gap"
+    if any(sig in last for sig in CLIENT_DATA_REFUSALS):
         return "refused"
     return "gap"
 
@@ -230,8 +264,18 @@ def classify_executor_exit(returncode: int, text: str) -> str:
     alone proves nothing. Only a FAIL or PREFLIGHT REFUSED line carrying an
     allowlisted client-data reason counts as fail-closed; every other nonzero
     exit is a gap.
+
+    Exit 0 is not proof either: an empty or stubbed stage_executor.py imports
+    cleanly and exits 0 printing nothing. A zero exit counts as 'ok' only with
+    POSITIVE evidence that the preflight ran -- at least one line beginning
+    `PREFLIGHT` (the executor prints PREFLIGHT_SECTIONS at stage_executor.py:1666
+    and `PREFLIGHT <stage> <file> ratio=...` at :1706) -- and no traceback.
     """
     if returncode == 0:
+        if TRACEBACK_MARKER in text:
+            return "gap"
+        if not any(raw.strip().startswith("PREFLIGHT") for raw in text.splitlines()):
+            return "gap"
         return "ok"
     if returncode != 1:  # 2 is usage/run-dir, never a fail-closed refusal
         return "gap"
@@ -266,9 +310,26 @@ def self_check() -> int:
         ("REFUSED: brand colors unresolved, no image stage may start. "
          "No such file: private/brand.json", "gap"),
         ("Traceback (most recent call last): ValueError: boom", "gap"),
+        # A refusal is proof only when it is the TERMINAL line, with nothing
+        # after it. A crash wearing a refusal's words is a gap.
+        ("REFUSED: brand colors unresolved, no image stage may start.\n"
+         "Traceback (most recent call last):\nValueError: boom", "gap"),
+        ("wrapper ValueError: brand colors unresolved, no image stage may start.", "gap"),
+        ("BUILD REFUSED: something else\n"
+         "ValueError: brand colors unresolved, no image stage may start.", "gap"),
+        ("REFUSED: brand colors unresolved, no image stage may start.\n"
+         "[Errno 13] Permission denied: 'private/brand.json'", "gap"),
+        ("REFUSED: brand colors unresolved, no image stage may start.\n"
+         "PermissionError: [Errno 13] Permission denied", "gap"),
     )
     exit_cases = (
         (0, "PREFLIGHT visual-mockup mobile/part-1.png ratio=3:4 chars=17000", "ok"),
+        # Exit 0 from a script that never ran the preflight proves nothing: an
+        # empty stage_executor.py exits 0 printing nothing.
+        (0, "", "gap"),
+        (0, "Traceback (most recent call last):\nKeyError: 'sections'", "gap"),
+        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12", "ok"),
+        (0, "NOTE page_kind: not declared\n", "gap"),
         (1, "FAIL: brand colors unresolved, no image stage may start. Tried: run brand pin "
             "private/brand.json: file not found. Ask the client: What are your brand colors?",
          "fail-closed"),

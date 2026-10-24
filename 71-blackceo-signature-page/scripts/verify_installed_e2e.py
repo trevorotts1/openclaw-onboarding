@@ -29,9 +29,34 @@ What it asserts
                                                       stage_prompt returns for the template)
   4  offline     stdlib only, provider `stub`, no network import on the exercised module
                  path, and no generation/provider artifact appears anywhere
-  5  discrimination  a throwaway copy with one required packaged asset deleted makes
-                 this harness exit nonzero NAMING that asset
+  5  discrimination  two throwaway copies prove the harness fails for the reason it
+                 claims, not by accident:
+                   5a inventory  one required packaged asset deleted -> nonzero, and the
+                      report NAMES that asset (proves assertion 1, packaging)
+                   5b pipeline   `scripts/stage_executor.py` truncated to an empty file
+                      (runs, exits 0, prints nothing) -> nonzero, and the report carries
+                      a FAIL line for the PREFLIGHT_SECTIONS marker specifically, so the
+                      preflight assertion itself is proved to fire -- exit status alone
+                      is never accepted as proof that the executor ran
   6  hygiene     no bytecode is written into the inspected tree
+
+What this does not prove
+  - the shared prompt-policy registry. `scripts/launch_context.py:_registry_policy_ids`
+    resolves `<parent>/shared-utils/signature_launch/domain/prompt-policy-registry.json`,
+    i.e. BESIDE the skill tree. A bare lone-directory install has no such sibling, and
+    this harness passes on one anyway, so `_registry_policy_ids` is never exercised here.
+    `scripts/preflight_installed.py` reports that path separately (PASS/GAP on its own
+    row); run it too. Verified: the harness exits 0 on a bare copy while that preflight
+    row is GAP.
+  - the repository test suite, the network, any paid provider, and optional imaging or
+    render libraries (PIL/playwright/...) -- none is imported on the exercised path.
+  - the negative-control plants run the harness against a deliberately broken copy; they
+    prove it fails, not that every possible break is caught.
+
+Section-count checking is deliberately NOT on that list: the fixture supplies BOTH
+sources the executor checks (<run_dir>/copy.json copy source and
+copy/copy-manifest.json) and each is asserted below. A fixture with only the manifest
+reports "copy source file not found" and would no longer pass.
 
 How "no generation artifact" is proved
   Code path -- build_production_request.py is a pure builder (module docstring: "Zero
@@ -282,8 +307,9 @@ def manuscript():
 
 def build_fixture(run_dir: Path):
     """Write a COMPLETE run fixture: brand palette pin, intake, the twelve-section
-    manuscript, the copy manifest the builder checks against, and the design prose the
-    prompt band needs. Nothing is read out of tests/."""
+    manuscript, BOTH section-count sources the executor checks (the run's `copy.json`
+    copy source and `copy/copy-manifest.json`), and the design prose the prompt band
+    needs. Nothing is read out of tests/."""
     (run_dir / "copy").mkdir(parents=True, exist_ok=True)
     (run_dir / "private").mkdir(parents=True, exist_ok=True)
     (run_dir / "private" / "brand.json").write_text(json.dumps(BRAND, indent=2) + "\n", encoding="utf-8")
@@ -296,6 +322,11 @@ def build_fixture(run_dir: Path):
     (run_dir / "copy" / "internal-manuscript.md").write_text(manuscript(), encoding="utf-8")
     (run_dir / "copy" / "copy-manifest.json").write_text(
         json.dumps({"sections": SEQUENCE}) + "\n", encoding="utf-8")
+    # The other half of check_section_count: <run_dir>/copy.json is the run's copy
+    # source (stage_executor._copy_source_candidates). No `cta` here, so the
+    # manuscript's inline labels stay authoritative (stage_executor.py:838-849).
+    (run_dir / "copy.json").write_text(
+        json.dumps({"sections": [{"id": sid} for sid in SEQUENCE]}) + "\n", encoding="utf-8")
     (run_dir / "design-prose.json").write_text(json.dumps(design_prose()) + "\n", encoding="utf-8")
 
 
@@ -347,6 +378,12 @@ def check_build(root: Path, run_dir: Path, chk: Check, home: Path):
                     f"ids={','.join(ids)}")
             chk.add(data.get("metadata", {}).get("section_count") == len(SEQUENCE),
                     "build: metadata.section_count is the form's canonical count", "")
+            # Both halves of check_section_count, proved rather than assumed: a
+            # fixture with only a manifest reports "copy source file not found".
+            checked = data.get("metadata", {}).get("checked_against") or []
+            chk.add(checked == ["copy source", "copy manifest"],
+                    "build: section count checked against the copy source AND the manifest",
+                    f"checked_against={'; '.join(checked) or 'request only'}")
         else:
             chk.add(False, "build: production request is valid JSON", parse_err)
     chk.add(provider_calls == 0, "build: metadata records provider_calls == 0",
@@ -366,6 +403,9 @@ def check_preflight(root: Path, run_dir: Path, chk: Check, home: Path):
     # --- did the preflight stage actually run? stage_executor's own markers, not silence.
     chk.add("PREFLIGHT_SECTIONS" in proc.stdout,
             "preflight: PREFLIGHT_SECTIONS printed (stage_executor.py:1666)",
+            grep_line(proc.stdout, "PREFLIGHT_SECTIONS"))
+    chk.add("checked_against=copy source; copy manifest" in proc.stdout,
+            "preflight: section count proved against both sources, not one",
             grep_line(proc.stdout, "PREFLIGHT_SECTIONS"))
     composed = re.findall(r"^PREFLIGHT " + re.escape(STAGE) + r" (\S+) ratio=", proc.stdout, re.M)
     chk.add(bool(composed),
@@ -418,31 +458,58 @@ def check_no_bytecode(root: Path, before, chk: Check):
 # --------------------------------------------------------------------------
 # 5. negative control
 # --------------------------------------------------------------------------
+# Two plants, one per layer the harness claims to assert. A nonzero exit alone
+# would not prove WHICH assertion caught it, so each plant also names the
+# evidence the report has to carry.
+#   (id, relative path, how, evidence the report must carry, what it proves)
+PLANTS = (
+    ("inventory", PLANT, "delete", PLANT,
+     "assertion 1 (packaging): the deleted required asset is named as missing"),
+    ("pipeline", "scripts/stage_executor.py", "truncate",
+     "[FAIL] preflight: PREFLIGHT_SECTIONS",
+     "assertion 3 (preflight): the PREFLIGHT_SECTIONS marker assertion fires on a "
+     "stage_executor.py that exits 0 printing nothing"),
+)
+
+
 def negative_control(root: Path, work: Path, chk: Check, self_path: Path):
-    """Break one required packaged asset in a throwaway copy and require this harness to
-    exit nonzero NAMING it. The plant is deleted with the throwaway copy; nothing is left
-    in the tree under test."""
-    copy = work / "planted-copy"
-    if copy.exists():
-        shutil.rmtree(copy)
-    shutil.copytree(root, copy, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    plant = copy / PLANT
-    if not plant.is_file():
-        return chk.add(False, "negative control: the plant asset exists in the copy before removal", PLANT)
-    plant.unlink()
-    proc = sh([sys.executable, "-B", "-I", str(self_path), "--target", str(copy),
-               "--work", str(work / "planted-work"), "--skip-negative-control"],
-              cwd=root, env=child_env(work / "planted-home"))
-    text = proc.stdout + proc.stderr
-    named = PLANT in text
-    shutil.rmtree(copy, ignore_errors=True)
-    shutil.rmtree(work / "planted-work", ignore_errors=True)
-    shutil.rmtree(work / "planted-home", ignore_errors=True)
-    chk.add(proc.returncode != 0, f"negative control: harness exits nonzero (rc={proc.returncode})",
-            first_line(text))
-    chk.add(named, f"negative control: the report names the planted asset ({PLANT})",
-            first_line(text) if not named else "named")
-    return proc.returncode
+    """Break one layer at a time in a throwaway copy and require this harness to exit
+    nonzero carrying that layer's evidence. Each plant is removed with its copy;
+    nothing is left in the tree under test."""
+    last_rc = 0
+    for plant_id, rel, how, evidence, proves in PLANTS:
+        copy = work / f"planted-{plant_id}"
+        if copy.exists():
+            shutil.rmtree(copy)
+        copy_work = work / f"planted-{plant_id}-work"
+        copy_home = work / f"planted-{plant_id}-home"
+        shutil.copytree(root, copy, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        target = copy / rel
+        if not target.is_file():
+            chk.add(False, f"negative control ({plant_id}): {rel} exists in the copy before planting",
+                    rel)
+            shutil.rmtree(copy, ignore_errors=True)
+            continue
+        if how == "delete":
+            target.unlink()
+        else:  # truncate: the file still exists, imports, exits 0 and prints nothing
+            target.write_text("", encoding="utf-8")
+        proc = sh([sys.executable, "-B", "-I", str(self_path), "--target", str(copy),
+                   "--work", str(copy_work), "--skip-negative-control"],
+                  cwd=root, env=child_env(copy_home))
+        text = proc.stdout + proc.stderr
+        carried = evidence in text
+        shutil.rmtree(copy, ignore_errors=True)
+        shutil.rmtree(copy_work, ignore_errors=True)
+        shutil.rmtree(copy_home, ignore_errors=True)
+        last_rc = proc.returncode
+        chk.add(proc.returncode != 0,
+                f"negative control ({plant_id}): harness exits nonzero (rc={proc.returncode})",
+                first_line(text))
+        chk.add(carried, f"negative control ({plant_id}): {proves}",
+                f"carried {evidence!r}" if carried else
+                f"report does not carry {evidence!r}: {first_line(text)}")
+    return last_rc
 
 
 # --------------------------------------------------------------------------
@@ -509,7 +576,7 @@ def main(argv=None) -> int:
         build_fixture(run_dir)
         chk.add(all((run_dir / r).is_file() for r in
                     ("intake.json", "private/brand.json", "copy/internal-manuscript.md",
-                     "copy/copy-manifest.json", "design-prose.json")),
+                     "copy/copy-manifest.json", "copy.json", "design-prose.json")),
                 "fixture: a complete run fixture was synthesised in the scratch directory",
                 str(run_dir))
         check_build(root, run_dir, chk, home)
