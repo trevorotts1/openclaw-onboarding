@@ -369,6 +369,191 @@ class RefusalTests(Base):
         self.assertFalse(result['success'])
 
 
+class _HostileItem(dict):
+    """A mapping that raises while it is being typed."""
+
+    def get(self, *args, **kwargs):
+        raise RuntimeError('record reads its own fields unreliably')
+
+
+class MalformedRecordTests(Base):
+    """MISSING and MALFORMED input is typed UNKNOWN. Never a crash, never a
+    silent ELIGIBLE, never a guessed default."""
+
+    def test_non_mapping_records_are_typed_unknown_not_exceptions(self):
+        live = self.scratch(name='live')
+        for bad in (None, 'unit', ['unit'], 7):
+            with self.subTest(bad=bad):
+                result = self.dispatch([bad])
+                record = result['items'][0]
+                self.assertEqual(disposal.UNKNOWN, record['disposition'])
+                self.assertIn(disposal.UNKNOWN_MALFORMED_ITEM, record['reasons'])
+                self.assertFalse(record['disposed'])
+                self.assertFalse(result['success'])
+                self.assertEqual('INCOMPLETE', result['status'])
+        self.assertTrue(os.path.lexists(str(live)),
+                        'an untypeable record deletes nothing')
+
+    def test_evaluate_types_a_malformed_record_without_raising(self):
+        for bad in (None, 'unit', ['unit'], 7, {'id': 5, 'consumers': 7}):
+            with self.subTest(bad=bad):
+                record = disposal.evaluate(
+                    bad, approved_root=self.approved,
+                    expected_device=self.device, preserve_content=True)
+                self.assertEqual(disposal.UNKNOWN, record['disposition'])
+                self.assertIn(disposal.UNKNOWN_MALFORMED_ITEM, record['reasons'])
+
+    def test_wrong_shaped_list_fields_are_malformed_unknown(self):
+        path = self.scratch()
+        for field in ('consumers', 'lease_ids', 'remote_merge_proof_ids',
+                      'preservation_receipt_ids'):
+            with self.subTest(field=field):
+                result = self.dispatch([self.item(**{field: 7})])
+                record = result['items'][0]
+                self.assertEqual(disposal.UNKNOWN, record['disposition'])
+                self.assertIn(disposal.UNKNOWN_MALFORMED_ITEM, record['reasons'])
+                self.assertTrue(os.path.lexists(str(path)),
+                                'a malformed record is never deleted')
+
+    def test_a_record_that_raises_while_typed_is_unknown_not_a_crash(self):
+        live = self.scratch(name='live')
+        result = self.dispatch([self.item(id='live', path=str(live)),
+                                _HostileItem()])
+        self.assertEqual(2, len(result['items']))
+        self.assertEqual(disposal.UNKNOWN, result['items'][1]['disposition'])
+        self.assertIn(disposal.UNKNOWN_MALFORMED_ITEM,
+                      result['items'][1]['reasons'])
+        self.assertTrue(result['items'][0]['disposed'])
+        self.assertTrue(result['receipt_written'],
+                        'a bad record never strands a committed deletion')
+
+    def test_one_bad_record_never_aborts_the_batch_or_strands_a_deletion(self):
+        first = self.scratch(name='first')
+        second = self.scratch(name='second')
+        third = self.scratch(name='third')
+        result = self.dispatch([
+            self.item(id='first', path=str(first)), None,
+            self.item(id='second', path=str(second)), 'unit', ['unit'], 7,
+            _HostileItem(), self.item(id='third', path=str(third))])
+        self.assertTrue(result['receipt_written'])
+        self.assertTrue(result['receipt_read_back'])
+        self.assertEqual({'ELIGIBLE': 3, 'DEFERRED': 0, 'BLOCKED': 0,
+                          'UNKNOWN': 5}, result['counts'])
+        self.assertEqual('INCOMPLETE', result['status'])
+        self.assertFalse(result['success'])
+        deleted = {entry['id']: entry for entry in result['deletions']}
+        self.assertEqual({'first', 'second', 'third'}, set(deleted))
+        for name in ('first', 'second', 'third'):
+            self.assertTrue(deleted[name]['absence']['absent'])
+            self.assertEqual(os.path.realpath(deleted[name]['path']),
+                             deleted[name]['canonical_path'])
+        # no stranded removal: every deletion is on disk with actual absence
+        on_disk = json.loads((self.receipts / 'disposal-receipt.json').read_text())
+        self.assertEqual({'first', 'second', 'third'},
+                         {entry['id'] for entry in on_disk['deletions']})
+        for record in on_disk['items']:
+            if record.get('disposed'):
+                self.assertIn('absence', record)
+                self.assertTrue(record['absence']['absent'])
+                self.assertIn('disposal_receipt_id', record)
+                self.assertTrue(record['preserved'].get('verified'))
+
+
+class ApprovedRootTests(Base):
+    def test_missing_approved_root_is_unknown_volume_identity(self):
+        missing_root = self.root / 'no-such-root'
+        path = self.approved / 'scratch' / 'unit'
+        path.mkdir(parents=True)
+        (path / 'notes.txt').write_text('keep')
+        record = disposal.evaluate(
+            self.item(), approved_root=missing_root,
+            expected_device=self.device, preserve_content=True)
+        self.assertEqual(disposal.UNKNOWN, record['disposition'])
+        self.assertIn(disposal.UNKNOWN_VOLUME_IDENTITY, record['reasons'])
+        self.assertTrue(os.path.lexists(str(path)))
+        result = disposal.dispatch(
+            [self.item()], approved_root=missing_root,
+            expected_device=self.device,
+            receipt_path=self.receipts / 'disposal-receipt.json',
+            preserve_content=True, preserved_root=self.preserved)
+        self.assertFalse(result['success'])
+        self.assertEqual(disposal.UNKNOWN, result['items'][0]['disposition'])
+        self.assertTrue(os.path.lexists(str(path)),
+                        'an unstatable volume identity deletes nothing')
+
+
+class PreservationProofTests(Base):
+    def test_preserve_content_wins_over_an_existing_preserved_root(self):
+        self.preserved.mkdir(parents=True)
+        path = self.scratch(files={'unique.txt': 'only copy'})
+        result = self.dispatch([self.item()])
+        record = result['items'][0]
+        self.assertEqual(disposal.ELIGIBLE, record['disposition'], record['reason'])
+        self.assertTrue(record['disposed'])
+        self.assertEqual('immediate_copy', record['checks']['preservation'])
+        preserved = record['preserved']
+        self.assertTrue(preserved.get('verified'),
+                        'the module copies content before it deletes')
+        self.assertEqual('only copy',
+                         (Path(preserved['destination']) / 'unique.txt').read_text())
+        self.assertFalse(os.path.lexists(str(path)))
+
+    def test_a_second_batch_is_still_preserved_content(self):
+        self.preserved.mkdir(parents=True)
+        first = self.scratch(name='one', files={'unique.txt': 'first only'})
+        self.dispatch([self.item(id='one', path=str(first))])
+        second = self.scratch(name='two', files={'unique.txt': 'second only'})
+        result = self.dispatch([self.item(id='two', path=str(second))])
+        record = result['items'][0]
+        self.assertEqual(disposal.ELIGIBLE, record['disposition'], record['reason'])
+        self.assertTrue(record['preserved'].get('verified'),
+                        'a preserved root left by an earlier batch is not proof')
+        self.assertEqual('second only',
+                         (Path(record['preserved']['destination'])
+                          / 'unique.txt').read_text())
+        self.assertFalse(os.path.lexists(str(second)))
+
+    def test_existing_preserved_root_alone_is_not_preservation_proof(self):
+        self.preserved.mkdir(parents=True)
+        path = self.scratch(files={'unique.txt': 'only copy'})
+        result = self.dispatch([self.item(preservation_receipt_ids=[])],
+                               preserve_content=False)
+        record = result['items'][0]
+        self.assertEqual(disposal.BLOCKED, record['disposition'])
+        self.assertIn(disposal.BLOCKED_MISSING_PRESERVATION, record['reasons'])
+        self.assertTrue(os.path.lexists(str(path)),
+                        'unproven content must survive')
+        self.assertEqual('only copy', (path / 'unique.txt').read_text())
+
+    def test_caller_preserved_needs_per_resource_receipts(self):
+        self.preserved.mkdir(parents=True)
+        path = self.scratch()
+        result = self.dispatch(
+            [self.item(preservation_receipt_ids=['saved-artifact'])],
+            preserve_content=False)
+        record = result['items'][0]
+        self.assertEqual(disposal.ELIGIBLE, record['disposition'], record['reason'])
+        self.assertEqual('caller_preserved', record['checks']['preservation'])
+        self.assertEqual(['saved-artifact'],
+                         record['preserved'].get('receipt_ids'))
+        self.assertTrue(record['disposed'])
+        self.assertEqual([], os.listdir(str(self.preserved)),
+                         'caller_preserved makes no copy of its own')
+
+
+class OwnershipProofTests(Base):
+    def test_a_malformed_ownership_receipt_is_not_ownership(self):
+        path = self.scratch()
+        for bad in (5, {'id': 'x'}, [''], '', [None], ['ok', 5]):
+            with self.subTest(bad=bad):
+                result = self.dispatch([self.item(ownership_receipt_id=bad)])
+                record = result['items'][0]
+                self.assertEqual(disposal.BLOCKED, record['disposition'])
+                self.assertIn(disposal.BLOCKED_UNOWNED, record['reasons'])
+                self.assertTrue(os.path.lexists(str(path)),
+                                'unverified ownership deletes nothing')
+
+
 class SourceGuardTests(unittest.TestCase):
     def test_deletion_path_contains_no_force_and_no_ignore_errors(self):
         source = (PKG / 'disposal.py').read_text()
