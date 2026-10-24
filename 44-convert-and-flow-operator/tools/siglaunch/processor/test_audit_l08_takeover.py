@@ -130,6 +130,13 @@ class LostOwnershipTests(unittest.TestCase):
         return DurableProcessor(self.store, lease_ttl_seconds=0.05,
                                 **kwargs)
 
+    def _lost_lease_processor(self, **kwargs):
+        """A processor whose lease is gone: renewal is refused, so the
+        ownership loss is real rather than merely elapsed time. A live,
+        un-stolen owner renews (see test_audit_l08_heartbeat)."""
+        self.store.renew_lease = lambda *a, **k: False
+        return self._short_lease_processor(**kwargs)
+
     def test_lease_lost_mid_callback_parks_exactly_once(self):
         self._short_lease_processor().process(make_event(),
                                               contact_ref="contact-1")
@@ -140,7 +147,7 @@ class LostOwnershipTests(unittest.TestCase):
             time.sleep(0.3)  # outlive the 0.05s lease, then succeed
             executed.append(payload)
 
-        proc = self._short_lease_processor()
+        proc = self._lost_lease_processor()
         self.assertEqual(proc.fulfill(key, slow_executor),
                          "parked_unknown")
         self.assertEqual(len(executed), 1)
@@ -161,7 +168,7 @@ class LostOwnershipTests(unittest.TestCase):
             time.sleep(0.3)  # effect may have landed; ack window lost
             executed.append(payload)
 
-        proc = self._short_lease_processor()
+        proc = self._lost_lease_processor()
         self.assertEqual(proc.fulfill(key, slow_executor),
                          "parked_unknown")
         # reconciler confirms the remote effect landed: done without a

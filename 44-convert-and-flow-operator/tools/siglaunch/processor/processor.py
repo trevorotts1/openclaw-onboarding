@@ -158,6 +158,53 @@ def effect_resource_for_action(action_type: str, txn_ref: str,
     return f"effect:{action_type}:{txn_ref}:{line_ref}"
 
 
+class LeaseHeartbeat:
+    """Renew an effect lease while its side effect is running.
+
+    Guarded completion already refuses a stale owner, so a callback that
+    outlives its lease cannot record a success it no longer owns — but
+    without renewal a live owner loses the lease mid-flight and the effect
+    parks as ``unknown``. This renews at a third of the TTL and stops as
+    soon as the store reports the lease is no longer ours, so a stolen
+    lease is never fought over.
+    """
+
+    def __init__(self, store, tenant: str, resource: str, holder: str,
+                 fencing_token: int, ttl_seconds: float):
+        self._store = store
+        self._args = (tenant, resource, holder, fencing_token)
+        self._ttl = float(ttl_seconds)
+        self._interval = max(0.05, self._ttl / 3.0)
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self.renewals = 0
+        self.lost = False
+
+    def __enter__(self) -> "LeaseHeartbeat":
+        self._thread = threading.Thread(target=self._run, daemon=True,
+                                        name="siglaunch-lease-heartbeat")
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=self._interval + 2.0)
+        return False
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval):
+            try:
+                renewed = self._store.renew_lease(
+                    *self._args, ttl_seconds=self._ttl)
+            except Exception:
+                return
+            if not renewed:
+                self.lost = True
+                return
+            self.renewals += 1
+
+
 class DurableProcessor:
     def __init__(self, store, tag_applier: Optional[Callable] = None,
                  purchase_tag: Optional[str] = None, version: str = "v1",
@@ -191,6 +238,13 @@ class DurableProcessor:
 
     def _release(self, tenant: str, resource: str, token: int) -> None:
         self.store.release_lease(tenant, resource, self._holder(), token)
+
+    def _heartbeat(self, tenant: str, resource: str, holder: str,
+                   token: int) -> LeaseHeartbeat:
+        """Renew the lease while a side effect runs, so a callback longer
+        than the TTL keeps its ownership instead of parking unknown."""
+        return LeaseHeartbeat(self.store, tenant, resource, holder, token,
+                              self.lease_ttl_seconds)
 
     def _park_takeover(self, key: tuple, tenant: str, resource: str,
                        holder: str, token: int) -> str:
@@ -383,7 +437,8 @@ class DurableProcessor:
             if current["state"] == "unknown":
                 return "parked_unknown"
             try:
-                self.tag_applier(contact_ref, self.purchase_tag)
+                with self._heartbeat(tenant, resource, holder, token):
+                    self.tag_applier(contact_ref, self.purchase_tag)
             except Exception:
                 # outcome unknown: park, never claim success
                 if not self.store.complete_action_if_owner(
@@ -473,7 +528,8 @@ class DurableProcessor:
             if current["state"] == "unknown":
                 return "parked_unknown"
             try:
-                executor(current["payload"])
+                with self._heartbeat(tenant, resource, holder, token):
+                    executor(current["payload"])
             except Exception:
                 if not self.store.complete_action_if_owner(
                         key, "unknown", tenant, resource, holder,
