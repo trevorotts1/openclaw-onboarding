@@ -1831,7 +1831,7 @@ STAGE_REGISTRY = {
         ["storyboard/gate.json", "storyboard/approval.json"],
         "delivered-approval", "approved shots + stills present",
         "scripts/core/intake_preflight/factory.py storyboard --resume",
-        "approval", artifacts=["storyboard/gate.json"]),
+        "approval", artifacts=["storyboard/shot-list.json", "storyboard/contracts.json"]),
     "image-keyframes": _stage(
         ["storyboard"], "keyframe-artist",
         "scripts/core/… image-keyframes", "keyframes/<shot-set-digest>",
