@@ -211,6 +211,34 @@
    "price_class": "api"
   },
   {
+   "id": "deepseek-chain",
+   "request_id": "deepseek-chain",
+   "openclaw_id": "deepseek-chain",
+   "label": "DeepSeek (9Router chain)",
+   "route": "router-alias",
+   "aliases": [
+    "deepseek",
+    "deepseek chain",
+    "deepseek-chain",
+    "deepseek 9router"
+   ],
+   "capabilities": [
+    "text",
+    "tool_use"
+   ],
+   "modalities": [
+    "text"
+   ],
+   "reasoning": {
+    "supported": false,
+    "effort_selector": false,
+    "efforts": [],
+    "note": "router chain: the capability set depends on the chain's members and must be verified per run"
+   },
+   "fallbacks": [],
+   "price_class": "api"
+  },
+  {
    "id": "opus-chain",
    "request_id": "opus-chain",
    "openclaw_id": "opus-chain",
