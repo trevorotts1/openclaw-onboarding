@@ -347,6 +347,79 @@ def test_dangling_relationship_is_refused():
     assert dangling and dangling[0]["character_id"] == "char_mara_001"
 
 
+# --- complete declared-participant surface (S75-A06 repair) -----------------
+
+def test_scene_identity_revision_binding_needs_a_cast_profile():
+    request, response = load()
+    request["scenes"][0]["identity_revisions"]["char_ghost_009"] = 1
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "char_ghost_009" in str(exc)
+    assert "char_mara_001" not in str(exc)
+
+def test_reaction_people_and_meaningful_extras_must_be_cast():
+    request, response = load()
+    request["scenes"][0]["reaction_people"] = ["char_ghost_011"]
+    request["scenes"][1]["meaningful_extras"] = ["char_ghost_012"]
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "char_ghost_011" in str(exc)
+    assert "char_ghost_012" in str(exc)
+
+def test_lip_sync_performer_binding_must_be_cast():
+    request, response = load()
+    request["scenes"][0]["visible_lip_sync"] = [
+        {"shot_id": "sh_01", "performer": "char_ghost_013",
+         "audio_line_id": "ln_01", "interval_seconds": [0.0, 2.4]}]
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "char_ghost_013" in str(exc)
+
+def test_performer_id_binding_must_be_cast():
+    request, response = load()
+    request["scenes"][1]["performance_order"] = [
+        {"slot": 1, "performer_id": "char_ghost_014", "line_id": "ln_03"}]
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "char_ghost_014" in str(exc)
+
+def test_scene_crowd_group_must_exist_in_the_manifest():
+    request, response = load()
+    request["scenes"][0]["crowd_group_ids"] = ["cg_ghost"]
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "cg_ghost" in str(exc)
+    assert "no such group" in str(exc)
+
+def test_scene_crowd_group_declared_in_the_manifest_is_accepted():
+    result = author()
+    assert result["state"] == "COMPLETE"
+    assert result["manifest"]["crowd_groups"][0]["crowd_group_id"] == \
+        "crowd_workshop_queue_001"
+    # the full surface is read: ids hide in bindings, not only in the lines
+    assert set(W.derive_speakers(load()[0]["scenes"])) >= {
+        "char_mara_001", "char_levi_002", "char_rosa_003"}
+    assert W.derive_crowds(load()[0]["scenes"]) == ["crowd_workshop_queue_001"]
+
+def test_generic_descriptor_as_display_name_is_refused():
+    request, response = load()
+    response["identities"][0]["display_name"] = "a customer in line"
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    assert exc.code == "INCOMPLETE_CAST"
+    assert "a customer in line" in str(exc)
+    named = [d for d in exc.packet["incomplete"]
+             if d["field"] == "display_name" and "char_mara_001" == d["character_id"]]
+    assert named and "generic descriptor" in named[0]["issue"]
+
+def test_generic_descriptor_refused_in_either_position():
+    request, response = load()
+    response["identities"][1]["display_name"] = "the manager"
+    response["identities"][1]["character_id"] = "char_manager_002"
+    exc = refuse(W.author_cast, request, dispatch=fake(response), model="fake-author")
+    fields = {d["field"] for d in exc.packet["incomplete"]
+              if d["character_id"] == "char_manager_002"}
+    assert "display_name" in fields
+
 # --- adapters and purity ----------------------------------------------------
 
 def test_legacy_bible_is_a_seed_not_an_identity():

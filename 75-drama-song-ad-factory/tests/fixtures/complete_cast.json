@@ -76,6 +76,8 @@
       {
         "scene_id": "sc_01",
         "cast_ids": ["char_mara_001", "char_levi_002"],
+        "identity_revisions": {"char_mara_001": 1, "char_levi_002": 1},
+        "crowd_group_ids": ["crowd_workshop_queue_001"],
         "spoken_dialogue": [
           {"line_id": "ln_01", "character_id": "char_levi_002", "text": "The total is short and you already knew."},
           {"line_id": "ln_02", "character_id": "char_mara_001", "text": "I knew on Tuesday and I did not want to frighten the team."}
@@ -84,6 +86,8 @@
       {
         "scene_id": "sc_02",
         "cast_ids": ["char_mara_001", "char_levi_002", "char_rosa_003"],
+        "identity_revisions": {"char_mara_001": 1, "char_levi_002": 1, "char_rosa_003": 1},
+        "reaction_people": ["char_rosa_003"],
         "spoken_dialogue": [
           {"line_id": "ln_03", "character_id": "char_rosa_003", "text": "I can wait one more week for my repair if it keeps your people paid."},
           {"line_id": "ln_04", "character_id": "char_mara_001", "text": "Then I will tell everyone tonight before they hear it another way."}

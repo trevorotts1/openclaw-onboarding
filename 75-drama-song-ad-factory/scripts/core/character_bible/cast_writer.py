@@ -45,7 +45,8 @@ import story_first_contracts as C  # noqa: E402  (S75-T03 envelope + cast schema
 
 __all__ = [
     "CastWriteError", "author_cast", "build_prompt", "canonical_digest",
-    "derive_speakers", "library_digest", "profile_defects", "verify_receipt",
+    "derive_speakers", "derive_crowds", "library_digest", "profile_defects",
+    "verify_receipt",
     "seed_from_legacy_bible", "MANIFEST_SCHEMA_VERSION", "LIBRARY_SCHEMA_VERSION",
     "ROLES", "SELECTIONS", "PROFILE_FIELDS", "ANONYMOUS_SPEAKERS", "CROWD_REQUIRED",
 ]
@@ -192,6 +193,9 @@ def profile_defects(record):
                            "every substantive assertion needs an origin"))
     if not _text(record.get("display_name")):
         out.append(_defect(cid, name, "display_name", "required"))
+    elif _anonymous(str(name)):
+        out.append(_defect(cid, name, "display_name",
+                           "a generic descriptor is not an identity"))
     if not _text(record.get("character_id")):
         out.append(_defect(cid, name, "character_id", "required stable ID"))
     elif _anonymous(str(cid)):
@@ -232,23 +236,100 @@ def _seal(record):
     return sealed
 
 
-# --- scene speakers ---------------------------------------------------------
+# --- scene participants -----------------------------------------------------
+
+#: Every scene field that declares who is in the scene: the participant surface
+#: of SCENE-SCRIPT-CONTRACT.md (``cast_ids``, ``identity_revisions``,
+#: ``crowd_group_ids``) plus the fields that name reaction people and
+#: meaningful extras by another key.
+_PARTICIPANT_KEYS = frozenset({
+    "cast_ids", "identity_revisions", "crowd_group_ids",
+    "participants", "participant_ids", "cast",
+    "reaction_people", "reaction_ids", "reacting_ids",
+    "meaningful_extras", "extras", "extra_ids",
+    "background_people", "background_ids", "background_cast",
+    "speakers", "speaker_ids", "performers", "performer_ids",
+    "actors", "actor_ids", "singers", "singer_ids", "voices", "voice_ids",
+    "onlookers", "witnesses", "audience_ids", "member_ids",
+})
+
+#: A person reference written as a per-line or per-shot binding.
+_PERSON_ID_KEYS = frozenset({
+    "character_id", "performer_id", "speaker_id", "actor_id",
+    "person_id", "singer_id", "member_id",
+})
+
+#: Any other scene key that plausibly carries a participant.
+_NAME_HINTS = (
+    "cast", "character", "performer", "participant", "speaker",
+    "people", "person", "actor", "extras", "extra_", "reaction", "reacting",
+    "background", "crowd", "witness", "onlooker", "audience",
+    "voice", "singer", "member",
+)
+
+def _declares_people(key):
+    low = (key or "").lower()
+    return (low in _PARTICIPANT_KEYS or low in _PERSON_ID_KEYS
+            or any(hint in low for hint in _NAME_HINTS))
+
+def _ref_like(value):
+    """A short whitespace-free token, not a sentence of prose."""
+    return (isinstance(value, str) and 0 < len(value) <= 64
+            and not any(ch.isspace() for ch in value))
+
+def _add_person(value, bucket):
+    """A person reference: a stable id, or a short generic descriptor that the
+    anonymous rule must refuse. Prose longer than 64 characters is not a name."""
+    if isinstance(value, str) and 0 < len(value) <= 64 and value not in bucket:
+        bucket.append(value)
+
+def _walk_refs(node, key, persons, crowds):
+    """Collect every participant reference in a scene's declared surface."""
+    if isinstance(node, dict):
+        # A map like ``identity_revisions`` names its people as its keys.
+        if _declares_people(key) and all(
+                not isinstance(v, (dict, list)) for v in node.values()):
+            bucket = crowds if "crowd" in (key or "").lower() else persons
+            for sub_key in node:
+                if _ref_like(sub_key) and sub_key not in bucket:
+                    bucket.append(sub_key)
+            return
+        for sub_key, value in node.items():
+            _walk_refs(value, str(sub_key), persons, crowds)
+    elif isinstance(node, list):
+        for item in node:
+            _walk_refs(item, key, persons, crowds)
+    elif _declares_people(key):
+        # Crowd membership is always an id; a person may also be named by the
+        # generic descriptor the anonymous rule has to refuse.
+        if "crowd" in (key or "").lower():
+            if _ref_like(node) and node not in crowds:
+                crowds.append(node)
+        else:
+            _add_person(node, persons)
 
 def derive_speakers(scenes):
-    """Every individual the scenes ask to speak, sing or act by name."""
-    out = []
+    """Every individual the scenes declare: speakers, singers, actors,
+    reaction people, meaningful extras and per-line/per-shot bindings.
+
+    Reads the full declared-participant surface of each scene, not only the
+    dialogue fields, so a scene binding id cannot hide an undeclared person.
+    """
+    persons, _ = _scene_participants(scenes)
+    return persons
+
+def derive_crowds(scenes):
+    """Every crowd group a scene declares, across the whole scene surface."""
+    _, crowds = _scene_participants(scenes)
+    return crowds
+
+def _scene_participants(scenes):
+    persons, crowds = [], []
     for scene in scenes or []:
         if not isinstance(scene, dict):
             continue
-        for field in ("spoken_dialogue", "sung_lyrics", "performance_order"):
-            for line in scene.get(field) or []:
-                if isinstance(line, dict) and line.get("character_id"):
-                    if line["character_id"] not in out:
-                        out.append(line["character_id"])
-        for cid in scene.get("cast_ids") or []:
-            if cid not in out:
-                out.append(cid)
-    return out
+        _walk_refs(scene, "", persons, crowds)
+    return persons, crowds
 
 
 # --- crowd ------------------------------------------------------------------
@@ -606,12 +687,29 @@ def author_cast(request, *, dispatch, model="", clock=None):
             "relationship_changes": list(changes),
         })
 
-    # --- every individual the scenes require must be selected ---
+    # --- every individual the scenes declare must be selected ---
     scenes = request.get("scenes")
     if isinstance(scenes, dict):
         scenes = scenes.get("scenes")
     if scenes is None and isinstance(request.get("scene_plan"), dict):
         scenes = request["scene_plan"].get("scenes")
+
+    # --- crowd rules ---
+    groups = response.get("crowd_groups") or []
+    defects.extend(_crowd_defects(groups, known_scenes))
+    member_ids = {g.get("crowd_group_id") for g in groups
+                  if isinstance(g, dict) and _text(g.get("crowd_group_id"))}
+    if len(member_ids) != len(groups):
+        defects.append({"field": "crowd_groups",
+                        "issue": "duplicate or missing crowd_group_id"})
+
+    # A scene may only draw its crowd from groups the manifest actually declares.
+    for crowd_id in derive_crowds(scenes):
+        if crowd_id not in member_ids:
+            defects.append({"field": "crowd_group_ids",
+                            "issue": "scene declares crowd group '%s' but the manifest "
+                                     "declares no such group" % crowd_id})
+
     for speaker in derive_speakers(scenes):
         if _anonymous(str(speaker)):
             defects.append({"field": "speakers",
@@ -619,16 +717,8 @@ def author_cast(request, *, dispatch, model="", clock=None):
                                      "with explicit wants, fears and speech" % speaker})
         elif speaker not in selected:
             defects.append({"field": "speakers",
-                            "issue": "speaker '%s' carries a line or action but has no "
-                                     "cast profile" % speaker})
-
-    # --- crowd rules ---
-    groups = response.get("crowd_groups") or []
-    defects.extend(_crowd_defects(groups, known_scenes))
-    member_ids = {g.get("crowd_group_id") for g in groups if isinstance(g, dict)}
-    if len(member_ids) != len(groups):
-        defects.append({"field": "crowd_groups",
-                        "issue": "duplicate or missing crowd_group_id"})
+                            "issue": "'%s' is declared in a scene — line, reaction or "
+                                     "binding — but has no cast profile" % speaker})
 
     if defects:
         raise CastWriteError(
