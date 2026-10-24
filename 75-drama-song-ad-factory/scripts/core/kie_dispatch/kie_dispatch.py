@@ -1268,6 +1268,150 @@ def _process_refusal(code, detail):
             "next_action": "Resume the governed factory entrypoint; preserve existing run evidence."}
 
 
+class ProviderFrameBindingError(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def _frame_still(root, approved, shot_id):
+    """Only the authoritative current still map decides which bytes a shot uses."""
+    with open(approved["stills_path"], encoding="utf-8") as f:
+        value = json.load(f).get(shot_id)
+    if not isinstance(value, str) or not value:
+        raise ProviderFrameBindingError("PROVIDER_FRAME_STILL_MISSING", "The approved shot has no local still.")
+    path = Path(value)
+    path = (path if path.is_absolute() else root / path).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise ProviderFrameBindingError("PROVIDER_FRAME_STILL_MISSING", "The approved still must be a readable file in this run.")
+    return path
+
+
+def upload_storyboard_frame(run_dir, shot_id, *, stage="video-generation", run_id=None,
+                            uploader=None, adapter_path=None):
+    """Upload one current approved still; never generate a picture or video.
+
+    The returned producer receipt goes under request.frame_bindings using the
+    actual provider field (e.g. first_frame_url). The ordinary request builder
+    receives its URL. The uploader receives an immutable copy, not the source;
+    no hash is inferred from a URL. Tests may inject an offline uploader without
+    claiming that the remote provider fetched the image. Explicitly injected
+    uploaders are offline receipts and cannot authorize paid frame dispatch.
+    """
+    from production_process import admit_production
+    from lip_sync.lip_gate import picture_gate as PG
+    import shutil
+    root = Path(run_dir).expanduser().resolve()
+    if stage not in ("video-generation", "qc-retakes"):
+        raise ProviderFrameBindingError("PROVIDER_FRAME_STAGE_MISMATCH", "Name the governed video stage for the frame upload.")
+    authority = admit_production(root, stage, run_id=run_id)
+    if not authority.get("ok"):
+        raise ProviderFrameBindingError(authority.get("reason_code", "PROVIDER_FRAME_AUTHORITY_MISSING"), authority.get("detail", "Frame upload not admitted."))
+    approved = authority.get("approved_storyboard") or {}
+    revision = (approved.get("revisions") or {}).get(shot_id)
+    if not revision:
+        raise ProviderFrameBindingError("PROVIDER_FRAME_SHOT_MISMATCH", "The upload shot is not in the current approved storyboard.")
+    source = _frame_still(root, approved, shot_id)
+    sha = PG.sha256_file(str(source))
+    with tempfile.TemporaryDirectory(prefix="frame-upload-", dir=root) as temp:
+        copied = Path(temp) / source.name
+        shutil.copyfile(source, copied)
+        if PG.sha256_file(str(copied)) != sha:
+            raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The still changed before upload.")
+        url = (uploader or PG.adapter_uploader(adapter_path=adapter_path))(str(copied))
+        if PG.sha256_file(str(copied)) != sha or PG.sha256_file(str(source)) != sha:
+            raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The uploader or source changed the approved frame bytes.")
+    if not isinstance(url, str) or not url.startswith("https://"):
+        raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The upload returned no HTTPS image URL.")
+    current = admit_production(root, stage, run_id=authority["run_id"])
+    if not current.get("ok") or (current.get("approved_storyboard", {}).get("revisions") or {}).get(shot_id) != revision:
+        raise ProviderFrameBindingError("PROVIDER_FRAME_APPROVAL_STALE", "The storyboard approval changed during upload.")
+    record = {"produced_by": "kie_dispatch.upload_storyboard_frame", "run_id": authority["run_id"],
+              "execution_mode": "offline" if uploader is not None else "production",
+              "production_upload": uploader is None,
+              "shot_id": shot_id, "storyboard_revision": revision, "source_path": str(source),
+              "sha256": sha, "url": url}
+    key = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+    directory = (root / "control" / "frame-uploads" / key).resolve()
+    if not directory.is_relative_to(root):
+        raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The upload receipt directory leaves this run.")
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / (sha + ".upload.json")
+    if path.exists():
+        with path.open(encoding="utf-8") as f:
+            if json.load(f) != record:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The existing upload receipt differs.")
+    else:
+        with path.open("x", encoding="utf-8") as f:
+            json.dump(record, f, sort_keys=True)
+    PG.require_upload_bound(str(source), url, str(directory))
+    return dict(record, receipt_dir=str(directory), upload_receipt_path=str(path))
+
+
+def provider_frame_refusal(model, request, root, approved, selected):
+    """Join actual I2V provider URLs to the current approved shot's uploaded bytes."""
+    if ML.is_locked_lipsync(model):
+        return None  # its existing picture/stem gates remain authoritative
+    from video_router.video_router import FIRST_FRAME_FIELDS, LAST_FRAME_FIELDS
+    from lip_sync.lip_gate import picture_gate as PG
+    req = request if isinstance(request, dict) else {}
+    inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+    frames = [(key, inp[key]) for key in sorted(FIRST_FRAME_FIELDS | LAST_FRAME_FIELDS)
+              if inp.get(key) is not None and inp.get(key) != ""]
+    # The card's existing Veo adapter uses the primary-schema image_urls list.
+    if model == "veo-3-1" and inp.get("image_urls"):
+        if not isinstance(inp["image_urls"], list):
+            return _process_refusal("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The provider image_urls field is not a list.")
+        frames.extend(("image_urls[%d]" % i, url) for i, url in enumerate(inp["image_urls"]))
+    if model == "minimax-h3/image-to-video" and not inp.get("first_frame_url"):
+        return _process_refusal("PROVIDER_FRAME_REQUIRED", "MiniMax H3 image-to-video needs its approved uploaded first frame.")
+    if any(key in LAST_FRAME_FIELDS or (key.startswith("image_urls[") and key != "image_urls[0]")
+           for key, _ in frames):
+        return _process_refusal("PROVIDER_LAST_FRAME_APPROVAL_MISSING",
+                                "This storyboard records one approved still per shot and no independent approved end frame.")
+    if not frames:
+        return None  # genuine text-to-video has no input frame to substitute
+    ids = {row["shot_id"] for row in selected}
+    sid = req.get("shot_id") or (next(iter(ids)) if len(ids) == 1 else None)
+    if sid not in ids:
+        return _process_refusal("PROVIDER_FRAME_SHOT_MISMATCH", "Bind this one provider job to its selected approved shot_id.")
+    try:
+        root = Path(root).resolve()
+        source = _frame_still(root, approved, sid)
+        sha = PG.sha256_file(str(source))
+        revision = approved["revisions"][sid]
+        bindings = req.get("frame_bindings") or {}
+        if not isinstance(bindings, dict):
+            raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "Frame bindings must be producer receipts keyed by provider field.")
+        for field, url in frames:
+            if not isinstance(url, str) or not url.startswith("https://"):
+                raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The actual provider frame must be an uploaded HTTPS URL.")
+            binding = bindings.get(field)
+            if binding is None:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED",
+                    "No production upload receipt binds this approved frame; use upload_storyboard_frame().")
+            else:
+                if not isinstance(binding, dict) or binding.get("shot_id") != sid:
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_SHOT_MISMATCH", "The frame upload belongs to a different storyboard shot.")
+                directory = Path(binding.get("receipt_dir") or "").resolve()
+                expected_root = (root / "control" / "frame-uploads").resolve()
+                if not directory.is_relative_to(expected_root):
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "No producer upload receipt belongs to this run.")
+                with (directory / (sha + ".upload.json")).open(encoding="utf-8") as f:
+                    produced = json.load(f)
+                if produced.get("execution_mode") != "production" or produced.get("production_upload") is not True:
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "Offline or unknown uploads cannot authorize a paid provider frame.")
+                if (produced.get("produced_by") != "kie_dispatch.upload_storyboard_frame" or
+                        produced.get("run_id") != req.get("run_id") or
+                        produced.get("shot_id") != sid or produced.get("storyboard_revision") != revision or
+                        produced.get("source_path") != str(source) or produced.get("sha256") != sha):
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_APPROVAL_STALE", "The upload is not bound to this current approved shot and still.")
+            PG.require_upload_bound(str(source), url, str(directory))
+        return None
+    except (ProviderFrameBindingError, OSError, ValueError, TypeError, KeyError, AttributeError, PG.LipsyncPictureNotGated) as exc:
+        return _process_refusal(getattr(exc, "code", "PROVIDER_FRAME_UPLOAD_UNVERIFIED"), str(exc))
+
+
 def production_process_admission(*, model, request, save_dir, ledger_db,
                                  run_id, stage="kie", state_store=None,
                                  adapter_path=None):
@@ -1357,6 +1501,10 @@ def production_process_admission(*, model, request, save_dir, ledger_db,
                     requested.get("review") != authoritative.get("review")):
                 return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISMATCH",
                                         "The requested storyboard differs from this run's approved artifact.")
+            frame_refusal = provider_frame_refusal(model, dict(req, run_id=run_id), root,
+                                                    approved_board, selected)
+            if frame_refusal:
+                return frame_refusal
         return receipt
     except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         return _process_refusal("PRODUCTION_AUTHORITY_UNREADABLE", str(exc))
@@ -2065,7 +2213,26 @@ def main(argv=None):
                    help="run state DB (control/state.sqlite3) for the F14 "
                         "video-model lock; without it a video job can never "
                         "pass F14 from the CLI")
+    up = d.add_parser("upload-storyboard-frame", help="Upload one current approved still and return its frame binding; no generation.")
+    up.add_argument("--run-dir", required=True)
+    up.add_argument("--shot-id", required=True)
+    up.add_argument("--stage", default="video-generation", choices=("video-generation", "qc-retakes"))
+    up.add_argument("--run-id", default=None)
+    up.add_argument("--adapter", default=None)
     a = ap.parse_args(argv)
+
+    if a.cmd == "upload-storyboard-frame":
+        try:
+            result = upload_storyboard_frame(a.run_dir, a.shot_id, stage=a.stage,
+                                             run_id=a.run_id, adapter_path=a.adapter)
+            json.dump({"outcome": "ok", "frame_binding": result}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return 0
+        except (ProviderFrameBindingError, OSError, ValueError) as exc:
+            json.dump({"outcome": "rejected", "reason_code": getattr(exc, "code", "PROVIDER_FRAME_UPLOAD_UNVERIFIED"),
+                       "detail": str(exc)}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return EXIT["rejected"]
 
     if a.cmd == "dispatch":
         with open(a.request, encoding="utf-8") as f:
