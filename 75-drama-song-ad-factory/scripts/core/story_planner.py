@@ -28,6 +28,12 @@ names --
     consequence        -> visible transformation (behavior, not "all better")
     commercial_action  -> the single CTA
 
+Revision identity is TYPE-STRICT (see ``_is_revision`` / ``_same_revision``): a
+revision or pinned digest is a non-empty string, and two revisions match only
+when they are type-identical AND equal. Anything else -- None, whitespace,
+False, True, 0, 0.0, [], {}, any non-str -- is not a declared revision and
+refuses with a named error.
+
 Run:  python3 story_planner.py validate --plan P.json --cast C.json --world W.json
       python3 story_planner.py selftest
 """
@@ -145,14 +151,47 @@ EXIT = {"ok": 0, "rejected": 4, "error": 1}
 # helpers
 # --------------------------------------------------------------------------- #
 def _blank(v):
-    """Nothing is here: None, whitespace, empty list/dict."""
-    if v is None:
-        return True
+    """Nothing is DECLARED here: None, whitespace, empty list/dict, and any
+    non-text scalar (False, True, 0, 0.0, an object).
+
+    Declared-ness is TYPE-based, never truthiness: a falsy value is not "missing
+    because it is false", and a truthy non-text value is not prose.
+    """
     if isinstance(v, str):
         return not v.strip()
     if isinstance(v, (list, tuple, dict, set)):
         return len(v) == 0
-    return False
+    return True
+
+
+def _is_revision(value):
+    """A DECLARED revision: a non-empty string.
+
+    The one revision predicate (S75-T09 round 4) and it is used at EVERY
+    revision/digest consumption site. Anything else -- None, "", whitespace,
+    False, True, 0, 0.0, [], {}, any non-str -- is NOT a declared revision and
+    must refuse with a named error. Truthiness never decides this.
+    """
+    return isinstance(value, str) and value.strip() != ""
+
+
+def _same_revision(left, right):
+    """Exact AND type-identical match.
+
+    0 can never satisfy False; the string "false" is a value while the boolean
+    False is not a revision at all. Two undeclared values never match.
+    """
+    return (type(left) is type(right) and _is_revision(left) and left == right)
+
+
+def _object(value):
+    """A JSON object or nothing.
+
+    Every artifact is an object; a non-object reaches the check that consumes it
+    as None and is refused BY NAME there -- never as an AttributeError inside
+    ``.get`` / ``_index`` (S75-T09 round 4 secondary).
+    """
+    return value if isinstance(value, dict) else None
 
 
 def _words(text):
@@ -194,25 +233,32 @@ def validate_foundation(foundation):
     errors = []
     for key in FOUNDATION_KEYS:
         art = foundation.get(key)
-        if not isinstance(art, dict):
+        if art is None:
             errors.append(_err("foundation-missing",
                                "%s is missing; no causal plan can be authored without it" % key,
                                field=key))
             continue
-        if _blank(art.get("revision")):
+        art = _object(art)
+        if art is None:
+            errors.append(_err("artifact-not-an-object",
+                               "%s must be a JSON object, got %s"
+                               % (key, type(foundation.get(key)).__name__), field=key))
+            continue
+        if not _is_revision(art.get("revision")):
             errors.append(_err("foundation-unversioned",
-                               "%s carries no revision" % key, field=key))
-        if _blank(art.get("digest")):
+                               "%s carries no revision; a revision is a non-empty string, got %r"
+                               % (key, art.get("revision")), field=key))
+        if not _is_revision(art.get("digest")):
             errors.append(_err("foundation-undigested",
                                "%s carries no content digest" % key, field=key))
 
-    cast = foundation.get("episode_cast_manifest")
-    if isinstance(cast, dict) and not isinstance(cast.get("cast"), list):
+    cast = _object(foundation.get("episode_cast_manifest"))
+    if cast is not None and not isinstance(cast.get("cast"), list):
         errors.append(_err("cast-manifest-shape",
                            "episode_cast_manifest.cast must be a list of {cast_id, "
                            "identity_revision}", field="episode_cast_manifest"))
-    world = foundation.get("episode_world")
-    if isinstance(world, dict) and not isinstance(world.get("locations"), list):
+    world = _object(foundation.get("episode_world"))
+    if world is not None and not isinstance(world.get("locations"), list):
         errors.append(_err("world-shape",
                            "episode_world.locations must be a list of {location_id}",
                            field="episode_world"))
@@ -220,9 +266,11 @@ def validate_foundation(foundation):
     # an EMPTY foundation set is as unusable as a missing one: it must stop the
     # authoring writer BEFORE the dispatcher is called, not afterwards
     for code, rows, detail in (
-            ("cast-manifest-empty", (cast or {}).get("cast"), "episode_cast_manifest.cast"),
-            ("world-locations-empty", (world or {}).get("locations"), "episode_world.locations"),
-            ("research-claims-empty", (foundation.get("research_bundle") or {}).get("claims"),
+            ("cast-manifest-empty", cast.get("cast") if cast else None,
+             "episode_cast_manifest.cast"),
+            ("world-locations-empty", world.get("locations") if world else None,
+             "episode_world.locations"),
+            ("research-claims-empty", (_object(foundation.get("research_bundle")) or {}).get("claims"),
              "research_bundle.claims")):
         if not isinstance(rows, list) or not rows:
             errors.append(_err(code,
@@ -412,6 +460,18 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
         research = foundation.get("research_bundle")
 
     errors = []
+    # artifacts are JSON objects. A non-object refuses BY NAME at this boundary
+    # -- never as an AttributeError inside _index/.get (S75-T09 round 4).
+    for name, art in (("episode_cast_manifest", cast_manifest),
+                      ("episode_world", world),
+                      ("research_bundle", research)):
+        if art is not None and _object(art) is None:
+            errors.append(_err("artifact-not-an-object",
+                               "%s must be a JSON object, got %s" % (name, type(art).__name__),
+                               field=name))
+    cast_manifest = _object(cast_manifest)
+    world = _object(world)
+    research = _object(research)
 
     if _blank(plan.get("schema_version")):
         errors.append(_err("schema-version-missing",
@@ -427,7 +487,8 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
                                "scene_plan is missing %r" % field, field=field))
 
     for key in FOUNDATION_KEYS:
-        if _blank(foundation.get(key)) if foundation else True:
+        bound = _object(foundation.get(key)) if foundation else None
+        if bound is None or _blank(bound):
             errors.append(_err("foundation-not-bound",
                                "scene_plan does not bind %s; an unbound plan cannot gate a script"
                                % key, field=key))
@@ -457,42 +518,54 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
     else:
         for key in FOUNDATION_KEYS:
             pin = pins.get(key)
-            artifact = cast_manifest if key == "episode_cast_manifest" else (
-                world if key == "episode_world" else
-                (research if key == "research_bundle" else foundation.get(key)))
+            artifact = _object(
+                cast_manifest if key == "episode_cast_manifest" else
+                (world if key == "episode_world" else
+                 (research if key == "research_bundle" else foundation.get(key))))
             if not isinstance(pin, dict):
                 errors.append(_err("foundation-revision-unpinned",
                                    "foundation_revisions carries no pin for %s; a missing pin is a "
                                    "refusal, not a waiver" % key, field="foundation_revisions"))
                 continue
             revision = (artifact or {}).get("revision")
-            if _blank(revision):
+            pin_revision = pin.get("revision")
+            if not _is_revision(revision):
                 errors.append(_err("artifact-revision-missing",
-                                   "%s declares no revision; absence of a revision is not "
-                                   "permission to skip the revision check" % key, field=key))
-            elif pin.get("revision") != revision:
+                                   "%s declares no revision (%r is not a revision; a revision is a "
+                                   "non-empty string); absence of a revision is not "
+                                   "permission to skip the revision check"
+                                   % (key, revision), field=key))
+            elif not _is_revision(pin_revision):
+                errors.append(_err("foundation-pin-revision-invalid",
+                                   "foundation_revisions pins %s revision %r; a pin must declare a "
+                                   "non-empty string revision" % (key, pin_revision),
+                                   field="foundation_revisions"))
+            elif not _same_revision(pin_revision, revision):
                 errors.append(_err("foundation-revision-mismatch",
                                    "plan pins %s revision %r but the validated artifact is %r"
-                                   % (key, pin.get("revision"), revision), field="foundation_revisions"))
-            if _blank((artifact or {}).get("digest")):
+                                   % (key, pin_revision, revision), field="foundation_revisions"))
+            digest = (artifact or {}).get("digest")
+            pin_digest = pin.get("digest")
+            if not _is_revision(digest):
                 errors.append(_err("artifact-digest-missing",
                                    "%s declares no content digest; an undigested artifact cannot "
                                    "be pinned" % key, field=key))
-            elif _blank(pin.get("digest")):
+            elif not _is_revision(pin_digest):
                 errors.append(_err("foundation-revision-undigested",
                                    "foundation_revisions pins %s without a digest" % key,
                                    field="foundation_revisions"))
-            elif pin.get("digest") != (artifact or {}).get("digest"):
+            elif not _same_revision(pin_digest, digest):
                 errors.append(_err("foundation-digest-mismatch",
                                    "plan pins %s digest %r but the validated artifact is %r"
-                                   % (key, pin.get("digest"), (artifact or {}).get("digest")),
+                                   % (key, pin_digest, digest),
                                    field="foundation_revisions"))
 
     # a world that declares NO revision must refuse, not switch the check off
-    if _blank(world_rev):
+    if not _is_revision(world_rev):
         errors.append(_err("world-revision-missing",
-                           "episode_world declares no revision; absence of a revision is not "
-                           "permission to skip the world-revision check",
+                           "episode_world declares no revision (%r is not a revision; a revision is "
+                           "a non-empty string); absence of a revision is not permission to skip "
+                           "the world-revision check" % (world_rev,),
                            field="episode_world"))
 
     scenes = plan.get("scenes")
@@ -549,22 +622,23 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
                                        "scene %r names cast_id %r, absent from the cast manifest"
                                        % (sid, cid), scene_id=sid, field="cast_roles",
                                        cast_id=cid))
-                elif (_blank(role.get("identity_revision"))
-                      or _blank(row.get("identity_revision"))):
-                    # neither side declaring a revision is a refusal, never a match
-                    errors.append(_err("cast-revision-missing",
-                                       "scene %r cast %r binds identity_revision %r and the "
-                                       "manifest holds %r; absence of a revision is not permission "
-                                       "to skip the identity check"
-                                       % (sid, cid, role.get("identity_revision"),
-                                          row.get("identity_revision")),
-                                       scene_id=sid, field="cast_roles", cast_id=cid))
-                elif role.get("identity_revision") != row.get("identity_revision"):
-                    errors.append(_err("cast-revision-mismatch",
-                                       "scene %r binds %r revision %r, manifest holds %r"
-                                       % (sid, cid, role.get("identity_revision"),
-                                          row.get("identity_revision")),
-                                       scene_id=sid, field="cast_roles", cast_id=cid))
+                else:
+                    role_revision = role.get("identity_revision")
+                    row_revision = row.get("identity_revision")
+                    if not _is_revision(role_revision) or not _is_revision(row_revision):
+                        # neither side declaring a revision is a refusal, never a match
+                        errors.append(_err("cast-revision-missing",
+                                           "scene %r cast %r binds identity_revision %r and the "
+                                           "manifest holds %r; a revision is a non-empty string and "
+                                           "absence of one is not permission to skip the identity "
+                                           "check"
+                                           % (sid, cid, role_revision, row_revision),
+                                           scene_id=sid, field="cast_roles", cast_id=cid))
+                    elif not _same_revision(role_revision, row_revision):
+                        errors.append(_err("cast-revision-mismatch",
+                                           "scene %r binds %r revision %r, manifest holds %r"
+                                           % (sid, cid, role_revision, row_revision),
+                                           scene_id=sid, field="cast_roles", cast_id=cid))
                 for field in ("role", "consequence"):
                     if _blank(role.get(field)):
                         errors.append(_err("cast-role-incomplete",
@@ -579,17 +653,19 @@ def validate_scene_plan(plan, cast_manifest=None, world=None, research=None):
                                "scene %r location_id %r is not in the episode world"
                                % (sid, loc), scene_id=sid, field="location_id",
                                location_id=loc))
-        if _blank(scene.get("world_revision")) or _blank(world_rev):
+        scene_world_revision = scene.get("world_revision")
+        if not _is_revision(scene_world_revision) or not _is_revision(world_rev):
             errors.append(_err("world-revision-unbound",
                                "scene %r cannot bind a world revision: scene world_revision=%r, "
-                               "episode_world.revision=%r; absence of either side is a refusal, "
-                               "not permission to skip the check"
-                               % (sid, scene.get("world_revision"), world_rev),
+                               "episode_world.revision=%r; a revision is a non-empty string and "
+                               "absence of either side is a refusal, not permission to skip the "
+                               "check"
+                               % (sid, scene_world_revision, world_rev),
                                scene_id=sid, field="world_revision"))
-        elif scene.get("world_revision") != world_rev:
+        elif not _same_revision(scene_world_revision, world_rev):
             errors.append(_err("world-revision-mismatch",
                                "scene %r binds world revision %r, world holds %r"
-                               % (sid, scene.get("world_revision"), world_rev),
+                               % (sid, scene_world_revision, world_rev),
                                scene_id=sid, field="world_revision"))
 
         claims = scene.get("claim_ids")
@@ -690,8 +766,8 @@ def build_scene_plan(foundation, beats, submit, attempt_key=None):
     request = {
         "operation": "scene_plan",
         "foundation": {
-            k: {"revision": (foundation.get(k) or {}).get("revision"),
-                "digest": (foundation.get(k) or {}).get("digest")}
+            k: {"revision": (_object(foundation.get(k)) or {}).get("revision"),
+                "digest": (_object(foundation.get(k)) or {}).get("digest")}
             for k in FOUNDATION_KEYS
         },
         "causal_story_beats": {f: beats[f] for f in BEAT_FIELDS},
@@ -716,8 +792,8 @@ def build_scene_plan(foundation, beats, submit, attempt_key=None):
     # its own and have that one validated in its place
     plan["foundation"] = foundation
     plan.setdefault("foundation_revisions", {
-        k: {"revision": (foundation.get(k) or {}).get("revision"),
-            "digest": (foundation.get(k) or {}).get("digest")}
+        k: {"revision": (_object(foundation.get(k)) or {}).get("revision"),
+            "digest": (_object(foundation.get(k)) or {}).get("digest")}
         for k in FOUNDATION_KEYS
     })
 

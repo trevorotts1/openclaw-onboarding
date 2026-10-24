@@ -21,7 +21,13 @@ Required cases (S75-A09):
   * timing stays provisional: measured lip-sync or a non-provisional timing
     basis is refused;
   * the music gate refuses an incomplete plan and a plan that already carries
-    a song.
+    a song;
+  * revision identity is TYPE-STRICT (round 4): a revision is a non-empty
+    string, and every falsy or non-string spelling (False, True, 0, 0.0, [],
+    {}, None, "", whitespace, an object) refuses by name at every consumption
+    site -- world revision, scene world_revision, cast identity_revision and
+    the foundation pins -- while an exactly-matching string still validates
+    and opens the music gate.
 """
 import copy
 import json
@@ -44,23 +50,23 @@ def codes(result):
 def workshop_foundation():
     return {
         "research_bundle": {
-            "bundle_id": "rb_workshop_001", "revision": 1, "digest": "sha256:aa11",
+            "bundle_id": "rb_workshop_001", "revision": "1", "digest": "sha256:aa11",
             "claims": [{"claim_id": "claim_shortfall_001"}],
         },
         "character_identity_library_snapshot": {
-            "snapshot_id": "cis_001", "revision": 3, "digest": "sha256:bb22",
+            "snapshot_id": "cis_001", "revision": "3", "digest": "sha256:bb22",
         },
         "episode_cast_manifest": {
-            "manifest_id": "ecm_workshop_001", "revision": 2, "digest": "sha256:cc33",
+            "manifest_id": "ecm_workshop_001", "revision": "2", "digest": "sha256:cc33",
             "cast": [
-                {"cast_id": "char_mara_001", "identity_revision": 1,
+                {"cast_id": "char_mara_001", "identity_revision": "1",
                  "display_name": "Mara"},
-                {"cast_id": "char_levi_002", "identity_revision": 1,
+                {"cast_id": "char_levi_002", "identity_revision": "1",
                  "display_name": "Levi"},
             ],
         },
         "episode_world": {
-            "world_id": "world_workshop_001", "revision": 1, "digest": "sha256:dd44",
+            "world_id": "world_workshop_001", "revision": "1", "digest": "sha256:dd44",
             "locations": [{"location_id": "loc_workshop_front_001"}],
         },
     }
@@ -70,21 +76,21 @@ def diner_foundation():
     """Neighbouring valid foundation: different setting, different cast."""
     return {
         "research_bundle": {
-            "bundle_id": "rb_diner_002", "revision": 4, "digest": "sha256:ee55",
+            "bundle_id": "rb_diner_002", "revision": "4", "digest": "sha256:ee55",
             "claims": [{"claim_id": "claim_lease_002"}],
         },
         "character_identity_library_snapshot": {
-            "snapshot_id": "cis_002", "revision": 1, "digest": "sha256:ff66",
+            "snapshot_id": "cis_002", "revision": "1", "digest": "sha256:ff66",
         },
         "episode_cast_manifest": {
-            "manifest_id": "ecm_diner_002", "revision": 1, "digest": "sha256:aa77",
+            "manifest_id": "ecm_diner_002", "revision": "1", "digest": "sha256:aa77",
             "cast": [
-                {"cast_id": "char_rosa_010", "identity_revision": 2, "display_name": "Rosa"},
-                {"cast_id": "char_theo_011", "identity_revision": 2, "display_name": "Theo"},
+                {"cast_id": "char_rosa_010", "identity_revision": "2", "display_name": "Rosa"},
+                {"cast_id": "char_theo_011", "identity_revision": "2", "display_name": "Theo"},
             ],
         },
         "episode_world": {
-            "world_id": "world_diner_002", "revision": 6, "digest": "sha256:bb88",
+            "world_id": "world_diner_002", "revision": "6", "digest": "sha256:bb88",
             "locations": [{"location_id": "loc_diner_counter_002"}],
         },
     }
@@ -116,11 +122,11 @@ def scene_workshop_001():
                              "choice in front of her partner"),
         "time": "evening closing time, one continuous evening",
         "location_id": "loc_workshop_front_001",
-        "world_revision": 1,
+        "world_revision": "1",
         "cast_roles": [
-            {"cast_id": "char_mara_001", "identity_revision": 1, "role": "viewpoint",
+            {"cast_id": "char_mara_001", "identity_revision": "1", "role": "viewpoint",
              "consequence": "Loses control of the information she was hiding"},
-            {"cast_id": "char_levi_002", "identity_revision": 1, "role": "partner",
+            {"cast_id": "char_levi_002", "identity_revision": "1", "role": "partner",
              "consequence": "Gains the fact he needs before payroll clears"},
         ],
         "immediate_want": "Mara wants one more vague promise accepted without reading the warning",
@@ -158,11 +164,11 @@ def scene_workshop_002():
                              "answers the actual obstacle rather than reassuring"),
         "time": "evening closing time, minutes after the notice opens",
         "location_id": "loc_workshop_front_001",
-        "world_revision": 1,
+        "world_revision": "1",
         "cast_roles": [
-            {"cast_id": "char_levi_002", "identity_revision": 1, "role": "viewpoint",
+            {"cast_id": "char_levi_002", "identity_revision": "1", "role": "viewpoint",
              "consequence": "Owns half the repair instead of waiting to be told"},
-            {"cast_id": "char_mara_001", "identity_revision": 1, "role": "partner",
+            {"cast_id": "char_mara_001", "identity_revision": "1", "role": "partner",
              "consequence": "Accepts a written date she cannot quietly move"},
         ],
         "immediate_want": "Levi wants a date and a name against every unpaid line",
@@ -212,11 +218,11 @@ def diner_plan():
                                  "single cup for the morning rush"),
             "time": "pre-dawn, before the diner opens",
             "location_id": "loc_diner_counter_002",
-            "world_revision": 6,
+            "world_revision": "6",
             "cast_roles": [
-                {"cast_id": "char_rosa_010", "identity_revision": 2, "role": "viewpoint",
+                {"cast_id": "char_rosa_010", "identity_revision": "2", "role": "viewpoint",
                  "consequence": "Stops managing the room and starts managing the debt"},
-                {"cast_id": "char_theo_011", "identity_revision": 2, "role": "co-signer",
+                {"cast_id": "char_theo_011", "identity_revision": "2", "role": "co-signer",
                  "consequence": "Learns the letter is already two weeks old"},
             ],
             "immediate_want": "Rosa wants the stove lit and the letter left in her apron",
@@ -295,7 +301,7 @@ def test_dispatched_plan_carries_pinned_revisions():
     assert auth.get("dispatched") is True
     assert (auth.get("receipt") or {}).get("attempt_key") == "att-1"
     assert ((seen.get("request") or {}).get("foundation") or {}).get(
-        "episode_cast_manifest", {}).get("revision") == 2
+        "episode_cast_manifest", {}).get("revision") == "2"
     assert ((seen.get("request") or {}).get("foundation") or {}).get(
         "episode_world", {}).get("digest") == "sha256:dd44"
     assert set((seen.get("request") or {}).get("causal_story_beats") or {}) == set(SP.BEAT_FIELDS)
@@ -372,7 +378,7 @@ def test_undefined_cast_and_stale_revision_refused():
     assert "cast-undefined" in codes(SP.validate_scene_plan(p))
 
     p = workshop_plan()
-    p["scenes"][0]["cast_roles"][0]["identity_revision"] = 7
+    p["scenes"][0]["cast_roles"][0]["identity_revision"] = "7"
     assert "cast-revision-mismatch" in codes(SP.validate_scene_plan(p))
 
 
@@ -382,7 +388,7 @@ def test_undefined_location_and_stale_world_revision_refused():
     assert "location-undefined" in codes(SP.validate_scene_plan(p))
 
     p = workshop_plan()
-    p["scenes"][0]["world_revision"] = 9
+    p["scenes"][0]["world_revision"] = "9"
     assert "world-revision-mismatch" in codes(SP.validate_scene_plan(p))
 
 
@@ -459,8 +465,8 @@ def test_neighbour_row_keys_resolve():
     f["episode_world"] = dict(f["episode_world"],
                               locations=[{"id": "loc_workshop_front_001"}])
     f["episode_cast_manifest"] = dict(f["episode_cast_manifest"], cast=[
-        {"character_id": "char_mara_001", "identity_revision": 1},
-        {"character_id": "char_levi_002", "identity_revision": 1},
+        {"character_id": "char_mara_001", "identity_revision": "1"},
+        {"character_id": "char_levi_002", "identity_revision": "1"},
     ])
     p = workshop_plan()
     p["foundation"] = f
@@ -490,8 +496,8 @@ def test_world_revision_absence_is_refused():
     p = workshop_plan()
     del p["foundation"]["episode_world"]["revision"]
     p["foundation_revisions"]["episode_world"] = {"digest": "sha256:dd44"}
-    p["scenes"][0]["world_revision"] = 99
-    p["scenes"][1]["world_revision"] = 99
+    p["scenes"][0]["world_revision"] = "99"
+    p["scenes"][1]["world_revision"] = "99"
     c = codes(SP.validate_scene_plan(p))
     assert SP.validate_scene_plan(p)["outcome"] == "rejected", c
     assert "world-revision-missing" in c and "world-revision-unbound" in c, c
@@ -506,7 +512,7 @@ def test_world_revision_absence_is_refused():
 
     # the declared-revision path still discriminates
     p = workshop_plan()
-    p["scenes"][0]["world_revision"] = 99
+    p["scenes"][0]["world_revision"] = "99"
     assert "world-revision-mismatch" in codes(SP.validate_scene_plan(p))
 
 
@@ -529,14 +535,14 @@ def test_cast_identity_revision_absence_is_refused():
 
     # the declared path still discriminates
     p = workshop_plan()
-    p["scenes"][0]["cast_roles"][0]["identity_revision"] = 7
+    p["scenes"][0]["cast_roles"][0]["identity_revision"] = "7"
     assert "cast-revision-mismatch" in codes(SP.validate_scene_plan(p))
 
 
 def test_foundation_revision_pins_reconciled():
     """The plan's pin must match the artifacts it validates against."""
     p = workshop_plan()
-    p["foundation_revisions"]["episode_world"]["revision"] = 5
+    p["foundation_revisions"]["episode_world"]["revision"] = "5"
     assert "foundation-revision-mismatch" in codes(SP.validate_scene_plan(p))
 
     p = workshop_plan()
@@ -607,6 +613,220 @@ def test_optional_guards_fail_closed():
     p = workshop_plan()
     p["scenes"] = ["not-a-scene"]
     assert SP.validate_scene_plan(p)["outcome"] == "rejected"
+
+
+# --------------------------------------------------------------------------- #
+# revision identity is TYPE-STRICT, never truthiness (S75-T09 round 4)
+# --------------------------------------------------------------------------- #
+#: Every type the truthiness bug used to smuggle past the blank check: falsy
+#: scalars, truthy non-strings, empties, whitespace and plain objects. NONE of
+#: these is a declared revision; each must refuse BY NAME at every consumption
+#: site. A declared revision is a non-empty string and nothing else.
+BAD_REVISIONS = (False, True, 0, 0.0, [], {}, None, "", "   ", b"1", ("1",),
+                 object())
+
+
+def test_revision_predicate_is_type_strict():
+    """One predicate, no truthiness: declared means non-empty string."""
+    for bad in BAD_REVISIONS:
+        assert SP._is_revision(bad) is False, repr(bad)
+    for good in ("1", "rev-17", "false", "0", "  x  "):
+        assert SP._is_revision(good) is True, repr(good)
+
+
+def test_revision_equality_is_type_strict():
+    """0 can never satisfy False; 'false' is a value, False is not a revision."""
+    assert SP._same_revision(0, False) is False
+    assert SP._same_revision(False, 0) is False
+    assert SP._same_revision("false", False) is False
+    assert SP._same_revision("1", 1) is False
+    assert SP._same_revision(1, True) is False
+    assert SP._same_revision("1", "1 ") is False   # exact, never stripped-equal
+    assert SP._same_revision(False, False) is False  # undeclared never matches
+    assert SP._same_revision(0, 0) is False
+    assert SP._same_revision("rev-1", "rev-1") is True
+
+
+def test_world_revision_type_matrix_refused():
+    """world revision / scene world_revision / pin, matching and not.
+
+    The round-3 bypass shape: world 'revision': false, scenes
+    'world_revision': false, matching pins, and music_gate still allowed.
+    """
+    for bad in BAD_REVISIONS:
+        # (a) matching falsy/non-str on every side -- the bypass family
+        p = workshop_plan()
+        p["foundation"]["episode_world"]["revision"] = bad
+        p["foundation_revisions"]["episode_world"]["revision"] = bad
+        for sc in p["scenes"]:
+            sc["world_revision"] = bad
+        res = SP.validate_scene_plan(p)
+        c = codes(res)
+        assert res["outcome"] == "rejected", (repr(bad), c[:3])
+        assert ("world-revision-missing" in c or "world-revision-unbound" in c
+                or "artifact-revision-missing" in c), (repr(bad), c[:3])
+        assert SP.music_gate(p)["allowed"] is False, repr(bad)
+
+        # (b) only the scene side is that type -- refused, never a mismatch
+        p = workshop_plan()
+        for sc in p["scenes"]:
+            sc["world_revision"] = bad
+        c = codes(SP.validate_scene_plan(p))
+        assert "world-revision-unbound" in c, (repr(bad), c[:3])
+        assert "world-revision-mismatch" not in c, (repr(bad), c[:3])
+        assert SP.music_gate(p)["allowed"] is False, repr(bad)
+
+        # (c) only the world side is that type -- refused, never a mismatch
+        p = workshop_plan()
+        p["foundation"]["episode_world"]["revision"] = bad
+        p["foundation_revisions"]["episode_world"]["revision"] = bad
+        c = codes(SP.validate_scene_plan(p))
+        assert "world-revision-missing" in c, (repr(bad), c[:3])
+        assert "world-revision-mismatch" not in c, (repr(bad), c[:3])
+
+        # (d) the pin alone is that type against a declared artifact
+        p = workshop_plan()
+        p["foundation_revisions"]["episode_world"]["revision"] = bad
+        c = codes(SP.validate_scene_plan(p))
+        assert "foundation-pin-revision-invalid" in c, (repr(bad), c[:3])
+        assert SP.music_gate(p)["allowed"] is False, repr(bad)
+
+
+def test_cast_identity_revision_type_matrix_refused():
+    """identity_revision on the role AND on the manifest row, matching or not."""
+    for bad in BAD_REVISIONS:
+        # matching bad on both sides must never read as a match
+        p = workshop_plan()
+        for row in p["foundation"]["episode_cast_manifest"]["cast"]:
+            row["identity_revision"] = bad
+        for sc in p["scenes"]:
+            for role in sc["cast_roles"]:
+                role["identity_revision"] = bad
+        c = codes(SP.validate_scene_plan(p))
+        assert "cast-revision-missing" in c, (repr(bad), c[:3])
+        assert "cast-revision-mismatch" not in c, (repr(bad), c[:3])
+        assert SP.music_gate(p)["allowed"] is False, repr(bad)
+
+        # one side only
+        p = workshop_plan()
+        p["scenes"][0]["cast_roles"][0]["identity_revision"] = bad
+        assert "cast-revision-missing" in codes(SP.validate_scene_plan(p)), repr(bad)
+
+        p = workshop_plan()
+        p["foundation"]["episode_cast_manifest"]["cast"][0]["identity_revision"] = bad
+        assert "cast-revision-missing" in codes(SP.validate_scene_plan(p)), repr(bad)
+
+
+def test_foundation_pin_type_matrix_refused():
+    """A pin carries a declared string revision/digest or it refuses."""
+    for bad in BAD_REVISIONS:
+        p = workshop_plan()
+        p["foundation_revisions"]["research_bundle"]["digest"] = bad
+        c = codes(SP.validate_scene_plan(p))
+        assert "foundation-revision-undigested" in c, (repr(bad), c[:3])
+        assert SP.music_gate(p)["allowed"] is False, repr(bad)
+
+        p = workshop_plan()
+        p["foundation"]["research_bundle"]["digest"] = bad
+        p["foundation_revisions"]["research_bundle"]["digest"] = bad
+        c = codes(SP.validate_scene_plan(p))
+        assert "artifact-digest-missing" in c, (repr(bad), c[:3])
+        assert SP.music_gate(p)["allowed"] is False, repr(bad)
+
+
+def test_zero_never_satisfies_false():
+    """The exact bypass family: 0 == False cross-matched one value."""
+    for world_rev, scene_rev, pin_rev in ((False, 0, 0), (0, False, 0),
+                                          (False, False, 0), (0.0, False, False),
+                                          (False, 0.0, 0.0)):
+        p = workshop_plan()
+        p["foundation"]["episode_world"]["revision"] = world_rev
+        p["foundation_revisions"]["episode_world"]["revision"] = pin_rev
+        for sc in p["scenes"]:
+            sc["world_revision"] = scene_rev
+        res = SP.validate_scene_plan(p)
+        c = codes(res)
+        assert res["outcome"] == "rejected", (world_rev, scene_rev, c[:3])
+        assert SP.music_gate(p)["allowed"] is False, (world_rev, scene_rev)
+        assert ("world-revision-missing" in c or "world-revision-unbound" in c), \
+            (world_rev, scene_rev, c[:3])
+
+
+def test_declared_string_revisions_still_match():
+    """Control: legitimate string revisions match exactly and the gate opens."""
+    ok = workshop_plan()
+    assert SP.validate_scene_plan(ok)["outcome"] == "ok"
+    assert SP.music_gate(ok)["allowed"] is True
+
+    for rev in ("rev-17", "false", "0", "1"):
+        p = workshop_plan()
+        p["foundation"]["episode_world"]["revision"] = rev
+        p["foundation_revisions"]["episode_world"]["revision"] = rev
+        for sc in p["scenes"]:
+            sc["world_revision"] = rev
+        res = SP.validate_scene_plan(p)
+        assert res["outcome"] == "ok", (rev, res["errors"][:3])
+        assert SP.music_gate(p)["allowed"] is True, rev
+
+    # a stale but DECLARED revision is a mismatch, not an absence
+    p = workshop_plan()
+    p["scenes"][0]["world_revision"] = "rev-17"
+    p["scenes"][1]["world_revision"] = "rev-17"
+    assert "world-revision-mismatch" in codes(SP.validate_scene_plan(p))
+
+
+def test_non_dict_artifacts_refuse_by_name():
+    """A non-object artifact is a NAMED refusal, never an AttributeError."""
+    for name, kw in (("episode_cast_manifest", "cast_manifest"),
+                     ("episode_world", "world"),
+                     ("research_bundle", "research")):
+        res = SP.validate_scene_plan(workshop_plan(), **{kw: "not-an-object"})
+        assert res["outcome"] == "rejected", name
+        assert "artifact-not-an-object" in codes(res), (name, codes(res)[:3])
+        gate = SP.music_gate(workshop_plan(), **{kw: ["not-an-object"]})
+        assert gate["allowed"] is False, name
+
+    p = workshop_plan()
+    p["foundation"]["episode_world"] = 7
+    assert "artifact-not-an-object" in codes(SP.validate_scene_plan(p))
+
+    p = workshop_plan()
+    p["foundation"]["character_identity_library_snapshot"] = "oops"
+    assert SP.validate_scene_plan(p)["outcome"] == "rejected"
+
+    p = workshop_plan()
+    p["foundation_revisions"]["episode_world"] = "oops"
+    assert "foundation-revision-unpinned" in codes(SP.validate_scene_plan(p))
+
+    # the authoring path names the refusal too, and dispatches nothing
+    calls = {"n": 0}
+
+    def counting_submit(request):
+        calls["n"] += 1
+        return {"scenes": []}
+
+    f = workshop_foundation()
+    f["episode_cast_manifest"] = ["not-an-object"]
+    out = SP.build_scene_plan(f, BEATS, counting_submit, attempt_key="att-obj")
+    assert out["outcome"] == "rejected" and out.get("dispatched") is False, out["reason_code"]
+    assert calls["n"] == 0, calls["n"]
+    assert "artifact-not-an-object" in [e["error"] for e in out["errors"]], out["errors"][:2]
+
+
+def test_empty_research_claims_still_block_before_dispatch():
+    """Empty research claims block the writer BEFORE any submit, calls=0."""
+    calls = {"n": 0}
+
+    def counting_submit(request):
+        calls["n"] += 1
+        return {"scenes": []}
+
+    f = workshop_foundation()
+    f["research_bundle"]["claims"] = []
+    out = SP.build_scene_plan(f, BEATS, counting_submit, attempt_key="att-claims")
+    assert out["outcome"] == "rejected" and out.get("dispatched") is False, out["reason_code"]
+    assert "research-claims-empty" in [e["error"] for e in out["errors"]], out["errors"][:2]
+    assert calls["n"] == 0, calls["n"]
 
 
 TESTS = [v for k, v in sorted(globals().items())
