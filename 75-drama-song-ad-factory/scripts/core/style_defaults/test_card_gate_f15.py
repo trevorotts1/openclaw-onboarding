@@ -368,9 +368,17 @@ def test_card_renders_plain_sentences_and_recommended():
     vm = card["video_model"]
     check("video-model menu lists every approved model for 60 seconds",
           len(vm) == 17, repr(vm))
-    check("Hailuo 02 Standard 768P line marked RECOMMENDED",
-          any(l.startswith("Hailuo 02 Standard") and "(RECOMMENDED)" in l
-              and "768P" in l for l in vm), repr(vm[6]))
+    check("Hailuo 02 Standard 768P present and NOT marked RECOMMENDED",
+          any(l.startswith("Hailuo 02 Standard") and "768P" in l
+              and "(RECOMMENDED)" not in l for l in vm), repr(vm[6]))
+    check("recommended marker follows the rates table (MiniMax H3, not Hailuo)",
+          CG._is_recommended_model({"model": "MiniMax H3", "resolution": "768P"})
+          and not CG._is_recommended_model({"model": "Hailuo 02 Standard",
+                                            "resolution": "768P (no 720p)"}),
+          repr(vm[6]))
+    check("no price-menu row is marked RECOMMENDED: the card's recommended "
+          "model (MiniMax H3) is a question row, not a priced menu row",
+          not any("(RECOMMENDED)" in l for l in vm), repr(vm))
     check("every model line carries a price and one plain sentence",
           all("$" in l and l.rstrip().endswith(".") for l in vm), repr(vm[:2]))
     check("Seedance 2.5 1080p PREMIUM marker travels with its line",

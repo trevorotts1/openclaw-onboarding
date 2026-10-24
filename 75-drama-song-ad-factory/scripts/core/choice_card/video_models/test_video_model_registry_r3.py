@@ -3,8 +3,8 @@
 carries, and refuses a card whose model list cannot be resolved.
 
 Behaviour proven (RELIABILITY-SPEC L3; live defect: the client's card answer
-was "Hailuo 02 Standard", the live KIE catalog has no such model -- brand is Hailuo
-02 -- and the run printed a model the catalog does not carry):
+named a model the live KIE catalog does not carry, and the run printed a
+model the catalog does not carry):
 
   * a resolvable registry yields only models the registry lists;
   * a registry missing a card model refuses BY NAME (MODEL_NOT_IN_REGISTRY
@@ -105,7 +105,7 @@ def test_live_repo_registry_resolves_all_four():
         check("live repo: all four card models resolve, no reason",
               rows is not None and reason is None
               and [r["name"] for r in rows]
-              == ["Hailuo 02 Standard", "Seedance 2.5", "Seedance 2.0 Mini",
+              == ["MiniMax H3", "Seedance 2.5", "Seedance 2.0 Mini",
                   "Google Veo 3.1"], repr(reason))
         ok_ids = set(VM.registry_ids())
         check("every row's kie_model carried by the registry",
@@ -122,9 +122,10 @@ def test_resolvable_registry_yields_only_listed_models():
     only models the registry lists, and refuses the rest by name."""
     live = _live_registry()
     reg = json.load(open(live, encoding="utf-8")) if live else {"models": []}
-    # registry WITHOUT Hailuo 02 Standard (the live defect: brand is Hailuo 02)
+    # registry WITHOUT MiniMax H3 (the live defect shape: a card row whose
+    # model the catalog does not carry)
     stripped = {"models": [m for m in reg.get("models", [])
-                           if m.get("id") != "hailuo/02-image-to-video-standard"]}
+                           if m.get("id") != "minimax-h3/image-to-video"]}
     check("stripped registry still carries the other three",
           {"bytedance/seedance-2-5", "bytedance/seedance-2-mini", "veo-3-1"}
           <= {m.get("id") for m in stripped["models"]}, repr(stripped)[:80])
@@ -136,8 +137,8 @@ def test_resolvable_registry_yields_only_listed_models():
               rows is None and reason is not None, repr(reason))
         check("refusal reason names the exact live defect",
               reason["reason_code"] == "MODEL_NOT_IN_REGISTRY"
-              and "Hailuo 02 Standard" in reason["detail"]
-              and "hailuo/02-image-to-video-standard" in reason["detail"], '')
+              and "MiniMax H3" in reason["detail"]
+              and "minimax-h3/image-to-video" in reason["detail"], '')
         try:
             VM.require_choices()
             check("require_choices refuses the defect list", False,
@@ -146,7 +147,7 @@ def test_resolvable_registry_yields_only_listed_models():
             check("require_choices refuses the defect list",
                   _res_model_error(e)
                   and e.reason == "MODEL_NOT_IN_REGISTRY"
-                  and "Hailuo 02 Standard" in str(e), str(e)[:120])
+                  and "MiniMax H3" in str(e), str(e)[:120])
         # the card question surfaces the same refusal
         try:
             IC._model_question("60 seconds")
@@ -155,7 +156,7 @@ def test_resolvable_registry_yields_only_listed_models():
         except Exception as e:  # noqa: BLE001  (see _res_model_error)
             check("card question refuses unresolvable list",
                   _res_model_error(e)
-                  and "Hailuo 02 Standard" in str(e), str(e)[:140])
+                  and "MiniMax H3" in str(e), str(e)[:140])
         # and lock_choice refuses the same row
         db = os.path.join(os.path.dirname(p), "state.sqlite3")
         try:
@@ -231,7 +232,7 @@ def test_lock_and_dispatch_stay_gated_for_off_registry_model():
         return
     reg = json.load(open(p, encoding="utf-8"))
     stripped = {"models": [m for m in reg.get("models", [])
-                           if m.get("id") != "hailuo/02-image-to-video-standard"]}
+                           if m.get("id") != "minimax-h3/image-to-video"]}
     old = _reg_env(_write_registry(stripped["models"]))
     try:
         d = tempfile.mkdtemp()
@@ -244,7 +245,7 @@ def test_lock_and_dispatch_stay_gated_for_off_registry_model():
                   e.reason == "MODEL_NOT_IN_REGISTRY", str(e)[:120])
         # dispatch-side F14 still fails closed on any unlocked run: the card
         # never answered, so no lock exists and the video job is refused.
-        env = KD.dispatch(model="hailuo/02-image-to-video-standard", request={},
+        env = KD.dispatch(model="minimax-h3/image-to-video", request={},
                           save_dir=tempfile.mkdtemp(), ledger_db=":memory:",
                           run_id="run-x", logical_key="k", attempt_id="a",
                           estimated_cost=100,
