@@ -6,16 +6,18 @@ no one re-runs Skill 38 setup. Only touches a box whose hooks are ALREADY enable
   a) removes hooks.maxBodyBytes   (OpenClaw 2026.9.x rejects it: config INVALID)
   b) sets gateway.trustedProxies  (only when unset/empty; else 403 proxy_attribution_required)
   c) REWRITES a hooks.mappings body that diverges from the required shape, including
-     REBINDING an agentId that is not a configured agent, and reports exactly which
-     keys changed (G-01/G-02: before v2.0.24 a stale agentId was reported and never
-     rebound, and a pre-upgrade body with nested sessionKey tokens and no
-     send-directive / conversation-log directives survived forever)
+     REBINDING an agentId that is not a configured agent, and reports one line per
+     changed key plus the agentId old -> new pair (G-01/G-02: before v2.0.24 a stale
+     agentId was reported and never rebound, and a pre-upgrade body with nested
+     sessionKey tokens and no send-directive / conversation-log directives survived
+     forever)
 Never enables hooks, adds mappings, creates tokens or prints secret values.
 The pre-change mapping body is backed up next to the config before any rewrite, the
 config is replaced by an atomic rename, and the run REFUSES to write when the file
 changed under it.
-Exit: 0 ok, 1 failed (validate rejected; backup restored), 2 needs-attention,
-      5 cannot-verify (unreadable, or the config changed under this run).
+Exit: 0 ok (INCLUDING a successful rewrite), 1 failed (validate rejected; backup
+      restored), 2 needs-attention, 5 cannot-verify (unreadable, or the config
+      changed under this run).
 Fixture hook: S38_REPAIR_LIB points at a stub lib-docker-tenant.sh.
 """
 import datetime
@@ -151,14 +153,19 @@ def repair(cfg, cfg_path):
             hooks["mappings"][i] = new
             backups.append((before.get("id") or ("index-%d" % i), before))
             mid = before.get("id") or ("index-%d" % i)
-            changes.append("hooks mapping %s: rewrite body — changed keys: %s"
-                           % (mid, ", ".join(changed)))
-            if "agentId" in changed and before.get("agentId") != new.get("agentId"):
-                changes.append("hooks mapping %s: agentId %r -> %r"
+            # PER-KEY REPORTING: one line per changed key, plus the agentId
+            # old -> new pair. A rewrite that succeeded reports SUCCESS — exit 2
+            # is reserved for work that genuinely needs attention.
+            changes.append("hooks mapping %s: rewrite body" % mid)
+            for k in changed:
+                if k == "agentId":
+                    changes.append("hooks mapping %s: changed key: agentId %r -> %r"
+                                   % (mid, before.get("agentId"), new.get("agentId")))
+                else:
+                    changes.append("hooks mapping %s: changed key: %s" % (mid, k))
+            if "agentId" not in changed:
+                changes.append("hooks mapping %s: agentId %r -> %r (unchanged)"
                                % (mid, before.get("agentId"), new.get("agentId")))
-            else:
-                attention.append("hooks mapping %s: rewritten — %s"
-                                 % (mid, ", ".join(changed)))
     return changes, attention, backups
 
 def run(root, dry):
@@ -312,11 +319,36 @@ def selftest():
         assert got["sessionKey"] == "{{session_key}}", got["sessionKey"]
         assert "MANDATORY" in got["messageTemplate"] and "conversational-logs" in got["messageTemplate"]
         assert got["timeoutSeconds"] == 900, "operator value must survive"
-        assert "changed keys: agentId, messageTemplate, sessionKey" in r.stdout, r.stdout
+        assert "changed key: agentId 'retired-bot' -> 'dept-communications'" in r.stdout, r.stdout
+        assert "changed key: messageTemplate" in r.stdout, r.stdout
+        assert "changed key: sessionKey" in r.stdout, r.stdout
+        assert "NEEDS ATTENTION" not in r.stdout, r.stdout
         assert mbaks(d) and json.loads(mbaks(d)[0].read_text())["agentId"] == "retired-bot"
         r2 = subprocess.run([sys.executable, me], env=env, capture_output=True, text=True)
         assert r2.returncode == 0 and "rewrite body" not in r2.stdout, r2.stdout
         assert len(mbaks(d)) == 1, "second run must write no second mapping backup"
+
+        # A SUCCESSFUL rewrite whose agentId needs no rebind reports success and
+        # exits 0 — never "NEEDS ATTENTION" exit 2.
+        d2 = T / "body2"
+        d2.mkdir()
+        body2 = dict(body, agentId="dept-communications")
+        cfg2 = {"agents": {"entries": {"dept-communications": {}, "main": {}}},
+                "hooks": {"enabled": True, "mappings": [body2]}}
+        (d2 / "openclaw.json").write_text(json.dumps(cfg2))
+        (d2 / "bin").mkdir()
+        (d2 / "bin" / "openclaw").write_text("#!/bin/sh\nexit 0\n")
+        (d2 / "bin" / "openclaw").chmod(0o755)
+        env2 = dict(os.environ, OPENCLAW_ROOT=str(d2), S38_REPAIR_LIB=lib,
+                    OC_CLI=str(d2 / "bin" / "openclaw"), ROUTING_AGENT_ID="")
+        r3 = subprocess.run([sys.executable, me], env=env2, capture_output=True, text=True)
+        got2 = json.loads((d2 / "openclaw.json").read_text())["hooks"]["mappings"][0]
+        assert r3.returncode == 0, "successful rewrite must not report needs-attention: %s" % r3.stdout
+        assert "NEEDS ATTENTION" not in r3.stdout, r3.stdout
+        assert got2["agentId"] == "dept-communications", got2["agentId"]
+        assert got2["sessionKey"] == "{{session_key}}", got2["sessionKey"]
+        assert "changed key: messageTemplate" in r3.stdout and "changed key: sessionKey" in r3.stdout, r3.stdout
+        assert "agentId 'dept-communications' -> 'dept-communications' (unchanged)" in r3.stdout, r3.stdout
 
     shutil.rmtree(T)
     print("selftest ok")

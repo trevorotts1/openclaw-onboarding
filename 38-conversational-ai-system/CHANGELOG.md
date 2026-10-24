@@ -1,3 +1,18 @@
+## [2.0.26] - 2026-10-24 - fix(hooks): a read-only target is now refused, the routing-agent failure names its candidates, changed keys are reported one line at a time, and a successful rewrite reports success
+
+Four claim defects in the v2.0.24 hooks.mappings work, found by an independent review of the committed bytes. The migration mechanics themselves were correct and are unchanged.
+
+- **A read-only target was silently replaced.** `rename(2)` replaces the DIRECTORY entry, not the file's own bits, so `openclaw.json` at mode 444 in a *writable* directory was overwritten and reset to 0600 while the installer exited 0 — the "read-only target fails with no partial write" claim did not hold for that shape. `refuse_unwritable_config` now fires before any backup or temp is created (and again immediately before the rename), exits **12**, and leaves the config byte- and mode-identical with no `.bak` and no temp left behind. A read-only *directory* still fails as before.
+- **The "no routing agent" failure named no candidates.** The installer exited 10 with a generic `set ROUTING_AGENT_ID to a configured agent id` while `repair-inbound-hooks.py` exited 2 naming them. `s38_resolve_routing_agent` (and the `s38_migrate_mapping` fallback) now name every configured agent id in the message — `set ROUTING_AGENT_ID to one of x, y` — so the operator can act on it. The installer still exits 10 and still leaves `agentId` untouched.
+- **Changed keys were reported as one combined line.** Both writers now print **one line per changed key**, plus the `agentId` old -> new pair (folded into the `agentId` key line when `agentId` is one of them, printed as an unchanged pair otherwise). This is the accurate wording for what v2.0.24 described as "one line naming every changed key".
+- **A successful rewrite reported `NEEDS ATTENTION` exit 2.** `repair-inbound-hooks.py` flagged every rewrite whose `agentId` was not rebound, even when the rewrite itself succeeded. Exit 2 is now reserved for work that genuinely needs attention; a successful rewrite reports success and exits 0.
+
+Unchanged and re-proven: three-key migration on a pre-upgrade mapping with operator `name`, `wakeMode`, `timeoutSeconds`, `deliver` and an unknown key preserved; second run byte-identical with no second backup; an already-correct mapping makes zero backups; malformed JSON exit 10 with the config untouched; config changed under the run exit 11 with the operator's newer content preserved; repair rebind and second-run no-op; dry-run writes nothing.
+
+Tests: `scripts/lib-docker-tenant.test.sh` unchanged and still passing; `tests/repair-inbound-hooks.test.sh` selftest gains a case for a successful rewrite that needs no `agentId` rebind (must exit 0, never `NEEDS ATTENTION`).
+
+The `model` key question on `hooks.mappings` is owned by a separate lane and is not decided here.
+
 ## [2.0.24] - 2026-10-24 - fix(hooks): content-addressed hooks.mappings migration; repair rebinds a stale agentId
 
 Two demonstrated defects left an upgraded box with a permanently broken GHL inbound hook body:
