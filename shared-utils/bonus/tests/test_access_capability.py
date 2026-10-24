@@ -44,11 +44,34 @@ from bonus import access_capability as ac  # noqa: E402
 # id has to reach the returned surface to matter, and that surface is covered.
 
 _URL = re.compile(r"https?://", re.I)
-_VERB_PATH = re.compile(r"\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/\S*", re.I)
-# A bare operation path: a token delimited by whitespace, a quote or a value
-# separator. `assisted/operator`, `{BASE}/tools/...` and a shebang are joined
-# text or path continuations, not operation tokens, and stay unflagged.
-_BARE_PATH = re.compile(r"(?:^|(?<=[\s\"'=(:,]))/[A-Za-z0-9_{][A-Za-z0-9_\-{}/.]*")
+# `\s*`, not `\s+`: a verb glued to its path (`POST/memberships/grant`) is the
+# same fabrication as a spaced one.
+_VERB_PATH = re.compile(r"\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*/\S*", re.I)
+# A bare operation path, in two forms:
+#   1. slash-led, delimited by whitespace, a quote or a value separator
+#      (`"/memberships/grant"`). Always flagged.
+#   2. identifier-prefixed: any [A-Za-z0-9_] run glued in front of the first
+#      `/` (`v1/memberships/grant`, `memberships/grant`). Shape alone cannot
+#      tell it from real prose (`memberships/communities`, `assisted/operator`),
+#      so the world is closed: it passes only as file provenance or as one of
+#      the reviewed slash tokens below. A new one fails until a human reviews it.
+# The two forms cannot overlap, so form 1 flags exactly what it did before.
+_BARE_PATH = re.compile(
+    r"(?:^|(?<=[\s\"'=(:,]))/[A-Za-z0-9_{][A-Za-z0-9_\-{}/.]*"
+    r"|(?<![A-Za-z0-9_\-.{}/])[A-Za-z0-9_{][A-Za-z0-9_\-.{}]*(?:/[A-Za-z0-9_\-.{}]*[A-Za-z0-9_}])+"
+)
+REVIEWED_SLASH_TOKENS = frozenset({
+    "assisted/operator",
+    "course/credential",
+    "courses/memberships",
+    "create/delete",
+    "identity/grant/credential/SMS/resource",
+    "login/credential",
+    "Membership/course",
+    "memberships/communities",
+    "return/recovery",
+    "shared-utils/ghl",
+})
 _SCHEMELESS_HOST = re.compile(r"\b(?:[a-z0-9][a-z0-9-]*\.)+[a-z][a-z0-9-]*(?::\d+)?/[A-Za-z0-9]")
 _DOTTED_OPERATION = re.compile(r"\b[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\b")
 _FILE_SUFFIXES = (
@@ -70,6 +93,15 @@ SMUGGLE_SHAPES = (
     ("bare operation path", '"api": "/memberships/grant"'),
     ("schemeless host+path", "api.leadconnectorhq.com/v1/memberships/grant"),
     ("dotted operation id", '"api": "memberships.grant"'),
+    # PBB-132 QC: an identifier glued in front of the `/` defeated every rule.
+    ("glued uppercase verb+path", "POST/memberships/grant"),
+    ("glued lowercase verb+path", "post/memberships/grant"),
+    ("glued mixed-case verb+path", "Get/memberships/grant"),
+    ("glued delete verb+path", "DELETE/memberships/grant"),
+    ("version-prefixed path", "v1/memberships/grant"),
+    ("api-prefixed path", "api/memberships/grant"),
+    ("unprefixed operation path", "memberships/grant"),
+    ("identifier-prefixed path", "x/memberships/grant"),
 )
 
 # Text that must NOT be flagged: real repo provenance and plain prose.
@@ -102,7 +134,13 @@ def _api_shape_hits(text):
     """API shapes that cannot be legitimate in this module's source or surface."""
     hits = [f"url:{m.group(0)}" for m in _URL.finditer(text)]
     hits += [f"verb+path:{m.group(0)}" for m in _VERB_PATH.finditer(text)]
-    hits += [f"bare-path:{m.group(0)}" for m in _BARE_PATH.finditer(text)]
+    for match in _BARE_PATH.finditer(text):
+        token = match.group(0)
+        if not token.startswith("/") and (
+            token.lower().endswith(_FILE_SUFFIXES) or token in REVIEWED_SLASH_TOKENS
+        ):
+            continue  # file provenance or reviewed prose, not an operation
+        hits.append(f"bare-path:{token}")
     hits += [f"host+path:{m.group(0)}" for m in _SCHEMELESS_HOST.finditer(text)]
     return hits
 
@@ -216,7 +254,7 @@ class TestNoFabricatedApi(unittest.TestCase):
 
     def test_route_surface_carries_no_api_shape_at_all(self):
         # `api` is None, so any API-shaped token anywhere in what the module
-        # hands back is a fabrication. Zero tolerance, every shape.
+        # hands back is a fabrication. Zero tolerance for every enumerated shape.
         for name, blob in (
             ("supported_route", json.dumps(ac.supported_route(), sort_keys=True)),
             ("decision_document", json.dumps(ac.decision_document(), sort_keys=True)),
@@ -253,6 +291,17 @@ class TestNoFabricatedApi(unittest.TestCase):
         # provenance paths, filenames and plain prose carry no fabricated API.
         for text in LEGITIMATE_TEXT:
             self.assertEqual(_fabricated_api_hits(text), [], text[:60])
+
+    def test_the_scan_guarantee_is_not_overstated(self):
+        # A pattern scan catches the enumerated shapes; it is not a proof that
+        # nothing can slip in, and the delivered prose may not promise more.
+        for name, path in (
+            ("module", Path(ac.__file__)),
+            ("evidence doc", _BONUS / "BONUS-ACCESS-CAPABILITY-DECISION.md"),
+        ):
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            self.assertNotIn("cannot slip a fabricated", flat, name)
+            self.assertIn("pattern scan, not a proof", flat, name)
 
     def test_supported_route_reports_the_block_reason(self):
         route = ac.supported_route()

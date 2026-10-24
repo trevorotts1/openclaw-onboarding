@@ -8,8 +8,12 @@
 
 This is a capability decision, not an adapter. Nothing here calls a provider; nothing
 here carries a URL, a verb or a path. `supported_route()` returns `api: None` on
-purpose and the suite pins that absence, so a later edit cannot slip a fabricated
-operation in.
+purpose and the suite pins that `None`. The suite also scans the returned surface,
+the module and this document for the API shapes it enumerates (scheme URL, verb plus
+path spaced or glued, bare or identifier-prefixed path, schemeless host plus path;
+dotted operation ids on the returned surface only), so an edit that adds one of those
+shapes fails the suite. It is a pattern scan, not a proof: a fabrication in a shape
+the scan does not enumerate is not caught.
 
 ---
 

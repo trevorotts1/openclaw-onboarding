@@ -18,8 +18,12 @@ Every step is reported as `proved`, `unproved`, `retired_rail_only` or
 `ui_only`, with repo-relative provenance and the exact missing evidence. A
 step that is not `proved` blocks the automated route. Nothing here carries a
 URL, a verb or a path: `supported_route()` returns `api: None` on purpose, and
-the test suite pins that absence, so a future edit cannot slip a fabricated
-operation in.
+the test suite pins that `None`. The suite also scans the returned surface,
+this module and the evidence doc for the API shapes it enumerates (scheme URL,
+verb plus path spaced or glued, bare or identifier-prefixed path, schemeless
+host plus path; dotted operation ids on the returned surface only), so an edit
+that adds one of those shapes fails the suite. It is a pattern scan, not a
+proof: a fabrication in a shape the scan does not enumerate is not caught.
 
 Reuse, not a second copy: the membership route question is answered by the
 existing GHL capability inventory (`shared-utils/ghl/capability_inventory.py`)
