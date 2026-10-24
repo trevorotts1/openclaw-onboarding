@@ -369,6 +369,26 @@ class IntakeSessionTest(unittest.TestCase):
         expected = card.conversation([], self.qs, purpose_flow=False)["message"]
         self.assertEqual(self.call()["message"], expected)
 
+    def test_malformed_existing_stage_store_refuses_without_mutation(self):
+        import sqlite3
+        db = self.run / "control" / "state.sqlite3"
+        db.parent.mkdir(parents=True)
+        with closing(sqlite3.connect(db)) as con:
+            con.execute("CREATE TABLE stages(run_id TEXT, stage TEXT, state TEXT)")
+            con.execute("INSERT INTO stages VALUES('actual-existing', 'research', 'NOT_STARTED')")
+            con.commit()
+        before = db.read_bytes()
+        qs, st = self.model_turns(2)
+        st = session.process(["yes"], qs, run_dir=self.run, purpose_flow=False)
+        self.assertFalse(st["done"])
+        self.assertEqual(st["reason_code"], "VIDEO_MODEL_STATE_UNAVAILABLE")
+        self.assertEqual(db.read_bytes(), before)
+        with closing(sqlite3.connect(db)) as con:
+            self.assertEqual(con.execute("SELECT run_id, stage, state FROM stages").fetchall(),
+                             [("actual-existing", "research", "NOT_STARTED")])
+            self.assertEqual(con.execute("SELECT count(*) FROM sqlite_master WHERE name='video_model_lock'").fetchone()[0], 0)
+        self.assertFalse(self.read()["done"])
+
     def test_exact_original_questions_are_not_mutated(self):
         original = copy.deepcopy(self.qs)
         self.advance()
