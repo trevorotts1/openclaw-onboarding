@@ -1,3 +1,7 @@
+## [Unreleased]  -  2026-10-24  -  T-43: onboarding cohort integration receipts bind one shared target owner, compatibility, red-subset isolation, exact gates and named-repair remote proof
+
+- In plain English: the onboarding batch train can now freeze a compatible cohort before anything lands. It refuses to run on a local file pretending to be a lock, refuses two units that edit the same file unless one combined owner candidate is named, holds a red unit and its true dependents while unrelated green work continues, requires an exact-SHA independent PASS receipt with the named checks (a broad ALL_PASS is not evidence), and proves a named repair by its actual content on the remote target after a baseline merge. Anything not observed is recorded as UNKNOWN with the reason, never as success, and the record it produces is `onboarding-remote-merge-receipts`.
+
 ## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
 
 ## [v27.1.64]  -  2026-10-22  -  W10 canary: A12 runtime-proof harness and the A-row execution runner
