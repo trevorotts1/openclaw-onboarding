@@ -283,6 +283,21 @@ jobs:
           [ "$rc" -eq 3 ] || { echo "✗ backend-ready with no config should exit 3 (SKIP), got $rc"; exit 1; }
           echo "✓ Skill 38 backend-ready gate exits 3 (SKIP) when no install is present"
 
+      - name: Skill 38 inbound-mapping contract — self-test and QC gate agree (G-03/G-04/G-05)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The defect this locks: 24-self-test-hook.sh judged one parsed mapping and
+          # demanded `model`, while qc-backend-ready.sh grepped the WHOLE openclaw.json
+          # for `"model": "..."` and passed the exact mapping the self-test refused.
+          # Both now run one predicate (scripts/lib-hook-mapping-contract.sh). This
+          # fixture matrix drives a known-good control plus eight negatives through
+          # BOTH gates and diffs the verdicts, so identical failure cannot masquerade
+          # as agreement. It also proves the installer refreshes on content drift
+          # instead of skipping on a matching skill-version.txt string. BASH only.
+          bash 38-conversational-ai-system/tests/hook-mapping-contract.test.sh
+          echo "✓ Skill 38 self-test and qc-backend-ready agree on every fixture"
+
       - name: Skill 38 F52 JSONL data contract (v1.5.0)
         shell: bash
         run: |

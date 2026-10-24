@@ -1,3 +1,39 @@
+## [2.0.24] - 2026-10-24 - fix: one inbound-mapping contract shared by the self-test, the QC gate and the installer
+
+G-03 / G-04 / G-05. `24-self-test-hook.sh` evaluated one parsed hooks mapping and refused it without a `model`,
+while `qc-backend-ready.sh` grepped the WHOLE `openclaw.json` for `"model": "..."` and `"deliver": false` — so a
+model anywhere in the file made the QC gate PASS the exact mapping the self-test refused. Same fixture: self-test
+says `no-model`, qc-backend-ready says PASS. On top of that the installer skipped a Skill 38 copy on a matching
+`skill-version.txt` STRING ALONE, so a dest wearing the right version with wrong content was never refreshed.
+
+- New `scripts/lib-hook-mapping-contract.sh`: the ONE predicate for a valid inbound mapping, evaluated per mapping
+  id. Exact key set (required `id`, `match`, `action`, `agentId`, `model`, `deliver`, `messageTemplate`; optional
+  `wakeMode`, `name`, `sessionKey`, `timeoutSeconds`; anything else fails by name — the OpenClaw schema is `.strict()`
+  and rejects `fallbacks`), `action` exactly `agent`, a non-empty `match.path`, `agentId` listed in
+  `hooks.allowedAgentIds`, a non-empty `model`, `deliver` exactly `false`, and all twelve send/memory directive
+  needles in `messageTemplate`. Pure bash + POSIX awk: no jq, no python3, so it works on a fleet box and keeps
+  qc-backend-ready's "no python" claim true. It emits `MAPCONTRACT` / `MAPENABLED` / `MAPSELECT` / `GATEVERDICT`
+  lines and fails CLOSED when the evaluator itself errors.
+- `scripts/qc-backend-ready.sh` and `scripts/24-self-test-hook.sh` both source it and print the same verdict lines,
+  so the two gates cannot reach different verdicts on the same config. The whole-file greps are gone.
+  `24-self-test-hook.sh` gains `--mapping-only` (evaluate the mapping contract and stop) for the fixture matrix.
+  The private python predicate in the self-test is deleted.
+- `install.sh` `install_skill_38_conversational_ai_system` now skips ONLY when the version string AND the content
+  both match (cksum over the four contract-carrying scripts), reports `installed` / `already-current` /
+  `refreshed-content-drift` / `refreshed-version`, and writes a secret-free `provisioning-receipt.json` next to the
+  install recording what was actually installed.
+- Tests: `tests/hook-mapping-contract.test.sh` — a 9-row fixture matrix (known-good control, fresh installer
+  output, T-09-upgraded, stale agentId, missing model, missing directive, wrong shape, decoy model on a sibling
+  mapping, hooks disabled) driven through BOTH gates with byte-identical verdicts and matching exit codes on every
+  row, plus the known-good control so identical failure cannot masquerade as agreement. It also asserts the
+  writer's fail-closed directive needles equal the contract's needles, and runs the extracted installer function
+  to prove content drift is refreshed rather than skipped.
+
+Open: `15-configure-hooks-mappings.sh` (T-09 lane) still does not emit `model`, so a fresh mapping is refused
+`missing-key:model` — that is G-03 on the writer side and is the fix T-09 owns. The directive needles are asserted
+equal to the writer's rather than sourced from it, because that file is not editable from this lane; once the
+writer sources the contract too, the equality assertion can go.
+
 ## [2.0.19] - 2026-10-13 - refactor(models): client-choice model selection, no prescribed models
 
 Model selection doctrine applied across the skill: no surface prescribes a specific model by name anymore. Selection resolves as (1) the client's explicit choice, (2) the client's configured default model, (3) a stop with a clear ask-the-client message. Where an old prescription carried a real rationale (reasoning depth, context size, speed, cost), it is kept as a recommendation with its reason, as guidance the client can override, never wired as a fallback value in code or config.
