@@ -1,4 +1,4 @@
-## [2.0.31] - 2026-10-24 - fix(routes): the Instagram adapter types its own-actor list and its grant (T-21 repair 2, PBB-199)
+## [2.0.36] - 2026-10-24 - fix(routes): the Instagram adapter types its own-actor list and its grant (T-21 repair 2, PBB-199)
 
 Repair of the qc4-t-21 FAIL verdict (`PBB-143`, refused commit `d9a6e00c5`). Two type holes, both in `shared-utils/routes/instagram/route_adapter.py`, both reproduced as failing tests on `d9a6e00c5` before any edit. Same class the sibling T-20 repair closed (`facebook_routes.admit_inbound`).
 
@@ -7,7 +7,7 @@ Repair of the qc4-t-21 FAIL verdict (`PBB-143`, refused commit `d9a6e00c5`). Two
 
 Proof: `test_route_adapter.py` 63 -> 69 OK (3 defect tests fail on `d9a6e00c5`, 3 inverse tests pass on both; no assertion weakened); self-check `OK 15 PASS`; upstream `test_pb_contracts.py` 42 OK, `test_consent_gate.py` 24 OK, `test_durable_processing.py` 26 OK.
 
-## [2.0.30] - 2026-10-24 - fix(routes): the Instagram adapter stops trusting caller convention (T-21 repair, PBB-143)
+## [2.0.35] - 2026-10-24 - fix(routes): the Instagram adapter stops trusting caller convention (T-21 repair, PBB-143)
 
 Repair of the T-21 FAIL verdict (`qc-t-21`). Three genuine defects, each independently reproduced on the committed bytes (`d0581e206`) before any edit; the verdict's scope clause is not a defect — `38-conversational-ai-system/CHANGELOG.md` and `skill-version.txt` ride in this commit because CONTRIBUTING.md line 76 and lines 116-121 require them in the same commit as the behaviour change. Same two files as 2.0.29 otherwise: `shared-utils/routes/instagram/route_adapter.py` and `test_route_adapter.py`. No second guard is written: `durable_store` is still the only inbox, `outbound_gate.dispatch()` still dispatches, `consent_gate` still owns consent.
 
@@ -19,7 +19,7 @@ Repair of the T-21 FAIL verdict (`qc-t-21`). Three genuine defects, each indepen
 - **Proof — suites and mutation control.** `test_route_adapter.py` **63 tests OK** (46 before + 17 added; no assertion weakened — the only deleted assertion lines are the two locals folded into the same `assertTrue`/`assertFalse` in `test_duplicate_customer_interaction_has_one_effect`). C-F08 re-run WITH the proof: the trace now refuses the unproven record before it admits the DM (`test_the_full_supported_trace`, steps 5-6). Mutation control, one guard off at a time on a copy of the fixed module, restored and verified identical afterwards: identity-conflict guard **1** failure, capability/grant guard **4**, verified-interaction guard **4**, consent fail-closed **5** — 14 assertion failures across four throws, so the new coverage bites. Module self-check `python3 -I route_adapter.py` **10 -> 15 PASS** (adds the identity conflict, the ungranted capability and the unverified interaction refusals). Upstream suites unchanged and re-run: `test_pb_contracts.py` **42 OK**, `test_consent_gate.py` **24 OK**, `test_durable_processing.py` **26 OK**.
 - **Ceiling named.** Still route eligibility and durable opener state: no network, no Instagram credential, no provider client, and no consent decision of its own — consent stays owned by `consent_gate`, and the caller still supplies the sender and the outbox action. `record_customer_interaction()` proves an interaction from the durable inbox record it is handed; it does not re-query the inbox, so a caller that fabricates an admission dict could still lie to it. If that ever matters, the route store should read `inbox_events` itself instead of trusting the dict.
 
-## [2.0.29] - 2026-10-24 - feat(routes): supported Instagram comment and direct routes (T-21, PBB-118)
+## [2.0.34] - 2026-10-24 - feat(routes): supported Instagram comment and direct routes (T-21, PBB-118)
 
 One new adapter, `shared-utils/routes/instagram/route_adapter.py`, plus its suite `test_route_adapter.py`. No existing file is modified and no second guard is written: `durable_store` remains the only inbox/outbox, `outbound_gate.dispatch()` remains the only dispatcher, and `consent_gate` remains the only refusal/fence evaluator.
 
