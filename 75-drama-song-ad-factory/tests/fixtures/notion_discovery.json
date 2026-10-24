@@ -1,0 +1,170 @@
+{
+  "schema": "s75.notion-discovery-fixture/v1",
+  "note": "Synthetic discovery fixture. No real client, page, credential or Notion call. Names and IDs are invented.",
+  "client_namespace": "fictional-fixture-client",
+  "other_namespace": "another-client",
+  "parent_page_id": "fixture-parent-page-id",
+  "search": {
+    "single": [
+      {
+        "has_more": true,
+        "next_cursor": "search-cursor-2",
+        "results": [
+          {
+            "id": "page-other-client-library",
+            "parent": {"page_id": "other-parent"},
+            "properties": {
+              "title": {"type": "title", "title": [{"plain_text": "Character Library"}]},
+              "client_namespace": {"rich_text": [{"plain_text": "another-client"}]}
+            }
+          },
+          {
+            "id": "page-fixture-library",
+            "parent": {"page_id": "fixture-parent-page-id"},
+            "data_source_id": "fixture-data-source-id",
+            "properties": {
+              "title": {"type": "title", "title": [{"plain_text": "Character Library"}]},
+              "client_namespace": {"rich_text": [{"plain_text": "fictional-fixture-client"}]}
+            }
+          }
+        ]
+      },
+      {
+        "has_more": false,
+        "next_cursor": null,
+        "results": [
+          {
+            "id": "page-unrelated-notes",
+            "parent": {"page_id": "unrelated-parent"},
+            "properties": {
+              "title": {"type": "title", "title": [{"plain_text": "Fixture notes"}]},
+              "client_namespace": {"rich_text": [{"plain_text": "third-client"}]}
+            }
+          }
+        ]
+      }
+    ],
+    "duplicate": [
+      {
+        "has_more": false,
+        "next_cursor": null,
+        "results": [
+          {
+            "id": "page-fixture-library-a",
+            "parent": {"page_id": "fixture-parent-page-id"},
+            "properties": {
+              "title": {"type": "title", "title": [{"plain_text": "Character Library"}]},
+              "client_namespace": {"rich_text": [{"plain_text": "fictional-fixture-client"}]}
+            }
+          },
+          {
+            "id": "page-fixture-library-b",
+            "parent": {"page_id": "fixture-other-parent-page-id"},
+            "properties": {
+              "title": {"type": "title", "title": [{"plain_text": "Character Library"}]},
+              "client_namespace": {"rich_text": [{"plain_text": "fictional-fixture-client"}]}
+            }
+          }
+        ]
+      }
+    ],
+    "empty": [
+      {"has_more": false, "next_cursor": null, "results": []}
+    ]
+  },
+  "read_pages": {
+    "page-fixture-library": {
+      "id": "page-fixture-library",
+      "data_source_id": "fixture-data-source-id",
+      "properties": {
+        "title": {"type": "title", "title": [{"plain_text": "Character Library"}]},
+        "client_namespace": {"rich_text": [{"plain_text": "fictional-fixture-client"}]}
+      }
+    },
+    "page-fixture-library-a": {
+      "id": "page-fixture-library-a",
+      "data_source_id": "fixture-data-source-id",
+      "properties": {
+        "client_namespace": {"rich_text": [{"plain_text": "fictional-fixture-client"}]}
+      }
+    }
+  },
+  "created_page": {
+    "id": "page-created-fixture-library",
+    "data_source_id": "fixture-created-data-source-id",
+    "properties": {
+      "title": {"type": "title", "title": [{"plain_text": "Character Library"}]},
+      "client_namespace": {"rich_text": [{"plain_text": "fictional-fixture-client"}]}
+    }
+  },
+  "catalog": {
+    "existing": [
+      {
+        "has_more": true,
+        "next_cursor": "catalog-cursor-2",
+        "results": [
+          {
+            "id": "page-char-mara",
+            "properties": {
+              "name": {"type": "title", "title": [{"plain_text": "Mara Vale"}]},
+              "character_id": "char-fixture-mara",
+              "identity_revision": "r2",
+              "role": "primary",
+              "approval_state": "APPROVED",
+              "record_digest": "digest-mara-r2",
+              "has_reference_image": true
+            }
+          },
+          {
+            "id": "page-char-tobias",
+            "properties": {
+              "name": {"type": "title", "title": [{"plain_text": "Tobias Reed"}]},
+              "character_id": "char-fixture-tobias",
+              "identity_revision": "r1",
+              "role": "supporting",
+              "approval_state": "DRAFT",
+              "record_digest": "digest-tobias-r1",
+              "has_reference_image": false
+            }
+          }
+        ]
+      },
+      {
+        "has_more": true,
+        "next_cursor": "catalog-cursor-3",
+        "results": [
+          {
+            "id": "page-char-mara-duplicate-name",
+            "properties": {
+              "name": {"type": "title", "title": [{"plain_text": "Mara Vale"}]},
+              "character_id": "char-fixture-mara-two",
+              "identity_revision": "r1",
+              "role": "recurring",
+              "approval_state": "DRAFT",
+              "record_digest": "digest-mara-two-r1",
+              "has_reference_image": false
+            }
+          }
+        ]
+      },
+      {
+        "has_more": false,
+        "next_cursor": null,
+        "results": [
+          {
+            "id": "page-char-ada",
+            "properties": {
+              "name": {"type": "title", "title": [{"plain_text": "Ada Finch"}]},
+              "character_id": "char-fixture-ada",
+              "identity_revision": "r3",
+              "role": "primary",
+              "approval_state": "APPROVED",
+              "record_digest": "digest-ada-r3",
+              "has_reference_image": true
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
