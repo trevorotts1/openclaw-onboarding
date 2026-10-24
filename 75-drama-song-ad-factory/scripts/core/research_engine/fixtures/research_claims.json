@@ -1,0 +1,50 @@
+{
+  "_comment": "S75-T04 focused fixture. One substantive sourced bundle plus an explicitly fictional premise must pass; untagged, padded, keyword-stuffed and unsupported-business bundles must fail. No live client, no network, no paid provider.",
+  "accept": {
+    "offer": "A 12-week sleep coaching program for shift workers",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work",
+    "action": "book a free 20 minute call",
+    "sub_avatar": {
+      "avatar": "night-shift nurse",
+      "emotional_wound": "awake at 4am with a shift starting at 7pm",
+      "desired_transformation": "sleeping a full block after a shift"
+    },
+    "sources": [
+      {"id": "src-1", "url": "https://pubmed.ncbi.nlm.nih.gov/example-shift-sleep", "retrieved": "2026-10-20"},
+      {"id": "src-2", "url": "https://www.bls.gov/ooh/healthcare/registered-nurses.htm", "retrieved": "2026-10-20"}
+    ],
+    "claims": [
+      {"id": "c1", "text": "Rotating shift work is associated with shorter sleep duration in nurses.", "source": "src-1", "provenance": "public-fact", "sections": ["audience"], "locator": "abstract"},
+      {"id": "c2", "text": "Registered nursing is one of the larger occupations in the United States.", "source": "src-2", "provenance": "public-fact", "sections": ["market"]},
+      {"id": "c3", "text": "Most competing sleep programs are built around office schedules rather than hospital shift rotations.", "source": "src-2", "provenance": "public-fact", "sections": ["competitors"]},
+      {"id": "c4", "text": "Our clients report sleeping through the night within three weeks.", "provenance": "owner-fact", "owner_ref": "answer:q11", "sections": ["market"]}
+    ],
+    "premise": "The hero is a night-shift nurse who has not slept properly in two years and hides it from the charge nurse."
+  },
+  "reject_untagged": {
+    "sources": [{"id": "src-1", "url": "https://example.invalid/source", "retrieved": "2026-10-20"}],
+    "claims": [
+      {"id": "u1", "text": "Nurses on rotating shifts sleep less than day staff.", "source": "src-1"},
+      {"id": "u2", "text": "Sleep coaching programs usually target office workers.", "source": "src-1"}
+    ]
+  },
+  "reject_keyword_stuffing": {
+    "sources": [{"id": "src-1", "url": "https://example.invalid/stuffed", "retrieved": "2026-10-20"}],
+    "claims": [
+      {"id": "s1", "text": "sleep coach, sleep coach near me, best sleep supplement, buy now, backlinks, seo services", "provenance": "public-fact", "source": "src-1", "sections": ["market", "audience", "competitors"]},
+      {"id": "s2", "text": "buy backlinks, crypto signals, weight loss tea, katy perry diet, seo package", "provenance": "public-fact", "source": "src-1", "sections": ["market", "audience", "competitors"]}
+    ]
+  },
+  "reject_unsupported_business": {
+    "sources": [{"id": "src-1", "url": "https://example.invalid/market-report", "retrieved": "2026-10-20"}],
+    "claims": [
+      {"id": "b1", "text": "We increased client revenue 300% and guarantee results within 30 days.", "provenance": "public-fact", "source": "src-1", "sections": ["market"]},
+      {"id": "b2", "text": "Sleep coaching demand is rising among hospital staff.", "provenance": "public-fact", "source": "src-1", "sections": ["audience", "competitors"]}
+    ]
+  },
+  "reject_empty": {
+    "sources": [],
+    "claims": [],
+    "padding": "research research research research research research research research"
+  }
+}
