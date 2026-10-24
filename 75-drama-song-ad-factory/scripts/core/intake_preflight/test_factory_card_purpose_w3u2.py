@@ -24,7 +24,6 @@ Stdlib only, no network, no provider, no paid call.
 import io
 import json
 import os
-import sqlite3
 import sys
 import tempfile
 from contextlib import redirect_stdout
@@ -38,6 +37,7 @@ for p in (str(CORE), str(HERE)):
         sys.path.insert(0, p)
 
 import factory as F                                             # noqa: E402
+from state_store import Store                                  # noqa: E402
 from choice_card.intake_card import intake_card as IC           # noqa: E402
 
 STAGES = ("research", "creative-strategy", "script-lyrics", "music",
@@ -65,11 +65,12 @@ def make_run(tmp, advanced=0):
     """A run folder: `advanced` stages past NOT_STARTED (0 = a NEW run)."""
     run = Path(tmp) / "run"
     (run / "control").mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(run / "control" / "state.sqlite3")) as con:
-        con.execute("CREATE TABLE stages(run_id TEXT, stage TEXT, state TEXT)")
-        for i, s in enumerate(STAGES):
-            con.execute("INSERT INTO stages VALUES('R', ?, ?)",
-                        (s, "COMPLETE" if i < advanced else "NOT_STARTED"))
+    with Store(run / "control" / "state.sqlite3") as store:
+        store.init_run("R", STAGES)
+        for stage in STAGES[:advanced]:
+            store.transition("R", stage, "READY", "fixture")
+            store.claim("R", stage, "fixture")
+            store.transition("R", stage, "COMPLETE", "fixture")
     return run
 
 
