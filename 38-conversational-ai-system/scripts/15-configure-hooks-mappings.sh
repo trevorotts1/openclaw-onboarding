@@ -37,19 +37,64 @@ append_secret() {
   printf '%s=%s\n' "$k" "$v" >> "$SECRETS_ENV_FILE"
 }
 
+# REFUSE to touch a config this user cannot write. rename(2) replaces the
+# DIRECTORY entry, not the file's own bits, so a mode-444 target in a WRITABLE
+# directory used to be silently replaced and reset to 0600 — the "read-only
+# target" shape passed instead of failing. Detect and refuse BEFORE any backup
+# or temp is created, so a refusal leaves the config untouched and nothing else
+# behind. Checked again in write_config, immediately before the rename.
+#   refuse_unwritable_config   (exit 12 = target not writable)
+refuse_unwritable_config() {
+  if [[ -e "$CONFIG_FILE" && ! -w "$CONFIG_FILE" ]]; then
+    echo "REFUSED: $CONFIG_FILE is not writable by this user — refusing to replace it (rename would silently clobber a read-only target). Live config left unchanged; no backup or temp written." >&2
+    exit 12
+  fi
+}
+
 backup_config() {
+  refuse_unwritable_config
   local ts
   ts="$(date +%Y%m%d-%H%M%S)"
   cp "$CONFIG_FILE" "${CONFIG_FILE}.bak.${ts}"
   echo "config backup: ${CONFIG_FILE}.bak.${ts}" >&2
 }
 
+# Back up ONE mapping body before it is migrated, so the operator can diff or
+# roll back the pre-change shape without unpicking the whole config file.
+#   backup_mapping <route-id> <mapping-json>
+backup_mapping() {
+  refuse_unwritable_config
+  local ts out
+  ts="$(date +%Y%m%d-%H%M%S)"
+  out="${CONFIG_FILE}.hooks-mapping-${1}.bak.${ts}.json"
+  printf '%s\n' "$2" | jq '.' > "$out" 2>/dev/null || printf '%s\n' "$2" > "$out"
+  chmod 600 "$out" 2>/dev/null || true
+  echo "mapping backup: $out" >&2
+}
+
+# Content digest of the live config, used to refuse a write when something else
+# (the gateway hot-reload, another operator, a second installer run) changed the
+# file underneath this run.
+_config_sha() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$CONFIG_FILE" | cut -d' ' -f1
+  elif command -v sha256sum >/dev/null 2>&1; then sha256sum "$CONFIG_FILE" | cut -d' ' -f1
+  else cksum "$CONFIG_FILE" | tr -d ' \n'; fi
+}
+
 # Validate-then-commit: the candidate is validated as its own file BEFORE it
 # replaces the live config, so a key the installed OpenClaw rejects (e.g.
 # 2026.9.x `hooks: Unrecognized key "maxBodyBytes"`) is never left live for
-# the gateway's hot-reload to trip on.
+# the gateway's hot-reload to trip on. The commit is a rename (atomic on one
+# filesystem) and is REFUSED when the live file changed under this run.
 write_config() {
-  local new="$1" tmp="${CONFIG_FILE}.tmp"
+  refuse_unwritable_config
+  local new="$1" tmp="${CONFIG_FILE}.tmp" now
+  now="$(_config_sha)"
+  if [[ -n "${CONFIG_READ_SHA:-}" && "$now" != "$CONFIG_READ_SHA" ]]; then
+    rm -f "$tmp" 2>/dev/null || true
+    echo "REFUSED: $CONFIG_FILE changed under this run (expected ${CONFIG_READ_SHA:0:12}, found ${now:0:12}) — live config left unchanged. Re-run." >&2
+    exit 11
+  fi
   echo "$new" | jq '.' > "$tmp"
   chmod 600 "$tmp" 2>/dev/null || true
   if command -v openclaw >/dev/null 2>&1 && ! OPENCLAW_CONFIG_PATH="$tmp" openclaw config validate >&2; then
@@ -58,6 +103,33 @@ write_config() {
     exit 5
   fi
   mv "$tmp" "$CONFIG_FILE"
+  CONFIG_READ_SHA="$(_config_sha)"
+}
+
+# FAIL-CLOSED GUARD: whatever messageTemplate is about to be written MUST carry
+# the mandatory send-directive elements AND the conversation-memory read-before /
+# append-after steps. It must NOT be possible to install (or migrate to) a GHL
+# hook whose messageTemplate lacks them — that is the hook that lets the agent
+# draft-but-not-send, hardcode SMS, drop the read path, or lose the contact's
+# memory mid-conversation. The needle lists live in lib-docker-tenant.sh so this
+# guard, the mapping migration and the Layer-3 QC scripts cannot drift apart.
+#   guard_message_template <messageTemplate>   (exit 8 = send-directive, 9 = memory)
+guard_message_template() {
+  local mt="$1" needle
+  while IFS= read -r needle; do
+    [ -n "$needle" ] || continue
+    if ! printf '%s' "$mt" | grep -qiF -- "$needle"; then
+      echo "REFUSED: messageTemplate is missing send-directive element '$needle' — refusing to write a hook that lets the agent draft-but-not-send (or hardcode SMS / drop the read path)." >&2
+      exit 8
+    fi
+  done < <(s38_send_directive_needles)
+  while IFS= read -r needle; do
+    [ -n "$needle" ] || continue
+    if ! printf '%s' "$mt" | grep -qiF -- "$needle"; then
+      echo "REFUSED: messageTemplate is missing conversation-log element '$needle' — refusing to write a hook whose agent cannot read-before/append-after and would lose this contact's memory." >&2
+      exit 9
+    fi
+  done < <(s38_conversation_memory_needles)
 }
 
 # =============================================================================
@@ -87,70 +159,94 @@ if [[ -n "$GATEWAY_TOKEN" && "$GATEWAY_TOKEN" == "$HOOKS_TOKEN" ]]; then
   exit 4
 fi
 
+# Snapshot the live config digest up front: write_config refuses to commit if
+# any other writer changed the file under this run.
+CONFIG_READ_SHA="$(_config_sha)"
+
 # Is a mapping with this id already in place?
 HAS_MAPPING="$(jq --arg id "$ROUTE_ID" '.hooks.mappings? // [] | map(.id == $id) | any' "$CONFIG_FILE")"
+CONFIGURED_AGENT_IDS="$(jq -c '[((.agents.entries // {}) | keys[]), ((.agents.list // [])[] | .id? // empty)] | unique' "$CONFIG_FILE")"
+
+# CORRECTED GHL HOOK STRUCTURE (2026-05-29) — verified live on a live client (OpenClaw 2026.5.27):
+#  - messageTemplate references the FLAT body key names ({{contact_id}}, {{message_body}}, {{channel}}, etc.)
+#    that the FLAT GHL body sends — NOT nested {{contact.id}}/{{customer_message.body}} (those arrive empty).
+#  - messageTemplate MUST include the MANDATORY SEND-DIRECTIVE (the canonical clause built by
+#    s38_canonical_mapping in lib-docker-tenant.sh) or the agent drafts but never sends (zero GHL API calls
+#    => customer gets nothing). Drafting is NOT sending. This is LAYER 1 of the 3-layer send enforcement
+#    (Layer 2 = AGENTS.md standing rule; Layer 3 = qc-send-directive.sh).
+#  - messageTemplate MUST ALSO include the CONVERSATION-MEMORY read-before/append-after steps. GHL inbound hook
+#    sessions are SINGLE-TURN / stateless — every hook run is a fresh session, so the agent's ONLY memory of a
+#    contact across messages is the per-contact conversation log (conversational-logs/<contact_id>__<name>.md).
+#    The template orders the agent to READ that log BEFORE replying (continue any in-progress booking/topic) and
+#    APPEND inbound+reply AFTER sending. Without it the agent has zero memory mid-conversation — the exact
+#    regression that left a live client mid-booking with "no memory." Enforced like the send-directive: fail-closed
+#    guard below + qc-conversation-memory.sh (Layer 3, CI + pre-handoff QC).
+#  - deliver MUST be false (deliver:true makes OpenClaw ALSO push to a channel, conflicting with the agent's
+#    own GHL-API reply).
+#  - NO `fallbacks` key (schema is .strict() and rejects it; fallbacks belong on a model-routing config only).
+#  NOTE: the SEND-DIRECTIVE lives ONLY on this SERVER mapping's messageTemplate (object-B, where {{…}}
+#  placeholders resolve). It must NEVER appear in the in-GHL-body messageTemplate — that one stays
+#  placeholder-free per the 23-key rule (qc-23-key-bodies.sh).
+NEW_MAPPING="$(s38_canonical_mapping "$ROUTE_ID" "$ROUTE_ID" "$ROUTING_AGENT_ID" "$SESSION_KEY")"
 
 if [[ "$HAS_MAPPING" == "true" ]]; then
-  echo "hooks.mappings entry id=$ROUTE_ID already present — skipping merge" >&2
+  # G-01 FIX: the mapping already exists, so compare its body to the required
+  # shape and upgrade ONLY the divergent keys. Before v2.0.24 this branch said
+  # "skipping merge" and left a pre-upgrade body (nested sessionKey merge
+  # tokens, no send-directive, no conversation-log read/append) in place on
+  # every re-run — an upgraded box kept the broken body forever.
+  EXISTING_MAPPING="$(jq -c --arg id "$ROUTE_ID" '(.hooks.mappings // [])[] | select(.id == $id)' "$CONFIG_FILE")"
+  MERGED_MAPPING="$(s38_merge_mapping_body "$EXISTING_MAPPING" "$NEW_MAPPING" "$CONFIGURED_AGENT_IDS")"
+  CHANGED_KEYS="$(s38_mapping_changed_keys "$EXISTING_MAPPING" "$MERGED_MAPPING")"
+  GUARD_MT="$(printf '%s' "$MERGED_MAPPING" | jq -r '.messageTemplate')"
+  guard_message_template "$GUARD_MT"
+  if [[ -z "$CHANGED_KEYS" ]]; then
+    echo "hooks.mappings entry id=$ROUTE_ID already at required shape — no change" >&2
+  else
+    backup_mapping "$ROUTE_ID" "$EXISTING_MAPPING"
+    backup_config
+    echo "hooks.mappings entry id=$ROUTE_ID migrating" >&2
+    # PER-KEY REPORTING: one line PER changed key, plus the agentId old -> new
+    # pair (folded into the agentId key line when agentId is one of them).
+    _old_aid="$(printf '%s' "$EXISTING_MAPPING" | jq -r '.agentId // ""')"
+    _new_aid="$(printf '%s' "$MERGED_MAPPING" | jq -r '.agentId // ""')"
+    _aid_reported=false
+    while IFS= read -r _key; do
+      [ -n "$_key" ] || continue
+      if [ "$_key" = "agentId" ]; then
+        echo "  changed key: agentId '$_old_aid' -> '$_new_aid'" >&2
+        _aid_reported=true
+      else
+        echo "  changed key: $_key" >&2
+      fi
+    done <<< "$CHANGED_KEYS"
+    [ "$_aid_reported" = "true" ] || echo "  agentId '$_old_aid' -> '$_new_aid' (unchanged)" >&2
+    # NOTE (2026-05-29): jq 1.7+ REJECTS the `.hooks //= {};` update-assignment as
+    # a TOP-LEVEL statement (the trailing `;` is parsed as a program separator and
+    # jq errors "syntax error, unexpected ';'"). Use the valid `.hooks = (.hooks // {})`
+    # form piped into the rest of the program — same semantics (ensure .hooks is an
+    # object before mutating it), valid on jq 1.6 AND jq 1.7+.
+    UPDATED="$(jq \
+      --arg id "$ROUTE_ID" \
+      --arg tok "$HOOKS_TOKEN" \
+      --arg agent "$ROUTING_AGENT_ID" \
+      --argjson mapping "$MERGED_MAPPING" \
+      '.hooks = (.hooks // {}) |
+       .hooks.enabled = true |
+       .hooks.token = $tok |
+       .hooks.path = (.hooks.path // "/hooks") |
+       .hooks.defaultSessionKey = (.hooks.defaultSessionKey // "hook:ghl:default") |
+       .hooks.allowRequestSessionKey = true |
+       .hooks.allowedSessionKeyPrefixes = ((.hooks.allowedSessionKeyPrefixes // []) + ["hook:ghl:"] | unique) |
+       .hooks.allowedAgentIds = ((.hooks.allowedAgentIds // []) + [$agent, $mapping.agentId] | unique) |
+       .hooks.mappings = [(.hooks.mappings // [])[] | if .id == $id then $mapping else . end]' "$CONFIG_FILE")"
+    write_config "$UPDATED"
+    echo "hooks.mappings entry id=$ROUTE_ID migrated into config" >&2
+  fi
 else
   backup_config
-  # CORRECTED GHL HOOK STRUCTURE (2026-05-29) — verified live on a live client (OpenClaw 2026.5.27):
-  #  - messageTemplate references the FLAT body key names ({{contact_id}}, {{message_body}}, {{channel}}, etc.)
-  #    that the FLAT GHL body sends — NOT nested {{contact.id}}/{{customer_message.body}} (those arrive empty).
-  #  - messageTemplate MUST include the MANDATORY SEND-DIRECTIVE (the canonical clause below) or the agent
-  #    drafts but never sends (zero GHL API calls => customer gets nothing). Drafting is NOT sending. This is
-  #    LAYER 1 of the 3-layer send enforcement (Layer 2 = AGENTS.md standing rule; Layer 3 = qc-send-directive.sh).
-  #  - messageTemplate MUST ALSO include the CONVERSATION-MEMORY read-before/append-after steps. GHL inbound hook
-  #    sessions are SINGLE-TURN / stateless — every hook run is a fresh session, so the agent's ONLY memory of a
-  #    contact across messages is the per-contact conversation log (conversational-logs/<contact_id>__<name>.md).
-  #    The template orders the agent to READ that log BEFORE replying (continue any in-progress booking/topic) and
-  #    APPEND inbound+reply AFTER sending. Without it the agent has zero memory mid-conversation — the exact
-  #    regression that left a live client mid-booking with "no memory." Enforced like the send-directive: fail-closed
-  #    guard below + qc-conversation-memory.sh (Layer 3, CI + pre-handoff QC).
-  #  - deliver MUST be false (deliver:true makes OpenClaw ALSO push to a channel, conflicting with the agent's
-  #    own GHL-API reply).
-  #  - NO `fallbacks` key (schema is .strict() and rejects it; fallbacks belong on a model-routing config only).
-  #  NOTE: the SEND-DIRECTIVE lives ONLY on this SERVER mapping's messageTemplate (object-B, where {{…}}
-  #  placeholders resolve). It must NEVER appear in the in-GHL-body messageTemplate — that one stays
-  #  placeholder-free per the 23-key rule (qc-23-key-bodies.sh).
-  NEW_MAPPING="$(jq -n \
-    --arg id "$ROUTE_ID" \
-    --arg path "$ROUTE_ID" \
-    --arg agent "$ROUTING_AGENT_ID" \
-    --arg sk "$SESSION_KEY" \
-    '{
-      id:$id, match:{path:$path}, action:"agent", agentId:$agent,
-      wakeMode:"now", name:"GHL Inbound", sessionKey:$sk,
-      messageTemplate:"INBOUND MESSAGE FROM GOHIGHLEVEL — {{channel}} channel From: {{first_name}} {{last_name}} Phone: {{phone}} Email: {{email}} Contact ID: {{contact_id}} Location ID: {{location_id}} Location name: {{location_name}} Customer message subject: {{subject}} Customer message body: {{message_body}} CONVERSATION MEMORY — THIS HOOK SESSION IS SINGLE-TURN AND STATELESS, your only memory of this contact is the log file. FIRST, before drafting anything, READ this contact'\''s conversation log at <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md for the full prior conversation and any in-progress booking/context (see AGENTS.md Conversation Memory Protocol); if the file is missing, treat this as a new contact. CONTINUE any in-progress topic/booking from the log instead of restarting. To pull deeper prior thread history when the log is thin, READ it from GHL: GET conversations/search?locationId={{location_id}}&contactId={{contact_id}} to find the conversationId, then GET conversations/{conversationId}/messages — conversationId is a READ key only, never a send field. Also check the matching playbook in conversation-workflows. MANDATORY — SEND on the SAME channel the message arrived on, do not just draft: read the inbound channel ({{channel}}) and SEND your reply via the GHL Conversations API (POST conversations/messages) with type = the MIRRORED channel value (SMS->SMS, Email->Email, Facebook->FB, Instagram->IG, WhatsApp->WhatsApp, Live Chat->Live_Chat); do NOT hardcode SMS. Send body = {type:<mirrored>, contactId:{{contact_id}}, locationId:{{location_id}}, message:<your reply>} (for Email also subject+html+emailFrom+emailTo). GHL threads the reply into this contact'\''s conversation BY contactId — do NOT put conversationId in the send body. Per TOOLS.md. Composing or drafting a reply is NOT sending — the customer receives nothing unless you make the API call. Do NOT end your turn until the send call returns a messageId/conversationId. AFTER the send returns a messageId, APPEND both this inbound message and your reply to <MASTER_FILES_DIR>/conversational-logs/{{contact_id}}__<name>.md (create the file if it is missing) — a reply that does not update the log loses this contact'\''s memory and is a failure.",
-      deliver:false, timeoutSeconds:300
-    }')"
-
-  # FAIL-CLOSED GUARD: the messageTemplate we just built MUST carry the mandatory send-directive elements.
-  # It must NOT be possible to install a GHL hook whose messageTemplate lacks the send-directive (Layer 1).
-  #  - messageTemplate MUST be CHANNEL-MIRRORING (reply on the SAME channel the message arrived on — the
-  #    mirrored `type` values, NOT a hardcoded SMS reply), MUST thread the send BY contactId (NOT
-  #    conversationId on the send), and MUST reference the GET conversations/search READ path for prior
-  #    history. Enforced both here (guard) and by qc-send-directive.sh (Layer 3).
   GUARD_MT="$(printf '%s' "$NEW_MAPPING" | jq -r '.messageTemplate')"
-  for needle in "MANDATORY" "SEND" "GHL Conversations API" "drafting" "NOT sending" "messageId" "SAME channel" "do NOT hardcode SMS" "conversations/search"; do
-    if ! printf '%s' "$GUARD_MT" | grep -qi -- "$needle"; then
-      echo "REFUSED: installer messageTemplate is missing send-directive element '$needle' — refusing to write a hook that lets the agent draft-but-not-send (or hardcode SMS / drop the read path)." >&2
-      exit 8
-    fi
-  done
-  # FAIL-CLOSED GUARD (conversation memory): GHL inbound hook sessions are single-turn/stateless — the agent's
-  # only memory across messages is the per-contact conversation log. The messageTemplate MUST tell the agent to
-  # READ the log BEFORE replying AND APPEND to it AFTER replying. It must NOT be possible to install a GHL hook
-  # whose messageTemplate lacks the conversation-log read-before OR append-after step (otherwise the agent has
-  # zero memory mid-conversation — this is the exact regression that broke a live client). The read+append
-  # directive lives ONLY on this SERVER mapping (the in-GHL-body messageTemplate stays placeholder-free per the
-  # 23-key rule).
-  for needle in "conversational-logs" "read" "append"; do
-    if ! printf '%s' "$GUARD_MT" | grep -qi -- "$needle"; then
-      echo "REFUSED: installer messageTemplate is missing conversation-log element '$needle' — refusing to write a hook whose agent cannot read-before/append-after and would lose this contact's memory." >&2
-      exit 9
-    fi
-  done
+  guard_message_template "$GUARD_MT"
   # NOTE (2026-05-29): jq 1.7+ REJECTS the `.hooks //= {};` update-assignment as
   # a TOP-LEVEL statement (the trailing `;` is parsed as a program separator and
   # jq errors "syntax error, unexpected ';'"). Use the valid `.hooks = (.hooks // {})`

@@ -283,6 +283,45 @@ jobs:
           [ "$rc" -eq 3 ] || { echo "✗ backend-ready with no config should exit 3 (SKIP), got $rc"; exit 1; }
           echo "✓ Skill 38 backend-ready gate exits 3 (SKIP) when no install is present"
 
+      - name: Skill 38 inbound-mapping contract — self-test and QC gate agree (G-03/G-04/G-05)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The defect this locks: 24-self-test-hook.sh judged one parsed mapping and
+          # demanded `model`, while qc-backend-ready.sh grepped the WHOLE openclaw.json
+          # for `"model": "..."` and passed the exact mapping the self-test refused.
+          # Both now run one predicate (scripts/lib-hook-mapping-contract.sh). This
+          # fixture matrix drives a known-good control plus eight negatives through
+          # BOTH gates and diffs the verdicts, so identical failure cannot masquerade
+          # as agreement. It also proves the installer refreshes on content drift
+          # instead of skipping on a matching skill-version.txt string. BASH only.
+          #
+          # STEP HARDNESS (PBB-042): three failure paths that have nothing to do
+          # with the pull request are closed here, following the backend-ready
+          # SKIP pattern above (explicit reason, never a silent pass, never a
+          # spurious red):
+          #   cwd    — the fixture path resolves from the repo root, not from
+          #            wherever the step happens to start
+          #   absent — a checkout that lacks the fixture SKIPs LOUDLY (the
+          #            pre-T-10 behaviour: that assertion did not exist) instead
+          #            of dying on `bash <missing>`'s exit 127
+          #   tools  — the fixture is pure bash + POSIX awk + coreutils: no jq,
+          #            no python3, no network (`--healthz ""` skips the curl and
+          #            `--mapping-only` stops before any POST), and its TMP paths
+          #            are quoted, so a checkout under a path containing spaces
+          #            is safe. A MISSING contract surface is still a red, not a
+          #            skip: the contract itself being gone is a real defect.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tests/hook-mapping-contract.test.sh"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=Skill 38 inbound-mapping contract SKIPPED::$t is absent from this checkout — the T-10 fixture is not present, so there is nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — the T-10 inbound-mapping-contract fixture is not present, so there is nothing to assert. This is exactly the pre-T-10 behaviour (the step did not exist). NOT a pass."
+            exit 0
+          fi
+          bash "$t"
+          echo "✓ Skill 38 self-test and qc-backend-ready agree on every fixture"
+
       - name: Skill 38 F52 JSONL data contract (v1.5.0)
         shell: bash
         run: |

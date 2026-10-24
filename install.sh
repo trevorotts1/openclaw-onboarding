@@ -8247,31 +8247,99 @@ install_skill_38_conversational_ai_system() {
         return 0
     fi
 
-    # Idempotent: skip if dest version matches src
-    if [ -f "$SKILL_DEST/skill-version.txt" ] && [ -d "$SKILL_DEST/protocols" ]; then
-        local SKILL38_CURRENT
-        SKILL38_CURRENT=$(cat "$SKILL_DEST/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
-        local SKILL38_SRC_VER
-        SKILL38_SRC_VER=$(cat "$SKILL_SRC/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
-        if [ -n "$SKILL38_CURRENT" ] && [ "$SKILL38_CURRENT" = "$SKILL38_SRC_VER" ]; then
-            success "Skill 38 already installed at v${SKILL38_CURRENT}"
-            chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
-            return 0
+    # Content fingerprint over the files that carry the Skill 38 install contract.
+    # A matching skill-version.txt proves NOTHING on its own: a hand-edited or
+    # partially copied dest can wear the right version string and still be wrong,
+    # which is how an inbound-mapping drift reached a client box. cksum is POSIX,
+    # so this adds no shasum/sha256sum dependency. ponytail: only the four
+    # contract-carrying scripts are hashed, not the whole tree — add files here if
+    # a later defect proves a wider surface matters.
+    local _s38_files="scripts/lib-hook-mapping-contract.sh scripts/24-self-test-hook.sh scripts/qc-backend-ready.sh scripts/15-configure-hooks-mappings.sh"
+    local _s38_fp_src="" _s38_fp_dest="" _s38_fp_final="" _s38_f
+    local _s38_action="installed" _s38_from="" _s38_ts _s38_host _s38_receipt _s38_verified=false
+    local SKILL38_CURRENT="" SKILL38_SRC_VER=""
+
+    for _s38_f in $_s38_files; do
+        if [ -f "$SKILL_SRC/$_s38_f" ]; then
+            _s38_fp_src="${_s38_fp_src}$(cksum < "$SKILL_SRC/$_s38_f" 2>/dev/null | tr -d ' \n'):"
+        else
+            _s38_fp_src="${_s38_fp_src}absent:"
         fi
-        note "Skill 38 present at v${SKILL38_CURRENT:-?}, source is v${SKILL38_SRC_VER:-?} — refreshing"
+        if [ -f "$SKILL_DEST/$_s38_f" ]; then
+            _s38_fp_dest="${_s38_fp_dest}$(cksum < "$SKILL_DEST/$_s38_f" 2>/dev/null | tr -d ' \n'):"
+        else
+            _s38_fp_dest="${_s38_fp_dest}absent:"
+        fi
+    done
+
+    if [ -f "$SKILL_DEST/skill-version.txt" ] && [ -d "$SKILL_DEST/protocols" ]; then
+        SKILL38_CURRENT=$(cat "$SKILL_DEST/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        SKILL38_SRC_VER=$(cat "$SKILL_SRC/skill-version.txt" 2>/dev/null | tr -d '[:space:]')
+        _s38_from="$SKILL38_CURRENT"
+    fi
+    [ -n "$SKILL38_SRC_VER" ] || SKILL38_SRC_VER="$(cat "$SKILL_SRC/skill-version.txt" 2>/dev/null | tr -d '[:space:]')"
+
+    # Idempotent ONLY on version AND content. Both must match to skip.
+    if [ -n "$SKILL38_CURRENT" ] && [ "$SKILL38_CURRENT" = "$SKILL38_SRC_VER" ] && [ "$_s38_fp_src" = "$_s38_fp_dest" ]; then
+        success "Skill 38 already installed at v${SKILL38_CURRENT} (content verified)"
+        chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+        _s38_action="already-current"
+    else
+        if [ -n "$SKILL38_CURRENT" ] && [ "$SKILL38_CURRENT" = "$SKILL38_SRC_VER" ]; then
+            note "Skill 38 version matches (v${SKILL38_CURRENT}) but the installed CONTENT differs from the source — refreshing"
+            _s38_action="refreshed-content-drift"
+        elif [ -n "$SKILL38_CURRENT" ]; then
+            note "Skill 38 present at v${SKILL38_CURRENT}, source is v${SKILL38_SRC_VER:-?} — refreshing"
+            _s38_action="refreshed-version"
+        fi
+
+        mkdir -p "$SKILL_DEST"
+        cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
+            warn "Failed to copy Skill 38 from $SKILL_SRC -> $SKILL_DEST"
+            return 0
+        }
+        chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+
+        success "Skill 38 (Conversational AI System v5.14) installed -> $SKILL_DEST"
+        note "Skill 38 brings 27 protocols, 8 journey templates, 9 install scripts, 7 references."
+        note "After this install completes, run: $SKILL_DEST/scripts/00-verify-prerequisites.sh"
+        note "  then 01..08 in order. Skills 05, 10, 19, 29 must be installed FIRST."
     fi
 
-    mkdir -p "$SKILL_DEST"
-    cp -R "$SKILL_SRC/." "$SKILL_DEST/" 2>>"$LOG_FILE" || {
-        warn "Failed to copy Skill 38 from $SKILL_SRC -> $SKILL_DEST"
-        return 0
-    }
-    chmod +x "$SKILL_DEST/scripts/"*.sh 2>/dev/null || true
+    # ---- provisioning receipt (secret-free; records what is ACTUALLY installed)
+    for _s38_f in $_s38_files; do
+        if [ -f "$SKILL_DEST/$_s38_f" ]; then
+            _s38_fp_final="${_s38_fp_final}$(cksum < "$SKILL_DEST/$_s38_f" 2>/dev/null | tr -d ' \n'):"
+        else
+            _s38_fp_final="${_s38_fp_final}absent:"
+        fi
+    done
+    [ "$_s38_fp_final" = "$_s38_fp_src" ] && _s38_verified=true || _s38_verified=false
 
-    success "Skill 38 (Conversational AI System v5.14) installed -> $SKILL_DEST"
-    note "Skill 38 brings 27 protocols, 8 journey templates, 9 install scripts, 7 references."
-    note "After this install completes, run: $SKILL_DEST/scripts/00-verify-prerequisites.sh"
-    note "  then 01..08 in order. Skills 05, 10, 19, 29 must be installed FIRST."
+    _s38_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf 'unknown')"
+    _s38_host="$(hostname 2>/dev/null || uname -n 2>/dev/null || printf 'unknown')"
+    _s38_receipt="$SKILL_DEST/provisioning-receipt.json"
+    {
+        printf '{\n'
+        printf '  "schema": "skill38-provisioning/v1",\n'
+        printf '  "timestamp": %s,\n' "$(oc_ghl_mcp_json_str "$_s38_ts")"
+        printf '  "box": {"hostname": %s, "platform": %s},\n' \
+            "$(oc_ghl_mcp_json_str "$_s38_host")" \
+            "$(oc_ghl_mcp_json_str "${OPENCLAW_PLATFORM:-unknown}")"
+        printf '  "skill": "38-conversational-ai-system",\n'
+        printf '  "from_version": %s,\n' "$(oc_ghl_mcp_json_str "${_s38_from:-none}")"
+        printf '  "to_version": %s,\n' "$(oc_ghl_mcp_json_str "${SKILL38_SRC_VER:-unknown}")"
+        printf '  "action": %s,\n' "$(oc_ghl_mcp_json_str "$_s38_action")"
+        printf '  "content_check": "cksum over the four contract-carrying scripts",\n'
+        printf '  "checked_files": %s,\n' "$(oc_ghl_mcp_json_str "$_s38_files")"
+        printf '  "source_fingerprint": %s,\n' "$(oc_ghl_mcp_json_str "$_s38_fp_src")"
+        printf '  "installed_fingerprint": %s,\n' "$(oc_ghl_mcp_json_str "$_s38_fp_final")"
+        printf '  "content_verified": %s\n' "$_s38_verified"
+        printf '}\n'
+    } > "$_s38_receipt.tmp" 2>>"$LOG_FILE" && mv "$_s38_receipt.tmp" "$_s38_receipt" || rm -f "$_s38_receipt.tmp" 2>/dev/null || true
+    chmod 600 "$_s38_receipt" 2>/dev/null || true
+    note "Skill 38 provisioning receipt: $_s38_receipt (action=$_s38_action, content_verified=$_s38_verified)"
+
     return 0
 }
 

@@ -13,9 +13,9 @@ v="$(tr -d '[:space:]' < "$REPO/43-graphify-knowledge-graph/skill-version.txt")"
 fm="$(awk '/^version:/{print $2; exit}' "$REPO/43-graphify-knowledge-graph/SKILL.md")"
 printf '%s' "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && [ "$v" = "$fm" ] && ok "R12 skill 43 versions X.Y.Z and equal" || bad "R12 $v vs $fm"
 # R13 (lib gate picks qc-convert-and-flow.sh, not qc-built-workflow.sh)
-mkdir -p "$T/sk/44-x"; printf -- '---\nname: x\n---\n' > "$T/sk/44-x/SKILL.md"
+mkdir -p "$T/sk/44-x"; printf -- '---\nname: x\nversion: 1.0.0\n---\n' > "$T/sk/44-x/SKILL.md"; printf 'v1.0.0\n' > "$T/sk/44-x/skill-version.txt"
 printf '#!/bin/sh\nexit 0\n' > "$T/sk/44-x/qc-convert-and-flow.sh"; printf '#!/bin/sh\nexit 9\n' > "$T/sk/44-x/qc-built-workflow.sh"; chmod +x "$T/sk/44-x/"*.sh
-mkdir -p "$T/bin"; printf '#!/bin/sh\necho "name: x ready"\n' > "$T/bin/openclaw"; chmod +x "$T/bin/openclaw"
+mkdir -p "$T/bin"; printf '#!/bin/sh\ncat <<'"'"'OUT'"'"'\nx ✓ Ready\n\nDetails:\n  Source: openclaw-managed\n  Path: %s\n  Visible to model: yes\nOUT\nexit 0\n' "$T/sk/44-x/SKILL.md" > "$T/bin/openclaw"; chmod +x "$T/bin/openclaw"
 out="$(HOME="$T/h" PATH="$T/bin:$PATH" OC_SKILLS_DIR="$T/sk" OPENCLAW_ROOT="$T/oc" bash -c 'source "$1" 2>/dev/null; oc_gate_skill 44-x >/dev/null 2>&1; echo rc=$?' _ "$REPO/lib-onboarding-state.sh" 2>&1)"
 echo "$out" | grep -q 'rc=0' && ok "R13 gate used qc-convert-and-flow.sh (qc-built-workflow.sh would exit 9)" || bad "R13: $out"
 # R14

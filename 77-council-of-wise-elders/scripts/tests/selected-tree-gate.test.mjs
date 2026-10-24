@@ -3,8 +3,9 @@
 // success for having written an unused directory. One runnable check for
 // scripts/selected-tree-gate.mjs — focused regression set (a)-(e).
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -286,6 +287,152 @@ test("(b) agent evidence that names a non-skill path fails closed", (t) => {
   const gate = checkSelectedTree({ home, skillDir: wired, load: false, agentSelected: join(home, "not-a-skill") });
   assert.equal(gate.ok, false);
   assert.match(gate.problems.join("\n"), /agent selection evidence is unusable/);
+});
+
+test("(d) a packaged entry that is EMPTY with a self-consistent manifest is refused", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const empty = "";
+  writeFileSync(join(wired, ENTRY_PATH), empty);
+  const manifest = JSON.parse(readFileSync(join(wired, "manifest.json"), "utf8"));
+  manifest.runtime_entry.sha256 = createHash("sha256").update(empty).digest("hex");
+  manifest.runtime_entry.bytes = 0;
+  writeFileSync(join(wired, "manifest.json"), JSON.stringify(manifest, null, 2));
+  makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: true });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /entry point is empty \(0 bytes\)/);
+});
+
+test("(d) a recorded entry that is a DIRECTORY is refused, not a crash", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  rmSync(join(wired, ENTRY_PATH));
+  mkdirSync(join(wired, ENTRY_PATH), { recursive: true });
+  makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /entry point is not a regular file/);
+});
+
+test("(d) an archive whose entry member is empty is refused", (t) => {
+  const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
+  if (zip.status !== 0) {
+    t.skip("zip not available");
+    return;
+  }
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), { entry: "recorded-only" });
+  const staging = join(home, "zip-staging");
+  mkdirSync(join(staging, dirname(ENTRY_PATH)), { recursive: true });
+  writeFileSync(join(staging, ENTRY_PATH), "");
+  execFileSync("zip", ["-qr", join(wired, "council-of-wise-elders.skill"), "."], { cwd: staging });
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /archive member .*is empty/);
+});
+
+test("(b) agent evidence that contradicts the install-record is refused", (t) => {
+  const home = fixtureHome(t);
+  const selected = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const claimed = makeCopy(join(home, ".agents", "skills", "council-of-wise-elders"));
+  const prefix = makePrefix(home, selected); // the record names the .claude copy
+  const gate = checkSelectedTree({ home, skillDir: selected, prefix, load: false, agentSelected: claimed });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /agent evidence names .* but the live install-record/);
+});
+
+test("(b) agent evidence outside every known root with no record is refused", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const outside = makeCopy(join(home, "elsewhere", "council-of-wise-elders"), { entry: false });
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false, agentSelected: outside });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /not a council-of-wise-elders copy under any known agent root/);
+});
+
+test("(c) equal versions with different content is a failure, not a warning", (t) => {
+  const home = fixtureHome(t);
+  const selected = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const wired = makeCopy(join(home, "wired", "council-of-wise-elders"));
+  writeFileSync(join(wired, "EXAMPLES.md"), "a file the selected copy does not have\n");
+  makePrefix(home, selected);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false, agentSelected: selected });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /both claim .* but their trees differ/);
+});
+
+test("(d) an archive member that is valid JavaScript but not the recorded build is refused", (t) => {
+  const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
+  if (zip.status !== 0) {
+    t.skip("zip not available");
+    return;
+  }
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), { entry: "recorded-only" });
+  const staging = join(home, "zip-staging");
+  mkdirSync(join(staging, dirname(ENTRY_PATH)), { recursive: true });
+  writeFileSync(join(staging, ENTRY_PATH), "#!/usr/bin/env node\nconsole.log('planted');\n");
+  execFileSync("zip", ["-qr", join(wired, "council-of-wise-elders.skill"), "."], { cwd: staging });
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /is not the recorded build/);
+});
+
+test("(d) an archive member that is a shell script is refused even without loading", (t) => {
+  const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
+  if (zip.status !== 0) {
+    t.skip("zip not available");
+    return;
+  }
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), { entry: "recorded-only" });
+  const shell = "#!/bin/sh\necho not javascript\n";
+  const manifest = JSON.parse(readFileSync(join(wired, "manifest.json"), "utf8"));
+  manifest.runtime_entry.sha256 = createHash("sha256").update(shell).digest("hex");
+  manifest.runtime_entry.bytes = Buffer.byteLength(shell);
+  writeFileSync(join(wired, "manifest.json"), JSON.stringify(manifest, null, 2));
+  const staging = join(home, "zip-staging");
+  mkdirSync(join(staging, dirname(ENTRY_PATH)), { recursive: true });
+  writeFileSync(join(staging, ENTRY_PATH), shell);
+  execFileSync("zip", ["-qr", join(wired, "council-of-wise-elders.skill"), "."], { cwd: staging });
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /does not look like a JavaScript entry point/);
+});
+
+test("(a) a symlinked version carrier cannot borrow another tree's identity", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  writeFileSync(join(wired, "version"), "1.0.99\n");
+  rmSync(join(wired, "skill-version.txt"));
+  symlinkSync(join(wired, "version"), join(wired, "skill-version.txt"));
+  makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /version carrier skill-version\.txt is a symlink/);
+});
+
+test("(a) a symlinked selected tree is verified through its pinned target", (t) => {
+  const home = fixtureHome(t);
+  const real = makeCopy(join(home, "real", "council-of-wise-elders"));
+  mkdirSync(join(home, ".claude", "skills"), { recursive: true });
+  const link = join(home, ".claude", "skills", "council-of-wise-elders");
+  symlinkSync(real, link);
+  makePrefix(home, link);
+  const gate = checkSelectedTree({ home, skillDir: real, load: false, agentSelected: link, agentSource: "symlink test" });
+  assert.equal(gate.ok, true, gate.problems.join(" | "));
+  assert.equal(gate.selected.physical, realpathSync(real));
+});
+
+test("(b) a relative skill_dir in a record is refused, never resolved against cwd", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const prefix = makePrefix(home, wired);
+  writeFileSync(join(prefix, "releases", "install-record.json"), JSON.stringify({ skill_dir: "." }));
+  const gate = checkSelectedTree({ home, skillDir: wired, prefix, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /records a relative skill_dir/);
 });
 
 test("(e) the shipped SKILL.md carries the current convene contract, not grant text", () => {
