@@ -39,6 +39,26 @@ def test_registry_in_the_shared_tree_is_read(tmp_path):
     assert launch_context._registry_policy_ids(str(skill)) == {"p1"}
 
 
+def test_shared_tree_symlink_back_into_the_skill_is_refused(tmp_path):
+    skill = tmp_path / "skill"
+    _write(skill / _rel())
+    (tmp_path / "shared-utils").symlink_to(skill / "shared-utils",
+                                           target_is_directory=True)
+    with pytest.raises(launch_context.LaunchContextError):
+        launch_context._registry_policy_ids(str(skill))
+
+
+def test_shared_registry_symlink_to_a_skill_file_is_refused(tmp_path):
+    skill = tmp_path / "skill"
+    own = skill / "vendored-registry.json"
+    _write(own)
+    shared = tmp_path / _rel()
+    shared.parent.mkdir(parents=True)
+    shared.symlink_to(own)
+    with pytest.raises(launch_context.LaunchContextError):
+        launch_context._registry_policy_ids(str(skill))
+
+
 def test_vendored_copy_does_not_shadow_a_missing_shared_registry(tmp_path):
     skill = tmp_path / "skill"
     _write(skill / "repo-integration" / "shared" / Path(_rel()).name)
