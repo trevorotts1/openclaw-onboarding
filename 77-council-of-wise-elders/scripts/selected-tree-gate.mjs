@@ -45,8 +45,9 @@
 //        (exit 0 ok, 1 problems, 2 usage)
 
 import { execFileSync } from "node:child_process";
-import { closeSync, existsSync, lstatSync, openSync, readSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { createHash } from "node:crypto";
+import { closeSync, existsSync, lstatSync, mkdtempSync, openSync, readSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ENTRY_PATH, checkEntryPoint } from "./entry-point-gate.mjs";
@@ -460,7 +461,7 @@ function verifyEntryFile(entry, { load }) {
  * A .skill archive must actually be a zip that carries the entry. Existence,
  * size or a filename is not proof.
  */
-function verifyArchive(copy) {
+function verifyArchive(copy, { load }) {
   const archive = join(copy.path, `${SKILL_NAME}.skill`);
   let st;
   try {
@@ -487,9 +488,25 @@ function verifyArchive(copy) {
   }
   const entry = copy.runtimeEntry?.path ?? ENTRY_PATH;
   const wanted = entry.split(/[\\/]/).pop();
-  const hasEntry = listing.split("\n").some((line) => line.trim().endsWith(entry) || (wanted && line.trim().endsWith(wanted)));
-  if (!hasEntry) return [`archive ${archive} does not contain the executable ${entry}`];
-  return [];
+  const member = listing
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.endsWith(entry) || (wanted && line.endsWith(wanted)));
+  if (!member) return [`archive ${archive} does not contain the executable ${entry}`];
+  // A member NAME in the listing is not the artifact: extract it and validate
+  // the bytes (non-empty, JavaScript, and node --check when loading is on).
+  let tmpDir;
+  try {
+    tmpDir = mkdtempSync(join(tmpdir(), "council-archive-"));
+    const out = join(tmpDir, "entry.mjs");
+    const bytes = execFileSync("unzip", ["-p", archive, member], { maxBuffer: 64 * 1024 * 1024 });
+    writeFileSync(out, bytes);
+    return verifyEntryFile(out, { load }).map((p) => `archive member ${member}: ${p}`);
+  } catch (e) {
+    return [`archive member ${member} could not be extracted: ${String(e.message).split("\n")[0]}`];
+  } finally {
+    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 /** The installed release named by a record must carry a valid, non-empty entry. */
@@ -499,6 +516,19 @@ function verifyInstalledEntry(rec, { load }) {
   const perEntry = entries.map((e) => ({ e, problems: verifyEntryFile(e, { load }) }));
   if (perEntry.some((x) => x.problems.length === 0)) return [];
   return perEntry.flatMap((x) => x.problems);
+}
+
+/** Content identity used to tell "same release, different tree" from "same tree". */
+function contentIdentity(dir) {
+  const manifest = readJson(join(dir, "manifest.json"));
+  const hash = (file) => {
+    try {
+      return createHash("sha256").update(readFileSync(file)).digest("hex");
+    } catch {
+      return "missing";
+    }
+  };
+  return `SKILL.md=${hash(join(dir, "SKILL.md"))} entry=${manifest?.runtime_entry?.sha256 ?? "unrecorded"}`;
 }
 
 /**
@@ -522,12 +552,13 @@ export function checkSelectedTree(opts = {}) {
   const selection = resolveSelection({ home, claudeConfigDir, openclawRoot, prefix, skillDir, records, agentSelected, agentSource });
   problems.push(...selection.problems);
 
-  const copies = inspectCopies({
+  const discoveredCopies = inspectCopies({
     home,
     claudeConfigDir,
     openclawRoot,
     extraDirs: skillDir ? [skillDir] : [],
   });
+  const copies = [...discoveredCopies];
 
   let selected = selection.selectedPath ? copies.find((c) => samePath(c.physical, selection.selectedPath)) : null;
   if (selection.selectedPath && !selected) {
@@ -552,7 +583,6 @@ export function checkSelectedTree(opts = {}) {
   problems.push(...canonicalEvidence.problems.map((p) => `the tree this update maintains: ${p}`));
 
   // Selection proof: one copy is unambiguous; more than one needs agent evidence.
-  const otherCopies = copies.filter((c) => !selected || !samePath(c.physical, selected.physical));
   const selectionProven = Boolean(agentSelected) || copies.length <= 1;
   if (!selectionProven) {
     problems.push(
@@ -561,6 +591,25 @@ export function checkSelectedTree(opts = {}) {
       `names the one the intended OpenClaw agent reads; an install-record or a fallback directory is not proof — ` +
       `pass --agent-selected PATH from the agent resolver, or report this as UNKNOWN`,
     );
+  }
+  // Agent evidence is not a free pass: it must not contradict the record the
+  // live CLI consults, and it must name a copy this box can actually see.
+  if (agentSelected) {
+    if (records.length) {
+      const agrees = records.some((r) => samePath(r.skillDir, agentSelected));
+      if (!agrees) {
+        problems.push(
+          `agent evidence names ${agentSelected} but the live install-record(s) name ` +
+          `${records.map((r) => r.skillDir).join(", ")}: the two disagree, so neither proves what the agent reads — ` +
+          `reconcile the resolver state before any update or gate can pass`,
+        );
+      }
+    } else if (!discoveredCopies.some((c) => samePath(c.physical, agentSelected) || samePath(c.path, agentSelected))) {
+      problems.push(
+        `agent evidence names ${agentSelected}, which is not a ${SKILL_NAME} copy under any known agent root: ` +
+        `the evidence is unverifiable`,
+      );
+    }
   }
 
   if (selected) {
@@ -611,7 +660,7 @@ export function checkSelectedTree(opts = {}) {
         `no archive, and no installed release naming this tree — every shipped artifact includes its executable`,
       );
     } else if (state === "archive") {
-      problems.push(...verifyArchive(selected).map((p) => `SELECTED copy ${selected.path}: ${p}`));
+      problems.push(...verifyArchive(selected, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
     } else if (state === "installed") {
       const rec = records.find((r) => samePath(r.skillDir, selected.physical));
       if (!rec) {
@@ -624,6 +673,14 @@ export function checkSelectedTree(opts = {}) {
     // (a release named by the resolver's own install-record carries it) both
     // satisfy the shipped-executable rule.
     if (skillDir && !samePath(selected.physical, skillDir)) {
+      const sameContent = contentIdentity(selected.path) === contentIdentity(skillDir);
+      if (selected.version && selected.version === canonicalVersion && !sameContent) {
+        problems.push(
+          `the selected copy ${selected.path} and the tree this update maintains ${skillDir} both claim ` +
+          `${selected.version} but their content differs (${contentIdentity(selected.path)} vs ${contentIdentity(skillDir)}): ` +
+          `the update wrote a directory the agent does not read`,
+        );
+      }
       warnings.push(
         `the resolver selects ${selected.path} (via ${selection.via}) while this update maintains ${skillDir}; ` +
         `the selected copy is verified above and is NOT the directory being written`,

@@ -3,6 +3,7 @@
 // success for having written an unused directory. One runnable check for
 // scripts/selected-tree-gate.mjs — focused regression set (a)-(e).
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -286,6 +287,79 @@ test("(b) agent evidence that names a non-skill path fails closed", (t) => {
   const gate = checkSelectedTree({ home, skillDir: wired, load: false, agentSelected: join(home, "not-a-skill") });
   assert.equal(gate.ok, false);
   assert.match(gate.problems.join("\n"), /agent selection evidence is unusable/);
+});
+
+test("(d) a packaged entry that is EMPTY with a self-consistent manifest is refused", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const empty = "";
+  writeFileSync(join(wired, ENTRY_PATH), empty);
+  const manifest = JSON.parse(readFileSync(join(wired, "manifest.json"), "utf8"));
+  manifest.runtime_entry.sha256 = createHash("sha256").update(empty).digest("hex");
+  manifest.runtime_entry.bytes = 0;
+  writeFileSync(join(wired, "manifest.json"), JSON.stringify(manifest, null, 2));
+  makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: true });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /entry point is empty \(0 bytes\)/);
+});
+
+test("(d) a recorded entry that is a DIRECTORY is refused, not a crash", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  rmSync(join(wired, ENTRY_PATH));
+  mkdirSync(join(wired, ENTRY_PATH), { recursive: true });
+  makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /entry point is not a regular file/);
+});
+
+test("(d) an archive whose entry member is empty is refused", (t) => {
+  const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
+  if (zip.status !== 0) {
+    t.skip("zip not available");
+    return;
+  }
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), { entry: "recorded-only" });
+  const staging = join(home, "zip-staging");
+  mkdirSync(join(staging, dirname(ENTRY_PATH)), { recursive: true });
+  writeFileSync(join(staging, ENTRY_PATH), "");
+  execFileSync("zip", ["-qr", join(wired, "council-of-wise-elders.skill"), "."], { cwd: staging });
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /archive member .*is empty/);
+});
+
+test("(b) agent evidence that contradicts the install-record is refused", (t) => {
+  const home = fixtureHome(t);
+  const selected = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const claimed = makeCopy(join(home, ".agents", "skills", "council-of-wise-elders"));
+  const prefix = makePrefix(home, selected); // the record names the .claude copy
+  const gate = checkSelectedTree({ home, skillDir: selected, prefix, load: false, agentSelected: claimed });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /agent evidence names .* but the live install-record/);
+});
+
+test("(b) agent evidence outside every known root with no record is refused", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const outside = makeCopy(join(home, "elsewhere", "council-of-wise-elders"), { entry: false });
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false, agentSelected: outside });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /not a council-of-wise-elders copy under any known agent root/);
+});
+
+test("(c) equal versions with different content is a failure, not a warning", (t) => {
+  const home = fixtureHome(t);
+  const selected = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const wired = makeCopy(join(home, "wired", "council-of-wise-elders"));
+  writeFileSync(join(wired, "SKILL.md"), readFileSync(join(wired, "SKILL.md"), "utf8").replace("Convening", "CONVENING"));
+  makePrefix(home, selected);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false, agentSelected: selected });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /both claim .* but their content differs/);
 });
 
 test("(e) the shipped SKILL.md carries the current convene contract, not grant text", () => {
