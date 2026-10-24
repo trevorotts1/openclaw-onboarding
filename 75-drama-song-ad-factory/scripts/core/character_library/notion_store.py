@@ -48,6 +48,58 @@ def _doc(character_id):
     return "%s-%s" % (IDENTITY_DOC_PREFIX, character_id)
 
 
+# SECURITY (do not loosen in a later round): a caller-supplied object never
+# answers a security question about itself. ``isinstance`` is deliberately not
+# used for these gates -- a dict subclass can lie in ``get()``/``keys()``/
+# ``__len__``/``__bool__``, a str subclass can lie in ``__eq__`` (Python calls
+# the subclass's reflected ``__eq__`` first), and a list subclass can lie in
+# ``__bool__``/``__len__``, which is exactly how a forged receipt on a draft
+# got through before. A subclass is refused outright with a named StoreError,
+# and every decision below runs on one plain builtin copy.
+
+def _mapping(value):
+    """One plain builtin dict copy, or None when it is not an exact builtin dict."""
+    if type(value) is not dict:
+        return None
+    return {k: v for k, v in value.items()}
+
+
+def _sequence(value):
+    """One plain builtin list copy, or None when it is not an exact builtin list.
+    Emptiness and length are always tested on the returned copy."""
+    if type(value) is not list:
+        return None
+    return list(value)
+
+
+def _plain_object(value, what):
+    copy = _mapping(value)
+    if copy is None:
+        raise StoreError(
+            "A %s must be a plain object, not %s. A subclass is refused because "
+            "it can lie in get() and __len__ about what it holds."
+            % (what, type(value).__name__))
+    return copy
+
+
+def _plain_sequence(value, what):
+    copy = _sequence(value)
+    if copy is None:
+        raise StoreError(
+            "A %s must be a plain list, not %s. A subclass is refused because it "
+            "can lie in __bool__ and __len__ about being empty."
+            % (what, type(value).__name__))
+    return copy
+
+
+def _plain_text(value, what):
+    if type(value) is not str:
+        raise StoreError(
+            "A %s must be a plain string, not %s. A subclass is refused because "
+            "it can lie in __eq__." % (what, type(value).__name__))
+    return value
+
+
 def _validated(record):
     """Seal and validate, refusing every defect as a plain StoreError."""
     sealed = identity.seal_identity(record)
@@ -72,19 +124,25 @@ class NotionStore:
 
     def save_registry(self, registry):
         """Persist this client's library, page and data source IDs."""
-        if not isinstance(registry, dict):
-            raise StoreError("The library registry must be an object.")
-        if registry.get("client_namespace") != self.client_namespace:
+        plain = _mapping(registry)
+        if plain is None:
+            raise StoreError(
+                "The library registry must be a plain object, not %s. A "
+                "subclass is refused because it can lie in get()."
+                % type(registry).__name__)
+        owner = plain.get("client_namespace")
+        if type(owner) is not str or owner != self.client_namespace:
             raise StoreError(
                 "The library registry belongs to a different client namespace.")
-        return adapter.save_registry(self.registry_path(), registry)
+        return adapter.save_registry(self.registry_path(), plain)
 
     def load_registry(self):
         """The stored mapping, or None. A handle only, never a token."""
-        registry = adapter.load_registry(self.registry_path())
+        registry = _mapping(adapter.load_registry(self.registry_path()))
         if registry is None:
             return None
-        if registry.get("client_namespace") != self.client_namespace:
+        owner = registry.get("client_namespace")
+        if type(owner) is not str or owner != self.client_namespace:
             return None
         return registry
 
@@ -116,13 +174,22 @@ class NotionStore:
         stores APPROVED and never writes an approval receipt: those exist only
         on the record the promotion step approved, with the receipt it produced.
         """
-        if not isinstance(record, dict):
-            raise StoreError("An identity record must be an object.")
-        if record.get("client_id") != self.client_namespace:
+        given = record
+        record = _mapping(given)
+        if record is None:
+            raise StoreError(
+                "An identity record must be a plain object, not %s. A subclass "
+                "is refused because it can lie in get() and __len__."
+                % type(given).__name__)
+        owner = record.get("client_id")
+        if type(owner) is not str or owner != self.client_namespace:
             raise StoreError(
                 "This identity belongs to a different client namespace, so it "
                 "cannot be stored in this client's library.")
-        character_id = str(record.get("character_id") or "").strip()
+        raw_id = record.get("character_id")
+        if type(raw_id) is not str:
+            raise StoreError("An identity record needs a character_id.")
+        character_id = raw_id.strip()
         if not character_id:
             raise StoreError("An identity record needs a character_id.")
 
@@ -133,38 +200,49 @@ class NotionStore:
         prepared.setdefault("reference_ids", [])
         # The local copy always declares what it is: a cache of Notion.
         prepared["local_cache"] = cache_mod.describe()
-        if prepared.get("draft_state") not in DRAFT_ORDER:
+        state = prepared.get("draft_state")
+        if type(state) is not str or state not in DRAFT_ORDER:
             raise StoreError("draft_state must be one of %s." % (DRAFT_ORDER,))
-        supplied = prepared.get("approval_bindings")
-        if not isinstance(supplied, list):
+        supplied = _sequence(prepared.get("approval_bindings"))
+        if supplied is None:
             raise StoreError(
-                "approval_bindings must be a list of approval receipts.")
+                "approval_bindings must be a plain list of approval receipts. "
+                "A list subclass is refused because it can lie in __bool__ and "
+                "__len__ about being empty.")
+        prepared["approval_bindings"] = supplied
         if existing is None:
-            if prepared.get("draft_state") == "APPROVED":
+            if state == "APPROVED":
                 raise StoreError(
                     "A character cannot be created already approved. Approval "
                     "is an explicit step, never a default, and a save never "
                     "stores APPROVED.")
-            if supplied:
+            if supplied:          # tested on the plain copy, never on the caller
                 raise StoreError(
                     "A draft carries no approval receipt. A receipt is written "
                     "only by the explicit promotion step, so one cannot be "
                     "parked on a record at save time.")
         else:
-            if prepared.get("draft_state") != existing.get("draft_state"):
+            held_state = existing.get("draft_state")
+            if type(held_state) is not str or state != held_state:
                 raise StoreError(
                     "A draft state changes only through an explicit approval "
                     "step; refusing an implicit transition from %r to %r."
-                    % (existing.get("draft_state"), prepared.get("draft_state")))
-            held = list(existing.get("approval_bindings") or [])
+                    % (held_state, state))
+            raw_held = existing.get("approval_bindings")
+            held = list(raw_held) if type(raw_held) is list else []
             if "approval_bindings" in record and supplied != held:
                 raise StoreError(
                     "An approval binding changes only through the explicit "
                     "promotion step; refusing a save that forges, edits or "
                     "drops a receipt.")
             prepared["approval_bindings"] = held
-            prepared["revision"] = max(
-                int(prepared.get("revision") or 1), int(existing.get("revision") or 1))
+            want = prepared.get("revision")
+            have = existing.get("revision")
+            want = 1 if want is None else want
+            have = 1 if have is None else have
+            if type(want) is not int or type(have) is not int:
+                raise StoreError("revision must be a positive integer.")
+            prepared["revision"] = max(want, have)
         sealed = _validated(prepared)
         self.cache.store(_doc(character_id), sealed,
                          revision=revision if revision is not None else sealed["revision"])
@@ -172,7 +250,9 @@ class NotionStore:
 
     def attach_image(self, character_id, reference_id):
         """Attach one image reference to the SAME identity. No duplicate record."""
-        reference = str(reference_id or "").strip()
+        if type(reference_id) is not str:
+            raise StoreError("An image needs a reference id.")
+        reference = reference_id.strip()
         if not reference:
             raise StoreError("An image needs a reference id.")
         existing = self.get_identity(character_id)
@@ -181,12 +261,17 @@ class NotionStore:
                 "No identity %r in this client's library. Attaching an image "
                 "never creates a character." % (character_id,))
         updated = dict(existing)
-        references = list(updated.get("reference_ids") or [])
+        raw_references = updated.get("reference_ids")
+        references = list(raw_references) if type(raw_references) is list else []
         if reference in references:
             return updated  # idempotent: same identity, same reference
         references.append(reference)
         updated["reference_ids"] = references
-        updated["revision"] = int(existing.get("revision") or 1) + 1
+        prior = existing.get("revision")
+        prior = 1 if prior is None else prior
+        if type(prior) is not int:
+            raise StoreError("revision must be a positive integer.")
+        updated["revision"] = prior + 1
         sealed = _validated(updated)
         self.cache.store(_doc(character_id), sealed, revision=sealed["revision"])
         return sealed
@@ -194,42 +279,49 @@ class NotionStore:
     def promote(self, character_id, to_state, *, approval=None):
         """Move a draft forward one explicit step. Implicit promotion refused.
 
-        Approving is the only place an approval receipt is ever written: the
-        receipt is built here, in its closed shape, bound to this character and
-        to this one promotion step. Nothing else can mint one.
+        Approving is the only place an approval receipt is ever minted. The
+        receipt is produced by :func:`character_bible.identity.mint_receipt`,
+        the one minting path: it carries a mint mark only that path can make,
+        keyed by a secret held in process memory. A dict typed by hand, and a
+        dict reloaded from a JSON file, have no such mark and are refused.
         """
         existing = self.get_identity(character_id)
         if existing is None:
             raise StoreError("No identity %r in this client's library." % (character_id,))
         current = existing.get("draft_state")
-        if to_state not in DRAFT_ORDER:
+        if type(to_state) is not str or to_state not in DRAFT_ORDER:
             raise StoreError("Unknown draft state %r." % (to_state,))
         expected = DRAFT_ORDER[DRAFT_ORDER.index(current) + 1] if current in DRAFT_ORDER[:-1] else None
         if to_state != expected:
             raise StoreError(
                 "Refusing an out-of-order transition from %r to %r; the next "
                 "explicit step is %r." % (current, to_state, expected))
-        bindings = list(existing.get("approval_bindings") or [])
+        raw_bindings = existing.get("approval_bindings")
+        bindings = list(raw_bindings) if type(raw_bindings) is list else []
         if to_state == "APPROVED":
-            if not isinstance(approval, dict):
+            plain = _mapping(approval)
+            if plain is None:
                 raise StoreError(
                     "Approval is explicit: an approval binding with an approver "
-                    "and receipt is required; refusing an implicit promotion.")
-            if not str(approval.get("approver") or "").strip() \
-                    or not str(approval.get("receipt_id") or "").strip():
+                    "and receipt is required; refusing an implicit promotion. "
+                    "A subclass is refused because it can lie in get().")
+            approver = plain.get("approver")
+            receipt_id = plain.get("receipt_id")
+            if type(approver) is not str or not approver.strip() \
+                    or type(receipt_id) is not str or not receipt_id.strip():
                 raise StoreError("An approval binding needs an approver and a receipt id.")
         updated = dict(existing)
         updated["draft_state"] = to_state
         updated["approval_bindings"] = bindings
         if to_state == "APPROVED":
-            bindings.append({
+            bindings.append(identity.mint_receipt({
                 "kind": identity.RECEIPT_KIND,
-                "receipt_id": str(approval["receipt_id"]).strip(),
-                "approver": str(approval["approver"]).strip(),
+                "receipt_id": receipt_id.strip(),
+                "approver": approver.strip(),
                 "character_id": str(existing.get("character_id") or "").strip(),
                 "from_state": current,
                 "to_state": to_state,
-            })
+            }))
         sealed = _validated(updated)
         self.cache.store(_doc(character_id), sealed, revision=sealed["revision"])
         return sealed
@@ -248,13 +340,24 @@ class NotionStore:
         """Rebuild missing or stale cached copies from the Notion side.
 
         ``remote_records`` are full identity records supplied by the Notion
-        side. A character Notion does not have is never created locally.
+        side. A character Notion does not have is never created locally. A
+        record carrying a hand-written approval receipt is refused and NOTHING
+        is written: a receipt is only ever the one the approval step minted,
+        never a dict a caller typed or reloaded from a JSON file.
         """
+        records = [] if remote_records is None else _plain_sequence(
+            remote_records, "Notion record list")
         restored = []
-        for remote in remote_records or []:
-            if not isinstance(remote, dict):
-                raise StoreError("A Notion record must be an object.")
-            if remote.get("client_id") != self.client_namespace:
+        for remote in records:
+            given = remote
+            remote = _mapping(given)
+            if remote is None:
+                raise StoreError(
+                    "A Notion record must be a plain object, not %s. A subclass "
+                    "is refused because it can lie in get()."
+                    % type(given).__name__)
+            owner = remote.get("client_id")
+            if type(owner) is not str or owner != self.client_namespace:
                 raise StoreError(
                     "A Notion record for another client cannot be restored here.")
             prepared = dict(remote)

@@ -7,6 +7,7 @@ Run: python3 test_notion_store_s75_t15.py
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -189,7 +190,7 @@ class StoreTest(unittest.TestCase):
 
 
 def receipt(over=None):
-    """A receipt in its real shape, bound to this fixture character."""
+    """A receipt in its real shape, written out by hand. No mint, no promotion."""
     binding = {
         "kind": identity.RECEIPT_KIND,
         "receipt_id": "receipt-001",
@@ -200,6 +201,17 @@ def receipt(over=None):
     }
     binding.update(over or {})
     return binding
+
+
+def minted(over=None):
+    """The receipt the explicit promotion step mints, mint mark and all.
+
+    This is the ONLY way to get a receipt the store will accept, and it is the
+    same call ``promote()`` makes.
+    """
+    fields = receipt(over)
+    fields.pop(identity.MINT_FIELD, None)
+    return identity.mint_receipt(fields)
 
 
 def with_bindings(bindings, state="APPROVED", namespace=NS_A):
@@ -301,9 +313,12 @@ class ForgedApprovalTest(unittest.TestCase):
                 self.assertTrue(caught.exception.defects)
 
     def test_validate_identity_accepts_only_a_resolved_receipt(self):
-        identity.validate_identity(self.sealed([receipt()]))
+        identity.validate_identity(self.sealed([minted()]))
         with self.assertRaises(identity.IdentityDefect):
             identity.validate_identity(self.sealed([]))  # approved, no receipt
+        # a receipt written out by hand has no mint mark and never resolves
+        with self.assertRaises(identity.IdentityDefect):
+            identity.validate_identity(self.sealed([receipt()]))
 
     # --- the honest path still works -------------------------------------
 
@@ -315,7 +330,7 @@ class ForgedApprovalTest(unittest.TestCase):
                                 approval={"approver": "client",
                                           "receipt_id": "receipt-001"})
         self.assertEqual(approved["draft_state"], "APPROVED")
-        self.assertEqual(approved["approval_bindings"], [receipt()])
+        self.assertEqual(approved["approval_bindings"], [minted()])
         self.assertIsNone(identity.resolve_receipt(approved["approval_bindings"][0],
                                                    approved))
         identity.validate_identity(approved)
@@ -337,7 +352,11 @@ class ForgedApprovalTest(unittest.TestCase):
                 self.assertEqual(store.get_identity(CHAR), approved)
 
         # the one receipt the promotion wrote is kept exactly, never re-minted
-        self.assertEqual(store.put_identity(with_bindings([receipt()])), approved)
+        self.assertEqual(store.put_identity(with_bindings([minted()])), approved)
+        # a hand-written copy of that same receipt is still refused
+        with self.assertRaises(store_mod.StoreError):
+            store.put_identity(with_bindings([receipt()]))
+        self.assertEqual(store.get_identity(CHAR), approved)
 
     def test_restore_refuses_a_notion_record_with_a_forged_receipt(self):
         store = self.store()
@@ -363,7 +382,7 @@ class ForgedApprovalTest(unittest.TestCase):
         record = dict(approved)
         record["client_id"] = "fixture-client-restored"
         self.assertEqual(target.restore_from_notion([record]), [CHAR])
-        self.assertEqual(target.get_identity(CHAR)["approval_bindings"], [receipt()])
+        self.assertEqual(target.get_identity(CHAR)["approval_bindings"], [minted()])
 
     # --- the rest of the row stays intact --------------------------------
 
@@ -396,6 +415,272 @@ class ForgedApprovalTest(unittest.TestCase):
         self.assertEqual(b.identities(), [])
         self.assertIsNone(b.load_registry())
         self.assertRaises(store_mod.StoreError, b.put_identity, load_fixture())
+
+
+def tree_bytes(root):
+    """Every byte on disk under the cache root, keyed by relative path."""
+    found = {}
+    for base, _dirs, names in os.walk(root):
+        for name in sorted(names):
+            path = os.path.join(base, name)
+            with open(path, "rb") as f:
+                found[os.path.relpath(path, root)] = f.read()
+    return found
+
+
+class LyingStr(str):
+    """A str whose __eq__ always says yes. Refused by exact type, never asked."""
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+    def __hash__(self):
+        return hash(str(self))
+
+
+class LyingDict(dict):
+    """A dict whose get() always reports the field the caller wishes it had."""
+
+    def get(self, key, default=None):
+        if key in ("kind", "draft_state"):
+            return {"kind": identity.RECEIPT_KIND,
+                    "draft_state": "APPROVED"}[key]
+        return dict.get(self, key, default)
+
+
+class LyingList(list):
+    """A list that reports itself empty while holding a forged receipt."""
+
+    def __bool__(self):
+        return False
+
+    def __len__(self):
+        return 0
+
+
+class MintMarkTest(unittest.TestCase):
+    """Round three: a receipt is a receipt only when the system minted it."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="s75-t15-")
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def store(self, namespace=NS_A):
+        return store_mod.NotionStore(self.root, namespace)
+
+    def approved_record(self, bindings):
+        return identity.seal_identity(with_bindings(bindings))
+
+    # --- 1. a hand-built receipt, promote() never called ------------------
+
+    def test_hand_built_receipt_never_resolves_and_never_reaches_disk(self):
+        hand_built = receipt({"receipt_id": "rcp-HANDWRITTEN-NOT-MINTED"})
+        record = with_bindings([hand_built])
+        self.assertIsNotNone(identity.resolve_receipt(
+            hand_built, identity.seal_identity(record)))
+        with self.assertRaises(identity.IdentityDefect):
+            identity.validate_identity(identity.seal_identity(record))
+
+        store = self.store()
+        before = tree_bytes(self.root)
+        with self.assertRaises(store_mod.StoreError) as caught:
+            store.restore_from_notion([record])
+        self.assertIn("mint", str(caught.exception))
+        self.assertEqual(tree_bytes(self.root), before)   # zero side effects
+        self.assertEqual(store.identities(), [])
+        self.assertNotIn(b"rcp-HANDWRITTEN-NOT-MINTED",
+                         b"".join(tree_bytes(self.root).values()))
+
+        with self.assertRaises(store_mod.StoreError):
+            store.put_identity(record)
+        self.assertEqual(store.identities(), [])
+
+    def test_a_mint_mark_is_what_makes_a_receipt_a_receipt(self):
+        store = self.store()
+        store.put_identity(load_fixture())
+        store.promote(CHAR, "DRAFT_COMPLETE")
+        approved = store.promote(CHAR, "APPROVED",
+                                 approval={"approver": "client",
+                                           "receipt_id": "receipt-001"})
+        minted_receipt = approved["approval_bindings"][0]
+        self.assertTrue(minted_receipt[identity.MINT_FIELD])
+
+        # strip the mark: the same dict a caller can type, refused
+        bare = {k: v for k, v in minted_receipt.items()
+                if k != identity.MINT_FIELD}
+        self.assertIsNotNone(identity.resolve_receipt(bare, approved))
+        # the mark belongs to the fields it covers: rewriting one field breaks it
+        rewritten = dict(minted_receipt, approver="someone else")
+        self.assertIsNotNone(identity.resolve_receipt(rewritten, approved))
+
+    # --- 2. a str subclass that lies in __eq__ ----------------------------
+
+    def test_str_subclass_lying_in_eq_is_refused_by_name(self):
+        # the threat is real: this is what a naive != check would believe
+        self.assertTrue(LyingStr("junk") == identity.RECEIPT_KIND)
+        self.assertFalse(LyingStr("DRAFT_INCOMPLETE") != "APPROVED")
+
+        binding = dict(minted({"receipt_id": "rcp-lying-str"}),
+                       kind=LyingStr("junk"))
+        reason = identity.resolve_receipt(binding, self.approved_record([binding]))
+        self.assertIsNotNone(reason)
+        self.assertIn("must be a plain string", reason)
+
+        record = with_bindings([minted()])
+        record["draft_state"] = LyingStr("DRAFT_INCOMPLETE")
+        record.pop("content_digest", None)
+        with self.assertRaises(identity.IdentityDefect):
+            identity.validate_identity(identity.seal_identity(record))
+
+        poisoned = with_bindings([minted()])
+        poisoned["approval_bindings"][0]["to_state"] = LyingStr("APPROVED")
+        poisoned.pop("content_digest", None)
+        with self.assertRaises(identity.IdentityDefect):
+            identity.validate_identity(identity.seal_identity(poisoned))
+        store = self.store()
+        with self.assertRaises(store_mod.StoreError):
+            store.restore_from_notion([poisoned])
+        self.assertEqual(store.identities(), [])
+
+    # --- 3. a dict subclass whose get() lies ------------------------------
+
+    def test_dict_subclass_lying_in_get_is_refused_by_name(self):
+        binding = LyingDict(receipt({"receipt_id": "rcp-lying-dict"}))
+        # the threat is real: get() would have answered every question right
+        self.assertEqual(binding.get("kind"), identity.RECEIPT_KIND)
+        reason = identity.resolve_receipt(binding,
+                                          self.approved_record([binding]))
+        self.assertIsNotNone(reason)
+        self.assertIn("LyingDict", reason)
+
+        store = self.store()
+        with self.assertRaises(store_mod.StoreError) as caught:
+            store.restore_from_notion([LyingDict(with_bindings([binding]))])
+        self.assertIn("plain object", str(caught.exception))
+        self.assertEqual(store.identities(), [])
+        self.assertEqual(tree_bytes(self.root), {})
+
+    # --- 4. a list subclass whose __bool__ and __len__ lie ----------------
+
+    def test_list_subclass_lying_about_being_empty_is_refused_by_name(self):
+        smuggled = LyingList([receipt({"receipt_id": "rcp-smuggled"})])
+        # the threat is real: the draft check would have seen "no receipts"
+        self.assertFalse(smuggled)
+        self.assertEqual(len(smuggled), 0)
+
+        record = with_bindings(smuggled, state="DRAFT_COMPLETE")
+        with self.assertRaises(identity.IdentityDefect) as caught:
+            identity.validate_identity(identity.seal_identity(record))
+        self.assertTrue(any("plain list" in d["message"]
+                            for d in caught.exception.defects))
+
+        store = self.store()
+        store.put_identity(load_fixture())
+        before = tree_bytes(self.root)
+        with self.assertRaises(store_mod.StoreError):
+            store.put_identity(with_bindings(smuggled, state="DRAFT_COMPLETE"))
+        self.assertEqual(tree_bytes(self.root), before)
+
+        with self.assertRaises(store_mod.StoreError):
+            store.restore_from_notion(LyingList([with_bindings([minted()])]))
+        self.assertEqual(store.identities()[0]["character_id"], CHAR)
+        self.assertEqual(store.identities()[0]["approval_bindings"], [])
+
+    # --- 5. one receipt id, two characters; and one step, two receipts ----
+
+    def test_receipt_id_is_single_use_and_never_moves_to_another_character(self):
+        mine = minted({"receipt_id": "rcp-reuse"})
+        transplanted = dict(mine, character_id="chr-someone-else")
+        reason = identity.resolve_receipt(transplanted,
+                                          self.approved_record([transplanted]))
+        self.assertIsNotNone(reason)
+        self.assertIn("was not minted by the approval step", reason)
+
+        with self.assertRaises(identity.IdentityDefect) as caught:
+            minted({"receipt_id": "rcp-reuse", "character_id": "chr-someone-else"})
+        self.assertIn("single-use", str(caught.exception))
+
+    def test_two_receipts_for_one_promotion_step_are_refused(self):
+        first = minted({"receipt_id": "rcp-step-first"})
+        second = minted({"receipt_id": "rcp-step-second"})
+        self.assertIsNone(identity.resolve_receipt(first,
+                                                   self.approved_record([first])))
+        self.assertIsNone(identity.resolve_receipt(second,
+                                                   self.approved_record([second])))
+
+        record = with_bindings([first, second])
+        with self.assertRaises(identity.IdentityDefect) as caught:
+            identity.validate_identity(identity.seal_identity(record))
+        self.assertTrue(any("one promotion step" in d["message"]
+                            for d in caught.exception.defects))
+
+        store = self.store()
+        with self.assertRaises(store_mod.StoreError):
+            store.restore_from_notion([record])
+        self.assertEqual(store.identities(), [])
+
+    # --- the legitimate flow still seals end to end -----------------------
+
+    def test_the_legitimate_flow_still_seals_and_reads_back(self):
+        store = self.store()
+        saved = store.put_identity(load_fixture())
+        self.assertEqual(saved["draft_state"], "DRAFT_INCOMPLETE")
+        store.promote(CHAR, "DRAFT_COMPLETE")
+        approved = store.promote(CHAR, "APPROVED",
+                                 approval={"approver": "client",
+                                           "receipt_id": "receipt-001"})
+
+        self.assertEqual(approved["draft_state"], "APPROVED")
+        self.assertEqual(len(approved["approval_bindings"]), 1)
+        self.assertIsNone(identity.resolve_receipt(approved["approval_bindings"][0],
+                                                   approved))
+        identity.validate_identity(approved)
+
+        on_disk = tree_bytes(self.root)
+        self.assertIn(b"approval_receipt", b"".join(on_disk.values()))
+        self.assertIn(b"mint_mark", b"".join(on_disk.values()))
+        self.assertEqual(store.get_identity(CHAR), approved)
+        self.assertEqual(store.sync_state(CHAR, approved["revision"]), "IN_SYNC")
+
+    # --- a receipt reloaded from JSON written by another run --------------
+
+    def test_a_receipt_reloaded_from_json_written_by_another_run_is_refused(self):
+        child = (
+            "import json, sys\n"
+            "sys.path.insert(0, %r)\n"
+            "from character_library import notion_store as store_mod\n"
+            "store = store_mod.NotionStore(sys.argv[1], %r)\n"
+            "store.put_identity(json.load(open(sys.argv[2], encoding='utf-8')))\n"
+            "store.promote(%r, 'DRAFT_COMPLETE')\n"
+            "approved = store.promote(%r, 'APPROVED',\n"
+            "                         approval={'approver': 'client',\n"
+            "                                   'receipt_id': 'receipt-001'})\n"
+            "json.dump(approved, sys.stdout)\n"
+            % (CORE, NS_A, CHAR, CHAR)
+        )
+        else_root = tempfile.mkdtemp(prefix="s75-t15-else-")
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", child, else_root, FIXTURE],
+                capture_output=True, text=True, check=True)
+        finally:
+            shutil.rmtree(else_root, ignore_errors=True)
+
+        reloaded = json.loads(proc.stdout)          # exactly a dict from JSON
+        self.assertEqual(reloaded["approval_bindings"][0]["receipt_id"],
+                         "receipt-001")
+        self.assertIsNotNone(identity.resolve_receipt(reloaded["approval_bindings"][0],
+                                                      reloaded))
+
+        target = self.store()
+        with self.assertRaises(store_mod.StoreError):
+            target.restore_from_notion([reloaded])
+        self.assertEqual(target.identities(), [])
 
 
 if __name__ == "__main__":
