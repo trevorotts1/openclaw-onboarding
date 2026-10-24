@@ -1,0 +1,72 @@
+{
+  "style_id": "alternative-rnb",
+  "label": "Alternative R&B",
+  "description": "intimate, spacious R&B with inventive textures, flexible grooves, and an expressive vocal.",
+  "catalog_revision": "2026-10-24",
+  "recipe_revision": "1.0.0",
+  "deliveries": ["spoken", "sung"],
+  "client_references": {
+    "artists": ["Tems"],
+    "explanation": "Broad alternative R&B and Afro-soul reference for expressive vocal presence and inventive texture; not an exclusive category or a voice to copy."
+  },
+  "production_traits": {
+    "musical_identity": "alternative R&B: intimate, uncluttered R&B with deliberate negative space, inventive selected textures, flexible groove and an expressive close vocal",
+    "instrumentation": [
+      "restrained bass line with warm sub weight",
+      "dry or unusual percussion, clipped and close",
+      "selected textural guitar, keyboard or synth touches",
+      "sparse kick and snare with syncopated gaps",
+      "optional layered vocal harmony on the returning phrase"
+    ],
+    "avoided_instrumentation": [
+      "dense programmed pop production",
+      "wall of reverb",
+      "constant four-on-the-floor club beat",
+      "dembow pattern"
+    ],
+    "rhythm": "ordinarily 4/4 with a syncopated, flexible pocket when the words support it; silence and gaps are part of the groove",
+    "tempo": {
+      "min_bpm": 68,
+      "max_bpm": 112,
+      "meter": "4/4",
+      "note": "flexible pocket; tempo chosen from the story's energy, not from a default slow tempo"
+    },
+    "vocal_delivery": "expressive, close lead with purposeful rests, original melodic shapes and optional layered vocal harmony that keeps words easy to hear, dry upfront vocal",
+    "energy_map": {
+      "consequence": "a small textural gesture underscores the consequence before the groove arrives",
+      "obstacle": "space and harmonic friction expose the contradiction",
+      "choice": "percussion drops out, leaving the decision in negative space",
+      "change": "harmony, register or rhythmic density shifts after the consequential choice",
+      "hook": "understated but recognizable hook expresses the earned change",
+      "cta": "final hook thins to the close lead and one texture under the CTA"
+    },
+    "hook_guidance": "the hook may be understated but must be recognizable and must express the earned change; nonstandard form is allowed only when the scene plan and duration stay coherent",
+    "spoken_sung_split": "spoken, rap and sung parts follow their elected sheet tags; nothing is inferred from the genre, and no rap is added by default",
+    "delivery_constraints": "keep words easy to hear over the texture; preserve selected language, gender and accent; no artist reference or alias enters production fields",
+    "word_fit": "negative space counts as intentional time, not missing lyrics; leave space around important names and breath-driven phrasing",
+    "mood_policy": "story_selected",
+    "story_energy": "mood chosen from the approved story: warm, tense, playful or confident; never automatically slow, sad or whispered",
+    "duration_guidance": {
+      "60": "one texture, one consequential turn, one hook and the CTA; rests are preserved, not filled",
+      "90": "two short sections with a textural break before the decision",
+      "120": "keeps meaningful rests and protected words; one harmonic shift after the choice",
+      "180": "adds a second texture and one instrumental passage that advances the story",
+      "300": "three scenes, a stripped middle section, hook phrase returns re-harmonized",
+      "600": "long-form with a second act and evolving textures; no instrumental meandering and no repeated filler"
+    },
+    "examples": [
+      "The unanswered phone rings into a sparse beat; after the lead answers, a warmer harmony changes the returning melodic phrase."
+    ]
+  },
+  "section_hint": "[Verse] close and uncluttered, [Hook] understated but clear, [Break] textural turn, [Hook] changed phrase",
+  "negative_constraints": [
+    "no mandatory melancholy",
+    "no mandatory whisper",
+    "no club four-on-the-floor",
+    "no artist name or alias in any production field"
+  ],
+  "test_ids": [
+    "test_alternative_rnb_compiles_texture_and_flexible_groove",
+    "test_alternative_rnb_is_not_automatically_sad"
+  ]
+}
