@@ -1628,8 +1628,10 @@ def main(argv=None):
             return 1                               # refuse loudly, never a half file
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         return 0
+    # A run-bound card is an intake turn, even when the caller omits --step.
+    # The unbound preview and the Studio export above retain their own shapes.
     if (a.seed_answers_file or a.format == "session-json"
-            or (a.step and (a.run_dir or a.run_state_file))):
+            or a.run_dir or a.run_state_file):
         from intake_preflight.card_session_cli import run
         return run(a, questions=qs, purpose_flow=purpose_flow)
     if a.step:
