@@ -1,0 +1,7 @@
+# search: C3.human-fence
+# command: git grep -nF def human_takeover 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/consent_gate.py
+# scope: consent_gate.py
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/consent_gate.py:299:    def human_takeover(self, tenant_id: str, canonical_contact_id: str, *,

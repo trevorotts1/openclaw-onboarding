@@ -1,0 +1,46 @@
+=== cwd: repo root ===
+
+$ python3 -B 38-conversational-ai-system/tools/consent_gate.py
+OK 15 PASS
+rc=0
+
+=== cwd: 38-conversational-ai-system/tools ===
+$ python3 -B -m unittest tests.test_pb_contracts tests.test_direct_fulfillment tests.test_bootstrap_engine tests.test_compat_guard -q
+----------------------------------------------------------------------
+Ran 118 tests in 9.181s
+
+OK
+rc=0
+
+=== cwd: repo root ===
+$ bash 38-conversational-ai-system/scripts/qc-self-test.sh
+=== qc-self-test: backend self-test standard + gate ===
+skill dir : /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-206-lane/wt/38-conversational-ai-system
+
+  [PASS] 24-self-test-hook.sh exists, parses, POSTs a synthetic flat-23-key inbound with the real Bearer
+  [PASS] verifies 200/{ok:true} + no 401/429 + conversation-log read + GHL send messageId + temp-contact cleanup
+  [PASS] writes selfTestPassed, fails on error, wired as a blocking readiness gate + documented
+
+RESULT: PASS — the agent self-tests the backend by ground truth before the client ever does.
+rc=0
+
+$ python3 -B 35-social-media-planner/scripts/profile_capability.py capabilities --channel facebook --account-type personal
+{
+  "assisted_statuses": [
+    "awaiting-operator",
+    "operator-confirmed"
+  ],
+  "count": 1,
+  "declared_at": "2026-10-24",
+  "forbidden_assisted_statuses": [
+rc=0
+
+$ python3 -B 38-conversational-ai-system/tools/pb_contracts.py validate --kind approval --file 38-conversational-ai-system/tools/tests/fixtures/pb-contracts/approval/manifest.json
+{
+  "command": "validate",
+  "errors": [],
+  "file": "38-conversational-ai-system/tools/tests/fixtures/pb-contracts/approval/manifest.json",
+  "kind": "approval",
+  "ok": true
+}
+rc=0

@@ -1,0 +1,7 @@
+# search: C5.slot-order-rule
+# command: git grep -nF due_at must increase across slots 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/pb_contracts.py
+# scope: pb_contracts.py
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:358:                errs.append("$.reminder_slots: due_at must increase across slots")

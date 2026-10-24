@@ -1,0 +1,6 @@
+# search: C5.absent-artifact-name
+# command: git grep -niF reminder-state-machine 144ec54507695371b0eaea1e06a561d7cd76273b -- .
+# scope: all tracked paths
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 1  count: 0  verdict: absent
+# --- stdout ---

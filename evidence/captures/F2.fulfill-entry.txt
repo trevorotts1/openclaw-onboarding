@@ -1,0 +1,7 @@
+# search: F2.fulfill-entry
+# command: git grep -nF def fulfill( 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/direct_fulfillment.py
+# scope: direct_fulfillment.py
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/direct_fulfillment.py:462:def fulfill(store: DurableStore, ledger: FulfillmentLedger,

@@ -1,0 +1,8 @@
+# search: C1.channel-identifier-types
+# command: git grep -nF CHANNEL_IDENTIFIER_TYPES 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/tenant_identity.py
+# scope: tenant_identity.py
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 2  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tenant_identity.py:48:CHANNEL_IDENTIFIER_TYPES = {
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tenant_identity.py:562:        ident_type = CHANNEL_IDENTIFIER_TYPES.get(channel.strip().lower())

@@ -1,0 +1,7 @@
+# search: PIN.commits-ahead-of-bccc4050f
+# command: git rev-list --count bccc4050f8ed98b2d9b55cfc087c27c924d62b03..144ec54507695371b0eaea1e06a561d7cd76273b
+# scope: commit graph
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+148

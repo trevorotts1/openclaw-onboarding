@@ -1,0 +1,362 @@
+# search: PIN.worktrees
+# command: git worktree list --porcelain
+# scope: local clone
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 267  verdict: present
+# --- stdout ---
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/openclaw-onboarding
+HEAD d619b5ea8862193c414a86418a9c907b496bb087
+branch refs/heads/main
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/build-t-29-lane/repo
+HEAD 3bb737341dfecd36769ae8cf87d9944ba2258a2b
+branch refs/heads/pb/PBB-123/t-29
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/c-t-43-lane/repo
+HEAD d32103b2f32571c16e82504e92e845e28bb21432
+branch refs/heads/pb/PBB-130/t-43-repair
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/c-t-46-lane/repo
+HEAD fe72a421cce304f8ea4e8202ff15c504b4da28b4
+branch refs/heads/pb/PBB-131/t-46-repair
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-019-operator/repo
+HEAD 4d9a2660c670caa4f7ceada4184eed87513cc86c
+branch refs/heads/integ/pbb-041-batch
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-158-lane/tree
+HEAD 8f49e6d2ba9455699e528e187b41f34e0e9ddd52
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-159-lane/tree-t25
+HEAD ead48c654ff16bcc9c5de1cb683cf9637662b38b
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-159-lane/tree-t26
+HEAD bd6fbd7ebf5d8fc8b659b37d5ff0f66dc6d509b7
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-162-lane/wt16
+HEAD 2f5c8cb16da9bc00c5408edc964da60132e496b8
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-162-lane/wt19
+HEAD cc79b30dbf56cc4634f678622123b392c29d792b
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-163-lane/tree
+HEAD 8f49e6d2ba9455699e528e187b41f34e0e9ddd52
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-164-lane/tree-t25
+HEAD ead48c654ff16bcc9c5de1cb683cf9637662b38b
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-164-lane/tree-t26
+HEAD bd6fbd7ebf5d8fc8b659b37d5ff0f66dc6d509b7
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-168-qc/wt
+HEAD 2d679b209e580cf8b3ec0508634a83f771c5b143
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-170-lane/tree
+HEAD 060f878acd5b4b0a6502a765c7eb825c6d24766b
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-171-qc/wt
+HEAD 6395572224bceb90d2203b4fb46686a87fe15738
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-178-qc/wt
+HEAD 370b968aeaf8850044361ea64b5d861400f1fd27
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-179-qc/wt
+HEAD 868b89492c5e5ca8b321758f9426a3a19a299166
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-192-lane/wt
+HEAD 74ca36d59be4b4d9a6d852f676072e3dd33c8949
+branch refs/heads/pb/PBB-192/t-28
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-195-lane/tree-new
+HEAD 15e7b22d5cf660a51f01b5fc905d698f87bc8348
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-195-lane/tree-old
+HEAD 8f49e6d2ba9455699e528e187b41f34e0e9ddd52
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-197-qc/wt
+HEAD b6f8c3626c635904de28daa9722eed0dc00724fe
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-199-qc/wt
+HEAD a8084d45cfba5474a458f36e091311c0539b77e4
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-200-lane/repo
+HEAD 702d6e4cdb4e1b4737c48cd8359c8905d427e2bb
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-201-lane/wt
+HEAD 144ec54507695371b0eaea1e06a561d7cd76273b
+branch refs/heads/pb/PBB-201/t-05
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-202-lane/wt
+HEAD 868b89492c5e5ca8b321758f9426a3a19a299166
+branch refs/heads/pb/PBB-202/t-38
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-203-lane/wt
+HEAD ffd6cc970bf7132e868ae7fbb5b8e39d2930496e
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-205-qc/wt
+HEAD a8084d45cfba5474a458f36e091311c0539b77e4
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-206-lane/wt
+HEAD b7874f1aca1a94419444213739231db018e2dbc5
+branch refs/heads/pb/PBB-206/t01-inventory
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-207-lane/wt
+HEAD b6f8c3626c635904de28daa9722eed0dc00724fe
+branch refs/heads/pb/PBB-207/t-20-repair
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo
+HEAD 702d6e4cdb4e1b4737c48cd8359c8905d427e2bb
+branch refs/heads/pb/PBB-220/t-05
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/qc4-t-27-lane/wt
+HEAD d4f0b1a48f642d0e3397b6d0b1f9888290858c15
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/T-28-lane/repo
+HEAD c1c991f8f19542f39888a33d79f64f11ed1b7e96
+branch refs/heads/pb/PBB-122/t-28
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/scratch/qc2-t-16-pbb133/wt
+HEAD 2f5c8cb16da9bc00c5408edc964da60132e496b8
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/tmp/PBB-169-qc-wt
+HEAD c3906b923f62208adb15661781e609f335f1fae7
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/tmp/PBB-192-qc/wt
+HEAD 74ca36d59be4b4d9a6d852f676072e3dd33c8949
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/tmp/pbb-209-qc-t28
+HEAD 74ca36d59be4b4d9a6d852f676072e3dd33c8949
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/tmp/pbb206/pinned-t01
+HEAD 144ec54507695371b0eaea1e06a561d7cd76273b
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/PBB-184-qc/wt
+HEAD ffd6cc970bf7132e868ae7fbb5b8e39d2930496e
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-04
+HEAD 702d6e4cdb4e1b4737c48cd8359c8905d427e2bb
+branch refs/heads/pb/PBB-177/t-04
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-14
+HEAD ffd6cc970bf7132e868ae7fbb5b8e39d2930496e
+branch refs/heads/pb/PBB-132/t-14
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-16
+HEAD 2d679b209e580cf8b3ec0508634a83f771c5b143
+branch refs/heads/pb/PBB-113/t-16
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-17
+HEAD 6395572224bceb90d2203b4fb46686a87fe15738
+branch refs/heads/pb/PBB-134/t-17
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-19
+HEAD c3906b923f62208adb15661781e609f335f1fae7
+branch refs/heads/pb/PBB-115/t-19
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-20
+HEAD b6f8c3626c635904de28daa9722eed0dc00724fe
+branch refs/heads/pb/PBB-142/t-20
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-21
+HEAD a8084d45cfba5474a458f36e091311c0539b77e4
+branch refs/heads/pb/PBB-143/t-21
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-23
+HEAD 15e7b22d5cf660a51f01b5fc905d698f87bc8348
+branch refs/heads/pb/PBB-136/t-23
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-25
+HEAD ead48c654ff16bcc9c5de1cb683cf9637662b38b
+branch refs/heads/pb/PBB-119/t-25
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-26
+HEAD bd6fbd7ebf5d8fc8b659b37d5ff0f66dc6d509b7
+branch refs/heads/pb/PBB-145/t-26
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-27
+HEAD d4f0b1a48f642d0e3397b6d0b1f9888290858c15
+branch refs/heads/pb/PBB-146/t-27
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-28
+HEAD 370b968aeaf8850044361ea64b5d861400f1fd27
+branch refs/heads/pb/PBB-137/t-28
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-29
+HEAD a9725fcdbc8bbf5b9acf22de2546cce4f029227f
+branch refs/heads/pb/PBB-138/t-29
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/b-t-38
+HEAD 868b89492c5e5ca8b321758f9426a3a19a299166
+branch refs/heads/pb/PBB-139/t-38
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-openclaw-onboarding
+HEAD 053c4fee91a3adc63231dc6212262e5c4e8b6a0d
+branch refs/heads/pb/T-08/shared-contracts
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t13
+HEAD d117da5ce8205b998bb3d7357dacf22f44f597ab
+branch refs/heads/pb/PBB-067/t13-fulfillment
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t36
+HEAD b6d8a42622a97fe35e203edc03740cf7392999f3
+branch refs/heads/pb/PBB-074/t36-idempotent-setup
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t39
+HEAD 8ed3f6fbdf0115fb0b598fdeb5d64ed212ced2fb
+branch refs/heads/pb/PBB-068/t39-compat
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t42
+HEAD 277a3f043851bac7dd521909e48daa6b49e8d754
+branch refs/heads/pb/PBB-069/t42-traces
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t43
+HEAD b5a39964859dcd0fd1babbbfac4c8887233ec3f0
+branch refs/heads/pb/PBB-130/t-43
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t46
+HEAD 64fa09cfafa840e74d0ddcfcbca5dc9d63e7bab1
+branch refs/heads/pb/PBB-131/t-46
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/build-t47
+HEAD 21ce26aebe01ba506ee1af388de15d21e3b7c3ae
+branch refs/heads/pb/PBB-070/t47-compat-proof
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-f39-clock
+HEAD 84f7658c3b4cabd5cee8b87b8cf19bc11222ad58
+branch refs/heads/pb/PBB-077/f39-clock
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-frontdoor
+HEAD 5378a2d2b59da70350c7074b0fd6ad26841bf3a2
+branch refs/heads/pb/PBB-090/frontdoor-argv
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t01
+HEAD 5bebbaf058bb5e457a102b371a8ec995fe827651
+branch refs/heads/pb/PBB-083/t01-inventory
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t01b
+HEAD 9ed7985a3a469ea3a8017d99702420d7a029daf1
+branch refs/heads/pb/PBB-093/t01-inventory
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t01c
+HEAD 925c01f426d9973535abe00e0dfcb9ca4b9c58f7
+branch refs/heads/pb/PBB-101/t01-inventory
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t01d
+HEAD 00a8db3cd58122f1ae53c922b9766db33e6d4b48
+branch refs/heads/pb/PBB-109/t01-inventory
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t06
+HEAD 2209b2870c2a4401ff6887ce230876c21f5158e1
+branch refs/heads/pb/T-06b/brief-approval-binding
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t06c
+HEAD 4286832a9a8e9ae6362db2003fdc76e3b707610e
+branch refs/heads/pb/T-06c/load-trust-boundary
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t08b
+HEAD 7c05a16aaf28183b2c2cd8046691ab56d079d46f
+branch refs/heads/pb/T-08b2/f5-adjudication
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t08d
+HEAD aa1a27bcbaf8ba89e3c461566f731ba634bb0fbd
+branch refs/heads/pb/T-08c/whitespace-gate
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t08e
+HEAD 6b4e659e9eb915274156876dd966a68ab5545148
+branch refs/heads/pb/T-08d/format-chars
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t36
+HEAD a699effcdfbb0a624f9fd992dcffb683f10f7bde
+branch refs/heads/pb/PBB-081/t36-idem
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/fix-t39-cas
+HEAD dd185a0496d556452a9182fad4050268eb15301a
+branch refs/heads/pb/PBB-078/t39-cas
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/integ-pbb099
+HEAD 613198296ada1b3edf890cd25e30121b8b742ee1
+branch refs/heads/batch/pbb-099-integration
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb002
+HEAD 053c4fee91a3adc63231dc6212262e5c4e8b6a0d
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb002-base
+HEAD 2ee6a2ee246fe9d936928e4541055a594531842e
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb047
+HEAD 7c05a16aaf28183b2c2cd8046691ab56d079d46f
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb047-parent
+HEAD 8e98f155eea9461b9b031e25c09440a966810ffb
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb048
+HEAD 2209b2870c2a4401ff6887ce230876c21f5158e1
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb067
+HEAD d117da5ce8205b998bb3d7357dacf22f44f597ab
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb069-t42
+HEAD 277a3f043851bac7dd521909e48daa6b49e8d754
+branch refs/heads/pb/QC-PBB-069/t42-qc
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb078-prefix
+HEAD 8ed3f6fbdf0115fb0b598fdeb5d64ed212ced2fb
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb078-review
+HEAD dd185a0496d556452a9182fad4050268eb15301a
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb113-t16
+HEAD edc20ea1d38c82db20d12cf752f2dfa89ab775a6
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb114
+HEAD 5e8b38b9ccb6cd4522ccc2b2b0d30af5f57ea05c
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-pbb119-t25
+HEAD d7ec43e34f0838f8304ce92846bc177e1ac46e6a
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/qc-t-27
+HEAD 01f18e01b778484ccfcc0cf08bf95e7ee2de417d
+detached
+
+worktree /Volumes/mac mini m4/Downloads/git trees and automations/worktrees/pb-skill38-20261024/rev-t01
+HEAD ad1a01ea25da26a94ec1ea679e05af1dfd7c77c0
+branch refs/heads/pb/PBB-062/t01-inventory
+

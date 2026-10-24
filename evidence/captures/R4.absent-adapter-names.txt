@@ -1,0 +1,6 @@
+# search: R4.absent-adapter-names
+# command: git grep -niE instagram-route-adapter|page-comment-adapter|messenger-route-adapter|private-opener-adapter 144ec54507695371b0eaea1e06a561d7cd76273b -- .
+# scope: all tracked paths
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 1  count: 0  verdict: absent
+# --- stdout ---

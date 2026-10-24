@@ -1,0 +1,7 @@
+# search: G2.identity-def
+# command: git grep -nF collect_onboarding_identity() { 144ec54507695371b0eaea1e06a561d7cd76273b -- install.sh
+# scope: install.sh
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:install.sh:3077:collect_onboarding_identity() {

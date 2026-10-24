@@ -1,0 +1,8 @@
+# search: G5.bootstrap-name
+# command: git grep -niF client-bootstrap-engine 144ec54507695371b0eaea1e06a561d7cd76273b -- .
+# scope: all tracked paths
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 2  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/CHANGELOG.md:14:Adds one stdlib-only module, `tools/bootstrap_engine.py` (the T-36 `client-bootstrap-engine`), which provisions the objects a guided setup asks for into one target root. `plan()` is a pure scoped diff and writes nothing, so nothing can be reported as provisioned when it was only planned; `run()` is the only writer. Receipts were written once per run in 2.0.28; the per-step write-ahead durability claimed at the time landed in 2.0.29.
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/bootstrap_engine.py:4:Contract basis: Purple-Billboard TODO T-36 ("client-bootstrap-engine") and

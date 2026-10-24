@@ -1,0 +1,10 @@
+# search: J1.publishing-cycle
+# command: git grep -nF run-publishing-cycle.sh 144ec54507695371b0eaea1e06a561d7cd76273b -- 35-social-media-planner/scripts/run-publishing-cycle.sh
+# scope: run-publishing-cycle.sh
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 4  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:35-social-media-planner/scripts/run-publishing-cycle.sh:3:#  run-publishing-cycle.sh
+144ec54507695371b0eaea1e06a561d7cd76273b:35-social-media-planner/scripts/run-publishing-cycle.sh:15:#    run-publishing-cycle.sh --topic "<topic>" \
+144ec54507695371b0eaea1e06a561d7cd76273b:35-social-media-planner/scripts/run-publishing-cycle.sh:20:#    run-publishing-cycle.sh --help
+144ec54507695371b0eaea1e06a561d7cd76273b:35-social-media-planner/scripts/run-publishing-cycle.sh:25:SCRIPT_NAME="run-publishing-cycle.sh"

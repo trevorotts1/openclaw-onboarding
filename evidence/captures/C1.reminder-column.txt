@@ -1,0 +1,12 @@
+# search: C1.reminder-column
+# command: git grep -nF reminder_total 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/tenant_identity.py
+# scope: tenant_identity.py
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 6  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tenant_identity.py:109:    reminder_total       INTEGER NOT NULL DEFAULT 0,
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tenant_identity.py:445:                    "  unknown_sends, reminder_total, created_at)"
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tenant_identity.py:683:            "SELECT suppression, unknown_sends, reminder_total FROM contacts"
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tenant_identity.py:688:            "SELECT suppression, unknown_sends, reminder_total FROM contacts"
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tenant_identity.py:710:            " reminder_total = ?"
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/tenant_identity.py:715:                source["reminder_total"] + target["reminder_total"],

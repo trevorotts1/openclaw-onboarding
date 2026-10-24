@@ -1,0 +1,6 @@
+# search: C6.runtime-scheduler
+# command: git grep -niF intelligent-followup-protocol 144ec54507695371b0eaea1e06a561d7cd76273b -- *cron* *schedule* *04-register*
+# scope: paths whose name contains cron, schedule or 04-register
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 1  count: 0  verdict: absent
+# --- stdout ---

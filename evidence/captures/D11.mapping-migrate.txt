@@ -1,0 +1,7 @@
+# search: D11.mapping-migrate
+# command: git grep -nF s38_merge_mapping_body 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh
+# scope: 15-configure-hooks-mappings.sh
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh:199:  MERGED_MAPPING="$(s38_merge_mapping_body "$EXISTING_MAPPING" "$NEW_MAPPING" "$CONFIGURED_AGENT_IDS")"

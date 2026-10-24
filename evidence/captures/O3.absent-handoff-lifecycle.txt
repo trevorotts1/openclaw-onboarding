@@ -1,0 +1,6 @@
+# search: O3.absent-handoff-lifecycle
+# command: git grep -niE handoff_accept|handoff_due|handoff-lifecycle|backup_owner|backup-owner 144ec54507695371b0eaea1e06a561d7cd76273b -- .
+# scope: all tracked paths
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 1  count: 0  verdict: absent
+# --- stdout ---

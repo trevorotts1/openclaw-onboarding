@@ -1,0 +1,7 @@
+# search: J4.approval-semantic
+# command: git grep -nF def semantic_approval 144ec54507695371b0eaea1e06a561d7cd76273b -- 38-conversational-ai-system/tools/pb_contracts.py
+# scope: pb_contracts.py
+# pin: 144ec54507695371b0eaea1e06a561d7cd76273b
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+144ec54507695371b0eaea1e06a561d7cd76273b:38-conversational-ai-system/tools/pb_contracts.py:393:def semantic_approval(doc):
