@@ -16,7 +16,11 @@
 #      cloudflared-council, `cloudflared tunnel run --token-file <file>`. It is
 #      restarted only when the token file or the cloudflared path changes; the
 #      Command Center's own connector is never touched; the token value is
-#      never printed or logged. No token file = no-op (most boxes).
+#      never printed or logged. No token file = no-op (most boxes),
+#   5. verifies the copy the runtime RESOLVER selects
+#      (scripts/selected-tree-gate.mjs): competing copies are reported loudly
+#      and a stale, contract-drifted or executable-less selected copy exits 1,
+#      so no roll reports success after updating only an unused directory.
 # It writes nothing inside the skill folder and touches no credential, model,
 # openclaw.json, AGENTS.md, gateway or Command Center.
 #
@@ -322,6 +326,30 @@ if ! "$NODE_EXE" --check "$ENTRY" >/dev/null 2>&1; then
 fi
 CHANGED=0
 [ "$REL_ID" != "$PREV_REL" ] && CHANGED=1
+
+# --------------------------------------- 5b. selected-tree gate (truth rule)
+# verify-what-the-resolver-selects (scripts/selected-tree-gate.mjs): the
+# update must verify the copy the runtime RESOLVER selects (its
+# install-record, else the install-time resolver order), never just the
+# directory it happens to have written. Competing copies are reported
+# loudly; a stale, contract-drifted or executable-less SELECTED copy fails
+# here and exits 1, so update-skills.sh withholds the .wired sentinel and no
+# roll reports success after updating only an unused directory.
+# On a box with more than one copy the gate needs agent-resolver evidence:
+# export COUNCIL_AGENT_SKILL_DIR=<the path the agent resolves> (for OpenClaw the
+# shadowing root, e.g. ~/.agents/skills/council-of-wise-elders). Without it the
+# gate reports the selection as unproven and this step refuses — by design.
+GT_RC=0
+GT_ARGS=(--skill-dir "$SKILL_DIR" --prefix "$P" --home "$HOME")
+if [ -n "${COUNCIL_AGENT_SKILL_DIR:-}" ]; then
+  GT_ARGS+=(--agent-selected "$COUNCIL_AGENT_SKILL_DIR" --agent-source "COUNCIL_AGENT_SKILL_DIR")
+fi
+GT_OUT="$( "$NODE" "$SKILL_DIR/scripts/selected-tree-gate.mjs" "${GT_ARGS[@]}" 2>&1 )" || GT_RC=$?
+[ -n "$GT_OUT" ] && printf '%s\n' "$GT_OUT"
+if [ "$GT_RC" -ne 0 ]; then
+  say "NOT_READY TREE_GATE the copy the resolver selects failed verification (lines above); success is withheld"
+  exit 1
+fi
 
 # ---------------------------------------------- 6. public origin (hostname rule)
 # Every source below is populated at INSTALL time (the Command Center ships first,

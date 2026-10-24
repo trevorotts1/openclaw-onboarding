@@ -1,5 +1,16 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.53: the selected-tree gate stops accepting substitutes for evidence (W77S)
+
+In plain English: the gate no longer treats "a record exists" as proof of what the agent reads, no longer prefers one version file when the carriers disagree, and no longer accepts an archive or an installed path just because it exists.
+
+- Selection: the gate verifies the copy the intended OpenClaw agent resolves. An install-record or a fallback directory is a candidate, not evidence. When more than one copy exists, `--agent-selected PATH` (from the agent resolver) is required; without it the run reports `agent selection unproven` and fails instead of passing.
+- `wire.sh` passes that evidence through `COUNCIL_AGENT_SKILL_DIR` (the path the agent resolves, e.g. `~/.agents/skills/council-of-wise-elders` on OpenClaw). Unset on a multi-copy box means the step refuses with `NOT_READY TREE_GATE` — the honest outcome, never a pass.
+- Version identity: `version`, `skill-version.txt`, SKILL.md frontmatter and manifest `skill_version` must agree. A disagreement lists every carrier and fails; the reader never silently prefers the first file it can open.
+- Executables: an `archive` is verified as a zip that contains the entry, and an installed release's entry must be a non-empty JavaScript file that passes `node --check` when loading is enabled. Existence alone is not validity.
+- Tests: `scripts/tests/selected-tree-gate.test.mjs` 17/17 (new: unproven selection, carrier disagreement incl. manifest, non-zip archive, empty entry, unparseable entry, agent evidence naming a non-skill path).
+- Checks on this branch (no-spend): `node scripts/doctor.mjs` PASS with `versions agree: version=1.0.53 skill-version.txt=v1.0.53 frontmatter=1.0.53`; `node scripts/verify-bundles.mjs` VERIFY: PASS (entry hash + load). Runtime bundle unchanged (`b10bb16b…`): this release carries no runtime code change.
+
 ## v1.0.52: Council: the packaged executable ships, and no installer ever says ready from source presence alone (W77R)
 
 In plain English: the .skill archive and the 999 distribution now carry the built `runtime/dist/blackceo-council.mjs` (byte-reproducible: sha256 `b10bb16b740c2a20fa66a49f66c75361df35112754c533556b3e89093626186b`, 1,165,675 bytes), and every install/verify path proves the ACTUAL entry point - exists, byte hash matches the manifest's recorded `runtime_entry`, and it loads (`node --check` plus a real no-spend `--help` run) - before anything may report ready. A missing, stale, or broken build fails with the exact rebuild command (`npm ci && npm run build`), never a silent reuse of an old bundle, never "ready" from SKILL.md presence or source match.
