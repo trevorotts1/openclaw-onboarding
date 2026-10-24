@@ -38,8 +38,16 @@ def _case(data, case):
         manifest.update(copy.deepcopy(case["manifest_patch"]))
     if case.get("crowd_patch"):
         manifest["crowd_groups"][0].update(copy.deepcopy(case["crowd_patch"]))
+    if case.get("cast_entry_patch"):
+        patch = case["cast_entry_patch"]
+        entry = manifest["cast"][patch.get("index", 0)]
+        entry.update(copy.deepcopy(patch.get("set", {})))
+        for key in patch.get("delete", []):
+            entry.pop(key, None)
     if case.get("scene_patch"):
         scene.update(copy.deepcopy(case["scene_patch"]))
+    for key in case.get("scene_delete", []):
+        scene.pop(key, None)
     return manifest, [scene]
 
 
@@ -127,9 +135,47 @@ def test_absent_cast_is_not_a_people_free_opt_out():
     assert "missing requirement" in packet["defects"][0]["issue"]
 
 
+def test_scene_cast_field_absent_or_empty_fails_closed_with_a_real_speaker():
+    data = _fixture()
+    for patch in ({"scene_delete": ["cast_ids"]}, {"scene_patch": {"cast_ids": []}},
+                  {"scene_patch": {"cast_ids": None}}):
+        case = dict(data["cases"][0], **patch)
+        packet = CV.validate_cast(*_case(data, case))
+        assert packet["ok"] is False, patch
+        assert _matching(packet, {"field": "scene.cast_ids", "issue_contains": ""}), packet["defects"]
+
+
+def test_absent_and_empty_scene_cast_are_distinct_named_errors():
+    data = _fixture()
+    absent = CV.validate_cast(*_case(data, {"scene_delete": ["cast_ids"]}))
+    empty = CV.validate_cast(*_case(data, {"scene_patch": {"cast_ids": []}}))
+    assert [d["issue"] for d in absent["defects"]] == ["missing"]
+    assert [d["issue"] for d in empty["defects"]] == ["empty"]
+
+
+def test_cast_entry_null_and_empty_values_fail_closed():
+    data = _fixture()
+    for patch in ({"index": 0, "set": {"episode_role": None}},
+                  {"index": 0, "set": {"episode_role": "  "}},
+                  {"index": 0, "set": {"scene_ids": []}},
+                  {"index": 1, "delete": ["choice_or_consequence"]}):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch": patch}))
+        assert packet["ok"] is False, patch
+        assert packet["defects"], patch
+
+
+def test_crowd_group_id_present_but_null_is_refused():
+    data = _fixture()
+    packet = CV.validate_cast(*_case(data, {"crowd_patch": {"crowd_group_id": None}}))
+    assert packet["ok"] is False
+    assert any(d["field"] == "crowd_groups.crowd_group_id" and d["issue"] == "empty"
+               for d in packet["defects"])
+
+
 def test_speaker_sources_cover_lyrics_actions_and_reactions():
     scene = {
         "scene_id": "scene_x",
+        "cast_ids": [],
         "sung_lyrics": [{"line_id": "l1", "character_id": "char_ghost"}],
         "named_actions": [{"character_id": "char_ghost", "action": "opens the door"}],
         "featured_reactions": [{"character_id": "char_ghost", "reaction": "flinches"}],

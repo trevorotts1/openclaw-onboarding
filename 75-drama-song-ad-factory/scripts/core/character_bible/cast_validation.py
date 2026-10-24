@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 
-from story_first_contracts import validate_cast_manifest
+from story_first_contracts import CAST_ENTRY_FIELDS, validate_cast_manifest
 
 __all__ = [
     "CastValidationError",
@@ -155,6 +155,9 @@ def validate_crowd_group(group, scene_ids=None, cast_ids=None):
                for f in CROWD_REQUIRED if f not in group]
     gid = group.get("crowd_group_id")
     ref = {"crowd_group_id": gid}
+    if "crowd_group_id" in group and _blank(gid):
+        defects.append(_defect("crowd_groups.crowd_group_id", "empty", ref,
+                               "crowd_groups.crowd_group_id: key present but empty; give the group a stable ID"))
 
     composition = group.get("composition")
     if isinstance(composition, list):
@@ -263,11 +266,34 @@ def _scene_defects(scene, cast_ids, crowd_ids):
     sid = scene.get("scene_id") if isinstance(scene, dict) else None
     if not isinstance(scene, dict):
         return [_defect("scene_plan", "scene not an object")]
-    scene_cast = scene.get("cast_ids")
-    scene_cast_set = set(scene_cast) if isinstance(scene_cast, list) else set()
+    # The scene cast field fails closed: absent, empty and malformed are each
+    # refused by name. A scene that names real people can never hide behind an
+    # omitted cast list.
+    if "cast_ids" not in scene:
+        defects.append(_defect("scene.cast_ids", "missing",
+                               {"scene_id": sid},
+                               "scene %s: cast field absent; declare cast_ids explicitly" % sid))
+        scene_cast = []
+    else:
+        scene_cast = scene.get("cast_ids")
+        if _blank(scene_cast):
+            defects.append(_defect("scene.cast_ids", "empty",
+                                   {"scene_id": sid},
+                                   "scene %s: cast field present but empty; list the characters on camera" % sid))
+            scene_cast = []
+        elif not isinstance(scene_cast, list):
+            defects.append(_defect("scene.cast_ids", "not a list",
+                                   {"scene_id": sid},
+                                   "scene %s: cast field must be a list of character_ids" % sid))
+            scene_cast = []
+    scene_cast_set = {c for c in scene_cast if _text(c)}
 
-    for cid in scene_cast if isinstance(scene_cast, list) else []:
-        if cid not in cast_ids:
+    for cid in scene_cast:
+        if _blank(cid):
+            defects.append(_defect("scene.cast_ids", "cast id empty",
+                                   {"scene_id": sid, "character_id": cid},
+                                   "scene %s: cast_ids entry is empty; each entry is a declared character_id" % sid))
+        elif not _text(cid) or cid not in cast_ids:
             defects.append(_defect("scene.cast_ids", "cast id not declared in manifest",
                                    {"scene_id": sid, "character_id": cid}))
 
@@ -313,6 +339,28 @@ def validate_cast(manifest, scenes=None):
         defect.setdefault("message", "%s: %s" % (defect.get("field"), defect.get("issue")))
     cast = manifest.get("cast")
     entries = [e for e in cast if isinstance(e, dict)] if isinstance(cast, list) else []
+    # Absent keys are already refused by the S75-T03 envelope ("missing"); a key
+    # that is present but null, empty text or an empty list is refused here.
+    for entry in entries:
+        cid = entry.get("character_id")
+        ref = {"character_id": cid if _text(cid) else None}
+        for field in CAST_ENTRY_FIELDS:
+            if field not in entry:
+                continue
+            if _blank(entry[field]):
+                defects.append(_defect("cast." + field, "empty", ref,
+                                       "cast entry %s: '%s' is present but empty; write the value or drop the member"
+                                       % (ref["character_id"], field)))
+            elif field in ("character_id", "identity_digest") and not _text(entry[field]):
+                defects.append(_defect("cast." + field, "not text", ref,
+                                       "cast entry: '%s' must be a string" % field))
+            elif field == "scene_ids" and not (isinstance(entry[field], list) and all(_text(s) for s in entry[field])):
+                defects.append(_defect("cast.scene_ids", "not a list of scene ids", ref,
+                                       "cast entry %s: scene_ids must be a non-empty list of scene ids" % ref["character_id"]))
+            elif field == "identity_revision" and (isinstance(entry[field], bool) or not isinstance(entry[field], int)) \
+                    and not (isinstance(entry[field], dict) and not _blank(entry[field])):
+                defects.append(_defect("cast.identity_revision", "not a revision", ref,
+                                       "cast entry %s: identity_revision must be an integer or a revision record" % ref["character_id"]))
     cast_ids = {e.get("character_id") for e in entries if _text(e.get("character_id"))}
     scene_ids = {s.get("scene_id") for s in scenes
                  if isinstance(s, dict) and _text(s.get("scene_id"))}

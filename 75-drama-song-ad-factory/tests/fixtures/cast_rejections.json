@@ -166,6 +166,46 @@
           }
         ]
       }
+    },
+    {
+      "name": "reject_scene_cast_field_absent_with_real_speaker",
+      "expect": {"field": "scene.cast_ids", "issue_contains": "missing"},
+      "scene_delete": ["cast_ids"]
+    },
+    {
+      "name": "reject_scene_cast_field_empty_with_real_speaker",
+      "expect": {"field": "scene.cast_ids", "issue_contains": "empty"},
+      "scene_patch": {"cast_ids": []}
+    },
+    {
+      "name": "reject_cast_entry_key_absent",
+      "expect": {"field": "cast.choice_or_consequence", "issue_contains": "missing"},
+      "cast_entry_patch": {"index": 1, "delete": ["choice_or_consequence"]}
+    },
+    {
+      "name": "reject_cast_entry_key_present_but_null",
+      "expect": {"field": "cast.episode_role", "issue_contains": "empty"},
+      "cast_entry_patch": {"index": 0, "set": {"episode_role": null}}
+    },
+    {
+      "name": "reject_cast_entry_key_present_but_empty_string",
+      "expect": {"field": "cast.immediate_story_function", "issue_contains": "empty"},
+      "cast_entry_patch": {"index": 1, "set": {"immediate_story_function": "   "}}
+    },
+    {
+      "name": "reject_cast_entry_key_present_but_empty_list",
+      "expect": {"field": "cast.scene_ids", "issue_contains": "empty"},
+      "cast_entry_patch": {"index": 0, "set": {"scene_ids": []}}
+    },
+    {
+      "name": "reject_scene_cast_field_not_a_list",
+      "expect": {"field": "scene.cast_ids", "issue_contains": "not a list"},
+      "scene_patch": {"cast_ids": "char_mara_001"}
+    },
+    {
+      "name": "reject_blank_scene_cast_id_entry",
+      "expect": {"field": "scene.cast_ids", "issue_contains": "cast id empty"},
+      "scene_patch": {"cast_ids": ["char_mara_001", ""]}
     }
   ]
 }
