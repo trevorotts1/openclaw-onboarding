@@ -614,6 +614,12 @@ def seam_status() -> Dict[str, Any]:
         "W11AC-U1 board_events.py producer calls append_envelope()/append()/due()/"
         "mark_* — envelope seam closed against its real to_outbox_envelope shape; "
         "the two units land via the batch integrator, runtime wiring is integration work",
+        "seq continuity across producer restarts: the producer must bind its "
+        "board_events.SeqAllocator to this outbox at startup "
+        "(SeqAllocator(store=outbox), which seeds each task from last_seq() at "
+        "bind time) — otherwise a fresh in-memory allocator restarts at 1 and "
+        "every event is refused as stale_seq. See the negative controls in both "
+        "modules' self-checks",
         "reconcile() resolver: authoritative consumer read (CC API or task_state "
         "projection) is wired by the integration owner, not this module",
         "W4B evidence.py state_counts -> stage mapping is the board consumer's",
@@ -897,6 +903,83 @@ def _selfcheck() -> int:
                                seq=1, now=3000.0)
     ok(dup_created is False and ob.counts()["total"] == 15,
        "negative control: duplicate key with stale seq still writes nothing")
+
+    # 28 — NEGATIVE CONTROL (a) — restart continuity across the REAL seam. A
+    # FRESH board_events.SeqAllocator (W11A) bound to this outbox's durable
+    # last_seq must emit N+1 and be ACCEPTED without any manual observe call.
+    # Fails on pre-fix behaviour: SeqAllocator took no store, a fresh one
+    # restarted at 1, and the outbox refused every event as stale_seq —
+    # cross-run emission was simply blocked.
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "_board_events_under_test",
+        str(Path(__file__).resolve().parent / "board_events.py"),
+    )
+    board_events = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = board_events  # dataclasses resolve via sys.modules
+    spec.loader.exec_module(board_events)
+
+    tmp_restart = tmp + ".restart"
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.remove(tmp_restart + suffix)
+        except FileNotFoundError:
+            pass
+    ob3 = EventOutbox(tmp_restart)
+    _, run1 = ob3.append(idempotency_key="rs-1", task_id="TR", kind="create",
+                         title="run-1 event", seq=5, now=100.0)
+    ok(run1 is True and ob3.last_seq("TR") == 5,
+       "run 1 establishes durable last_seq = 5")
+    reborn = board_events.SeqAllocator(store=ob3)  # producer restart
+    nxt = reborn.next("TR")                        # no observe() call anywhere
+    ok(nxt == 6, f"fresh allocator bound to store emits N+1 = 6 (got {nxt})")
+    e6, created6 = ob3.append(idempotency_key="rs-2", task_id="TR", kind="start",
+                              seq=nxt, now=101.0)
+    ok(created6 is True and e6["seq"] == 6,
+       "cross-run emission accepted: restarted seq passes the outbox (pre-fix: stale_seq)")
+    stream = board_events.BoardEventStream(
+        producer=board_events.ProducerIdentity(producer_id="cc_board.rs", source="funnel"),
+        correlation=board_events.bind_ingest_receipt("rs-ing", {"task_id": "TR"}),
+        allocator=board_events.SeqAllocator(store=ob3),
+    )
+    ev_restart = stream.start(at="2026-10-23T00:00:02Z")
+    e7, created7 = ob3.append_envelope(board_events.to_outbox_envelope(ev_restart), now=102.0)
+    ok(created7 is True and ev_restart.seq == 7 and e7["seq"] == 7,
+       "restarted producer stream continues at 7 via the envelope seam")
+    ok(ob3.last_seq("TR") == 7, "durable last_seq advanced monotonically 5 -> 7")
+    ob3.close()
+
+    # 29 — NEGATIVE CONTROL (b) — a genuinely stale/duplicate seq is still
+    # refused or deduped, never silently accepted (the restart fix does not
+    # weaken idempotency or monotonicity).
+    ob3 = EventOutbox(tmp_restart)  # reopen: durable state survives the restart
+    try:
+        ob3.append(idempotency_key="rs-3", task_id="TR", kind="block", seq=7, now=200.0)
+        ok(False, "seq == durable last must raise")
+    except OutboxError as exc:
+        ok("stale_seq" in str(exc), f"seq == durable last still refused ({exc})")
+    try:
+        ob3.append(idempotency_key="rs-4", task_id="TR", kind="block", seq=1, now=200.0)
+        ok(False, "backwards seq must raise")
+    except OutboxError as exc:
+        ok("stale_seq" in str(exc), f"backwards seq still refused ({exc})")
+    _, dup2 = ob3.append(idempotency_key="rs-2", task_id="TR", kind="start",
+                         seq=99, now=200.0)
+    ok(dup2 is False and ob3.counts()["total"] == 3,
+       "duplicate idempotency key deduped (created=False), nothing written")
+    stale_alloc = board_events.SeqAllocator(store=ob3)
+    try:
+        stale_alloc.observe("TR", 2)
+        ok(False, "stale observe against durable state must raise")
+    except board_events.BoardEventError as exc:
+        ok(exc.reason == "bad_seq",
+           f"stale observe refused against durable state ({exc})")
+    ok(stale_alloc.next("TR") == 8,
+       "refused observe armed nothing: allocation continues at durable+1")
+    ob3.close()
 
     print(f"OK {passed} PASS")
     return 0
