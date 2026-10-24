@@ -2110,19 +2110,16 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
     required = [s for s in order if reg.get(s, {}).get("required", True)]
     optional = [s for s in order if not reg.get(s, {}).get("required", True)]
 
-    # approvals current: every required stage with an approval policy other
-    # than "none" must carry an approved record at the current plan revision.
-    plan_rev = (_read_json(rd / "control" / "plan-revision.json", {}) or {}).get("revision")
-    approvals = _read_json(rd / "control" / "approvals.json", {}) or {}
-    approvals_current = True
-    for s in required:
-        if reg.get(s, {}).get("approval_policy", "none") == "none":
-            continue
-        a = approvals.get(s)
-        if not (isinstance(a, dict) and a.get("state") == "approved"
-                and (plan_rev is None or a.get("plan_revision") == plan_rev)):
-            approvals_current = False
-            break
+    # Existing artifact decisions and legal stage history are the source of
+    # authority. The unwritten legacy cache can restrict them, never grant it.
+    try:
+        import production_process
+        approval_projection = production_process.inspect_completion_approvals(rd)
+        approvals_current = approval_projection.get("ok") is True
+    except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        approval_projection = {"ok": False, "reason_code": "PRODUCTION_COMPLETION_APPROVALS_UNAVAILABLE",
+                               "detail": str(exc)}
+        approvals_current = False
 
     # independent final QC: a record whose producer is a dedicated final-QC
     # reviewer, gate PASS. A stage's own output never counts as final QC.
@@ -2173,6 +2170,7 @@ def _collect_completion_evidence(run_dir, got, stages=None, registry=None):
         "stage_states": states,
         "skipped_optional_reasons": (_read_json(rd / "control" / "skip-reasons.json", {}) or {}),
         "approvals_current": approvals_current,
+        "approval_projection": approval_projection,
         "final_qc_independent_pass": final_qc_ok,
         "artifacts_present": artifacts_present,
         "missing_artifacts": missing,

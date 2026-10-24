@@ -295,6 +295,86 @@ def inspect_intake(run_dir, *, run_id=None):
         return _result(False, "PRODUCTION_STATE_UNVERIFIED", str(exc), **context)
 
 
+def inspect_completion_approvals(run_dir, *, run_id=None):
+    """Project current recorded decisions for closure, without writing approvals.
+
+    Completed stages are inspected rather than re-admitted as runnable work.
+    Internal blueprint/QC completion is never a new owner approval event.
+    The collector still independently requires final QC, artifacts and delivery.
+    """
+    root = Path(run_dir).resolve()
+    checks = {}
+    context = {"run_dir": str(root), "run_id": run_id, "checks": checks,
+               "cache_restrictions": []}
+    def refuse(code, detail):
+        return _result(False, code, detail, **context)
+    try:
+        intake = inspect_intake(root, run_id=run_id)
+        context.update(run_id=intake.get("run_id"), authority=intake.get("authority"))
+        if not intake["ok"]:
+            return refuse(intake["reason_code"], intake["detail"])
+        held_id, states, events, _model = _snapshot(root, intake["run_id"])
+        order, registry = _graph()
+        for stage in order:
+            if registry[stage].get("required", True) and not _completed(stage, states, events):
+                return refuse("PRODUCTION_COMPLETION_HISTORY_UNVERIFIED",
+                              "Required stage %s has no current legal completion history." % stage)
+        prefs = intake["preferences"]
+        script = _script_proof(root, held_id, required=prefs["script"])
+        checks["script-lyrics"] = script
+        if not script["ok"]:
+            return refuse(script["reason_code"], script["detail"])
+        blueprint = _read(root / "creative" / "blueprint.json")
+        if not isinstance(blueprint, dict) or not blueprint or _offline_proof(blueprint):
+            return refuse("PRODUCTION_BLUEPRINT_UNVERIFIED", "The completed internal blueprint has no current production artifact.")
+        checks["creative-strategy"] = {"ok": True, "proof_kind": "internal-stage-and-current-script-package",
+            "detail": "Legal blueprint stage completion and the current downstream script proof; no separate owner approval is inferred."}
+        from song_choices import song_choices as songs
+        if prefs["song"]:
+            song = songs._state(str(root))
+            if not song or song.get("required") is not True:
+                return refuse("PRODUCTION_SONG_PREFERENCE_MISMATCH", "The elected song choice is missing or disabled.")
+        from intake_preflight import factory
+        hold = factory._song_hold(root)
+        if hold:
+            return refuse(hold["reason_code"], hold.get("detail") or hold.get("next_action") or "The current song decision is still pending.")
+        checks["music"] = {"ok": True, "proof_kind": "existing-song-and-operator-decision-validators",
+                           "detail": "The existing song hold is open; measured verdicts are not relabelled."}
+        storyboard = _storyboard_proof(root, required=prefs["storyboard"], events=events)
+        checks["storyboard"] = storyboard
+        if not storyboard["ok"]:
+            return refuse(storyboard["reason_code"], storyboard["detail"])
+        recap_reader = getattr(factory, "_recap_hold", None)
+        if callable(recap_reader):
+            hold = recap_reader(root)
+            if hold:
+                return refuse(hold["reason_code"], hold.get("detail") or hold.get("next_action") or "The current production Go is unverified.")
+            checks["production-go"] = {"ok": True, "proof_kind": "existing-current-recap-and-go-reader"}
+        checks["final-qc"] = {"ok": True, "proof_kind": "legal-qc-stage-completion",
+                              "detail": "The independent final-QC PASS remains a separate collector requirement."}
+        cache_path = root / "control" / "approvals.json"
+        if cache_path.exists():
+            cache = _read(cache_path)
+            if not isinstance(cache, dict):
+                return refuse("PRODUCTION_APPROVAL_CACHE_UNVERIFIED", "The legacy approval restriction cache is unreadable.")
+            revision_path = root / "control" / "plan-revision.json"
+            revision = _read(revision_path).get("revision") if revision_path.exists() else None
+            for stage in order:
+                if (not registry[stage].get("required", True) or
+                        registry[stage].get("approval_policy", "none") == "none" or stage not in cache):
+                    continue
+                entry = cache[stage]
+                if (not isinstance(entry, dict) or entry.get("state") != "approved" or
+                        (revision is not None and entry.get("plan_revision") != revision)):
+                    context["cache_restrictions"].append(stage)
+            if context["cache_restrictions"]:
+                return refuse("PRODUCTION_APPROVAL_CACHE_RESTRICTS", "Existing approval restrictions are pending, revoked or stale.")
+        return _result(True, "PRODUCTION_COMPLETION_APPROVALS_CURRENT",
+                       "Current recorded artifact decisions and legal internal stage history agree; no approval cache was created.", **context)
+    except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError, sqlite3.Error) as exc:
+        return refuse("PRODUCTION_COMPLETION_APPROVALS_UNVERIFIED", str(exc))
+
+
 def _ancestors(stage, registry):
     seen, visiting = set(), set()
     def visit(node):
