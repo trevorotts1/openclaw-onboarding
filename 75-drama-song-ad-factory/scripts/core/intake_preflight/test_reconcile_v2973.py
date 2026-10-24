@@ -55,6 +55,8 @@ sys.path.insert(0, str(HERE))
 import factory as F            # noqa: E402
 import state_store as SS       # noqa: E402
 from batch_mode.batch import STAGES  # noqa: E402
+from test_factory_method_agnes import confirmed_fixture, storyboard_fixture
+from test_production_process import approve_script
 
 RID = "vtv-reconcile-run"
 FACTORY = HERE + "/factory.py"
@@ -70,10 +72,9 @@ def check(name, cond, detail=""):
 
 
 def new_run(tmp):
-    run = Path(tempfile.mkdtemp(dir=tmp, prefix="rec-"))
-    (run / "control").mkdir(parents=True)
-    with SS.Store(run / "control" / "state.sqlite3") as st:
-        st.init_run(RID, [s for s, _ in STAGES])
+    run = Path(tempfile.mkdtemp(dir=tmp, prefix="rec-")) / RID
+    confirmed_fixture(run)
+    approve_script(run)
     return run
 
 
@@ -108,13 +109,6 @@ def main():
     run = new_run(tmp)
     sb = run / "storyboard"
     sb.mkdir(parents=True)
-    (sb / "gate.json").write_text(json.dumps(
-        {"shots": [{"shot_id": "s%d" % i, "status": "storyboard_approved"}
-                   for i in range(1, 14)],
-         "approved_at": "2026-10-20T21:56:49Z"}))
-    (sb / "approval.json").write_text(json.dumps(
-        {"state": "approved", "choice": "yes",
-         "at": 1760999809.0}))                    # 2026-10-20T21:56:49Z
     stills_dir = run / "stills"
     stills_dir.mkdir()
     stills = {}
@@ -123,6 +117,7 @@ def main():
         p.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 32)
         stills["s%d" % i] = "stills/shot-%d.png" % i
     (sb / "stills.json").write_text(json.dumps(stills))
+    storyboard_fixture(run, count=13, duration=26, stills=stills, approve=True)
     check("precondition: storyboard row NOT_STARTED",
           stage_state(run, "storyboard") == "NOT_STARTED")
     p = run_next(run)
@@ -193,12 +188,10 @@ def main():
     run3c = new_run(tmp)
     sb3c = run3c / "storyboard"
     sb3c.mkdir(parents=True)
-    (sb3c / "gate.json").write_text(json.dumps(
-        {"shots": [{"shot_id": "s1", "status": "storyboard_approved"}]}))
-    (sb3c / "approval.json").write_text(json.dumps({"state": "approved"}))
     (sb3c / "stills.json").write_text(json.dumps({"s1": "stills/s1.png"}))
     (run3c / "stills").mkdir()
     (run3c / "stills" / "s1.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 8)
+    storyboard_fixture(run3c, stills={"s1": "stills/s1.png"}, approve=True)
     with SS.Store(run3c / "control" / "state.sqlite3") as st:
         st.transition(RID, "storyboard", "READY", "seed")
         st.claim(RID, "storyboard", "live-worker", lease_s=600)
@@ -214,7 +207,7 @@ def main():
     run4 = new_run(tmp)
     (run4 / "music").mkdir()
     (run4 / "music" / "picked-song.mp3").write_bytes(b"ID3" + b"\0" * 64)
-    (run4 / "song-choices").mkdir()
+    (run4 / "song-choices").mkdir(exist_ok=True)
     import hashlib
     sha = hashlib.sha256((run4 / "music" / "picked-song.mp3").read_bytes()) \
         .hexdigest()
@@ -233,7 +226,7 @@ def main():
     (run5 / "music" / "picked-song.mp3").write_bytes(b"ID3" + b"\0" * 64)
     sha5 = hashlib.sha256((run5 / "music" / "picked-song.mp3")
                           .read_bytes()).hexdigest()
-    (run5 / "song-choices").mkdir()
+    (run5 / "song-choices").mkdir(exist_ok=True)
     (run5 / "song-choices" / "pick.json").write_text(json.dumps(
         {"pick": 1, "label": "V1", "sha256": sha5}))
     (run5 / "music" / "qc-records.json").write_text(
@@ -255,7 +248,7 @@ def main():
     (run5b / "music" / "picked-song.mp3").write_bytes(b"ID3" + b"\0" * 64)
     sha5b = hashlib.sha256((run5b / "music" / "picked-song.mp3")
                            .read_bytes()).hexdigest()
-    (run5b / "song-choices").mkdir()
+    (run5b / "song-choices").mkdir(exist_ok=True)
     (run5b / "song-choices" / "pick.json").write_text(json.dumps(
         {"pick": 1, "label": "V1", "sha256": sha5b}))
     bad = [dict(qc_pass_records()[0], verdict="FAIL")]

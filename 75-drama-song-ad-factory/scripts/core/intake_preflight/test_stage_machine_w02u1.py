@@ -27,6 +27,7 @@ sys.path.insert(0, str(HERE))
 
 import factory as F  # noqa: E402
 import state_store as ss  # noqa: E402
+from test_production_process import confirmed_run, complete_stage, approve_script
 
 PASS = []
 
@@ -120,15 +121,10 @@ def test_strict_completion_requires_all_gates():
 def test_events_auto_continue():
     with tempfile.TemporaryDirectory() as td:
         run = Path(td) / "run-A"
-        (run / "control").mkdir(parents=True)
+        confirmed_run(run, song=False)
         db = run / "control" / "state.sqlite3"
-        st = ss.Store(db)
-        st.init_run("run-A", F.CANONICAL_STAGES)
-        # research complete, creative-strategy ready -> next should be creative
-        st.transition("run-A", "research", "READY", "w1")
-        st.claim("run-A", "research", "w1", 60)
-        st.transition("run-A", "research", "COMPLETE", "w1")
-        st.close()
+        # The real Store transition and artifact prove the completed predecessor.
+        complete_stage(run, "research")
 
         a1 = F.continuation_enqueue(run, "approval", run_id="run-A")
         assert a1["verdict"] == "runnable" and a1["next_stage"] == "creative-strategy", a1
@@ -137,15 +133,10 @@ def test_events_auto_continue():
         assert q and q[-1]["next_stage"] == "creative-strategy", q
 
         # a provider-completion event on music advances to continuity-bible
-        st = ss.Store(db)
-        for s in ("creative-strategy", "script-lyrics"):
-            st.transition("run-A", s, "READY", "w1")
-            st.claim("run-A", s, "w1", 60)
-            st.transition("run-A", s, "COMPLETE", "w1")
-        st.transition("run-A", "music", "READY", "w1")
-        st.claim("run-A", "music", "w1", 60)
-        st.transition("run-A", "music", "COMPLETE", "w1")
-        st.close()
+        for stage in ("creative-strategy", "script-lyrics"):
+            complete_stage(run, stage)
+        approve_script(run)
+        complete_stage(run, "music")
         a2 = F.continuation_enqueue(run, "provider-completion", run_id="run-A")
         assert a2["verdict"] == "runnable" and a2["next_stage"] == "continuity-bible", a2
         ok("approval + provider events auto-continue the correct run")
@@ -299,14 +290,9 @@ def test_wal_db_without_sidecars_reads():
     import sqlite3
     with tempfile.TemporaryDirectory() as td:
         run = Path(td) / "run-W"
-        (run / "control").mkdir(parents=True)
+        confirmed_run(run, song=False)
         db = run / "control" / "state.sqlite3"
-        st = ss.Store(db)
-        st.init_run("run-W", F.CANONICAL_STAGES)
-        st.transition("run-W", "research", "READY", "w1")
-        st.claim("run-W", "research", "w1", 60)
-        st.transition("run-W", "research", "COMPLETE", "w1")
-        st.close()
+        complete_stage(run, "research")
         # Reproduce the real fleet failure: a WAL db that still carries frames,
         # handed to a reader whose directory it cannot write (no -shm can be
         # attached). Plain mode=ro then raises SQLITE_CANTOPEN "unable to open
@@ -318,7 +304,8 @@ def test_wal_db_without_sidecars_reads():
                     "WHERE run_id='run-W' AND stage='research'")
         con.commit()
         sealed = Path(td) / "run-S"
-        (sealed / "control").mkdir(parents=True)
+        shutil.copytree(run, sealed, ignore=shutil.ignore_patterns(
+            "state.sqlite3", "state.sqlite3-wal", "state.sqlite3-shm"))
         sdb = sealed / "control" / "state.sqlite3"
         for suf in ("", "-wal"):
             if Path(str(db) + suf).exists():

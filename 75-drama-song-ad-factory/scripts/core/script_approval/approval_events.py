@@ -195,20 +195,25 @@ def register_artifact(rec, kind, sha256, revision=None):
 
 
 def open_ask(rec, kinds, message_id=None, ask_id=None):
-    """One presentation in the originating conversation: the kinds it showed,
-    their displayed revisions, and the message the client replies to. A
-    re-presentation refreshes the displayed revision labels in place."""
-    kinds = [k for k in kinds]
-    ask_id = ask_id or _id("ask", message_id or "", ",".join(kinds), utcnow())
+    """Bind a presentation identity to the exact displayed artifact revisions.
+
+    Resending unchanged content keeps its ask. A changed revision supersedes
+    the old ask, so its reply binding cannot silently approve new content.
+    """
+    kinds = list(kinds)
+    revisions = {k: (rec["artifacts"].get(k) or {}).get("revision") for k in kinds}
     for a in rec["asks"]:
         if a.get("state") == "open" and a.get("kinds") == kinds:
+            if a.get("revisions") != revisions:
+                a["state"] = "superseded"
+                continue
             if message_id:
-                a["message_id"] = message_id       # the latest presentation message
-            a["revisions"] = {k: (rec["artifacts"].get(k) or {}).get("revision") for k in kinds}
+                a["message_id"] = message_id
             return a
+    ask_id = ask_id or _id("ask", message_id or "", ",".join(kinds),
+                          json.dumps(revisions, sort_keys=True), utcnow())
     ask = {"ask_id": ask_id, "kinds": kinds, "message_id": message_id,
-           "revisions": {k: (rec["artifacts"].get(k) or {}).get("revision") for k in kinds},
-           "state": "open", "opened_at": utcnow()}
+           "revisions": revisions, "state": "open", "opened_at": utcnow()}
     rec["asks"].append(ask)
     return ask
 
@@ -278,10 +283,17 @@ def record_decision(rec, kinds, ctx):
     decision, not a replay.
     """
     ctx = ctx or {}
+    provenance = reply_context_status(rec, ctx)
+    if not provenance["ok"] or is_preference_reply(ctx.get("reply_text")):
+        raise ValueError(provenance["detail"] if not provenance["ok"] else "A viewing preference is not artifact approval.")
     kinds = list(kinds)
+    if rec.get("reply_contract"):
+        ask = next((a for a in rec.get("asks", []) if a.get("ask_id") == ctx.get("presentation_ask_id")), {})
+        if not set(kinds) <= set(ask.get("kinds") or []):
+            raise ValueError("The client reply cannot approve an artifact outside its presented ask.")
     shas = {k: (rec.get("artifacts", {}).get(k) or {}).get("sha256") for k in kinds}
     revisions = {k: (rec.get("artifacts", {}).get(k) or {}).get("revision") for k in kinds}
-    decision_key = ctx.get("reply_to_message_id") or _id(
+    decision_key = ctx.get("source_ref") or ctx.get("reply_to_message_id") or _id(
         ctx.get("tenant_id"), ctx.get("run_id"), tuple(sorted(shas.items())),
         ctx.get("approved_by"), ctx.get("reply_text_sha"))
     for did, events in decisions(rec):
@@ -307,6 +319,8 @@ def record_decision(rec, kinds, ctx):
               "approved_by": ctx.get("approved_by"), "timestamp": ts,
               "reply_to_message_id": ctx.get("reply_to_message_id"),
               "reply_text_sha": ctx.get("reply_text_sha"),
+              "reply_text": ctx.get("reply_text"), "source": ctx.get("source"),
+              "source_ref": ctx.get("source_ref"), "presentation_ask_id": ctx.get("presentation_ask_id"),
               "state": "active", "invalidated_by": None}
         rec["approvals"].append(ev)
         events.append(ev)
@@ -352,6 +366,63 @@ def _named_kinds(text):
     return out
 
 
+def is_preference_reply(text):
+    """Approval-process preferences and viewing requests are not decisions."""
+    t = _norm(text)
+    if re.fullmatch(r"(?:option |choice )?\d+", t):
+        return True
+    return any(re.search(pattern, t) for pattern in (
+        r"\b(?:show|send) (?:me|us)\b",
+        r"\blet (?:me|us) (?:see|review|read)\b",
+        r"\b(?:want|need|prefer|would like)\b.*\b(?:see|review|read|approv[a-z]*)\b.*\bfirst\b",
+        r"\b(?:see|review|read)\b.*\b(?:first|before)\b",
+        r"\b(?:approv[a-z]*)\b.*\b(?:after|once) (?:i|we) (?:see|review|read)\b",
+        r"^script approval (?:is )?(?:1|yes)\b",
+        r"\bnothing (?:is )?generated until\b",
+    ))
+
+
+def reply_context_status(rec, ctx=None):
+    """Validate the existing presentation/reply protocol, without mutation.
+
+    Modern records require a new client source reference and exact ask binding.
+    Legacy records keep their existing context path; no identity is invented.
+    """
+    ctx, rec = ctx or {}, rec or {}
+    contract = rec.get("reply_contract") or {}
+    required = bool(contract)
+    def result(ok, code, detail):
+        return {"ok": ok, "required": required, "reason_code": code, "detail": detail}
+    if ctx.get("source") is not None and str(ctx["source"]).strip().lower() != "client":
+        return result(False, "ARTIFACT_REPLY_SOURCE_INVALID", "An assistant or saved preference cannot approve the client's artifact.")
+    if not required:
+        return result(True, "ARTIFACT_REPLY_LEGACY_CONTEXT", "Existing legacy artifact reply context is preserved.")
+    if (ctx.get("source") != "client" or not isinstance(ctx.get("source_ref"), str) or
+            not ctx["source_ref"].strip() or not ctx.get("presentation_ask_id") or not ctx.get("run_id")):
+        return result(False, "ARTIFACT_REPLY_CONTEXT_REQUIRED", "Carry the actual new client reply source, source reference, run and presented ask identity.")
+    if ctx["source_ref"] in contract.get("intake_source_refs", []):
+        return result(False, "ARTIFACT_REPLY_INTAKE_REUSED", "This source reference belongs to intake, not a new reply to the presented script and lyrics.")
+    if str(ctx["run_id"]) != str(contract.get("run_id")):
+        return result(False, "ARTIFACT_REPLY_SCOPE_MISMATCH", "This artifact reply belongs to another run.")
+    # A replay acknowledges its original decision, including a superseded
+    # revision; it never approves the new revision or creates another event.
+    prior = next((e for e in rec.get("approvals", []) if e.get("source_ref") == ctx["source_ref"]), None)
+    if prior:
+        if (prior.get("source") != "client" or prior.get("presentation_ask_id") != ctx["presentation_ask_id"] or
+                str(prior.get("run_id")) != str(ctx["run_id"]) or
+                prior.get("reply_text_sha") != ctx.get("reply_text_sha")):
+            return result(False, "ARTIFACT_REPLY_SOURCE_REUSED", "The same reply source reference cannot identify different words, runs or presentations.")
+        return result(True, "ARTIFACT_REPLY_REPLAY", "This is the previously recorded client artifact reply.")
+    ask = next((a for a in rec.get("asks", []) if a.get("ask_id") == ctx["presentation_ask_id"]), None)
+    if (not ask or ask.get("state") != "open" or not rec.get("sent") or
+            any((rec.get("artifacts", {}).get(k) or {}).get("revision") != rev
+                for k, rev in (ask.get("revisions") or {}).items()) or not ask.get("revisions")):
+        return result(False, "ARTIFACT_REPLY_PRESENTATION_MISMATCH", "The reply must name the current presented whole-script/lyrics ask and its exact revisions.")
+    if ask.get("message_id") and ctx["source_ref"] == ask["message_id"]:
+        return result(False, "ARTIFACT_REPLY_SOURCE_REUSED", "The presentation itself is not a new client approval reply.")
+    return result(True, "ARTIFACT_REPLY_PROVENANCE_CONFIRMED", "A new client reply is bound to the current presented artifacts.")
+
+
 def is_affirmative(text):
     t = _norm(text)
     if not t:
@@ -361,7 +432,7 @@ def is_affirmative(text):
     if t in _AFFIRM:
         return True
     words = t.split()
-    if words and words[0] in _AFFIRM:      # "yes, show me first" approves
+    if words and words[0] in _AFFIRM:      # preference recovery also uses this generic affirmative parser
         return True
     return any(re.search(r"\b%s\b" % re.escape(a), t) for a in _AFFIRM if len(a) > 3)
 
@@ -382,11 +453,14 @@ def find_replay(rec, ctx):
     """
     ctx = ctx or {}
     events = rec.get("approvals") or []
-    key = ctx.get("reply_to_message_id")
+    key = ctx.get("source_ref") or ctx.get("reply_to_message_id")
     if key:
         for ev in reversed(events):
-            if ev.get("reply_to_message_id") == key:
+            field = "source_ref" if ctx.get("source_ref") else "reply_to_message_id"
+            if ev.get(field) == key:
                 return _decision_view(rec, ev.get("decision_id"))
+    if rec.get("reply_contract") and ctx.get("source_ref"):
+        return None  # distinct modern messages are not merged merely because both say yes
     tsha = ctx.get("reply_text_sha")
     if tsha:
         for did, evs in decisions(rec):
@@ -440,6 +514,13 @@ def interpret_reply(text, rec, ctx=None):
     rec = rec if isinstance(rec, dict) else {}
     raw = str(text or "").strip()
     t = _norm(raw)
+    if is_preference_reply(raw):
+        return {"intent": "preference", "kinds": [], "question":
+                "That selects the approval process or asks to see the work. Please reply to the current whole script and lyrics after reviewing them."}
+    provenance = reply_context_status(rec, ctx)
+    if not provenance["ok"]:
+        return {"intent": "unproven", "kinds": [], "question": provenance["detail"],
+                "reason_code": provenance["reason_code"]}
 
     for field, label in (("run_id", "run"), ("tenant_id", "tenant")):
         want = rec.get(field) or (rec.get("run") or {}).get(field)
@@ -455,6 +536,8 @@ def interpret_reply(text, rec, ctx=None):
                 "conversation where I sent the script."}
 
     asks = open_asks(rec)
+    if rec.get("reply_contract") and ctx.get("presentation_ask_id"):
+        asks = [a for a in asks if a.get("ask_id") == ctx["presentation_ask_id"]]
     asked = [k for a in asks for k in a.get("kinds") or []]
     named = [k for k in _named_kinds(t)
              if k in ("script", "lyrics", "character_images", "music", "storyboard")]

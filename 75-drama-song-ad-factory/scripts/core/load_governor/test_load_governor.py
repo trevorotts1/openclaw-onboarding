@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -18,6 +19,22 @@ os.environ.pop("DSAF_HEAVY_SLOTS", None)
 os.environ.pop("KIE_API_KEY", None)
 
 import load_governor as LG  # noqa: E402
+
+# Each local helper child is deliberately unable to launch nested commands or
+# reach a network. The parent runner also blocks non-test process launches.
+CHILD_GUARD = """# LG_TEST_CHILD_OFFLINE
+import socket, ssl, subprocess
+def _lg_child_blocked(*args, **kwargs):
+    raise RuntimeError('LG_TEST_CHILD_TRANSPORT_BLOCKED')
+subprocess.run = _lg_child_blocked
+subprocess.Popen = _lg_child_blocked
+socket.create_connection = _lg_child_blocked
+for _method in ('connect', 'connect_ex', 'send', 'sendall', 'sendto', 'sendmsg'):
+    if hasattr(socket.socket, _method):
+        setattr(socket.socket, _method, _lg_child_blocked)
+ssl.SSLSocket.connect = _lg_child_blocked
+ssl.SSLSocket.connect_ex = _lg_child_blocked
+"""
 
 FAILS = []
 
@@ -30,7 +47,7 @@ def check(name, cond, detail=""):
 
 def holder():
     """A separate process that holds one heavy slot until its stdin closes."""
-    code = ("import sys; sys.path.insert(0, %r)\n"
+    code = CHILD_GUARD + ("import sys; sys.path.insert(0, %r)\n"
             "import load_governor as LG\n"
             "with LG.heavy_slot('holder', probe=lambda: 90.0):\n"
             "    print('held', flush=True); sys.stdin.read()\n" % CORE)
@@ -127,7 +144,9 @@ try:
     check("OpenAI whisper refused", False)
 except LG.LoadGovernorError as e:
     check("OpenAI whisper refused", e.code == "LOCAL_ASR_FORBIDDEN")
-rc = LG.run_heavy([sys.executable, "-c", "print(1)"], "plain-heavy", capture_output=True, text=True)
+# This unit checks the heavy-slot wrapper, not a host-specific memory probe.
+with patch.object(LG.load_governor, "free_pct", return_value=90.0):
+    rc = LG.run_heavy([sys.executable, "-c", CHILD_GUARD + "print(1)"], "plain-heavy", capture_output=True, text=True)
 check("run_heavy runs a non-ffmpeg job through the gate", rc.stdout.strip() == "1")
 
 # 4. cleanup never touches deliverables
@@ -177,7 +196,7 @@ worst = max(sum(1 for u in sent if t <= u < t + 10.0) for t in sent)
 check("KIE never exceeds 20 in any 10 s window", worst <= 20, worst)
 check("KIE limiter really spaced them", sent[-1] - sent[0] >= 30)
 # two real processes share the bucket
-code = ("import sys; sys.path.insert(0, %r)\nimport load_governor as LG\n"
+code = CHILD_GUARD + ("import sys; sys.path.insert(0, %r)\nimport load_governor as LG\n"
         "for _ in range(12): LG.kie_acquire()\nprint('done')\n" % CORE)
 t0 = time.time()
 shared = tempfile.mkdtemp(dir=TMP)
@@ -237,7 +256,7 @@ check("exhausted 429 is reported as not submitted", parsed and parsed["state"] =
 
 # make_runner end to end: a 429 on submit is resubmitted; polls leave the bucket alone
 fake = os.path.join(TMP, "fake_adapter.py")
-open(fake, "w").write("import sys, os\nc = os.path.join(os.environ['FAKE_DIR'], 'n')\n"
+open(fake, "w").write(CHILD_GUARD + "import sys, os\nc = os.path.join(os.environ['FAKE_DIR'], 'n')\n"
     "n = int(open(c).read()) if os.path.exists(c) else 0\n"
     "if sys.argv[1] == 'submit':\n    open(c, 'w').write(str(n + 1))\n"
     "    print('{\"code\": 429}' if n < 2 else '{\"state\": \"ok\"}')\nelse:\n    print('{\"state\": \"ok\"}')\n")
@@ -245,16 +264,32 @@ os.environ["FAKE_DIR"] = tempfile.mkdtemp(dir=TMP)
 os.environ["DSAF_GOVERNOR_DIR"] = tempfile.mkdtemp(dir=TMP)
 os.environ[LG.load_governor.POLL_ENV] = "0"
 LG.load_governor.time.sleep = lambda s: None          # skip the real 2 s / 4 s backoff
-run = KD.make_runner(30)
-for cmd in ("health", "wait", "save"):
-    run([fake, cmd, "--json"])
-check("make_runner: polls/health/save leave the generation bucket untouched",
-      not os.path.exists(os.path.join(os.environ["DSAF_GOVERNOR_DIR"], "kie-rate")))
-rc, out = run([fake, "submit", "--request", "r.json"])
-check("make_runner: submit 429 resubmitted until it runs",
-      '"ok"' in out and open(os.path.join(os.environ["FAKE_DIR"], "n")).read() == "3")
-check("make_runner: 3 submit attempts drew 3 generation tokens", len(json.load(open(os.path.join(
-    os.environ["DSAF_GOVERNOR_DIR"], "kie-rate", LG.key_tag(), "stamps.json")))) == 3)
+# Admission is an explicitly isolated dependency in this RETRY unit. The
+# real make_runner, digest check, limiter, retries and guarded local fake CLI
+# still run. This fixture is not evidence of production admission.
+request_path = os.path.join(TMP, "retry-request.json")
+request = {"model": "governor-fixture", "input": {"prompt": "local retry fixture"}}
+with open(request_path, "w") as stream:
+    json.dump(request, stream)
+context = {"arguments": {"fixture": "governor-retry-only"},
+           "request_digest": KD.L.digest_request(request)}
+with patch.object(KD, "production_process_admission", return_value={"ok": True, "fixture_only": True}) as admission:
+    run = KD.make_runner(30, process_context=context)
+    for cmd in ("health", "wait", "save"):
+        run([fake, cmd, "--json"])
+    check("make_runner: polls/health/save leave the generation bucket untouched",
+          not os.path.exists(os.path.join(os.environ["DSAF_GOVERNOR_DIR"], "kie-rate")))
+    rc, out = run([fake, "submit", "--request", request_path])
+    check("make_runner: submit 429 resubmitted until it runs",
+          '"ok"' in out and open(os.path.join(os.environ["FAKE_DIR"], "n")).read() == "3")
+    check("make_runner: 3 submit attempts drew 3 generation tokens", len(json.load(open(os.path.join(
+        os.environ["DSAF_GOVERNOR_DIR"], "kie-rate", LG.key_tag(), "stamps.json")))) == 3)
+    check("retry unit explicitly exercised admission dependency", admission.call_count == 1)
+try:
+    KD.make_runner(30)([fake, "submit", "--request", request_path])
+    check("unbound real runner still refuses production", False)
+except KD.DispatchError as exc:
+    check("unbound real runner still refuses production", "PRODUCTION_CONTEXT_REQUIRED" in str(exc))
 
 # docs agree with references/kie-rate-limit.md
 SK = os.path.join(CORE, "..", "..")

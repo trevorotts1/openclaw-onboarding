@@ -26,8 +26,11 @@ and the client answered Yes, it first runs script_approval.stage.run_stage: send
 the script through the client-delivery path (`openclaw message send` to --target,
 or, with no --target, the messages come back in data.messages for the chat),
 records the run as waiting and answers outcome "waiting" (exit 2) with no music
-command. `script-reply --run-dir D --reply TEXT` carries the client's answer:
-approve -> `next` hands out music; anything else -> the edit is re-checked and re-sent.
+command. `script-reply --run-dir D --reply TEXT --reply-source client
+--answer-source-ref REF --presentation-ask-id ASK --run-id RUN` carries the actual
+new client answer for a modern run. ASK and RUN are exposed in approval_context;
+the caller must supply them from the reply's presentation, never from a default.
+Approval -> `next` hands out music; an edit is re-checked and re-sent.
 """
 import argparse
 import json
@@ -184,14 +187,42 @@ def cmd_preflight(a):
                "credentials": a.credential or [], "auth": _load(a.auth_file) if a.auth_file else None,
                "summary_digest": a.summary_digest,
                "run_state": _load(a.run_state_file) if a.run_state_file else None,
-               "card_receipt": _load(a.card_receipt_file) if a.card_receipt_file else None}
+               "card_receipt": _load(a.card_receipt_file) if a.card_receipt_file else None,
+               "run_dir": getattr(a, "run_dir", None), "run_id": a.run_id,
+               "stage": getattr(a, "stage", None), "mode": getattr(a, "mode", "production")}
     try:
         r = _check(payload)
     except Exception as e:
         return envelope("preflight", run_id, "error", "preflight-failed", str(e)[:200])
+    admission = (r.get("checks") or {}).get("production_process") or {}
+    run_id = admission.get("run_id") or run_id
     return envelope("preflight", run_id, r["outcome"], r["reason_code"], r["next_action"],
-                    data={k: r.get(k) for k in ("checks", "missing", "outside")},
+                    data={k: r.get(k) for k in ("checks", "missing", "outside", "mode", "generating",
+                                                "readiness", "production_admitted", "repair_plan")},
                     state_version={"expected": a.summary_digest, "current": run_id})
+
+
+def _production_admission(run_dir, stage=None, run_id=None):
+    """Read governed authority; operator JSON and dependency checks cannot grant it."""
+    try:
+        import production_process
+        result = (production_process.admit_production(run_dir, stage, run_id=run_id)
+                  if stage else production_process.inspect_intake(run_dir, run_id=run_id))
+        if not isinstance(result, dict) or type(result.get("ok")) is not bool:
+            raise ValueError("production admission returned no typed decision")
+        return result
+    except (ImportError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        return {"ok": False, "reason_code": "PRODUCTION_PROCESS_UNAVAILABLE",
+                "detail": str(exc), "next_action": "Restore the governed production-process helper.",
+                "run_dir": str(run_dir), "run_id": run_id, "stage": stage}
+
+
+def _production_refusal(command, run_dir, admission):
+    return envelope(command, admission.get("run_id") or Path(run_dir).name or "run",
+                    "waiting", admission.get("reason_code") or "PRODUCTION_PROCESS_UNVERIFIED",
+                    admission.get("detail") or admission.get("next_action") or "Resume the governed production stage.",
+                    data={"stage": None, "command": None, "production_admitted": False,
+                          "blocked_stage": admission.get("stage"), "production_process": admission})
 
 
 # ── B1: the "what next" command ──────────────────────────────────────────────
@@ -454,17 +485,59 @@ def _deliverer(a, out):
     return deliver
 
 
+def _script_reply_context(a):
+    """Only the caller can identify an incoming client artifact reply."""
+    fields = (("source", "reply_source"), ("source_ref", "answer_source_ref"),
+              ("presentation_ask_id", "presentation_ask_id"), ("run_id", "run_id"))
+    return {field: getattr(a, flag) for field, flag in fields
+            if getattr(a, flag, None) not in (None, "")}
+
+
+def _script_presentation_context(run_dir, approval, events):
+    """Expose saved presentation identity; never fill an incoming reply from it."""
+    record = approval.record_for(str(run_dir))
+    if not isinstance(record, dict):
+        return {"run_id": None, "sent": False, "asks": [], "artifacts": {}}
+    return {"run_id": (record.get("run") or {}).get("run_id") or
+                       (record.get("reply_contract") or {}).get("run_id"),
+            "sent": record.get("sent") is True,
+            "asks": events.open_asks(record),
+            "artifacts": record.get("artifacts") or {}}
+
+
 def _script_gate(run_dir, a, reply):
     core = Path(__file__).resolve().parent.parent
     if str(core) not in sys.path:
         sys.path.insert(0, str(core))
     from script_approval import stage as _stage  # noqa: PLC0415
+    from script_approval import script_approval as _approval  # noqa: PLC0415
+    from script_approval import approval_events as _events  # noqa: PLC0415
     out = []
+    context = _script_reply_context(a) if reply is not None else {}
+    if reply is not None:
+        try:
+            admitted = _approval.reply_provenance(str(run_dir), context=context, reply=reply)
+            if not isinstance(admitted, dict) or type(admitted.get("ok")) is not bool:
+                raise ValueError("artifact reply admission returned no typed decision")
+        except (AttributeError, OSError, ValueError, TypeError, KeyError) as exc:
+            admitted = {"ok": False, "reason_code": "ARTIFACT_REPLY_PROVENANCE_UNAVAILABLE",
+                        "detail": str(exc)}
+        if not admitted["ok"]:
+            return {"outcome": "waiting", "reason_code": admitted.get("reason_code"),
+                    "detail": admitted.get("detail"), "messages": [], "delivered": [],
+                    "approval_context": _script_presentation_context(run_dir, _approval, _events)}
+    else:
+        # An outgoing presentation may carry the verified Store identity. It
+        # supplies no incoming client source or approval evidence.
+        admission = _production_admission(run_dir)
+        if admission.get("ok") and admission.get("run_id"):
+            context["run_id"] = admission["run_id"]
     try:
-        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply)
+        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply, context=context)
     except Exception as e:  # noqa: BLE001 - delivery failed: stay paused, resume re-sends
         return {"outcome": "error", "problems": [str(e)[:200]], "messages": out}
     r["delivered"] = out
+    r["approval_context"] = _script_presentation_context(run_dir, _approval, _events)
     return r
 
 
@@ -478,9 +551,12 @@ def _sa_envelope(cmd, sid, r):
         return envelope(cmd, sid, "rejected", "script-checks-failed",
                         "Fix: %s" % "; ".join(r["problems"]), data=r)
     if oc == "waiting":
+        if str(r.get("reason_code") or "").startswith("ARTIFACT_REPLY_"):
+            return envelope(cmd, sid, "waiting", r["reason_code"],
+                            r.get("detail") or "Carry the actual client reply and presentation identity.", data=r)
         return envelope(cmd, sid, "waiting", "SCRIPT_AWAITING_APPROVAL",
-                        "The client has the script. No song until they reply. When they do, "
-                        "run script-reply --run-dir <dir> --reply <their words>.", data=r)
+                        "The client has the script. No song until they reply. Use script-reply "
+                        "with their words, client source reference, run ID and presentation ask ID.", data=r)
     return envelope(cmd, sid, "ok", "script-approved",
                     "Script approved (or not asked for). Run `next` for the music stage.", data=r)
 
@@ -820,6 +896,19 @@ def music_stage(run_dir, owner, action, run_id=None, reason=None,
 
 def cmd_music(a):
     run_dir = Path(a.run_dir).expanduser().resolve()
+    guarded = a.action in ("start", "resume", "complete")
+    admission = (_production_admission(run_dir, MUSIC if a.action == "start" else None,
+                                        run_id=getattr(a, "run_id", None)) if guarded else
+                 {"ok": False, "reason_code": "LIFECYCLE_CONTROL_ONLY", "stage": None,
+                  "run_id": getattr(a, "run_id", None), "authority": None})
+    if (guarded and not admission["ok"] and a.action == "start"
+            and admission.get("reason_code") == "PRODUCTION_STAGE_NOT_RUNNABLE"
+            and admission.get("current_state") in ("WAITING_PROVIDER", "WAITING_APPROVAL", "QC", "COMPLETE")):
+        # start is an existing-job heartbeat/idempotent read in these states;
+        # the lifecycle's owner/lease checks still decide whether it may resume.
+        admission = _production_admission(run_dir, run_id=getattr(a, "run_id", None))
+    if guarded and not admission["ok"]:
+        return _production_refusal("music", run_dir, admission)
     qc = None
     od = None
     if a.action == "complete":
@@ -841,8 +930,9 @@ def cmd_music(a):
     r = music_stage(run_dir, a.owner, a.action, run_id=a.run_id, reason=a.reason,
                     retryable=a.retryable, qc=qc, lease_s=a.lease_s,
                     operator_decision=od)
-    return envelope("music", run_dir.name or "run", r["outcome"], r["reason_code"],
-                    r["detail"], data={"stage": MUSIC, "row": r["row"]})
+    return envelope("music", admission.get("run_id") or run_dir.name or "run", r["outcome"], r["reason_code"],
+                    r["detail"], data={"stage": MUSIC, "row": r["row"], "production_process": admission,
+                                      "production_admitted": admission.get("stage") == MUSIC})
 
 
 def _music_lifecycle():
@@ -1741,7 +1831,7 @@ STAGE_REGISTRY = {
         ["storyboard/gate.json", "storyboard/approval.json"],
         "delivered-approval", "approved shots + stills present",
         "scripts/core/intake_preflight/factory.py storyboard --resume",
-        "approval", artifacts=["storyboard/gate.json"]),
+        "approval", artifacts=["storyboard/shot-list.json", "storyboard/contracts.json"]),
     "image-keyframes": _stage(
         ["storyboard"], "keyframe-artist",
         "scripts/core/… image-keyframes", "keyframes/<shot-set-digest>",
@@ -2151,9 +2241,18 @@ def continuation_enqueue(run_dir, event, run_id=None, stages=None,
         "at": time.time(),
     }
     if decision["verdict"] == "runnable" and decision["next_stage"]:
-        entry = (registry or STAGE_REGISTRY).get(decision["next_stage"], {})
-        action["entrypoint"] = entry.get("entrypoint")
-        action["idempotency"] = entry.get("idempotency")
+        admission = _production_admission(rd, decision["next_stage"], run_id=run_id)
+        action["production_process"] = admission
+        action["production_admitted"] = admission["ok"]
+        if admission["ok"]:
+            entry = (registry or STAGE_REGISTRY).get(decision["next_stage"], {})
+            action["entrypoint"] = entry.get("entrypoint")
+            action["idempotency"] = entry.get("idempotency")
+        else:
+            action["verdict"] = "waiting"
+            action["reason_code"] = admission["reason_code"]
+            action["entrypoint"] = None
+            action["wake_event"] = "governed-stage-ready"
     if decision["verdict"] == "exhausted" and decision["all_complete"]:
         delivered, report = evaluate_completion(rd, got, stages, registry,
                                                 evidence=evidence)
@@ -2209,6 +2308,9 @@ def cmd_event(a):
         return envelope("event", str(getattr(a, "run_id", "") or run_dir.name),
                         "rejected", "unknown-event",
                         "event must be one of %s" % (", ".join(EVENT_KINDS),))
+    authority = _production_admission(run_dir, run_id=getattr(a, "run_id", None))
+    if not authority["ok"]:
+        return _production_refusal("event", run_dir, authority)
     action = continuation_enqueue(run_dir, event,
                                   run_id=getattr(a, "run_id", None))
     sid = action["run_id"]
@@ -2217,6 +2319,9 @@ def cmd_event(a):
                         "Event %r enqueued the next action: run %r."
                         % (event, action.get("entrypoint") or action["next_stage"]),
                         data=action)
+    admission = action.get("production_process") or {}
+    if admission.get("ok") is False:
+        return _production_refusal("event", run_dir, admission)
     if action.get("delivered"):
         return envelope("event", sid, "ok", "run-complete",
                         "Event %r: the run is delivered (strict completion)."
@@ -2316,11 +2421,20 @@ def _next_ai_roles(run_dir):
 
 def cmd_next(a):
     """Expose the admitted role dispatch alongside the existing stage plan."""
+    # Restart an outdated process before intake handoff, authority inspection
+    # or reconciliation can inspect or change any run state.
+    boot_snapshot = _stale_session()
+    if boot_snapshot[0]:
+        return _next_stage(a, boot_snapshot=boot_snapshot)
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
     # An incomplete intake remains the primary gate; it has not bound its AI
     # answer yet and must not be told to replace it with a default model pair.
     if _intake_session_gate(run_dir, run_dir.name or "run") is not None:
         return _next_stage(a)
+    if (run_dir / "control" / "state.sqlite3").exists():
+        authority = _production_admission(run_dir)
+        if not authority["ok"]:
+            return _production_refusal("next", run_dir, authority)
     roles, refused = _next_ai_roles(run_dir)
     if refused is not None:
         return envelope("next", run_dir.name or "run", "error",
@@ -2329,6 +2443,15 @@ def cmd_next(a):
                         data={"stage": None, "command": None, "admission": refused},
                         evidence=[str(run_dir / "model-bindings.json")])
     result = _next_stage(a)
+    data = result.setdefault("data", {})
+    if result.get("outcome") == "ok" and data.get("command"):
+        stage = data.get("production_stage") or data.get("stage")
+        admission = _production_admission(run_dir, stage)
+        if not admission["ok"]:
+            return _production_refusal("next", run_dir, admission)
+        data["production_process"] = admission
+        data["production_admitted"] = True
+        result["run_id"] = admission.get("run_id") or result["run_id"]
     if roles is not None:
         data = result.setdefault("data", {})
         data["ai_role_bindings"] = roles
@@ -2349,12 +2472,12 @@ def cmd_next(a):
     return result
 
 
-def _next_stage(a):
+def _next_stage(a, *, boot_snapshot=None):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     # L4.2: a process whose skill was updated since it started refuses to
     # continue ANY run — silently running stale code is how merged fixes
     # missed 17-20 h sessions. Both versions are named; restart is the remedy.
-    stale, boot_v, disk_v = _stale_session()
+    stale, boot_v, disk_v = boot_snapshot if boot_snapshot is not None else _stale_session()
     if stale:
         env = envelope("next", "",
                        "error", "SKILL_UPDATED",
@@ -2718,7 +2841,7 @@ def _next_stage(a):
                 % sc["mode"],
                 data=data, evidence=["%s" % db, runbook_path])
     lane = lane_size_payload()
-    nxt = {"stage": present_id, "command": row["command"],
+    nxt = {"stage": present_id, "production_stage": next_stage, "command": row["command"],
            "produces": row.get("produces", ""), "lane_size": lane,
            "stages_source": stages_source}
     if row_id != present_id:
@@ -2858,6 +2981,11 @@ def main(argv=None):
     i.add_argument("--run-id", default=None)
     p = sub.add_parser("preflight", help="NAMES-only dependency/auth checks; never generates.")
     p.add_argument("--run-id", default=None)
+    p.add_argument("--run-dir", default=None, help="Existing governed run; omitted for dependency diagnostics.")
+    p.add_argument("--stage", default=None, choices=tuple(STAGE_REGISTRY),
+                   help="Canonical stage whose current predecessors and artifact gates must admit production.")
+    p.add_argument("--mode", default="production", choices=("production", "diagnostic"),
+                   help="Diagnostic checks are non-generating and never confer production admission.")
     p.add_argument("--root", default=None, help="Approved storage root.")
     p.add_argument("--storage-dir", default=None)
     p.add_argument("--ref", action="append", default=None)
@@ -2925,6 +3053,14 @@ def main(argv=None):
                                              "(SCRIPT APPROVAL): approve, or an edit.")
     sr.add_argument("--run-dir", required=True)
     sr.add_argument("--reply", required=True)
+    sr.add_argument("--reply-source", default=None,
+                    help="Actual origin of this artifact reply; client is required for modern runs.")
+    sr.add_argument("--answer-source-ref", default=None,
+                    help="Distinct originating client message/event reference; never an intake answer reference.")
+    sr.add_argument("--presentation-ask-id", default=None,
+                    help="Exact current presented whole-script/lyrics ask ID from approval_context.asks.")
+    sr.add_argument("--run-id", default=None,
+                    help="Actual run ID carried by this client reply; never inferred from the folder.")
     sr.add_argument("--target", default="")
     fr = sub.add_parser("final-recap", help="Gate 4: build the ONE final "
                         "scene/music/cost recap by MEASURING the run (scenes, "

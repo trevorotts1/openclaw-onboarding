@@ -7,7 +7,6 @@ Run: python3 core/song_choices/test_song_choices_fu_song.py   (needs ffmpeg + ff
 import json
 import os
 import shutil
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -22,6 +21,7 @@ from song_choices import song_choices as SC                     # noqa: E402
 import length_formula as LF                                     # noqa: E402
 import kie_dispatch.kie_dispatch as KD                          # noqa: E402
 import factory as F                                             # noqa: E402
+from test_production_process import confirmed_run, complete_stage, approve_script
 
 N = len(IC.QUESTIONS)
 IDS = [q["id"] for q in IC.QUESTIONS]
@@ -279,15 +279,14 @@ def test_all_failed_versions_are_presented_with_the_one_fork():
         assert SC.refusal(os.path.join(tmp, "run")) is not None
 
 
-def _stage_run(tmp, music_done=True):
+def _stage_run(tmp, music_done=True, *, song=True):
     run = os.path.join(tmp, "run")
-    os.makedirs(os.path.join(run, "control"), exist_ok=True)
-    stages = ("research", "creative-strategy", "script-lyrics", "music", "continuity-bible", "storyboard",
-              "image-keyframes", "video-generation", "qc-retakes", "assembly", "final-qc", "delivery")
-    with sqlite3.connect(os.path.join(run, "control", "state.sqlite3")) as con:
-        con.execute("CREATE TABLE stages(run_id TEXT, stage TEXT, state TEXT)")
-        for i, s in enumerate(stages):
-            con.execute("INSERT INTO stages VALUES('R', ?, ?)", (s, "COMPLETE" if i < (4 if music_done else 3) else "NOT_STARTED"))
+    confirmed_run(run, song=song)
+    for stage in ("research", "creative-strategy", "script-lyrics"):
+        complete_stage(run, stage)
+    approve_script(run)
+    if music_done:
+        complete_stage(run, "music")
     return run
 
 
@@ -332,7 +331,9 @@ def test_gate_blocks_picture_and_paid_jobs_until_pick():
 
 def test_no_path_is_unchanged_and_broken_state_fails_closed():
     with tempfile.TemporaryDirectory() as tmp:
-        run = _stage_run(tmp)
+        run = _stage_run(tmp, song=False)
+        # Preserve the legacy absent-state surface with a confirmed No answer.
+        os.remove(os.path.join(run, "song-choices", "state.json"))
         assert SC.refusal(run) is None and KD._song_pick_refusal("kling/video", run) is None   # no state file
         env = F.cmd_next(_A(run))
         assert env["outcome"] == "ok" and env["data"]["stage"] == "continuity-bible"

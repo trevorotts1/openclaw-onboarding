@@ -1008,9 +1008,32 @@ def resolve_adapter(explicit=None):
 GENERATION_CMDS = frozenset({"submit", "create", "generate", "extend"})
 
 
-def make_runner(timeout=300):
-    """Real Skill 74 subprocess. The tests never use this."""
+def make_runner(timeout=300, *, process_context=None):
+    """Real Skill 74 subprocess; paid commands require current run authority.
+
+    Injected test runners are an offline seam, not production evidence. The
+    real runner independently checks authority, including when passed back to
+    dispatch as an injected callable or wrapped by another Python function.
+    """
     def _run(argv):
+        cmd = str(argv[1]) if len(argv) > 1 else ""
+        if cmd in GENERATION_CMDS:
+            if not isinstance(process_context, dict):
+                raise DispatchError("PRODUCTION_CONTEXT_REQUIRED: use governed dispatch")
+            args = list(argv)
+            try:
+                req_path = args[args.index("--request") + 1]
+                with open(req_path, encoding="utf-8") as f:
+                    current_request = json.load(f)
+            except (ValueError, IndexError, OSError) as exc:
+                raise DispatchError("PRODUCTION_REQUEST_UNREADABLE: %s" % exc) from exc
+            if L.digest_request(current_request) != process_context["request_digest"]:
+                raise DispatchError("PRODUCTION_REQUEST_CHANGED: prepare the request again")
+            receipt = production_process_admission(
+                request=current_request, **process_context["arguments"])
+            if not receipt.get("ok"):
+                raise DispatchError("%s: %s" % (
+                    receipt.get("reason_code"), receipt.get("detail")))
         def once():
             r = subprocess.run([sys.executable] + list(argv),
                                capture_output=True, text=True, timeout=timeout,
@@ -1019,9 +1042,10 @@ def make_runner(timeout=300):
         # Load governor: only NEW generation requests (submit) draw from the
         # 20-per-10-s bucket; health/preflight/wait/save use the gentle poll
         # limiter. A 429 means the job did not run: back off and resubmit.
-        cmd = str(argv[1]) if len(argv) > 1 else ""
         return _LG.kie_request(once, label=" ".join(str(a) for a in argv[1:4]),
                                generation=cmd in GENERATION_CMDS)
+    _run._s75_live_runner = True
+    _run._s75_bind = lambda context: make_runner(timeout, process_context=context)
     return _run
 
 
@@ -1208,7 +1232,10 @@ def check_script_approval_gate(model, request, save_dir=None):
     """SCRIPT APPROVAL: a music job for a run whose client asked to approve the
     script first refuses until the script is approved. Others untouched."""
     req = request if isinstance(request, dict) else {}
-    if _modality(model) != "music" or _SA is None:
+    if _modality(model) != "music" or _SA is None or model == "ai-music-api/separate-vocals":
+        # Separating the already selected song is not new lyric generation.
+        # Its actual production stage still requires the authoritative script,
+        # song and storyboard gates in production_process_admission below.
         return None
     inp = req.get("input") if isinstance(req.get("input"), dict) else {}
     # The record rides the request, else it is found in the run folder (request
@@ -1236,10 +1263,286 @@ def _saved_hashes(paths):
     return result
 
 
+def _process_refusal(code, detail):
+    return {"ok": False, "reason_code": code, "detail": detail,
+            "next_action": "Resume the governed factory entrypoint; preserve existing run evidence."}
+
+
+class ProviderFrameBindingError(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def _frame_still(root, approved, shot_id):
+    """Only the authoritative current still map decides which bytes a shot uses."""
+    with open(approved["stills_path"], encoding="utf-8") as f:
+        value = json.load(f).get(shot_id)
+    if not isinstance(value, str) or not value:
+        raise ProviderFrameBindingError("PROVIDER_FRAME_STILL_MISSING", "The approved shot has no local still.")
+    path = Path(value)
+    path = (path if path.is_absolute() else root / path).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise ProviderFrameBindingError("PROVIDER_FRAME_STILL_MISSING", "The approved still must be a readable file in this run.")
+    return path
+
+
+def upload_storyboard_frame(run_dir, shot_id, *, stage="video-generation", run_id=None,
+                            uploader=None, adapter_path=None):
+    """Upload one current approved still; never generate a picture or video.
+
+    The returned producer receipt goes under request.frame_bindings using the
+    actual provider field (e.g. first_frame_url). The ordinary request builder
+    receives its URL. The uploader receives an immutable copy, not the source;
+    no hash is inferred from a URL. Tests may inject an offline uploader without
+    claiming that the remote provider fetched the image. Explicitly injected
+    uploaders are offline receipts and cannot authorize paid frame dispatch.
+    """
+    from production_process import admit_production, validate_upload_url
+    from lip_sync.lip_gate import picture_gate as PG
+    import shutil
+    root = Path(run_dir).expanduser().resolve()
+    if stage not in ("video-generation", "qc-retakes"):
+        raise ProviderFrameBindingError("PROVIDER_FRAME_STAGE_MISMATCH", "Name the governed video stage for the frame upload.")
+    authority = admit_production(root, stage, run_id=run_id)
+    if not authority.get("ok"):
+        raise ProviderFrameBindingError(authority.get("reason_code", "PROVIDER_FRAME_AUTHORITY_MISSING"), authority.get("detail", "Frame upload not admitted."))
+    approved = authority.get("approved_storyboard") or {}
+    revision = (approved.get("revisions") or {}).get(shot_id)
+    if not revision:
+        raise ProviderFrameBindingError("PROVIDER_FRAME_SHOT_MISMATCH", "The upload shot is not in the current approved storyboard.")
+    source = _frame_still(root, approved, shot_id)
+    sha = PG.sha256_file(str(source))
+    with tempfile.TemporaryDirectory(prefix="frame-upload-", dir=root) as temp:
+        copied = Path(temp) / source.name
+        shutil.copyfile(source, copied)
+        if PG.sha256_file(str(copied)) != sha:
+            raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The still changed before upload.")
+        url = (uploader or PG.adapter_uploader(adapter_path=adapter_path))(str(copied))
+        if PG.sha256_file(str(copied)) != sha or PG.sha256_file(str(source)) != sha:
+            raise ProviderFrameBindingError("PROVIDER_FRAME_CHANGED_DURING_UPLOAD", "The uploader or source changed the approved frame bytes.")
+    if not validate_upload_url(url):
+        raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The upload returned no HTTPS image URL.")
+    current = admit_production(root, stage, run_id=authority["run_id"])
+    if not current.get("ok") or (current.get("approved_storyboard", {}).get("revisions") or {}).get(shot_id) != revision:
+        raise ProviderFrameBindingError("PROVIDER_FRAME_APPROVAL_STALE", "The storyboard approval changed during upload.")
+    record = {"produced_by": "kie_dispatch.upload_storyboard_frame", "run_id": authority["run_id"],
+              "execution_mode": "offline" if uploader is not None else "production",
+              "production_upload": uploader is None,
+              "shot_id": shot_id, "storyboard_revision": revision, "source_path": str(source),
+              "sha256": sha, "url": url}
+    key = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+    directory = (root / "control" / "frame-uploads" / key).resolve()
+    if not directory.is_relative_to(root):
+        raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The upload receipt directory leaves this run.")
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / (sha + ".upload.json")
+    if path.exists():
+        with path.open(encoding="utf-8") as f:
+            if json.load(f) != record:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The existing upload receipt differs.")
+    else:
+        with path.open("x", encoding="utf-8") as f:
+            json.dump(record, f, sort_keys=True)
+    PG.require_upload_bound(str(source), url, str(directory))
+    return dict(record, receipt_dir=str(directory), upload_receipt_path=str(path))
+
+
+def provider_frame_refusal(model, request, root, approved, selected):
+    """Join actual I2V provider URLs to the current approved shot's uploaded bytes."""
+    if ML.is_locked_lipsync(model):
+        return None  # its existing picture/stem gates remain authoritative
+    from video_router.video_router import FIRST_FRAME_FIELDS, LAST_FRAME_FIELDS
+    from production_process import validate_upload_url
+    from lip_sync.lip_gate import picture_gate as PG
+    req = request if isinstance(request, dict) else {}
+    inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+    frames = [(key, inp[key]) for key in sorted(FIRST_FRAME_FIELDS | LAST_FRAME_FIELDS)
+              if inp.get(key) is not None and inp.get(key) != ""]
+    # The card's existing Veo adapter uses the primary-schema image_urls list.
+    if model == "veo-3-1" and inp.get("image_urls"):
+        if not isinstance(inp["image_urls"], list):
+            return _process_refusal("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The provider image_urls field is not a list.")
+        frames.extend(("image_urls[%d]" % i, url) for i, url in enumerate(inp["image_urls"]))
+    if model == "minimax-h3/image-to-video" and not inp.get("first_frame_url"):
+        return _process_refusal("PROVIDER_FRAME_REQUIRED", "MiniMax H3 image-to-video needs its approved uploaded first frame.")
+    if any(key in LAST_FRAME_FIELDS or (key.startswith("image_urls[") and key != "image_urls[0]")
+           for key, _ in frames):
+        return _process_refusal("PROVIDER_LAST_FRAME_APPROVAL_MISSING",
+                                "This storyboard records one approved still per shot and no independent approved end frame.")
+    if not frames:
+        return None  # genuine text-to-video has no input frame to substitute
+    ids = {row["shot_id"] for row in selected}
+    sid = req.get("shot_id") or (next(iter(ids)) if len(ids) == 1 else None)
+    if sid not in ids:
+        return _process_refusal("PROVIDER_FRAME_SHOT_MISMATCH", "Bind this one provider job to its selected approved shot_id.")
+    try:
+        root = Path(root).resolve()
+        source = _frame_still(root, approved, sid)
+        sha = PG.sha256_file(str(source))
+        revision = approved["revisions"][sid]
+        bindings = req.get("frame_bindings") or {}
+        if not isinstance(bindings, dict):
+            raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "Frame bindings must be producer receipts keyed by provider field.")
+        for field, url in frames:
+            if not validate_upload_url(url):
+                raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "The actual provider frame must be an uploaded HTTPS URL.")
+            binding = bindings.get(field)
+            if binding is None:
+                raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED",
+                    "No production upload receipt binds this approved frame; use upload_storyboard_frame().")
+            else:
+                if not isinstance(binding, dict) or binding.get("shot_id") != sid:
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_SHOT_MISMATCH", "The frame upload belongs to a different storyboard shot.")
+                directory = Path(binding.get("receipt_dir") or "").resolve()
+                expected_root = (root / "control" / "frame-uploads").resolve()
+                if not directory.is_relative_to(expected_root):
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "No producer upload receipt belongs to this run.")
+                with (directory / (sha + ".upload.json")).open(encoding="utf-8") as f:
+                    produced = json.load(f)
+                if produced.get("execution_mode") != "production" or produced.get("production_upload") is not True:
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_UPLOAD_UNVERIFIED", "Offline or unknown uploads cannot authorize a paid provider frame.")
+                if (produced.get("produced_by") != "kie_dispatch.upload_storyboard_frame" or
+                        produced.get("run_id") != req.get("run_id") or
+                        produced.get("shot_id") != sid or produced.get("storyboard_revision") != revision or
+                        produced.get("source_path") != str(source) or produced.get("sha256") != sha):
+                    raise ProviderFrameBindingError("PROVIDER_FRAME_APPROVAL_STALE", "The upload is not bound to this current approved shot and still.")
+            PG.require_upload_bound(str(source), url, str(directory))
+        return None
+    except (ProviderFrameBindingError, OSError, ValueError, TypeError, KeyError, AttributeError, PG.LipsyncPictureNotGated) as exc:
+        return _process_refusal(getattr(exc, "code", "PROVIDER_FRAME_UPLOAD_UNVERIFIED"), str(exc))
+
+
+def production_process_admission(*, model, request, save_dir, ledger_db,
+                                 run_id, stage="kie", state_store=None,
+                                 adapter_path=None):
+    """Read-only admission; caller-authored receipt JSON is never authority."""
+    req = request if isinstance(request, dict) else {}
+    if req.get("model") and req["model"] != model:
+        return _process_refusal("PRODUCTION_MODEL_MISMATCH",
+                                "The provider payload model differs from the dispatched model.")
+    def enclosing_root(path):
+        p = Path(path).expanduser().resolve()
+        for root in (p, *p.parents):
+            if (root / "control" / "state.sqlite3").is_file():
+                return root
+        return None
+    try:
+        if str(ledger_db) == ":memory:":
+            return _process_refusal("PRODUCTION_LEDGER_REQUIRED",
+                                    "Production requires this run's persistent spend ledger.")
+        ledger = Path(ledger_db).expanduser().resolve()
+        state_path = getattr(state_store, "path", state_store)
+        state_path = Path(state_path).expanduser().resolve() if state_path else None
+        root = (Path(req["run_dir"]).expanduser().resolve() if req.get("run_dir")
+                else enclosing_root(state_path) if state_path else None)
+        root = root or enclosing_root(ledger.parent)
+        if root is None:
+            return _process_refusal("PRODUCTION_RUN_AUTHORITY_MISSING",
+                                    "No canonical run state binds this production request.")
+        if not ledger.is_relative_to(root) or not Path(save_dir).expanduser().resolve().is_relative_to(root):
+            return _process_refusal("PRODUCTION_RUN_SCOPE_MISMATCH",
+                                    "The spend ledger and saved outputs must belong to the admitted run.")
+        if state_path and state_path != root / "control" / "state.sqlite3":
+            return _process_refusal("PRODUCTION_RUN_SCOPE_MISMATCH",
+                                    "The model-lock store is not this run's canonical stage store.")
+        kind = "video" if ML.is_locked_lipsync(model) else _modality(model, adapter_path)
+        allowed_stages = {"music": ("music", "qc-retakes"),
+                          "image": ("continuity-bible", "image-keyframes", "qc-retakes"),
+                          "video": ("video-generation", "qc-retakes")}[kind]
+        separation = model == "ai-music-api/separate-vocals"
+        picture_repair = kind == "image" and req.get("request_kind") == "lipsync-picture-regeneration"
+        if separation:
+            allowed_stages = ("music", "video-generation", "qc-retakes")
+        elif picture_repair:
+            allowed_stages = ("video-generation", "qc-retakes")
+        requested_stage = req.get("production_stage")
+        if requested_stage and stage != "kie" and requested_stage != stage:
+            return _process_refusal("PRODUCTION_STAGE_MISMATCH",
+                                    "The request and dispatch name different production stages.")
+        paid_stage = requested_stage if stage == "kie" else stage
+        if not paid_stage:
+            if kind == "image" or separation:
+                return _process_refusal("PRODUCTION_STAGE_REQUIRED",
+                                        "Name the actual governed stage for this image or vocal-separation job.")
+            paid_stage = allowed_stages[0]
+        if paid_stage not in allowed_stages:
+            return _process_refusal("PRODUCTION_STAGE_MISMATCH",
+                                    "%s generation cannot run as %s." % (kind, paid_stage))
+        from production_process import admit_production
+        receipt = admit_production(root, paid_stage, run_id=run_id)
+        if not isinstance(receipt, dict) or not receipt.get("ok"):
+            return receipt if isinstance(receipt, dict) else _process_refusal(
+                "PRODUCTION_AUTHORITY_UNREADABLE", "The production authority returned no admission.")
+        approved_script = receipt.get("approved_script") or {}
+        inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+        lyrics = inp.get("lyrics", req.get("lyrics"))
+        if kind == "music" and lyrics is not None:
+            if not approved_script.get("lyrics_sha256"):
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISSING",
+                                        "The admitted run has no current lyric artifact identity.")
+            if _SA is None or _SA.lyrics_sha(lyrics) != approved_script["lyrics_sha256"]:
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISMATCH",
+                                        "The provider lyrics differ from the approved lyric artifact.")
+        approved_board = receipt.get("approved_storyboard") or {}
+        if kind == "video":
+            if not approved_board:
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISSING",
+                                        "The admitted run has no current storyboard artifact identity.")
+            with open(approved_board["gate_path"], encoding="utf-8") as f:
+                authoritative = json.load(f)
+            with open(approved_board["shot_list_path"], encoding="utf-8") as f:
+                source = json.load(f)
+            shots = source.get("shots") if isinstance(source, dict) else source
+            approved_shots = {s["shot_id"]: dict(s, status="storyboard_approved") for s in shots}
+            requested = req.get("storyboard") or {}
+            selected = requested.get("shots")
+            if (not isinstance(selected, list) or not selected or
+                    any(s != approved_shots.get(s.get("shot_id")) for s in selected) or
+                    requested.get("review") != authoritative.get("review")):
+                return _process_refusal("PRODUCTION_APPROVAL_SCOPE_MISMATCH",
+                                        "The requested storyboard differs from this run's approved artifact.")
+            frame_refusal = provider_frame_refusal(model, dict(req, run_id=run_id), root,
+                                                    approved_board, selected)
+            if frame_refusal:
+                return frame_refusal
+        return receipt
+    except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        return _process_refusal("PRODUCTION_AUTHORITY_UNREADABLE", str(exc))
+
+
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
              timeout=300, state_store=None, video_job=None):
+    """Governed production, or explicitly identified offline runner simulation.
+
+    A fake injected runner exercises the existing protocol without conferring
+    production authority. An arbitrary Python callable is trusted test code;
+    this API does not sandbox code or defend against filesystem/code rewrites.
+    """
+    execution = {"mode": "production" if runner is None or
+                 getattr(runner, "_s75_live_runner", False) else "offline"}
+    result = _dispatch_pipeline(
+        model=model, request=request, save_dir=save_dir, ledger_db=ledger_db,
+        run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+        estimated_cost=estimated_cost, prompt=prompt, units=units, stage=stage,
+        owner=owner, adapter_path=adapter_path, runner=runner, timeout=timeout,
+        state_store=state_store, video_job=video_job, _execution=execution)
+    evidence = result.setdefault("evidence", {})
+    evidence["execution_mode"] = execution["mode"]
+    evidence["production_admitted"] = bool((execution.get("admission") or {}).get("ok"))
+    evidence["accepted_production"] = bool(evidence["production_admitted"] and
+                                           result.get("outcome") == "ok")
+    if execution.get("admission"):
+        evidence["process_admission"] = execution["admission"]
+    return result
+
+
+def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_key,
+             attempt_id, estimated_cost, prompt="", units=1, stage="kie",
+             owner="kie-dispatch", adapter_path=None, runner=None,
+             timeout=300, state_store=None, video_job=None, _execution=None):
     """Run the plan 5.4 pipeline once. Returns one envelope; never raises.
 
     F14 video-model lock: video jobs (video_job=True, or a video model on
@@ -1475,7 +1778,27 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
             run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
             evidence={"placeholder_path": ph[0], "placeholder_token": ph[1],
                       "generated": False})
-    run = runner or make_runner(timeout)
+    # Authoritative intake, artifact scope and predecessor state are checked
+    # before even planning/reserving spend. A caller's card/approval JSON is
+    # only a projection and cannot replace the governed run's authority.
+    process_context = None
+    if _execution["mode"] == "production":
+        arguments = dict(model=model, save_dir=save_dir, ledger_db=ledger_db,
+                         run_id=run_id, stage=stage, state_store=state_store,
+                         adapter_path=adapter_path)
+        admission = production_process_admission(request=request, **arguments)
+        _execution["admission"] = admission
+        if not admission.get("ok"):
+            return envelope("dispatch", "rejected", admission["reason_code"],
+                            admission.get("detail", "") + " " + admission.get("next_action", ""),
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id, evidence={"generated": False})
+        stage = admission["stage"]  # the ledger names the admitted canonical stage
+        process_context = {"arguments": arguments,
+                           "request_digest": L.digest_request(request)}
+        if runner is not None:
+            runner = runner._s75_bind(process_context)
+    run = runner or make_runner(timeout, process_context=process_context)
 
     # ---- 1. ledger reserve -------------------------------------------------
     digest = L.digest_request(request)
@@ -1629,7 +1952,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
         wait_s = _wait_budget_s(request, model, adapter)
         # Injected runners (tests) already stand in for Skill 74; the real
         # wait subprocess gets W+120 so the inner wait always returns first.
-        wait_run = run if runner is not None else make_runner(wait_s + 120)
+        wait_run = run if runner is not None else make_runner(wait_s + 120, process_context=process_context)
 
         def _unknown_at(stage, extra, task=""):
             ev = {"stage": stage, "wait_timeout_s": wait_s}
@@ -1881,7 +2204,8 @@ def main(argv=None):
     x.add_argument("--units", type=int, default=1)
     x.add_argument("--prompt", default=None)
     x.add_argument("--prompt-file", default=None)
-    x.add_argument("--stage", default="kie")
+    x.add_argument("--stage", default="kie",
+                   help="Canonical production stage; required for ambiguous image jobs.")
     x.add_argument("--owner", default="kie-dispatch")
     x.add_argument("--adapter", default=None,
                    help="Path to kie_live_adapter.py (default: search).")
@@ -1890,7 +2214,26 @@ def main(argv=None):
                    help="run state DB (control/state.sqlite3) for the F14 "
                         "video-model lock; without it a video job can never "
                         "pass F14 from the CLI")
+    up = d.add_parser("upload-storyboard-frame", help="Upload one current approved still and return its frame binding; no generation.")
+    up.add_argument("--run-dir", required=True)
+    up.add_argument("--shot-id", required=True)
+    up.add_argument("--stage", default="video-generation", choices=("video-generation", "qc-retakes"))
+    up.add_argument("--run-id", default=None)
+    up.add_argument("--adapter", default=None)
     a = ap.parse_args(argv)
+
+    if a.cmd == "upload-storyboard-frame":
+        try:
+            result = upload_storyboard_frame(a.run_dir, a.shot_id, stage=a.stage,
+                                             run_id=a.run_id, adapter_path=a.adapter)
+            json.dump({"outcome": "ok", "frame_binding": result}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return 0
+        except (ProviderFrameBindingError, OSError, ValueError) as exc:
+            json.dump({"outcome": "rejected", "reason_code": getattr(exc, "code", "PROVIDER_FRAME_UPLOAD_UNVERIFIED"),
+                       "detail": str(exc)}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return EXIT["rejected"]
 
     if a.cmd == "dispatch":
         with open(a.request, encoding="utf-8") as f:
