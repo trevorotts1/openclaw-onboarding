@@ -1,4 +1,6 @@
-## [2.0.25] - 2026-10-24 - fix: five T-11 defects — identity-root allowlist, no channel fusion, generated owner identity, fenced captures (T-11 QC repair)
+## [2.0.25] - 2026-10-24 - fix: five T-11 defects (QC repair) + feat: durable inbox/outbox, fresh outbound gate, unknown-send reconciliation (T-12)
+
+### T-11 QC repair — five defects: identity-root allowlist, no channel fusion, generated owner identity, fenced captures
 
 Independent QC FAILED the 2.0.24 T-11 modules on five reproduced defects. All five are repaired here, each with its own test, including real multi-process races; the original 70043d040 commit is left intact as evidence of what failed.
 
@@ -9,6 +11,12 @@ Independent QC FAILED the 2.0.24 T-11 modules on five reproduced defects. All fi
 - **Premature complete() (D5).** `_set_terminal` marked a capture terminal without checking `cursor == len(steps)`, so a premature `complete()` left steps permanently unreachable and silently dropped data. `complete()` now raises `CaptureIncomplete` with the cursor and step count and leaves the capture resumable; `reject()` is still allowed with steps remaining.
 
 Tests: `tools/tests/test_tenant_identity.py` (26) and `tools/tests/test_collection_lock.py` (23) — 49 in these two files, 93 across the skill suite (73 before). Three capture tests that encoded the unfenced D4 behaviour (`test_rejected_capture_stays_rejected_and_cannot_advance`, `test_capture_cursor_never_rewinds`, `test_capture_rejects_a_foreign_contact`) now acquire the collection lock before mutating a capture, and the `_worker` harness behind `test_partial_capture_resumes_in_a_new_process_never_restarts` does the same; no existing assertion was weakened.
+
+### T-12 — durable inbox/outbox, fresh outbound gate and unknown-send reconciliation
+
+Adds four stdlib-only modules under `tools/`. `durable_store.py` holds a SQLite inbox keyed on (provider, tenant_id, provider_event_id): a redelivered provider event has exactly one effect across processes and restarts, and identical bodies with different event ids stay two events. Its outbox is keyed by `logical_intent_key`/`idempotency_key` with the states not_requested, queued, dispatched, acknowledged, completed, unknown, failed, canceled, suppressed and quarantined; ACK and completion are separate persisted receipts and a stop ACK never counts as completion. Dispatch takes a fenced lease and commits the attempt with one `INSERT ... SELECT` that a cancellation or a stolen lease makes fail before anything is sent. `outbound_gate.py` evaluates the gate fresh on every dispatch and every retry; a verdict row is keyed to its attempt number and can never be reused, and the only verdict that sends is the one computed immediately before the fenced commit. `reconciliation.py` resolves a dispatch with no verdict without ever double-sending: applied becomes acknowledged (not completed), not_applied returns to queued under the SAME action identity, and unresolved stays unclaimable. `sweep_inflight()` promotes a dead-mid-send action to explicit unknown on restart while leaving its attempt open. Tests: `tools/tests/test_durable_processing.py` (26), including a real SIGKILL between provider acceptance and receipt persistence, two real worker processes racing one action, and a two-process cancellation race; the provider in every case is a real append+fsync file on disk. Contract dependency: shared schemas are owned by T-08 and were absent at this base; the modules implement DATA-CONTRACTS sections 2, 3 and 4 directly.
+
+The interrupted pre-restart session had also written the T-11 `tenant_identity.py`/`collection_lock.py` modules and their tests into this worktree. They are byte-identical to commit 70043d040 on `pb/T-11/tenant-collection-lock` and are committed here unchanged so that no partial work is lost; the T-11 release entry below is theirs.
 
 ## [2.0.24] - 2026-10-24 - feat: tenant/contact identity and the shared collection lock (T-11)
 
