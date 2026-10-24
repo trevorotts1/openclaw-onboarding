@@ -1,3 +1,12 @@
+## [Unreleased]  -  2026-10-24  -  PBB-177 / T-04: verified external storage binding and measured global capacity
+
+- Adds `evidence/storage-and-resource-receipt.json` and bumps Skill 38 to v2.0.32 with its own changelog entry. The receipt binds the live external mount by media UUID, resolves every configured parent and device, and proves child `TMPDIR`/`TMP`/`TEMP`/tempfile propagation for shell, Python (including a grandchild) and Node.
+- Measured facts, each with the command and exit code that produced it: mount `/dev/disk7s1`, `st_dev 16777244`, UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA`; filesystem 4000770232320 bytes total and 2524230701056 available; 24 GiB RAM with 5254676480 bytes reclaimable; limits 10 agents per workflow / 50 workflows / 500 agents.
+- Recorded gaps, not papered over: the `config/storage.json` device pin is stale (`disk5s1` / `16777240`) and is never read by `tools/control.py`; macOS `mktemp` ignores `TMPDIR` and writes to the internal disk; `PYTHONPYCACHEPREFIX` is ignored under `-I`; and 9 `node_modules` symlinks under the run roots resolve off-volume.
+- In plain English: this proves where the work actually lives and where temporary files really go, and it names the places where the proof shows a hole instead of pretending they are covered.
+- Nothing is enforced yet. No control code, config, ledger, provider, limit or credential was changed; provider quota, memory admission and unprobed tool caches remain explicitly UNKNOWN.
+- Risk level: LOW (evidence artifact and bookkeeping only).
+
 ## [Unreleased]  -  2026-10-24  -  PBB-070 / T-47: cross-repository compatibility manifest and deployment evidence
 
 - Adds `implementation/pbb-070/compatibility-manifest.json` and `implementation/pbb-070/DEPLOYMENT-EVIDENCE.md`. The manifest binds openclaw-onboarding `bccc4050f`, 999-setup `1d1545fc8`, and blackceo-command-center `ef6b9364e` (pinned tag v7.6.112) by exact commit, names the interfaces that were checked, and marks every interface that is not proven.
