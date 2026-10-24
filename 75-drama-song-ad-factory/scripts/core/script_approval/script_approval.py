@@ -299,7 +299,10 @@ def reply_provenance(run_dir, record=None, context=None, reply=None):
     if provenance["ok"] and reply is not None and AE.is_preference_reply(reply):
         return {"ok": False, "required": provenance["required"], "reason_code": "ARTIFACT_REPLY_IS_PREFERENCE",
                 "detail": "Choosing to see the work first or giving an intake option is not approval of the presented whole script and lyrics."}
-    if provenance["ok"] and provenance["required"]:
+    intent = AE.interpret_reply(reply, rec, ctx).get("intent") if provenance["ok"] else None
+    if provenance["ok"] and provenance["required"] and intent in ("approve", "already-approved"):
+        # Approval binds the bytes already presented. A provenanced edit is
+        # allowed through the existing recheck/re-presentation path instead.
         try:
             with open(os.path.join(run_dir, "creative", "script.json"), encoding="utf-8") as stream:
                 doc = json.load(stream)
@@ -422,7 +425,8 @@ def handle_reply(run_dir, reply, title, story, sheet, lyrics, apply_edit, rechec
     rec = AE.ensure_record(rec)
     prior_sent = bool(rec.get("sent"))
     provenance = reply_provenance(run_dir, rec, ctx, reply)
-    if provenance["ok"] and provenance["required"]:
+    intent = AE.interpret_reply(reply, rec, ctx).get("intent") if provenance["ok"] else None
+    if provenance["ok"] and provenance["required"] and intent in ("approve", "already-approved"):
         actual = {"script": script_sha(title, story, sheet), "lyrics": lyrics_sha(lyrics)}
         if any((rec.get("artifacts", {}).get(k) or {}).get("sha256") != sha for k, sha in actual.items()):
             provenance = {"ok": False, "required": True, "reason_code": "ARTIFACT_REPLY_ARTIFACT_CHANGED",

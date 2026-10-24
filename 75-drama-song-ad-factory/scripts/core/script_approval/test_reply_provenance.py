@@ -107,6 +107,37 @@ class ReplyProvenanceTest(unittest.TestCase):
         self.assertEqual(run_hashes(self.run), before)
         self.assertEqual(self.reply("I approve both", self.context())["status"], "approved")
 
+    def test_provenanced_preapplied_edit_rechecks_and_represents_without_approval(self):
+        context = self.context()
+        old_ask = context["presentation_ask_id"]
+        self.doc["story"][0][1][0] = "Christine closes the gate."
+        self.doc["sheet"][0]["lines"] = ["A closed gate becomes my new chapter"]
+        self.doc["lyrics"] = self.doc["sheet"][0]["lines"][0]
+        write_json(self.run / "creative" / "script.json", self.doc)
+        raw = "say gate, not door"
+        provenance = approval.reply_provenance(self.run, context=context, reply=raw)
+        self.assertTrue(provenance["ok"], provenance)
+        checks = []
+        def apply_edit(reply, story, sheet):
+            self.assertEqual(reply, raw)
+            return story, sheet, self.doc["lyrics"]
+        def recheck(story, sheet):
+            checks.append((story, sheet))
+            return []
+        result = approval.handle_reply(self.run, raw, self.doc["title"], self.doc["story"],
+                                       self.doc["sheet"], self.doc["lyrics"], apply_edit, recheck,
+                                       context=context)
+        self.assertEqual(checks, [(self.doc["story"], self.doc["sheet"])])
+        self.assertEqual(result["status"], "pending", result)
+        self.assertTrue(result["edited"])
+        self.assertIn("closed gate", "\n".join(result["messages"]))
+        record = approval.record_for(self.run)
+        self.assertEqual(record["approvals"], [])
+        self.assertEqual(record["status"], "pending")
+        self.assertNotEqual(events.open_asks(record)[0]["ask_id"], old_ask)
+        self.assertEqual(record["artifacts"]["lyrics"]["sha256"], approval.lyrics_sha(self.doc["lyrics"]))
+        self.assertIsNotNone(approval.check_script_approval(record, self.doc["lyrics"]))
+
     def test_on_disk_script_change_requires_a_new_presentation_before_any_decision(self):
         context = self.context()
         self.doc["story"][0][1].append("An unseen revised ending")
