@@ -1,0 +1,171 @@
+{
+  "_note": "Fiction-only fixtures for S75-T07. Not client content, not approved assets, no provider call.",
+  "manifest": {
+    "cast": [
+      {
+        "character_id": "char_mara_001",
+        "identity_revision": 1,
+        "identity_digest": "identity-digest-1",
+        "episode_role": "lead",
+        "scene_ids": ["scene_workshop_001"],
+        "immediate_story_function": "Must choose to expose the hidden warning.",
+        "choice_or_consequence": "Disclosure shifts her from isolation to shared responsibility."
+      },
+      {
+        "character_id": "char_levi_002",
+        "identity_revision": 1,
+        "identity_digest": "identity-digest-2",
+        "episode_role": "supporting partner",
+        "scene_ids": ["scene_workshop_001"],
+        "immediate_story_function": "Refuses vague reassurance and shows the empty ledger.",
+        "choice_or_consequence": "His restrained offer makes Mara's turn possible."
+      }
+    ],
+    "crowd_groups": [
+      {
+        "crowd_group_id": "crowd_workshop_queue_001",
+        "composition": "four adult repair customers waiting in an ordinary queue",
+        "count": 4,
+        "age_range": "adults 25-60",
+        "roles": ["waiting customers"],
+        "location_placement": {
+          "scene_workshop_001": "two seated beside the north wall, two standing at the counter"
+        },
+        "collective_behavior": ["wait quietly", "step forward only when the counter opens"],
+        "permitted_motion": "small posture shifts and one step forward; no crossing into the work bay",
+        "attention_direction": "toward the counter, never toward the camera",
+        "interaction_with_leads": "none; they never speak to or touch a lead",
+        "wardrobe_palette": "muted everyday clothes, no uniforms, no logos",
+        "camera_limits": "remain outside focus; no close-up, no reaction shot",
+        "entry_exit_rule": "already present at scene open; leave after the leads in the next transition",
+        "recurrence": "this scene only",
+        "dialogue": "PROHIBITED",
+        "reference_provenance": "proposed fiction for the episode brief",
+        "scene_ids": ["scene_workshop_001"]
+      }
+    ]
+  },
+  "scene": {
+    "scene_id": "scene_workshop_001",
+    "cast_ids": ["char_mara_001", "char_levi_002"],
+    "crowd_group_ids": ["crowd_workshop_queue_001"],
+    "spoken_dialogue": [
+      {
+        "line_id": "line_mara_001",
+        "character_id": "char_mara_001",
+        "text": "If I lock that door, their checks bounce tomorrow."
+      }
+    ],
+    "sung_lyrics": [
+      {
+        "line_id": "line_mara_003",
+        "character_id": "char_mara_001",
+        "text": "I kept the light on, kept the truth outside."
+      }
+    ],
+    "performance_order": [
+      {"character_id": "char_mara_001", "line_id": "line_mara_001"}
+    ],
+    "named_actions": [
+      {"character_id": "char_levi_002", "action": "opens the ledger where Mara can read it"}
+    ],
+    "featured_reactions": []
+  },
+  "cases": [
+    {
+      "name": "accept_full_declared_cast_and_lawful_crowd",
+      "expect": "pass"
+    },
+    {
+      "name": "reject_absent_cast_field",
+      "expect": {"field": "cast", "issue_contains": "empty"},
+      "manifest": {"cast": [], "crowd_groups": []}
+    },
+    {
+      "name": "reject_undefined_speaker",
+      "expect": {"field": "scene.spoken_dialogue", "issue_contains": "not declared in cast"},
+      "scene_patch": {
+        "spoken_dialogue": [
+          {"line_id": "line_ghost", "character_id": "char_ghost_999", "text": "Nobody declared me at all."}
+        ]
+      }
+    },
+    {
+      "name": "reject_anonymous_speaker",
+      "expect": {"field": "scene.spoken_dialogue", "issue_contains": "anonymous"},
+      "scene_patch": {
+        "spoken_dialogue": [
+          {"line_id": "line_anon", "character_id": "a woman", "text": "Somebody has to say it out loud."}
+        ]
+      }
+    },
+    {
+      "name": "reject_crowd_without_composition",
+      "expect": {"field": "crowd_groups.composition", "issue_contains": "composition"},
+      "crowd_patch": {"composition": ""}
+    },
+    {
+      "name": "reject_crowd_without_placement",
+      "expect": {"field": "crowd_groups.location_placement", "issue_contains": "placement"},
+      "crowd_patch": {"location_placement": {}}
+    },
+    {
+      "name": "reject_crowd_without_collective_behavior",
+      "expect": {"field": "crowd_groups.collective_behavior", "issue_contains": "not specified"},
+      "crowd_patch": {"collective_behavior": []}
+    },
+    {
+      "name": "reject_crowd_group_used_as_speaker",
+      "expect": {"field": "scene.spoken_dialogue", "issue_contains": "crowd group"},
+      "scene_patch": {
+        "spoken_dialogue": [
+          {"line_id": "line_queue", "character_id": "crowd_workshop_queue_001", "text": "We have been waiting a long time."}
+        ]
+      }
+    },
+    {
+      "name": "reject_singled_out_member_without_identity",
+      "expect": {"field": "crowd_groups.individualized_member_ids", "issue_contains": "anonymous"},
+      "crowd_patch": {
+        "dialogue": "INDIVIDUALIZED_ONLY",
+        "individualized_member_ids": ["a customer"]
+      }
+    },
+    {
+      "name": "reject_speaker_not_in_scene_cast",
+      "expect": {"field": "scene.named_actions", "issue_contains": "this scene's cast"},
+      "scene_patch": {"cast_ids": ["char_mara_001"]}
+    },
+    {
+      "name": "reject_undefined_crowd_reference",
+      "expect": {"field": "scene.crowd_group_ids", "issue_contains": "undefined crowd"},
+      "scene_patch": {"crowd_group_ids": ["crowd_ghost_404"]}
+    },
+    {
+      "name": "reject_missing_scene_reference",
+      "expect": {"field": "cast.scene_ids", "issue_contains": "undefined scene"},
+      "manifest_patch": {
+        "cast": [
+          {
+            "character_id": "char_mara_001",
+            "identity_revision": 1,
+            "identity_digest": "identity-digest-1",
+            "episode_role": "lead",
+            "scene_ids": ["scene_workshop_001", "scene_never_written"],
+            "immediate_story_function": "Must choose to expose the hidden warning.",
+            "choice_or_consequence": "Disclosure shifts her from isolation to shared responsibility."
+          },
+          {
+            "character_id": "char_levi_002",
+            "identity_revision": 1,
+            "identity_digest": "identity-digest-2",
+            "episode_role": "supporting partner",
+            "scene_ids": ["scene_workshop_001"],
+            "immediate_story_function": "Refuses vague reassurance and shows the empty ledger.",
+            "choice_or_consequence": "His restrained offer makes Mara's turn possible."
+          }
+        ]
+      }
+    }
+  ]
+}
