@@ -43,7 +43,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional
 
 # Skill 38 tools are siblings of this repository tree, not of this directory.
 _TOOLS_DIR = Path(__file__).resolve().parents[3] / "38-conversational-ai-system" / "tools"
@@ -188,6 +188,10 @@ def evaluate_eligibility(route: Any, facts: Mapping[str, Any], *,
 
     The returned GateVerdict plugs straight into outbound_gate.dispatch:
         dispatch(store, lambda ctx: evaluate_eligibility(route, facts), ...)
+
+    The every-send facts ride in `facts`: a recorded `global_stop` and an
+    `owner_current` that is not true are consumed here, so this composition
+    cannot send what the C-F04 fixtures require suppressed.
     """
     if route not in ROUTES:
         raise RouteError(f"bad_input: unknown route {route!r}")
@@ -210,15 +214,35 @@ def evaluate_eligibility(route: Any, facts: Mapping[str, Any], *,
         return refuse("PURPOSE_NOT_PERMITTED", action_purpose=purpose,
                       expected=ROUTE_PURPOSE[route])
 
+    # C-F04 every-send gate: the STOP and ownership facts this adapter is
+    # handed are load-bearing, not decoration (fixtures F-04B, F-04C). A
+    # recorded global STOP suppresses every route, and an owner that is not
+    # current means a human owns the conversation and the bot is fenced out
+    # (DATA-CONTRACTS 3/7). A fact that is absent carries no claim, so a route
+    # evaluated on its own minimal facts is not refused here. These run before
+    # the binding quarantine on purpose: a stopped or human-owned thread must
+    # never come back to life through a later reconcile.
+    stop = facts.get("global_stop")
+    if stop:
+        return refuse("GLOBAL_STOP", global_stop=stop)
+    owner = facts.get("owner_current")
+    if owner is not None and owner is not True:
+        return refuse("OWNER_NOT_CURRENT", owner_current=owner)
+
     # A changed account binding quarantines old queued work; never reroute it
-    # silently (DATA-CONTRACTS 2/3).
+    # silently (DATA-CONTRACTS 2/3). A binding that cannot be checked against a
+    # current value is not a passing binding: it quarantines too, and the
+    # evidence says which of the two it was.
     bound = facts.get("account_binding_revision")
     current = facts.get("current_binding_revision")
-    if bound is not None and current is not None and bound != current:
+    if bound is not None and (current is None or bound != current):
+        changed = current is not None and bound != current
         return GateVerdict(
             verdict="QUARANTINED", checked_at=ts,
             binding_revision=current,
-            evidence={"reason": "BINDING_CHANGED", "route": route,
+            evidence={"reason": "BINDING_CHANGED" if changed
+                      else "BINDING_UNVERIFIED",
+                      "route": route,
                       "account_binding_revision": bound,
                       "current_binding_revision": current})
 
@@ -261,7 +285,8 @@ class AdmissionResult:
 
 def admit_inbound(store: Any, *, tenant_id: str, provider_event_id: str,
                   actor_id: Optional[str] = None,
-                  own_actor_ids: Any = (), direction: str = "inbound",
+                  own_actor_ids: Iterable[str] = (),
+                  direction: str = "inbound",
                   payload_sha256: Optional[str] = None,
                   now: Optional[float] = None) -> AdmissionResult:
     """Admit a Page/Messenger event through the T-12 inbox guard.
@@ -269,7 +294,14 @@ def admit_inbound(store: Any, *, tenant_id: str, provider_event_id: str,
     Own outgoing/reveal events are excluded there by verified direction and
     actor. This wrapper only pins the provider name so a Page event can never
     be admitted under another provider's identity namespace.
+
+    own_actor_ids is a collection of ids. A bare string is rejected outright:
+    it would be read as its own characters, the exclusion set would hold
+    single letters, and our own actor would stop being excluded.
     """
+    if isinstance(own_actor_ids, (str, bytes, bytearray)):
+        raise RouteError("bad_input: own_actor_ids must be a collection of"
+                         " actor ids, not one bare value")
     result = store.admit_event(
         provider="facebook", tenant_id=_text(tenant_id, "tenant_id"),
         provider_event_id=_text(provider_event_id, "provider_event_id"),

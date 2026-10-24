@@ -407,5 +407,206 @@ class CommonGateIntegrationTests(unittest.TestCase):
         self.assertEqual(self.sent, [aid])
 
 
+class EverySendGateFactTests(unittest.TestCase):
+    """C-F04 / F-04B, F-04C (PBB-142 repair): the STOP and owner facts in the
+    adapter's own fact mapping are load-bearing.
+
+    Before the repair the adapter read neither `global_stop` nor
+    `owner_current`, so F-04B (a global STOP) and F-04C (an owner that is not
+    current) both evaluated ALLOW and sent through the common gate.
+    """
+
+    def verdict(self, route, facts):
+        return routes.evaluate_eligibility(route, facts, now=1000.0)
+
+    def test_f04b_a_global_stop_suppresses_the_inbound_reply(self):
+        out = self.verdict(routes.ROUTE_INBOUND_DM,
+                           inbound_facts(global_stop=True))
+        self.assertEqual(out.verdict, "SUPPRESSED")
+        self.assertEqual(out.evidence["reason"], "GLOBAL_STOP")
+
+    def test_a_global_stop_suppresses_every_route(self):
+        for route, facts in ((routes.ROUTE_PUBLIC_REPLY, public_facts()),
+                             (routes.ROUTE_COMMENT_PRIVATE_OPENER,
+                              opener_facts()),
+                             (routes.ROUTE_INBOUND_DM, inbound_facts())):
+            with self.subTest(route=route):
+                out = self.verdict(route, dict(facts, global_stop=True))
+                self.assertEqual(out.verdict, "SUPPRESSED")
+                self.assertEqual(out.evidence["reason"], "GLOBAL_STOP")
+
+    def test_f04c_an_owner_that_is_not_current_suppresses_the_public_reply(self):
+        out = self.verdict(routes.ROUTE_PUBLIC_REPLY,
+                           public_facts(owner_current=False))
+        self.assertEqual(out.verdict, "SUPPRESSED")
+        self.assertEqual(out.evidence["reason"], "OWNER_NOT_CURRENT")
+
+    def test_an_owner_that_is_not_current_suppresses_every_route(self):
+        for route, facts in ((routes.ROUTE_PUBLIC_REPLY, public_facts()),
+                             (routes.ROUTE_COMMENT_PRIVATE_OPENER,
+                              opener_facts()),
+                             (routes.ROUTE_INBOUND_DM, inbound_facts())):
+            with self.subTest(route=route):
+                out = self.verdict(route, dict(facts, owner_current=False))
+                self.assertEqual(out.verdict, "SUPPRESSED")
+                self.assertEqual(out.evidence["reason"], "OWNER_NOT_CURRENT")
+
+    def test_no_stop_and_a_current_owner_still_allow(self):
+        # F-04's own clear shape: the gate must not blanket-refuse.
+        for route, facts in ((routes.ROUTE_PUBLIC_REPLY, public_facts()),
+                             (routes.ROUTE_COMMENT_PRIVATE_OPENER,
+                              opener_facts()),
+                             (routes.ROUTE_INBOUND_DM, inbound_facts())):
+            with self.subTest(route=route):
+                out = self.verdict(
+                    route, dict(facts, global_stop=False, owner_current=True))
+                self.assertEqual(out.verdict, "ALLOW")
+
+    def test_absent_stop_and_owner_facts_still_allow(self):
+        # Facts that carry no STOP and no ownership claim are not a STOP.
+        minimal = {
+            routes.ROUTE_PUBLIC_REPLY: {
+                "channel": "FB_PUBLIC", "action_purpose": "PUBLIC_REPLY",
+                "public_reply_permission": True},
+            routes.ROUTE_COMMENT_PRIVATE_OPENER: {
+                "channel": "FB_DM",
+                "action_purpose": "COMMENT_PRIVATE_OPENER",
+                "comment_event_id": "ev-1",
+                "comment_private_opener_permission": True},
+            routes.ROUTE_INBOUND_DM: {
+                "channel": "FB_DM", "action_purpose": "AI_REPLY",
+                "inbound_message_id": "ev-2", "inbound_dm_window": True,
+                "eligibility_refreshed_by": "PLATFORM_ELIGIBILITY"},
+        }
+        for route, facts in minimal.items():
+            with self.subTest(route=route):
+                self.assertEqual(self.verdict(route, facts).verdict, "ALLOW")
+
+    def test_a_stop_beats_a_changed_binding(self):
+        # A stopped send is never resurrected by a later binding reconcile, so
+        # the terminal suppression wins over the quarantine.
+        out = self.verdict(routes.ROUTE_INBOUND_DM,
+                           inbound_facts(global_stop=True,
+                                         current_binding_revision="binding-8"))
+        self.assertEqual(out.verdict, "SUPPRESSED")
+        self.assertEqual(out.evidence["reason"], "GLOBAL_STOP")
+
+    def test_f04b_and_f04c_never_reach_the_sender(self):
+        # The exact composition T-20 ships: routes.evaluate_eligibility feeding
+        # outbound_gate.dispatch. Both fixtures must block with no send.
+        cases = (
+            ("F-04B", routes.ROUTE_INBOUND_DM,
+             inbound_facts(global_stop=True), "AI_REPLY"),
+            ("F-04C", routes.ROUTE_PUBLIC_REPLY,
+             public_facts(owner_current=False), "PUBLIC_REPLY"),
+        )
+        for name, route, facts, purpose in cases:
+            with self.subTest(fixture=name):
+                with tempfile.TemporaryDirectory(prefix="fb-route-f04-") as d:
+                    store = DurableStore(str(Path(d) / "s.sqlite"))
+                    row, _ = store.create_intent(
+                        logical_intent_key="K-" + name,
+                        idempotency_key="I-" + name,
+                        tenant_id="t1", scope="person_directed",
+                        canonical_contact_id="c1", content_sha256="h",
+                        purpose=purpose)
+                    store.queue(row["action_id"])
+                    sent = []
+                    out = dispatch(
+                        store,
+                        lambda ctx, f=facts, r=route:
+                            routes.evaluate_eligibility(r, f),
+                        lambda ctx: sent.append(ctx["action_id"])
+                        or {"provider": "facebook",
+                            "provider_receipt_id": "r1",
+                            "supported_status": "accepted"},
+                        row["action_id"], "w1")
+                    self.assertEqual(out.status, ST_BLOCKED)
+                    self.assertEqual(out.verdict, "SUPPRESSED")
+                    self.assertEqual(sent, [],
+                                     "sender was called under a suppression")
+                    self.assertEqual(store.get_action(row["action_id"])["state"],
+                                     "suppressed")
+                    store.close()
+
+
+class OwnActorIdShapeTests(unittest.TestCase):
+    """C-20 clause 2 (PBB-142 repair): own_actor_ids is typed, and a bare
+    string is rejected instead of degrading to its own characters."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="fb-route-own-")
+        self.store = DurableStore(str(Path(self.tmp.name) / "s.sqlite"))
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_a_bare_string_own_actor_ids_is_rejected(self):
+        with self.assertRaises(routes.RouteError):
+            routes.admit_inbound(self.store, tenant_id="t1",
+                                 provider_event_id="e-str", actor_id="page-1",
+                                 own_actor_ids="page-1")
+
+    def test_the_rejected_call_admits_nothing_and_writes_no_row(self):
+        with self.assertRaises(routes.RouteError):
+            routes.admit_inbound(self.store, tenant_id="t1",
+                                 provider_event_id="e-str", actor_id="page-1",
+                                 own_actor_ids="page-1")
+        # If the rejected call had written anything this would read "duplicate".
+        clean = routes.admit_inbound(self.store, tenant_id="t1",
+                                     provider_event_id="e-str",
+                                     actor_id="reader-9",
+                                     own_actor_ids=("page-1",))
+        self.assertTrue(clean.admitted)
+
+    def test_a_collection_still_excludes_the_own_actor(self):
+        out = routes.admit_inbound(self.store, tenant_id="t1",
+                                   provider_event_id="e-list", actor_id="page-1",
+                                   own_actor_ids=["page-1"])
+        self.assertFalse(out.admitted)
+        self.assertEqual(out.reason, "excluded:own_actor")
+
+
+class BindingVerificationTests(unittest.TestCase):
+    """C-F04 'rebind' (PBB-142 repair): a binding that cannot be checked is not
+    a passing binding. Before the repair a stale binding with no current value
+    evaluated ALLOW."""
+
+    def test_a_stale_binding_with_no_current_value_quarantines(self):
+        out = routes.evaluate_eligibility(
+            routes.ROUTE_PUBLIC_REPLY,
+            public_facts(current_binding_revision=None), now=1000.0)
+        self.assertEqual(out.verdict, "QUARANTINED")
+        self.assertEqual(out.evidence["account_binding_revision"], "binding-7")
+        self.assertIsNone(out.evidence["current_binding_revision"])
+
+    def test_that_quarantine_still_blocks_the_common_gate(self):
+        with tempfile.TemporaryDirectory(prefix="fb-route-bind-") as d:
+            store = DurableStore(str(Path(d) / "s.sqlite"))
+            row, _ = store.create_intent(
+                logical_intent_key="L-unverified",
+                idempotency_key="L-unverified-idem",
+                tenant_id="t1", scope="person_directed",
+                canonical_contact_id="c1", content_sha256="h",
+                purpose="AI_REPLY")
+            store.queue(row["action_id"])
+            sent = []
+            out = dispatch(
+                store,
+                lambda ctx: routes.evaluate_eligibility(
+                    routes.ROUTE_INBOUND_DM,
+                    inbound_facts(current_binding_revision=None)),
+                lambda ctx: sent.append(ctx["action_id"])
+                or {"provider": "facebook", "provider_receipt_id": "r1",
+                    "supported_status": "accepted"},
+                row["action_id"], "w1")
+            self.assertEqual(out.status, ST_BLOCKED)
+            self.assertEqual(sent, [])
+            self.assertIn(store.get_action(row["action_id"])["state"],
+                          ("suppressed", "quarantined"))
+            store.close()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
