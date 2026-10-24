@@ -425,6 +425,16 @@ test("(a) a symlinked selected tree is verified through its pinned target", (t) 
   assert.equal(gate.selected.physical, realpathSync(real));
 });
 
+test("(b) a relative skill_dir in a record is refused, never resolved against cwd", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const prefix = makePrefix(home, wired);
+  writeFileSync(join(prefix, "releases", "install-record.json"), JSON.stringify({ skill_dir: "." }));
+  const gate = checkSelectedTree({ home, skillDir: wired, prefix, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /records a relative skill_dir/);
+});
+
 test("(e) the shipped SKILL.md carries the current convene contract, not grant text", () => {
   // Source-level guard: the canonical tree this unit ships must carry the
   // convene-is-approval contract so upgrades can never resurrect grant text.

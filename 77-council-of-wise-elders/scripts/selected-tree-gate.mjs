@@ -48,7 +48,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, existsSync, lstatSync, mkdtempSync, openSync, readSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ENTRY_PATH, checkEntryPoint } from "./entry-point-gate.mjs";
 
@@ -203,7 +203,8 @@ function recordPathsNear(entryFile) {
 function readRecord(file) {
   const json = readJson(file);
   if (json && typeof json.skill_dir === "string" && json.skill_dir.length > 0) {
-    return { recordPath: safeReal(file), skillDir: resolve(json.skill_dir) };
+    const relative = !isAbsolute(json.skill_dir);
+    return { recordPath: safeReal(file), skillDir: resolve(json.skill_dir), relativeSkillDir: relative, rawSkillDir: json.skill_dir };
   }
   return null;
 }
@@ -666,6 +667,13 @@ export function checkSelectedTree(opts = {}) {
   const selection = resolveSelection({ home, claudeConfigDir, openclawRoot, prefix, skillDir, records, agentSelected, agentSource });
   problems.push(...selection.problems);
   for (const rec of records) {
+    if (rec.relativeSkillDir) {
+      problems.push(
+        `the install-record ${rec.recordPath} records a relative skill_dir ("${rec.rawSkillDir}"): ` +
+        `a relative path resolves against whatever directory the verifier runs in, so it cannot name a tree — ` +
+        `repair the record with an absolute path`,
+      );
+    }
     problems.push(...verifyRecordRelease(rec, { load }));
   }
   // Pin the physical targets once: a symlink retargeted mid-run must never be
