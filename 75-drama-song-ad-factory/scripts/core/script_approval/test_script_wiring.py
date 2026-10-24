@@ -67,7 +67,20 @@ def next_(run, target=""):
 
 
 def reply(run, text, target=""):
-    return F.cmd_script_reply(argparse.Namespace(run_dir=run, reply=text, target=target))
+    """An explicit synthetic NEW client event answers the actually saved ask.
+
+    Production callers receive no such defaults; contextless CLI replies are
+    covered separately by the artifact provenance refusal tests.
+    """
+    from script_approval import approval_events as AE
+    with open(os.path.join(run, "control", "intake-session.json")) as stream:
+        run_id = json.load(stream)["run_id"]
+    ask_id = AE.open_asks(SA.record_for(run))[-1]["ask_id"]
+    reply.sequence = getattr(reply, "sequence", 0) + 1
+    return F.cmd_script_reply(argparse.Namespace(
+        run_dir=run, reply=text, target=target, reply_source="client",
+        answer_source_ref="script-wiring-client-event:%d" % reply.sequence,
+        presentation_ask_id=ask_id, run_id=run_id))
 
 
 def music(run, lyrics):
