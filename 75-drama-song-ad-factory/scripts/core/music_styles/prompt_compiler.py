@@ -18,6 +18,8 @@ stdlib only, no network, no file writes.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 TOOL_NAME = "music_styles.prompt_compiler"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.suno-prompt-compiler/v1"
@@ -191,12 +193,42 @@ def catalog_records(catalog):
         % (type(catalog).__name__,))
 
 
+class DisplayOnly(Mapping):
+    """The client-facing reference block: readable for a screen, never a wire.
+
+    A Mapping, not a dict, so ``json.dumps`` refuses it by construction: display
+    metadata cannot serialise into a provider payload even when a caller hands
+    it along by mistake.  ``suno_prompt_guard`` refuses it at the boundary too.
+    """
+
+    def __init__(self, data):
+        self._data = dict(data)
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
+
+    def __eq__(self, other):
+        if isinstance(other, Mapping):
+            return dict(self._data) == dict(other)
+        return NotImplemented
+
+    def __repr__(self):
+        return "DisplayOnly(%r)" % (self._data,)
+
+
 def display_metadata(recipe):
     """The client-facing reference block, for UI rendering only.
 
-    Returned to a screen; never consumed by a compiler or a payload builder.
+    Returned to a screen; never consumed by a compiler or a payload builder,
+    and unserialisable into a payload by type.
     """
     if not isinstance(recipe, dict):
-        return {}
+        return DisplayOnly({})
     refs = recipe.get("client_references")
-    return dict(refs) if isinstance(refs, dict) else {}
+    return DisplayOnly(refs if isinstance(refs, Mapping) else {})

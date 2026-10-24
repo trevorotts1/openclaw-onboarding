@@ -380,5 +380,106 @@
         "constraints": "preserve elected voice, language, gender, accent and explicitness; grit is texture, not an imitation"
       }
     }
-  }
+  },
+  "guard_cases": [
+    {
+      "id": "key-position-map-key",
+      "inject": {"input": {"mix": {"Whitney Houston": "lead vocal"}}},
+      "expect": {
+        "decision": "SANITIZED",
+        "sendable": true,
+        "sanitized_fields": ["input.mix.Whitney Houston"],
+        "blocked_reason": null,
+        "blocked_field": null
+      }
+    },
+    {
+      "id": "nested-map-key",
+      "inject": {"input": {"mix": {"stems": {"P. Diddy": "adlib"}}}},
+      "expect": {
+        "decision": "SANITIZED",
+        "sendable": true,
+        "sanitized_fields": ["input.mix.stems.P. Diddy"],
+        "blocked_reason": null,
+        "blocked_field": null
+      }
+    },
+    {
+      "id": "array-element-map-key",
+      "inject": {"input": {"effects": [{"JellyRoll": "grit"}, {"mix bus": "clean"}]}},
+      "expect": {
+        "decision": "SANITIZED",
+        "sendable": true,
+        "sanitized_fields": ["input.effects.0.JellyRoll"],
+        "blocked_reason": null,
+        "blocked_field": null
+      }
+    },
+    {
+      "id": "case-variant-key",
+      "inject": {"input": {"mix": {"CÉLINE DION": "lead vocal"}}},
+      "expect": {
+        "decision": "SANITIZED",
+        "sendable": true,
+        "sanitized_fields": ["input.mix.CÉLINE DION"],
+        "blocked_reason": null,
+        "blocked_field": null
+      }
+    },
+    {
+      "id": "punctuation-variant-key",
+      "inject": {"input": {"mix": {"jelly-roll": "grit", "Celine Dion’s": "lead vocal"}}},
+      "expect": {
+        "decision": "SANITIZED",
+        "sendable": true,
+        "sanitized_fields": ["input.mix.Celine Dion’s", "input.mix.jelly-roll"],
+        "blocked_reason": null,
+        "blocked_field": null
+      }
+    },
+    {
+      "id": "negative-reference-key",
+      "inject": {"input": {"negative_prompt": {"Whitney Houston": "exclude this sound"}}},
+      "expect": {
+        "decision": "SANITIZED",
+        "sendable": true,
+        "sanitized_fields": ["input.negative_prompt.Whitney Houston"],
+        "blocked_reason": null,
+        "blocked_field": null
+      }
+    },
+    {
+      "id": "negative-reference-value",
+      "inject": {"input": {"negative_tags": ["reverb", "do not sound like Jelly Roll", "echo"]}},
+      "expect": {
+        "decision": "SANITIZED",
+        "sendable": true,
+        "sanitized_fields": ["input.negative_tags.1"],
+        "blocked_reason": null,
+        "blocked_field": null
+      }
+    },
+    {
+      "id": "negative-reference-instruction",
+      "inject": {"input": {"style_suffix": ", do not sound like P. Diddy"}},
+      "expect": {
+        "decision": "SANITIZED",
+        "sendable": true,
+        "sanitized_fields": ["input.style_suffix"],
+        "blocked_reason": null,
+        "blocked_field": null
+      }
+    },
+    {
+      "id": "collision-hold-approved-lyrics",
+      "inject": {"input": {"lyrics": "[Spoken] The shop lights go down.\n[Sung] One honest call is all I need to make.\n[Sung] Whitney Houston"}},
+      "expect": {
+        "decision": "BLOCKED",
+        "sendable": false,
+        "sanitized_fields": [],
+        "blocked_reason": "APPROVED_CONTENT_COLLISION",
+        "blocked_field": "input.lyrics"
+      }
+    }
+  ]
 }

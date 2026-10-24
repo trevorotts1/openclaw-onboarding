@@ -23,6 +23,13 @@ Case, Unicode accents, apostrophes (straight and curly) and punctuation are
 normalized before matching, so ``CÉLINE DION``, ``Celine Dion.`` and
 ``Celine Dion’s`` all hit the same alias.
 
+Object KEYS are outbound text too: every key at any depth is normalized and
+matched exactly like a value, so a name can never ride out of the payload
+inside a map key.  A map entry whose key carries a reference is dropped whole
+(the entry is atomic, like a list tag); under an approved path it blocks
+instead.  A payload value that cannot serialise into a provider payload --
+display metadata -- is a hard block of its own.
+
 The alias set is the catalog's own display references plus the explicit
 aliases recorded beside them.  That scope is reported as ``alias_scope`` --
 this is NOT a blacklist of every artist alive, and the receipt says so.
@@ -224,6 +231,26 @@ def _walk_keys(value, path=()):
             yield from _walk_keys(sub, path + (index,))
 
 
+#: Everything a provider payload may lawfully carry.  Anything else -- a
+#: display-only mapping, a custom object -- cannot serialise into a provider
+#: payload and is refused at this boundary instead of being hoped past.
+_JSON_SCALARS = (str, int, float, bool)
+
+
+def _walk_foreign(value, path=()):
+    """Yield (path, value) for every node that is not plain payload data."""
+    if value is None or isinstance(value, _JSON_SCALARS):
+        return
+    if isinstance(value, dict):
+        for key, sub in value.items():
+            yield from _walk_foreign(sub, path + (key,))
+    elif isinstance(value, (list, tuple)):
+        for index, sub in enumerate(value):
+            yield from _walk_foreign(sub, path + (index,))
+    else:
+        yield path, value
+
+
 def _get(payload, path):
     node = payload
     for part in path:
@@ -286,7 +313,22 @@ def guard(payload, catalog, protected=DEFAULT_PROTECTED_PATHS):
                                "the guarded payload must be an object")
     aliases = alias_set(catalog)
     revision = alias_revision(aliases)
-    inspected = [_dot(path) for path, _ in _walk_text(payload)]
+    inspected = ([_dot(path) for path, _ in _walk_text(payload)]
+                 + [_dot(path) for path, _ in _walk_keys(payload)])
+
+    foreign = sorted({_dot(path) for path, _node in _walk_foreign(payload)})
+    if foreign:
+        return _receipt(payload, revision, aliases, inspected,
+                        decision="BLOCKED", sendable=False,
+                        blocked=[{"field": path,
+                                  "match": None,
+                                  "reason": "DISPLAY_METADATA_NOT_SERIALIZABLE",
+                                  "detail": ("value cannot serialise into a "
+                                             "provider payload; display "
+                                             "metadata is display-only"),
+                                  "resolution_owner": "payload builder"}
+                                 for path in foreign],
+                        sanitized=[], provider_calls=0)
 
     leaks = sorted({_dot(path) for path, key in _walk_keys(payload)
                     if key in CLIENT_METADATA_KEYS})
@@ -304,6 +346,28 @@ def guard(payload, catalog, protected=DEFAULT_PROTECTED_PATHS):
     blocked = []
     sanitized = []
     edits = []
+    key_drops = []
+    # A map KEY is outbound text: it is normalized and matched exactly like a
+    # value, at every depth.  An entry whose key carries a reference is atomic
+    # and is dropped whole; under an approved path it blocks instead.
+    for key_path, key in list(_walk_keys(guarded)):
+        hits = find_matches(str(key), aliases)
+        if not hits:
+            continue
+        field = _dot(key_path)
+        if is_protected(key_path, protected):
+            blocked.append({
+                "field": field,
+                "match": hits,
+                "reason": "APPROVED_CONTENT_COLLISION",
+                "detail": ("approved creative content collides with catalog "
+                           "reference(s); the approved bytes are unchanged and "
+                           "only this submission is held"),
+                "resolution_owner": "artifact revision + whole-package review",
+            })
+            continue
+        key_drops.append(key_path)
+        sanitized.append(field)
     for path, text in list(_walk_text(guarded)):
         hits = find_matches(text, aliases)
         if not hits:
@@ -357,6 +421,10 @@ def guard(payload, catalog, protected=DEFAULT_PROTECTED_PATHS):
     for path, value in edits:
         if value is not None:
             _set(guarded, path, value)
+    # Key drops are whole entries and shift nothing; deepest first so an entry
+    # nested inside another dropped entry goes before its container.
+    for key_path in sorted(key_drops, key=len, reverse=True):
+        _delete(guarded, key_path)
     removals = {}
     for path, value in edits:
         if value is None:
@@ -366,13 +434,17 @@ def guard(payload, catalog, protected=DEFAULT_PROTECTED_PATHS):
             _delete(guarded, parent_path + (index,))
 
     # Re-scan the WHOLE guarded payload: a rewrite can never leave a hit
-    # behind unnoticed, at any depth.
+    # behind unnoticed, at any depth -- in values or in keys.
     already = {(b["field"], tuple(b["match"] or ())) for b in blocked}
     residual = []
     for path, text in _walk_text(guarded):
         hits = find_matches(text, aliases)
         if hits and (_dot(path), tuple(hits)) not in already:
             residual.append({"field": _dot(path), "match": hits})
+    for key_path, key in _walk_keys(guarded):
+        hits = find_matches(str(key), aliases)
+        if hits and (_dot(key_path), tuple(hits)) not in already:
+            residual.append({"field": _dot(key_path), "match": hits})
     if residual:
         blocked.extend({
             "field": item["field"],

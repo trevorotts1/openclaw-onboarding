@@ -10,6 +10,7 @@ a synthetic createTask envelope and every "send" is a local dict.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import sys
@@ -372,6 +373,163 @@ class GuardContract(unittest.TestCase):
         self.assertEqual(receipt["submitted_payload_digest"],
                          receipt["payload_digest"])
 
+
+def deep_merge(base, extra):
+    """Overlay one fixture injection onto an envelope: dicts merge, rest replaces."""
+    for key, value in extra.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            deep_merge(base[key], value)
+        else:
+            base[key] = copy.deepcopy(value)
+    return base
+
+def approved_hashes(payload):
+    """sha256 of every approved creative field, by path -- a hash, not a claim."""
+    out = {}
+    for path, text in G._walk_text(payload):
+        if G.is_protected(path, G.DEFAULT_PROTECTED_PATHS):
+            out[G._dot(path)] = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return out
+
+def references_left(payload, aliases):
+    """Aliases still present anywhere in a payload: values AND keys, any depth."""
+    found = {}
+    for path, text in G._walk_text(payload):
+        hits = G.find_matches(text, aliases)
+        if hits:
+            found[G._dot(path)] = hits
+    for path, key in G._walk_keys(payload):
+        hits = G.find_matches(str(key), aliases)
+        if hits:
+            found[G._dot(path)] = hits
+    return found
+
+class FixtureCases(unittest.TestCase):
+    """The fixture's guard_cases, proved on all eighteen styles."""
+
+    REQUIRED_CASES = (
+        "key-position-map-key", "nested-map-key", "array-element-map-key",
+        "case-variant-key", "punctuation-variant-key",
+        "negative-reference-key", "negative-reference-value",
+        "negative-reference-instruction", "collision-hold-approved-lyrics",
+    )
+
+    def setUp(self):
+        self.catalog = load_catalog()
+        self.aliases = G.alias_set(self.catalog)
+        self.cases = self.catalog.get("guard_cases") or []
+
+    def test_fixture_covers_the_whole_class(self):
+        ids = [case["id"] for case in self.cases]
+        for wanted in self.REQUIRED_CASES:
+            self.assertIn(wanted, ids)
+
+    def test_every_case_holds_on_every_style(self):
+        self.assertTrue(self.cases)
+        for case in self.cases:
+            expect = case["expect"]
+            for style_id in STYLE_IDS:
+                payload = deep_merge(envelope(self.catalog, style_id),
+                                     case["inject"])
+                approved_before = approved_hashes(payload)
+                receipt = G.guard(payload, self.catalog)
+                label = (case["id"], style_id)
+                self.assertEqual(receipt["decision"], expect["decision"], label)
+                self.assertEqual(receipt["sendable"], expect["sendable"], label)
+                self.assertEqual(sorted(receipt["sanitized_fields"]),
+                                 sorted(expect["sanitized_fields"]), label)
+                self.assertEqual(receipt["provider_calls"], 0, label)
+                # the caller's payload, approved bytes included, is untouched
+                self.assertEqual(approved_hashes(payload), approved_before,
+                                 label)
+                self.assertEqual(
+                    receipt["preserved_approved_content_digest"]["fields"],
+                    approved_before, label)
+                if expect["blocked_reason"] is None:
+                    self.assertEqual(receipt["blocked"], [], label)
+                    self.assertEqual(
+                        references_left(receipt["payload"], self.aliases),
+                        {}, label)
+                else:
+                    self.assertEqual([b["reason"] for b in receipt["blocked"]],
+                                     [expect["blocked_reason"]], label)
+                    self.assertEqual([b["field"] for b in receipt["blocked"]],
+                                     [expect["blocked_field"]], label)
+                    self.assertIsNone(receipt["payload"], label)
+
+    def test_collision_hold_is_hash_proven_and_holds_only_that_submission(self):
+        held = deep_merge(envelope(self.catalog, "soul-ballad"),
+                          {"input": {"lyrics": APPROVED_LYRICS +
+                                     "\n[Sung] Whitney Houston"}})
+        before = hashlib.sha256(
+            held["input"]["lyrics"].encode("utf-8")).hexdigest()
+        receipt = G.guard(held, self.catalog)
+        after = hashlib.sha256(
+            held["input"]["lyrics"].encode("utf-8")).hexdigest()
+        self.assertEqual(before, after)                 # hash, not a claim
+        self.assertEqual(
+            receipt["preserved_approved_content_digest"]["fields"],
+            {"input.lyrics": before})
+        self.assertEqual(receipt["decision"], "BLOCKED")
+        self.assertEqual(receipt["blocked"][0]["match"], ["whitney houston"])
+        self.assertIn("review", receipt["blocked"][0]["resolution_owner"])
+        # only that submission is held; the next clean one goes untouched
+        clean = G.guard(envelope(self.catalog, "soul-ballad"), self.catalog)
+        self.assertEqual(clean["decision"], "PASS")
+        self.assertTrue(clean["sendable"])
+
+    def test_inspected_fields_cover_every_text_and_key_position(self):
+        payload = envelope(self.catalog, "afro-soul",
+                           mix={"outer": {"inner": "clean"}})
+        receipt = G.guard(payload, self.catalog)
+        expect = set()
+        for path, _text in G._walk_text(payload):
+            expect.add(G._dot(path))
+        for path, _key in G._walk_keys(payload):
+            expect.add(G._dot(path))
+        self.assertEqual(set(receipt["inspected_fields"]), expect)
+        self.assertIn("input.mix.outer.inner", expect)
+        self.assertIn("input.mix.outer", expect)
+
+class DisplayMetadataBoundary(unittest.TestCase):
+    """Display metadata is structurally unable to reach a provider payload."""
+
+    def setUp(self):
+        self.catalog = load_catalog()
+        self.aliases = G.alias_set(self.catalog)
+        self.record = {
+            "style_id": "x",
+            "client_references": {"artists": ["Whitney Houston"],
+                                  "aliases": ["Whitney"]},
+            "production_traits": {"instruments": "warm piano",
+                                  "tempo": "70 bpm"},
+        }
+
+    def test_display_metadata_cannot_serialise_into_a_payload(self):
+        block = PC.display_metadata(self.record)
+        self.assertEqual(block, {"artists": ["Whitney Houston"],
+                                 "aliases": ["Whitney"]})
+        with self.assertRaises(TypeError):
+            json.dumps({"input": {"mix": block}})
+
+    def test_display_metadata_in_a_payload_is_refused_at_the_boundary(self):
+        payload = envelope(self.catalog, "soul-ballad")
+        payload["input"]["mix"] = PC.display_metadata(self.record)
+        receipt = G.guard(payload, self.catalog)
+        self.assertEqual(receipt["decision"], "BLOCKED")
+        self.assertFalse(receipt["sendable"])
+        self.assertIsNone(receipt["payload"])
+        self.assertEqual([b["reason"] for b in receipt["blocked"]],
+                         ["DISPLAY_METADATA_NOT_SERIALIZABLE"])
+        self.assertIn("input.mix", receipt["blocked"][0]["field"])
+
+    def test_a_compiled_payload_serialises_with_zero_references(self):
+        payload = envelope(self.catalog, "soul-ballad",
+                           style=PC.compile_style_field(self.record))
+        wire = json.dumps(payload, sort_keys=True)
+        self.assertEqual(references_left(payload, self.aliases), {})
+        self.assertNotIn("Whitney", wire)
+        self.assertEqual(G.find_matches(wire, self.aliases), [])
 
 class Hygiene(unittest.TestCase):
     def test_modules_are_stdlib_only_and_never_touch_a_provider(self):
