@@ -829,6 +829,233 @@ def test_empty_research_claims_still_block_before_dispatch():
     assert calls["n"] == 0, calls["n"]
 
 
+# --------------------------------------------------------------------------- #
+# str SUBCLASS attacks: type identity, never isinstance (S75-T09 round 6)
+# --------------------------------------------------------------------------- #
+class EmptyStr(str):
+    """Empty payload, strip() NOT overridden."""
+
+
+class StripLie(str):
+    """Zero-length payload whose own strip() claims content."""
+
+    def strip(self, *args, **kwargs):
+        return "x"
+
+
+class AlwaysEq(str):
+    """Its own __eq__ agrees with anything."""
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+    def __hash__(self):
+        return hash(str(self))
+
+
+class HashLie(str):
+    """Lies about __hash__ only; __eq__ is still str's."""
+
+    def __hash__(self):
+        return 0
+
+
+class StrLenLie(str):
+    """Lies about __str__ and __len__."""
+
+    def __str__(self):
+        return "pretend"
+
+    def __len__(self):
+        return 99
+
+
+class BoolFalse(str):
+    """Non-empty payload reported falsy by its own __bool__."""
+
+    def __bool__(self):
+        return False
+
+
+#: (label, class, payload). EmptyStr never was a bypass (its strip is honest);
+#: StripLie/AlwaysEq/HashLie/StrLenLie/BoolFalse all passed the isinstance
+#: predicate and are refused by TYPE IDENTITY now.
+SUBCLASS_ATTACKS = (
+    ("EmptyStr", EmptyStr, ""),
+    ("StripLie", StripLie, ""),
+    ("AlwaysEq", AlwaysEq, "alpha"),
+    ("HashLie", HashLie, "rev-17"),
+    ("StrLenLie", StrLenLie, "rev-17"),
+    ("BoolFalse", BoolFalse, "rev-17"),
+)
+
+#: Every named refusal this family may produce. A subclass revision is not a
+#: DECLARED revision, so absence-family codes are correct here.
+NAMED_REFSUALS = frozenset("""
+artifact-revision-missing artifact-digest-missing world-revision-missing
+world-revision-unbound world-revision-mismatch cast-revision-missing
+cast-revision-mismatch foundation-pin-revision-invalid
+foundation-revision-undigested foundation-revision-mismatch
+foundation-digest-mismatch foundation-revision-unpinned
+foundation-unversioned foundation-undigested
+""".split())
+
+
+def _attack_sites(cls, payload):
+    """One plan per consumption site, the attack value on BOTH sides of that
+    site's comparison -- so only that site can be the bypass."""
+    def whole(p):
+        for key in SP.FOUNDATION_KEYS:
+            for side in (p["foundation"][key], p["foundation_revisions"][key]):
+                side["revision"] = cls(payload)
+                side["digest"] = cls(payload)
+        for sc in p["scenes"]:
+            sc["world_revision"] = cls(payload)
+            for role in sc["cast_roles"]:
+                role["identity_revision"] = cls(payload)
+        for row in p["foundation"]["episode_cast_manifest"]["cast"]:
+            row["identity_revision"] = cls(payload)
+
+    def world_all(p):
+        p["foundation"]["episode_world"]["revision"] = cls(payload)
+        p["foundation_revisions"]["episode_world"]["revision"] = cls(payload)
+        for sc in p["scenes"]:
+            sc["world_revision"] = cls(payload)
+
+    def cast_all(p):
+        for row in p["foundation"]["episode_cast_manifest"]["cast"]:
+            row["identity_revision"] = cls(payload)
+        for sc in p["scenes"]:
+            for role in sc["cast_roles"]:
+                role["identity_revision"] = cls(payload)
+
+    def digest_all(p):
+        p["foundation"]["research_bundle"]["digest"] = cls(payload)
+        p["foundation_revisions"]["research_bundle"]["digest"] = cls(payload)
+
+    def only_world(p):
+        p["foundation"]["episode_world"]["revision"] = cls(payload)
+
+    def only_scene(p):
+        for sc in p["scenes"]:
+            sc["world_revision"] = cls(payload)
+
+    def only_pin_rev(p):
+        p["foundation_revisions"]["episode_world"]["revision"] = cls(payload)
+
+    def only_pin_dig(p):
+        p["foundation_revisions"]["episode_world"]["digest"] = cls(payload)
+
+    def only_row(p):
+        for row in p["foundation"]["episode_cast_manifest"]["cast"]:
+            row["identity_revision"] = cls(payload)
+
+    def only_role(p):
+        for sc in p["scenes"]:
+            for role in sc["cast_roles"]:
+                role["identity_revision"] = cls(payload)
+
+    def only_digest(p):
+        p["foundation"]["research_bundle"]["digest"] = cls(payload)
+
+    return (
+        ("all sites at once", whole),
+        ("world.revision+scene.world_revision+pin.revision", world_all),
+        ("cast row identity_revision+role identity_revision", cast_all),
+        ("research.digest+pin.digest", digest_all),
+        ("world.revision alone", only_world),
+        ("scene.world_revision alone", only_scene),
+        ("pin.revision alone", only_pin_rev),
+        ("pin.digest alone", only_pin_dig),
+        ("cast row identity_revision alone", only_row),
+        ("role identity_revision alone", only_role),
+        ("research.digest alone", only_digest),
+    )
+
+
+def test_subclass_is_never_a_declared_revision():
+    """Predicate level: no str subclass declares a revision or matches one."""
+    for label, cls, payload in SUBCLASS_ATTACKS:
+        bad = cls(payload)
+        assert SP._is_revision(bad) is False, label
+        assert SP._same_revision(bad, bad) is False, label
+        assert SP._same_revision(bad, payload) is False, label
+        assert SP._same_revision(payload, bad) is False, label
+    # FAIL-2 shape: non-matching payloads must never compare equal, even though
+    # the candidate's own __eq__ says they do
+    left, right = AlwaysEq("alpha"), AlwaysEq("beta")
+    assert str.__eq__(left, right) is False      # the lie is real
+    assert left == right                         # its own __eq__ says True
+    assert SP._same_revision(left, right) is False
+    assert SP._same_revision(right, left) is False
+
+
+def test_subclass_revisions_refused_at_every_site():
+    """world/scene/pin/cast-row/cast-role/digest/pin/foundation: named refusal."""
+    for label, cls, payload in SUBCLASS_ATTACKS:
+        for site_name, mutate in _attack_sites(cls, payload):
+            p = workshop_plan()
+            mutate(p)
+            res = SP.validate_scene_plan(p)
+            c = codes(res)
+            where = "%s @ %s" % (label, site_name)
+            assert res["outcome"] == "rejected", (where, c[:3])
+            assert any(code in NAMED_REFSUALS for code in c), (where, c[:3])
+            gate = SP.music_gate(p)
+            assert gate["allowed"] is False, where
+
+    # the authoring path refuses it too, before any dispatch
+    for label, cls, payload in SUBCLASS_ATTACKS:
+        f = workshop_foundation()
+        for key in SP.FOUNDATION_KEYS:
+            f[key]["revision"] = cls(payload)
+            f[key]["digest"] = cls(payload)
+        calls = {"n": 0}
+
+        def counting_submit(request):
+            calls["n"] += 1
+            return {"scenes": []}
+
+        out = SP.build_scene_plan(f, BEATS, counting_submit, attempt_key="att-sub")
+        assert out["outcome"] == "rejected" and out.get("dispatched") is False, \
+            (label, out.get("reason_code"))
+        assert calls["n"] == 0, (label, calls["n"])
+
+
+def test_lying_eq_cannot_mark_the_plan_complete_or_versioned():
+    """The same __eq__ delegation, closed at the gate's own identity checks."""
+    p = workshop_plan()
+    p["status"] = AlwaysEq("bogus")
+    gate = SP.music_gate(p)
+    assert gate["allowed"] is False, gate["reason_code"]
+    assert "plan-not-complete" in codes(gate), codes(gate)[:3]
+
+    p = workshop_plan()
+    p["schema_version"] = AlwaysEq("bogus")
+    res = SP.validate_scene_plan(p)
+    assert res["outcome"] == "rejected", res["errors"][:3]
+    assert "schema-version-missing" in codes(res), codes(res)[:3]
+    assert SP.music_gate(p)["allowed"] is False
+
+
+def test_plain_string_revisions_still_accepted_end_to_end():
+    """Control: plain strings are never over-refused, whatever they spell."""
+    for rev in ("1", "2", "rev-17", "false", "0", "01", "  x  ", "sha256:dd44",
+                "null", "none", "true", "-1", "1e3", "0x1", "1.0", "_", "a\nb"):
+        p = workshop_plan()
+        p["foundation"]["episode_world"]["revision"] = rev
+        p["foundation_revisions"]["episode_world"]["revision"] = rev
+        for sc in p["scenes"]:
+            sc["world_revision"] = rev
+        res = SP.validate_scene_plan(p)
+        assert res["outcome"] == "ok", (repr(rev), res["errors"][:3])
+        gate = SP.music_gate(p)
+        assert gate["allowed"] is True, (repr(rev), gate["reason_code"])
+
+
 TESTS = [v for k, v in sorted(globals().items())
          if k.startswith("test_") and callable(v)]
 

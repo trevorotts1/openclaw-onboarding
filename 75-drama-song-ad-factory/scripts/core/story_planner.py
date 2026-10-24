@@ -29,10 +29,12 @@ names --
     commercial_action  -> the single CTA
 
 Revision identity is TYPE-STRICT (see ``_is_revision`` / ``_same_revision``): a
-revision or pinned digest is a non-empty string, and two revisions match only
-when they are type-identical AND equal. Anything else -- None, whitespace,
-False, True, 0, 0.0, [], {}, any non-str -- is not a declared revision and
-refuses with a named error.
+revision or pinned digest is a non-empty PLAIN string -- type identity, never
+isinstance, so a str subclass is not a revision at all -- and two revisions
+match only when they are type-identical AND equal, compared as plain str.
+Anything else -- None, whitespace, False, True, 0, 0.0, [], {}, any non-str,
+and any str SUBCLASS -- is not a declared revision and refuses with a named
+error.
 
 Run:  python3 story_planner.py validate --plan P.json --cast C.json --world W.json
       python3 story_planner.py selftest
@@ -155,9 +157,11 @@ def _blank(v):
     non-text scalar (False, True, 0, 0.0, an object).
 
     Declared-ness is TYPE-based, never truthiness: a falsy value is not "missing
-    because it is false", and a truthy non-text value is not prose.
+    because it is false", and a truthy non-text value is not prose. Type ID,
+    not isinstance: a str subclass is not text here (S75-T09 round 6) and its
+    own ``strip`` never gets a vote.
     """
-    if isinstance(v, str):
+    if type(v) is str:
         return not v.strip()
     if isinstance(v, (list, tuple, dict, set)):
         return len(v) == 0
@@ -165,23 +169,28 @@ def _blank(v):
 
 
 def _is_revision(value):
-    """A DECLARED revision: a non-empty string.
+    """A DECLARED revision: a non-empty PLAIN string (S75-T09 round 6).
 
-    The one revision predicate (S75-T09 round 4) and it is used at EVERY
-    revision/digest consumption site. Anything else -- None, "", whitespace,
-    False, True, 0, 0.0, [], {}, any non-str -- is NOT a declared revision and
-    must refuse with a named error. Truthiness never decides this.
+    The one revision predicate and it is used at EVERY revision/digest
+    consumption site. Anything else -- None, "", whitespace, False, True, 0,
+    0.0, [], {}, any non-str, and every str SUBCLASS -- is NOT a declared
+    revision and must refuse with a named error. Truthiness never decides this,
+    and a subclass never declares one through its own ``strip``.
     """
-    return isinstance(value, str) and value.strip() != ""
+    return type(value) is str and value.strip() != ""
 
 
 def _same_revision(left, right):
-    """Exact AND type-identical match.
+    """Exact AND type-identical match, compared as plain str.
 
     0 can never satisfy False; the string "false" is a value while the boolean
-    False is not a revision at all. Two undeclared values never match.
+    False is not a revision at all. Two undeclared values never match, and the
+    comparison never delegates to a candidate's own ``__eq__``: once the type
+    gate has admitted both sides they are compared as plain ``str``.
     """
-    return (type(left) is type(right) and _is_revision(left) and left == right)
+    return (type(left) is str and type(right) is str
+            and _is_revision(left) and _is_revision(right)
+            and str(left) == str(right))
 
 
 def _object(value):
@@ -713,10 +722,13 @@ def music_gate(plan, cast_manifest=None, world=None, research=None):
     result = validate_scene_plan(plan, cast_manifest, world, research)
     reasons = list(result["errors"])
     if isinstance(plan, dict):
-        if plan.get("status") != "complete":
+        status = plan.get("status")
+        # the completion mark is matched as a plain str; a str subclass's own
+        # __eq__ must never vote itself "complete"
+        if type(status) is not str or status != "complete":
             reasons.append(_err("plan-not-complete",
                                 "plan status=%r; the scene plan must be marked complete before "
-                                "any song, and an unmarked plan is not complete" % plan.get("status")))
+                                "any song, and an unmarked plan is not complete" % status))
         for key in PLAN_MUSIC_KEYS:
             if key in plan:
                 reasons.append(_err("plan-carries-song",
