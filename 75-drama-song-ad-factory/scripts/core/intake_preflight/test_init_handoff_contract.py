@@ -129,10 +129,14 @@ class InitHandoffContract(unittest.TestCase):
 
     def test_unavailable_admission_does_not_default_or_return_a_command(self):
         self.confirm()
-        with mock.patch.object(models, "admit_dispatch", return_value={
-                "ok": False, "error_code": "MODEL_UNAVAILABLE", "reason": "fixture route unavailable"}):
+        # Resolve the consumer's current module after the package test fixtures
+        # may have reloaded it; patching a stale imported object proves nothing.
+        from choice_card.intake_card import ai_models as active_models
+        with mock.patch.object(active_models, "admit_dispatch", return_value={
+                "ok": False, "error_code": "MODEL_UNAVAILABLE", "reason": "fixture route unavailable"}) as admission:
             code, nxt = self.invoke("next", "--run-dir", str(self.run))
-        self.assertEqual(code, 1)
+        admission.assert_called_once()
+        self.assertEqual(code, 1, nxt)
         self.assertEqual(nxt["reason_code"], "MODEL_UNAVAILABLE")
         self.assertIsNone(nxt["data"]["stage"])
         self.assertIsNone(nxt["data"]["command"])
