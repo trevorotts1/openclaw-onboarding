@@ -23,7 +23,7 @@ def components(**overrides):
     return base
 
 
-def client_ctx(text="approve", **extra):
+def client_ctx(text="I approve the whole creative package.", **extra):
     ctx = {"reply_text": text, "source": "client", "source_ref": "tg-msg-1",
            "approved_by": "client_001", "timestamp": "2026-10-24T12:00:00Z"}
     ctx.update(extra)
@@ -190,10 +190,10 @@ def _fixture():
 
 def _presented():
     """The one presentation, as the interpreter reads it: nothing approved."""
-    arts = {k: {"revision": 1, "sha256": "digest-" + k} for k in ("script", "lyrics")}
+    arts = {k: {"revision": 1, "sha256": "digest-" + k} for k in B.COMPONENTS}
     return ({"artifacts": arts, "approvals": [], "sent": True,
-             "asks": [{"ask_id": "ask-1", "kinds": ["script", "lyrics"], "state": "open",
-                       "revisions": {"script": 1, "lyrics": 1}}]},
+             "asks": [{"ask_id": "ask-1", "kinds": list(B.COMPONENTS), "state": "open",
+                       "revisions": {k: 1 for k in B.COMPONENTS}}]},
             {"source": "client", "source_ref": "tg-msg-9", "presentation_ask_id": "ask-1"})
 
 def test_nothing_short_of_an_unambiguous_approval_opens_the_gate():
@@ -222,10 +222,129 @@ def test_plain_approvals_still_open_the_gate():
         book.bind("package", components(), tenant_id="t1", run_id="r1")
         receipt = book.approve("package", client_ctx(case["text"]))
         assert receipt["decision"] == "approved" and receipt["state"] == B.ACTIVE, case["name"]
+        assert sorted(receipt["components"]) == case["covers"], case["name"]
         assert book.admissibility("package")["ok"] is True, case["name"]
 
 
+# --------------------------------------------------------------------------- #
+# round 4: scope is bound in BOTH directions
+# --------------------------------------------------------------------------- #
+
+def _bound_book():
+    book = B.ApprovalBook()
+    book.bind("package", components(), tenant_id="t1", run_id="r1")
+    return book
+
+
+def test_battery_sizes_are_the_deliverable():
+    replies = _fixture()["reply_decisions"]
+    assert len(replies["ambiguous_scope"]) >= 15, len(replies["ambiguous_scope"])
+    assert len(replies["partial_scope"]) >= 10, len(replies["partial_scope"])
+    assert len(replies["must_open"]) >= 20, len(replies["must_open"])
+    named = {c["text"] for c in replies["ambiguous_scope"]}
+    for text in ("approve one of them", "approved", "yes", "sounds good",
+                 "the ones we discussed", "all of those"):
+        assert text in named, text
+    for case in replies["must_open"]:
+        assert case["covers"] == sorted(B.COMPONENTS), case["name"]
+        canon, package = B._scan_scope(case["text"])
+        assert package or canon, "%s names no artifact" % case["name"]
+    with_noun = [c for c in replies["must_open"] if B._scan_scope(c["text"])[0]]
+    assert len(with_noun) >= 20, len(with_noun)
+
+
+def test_ambiguity_battery_mints_nothing_at_all():
+    """A reply that approves nothing specific never covers the package."""
+    for case in _fixture()["reply_decisions"]["ambiguous_scope"]:
+        book = _bound_book()
+        exc = _raises(book.approve, "package", client_ctx(case["text"]))
+        assert exc.code != "APPROVED", case["name"]
+        assert book.receipts_for("package") == [], case["name"]
+        assert book.receipt_for("package") is None, case["name"]
+        assert book.coverage("package")["approved"] == [], case["name"]
+        verdict = book.admissibility("package")
+        assert verdict["ok"] is False and verdict["code"] != "APPROVED", case["name"]
+
+
+def test_partial_scope_covers_only_what_is_named():
+    """'The scene plan is approved.' approves one component, not eight."""
+    for case in _fixture()["reply_decisions"]["partial_scope"]:
+        book = _bound_book()
+        receipt = book.approve("package", client_ctx(case["text"]))
+        assert receipt["decision"] == "approved" and receipt["state"] == B.ACTIVE, case["name"]
+        assert sorted(receipt["components"]) == case["covers"], (
+            "%s covered %s" % (case["name"], sorted(receipt["components"])))
+        assert len(case["covers"]) < len(B.COMPONENTS), case["name"]
+        assert receipt["scope"] == "partial", case["name"]
+        coverage = book.coverage("package")
+        assert coverage["approved"] == case["covers"], case["name"]
+        assert coverage["missing"] == sorted(set(B.COMPONENTS) - set(case["covers"])), case["name"]
+        verdict = book.admissibility("package")
+        assert verdict["ok"] is False and verdict["code"] == "APPROVAL_INCOMPLETE", (
+            case["name"], verdict)
+        assert verdict["missing"] == coverage["missing"], case["name"]
+
+
+def test_partial_battery_covers_every_foundation_component():
+    """1-of-8 and 2-of-8 for every foundation component."""
+    import story_first_contracts as C
+    cases = _fixture()["reply_decisions"]["partial_scope"]
+    for kind in C._FOUNDATION:
+        assert [c for c in cases if c["covers"] == [kind]], "no 1-of-8 for %s" % kind
+        assert [c for c in cases if kind in c["covers"] and len(c["covers"]) == 2], (
+            "no 2-of-8 for %s" % kind)
+
+
+def test_partial_approval_completes_only_when_the_rest_is_named():
+    book = _bound_book()
+    book.approve("package", client_ctx("The scene plan is approved."))
+    assert book.admissibility("package")["ok"] is False
+    book.approve("package", client_ctx("I approve the whole creative package."))
+    assert book.coverage("package")["missing"] == []
+    assert book.admissibility("package")["ok"] is True
+
+
+def test_partial_receipt_is_invalidated_by_its_own_component_only():
+    book = _bound_book()
+    receipt = book.approve("package", client_ctx("The scene plan is approved."))
+    moved = book.update_component("package", "script", 2, "digest-script-v2")
+    assert moved["invalidated"] == [], moved
+    assert receipt["state"] == B.ACTIVE
+    moved = book.update_component("package", "scene_plan", 2, "digest-scene_plan-v2")
+    assert moved["invalidated"] == [receipt["receipt_id"]], moved
+
+
+def _report():
+    """Print decision / state / covered count per reply. A covered count of 8
+    on an ambiguous or partial reply is the leak this battery exists to catch."""
+    replies = _fixture()["reply_decisions"]
+    for group in ("ambiguous_scope", "partial_scope", "must_open"):
+        print("== %s" % group)
+        leaks, opened = 0, 0
+        for case in replies[group]:
+            book = _bound_book()
+            try:
+                receipt = book.approve("package", client_ctx(case["text"]))
+            except B.BindingError as exc:
+                print("%-42s %-7s %-11s components=0 (%s)" % (
+                    case["name"], "refused", exc.code, case["text"][:40]))
+                continue
+            covered = sorted(receipt["components"])
+            if group != "must_open" and len(covered) == len(B.COMPONENTS):
+                leaks += 1
+            if group == "must_open" and book.admissibility("package")["ok"]:
+                opened += 1
+            print("%-42s %-7s %-11s components=%d %s" % (
+                case["name"], receipt["decision"], receipt["state"], len(covered),
+                ",".join(covered) if group == "partial_scope" else ""))
+        print("-- %d cases, %d leaks, opened %d/%d\n"
+              % (len(replies[group]), leaks, opened, len(replies[group])))
+    return leaks
+
+
 if __name__ == "__main__":
+    if "--report" in sys.argv:
+        sys.exit(1 if _report() else 0)
     failures = 0
     tests = [(name, fn) for name, fn in sorted(globals().items())
              if name.startswith("test_") and callable(fn)]
