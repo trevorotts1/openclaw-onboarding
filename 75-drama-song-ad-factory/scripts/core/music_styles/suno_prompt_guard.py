@@ -138,8 +138,14 @@ def alias_set(catalog):
     """{normalized alias: sorted style ids that display it}, from the catalog.
 
     Reads ONLY the display namespace.  Aliases may be given as a list, or as a
-    mapping of artist -> extra aliases.
+    mapping of artist -> extra aliases.  ``catalog`` is either the catalog
+    (records carrying ``client_references``) or ONE flat display-references
+    mapping -- which is the shape a single run declares at the dispatch seam.
     """
+    if isinstance(catalog, dict) and any(
+            key in catalog for key in ("artists", "aliases", "reference_songs")):
+        catalog = {"styles": {"<run>": {"style_id": "<run>",
+                                        "client_references": catalog}}}
     out = {}
     for record in _records(catalog):
         refs = record.get("client_references")

@@ -584,6 +584,92 @@ class SquashedSpellings(unittest.TestCase):
         receipt = G.guard(envelope(self.catalog, "soul-rise"), {"styles": {}})
         self.assertEqual(receipt["decision"], "PASS")
 
+class DispatchSeam(unittest.TestCase):
+    """S75-T41 defect 2: the guard runs at the REAL outbound seam --
+    ``song_dispatch.run_takes``, the one funnel every createTask payload goes
+    through -- so a leaking payload is refused there and NEVER reaches the
+    transport (zero provider calls)."""
+
+    CLIENT = "I am not small. I never was. One seed of truth made me strong."
+    HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
+    SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
+             {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
+             {"tag": "Verse", "delivery": "sung",
+              "lines": ["One seed of truth made me stro-o-ong,"]},
+             {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
+             {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
+             {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
+             {"tag": "Outro", "delivery": "spoken",
+              "lines": ["Get the book. Link below."]}]
+    HOOK_PLAN = {"true_at_beat": "the_world"}
+    PACE_ORDER = {"drop": "half-time drop, thin drums",
+                  "return": "turn and rise back to the groove",
+                  "boundary_s": 15.0, "return_boundary_s": 38.0}
+    STYLE_ID = "soul-ballad"
+
+    def setUp(self):
+        self.catalog = load_catalog()
+        self.aliases = G.alias_set(self.catalog)
+
+    def _dispatch(self, mutate=None):
+        """(requests the transport received, seam error or None)."""
+        import length_formula as LF
+        import song_dispatch as SD
+        import suno_recipe as R
+        sent = []
+
+        def transport(request):
+            sent.append(request)
+            return []
+
+        plan = dict(LF.plan(60, (15, 20)), style_id=self.STYLE_ID,
+                    hook_plan=self.HOOK_PLAN, pace_change=self.PACE_ORDER)
+        req = R.build_request(self.STYLE_ID, self.SHEET, self.CLIENT, "T",
+                              plan["delivered_s"], hook_plan=self.HOOK_PLAN,
+                              pace_plan=self.PACE_ORDER)
+        req["input"]["duration"] = plan["delivered_s"]
+        if mutate:
+            mutate(req["input"])
+        try:
+            SD.run_takes(req, plan, transport, lambda t: {}, lambda t, r: None,
+                         "One closed door. Get the book.", " ".join(self.HOOK),
+                         (15, 20), kie=lambda fn, lbl, generation=False: fn(),
+                         style_id=self.STYLE_ID, cap_cents=6,
+                         alias_catalog=self.catalog)
+        except Exception as exc:                      # noqa: BLE001 - the seam's own refusal
+            return sent, exc
+        return sent, None
+
+    def test_leaking_payload_is_refused_at_the_seam_and_never_dispatched(self):
+        for field, text in (("lyrics", APPROVED_LYRICS + "\n[Sung] Jelly Roll"),
+                            ("style", "EdSheeran groove"),
+                            ("style", "avoid LutherVandross tone")):
+            def mutate(inp, field=field, text=text):
+                inp[field] = text
+            sent, err = self._dispatch(mutate)
+            self.assertEqual(sent, [], (field, text))
+            self.assertIsNotNone(err, (field, text))
+            self.assertIn("OUTGOING_REFERENCE_BLOCKED", str(err), (field, text))
+
+    def test_squashed_leak_dispatches_only_approved_traits(self):
+        def mutate(inp):
+            inp["style"] = inp["style"] + ", warm strings, EdSheeran groove"
+            inp["negative_tags"] = "andraday beat"
+        sent, err = self._dispatch(mutate)
+        self.assertIsNone(err, err)
+        self.assertEqual(len(sent), 1)
+        wire = json.dumps(sent[0], ensure_ascii=False)
+        self.assertNotIn("EdSheeran groove", wire)
+        self.assertNotIn("andraday beat", wire)
+        self.assertEqual(G.find_matches(wire, self.aliases), [], wire)
+
+    def test_clean_payload_still_reaches_the_transport(self):
+        sent, err = self._dispatch()
+        self.assertIsNone(err, err)
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(G.find_matches(json.dumps(sent[0], ensure_ascii=False),
+                                        self.aliases), [])
+
 class Hygiene(unittest.TestCase):
     def test_modules_are_stdlib_only_and_never_touch_a_provider(self):
         forbidden = ("socket", "urllib", "requests", "http.client",
