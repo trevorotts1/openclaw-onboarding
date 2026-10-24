@@ -48,7 +48,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, existsSync, lstatSync, mkdtempSync, openSync, readSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ENTRY_PATH, checkEntryPoint } from "./entry-point-gate.mjs";
 
@@ -107,22 +107,51 @@ function frontmatterVersion(dir) {
  */
 export function readVersionEvidence(dir) {
   const sources = {};
+  const problems = [];
+  const plainFile = (file, label) => {
+    try {
+      const st = lstatSync(file);
+      if (st.isSymbolicLink()) {
+        let target = "unknown";
+        try { target = realpathSync(file); } catch { /* broken link */ }
+        problems.push(`${dir}: version carrier ${label} is a symlink (${target}) — a carrier must be a regular file of this tree, not a link that can borrow another tree's identity`);
+        return false;
+      }
+      if (!st.isFile()) {
+        problems.push(`${dir}: version carrier ${label} is not a regular file`);
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
   for (const [key, name] of [["versionFile", "version"], ["skillVersionFile", "skill-version.txt"]]) {
     try {
+      if (!plainFile(join(dir, name), name)) continue;
       const v = readFileSync(join(dir, name), "utf8").trim().replace(/^v/, "");
       if (v) sources[key] = v;
     } catch {
       // carrier absent
     }
   }
-  const frontmatter = frontmatterVersion(dir);
-  if (frontmatter) sources.frontmatter = frontmatter;
+  let skillMdLink = false;
+  try {
+    skillMdLink = lstatSync(join(dir, "SKILL.md")).isSymbolicLink();
+  } catch {
+    skillMdLink = false;
+  }
+  if (!skillMdLink) {
+    const frontmatter = frontmatterVersion(dir);
+    if (frontmatter) sources.frontmatter = frontmatter;
+  } else {
+    problems.push(`${dir}: SKILL.md is a symlink — its frontmatter cannot establish this tree's identity`);
+  }
   const manifest = readJson(join(dir, "manifest.json"));
   if (manifest && typeof manifest.skill_version === "string" && manifest.skill_version.trim()) {
     sources.manifestSkillVersion = manifest.skill_version.trim().replace(/^v/, "");
   }
   const values = [...new Set(Object.values(sources))];
-  const problems = [];
   if (values.length === 0) {
     problems.push(`${dir}: no version marker (version, skill-version.txt, SKILL.md frontmatter or manifest skill_version)`);
   } else if (values.length > 1) {
@@ -443,8 +472,12 @@ function verifyEntryFile(entry, { load }) {
     problems.push(`entry ${entry} is unreadable: ${String(e.message).split("\n")[0]}`);
     return problems;
   }
-  if (!head.startsWith("#!") && !/\b(import|export|const|let|function|process)\b/.test(head)) {
-    problems.push(`entry ${entry} does not look like a JavaScript entry point`);
+  // A shebang alone is not JavaScript: a shell script starts with "#!" too.
+  const firstLine = head.split("\n")[0] ?? "";
+  const nodeShebang = /^#!.*\bnode(\.exe)?\b/.test(firstLine);
+  const jsTokens = /\b(import|export|const|let|var|function|class|process)\b/.test(head);
+  if (!nodeShebang && !jsTokens) {
+    problems.push(`entry ${entry} does not look like a JavaScript entry point (shebang: "${firstLine.slice(0, 60)}")`);
   }
   if (load) {
     try {
@@ -462,7 +495,7 @@ function verifyEntryFile(entry, { load }) {
  * size or a filename is not proof.
  */
 function verifyArchive(copy, { load }) {
-  const archive = join(copy.path, `${SKILL_NAME}.skill`);
+  const archive = join(copy.physical, `${SKILL_NAME}.skill`);
   let st;
   try {
     st = statSync(archive);
@@ -501,7 +534,20 @@ function verifyArchive(copy, { load }) {
     const out = join(tmpDir, "entry.mjs");
     const bytes = execFileSync("unzip", ["-p", archive, member], { maxBuffer: 64 * 1024 * 1024 });
     writeFileSync(out, bytes);
-    return verifyEntryFile(out, { load }).map((p) => `archive member ${member}: ${p}`);
+    const problems = verifyEntryFile(out, { load });
+    const recorded = copy.runtimeEntry;
+    if (!recorded || !recorded.sha256) {
+      problems.push(`archive ${archive} carries no recorded runtime_entry hash, so the archived executable cannot be tied to a build`);
+    } else {
+      const sha = createHash("sha256").update(bytes).digest("hex");
+      if (sha !== recorded.sha256 || bytes.length !== recorded.bytes) {
+        problems.push(
+          `archive member ${member} is sha256 ${sha} (${bytes.length} bytes) but manifest.json records ` +
+          `${recorded.sha256} (${recorded.bytes} bytes): the archived executable is not the recorded build`,
+        );
+      }
+    }
+    return problems.map((p) => `archive member ${member}: ${p}`);
   } catch (e) {
     return [`archive member ${member} could not be extracted: ${String(e.message).split("\n")[0]}`];
   } finally {
@@ -518,17 +564,85 @@ function verifyInstalledEntry(rec, { load }) {
   return perEntry.flatMap((x) => x.problems);
 }
 
-/** Content identity used to tell "same release, different tree" from "same tree". */
-function contentIdentity(dir) {
-  const manifest = readJson(join(dir, "manifest.json"));
-  const hash = (file) => {
+/**
+ * A record is a promise about a release. Verify the release entry it can
+ * reach, not only the skill tree: a live record pointing at a release whose
+ * entry is a directory or empty means the CLI cannot run at all.
+ */
+function verifyRecordRelease(rec, { load }) {
+  const dir = dirname(rec.recordPath);
+  const releasesDir = dir.endsWith(`${sep}releases`) ? dir : join(dir, "releases");
+  const activeFiles = [join(dir, "..", "active.json"), join(dir, "active.json")];
+  let releasePath = null;
+  for (const file of activeFiles) {
+    const active = readJson(file);
+    if (active && typeof active.releasePath === "string") {
+      releasePath = active.releasePath;
+      break;
+    }
+  }
+  const candidates = [];
+  if (releasePath) {
+    candidates.push(join(releasePath, "dist", "blackceo-council.mjs"));
+  } else {
+    let releases = [];
     try {
-      return createHash("sha256").update(readFileSync(file)).digest("hex");
+      releases = readdirSync(releasesDir, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => join(releasesDir, e.name, "dist", "blackceo-council.mjs"))
+        .filter((p) => existsSync(p));
     } catch {
-      return "missing";
+      releases = [];
+    }
+    candidates.push(...releases);
+    if (!candidates.length) candidates.push(...entryCandidatesForRecord(rec.recordPath));
+  }
+  if (!candidates.length) {
+    return [`the install-record ${rec.recordPath} names no reachable release entry (no active.json releasePath and no releases/*/dist entry): a record that promises a release must be able to name one`];
+  }
+  const perEntry = candidates.map((e) => ({ e, problems: verifyEntryFile(e, { load }) }));
+  if (perEntry.some((x) => x.problems.length === 0)) return [];
+  return perEntry.flatMap((x) => x.problems).map((p) => `the release named by ${rec.recordPath}: ${p}`);
+}
+
+const sha256File = (file) => {
+  try {
+    return createHash("sha256").update(readFileSync(file)).digest("hex");
+  } catch {
+    return "missing";
+  }
+};
+
+/**
+ * Full-tree identity: every regular file (path + content hash) and every
+ * symlink (path + target), skipping only generated dependency/cache trees.
+ * Equal versions are not equal releases unless this digest matches.
+ */
+function treeIdentity(dir) {
+  const lines = [];
+  const walk = (rel) => {
+    let entries;
+    try {
+      entries = readdirSync(join(dir, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries.sort((x, y) => x.name.localeCompare(y.name))) {
+      if (e.name === "node_modules" || e.name === ".git" || e.name === "__pycache__") continue;
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isSymbolicLink()) {
+        let target = "broken";
+        try { target = realpathSync(join(dir, r)); } catch { /* keep broken */ }
+        lines.push(`${r}\tlink:${target}`);
+      } else if (e.isDirectory()) {
+        walk(r);
+      } else if (e.isFile()) {
+        lines.push(`${r}\t${sha256File(join(dir, r))}`);
+      }
     }
   };
-  return `SKILL.md=${hash(join(dir, "SKILL.md"))} entry=${manifest?.runtime_entry?.sha256 ?? "unrecorded"}`;
+  walk("");
+  return `${createHash("sha256").update(lines.join("\n")).digest("hex")}:${lines.length}`;
 }
 
 /**
@@ -551,6 +665,13 @@ export function checkSelectedTree(opts = {}) {
   const records = scanInstallRecords({ home, prefix });
   const selection = resolveSelection({ home, claudeConfigDir, openclawRoot, prefix, skillDir, records, agentSelected, agentSource });
   problems.push(...selection.problems);
+  for (const rec of records) {
+    problems.push(...verifyRecordRelease(rec, { load }));
+  }
+  // Pin the physical targets once: a symlink retargeted mid-run must never be
+  // verified as if it were the tree that was checked at the start.
+  const pinnedSelection = selection.selectedPath ? safeReal(selection.selectedPath) : null;
+  const pinnedSkillDir = skillDir ? safeReal(skillDir) : null;
 
   const discoveredCopies = inspectCopies({
     home,
@@ -622,7 +743,7 @@ export function checkSelectedTree(opts = {}) {
       );
     }
     // (e) the convene contract, as text the selected tree actually carries
-    const text = normalizedText(join(selected.path, "SKILL.md"));
+    const text = normalizedText(join(selected.physical, "SKILL.md"));
     for (const phrase of STALE_CONTRACT_PHRASES) {
       if (text.includes(phrase)) {
         problems.push(
@@ -640,8 +761,8 @@ export function checkSelectedTree(opts = {}) {
     // (c)+(d) the selected artifact must ship a verifiable executable
     const state = executableStatus(selected, records);
     if (state === "packaged") {
-      const manifest = readJson(join(selected.path, "manifest.json"));
-      const gate = checkEntryPoint(selected.path, manifest, { load });
+      const manifest = readJson(join(selected.physical, "manifest.json"));
+      const gate = checkEntryPoint(selected.physical, manifest, { load });
       if (!gate.ok) problems.push(...gate.problems.map((p) => `SELECTED copy ${selected.path}: ${p}`));
     } else if (state === "packaged-missing-entry") {
       problems.push(
@@ -673,12 +794,16 @@ export function checkSelectedTree(opts = {}) {
     // (a release named by the resolver's own install-record carries it) both
     // satisfy the shipped-executable rule.
     if (skillDir && !samePath(selected.physical, skillDir)) {
-      const sameContent = contentIdentity(selected.path) === contentIdentity(skillDir);
-      if (selected.version && selected.version === canonicalVersion && !sameContent) {
+      const selectedIdentity = treeIdentity(selected.physical);
+      const maintainedIdentity = treeIdentity(skillDir);
+      if (selectedIdentity !== maintainedIdentity) {
         problems.push(
-          `the selected copy ${selected.path} and the tree this update maintains ${skillDir} both claim ` +
-          `${selected.version} but their content differs (${contentIdentity(selected.path)} vs ${contentIdentity(skillDir)}): ` +
-          `the update wrote a directory the agent does not read`,
+          `the selected copy ${selected.path} and the tree this update maintains ${skillDir} ` +
+          (selected.version && selected.version === canonicalVersion
+            ? `both claim ${selected.version} `
+            : "") +
+          `but their trees differ (selected ${selectedIdentity} vs maintained ${maintainedIdentity}): ` +
+          `an update that wrote any other file must not report success`,
         );
       }
       warnings.push(
@@ -706,6 +831,21 @@ export function checkSelectedTree(opts = {}) {
       warnings.push(
         `CONFLICT: ${copy.path} is at version ${copy.version} while the selected copy ${selected.path} ` +
         `is at ${selected.version}`,
+      );
+    }
+  }
+
+  // A symlink that moved while it was being checked cannot be verified.
+  for (const pinned of [
+    { label: "the resolver-selected path", path: selection.selectedPath, real: pinnedSelection },
+    { label: "the tree this update maintains", path: skillDir, real: pinnedSkillDir },
+  ]) {
+    if (!pinned.path || !pinned.real) continue;
+    const now = safeReal(pinned.path);
+    if (now !== pinned.real) {
+      problems.push(
+        `${pinned.label} ${pinned.path} changed target during verification (${pinned.real} -> ${now}): ` +
+        `a moving symlink cannot be verified`,
       );
     }
   }

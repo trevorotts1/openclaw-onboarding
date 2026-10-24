@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -355,11 +355,74 @@ test("(c) equal versions with different content is a failure, not a warning", (t
   const home = fixtureHome(t);
   const selected = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
   const wired = makeCopy(join(home, "wired", "council-of-wise-elders"));
-  writeFileSync(join(wired, "SKILL.md"), readFileSync(join(wired, "SKILL.md"), "utf8").replace("Convening", "CONVENING"));
+  writeFileSync(join(wired, "EXAMPLES.md"), "a file the selected copy does not have\n");
   makePrefix(home, selected);
   const gate = checkSelectedTree({ home, skillDir: wired, load: false, agentSelected: selected });
   assert.equal(gate.ok, false);
-  assert.match(gate.problems.join("\n"), /both claim .* but their content differs/);
+  assert.match(gate.problems.join("\n"), /both claim .* but their trees differ/);
+});
+
+test("(d) an archive member that is valid JavaScript but not the recorded build is refused", (t) => {
+  const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
+  if (zip.status !== 0) {
+    t.skip("zip not available");
+    return;
+  }
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), { entry: "recorded-only" });
+  const staging = join(home, "zip-staging");
+  mkdirSync(join(staging, dirname(ENTRY_PATH)), { recursive: true });
+  writeFileSync(join(staging, ENTRY_PATH), "#!/usr/bin/env node\nconsole.log('planted');\n");
+  execFileSync("zip", ["-qr", join(wired, "council-of-wise-elders.skill"), "."], { cwd: staging });
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /is not the recorded build/);
+});
+
+test("(d) an archive member that is a shell script is refused even without loading", (t) => {
+  const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
+  if (zip.status !== 0) {
+    t.skip("zip not available");
+    return;
+  }
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"), { entry: "recorded-only" });
+  const shell = "#!/bin/sh\necho not javascript\n";
+  const manifest = JSON.parse(readFileSync(join(wired, "manifest.json"), "utf8"));
+  manifest.runtime_entry.sha256 = createHash("sha256").update(shell).digest("hex");
+  manifest.runtime_entry.bytes = Buffer.byteLength(shell);
+  writeFileSync(join(wired, "manifest.json"), JSON.stringify(manifest, null, 2));
+  const staging = join(home, "zip-staging");
+  mkdirSync(join(staging, dirname(ENTRY_PATH)), { recursive: true });
+  writeFileSync(join(staging, ENTRY_PATH), shell);
+  execFileSync("zip", ["-qr", join(wired, "council-of-wise-elders.skill"), "."], { cwd: staging });
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /does not look like a JavaScript entry point/);
+});
+
+test("(a) a symlinked version carrier cannot borrow another tree's identity", (t) => {
+  const home = fixtureHome(t);
+  const wired = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  writeFileSync(join(wired, "version"), "1.0.99\n");
+  rmSync(join(wired, "skill-version.txt"));
+  symlinkSync(join(wired, "version"), join(wired, "skill-version.txt"));
+  makePrefix(home, wired);
+  const gate = checkSelectedTree({ home, skillDir: wired, load: false });
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /version carrier skill-version\.txt is a symlink/);
+});
+
+test("(a) a symlinked selected tree is verified through its pinned target", (t) => {
+  const home = fixtureHome(t);
+  const real = makeCopy(join(home, "real", "council-of-wise-elders"));
+  mkdirSync(join(home, ".claude", "skills"), { recursive: true });
+  const link = join(home, ".claude", "skills", "council-of-wise-elders");
+  symlinkSync(real, link);
+  makePrefix(home, link);
+  const gate = checkSelectedTree({ home, skillDir: real, load: false, agentSelected: link, agentSource: "symlink test" });
+  assert.equal(gate.ok, true, gate.problems.join(" | "));
+  assert.equal(gate.selected.physical, realpathSync(real));
 });
 
 test("(e) the shipped SKILL.md carries the current convene contract, not grant text", () => {
