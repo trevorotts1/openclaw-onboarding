@@ -5,6 +5,7 @@ and the 3-song message + files reach the client sink before any video stage.
 Run: python3 core/song_choices/test_song_wire_fu_song2.py   (needs ffmpeg + ffprobe)
 """
 import io
+import json
 import os
 import shutil
 import sys
@@ -17,6 +18,7 @@ import test_song_choices_fu_song as T                           # noqa: E402  (f
 from choice_card.intake_card import intake_card as IC           # noqa: E402
 from song_choices import song_choices as SC                     # noqa: E402
 import factory as F                                             # noqa: E402
+from state_store import Store                                  # noqa: E402
 
 YES = T.ANS("1") + ["yes"]                # all recommended; SONG APPROVAL = Yes
 NO = T.ANS("2") + ["yes"]                 # SONG APPROVAL = No
@@ -81,11 +83,44 @@ def test_resume_keeps_the_answer_offered_songs_and_pick():
         assert _gate(run) == "open"
 
 
+def _cli_stage_run(tmp):
+    """The real store schema required by the CLI's persisted video-model lock."""
+    run = os.path.join(tmp, "run")
+    os.makedirs(os.path.join(run, "control"), exist_ok=True)
+    stages = F._stages()
+    with Store(os.path.join(run, "control", "state.sqlite3")) as store:
+        store.init_run("R", stages)
+        for stage in stages[:4]:
+            store.transition("R", stage, "READY", "fixture")
+            store.claim("R", stage, "fixture")
+            store.transition("R", stage, "COMPLETE", "fixture")
+    return run
+
+
+def _confirm_cli_card(run, replies, target=None):
+    """Present each renderer receipt before its one client reply, then confirm."""
+    args = ["card", "--step", "--run-dir", run, "--format", "session-json"]
+    if target is not None:
+        args += ["--target", target]
+
+    def turn(extra=()):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            assert F.main(args + list(extra)) == 0
+        return json.loads(out.getvalue())
+
+    state = turn()
+    for reply in replies:
+        assert state["done"] is False
+        state = turn(["--question-id", state["question_id"],
+                      "--question-digest", state["question_digest"], "--reply", reply])
+    assert state["done"] is True
+
+
 def test_cli_card_step_with_run_dir_records_the_answer():
     with tempfile.TemporaryDirectory() as tmp:
-        run = T._stage_run(tmp)
-        with redirect_stdout(io.StringIO()):
-            F.main(["card", "--step", "--run-dir", run] + [x for r in YES for x in ("--reply", r)])
+        run = _cli_stage_run(tmp)
+        _confirm_cli_card(run, YES)
         assert SC._state(run)["required"] is True
 
 
@@ -118,9 +153,8 @@ def test_message_and_three_files_reach_the_sink_in_order_before_any_video_stage(
 
 def test_card_target_is_used_with_no_target_passed_by_the_caller():
     with tempfile.TemporaryDirectory() as tmp:
-        run = T._stage_run(tmp)
-        with redirect_stdout(io.StringIO()):
-            F.main(["card", "--step", "--run-dir", run, "--target", "777"] + [x for r in YES for x in ("--reply", r)])
+        run = _cli_stage_run(tmp)
+        _confirm_cli_card(run, YES, target="777")
         sent = []
         msg = _offer(tmp, run, send=sent.append)                     # caller passes NO target=
         assert len(sent) == 1

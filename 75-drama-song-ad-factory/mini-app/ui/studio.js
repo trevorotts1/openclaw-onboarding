@@ -573,6 +573,9 @@ function pageQuestions() {
       ].filter(Boolean)),
     ]));
   }
+  for (const text of q.supplementary_explanation || []) {
+    fieldset.append(el("p", { class: "hint", text }));
+  }
   if (chosen && isFreeTextOption(chosen)) {
     fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }, q));
   }

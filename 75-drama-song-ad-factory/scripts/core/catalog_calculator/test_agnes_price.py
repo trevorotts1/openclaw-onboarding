@@ -54,10 +54,9 @@ def approx(a, b, abs_tol=0.01):
 
 
 #: What card_render prints for card {} with this fixture on this branch
-#: (v2.9.107 — the shipped video model is MiniMax H3 at $0.04/s, 15-second
-#: generations, the KIE catalog carries it; the card total moved with the
-#: data): every rerun must stay byte-identical to THIS text (BUILD-PLAN
-#: W1-agnes-core-U7).
+#: (2026-10-24 — the shipped video model is MiniMax H3 at $0.04/s, restored by
+#: owner order: the KIE catalog carries minimax-h3/image-to-video): every
+#: rerun must stay byte-identical to THIS text (BUILD-PLAN W1-agnes-core-U7).
 GOLDEN_PLAIN_CARD = (
     "  Length:      60 seconds   $2.40\n"
     "  Shape:       9:16   $0.22\n"
@@ -74,7 +73,7 @@ GOLDEN_PLAIN_CARD = (
     "  Total:       $2.68 + $1.34 retake allowance (50%) = $4.02")
 
 #: quote(1, "90 seconds") on this branch (table rates, no adapter; MiniMax
-#: H3's $0.04/s x 90 = $3.60 + music + voice rows, plus the planning
+#: H3's $0.04/s x 90 = $3.60 + music row = $3.92 base, + $1.96 planning
 #: allowance = $5.88).
 GOLDEN_QUOTE_90 = 5.88
 

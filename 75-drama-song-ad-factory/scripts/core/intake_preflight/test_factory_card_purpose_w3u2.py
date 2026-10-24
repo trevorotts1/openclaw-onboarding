@@ -9,8 +9,8 @@ guard was inert. What is proved here, behaviourally:
   * a NEW run through `factory.py card --step --run-dir` (Claude Code chat) is
     asked the purpose card and ends with control/method.json on disk;
   * the same run through `--format telegram-json` (the Telegram launcher);
-  * the same run through `studio_bridge._replay` (what `studio_bridge.py poll`
-    runs for a Studio order), with the studio order's own marker present;
+  * unreceipted bulk orders through `studio_bridge._replay` fail closed;
+    a Studio marker does not authorize invented or unseen question answers;
   * a RESUMED run (stage work recorded, answers saved) keeps the card it
     started on: the legacy list, byte-identical answers, no method.json;
   * `--no-purpose-flow` still asks the pre-method card on a new run;
@@ -24,7 +24,6 @@ Stdlib only, no network, no provider, no paid call.
 import io
 import json
 import os
-import sqlite3
 import sys
 import tempfile
 from contextlib import redirect_stdout
@@ -38,6 +37,7 @@ for p in (str(CORE), str(HERE)):
         sys.path.insert(0, p)
 
 import factory as F                                             # noqa: E402
+from state_store import Store                                  # noqa: E402
 from choice_card.intake_card import intake_card as IC           # noqa: E402
 
 STAGES = ("research", "creative-strategy", "script-lyrics", "music",
@@ -65,11 +65,12 @@ def make_run(tmp, advanced=0):
     """A run folder: `advanced` stages past NOT_STARTED (0 = a NEW run)."""
     run = Path(tmp) / "run"
     (run / "control").mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(run / "control" / "state.sqlite3")) as con:
-        con.execute("CREATE TABLE stages(run_id TEXT, stage TEXT, state TEXT)")
-        for i, s in enumerate(STAGES):
-            con.execute("INSERT INTO stages VALUES('R', ?, ?)",
-                        (s, "COMPLETE" if i < advanced else "NOT_STARTED"))
+    with Store(run / "control" / "state.sqlite3") as store:
+        store.init_run("R", STAGES)
+        for stage in STAGES[:advanced]:
+            store.transition("R", stage, "READY", "fixture")
+            store.claim("R", stage, "fixture")
+            store.transition("R", stage, "COMPLETE", "fixture")
     return run
 
 
@@ -106,14 +107,16 @@ def legacy_replies():
 
 
 def drive(run, replies, fmt="text", extra=()):
-    """One launch of `factory.py card --step`, the launcher every path uses."""
+    """Render before each explicit reply through the supported CLI launcher."""
     argv = ["card", "--step", "--run-dir", str(run), "--format", fmt]
     argv.extend(extra)
-    for r in replies:
-        argv.extend(["--reply", r])
     out = io.StringIO()
     with redirect_stdout(out):
         code = F.main(argv)
+    for reply in replies:
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = F.main(argv + ["--reply", reply])
     return code, out.getvalue()
 
 
@@ -170,16 +173,18 @@ def main():
         (run / "control" / "studio-order.json").write_text(
             json.dumps({"order_id": "ord-w3u2", "client_id": "c1", "title": "t"}),
             encoding="utf-8")
-        code, factory_path = SB._replay(str(SKILL), run, replies)
-        check("replay reported ok", code, SB.EXIT["ok"])
+        capture = io.StringIO()
+        with redirect_stdout(capture):
+            code, factory_path = SB._replay(str(SKILL), run, replies)
+        check("unreceipted bulk Studio order refused", code, SB.EXIT["error"])
+        check("bridge exposes a named replay refusal",
+              json.loads(capture.getvalue()).get("code"), "REPLAY_FAILED")
         check("the launcher it shelled out to is factory.py",
-              Path(factory_path).name, "factory.py")
-        check("and it is THIS factory",
               Path(factory_path).resolve(), Path(F.__file__).resolve())
-        check_true("control/method.json written",
-                   (run / "control" / "method.json").exists())
-        check("the Studio run's purpose",
-              F._method_record(str(run)).get("purpose"), "campaign")
+        check("no method record claimed without accepted replies",
+              (run / "control" / "method.json").exists(), False)
+        stored = json.loads((run / "control" / "intake-session.json").read_text())
+        check("no bulk answer was silently consumed", stored["answered_count"], 0)
 
         # -- 4: a RESUMED run is untouched -----------------------------------
         print("[4] a RESUMED run keeps the card it started on")

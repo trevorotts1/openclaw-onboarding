@@ -34,10 +34,10 @@ EXPECTED = (
 )
 
 
-def card(*extra):
+def card(*extra, expected_rc=0):
     r = subprocess.run([sys.executable, FACTORY, "card", "--step", *extra],
                        capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
+    assert r.returncode == expected_rc, (r.returncode, r.stdout, r.stderr)
     return r.stdout.rstrip("\n")
 
 
@@ -63,15 +63,19 @@ def test_not_shown_on_resume_or_recap():
     st = _state()
     json.dump({"intro_shown": True, "keep": 1}, open(st, "w"))
     assert card("--run-state-file", st).startswith("Question 1 of ")   # resume
-    assert "Here is what you picked" in card("--run-state-file", st,
-                                             *[x for r in IC.example_replies() for x in ("--reply", r)])
+    for reply in IC.example_replies():
+        message = card("--run-state-file", st, "--reply", reply)
+    assert "Here is what you picked" in message
     assert json.load(open(st))["keep"] == 1                            # state kept
 
 
 def test_not_shown_once_replies_exist():
-    st = _state()                                  # fresh file, but client already replied
-    assert card("--run-state-file", st, "--reply", IC.example_replies()[0]).startswith("Question 2 of ")
-    assert not os.path.exists(st)
+    st = _state()                                  # fresh file, but no question was rendered
+    message = card("--run-state-file", st, "--reply", IC.example_replies()[0], expected_rc=2)
+    assert message.startswith("Question 1 of ")     # unseen answer cannot skip a question
+    assert "Question 2 of " not in message and EXPECTED not in message
+    saved = json.load(open(os.path.join(os.path.dirname(st), "intake-session.json")))
+    assert saved["answer_records"] == {} and saved["done"] is False
 
 
 def test_batch_and_cli_only_paths_unchanged():
