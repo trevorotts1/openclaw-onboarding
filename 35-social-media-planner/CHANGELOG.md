@@ -1,5 +1,81 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.8.2] - 2026-10-24 - T-22c repair: a receipt is proof only when the placement_id recomputes
+
+- The receipt is now provable, not self-consistent. `prepare_assisted_placement`
+  and `record_operator_confirmation` both derive `placement_id` through one
+  function (`_placement_provenance` -> `_placement_id`, a SHA-256 digest of
+  channel, account_type, action, placement), so the two cannot drift, and
+  `record_operator_confirmation` recomputes the digest and REFUSES unless it
+  equals the supplied `placement_id`. Before this, any arbitrary dict carrying a
+  well-formed `placement` was bound to whatever non-empty string sat in
+  `placement_id` — `'anything-at-all'` bound happily.
+- The package must carry what the digest is computed from: `channel`,
+  `account_type`, `action` and `placement` are required, so there is nothing left
+  for a carried id to stand in for.
+- Placement field types are enforced: each of text, asset, keyword, cta, timing
+  must be a non-empty string, object or list. `{text: 1, asset: 1, keyword: 1,
+  cta: 1, timing: 1}` used to be accepted and is now refused at prepare AND at
+  confirm.
+- `_valid_receipt` now checks provenance instead of string equality with the
+  record's own field: the record's `placement_id` must be the digest recomputed
+  from that record's own inputs, and the receipt must name exactly that id. A
+  hand-built `operator-confirmed` record with a fabricated id and a self-consistent
+  receipt is refused on BOTH the status surface and the guard, with the same
+  reason.
+- Tests: `test_t22_status_guard_matrix.py` gains fabricated-id / missing
+  digest-input / wrong-field-type refusals. Its `known-good` control for an
+  operator-confirmed non-personal placement is now built through the real
+  workflow (threads/business, prepared then confirmed) instead of hand-written
+  with a fabricated `placement_id` and no placement — that hand-written record was
+  itself the mint this release closes. No assertion was weakened: the control
+  still requires that an operator-confirmed page-class placement passes both
+  surfaces, now with a receipt that is actually provable.
+- Suites: T-22 16 tests OK, status/guard matrix 10 tests OK (was 23 combined).
+- skill-version v3.8.1 -> v3.8.2.
+
+## [3.8.1] - 2026-10-24 - T-22 repair: one truth path for the status surface and the guard
+
+- `status_surface` now refuses a personal-profile or personal-account record on the
+  `unattended` route, instead of rendering `claim: published-by-system`,
+  `published_by_system: true` and `receipt: null` for it. That was the exact defect
+  T-22 exists to prevent: the honesty rule was enforced on the assisted branch and
+  on the guard, but not on the read path's unattended branch.
+- The read path and the guard are now ONE code path. `status_surface` returns what
+  `_truth_of()` returns and `assert_truthful_publication` only checks that it does
+  not raise, so the two cannot drift apart again; the personal-profile/unattended
+  rule is written once in `_reject_personal_on_unattended` and called by both. The
+  guard no longer silently relabels a record the status surface refuses, and the
+  status surface no longer silently relabels `published_by_system: true` on an
+  assisted record.
+- `assert_truthful_publication` now also refuses records outside the truthful
+  status vocabulary or with no declared route (previously the guard passed what the
+  status surface refused).
+- Receipt binding is no longer optional: `_valid_receipt` refuses a receipt that
+  names no placement or that is offered for a record naming none, so a receipt can
+  never stand in for a placement it is not about.
+- `record_operator_confirmation` refuses anything it could not honestly attest: no
+  `placement_id`, a package that is not a prepared placement, a `confirmed_at` that
+  is not an ISO-8601 timestamp, and a package that already claims publication. The
+  minted record is checked by `_truth_of()` before it is returned, so confirmation
+  can never produce a record the guard or the status surface would refuse.
+- Added `tests/social-planner/test_t22_status_guard_matrix.py`: 480-row matrix of
+  route x account_type x personal_profile x status x receipt proving the read path
+  and the guard agree in both directions, a known-good page-publication control that
+  passes both, the 36/36 unattended personal-profile refusal triples, and the
+  operator-confirmation hardening.
+- skill-version v3.8.0 -> v3.8.1.
+
+## [3.8.0] - 2026-10-24 - T-22 honest personal-profile capability and assisted contract
+
+- Added `config/profile-capabilities.json`: the single machine-readable declaration of what each channel and account type can do `unattended`, what needs one `operator_action`, and what is `unavailable`. Personal profiles are always assisted or unavailable, never unattended; the declaration validator fails closed if a personal profile lists any unattended action.
+- Added `shared-utils/personal_profile_capability.py`: capability lookup, refusal path, assisted placement preparation (text, asset, keyword, CTA, timing), operator-confirmation receipt, truthful status surface and `assert_truthful_publication` guard. An assisted/personal placement can never report `published-by-system`; `operator-confirmed` requires a valid receipt.
+- Added `scripts/profile_capability.py` operator CLI (`capabilities`, `request`, `confirm`, `status`, `guard`).
+- Added `PROFILE-CAPABILITIES.md` (declaration table, assisted contract, refusal language, status surface, CLI).
+- Added `tests/social-planner/test_t22_profile_capability.py`: unattended personal-profile refusal, receipt only after operator confirmation, guard failure on a system-claimed publication without a receipt, and capability-data round-trip as the single source.
+- `INSTRUCTIONS.md` and `SKILL.md` now route account-type decisions through the declaration; the Facebook gotcha points at the assisted contract.
+- skill-version v3.7.3 -> v3.8.0.
+
 ## [3.7.2] - 2026-10-13 - model doctrine cleanup
 
 - Per-role model tiering no longer prescribes named models: each role uses the client's selected model, or the client's configured default model, with tier recommendations stated as guidance. Spawn examples use client-selected placeholders and stop to ask the client when no model is selected or configured.

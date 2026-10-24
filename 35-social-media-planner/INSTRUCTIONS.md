@@ -21,6 +21,8 @@ Facebook (feed posts + carousels + Stories/Reels), Instagram (feed posts + Reels
 
 The exact enabled platform set is determined at runtime by a live GHL connected-accounts query — never assumed from a fixed list.
 
+**Account-type capability is declared, never inferred.** `config/profile-capabilities.json` is the single source of truth for what the system can do unattended, what needs one operator step, and what it cannot do at all. Personal profiles are always assisted: the system prepares the exact placement and the operator performs the manual post, which is recorded as a receipt. A personal-profile post is never reported as published by the system. See `PROFILE-CAPABILITIES.md`, `shared-utils/personal_profile_capability.py`, and `scripts/profile_capability.py`.
+
 The skill is **variable-driven** — every credential, URL, brand voice, and image-model setting is pulled from existing files. **Never hardcode a brand name, a domain, or a credential.**
 
 ---
@@ -278,7 +280,7 @@ The Marketing department in the dashboard has a "Publish" button on each campaig
 | GHL blog | Posts via the LeadConnector API. Respect daily quota — pre-check via `~/.openclaw/scripts/ghl-quota-check.sh` first (see cron-prompt RULE 18). |
 | YouTube | Video Producer's output must be H.264 / AAC. Specs in `video-specs.json`. |
 | X / Twitter | Thread mode: posts longer than 280 chars are auto-threaded. |
-| Facebook | Page token only; personal profile posting is not supported. |
+| Facebook | Page token only. Personal profiles have no supported public posting or comment API; use the assisted contract in `PROFILE-CAPABILITIES.md` (prepare the placement, operator posts, receipt recorded). |
 
 ---
 

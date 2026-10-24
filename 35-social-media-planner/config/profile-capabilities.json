@@ -1,0 +1,340 @@
+{
+  "$schema_note": "T-22 honest personal-profile capability declaration and assisted contract. ONE machine-readable source consumed by shared-utils/personal_profile_capability.py, the profile_capability.py CLI, the status surface, and (later) Command Center. Every channel/account-type declares exactly three action buckets: unattended (the system may do it without a human), operator_action (the system prepares and a human performs one step), and unavailable (the system cannot do it). Personal profiles are ALWAYS assisted, never unattended. No assisted placement may ever be reported as published-by-system; a receipt recorded after explicit operator confirmation is the only proof of an assisted action.",
+  "policy": {
+    "version": "1.0.0",
+    "declared_at": "2026-10-24",
+    "checked_at": "2026-10-24",
+    "single_source_of_truth": "35-social-media-planner/config/profile-capabilities.json",
+    "personal_profile_rule": "Any account type with personal_profile=true declares mode assisted (or unavailable) and MUST NOT list any action under unattended. Unattended personal-profile posting or commenting is never supported.",
+    "no_system_publication_without_receipt": true,
+    "assisted_placement_route": "assisted",
+    "assisted_statuses": {
+      "awaiting-operator": "Placement prepared and handed to the operator. Nothing has been posted.",
+      "operator-confirmed": "The operator confirmed performing the manual step. The receipt is the record of that confirmation."
+    },
+    "assisted_forbidden_statuses": {
+      "published-by-system": "Forbidden. The system cannot publish an assisted placement; only a human action can.",
+      "published": "Forbidden as a bare status for an assisted placement. Use operator-confirmed with a receipt."
+    },
+    "receipt_required_fields": ["placement_id", "operator", "confirmed_at", "method"],
+    "refusal_language": "Ordinary personal profiles have no supported public posting or comment API. This system cannot publish or comment on a personal profile unattended. It can prepare the exact placement (text, asset, keyword, call to action and timing) and hand it to you for one manual step, then record your confirmation as the receipt.",
+    "assisted_offer_language": "The assisted route is available: the system prepares the exact placement and gives you a one-step instruction. After you perform it and confirm, the system records an operator-confirmed receipt. It never claims the post was published by the system."
+  },
+  "actions": {
+    "post": "Publish a text post.",
+    "image": "Publish an image post.",
+    "video": "Publish a video post.",
+    "reel": "Publish a short-form vertical video.",
+    "story": "Publish a story.",
+    "comment": "Comment on a post.",
+    "reply": "Reply to a comment.",
+    "update": "Publish a business update.",
+    "offer": "Publish an offer.",
+    "event": "Publish an event."
+  },
+  "channels": {
+    "facebook": {
+      "channel_label": "Facebook",
+      "checked_at": "2026-10-24",
+      "source_urls": [
+        "https://developers.facebook.com/docs/pages-api/posts",
+        "https://developers.facebook.com/docs/pages-api/overview"
+      ],
+      "account_types": {
+        "page": {
+          "label": "Facebook Page (business)",
+          "mode": "unattended",
+          "personal_profile": false,
+          "path": "ghl_social_planner",
+          "platform_api": "supported",
+          "unattended": ["post", "image", "video", "reel", "story", "comment", "reply"],
+          "operator_action": [],
+          "unavailable": [],
+          "notes": "Page-scoped publishing and comments are available through the Meta Graph API and the connected GHL social planner."
+        },
+        "personal": {
+          "label": "Personal Facebook profile",
+          "mode": "assisted",
+          "personal_profile": true,
+          "path": "operator_manual",
+          "platform_api": "not_available",
+          "unattended": [],
+          "operator_action": ["post", "image", "video", "story", "comment", "reply"],
+          "unavailable": [],
+          "operator_instruction": "Open Facebook, paste the prepared text and asset, post or comment exactly as written, then return to the system and confirm the operator action.",
+          "notes": "Meta provides publishing and comment APIs for Pages, not for ordinary personal profiles. This system cannot post or comment on a personal Facebook profile unattended."
+        }
+      }
+    },
+    "instagram": {
+      "channel_label": "Instagram",
+      "checked_at": "2026-10-24",
+      "source_urls": [
+        "https://developers.facebook.com/docs/instagram-platform/content-publishing",
+        "https://developers.facebook.com/docs/instagram-platform/overview"
+      ],
+      "account_types": {
+        "business": {
+          "label": "Instagram business account",
+          "mode": "unattended",
+          "personal_profile": false,
+          "path": "ghl_social_planner",
+          "platform_api": "supported",
+          "unattended": ["post", "image", "video", "reel", "story", "comment"],
+          "operator_action": [],
+          "unavailable": [],
+          "notes": "Professional accounts publish through the Instagram API and the connected GHL social planner."
+        },
+        "creator": {
+          "label": "Instagram creator account",
+          "mode": "unattended",
+          "personal_profile": false,
+          "path": "ghl_social_planner",
+          "platform_api": "supported",
+          "unattended": ["post", "image", "video", "reel", "story", "comment"],
+          "operator_action": [],
+          "unavailable": [],
+          "notes": "Professional accounts publish through the Instagram API and the connected GHL social planner."
+        },
+        "personal": {
+          "label": "Personal Instagram profile",
+          "mode": "assisted",
+          "personal_profile": true,
+          "path": "operator_manual",
+          "platform_api": "not_available",
+          "unattended": [],
+          "operator_action": ["post", "image", "video", "reel", "story", "comment", "reply"],
+          "unavailable": [],
+          "operator_instruction": "Open Instagram, paste the prepared caption and attach the prepared asset, post or comment exactly as written, then return to the system and confirm the operator action.",
+          "notes": "Instagram content publishing is limited to professional accounts. An ordinary personal profile has no supported public posting or comment API."
+        }
+      }
+    },
+    "linkedin": {
+      "channel_label": "LinkedIn",
+      "checked_at": "2026-10-24",
+      "source_urls": [
+        "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api",
+        "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/organizations/organization-posts"
+      ],
+      "account_types": {
+        "organization": {
+          "label": "LinkedIn company page",
+          "mode": "unattended",
+          "personal_profile": false,
+          "path": "ghl_social_planner",
+          "platform_api": "supported",
+          "unattended": ["post", "image", "video", "comment", "reply"],
+          "operator_action": [],
+          "unavailable": [],
+          "notes": "Company-page publishing is available through LinkedIn's organization API and the connected GHL social planner."
+        },
+        "personal": {
+          "label": "Personal LinkedIn profile",
+          "mode": "assisted",
+          "personal_profile": true,
+          "path": "operator_manual",
+          "platform_api": "restricted",
+          "unattended": [],
+          "operator_action": ["post", "image", "video", "comment", "reply"],
+          "unavailable": [],
+          "operator_instruction": "Open LinkedIn, paste the prepared text and attach the prepared asset, publish or comment exactly as written, then return to the system and confirm the operator action.",
+          "notes": "Member posting requires approved partner access that this system does not hold. Personal profiles are assisted here; no unattended path is offered or implied."
+        }
+      }
+    },
+    "x": {
+      "channel_label": "X (Twitter)",
+      "checked_at": "2026-10-24",
+      "source_urls": [
+        "https://docs.x.com/x-api/posts/create-post"
+      ],
+      "account_types": {
+        "organization": {
+          "label": "X brand/business account",
+          "mode": "unattended",
+          "personal_profile": false,
+          "path": "ghl_social_planner",
+          "platform_api": "supported",
+          "unattended": ["post", "image", "video", "reply"],
+          "operator_action": [],
+          "unavailable": [],
+          "notes": "Connected brand accounts publish through the GHL social planner."
+        },
+        "personal": {
+          "label": "Personal X account",
+          "mode": "assisted",
+          "personal_profile": true,
+          "path": "operator_manual",
+          "platform_api": "restricted",
+          "unattended": [],
+          "operator_action": ["post", "image", "video", "reply"],
+          "unavailable": [],
+          "operator_instruction": "Open X, paste the prepared post and attach the prepared asset, publish or reply exactly as written, then return to the system and confirm the operator action.",
+          "notes": "X offers user-context posting under paid API access, but this system does not expose unattended personal-account publishing. Personal profiles stay operator-confirmed."
+        }
+      }
+    },
+    "tiktok": {
+      "channel_label": "TikTok",
+      "checked_at": "2026-10-24",
+      "source_urls": [
+        "https://developers.tiktok.com/doc/content-posting-api-get-started"
+      ],
+      "account_types": {
+        "business": {
+          "label": "TikTok business account",
+          "mode": "unattended",
+          "personal_profile": false,
+          "path": "ghl_social_planner",
+          "platform_api": "supported",
+          "unattended": ["video"],
+          "operator_action": [],
+          "unavailable": ["comment", "reply"],
+          "notes": "Direct video publishing is available for approved business accounts. Comment automation is not offered."
+        },
+        "personal": {
+          "label": "Personal TikTok account",
+          "mode": "assisted",
+          "personal_profile": true,
+          "path": "operator_manual",
+          "platform_api": "not_available",
+          "unattended": [],
+          "operator_action": ["video", "comment", "reply"],
+          "unavailable": [],
+          "operator_instruction": "Open TikTok, upload the prepared video with the prepared caption, publish or comment exactly as written, then return to the system and confirm the operator action.",
+          "notes": "This system has no unattended path for personal TikTok accounts. The operator performs the upload; the system records only the confirmation receipt."
+        }
+      }
+    },
+    "pinterest": {
+      "channel_label": "Pinterest",
+      "checked_at": "2026-10-24",
+      "source_urls": [
+        "https://developers.pinterest.com/docs/api/v5/pins-create"
+      ],
+      "account_types": {
+        "business": {
+          "label": "Pinterest business account",
+          "mode": "unattended",
+          "personal_profile": false,
+          "path": "ghl_social_planner",
+          "platform_api": "supported",
+          "unattended": ["post", "image"],
+          "operator_action": [],
+          "unavailable": ["comment", "reply"],
+          "notes": "Pin publishing is available for business accounts through the connected GHL social planner."
+        },
+        "personal": {
+          "label": "Personal Pinterest account",
+          "mode": "assisted",
+          "personal_profile": true,
+          "path": "operator_manual",
+          "platform_api": "not_available",
+          "unattended": [],
+          "operator_action": ["post", "image"],
+          "unavailable": [],
+          "operator_instruction": "Open Pinterest, create the pin from the prepared image, title, description and destination link, then return to the system and confirm the operator action.",
+          "notes": "The Pinterest API is business-account scoped. Personal profiles are assisted only."
+        }
+      }
+    },
+    "youtube": {
+      "channel_label": "YouTube",
+      "checked_at": "2026-10-24",
+      "source_urls": [
+        "https://developers.google.com/youtube/v3/docs/videos/insert"
+      ],
+      "account_types": {
+        "channel": {
+          "label": "YouTube channel (brand/creator)",
+          "mode": "unattended",
+          "personal_profile": false,
+          "path": "direct_youtube_api",
+          "platform_api": "supported",
+          "unattended": ["video"],
+          "operator_action": [],
+          "unavailable": ["comment", "reply"],
+          "notes": "Video uploads run through the YouTube Data API when the channel's OAuth credentials are configured. Comments are not automated."
+        },
+        "personal": {
+          "label": "Personal YouTube channel",
+          "mode": "assisted",
+          "personal_profile": true,
+          "path": "operator_manual",
+          "platform_api": "not_available",
+          "unattended": [],
+          "operator_action": ["video"],
+          "unavailable": [],
+          "operator_instruction": "Open YouTube Studio, upload the prepared video with the prepared title, description and thumbnail, then return to the system and confirm the operator action.",
+          "notes": "This system does not hold unattended upload access for personal YouTube channels. The operator performs the upload."
+        }
+      }
+    },
+    "threads": {
+      "channel_label": "Threads",
+      "checked_at": "2026-10-24",
+      "source_urls": [
+        "https://developers.facebook.com/docs/threads"
+      ],
+      "account_types": {
+        "business": {
+          "label": "Threads professional account",
+          "mode": "assisted",
+          "personal_profile": false,
+          "path": "operator_manual",
+          "platform_api": "supported",
+          "unattended": [],
+          "operator_action": ["post", "image", "video", "reply"],
+          "unavailable": [],
+          "operator_instruction": "Open Threads, paste the prepared post and attach the prepared asset, publish or reply exactly as written, then return to the system and confirm the operator action.",
+          "notes": "The Threads API exists, but this system has no verified production adapter yet. Until the adapter is verified, professional Threads accounts are assisted, never claimed as automated."
+        },
+        "personal": {
+          "label": "Personal Threads profile",
+          "mode": "assisted",
+          "personal_profile": true,
+          "path": "operator_manual",
+          "platform_api": "not_available",
+          "unattended": [],
+          "operator_action": ["post", "image", "video", "reply"],
+          "unavailable": [],
+          "operator_instruction": "Open Threads, paste the prepared post and attach the prepared asset, publish or reply exactly as written, then return to the system and confirm the operator action.",
+          "notes": "There is no unattended personal-profile path in this system."
+        }
+      }
+    },
+    "google-business-profile": {
+      "channel_label": "Google Business Profile",
+      "checked_at": "2026-10-24",
+      "source_urls": [
+        "https://developers.google.com/my-business/content/posts-data"
+      ],
+      "account_types": {
+        "business": {
+          "label": "Google Business Profile (business)",
+          "mode": "unattended",
+          "personal_profile": false,
+          "path": "ghl_social_planner",
+          "platform_api": "supported",
+          "unattended": ["update", "offer", "event", "image"],
+          "operator_action": [],
+          "unavailable": [],
+          "notes": "Updates, offers and events publish through the connected GHL social planner."
+        },
+        "personal": {
+          "label": "Personal Google account (no Business Profile)",
+          "mode": "unavailable",
+          "personal_profile": true,
+          "path": "none",
+          "platform_api": "not_available",
+          "unattended": [],
+          "operator_action": [],
+          "unavailable": ["update", "offer", "event", "image"],
+          "operator_instruction": "",
+          "notes": "A personal Google account is not a Business Profile. There is no profile to post to, and this system offers no assisted route for this case."
+        }
+      }
+    }
+  }
+}
