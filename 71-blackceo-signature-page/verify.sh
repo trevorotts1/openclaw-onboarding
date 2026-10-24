@@ -219,11 +219,32 @@ else
 fi
 
 if [ "$fail" -eq 0 ]; then
-  if python3 "$ROOT/tests/run_tests.py" >/dev/null 2>&1; then
-    echo "[PASS] tests/run_tests.py"
+  # The repository suite resolves fixtures from the repository root (this
+  # skill's parent directory). A lone-directory install cannot run it at all,
+  # so it is reported as NOT RUN with the exact command that does run it —
+  # never skipped silently and never counted as a pass. What an installation
+  # CAN prove is its own runtime, which the preflight below checks offline.
+  if [ -f "$ROOT/../scripts/check-skill71-parity.py" ]; then
+    if python3 "$ROOT/tests/run_tests.py" >/dev/null 2>&1; then
+      echo "[PASS] tests/run_tests.py"
+    else
+      echo "[FAIL] tests/run_tests.py" >&2
+      fail=1
+    fi
   else
-    echo "[FAIL] tests/run_tests.py" >&2
-    fail=1
+    echo "[NOT RUN] tests/run_tests.py — repository-only suite (needs a repo checkout)"
+    echo "          canonical command: cd ~/openclaw-onboarding/71-blackceo-signature-page && python3 -m pytest -q tests"
+    if [ -f "$ROOT/scripts/preflight_installed.py" ]; then
+      if python3 "$ROOT/scripts/preflight_installed.py"; then
+        echo "[PASS] installed-runtime preflight"
+      else
+        echo "[FAIL] installed-runtime preflight" >&2
+        fail=1
+      fi
+    else
+      echo "[FAIL] installed-runtime preflight: scripts/preflight_installed.py is not in this installation" >&2
+      fail=1
+    fi
   fi
 fi
 
