@@ -12,7 +12,10 @@ Doctrine, enforced in code:
     probe exists the result is a refusal, not a claim.
   * Every destination is resolved through ONE function that rejects a symlink
     component, a path outside the approved root, a path on the internal disk
-    family and a path on a different device. There is no "try /tmp" branch.
+    family and a path on a different device. There is no "try /tmp" branch:
+    `temp_env`, `probe_child` and `resolve_destinations` run the same admission
+    as the adapters, so an internal target is refused before anything is
+    created or launched.
   * A destination handle is opened with O_NOFOLLOW and fstat'd. Its device and
     inode are rechecked against the visible path immediately before a write and
     again after publication; a rebound directory is a named refusal.
@@ -40,7 +43,9 @@ from __future__ import annotations
 import errno
 import json
 import os
+import re
 import shutil
+import stat as stat_module
 import subprocess
 import sys
 import tempfile
@@ -79,17 +84,30 @@ INTERNAL_TEMP_MARKERS: Tuple[str, ...] = (
     "/var/folders/", "/private/var/folders/",
 )
 
-# roles -> directory under the approved root. ledgers are retained control
-# state, so they never live under a disposable tree (STORAGE.md).
+# roles -> directory under the approved root, exactly as STORAGE.md "Required
+# per-run layout" names them: worktrees/<run-id>/<repository>/<unit>,
+# scratch/<run-id>/<unit>, tmp/purple-billboard/<run-id>,
+# tmp/purple-billboard-caches/<run-id>, plus the retained control/evidence
+# directory outside the disposable trees. The <repository>/<unit> depth under
+# worktree and scratch is created by the caller that knows those names; this
+# mapping owns the per-run directory itself.
+#   output is the one role STORAGE.md does not name ("test/build outputs use
+#   that layout"); it lives beside the contracted tmp trees instead of
+#   inventing a fourth top-level root.
 LAYOUT: Mapping[str, str] = {
     "worktree": "worktrees",
     "scratch": "scratch",
-    "temp": "tmp",
-    "cache": "tmp-caches",
-    "output": "outputs",
+    "temp": "tmp/purple-billboard",
+    "cache": "tmp/purple-billboard-caches",
+    "output": "tmp/purple-billboard-outputs",
     "ledger": "ledgers",
 }
 DISPOSABLE_ROLES = frozenset({"worktree", "scratch", "temp", "cache", "output"})
+
+# One run id, one path segment: no separators, no whitespace, no control
+# characters, no leading dot. A name that is not this shape is refused rather
+# than half-sanitised.
+RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 _O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -140,8 +158,21 @@ class ChildProbe:
 
 # ── mount verification ──────────────────────────────────────────────────────
 
-def _darwin_uuid_probe(path: str) -> Optional[str]:
-    """Read the volume UUID from diskutil. Offline; no network."""
+_MEDIA_CACHE: Dict[int, Dict[str, Any]] = {}
+
+def _darwin_media_probe(path: str) -> Optional[Dict[str, Any]]:
+    """What diskutil observes about the volume holding `path`.
+
+    Offline; no network. Cached per device so a repeated admission costs one
+    probe. Returns None when this host cannot observe the media identity at
+    all - which is a fact about the host, never a licence to claim one.
+    """
+    try:
+        device = os.stat(path).st_dev
+    except OSError:
+        return None
+    if device in _MEDIA_CACHE:
+        return _MEDIA_CACHE[device]
     try:
         out = subprocess.run(
             ["/usr/sbin/diskutil", "info", "-plist", path],
@@ -156,21 +187,37 @@ def _darwin_uuid_probe(path: str) -> Optional[str]:
         info = plistlib.loads(out.stdout)
     except Exception:
         return None
+    facts: Dict[str, Any] = {"uuid": None, "internal": bool(info.get("Internal"))}
     for key in ("VolumeUUID", "MediaUUID", "DiskUUID"):
         value = info.get(key)
         if value:
-            return str(value)
-    return None
+            facts["uuid"] = str(value)
+            break
+    _MEDIA_CACHE[device] = facts
+    return facts
+
+def _darwin_uuid_probe(path: str) -> Optional[str]:
+    """Read the volume UUID from diskutil. Offline; no network."""
+    facts = _darwin_media_probe(path)
+    return facts.get("uuid") if facts else None
 
 def verify_mount(path: str, *, expected_uuid: Optional[str] = None,
                  required_bytes: int = 0,
                  uuid_probe: Optional[Any] = None,
-                 require_mount: bool = True) -> MountIdentity:
+                 require_mount: bool = True,
+                 require_media_uuid: bool = False) -> MountIdentity:
     """Verify the approved root. Raises instead of assuming anything.
 
     `require_mount=False` is only for a caller verifying a directory it has
     already proven is reached through a bind (the Docker adapter does its own
-    mount-info check); the default refuses a non-mount root.
+    mount-info check); the default refuses a non-mount root. It relaxes the
+    mount-point test only - it never relaxes anything else.
+
+    Media identity (STORAGE.md admission step 1, "media UUID matches"): when
+    this host can observe the volume identity it is recorded on the result even
+    if the contract declares none, and a declared UUID is confirmed by a real
+    probe only. `require_media_uuid=True` refuses admission when no identity
+    could be observed at all.
     """
     if not path or not os.path.isabs(path):
         raise PathRejected("path_not_absolute: %r" % (path,))
@@ -193,16 +240,22 @@ def verify_mount(path: str, *, expected_uuid: Optional[str] = None,
                 % (path, free, required_bytes))
 
     media_uuid = None
+    internal_media = None
+    probe_available = True
+    if uuid_probe is not None:
+        media_uuid = uuid_probe(path)
+    else:
+        facts = _darwin_media_probe(path) if sys.platform == "darwin" else None
+        probe_available = facts is not None
+        if facts is not None:
+            media_uuid = facts.get("uuid")
+            internal_media = facts.get("internal")
     if expected_uuid is not None:
-        probe = uuid_probe
-        if probe is None and sys.platform == "darwin":
-            probe = _darwin_uuid_probe
-        if probe is None:
+        if not probe_available:
             raise StorageError(
                 "media_uuid_unverified: %s declares %r but this host has no "
                 "identity probe; refusing to claim the volume"
                 % (path, expected_uuid))
-        media_uuid = probe(path)
         if not media_uuid:
             raise StorageError(
                 "media_uuid_unverified: probe returned no identity for %s" % path)
@@ -210,8 +263,21 @@ def verify_mount(path: str, *, expected_uuid: Optional[str] = None,
             raise StorageError(
                 "media_uuid_mismatch: %s reports %r, contract declares %r"
                 % (path, media_uuid, expected_uuid))
+    elif media_uuid:
+        limitations.append(
+            "media_uuid_not_declared: observed %s; the contract declares none, "
+            "so this is an observation and not a claimed match" % media_uuid)
     else:
         limitations.append("media_uuid_not_declared: identity not claimed")
+    if require_media_uuid and not media_uuid:
+        raise StorageError(
+            "media_uuid_unverified: %s has no observed media identity; "
+            "admission step 1 (media UUID matches) cannot be claimed" % path)
+    if internal_media:
+        limitations.append(
+            "media_on_internal_disk: diskutil reports Internal=true for %s; "
+            "device inequality against the root disk is the externality proof"
+            % path)
 
     return MountIdentity(path=path, device=st.st_dev, media_uuid=media_uuid,
                          filesystem=None,
@@ -238,43 +304,136 @@ def _inside(path: str, root: str) -> bool:
     except ValueError:
         return False
 
-def assert_external(path: str, root: str, *,
-                    internal_roots: Sequence[str] = INTERNAL_ROOTS,
-                    internal_temp_markers: Sequence[str] = INTERNAL_TEMP_MARKERS,
-                    check_device: bool = True) -> str:
-    """Admit one destination path or raise a named refusal.
+def _nearest_existing(path: str) -> str:
+    probe = os.path.abspath(path)
+    while probe and not os.path.exists(probe):
+        parent = os.path.dirname(probe)
+        if parent == probe:
+            break
+        probe = parent
+    return probe
 
-    Order matters: a linked component is named before anything resolves it, so
-    a symlink into internal storage can never be laundered by realpath.
+def _on_external_device(path: str) -> bool:
+    """True when `path` is not on the internal root disk.
+
+    Device inequality is this module's proof of "external": a mount point on
+    the internal root disk is still internal storage.
     """
-    if not os.path.isabs(path):
-        raise PathRejected("path_not_absolute: %r" % (path,))
-    normal = os.path.normpath(path)
+    probe = _nearest_existing(path)
+    if not probe or not os.path.exists(probe):
+        return False
+    return os.stat(probe).st_dev != os.stat(os.sep).st_dev
+
+def _reject_internal(path: str, *, home_roots: Sequence[str],
+                     lift_home: bool,
+                     internal_roots: Sequence[str],
+                     internal_temp_markers: Sequence[str]) -> None:
+    for internal in internal_roots:
+        if path == internal or path.startswith(internal.rstrip(os.sep) + os.sep):
+            raise PathRejected(
+                "internal_fallback: %s is internal storage (%s)" % (path, internal))
+    for marker in internal_temp_markers:
+        if path.startswith(marker):
+            raise PathRejected(
+                "internal_temp: %s is an OS temp tree (%s)" % (path, marker))
+    for home in home_roots:
+        if path == home or path.startswith(home.rstrip(os.sep) + os.sep):
+            if not lift_home:
+                raise PathRejected(
+                    "internal_home: %s is inside a home directory; project work "
+                    "belongs on the approved external root" % path)
+
+def _home_default() -> Tuple[str, ...]:
+    return (os.path.abspath(os.path.expanduser("~")),)
+
+def _admit_root(root: str, *, bind_proven: bool = False,
+                internal_roots: Sequence[str] = INTERNAL_ROOTS,
+                internal_temp_markers: Sequence[str] = INTERNAL_TEMP_MARKERS,
+                home_roots: Optional[Sequence[str]] = None) -> str:
+    """Admit an approved root, or raise. `bind_proven` is the caller stating it
+    has already proven this root is an approved host bind (Docker mount-info
+    proof, an operator-declared dedicated VPS volume); it never excuses an
+    internal temp tree. `home_roots` defaults to the real user home and is
+    caller-tunable exactly like `internal_roots`, for the caller that has
+    already proven an approved root that happens to live under a home.
+    """
+    if not root or not os.path.isabs(root):
+        raise PathRejected("path_not_absolute: %r" % (root,))
+    normal = os.path.normpath(root)
     linked = _symlink_component(normal)
     if linked is not None:
         raise PathRejected("symlink_component: %s (component %s)" % (normal, linked))
-    for internal in internal_roots:
-        if normal == internal or normal.startswith(internal.rstrip(os.sep) + os.sep):
-            raise PathRejected(
-                "internal_fallback: %s is internal storage (%s)" % (normal, internal))
-    for marker in internal_temp_markers:
-        if normal.startswith(marker):
-            raise PathRejected(
-                "internal_temp: %s is an OS temp tree (%s)" % (normal, marker))
-    home = os.path.abspath(os.path.expanduser("~"))
-    if normal == home or normal.startswith(home + os.sep):
+    homes = _home_default() if home_roots is None else tuple(home_roots)
+    _reject_internal(normal, home_roots=homes,
+                     lift_home=_on_external_device(normal) or bind_proven,
+                     internal_roots=internal_roots,
+                     internal_temp_markers=internal_temp_markers)
+    if not bind_proven and not _on_external_device(normal):
         raise PathRejected(
-            "internal_home: %s is inside the user home; project work belongs on "
-            "the approved external root" % normal)
-    if not _inside(normal, root):
-        raise PathRejected("outside_approved_root: %s not under %s" % (normal, root))
-    if os.path.abspath(normal) == os.path.abspath(root):
-        raise PathRejected("destination_is_root: %s" % normal)
-    if check_device and os.path.exists(normal):
-        if os.stat(normal).st_dev != os.stat(root).st_dev:
-            raise PathRejected(
-                "different_device: %s is on device %d, root %s on %d"
-                % (normal, os.stat(normal).st_dev, root, os.stat(root).st_dev))
+            "internal_fallback: %s is on the internal root disk (device %d); an "
+            "approved root must be a proven external destination and there is "
+            "no internal fallback" % (normal, os.stat(os.sep).st_dev))
+    return normal
+
+def assert_external(path: str, root: Optional[str] = None, *,
+                    internal_roots: Sequence[str] = INTERNAL_ROOTS,
+                    internal_temp_markers: Sequence[str] = INTERNAL_TEMP_MARKERS,
+                    home_roots: Optional[Sequence[str]] = None,
+                    check_device: bool = True,
+                    bind_proven: bool = False) -> str:
+    """Admit one destination path or raise a named refusal.
+
+    Internal storage is named first, on the text AND on the OS resolution of the
+    raw path, so neither a literal /tmp nor a symlink into one can be admitted.
+    The raw path and its real target must then agree, so a symlink cannot be
+    laundered through an interior "..". A path under a home directory is refused
+    unless it is inside an approved root on proven external storage - the
+    inverse case of a legitimately approved external mount that happens to live
+    under a home. With no `root`, the path itself has to be proven external;
+    `assert_external` is therefore also the admission used by `temp_env` and
+    `probe_child`.
+    """
+    if not path or not os.path.isabs(path):
+        raise PathRejected("path_not_absolute: %r" % (path,))
+    normal = os.path.normpath(path)
+    resolved = os.path.realpath(path)
+    homes = _home_default() if home_roots is None else tuple(home_roots)
+    if root is not None:
+        root_normal = _admit_root(root, bind_proven=bind_proven,
+                                  internal_roots=internal_roots,
+                                  internal_temp_markers=internal_temp_markers,
+                                  home_roots=homes)
+        lift_home = _inside(normal, root_normal) and (
+            _on_external_device(root_normal) or bind_proven)
+    else:
+        root_normal = None
+        lift_home = _on_external_device(normal) or bind_proven
+    for candidate in (normal, resolved):
+        _reject_internal(candidate, home_roots=homes, lift_home=lift_home,
+                         internal_roots=internal_roots,
+                         internal_temp_markers=internal_temp_markers)
+    linked = _symlink_component(normal)
+    if linked is not None:
+        raise PathRejected("symlink_component: %s (component %s)" % (normal, linked))
+    if os.path.abspath(resolved) != os.path.abspath(normal):
+        raise PathRejected(
+            "outside_approved_root: %s resolves to %s; a path whose text and its "
+            "OS resolution disagree is refused (no symlink laundering)"
+            % (path, resolved))
+    if root_normal is not None:
+        if not _inside(normal, root_normal):
+            raise PathRejected("outside_approved_root: %s not under %s" % (normal, root_normal))
+        if os.path.abspath(normal) == os.path.abspath(root_normal):
+            raise PathRejected("destination_is_root: %s" % normal)
+        if check_device and os.path.exists(normal):
+            if os.stat(normal).st_dev != os.stat(root).st_dev:
+                raise PathRejected(
+                    "different_device: %s is on device %d, root %s on %d"
+                    % (normal, os.stat(normal).st_dev, root, os.stat(root).st_dev))
+    elif not _on_external_device(normal):
+        raise PathRejected(
+            "internal_fallback: %s is on the internal root disk (device %d); a "
+            "destination must be on proven external storage" % (normal, os.stat(os.sep).st_dev))
     return normal
 
 def resolve_destinations(root: str, run_id: str, *, create: bool = False,
@@ -282,27 +441,38 @@ def resolve_destinations(root: str, run_id: str, *, create: bool = False,
                          expected_uuid: Optional[str] = None,
                          uuid_probe: Optional[Any] = None,
                          require_mount: bool = True,
+                         require_media_uuid: bool = False,
+                         bind_proven: bool = False,
                          ) -> Dict[str, Destination]:
     """Resolve the required per-run layout. Writes nothing unless create=True.
 
     Roles: worktree, scratch, temp, cache, output, ledger. Every one is
-    admitted through assert_external; a refusal names the clause.
+    admitted through assert_external; a refusal names the clause. The root is
+    admitted first: `require_mount=False` only relaxes the mount-point test,
+    it never admits a root on the internal disk.
     """
-    if not run_id or os.sep in run_id or run_id in (".", ".."):
+    if not isinstance(run_id, str) or not RUN_ID_PATTERN.match(run_id):
         raise PathRejected("bad_run_id: %r" % (run_id,))
+    root = _admit_root(root, bind_proven=bind_proven)
     identity = verify_mount(root, expected_uuid=expected_uuid,
                             required_bytes=required_bytes, uuid_probe=uuid_probe,
-                            require_mount=require_mount)
+                            require_mount=require_mount,
+                            require_media_uuid=require_media_uuid)
     out: Dict[str, Destination] = {}
     for role, dirname in LAYOUT.items():
         path = os.path.join(identity.path, dirname, run_id)
-        assert_external(path, identity.path)
+        assert_external(path, identity.path, bind_proven=bind_proven)
         if create:
             try:
                 os.makedirs(path, exist_ok=False)
             except FileExistsError:
-                pass
-            assert_external(path, identity.path)
+                observed = os.lstat(path)
+                if not stat_module.S_ISDIR(observed.st_mode):
+                    raise PathRejected(
+                        "non_regular_destination: %s exists and is not a "
+                        "directory; an existing non-regular destination is "
+                        "blocked" % path) from None
+            assert_external(path, identity.path, bind_proven=bind_proven)
             st = os.stat(path)
             out[role] = Destination(role, path, st.st_dev, st.st_ino)
         else:
@@ -337,8 +507,7 @@ class DestinationHandle:
             st = os.lstat(self.path)
         except FileNotFoundError:
             raise ReboundDestination("destination_missing: %s" % self.path) from None
-        import stat as _stat
-        if _stat.S_ISLNK(st.st_mode):
+        if stat_module.S_ISLNK(st.st_mode):
             raise ReboundDestination(
                 "destination_became_symlink: %s" % self.path)
         fd_st = os.fstat(self._fd)
@@ -447,6 +616,12 @@ def open_destination(path: str, *, expected: Optional[Destination] = None,
     linked = _symlink_component(path)
     if linked is not None:
         raise PathRejected("symlink_component: %s (component %s)" % (path, linked))
+    if os.path.lexists(path):
+        observed = os.lstat(path)
+        if not stat_module.S_ISDIR(observed.st_mode):
+            raise PathRejected(
+                "non_regular_destination: %s exists and is not a directory; an "
+                "existing non-regular destination is blocked" % path)
     fd = os.open(path, os.O_RDONLY | _O_DIRECTORY | _O_NOFOLLOW)
     st = os.fstat(fd)
     if expected is not None:
@@ -492,28 +667,39 @@ print(json.dumps({
 }))
 """
 
-def temp_env(temp_dir: str) -> Dict[str, str]:
-    """The per-process environment every engineering worker must be launched with."""
-    if not os.path.isabs(temp_dir):
-        raise PathRejected("temp_dir_not_absolute: %r" % (temp_dir,))
-    return {"TMPDIR": temp_dir, "TMP": temp_dir, "TEMP": temp_dir}
+def temp_env(temp_dir: str, *, root: Optional[str] = None,
+             bind_proven: bool = False) -> Dict[str, str]:
+    """The per-process environment every engineering worker must be launched with.
+
+    The directory is admitted exactly like a destination: an internal temp
+    tree, an internal-disk path or the user home is a named refusal, so this
+    function can never be the "try /tmp" branch of someone else's launcher.
+    """
+    admitted = assert_external(temp_dir, root, bind_proven=bind_proven)
+    return {"TMPDIR": admitted, "TMP": admitted, "TEMP": admitted}
 
 def probe_child(temp_dir: str, *, python: str = sys.executable,
                 env: Optional[Mapping[str, str]] = None,
                 timeout: int = 60,
-                runner: Any = None) -> ChildProbe:
+                runner: Any = None,
+                root: Optional[str] = None,
+                bind_proven: bool = False) -> ChildProbe:
     """Launch a real child with the intended temp environment and verify it.
 
     Proves: the three variables are the external directory, tempfile.gettempdir()
     resolves there, a file the child actually created has that real parent and
     the destination's device, and the child removed it. A failure names the
     failing clause with the observed value.
+
+    The target is admitted before any child starts, so this probe can never
+    certify propagation into internal storage.
     """
-    if not os.path.isdir(temp_dir):
-        raise MissingMount("missing_temp_dir: %s" % temp_dir)
-    real_expected = os.path.realpath(temp_dir)
+    admitted = assert_external(temp_dir, root, bind_proven=bind_proven)
+    if not os.path.isdir(admitted):
+        raise MissingMount("missing_temp_dir: %s" % admitted)
+    real_expected = os.path.realpath(admitted)
     child_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
-    child_env.update(temp_env(temp_dir))
+    child_env.update(temp_env(admitted))
     if env:
         child_env.update(env)
     command = [python, "-I", "-c", CHILD_PROBE_SOURCE]
@@ -549,7 +735,7 @@ def probe_child(temp_dir: str, *, python: str = sys.executable,
             % (observed.get("file_parent_real"), real_expected))
     if not observed.get("file_created"):
         raise PropagationError("child_file_not_created: probe created nothing")
-    expected_device = os.stat(temp_dir).st_dev
+    expected_device = os.stat(admitted).st_dev
     if observed.get("file_device") != expected_device:
         raise PropagationError(
             "child_file_device: observed %r, expected %d"

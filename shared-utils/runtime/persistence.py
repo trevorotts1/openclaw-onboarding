@@ -57,6 +57,7 @@ try:  # package import; the fallback exists so `python3 persistence.py` works
         Destination,
         PathRejected,
         ReboundDestination,
+        RUN_ID_PATTERN,
         open_destination,
     )
 except ImportError:  # pragma: no cover - direct execution
@@ -65,6 +66,7 @@ except ImportError:  # pragma: no cover - direct execution
         Destination,
         PathRejected,
         ReboundDestination,
+        RUN_ID_PATTERN,
         open_destination,
     )
 
@@ -128,8 +130,9 @@ def _utc_now() -> str:
     return _datetime.datetime.now(_datetime.timezone.utc).isoformat()
 
 def _require_id(value: Any, name: str) -> str:
-    if not isinstance(value, str) or not value.strip() or "/" in value \
-            or value in (".", ".."):
+    """One clean path segment: no separator, whitespace, control character or
+    leading dot. The same shape `external.resolve_destinations` accepts."""
+    if not isinstance(value, str) or not RUN_ID_PATTERN.match(value):
         raise PathRejected("bad_%s: %r" % (name, value))
     return value
 

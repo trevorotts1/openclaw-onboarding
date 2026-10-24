@@ -275,11 +275,37 @@ class PersistencePlan:
             "reason": self.reason,
         }
 
+# Label characters: everything else is a boundary. A read-back names an
+# identity only when one of its whole labels equals that identity, and it
+# contradicts itself when it names a longer label built on the same prefix.
+_LABEL_BOUNDARY = re.compile(r"[^A-Za-z0-9._-]+")
+
+def _labels(text: str) -> Sequence[str]:
+    return [token for token in _LABEL_BOUNDARY.split(text) if token]
+
+def _names_identity(identity: str, text: str) -> bool:
+    wanted = identity.strip().lower()
+    return any(token.lower() == wanted for token in _labels(text))
+
+def _names_longer_label(identity: str, text: str) -> bool:
+    wanted = identity.strip().lower()
+    return any(token.lower().startswith(wanted) and len(token) > len(wanted)
+               for token in _labels(text))
+
 def verify_persistence(plan: PersistencePlan, readback: Optional[Any]) -> PersistencePlan:
     """Promote the plan to verified ONLY from a real registration read-back.
 
-    A documented primitive is not evidence. No read-back, a read-back that does
-    not name this identity, or a non-persistent state all leave it unverified.
+    A documented primitive is not evidence. No read-back, an empty read-back, a
+    read-back that does not name this identity as a whole label, or a
+    non-persistent state all leave it unverified.
+
+    Identity is matched as a whole label, never as a substring: a registration
+    for `com.blackceo.purple-billboard.runtime-EXTRA-OTHER-JOB` is a different
+    job and must not verify this one. When a command's output cannot name the
+    unit itself (for example `systemctl show --property=...`), the caller
+    supplies the observation as {"identity": ..., "observed": ...}; the
+    identity field must match exactly, and an observed text that names a longer
+    label is still refused.
     """
     if readback is None:
         return replace(plan, verified=False, reason="no_readback")
@@ -289,16 +315,20 @@ def verify_persistence(plan: PersistencePlan, readback: Optional[Any]) -> Persis
         if identity != plan.identity:
             return replace(plan, verified=False, reason="identity_mismatch")
         text = "" if observed is None else str(observed)
+        named = True
     else:
         text = str(readback)
-        if plan.identity.lower() not in text.lower():
-            return replace(plan, verified=False, reason="identity_mismatch")
+        named = False
+    if not text.strip():
+        return replace(plan, verified=False, reason="empty_readback")
+    if not named and not _names_identity(plan.identity, text):
+        return replace(plan, verified=False, reason="identity_mismatch")
+    if _names_longer_label(plan.identity, text):
+        return replace(plan, verified=False, reason="identity_mismatch")
     lowered = text.lower()
     tokens = TERMINAL_STATES.get(plan.kind, ())
     if tokens and not any(token in lowered for token in tokens):
         return replace(plan, verified=False, reason="state_not_persistent")
-    if not text.strip():
-        return replace(plan, verified=False, reason="empty_readback")
     return replace(plan, verified=True, reason="read_back")
 
 
@@ -315,6 +345,8 @@ class BindIdentity:
 
 class _BaseAdapter:
     runtime = ""
+    require_mount = True          # the approved root must be a mount point
+    require_media_uuid = False    # admission step 1: a media identity is claimed
 
     def __init__(self, facts: HostFacts, bind: BindIdentity, *,
                  mount_entries: Optional[Sequence[MountEntry]] = None,
@@ -330,16 +362,22 @@ class _BaseAdapter:
     def verify_bind(self) -> MountIdentity:
         raise NotImplementedError
 
+    def bind_proven(self) -> bool:
+        """True when this adapter proves the bind itself, so the storage layer
+        may accept a root on the internal disk device. Never true on Mac."""
+        return False
+
     def _mount(self, *, require_mount: bool) -> MountIdentity:
         return verify_mount(self.bind.root,
                             expected_uuid=self.bind.media_uuid,
                             uuid_probe=self._uuid_probe,
-                            require_mount=require_mount)
+                            require_mount=require_mount,
+                            require_media_uuid=self.require_media_uuid)
 
     def _reject_internal_root(self, identity: MountIdentity) -> None:
         try:
             assert_external(os.path.join(identity.path, "probe"),
-                            identity.path)
+                            identity.path, bind_proven=self.bind_proven())
         except PathRejected as exc:
             raise BindingRefused(str(exc)) from None
 
@@ -350,14 +388,20 @@ class _BaseAdapter:
         return resolve_destinations(self.bind.root, run_id, create=create,
                                     required_bytes=required_bytes,
                                     expected_uuid=self.bind.media_uuid,
-                                    uuid_probe=self._uuid_probe)
+                                    uuid_probe=self._uuid_probe,
+                                    require_mount=self.require_mount,
+                                    require_media_uuid=self.require_media_uuid,
+                                    bind_proven=self.bind_proven())
 
     def process_env(self, run_id: str, *, create: bool = False) -> Dict[str, str]:
         destinations = self.destinations(run_id, create=create)
-        return temp_env(destinations["temp"].path)
+        return temp_env(destinations["temp"].path, root=self.bind.root,
+                        bind_proven=self.bind_proven())
 
     def child_probe(self, run_id: str, **kwargs: Any) -> ChildProbe:
         destinations = self.destinations(run_id)
+        kwargs.setdefault("root", self.bind.root)
+        kwargs.setdefault("bind_proven", self.bind_proven())
         return probe_child(destinations["temp"].path, **kwargs)
 
     def open_ledger(self, run_id: str,
@@ -407,6 +451,9 @@ class MacAdapter(_BaseAdapter):
     """macOS client/operator host: an external mounted volume, launchd restart."""
 
     runtime = RUNTIME_MAC
+    # STORAGE.md admission step 1 ("media UUID matches") is claimable here:
+    # diskutil observes the volume identity on macOS.
+    require_media_uuid = True
 
     def verify_bind(self) -> MountIdentity:
         identity = self._mount(require_mount=True)
@@ -434,6 +481,11 @@ class VpsAdapter(_BaseAdapter):
     """Linux VPS: an explicitly approved bind, systemd restart."""
 
     runtime = RUNTIME_VPS
+
+    def bind_proven(self) -> bool:
+        # An operator-declared dedicated volume is the proof; a same-device
+        # root is accepted only because the operator said so by name.
+        return bool(self.bind.dedicated)
 
     def verify_bind(self) -> MountIdentity:
         if not self.bind.source:
@@ -468,6 +520,12 @@ class DockerAdapter(_BaseAdapter):
     """Container: a host bind proven by mount info, host-set restart policy."""
 
     runtime = RUNTIME_DOCKER
+    # The bind is proven from mount info below, not from the mount-point test:
+    # a container path inside a host bind is not itself a mount point.
+    require_mount = False
+
+    def bind_proven(self) -> bool:
+        return True
 
     def _entries(self) -> Tuple[MountEntry, ...]:
         if self._mount_entries is not None:

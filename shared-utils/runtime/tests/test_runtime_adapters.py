@@ -117,6 +117,25 @@ class MountTests(ExternalTestCase):
             ex.verify_mount(self.work, require_mount=False,
                             required_bytes=1 << 60)
 
+    def test_the_observed_media_identity_is_recorded_not_dropped(self):
+        identity = ex.verify_mount(self.work, require_mount=False,
+                                   uuid_probe=lambda path: "uuid-observed-1")
+        self.assertEqual(identity.media_uuid, "uuid-observed-1")
+        self.assertTrue(any(item.startswith("media_uuid_not_declared")
+                            for item in identity.limitations))
+
+    def test_admission_can_require_a_media_identity(self):
+        with self.assertRaises(ex.StorageError) as caught:
+            ex.verify_mount(self.work, require_mount=False,
+                            uuid_probe=lambda path: None,
+                            require_media_uuid=True)
+        self.assertIn("media_uuid_unverified", str(caught.exception))
+        admitted = ex.verify_mount(self.work, require_mount=False,
+                                   uuid_probe=lambda path: None)
+        self.assertIsNone(admitted.media_uuid)
+        self.assertTrue(any(item.startswith("media_uuid_not_declared")
+                            for item in admitted.limitations))
+
 
 # ── destination rejection (C-F14, C-F18) ────────────────────────────────────
 
@@ -170,6 +189,85 @@ class DestinationTests(ExternalTestCase):
             stat = os.stat(destination.path)
             self.assertEqual((destination.device, destination.inode),
                              (stat.st_dev, stat.st_ino))
+
+    def test_the_contracted_per_run_layout_names_are_used(self):
+        # STORAGE.md "Required per-run layout", verbatim.
+        self.assertEqual(dict(ex.LAYOUT), {
+            "worktree": "worktrees",
+            "scratch": "scratch",
+            "temp": "tmp/purple-billboard",
+            "cache": "tmp/purple-billboard-caches",
+            "output": "tmp/purple-billboard-outputs",
+            "ledger": "ledgers",
+        })
+
+    def test_a_bad_run_id_is_refused(self):
+        for bad in ("", "  ", "run q c", ".. ", "..", ".", "..\\..\\evil",
+                    "a\nb", "/etc", "run/1"):
+            with self.assertRaises(ex.PathRejected) as caught:
+                ex.resolve_destinations(self.work, bad, create=False,
+                                        require_mount=False)
+            self.assertIn("bad_run_id", str(caught.exception), bad)
+
+    def test_a_laundered_dotdot_path_is_refused(self):
+        outside = tempfile.mkdtemp(prefix="pbb-outside-", dir=self.base)
+        self.addCleanup(shutil.rmtree, outside, True)
+        link = os.path.join(self.work, "link-out")
+        os.symlink(outside, link)
+        with self.assertRaises(ex.PathRejected) as caught:
+            ex.assert_external(os.path.join(link, "..", "escaped"), self.work)
+        self.assertIn("outside_approved_root", str(caught.exception))
+
+    def test_an_interior_dotdot_inside_the_root_still_resolves(self):
+        self.assertEqual(
+            ex.assert_external(os.path.join(self.work, "sub", "..", "leaf"),
+                               self.work),
+            os.path.join(self.work, "leaf"))
+        self.assertEqual(
+            ex.assert_external(os.path.join(self.work, "leaf") + os.sep,
+                               self.work),
+            os.path.join(self.work, "leaf"))
+
+    def test_a_home_path_under_a_proven_external_root_is_admitted(self):
+        home = os.path.join(self.work, "home")
+        root = os.path.join(home, "ExternalMount")
+        os.makedirs(os.path.join(root, "proj"))
+        with mock.patch.dict(os.environ, {"HOME": home}):
+            self.assertEqual(
+                ex.assert_external(os.path.join(root, "proj"), root),
+                os.path.join(root, "proj"))
+            with self.assertRaises(ex.PathRejected) as caught:
+                ex.assert_external(os.path.join(home, "outside-proj"), root)
+            self.assertIn("internal_home", str(caught.exception))
+
+    def test_the_home_rule_is_caller_tunable_like_the_internal_rules(self):
+        home = os.path.expanduser("~")
+        root = os.path.join(home, "pbb-t38-home-proof")
+        target = os.path.join(root, "proj")
+        with self.assertRaises(ex.PathRejected) as caught:
+            ex.assert_external(target, root)
+        self.assertIn("internal_home", str(caught.exception))
+        self.assertFalse(os.path.exists(target))
+        self.assertEqual(
+            ex.assert_external(target, root, home_roots=(), bind_proven=True),
+            target)
+        self.assertFalse(os.path.exists(target))
+
+    def test_a_non_regular_existing_destination_is_refused_by_name(self):
+        run_id = "run-collide"
+        unresolved = ex.resolve_destinations(self.work, run_id, create=False,
+                                             require_mount=False)
+        file_path = unresolved["ledger"].path
+        os.makedirs(os.path.dirname(file_path))
+        with open(file_path, "wb") as handle:
+            handle.write(b"not a directory")
+        with self.assertRaises(ex.PathRejected) as caught:
+            ex.resolve_destinations(self.work, run_id, create=True,
+                                    require_mount=False)
+        self.assertIn("non_regular_destination", str(caught.exception))
+        with self.assertRaises(ex.PathRejected) as caught:
+            ex.open_destination(file_path)
+        self.assertIn("non_regular_destination", str(caught.exception))
 
 
 # ── no-follow handle, publication and rebinding ─────────────────────────────
@@ -263,6 +361,37 @@ class PropagationTests(ExternalTestCase):
         self.assertIn("tool_specific_options_unverified",
                       str(caught.exception))
 
+    def test_temp_env_refuses_internal_storage(self):
+        for path in ("/private/tmp/pbb-x", "/private/var/tmp/pbb-x",
+                     "/Users/Shared/tmp/pbb-x"):
+            with self.assertRaises(ex.PathRejected) as caught:
+                ex.temp_env(path)
+            self.assertIn("internal", str(caught.exception), path)
+        self.assertEqual(ex.temp_env(self.work),
+                         {"TMPDIR": self.work, "TMP": self.work,
+                          "TEMP": self.work})
+
+    def test_probe_child_refuses_internal_storage_before_launching(self):
+        runner = mock.Mock()
+        for path in ("/private/tmp/pbb-x", "/private/var/folders/zz/pbb-x",
+                     "/Users/Shared/tmp/pbb-x"):
+            with self.assertRaises(ex.PathRejected) as caught:
+                ex.probe_child(path, runner=runner)
+            self.assertIn("internal", str(caught.exception), path)
+        runner.assert_not_called()
+
+    def test_resolve_destinations_refuses_an_internal_disk_root(self):
+        internal_root = "/Users/Shared"
+        run_id = "run-internal-proof"
+        for require_mount in (False, True):
+            with self.assertRaises(ex.PathRejected):
+                ex.resolve_destinations(internal_root, run_id, create=True,
+                                        require_mount=require_mount)
+        for dirname in ex.LAYOUT.values():
+            self.assertFalse(os.path.exists(
+                os.path.join(internal_root, dirname, run_id)),
+                "%s/%s was created on the internal disk" % (dirname, run_id))
+
 
 # ── host detection and adapter selection (C-38) ─────────────────────────────
 
@@ -306,6 +435,14 @@ class HostTests(ExternalTestCase):
         receipt = adapter.receipt("run-mac")
         self.assertEqual(receipt["runtime"], ho.RUNTIME_MAC)
         self.assertEqual(receipt["bind"]["root"], external_mount_root())
+
+    def test_the_mac_adapter_claims_a_media_identity(self):
+        facts = ho.detect_host(platform_name="Darwin")
+        adapter = ho.MacAdapter(facts, ho.BindIdentity(root=external_mount_root()),
+                                uuid_probe=lambda path: None)
+        with self.assertRaises(ex.StorageError) as caught:
+            adapter.verify_bind()
+        self.assertIn("media_uuid_unverified", str(caught.exception))
 
     def test_the_vps_adapter_requires_an_explicit_bind_identity(self):
         facts = ho.detect_host(platform_name="Linux", docker_env=False,
@@ -444,6 +581,28 @@ class PersistenceClaimTests(ExternalTestCase):
         wrong = ho.verify_persistence(plan, "state = running someone-else")
         self.assertFalse(wrong.verified)
         self.assertEqual(wrong.reason, "identity_mismatch")
+
+    def test_a_longer_label_never_verifies_this_identity(self):
+        facts = ho.detect_host(platform_name="Darwin")
+        plan = ho.MacAdapter(facts, ho.BindIdentity(root=os.sep)).persistence_plan()
+        impostor = "state = running " + plan.identity + "-EXTRA-OTHER-JOB"
+        result = ho.verify_persistence(plan, impostor)
+        self.assertFalse(result.verified)
+        self.assertEqual(result.reason, "identity_mismatch")
+        mapped = ho.verify_persistence(
+            plan, {"identity": plan.identity, "observed": impostor})
+        self.assertFalse(mapped.verified)
+        self.assertEqual(mapped.reason, "identity_mismatch")
+
+    def test_an_empty_readback_reports_empty_readback(self):
+        facts = ho.detect_host(platform_name="Darwin")
+        plan = ho.MacAdapter(facts, ho.BindIdentity(root=os.sep)).persistence_plan()
+        for readback in ("", "   ",
+                         {"identity": plan.identity, "observed": ""},
+                         {"identity": plan.identity, "observed": None}):
+            result = ho.verify_persistence(plan, readback)
+            self.assertFalse(result.verified, readback)
+            self.assertEqual(result.reason, "empty_readback", readback)
 
     def test_a_loaded_but_non_persistent_state_stays_unverified(self):
         facts = ho.detect_host(platform_name="Darwin")
