@@ -234,7 +234,13 @@ def plan_capture(
         raise CaptureError("ask_state %r not in %s" % (ask_state, ASK_STATES))
     if not isinstance(asks_used, int) or isinstance(asks_used, bool) or asks_used < 0:
         raise CaptureError("asks_used must be a non-negative integer")
-    refusals = frozenset(facts.field_refusals)
+    # Field names fold case the way channel_optouts do ("sms" and "SMS" are
+    # one opt-out; "Mobile" and "mobile" are one refusal). Non-strings keep
+    # their identity and still land in unknown_refusals, so nothing becomes
+    # acceptable by being unrecognisable.
+    refusals = frozenset(
+        item.strip().lower() if isinstance(item, str) else item
+        for item in facts.field_refusals)
     unknown_refusals = refusals - frozenset(FIELD_NAMES)
     if unknown_refusals:
         raise CaptureError("unknown field refusal %s" % sorted(unknown_refusals))
@@ -299,11 +305,12 @@ def refuse(facts: CaptureFacts, *, scope: str, value: str = "") -> CaptureFacts:
             "unknown refusal scope %r is not broader permission" % (scope,))
     version = facts.state_version + 1
     if scope == FIELD_REFUSAL:
-        if value not in FIELD_NAMES:
+        field = value.strip().lower() if isinstance(value, str) else value
+        if field not in FIELD_NAMES:
             raise CaptureRefused("field refusal must name one of %s" % (FIELD_NAMES,))
         return CaptureFacts(
             state=facts.state, state_version=version,
-            field_refusals=tuple(sorted(set(facts.field_refusals) | {value})),
+            field_refusals=tuple(sorted(set(facts.field_refusals) | {field})),
             channel_optouts=facts.channel_optouts, global_stop=facts.global_stop,
             human_owner_id=facts.human_owner_id,
             delivery_consent=facts.delivery_consent)
@@ -471,9 +478,29 @@ class SmsEmailAsk:
             raise CaptureRefused("the SMS email ask was never created")
         return row
 
+    def _select(self, action_id: Optional[str] = None) -> Dict[str, Any]:
+        """This ask's own row, never another action or another person's.
+
+        The identity of an ask is (tenant_id, canonical_contact_id,
+        logical_intent_key, purpose). A caller-supplied action_id naming
+        anything else - another contact's action, this contact's ACCESS_PASS,
+        another sequence's ask - is refused before the store is touched
+        further, so no path can send a foreign action AS the one logical SMS
+        email ask.
+        """
+        row = self.store.get_action(action_id) if action_id else self.require_action()
+        if (row.get("tenant_id") != self.tenant_id
+                or row.get("canonical_contact_id") != self.canonical_contact_id
+                or row.get("logical_intent_key") != self.logical_intent_key
+                or row.get("purpose") != PURPOSE_SMS_EMAIL_ASK):
+            raise CaptureRefused(
+                "action %r is not this SMS email ask; refusing to touch it"
+                % (row.get("action_id"),))
+        return row
+
     def state(self, action_id: Optional[str] = None) -> str:
         """The D-26 state of the ask, derived from the durable row."""
-        row = self.store.get_action(action_id) if action_id else self.require_action()
+        row = self._select(action_id)
         if self.store.unresolved_attempt(row["action_id"]) is not None:
             return ASK_DISPATCHING
         ds = upstream().durable_store
@@ -505,7 +532,7 @@ class SmsEmailAsk:
 
     def view(self, action_id: Optional[str] = None) -> Dict[str, Any]:
         """The `sms_email_ask` object, checked against T-08's schema."""
-        row = self.store.get_action(action_id) if action_id else self.require_action()
+        row = self._select(action_id)
         receipts = self.store.receipts(row["action_id"])
         dispatch = receipts.get("dispatch") or {}
         ack = receipts.get("ack") or {}
@@ -540,8 +567,12 @@ class SmsEmailAsk:
         lease_seconds: Optional[float] = None,
         context: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        """Send (or retry) through T-12's common gate. Never a cached verdict."""
-        row = self.store.get_action(action_id) if action_id else self.require_action()
+        """Send (or retry) through T-12's common gate. Never a cached verdict.
+
+        Only this ask's own action is dispatchable: a foreign action_id is
+        refused here, before the gate or the sender sees it.
+        """
+        row = self._select(action_id)
         ctx = {
             "purpose": PURPOSE_SMS_EMAIL_ASK,
             "tenant_id": self.tenant_id,

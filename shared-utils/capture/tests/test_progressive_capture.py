@@ -210,6 +210,29 @@ class RefusalTests(Base):
         with self.assertRaises(pc.CaptureRefused):
             pc.refuse(pc.CaptureFacts(), scope="field", value="address")
 
+    def test_a_field_refusal_is_case_insensitive_like_channel_optouts(self):
+        # "sms" and "SMS" are one channel opt-out; "Mobile" must be one field
+        # refusal too, and the refusal must reach plan_capture as "mobile".
+        facts = pc.refuse(pc.CaptureFacts(), scope="field", value="Mobile")
+        self.assertEqual(("mobile",), facts.field_refusals)
+        plan = pc.plan_capture(pc.KnownFields(), facts=facts)
+        self.assertEqual((), plan.asks)
+        self.assertEqual("field_refused:mobile", plan.reason)
+        # Facts built directly take the same path.
+        plan = pc.plan_capture(
+            pc.KnownFields(mobile="+15550001111"),
+            facts=pc.CaptureFacts(field_refusals=("EMAIL",)), access_ready=True)
+        self.assertFalse(plan.email_ask_allowed)
+        self.assertEqual("field_refused:email", plan.reason)
+        # Case folding is not blanket permission: a value that names no field
+        # is still refused, and a non-string refusal still fails closed.
+        with self.assertRaises(pc.CaptureRefused):
+            pc.refuse(pc.CaptureFacts(), scope="field", value="address")
+        with self.assertRaises(pc.CaptureError):
+            pc.plan_capture(
+                pc.KnownFields(),
+                facts=pc.CaptureFacts(field_refusals=("address",)))
+
     def test_delivery_consent_is_separate_and_required(self):
         plan = pc.plan_capture(pc.KnownFields(mobile="+15550001111"),
                               facts=pc.CaptureFacts(delivery_consent=False),
@@ -312,7 +335,11 @@ class SingleAskTests(Base):
         self.queued_ask()
         self.ask.dispatch(self.evaluator(), self.sender(receipt=None), "w1")
         self.assertEqual(pc.ASK_UNKNOWN, self.ask.state())
-        with self.assertRaises(pc.CaptureRefused):
+        # The reason is pinned, not just the class: without it, deleting the
+        # unknown guard is hidden behind the later "retry requires known
+        # nonexecution" guard, which raises the same exception type.
+        with self.assertRaisesRegex(pc.CaptureRefused,
+                                   "unknown ask must reconcile"):
             self.ask.retry_after_correction(
                 corrected_mobile="+15550002222", evaluator=self.evaluator(),
                 sender=self.sender(receipt={"provider": "twilio"}), worker_id="w1")
@@ -321,7 +348,8 @@ class SingleAskTests(Base):
                            receipt={"provider": "twilio",
                                     "provider_message_id": "SM999"})
         self.assertEqual(pc.ASK_ACCEPTED, self.ask.state())
-        with self.assertRaises(pc.CaptureRefused):
+        with self.assertRaisesRegex(pc.CaptureRefused,
+                                   "accepted ask is not a new or retryable send"):
             self.ask.retry_after_correction(
                 corrected_mobile="+15550002222", evaluator=self.evaluator(),
                 sender=self.sender(receipt={"provider": "twilio"}), worker_id="w1")
@@ -434,6 +462,95 @@ class FreshGateTests(Base):
         self.assertEqual("QUARANTINED", outcome.verdict)
         self.assertEqual(0, len(sender.calls))
         self.assertEqual(pc.ASK_SUPPRESSED, self.ask.state())
+
+
+# ── C-16: the send boundary only ever touches THIS ask ──────────────────────
+
+class OwnActionBoundaryTests(Base):
+    """A foreign action_id must never be sent AS the one logical SMS email ask.
+
+    The identity of an ask is (tenant_id, canonical_contact_id,
+    logical_intent_key, purpose). Any row that does not match all four is not
+    this ask: another person's action, this person's ACCESS_PASS, or another
+    sequence's ask. Each case below is refused before the sender is called,
+    and the same call on this ask still sends - so the guard cannot be
+    satisfied by blanket refusal.
+    """
+
+    def foreign_action(self, *, key: str, contact_id: str,
+                       purpose: str) -> str:
+        row, _ = self.store.create_intent(
+            logical_intent_key=key, idempotency_key=key,
+            tenant_id=self.tenant, scope="person_directed",
+            purpose=purpose, canonical_contact_id=contact_id,
+            content_sha256="deadbeef")
+        self.store.queue(row["action_id"])
+        return row["action_id"]
+
+    def foreign_rows(self):
+        other = self.identity.bind(
+            self.tenant, [("fb_psid", "psid-2", True)], source="test")
+        return {
+            "another contact's ACCESS_PASS": self.foreign_action(
+                key="access-pass:%s:%s:seq-1" % (self.tenant, other),
+                contact_id=other, purpose=pc.PURPOSE_ACCESS_PASS),
+            "this contact's ACCESS_PASS": self.foreign_action(
+                key=self.ask.pass_intent_key,
+                contact_id=self.cid, purpose=pc.PURPOSE_ACCESS_PASS),
+            "another sequence's ask": self.foreign_action(
+                key="sms-email-ask:%s:%s:seq-2" % (self.tenant, self.cid),
+                contact_id=self.cid, purpose=pc.PURPOSE_SMS_EMAIL_ASK),
+        }
+
+    def test_a_foreign_action_is_never_sent_as_this_ask(self):
+        mine = self.queued_ask()
+        for label, foreign in self.foreign_rows().items():
+            with self.subTest(label):
+                sender = self.sender(receipt={"provider": "twilio",
+                                              "provider_message_id": "SMX"})
+                with self.assertRaisesRegex(
+                        pc.CaptureRefused, "is not this SMS email ask"):
+                    self.ask.dispatch(self.evaluator(), sender, "w1",
+                                      action_id=foreign)
+                self.assertEqual([], sender.calls, label)
+                self.assertEqual("queued", self.store.get_action(foreign)["state"],
+                                 label)
+                self.assertEqual({}, self.store.receipts(foreign), label)
+        # Inverse: the same dispatch on this ask still sends.
+        sender = self.sender(receipt={"provider": "twilio",
+                                      "provider_message_id": "SM1"})
+        outcome = self.ask.dispatch(self.evaluator(), sender, "w1",
+                                    action_id=mine)
+        self.assertTrue(outcome.sent)
+        self.assertEqual(1, len(sender.calls))
+        self.assertEqual(pc.ASK_ACCEPTED, self.ask.state())
+
+    def test_state_and_view_refuse_a_foreign_action(self):
+        mine = self.queued_ask()
+        for label, foreign in self.foreign_rows().items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(
+                        pc.CaptureRefused, "is not this SMS email ask"):
+                    self.ask.state(foreign)
+                with self.assertRaisesRegex(
+                        pc.CaptureRefused, "is not this SMS email ask"):
+                    self.ask.view(foreign)
+        # Inverse: this ask's own id still reports its state and view.
+        self.assertEqual(pc.ASK_QUEUED, self.ask.state(mine))
+        self.assertEqual(mine, self.ask.view(mine)["logical_action_id"])
+
+    def test_retry_after_correction_stays_on_this_ask(self):
+        self.queued_ask()
+        self.ask.dispatch(self.evaluator(),
+                          self.sender(exc=ConnectionError("dial failed")), "w1")
+        self.ask.reconcile("not_applied", {"evidence": "carrier log ev-9"})
+        self.ask.record_known_nonexecution("carrier rejected the handset number")
+        outcome = self.ask.retry_after_correction(
+            corrected_mobile="+15550002222", evaluator=self.evaluator(),
+            sender=self.sender(receipt={"provider": "twilio"}), worker_id="w1")
+        self.assertTrue(outcome.sent)
+        self.assertEqual(self.ask.require_action()["action_id"], outcome.action_id)
+        self.assertEqual(1, self.store.counts()["actions"])
 
 
 # ── C-F11: the later email binds to the same verified member ───────────────
