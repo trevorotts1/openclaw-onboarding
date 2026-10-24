@@ -59,9 +59,56 @@ def _worker(cfg_path):
     seq = cfg["seq"]
     mode = cfg["mode"]
 
-    if mode == "capture_partial":
+    if mode == "capture_unfenced":
+        # Deliberately never acquires the collection lock: the capture
+        # mutators must refuse before the step runs.
         store = cl.CaptureStore(lock)
-        store.begin(tenant, contact, seq, cfg["capture"], cfg["steps"])
+        try:
+            store.begin(
+                tenant,
+                contact,
+                seq,
+                cfg["capture"],
+                cfg["steps"],
+                owner_id=cfg["owner"],
+                fence=int(cfg["fence"]),
+            )
+        except Exception as exc:
+            _emit(
+                cfg,
+                {
+                    "owner": cfg["owner"],
+                    "begin": "refused:" + type(exc).__name__,
+                    "ran": None,
+                },
+            )
+            return 0
+        # begin() handed control back, so the step would run here.
+        _emit(
+            cfg,
+            {"owner": cfg["owner"], "begin": "ok", "ran": cfg["steps"][0]},
+        )
+        return 0
+
+    if mode in ("capture_partial", "capture_resume"):
+        store = cl.CaptureStore(lock)
+        lease = lock.acquire(tenant, contact, seq, cfg["owner"], 60.0)
+        if not lease.granted:
+            _emit(cfg, {"error": "lock not granted: %s" % (lease.reason,)})
+            return 4
+        owner = cfg["owner"]
+        fence = lease.fence
+
+    if mode == "capture_partial":
+        store.begin(
+            tenant,
+            contact,
+            seq,
+            cfg["capture"],
+            cfg["steps"],
+            owner_id=owner,
+            fence=fence,
+        )
         for index in range(1, int(cfg["advance_to"]) + 1):
             store.advance(
                 tenant,
@@ -70,14 +117,24 @@ def _worker(cfg_path):
                 cfg["capture"],
                 index,
                 {"step": cfg["steps"][index - 1]},
+                owner_id=owner,
+                fence=fence,
             )
         state = store.get(tenant, contact, seq, cfg["capture"])
+        lock.release(tenant, contact, seq, owner, fence)
         _emit(cfg, {"state": state["state"], "cursor": state["cursor"]})
         return 0
 
     if mode == "capture_resume":
-        store = cl.CaptureStore(lock)
-        first = store.begin(tenant, contact, seq, cfg["capture"], cfg["steps"])
+        first = store.begin(
+            tenant,
+            contact,
+            seq,
+            cfg["capture"],
+            cfg["steps"],
+            owner_id=owner,
+            fence=fence,
+        )
         executed = []
         for index in range(first["cursor"] + 1, len(cfg["steps"]) + 1):
             store.advance(
@@ -87,10 +144,15 @@ def _worker(cfg_path):
                 cfg["capture"],
                 index,
                 {"step": cfg["steps"][index - 1]},
+                owner_id=owner,
+                fence=fence,
             )
             executed.append(cfg["steps"][index - 1])
-        store.complete(tenant, contact, seq, cfg["capture"])
+        store.complete(
+            tenant, contact, seq, cfg["capture"], owner_id=owner, fence=fence
+        )
         state = store.get(tenant, contact, seq, cfg["capture"])
+        lock.release(tenant, contact, seq, owner, fence)
         _emit(
             cfg,
             {
@@ -132,7 +194,7 @@ def _worker(cfg_path):
             seq,
             cfg["owner"],
             lease.fence,
-            "send:" + cfg["owner"],
+            cfg.get("effect") or ("send:" + cfg["owner"]),
         )
     _emit(cfg, result)
     return 0
@@ -362,6 +424,13 @@ class TestLockSemantics(LockTestBase):
 class TestCaptureState(LockTestBase):
     STEPS = ["step1", "step2", "step3", "step4"]
 
+    def _held(self, owner="capture-owner", seq="seq-1", lease=60.0):
+        lease_result = self.lock.acquire(
+            "tenant-a", self.cid, seq, owner, lease
+        )
+        self.assertTrue(lease_result.granted, lease_result)
+        return lease_result
+
     def test_partial_capture_resumes_in_a_new_process_never_restarts(self):
         first = self._run_jobs(
             [
@@ -393,30 +462,257 @@ class TestCaptureState(LockTestBase):
         self.assertEqual(resumed["cursor"], 4)
 
     def test_rejected_capture_stays_rejected_and_cannot_advance(self):
+        lease = self._held()
         store = cl.CaptureStore(self.lock)
-        store.begin("tenant-a", self.cid, "seq-1", "cap-2", self.STEPS)
-        store.reject("tenant-a", self.cid, "seq-1", "cap-2", "client declined")
+        store.begin(
+            "tenant-a", self.cid, "seq-1", "cap-2", self.STEPS,
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
+        store.reject(
+            "tenant-a", self.cid, "seq-1", "cap-2", "client declined",
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
         with self.assertRaises(cl.CaptureRejected):
-            store.advance("tenant-a", self.cid, "seq-1", "cap-2", 1)
-        again = store.begin("tenant-a", self.cid, "seq-1", "cap-2", self.STEPS)
+            store.advance(
+                "tenant-a", self.cid, "seq-1", "cap-2", 1,
+                owner_id=lease.owner_id, fence=lease.fence,
+            )
+        again = store.begin(
+            "tenant-a", self.cid, "seq-1", "cap-2", self.STEPS,
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
         self.assertEqual(again["state"], "rejected")
         self.assertEqual(again["rejection_reason"], "client declined")
         self.assertEqual(again["cursor"], 0)
 
     def test_capture_cursor_never_rewinds(self):
+        lease = self._held()
         store = cl.CaptureStore(self.lock)
-        store.begin("tenant-a", self.cid, "seq-1", "cap-3", self.STEPS)
-        store.advance("tenant-a", self.cid, "seq-1", "cap-3", 2)
+        store.begin(
+            "tenant-a", self.cid, "seq-1", "cap-3", self.STEPS,
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
+        store.advance(
+            "tenant-a", self.cid, "seq-1", "cap-3", 2,
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
         with self.assertRaises(cl.CaptureConflict):
-            store.advance("tenant-a", self.cid, "seq-1", "cap-3", 2)
+            store.advance(
+                "tenant-a", self.cid, "seq-1", "cap-3", 2,
+                owner_id=lease.owner_id, fence=lease.fence,
+            )
         with self.assertRaises(cl.CaptureConflict):
-            store.advance("tenant-a", self.cid, "seq-1", "cap-3", 1)
+            store.advance(
+                "tenant-a", self.cid, "seq-1", "cap-3", 1,
+                owner_id=lease.owner_id, fence=lease.fence,
+            )
 
     def test_capture_rejects_a_foreign_contact(self):
         cid_b = self.ident.bind("tenant-b", [("fb_psid", "fb-b", True)])
+        lease = self._held()
         store = cl.CaptureStore(self.lock)
         with self.assertRaises(ti.VerificationError):
-            store.begin("tenant-a", cid_b, "seq-1", "cap-4", self.STEPS)
+            store.begin(
+                "tenant-a", cid_b, "seq-1", "cap-4", self.STEPS,
+                owner_id=lease.owner_id, fence=lease.fence,
+            )
+
+
+class TestCaptureFencing(LockTestBase):
+    """D4: capture mutation must require a valid lock fence."""
+
+    STEPS = ["step1", "step2", "step3", "step4"]
+
+    def test_capture_mutation_refuses_before_any_step_without_the_lock(self):
+        store = cl.CaptureStore(self.lock)
+        for method, args in (
+            ("begin", ("cap-f", self.STEPS)),
+            ("advance", ("cap-f", 1)),
+            ("complete", ("cap-f",)),
+            ("reject", ("cap-f",)),
+        ):
+            with self.assertRaises(cl.StaleWriter):
+                getattr(store, method)(
+                    "tenant-a", self.cid, "seq-1", *args,
+                    owner_id="nobody", fence=0,
+                )
+        self.assertIsNone(store.get("tenant-a", self.cid, "seq-1", "cap-f"))
+
+    def test_stale_fence_is_refused_after_a_handover(self):
+        first = self.lock.acquire("tenant-a", self.cid, "seq-1", "owner-1", 60)
+        store = cl.CaptureStore(self.lock)
+        store.begin(
+            "tenant-a", self.cid, "seq-1", "cap-h", self.STEPS,
+            owner_id=first.owner_id, fence=first.fence,
+        )
+        self.lock.release(
+            "tenant-a", self.cid, "seq-1", "owner-1", first.fence
+        )
+        second = self.lock.acquire("tenant-a", self.cid, "seq-1", "owner-2", 60)
+        with self.assertRaises(cl.StaleWriter):
+            store.advance(
+                "tenant-a", self.cid, "seq-1", "cap-h", 1,
+                owner_id=first.owner_id, fence=first.fence,
+            )
+        store.advance(
+            "tenant-a", self.cid, "seq-1", "cap-h", 1,
+            owner_id=second.owner_id, fence=second.fence,
+        )
+        self.assertEqual(
+            store.get("tenant-a", self.cid, "seq-1", "cap-h")["cursor"], 1
+        )
+
+    def test_two_unfenced_workers_never_run_a_step(self):
+        results = self._run_jobs(
+            [
+                {
+                    "mode": "capture_unfenced",
+                    "owner": "worker-%02d" % index,
+                    "capture": "cap-race",
+                    "steps": ["collect-answers"],
+                    "fence": 0,
+                }
+                for index in range(2)
+            ]
+        )
+        ran = [r for r in results if r.get("ran")]
+        self.assertEqual(ran, [], results)
+        self.assertEqual(
+            {r["begin"] for r in results},
+            {"refused:StaleWriter"},
+            results,
+        )
+        self.assertIsNone(
+            cl.CaptureStore(self.lock).get(
+                "tenant-a", self.cid, "seq-1", "cap-race"
+            )
+        )
+
+
+class TestPrematureComplete(LockTestBase):
+    """D5: complete() must refuse while steps remain."""
+
+    STEPS = ["s1", "s2", "s3", "s4"]
+
+    def _partial(self, capture="cap-p"):
+        lease = self.lock.acquire("tenant-a", self.cid, "seq-1", "owner-1", 60)
+        store = cl.CaptureStore(self.lock)
+        store.begin(
+            "tenant-a", self.cid, "seq-1", capture, self.STEPS,
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
+        store.advance(
+            "tenant-a", self.cid, "seq-1", capture, 2, {"half": True},
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
+        return lease, store
+
+    def test_complete_refuses_while_steps_remain(self):
+        lease, store = self._partial()
+        with self.assertRaises(cl.CaptureIncomplete) as raised:
+            store.complete(
+                "tenant-a", self.cid, "seq-1", "cap-p",
+                owner_id=lease.owner_id, fence=lease.fence,
+            )
+        self.assertIn("2 of 4", str(raised.exception))
+        state = store.get("tenant-a", self.cid, "seq-1", "cap-p")
+        self.assertEqual(state["state"], "in_progress")
+        self.assertEqual(state["cursor"], 2)
+
+    def test_premature_complete_leaves_the_capture_resumable(self):
+        lease, store = self._partial("cap-q")
+        with self.assertRaises(cl.CaptureIncomplete):
+            store.complete(
+                "tenant-a", self.cid, "seq-1", "cap-q",
+                owner_id=lease.owner_id, fence=lease.fence,
+            )
+        store.advance(
+            "tenant-a", self.cid, "seq-1", "cap-q", 3,
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
+        store.advance(
+            "tenant-a", self.cid, "seq-1", "cap-q", 4,
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
+        done = store.complete(
+            "tenant-a", self.cid, "seq-1", "cap-q",
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
+        self.assertEqual(done["state"], "complete")
+        self.assertEqual(done["cursor"], 4)
+
+    def test_reject_is_still_allowed_with_steps_remaining(self):
+        lease, store = self._partial("cap-r")
+        gone = store.reject(
+            "tenant-a", self.cid, "seq-1", "cap-r", "client declined",
+            owner_id=lease.owner_id, fence=lease.fence,
+        )
+        self.assertEqual(gone["state"], "rejected")
+        self.assertEqual(gone["cursor"], 2)
+
+
+class TestOwnerIdentity(LockTestBase):
+    """D3: mutual exclusion must not rest on a caller-supplied string."""
+
+    def test_two_processes_sharing_one_owner_string_are_mutually_exclusive(self):
+        results = self._run_jobs(
+            [
+                {
+                    "mode": "acquire",
+                    "owner": "job-shared",
+                    "effect": "send:job-%02d" % index,
+                    "lease": 60.0,
+                    "wait": 0.15,
+                }
+                for index in range(4)
+            ]
+        )
+        self.assertEqual({r["owner"] for r in results}, {"job-shared"})
+        winners = [r for r in results if r["granted"]]
+        self.assertEqual(len(winners), 1, results)
+        self.assertEqual(self._effect_count(), 1, results)
+        conn = sqlite3.connect(self.db)
+        try:
+            effects = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT effect_id FROM collection_effects"
+                    " ORDER BY effect_id"
+                )
+            ]
+        finally:
+            conn.close()
+        self.assertEqual(len(effects), 1, effects)
+        self.assertTrue(effects[0].startswith("send:job-"), effects)
+
+    def test_owner_id_is_normalized_the_same_way_in_every_method(self):
+        lease = self.lock.acquire("tenant-a", self.cid, "seq-1", "  owner-1  ", 60)
+        self.assertTrue(lease.granted)
+        self.assertTrue(
+            self.lock.record_effect(
+                "tenant-a", self.cid, "seq-1", "owner-1", lease.fence, "send:x"
+            )
+        )
+        self.assertTrue(
+            self.lock.renew(
+                "tenant-a", self.cid, "seq-1", "  owner-1  ", lease.fence, 60
+            ).granted
+        )
+        self.lock.assert_fence(
+            "tenant-a", self.cid, "seq-1", " owner-1 ", lease.fence
+        )
+        self.assertTrue(
+            self.lock.release(
+                "tenant-a", self.cid, "seq-1", "owner-1", lease.fence
+            )
+        )
+
+    def test_a_foreign_owner_label_cannot_write_with_this_owners_fence(self):
+        lease = self.lock.acquire("tenant-a", self.cid, "seq-1", "owner-1", 60)
+        with self.assertRaises(cl.StaleWriter):
+            self.lock.record_effect(
+                "tenant-a", self.cid, "seq-1", "owner-2", lease.fence, "send:x"
+            )
 
 
 if __name__ == "__main__":

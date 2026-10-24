@@ -11,15 +11,26 @@ processes contend on one writer. Guarantees:
 
   * exactly one collector holds the key; a second acquire is denied with
     reason "held" (defer) or blocks in acquire_or_wait;
+  * mutual exclusion does not rest on a caller-supplied string. Every
+    owner_id is bound to this process's lock instance, so two distinct
+    processes passing the SAME owner string resolve to two different owner
+    keys and at most one of them is granted. owner_id is normalized the same
+    way in acquire, renew, release, reconcile, assert_fence, record_effect
+    and every CaptureStore mutation, so a padded string never locks itself
+    out with StaleWriter;
   * every successful acquire advances a monotonic fence; a stale writer's
     fenced write is rejected, so a deferred loser cannot duplicate a send;
   * an expired lease is frozen as "reconcile_required". No successor may
     take over until reconcile() records the handover at the exact fence it
     observed; only then does the next acquire advance the fence.
 
-CaptureStore keeps a capture's own cursor. begin() on an existing capture
-returns it unchanged (resume, never restart), advance() refuses to rewind,
-and a rejected capture stays rejected.
+CaptureStore keeps a capture's own cursor. Every mutation (begin, advance,
+complete, reject) requires a valid lock fence and refuses BEFORE the caller
+runs the next step, so a worker that does not hold the collection lock can
+never execute a step twice. begin() on an existing capture returns it
+unchanged (resume, never restart), advance() refuses to rewind, complete()
+refuses while steps remain so the capture stays resumable, and a rejected
+capture stays rejected.
 
 Tenant isolation is enforced by the module: acquire(), reconcile(), and every
 CaptureStore entry point call TenantIdentity.verify() before touching a row,
@@ -32,8 +43,10 @@ Python 3 standard library only.
 
 import dataclasses
 import json
+import os
 import sqlite3
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from tenant_identity import TenantIdentity, VerificationError
@@ -121,6 +134,10 @@ class CaptureComplete(CaptureError):
     """The capture is already complete and cannot advance."""
 
 
+class CaptureIncomplete(CaptureError):
+    """The capture still has steps left and may not be marked complete."""
+
+
 @dataclasses.dataclass(frozen=True)
 class Lease:
     """Result of an acquire/renew/reconcile attempt."""
@@ -160,7 +177,23 @@ class CollectionLock:
             raise TypeError("CollectionLock requires a TenantIdentity")
         self.identity = identity
         self.db_path = identity.db_path
+        # One owner identity per lock instance (process): generated here, so
+        # mutual exclusion never depends on two callers choosing different
+        # strings.
+        self.instance_id = "%d-%s" % (os.getpid(), uuid.uuid4().hex)
         self.init_schema()
+
+    def _owner_key(self, owner_id: str) -> str:
+        """Normalize a caller's owner label and bind it to this process.
+
+        Same normalization in every method; the instance suffix is what makes
+        two real processes passing one shared string mutually exclusive.
+        Idempotent, so a caller may pass back either its own label or the
+        Lease.owner_id the lock returned.
+        """
+        label = _require_id(owner_id, "owner_id")
+        suffix = "@" + self.instance_id
+        return label if label.endswith(suffix) else label + suffix
 
     # -- storage ---------------------------------------------------------
 
@@ -201,7 +234,7 @@ class CollectionLock:
     ) -> Lease:
         """Try to become the collector. Never blocks; returns a Lease."""
         key = _key(tenant_id, canonical_contact_id, collection_sequence_id)
-        owner_id = _require_id(owner_id, "owner_id")
+        owner_id = self._owner_key(owner_id)
         if lease_seconds is None or lease_seconds < 0:
             raise LockError("lease_seconds must be >= 0")
         # Module-enforced tenant isolation: unknown tenant or foreign contact
@@ -327,7 +360,7 @@ class CollectionLock:
                 " AND collection_sequence_id = ?",
                 (now + lease_seconds, now) + key,
             )
-        return Lease(True, int(fence), owner_id, "renewed")
+        return Lease(True, int(fence), self._owner_key(owner_id), "renewed")
 
     def release(
         self,
@@ -368,7 +401,7 @@ class CollectionLock:
         dead writer's receipts/effects here; the lock records that it did.
         """
         key = _key(tenant_id, canonical_contact_id, collection_sequence_id)
-        owner_id = _require_id(owner_id, "owner_id")
+        owner_id = self._owner_key(owner_id)
         self.identity.verify(tenant_id, canonical_contact_id)
         now = time.time()
         with self._write() as conn:
@@ -441,18 +474,18 @@ class CollectionLock:
                 return False
         return True
 
-    @staticmethod
     def _assert_fence_locked(
-        conn: sqlite3.Connection, key, owner_id: str, fence: int, now: float
+        self, conn: sqlite3.Connection, key, owner_id: str, fence: int, now: float
     ) -> None:
-        row = CollectionLock._select(conn, key)
+        owner_key = self._owner_key(owner_id)
+        row = self._select(conn, key)
         if row is None:
             raise StaleWriter("no lock record")
         if row["state"] != STATE_HELD:
             raise StaleWriter("lock is %r, not held" % (row["state"],))
-        if row["owner_id"] != owner_id:
+        if row["owner_id"] != owner_key:
             raise StaleWriter(
-                "lock is owned by %r, not %r" % (row["owner_id"], owner_id)
+                "lock is owned by %r, not %r" % (row["owner_id"], owner_key)
             )
         if int(row["fence"]) != int(fence):
             raise StaleWriter(
@@ -501,8 +534,15 @@ class CaptureStore:
         collection_sequence_id: str,
         capture_id: str,
         steps: List[str],
+        *,
+        owner_id: str,
+        fence: int,
     ) -> Dict[str, Any]:
-        """Create or resume. An existing capture is returned unchanged."""
+        """Create or resume. An existing capture is returned unchanged.
+
+        Requires a valid collection-lock fence. The refusal lands BEFORE the
+        caller runs a step, so an unfenced worker can never execute one twice.
+        """
         key = _key(tenant_id, canonical_contact_id, collection_sequence_id)
         capture_id = _require_id(capture_id, "capture_id")
         if not steps or not isinstance(steps, list):
@@ -510,6 +550,7 @@ class CaptureStore:
         self.identity.verify(tenant_id, canonical_contact_id)
         now = time.time()
         with self.lock._write() as conn:
+            self.lock._assert_fence_locked(conn, key, owner_id, fence, now)
             row = self._select(conn, key, capture_id)
             if row is not None:
                 return self._as_dict(row)
@@ -537,14 +578,22 @@ class CaptureStore:
         capture_id: str,
         step_index: int,
         data: Optional[Dict[str, Any]] = None,
+        *,
+        owner_id: str,
+        fence: int,
     ) -> Dict[str, Any]:
-        """Move the cursor forward only. step_index is the count completed."""
+        """Move the cursor forward only. step_index is the count completed.
+
+        Fenced like every other mutation: an owner whose fence is stale is
+        refused here, before the caller runs the next step.
+        """
         key = _key(tenant_id, canonical_contact_id, collection_sequence_id)
         capture_id = _require_id(capture_id, "capture_id")
         if not isinstance(step_index, int) or step_index < 0:
             raise CaptureError("step_index must be a non-negative integer")
         now = time.time()
         with self.lock._write() as conn:
+            self.lock._assert_fence_locked(conn, key, owner_id, fence, now)
             row = self._select(conn, key, capture_id)
             if row is None:
                 raise CaptureError("unknown capture %r" % (capture_id,))
@@ -587,6 +636,9 @@ class CaptureStore:
         canonical_contact_id: str,
         collection_sequence_id: str,
         capture_id: str,
+        *,
+        owner_id: str,
+        fence: int,
     ) -> Dict[str, Any]:
         return self._set_terminal(
             tenant_id,
@@ -595,6 +647,8 @@ class CaptureStore:
             capture_id,
             CAPTURE_COMPLETE,
             None,
+            owner_id,
+            fence,
         )
 
     def reject(
@@ -604,6 +658,9 @@ class CaptureStore:
         collection_sequence_id: str,
         capture_id: str,
         reason: str = "",
+        *,
+        owner_id: str,
+        fence: int,
     ) -> Dict[str, Any]:
         return self._set_terminal(
             tenant_id,
@@ -612,16 +669,19 @@ class CaptureStore:
             capture_id,
             CAPTURE_REJECTED,
             reason or "",
+            owner_id,
+            fence,
         )
 
     def _set_terminal(
         self, tenant_id, canonical_contact_id, collection_sequence_id,
-        capture_id, state, reason,
+        capture_id, state, reason, owner_id, fence,
     ) -> Dict[str, Any]:
         key = _key(tenant_id, canonical_contact_id, collection_sequence_id)
         capture_id = _require_id(capture_id, "capture_id")
         now = time.time()
         with self.lock._write() as conn:
+            self.lock._assert_fence_locked(conn, key, owner_id, fence, now)
             row = self._select(conn, key, capture_id)
             if row is None:
                 raise CaptureError("unknown capture %r" % (capture_id,))
@@ -629,6 +689,15 @@ class CaptureStore:
                 return self._as_dict(row)
             if row["state"] == CAPTURE_COMPLETE:
                 raise CaptureComplete("capture already complete")
+            steps = json.loads(row["steps_json"])
+            cursor = int(row["cursor"])
+            if state == CAPTURE_COMPLETE and cursor != len(steps):
+                # Refuse BEFORE the write: the capture must stay resumable, or
+                # the remaining steps become permanently unreachable.
+                raise CaptureIncomplete(
+                    "capture has %s of %s steps; refusing premature complete"
+                    % (cursor, len(steps))
+                )
             conn.execute(
                 "UPDATE captures SET state = ?, rejection_reason = ?,"
                 " updated_at = ? WHERE tenant_id = ? AND"
