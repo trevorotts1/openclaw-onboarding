@@ -28,6 +28,21 @@ Required cases (S75-A09):
     site -- world revision, scene world_revision, cast identity_revision and
     the foundation pins -- while an exactly-matching string still validates
     and opens the music gate.
+  * the DECISION BASIS is exact builtin type identity (round 7): emptiness and
+    length are never decided through the candidate's own __len__ / __bool__ /
+    strip(), and equality never through its __eq__ / __ne__ / get() /
+    __contains__. Every attack class -- str subclasses (strip missing, lying or
+    raising; __eq__-always-True; __hash__ only; __ne__ only; contradictory
+    __eq__/__ne__; __eq__ False against itself; __bool__ False; __str__+__len__
+    overridden), plain objects spoofing __class__ (as an attribute and via
+    __getattr__), a non-str voter, dict subclasses (lying __len__ alone and with
+    lying __eq__/__ne__, __contains__ always False = song hiding, get() lying
+    about status, and the decisive empty dict with __len__ 1 / __ne__ False),
+    a list subclass with lying __len__, and the int/bool/None controls -- is
+    refused BY NAME at every identity site with the named reason
+    type-identity-refused, no entry point raises, and the one legitimate case
+    (an int at estimated_duration_seconds) plus a whole honest plan still reach
+    music_gate allowed=True.
 """
 import copy
 import json
@@ -1054,6 +1069,445 @@ def test_plain_string_revisions_still_accepted_end_to_end():
         assert res["outcome"] == "ok", (repr(rev), res["errors"][:3])
         gate = SP.music_gate(p)
         assert gate["allowed"] is True, (repr(rev), gate["reason_code"])
+
+
+# --------------------------------------------------------------------------- #
+# exact builtin type identity is the decision basis (S75-T09 round 7)
+#
+# Round 6 failed because emptiness and inequality were still decided THROUGH the
+# candidate's own __len__ / __ne__ / get / __contains__. Every class below must
+# be refused BY NAME -- never coerced, never asked to prove emptiness -- and no
+# entry point may raise instead of refusing.
+# --------------------------------------------------------------------------- #
+class StripRaises(str):
+    """str subclass whose strip() raises instead of answering."""
+
+    def strip(self, *args, **kwargs):
+        raise RuntimeError("strip refuses to answer")
+
+
+class NeLie(str):
+    """Overrides __ne__ only."""
+
+    def __ne__(self, other):
+        return True
+
+
+class ContradictEqNe(str):
+    """__eq__ and __ne__ contradict each other."""
+
+    def __eq__(self, other):
+        return False
+
+    def __ne__(self, other):
+        return True
+
+
+class EqFalseSelf(str):
+    """__eq__ is False even against itself."""
+
+    def __eq__(self, other):
+        return False
+
+    def __ne__(self, other):
+        return True
+
+    __hash__ = str.__hash__
+
+
+class ClassSpoofAttr(object):
+    """Plain object spoofing __class__ as a class attribute."""
+
+    __class__ = dict
+
+
+class ClassSpoofGetattr(object):
+    """Plain object spoofing __class__ through __getattr__."""
+
+    def __getattr__(self, name):
+        if name == "__class__":
+            return dict
+        raise AttributeError(name)
+
+
+class NonStrVoter(object):
+    """Plain NON-str object whose __eq__/__ne__ vote True, __hash__ 0."""
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+    def __hash__(self):
+        return 0
+
+
+class DictLenLieEq(dict):
+    """Dict subclass with lying __len__ AND lying __eq__/__ne__."""
+
+    def __len__(self):
+        return 1
+
+    def __bool__(self):
+        return True
+
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+
+class DictLenLie(dict):
+    """Dict subclass with lying __len__ only."""
+
+    def __len__(self):
+        return 1
+
+    def __bool__(self):
+        return True
+
+
+class ListLenLie(list):
+    """List subclass with lying __len__ only."""
+
+    def __len__(self):
+        return 1
+
+    def __bool__(self):
+        return True
+
+
+class DictContainsLie(dict):
+    """Dict subclass whose __contains__ is always False -- song hiding."""
+
+    def __contains__(self, key):
+        return False
+
+    def __len__(self):
+        return 1
+
+    def __bool__(self):
+        return True
+
+
+class DictGetLie(dict):
+    """Dict subclass whose get() lies about status."""
+
+    def __init__(self, *args, **kwargs):
+        self.lies = dict(kwargs.pop("lies", {}) or {})
+        super(DictGetLie, self).__init__(*args, **kwargs)
+
+    def get(self, key, default=None):
+        if key in self.lies:
+            return self.lies[key]
+        return dict.get(self, key, default)
+
+    def __len__(self):
+        return 1
+
+    def __bool__(self):
+        return True
+
+
+class EmptyDictLenNe(dict):
+    """THE decisive round-6 bypass: an EMPTY dict whose __len__ says 1 and whose
+    __ne__ says "never different". plan['schema_version'] = one of these
+    validated ok / scene-plan-valid with ZERO errors and opened the gate."""
+
+    def __len__(self):
+        return 1
+
+    def __bool__(self):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+    def __eq__(self, other):
+        return False
+
+
+#: Every attack class named against round 6, plus the scalar controls. The flag
+#: says whether the class can LIE through its own dunders: those must be refused
+#: with the named subclass reason ``type-identity-refused`` as well as with the
+#: consuming site's own code. The scalar controls cannot lie, so they must be
+#: refused with the site's own code alone (silently coercing them would be the
+#: over-refusal side of the same bug).
+ATTACK_CLASSES = (
+    ("str subclass, strip() not overridden", lambda: EmptyStr(""), True),
+    ("str subclass, strip() lies", lambda: StripLie(""), True),
+    ("str subclass, strip() raises", lambda: StripRaises(""), True),
+    ("str subclass, __eq__ True vs anything, str.__hash__ kept",
+     lambda: AlwaysEq("alpha"), True),
+    ("str subclass, __hash__ only", lambda: HashLie("rev-17"), True),
+    ("str subclass, __ne__ only", lambda: NeLie("rev-17"), True),
+    ("str subclass, contradictory __eq__/__ne__", lambda: ContradictEqNe("rev-17"), True),
+    ("str subclass, __eq__ False even against itself", lambda: EqFalseSelf("rev-17"), True),
+    ("str subclass, __bool__ False", lambda: BoolFalse("rev-17"), True),
+    ("str subclass, __str__ and __len__ overridden", lambda: StrLenLie("rev-17"), True),
+    ("plain object spoofing __class__ as an attribute", lambda: ClassSpoofAttr(), True),
+    ("plain object spoofing __class__ via __getattr__", lambda: ClassSpoofGetattr(), True),
+    ("plain NON-str object voting True against strings, __hash__ 0",
+     lambda: NonStrVoter(), True),
+    ("dict subclass, lying __len__ AND lying __eq__/__ne__", lambda: DictLenLieEq(), True),
+    ("dict subclass, lying __len__ only", lambda: DictLenLie(), True),
+    ("list subclass, lying __len__ only", lambda: ListLenLie(), True),
+    ("dict subclass, __contains__ always False (song hiding)", lambda: DictContainsLie(), True),
+    ("dict subclass, get() lies about status", lambda: DictGetLie(), True),
+    ("empty dict subclass, __len__ 1 and __ne__ False", lambda: EmptyDictLenNe(), True),
+    ("scalar control: int 7", lambda: 7, False),
+    ("scalar control: bool True", lambda: True, False),
+    ("scalar control: None", lambda: None, False),
+)
+
+
+def _identity_sites():
+    """Every place one of these values is decided on. The value is planted on
+    BOTH sides of each comparison, so only that site can be the bypass."""
+    def world_and_scene_and_pin(p, v):
+        p["foundation"]["episode_world"]["revision"] = v
+        p["foundation_revisions"]["episode_world"]["revision"] = v
+        for sc in p["scenes"]:
+            sc["world_revision"] = v
+
+    def cast_rows_and_roles(p, v):
+        for row in p["foundation"]["episode_cast_manifest"]["cast"]:
+            row["identity_revision"] = v
+        for sc in p["scenes"]:
+            for role in sc["cast_roles"]:
+                role["identity_revision"] = v
+
+    def digests(p, v):
+        p["foundation"]["research_bundle"]["digest"] = v
+        p["foundation_revisions"]["research_bundle"]["digest"] = v
+
+    return (
+        ("plan.schema_version", lambda p, v: p.update(schema_version=v)),
+        ("plan.status", lambda p, v: p.update(status=v)),
+        ("plan.plan_id", lambda p, v: p.update(plan_id=v)),
+        ("plan.episode_id", lambda p, v: p.update(episode_id=v)),
+        ("plan.foundation_revisions", lambda p, v: p.update(foundation_revisions=v)),
+        ("plan.foundation", lambda p, v: p.update(foundation=v)),
+        ("plan.scenes", lambda p, v: p.update(scenes=v)),
+        ("pin object itself", lambda p, v: p["foundation_revisions"].update(episode_world=v)),
+        ("artifact object itself", lambda p, v: p["foundation"].update(episode_world=v)),
+        ("world.revision + scene.world_revision + pin.revision", world_and_scene_and_pin),
+        ("cast row identity_revision + role identity_revision", cast_rows_and_roles),
+        ("research.digest + pin.digest", digests),
+        ("scene.timing_basis", lambda p, v: p["scenes"][0].update(timing_basis=v)),
+        ("scene.causal_predecessor (link)", lambda p, v: p["scenes"][1].update(
+            causal_predecessor=v)),
+        ("scene.dramatic_purpose", lambda p, v: p["scenes"][0].update(dramatic_purpose=v)),
+        ("scene.visible_action", lambda p, v: p["scenes"][0].update(visible_action=v)),
+        ("scene.location_id", lambda p, v: p["scenes"][0].update(location_id=v)),
+        ("scene.cast_id", lambda p, v: p["scenes"][0]["cast_roles"][0].update(cast_id=v)),
+        ("scene.claim_ids", lambda p, v: p["scenes"][0].update(claim_ids=v)),
+        ("scene.cast_roles", lambda p, v: p["scenes"][0].update(cast_roles=v)),
+        ("scene.estimated_duration_seconds",
+         lambda p, v: p["scenes"][0].update(estimated_duration_seconds=v)),
+        ("world.locations set", lambda p, v: p["foundation"]["episode_world"].update(locations=v)),
+        ("cast.cast set", lambda p, v: p["foundation"]["episode_cast_manifest"].update(cast=v)),
+        ("research.claims set", lambda p, v: p["foundation"]["research_bundle"].update(claims=v)),
+    )
+
+
+#: The named refusal that says WHY a lie-capable value is never accepted. The
+#: wording is part of the contract: a refusal that does not name the lie is a
+#: silent coercion in disguise.
+SUBCLASS_REASON = "can lie in get(), __bool__, __len__ or the reflected __eq__"
+
+
+#: Sites whose contract lives in the music gate rather than in the plan
+#: validator itself.
+GATE_ONLY_SITES = ("plan.status",)
+
+#: The one legitimate attack-times-site case: an int at
+#: estimated_duration_seconds IS a duration. Every other case must refuse.
+LEGIT_CASES = (("scalar control: int 7", "scene.estimated_duration_seconds"),)
+
+
+def _assert_refused_by_name(label, site_name, make, lie_capable):
+    """One attack-times-site case: refuse, by name, without raising."""
+    plan = workshop_plan()
+    site = dict((n, f) for n, f in _identity_sites())[site_name]
+    try:
+        site(plan, make())
+        res = SP.validate_scene_plan(plan)
+        gate = SP.music_gate(plan)
+    except Exception as exc:                              # noqa: BLE001
+        raise AssertionError("%s @ %s raised %s instead of refusing"
+                             % (label, site_name, exc))
+    where = "%s @ %s" % (label, site_name)
+    if (label, site_name) in LEGIT_CASES:
+        # the positive control, in the same matrix: an int duration is a
+        # duration, so the gate must still open for it
+        assert res["outcome"] == "ok", (where, codes(res)[:3])
+        assert gate["allowed"] is True, (where, gate["reason_code"])
+        return
+    assert gate["allowed"] is False, (where, gate["reason_code"], codes(res)[:3])
+    c = codes(gate)
+    assert c, (where, "the gate closed without naming a reason")
+    if site_name not in GATE_ONLY_SITES:
+        assert res["outcome"] == "rejected", (where, res["outcome"], codes(res)[:3])
+    if lie_capable:
+        assert "type-identity-refused" in c, (where, c[:3])
+        named = [e for e in gate["errors"] if e["error"] == "type-identity-refused"]
+        assert SUBCLASS_REASON in named[0]["detail"], (where, named[0]["detail"])
+
+
+def test_every_attack_class_refused_by_name_at_every_identity_site():
+    """The full attack-times-site matrix: named refusal, gate closed, no raise."""
+    for label, make, lie_capable in ATTACK_CLASSES:
+        for site_name, _ in _identity_sites():
+            _assert_refused_by_name(label, site_name, make, lie_capable)
+
+
+def test_decisive_empty_dict_bypass_is_closed():
+    """The exact round-6 receipt: plan['schema_version'] = empty dict subclass
+    whose __len__ returns 1 and whose __ne__ returns False used to validate ok /
+    scene-plan-valid with ZERO errors and music_gate.allowed True."""
+    p = workshop_plan()
+    p["schema_version"] = EmptyDictLenNe()
+    res = SP.validate_scene_plan(p)
+    c = codes(res)
+    assert res["outcome"] == "rejected", (res["outcome"], c[:3])
+    assert "schema-version-missing" in c, c
+    assert "type-identity-refused" in c, c
+    assert res["reason_code"] != "scene-plan-valid", res["reason_code"]
+    gate = SP.music_gate(p)
+    assert gate["allowed"] is False, gate["reason_code"]
+    assert gate["errors"], "the gate opened with zero errors"
+
+    # the emptiness/length decision never runs on the candidate itself
+    assert SP._blank(EmptyDictLenNe()) is True          # reports __len__ 1
+    assert SP._blank(ListLenLie()) is True
+    assert SP._blank(DictLenLieEq()) is True
+    assert SP._is_revision(EmptyDictLenNe()) is False
+    assert SP._same_text(EmptyDictLenNe(), SP.SCHEMA_VERSION) is False
+
+
+def test_plan_object_itself_is_refused_when_not_an_exact_dict():
+    """Not merely its fields: the plan OBJECT is type-checked."""
+    for label, plan in (
+            ("dict subclass, get() lies about status",
+             DictGetLie(dict(workshop_plan()), lies={"status": "complete"})),
+            ("dict subclass, __contains__ hides the song",
+             DictContainsLie(workshop_plan())),
+            ("dict subclass, lying __len__", DictLenLieEq(workshop_plan())),
+            ("plain object spoofing __class__ as an attribute", ClassSpoofAttr()),
+            ("plain object spoofing __class__ via __getattr__", ClassSpoofGetattr()),
+    ):
+        try:
+            res = SP.validate_scene_plan(plan)
+            gate = SP.music_gate(plan)
+        except Exception as exc:                          # noqa: BLE001
+            raise AssertionError("plan object %s raised %s instead of refusing" % (label, exc))
+        c = codes(res)
+        assert res["outcome"] in ("rejected", "error"), (label, res["outcome"], c[:3])
+        assert c, (label, "refused without naming a reason")
+        assert gate["allowed"] is False, (label, gate["reason_code"])
+
+
+def test_song_hiding_cannot_open_the_gate():
+    """A plan that already carries lyrics must be refused even when the plan
+    object's __contains__ swears it carries nothing."""
+    p = workshop_plan()
+    p["lyrics"] = {"line_1": "placeholder"}
+    hidden = DictContainsLie(p)
+    assert "lyrics" not in hidden                    # the lie is real
+    gate = SP.music_gate(hidden)
+    assert gate["allowed"] is False, gate["reason_code"]
+    assert codes(gate), "refused without naming a reason"
+
+    # an honest plan carrying a song is refused too (the positive half)
+    gate2 = SP.music_gate(p)
+    assert gate2["allowed"] is False
+    assert "plan-carries-song" in codes(gate2), codes(gate2)
+
+
+def test_lying_status_cannot_mark_the_plan_complete():
+    """get() that answers 'complete' for a draft plan must not open the gate."""
+    p = workshop_plan()
+    p["status"] = "draft"
+    liar = DictGetLie(p, lies={"status": "complete"})
+    assert liar.get("status") == "complete" and liar["status"] == "draft"  # the lie
+    gate = SP.music_gate(liar)
+    assert gate["allowed"] is False, gate["reason_code"]
+    assert codes(gate), "refused without naming a reason"
+
+
+def test_no_entry_point_raises_on_a_hostile_value():
+    """A validator that raises instead of refusing is not fail-closed."""
+    hostile = (StripRaises("alpha"), ClassSpoofAttr(), ClassSpoofGetattr(),
+               EmptyDictLenNe(), DictLenLieEq(), NonStrVoter())
+    for value in hostile:
+        for label, call in (
+                ("validate_scene_plan", lambda v: SP.validate_scene_plan(
+                    workshop_plan(), cast_manifest=v)),
+                ("validate_scene_plan world", lambda v: SP.validate_scene_plan(
+                    workshop_plan(), world=v)),
+                ("music_gate", lambda v: SP.music_gate(workshop_plan(), world=v)),
+                ("validate_foundation", lambda v: SP.validate_foundation(v)),
+                ("validate_causal_beats", lambda v: SP.validate_causal_beats(v)),
+                ("build_scene_plan", lambda v: SP.build_scene_plan(
+                    v, BEATS, lambda r: {"scenes": []}, attempt_key="att-hostile")),
+        ):
+            try:
+                out = call(value)
+            except Exception as exc:                      # noqa: BLE001
+                raise AssertionError("%s(%s) raised %s" % (label, type(value).__name__, exc))
+            assert isinstance(out, dict) and out.get("errors"), \
+                (label, type(value).__name__, out)
+            assert out.get("outcome") in ("rejected", "error"), (label, out.get("outcome"))
+
+    # and a scene field whose strip() raises is a named refusal, not a crash
+    p = workshop_plan()
+    p["scenes"][0]["visible_action"] = StripRaises("alpha")
+    res = SP.validate_scene_plan(p)
+    assert res["outcome"] == "rejected"
+    assert "type-identity-refused" in codes(res), codes(res)[:3]
+
+
+def test_scalars_are_refused_by_the_site_code_and_never_coerced():
+    """The controls: int 7 / True / None cannot lie, so they are refused by the
+    consuming site's own named code -- and an int duration stays legitimate."""
+    p = workshop_plan()
+    p["scenes"][0]["estimated_duration_seconds"] = 7
+    res = SP.validate_scene_plan(p)
+    assert res["outcome"] == "ok", (res["errors"][:3],)
+    assert SP.music_gate(p)["allowed"] is True
+
+    for bad, code in ((True, "duration-invalid"), (None, "duration-invalid"),
+                      ("24", "duration-invalid"), (7.5, None)):
+        p = workshop_plan()
+        p["scenes"][0]["estimated_duration_seconds"] = bad
+        res = SP.validate_scene_plan(p)
+        if code is None:      # a float duration is still a positive number
+            assert res["outcome"] == "ok", (repr(bad), res["errors"][:3])
+            continue
+        assert code in codes(res), (repr(bad), codes(res)[:3])
+        assert SP.music_gate(p)["allowed"] is False, repr(bad)
+
+    for bad in (7, True, None):
+        p = workshop_plan()
+        p["schema_version"] = bad
+        assert "schema-version-missing" in codes(SP.validate_scene_plan(p)), repr(bad)
+        assert SP.music_gate(p)["allowed"] is False, repr(bad)
+
+
+def test_honest_plan_still_opens_the_gate():
+    """Positive control: the repair must not become over-refusal."""
+    p = workshop_plan()
+    res = SP.validate_scene_plan(p)
+    assert res["outcome"] == "ok", (res["errors"][:3],)
+    assert res["reason_code"] == "scene-plan-valid", res["reason_code"]
+    gate = SP.music_gate(p)
+    assert gate["allowed"] is True, gate["reason_code"]
+    assert gate["errors"] == [], gate["errors"]
+    assert SP.validate_scene_plan(diner_plan())["outcome"] == "ok"
+    assert SP.music_gate(diner_plan())["allowed"] is True
 
 
 TESTS = [v for k, v in sorted(globals().items())
