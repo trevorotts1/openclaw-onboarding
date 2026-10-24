@@ -22,6 +22,7 @@ Run: python3 tools/interactive_owner.py validate --contract <path>
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -104,7 +105,12 @@ def validate_contract(doc, launch_owner=None):
     launch bundle (see ``load_launch_owner``). Passing None means no bundle was
     bound.
     """
-    errs = list(contracts.validate_schema(load_schema(), doc))
+    # Schema errors carry the stable INVALID_CONTRACT code so a refused verdict
+    # names a code a caller can assert on, never a JSON path like "$". A root
+    # that is not an object (null, [], "hello") is refused here, before any
+    # semantic rule reads a field from it.
+    errs = [_err(INVALID_CONTRACT, e)
+            for e in contracts.validate_schema(load_schema(), doc)]
     if errs:
         # The document is malformed; semantic rules would only add noise.
         return errs
@@ -257,18 +263,26 @@ def resolve_event(doc, event, launch_owner=None):
     }
 
 
-def resolve_contract(path, event=None, launch_bundle=None):
+# Omitting ``event`` means "validate only". A parsed JSON ``null`` is an event
+# like any other and must be judged -- it is refused MALFORMED_EVENT -- so the
+# validate-only switch cannot be ``None``.
+_VALIDATE_ONLY = object()
+
+
+def resolve_contract(path, event=_VALIDATE_ONLY, launch_bundle=None):
     """Load a contract file and (when given) resolve one event against it."""
     contract_path = Path(path)
     doc = contracts.load_json(contract_path)
     bundle_path = launch_bundle
-    owner_doc = doc.get("owner") or {}
-    if bundle_path is None:
+    # Read the bundle pointer defensively: validation has not run yet, so the
+    # document may be any JSON value. A non-object here is refused below.
+    owner_doc = doc.get("owner") if isinstance(doc, dict) else None
+    if bundle_path is None and isinstance(owner_doc, dict):
         bundle_path = owner_doc.get("launch_bundle")
     launch_owner = None
     if _nonempty(bundle_path):
         launch_owner = load_launch_owner(bundle_path, contract_path.parent)
-    if event is None:
+    if event is _VALIDATE_ONLY:
         errs = validate_contract(doc, launch_owner)
         return {"status": "refused" if errs else "accepted", "errors": errs, "doc": doc}
     return resolve_event(doc, event, launch_owner)
@@ -285,9 +299,11 @@ def _usage(message):
 
 
 def _parse_event(value):
-    candidate = Path(value)
-    if candidate.is_file():
-        return contracts.load_json(candidate)
+    # os.path.isfile answers False for any string that cannot be a path (too
+    # long, NUL byte); Path.is_file raises OSError there on Python 3.9, which
+    # crashed a long but valid inline event.
+    if os.path.isfile(value):
+        return contracts.load_json(value)
     # Caller-controlled text: a parse failure is a usage error, the same verdict
     # contracts.load_json gives the same bytes supplied as a file path. A raw
     # json traceback would exit 1 with no verdict at all.
@@ -320,7 +336,9 @@ def main(argv=None):
 
     try:
         if command == "validate":
-            result = resolve_contract(contract_path, None, args.get("launch_bundle"))
+            result = resolve_contract(
+                contract_path, launch_bundle=args.get("launch_bundle")
+            )
             payload = {"status": result["status"], "errors": result["errors"]}
             print(json.dumps(payload, indent=2))
             return 0 if not result["errors"] else 1
@@ -337,6 +355,10 @@ def main(argv=None):
             return 0 if verdict["status"] == "accepted" else 1
     except contracts.UsageError as exc:
         return _usage(str(exc))
+    except (OSError, UnicodeError, RecursionError) as exc:
+        # A caller path that is a folder or not UTF-8, or input nested past
+        # what the parser and checker can walk: "2 = usage or IO", no verdict.
+        return _usage("cannot read or check the input: %s" % (exc,))
 
     return _usage("unknown command %r" % (command,))
 

@@ -115,3 +115,11 @@ python3 38-conversational-ai-system/tools/interactive_owner.py resolve \
 
 Exit `0` = accepted or valid, `1` = refused or invalid, `2` = usage or IO. The
 suite is offline and stdlib-only; no live effects, no provider calls.
+
+Hostile input never routes and never crashes:
+
+| Input | Verdict |
+|---|---|
+| Contract that fails the schema, including JSON that is not an object (`null`, `[]`, `"hello"`) or an `owner` that is not an object | refused `INVALID_CONTRACT`, exit `1` |
+| Event that is not an object, including `null` | refused `MALFORMED_EVENT`, exit `1` — never accepted |
+| Path that is missing, a folder or not UTF-8; JSON that will not parse; input nested deeper than the checker can walk | usage, exit `2`, no verdict |

@@ -572,5 +572,186 @@ class CliTests(unittest.TestCase):
         self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
 
 
+GOOD_EVENT = json.dumps(
+    {"kind": "control", "step_id": "pick_time", "control_id": "wed_2pm", "generation": 3}
+)
+# Valid JSON that is not an object. Every one is a document a caller can hand
+# the tool; none of them is a contract or an event.
+NON_OBJECTS = (("null", "null"), ("list", "[]"), ("string", '"hello"'),
+               ("int", "5"), ("bool", "true"))
+
+
+class HostileInputTests(unittest.TestCase):
+    """PBB-157 review: a null event was accepted and a non-object contract crashed.
+
+    Every case asserts the exit code, the verdict code, ``route: None`` and no
+    traceback, so a test passes only on the documented answer and never on
+    "some failure happened".
+    """
+
+    setUp = CliTests.setUp
+    tearDown = CliTests.tearDown
+    run_cli = CliTests.run_cli
+
+    def write(self, name, data):
+        path = self.tmp / name
+        path.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
+        return str(path)
+
+    def assert_refused(self, argv, want_code):
+        code, out, err = self.run_cli(*argv)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(code, 1, (out, err))
+        payload = json.loads(out)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["code"], want_code)
+        self.assertIsNone(payload["route"])
+        return payload
+
+    def assert_usage(self, argv, needle):
+        code, out, err = self.run_cli(*argv)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(code, 2, (out, err))
+        self.assertEqual(out.strip(), "")
+        self.assertIn(needle, err)
+
+    # Defect 1 -- fail-open: a null event must never be accepted.
+
+    def test_a_null_inline_event_is_refused_not_accepted(self):
+        self.assert_refused(
+            ("resolve", "--contract", fixture("valid.json"), "--event", "null"),
+            owner.MALFORMED_EVENT,
+        )
+
+    def test_a_null_event_file_is_refused_not_accepted(self):
+        path = self.write("event-null.json", "null")
+        self.assert_refused(
+            ("resolve", "--contract", fixture("valid.json"), "--event", path),
+            owner.MALFORMED_EVENT,
+        )
+
+    def test_resolve_contract_with_a_none_event_is_a_refusal(self):
+        verdict = owner.resolve_contract(fixture("valid.json"), None)
+        self.assertEqual(verdict["status"], "refused")
+        self.assertEqual(verdict.get("code"), owner.MALFORMED_EVENT)
+        self.assertIsNone(verdict.get("route"))
+
+    def test_every_non_object_event_is_malformed(self):
+        for name, text in NON_OBJECTS[1:] + (("object", "{}"),):
+            with self.subTest(event=name):
+                self.assert_refused(
+                    ("resolve", "--contract", fixture("valid.json"), "--event", text),
+                    owner.MALFORMED_EVENT,
+                )
+
+    def test_omitting_the_event_still_only_validates(self):
+        # Inverse: the validate-only path is the omitted event, not a None one.
+        result = owner.resolve_contract(fixture("valid.json"))
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["errors"], [])
+        refused = owner.resolve_contract(fixture("two-responders.json"))
+        self.assertEqual(refused["status"], "refused")
+        self.assertTrue(refused["errors"][0].startswith(owner.TWO_RESPONDERS))
+
+    # Defect 2 -- crash: a contract that is not an object is a verdict.
+
+    def test_a_non_object_contract_is_refused_by_validate(self):
+        for name, text in NON_OBJECTS:
+            with self.subTest(contract=name):
+                path = self.write("contract-%s.json" % name, text)
+                code, out, err = self.run_cli("validate", "--contract", path)
+                self.assertNotIn("Traceback", err)
+                self.assertEqual(code, 1, (out, err))
+                payload = json.loads(out)
+                self.assertEqual(payload["status"], "refused")
+                self.assertTrue(
+                    payload["errors"][0].startswith(owner.INVALID_CONTRACT), payload
+                )
+
+    def test_a_non_object_contract_is_refused_by_resolve(self):
+        for name, text in NON_OBJECTS:
+            with self.subTest(contract=name):
+                path = self.write("contract-%s.json" % name, text)
+                self.assert_refused(
+                    ("resolve", "--contract", path, "--event", GOOD_EVENT),
+                    owner.INVALID_CONTRACT,
+                )
+
+    def test_a_non_object_owner_is_refused_not_crashed(self):
+        for name, value in (("string", "native_ghl"), ("int", 5), ("list", ["x"])):
+            with self.subTest(owner=name):
+                path = self.write(
+                    "owner-%s.json" % name,
+                    json.dumps(controls_contract(owner=value)),
+                )
+                code, out, err = self.run_cli("validate", "--contract", path)
+                self.assertNotIn("Traceback", err)
+                self.assertEqual(code, 1, (out, err))
+                self.assertTrue(
+                    json.loads(out)["errors"][0].startswith(owner.INVALID_CONTRACT)
+                )
+                self.assert_refused(
+                    ("resolve", "--contract", path, "--event", GOOD_EVENT),
+                    owner.INVALID_CONTRACT,
+                )
+
+    def test_schema_refusals_carry_the_stable_invalid_contract_code(self):
+        for doc in (None, [], "hello", controls_contract(second_owner="x")):
+            with self.subTest(doc=repr(doc)[:40]):
+                errors = owner.validate_contract(doc)
+                self.assertTrue(errors)
+                self.assertTrue(errors[0].startswith(owner.INVALID_CONTRACT), errors)
+
+    def test_a_valid_contract_from_a_file_still_routes(self):
+        # Inverse: the canonical bytes still validate and still route.
+        code, out, _ = self.run_cli("validate", "--contract", fixture("valid.json"))
+        self.assertEqual(code, 0)
+        code, out, _ = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", GOOD_EVENT
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
+
+    # Same class, IO side: an unreadable caller path is "2 = usage or IO".
+
+    def test_unreadable_paths_are_a_usage_exit_not_a_traceback(self):
+        folder = self.tmp / "a-folder"
+        folder.mkdir()
+        latin = self.write("latin.json", b'{"x": "\xff"}')
+        cases = (
+            ("contract is a folder", ("validate", "--contract", str(folder))),
+            ("contract not UTF-8", ("validate", "--contract", latin)),
+            ("event file not UTF-8",
+             ("resolve", "--contract", fixture("valid.json"), "--event", latin)),
+            ("launch bundle is a folder",
+             ("validate", "--contract", fixture("valid.json"),
+              "--launch-bundle", str(folder))),
+            ("inline event nested past the parser limit",
+             ("resolve", "--contract", fixture("valid.json"), "--event", "[" * 1000000)),
+            ("contract value nested past the checker limit",
+             ("validate", "--contract", self.write(
+                 "deep.json",
+                 '{"schema_version": 1, "contract_id": "x", "owner": {"kind": '
+                 + "[" * 100000 + "]" * 100000 + "}, "
+                 + json.dumps({"steps": base_contract()["steps"]})[1:],
+             ))),
+        )
+        for label, argv in cases:
+            with self.subTest(case=label):
+                self.assert_usage(argv, "usage:")
+
+    def test_a_long_inline_event_is_parsed_not_probed_to_a_crash(self):
+        # The file-or-inline probe used to raise OSError (name too long) on
+        # Python 3.9 for any inline event longer than one path component, so a
+        # valid event crashed instead of routing.
+        event = json.dumps(dict(json.loads(GOOD_EVENT), note="x" * 400))
+        code, out, err = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", event
+        )
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(code, 0, (out, err))
+        self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
