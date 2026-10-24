@@ -9,6 +9,7 @@ import io
 import json
 import os
 import shutil
+import shlex
 import stat
 import sys
 import tempfile
@@ -171,7 +172,7 @@ def _fake_openclaw(ok=True):
     d = tempfile.mkdtemp(prefix="sa-bin-")
     log = os.path.join(d, "log")
     exe = os.path.join(d, "openclaw")
-    open(exe, "w").write('#!/bin/sh\nprintf "%%s\\n" "$*" >> %s\n%s\n' % (log, "exit 0" if ok else "exit 1"))
+    open(exe, "w").write('#!/bin/sh\nprintf "%%s\\n" "$*" >> %s\n%s\n' % (shlex.quote(log), "exit 0" if ok else "exit 1"))
     os.chmod(exe, os.stat(exe).st_mode | stat.S_IEXEC)
     return d, log
 
