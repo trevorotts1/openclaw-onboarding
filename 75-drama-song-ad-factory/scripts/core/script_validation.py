@@ -3,11 +3,34 @@
 Reuses the released S75-T03 contracts (story_first_contracts) rather than
 restating the scene schema. Adds the script-level checks the contract names:
 
-  * one-line placeholder scenes are refused for new authoring
+  * a scene is authored content or it is refused (see THE RULE below)
   * beat-only bypasses (beats present, no scenes) are refused
   * legacy records that predate the contract stay readable, are marked
     COMPATIBILITY_LIMITED with their unresolved rich fields listed, and are
     never regenerated, rewritten or reported as accepted rich scenes
+
+THE RULE
+--------
+A scene is authored content, or it is refused. One rule, applied to every
+scene, with no flag that exempts any part of it:
+
+  1. the scene entry is an object
+  2. ``silent_scene`` is a typed declaration, not a switch: it is absent, or
+     exactly true, or exactly false. A string, an int, a list, a float or any
+     other truthy value is a named refusal. Silence exempts NOTHING else: a
+     silent scene still has to prove it is a real scene with real content.
+  3. the scene carries real performed lines: at least MIN_SCENE_LINES of them,
+     at least MIN_SCENE_LINE_WORDS written words across them, and no
+     placeholder among them
+  4. every written statement in the scene states something: written text, long
+     enough to say it, clause-shaped, not a placeholder, not one token
+     repeated, not a serialization literal
+  5. no statement is pasted into two different jobs
+
+Placeholder content cannot satisfy this: it is too short to clear the word
+floors, it has no clause structure, it names a placeholder, or it is the same
+sentence copied around. That is the point -- the check is about the SHAPE of
+authorship, so no new spelling of a stub gets through.
 
 Stdlib only. Pure functions: no IO, no model dispatch, no mutation of input.
 """
@@ -27,14 +50,20 @@ ORIGIN_LEGACY = "LEGACY"
 
 # ponytail: a scene must carry at least this many written words across its
 # spoken/sung lines, and at least two real lines, to count as authored rather
-# than a placeholder. Raise with reviewer evidence; silent scenes are exempt.
+# than a placeholder. This applies to silent scenes too -- silence is a
+# staging decision, never a content exemption. Raise with reviewer evidence.
 MIN_SCENE_LINE_WORDS = 8
 MIN_SCENE_LINES = 2
 
-# ponytail: free-text quality claims are held to a word floor plus one function
-# word, the cheapest structural stand-in for "this is a statement, not a
-# keyword list". Raise the floors with reviewer evidence.
+# ponytail: free-text claims are held to a word floor plus one function word,
+# the cheapest structural stand-in for "this is a statement, not a keyword
+# list". Raise the floors with reviewer evidence.
 MIN_CLAIM_WORDS = 4
+
+# A time/place specification is a noun phrase ("evening, closing time"), so it
+# is held to a length and variety floor instead of a clause floor. Two words
+# is what separates a written time from a shrug ("sometime", "later", "0").
+MIN_TIME_WORDS = 2
 
 # Closed-class English words that any clause carries and a bare keyword list
 # does not. This is a structural test, never a list of banned values.
@@ -46,17 +75,40 @@ must wants want chooses choose forces force keeps keep makes make
 is are was were be been being has have had do does did
 """.split())
 
+# Serialization literals are code, not prose. A field that names one of these
+# names a data value, never a story value. Closed class, defined by the data
+# formats, not by taste.
+_NON_PROSE_TOKENS = frozenset("""
+true false null none nil nan undefined void yes no
+""".split())
+
 _EMOTION_FIELDS = ("emotion_before", "emotion_after")
 _CLAIM_FIELDS = (("dramatic_purpose", C.MIN_PURPOSE_WORDS),
                  ("visible_action", C.MIN_ACTION_WORDS),
                  ("consequential_choice", C.MIN_CHOICE_WORDS),
                  ("turn_trigger", 3))
+# Fields that must state something now that they are no longer presence-only.
+# (field, word floor, clause-shaped). `time` is a specification ("evening,
+# closing time"), so it is held to length and variety instead of a clause.
+_STATEMENT_FIELDS = (("time", MIN_TIME_WORDS, False),
+                     ("immediate_want", MIN_CLAIM_WORDS, True),
+                     ("obstacle", MIN_CLAIM_WORDS, True),
+                     ("subtext_and_behavior", MIN_CLAIM_WORDS, True))
+
+# Every field whose value is one written statement. Used to refuse the same
+# sentence pasted into two different jobs.
+_ALL_STATEMENT_FIELDS = tuple(
+    [f for f, _ in _CLAIM_FIELDS] + [f for f, _, _ in _STATEMENT_FIELDS] +
+    ["framing_movement_intent", "transition"])
 
 RICH_SCHEMA_VERSIONS = (C.SCENE_SCHEMA_VERSION, "s75.script.v1")
 
 COMPATIBILITY_LIMITED = "COMPATIBILITY_LIMITED"
 
 PLACEHOLDER_TEXT = ("...", "…", "tbd", "todo", "line here", "placeholder")
+
+# Tokens that name an unfilled slot rather than content.
+_PLACEHOLDER_TOKENS = frozenset(("tbd", "todo", "placeholder"))
 
 # Rich fields whose absence makes a legacy record compatibility-limited.
 _RICH_FIELDS = (
@@ -128,6 +180,13 @@ def _tokens(text):
     return [t for t in cleaned.split() if t]
 
 
+def _normalized(value):
+    """The comparable content of a written value; None when it is not text."""
+    if not isinstance(value, str):
+        return None
+    return " ".join(_tokens(value))
+
+
 def is_keyword_only(text):
     """True for a bare keyword list: too short, or no clause structure at all."""
     words = _tokens(text)
@@ -136,38 +195,116 @@ def is_keyword_only(text):
     return not any(word in _FUNCTION_WORDS for word in words)
 
 
-def _claim_defects(value, field, min_words, code="KEYWORD_ONLY_CLAIM"):
-    """A quality claim must state something, not name it."""
+def _is_placeholder_text(value):
+    return isinstance(value, str) and value.strip().lower() in PLACEHOLDER_TEXT
+
+
+# --- one rule: this value states something ---------------------------------
+
+def _statement_defects(value, field, min_words, *, clause=True):
+    """Refuse a value that carries no information.
+
+    One structural test, applied to every written field in the module:
+    written text (never a number, bool, list or null), long enough to state
+    anything, not an unfilled slot, not one token repeated, and -- where the
+    field must be a sentence rather than a specification -- clause-shaped.
+    """
     if not isinstance(value, str):
-        return [_defect(code, field, "claim must be written text")]
-    if C._words(value) < min_words:
-        return [_defect(code, field, "claim is too short to state a job")]
-    if is_keyword_only(value):
-        return [_defect(code, field, "keyword list, not a stated claim")]
+        return [_defect("CLAIM_NOT_WRITTEN", field,
+                        {"reason": "value must be written text",
+                         "got": type(value).__name__})]
+    if _is_placeholder_text(value):
+        return [_defect("PLACEHOLDER_CLAIM", field, "value names an unfilled slot")]
+    tokens = _tokens(value)
+    if not tokens:
+        return [_defect("CLAIM_NOT_WRITTEN", field, "value has no words in it")]
+    if any(token in _NON_PROSE_TOKENS for token in tokens):
+        return [_defect("CLAIM_NOT_WRITTEN", field,
+                        "value names a serialization literal, not a story value")]
+    if any(token in _PLACEHOLDER_TOKENS for token in tokens):
+        return [_defect("PLACEHOLDER_CLAIM", field, "value names an unfilled slot")]
+    if len(tokens) < min_words:
+        return [_defect("KEYWORD_ONLY_CLAIM", field,
+                        "value is too short to state anything (%d words, %d needed)"
+                        % (len(tokens), min_words))]
+    if len(set(tokens)) * 2 <= len(tokens):
+        return [_defect("CLAIM_REPEATED", field, "value is one token repeated")]
+    if clause and not any(token in _FUNCTION_WORDS for token in tokens):
+        return [_defect("KEYWORD_ONLY_CLAIM", field, "keyword list, not a stated claim")]
     return []
+
+
+def _claim_defects(value, field, min_words, code="KEYWORD_ONLY_CLAIM"):
+    """A quality claim must state something, not name it. `code` is kept for
+    callers that name their own refusal; the rule is `_statement_defects`."""
+    defects = _statement_defects(value, field, min_words)
+    if code != "KEYWORD_ONLY_CLAIM":
+        return [_defect(code, d["field"], d.get("detail")) for d in defects]
+    return defects
 
 
 def _sound_cue_defects(scene):
     defects = []
-    for entry in scene.get("sound_music_cues") or []:
-        if not isinstance(entry, str) or not entry.strip():
-            defects.append(_defect("KEYWORD_ONLY_CLAIM", "sound_music_cues",
-                                   "cue must be written text"))
-        else:
-            defects.extend(_claim_defects(entry, "sound_music_cues", MIN_CLAIM_WORDS))
+    cues = scene.get("sound_music_cues") or []
+    if not isinstance(cues, (list, tuple)):
+        cues = [cues]
+    for entry in cues:
+        defects.extend(_statement_defects(entry, "sound_music_cues", MIN_CLAIM_WORDS))
     return defects
 
 
 def _emotion_change_defects(scene):
-    """A scene must move its performers; identical before/after is no turn."""
-    before = scene.get("emotion_before")
-    after = scene.get("emotion_after")
-    if not isinstance(before, str) or not isinstance(after, str):
-        return []
-    if " ".join(_tokens(before)) == " ".join(_tokens(after)):
-        return [_defect("EMOTION_STAGNANT", "emotion_after",
-                        "emotion_before and emotion_after name no change")]
-    return []
+    """A scene must move its performers; two values that name no change are not
+    a turn, and two values that are not written emotion words are not emotions
+    at all."""
+    defects = []
+    normalized = {}
+    for field in _EMOTION_FIELDS:
+        value = scene.get(field)
+        if not isinstance(value, str):
+            defects.append(_defect("EMOTION_NOT_GENUINE", field,
+                                   {"reason": "emotion must be written text",
+                                    "got": type(value).__name__}))
+            normalized[field] = None
+            continue
+        text = _normalized(value)
+        if not text:
+            defects.append(_defect("EMOTION_NOT_GENUINE", field, "emotion names nothing"))
+            normalized[field] = None
+            continue
+        if _is_placeholder_text(value) or any(
+                token in _PLACEHOLDER_TOKENS or token in _NON_PROSE_TOKENS
+                for token in _tokens(value)):
+            defects.append(_defect("EMOTION_NOT_GENUINE", field,
+                                   "emotion names a slot or a literal, not a state"))
+            normalized[field] = None
+            continue
+        normalized[field] = text
+    before = normalized.get("emotion_before")
+    after = normalized.get("emotion_after")
+    raw_before = scene.get("emotion_before")
+    raw_after = scene.get("emotion_after")
+    if before == after or raw_before == raw_after:
+        defects.append(_defect("EMOTION_STAGNANT", "emotion_after",
+                               "emotion_before and emotion_after name no change"))
+    return defects
+
+
+def _repetition_defects(scene):
+    """One statement pasted into two jobs is one statement, not two."""
+    seen = {}
+    defects = []
+    for field in _ALL_STATEMENT_FIELDS:
+        text = _normalized(scene.get(field))
+        if not text:
+            continue
+        if text in seen:
+            defects.append(_defect("CLAIM_REPEATED", field,
+                                   {"reason": "same statement as another field",
+                                    "same_as": seen[text]}))
+        else:
+            seen[text] = field
+    return defects
 
 
 def _context_defects(world, cast_manifest):
@@ -221,25 +358,71 @@ def _performer_defects(scenes, cast_manifest):
     return defects
 
 
-def _is_placeholder(scene):
-    """A one-line placeholder scene: unstructured, or a single stub line."""
-    if isinstance(scene, str):
-        return True
-    if not isinstance(scene, dict):
-        return False
-    if scene.get("silent_scene"):
-        return False
+def _line_texts(scene):
+    """Every line text the scene claims to perform, placeholders included."""
     texts = []
     for field in ("spoken_dialogue", "sung_lyrics"):
-        for line in scene.get(field) or []:
+        entries = scene.get(field) or []
+        if not isinstance(entries, (list, tuple)):
+            entries = [entries]
+        for line in entries:
             if isinstance(line, dict):
-                texts.append(str(line.get("text") or "").strip().lower())
-    real = [t for t in texts if t and t not in PLACEHOLDER_TEXT]
-    if not real:
-        return True
-    if len(real) < MIN_SCENE_LINES or _line_words(scene) < MIN_SCENE_LINE_WORDS:
-        return True
-    return any(t in PLACEHOLDER_TEXT for t in texts)
+                texts.append(str(line.get("text") or "").strip())
+            else:
+                texts.append(str(line or "").strip())
+    return texts
+
+
+def _scene_content_defects(scene):
+    """THE RULE for one scene. Returns every named refusal it earns.
+
+    There is no short-circuit here and none may be added: no flag, field or
+    type exempts a scene from proving it carries authored content.
+    """
+    sid = scene.get("scene_id") if isinstance(scene, dict) else None
+    if not isinstance(scene, dict):
+        return [_defect("SCENE_ENTRY_NOT_OBJECT", "scenes",
+                        "scene entry must be an object, got %s" % type(scene).__name__),
+                _defect("PLACEHOLDER_SCENE", "scenes", "unstructured scene")]
+
+    defects = []
+
+    # 2. silence is a typed declaration, not a bypass switch.
+    silence = scene.get("silent_scene")
+    if silence is not None and not isinstance(silence, bool):
+        defects.append(_defect("SILENT_SCENE_FLAG", "silent_scene",
+                               {"reason": "silent_scene must be true or false, "
+                                          "never a truthy value that switches checks off",
+                                "got": type(silence).__name__}))
+
+    # 3. real performed lines, and no placeholder among them.
+    texts = _line_texts(scene)
+    placeholder_free = [t for t in texts if t and not _is_placeholder_text(t)]
+    if any(_is_placeholder_text(t) for t in texts):
+        defects.append(_defect("PLACEHOLDER_SCENE", "scenes",
+                               sid or "unstructured scene"))
+    if len(placeholder_free) < MIN_SCENE_LINES or _line_words(scene) < MIN_SCENE_LINE_WORDS:
+        defects.append(_defect("PLACEHOLDER_SCENE", "scenes",
+                               sid or "unstructured scene"))
+    for field in ("spoken_dialogue", "sung_lyrics"):
+        entries = scene.get(field) or []
+        if not isinstance(entries, (list, tuple)):
+            entries = [entries]
+        for line in entries:
+            text = line.get("text") if isinstance(line, dict) else line
+            defects.extend(_statement_defects(text, field, C.MIN_LINE_WORDS, clause=False))
+
+    # 4. every written statement states something.
+    for field, min_words, clause in _STATEMENT_FIELDS:
+        defects.extend(_statement_defects(scene.get(field), field, min_words, clause=clause))
+    for field, min_words in _CLAIM_FIELDS:
+        defects.extend(_statement_defects(scene.get(field), field, min_words))
+    for field in ("framing_movement_intent", "transition"):
+        defects.extend(_statement_defects(scene.get(field), field, MIN_CLAIM_WORDS))
+
+    # 5. no statement pasted into two jobs.
+    defects.extend(_repetition_defects(scene))
+    return defects
 
 
 def _lip_sync_defects(scene):
@@ -317,6 +500,9 @@ def validate_script(script, origin=ORIGIN_NEW, world=None, cast_manifest=None):
         for scene in scene_list:
             if not isinstance(scene, dict):
                 unresolved.update(_RICH_FIELDS)
+                defects.append(_defect("SCENE_ENTRY_NOT_OBJECT", "scenes",
+                                       "scene entry must be an object, got %s"
+                                       % type(scene).__name__))
                 continue
             for field in _RICH_FIELDS:
                 if C._blank(scene.get(field)):
@@ -335,10 +521,11 @@ def validate_script(script, origin=ORIGIN_NEW, world=None, cast_manifest=None):
     seen = set()
     previous = None
     for scene in scenes if isinstance(scenes, list) else []:
-        sid = scene.get("scene_id") if isinstance(scene, dict) else None
-        if _is_placeholder(scene):
-            defects.append(_defect("PLACEHOLDER_SCENE", "scenes", sid or "unstructured scene"))
+        if not isinstance(scene, dict):
+            defects.extend(_scene_content_defects(scene))
             continue
+        sid = scene.get("scene_id")
+        defects.extend(_scene_content_defects(scene))
         if sid in seen:
             defects.append(_defect("DUPLICATE_SCENE_ID", "scene_id", sid))
         seen.add(sid)
@@ -347,10 +534,6 @@ def validate_script(script, origin=ORIGIN_NEW, world=None, cast_manifest=None):
         defects.extend(_lip_sync_defects(scene))
         defects.extend(_emotion_change_defects(scene))
         defects.extend(_sound_cue_defects(scene))
-        for field, min_words in _CLAIM_FIELDS:
-            defects.extend(_claim_defects(scene.get(field), field, min_words))
-        for field in ("framing_movement_intent", "transition"):
-            defects.extend(_claim_defects(scene.get(field), field, MIN_CLAIM_WORDS))
         if world is not None:
             defects.extend(_geography_defects(scene, world))
         predecessor = scene.get("causal_predecessor")
