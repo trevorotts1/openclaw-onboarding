@@ -167,3 +167,45 @@ model-list response or assistant assertion is not that evidence. Never claim
 that chain members or provider execution were verified by this no-generation
 intake/bootstrap check. Existing owner projects remain unchanged unless a
 separate authorized migration is actually performed and verified.
+
+## Governed production admission
+
+Run confirmed-intake planning without approving an unseen script or storyboard:
+
+```bash
+python3 scripts/core/intake_preflight/factory.py preflight --run-dir "$RUN"
+python3 scripts/core/intake_preflight/factory.py next --run-dir "$RUN"
+```
+
+A dependency-only or diagnostic preflight explicitly reports that it has not
+admitted production. To check a particular canonical stage, add
+`--stage "<canonical stage>"`. The shared admission code reads the actual
+validated factory stage registry; it checks confirmed raw answer provenance,
+run identity, completed predecessor transitions and required artifacts. Do not
+write an authorization JSON file, card receipt or database row to satisfy a
+refusal. These projections do not grant authority.
+
+When the client elected script approval, the whole current script, every scene
+and lyrics require their existing revision-bound artifact decisions before
+music. Song choice remains a separate downstream gate when elected. Storyboard
+artifact approval uses the current shot contracts and stills after keyframes
+exist, before video generation. Preferences, spending caps and a general request
+to begin do not approve unseen artifacts. Creative dramatic proposals remain
+allowed; label their sources accurately and present the whole package.
+
+The paid dispatch boundary checks admission before planning/reserving spend and
+rechecks it with the current request before real submission. Vocal separation
+and picture repair carry their actual canonical stage context. Explicit offline
+runner simulations remain available but report non-authoritative evidence;
+their receipts cannot establish a completed production predecessor.
+
+Existing legacy answers are preserved. A legacy run with current revision-bound
+artifact decisions and matching governed stage history can resume. Missing or
+ambiguous authority returns a specific hold; it does not reset the run or
+reconstruct old client replies. Live SQLite state is read without modifying the
+source store or ignoring its pending WAL updates.
+
+These checks enforce supported entrypoints and application evidence. They do
+not establish an operating-system security boundary against a party able to
+rewrite the code and all histories. Do not claim an absolute filesystem lock or
+that admission proves a provider call occurred.
