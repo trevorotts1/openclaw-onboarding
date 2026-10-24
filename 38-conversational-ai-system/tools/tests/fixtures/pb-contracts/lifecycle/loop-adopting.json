@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "tenant_id": "tenant-alpha",
+  "loop_id": "loop-1",
+  "controller_id": "ctrl-1",
+  "controller_generation": 1,
+  "state": "ADOPTING",
+  "applied_event_revision": 1,
+  "closed_event_revision": null,
+  "stop_action_id": null,
+  "finalizer_evidence_id": null,
+  "client_runtime_jobs_protected": true,
+  "updated_at": "2026-10-24T09:00:00Z",
+  "state_reason": null
+}

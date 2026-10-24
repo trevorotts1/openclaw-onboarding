@@ -187,7 +187,16 @@
             "approval_revision",
             "suppression_revision",
             "owner_fence",
-            "binding_revision"
+            "binding_revision",
+            "policy_revision",
+            "authority_revision",
+            "lifecycle_state",
+            "content_revision",
+            "asset_version_id",
+            "schedule_evidence_id",
+            "quiet_rule_status",
+            "platform_publishing_permission",
+            "reveal_order_verified"
           ],
           "properties": {
             "checked_at": {
@@ -227,6 +236,49 @@
             "binding_revision": {
               "type": "string",
               "minLength": 1
+            },
+            "policy_revision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authority_revision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lifecycle_state": {
+              "enum": [
+                "NOT_INSTALLED",
+                "ADOPTING",
+                "RUNNING",
+                "PAUSED_RESUMABLE",
+                "CLOSING",
+                "CLOSED",
+                "CANCELED"
+              ]
+            },
+            "content_revision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "asset_version_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "schedule_evidence_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "quiet_rule_status": {
+              "enum": [
+                "CLEAR",
+                "IN_QUIET_WINDOW"
+              ]
+            },
+            "platform_publishing_permission": {
+              "type": "boolean"
+            },
+            "reveal_order_verified": {
+              "type": "boolean"
             }
           }
         },
@@ -261,6 +313,44 @@
             "string",
             "null"
           ]
+        },
+        "scheduled_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cta_text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keyword": {
+          "type": "string",
+          "minLength": 1
+        },
+        "promised_item_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bonus_asset_versions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "conversation_policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_spare_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "precondition": {
           "type": "object",
@@ -311,6 +401,14 @@
         "approval_manifest_id",
         "approval_revision",
         "parent_post_id",
+        "scheduled_at",
+        "timezone",
+        "cta_text",
+        "keyword",
+        "promised_item_version",
+        "bonus_asset_versions",
+        "conversation_policy_version",
+        "allowed_spare_ids",
         "precondition"
       ],
       "allOf": [
@@ -538,11 +636,21 @@
           "required": [
             "checked_at",
             "decision",
-            "eligibility_evidence_id",
+            "eligibility_evidence",
             "consent_evidence_id",
             "suppression_revision",
             "owner_fence",
-            "binding_revision"
+            "binding_revision",
+            "policy_revision",
+            "authority_revision",
+            "lifecycle_state",
+            "content_revision",
+            "asset_version_id",
+            "schedule_evidence_id",
+            "quiet_rule_status",
+            "trusted_contact_mapping_evidence_id",
+            "inbound_dm_window",
+            "eligibility_refreshed_by"
           ],
           "properties": {
             "checked_at": {
@@ -558,11 +666,43 @@
                 "RECONCILE_UNKNOWN"
               ]
             },
-            "eligibility_evidence_id": {
-              "type": [
-                "string",
-                "null"
-              ]
+            "eligibility_evidence": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "purpose": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "checked_at": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "basis": {
+                    "enum": [
+                      "INBOUND_MESSAGE",
+                      "CONSENT_RECORD",
+                      "PLATFORM_ELIGIBILITY",
+                      "OUTBOUND_MESSAGE",
+                      "CROSS_CHANNEL_MESSAGE"
+                    ]
+                  }
+                },
+                "required": [
+                  "purpose",
+                  "evidence_id",
+                  "checked_at",
+                  "basis"
+                ]
+              }
             },
             "consent_evidence_id": {
               "type": [
@@ -581,6 +721,59 @@
             "binding_revision": {
               "type": "string",
               "minLength": 1
+            },
+            "policy_revision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authority_revision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lifecycle_state": {
+              "enum": [
+                "NOT_INSTALLED",
+                "ADOPTING",
+                "RUNNING",
+                "PAUSED_RESUMABLE",
+                "CLOSING",
+                "CLOSED",
+                "CANCELED"
+              ]
+            },
+            "content_revision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "asset_version_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "schedule_evidence_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "quiet_rule_status": {
+              "enum": [
+                "CLEAR",
+                "IN_QUIET_WINDOW"
+              ]
+            },
+            "trusted_contact_mapping_evidence_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inbound_dm_window": {
+              "type": "boolean"
+            },
+            "eligibility_refreshed_by": {
+              "enum": [
+                "INBOUND_MESSAGE",
+                "CONSENT_RECORD",
+                "PLATFORM_ELIGIBILITY",
+                "OUTBOUND_MESSAGE",
+                "CROSS_CHANNEL_MESSAGE"
+              ]
             }
           }
         },

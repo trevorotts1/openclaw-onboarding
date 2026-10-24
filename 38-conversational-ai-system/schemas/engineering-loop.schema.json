@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Engineering loop lifecycle with one applied-event revision and a crash-surviving controller identity",
+  "description": "Purple Billboard DATA-CONTRACTS section 9. The canonical loop lifecycle is NOT_INSTALLED -> ADOPTING -> RUNNING or PAUSED_RESUMABLE -> CLOSING -> CLOSED, and CANCELED is a distinct disposition. There is no CLOSED_VERIFIED alias: CLOSED is the only closed state. The CLOSED update is carried at exactly one applied event revision, and the controller identity is never recreated after a crash.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "loop_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "controller_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "controller_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "enum": [
+        "NOT_INSTALLED",
+        "ADOPTING",
+        "RUNNING",
+        "PAUSED_RESUMABLE",
+        "CLOSING",
+        "CLOSED",
+        "CANCELED"
+      ]
+    },
+    "applied_event_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "closed_event_revision": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "stop_action_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "finalizer_evidence_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "client_runtime_jobs_protected": {
+      "const": true
+    },
+    "updated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "loop_id",
+    "controller_id",
+    "controller_generation",
+    "state",
+    "applied_event_revision",
+    "closed_event_revision",
+    "stop_action_id",
+    "finalizer_evidence_id",
+    "client_runtime_jobs_protected",
+    "updated_at",
+    "state_reason"
+  ]
+}

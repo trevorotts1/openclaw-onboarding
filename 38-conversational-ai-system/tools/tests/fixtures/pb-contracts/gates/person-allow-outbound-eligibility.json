@@ -1,0 +1,26 @@
+{
+  "checked_at": "2026-10-24T10:00:00Z",
+  "decision": "ALLOW",
+  "consent_evidence_id": null,
+  "suppression_revision": "sup-1",
+  "owner_fence": 4,
+  "binding_revision": "binding-7",
+  "eligibility_evidence": [
+    {
+      "purpose": "ORIGINAL_GIFT",
+      "evidence_id": "ev-elig-1",
+      "checked_at": "2026-10-24T09:58:00Z",
+      "basis": "OUTBOUND_MESSAGE"
+    }
+  ],
+  "policy_revision": "policy-3",
+  "authority_revision": "auth-1",
+  "lifecycle_state": "RUNNING",
+  "content_revision": "content-9",
+  "asset_version_id": "asset-2",
+  "schedule_evidence_id": "ev-sched-1",
+  "quiet_rule_status": "CLEAR",
+  "trusted_contact_mapping_evidence_id": "ev-tcm-1",
+  "inbound_dm_window": true,
+  "eligibility_refreshed_by": "INBOUND_MESSAGE"
+}

@@ -66,5 +66,17 @@
   "pending_request_ids": [
     "REQ-2",
     "REQ-3"
-  ]
+  ],
+  "channel_references": [
+    {
+      "channel": "FB_DM",
+      "conversation_id": "conv-9"
+    }
+  ],
+  "capture_budget": {
+    "max_reminders": 3,
+    "max_sms_email_asks": 1,
+    "reminders_used": 1,
+    "sms_email_asks_used": 1
+  }
 }

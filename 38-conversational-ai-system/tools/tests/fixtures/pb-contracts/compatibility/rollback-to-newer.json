@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "protocol_version": "proto-2",
+  "reader_version": "1.4.0",
+  "writer_version": "1.4.0",
+  "migration_checkpoint": "ckpt-12",
+  "writer_generation": 3,
+  "config_revision": "cfg-8",
+  "upgrade_wrote_revision": 7,
+  "client_revision": 9,
+  "rollback": {
+    "mode": "ROLLBACK",
+    "target_revision": 9,
+    "reason": "client fix"
+  },
+  "never_rolled_back": [
+    "sent_effects",
+    "contact_facts",
+    "consent_suppression",
+    "counters",
+    "unknown_send_reconciliation"
+  ],
+  "updated_at": "2026-10-24T09:00:00Z"
+}

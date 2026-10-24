@@ -43,6 +43,9 @@ KIND_DIRS = {
     "approval": "approval",
     "readiness": "readiness",
     "action": "action",
+    "lifecycle": "lifecycle",
+    "compatibility": "compatibility",
+    "reconciliation": "reconciliation",
 }
 
 
@@ -52,6 +55,13 @@ def run(*argv):
     with contextlib.redirect_stdout(buffer):
         code = contracts.main([str(arg) for arg in argv])
     return code, json.loads(buffer.getvalue())
+
+
+def dispatch(ledger, action, gate, manifest=None, now="2026-10-24T10:01:00Z"):
+    argv = ["dispatch", "--action", action, "--gate", gate, "--ledger", ledger, "--now", now]
+    if manifest:
+        argv += ["--manifest", manifest]
+    return run(*argv)
 
 
 def fixture(*parts):
@@ -84,6 +94,9 @@ class ControlTests(unittest.TestCase):
             ("approval", fixture("approval", "manifest.json")),
             ("readiness", fixture("readiness", "valid.json")),
             ("action", fixture("action", "completed-valid.json")),
+            ("lifecycle", fixture("lifecycle", "loop-closed.json")),
+            ("compatibility", fixture("compatibility", "valid.json")),
+            ("reconciliation", fixture("reconciliation", "merge-by-verified-identifier.json")),
         ]
         for kind, path in cases:
             code, payload = run("validate", "--kind", kind, "--file", path)
@@ -293,6 +306,228 @@ class DispatchTests(Fixture):
         self.assertEqual(1, code, payload)
         self.assertEqual("QUARANTINED", payload["decision"])
         self.assertEqual("BINDING_CHANGED", payload["reason"])
+
+
+class LifecycleTests(unittest.TestCase):
+    """DATA-CONTRACTS section 9: the loop ladder, one controller, one event revision."""
+
+    def test_closed_verified_alias_is_rejected(self):
+        code, payload = run("validate", "--kind", "lifecycle",
+                            "--file", fixture("lifecycle", "loop-closed-verified.json"))
+        self.assertEqual(1, code)
+        self.assertFalse(payload["ok"])
+        self.assertTrue(any("CLOSED_VERIFIED" in err for err in payload["errors"]), payload["errors"])
+
+    def test_claiming_closed_early_is_rejected(self):
+        code, payload = run("validate", "--kind", "lifecycle",
+                            "--file", fixture("lifecycle", "loop-closed-early.json"))
+        self.assertEqual(1, code)
+        self.assertTrue(any("closed_event_revision" in err for err in payload["errors"]), payload["errors"])
+
+    def test_lifecycle_transition_table(self):
+        cases = [
+            ("adopting may start running", "loop-adopting.json", "loop-running.json", True),
+            ("closing closes on the finalizer", "loop-closing.json", "loop-closed.json", True),
+            ("running cannot skip closing", "loop-running.json", "loop-closed.json", False),
+            ("a crashed controller is never recreated", "loop-closing.json", "loop-closed-recreated.json", False),
+        ]
+        for label, before, after, expected in cases:
+            with self.subTest(label):
+                code, payload = run(
+                    "transition", "--kind", "lifecycle",
+                    "--before", fixture("lifecycle", before), "--after", fixture("lifecycle", after),
+                )
+                self.assertEqual(expected, payload["ok"], "%s: %s" % (label, payload.get("errors")))
+                self.assertEqual(0 if expected else 1, code)
+                if not expected:
+                    self.assertTrue(payload["errors"], "%s failed without a reason" % label)
+
+
+class CompatibilityTests(unittest.TestCase):
+    """DATA-CONTRACTS section 10: rollback compares the revision the upgrade wrote."""
+
+    def test_valid_record_is_accepted(self):
+        code, payload = run("validate", "--kind", "compatibility",
+                            "--file", fixture("compatibility", "valid.json"))
+        self.assertEqual(0, code, payload)
+        self.assertTrue(payload["ok"])
+
+    def test_rollback_to_a_newer_client_revision_is_rejected(self):
+        code, payload = run("validate", "--kind", "compatibility",
+                            "--file", fixture("compatibility", "rollback-to-newer.json"))
+        self.assertEqual(1, code)
+        self.assertFalse(payload["ok"])
+        self.assertTrue(any("forward repair" in err for err in payload["errors"]), payload["errors"])
+
+    def test_writer_generation_is_required(self):
+        code, payload = run("validate", "--kind", "compatibility",
+                            "--file", fixture("compatibility", "no-writer-generation.json"))
+        self.assertEqual(1, code)
+        self.assertTrue(any("writer_generation" in err for err in payload["errors"]), payload["errors"])
+
+
+class ReconciliationTests(unittest.TestCase):
+    """DATA-CONTRACTS section 1: verified identifiers, never by name, never across tenants."""
+
+    def test_verified_identifier_merge_is_accepted(self):
+        code, payload = run("validate", "--kind", "reconciliation",
+                            "--file", fixture("reconciliation", "merge-by-verified-identifier.json"))
+        self.assertEqual(0, code, payload)
+        self.assertTrue(payload["ok"])
+
+    def test_merge_rules(self):
+        cases = [
+            ("merge-by-display-name.json", "never merge by display name"),
+            ("merge-across-tenants.json", "never merge across tenants"),
+            ("identifier-from-other-tenant.json", "not this tenant's"),
+        ]
+        for name, needle in cases:
+            with self.subTest(name):
+                code, payload = run("validate", "--kind", "reconciliation",
+                                    "--file", fixture("reconciliation", name))
+                self.assertEqual(1, code)
+                self.assertFalse(payload["ok"])
+                self.assertTrue(any(needle in err for err in payload["errors"]), payload["errors"])
+
+
+class PlacementDivergenceTests(Fixture):
+    """DATA-CONTRACTS section 3: the approved manifest is the authority."""
+
+    MUTATIONS = [
+        ("channel", "manifest-mut-channel.json"),
+        ("scheduled_at", "manifest-mut-scheduled-at.json"),
+        ("timezone", "manifest-mut-timezone.json"),
+        ("cta_text", "manifest-mut-cta-text.json"),
+        ("keyword", "manifest-mut-keyword.json"),
+        ("promised_item_version", "manifest-mut-promised-item-version.json"),
+        ("bonus_asset_versions", "manifest-mut-bonus-asset-versions.json"),
+        ("conversation_policy_version", "manifest-mut-conversation-policy-version.json"),
+        ("allowed_spare_ids", "manifest-mut-allowed-spare-ids.json"),
+    ]
+
+    def test_each_mutated_field_blocks_dispatch_and_names_itself(self):
+        for index, (field, name) in enumerate(self.MUTATIONS):
+            with self.subTest(field):
+                mutated = fixture("approval", name)
+                # The probe document is a well-formed manifest: the block below is
+                # the divergence check, not a blanket schema failure.
+                code, payload = run("validate", "--kind", "approval", "--file", mutated)
+                self.assertEqual(0, code, payload)
+                self.assertTrue(payload["ok"], "%s is not a valid manifest: %s" % (name, payload["errors"]))
+
+                # Known-good control: the pristine pair still dispatches.
+                code, control = dispatch(str(self.ledger_dir / ("ctl-%d.json" % index)),
+                                         fixture("outbound", "public-placement.json"),
+                                         fixture("gates", "public-allow.json"),
+                                         fixture("approval", "manifest.json"))
+                self.assertEqual(0, code, control)
+                self.assertEqual("DISPATCHED", control["decision"], control)
+
+                code, payload = dispatch(str(self.ledger_dir / ("mut-%d.json" % index)),
+                                         fixture("outbound", "public-placement.json"),
+                                         fixture("gates", "public-allow.json"), mutated)
+                self.assertEqual(1, code, payload)
+                self.assertEqual("STALE_APPROVAL", payload["decision"])
+                self.assertIn(field, payload["reason"])
+                self.assertTrue(
+                    any(err.startswith("$.%s:" % field) for err in payload["errors"]), payload["errors"]
+                )
+
+
+class CrossTenantContactTests(Fixture):
+    """DATA-CONTRACTS section 1: one contact is reconciled inside one tenant."""
+
+    def test_same_contact_under_two_tenants_cannot_both_dispatch(self):
+        code, first = dispatch(str(self.ledger_dir / "one.json"), fixture("outbound", "person-gift.json"),
+                               fixture("gates", "person-allow.json"))
+        self.assertEqual(0, code, first)
+        self.assertEqual("DISPATCHED", first["decision"], first)
+
+        code, second = dispatch(str(self.ledger_dir / "one.json"),
+                                fixture("outbound", "person-gift-other-tenant.json"),
+                                fixture("gates", "person-allow.json"))
+        self.assertEqual(1, code, second)
+        self.assertEqual("QUARANTINED", second["decision"])
+        self.assertIn("CONTACT-77", second["reason"])
+
+    def test_control_a_different_contact_still_dispatches(self):
+        other = copy.deepcopy(json.loads(Path(fixture("outbound", "person-gift-other-tenant.json")).read_text()))
+        other["canonical_contact_id"] = "contact-88"
+        path = self.ledger_dir / "other-contact.json"
+        path.write_text(json.dumps(other), encoding="utf-8")
+        dispatch(str(self.ledger_dir / "two.json"), fixture("outbound", "person-gift.json"),
+                 fixture("gates", "person-allow.json"))
+        code, payload = dispatch(str(self.ledger_dir / "two.json"), str(path),
+                                 fixture("gates", "person-allow.json"))
+        self.assertEqual(0, code, payload)
+        self.assertEqual("DISPATCHED", payload["decision"], payload)
+
+
+class CollectionContractTests(unittest.TestCase):
+    """DATA-CONTRACTS sections 1 and 8: cardinality, budgets and real timestamps."""
+
+    CASES = [
+        ("duplicate reminder slots", "collection", "duplicate-reminder-slots.json", "reminder_slots"),
+        ("a non-timestamp", "collection", "non-timestamp.json", "requested_at"),
+        ("the origin reference is missing", "collection", "origin-reference-missing.json", "channel_references"),
+        ("the capture budget is exceeded", "collection", "capture-budget-exceeded.json", "capture_budget"),
+        ("duplicate pending request ids", "collection", "duplicate-pending-ids.json", "pending_request_ids"),
+        ("an approved manifest with zero placements", "approval", "manifest-zero-placements.json", "placements"),
+    ]
+
+    def test_rejections_name_the_field(self):
+        for label, kind, name, field in self.CASES:
+            with self.subTest(label):
+                code, payload = run("validate", "--kind", kind, "--file", fixture(kind, name))
+                self.assertEqual(1, code, payload)
+                self.assertFalse(payload["ok"])
+                self.assertTrue(any(field in err for err in payload["errors"]), payload["errors"])
+
+    def test_controls_still_validate(self):
+        for kind, parts in [("collection", ("collection", "valid.json")), ("approval", ("approval", "manifest.json"))]:
+            code, payload = run("validate", "--kind", kind, "--file", fixture(*parts))
+            self.assertEqual(0, code, "%s should validate: %s" % (parts, payload.get("errors")))
+
+
+class GateRecordTests(Fixture):
+    """DATA-CONTRACTS section 3: what the gate record must carry and prove."""
+
+    def test_public_control_dispatches(self):
+        code, payload = dispatch(str(self.ledger_dir / "pub.json"), fixture("outbound", "public-placement.json"),
+                                 fixture("gates", "public-allow.json"), fixture("approval", "manifest.json"))
+        self.assertEqual(0, code, payload)
+        self.assertEqual("DISPATCHED", payload["decision"], payload)
+
+    def test_public_without_platform_permission_is_refused(self):
+        code, payload = dispatch(str(self.ledger_dir / "pub2.json"), fixture("outbound", "public-placement.json"),
+                                 fixture("gates", "public-allow-no-publish-permission.json"),
+                                 fixture("approval", "manifest.json"))
+        self.assertEqual(1, code, payload)
+        self.assertEqual("NO_PLATFORM_PUBLISHING_PERMISSION", payload["reason"])
+
+    def test_person_control_dispatches(self):
+        code, payload = dispatch(str(self.ledger_dir / "per.json"), fixture("outbound", "person-gift.json"),
+                                 fixture("gates", "person-allow.json"))
+        self.assertEqual(0, code, payload)
+        self.assertEqual("DISPATCHED", payload["decision"], payload)
+
+    def test_a_comment_opener_is_not_an_inbound_dm_window(self):
+        code, payload = dispatch(str(self.ledger_dir / "per2.json"), fixture("outbound", "person-comment-opener.json"),
+                                 fixture("gates", "person-allow.json"))
+        self.assertEqual(1, code, payload)
+        self.assertEqual("COMMENT_OPENER_IS_NOT_AN_INBOUND_DM_WINDOW", payload["reason"])
+
+    def test_a_dm_without_an_inbound_window_is_refused(self):
+        code, payload = dispatch(str(self.ledger_dir / "per3.json"), fixture("outbound", "person-gift.json"),
+                                 fixture("gates", "person-allow-no-window.json"))
+        self.assertEqual(1, code, payload)
+        self.assertEqual("NO_INBOUND_DM_WINDOW", payload["reason"])
+
+    def test_outbound_does_not_refresh_eligibility(self):
+        code, payload = dispatch(str(self.ledger_dir / "per4.json"), fixture("outbound", "person-gift.json"),
+                                 fixture("gates", "person-allow-outbound-eligibility.json"))
+        self.assertEqual(1, code, payload)
+        self.assertEqual("ELIGIBILITY_NOT_REFRESHED_BY_OUTBOUND", payload["reason"])
 
 
 def _iter_document_cases():

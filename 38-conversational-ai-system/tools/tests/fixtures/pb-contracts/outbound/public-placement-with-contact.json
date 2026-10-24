@@ -37,5 +37,17 @@
     "tenant_publication_active": true,
     "parent_post_verified": false
   },
-  "canonical_contact_id": "contact-77"
+  "canonical_contact_id": "contact-77",
+  "scheduled_at": "2026-11-01T15:00:00Z",
+  "timezone": "America/New_York",
+  "cta_text": "Comment GUIDE and I will send it.",
+  "keyword": "GUIDE",
+  "promised_item_version": "v3",
+  "bonus_asset_versions": [
+    "bonus-v1"
+  ],
+  "conversation_policy_version": "policy-3",
+  "allowed_spare_ids": [
+    "spare-a"
+  ]
 }

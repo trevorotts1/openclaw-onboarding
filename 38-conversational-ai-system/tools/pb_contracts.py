@@ -10,7 +10,7 @@ DATA-CONTRACTS.md sections 1, 2, 3, 9 and 10 (DEC-02, DEC-08).
 
 Commands
   validate    --kind KIND --file F [--manifest M]
-  transition  --kind collection|action --before B --after A
+  transition  --kind collection|action|lifecycle --before B --after A
   dispatch    --action F --gate G --ledger L [--manifest M] [--now T]
               [--max-gate-age-seconds N]
   receipt     --ledger L --key K --status S [--provider-object-id X]
@@ -44,7 +44,50 @@ SCHEMA_FILES = {
     "approval": "approval-manifest.schema.json",
     "readiness": "readiness-evidence.schema.json",
     "action": "action-lifecycle.schema.json",
+    "lifecycle": "engineering-loop.schema.json",
+    "compatibility": "compatibility-record.schema.json",
+    "reconciliation": "contact-reconciliation.schema.json",
 }
+
+# DATA-CONTRACTS section 3: the return must carry binding, policy and fence.
+GATE_COMMON_CHECKS = [
+    ("policy_revision", "policy_version", "POLICY_CHANGED"),
+    ("content_revision", "content_revision", "CONTENT_CHANGED"),
+    ("asset_version_id", "asset_version_id", "ASSET_CHANGED"),
+]
+# Section 3 public branch: exact approved placement/account/channel/schedule/CTA/
+# keyword/assets/spares. The approved manifest is the authority, so any divergence
+# on these fields blocks dispatch and names the field.
+PLACEMENT_BOUND_FIELDS = [
+    "channel",
+    "scheduled_at",
+    "timezone",
+    "content_revision",
+    "cta_text",
+    "keyword",
+    "promised_item_version",
+    "bonus_asset_versions",
+    "conversation_policy_version",
+    "allowed_spare_ids",
+]
+LIFECYCLE_LADDER = ["NOT_INSTALLED", "ADOPTING", "RUNNING", "PAUSED_RESUMABLE", "CLOSING", "CLOSED"]
+LIFECYCLE_EDGES = {
+    "NOT_INSTALLED": {"ADOPTING"},
+    "ADOPTING": {"RUNNING", "CANCELED"},
+    "RUNNING": {"PAUSED_RESUMABLE", "CLOSING", "CANCELED"},
+    "PAUSED_RESUMABLE": {"RUNNING", "CLOSING", "CANCELED"},
+    "CLOSING": {"CLOSED", "CANCELED"},
+    "CLOSED": set(),
+    "CANCELED": set(),
+}
+NEVER_ROLLED_BACK = [
+    "sent_effects",
+    "contact_facts",
+    "consent_suppression",
+    "counters",
+    "unknown_send_reconciliation",
+]
+DM_CHANNELS = {"FB_DM", "IG_DM"}
 
 READINESS_KEYS = ["installed", "configured", "running", "replied", "fulfilled"]
 TERMINAL_COLLECTION = {
@@ -134,6 +177,8 @@ def validate_schema(schema, value, path="$"):
             errs.append("%s: above maximum %r" % (path, schema["maximum"]))
 
     if isinstance(value, list):
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            errs.append("%s: fewer than minItems %d" % (path, schema["minItems"]))
         if "maxItems" in schema and len(value) > schema["maxItems"]:
             errs.append("%s: more than maxItems %d" % (path, schema["maxItems"]))
         if schema.get("uniqueItems"):
@@ -258,11 +303,64 @@ def semantic_collection(doc):
             errs.append("%s: fulfilled item requires fulfilled_at" % path)
         if item["status"] != "fulfilled" and item["fulfilled_at"]:
             errs.append("%s: only a fulfilled item may carry fulfilled_at" % path)
+        try:
+            parse_ts(item["requested_at"], "%s.requested_at" % path)
+            if item["fulfilled_at"] is not None:
+                parse_ts(item["fulfilled_at"], "%s.fulfilled_at" % path)
+        except UsageError as exc:
+            errs.append(str(exc))
     if len(set(request_ids)) != len(request_ids):
         errs.append("$.requested_items: duplicate request_id")
     stray = [rid for rid in doc["pending_request_ids"] if rid not in request_ids]
     if stray:
         errs.append("$.pending_request_ids: unknown request ids %s" % stray)
+    if len(set(doc["pending_request_ids"])) != len(doc["pending_request_ids"]):
+        errs.append("$.pending_request_ids: duplicate request id")
+
+    # Section 1: FB, IG and SMS references share one lock, so the reference set is
+    # 1..n and the origin must be one of its members.
+    references = doc["channel_references"]
+    pairs = [(ref["channel"], ref["conversation_id"]) for ref in references]
+    if len(set(pairs)) != len(pairs):
+        errs.append("$.channel_references: duplicate channel reference")
+    if (doc["originating_channel"], doc["originating_conversation_id"]) not in pairs:
+        errs.append(
+            "$.channel_references: must contain the originating %s reference %r"
+            % (doc["originating_channel"], doc["originating_conversation_id"])
+        )
+
+    budget = doc["capture_budget"]
+    if budget["reminders_used"] > budget["max_reminders"]:
+        errs.append("$.capture_budget: reminders_used exceeds the capture budget")
+    if budget["sms_email_asks_used"] > budget["max_sms_email_asks"]:
+        errs.append("$.capture_budget: sms_email_asks_used exceeds the capture budget")
+    if budget["reminders_used"] < doc["reminders_accepted"]:
+        errs.append("$.capture_budget: reminders_used cannot be below reminders_accepted")
+
+    # Section 8: three distinct slots, in order.
+    slots = doc["reminder_slots"]
+    numbers = [slot["slot"] for slot in slots]
+    if len(set(numbers)) != len(numbers):
+        errs.append("$.reminder_slots: duplicate slot number %s" % sorted(numbers))
+    if numbers != sorted(numbers):
+        errs.append("$.reminder_slots: slot numbers must be listed in order")
+    dues = []
+    for index, slot in enumerate(slots):
+        path = "$.reminder_slots[%d]" % index
+        try:
+            dues.append((parse_ts(slot["due_at"], "%s.due_at" % path), index))
+        except UsageError as exc:
+            errs.append(str(exc))
+    if len(dues) == len(slots):
+        for earlier, later in zip(dues, dues[1:]):
+            if later[0] <= earlier[0]:
+                errs.append("$.reminder_slots: due_at must increase across slots")
+
+    if doc["t0"] is not None:
+        try:
+            parse_ts(doc["t0"], "t0")
+        except UsageError as exc:
+            errs.append(str(exc))
     return errs
 
 
@@ -301,6 +399,18 @@ def semantic_approval(doc):
     placement_ids = [p["placement_id"] for p in doc["placements"]]
     if len(set(placement_ids)) != len(placement_ids):
         errs.append("$.placements: duplicate placement_id")
+    if doc["status"] in {"APPROVED", "PARTIAL_INVALIDATED"} and not doc["placements"]:
+        errs.append("$.placements: an approved manifest binds at least one placement")
+    for earlier, later in zip(doc["placements"], doc["placements"][1:]):
+        if later["scheduled_at"] < earlier["scheduled_at"]:
+            errs.append("$.placements: placement slots must be listed in schedule order")
+        if later["placement_id"] == earlier["placement_id"]:
+            errs.append("$.placements: duplicate placement slot %r" % later["placement_id"])
+    for placement in doc["placements"]:
+        try:
+            parse_ts(placement["scheduled_at"], "placements[%s].scheduled_at" % placement["placement_id"])
+        except UsageError as exc:
+            errs.append(str(exc))
     invalid = [p for p in doc["placements"] if p["approval_status"] == "INVALIDATED"]
     if doc["status"] == "APPROVED" and invalid:
         errs.append("$.placements: an APPROVED manifest cannot contain invalidated placements")
@@ -396,12 +506,113 @@ def semantic_action(doc):
     return errs
 
 
+def semantic_lifecycle(doc):
+    """Section 9: CLOSED is carried at one applied event revision by one controller."""
+    errs = []
+    state = doc["state"]
+    try:
+        parse_ts(doc["updated_at"], "updated_at")
+    except UsageError as exc:
+        errs.append(str(exc))
+
+    if state == "CLOSING" and not doc["stop_action_id"]:
+        errs.append("$.stop_action_id: a CLOSING loop keeps the stop action")
+    if state == "CLOSED":
+        if not doc["stop_action_id"]:
+            errs.append("$.stop_action_id: CLOSED requires the stop action")
+        if not doc["finalizer_evidence_id"]:
+            errs.append("$.finalizer_evidence_id: CLOSED requires the finalizer terminal receipt")
+        if doc["closed_event_revision"] is None:
+            errs.append("$.closed_event_revision: CLOSED must name the applied event revision")
+        elif doc["closed_event_revision"] != doc["applied_event_revision"]:
+            errs.append(
+                "$.closed_event_revision: the CLOSED update is carried at one applied event "
+                "revision (%r != %r)" % (doc["closed_event_revision"], doc["applied_event_revision"])
+            )
+    else:
+        if doc["closed_event_revision"] is not None:
+            errs.append("$.closed_event_revision: only CLOSED carries a closed event revision")
+        if doc["finalizer_evidence_id"] is not None:
+            errs.append("$.finalizer_evidence_id: only CLOSED carries the finalizer receipt")
+    return errs
+
+
+def semantic_compat(doc):
+    """Section 10: rollback compares the revision the upgrade wrote."""
+    errs = []
+    try:
+        parse_ts(doc["updated_at"], "updated_at")
+    except UsageError as exc:
+        errs.append(str(exc))
+
+    missing = [name for name in NEVER_ROLLED_BACK if name not in doc["never_rolled_back"]]
+    if missing:
+        errs.append("$.never_rolled_back: missing %s" % missing)
+
+    rollback = doc["rollback"]
+    target = rollback["target_revision"]
+    if rollback["mode"] == "ROLLBACK":
+        if target is None:
+            errs.append("$.rollback.target_revision: a rollback names the revision it returns to")
+        elif target > doc["upgrade_wrote_revision"]:
+            errs.append(
+                "$.rollback.target_revision: %d is a newer client revision than the %d the "
+                "upgrade wrote; that conflict is repaired forward, never rolled back"
+                % (target, doc["upgrade_wrote_revision"])
+            )
+        if doc["client_revision"] > doc["upgrade_wrote_revision"]:
+            errs.append(
+                "$.rollback.mode: client revision %d is newer than the revision the upgrade "
+                "wrote (%d), so this is a forward repair, not a rollback"
+                % (doc["client_revision"], doc["upgrade_wrote_revision"])
+            )
+    elif rollback["mode"] == "NONE" and target is not None:
+        errs.append("$.rollback.target_revision: mode NONE names no target revision")
+    return errs
+
+
+def semantic_reconciliation(doc):
+    """Section 1: verified identifiers, supported merges, never by name or across tenants."""
+    errs = []
+    try:
+        parse_ts(doc["updated_at"], "updated_at")
+    except UsageError as exc:
+        errs.append(str(exc))
+    for index, ident in enumerate(doc["verified_identifiers"]):
+        path = "$.verified_identifiers[%d]" % index
+        try:
+            parse_ts(ident["verified_at"], "%s.verified_at" % path)
+        except UsageError as exc:
+            errs.append(str(exc))
+        if ident["tenant_id"] != doc["tenant_id"]:
+            errs.append("%s: an identifier from tenant %r is not this tenant's to reconcile" % (path, ident["tenant_id"]))
+
+    merge = doc["merge"]
+    if merge["basis"] == "DISPLAY_NAME":
+        errs.append("$.merge.basis: never merge by display name")
+    if merge["basis"] == "CROSS_TENANT":
+        errs.append("$.merge.basis: never merge across tenants")
+    if merge["mode"] == "MERGE":
+        if merge["basis"] != "VERIFIED_IDENTIFIER":
+            errs.append("$.merge.basis: a merge requires a verified identifier")
+        if not merge["target_canonical_contact_id"]:
+            errs.append("$.merge.target_canonical_contact_id: a merge names its target")
+        if merge["target_canonical_contact_id"] in merge["source_canonical_contact_ids"]:
+            errs.append("$.merge.source_canonical_contact_ids: a contact is not its own source")
+    if doc["preserved"]["suppression_kept"] != "STRICTER":
+        errs.append("$.preserved.suppression_kept: preserve the stricter suppression")
+    return errs
+
+
 SEMANTIC = {
     "collection": semantic_collection,
     "outbound": semantic_outbound,
     "approval": semantic_approval,
     "readiness": semantic_readiness,
     "action": semantic_action,
+    "lifecycle": semantic_lifecycle,
+    "compatibility": semantic_compat,
+    "reconciliation": semantic_reconciliation,
 }
 
 
@@ -487,8 +698,10 @@ def cmd_transition(args):
         errs.extend(collection_transition_errors(before, after))
     elif not errs and args.kind == "action":
         errs.extend(action_transition_errors(before, after))
+    elif not errs and args.kind == "lifecycle":
+        errs.extend(lifecycle_transition_errors(before, after))
     elif not errs:
-        raise UsageError("transition supports kind collection or action, got %r" % args.kind)
+        raise UsageError("transition supports kind collection, action or lifecycle, got %r" % args.kind)
 
     return emit(
         {
@@ -560,6 +773,41 @@ def action_transition_errors(before, after):
     return errs
 
 
+def lifecycle_transition_errors(before, after):
+    """Section 9: the loop ladder, one controller, one applied event revision."""
+    errs = []
+    for field in ("tenant_id", "loop_id", "controller_id"):
+        if before[field] != after[field]:
+            errs.append(
+                "$.%s: identity cannot change (%r -> %r); a crashed controller is never recreated"
+                % (field, before[field], after[field])
+            )
+    if after["controller_generation"] < before["controller_generation"]:
+        errs.append("$.controller_generation: must not decrease")
+    if after["applied_event_revision"] <= before["applied_event_revision"]:
+        errs.append(
+            "$.applied_event_revision: must increase (%d -> %d)"
+            % (before["applied_event_revision"], after["applied_event_revision"])
+        )
+
+    old, new = before["state"], after["state"]
+    if old == new:
+        return errs
+    if new not in LIFECYCLE_EDGES[old]:
+        errs.append("$.state: unsupported transition %r -> %r" % (old, new))
+        return errs
+    if new == "CLOSED":
+        if after["closed_event_revision"] != after["applied_event_revision"]:
+            errs.append(
+                "$.closed_event_revision: the CLOSED update is carried at one applied event revision"
+            )
+        elif after["closed_event_revision"] <= before["applied_event_revision"]:
+            errs.append(
+                "$.closed_event_revision: the CLOSED update must be a new applied event revision"
+            )
+    return errs
+
+
 def cmd_dispatch(args):
     action = load_json(args.action)
     errs = check_document("outbound", action)
@@ -614,6 +862,24 @@ def cmd_dispatch(args):
     if existing and existing["status"] not in RETRYABLE_STATUSES | {"dispatching"}:
         return refuse("INVALID", "ACTION_STATUS_%s_NOT_DISPATCHABLE" % existing["status"].upper())
 
+    # Section 1: a contact is reconciled and dispatched inside one tenant. The same
+    # canonical_contact_id under another tenant is a different person's record.
+    contact = action.get("canonical_contact_id")
+    if contact:
+        holders = sorted(
+            {
+                other["tenant_id"]
+                for other in ledger["actions"].values()
+                if other.get("canonical_contact_id") == contact
+            }
+            - {action["tenant_id"]}
+        )
+        if holders:
+            return refuse(
+                "QUARANTINED",
+                "CONTACT_%s_ALREADY_BOUND_TO_TENANT_%s" % (contact.upper(), ",".join(holders).upper()),
+            )
+
     if gate["decision"] != "ALLOW":
         return refuse(gate["decision"], "GATE_DECISION")
     if gate["binding_revision"] != action["account_binding_revision"]:
@@ -636,11 +902,12 @@ def cmd_dispatch(args):
 
     approval_errs = approval_errors(action, args.manifest)
     if approval_errs:
+        named = sorted({err.split(":")[0][2:] for err in approval_errs if err.startswith("$.")})
         payload = {
             "ok": False,
             "command": "dispatch",
             "decision": "STALE_APPROVAL",
-            "reason": "APPROVAL_NOT_CURRENT",
+            "reason": "APPROVAL_NOT_CURRENT" + (":" + ",".join(named) if named else ""),
             "action_id": action["action_id"],
             "idempotency_key": key,
             "attempts": len(existing["attempts"]) if existing else 0,
@@ -648,14 +915,40 @@ def cmd_dispatch(args):
         }
         return emit(payload)
 
+    # Section 3 common checks: current authority and lifecycle, exact content and
+    # asset, scheduling and quiet rules. The return carries binding, policy, fence.
+    for gate_field, action_field, reason in GATE_COMMON_CHECKS:
+        if gate[gate_field] != action[action_field]:
+            return refuse("QUARANTINED", reason)
+    if gate["lifecycle_state"] not in {"RUNNING", "PAUSED_RESUMABLE"}:
+        return refuse("SUPPRESSED", "LIFECYCLE_%s" % gate["lifecycle_state"])
+    if gate["quiet_rule_status"] != "CLEAR":
+        return refuse("SUPPRESSED", "QUIET_RULE_%s" % gate["quiet_rule_status"])
+
     if action["scope"] == "public_placement":
         if gate["publication_paused"]:
             return refuse("SUPPRESSED", "PUBLICATION_PAUSED")
+        if gate["platform_publishing_permission"] is not True:
+            return refuse("SUPPRESSED", "NO_PLATFORM_PUBLISHING_PERMISSION")
         if action["purpose"] in {"REVEAL_COMMENT", "BONUS_COMMENT"}:
             if gate["parent_post_verified"] is not True:
                 return refuse("PARENT_UNVERIFIED", "REVEAL_PARENT_NOT_VERIFIED")
+            if gate["reveal_order_verified"] is not True:
+                return refuse("SUPPRESSED", "REVEAL_ORDER_NOT_VERIFIED")
     else:
-        if not gate["eligibility_evidence_id"] and not gate["consent_evidence_id"]:
+        if not gate["trusted_contact_mapping_evidence_id"]:
+            return refuse("SUPPRESSED", "NO_TRUSTED_CONTACT_MAPPING")
+        if action["purpose"] == "COMMENT_PRIVATE_OPENER" and gate["inbound_dm_window"]:
+            return refuse("SUPPRESSED", "COMMENT_OPENER_IS_NOT_AN_INBOUND_DM_WINDOW")
+        if action["channel"] in DM_CHANNELS and not gate["inbound_dm_window"]:
+            return refuse("SUPPRESSED", "NO_INBOUND_DM_WINDOW")
+        records = [r for r in gate["eligibility_evidence"] if r["purpose"] == action["purpose"]]
+        stale_basis = {"OUTBOUND_MESSAGE", "CROSS_CHANNEL_MESSAGE"}
+        # Outbound and cross-channel messages do not refresh FB/IG eligibility.
+        usable = [r for r in records if r["evidence_id"] and r["basis"] not in stale_basis]
+        if not usable and not gate["consent_evidence_id"]:
+            if any(r["basis"] in stale_basis for r in records) and action["channel"] in DM_CHANNELS:
+                return refuse("SUPPRESSED", "ELIGIBILITY_NOT_REFRESHED_BY_OUTBOUND")
             return refuse("SUPPRESSED", "NO_DELIVERY_BASIS")
 
     attempt_no = (len(existing["attempts"]) if existing else 0) + 1
@@ -672,11 +965,13 @@ def cmd_dispatch(args):
         "action_id": action["action_id"],
         "tenant_id": action["tenant_id"],
         "logical_intent_key": action["logical_intent_key"],
+        "canonical_contact_id": action.get("canonical_contact_id"),
         "scope": action["scope"],
         "purpose": action["purpose"],
         "attempts": [],
         "receipts": [],
     }
+    entry["canonical_contact_id"] = action.get("canonical_contact_id")
     entry["attempts"].append(attempt)
     entry["status"] = "dispatching"
     entry["updated_at"] = args.now or now_utc()
@@ -751,6 +1046,16 @@ def approval_errors(action, manifest_path):
                 )
             if placement["content_revision"] != action["content_revision"]:
                 problems.append("$.content_revision: placement approved %r" % placement["content_revision"])
+            for field in PLACEMENT_BOUND_FIELDS:
+                approved = placement[field]
+                attempted = action[field]
+                if isinstance(approved, list):
+                    approved, attempted = sorted(approved), sorted(attempted or [])
+                if approved != attempted:
+                    problems.append(
+                        "$.%s: diverges from the approved placement %r (approved %r)"
+                        % (field, attempted, approved)
+                    )
     return problems
 
 
@@ -801,7 +1106,7 @@ def build_parser():
     validate.set_defaults(func=cmd_validate)
 
     transition = sub.add_parser("transition", help="validate a state transition")
-    transition.add_argument("--kind", required=True, choices=["collection", "action"])
+    transition.add_argument("--kind", required=True, choices=["collection", "action", "lifecycle"])
     transition.add_argument("--before", required=True)
     transition.add_argument("--after", required=True)
     transition.set_defaults(func=cmd_transition)
