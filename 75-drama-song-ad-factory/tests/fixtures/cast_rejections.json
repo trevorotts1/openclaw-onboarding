@@ -206,6 +206,87 @@
       "name": "reject_blank_scene_cast_id_entry",
       "expect": {"field": "scene.cast_ids", "issue_contains": "cast id empty"},
       "scene_patch": {"cast_ids": ["char_mara_001", ""]}
+    },
+    {
+      "name": "reject_crowd_referenced_in_scene_its_record_forbids",
+      "expect": {"field": "scene.crowd_group_ids", "issue_contains": "not permitted in this scene"},
+      "crowd_patch": {"scene_ids": ["scene_other_20"],
+                      "location_placement": {"scene_other_20": "far rail, out of focus"}},
+      "cast_entry_patches": [{"index": 0, "set": {"scene_ids": ["scene_ferry_deck_103", "scene_other_20"]}},
+                             {"index": 1, "set": {"scene_ids": ["scene_ferry_deck_103"]}}],
+      "scene_patch": {"scene_id": "scene_ferry_deck_103"},
+      "extra_scenes": [{"scene_id": "scene_other_20", "cast_ids": ["char_mara_001"], "crowd_group_ids": []}]
+    },
+    {
+      "name": "reject_crowd_membership_unprovable",
+      "expect": {"field": "scene.crowd_group_ids", "issue_contains": "membership unprovable"},
+      "crowd_patch": {"scene_ids": "scene_workshop_001"}
+    },
+    {
+      "name": "reject_cast_episode_role_number",
+      "expect": {"field": "cast.episode_role", "issue_contains": "not a string"},
+      "cast_entry_patch": {"index": 0, "set": {"episode_role": 0}}
+    },
+    {
+      "name": "reject_cast_episode_role_boolean",
+      "expect": {"field": "cast.episode_role", "issue_contains": "not a string"},
+      "cast_entry_patch": {"index": 0, "set": {"episode_role": false}}
+    },
+    {
+      "name": "reject_cast_episode_role_outside_vocabulary",
+      "expect": {"field": "cast.episode_role", "issue_contains": "vocabulary"},
+      "cast_entry_patch": {"index": 0, "set": {"episode_role": "wizard banana"}}
+    },
+    {
+      "name": "reject_cast_story_function_boolean",
+      "expect": {"field": "cast.immediate_story_function", "issue_contains": "not a string"},
+      "cast_entry_patch": {"index": 0, "set": {"immediate_story_function": false}}
+    },
+    {
+      "name": "reject_cast_story_function_number",
+      "expect": {"field": "cast.immediate_story_function", "issue_contains": "not a string"},
+      "cast_entry_patch": {"index": 0, "set": {"immediate_story_function": 0}}
+    },
+    {
+      "name": "reject_cast_story_function_without_content",
+      "expect": {"field": "cast.immediate_story_function", "issue_contains": "no real content"},
+      "cast_entry_patch": {"index": 0, "set": {"immediate_story_function": "x"}}
+    },
+    {
+      "name": "reject_cast_choice_single_token_list",
+      "expect": {"field": "cast.choice_or_consequence",
+                 "issue_contains": "list entries must be strings with real content"},
+      "cast_entry_patch": {"index": 0, "set": {"choice_or_consequence": ["x"]}}
+    },
+    {
+      "name": "reject_cast_choice_number",
+      "expect": {"field": "cast.choice_or_consequence", "issue_contains": "not a string"},
+      "cast_entry_patch": {"index": 0, "set": {"choice_or_consequence": 5}}
+    },
+    {
+      "name": "reject_cast_choice_boolean",
+      "expect": {"field": "cast.choice_or_consequence", "issue_contains": "not a string"},
+      "cast_entry_patch": {"index": 0, "set": {"choice_or_consequence": true}}
+    },
+    {
+      "name": "reject_crowd_age_range_number",
+      "expect": {"field": "crowd_groups.age_range", "issue_contains": "not a string"},
+      "crowd_patch": {"age_range": 5}
+    },
+    {
+      "name": "reject_crowd_dialogue_number",
+      "expect": {"field": "crowd_groups.dialogue", "issue_contains": "not a string"},
+      "crowd_patch": {"dialogue": 7}
+    },
+    {
+      "name": "reject_crowd_permitted_motion_boolean",
+      "expect": {"field": "crowd_groups.permitted_motion", "issue_contains": "not a string"},
+      "crowd_patch": {"permitted_motion": true}
+    },
+    {
+      "name": "reject_crowd_roles_token_list",
+      "expect": {"field": "crowd_groups.roles", "issue_contains": "no relevant roles"},
+      "crowd_patch": {"roles": ["x"]}
     }
   ]
 }

@@ -44,11 +44,16 @@ def _case(data, case):
         entry.update(copy.deepcopy(patch.get("set", {})))
         for key in patch.get("delete", []):
             entry.pop(key, None)
+    for patch in case.get("cast_entry_patches") or []:
+        entry = manifest["cast"][patch.get("index", 0)]
+        entry.update(copy.deepcopy(patch.get("set", {})))
+        for key in patch.get("delete", []):
+            entry.pop(key, None)
     if case.get("scene_patch"):
         scene.update(copy.deepcopy(case["scene_patch"]))
     for key in case.get("scene_delete", []):
         scene.pop(key, None)
-    return manifest, [scene]
+    return manifest, [scene] + copy.deepcopy(case.get("extra_scenes") or [])
 
 
 def _matching(packet, expected):
@@ -186,6 +191,77 @@ def test_speaker_sources_cover_lyrics_actions_and_reactions():
     packet = CV.validate_cast({"cast": []}, [scene])
     assert packet["ok"] is False
     assert sum(1 for d in packet["defects"] if "not declared in cast" in d["issue"]) >= 1
+
+
+def _case_named(data, name):
+    return next(c for c in data["cases"] if c["name"] == name)
+
+
+def test_crowd_in_a_scene_its_own_record_forbids_is_refused():
+    """Existence is not permission: the group exists, the scene exists, still no."""
+    data = _fixture()
+    case = _case_named(data, "reject_crowd_referenced_in_scene_its_record_forbids")
+    before = CV.validate_cast(*_case(data, dict(case,
+                                               crowd_patch={"scene_ids": ["scene_ferry_deck_103"],
+                                                            "location_placement":
+                                                                {"scene_ferry_deck_103": "far rail, out of focus"}})))
+    assert before["ok"] is True, before["defects"]
+    packet = CV.validate_cast(*_case(data, case))
+    assert packet["ok"] is False
+    assert _matching(packet, case["expect"]), packet["defects"]
+
+
+def test_crowd_membership_error_is_distinct_from_undefined_crowd():
+    data = _fixture()
+    cases = {_case_named(data, n)["expect"]["issue_contains"]
+             for n in ("reject_crowd_referenced_in_scene_its_record_forbids",
+                       "reject_crowd_membership_unprovable",
+                       "reject_undefined_crowd_reference")}
+    assert len(cases) == 3, cases
+
+
+def test_substantive_cast_fields_refuse_falsy_and_wrong_type_values():
+    """Presence is not content: 0, False and ["x"] are each refused by name."""
+    data = _fixture()
+    patches = ({"episode_role": 0}, {"episode_role": False}, {"episode_role": ["lead"]},
+               {"immediate_story_function": 0}, {"immediate_story_function": False},
+               {"immediate_story_function": "x"},
+               {"choice_or_consequence": ["x"]}, {"choice_or_consequence": 5},
+               {"choice_or_consequence": True}, {"choice_or_consequence": []})
+    for value in patches:
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch": {"index": 0, "set": value}}))
+        assert packet["ok"] is False, value
+        field = "cast." + next(iter(value))
+        assert any(d["field"] == field for d in packet["defects"]), (value, packet["defects"])
+
+
+def test_episode_role_must_come_from_the_story_vocabulary():
+    data = _fixture()
+    good = {"index": 0, "set": {"episode_role": "supporting partner"}}
+    assert CV.validate_cast(*_case(data, {"cast_entry_patch": good}))["ok"] is True
+    for bad in ("wizard banana", "lead banana", "zzzz"):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch": {"index": 0, "set": {"episode_role": bad}}}))
+        assert packet["ok"] is False, bad
+        assert _matching(packet, {"field": "cast.episode_role",
+                                  "issue_contains": "vocabulary"}), packet["defects"]
+
+
+def test_choice_or_consequence_accepts_real_text_and_real_lists():
+    data = _fixture()
+    for value in ("Disclosure shifts her from isolation to shared responsibility.",
+                  ["She tells the truth.", "The ledger opens."]):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch": {"index": 0, "set": {"choice_or_consequence": value}}}))
+        assert packet["ok"] is True, (value, packet["defects"])
+
+
+def test_crowd_fields_refuse_numbers_booleans_and_token_lists():
+    data = _fixture()
+    for patch in ({"age_range": 5}, {"dialogue": 7}, {"permitted_motion": True},
+                  {"roles": ["x"]}, {"wardrobe_palette": 0}):
+        packet = CV.validate_cast(*_case(data, {"crowd_patch": patch}))
+        field = "crowd_groups." + next(iter(patch))
+        assert packet["ok"] is False, patch
+        assert any(d["field"] == field for d in packet["defects"]), (patch, packet["defects"])
 
 
 if __name__ == "__main__":
