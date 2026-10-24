@@ -9,9 +9,11 @@ Proves, behaviourally:
   * `storyboard` on a run WITH control/studio-order.json calls the (stubbed)
     approvals_bridge.publish once, with the cards text, every still, and the
     stage "storyboard";
-  * `next` turns a (stubbed) studio ANSWER into the EXISTING apply command:
-    storyboard -> `storyboard --reply`, song pick -> `song_choices.py pick`,
-    script -> `script-reply`;
+  * the real studio adapter proposes the EXISTING apply command for its
+    (stubbed) answer: storyboard -> `storyboard --reply`, song pick ->
+    `song_choices.py pick`, script -> `script-reply`; public `next` still
+    requires the actual artifact/pick handler to record the decision, and a
+    contextless script reply cannot fabricate client provenance;
   * a chat run (no studio order) answers nothing: the storyboard gate still
     waits, the song gate still refuses — the studio never opens a gate by
     being absent.
@@ -30,7 +32,6 @@ import argparse
 import json
 import os
 import shutil
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,8 @@ for _p in (str(CORE), str(HERE)):
         sys.path.insert(0, _p)
 
 import factory as F   # noqa: E402
+from test_production_process import (confirmed_run, complete_stage, approve_script,
+                                    run_hashes)  # noqa: E402
 
 STAGES = ("research", "creative-strategy", "script-lyrics", "music",
           "continuity-bible", "storyboard", "image-keyframes",
@@ -86,16 +89,25 @@ def make_storyboard_run(tmp, studio=False):
 
 
 def make_state_run(tmp, upto):
-    """A run whose control/state.sqlite3 marks every stage before `upto`
-    COMPLETE and `upto` itself NOT_STARTED."""
-    run = Path(tempfile.mkdtemp(dir=str(tmp), prefix="ds-state-"))
-    (run / "control").mkdir()
-    with sqlite3.connect(str(run / "control" / "state.sqlite3")) as con:
-        con.execute("CREATE TABLE stages(run_id TEXT, stage TEXT, state TEXT)")
-        for s in STAGES:
-            con.execute("INSERT INTO stages VALUES('R',?,?)",
-                        (s, "COMPLETE" if STAGES.index(s) < STAGES.index(upto)
-                         else "NOT_STARTED"))
+    """Real confirmed intake and predecessor history up to the pending stage."""
+    run = (make_storyboard_run(tmp) if upto == "video-generation" else
+           Path(tempfile.mkdtemp(dir=str(tmp), prefix="ds-state-")))
+    confirmed_run(run, script=True, song=upto == "continuity-bible",
+                  storyboard=upto == "video-generation")
+    if upto == "music":
+        creative = run / "creative"
+        creative.mkdir(exist_ok=True)
+        shutil.copyfile(CORE / "story_arc" / "fixtures" / "valid.json", creative / "story.json")
+        shutil.copyfile(CORE / "lyric_writer" / "fixtures" / "campaign.json", creative / "lyrics.json")
+        (creative / "script.json").write_text(json.dumps(
+            {"title": "The Climb", "story": [["The world", ["She runs a small shop."]]],
+             "sheet": [{"tag": "Intro", "lines": ["One closed door."]},
+                       {"tag": "Hook 1", "lines": ["I am not sma-a-all", "I ne-ever wa-a-as"]}],
+             "lyrics": "One closed door.\nI am not sma-a-all\nI ne-ever wa-a-as"}), "utf-8")
+    else:
+        approve_script(run)
+    for stage in STAGES[:STAGES.index(upto)]:
+        complete_stage(run, stage)
     return run
 
 
@@ -143,6 +155,18 @@ def patched(attr, value):
         yield
     finally:
         setattr(F, attr, saved)
+
+
+@contextmanager
+def observed_studio_apply():
+    """Observe real routing output without altering the admission decision."""
+    original, results = F._studio_apply, []
+    def observe(*args, **kwargs):
+        result = original(*args, **kwargs)
+        results.append(result)
+        return result
+    with patched("_studio_apply", observe):
+        yield results
 
 
 @contextmanager
@@ -228,11 +252,17 @@ def test_storyboard_second_send_is_a_new_version():
 # ── next: a studio answer becomes the existing apply command ─────────────────
 
 def test_next_storyboard_answer_becomes_storyboard_reply():
-    with tmpdir("ds-state-") as tmp, bridge(answer="GO") as fb:
+    with tmpdir("ds-state-") as tmp, bridge(answer="GO") as fb, observed_studio_apply() as routed:
         run = make_state_run(tmp, "video-generation")
         (run / "control" / "studio-order.json").write_text(json.dumps(
             {"order_id": "o-1", "base_url": "https://studio.example"}), "utf-8")
-        env = F.cmd_next(ns(run_dir=str(run)))
+        before = run_hashes(run)
+        public = F.cmd_next(ns(run_dir=str(run)))
+        assert public["outcome"] == "waiting" and not public["data"]["production_admitted"], public
+        assert public["reason_code"] == "PRODUCTION_PROCESS_UNVERIFIED", public
+        assert "storyboard/approval.json" in public["data"]["production_process"]["detail"], public
+        assert public["data"]["command"] is None and run_hashes(run) == before
+        env = routed[-1]
         assert env["outcome"] == "ok" and env["data"]["approval"] == "storyboard", env
         cmd = env["data"]["command"]
         assert "factory.py storyboard" in cmd and "--reply GO" in cmd
@@ -250,14 +280,18 @@ def test_next_storyboard_gate_still_waits_without_an_answer():
 
 
 def test_next_song_pick_answer_becomes_song_pick():
-    with tmpdir("ds-state-") as tmp, bridge(answer="2"):
+    with tmpdir("ds-state-") as tmp, bridge(answer="2"), observed_studio_apply() as routed:
         run = make_state_run(tmp, "continuity-bible")
-        (run / "song-choices").mkdir()
+        (run / "song-choices").mkdir(exist_ok=True)
         (run / "song-choices" / "state.json").write_text(
             json.dumps({"required": True, "offered": {}}), "utf-8")
         (run / "control" / "studio-order.json").write_text(json.dumps(
             {"order_id": "o-1", "base_url": "https://studio.example"}), "utf-8")
-        env = F.cmd_next(ns(run_dir=str(run)))
+        before = run_hashes(run)
+        public = F.cmd_next(ns(run_dir=str(run)))
+        assert public["outcome"] == "waiting" and public["reason_code"] == "SONG_PICK_MISSING", public
+        assert public["data"]["command"] is None and run_hashes(run) == before
+        env = routed[-1]
         assert env["outcome"] == "ok" and env["data"]["approval"] == "song", env
         assert "song_choices.py pick" in env["data"]["command"]
         assert "--reply 2" in env["data"]["command"]
@@ -266,32 +300,33 @@ def test_next_song_pick_answer_becomes_song_pick():
 def test_next_song_gate_still_refuses_without_an_answer():
     with tmpdir("ds-state-") as tmp, bridge():
         run = make_state_run(tmp, "continuity-bible")
-        (run / "song-choices").mkdir()
+        (run / "song-choices").mkdir(exist_ok=True)
         (run / "song-choices" / "state.json").write_text(
             json.dumps({"required": True, "offered": {}}), "utf-8")
         env = F.cmd_next(ns(run_dir=str(run)))
         assert env["outcome"] == "error" and env["reason_code"] == "SONG_PICK_MISSING", env
 
 
-_SCRIPT_SENT = lambda rd, a, reply=None: {"outcome": "waiting",   # noqa: E731
-                                          "reason": "script-sent",
-                                          "messages": [], "delivered": []}
-
-
 def test_next_script_answer_becomes_script_reply():
-    with tmpdir("ds-state-") as tmp, bridge(answer="approve, love it"), \
-            patched("_script_gate", _SCRIPT_SENT):
+    with tmpdir("ds-state-") as tmp, bridge(answer="approve, love it"), observed_studio_apply() as routed:
         run = make_state_run(tmp, "music")
         (run / "control" / "studio-order.json").write_text(json.dumps(
             {"order_id": "o-1", "base_url": "https://studio.example"}), "utf-8")
-        env = F.cmd_next(ns(run_dir=str(run)))
+        public = F.cmd_next(ns(run_dir=str(run)))
+        assert public["outcome"] == "waiting" and public["reason_code"] == "SCRIPT_NOT_APPROVED", public
+        assert public["data"]["command"] is None
+        env = routed[-1]
         assert env["outcome"] == "ok" and env["data"]["approval"] == "script", env
         cmd = env["data"]["command"]
         assert "factory.py script-reply" in cmd and "--reply 'approve, love it'" in cmd
+        before = run_hashes(run)
+        refused = F.cmd_script_reply(ns(run_dir=str(run), reply="approve, love it"))
+        assert refused["reason_code"] == "ARTIFACT_REPLY_CONTEXT_REQUIRED", refused
+        assert run_hashes(run) == before
 
 
 def test_next_script_waiting_without_studio_stays_waiting():
-    with tmpdir("ds-state-") as tmp, bridge(), patched("_script_gate", _SCRIPT_SENT):
+    with tmpdir("ds-state-") as tmp, bridge():
         run = make_state_run(tmp, "music")
         env = F.cmd_next(ns(run_dir=str(run)))
         assert env["outcome"] == "waiting" and \

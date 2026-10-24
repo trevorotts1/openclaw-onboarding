@@ -20,6 +20,8 @@ Run: python3 scripts/core/style_defaults/test_card_gate_f15.py
 stdlib only; no network, no provider, $0 spend.
 """
 import json
+import io
+from contextlib import redirect_stdout
 import math
 import re
 import subprocess
@@ -190,9 +192,10 @@ def test_preflight_refuses_paid_work_without_card():
                   "summary_digest": "t",
                   "card_receipt": CG.answered_stamped(
                       ANSWERS, "Trevor", datetime.now(timezone.utc))})
-    check("preflight with recorded card passes",
-          r2.get("outcome") == "ok", "%s/%s" % (r2.get("outcome"),
-                                                r2.get("reason_code")))
+    check("recorded card preflight is dependency-only, not production admission",
+          r2.get("outcome") == "ok" and r2.get("reason_code") == "preflight-pass-dependencies"
+          and r2.get("production_admitted") is False,
+          "%s/%s" % (r2.get("outcome"), r2.get("reason_code")))
 
 def test_dispatch_refuses_paid_job_without_card():
     env = KD.dispatch(model="minimax/h3-768p", request={}, save_dir="/tmp",
@@ -212,30 +215,31 @@ def test_cli_preflight_gated():
         auth = os.path.join(tmp, "auth.json")
         with open(auth, "w", encoding="utf-8") as fh:
             json.dump({"scope": "campaign"}, fh)
-        run = subprocess.run(
-            [sys.executable, str(FACTORY), "preflight", "--root", tmp,
-             "--storage-dir", tmp, "--profile", "drama-9x16-60s",
-             "--auth-file", auth, "--summary-digest", "t"],
-            capture_output=True, text=True)
-        env = json.loads(run.stdout)
+        from intake_preflight import factory
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = factory.main(["preflight", "--root", tmp,
+                                 "--storage-dir", tmp, "--profile", "drama-9x16-60s",
+                                 "--auth-file", auth, "--summary-digest", "t"])
+        env = json.loads(out.getvalue())
         check("CLI preflight without card -> CARD_UNANSWERED",
               env.get("reason_code") == "CARD_UNANSWERED",
-              "%s (exit %s, stderr %s)" % (env.get("reason_code"),
-                                           run.returncode,
-                                           run.stderr.strip()[:160]))
+              "%s (exit %s)" % (env.get("reason_code"), code))
         receipt = os.path.join(tmp, "card.json")
         with open(receipt, "w", encoding="utf-8") as fh:
             json.dump(CG.answered_stamped(ANSWERS, "Trevor",
                                           datetime.now(timezone.utc)), fh)
-        run2 = subprocess.run(
-            [sys.executable, str(FACTORY), "preflight", "--root", tmp,
-             "--storage-dir", tmp, "--profile", "drama-9x16-60s",
-             "--auth-file", auth, "--summary-digest", "t",
-             "--card-receipt-file", receipt],
-            capture_output=True, text=True)
-        env2 = json.loads(run2.stdout)
-        check("CLI preflight with recorded card passes",
-              env2.get("outcome") == "ok" and env2.get("reason_code") == "preflight-pass",
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = factory.main(["preflight", "--root", tmp,
+                                 "--storage-dir", tmp, "--profile", "drama-9x16-60s",
+                                 "--auth-file", auth, "--summary-digest", "t",
+                                 "--card-receipt-file", receipt])
+        env2 = json.loads(out.getvalue())
+        check("CLI recorded-card preflight is dependencies-only",
+              code == 0 and env2.get("outcome") == "ok"
+              and env2.get("reason_code") == "preflight-pass-dependencies"
+              and (env2.get("data") or {}).get("production_admitted") is False,
               "%s/%s" % (env2.get("outcome"), env2.get("reason_code")))
 
 # ------------------------------------------------------- length menu -------

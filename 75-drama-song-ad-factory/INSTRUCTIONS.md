@@ -648,3 +648,14 @@ and attempts are preserved. A pending research command or
 `admitted_not_called` plan is not provider execution. Router-chain attempts
 remain `CHAIN_RESOLUTION_UNVERIFIED` until supported identity evidence proves
 the actual call. See the intake session contract's model-role evidence section.
+
+
+**Production admission.** Use `factory.py preflight --run-dir "$RUN"` for
+confirmed-intake planning and add `--stage "<canonical stage>"` for that stage.
+An unbound preflight is a dependency diagnostic. Its success does not authorize
+production. Follow the admitted stage command from `next`; manual authorization
+JSON, four-pick receipts and stage rows cannot replace authoritative intake,
+predecessor completion or current artifact approvals. The paid dispatch boundary
+rechecks the run and request immediately before submission. Offline simulations
+are marked non-authoritative. See the intake session contract for scope and
+legacy resume behavior.
