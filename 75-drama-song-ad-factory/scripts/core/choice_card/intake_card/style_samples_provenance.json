@@ -1,0 +1,39 @@
+{
+  "schema": "blackceo.visual-style-samples-provenance/v1",
+  "checked_at": "2026-10-24T19:23:44Z",
+  "check_method": "read-only GET with 'Range: bytes=0-31'; HTTP 206, content-type video/mp4, MP4 ftyp header. 32 bytes read per response; no media file created or uploaded.",
+  "source": {
+    "repo": "trevorotts1/openclaw-onboarding",
+    "worktree": "worktrees/s75-intake-20261024/production-integration",
+    "head": "79432759e29f882de0dca70e479274e4523a7e83",
+    "path": "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/style_samples.json"
+  },
+  "note": "Watching a sample shows the look only. It is not an approval of any script, storyboard, keyframe or video artifact.",
+  "samples": {
+    "lifelike-3d": {
+      "status": "verified",
+      "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/ceccdb53-1db7-4513-b7d5-f8da7a9cdd65.mp4",
+      "reported_bytes": 10274946
+    },
+    "2d-hand-painted": {
+      "status": "verified",
+      "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/79707c0f-e255-4f3f-955a-9fed2e8e9915.mp4",
+      "reported_bytes": 7111451
+    },
+    "sketch-to-life": {
+      "status": "verified",
+      "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/923bbada-b8c2-4901-a736-8835a85605b3.mp4",
+      "reported_bytes": 12896806
+    },
+    "canvas-to-life": {
+      "status": "unavailable",
+      "url": null,
+      "client_note": "Sample not available yet."
+    },
+    "canvas-to-3d": {
+      "status": "verified",
+      "url": "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/9eb9ea93-2cf8-4246-935f-739d2eb576cf.mp4",
+      "reported_bytes": 6919899
+    }
+  }
+}
