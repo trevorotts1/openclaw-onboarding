@@ -275,5 +275,162 @@ class TestUnverifiedAndMerge(unittest.TestCase):
         self.assertEqual(types, {"fb_psid", "email", "ig_psid", "phone"})
 
 
+class TestIdentityRootAllowlist(IdentityTestBase):
+    """D1: an identity root is an explicit allowlist of person-unique kinds."""
+
+    CHANNEL_SCOPED = (
+        "placement_id",
+        "ad_id",
+        "adset_id",
+        "campaign_id",
+        "conversation_id",
+        "thread_id",
+    )
+
+    def test_placement_id_is_never_an_identity_root(self):
+        with self.assertRaises(ti.VerificationError) as raised:
+            self.ident.bind("tenant-a", [("placement_id", "plc-1", True)])
+        self.assertIn("never carries a canonical contact", str(raised.exception))
+        with self.assertRaises(ti.VerificationError) as raised:
+            ti.normalize_identifier("placement_id", "plc-1")
+        self.assertIn("identity root", str(raised.exception))
+
+    def test_default_provenance_does_not_bypass_the_identity_root_gate(self):
+        # The reviewer's repro: provenance left at its default, identifier is
+        # the placement id.
+        for kind, value in (
+            ("placement_id", "plc-42"),
+            ("ad_id", "ad-42"),
+            ("campaign_id", "cmp-42"),
+            ("conversation_id", "thread-1"),
+        ):
+            with self.assertRaises(ti.VerificationError):
+                self.ident.bind("tenant-a", [(kind, value, True)])
+
+    def test_normalize_identifier_refuses_channel_scoped_kinds(self):
+        for kind in self.CHANNEL_SCOPED:
+            with self.assertRaises(ti.VerificationError):
+                ti.normalize_identifier(kind, "some-value")
+
+    def test_unknown_identifier_kind_is_refused_not_guessed(self):
+        with self.assertRaises(ti.VerificationError):
+            ti.normalize_identifier("placement_id_v2", "some-value")
+        with self.assertRaises(ti.VerificationError):
+            ti.classify_identifier("not_a_kind")
+
+    def test_person_unique_kinds_are_identity_roots(self):
+        for kind in ("fb_psid", "ig_psid", "sms_number", "email", "phone", "login_id"):
+            self.assertEqual(ti.classify_identifier(kind), ti.IDENTITY_ROOT)
+        for kind in self.CHANNEL_SCOPED:
+            self.assertEqual(ti.classify_identifier(kind), ti.CHANNEL_REFERENCE)
+        self.assertEqual(
+            ti.normalize_identifier("Email", "Person@Example.COM"),
+            ("email", "person@example.com"),
+        )
+        self.assertEqual(
+            ti.normalize_channel_ref("Conversation_ID", " thread-1 "),
+            ("conversation_id", "thread-1"),
+        )
+
+    def test_a_placement_can_never_resolve_to_a_contact(self):
+        for kind, value in (
+            ("placement_id", "plc-1"),
+            ("campaign_id", "cmp-1"),
+            ("thread_id", "t-1"),
+        ):
+            with self.assertRaises(ti.VerificationError):
+                self.ident.resolve("tenant-a", kind, value)
+            with self.assertRaises(ti.VerificationError):
+                self.ident.resolve(
+                    "tenant-a", kind, value, verified_only=False
+                )
+
+
+class TestChannelReferenceNeverFuses(IdentityTestBase):
+    """D2: a shared thread id must never merge two identities."""
+
+    def _pair(self):
+        cid_a = self.ident.bind(
+            "tenant-a",
+            [("fb_psid", "fb-AAA", True), ("conversation_id", "thread-1", True)],
+        )
+        cid_b = self.ident.bind(
+            "tenant-a",
+            [("fb_psid", "fb-BBB", True), ("conversation_id", "thread-1", True)],
+        )
+        return cid_a, cid_b
+
+    def test_two_people_sharing_a_thread_id_stay_two_contacts(self):
+        cid_a, cid_b = self._pair()
+        self.assertNotEqual(cid_a, cid_b)
+        self.assertEqual(
+            self.ident.channel_refs("tenant-a", cid_a),
+            [{"ref_type": "conversation_id", "ref_value": "thread-1"}],
+        )
+        self.assertEqual(
+            self.ident.channel_refs("tenant-a", cid_b),
+            [{"ref_type": "conversation_id", "ref_value": "thread-1"}],
+        )
+        types_a = {
+            i["ident_type"] for i in self.ident.identifiers("tenant-a", cid_a)
+        }
+        types_b = {
+            i["ident_type"] for i in self.ident.identifiers("tenant-a", cid_b)
+        }
+        self.assertEqual(types_a, {"fb_psid"})
+        self.assertEqual(types_b, {"fb_psid"})
+        self.assertEqual(self.ident.resolve("tenant-a", "fb_psid", "fb-AAA"), cid_a)
+        self.assertEqual(self.ident.resolve("tenant-a", "fb_psid", "fb-BBB"), cid_b)
+
+    def test_a_shared_thread_id_records_no_contact_merges_row(self):
+        self._pair()
+        with sqlite3.connect(self.db) as conn:
+            merges = conn.execute(
+                "SELECT COUNT(*) FROM contact_merges"
+            ).fetchone()[0]
+        self.assertEqual(merges, 0)
+
+    def test_suppression_does_not_leak_across_a_shared_thread(self):
+        cid_a, cid_b = self._pair()
+        with sqlite3.connect(self.db) as conn:
+            conn.execute(
+                "UPDATE contacts SET suppression = ?, reminder_total = 9"
+                " WHERE tenant_id = ? AND canonical_contact_id = ?",
+                (ti.SUPPRESSION_GLOBAL_STOP, "tenant-a", cid_a),
+            )
+        a = self.ident.verify("tenant-a", cid_a)
+        b = self.ident.verify("tenant-a", cid_b)
+        self.assertEqual(a["suppression"], ti.SUPPRESSION_GLOBAL_STOP)
+        self.assertEqual(a["reminder_total"], 9)
+        self.assertEqual(b["suppression"], ti.SUPPRESSION_NONE)
+        self.assertEqual(b["reminder_total"], 0)
+
+    def test_a_channel_reference_alone_never_carries_a_contact(self):
+        with self.assertRaises(ti.VerificationError) as raised:
+            self.ident.bind(
+                "tenant-a",
+                [("conversation_id", "thread-9", True)],
+                provenance=ti.PROVENANCE_PERSON_DIRECTED,
+            )
+        self.assertIn("person-unique", str(raised.exception))
+
+    def test_a_shared_thread_id_never_merges_unrelated_contacts(self):
+        # Two contacts that never share a person-unique identifier must not be
+        # pulled together by a channel reference appearing later.
+        cid_a = self.ident.bind("tenant-a", [("fb_psid", "fb-A1", True)])
+        cid_b = self.ident.bind("tenant-a", [("fb_psid", "fb-B1", True)])
+        again_a = self.ident.bind(
+            "tenant-a",
+            [("fb_psid", "fb-A1", True), ("thread_id", "t-9", True)],
+        )
+        again_b = self.ident.bind(
+            "tenant-a",
+            [("fb_psid", "fb-B1", True), ("thread_id", "t-9", True)],
+        )
+        self.assertEqual(again_a, cid_a)
+        self.assertEqual(again_b, cid_b)
+        self.assertNotEqual(cid_a, cid_b)
+
+
 if __name__ == "__main__":
     unittest.main()

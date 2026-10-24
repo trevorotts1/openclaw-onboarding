@@ -12,6 +12,11 @@ Enforcement lives here and in the SQLite keys, not in a path convention:
     email or phone;
   * a verified identifier in tenant B is a different row from the same value
     in tenant A, so no query can join across tenants;
+  * an identity root is an explicit allowlist of person-unique kinds
+    (IDENTITY_ROOT_TYPES); anything placement-, ad-, campaign- or
+    thread-scoped is a CHANNEL_REFERENCE attribute and is structurally unable
+    to carry or merge a canonical contact, whatever the provenance argument
+    says (DATA-CONTRACTS 2);
   * a public placement never carries a canonical contact (DATA-CONTRACTS 2).
 
 Contract schemas under schemas/ are owned by T-08. They were not present at
@@ -50,6 +55,41 @@ CHANNEL_IDENTIFIER_TYPES = {
     "email": "email",
     "phone": "phone",
 }
+
+# Identity roots are an explicit allowlist of PERSON-UNIQUE identifier kinds.
+# Anything scoped to a placement, ad, campaign, page or conversation/thread
+# names something that many people share, so it can never be an identity root
+# (DATA-CONTRACTS 2). Unknown kinds are refused outright rather than guessed.
+IDENTITY_ROOT_TYPES = frozenset(
+    {
+        "fb_psid",
+        "ig_psid",
+        "sms_number",
+        "email",
+        "phone",
+        "login_id",
+    }
+)
+
+CHANNEL_REFERENCE_TYPES = frozenset(
+    {
+        "conversation_id",
+        "thread_id",
+        "thread_ref",
+        "dm_id",
+        "placement_id",
+        "ad_id",
+        "adset_id",
+        "campaign_id",
+        "page_id",
+        "post_id",
+        "comment_id",
+        "message_id",
+    }
+)
+
+IDENTITY_ROOT = "identity_root"
+CHANNEL_REFERENCE = "channel_reference"
 
 _IDENT_TYPE_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 
@@ -92,6 +132,24 @@ CREATE TABLE IF NOT EXISTS contact_merges (
     reason            TEXT NOT NULL DEFAULT '',
     merged_at         REAL NOT NULL
 );
+
+-- Channel references are attributes, not identity. No uniqueness on
+-- (ref_type, ref_value): two different people may share one thread id, and
+-- that must never fuse them (DATA-CONTRACTS 2).
+CREATE TABLE IF NOT EXISTS contact_channel_refs (
+    tenant_id            TEXT NOT NULL,
+    canonical_contact_id TEXT NOT NULL,
+    ref_type             TEXT NOT NULL,
+    ref_value            TEXT NOT NULL,
+    source               TEXT NOT NULL DEFAULT '',
+    created_at           REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS channel_refs_by_contact
+    ON contact_channel_refs (tenant_id, canonical_contact_id);
+
+CREATE INDEX IF NOT EXISTS channel_refs_by_value
+    ON contact_channel_refs (tenant_id, ref_type, ref_value);
 """
 
 
@@ -115,24 +173,74 @@ class VerificationError(ContactError):
     """A tenant/contact reference did not satisfy the contract."""
 
 
-def normalize_identifier(ident_type: str, value: str) -> Tuple[str, str]:
-    """Return (type, value) normalized for storage and lookup.
+def classify_identifier(ident_type: str) -> str:
+    """Return IDENTITY_ROOT or CHANNEL_REFERENCE; refuse everything else.
 
-    Only email case is folded. Phone and PSID values stay exactly as the
-    verified provider gave them; formatting normalization belongs to the
-    provider adapter that marks the identifier verified.
+    The classification is structural: it depends only on the identifier kind,
+    never on what a caller says about provenance. A placement-, ad-, campaign-
+    or thread-scoped kind is a CHANNEL_REFERENCE and can never become an
+    identity root.
     """
     if not isinstance(ident_type, str) or not ident_type.strip():
         raise VerificationError("identifier type is required")
     kind = ident_type.strip().lower()
     if not _IDENT_TYPE_RE.match(kind):
-        raise VerificationError("identifier type %r is not a simple token" % (ident_type,))
+        raise VerificationError(
+            "identifier type %r is not a simple token" % (ident_type,)
+        )
+    if kind in IDENTITY_ROOT_TYPES:
+        return IDENTITY_ROOT
+    if kind in CHANNEL_REFERENCE_TYPES:
+        return CHANNEL_REFERENCE
+    raise VerificationError(
+        "unknown identifier kind %r; only person-unique identity roots and"
+        " channel references are recognised" % (ident_type,)
+    )
+
+
+def normalize_identifier(ident_type: str, value: str) -> Tuple[str, str]:
+    """Return (type, value) normalized for a PERSON-UNIQUE identity root.
+
+    Only email case is folded. Phone and PSID values stay exactly as the
+    verified provider gave them; formatting normalization belongs to the
+    provider adapter that marks the identifier verified.
+
+    Anything placement-, ad-, campaign- or thread-scoped is refused here, so a
+    public placement cannot reach a canonical contact through this function no
+    matter what the provenance argument claims (DATA-CONTRACTS 2).
+    """
+    if classify_identifier(ident_type) != IDENTITY_ROOT:
+        raise VerificationError(
+            "identifier kind %r is not a person-unique identity root; a"
+            " placement, ad, campaign or conversation reference never"
+            " carries a canonical contact" % (ident_type,)
+        )
+    kind = ident_type.strip().lower()
+    return kind, _normalize_value(kind, value)
+
+
+def normalize_channel_ref(ref_type: str, value: str) -> Tuple[str, str]:
+    """Return (type, value) for a channel reference attribute.
+
+    A channel reference is stored against a contact but never used as an
+    identity root and never used to merge two contacts.
+    """
+    if classify_identifier(ref_type) != CHANNEL_REFERENCE:
+        raise VerificationError(
+            "identifier kind %r is a person-unique identity root, not a"
+            " channel reference" % (ref_type,)
+        )
+    kind = ref_type.strip().lower()
+    return kind, _normalize_value(kind, value)
+
+
+def _normalize_value(kind: str, value: Any) -> str:
     if value is None or not isinstance(value, str) or not value.strip():
         raise VerificationError("identifier value is required for type %r" % kind)
     normalized = value.strip()
     if kind == "email":
         normalized = normalized.casefold()
-    return kind, normalized
+    return normalized
 
 
 def canonical_contact_id_for(tenant_id: str, ident_type: str, value: str) -> str:
@@ -268,6 +376,7 @@ class TenantIdentity:
             )
 
         claims: Dict[Tuple[str, str], bool] = {}
+        refs: List[Tuple[str, str]] = []
         for item in identifiers or ():
             if len(item) == 3:
                 ident_type, value, verified = item
@@ -278,12 +387,20 @@ class TenantIdentity:
                 raise VerificationError(
                     "identifier must be (type, value[, verified])"
                 )
+            if classify_identifier(ident_type) == CHANNEL_REFERENCE:
+                # Stored as an attribute only: never an identity root and
+                # never merge authority, so two people sharing one thread id
+                # stay two people (DATA-CONTRACTS 2).
+                refs.append(normalize_channel_ref(ident_type, value))
+                continue
             key = normalize_identifier(ident_type, value)
             claims[key] = claims.get(key, False) or bool(verified)
 
         if not claims:
             raise VerificationError(
-                "empty contact: at least one identifier is required"
+                "empty contact: at least one person-unique identifier is"
+                " required; a channel reference alone never carries a"
+                " canonical contact"
             )
         verified_claims = sorted(k for k, ok in claims.items() if ok)
         if not verified_claims:
@@ -392,6 +509,28 @@ class TenantIdentity:
                             value,
                         ),
                     )
+            for ref_type, ref_value in sorted(set(refs)):
+                conn.execute(
+                    "INSERT INTO contact_channel_refs"
+                    " (tenant_id, canonical_contact_id, ref_type, ref_value,"
+                    "  source, created_at)"
+                    " SELECT ?, ?, ?, ?, ?, ?"
+                    " WHERE NOT EXISTS (SELECT 1 FROM contact_channel_refs"
+                    "   WHERE tenant_id = ? AND canonical_contact_id = ?"
+                    "   AND ref_type = ? AND ref_value = ?)",
+                    (
+                        tenant_id,
+                        contact_id,
+                        ref_type,
+                        ref_value,
+                        source,
+                        now,
+                        tenant_id,
+                        contact_id,
+                        ref_type,
+                        ref_value,
+                    ),
+                )
             return contact_id
 
     def resolve(
@@ -493,6 +632,23 @@ class TenantIdentity:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def channel_refs(
+        self, tenant_id: str, canonical_contact_id: str
+    ) -> List[Dict[str, Any]]:
+        """Channel references recorded against one contact.
+
+        Attributes only: the same ref_value may appear on many contacts.
+        """
+        self.require_tenant(tenant_id)
+        with self._read() as conn:
+            rows = conn.execute(
+                "SELECT ref_type, ref_value FROM contact_channel_refs"
+                " WHERE tenant_id = ? AND canonical_contact_id = ?"
+                " ORDER BY ref_type, ref_value",
+                (tenant_id, canonical_contact_id),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def merge(
         self,
         tenant_id: str,
@@ -563,6 +719,11 @@ class TenantIdentity:
         )
         conn.execute(
             "UPDATE identifiers SET canonical_contact_id = ?"
+            " WHERE tenant_id = ? AND canonical_contact_id = ?",
+            (target_contact_id, tenant_id, source_contact_id),
+        )
+        conn.execute(
+            "UPDATE contact_channel_refs SET canonical_contact_id = ?"
             " WHERE tenant_id = ? AND canonical_contact_id = ?",
             (target_contact_id, tenant_id, source_contact_id),
         )
