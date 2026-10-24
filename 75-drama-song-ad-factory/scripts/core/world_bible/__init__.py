@@ -7,6 +7,9 @@ from .world_writer import (  # noqa: F401
     author_world,
     canonical_digest,
     change_setting,
+    dispatch_author,
+    live_transport,
+    no_spend_transport,
     validate,
 )
 
@@ -17,5 +20,8 @@ __all__ = [
     "author_world",
     "canonical_digest",
     "change_setting",
+    "dispatch_author",
+    "live_transport",
+    "no_spend_transport",
     "validate",
 ]

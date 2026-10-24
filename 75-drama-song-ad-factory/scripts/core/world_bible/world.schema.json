@@ -22,7 +22,8 @@
     "never_list",
     "cast_refs",
     "continuity",
-    "content_digest"
+    "content_digest",
+    "seal"
   ],
   "properties": {
     "schema_version": {
@@ -56,6 +57,33 @@
     },
     "provenance": {
       "type": "object"
+    },
+    "seal": {
+      "type": "object",
+      "description": "The dispatch seal: the handle the call returned, the receipt the transport minted at call time, and the seal digest binding both to content_digest. It proves a dispatch that happened in the run that sealed this record; a fixture file or a hand-written bindings file cannot produce one.",
+      "required": [
+        "dispatch_handle",
+        "receipt",
+        "seal_digest"
+      ],
+      "properties": {
+        "dispatch_handle": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "receipt": {
+          "type": "object",
+          "required": [
+            "transport_id",
+            "nonce",
+            "receipt_digest"
+          ]
+        },
+        "seal_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
     },
     "dependencies": {
       "type": "object"
