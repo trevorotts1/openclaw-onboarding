@@ -5,13 +5,14 @@ submit is the kie_dispatch fake Skill 74. No network, no paid call.
 Run: python3 core/script_approval/test_script_wiring.py
 """
 import argparse
+import io
 import json
 import os
 import shutil
-import sqlite3
 import stat
 import sys
 import tempfile
+from contextlib import redirect_stdout
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -19,6 +20,7 @@ for p in (CORE, os.path.join(CORE, "kie_dispatch"), os.path.join(CORE, "intake_p
     sys.path.insert(0, p)
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 import factory as F  # noqa: E402
+from state_store import Store  # noqa: E402
 import script_approval as SA  # noqa: E402
 import test_kie_dispatch as TK  # noqa: E402
 
@@ -44,11 +46,12 @@ def make_run(yes=True):
     run = tempfile.mkdtemp(prefix="sa-wire-")
     os.makedirs(os.path.join(run, "control"))
     os.makedirs(os.path.join(run, "creative"))
-    with sqlite3.connect(os.path.join(run, "control", "state.sqlite3")) as con:
-        con.execute("CREATE TABLE stages(run_id TEXT, stage TEXT, state TEXT)")
-        for s in STAGES:
-            con.execute("INSERT INTO stages VALUES('R',?,?)",
-                        (s, "COMPLETE" if STAGES.index(s) < 3 else "NOT_STARTED"))
+    with Store(os.path.join(run, "control", "state.sqlite3")) as store:
+        store.init_run("R", STAGES)
+        for stage in STAGES[:3]:
+            store.transition("R", stage, "READY", "fixture")
+            store.claim("R", stage, "fixture")
+            store.transition("R", stage, "COMPLETE", "fixture")
     shutil.copy(SAMPLES[0], os.path.join(run, "creative", "story.json"))
     shutil.copy(SAMPLES[1], os.path.join(run, "creative", "lyrics.json"))
     answers = IC.conversation(ones()[:-1] + ["1" if yes else "2"])["answers"]
@@ -200,8 +203,20 @@ def confirm_card(run, script_answer):
     """Drive the REAL card (factory.py card --step --run-dir) to a confirmed recap."""
     os.remove(os.path.join(run, "card-answers.json"))
     replies = ones()[:-1] + [script_answer] + ["yes"]
-    args = ["card", "--step", "--run-dir", run] + [x for r in replies for x in ("--reply", r)]
-    assert F.main(args) == 0
+    args = ["card", "--step", "--run-dir", run, "--format", "session-json"]
+
+    def turn(extra=()):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            assert F.main(args + list(extra)) == 0
+        return json.loads(out.getvalue())
+
+    state = turn()                            # emit the exact pending question first
+    for reply in replies:
+        assert state["done"] is False
+        state = turn(["--question-id", state["question_id"],
+                      "--question-digest", state["question_digest"], "--reply", reply])
+    assert state["done"] is True             # the final reply explicitly confirms the recap
 
 
 def test_confirmed_recap_writes_answers_yes_pauses():

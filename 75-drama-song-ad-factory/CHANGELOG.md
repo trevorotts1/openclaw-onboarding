@@ -4,25 +4,41 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
-## v2.9.107 - 2026-10-24 - MiniMax H3 restored, 2-minute length restored
+## v2.9.108 - 2026-10-24 - durable intake bound to the exact rendered questions
 
-- **VIDEO MODEL: MiniMax H3 is row 1 and RECOMMENDED again.** The 2026-10-21
-  removal (`9f7bb25c3`) was justified by "the live catalog never carried
-  MiniMax H3". That claim was false: KIE serves `minimax-h3/image-to-video`
-  (https://kie.ai/minimax-h3), and the skill's own v2.9.9 changelog
-  (`9cdb44b94`) lists H3 first and recommended. Row 1 is H3 at 768P, $0.04/s
-  (8 credits/s); Hailuo 02 Standard stays on the price menu and is no longer
-  recommended.
-- **Pricing reconciled.** The H3 catalog fixture carried the 2K tier
-  (13 credits/s) while the card quotes 768P, so the question price and the
-  final card total disagreed. The fixture now carries the 768P tier the card
-  quotes, and the "question price equals final card total" invariant holds.
-- **LENGTH: the 2-minute option is restored** at position 3, and
-  `_LENGTH_KEEP` keeps 120 s in every purpose path that asks for a length
-  (testimonial, lesson, paid ad, social post). No question wording, label or
-  option sentence changed; only which options exist.
-- Tests: 227 passed, 0 failed across `choice_card/`, `style_defaults/` and
-  `catalog_calculator/`.
+Intake now persists every raw client answer with its source and exact rendered
+question/options before advancing. Separate CLI calls resume the saved question;
+unknown options, mismatched or revised menus, and incomplete intake refuse to
+advance. Explicitly sourced prior facts can be reused without importing guessed
+choices or remapping old menu numbers. Recap confirmation remains separate from
+approval of the actual script, complete storyboard, or selected song.
+
+The chosen video provider route is saved in the existing run model lock. Both
+ordinary and campaign intake use the canonical six durations, including 120
+seconds. Existing question text/order and retained descriptions are preserved;
+the authorized Agnes supplement explains both Agnes and KIE.ai, costs and limits.
+The Studio question snapshot follows the renderer. Legacy bulk Studio replies
+without question provenance fail closed; no service deployment is included.
+
+Focused offline CLI, state, duration, model and approval checks accompany the
+change. Existing creative, opening, soundtrack and lip-sync policies are retained.
+
+## v2.9.107 - 2026-10-24 - MiniMax H3 restored as the card's recommended video model
+
+Commit 9f7bb25c3 removed MiniMax H3 from the VIDEO MODEL question on the
+claim that "the live catalog never carried MiniMax H3". That claim was
+false: `74-kie-live-adapter/references/kie-model-registry.json` carries
+`minimax-h3/image-to-video` (8 credits/s = $0.04/s at 768P, 4-15 second
+generations), and KIE lists it at `kie.ai/minimax-h3`. The card had been
+rendering `1. Hailuo 02 Standard (RECOMMENDED)` with H3 nowhere.
+
+H3 is restored as row 1 with `recommended: true` at its existing registry
+rate, and the false `source_note` is corrected. The question order is again
+1 MiniMax H3 (RECOMMENDED), 2 Seedance 2.5, 3 Seedance 2.0 Mini, 4 Google
+Veo 3.1; Hailuo 02 Standard stays on the price menu, no longer recommended.
+No question wording, label, option sentence, length, music style or video
+style changed. Goldens follow the data.
+
 ## v2.9.106 - 2026-10-23 - optional Studio capability is evaluated before credential demand
 
 The persistent timer (`timer-artifacts/run-timer.sh`) demanded `machine.url` and

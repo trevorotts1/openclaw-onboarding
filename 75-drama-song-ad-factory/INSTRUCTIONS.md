@@ -613,3 +613,27 @@ card. The answers and the time answered go into the receipt
 - **Command Center:** one deliverable per ad (VPS boxes), one Kanban card
   per ad and one parent card per batch.
 
+
+## Durable interactive intake (current entrypoint)
+
+For every new interactive run, use `factory.py card --step --run-dir "$RUN"
+--format session-json`. Send its returned `message` verbatim, wait for one
+explicit client reply, and return that raw reply with the returned
+`--question-id` and `--question-digest`; record its actual origin with
+`--answer-source-ref`. The session saves accepted answers before advancing.
+Resume the same run with no reply to retrieve the pending turn; never ask the
+client to type the answer history again.
+
+This path supersedes the older cumulative `--reply`, preselected-default and
+fixed-count intake instructions above. Never answer from an assistant recap,
+silence or an inferred choice; never remap numbers across changed menus.
+`answered_count`, `total_count` and `done` come from the session response, and
+`done` requires all current valid answers plus explicit recap confirmation.
+SCRIPT/SONG/STORYBOARD preferences and intake confirmation do not approve the
+actual assets or authorize paid generation.
+
+Preserve explicit known client facts with `--seed-answers-file` only when each
+raw answer has its stable question ID and actual source reference; unknown
+legacy numbers and unprovenanced Studio bulk replies cannot be accepted.
+The complete flags, seed format, refusals, resume behavior and artifact
+approval boundaries are in [the intake session contract](references/intake-session-contract.md).

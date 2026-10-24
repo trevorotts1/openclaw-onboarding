@@ -15,6 +15,8 @@ Nothing here calls a provider: the card builds text and reads one local guide.
 
 Run: python3 -m pytest -q S75/scripts/core/choice_card/intake_card/test_purpose_agnes.py
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -71,6 +73,25 @@ def _plan(purpose=None, where=None, client_dir=None, overrides=None):
     return qs, replies
 
 
+def _run_interactive_card(run, replies):
+    """Each explicit answer follows the exact rendered session receipt."""
+    args = ["--step", "--purpose-flow", "--run-dir", run, "--format", "session-json"]
+
+    def turn(extra=()):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            rc = IC.main(args + list(extra))
+        state = json.loads(output.getvalue())
+        assert rc == 0, state
+        return state
+
+    state = turn()
+    for reply in replies:
+        state = turn(["--question-id", state["question_id"],
+                      "--question-digest", state["question_digest"], "--reply", reply])
+    return state
+
+
 def _ids(qs):
     return [q["id"] for q in qs]
 
@@ -124,7 +145,7 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
     assert "episode_length" in ids and "length" not in ids
     assert ids.index("episode_length") == ids.index("models") + 1
     assert _labels(camp, "episode_length") == [
-        "3 minutes", "5 minutes", "7 minutes", "10 minutes"]
+        "60 seconds", "90 seconds", "2 minutes", "3 minutes", "5 minutes", "10 minutes"]
     assert "shape" in ids
 
     # choice 2: PERMISSION sits right after PURPOSE, and no other screen
@@ -132,7 +153,8 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
     assert _ids(test)[:2] == ["purpose", "permission"]
     assert "episode_length" not in _ids(test)
     assert _labels(test, "length") == [
-        "60 seconds", "90 seconds", "2 minutes", "3 minutes + 60s and 90s clips"]
+        "60 seconds", "90 seconds", "2 minutes", "3 minutes + 60s and 90s clips",
+        "5 minutes + 60s and 90s clips", "10 minutes (the long version) + 60s and 90s clips"]
     assert "shape" in _ids(test)
 
     # choice 3: no follow-up at all
@@ -140,18 +162,18 @@ def test_each_purpose_gets_the_right_follow_up_and_the_right_lengths():
     assert "permission" not in _ids(lesson)
     assert "where" not in _ids(lesson)
     assert _labels(lesson, "length") == [
-        "60 seconds", "90 seconds", "2 minutes", "3 minutes + 60s and 90s clips"]
+        "60 seconds", "90 seconds", "2 minutes", "3 minutes + 60s and 90s clips",
+        "5 minutes + 60s and 90s clips", "10 minutes (the long version) + 60s and 90s clips"]
 
     # choice 4: WHERE right after PURPOSE, then the platform's own lengths
     paid, _ = _plan(purpose=4, where=1)
     assert _ids(paid)[:2] == ["purpose", "where"]
-    assert _labels(paid, "length") == [
-        "30 seconds", "60 seconds", "90 seconds", "2 minutes"]
+    assert _labels(paid, "length") == _labels(test, "length")
     plen = next(q for q in paid if q["id"] == "length")
     assert plen["options"][plen["recommended"]][0] == "60 seconds"
     assert "shape" not in _ids(paid)          # 9:16 is pinned for an ad
     free, _ = _plan(purpose=4, where=4)
-    assert _labels(free, "length") == ["60 seconds", "90 seconds", "2 minutes"]
+    assert _labels(free, "length") == _labels(test, "length")
     assert "shape" not in _ids(free)
 
 
@@ -220,17 +242,17 @@ def test_a_missing_agnes_access_is_unknown_and_loud_never_a_crash(monkeypatch):
 def test_the_agnes_question_stops_past_five_minutes(monkeypatch):
     _fake_agnes(monkeypatch, "unknown", [])
     short, _ = _plan(purpose=1, client_dir="/client",
-                     overrides={"episode_length": "2"})
+                     overrides={"episode_length": "5"})
     assert "agnes" in _ids(short)                    # 5 minutes is still Agnes
     long, _ = _plan(purpose=1, client_dir="/client",
-                    overrides={"episode_length": "4"})
-    assert "agnes" not in _ids(long)                 # 7 and 10 minutes are KIE-only
-    assert _labels(long, "episode_length")[3] == "10 minutes"
+                    overrides={"episode_length": "6"})
+    assert "agnes" not in _ids(long)                 # 10 minutes is KIE-only
+    assert _labels(long, "episode_length")[5] == "10 minutes"
 
 
 def test_agnes_yes_turns_the_video_model_into_the_backup(monkeypatch):
     _fake_agnes(monkeypatch, "unknown", [])
-    qs, yes_replies = _plan(purpose=1, client_dir="/client", overrides={"agnes": "1"})
+    qs, yes_replies = _plan(purpose=1, client_dir="/client", overrides={"agnes": "1", "episode_length": "4"})
     assert "agnes" in _ids(qs) and "model" in _ids(qs)
     yes = IC._shaped(IC.QUESTIONS, _answers_for(yes_replies, "/client"), "/client")
     model = next(q for q in yes if q["id"] == "model")
@@ -252,9 +274,8 @@ def test_run_dir_writes_method_json_and_the_agnes_block(tmp_path, monkeypatch):
     run = str(tmp_path / "run")
     os.makedirs(run)
     _, replies = _plan(purpose=4, where=1)
-    assert IC.main(["--step", "--purpose-flow", "--run-dir", run, "--format", "text"]
-                   + [x for r in replies for x in ("--reply", r)]
-                   + ["--reply", "yes"]) == 0
+    state = _run_interactive_card(run, replies + ["yes"])
+    assert state["done"] is True
 
     with open(os.path.join(run, "control", "method.json"), encoding="utf-8") as fh:
         method = json.load(fh)
@@ -277,15 +298,32 @@ def test_a_testimonial_run_records_its_permission_answer(tmp_path, monkeypatch):
     run = str(tmp_path / "run")
     os.makedirs(run)
     _, replies = _plan(purpose=2)
-    assert IC.main(["--step", "--purpose-flow", "--run-dir", run, "--format", "text"]
-                   + [x for r in replies for x in ("--reply", r)]
-                   + ["--reply", "yes"]) == 0
+    state = _run_interactive_card(run, replies + ["yes"])
+    assert state["done"] is True
     with open(os.path.join(run, "control", "method.json"), encoding="utf-8") as fh:
         method = json.load(fh)
     assert method["purpose"] == "testimonial"
     assert method["platform"] is None
     assert method["output_types"] == ["MASTER_EPISODE"]
     assert method["testimonial_permission"] == "yes"
+
+
+def test_stateful_cli_refuses_unseen_and_bulk_answers(tmp_path):
+    run = str(tmp_path / "run")
+    args = ["--step", "--purpose-flow", "--run-dir", run, "--format", "session-json"]
+    _, replies = _plan(purpose=4, where=1)
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        rc = IC.main(args + [x for reply in replies for x in ("--reply", reply)])
+    state = json.loads(output.getvalue())
+    assert rc == 2 and state["reason_code"] == "QUESTION_NOT_PRESENTED"
+    assert state["answered_count"] == 0 and state["done"] is False
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        rc = IC.main(args + [x for reply in replies for x in ("--reply", reply)])
+    state = json.loads(output.getvalue())
+    assert rc == 2 and state["reason_code"] == "ONE_REPLY_AT_A_TIME"
+    assert state["answered_count"] == 0 and state["done"] is False
 
 
 def test_permission_not_yet_waits_and_writes_nothing(tmp_path, monkeypatch):

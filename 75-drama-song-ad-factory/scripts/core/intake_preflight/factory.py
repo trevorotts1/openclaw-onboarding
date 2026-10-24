@@ -2227,6 +2227,39 @@ def cmd_event(a):
                     data=action)
 
 
+def _intake_session_gate(run_dir, sid):
+    """A new durable intake must be explicitly confirmed before any stage.
+
+    Runs without this session artifact keep their existing grandfathered path.
+    The core inspector validates its own schema and confirmation read-only;
+    this projection never consumes an answer or writes a preference/approval.
+    """
+    path = run_dir / "control" / "intake-session.json"
+    if not path.exists():
+        return None
+    resume = "python3 %s card --step --run-dir %s --format session-json" % (
+        shlex.quote(str(Path(__file__).resolve())), shlex.quote(str(run_dir)))
+    try:
+        from choice_card.intake_card import intake_session
+        status = intake_session.completion_status(run_dir)
+        if not isinstance(status, dict) or not status.get("valid"):
+            return envelope("next", str(sid), "error", "INTAKE_SESSION_UNREADABLE",
+                            "The saved intake cannot be validated; preserve it and resume intake.",
+                            data={"stage": None, "command": None, "intake": status,
+                                  "resume_command": resume}, evidence=[str(path)])
+    except (ImportError, OSError, ValueError, TypeError, AttributeError) as exc:
+        return envelope("next", str(sid), "error", "INTAKE_SESSION_UNREADABLE",
+                        "The saved intake cannot be validated; preserve it and resume intake.",
+                        data={"stage": None, "command": None, "detail": str(exc),
+                              "resume_command": resume}, evidence=[str(path)])
+    if status.get("done"):
+        return None
+    return envelope("next", str(sid), "waiting", "INTAKE_NOT_CONFIRMED",
+                    "Finish the pending intake question and explicitly confirm its recap.",
+                    data={"stage": None, "command": None, "intake": status,
+                          "resume_command": resume}, evidence=[str(path)])
+
+
 def cmd_next(a):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     # L4.2: a process whose skill was updated since it started refuses to
@@ -2247,6 +2280,9 @@ def cmd_next(a):
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
     db = run_dir / "control" / "state.sqlite3"
     sid = run_dir.name or "run"
+    intake_gate = _intake_session_gate(run_dir, sid)
+    if intake_gate is not None:
+        return intake_gate
     if not db.exists():
         env = envelope("next", str(sid), "error", "state-file-missing",
                        "Create the run first (factory.py intake, then "
@@ -2815,7 +2851,7 @@ def main(argv=None):
                          "disk is refused and nothing is written.")
     c = sub.add_parser("card", help=_card_help())
     c.add_argument("--format", default="text",
-                   choices=("text", "openclaw-json", "telegram-json", "studio-json"),
+                   choices=("text", "openclaw-json", "telegram-json", "studio-json", "session-json"),
                    help="text: raw card for the chat. openclaw-json / telegram-json: "
                         "send payloads. studio-json: the studio question/price/example "
                         "export (SPEC §5).")
@@ -2836,6 +2872,16 @@ def main(argv=None):
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
                    help="a client reply so far, in order (repeat the flag)")
+    c.add_argument("--question-id", default=None,
+                   help="Identity of the renderer-produced question being answered.")
+    c.add_argument("--question-digest", default=None,
+                   help="Digest of the exact renderer-produced question and options.")
+    c.add_argument("--reply-source", default="client",
+                   help="Answer provenance; only explicit client replies are accepted.")
+    c.add_argument("--answer-source-ref", default=None,
+                   help="Message/transcript reference for this exact raw client reply.")
+    c.add_argument("--seed-answers-file", default=None,
+                   help="Explicit raw owner facts with stable question IDs and source references; never a recap or old menu numbers.")
     c.add_argument("--fit", action="store_true",
                    help="FU-U4: the fit STOP card for the client's own lines "
                         "(--brief-file, --packet-file); exit 2 when they do not fit")
@@ -2881,6 +2927,14 @@ def main(argv=None):
             if not limit:
                 limit = limit_from(doc)
                 from_brief = bool(limit)
+        if a.format == "session-json" or a.seed_answers_file or (a.step and (a.run_dir or a.run_state_file)):
+            try:
+                from .card_session_cli import run as _card_session
+            except ImportError:                 # direct factory.py invocation
+                from card_session_cli import run as _card_session
+            a.limit = limit
+            a.limit_from_brief = bool(limit and from_brief)
+            return _card_session(a, purpose_flow=_purpose_flow_for(a.run_dir, a.purpose_flow))
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
                           + (["--price", a.price] if a.price else [])
