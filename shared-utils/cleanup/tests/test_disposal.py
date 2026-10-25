@@ -866,6 +866,121 @@ class RepairProofTests(Base):
         self.assertTrue(os.path.lexists(str(path)))
 
 
+class SecondRepairProofTests(Base):
+    """Before/after proofs for the PBB-312 verdict defects. Defects 1 and 2 fail
+    on bd832e5f0 and a96a25e5 alike; defect 3 is the regression a96a25e5
+    introduced (it passes on bd832e5f0). All three pass on this repair."""
+
+    def test_a_remote_merge_proof_that_is_no_receipt_is_not_proof(self):
+        # defect 1: a non-empty list was taken as proof; [''], [5], [None] are
+        # not receipt references at all.
+        for label, proofs in (('blank', ['']), ('int', [5]), ('bool', [True]),
+                              ('mixed', ['ok', 5]), ('none', [None])):
+            with self.subTest(proofs=label):
+                path = self.scratch(name='proof-' + label,
+                                    files={'unique.txt': 'only copy'})
+                result = self.dispatch([self.item(
+                    id='proof-' + label, resource_type='merged_worktree',
+                    path=str(path), clean_state='CLEAN',
+                    remote_merge_proof_ids=proofs,
+                    preservation_receipt_ids=None)],
+                    preserve_content=False)
+                record = result['items'][0]
+                self.assertNotEqual(disposal.ELIGIBLE, record['disposition'])
+                self.assertIn(disposal.BLOCKED_MISSING_REMOTE_MERGE_PROOF,
+                              record['reasons'])
+                self.assertFalse(record['disposed'])
+                self.assertTrue(os.path.lexists(str(path)),
+                                'a proof that is no receipt deletes nothing')
+                self.assertEqual('only copy', (path / 'unique.txt').read_text())
+
+    def test_a_real_remote_merge_proof_still_disposes(self):
+        # CONTROL for defect 1: expected to pass before and after the repair.
+        path = self.scratch(name='proof-real')
+        result = self.dispatch([self.item(
+            resource_type='merged_worktree', path=str(path),
+            clean_state='CLEAN', remote_merge_proof_ids=['remote-proof-1'],
+            preservation_receipt_ids=None)], preserve_content=False)
+        record = result['items'][0]
+        self.assertEqual(disposal.ELIGIBLE, record['disposition'], record['reason'])
+        self.assertTrue(record['disposed'])
+        self.assertFalse(os.path.lexists(str(path)))
+
+    def test_a_malformed_disposal_receipt_id_does_not_prove_prior_disposal(self):
+        # defect 2: plain truthiness accepted 5 / True / {'a': 1} as a receipt.
+        for label, receipt in (('blank-list', ['']), ('int', 5), ('bool', True),
+                               ('mixed', ['ok', 5]), ('dict', {'a': 1})):
+            with self.subTest(receipt=label):
+                result = self.dispatch([self.item(
+                    path=str(self.approved / 'scratch' / ('gone-' + label)),
+                    disposal_receipt_id=receipt)])
+                record = result['items'][0]
+                self.assertNotIn(disposal.OK_ALREADY_DISPOSED, record['reasons'])
+                self.assertNotEqual(disposal.ELIGIBLE, record['disposition'])
+                self.assertIn(disposal.UNKNOWN_ABSENT_WITHOUT_RECEIPT,
+                              record['reasons'])
+                self.assertFalse(record['disposed'])
+                self.assertFalse(result['success'])
+
+    def test_a_real_disposal_receipt_still_proves_prior_disposal(self):
+        # CONTROL for defect 2: expected to pass before and after the repair.
+        result = self.dispatch([self.item(
+            path=str(self.approved / 'scratch' / 'gone'),
+            disposal_receipt_id='dispose-unit-1')])
+        record = result['items'][0]
+        self.assertEqual(disposal.ELIGIBLE, record['disposition'])
+        self.assertIn(disposal.OK_ALREADY_DISPOSED, record['reasons'])
+        self.assertTrue(record['disposed'])
+
+    def test_evaluate_types_unreadable_content_and_never_raises(self):
+        # defect 3: _tree_digest raised PermissionError out of evaluate().
+        path, store = self._locked_pair('locked-evaluate')
+        try:
+            record = disposal.evaluate(
+                self.item(path=str(path), preserved_path=str(store)),
+                approved_root=self.approved, expected_device=self.device,
+                preserved_paths=[str(self.preserved)], preserve_content=False)
+        finally:
+            self._unlock(path, store)
+        self.assertEqual(disposal.UNKNOWN, record['disposition'])
+        self.assertIn(disposal.UNKNOWN_UNREADABLE_CONTENT, record['reasons'])
+        self.assertNotIn(disposal.OK_ELIGIBLE, record['reasons'])
+
+    def test_dispatch_types_unreadable_content_and_deletes_nothing(self):
+        path, store = self._locked_pair('locked-dispatch')
+        try:
+            result = self.dispatch(
+                [self.item(path=str(path), preserved_path=str(store))],
+                preserve_content=False)
+        finally:
+            self._unlock(path, store)
+        record = result['items'][0]
+        self.assertEqual(disposal.UNKNOWN, record['disposition'])
+        self.assertIn(disposal.UNKNOWN_UNREADABLE_CONTENT, record['reasons'])
+        self.assertNotIn(disposal.UNKNOWN_MALFORMED_ITEM, record['reasons'],
+                         'an I/O failure is not a malformed record')
+        self.assertFalse(record['disposed'])
+        self.assertTrue(os.path.lexists(str(path)),
+                        'unreadable content deletes nothing')
+
+    def _locked_pair(self, name):
+        if not hasattr(os, 'geteuid') or os.geteuid() == 0:
+            self.skipTest('root can read any file: the lock cannot be proven')
+        path = self.scratch(name=name, files={'unique.txt': 'only copy',
+                                             'locked.bin': 'x'})
+        store = self.root / ('caller-store-' + name) / name
+        store.parent.mkdir(parents=True)
+        shutil.copytree(str(path), str(store))
+        os.chmod(str(path / 'locked.bin'), 0o000)
+        os.chmod(str(store / 'locked.bin'), 0o000)
+        return path, store
+
+    def _unlock(self, path, store):
+        for locked in (path / 'locked.bin', store / 'locked.bin'):
+            if locked.exists():
+                os.chmod(str(locked), 0o600)
+
+
 def authority_for(command):
     class Stub:
         @staticmethod

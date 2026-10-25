@@ -21,7 +21,10 @@ Contract, in this order:
    byte-for-byte against the resource -- the receipt records the exact external
    path and its digest, and absence is proven by a real lstat after removal. A
    directory merely existing is never proof. The preserved destination is proven
-   to sit inside the preserved root before and after the copy.
+   to sit inside the preserved root before and after the copy. A remote merge
+   proof is a receipt reference like any other: an id this module cannot read as
+   a receipt is no proof. Content that cannot be read is typed UNKNOWN, never
+   raised out of the typing API.
 4. Deletion never forces. `git worktree remove` is taken from the repository's
    accepted cleanup transaction module (scripts/lib/cleanup_transaction.py) and
    must not carry --force in any of its forms (long, attached value, short
@@ -84,6 +87,7 @@ UNKNOWN_CLEAN_STATE = 'UNKNOWN_CLEAN_STATE'
 UNKNOWN_CONSUMER_STATE = 'UNKNOWN_CONSUMER_STATE'
 UNKNOWN_ABSENT_WITHOUT_RECEIPT = 'UNKNOWN_ABSENT_WITHOUT_RECEIPT'
 UNKNOWN_MALFORMED_ITEM = 'UNKNOWN_MALFORMED_ITEM'
+UNKNOWN_UNREADABLE_CONTENT = 'UNKNOWN_UNREADABLE_CONTENT'
 
 # List-shaped contract fields. A wrong shape is malformed data, never a default.
 LIST_FIELDS = ('consumers', 'lease_ids', 'remote_merge_proof_ids',
@@ -99,6 +103,15 @@ class Refused(Exception):
 class CleanupAuthorityUnavailable(Exception):
     """The repository's accepted no-force deletion module could not be loaded.
     Deletion is refused rather than reimplemented here."""
+
+
+class UnreadableContent(OSError):
+    """Resource content could not be read while proving preservation.
+
+    An I/O failure is a fact this module cannot determine, so it must surface as
+    a typed UNKNOWN -- never as a crash out of evaluate() and never as a
+    malformed record.
+    """
 
 
 def _as_list(value):
@@ -149,16 +162,15 @@ def _identity_problem(value):
     return None
 
 
-def _malformed_record(detail):
+def _malformed_record(detail, code=UNKNOWN_MALFORMED_ITEM):
     """Typed UNKNOWN for a record this module cannot read. Fail closed: a record
     nobody can type is never ELIGIBLE and never deleted."""
-    finding = {'disposition': UNKNOWN, 'code': UNKNOWN_MALFORMED_ITEM,
-               'detail': detail}
+    finding = {'disposition': UNKNOWN, 'code': code, 'detail': detail}
     return {
         'id': '', 'resource_type': '', 'path': '', 'canonical_path': None,
         'device': None, 'present': None, 'checks': {},
-        'disposition': UNKNOWN, 'reasons': [UNKNOWN_MALFORMED_ITEM],
-        'reason': f'{UNKNOWN_MALFORMED_ITEM}: {detail}', 'findings': [finding],
+        'disposition': UNKNOWN, 'reasons': [code],
+        'reason': f'{code}: {detail}', 'findings': [finding],
     }
 
 
@@ -258,15 +270,31 @@ def _symlink_component(path, root):
 
 def _sha256(path):
     digest = hashlib.sha256()
-    with open(path, 'rb') as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
-            digest.update(chunk)
+    try:
+        with open(path, 'rb') as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                digest.update(chunk)
+    except OSError as exc:
+        raise UnreadableContent(f'{path}: {exc}') from exc
     return digest.hexdigest()
 
 
 def _tree_digest(path):
     """{relative path: (sha256, size)} for regular files; symlinks recorded as
-    links so a preserved copy can be compared without following them out."""
+    links so a preserved copy can be compared without following them out.
+
+    Raises UnreadableContent when any entry cannot be read: unreadable content is
+    an undetermined fact, and the caller types it rather than crashing on it.
+    """
+    try:
+        return _tree_digest_unchecked(path)
+    except UnreadableContent:
+        raise
+    except OSError as exc:
+        raise UnreadableContent(f'{path}: {exc}') from exc
+
+
+def _tree_digest_unchecked(path):
     entries = {}
     root = Path(path)
     if root.is_symlink():
@@ -486,7 +514,7 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
                      f'resource device {record["device"]} != expected {expected_device}')
 
         if record['present'] is False:
-            if item.get('disposal_receipt_id'):
+            if _receipt_ref(item.get('disposal_receipt_id')):
                 note(ELIGIBLE, OK_ALREADY_DISPOSED,
                      'absent and a disposal receipt already exists')
             else:
@@ -529,7 +557,11 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
                  'unique unmerged work must be preserved, never deleted')
 
         remote_proofs = _as_list(item.get('remote_merge_proof_ids'))
-        if resource_type in WORKTREE_TYPES and not remote_proofs:
+        # A proof id is a receipt reference: _receipt_ref is the one test, the
+        # same one ownership uses. A list that only LOOKS non-empty ([''], [5],
+        # [None]) is no receipt at all, and no receipt is no right to delete.
+        remote_proof_ok = _receipt_ref(item.get('remote_merge_proof_ids'))
+        if resource_type in WORKTREE_TYPES and not remote_proof_ok:
             note(BLOCKED, BLOCKED_MISSING_REMOTE_MERGE_PROOF,
                  'merged work is not proven present in the remote target')
 
@@ -541,7 +573,7 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
         receipts = _as_list(item.get('preservation_receipt_ids'))
         proof = None
         preserved = []
-        if resource_type in WORKTREE_TYPES and remote_proofs:
+        if resource_type in WORKTREE_TYPES and remote_proof_ok:
             proof = 'remote_merge_proof'
             record['checks']['remote_merge_proof_ids'] = list(remote_proofs)
         if proof is None and preserve_content:
@@ -556,10 +588,16 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
             else:
                 proof = 'immediate_copy'
         if proof is None and receipts:
-            for candidate in _named_copy_candidates(item, preserved_paths):
-                copy = _proven_copy(record['path'], candidate)
-                if copy is not None:
-                    preserved.append(copy)
+            # Unreadable content is a fact this module cannot determine: type it
+            # UNKNOWN. It must never escape evaluate() as an exception.
+            try:
+                for candidate in _named_copy_candidates(item, preserved_paths):
+                    copy = _proven_copy(record['path'], candidate)
+                    if copy is not None:
+                        preserved.append(copy)
+            except UnreadableContent as exc:
+                note(UNKNOWN, UNKNOWN_UNREADABLE_CONTENT,
+                     f'preserved content could not be read: {exc}')
             if preserved:
                 proof = 'caller_preserved'
                 record['checks']['preservation_receipt_ids'] = list(receipts)
@@ -567,7 +605,9 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
         if preserved:
             record['checks']['preserved_copies'] = preserved
         if proof is None and not any(
-                f['code'] == BLOCKED_PRESERVATION_FAILED for f in findings):
+                f['code'] in (BLOCKED_PRESERVATION_FAILED,
+                              UNKNOWN_UNREADABLE_CONTENT)
+                for f in findings):
             note(BLOCKED, BLOCKED_MISSING_PRESERVATION,
                  'no preserved content proven at an external path, no remote '
                  'proof, and preserve_content is off')
@@ -677,6 +717,10 @@ def dispatch(items, *, approved_root, expected_device, receipt_path,
                 item, approved_root=approved_root, expected_device=expected_device,
                 preserved_paths=[preserved_root] if preserved_root else (),
                 preserve_content=preserve_content)
+        except UnreadableContent as exc:  # unreadable content is not malformed
+            record = _malformed_record(
+                f'record content could not be read: {exc}',
+                UNKNOWN_UNREADABLE_CONTENT)
         except Exception as exc:  # one bad record never aborts the batch
             record = _malformed_record(f'record could not be typed: {exc}')
         record['disposed'] = False
