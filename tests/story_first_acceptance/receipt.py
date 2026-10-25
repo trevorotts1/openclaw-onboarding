@@ -27,12 +27,21 @@ import re
 RECEIPT_VERSION = "s75.cross_flavor.receipt.v1"
 EXECUTION_VERDICTS = ("PASS", "FAIL", "UNAVAILABLE")
 ACCEPTANCE_VERDICTS = ("PASS", "FAIL", "PENDING_INDEPENDENT_CHECK", "UNAVAILABLE")
+CELL_STATUSES = ("OBSERVED_PASS", "OBSERVED_FAIL", "NOT_APPLICABLE")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _REQUIRED = (
     "receipt_version", "unit_id", "flavor", "repository", "candidate", "base",
     "harness", "contracts", "dependencies", "executed", "not_executed",
     "literal_binding", "checks", "execution", "unaffected_proof", "coverage",
     "author", "acceptance",
+)
+_CELL_REQUIRED = ("cell_id", "flavor", "behavior", "repository", "executed",
+                  "status", "instrument", "checks", "observations",
+                  "known_good_control", "negative_control", "repository_release")
+_CELL_BEHAVIORS = (
+    "missing foundation", "cast bypass", "scene richness", "Notion migration",
+    "identity setting changes", "approval ordering", "style18",
+    "original byte preservation", "paid compatibility",
 )
 
 
@@ -43,7 +52,7 @@ class ReceiptError(Exception):
 def build(*, flavor, repository, candidate, harness, base, contracts,
           dependencies, executed, not_executed, literal_binding, checks,
           execution_verdict, unaffected_proof, coverage, author, checker=None,
-          generated_at=None):
+          generated_at=None, cells=None):
     """Assemble and validate one receipt. Refuses a self-issued PASS."""
     receipt = {
         "receipt_version": RECEIPT_VERSION,
@@ -71,6 +80,8 @@ def build(*, flavor, repository, candidate, harness, base, contracts,
                 None if checker is None else checker.strip() != author.strip()),
         },
     }
+    if cells is not None:
+        receipt["cells"] = cells
     validate(receipt)
     return receipt
 
@@ -150,9 +161,78 @@ def validate(receipt):
                        "cannot hold the other's facets")
     if any(not item.get("reason") for item in receipt["not_executed"]):
         defects.append("every not_executed entry needs a reason")
+    defects.extend(_cell_defects(receipt.get("cells"), receipt.get("checks") or {}))
     if defects:
         raise ReceiptError("; ".join(defects))
     return None
+
+
+def _cell_defects(cells, checks):
+    """Every cell must execute and report; a silent or inert cell is refused.
+
+    This is the gate that stops the round-1 defect from recurring: nine cells
+    that executed nothing passed as a receipt. A cell now has to carry an
+    observation, a control whose answer is known, and its own repository
+    release proof, or the receipt is refused outright.
+    """
+    defects = []
+    if cells is None:
+        return defects  # an older receipt shape; cells are recorded when a runner supplies them
+    if not isinstance(cells, list) or len(cells) != len(_CELL_BEHAVIORS):
+        defects.append("cells must list exactly %d cells (9 behaviours x 2 "
+                       "flavours is 18 across both receipts)" % len(_CELL_BEHAVIORS))
+        return defects
+    behaviors = [cell.get("behavior") for cell in cells]
+    for expected in _CELL_BEHAVIORS:
+        if expected not in behaviors:
+            defects.append("cells is missing the %r behaviour" % expected)
+    if len(set(behaviors)) != len(behaviors):
+        defects.append("cells repeats a behaviour: %r" % (behaviors,))
+    for cell in cells:
+        label = cell.get("behavior") or cell.get("cell_id") or "<unnamed cell>"
+        for key in _CELL_REQUIRED:
+            if key not in cell:
+                defects.append("cell %r is missing %s" % (label, key))
+        if cell.get("executed") is not True:
+            defects.append("cell %r executed nothing; a cell that runs nothing is "
+                           "absence of evidence" % label)
+        if cell.get("status") not in CELL_STATUSES:
+            defects.append("cell %r status must be one of %s"
+                           % (label, CELL_STATUSES))
+        if not cell.get("observations"):
+            defects.append("cell %r reported no observation" % label)
+        control = cell.get("known_good_control") or {}
+        if control.get("pass") is not True:
+            defects.append("cell %r has no passing known-good control on its own "
+                           "instrument" % label)
+        if not control.get("expected") and not control.get("pass"):
+            defects.append("cell %r control does not state the known answer" % label)
+        release = cell.get("repository_release") or {}
+        if release.get("own_repository_released") is not True:
+            defects.append("cell %r did not prove it released only its own "
+                           "repository" % label)
+        if release.get("foreign_repository_modules_loaded"):
+            defects.append("cell %r loaded modules from another repository: %s"
+                           % (label, release["foreign_repository_modules_loaded"]))
+        if cell.get("status") == "NOT_APPLICABLE":
+            na = cell.get("not_applicable") or {}
+            if not na.get("missing_capability"):
+                defects.append("cell %r is NOT_APPLICABLE without naming the "
+                               "missing capability" % label)
+            if not na.get("owed_by"):
+                defects.append("cell %r is NOT_APPLICABLE without naming the unit "
+                               "that owes the capability" % label)
+    counted = {s: sum(1 for c in cells if c.get("status") == s) for s in CELL_STATUSES}
+    for key, status in (("cells_pass", "OBSERVED_PASS"),
+                        ("cells_fail", "OBSERVED_FAIL"),
+                        ("cells_not_applicable", "NOT_APPLICABLE")):
+        if key in checks and checks[key] != counted[status]:
+            defects.append("checks.%s is %r but %d cell(s) are %s"
+                           % (key, checks[key], counted[status], status))
+    if checks.get("cells_total") not in (None, len(cells)):
+        defects.append("checks.cells_total is %r but the receipt lists %d cell(s)"
+                       % (checks.get("cells_total"), len(cells)))
+    return defects
 
 
 def with_coverage_gaps(not_executed, gaps):

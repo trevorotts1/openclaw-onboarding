@@ -91,14 +91,79 @@ FACET_ROWS = {
 }
 
 # Facets T32 paragraph 53 names that these shared contracts do NOT state.
+#
+# Repair round 1 (against the round-1 FAIL): four of these were honest about a
+# product gap and are kept as product gaps, but the reason now names the unit
+# that owes the capability. Two of them -- the eighteen styles and the exact
+# original description bytes -- are DELIVERED by S75-T18..S75-T21 and are now
+# exercised for real by cells in cell_matrix.py, so they are no longer listed
+# as not covered. What is left of "style18" is genuinely out of reach: the
+# catalog resolves eighteen styles, but end-to-end render and dispatch through
+# the production pipeline is a package-assembly deliverable.
 NOT_COVERED = {
     "genuine writing dispatch": "no dispatch call exists in the shared contract modules; asserting it here would invent a criterion",
-    "Notion offline snapshot / new-existing-mixed / retry / conflict / migration": "Notion sync is not modelled in story_first_contracts or package_flavor_adapter",
-    "18 style end-to-end paths": "the 18-style catalog is not defined in the shared contract modules",
-    "exact original description bytes": "byte-preservation of intake text is not stated in the shared contract modules",
-    "old paid output / raw answer / approval preservation": "paid-asset compatibility is not modelled in the shared contract modules",
-    "affected-only invalidation of plan/script/visual outputs": "the shared contracts declare stage dependencies and approval bindings but implement no output invalidation",
-    "elected full-script-before-music via user election": "ordering is enforced; the election record itself is outside these modules",
+    "Notion offline snapshot / new-existing-mixed / retry / conflict / migration": (
+        "capability absent from both repositories. Owed by S75-T17 "
+        "(CHARACTER-MIGRATION-OWNER), blocked on S75-T15, S75-T16, S75-T28. "
+        "The cell_matrix Notion migration cell executes a presence scan over "
+        "character_library/migration.py, sync.py, notion_store.py and cache.py "
+        "and reports NOT_APPLICABLE with this reason."),
+    "18 style end-to-end render/dispatch paths": (
+        "the eighteen styles are delivered and ARE exercised (cell_matrix "
+        "style18 resolves all eighteen ids in music_styles.catalog); what is "
+        "not covered here is end-to-end render and dispatch through the "
+        "production pipeline. Owed by S75-T29 (ONB-PACKAGE-OWNER) for the "
+        "onboarding flavour and S75-T30 (N999-PACKAGE-OWNER) for 999."),
+    "old paid output / raw answer / approval preservation": (
+        "capability absent from both repositories. Owed by S75-T28 "
+        "(COMPATIBILITY-OWNER: compatibility.py, "
+        "contracts/legacy-compatibility-map.json, "
+        "tests/fixtures/paid_artifact_preservation.json), blocked on S75-T01, "
+        "S75-T03. The cell_matrix paid compatibility cell executes a presence "
+        "scan over those three carriers and a token scan of the shared "
+        "contracts, and reports NOT_APPLICABLE with this reason."),
+    "affected-only invalidation of plan/script/visual outputs": (
+        "the shared contracts declare stage dependencies and approval bindings "
+        "but implement no output invalidation. Owed by S75-T28 "
+        "(COMPATIBILITY-OWNER)."),
+    "elected full-script-before-music via user election": (
+        "ordering is enforced; the election record itself is outside these "
+        "modules. Owed by S75-T29 (ONB-PACKAGE-OWNER) / S75-T30 "
+        "(N999-PACKAGE-OWNER)."),
+}
+
+#: The nine behaviours S75-A32 names, each bound to the cell that speaks to it
+#: and to the acceptance row clause it satisfies. The cell matrix is what the
+#: row is judged on; the facet list above is the layer beneath it.
+CELL_ROWS = {
+    "missing foundation": {"rows": ["S75-A09", "S75-A13", "S75-A32"],
+                           "clause": "missing foundation cannot bypass the gate"},
+    "cast bypass": {"rows": ["S75-A07", "S75-A09", "S75-A32"],
+                    "clause": "cast cannot be bypassed: empty, partial and "
+                              "undefined speakers all fail closed"},
+    "scene richness": {"rows": ["S75-A09", "S75-A11", "S75-A32"],
+                       "clause": "one-line placeholders are refused; a rich "
+                                 "scene validates"},
+    "Notion migration": {"rows": ["S75-A32"],
+                         "clause": "Notion migration is exercised by both "
+                                   "flavour facets (product gap; see "
+                                   "not_covered for the owing unit)"},
+    "identity setting changes": {"rows": ["S75-A05", "S75-A08", "S75-A32"],
+                                 "clause": "a setting change cannot rewrite "
+                                           "identity; a pinned stale world "
+                                           "revision is refused"},
+    "approval ordering": {"rows": ["S75-A12", "S75-A13", "S75-A32"],
+                          "clause": "preference is not approval; approval binds "
+                                    "to current digests"},
+    "style18": {"rows": ["S75-A18", "S75-A32"],
+                "clause": "exactly eighteen styles, unique and resolvable"},
+    "original byte preservation": {"rows": ["S75-A18", "S75-A32"],
+                                   "clause": "original descriptions survive "
+                                             "byte-for-byte"},
+    "paid compatibility": {"rows": ["S75-A32"],
+                           "clause": "paid compatibility is exercised by both "
+                                     "flavour facets (product gap; see "
+                                     "not_covered for the owing unit)"},
 }
 
 REQUIRED_CONTRACT_FILES = (
@@ -704,9 +769,12 @@ def _unmet_description(facet):
 
 
 def coverage():
+    rows = {row for spec in FACET_ROWS.values() for row in spec["rows"]}
+    rows |= {row for spec in CELL_ROWS.values() for row in spec["rows"]}
     return {
         "covered": FACET_ROWS,
+        "cells": CELL_ROWS,
         "not_covered": NOT_COVERED,
-        "rows_touched": sorted({row for spec in FACET_ROWS.values() for row in spec["rows"]}),
+        "rows_touched": sorted(rows),
         "note": "a row is touched only for the named clause; no row is claimed fully covered",
     }

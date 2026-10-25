@@ -120,6 +120,13 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
     _, head, _ = _git(repo_root, "rev-parse", "HEAD")
     _, branch, _ = _git(repo_root, "rev-parse", "--abbrev-ref", "HEAD")
     _, base_commit, _ = _git(repo_root, "rev-parse", args.base_ref)
+    # A file that records its own commit cannot be committed inside that
+    # commit. Record the head the facets actually ran at and say so; the unit
+    # receipt carries the pushed head alongside it.
+    expected = args.candidate
+    if expected and expected != head:
+        raise SystemExit("--candidate %s does not match this checkout's HEAD %s"
+                         % (expected, head))
     status = payload.get("status")
     if flavor == "onboarding":
         candidate_head, candidate_branch, candidate_clean = head, branch, _repo_state(repo_root)[2]
@@ -146,8 +153,44 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
     controls_red = sum(1 for f in facets if f["control"]["control_red"])
     controls_green = len(facets) - controls_red
 
+    # The nine S75-A32 cells. They are recorded even when the flavour has no
+    # candidate: an executing cell with an honest NOT_APPLICABLE is evidence,
+    # an empty list is not.
+    cells = payload.get("cells") or []
+    cell_counts = {"cells_total": len(cells),
+                   "cells_pass": sum(1 for c in cells
+                                     if c.get("status") == "OBSERVED_PASS"),
+                   "cells_fail": sum(1 for c in cells
+                                     if c.get("status") == "OBSERVED_FAIL"),
+                   "cells_not_applicable": sum(1 for c in cells
+                                               if c.get("status") == "NOT_APPLICABLE")}
+    cell_not_executed = []
+    for cell in cells:
+        control = cell.get("negative_control") or {}
+        if cell.get("status") == "NOT_APPLICABLE":
+            na = cell.get("not_applicable") or {}
+            cell_not_executed.append({
+                "facet": "cell:%s" % cell["behavior"],
+                "reason": "capability not present in this repository: %s; owed by %s"
+                          % (na.get("missing_capability"), na.get("owed_by")),
+                "class": "NOT_MODELLED_BY_CONTRACTS",
+            })
+            continue
+        executed.append({
+            "facet": "cell:%s" % cell["behavior"],
+            "ok": cell.get("status") == "OBSERVED_PASS",
+            "checks": max(1, len(cell.get("checks") or [])),
+            "negative_control": {
+                "unmet_condition": control.get("unmet_condition"),
+                "facet_ok_on_unmet": control.get("observed"),
+                "control_red": control.get("control_red"),
+            },
+            "reason": "; ".join((cell.get("observations") or [])[:2])[:400],
+        })
+
     status = payload.get("status")
-    if status == "PASS" and (facets_red or controls_green):
+    if status == "PASS" and (facets_red or controls_green
+                             or cell_counts["cells_fail"]):
         status = "FAIL"
     not_executed = []
     if status == "UNAVAILABLE":
@@ -159,6 +202,10 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
                           + ", ".join(missing),
                 "class": "CANDIDATE_NOT_LANDED",
             })
+    for row in cell_not_executed:
+        row["class"] = ("CANDIDATE_NOT_LANDED" if status == "UNAVAILABLE"
+                        else "NOT_MODELLED_BY_CONTRACTS")
+        not_executed.append(row)
     not_executed = R.with_coverage_gaps(not_executed, F.NOT_COVERED)
 
     return R.build(
@@ -171,6 +218,9 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
             "checkout_commit": checkout_head,
             "head_verified_at_execution": head_verified,
             "worktree_clean_excluding_receipts": candidate_clean,
+            "filing_note": ("this commit is the head the facets executed at; the "
+                            "commit that files this receipt is its child and "
+                            "changes only this receipt"),
         },
         harness={"repository": "trevorotts1/openclaw-onboarding",
                  "commit": head, "branch": branch},
@@ -195,8 +245,9 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
             "contract_module": "scripts/core/story_first_contracts.py",
             "contract_files": list(F.REQUIRED_CONTRACT_FILES),
         },
-        checks={"facets_green": facets_green, "facets_red": facets_red,
-                "controls_red": controls_red, "controls_green": controls_green},
+        checks=dict(facets_green=facets_green, facets_red=facets_red,
+                    controls_red=controls_red, controls_green=controls_green,
+                    **cell_counts),
         execution_verdict=status if status in ("PASS", "FAIL", "UNAVAILABLE") else "FAIL",
         unaffected_proof={
             "method": "one subprocess and one receipt per flavor; each flavor loads only its own "
@@ -208,6 +259,7 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
         coverage=F.coverage(),
         author=args.author,
         checker=args.checker,
+        cells=cells,
     )
 
 
@@ -265,11 +317,14 @@ def main(argv=None):
         path = R.write(os.path.join(out_dir, "%s.json" % flavor), receipt)
         written.append(path)
         verdict = receipt["execution"]["verdict"]
-        print("%-10s %-11s facets %d green / %d red, controls %d red / %d green -> %s"
+        print("%-10s %-11s facets %d green / %d red, controls %d red / %d green; "
+              "cells %d executed (%d pass / %d fail / %d not-applicable) -> %s"
               % (flavor, verdict,
                  receipt["checks"]["facets_green"], receipt["checks"]["facets_red"],
                  receipt["checks"]["controls_red"], receipt["checks"]["controls_green"],
-                 path))
+                 receipt["checks"]["cells_total"],
+                 receipt["checks"]["cells_pass"], receipt["checks"]["cells_fail"],
+                 receipt["checks"]["cells_not_applicable"], path))
         if verdict == "FAIL":
             failures += 1
         if verdict == "UNAVAILABLE":

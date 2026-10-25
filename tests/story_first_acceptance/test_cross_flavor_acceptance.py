@@ -188,6 +188,132 @@ def test_coverage_names_only_contract_rows():
     assert coverage["not_covered"], "the uncovered T32 facets must be stated"
 
 
+# --- the eighteen S75-A32 cells (repair round 1) ---------------------------
+# The round-1 verdict was FAIL because nine of the eighteen cells executed
+# nothing. These checks are the ones that make that defect impossible to
+# repeat silently: a cell either executes and reports, or it is refused.
+
+import cell_matrix as C  # noqa: E402
+
+
+def _onb_target():
+    return C.Target("onboarding", "trevorotts1/openclaw-onboarding", ONB_ROOT)
+
+
+def _cells():
+    return C.run_cells(_onb_target())
+
+
+def _valid_cells():
+    """Nine minimal well-formed cells, for the refusal tests."""
+    out = []
+    for behavior in C.BEHAVIORS:
+        out.append({
+            "cell_id": "onboarding::%s" % behavior,
+            "flavor": "onboarding",
+            "behavior": behavior,
+            "repository": "trevorotts1/openclaw-onboarding",
+            "skill_root": ONB_ROOT,
+            "executed": True,
+            "status": "OBSERVED_PASS",
+            "instrument": "demo",
+            "checks": [],
+            "observations": ["ran and observed something"],
+            "known_good_control": {"pass": True, "expected": "known answer"},
+            "negative_control": {"unmet_condition": "x", "observed": False,
+                                 "control_red": True},
+            "repository_release": {"own_repository_released": True,
+                                   "foreign_repository_modules_loaded": []},
+        })
+    return out
+
+
+def test_every_cell_executes_and_reports_an_observation():
+    red = []
+    for cell in _cells():
+        if cell["executed"] is not True:
+            red.append("%s executed nothing" % cell["behavior"])
+        if not cell["observations"]:
+            red.append("%s reported no observation" % cell["behavior"])
+        if cell["known_good_control"]["pass"] is not True:
+            red.append("%s has no passing known-good control" % cell["behavior"])
+    assert red == [], red
+
+
+def test_delivered_style18_and_byte_preservation_are_exercised_not_skipped():
+    """S75-T18..T21 shipped both of these; a cell claiming otherwise is a lie."""
+    by_behavior = {c["behavior"]: c for c in _cells()}
+    for behavior in ("style18", "original byte preservation"):
+        cell = by_behavior[behavior]
+        assert cell["status"] == "OBSERVED_PASS", (behavior, cell["status"],
+                                                   cell["observations"])
+        assert cell["checks"], behavior
+
+
+def test_absent_capabilities_are_not_applicable_and_name_the_owing_unit():
+    by_behavior = {c["behavior"]: c for c in _cells()}
+    for behavior in ("Notion migration", "paid compatibility"):
+        cell = by_behavior[behavior]
+        assert cell["status"] == "NOT_APPLICABLE", (behavior, cell["status"])
+        na = cell["not_applicable"]
+        assert na["missing_capability"], behavior
+        assert na["owed_by"], behavior
+        assert na["blocked_by"], behavior
+        # the scan still ran and still reported what it saw
+        assert any("absent" in line for line in cell["observations"]), behavior
+
+
+def test_cells_release_their_own_repository():
+    for cell in _cells():
+        release = cell["repository_release"]
+        assert release["own_repository_released"] is True, cell["behavior"]
+        assert release["foreign_repository_modules_loaded"] == [], cell["behavior"]
+        assert release["all_paths_inside_own_repository"] is True, cell["behavior"]
+
+
+def test_receipt_refuses_a_cell_that_executed_nothing():
+    cells = _valid_cells()
+    cells[0]["executed"] = False
+    cells[0]["observations"] = []
+    try:
+        _receipt(cells=cells)
+    except R.ReceiptError as exc:
+        assert "executed nothing" in str(exc)
+    else:
+        raise AssertionError("a receipt with an inert cell was accepted")
+
+
+def test_receipt_refuses_not_applicable_without_the_owing_unit():
+    cells = _valid_cells()
+    cells[3]["status"] = "NOT_APPLICABLE"
+    cells[3]["not_applicable"] = {"missing_capability": "something"}
+    try:
+        _receipt(cells=cells)
+    except R.ReceiptError as exc:
+        assert "owes" in str(exc)
+    else:
+        raise AssertionError("a NOT_APPLICABLE cell with no owing unit was accepted")
+
+
+def test_receipt_refuses_a_cell_count_mismatch():
+    cells = _valid_cells()
+    try:
+        _receipt(cells=cells,
+                 checks={"facets_green": 1, "facets_red": 0,
+                         "controls_red": 1, "controls_green": 0,
+                         "cells_total": 9, "cells_pass": 8,
+                         "cells_fail": 0, "cells_not_applicable": 1})
+    except R.ReceiptError as exc:
+        assert "cells" in str(exc)
+    else:
+        raise AssertionError("cell counts that disagree with the cells were accepted")
+
+
+def test_cell_instruments_discriminate():
+    """A control that cannot go red is worthless; prove the predicates can."""
+    assert C.selfcheck() is True
+
+
 if __name__ == "__main__":
     failures = 0
     tests = [(name, fn) for name, fn in sorted(globals().items())

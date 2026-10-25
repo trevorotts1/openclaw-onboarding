@@ -31,7 +31,9 @@
         "head_verified_at_execution": {"type": "boolean",
           "description": "true only when git rev-parse HEAD equalled candidate.commit during execution."},
         "worktree_clean_excluding_receipts": {"type": "boolean",
-          "description": "tracked files clean; untracked receipt files are excluded on purpose."}
+          "description": "tracked files clean; untracked receipt files are excluded on purpose."},
+        "filing_note": {"type": "string",
+          "description": "Names the self-reference limit outright: a file that records its own commit cannot be committed inside that commit."}
       }
     },
     "base": {
@@ -124,7 +126,34 @@
         "facets_red": {"type": "integer", "minimum": 0},
         "controls_red": {"type": "integer", "minimum": 0},
         "controls_green": {"type": "integer", "minimum": 0,
-          "description": "must be 0 for execution PASS: a green control is a vacuous fixture."}
+          "description": "must be 0 for execution PASS: a green control is a vacuous fixture."},
+        "cells_total": {"type": "integer", "minimum": 9},
+        "cells_pass": {"type": "integer", "minimum": 0},
+        "cells_fail": {"type": "integer", "minimum": 0},
+        "cells_not_applicable": {"type": "integer", "minimum": 0}
+      }
+    },
+    "cells": {
+      "type": "array",
+      "description": "The eighteen S75-A32 cells (nine per receipt): every cell executed with an observation, a known-good control and its own repository release, or an honest NOT_APPLICABLE naming the missing capability and the unit that owes it. A receipt whose cells executed nothing is refused.",
+      "items": {
+        "type": "object",
+        "required": ["cell_id", "flavor", "behavior", "repository", "executed", "status", "instrument", "checks", "observations", "known_good_control", "negative_control", "repository_release"],
+        "properties": {
+          "cell_id": {"type": "string"},
+          "flavor": {"enum": ["onboarding", "999"]},
+          "behavior": {"type": "string"},
+          "repository": {"type": "string"},
+          "executed": {"const": true},
+          "status": {"enum": ["OBSERVED_PASS", "OBSERVED_FAIL", "NOT_APPLICABLE"]},
+          "instrument": {"type": "string"},
+          "checks": {"type": "array"},
+          "observations": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "known_good_control": {"type": "object"},
+          "negative_control": {"type": "object"},
+          "not_applicable": {"type": ["object", "null"]},
+          "repository_release": {"type": "object"}
+        }
       }
     },
     "execution": {
