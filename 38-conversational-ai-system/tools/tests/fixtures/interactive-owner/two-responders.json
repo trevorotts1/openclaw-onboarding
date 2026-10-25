@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "contract_id": "launch-ai/tenant-alpha/loc-1/two-responders",
+  "responders": [
+    {
+      "id": "openclaw_inbound",
+      "kind": "openclaw_inbound"
+    },
+    {
+      "id": "native_ghl_node",
+      "kind": "native_ghl"
+    }
+  ],
+  "steps": [
+    {
+      "step_id": "pick_time",
+      "generation": 1,
+      "controls": [
+        "tue_10am"
+      ],
+      "free_text": "accept"
+    }
+  ]
+}

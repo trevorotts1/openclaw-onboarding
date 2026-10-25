@@ -866,6 +866,19 @@ else
   report_fail "qc-lattice-pointer.sh not found (looked in scripts/)"
 fi
 
+section "Interactive workflow owner (qc-interactive-owner.sh)"
+QC_INTERACTIVE="$SCRIPT_DIR/qc-interactive-owner.sh"
+[ -f "$QC_INTERACTIVE" ] || QC_INTERACTIVE="$SKILL38_ROOT/scripts/qc-interactive-owner.sh"
+if [ -f "$QC_INTERACTIVE" ]; then
+  if bash "$QC_INTERACTIVE" >/dev/null 2>&1; then
+    report_pass "T-19 holds (launch/interactive-owner-contract.md + tools/interactive_owner.py + its suite; OpenClaw inbound is the default owner, controls/callbacks/free text route to it, stale taps are refused with no route, and a contract naming two responders is refused)"
+  else
+    report_fail "qc-interactive-owner.sh failed - an interactive event reached two responders, a stale tap routed, or the contract document/tools are missing; run it directly for detail"
+  fi
+else
+  report_fail "qc-interactive-owner.sh not found (looked in scripts/)"
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"
