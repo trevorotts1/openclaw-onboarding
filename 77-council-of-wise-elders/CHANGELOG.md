@@ -1,5 +1,13 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.60: the hybrid supervisor and the queue operation producer land together (HYBRID-1060)
+
+In plain English: this release adds the two halves of the hybrid council, landed as one batch. The supervisor decides which seats answer and in what order under the version 2 policy; the producer turns that decision into the queued work the runtime actually runs. Nothing about the existing council changes: both pieces are new files, and every earlier behaviour is untouched.
+
+- The hybrid supervisor ships under `scripts/supervisor/hybrid/` with its own `package.json`, `supervisor.mjs`, a test file, and the version 2 supervisor policy document (`wise-elders.hybrid-supervisor-policy/v2`). Its own suite passes 18 of 18.
+- The queue operation producer ships as `runtime/src/queue/operation-producer.ts` with its test file, turning a council decision into an operation the queue can run. Its own suite passes 6 of 6.
+- Packaging: `manifest.json` and the `.skill` archive are rebuilt once over both unit heads, and the version markers (`skill-version.txt`, `version`, and the `SKILL.md` frontmatter) all read 1.0.60.
+
 ## v1.0.59: the packaged copy is proven against the release, never against its own claims (TREEGATE-REPAIR)
 
 In plain English: 1.0.58 started accepting a packaged copy of the council as "the same release" as the copy being updated. The review that followed found the check was asking the packaged copy to vouch for itself: anything it wrote about itself was believed. A copy that shared no files with the release at all could be accepted by filling in its own paperwork. This release makes the release do the vouching.
