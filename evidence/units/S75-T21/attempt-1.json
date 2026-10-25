@@ -9,7 +9,7 @@
   "base_sha": "c883b35ce9f594b4450e5cffc654ec4945cef2d3",
   "base_proved_from_origin": true,
   "base_proof": "git ls-remote https://github.com/trevorotts1/openclaw-onboarding.git refs/heads/main -> c883b35ce9f594b4450e5cffc654ec4945cef2d3; cloned and checked out that exact 40-hex",
-  "head_sha": "PENDING_AT_WRITE_TIME",
+  "head_sha": "7d2f772b8a73b451c717cf3448d3f5adca1fd10e",
   "written_at": "2026-10-25T17:22:43Z",
   "attempt_index_note": "evidence/units/S75-T21/ did not exist at base (git ls-tree -r origin/main -- evidence/units is empty) and was absent from the shared working tree, so index 1 is the first free index",
   "why_round_2": "round 1's branch df7123b44268dfeff2541ea56ee18295feeb6159 is 100 commits behind origin/main; diffing it from current main shows accepted carriers (catalog.py, T19/T20/T22 recipe files and tests) as deleted. Round 2 branches from current origin/main and ADDS only.",
@@ -33,5 +33,8 @@
     "behaviour_identity": "style_text output is byte-identical at base and head across 13 cases (3 live styles x 2 genders x plain/pace, plus a sheet-mapped rnb-flow), sha256-compared",
     "deletion": "git diff --name-status <base> HEAD has no row starting with D"
   },
-  "amended_at": null
+  "amended_at": "2026-10-25T17:22:58Z",
+  "head_sha_note": "the commit that first carried this file and the code; the amendment commit carrying this resolved value is its immediate child and the branch tip",
+  "pending_artefact_sha256": "7f033cc1595201431235ed00f2daa322d3971f5c8e38ef9717cd48a7fbda59c1",
+  "attempt_index_proof": "git ls-tree -r origin/main -- evidence/units is empty and round 1's branch df7123b also carries no evidence file, so attempt-1.json is the first artefact for this unit and no earlier attempt file existed to preserve"
 }
