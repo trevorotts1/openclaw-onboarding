@@ -18,6 +18,7 @@ Run: python3 -m pytest tests/unit/test_onboarding_integration.py -q
 from __future__ import annotations
 
 import ast
+import json
 import subprocess
 import sys
 import tempfile
@@ -1566,6 +1567,87 @@ class FifthRepairProofTests(unittest.TestCase):
         absent = evaluate_cohort([unit("A", SHA_A, schema={"kind": None})])
         self.assertEqual([h["reason"] for h in absent["hold"]],
                          ["schema_kind_unobserved"])
+
+    def test_a_proven_receipt_never_reads_an_unobserved_cohort_as_empty(self):
+        """R-1: "nothing is held" is a FACT, so an unobserved list is not [].
+
+        The raw ``or`` at ``verify_receipt``'s cohort check read ``None`` as
+        "there was nothing" and verified a receipt whose cohort had never been
+        observed. Each of the three legs is pinned separately so no single edit
+        reopens it.
+        """
+        base = {"artifact": ARTIFACT, "state": PROVEN, "reasons": [],
+                "owner": {"state": PROVEN},
+                "target": {"remote": "origin", "before": SHA_A,
+                           "after": "b" * 40},
+                "candidates": [{"unit_id": "A", "sha": SHA_A}],
+                "gates": [{"unit_id": "A", "state": PROVEN}],
+                "named_repairs": [], "cleanup": [],
+                "proof": {"state": PROVEN}}
+
+        def receipt(**over):
+            record = json.loads(json.dumps(base))
+            record.update(over)
+            return record
+
+        ok, why = verify_receipt(receipt(cohort={
+            "admit": ["A"], "order": ["A"], "hold": [], "unknown": []}))
+        self.assertTrue(ok, why)  # INVERSE: observed empty still verifies
+
+        for cohort in ({"admit": ["A"], "hold": None, "unknown": []},
+                       {"admit": ["A"], "hold": [], "unknown": None},
+                       {"admit": ["A"], "hold": None, "unknown": None}):
+            with self.subTest(cohort=cohort):
+                ok, why = verify_receipt(receipt(cohort=cohort))
+                self.assertFalse(ok)
+                self.assertEqual(why,
+                                 "proven receipt carries an unobserved cohort.hold"
+                                 if cohort.get("hold") is None
+                                 else "proven receipt carries an unobserved cohort.unknown")
+        for cohort in ({"admit": ["A"], "hold": "junk", "unknown": []},
+                       {"admit": ["A"], "hold": [], "unknown": "junk"}):
+            with self.subTest(cohort=cohort):
+                ok, why = verify_receipt(receipt(cohort=cohort))
+                self.assertFalse(ok)
+                self.assertIn("malformed cohort.", why)
+
+    def test_the_main_pin_names_a_commit_not_a_moving_ref(self):
+        """M8: a pin that reads ``origin/main`` is not a pin at all."""
+        self.assertRegex(_MAIN_PIN_SHA, r"^[0-9a-f]{40}$",
+                         "_MAIN_PIN_SHA must be a full object name, never a ref")
+
+    def test_the_version_scorer_is_numeric_not_lexical(self):
+        """M9: "2.0.9" sorts ABOVE "2.0.10" lexically and must not here."""
+        self.assertLess(_numeric_version("v2.0.9"), _numeric_version("v2.0.10"))
+        self.assertLess(_numeric_version("v2.0.99"), _numeric_version("v2.0.100"))
+        self.assertGreater(_numeric_version("v3.0.0"), _numeric_version("v2.999.999"))
+
+    def test_the_pin_reads_its_named_sha_and_scores_numerically_at_the_call_site(self):
+        """M8/M9: the CONSTANTS are pinned above, the CALL SITES are pinned here.
+
+        A mutant that swaps `_MAIN_PIN_SHA` for `origin/main` inside the
+        `git show` argument, or `_numeric_version(x)` for `x` inside the
+        comparison, leaves every constant intact and is behaviourally identical
+        TODAY -- `origin/main` currently points at exactly the pinned commit and
+        this tree's marker sorts above it either way. It is only distinguishable
+        once main moves, which is exactly when the pin must already be right.
+        So the shape of the call site is asserted, the same way
+        `test_integration_module_has_no_process_network_or_fs_mutation` already
+        asserts on module source.
+        """
+        source = Path(__file__).read_text(encoding="utf-8")
+        compact = source.replace(" ", "").replace("\n", "")
+        # The needles are assembled from fragments: a needle written out in
+        # full would appear in THIS test's own source and match itself, which
+        # is exactly the blind spot the first draft of this pin had.
+        needle_sha = "%s:%s" + chr(34) + "%(" + "_MAIN_PIN_SHA" + "," \
+            + "_SKILL_VERSION_PATH)"
+        needle_num = "_numeric_version(" + "marker),_numeric_version(" \
+            + "on_main)"
+        self.assertIn(needle_sha, compact,
+                      "the git read must go through the NAMED SHA, never a ref")
+        self.assertIn(needle_num, compact,
+                      "the comparison must be scored numerically, never lexically")
 
     def test_an_observed_plain_string_still_runs_its_own_clause(self):
         """INVERSE: the law refuses non-strings, it does not refuse everything."""
