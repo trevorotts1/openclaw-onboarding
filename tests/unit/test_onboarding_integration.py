@@ -1041,6 +1041,206 @@ class Receipts(unittest.TestCase):
         self.assertTrue(ok, reason)
 
 
+class ThirdRepairProofTests(unittest.TestCase):
+    """QC round 3: no unobserved fact becomes a name, a proof or a green light.
+
+    Every case here was reproduced on the parent ``d32103b2f`` and on the
+    reviewed commit ``7a965c7f4`` before this repair. The rule is the one
+    this file already pins for ``consumers`` (see
+    ``test_malformed_consumers_is_unknown_never_eligible``): a value read as
+    a collection, an identity or a proof is observed, or the answer is
+    ``UNKNOWN`` — never a ``str()``-coerced default.
+    """
+
+    def test_a_remote_merge_proof_id_that_is_no_receipt_is_no_proof(self):
+        """D-1: a proof-id collection is observed, or there is no proof."""
+        base = {"id": "m", "resource_type": "merged_worktree", "consumers": [],
+                "has_unique_unmerged_work": False, "clean_state": "CLEAN"}
+        for shape in ("junk", [""], [None], [7], 1, {"p": 1}, [], None):
+            with self.subTest(shape):
+                result = cleanup_disposition(
+                    dict(base, remote_merge_proof_ids=shape))
+                self.assertEqual(result["disposition"], UNKNOWN)
+                self.assertNotEqual(result["reason"], "clean_merged_tree")
+        control = cleanup_disposition(
+            dict(base, remote_merge_proof_ids=["M-1"]))
+        self.assertEqual((control["disposition"], control["reason"]),
+                         ("eligible", "clean_merged_tree"))
+        contrast = cleanup_disposition({
+            "id": "x", "resource_type": "disposable_scratch",
+            "consumers": "nobody", "has_unique_unmerged_work": False})
+        self.assertEqual(contrast["disposition"], UNKNOWN)
+
+    def test_an_unobserved_cleanup_id_is_never_a_record_id(self):
+        """D-1: ``5`` is not a resource id, and str() must not invent one."""
+        result = cleanup_disposition({
+            "id": 5, "resource_type": "disposable_scratch",
+            "consumers": [], "has_unique_unmerged_work": False})
+        self.assertEqual(result["disposition"], UNKNOWN)
+        self.assertEqual(result["id"], "")
+        self.assertEqual(result["reason"], "resource_id_unobserved")
+
+    def test_an_unobserved_file_entry_is_never_a_path(self):
+        """D-2: ``str(f)`` on a ``None`` file entry invents ``'None'``."""
+        for entry in ([None], [5], [{}], [[]], [False], [b"x"]):
+            with self.subTest(entry):
+                report = evaluate_cohort([
+                    {"unit_id": "A", "sha": SHA_A, "files": entry,
+                     "depends_on": [], "state": "green"}])
+                self.assertEqual(report["state"], UNKNOWN)
+                self.assertEqual([e["reason"] for e in report["unknown"]],
+                                 ["unit_files_malformed"])
+        control = evaluate_cohort([
+            {"unit_id": "A", "sha": SHA_A, "files": ["a.py"],
+             "depends_on": [], "state": "green"}])
+        self.assertEqual(control["state"], ADMITTED)
+
+    def test_an_unobserved_dependency_or_repo_entry_is_never_a_name(self):
+        """D-2: a dependency id and a repository name are observed strings."""
+        dep = evaluate_cohort([
+            {"unit_id": "A", "sha": SHA_A, "files": ["a.py"],
+             "depends_on": [None], "state": "green"}])
+        self.assertEqual(dep["state"], UNKNOWN)
+        self.assertEqual([e["reason"] for e in dep["unknown"]],
+                         ["unit_depends_on_malformed"])
+        repo = evaluate_cohort([
+            {"unit_id": "A", "sha": SHA_A, "files": ["a.py"],
+             "depends_on": [], "state": "green", "repo": 5}])
+        self.assertEqual(repo["state"], UNKNOWN)
+        self.assertEqual([e["reason"] for e in repo["unknown"]],
+                         ["unit_repo_malformed"])
+        control = evaluate_cohort([
+            {"unit_id": "A", "sha": SHA_A, "files": ["a.py"],
+             "depends_on": [], "state": "green", "repo": "cc"}])
+        self.assertEqual(control["state"], ADMITTED)
+
+    def test_an_unrecognised_unit_state_is_unknown_never_not_red(self):
+        """D-3: a wrong-typed state is unobserved, not silently "not red"."""
+        for state in ("", 5, True, [], {}, "RED", "red ", "greenish"):
+            with self.subTest(state):
+                report = evaluate_cohort([
+                    {"unit_id": "A", "sha": SHA_A, "files": ["a.py"],
+                     "depends_on": [], "state": state}])
+                self.assertEqual(report["state"], UNKNOWN)
+                self.assertEqual(report["admit"], [])
+                self.assertEqual([e["reason"] for e in report["unknown"]],
+                                 ["unit_state_malformed"])
+        red = evaluate_cohort([unit("A", SHA_A, files=["a.py"], state="red")])
+        self.assertEqual(red["state"], HELD)
+        green = evaluate_cohort([unit("A", SHA_A, files=["a.py"])])
+        self.assertEqual(green["state"], ADMITTED)
+
+    def test_a_receipt_target_position_must_be_an_observed_object_id(self):
+        """D-4: ``"zz"`` and ``1``/``2`` are not remote positions."""
+        forged = {"artifact": ARTIFACT, "state": PROVEN, "reasons": [],
+                  "owner": {"state": PROVEN},
+                  "target": {"remote": "origin", "before": "zz", "after": "zz"},
+                  "candidates": [{"unit_id": "A", "sha": SHA_A}],
+                  "cohort": {"admit": ["A"], "hold": [], "unknown": []},
+                  "gates": [{"unit_id": "A", "state": PROVEN}],
+                  "named_repairs": [], "cleanup": [],
+                  "proof": {"state": PROVEN}}
+        ok, reason = verify_receipt(forged)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "proven receipt lacks target before/after")
+        ok, reason = verify_receipt(dict(forged, target={
+            "remote": "o", "before": 1, "after": 2}))
+        self.assertFalse(ok)
+        self.assertEqual(reason, "proven receipt lacks target before/after")
+        control = verify_receipt(dict(
+            forged, target={"remote": "origin", "before": "1", "after": "2"},
+            gates=[{"unit_id": "A", "state": UNKNOWN, "reason": "x"}]))
+        self.assertEqual(control,
+                         (False, "proven receipt carries a non-proven gate"))
+        built = build_receipt(
+            owner={"state": PROVEN},
+            target={"remote": "origin", "before": "zz", "after": "zz"},
+            cohort={"admit": ["A"], "order": ["A"], "hold": [], "unknown": [],
+                    "candidates": [{"unit_id": "A", "sha": SHA_A}]},
+            gates=[{"unit_id": "A", "state": PROVEN}],
+            proof={"state": PROVEN, "reason": "target_head_observed"})
+        self.assertEqual(built["state"], UNKNOWN)
+        self.assertIn("target_before_unobserved", built["reasons"])
+        self.assertIn("target_after_unobserved", built["reasons"])
+
+    def test_a_named_repair_identity_and_blob_id_must_be_observed(self):
+        """D-5: ``None == None`` is not content equivalence."""
+        observation = {"remote": "origin", "target_ref": "refs/heads/main",
+                       "observed_head": HEAD_AFTER, "method": "ancestry",
+                       "contains_sha": True}
+        for repair_id in (5, ["r"], True):
+            with self.subTest(repair_id):
+                result = prove_named_repair(
+                    {"repair_id": repair_id, "sha": SHA_R}, observation)
+                self.assertEqual(result["state"], UNKNOWN)
+        for value in (9, ["r"], True):
+            with self.subTest(value):
+                ref = prove_named_repair(
+                    {"repair_id": "R1", "sha": SHA_R},
+                    dict(observation, target_ref=value))
+                self.assertEqual(ref["state"], UNKNOWN)
+                head = prove_named_repair(
+                    {"repair_id": "R1", "sha": SHA_R},
+                    dict(observation, observed_head=value))
+                self.assertEqual(head["state"], UNKNOWN)
+        nulls = prove_named_repair(
+            {"repair_id": "R1", "sha": SHA_R, "files": {"a.py": None}},
+            {"remote": "origin", "target_ref": "refs/heads/main",
+             "observed_head": HEAD_AFTER, "method": "squash",
+             "tree": {"a.py": None}})
+        self.assertEqual(nulls["state"], UNKNOWN)
+        self.assertEqual(nulls["reason"], "repair_content_malformed")
+        control = prove_named_repair(
+            {"repair_id": "R1", "sha": SHA_R, "files": {"a.py": "blob-a"}},
+            {"remote": "origin", "target_ref": "refs/heads/main",
+             "observed_head": HEAD_AFTER, "method": "squash",
+             "tree": {"a.py": "blob-a"}})
+        self.assertEqual(control["state"], PROVEN)
+
+    def test_a_built_receipt_is_self_consistent_never_reasonless_unknown(self):
+        """D-6: a fully proven input set is PROVEN, and an UNKNOWN names why."""
+        cohort = {"admit": ["A"], "order": ["A"], "hold": [], "unknown": [],
+                  "candidates": [{"unit_id": "A", "sha": SHA_A}]}
+        built = build_receipt(
+            owner={"state": PROVEN},
+            target={"remote": "origin", "before": HEAD_BEFORE,
+                    "after": HEAD_AFTER},
+            cohort=cohort, gates=[{"unit_id": "A", "state": PROVEN}],
+            proof={"state": PROVEN, "reason": "target_head_observed"})
+        self.assertEqual(built["state"], PROVEN)
+        self.assertEqual(built["reasons"], [])
+        self.assertEqual(verify_receipt(built), (True, ""))
+        unknown = build_receipt(
+            owner={"state": PROVEN},
+            target={"remote": "origin", "before": HEAD_BEFORE,
+                    "after": HEAD_AFTER},
+            cohort=cohort, gates=[{"unit_id": "A", "state": "JUNK"}],
+            proof={"state": PROVEN, "reason": "target_head_observed"})
+        self.assertEqual(unknown["state"], UNKNOWN)
+        self.assertTrue(unknown["reasons"])
+        self.assertEqual(verify_receipt(unknown), (True, ""))
+
+    def test_an_unobserved_gate_identity_or_check_name_never_proves(self):
+        """D-7: the identity and the check name a proof carries are observed."""
+        for unit_id in (5, None, ["A"], True):
+            with self.subTest(unit_id):
+                result = exact_independent_gate(
+                    {"unit_id": unit_id, "sha": SHA_A}, receipt(SHA_A))
+                self.assertEqual(result["state"], UNKNOWN)
+                self.assertEqual(result["reason"], "unit_id_unobserved")
+        for bad in (receipt(SHA_A, checks=[{"name": None, "status": "pass"}]),
+                    receipt(SHA_A, checks={None: "pass"}),
+                    receipt(SHA_A, checks=[{"name": "unit", "status": 5}]),
+                    receipt(SHA_A, checks=["junk"])):
+            with self.subTest(bad["checks"]):
+                result = exact_independent_gate(unit("A", SHA_A), bad)
+                self.assertEqual(result["state"], UNKNOWN)
+                self.assertEqual(result["reason"],
+                                 "required_check_results_malformed")
+        control = exact_independent_gate(unit("A", SHA_A), receipt(SHA_A))
+        self.assertEqual(control["state"], PROVEN)
+
+
 class ReuseAndIsolation(unittest.TestCase):
     """Clause: reuse accepted upstream modules; no hidden side channels."""
 

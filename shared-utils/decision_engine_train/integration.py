@@ -94,6 +94,7 @@ def _reason(unit_id, rule_id, reason):
 
 _HEX_DIGITS = "0123456789abcdef"
 CONSUMER_STATES = ("active", "released")
+UNIT_STATES = ("green", "red")
 
 
 def _is_hex_sha(value):
@@ -146,6 +147,71 @@ def _as_number(value):
     return value
 
 
+def _as_hex_ref(value):
+    """A git object id as observed: a hex prefix, or None when not observed.
+
+    ``None``, an int, a bool and any non-hex string are NOT an object id.
+    Length may be abbreviated, but every character must be a hex digit —
+    ``"zz"`` is not a prefix of anything git wrote.
+    """
+    if not isinstance(value, str) or not value or len(value) > 40:
+        return None
+    for char in value:
+        if char not in _HEX_DIGITS:
+            return None
+    return value
+
+
+def _as_blob_map(value):
+    """A ``{path: blob id}`` mapping of observed strings, or None.
+
+    ``None`` is not a blob id and neither is an int: a content proof built
+    from two unobserved values would be ``None == None``, which is not
+    equivalence. Every path and every blob id must already be a non-empty
+    string.
+    """
+    mapping = _as_mapping(value)
+    if mapping is None:
+        return None
+    out = {}
+    for path, blob in mapping.items():
+        if not isinstance(path, str) or not path:
+            return None
+        if not isinstance(blob, str) or not blob:
+            return None
+        out[path] = blob
+    return out
+
+
+def _as_checks(raw):
+    """Observed ``(name: status)`` results, or None when not observed.
+
+    A check name is never ``None`` and a status is never ``5``: neither is
+    str()-coerced into a named check, so a malformed collection can neither
+    satisfy nor be mistaken for a named check result.
+    """
+    if isinstance(raw, dict):
+        pairs = list(raw.items())
+    elif isinstance(raw, (list, tuple)):
+        pairs = []
+        for entry in raw:
+            record = _as_mapping(entry)
+            if record is None:
+                return None
+            pairs.append((record.get("name"), record.get("status")))
+    else:
+        return None
+    observed, check_list = {}, []
+    for name, status in pairs:
+        if not isinstance(name, str) or not name:
+            return None
+        if not isinstance(status, str) or not status:
+            return None
+        observed[name] = status
+        check_list.append({"name": name, "status": status})
+    return observed, check_list
+
+
 def _normalise_units(units):
     """Normalise unit records. Returns ``(units, problems)``.
 
@@ -162,30 +228,34 @@ def _normalise_units(units):
                                     "unit_record_malformed:%d" % index))
             continue
         uid = record.get("unit_id")
-        if uid is None or not str(uid):
+        if not isinstance(uid, str) or not uid:
             problems.append(_reason("", RULE_SEPARATE_FILES,
                                     "unit_id_unobserved"))
             continue
         sha = record.get("sha")
-        if sha is None or not str(sha):
-            problems.append(_reason(str(uid), RULE_SEPARATE_FILES,
+        if not isinstance(sha, str) or not sha:
+            problems.append(_reason(uid, RULE_SEPARATE_FILES,
                                     "candidate_sha_unobserved"))
             continue
+        if not _is_hex_sha(sha):
+            problems.append(_reason(uid, RULE_SEPARATE_FILES,
+                                    "candidate_sha_not_exact_40_hex"))
+            continue
         if record.get("files") is None:
-            problems.append(_reason(str(uid), RULE_SHARED_FILE,
+            problems.append(_reason(uid, RULE_SHARED_FILE,
                                     "unit_files_unobserved"))
             continue
-        files = _as_records(record.get("files"))
+        files = _as_names(record.get("files"))
         if files is None:
-            problems.append(_reason(str(uid), RULE_SHARED_FILE,
+            problems.append(_reason(uid, RULE_SHARED_FILE,
                                     "unit_files_malformed"))
             continue
         if record.get("depends_on") is None:
             deps = ()
         else:
-            deps = _as_records(record.get("depends_on"))
+            deps = _as_names(record.get("depends_on"))
             if deps is None:
-                problems.append(_reason(str(uid), RULE_DEPENDENCY,
+                problems.append(_reason(uid, RULE_DEPENDENCY,
                                         "unit_depends_on_malformed"))
                 continue
         if record.get("depends_on_repos") is None:
@@ -193,7 +263,7 @@ def _normalise_units(units):
         else:
             dep_repos = _as_names(record.get("depends_on_repos"))
             if dep_repos is None:
-                problems.append(_reason(str(uid), RULE_CROSS_REPO,
+                problems.append(_reason(uid, RULE_CROSS_REPO,
                                         "unit_depends_on_repos_malformed"))
                 continue
         if record.get("schema") is None:
@@ -201,22 +271,34 @@ def _normalise_units(units):
         else:
             schema = _as_mapping(record.get("schema"))
             if schema is None:
-                problems.append(_reason(str(uid), RULE_BREAKING_WRITER,
+                problems.append(_reason(uid, RULE_BREAKING_WRITER,
                                         "schema_record_malformed"))
                 continue
-        if record.get("state") is None:
-            problems.append(_reason(str(uid), RULE_RED_SUBSET,
+        state = record.get("state")
+        if state is None:
+            problems.append(_reason(uid, RULE_RED_SUBSET,
                                     "unit_state_unobserved"))
             continue
+        if not isinstance(state, str) or state not in UNIT_STATES:
+            problems.append(_reason(uid, RULE_RED_SUBSET,
+                                    "unit_state_malformed"))
+            continue
+        repo = record.get("repo")
+        if repo is None:
+            repo = ""
+        elif not isinstance(repo, str) or not repo:
+            problems.append(_reason(uid, RULE_CROSS_REPO,
+                                    "unit_repo_malformed"))
+            continue
         unit = dict(record)
-        unit["unit_id"] = str(uid)
-        unit["sha"] = str(sha)
-        unit["files"] = tuple(str(f) for f in files)
-        unit["depends_on"] = tuple(str(d) for d in deps)
+        unit["unit_id"] = uid
+        unit["sha"] = sha
+        unit["files"] = tuple(files)
+        unit["depends_on"] = tuple(deps)
         unit["depends_on_repos"] = tuple(dep_repos)
-        unit["state"] = str(record.get("state"))
+        unit["state"] = state
         unit["schema"] = dict(schema)
-        unit["repo"] = str(record.get("repo") or "")
+        unit["repo"] = repo
         out.append(unit)
     return out, problems
 
@@ -263,7 +345,6 @@ def _cross_repo_verdict(unit, by_id, repository, publication_order):
             if dep_repo != repo:
                 producers.add(dep_repo)
     for dep_repo in _as_names(unit.get("depends_on_repos")) or ():
-        dep_repo = str(dep_repo)
         if dep_repo != repo:
             producers.add(dep_repo)
     if not producers:
@@ -475,7 +556,10 @@ def exact_independent_gate(unit, receipt, required_checks=("unit", "integration"
     if record is None:
         return {"unit_id": "", "state": UNKNOWN,
                 "reason": "unit_record_malformed", "checks": []}
-    unit_id = str(record.get("unit_id") or "")
+    unit_id = record.get("unit_id")
+    if not isinstance(unit_id, str) or not unit_id:
+        return {"unit_id": "", "state": UNKNOWN,
+                "reason": "unit_id_unobserved", "checks": []}
     unit_sha = record.get("sha")
     if not isinstance(receipt, dict) or not receipt:
         return {"unit_id": unit_id, "state": UNKNOWN,
@@ -499,17 +583,11 @@ def exact_independent_gate(unit, receipt, required_checks=("unit", "integration"
         return {"unit_id": unit_id, "state": CONTRADICTED,
                 "reason": reason, "checks": []}
 
-    raw_checks = receipt.get("checks")
-    if isinstance(raw_checks, dict):
-        observed = {str(k): str(v) for k, v in raw_checks.items()}
-        check_list = [{"name": k, "status": v} for k, v in observed.items()]
-    elif isinstance(raw_checks, list):
-        observed = {str(c.get("name")): str(c.get("status"))
-                    for c in raw_checks if isinstance(c, dict)}
-        check_list = [{"name": str(c.get("name")), "status": str(c.get("status"))}
-                      for c in raw_checks if isinstance(c, dict)]
-    else:
-        observed, check_list = {}, []
+    parsed = _as_checks(receipt.get("checks"))
+    if parsed is None:
+        return {"unit_id": unit_id, "state": UNKNOWN,
+                "reason": "required_check_results_malformed", "checks": []}
+    observed, check_list = parsed
     for name in observed:
         if name.upper() in ("ALL_PASS", "ALL", "AGGREGATE"):
             return {"unit_id": unit_id, "state": CONTRADICTED,
@@ -558,23 +636,27 @@ def prove_named_repair(repair, observation):
     if record is None:
         return _repair_verdict(UNKNOWN, "repair_record_malformed")
     repair = dict(record)
-    repair_id = str(repair.get("repair_id") or "")
-    sha = str(repair.get("sha") or "")
-    if not repair_id:
+    repair_id = repair.get("repair_id")
+    sha = repair.get("sha")
+    if not isinstance(repair_id, str) or not repair_id:
         return _repair_verdict(UNKNOWN, "repair_id_unobserved")
-    if not _load_cohort().is_hex_sha(sha):
+    if not isinstance(sha, str) or not _load_cohort().is_hex_sha(sha):
         return _repair_verdict(UNKNOWN, "repair_sha_not_exact_40_hex",
                                repair_id=repair_id)
     if not isinstance(observation, dict) or not observation:
         return _repair_verdict(UNKNOWN, "remote_content_unobserved",
                                repair_id=repair_id)
-    if not observation.get("target_ref"):
+    target_ref = observation.get("target_ref")
+    if not isinstance(target_ref, str) or not target_ref:
         return _repair_verdict(UNKNOWN, "remote_target_unobserved",
                                repair_id=repair_id)
-    if not observation.get("observed_head"):
+    if _as_hex_ref(observation.get("observed_head")) is None:
         return _repair_verdict(UNKNOWN, "remote_head_unobserved",
                                repair_id=repair_id)
-    method = str(observation.get("method") or "")
+    method = observation.get("method")
+    if not isinstance(method, str) or not method:
+        return _repair_verdict(UNKNOWN, "proof_method_unobserved",
+                               repair_id=repair_id)
     if method == "baseline_only":
         return _repair_verdict(UNKNOWN,
                                "prior_baseline_merge_is_not_repair_proof",
@@ -591,19 +673,23 @@ def prove_named_repair(repair, observation):
         return _repair_verdict(UNKNOWN, "ancestry_unobserved",
                                repair_id=repair_id)
     if method in ("content_equivalence", "squash"):
-        files = _as_mapping(repair.get("files"))
-        if repair.get("files") is not None and files is None:
-            return _repair_verdict(UNKNOWN, "repair_content_malformed",
-                                   repair_id=repair_id)
-        expected = {str(k): str(v) for k, v in (files or {}).items()}
+        if repair.get("files") is None:
+            expected = {}
+        else:
+            expected = _as_blob_map(repair.get("files"))
+            if expected is None:
+                return _repair_verdict(UNKNOWN, "repair_content_malformed",
+                                       repair_id=repair_id)
         if not expected:
             return _repair_verdict(UNKNOWN, "repair_content_unobserved",
                                    repair_id=repair_id)
-        tree = observation.get("tree")
-        if not isinstance(tree, dict):
+        if observation.get("tree") is None:
             return _repair_verdict(UNKNOWN, "remote_tree_unobserved",
                                    repair_id=repair_id)
-        tree = {str(k): str(v) for k, v in tree.items()}
+        tree = _as_blob_map(observation.get("tree"))
+        if tree is None:
+            return _repair_verdict(UNKNOWN, "remote_tree_malformed",
+                                   repair_id=repair_id)
         for path in sorted(expected):
             if path not in tree:
                 return _repair_verdict(UNKNOWN, "content_partially_observed:%s" % path,
@@ -786,8 +872,8 @@ def cleanup_disposition(resource):
     if record is None:
         return {"id": "", "disposition": UNKNOWN,
                 "reason": "resource_record_malformed"}
-    resource_id = str(record.get("id") or "")
-    if not resource_id:
+    resource_id = record.get("id")
+    if not isinstance(resource_id, str) or not resource_id:
         return {"id": "", "disposition": UNKNOWN,
                 "reason": "resource_id_unobserved"}
     if record.get("consumers") is None:
@@ -800,12 +886,16 @@ def cleanup_disposition(resource):
     active = []
     for raw in consumers:
         consumer = _as_mapping(raw)
-        state = str(consumer.get("state")) if consumer is not None else ""
+        state = consumer.get("state") if consumer is not None else None
         if consumer is None or state not in CONSUMER_STATES:
             return {"id": resource_id, "disposition": UNKNOWN,
                     "reason": "consumer_state_unobserved"}
         if state == "active":
-            active.append(str(consumer.get("id")))
+            consumer_id = consumer.get("id")
+            if not isinstance(consumer_id, str) or not consumer_id:
+                return {"id": resource_id, "disposition": UNKNOWN,
+                        "reason": "consumer_state_unobserved"}
+            active.append(consumer_id)
     if active:
         return {"id": resource_id, "disposition": "deferred",
                 "reason": "consumer_active:%s" % ",".join(sorted(active))}
@@ -817,7 +907,10 @@ def cleanup_disposition(resource):
         return {"id": resource_id, "disposition": UNKNOWN,
                 "reason": "unique_work_state_unobserved"}
     clean_state = record.get("clean_state")
-    resource_type = str(record.get("resource_type") or "")
+    resource_type = record.get("resource_type")
+    if not isinstance(resource_type, str) or not resource_type:
+        return {"id": resource_id, "disposition": UNKNOWN,
+                "reason": "resource_type_unobserved"}
     if resource_type == "disposable_scratch":
         return {"id": resource_id, "disposition": "eligible",
                 "reason": "disposable_scratch"}
@@ -825,7 +918,11 @@ def cleanup_disposition(resource):
         if clean_state != "CLEAN":
             return {"id": resource_id, "disposition": UNKNOWN,
                     "reason": "clean_state_unobserved"}
-        if not record.get("remote_merge_proof_ids"):
+        proof_ids = _as_names(record.get("remote_merge_proof_ids"))
+        if proof_ids is None:
+            return {"id": resource_id, "disposition": UNKNOWN,
+                    "reason": "remote_merge_proof_malformed"}
+        if not proof_ids:
             return {"id": resource_id, "disposition": UNKNOWN,
                     "reason": "remote_merge_proof_unobserved"}
         return {"id": resource_id, "disposition": "eligible",
@@ -834,16 +931,24 @@ def cleanup_disposition(resource):
             "reason": "resource_type_unobserved:%s" % resource_type}
 
 
-def _merge_component_states(components):
+def _merge_component_states(components, reasons):
     """Fold component states: any contradiction wins, then any unknown, else proven.
 
-    A component whose state is absent or unrecognised folds to ``UNKNOWN``:
-    an unobserved component state is never a proof.
+    A component whose state is absent or unrecognised folds to ``UNKNOWN``
+    **with a reason**: an unobserved component state is never a proof, and an
+    ``UNKNOWN`` with no reason is a receipt ``verify_receipt`` itself rejects.
     """
-    states = [str(c.get("state")) for c in components if isinstance(c, dict)]
+    states = []
+    for component in components:
+        record = _as_mapping(component)
+        if record is None or not isinstance(record.get("state"), str):
+            states.append(None)
+            continue
+        states.append(record["state"])
     if any(state == CONTRADICTED for state in states):
         return CONTRADICTED
     if any(state not in (PROVEN, ADMITTED) for state in states):
+        reasons.append("component_state_unobserved")
         return UNKNOWN
     return PROVEN
 
@@ -908,13 +1013,16 @@ def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
 
     if owner.get("state") != PROVEN:
         reasons.append("owner:%s" % (owner.get("reason") or "owner_unobserved"))
-    if not target.get("remote"):
+    if not isinstance(target.get("remote"), str) or not target.get("remote"):
         reasons.append("remote_target_unobserved")
-    if not target.get("before"):
+    if _as_hex_ref(target.get("before")) is None:
         reasons.append("target_before_unobserved")
-    if not target.get("after"):
+    if _as_hex_ref(target.get("after")) is None:
         reasons.append("target_after_unobserved")
-    if not cohort.get("admit"):
+    admit_names = _as_names(cohort.get("admit"))
+    if admit_names is None:
+        reasons.append("cohort_membership_malformed")
+    elif not admit_names:
         reasons.append("cohort_membership_empty")
     for entry in _records_or_reason(cohort.get("unknown"), "cohort_unknown",
                                     reasons):
@@ -939,8 +1047,8 @@ def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
                                            or "proof_unobserved"))
 
     candidates = []
-    order = _as_records(cohort.get("order")) if cohort.get("order") is not None else ()
-    if order is None:
+    order = _as_names(cohort.get("order"))
+    if order is None or not order:
         reasons.append("candidate_unobserved")
         order = ()
     for uid in order:
@@ -949,14 +1057,14 @@ def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
         if not _is_hex_sha(sha):
             reasons.append("candidate_sha_unobserved:%s" % uid)
 
-    components = [owner, cohort, proof] + gates + named_repairs
+    components = [owner, proof] + gates + named_repairs
     components += [{"state": PROVEN if item.get("disposition") == "eligible"
                     else UNKNOWN} for item in cleanup]
     cohort_state = (UNKNOWN if cohort.get("unknown") else
                     UNKNOWN if cohort.get("hold") else
-                    ADMITTED if cohort.get("admit") else UNKNOWN)
+                    ADMITTED if admit_names else UNKNOWN)
     components.append({"state": cohort_state})
-    state = _merge_component_states(components)
+    state = _merge_component_states(components, reasons)
     if reasons and state == PROVEN:
         state = UNKNOWN
 
@@ -980,10 +1088,13 @@ def build_receipt(*, repository="onboarding", owner, target, cohort, gates,
 
 def _sha_for(cohort, unit_id):
     """Look up the exact SHA the cohort froze for a unit, else None."""
+    if not isinstance(unit_id, str) or not unit_id:
+        return None
     for candidate in _as_records(cohort.get("candidates")) or ():
         record = _as_mapping(candidate)
         if record is not None and record.get("unit_id") == unit_id:
-            return record.get("sha")
+            sha = record.get("sha")
+            return sha if isinstance(sha, str) else None
     return None
 
 
@@ -1024,23 +1135,26 @@ def verify_receipt(receipt):
         if owner.get("state") != PROVEN:
             return False, "proven receipt lacks a proven owner"
         target = _as_mapping(receipt.get("target")) or {}
-        if not (target.get("remote") and target.get("before")
-                and target.get("after")):
+        if not isinstance(target.get("remote"), str) or not target.get("remote"):
+            return False, "proven receipt lacks target before/after"
+        if (_as_hex_ref(target.get("before")) is None
+                or _as_hex_ref(target.get("after")) is None):
             return False, "proven receipt lacks target before/after"
         candidates = _as_records(receipt.get("candidates"))
         if not candidates:
             return False, "proven receipt has no candidates"
         for candidate in candidates:
             record = _as_mapping(candidate) or {}
-            if not record.get("unit_id"):
+            if not isinstance(record.get("unit_id"), str) or not record["unit_id"]:
                 return False, "proven receipt carries a candidate without a unit id"
             if not _is_hex_sha(record.get("sha")):
                 return False, "proven receipt carries a candidate without an exact sha"
         if not receipt.get("gates"):
             return False, "proven receipt has no gates"
         cohort = _as_mapping(receipt.get("cohort")) or {}
+        admit = _as_names(cohort.get("admit"))
         if (cohort.get("hold") or cohort.get("unknown")
-                or not cohort.get("admit")):
+                or admit is None or not admit):
             return False, "proven receipt carries a non-admitted cohort"
         for gate in receipt.get("gates") or ():
             if gate.get("state") != PROVEN:
