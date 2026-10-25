@@ -162,11 +162,12 @@ const DEFAULT_CONVENE_DRAIN_TIMEOUT_MS = 25_000;
 
 /**
  * Budget service ceilings for a convened session. The grant issued at
- * convene is the authority: the four older modes carry 62/27/8, a light
- * or medium session 50/50/50, a heavy session 100/100/100 (see
- * service/driver.ts ceilingsForMode). The service settings must therefore
- * admit those totals — this is the protocol's runaway guard, never a
- * money ceiling (money and tokens stay null on every grant).
+ * convene is the authority: the four older modes carry 50/9/8 (exactly
+ * what they are documented and printed as), a light or medium session
+ * 50/50/50, a heavy session 100/100/100 (see service/driver.ts
+ * ceilingsForMode). The service settings must therefore admit those
+ * totals — this is the protocol's runaway guard, never a money ceiling
+ * (money and tokens stay null on every grant).
  */
 export const CONVENING_SETTINGS: CouncilSettings = {
   ...DEFAULT_COUNCIL_SETTINGS,

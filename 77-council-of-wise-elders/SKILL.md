@@ -211,16 +211,26 @@ counsel artifact.
    - The client's own Ollama, if they prefer it. When their plan is not
      already known, ask once: the $20 a month plan runs at most three
      advisors at a time; the $100 a month plan runs up to ten. When Ollama
-     fails, the council falls back to OpenRouter.
+     fails and the client has named an OpenRouter fallback model
+     (`--fallback-model ID`), the failed seats re-run on OpenRouter; with
+     no fallback model the sitting blocks on the failed seats instead.
    - Agnes 3.0 Flash, when the client selects it: no parallel limit.
+
+   The DEFAULT is one rule, and it is the same rule in INSTRUCTIONS.md:
+   if one of those routes is the calling agent's own provider family, that
+   route is the default (it runs the client's own provider); otherwise
+   OpenRouter is the default, which is also what you recommend. OpenRouter
+   being "first and recommended" never overrides the caller's own provider.
    a. Read the calling agent's configured provider and model from its own
       environment: in OpenClaw, `openclaw agents list` (the agent's
       `Model:` line, `<provider>/<model>`); on claude-nine or Claude Code,
       the harness's configured default. Never guess it.
    b. Run `blackceo-council routes` (or `models --json`). If a route
-      matches the caller's provider family, offer THAT as the default and
-      say plainly: "your agent's provider is <provider>, and the council
-      runs it through <route>".
+      matches the caller's provider family, that route is the default and
+      you say plainly: "your agent's provider is <provider>, and the council
+      runs it through <route>". If no route matches the caller's provider
+      family, the default is OpenRouter (the recommended one) and step c
+      asks the client to choose from the routes that exist.
    c. If NO route matches the caller's provider, say exactly this and
       stop: "The council runtime on this box is configured with: <the
       routes it returned>. None of those is your agent's model

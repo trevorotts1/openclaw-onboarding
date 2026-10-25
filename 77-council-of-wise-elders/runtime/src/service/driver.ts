@@ -182,18 +182,21 @@ const DEFAULT_PACK_VERSION = 'live-elder-knowledge/v1';
 
 /**
  * Protocol runaway guard only; money and token ceilings stay unset.
- * Sized for the nine-seat, three-round council: 27 operations, each
- * allowed its one repair (27), plus the 8 transport retries = 62, so a
- * real model that needs a repair on most operations cannot starve the
- * session (real run: 9 repairs were spent by mid Round 2).
  *
- * The four older modes keep exactly this grant. Light/medium/heavy take
- * their ceilings from MODE_ROUND_POLICY instead: the mode's provider cap
- * is the whole guard (money and tokens stay null).
+ * The four older modes keep exactly the ceiling the client is told and
+ * the ceiling they were already enforced at: 50 provider requests, with
+ * 9 repairs and 8 transport retries under it (DEFAULT_COUNCIL_SETTINGS).
+ * The grant IS the enforced cap, so the printed cap, `status`, the docs
+ * and the budget service can never disagree (W77S-MODES review: the
+ * earlier 62/27/8 grant was silently raised to 62 by the convening
+ * service settings while every client-facing file promised 50).
+ *
+ * Light/medium/heavy take their ceilings from MODE_ROUND_POLICY instead:
+ * the mode's provider cap is the whole guard (money and tokens stay null).
  */
 const CONVENING_CEILINGS: RunCeilings = {
-  max_provider_requests: 62,
-  max_output_repairs: 27,
+  max_provider_requests: 50,
+  max_output_repairs: 9,
   max_transport_retries: 8,
   max_input_tokens: null,
   max_output_tokens: null,
@@ -440,8 +443,17 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
         ? lightPanelFor(brief)
         : [...baseSpec.seat_ids];
     // Every panel seat carries a weight: a seat missing from the brief's
-    // relevance_weights blocks the sitting at DRAFT_RESOLUTION.
-    const relevanceWeights = { ...brief.relevance_weights };
+    // relevance_weights blocks the sitting at DRAFT_RESOLUTION. A seat
+    // that is NOT on the panel carries none: publication recomputes the
+    // decision over every weighted seat, so a light sitting that kept the
+    // other six weights scored the verdict over a three-seat card set but
+    // recomputed it over nine seats and failed its own scores_recomputed
+    // check (W77S-MODES review).
+    const panel = new Set<SeatId>(seatIds);
+    const relevanceWeights: DecisionBrief['relevance_weights'] = {};
+    for (const [seatId, weight] of Object.entries(brief.relevance_weights)) {
+      if (panel.has(seatId as SeatId)) relevanceWeights[seatId as SeatId] = weight;
+    }
     for (const seatId of seatIds) {
       if (relevanceWeights[seatId] === undefined) relevanceWeights[seatId] = 1;
     }

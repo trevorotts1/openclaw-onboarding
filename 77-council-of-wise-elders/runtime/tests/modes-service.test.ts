@@ -11,7 +11,7 @@
  *  - the fallback route is resolved on openrouter-configured, and every
  *    other case reports "none (<reason>)";
  *  - grant ceilings are per mode (light/medium 50, heavy 100) and the four
- *    older modes keep 62/27/8;
+ *    older modes keep the enforced 50/9/8 they are documented and printed as;
  *  - the service budget settings admit those totals so the grant governs;
  *  - the CLI forwards --seat-ids/--ollama-plan/--fallback-model and prints
  *    the run shape (and never a money figure);
@@ -410,7 +410,7 @@ test('W77S-D: an older mode never gets a fallback route', async () => {
 
 // ---------------------------------------------------------------- ceilings
 
-test('W77S-D: grant ceilings come from the mode policy and the four older modes keep 62/27/8', () => {
+test('W77S-D: grant ceilings come from the mode policy and the four older modes keep 50/9/8', () => {
   for (const [mode, cap] of [
     ['light', 50],
     ['medium', 50],
@@ -424,10 +424,12 @@ test('W77S-D: grant ceilings come from the mode policy and the four older modes 
     assert.equal(ceilings.max_output_tokens, null, mode);
     assert.equal(ceilings.max_money, null, mode);
   }
+  // The grant is the ENFORCED cap for an older mode, so it must equal the
+  // 50/9/8 every client-facing file promises and every `status` reports.
   for (const mode of ['full', 'selected', 'quick', 'consult'] as const) {
     assert.deepEqual(ceilingsForMode(mode), {
-      max_provider_requests: 62,
-      max_output_repairs: 27,
+      max_provider_requests: 50,
+      max_output_repairs: 9,
       max_transport_retries: 8,
       max_input_tokens: null,
       max_output_tokens: null,
@@ -646,7 +648,7 @@ test('W77S-D: an older mode prints a fixed three-round shape', async () => {
     mode: 'full',
     seats: 9,
     rounds: null,
-    request_cap: 62,
+    request_cap: 50,
     parallel_limit: 1,
   });
   const c = capture();
@@ -657,7 +659,7 @@ test('W77S-D: an older mode prints a fixed three-round shape', async () => {
   });
   assert.equal(code, 0);
   assert.match(c.out(), /rounds: 3 \(fixed\)/);
-  assert.match(c.out(), /request cap: 62 provider requests/);
+  assert.match(c.out(), /request cap: 50 provider requests/);
 });
 
 test('W77S-D: dispatcher help documents the new convene flags', async () => {

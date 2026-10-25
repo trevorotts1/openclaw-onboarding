@@ -375,6 +375,11 @@ export class CouncilEngine {
 
   async resumeSession(sessionId: string, grantRef: string): Promise<StoredSession> {
     let session = await this.getSession(sessionId);
+    // The local engine runs only the four older modes' pipeline. A council
+    // size has no resumable pipeline here, so resuming one would walk the
+    // legacy round-2 path and die on an illegal transition; refuse it with
+    // the same typed message create/start use (W77S-MODES review).
+    refuseCouncilSize(session.spec.mode);
     const from = session.state.state;
     if (from !== 'PAUSED' && from !== 'BLOCKED') {
       throw new CouncilError(

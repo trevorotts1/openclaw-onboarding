@@ -53,6 +53,7 @@ import {
   type DeliberationService,
   type RunSessionResult,
 } from '../src/protocol/composition.js';
+import { validateVerdictForPublication } from '../src/protocol/verdict.js';
 import { CONVENING_SETTINGS } from '../src/service/composition.js';
 import {
   createCouncilDriver,
@@ -338,6 +339,8 @@ interface Rig {
     seat_ids?: SeatId[];
     ollama_plan?: '20' | '100';
     fallback_model?: string;
+    /** Override the frozen brief (e.g. one carrying weights for every seat). */
+    brief?: DecisionBrief;
   }) => Promise<{ session_id: string; seats: number; parallel_limit: number; request_cap: number }>;
   drain: () => Promise<void>;
 }
@@ -346,7 +349,13 @@ const FALLBACK_ROUTE_ID = 'openrouter-configured';
 
 function rig(
   route: { routeId: string; providerSlug: string },
-  opts: { failingSeat?: SeatId } = {},
+  opts: {
+    failingSeat?: SeatId;
+    /** Several seats that fail on the primary route. */
+    failingSeats?: readonly SeatId[];
+    /** Restrict the `failingSeats` failures to one round (keeps the run under the cap). */
+    failRound?: number;
+  } = {},
 ): Rig {
   const dir = mkdtempSync(join(tmpdir(), 'w77s-e2e-'));
   const db = CouncilDatabase.open(join(dir, 'council.db'), {
@@ -357,9 +366,16 @@ function rig(
   db.write((handle) => handle.exec(COUNCIL_SCHEMA_SQL));
   const transport = new ConcurrencyTransport();
   const fallbackTransport = new ConcurrencyTransport();
+  const fails = (request: TransportRequest): boolean => {
+    const seatId = request.seat_id as SeatId;
+    if (opts.failingSeat !== undefined && seatId === opts.failingSeat) return true;
+    if (opts.failingSeats === undefined || !opts.failingSeats.includes(seatId)) return false;
+    return opts.failRound === undefined || request.round === opts.failRound;
+  };
+  const hasFallback = opts.failingSeat !== undefined || opts.failingSeats !== undefined;
   const primary: ModelTransport = {
     generate: async (request) => {
-      if (opts.failingSeat !== undefined && request.seat_id === opts.failingSeat) {
+      if (fails(request)) {
         transport.requests.push(request);
         throw new TransportDispatchError('rate limited by the local daemon', {
           retryable: true,
@@ -375,9 +391,7 @@ function rig(
     catalog: new ListCatalog(SEAT_IDS.map((seatId) => seatCandidate(seatId))),
     resolvePrincipal: () => principal,
     resolveTransport: (snapshot) =>
-      opts.failingSeat !== undefined && snapshot.routeId === FALLBACK_ROUTE_ID
-        ? fallbackTransport
-        : primary,
+      hasFallback && snapshot.routeId === FALLBACK_ROUTE_ID ? fallbackTransport : primary,
     routeBudget: () => ({
       context_limit_bytes: 1_000_000,
       response_schema_bytes: 2_000,
@@ -570,4 +584,82 @@ test('W77S-E2E: a rate-limited Ollama seat is re-run on the driver-approved fall
   assert.ok(fallbackJobs.every((job) => job.state === 'succeeded'));
   if (settled.status !== 'completed') return;
   assert.equal(settled.verdict.ratification_status, 'not_required');
+});
+
+test('W77S-E2E: the Ollama fallback re-runs every failed seat in ONE wave on the fallback route', async () => {
+  // Medium on an Ollama $20 plan: the primary waves are 3 wide. Four
+  // seats fail in Round 1, so a fallback that inherited the primary's
+  // wave width would need two serial OpenRouter round-trips. The
+  // fallback route has no parallel limit: all four go in one wave.
+  const failing = SEAT_IDS.slice(0, 4);
+  const r = rig(
+    { routeId: 'ollama-configured', providerSlug: 'ollama' },
+    { failingSeats: failing, failRound: 1 },
+  );
+  const accepted = await r.convene({
+    mode: 'medium',
+    ollama_plan: '20',
+    fallback_model: 'some/model',
+  });
+  await r.drain();
+
+  assert.equal(accepted.parallel_limit, 3);
+  assert.equal(r.fallbackTransport.requests.length, failing.length);
+  assert.equal(
+    r.fallbackTransport.peak,
+    failing.length,
+    'the fallback route runs every re-run at once, not in primary-sized waves',
+  );
+  assert.equal(r.settled[0].result.status, 'completed');
+});
+
+test('W77S-E2E: light freezes only its panel weights so the verdict passes publication', async () => {
+  // A light convene over a brief that carries all nine weights: the
+  // driver's panel is three seats, so the frozen brief must carry three
+  // weights. Keeping the other six made publication recompute the
+  // decision over nine seats while the verdict was built over three, and
+  // the light verdict failed its own scores_recomputed check.
+  const r = rig({ routeId: 'openrouter-configured', providerSlug: 'openrouter-configured' });
+  const allWeights = briefFor([...SEAT_IDS]);
+  const accepted = await r.convene({
+    mode: 'light',
+    seat_ids: [...LIGHT_PANEL],
+    brief: allWeights,
+  });
+  await r.drain();
+
+  const owner = envelopeFromScope(SCOPE, 'owner-1', 'owner', 'write');
+  const stored = r.service.repositories.getSession(owner, accepted.session_id);
+  assert.ok(stored);
+  assert.deepEqual(
+    Object.keys(stored.brief.relevance_weights).sort(),
+    [...LIGHT_PANEL].sort(),
+    'the frozen brief carries exactly the panel weights',
+  );
+  // Every panel seat keeps the weight the caller gave it.
+  for (const seatId of LIGHT_PANEL) {
+    assert.equal(
+      stored.brief.relevance_weights[seatId],
+      allWeights.relevance_weights[seatId],
+      seatId,
+    );
+  }
+
+  const settled = r.settled[0].result;
+  assert.equal(settled.status, 'completed');
+  if (settled.status !== 'completed') return;
+  const publication = validateVerdictForPublication({
+    verdict: settled.verdict,
+    brief: stored.brief,
+    final_cards: r.service.repositories.listCards(owner, accepted.session_id),
+    require_final_cards: true,
+  });
+  assert.equal(
+    publication.publishable,
+    true,
+    publication.checks
+      .filter((check) => check.status !== 'pass')
+      .map((check) => `${check.name}: ${check.detail}`)
+      .join('; '),
+  );
 });

@@ -438,6 +438,10 @@ export class DeliberationService {
       routeSnapshot: PinnedRouteSnapshot = options.route_snapshot,
       keySuffix = '',
       grantId: string = options.grant_id,
+      // The wave width for THIS round's route. Defaults to the primary
+      // route's limit; the Ollama fallback overrides it because it runs
+      // on a different provider with a different parallel limit.
+      waveLimit: number = Math.max(1, options.parallel_limit ?? 1),
     ): Promise<void> => {
       const roundPrefix = `round-${round}:`;
       for (const [seatId, plan] of plans) {
@@ -477,7 +481,7 @@ export class DeliberationService {
       // state (or return to queued, which this loop then claims).
       // With no competing worker the first null claim ends the round,
       // exactly as before.
-      const limit = Math.max(1, options.parallel_limit ?? 1);
+      const limit = Math.max(1, waveLimit);
       const maxIterations = plans.size * 4 + 16;
       const timers = this.deps.timers ?? systemTimers;
       const pollMs = this.deps.roundWaitPollMs ?? ROUND_WAIT_POLL_MS;
@@ -564,12 +568,21 @@ export class DeliberationService {
         }
       }
       if (plans.size === 0) return;
+      // The fallback runs on ITS OWN provider, so the primary route's
+      // Ollama wave width does not apply: an OpenRouter fallback has no
+      // parallel limit and every failed seat re-runs in one wave. A
+      // fallback that is itself Ollama keeps the primary plan limit (the
+      // plan belongs to the client's Ollama account, not to the route).
+      const fallbackLimit = isOllamaProvider(fallback.providerSlug)
+        ? Math.max(1, options.parallel_limit ?? 1)
+        : Math.max(1, plans.size);
       await enqueueRound(
         round,
         plans,
         fallback,
         ':fallback',
         options.fallback_grant_id ?? options.grant_id,
+        fallbackLimit,
       );
     };
 
@@ -579,7 +592,14 @@ export class DeliberationService {
     // draft input hash, so every Round 3 dispatch would refuse as input
     // drift. In full mode a seat with no card can only end BLOCKED, so
     // continuing would spend paid Round 2/3 calls on a session that cannot
-    // produce a verdict. Stop in place (BLOCKED is resumable).
+    // produce a verdict. Stop in place.
+    //
+    // The stopped session is left BLOCKED with its committed cards intact,
+    // but it is NOT resumable by any runner this runtime ships: runSession
+    // is a one-shot driver, the service exposes no resume route, and the
+    // local CLI engine refuses the council sizes (only the four older
+    // modes have a resumable pipeline). BLOCKED here means "stopped, safe
+    // to inspect" — not "resume to finish" (W77S-MODES review).
     const stalledRound = (round: number): RunSessionResult | null => {
       const prefix = `round-${round}:`;
       const unfinished = this.runner

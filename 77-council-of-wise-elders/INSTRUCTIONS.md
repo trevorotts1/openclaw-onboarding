@@ -55,11 +55,18 @@ and dispatch are the proven live legs.
    - The client's own Ollama, if they prefer it. When their plan is not
      already known, ask once: the $20 a month plan runs at most three
      advisors at a time, the $100 a month plan runs up to ten. When Ollama
-     fails, the council falls back to OpenRouter.
+     fails and the client has named an OpenRouter fallback model
+     (`--fallback-model ID`), the failed seats re-run on OpenRouter; with
+     no fallback model the sitting blocks on the failed seats instead.
    - Agnes 3.0 Flash, when the client selects it: no parallel limit.
-   Never pick silently. Pass the client's choice with `--route` and
-   `--model`; when the client defers, pass nothing and the detected
-   harness decides (`--harness` overrides).
+   The default follows the same rule as SKILL.md: read the calling agent's
+   own configured provider (in OpenClaw, `openclaw agents list`; on
+   claude-nine or Claude Code, the harness default) and, if one of those
+   routes is that provider family, that route is the default; otherwise
+   OpenRouter is the default and the recommendation. Never pick silently.
+   Pass the client's choice with `--route` and `--model`; when the client
+   defers, pass nothing and the detected harness decides (`--harness`
+   overrides).
 6. For a question that depends on current facts, research the web first
    with your own tools and pass the findings with `--fresh-facts FILE`, a
    JSON array of `{claim, url, title, retrieved_at}`. Keep "From the
