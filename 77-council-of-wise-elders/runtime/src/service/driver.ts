@@ -22,18 +22,22 @@
  * and every card comes from the resolved route's transport.
  */
 
-import { appendFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { TrustedPrincipal } from '../authorization/index.js';
 import type { PinnedRouteSnapshot } from '../budgets/route-snapshot.js';
 import { buildSampleSession } from '../cli/fixture-transport.js';
 import type { Clock, IdSource, StoredSession } from '../cli/host-ports.js';
 import {
   canonicalHash,
+  isCouncilSize,
+  MODE_ROUND_POLICY,
   SEAT_IDS,
   validateDecisionBrief,
   validateSessionSpec,
+  type CouncilSize,
   type DecisionBrief,
+  type ModeRoundPolicy,
   type ModelPolicy,
   type RunCeilings,
   type ScopeFields,
@@ -42,6 +46,12 @@ import {
   type SessionSpec,
   type SessionVisibility,
 } from '../contracts/index.js';
+import { recommendLightPanel } from '../intake/panel.js';
+import {
+  isOllamaProvider,
+  parallelLimitFor,
+  type OllamaPlan,
+} from '../providers/parallel.js';
 import type { AuthorizationEnvelope } from '../persistence/envelope.js';
 import type {
   DeliberationService,
@@ -84,10 +94,21 @@ export interface ConveneInput {
   brief?: DecisionBrief;
   mode?: SessionMode;
   seat_ids?: SeatId[];
+  /** The client's Ollama plan; remembered in <dataDir>/provider-plan.json. */
+  ollama_plan?: OllamaPlan | null;
+  /** OpenRouter model to fall back to when the primary route is Ollama. */
+  fallback_model?: string | null;
   visibility?: SessionVisibility;
   route: RouteChoiceRequest;
   fresh_facts?: FreshFact[];
   requested_by: string;
+}
+
+/** Rounds a council size may run, as the client-facing summary prints them. */
+export interface ConveneRoundsPolicy {
+  min_rounds: number;
+  max_rounds: number;
+  stop_from_round: number | null;
 }
 
 export interface ConveneAccepted {
@@ -100,11 +121,24 @@ export interface ConveneAccepted {
   grant_id: string;
   session_path: string;
   events_path: string;
+  /** Real session mode (light/medium/heavy or one of the four older modes). */
+  mode: SessionMode;
+  /** Panel seats the run actually uses. */
+  seats: number;
+  /** null for the four older modes, whose round shape is fixed. */
+  rounds: ConveneRoundsPolicy | null;
+  /** The enforced provider-request cap for this session. */
+  request_cap: number;
+  /** Seats dispatched at once (1 for the older modes, today's behaviour). */
+  parallel_limit: number;
+  /** One plain line: the fallback route, or none and why. */
+  fallback: string;
 }
 
 export type DriverRefusalCode =
   | 'COMPOSITION_NOT_READY'
   | 'CONVENE_INPUT_INVALID'
+  | 'OLLAMA_PLAN_REQUIRED'
   | RouteChoiceErrorCode;
 
 export class DriverRefusal extends Error {
@@ -133,6 +167,8 @@ export interface CouncilDriverDeps {
   recordFreshFacts?: (sessionId: string, facts: FreshFact[]) => void;
   /** <dataDir>/convening-audit.jsonl */
   auditLogPath: string;
+  /** Durable data directory for the remembered Ollama plan. Defaults to dirname(auditLogPath). */
+  dataDir?: string;
   onSettled?: (
     sessionId: string,
     result: RunSessionResult | { status: 'error'; code: string },
@@ -150,6 +186,10 @@ const DEFAULT_PACK_VERSION = 'live-elder-knowledge/v1';
  * allowed its one repair (27), plus the 8 transport retries = 62, so a
  * real model that needs a repair on most operations cannot starve the
  * session (real run: 9 repairs were spent by mid Round 2).
+ *
+ * The four older modes keep exactly this grant. Light/medium/heavy take
+ * their ceilings from MODE_ROUND_POLICY instead: the mode's provider cap
+ * is the whole guard (money and tokens stay null).
  */
 const CONVENING_CEILINGS: RunCeilings = {
   max_provider_requests: 62,
@@ -159,6 +199,37 @@ const CONVENING_CEILINGS: RunCeilings = {
   max_output_tokens: null,
   max_money: null,
 };
+
+export function ceilingsForMode(mode: SessionMode): RunCeilings {
+  if (!isCouncilSize(mode)) return { ...CONVENING_CEILINGS };
+  const cap = MODE_ROUND_POLICY[mode].max_provider_requests;
+  return {
+    max_provider_requests: cap,
+    max_output_repairs: cap,
+    max_transport_retries: cap,
+    max_input_tokens: null,
+    max_output_tokens: null,
+    max_money: null,
+  };
+}
+
+/** The round shape a council size runs, for the client-facing summary. */
+export function roundsPolicyOf(mode: CouncilSize): ConveneRoundsPolicy {
+  const policy: ModeRoundPolicy = MODE_ROUND_POLICY[mode];
+  return {
+    min_rounds: policy.min_rounds,
+    max_rounds: policy.max_rounds,
+    stop_from_round: policy.stop_from_round,
+  };
+}
+
+/** <dataDir>/provider-plan.json — the client's Ollama plan, asked once. */
+const PROVIDER_PLAN_FILE = 'provider-plan.json';
+/** The one question asked when an Ollama route has no known plan (design verbatim). */
+const OLLAMA_PLAN_ACTION =
+  'Ask the client: are you on the Ollama $20 a month plan or the $100 a month plan? Then convene again with --ollama-plan 20 or --ollama-plan 100.';
+/** The OpenRouter route the fallback model is resolved on. */
+const FALLBACK_ROUTE_ID = 'openrouter-configured';
 
 // ponytail: the six typed route-choice codes map to a fixed status; a
 // route-choice error with an unknown code is rethrown untouched.
@@ -186,12 +257,113 @@ function errorCode(error: unknown): string {
   return typeof code === 'string' ? code : 'RUN_FAILED';
 }
 
+/**
+ * The three best-fit seats for a light question. The brief names the
+ * domains that matter (critical_domains required_seat_id, and weight 3),
+ * so those seats are offered first in the same order recommendLightPanel
+ * uses, and the roster fills any shortfall.
+ */
+function lightPanelFor(brief: DecisionBrief): SeatId[] {
+  const responsible = new Set(
+    brief.critical_domains
+      .map((domain) => domain.required_seat_id)
+      .filter((seat): seat is SeatId => seat !== null),
+  );
+  const flagged = (seat: SeatId): boolean =>
+    responsible.has(seat) || brief.relevance_weights[seat] === 3;
+  const draft = {
+    answers: {
+      decision: {
+        flags: {
+          involves_money_commitment: flagged('tiffany-aliche'),
+          involves_offer_or_pricing: flagged('russell-brunson'),
+          involves_rebrand_or_pivot: flagged('simon-sinek'),
+          involves_stakeholder_trust: flagged('brene-brown'),
+          decision_is_communication: flagged('td-jakes'),
+        },
+      },
+    },
+  } as unknown as Parameters<typeof recommendLightPanel>[0];
+  return recommendLightPanel(draft);
+}
+
 export function createCouncilDriver(deps: CouncilDriverDeps): {
   convene(input: ConveneInput): Promise<ConveneAccepted>;
   inFlight(): number;
   drain(): Promise<void>;
 } {
   const running = new Set<Promise<void>>();
+
+  function planFilePath(): string {
+    return join(deps.dataDir ?? dirname(deps.auditLogPath), PROVIDER_PLAN_FILE);
+  }
+
+  /** The remembered Ollama plan; null when the client has not been asked yet. */
+  function readOllamaPlan(): OllamaPlan | null {
+    try {
+      const raw = JSON.parse(readFileSync(planFilePath(), 'utf8')) as { ollama_plan?: unknown };
+      return raw.ollama_plan === '20' || raw.ollama_plan === '100' ? raw.ollama_plan : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * <dataDir>/provider-plan.json, written when the client supplies the
+   * plan and read back when they do not. A failed write loses only the
+   * memory (the question is asked once more), never the run.
+   */
+  function writeOllamaPlan(plan: OllamaPlan): void {
+    try {
+      const path = planFilePath();
+      mkdirSync(dirname(path), { recursive: true });
+      const tmp = `${path}.tmp.${process.pid}`;
+      writeFileSync(tmp, `${JSON.stringify({ ollama_plan: plan }, null, 2)}\n`);
+      renameSync(tmp, path);
+    } catch {
+      /* ponytail: best-effort memory; the session still runs on the supplied plan */
+    }
+  }
+
+  function resolveOllamaPlan(supplied: unknown): OllamaPlan | null {
+    if (supplied === '20' || supplied === '100') {
+      writeOllamaPlan(supplied);
+      return supplied;
+    }
+    if (supplied !== undefined && supplied !== null) {
+      throw invalid('ollama_plan must be "20" or "100".');
+    }
+    return readOllamaPlan();
+  }
+
+  /**
+   * The fallback route for an Ollama primary: the named model on the
+   * OpenRouter route. Anything that cannot be resolved is reported as
+   * "none (<reason>)" and the convene proceeds on the primary route.
+   */
+  async function resolveFallback(
+    primary: ResolvedSessionRoute,
+    fallbackModel: string | null,
+    councilMode: boolean,
+  ): Promise<{ snapshot: PinnedRouteSnapshot | null; line: string }> {
+    if (!councilMode) return { snapshot: null, line: 'none (the older modes keep their existing route)' };
+    if (!isOllamaProvider(primary.snapshot.providerSlug)) {
+      return { snapshot: null, line: 'none (primary route is not Ollama)' };
+    }
+    if (fallbackModel === null || fallbackModel.trim() === '') {
+      return { snapshot: null, line: 'none (no fallback model given)' };
+    }
+    try {
+      const resolved = await deps.resolveRoute({ route_id: FALLBACK_ROUTE_ID, model: fallbackModel });
+      return {
+        snapshot: resolved.snapshot,
+        line: `${resolved.snapshot.routeId} / ${resolved.model_label}`,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { snapshot: null, line: `none (${message})` };
+    }
+  }
 
   async function route(request: RouteChoiceRequest): Promise<ResolvedSessionRoute> {
     try {
@@ -256,6 +428,24 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       session_id: sessionId,
       revision: 1,
     };
+    // A client convene that names no council size gets medium (design
+    // default). The built-in sample keeps the mode its fixture carries:
+    // it is a harmless demo, not a client decision to size.
+    const mode: SessionMode = input.mode ?? (sample ? baseSpec.mode : 'medium');
+    // Light runs the three best-fit seats. Named seats win; otherwise the
+    // brief's own critical domains pick the panel.
+    const seatIds: SeatId[] = input.seat_ids
+      ? [...input.seat_ids]
+      : mode === 'light'
+        ? lightPanelFor(brief)
+        : [...baseSpec.seat_ids];
+    // Every panel seat carries a weight: a seat missing from the brief's
+    // relevance_weights blocks the sitting at DRAFT_RESOLUTION.
+    const relevanceWeights = { ...brief.relevance_weights };
+    for (const seatId of seatIds) {
+      if (relevanceWeights[seatId] === undefined) relevanceWeights[seatId] = 1;
+    }
+    brief = { ...brief, relevance_weights: relevanceWeights };
     const briefCheck = validateDecisionBrief(brief);
     if (!briefCheck.ok) {
       throw invalid('The decision brief failed validation.', { issues: briefCheck.issues });
@@ -265,9 +455,9 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       session_id: sessionId,
       brief_revision: 1,
       brief_sha256: canonicalHash(brief),
-      mode: input.mode ?? baseSpec.mode,
+      mode,
       visibility: input.visibility ?? baseSpec.visibility,
-      seat_ids: input.seat_ids ? [...input.seat_ids] : baseSpec.seat_ids,
+      seat_ids: seatIds,
       model_policy: resolved.model_policy,
       created_at: now,
     };
@@ -336,6 +526,35 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
     const resolved = await route(input.route ?? {});
     const sessionId = `sess-${deps.ids.newId()}`;
     const session = buildSession(input, sessionId, resolved);
+    const mode = session.spec.mode;
+    const councilMode = isCouncilSize(mode);
+
+    // The Ollama plan is remembered once, then reused. An Ollama route
+    // with no known plan is a typed refusal, never a guess.
+    const plan = resolveOllamaPlan(input.ollama_plan);
+    let parallelLimit = 1;
+    if (councilMode) {
+      const parallel = parallelLimitFor({
+        providerSlug: resolved.snapshot.providerSlug,
+        ollamaPlan: plan,
+        panelSize: session.spec.seat_ids.length,
+      });
+      if (!parallel.ok) {
+        throw new DriverRefusal(
+          'OLLAMA_PLAN_REQUIRED',
+          'The client chooses their own Ollama, and its plan is not known yet, so the council cannot size how many advisors run at once.',
+          OLLAMA_PLAN_ACTION,
+          409,
+        );
+      }
+      parallelLimit = parallel.limit;
+    }
+    const fallback = await resolveFallback(
+      resolved,
+      input.fallback_model ?? null,
+      councilMode,
+    );
+    const ceilings = ceilingsForMode(mode);
 
     const repos = deps.deliberation.repositories;
     repos.createSession(deps.envelope, session);
@@ -347,7 +566,7 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       purpose: 'council_run',
       route_snapshot: resolved.snapshot,
       route_policy_sha256: canonicalHash({ route_snapshot: resolved.snapshot }),
-      ceilings: CONVENING_CEILINGS,
+      ceilings,
     });
     const grant = grants.approveRun(deps.envelope, preview.preview_id, {
       principal: deps.principal,
@@ -381,6 +600,8 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
         settled = await deps.deliberation.runSession(deps.envelope, sessionId, {
           grant_id: grant.grant_id,
           route_snapshot: resolved.snapshot,
+          parallel_limit: parallelLimit,
+          fallback_route_snapshot: fallback.snapshot,
         });
       } catch (error) {
         settled = { status: 'error', code: errorCode(error) };
@@ -405,6 +626,12 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       grant_id: grant.grant_id,
       session_path: `/council/${sessionId}`,
       events_path: `/api/council/sessions/${sessionId}/events`,
+      mode,
+      seats: session.spec.seat_ids.length,
+      rounds: councilMode ? roundsPolicyOf(mode as CouncilSize) : null,
+      request_cap: ceilings.max_provider_requests,
+      parallel_limit: parallelLimit,
+      fallback: fallback.line,
     };
   }
 
