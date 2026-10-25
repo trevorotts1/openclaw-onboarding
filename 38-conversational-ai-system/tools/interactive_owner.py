@@ -44,6 +44,12 @@ DEFAULT_OWNER_KIND = OWNER_OPENCLAW
 EVENT_KINDS = ("control", "callback", "free_text")
 FREE_TEXT_POLICIES = ("accept", "reject")
 
+# How deep a caller-supplied JSON value may nest before the tool refuses it as
+# usage rather than walking it. A contract or an event is four or five levels
+# deep at most, so this only ever catches hostile input; contract document §7
+# promises exit 2 for exactly that case.
+DEPTH_LIMIT = 64
+
 # Verdict codes. Refused codes are stable identifiers a caller can assert on.
 ROUTED = "ROUTED"
 STALE_TAP = "STALE_TAP"
@@ -72,6 +78,25 @@ def _nonempty(value):
     return isinstance(value, str) and value.strip() != ""
 
 
+def _reject_deep(value, what):
+    """Refuse a caller-supplied value nested past :data:`DEPTH_LIMIT`.
+
+    Walks with an explicit stack, never recursion, so the refusal itself cannot
+    run out of stack on the input it is refusing.
+    """
+    stack = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > DEPTH_LIMIT:
+            raise contracts.UsageError(
+                "%s is nested deeper than %d levels" % (what, DEPTH_LIMIT)
+            )
+        if isinstance(node, dict):
+            stack.extend((child, depth + 1) for child in node.values())
+        elif isinstance(node, list):
+            stack.extend((child, depth + 1) for child in node)
+
+
 def load_schema():
     return contracts.load_json(SCHEMA_PATH)
 
@@ -98,6 +123,54 @@ def load_launch_owner(bundle_path, base):
     return owner if isinstance(owner, dict) else None
 
 
+def _shape_errors(doc):
+    """The refusals contract document §2 and §3 promise by name.
+
+    These run BEFORE the schema pass. ``validate_schema`` returns as soon as a
+    field fails its declared type, so a schema-first order buried
+    ``NO_RESPONDER`` ("responders must be a list") and ``INVALID_STEP`` behind
+    an ``INVALID_CONTRACT`` verdict and left both guards unreachable -- a
+    contract that named its own ``responders`` as a string was refused, but
+    never with the code §2 tells a caller to assert on. The guards move; the
+    refusal does not get weaker.
+
+    ``step_id`` and ``control`` ids are compared with the same ``_nonempty``
+    the event side uses, so a whitespace-only identity is refused here for the
+    same reason it is ``MALFORMED_EVENT`` there: a step declared
+    ``step_id: "   "`` validates and is then unroutable by any event.
+    """
+    errs = []
+    if not isinstance(doc, dict):
+        # Not a contract at all; the schema pass names it INVALID_CONTRACT.
+        return errs
+    responders = doc.get("responders")
+    if responders is not None and not isinstance(responders, list):
+        errs.append(_err(NO_RESPONDER, "responders must be a list"))
+    for index, step in enumerate(doc.get("steps") or []):
+        if not isinstance(step, dict):
+            continue
+        step_id = step.get("step_id")
+        if not _nonempty(step_id):
+            errs.append(_err(
+                INVALID_STEP, "step %d step_id must be a nonempty string" % index,
+            ))
+        controls = step.get("controls")
+        if isinstance(controls, list):
+            for control in controls:
+                if not _nonempty(control):
+                    errs.append(_err(
+                        INVALID_STEP,
+                        "step %r control ids must be nonempty strings" % (step_id,),
+                    ))
+                    break
+        if step.get("free_text") not in FREE_TEXT_POLICIES:
+            errs.append(_err(
+                INVALID_STEP,
+                "step %r free_text must be one of %s" % (step_id, list(FREE_TEXT_POLICIES)),
+            ))
+    return errs
+
+
 def validate_contract(doc, launch_owner=None):
     """Return a list of ``CODE: message`` strings. Empty list means valid.
 
@@ -105,6 +178,10 @@ def validate_contract(doc, launch_owner=None):
     launch bundle (see ``load_launch_owner``). Passing None means no bundle was
     bound.
     """
+    shape_errs = _shape_errors(doc)
+    if shape_errs:
+        return shape_errs
+
     # Schema errors carry the stable INVALID_CONTRACT code so a refused verdict
     # names a code a caller can assert on, never a JSON path like "$". A root
     # that is not an object (null, [], "hello") is refused here, before any
@@ -134,9 +211,7 @@ def validate_contract(doc, launch_owner=None):
     responders = doc.get("responders")
     if responders is None:
         responders = [{"id": owner_kind, "kind": owner_kind}]
-    if not isinstance(responders, list):
-        errs.append(_err(NO_RESPONDER, "responders must be a list"))
-    elif not responders:
+    if not responders:
         errs.append(_err(NO_RESPONDER, "the contract must name one responder"))
     elif len(responders) > 1:
         errs.append(_err(
@@ -159,11 +234,6 @@ def validate_contract(doc, launch_owner=None):
         if step_id in seen_steps:
             errs.append(_err(DUPLICATE_STEP, "step_id %r appears twice" % (step_id,)))
         seen_steps.add(step_id)
-        if step.get("free_text") not in FREE_TEXT_POLICIES:
-            errs.append(_err(
-                INVALID_STEP,
-                "step %r free_text must be one of %s" % (step_id, list(FREE_TEXT_POLICIES)),
-            ))
     return errs
 
 
@@ -181,6 +251,14 @@ def _refused(code, reason, **extra):
 
 
 def _malformed(event):
+    """Shape only: is this an object this module may judge at all?
+
+    ``generation`` is deliberately NOT checked here. Contract §4 makes the
+    generation the stale-tap rule for a control or a callback, and gives free
+    text no generation at all, so a tap that names a control this step never
+    rendered answers UNKNOWN_CONTROL whatever else it carries -- and a typed
+    message routes whether or not the provider stamped one.
+    """
     if not isinstance(event, dict):
         return _refused(MALFORMED_EVENT, "the event must be an object")
     if event.get("kind") not in EVENT_KINDS:
@@ -190,9 +268,6 @@ def _malformed(event):
         )
     if not _nonempty(event.get("step_id")):
         return _refused(MALFORMED_EVENT, "event.step_id must be a nonempty string")
-    generation = event.get("generation")
-    if not isinstance(generation, int) or isinstance(generation, bool):
-        return _refused(MALFORMED_EVENT, "event.generation must be an integer")
     if event["kind"] in ("control", "callback") and not _nonempty(event.get("control_id")):
         return _refused(
             MALFORMED_EVENT,
@@ -226,15 +301,12 @@ def resolve_event(doc, event, launch_owner=None):
     if step is None:
         return _refused(UNKNOWN_STEP, "no interactive step %r" % (event["step_id"],))
 
-    if event["generation"] != step["generation"]:
-        return _refused(
-            STALE_TAP,
-            "tap generation %d is behind step %r generation %d"
-            % (event["generation"], step["step_id"], step["generation"]),
-        )
-
     owner = _owner_record(doc)
     if event["kind"] == "free_text":
+        # Free text carries no generation: contract §3 gives the generation to
+        # the step re-render, and §4 routes typed text on the step's policy
+        # alone. Gating it on the generation refused a message that was never
+        # a tap and answered STALE_TAP where §4 promises FREE_TEXT_REJECTED.
         if step["free_text"] == "reject":
             return _refused(
                 FREE_TEXT_REJECTED,
@@ -253,6 +325,17 @@ def resolve_event(doc, event, launch_owner=None):
             UNKNOWN_CONTROL,
             "step %r has no control %r" % (step["step_id"], event["control_id"]),
         )
+
+    generation = event.get("generation")
+    if not isinstance(generation, int) or isinstance(generation, bool):
+        return _refused(MALFORMED_EVENT, "event.generation must be an integer")
+    if generation != step["generation"]:
+        return _refused(
+            STALE_TAP,
+            "tap generation %d is behind step %r generation %d"
+            % (generation, step["step_id"], step["generation"]),
+        )
+
     return {
         "status": "accepted",
         "code": ROUTED,
@@ -273,6 +356,7 @@ def resolve_contract(path, event=_VALIDATE_ONLY, launch_bundle=None):
     """Load a contract file and (when given) resolve one event against it."""
     contract_path = Path(path)
     doc = contracts.load_json(contract_path)
+    _reject_deep(doc, "the contract")
     bundle_path = launch_bundle
     # Read the bundle pointer defensively: validation has not run yet, so the
     # document may be any JSON value. A non-object here is refused below.
@@ -303,14 +387,17 @@ def _parse_event(value):
     # long, NUL byte); Path.is_file raises OSError there on Python 3.9, which
     # crashed a long but valid inline event.
     if os.path.isfile(value):
-        return contracts.load_json(value)
-    # Caller-controlled text: a parse failure is a usage error, the same verdict
-    # contracts.load_json gives the same bytes supplied as a file path. A raw
-    # json traceback would exit 1 with no verdict at all.
-    try:
-        return json.loads(value)
-    except ValueError as exc:
-        raise contracts.UsageError("invalid JSON event: %s" % exc)
+        event = contracts.load_json(value)
+    else:
+        # Caller-controlled text: a parse failure is a usage error, the same
+        # verdict contracts.load_json gives the same bytes supplied as a file
+        # path. A raw json traceback would exit 1 with no verdict at all.
+        try:
+            event = json.loads(value)
+        except ValueError as exc:
+            raise contracts.UsageError("invalid JSON event: %s" % exc)
+    _reject_deep(event, "the event")
+    return event
 
 
 def main(argv=None):

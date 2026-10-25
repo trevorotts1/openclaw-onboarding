@@ -36,9 +36,15 @@ Declared, it must contain exactly one record whose `kind` matches the owner:
 
 | Condition | Code |
 |---|---|
+| a value that is not a list | `NO_RESPONDER` |
 | zero records | `NO_RESPONDER` |
 | two or more records | `TWO_RESPONDERS` |
 | one record, kind disagrees with the owner | `RESPONDER_MISMATCH` |
+
+`id` on a responder is a **label**, not a routing key: the routed identity is
+the owner kind, so a blank label is accepted and can never become an address.
+The identities an event echoes -- `step_id` and `control_id` -- are the ones
+refused when blank (§3).
 
 A refused contract has no route at all. Every event against it is refused with
 the same code, so a two-responder launch cannot answer a single tap.
@@ -49,9 +55,9 @@ Each step is one interactive ask:
 
 | Field | Rule |
 |---|---|
-| `step_id` | Nonempty, unique within the contract. |
+| `step_id` | Nonempty -- never `""` and never whitespace only -- and unique within the contract. |
 | `generation` | Integer ≥ 1. Bumped whenever the step is re-rendered. |
-| `controls` | Nonempty, unique list of control ids the step renders. |
+| `controls` | Nonempty, unique list of control ids the step renders. Each id is nonempty in the same sense as `step_id`. |
 | `free_text` | `accept` or `reject`. There is no default: a step says which. |
 
 ## 4. The four input classes
@@ -60,8 +66,9 @@ Each step is one interactive ask:
 |---|---|---|
 | `control` | `step_id` + `control_id` + current `generation` → routed to the owner. | `UNKNOWN_STEP`, `UNKNOWN_CONTROL`, `MALFORMED_EVENT` |
 | `callback` | Identical to a control, delivered by the provider. Same owner, same route. | `UNKNOWN_STEP`, `UNKNOWN_CONTROL`, `MALFORMED_EVENT` |
-| `free text` | Routed to the owner when the step's `free_text` is `accept`. | `FREE_TEXT_REJECTED` when `reject` |
+| `free text` | Routed to the owner when the step's `free_text` is `accept`. **It carries no `generation`** -- §3 gives the generation to the step re-render, and a typed message is not a tap -- so it routes (or is refused) whatever generation a provider stamps on it. | `FREE_TEXT_REJECTED` when `reject` |
 | `stale tap` | Any control or callback whose `generation` differs from the step's current generation. | `STALE_TAP` |
+| (a control or callback that names a control the step never rendered) | Refused on the control identity, whatever else the event carries. | `UNKNOWN_CONTROL` |
 
 **A stale tap is derived, never self-declared.** A provider cannot be trusted to
 label its own tap stale, so `stale tap` is not one of the event kinds

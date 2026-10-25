@@ -17,7 +17,9 @@ import contextlib
 import copy
 import io
 import json
+import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -751,6 +753,388 @@ class HostileInputTests(unittest.TestCase):
         self.assertNotIn("Traceback", err)
         self.assertEqual(code, 0, (out, err))
         self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
+
+
+class ContractCodeTests(unittest.TestCase):
+    """PBB-261 D3: the codes the contract document names are the codes emitted.
+
+    ``validate_schema`` returns as soon as a field fails its declared type, so
+    with the schema first these two declared refusals were unreachable: a
+    contract naming ``responders`` as a string answered ``INVALID_CONTRACT:
+    $.responders: expected type array`` and a step with ``free_text: "maybe"``
+    answered ``INVALID_CONTRACT: $.steps[0].free_text: ...`` -- never the
+    ``NO_RESPONDER`` / ``INVALID_STEP`` the contract document tells a caller to
+    assert on. Each case asserts the exact code, so it fails on "some refusal
+    happened" as well as on acceptance.
+    """
+
+    def test_a_non_list_responders_field_reports_no_responder(self):
+        doc = controls_contract(responders="openclaw_inbound")
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertEqual(errors[0].split(":", 1)[0], owner.NO_RESPONDER)
+        self.assertIn("responders must be a list", errors[0])
+
+    def test_a_non_list_responders_field_is_a_refusal_not_an_acceptance(self):
+        path = self.tmp_path("responders-string.json", json.dumps(
+            controls_contract(responders="openclaw_inbound")))
+        code, out, err = self.run_cli("validate", "--contract", path)
+        self.assertEqual(code, 1)
+        payload = json.loads(out)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["errors"][0].split(":", 1)[0], owner.NO_RESPONDER)
+
+    def test_an_unknown_free_text_policy_reports_invalid_step(self):
+        doc = base_contract()
+        doc["steps"][0]["free_text"] = "maybe"
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertEqual(errors[0].split(":", 1)[0], owner.INVALID_STEP)
+
+    def test_a_missing_free_text_policy_reports_invalid_step_too(self):
+        # Class, not instance: the schema's ``required`` list would have
+        # swallowed this one as well.
+        doc = base_contract()
+        del doc["steps"][0]["free_text"]
+        errors = owner.validate_contract(doc)
+        self.assertEqual(errors[0].split(":", 1)[0], owner.INVALID_STEP)
+
+    def test_the_declared_codes_survive_a_bad_free_text_on_a_non_first_step(self):
+        doc = base_contract()
+        doc["steps"][1]["free_text"] = "whenever"
+        errors = owner.validate_contract(doc)
+        self.assertEqual(errors[0].split(":", 1)[0], owner.INVALID_STEP)
+
+    def test_a_contract_that_only_fails_the_schema_still_says_invalid_contract(self):
+        # Inverse: moving the guards forward did not steal INVALID_CONTRACT
+        # from a document that is simply the wrong shape.
+        errors = owner.validate_contract(controls_contract(second_owner="x"))
+        self.assertTrue(errors[0].startswith(owner.INVALID_CONTRACT), errors)
+        self.assertEqual(owner.validate_contract(None)[0].split(":", 1)[0],
+                         owner.INVALID_CONTRACT)
+
+    setUp = CliTests.setUp
+    tearDown = CliTests.tearDown
+    run_cli = CliTests.run_cli
+
+    def tmp_path(self, name, text):
+        path = self.tmp / name
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+
+class WhitespaceIdentityTests(unittest.TestCase):
+    """PBB-261 D4: a whitespace-only name is not an identity.
+
+    The event side judged ``step_id`` and ``control_id`` with ``_nonempty``; the
+    contract side used the schema's ``minLength: 1``, which a run of spaces
+    satisfies. So a step declared ``step_id: "   "`` validated and was then
+    unroutable by any event -- its id could only ever be echoed back as
+    ``MALFORMED_EVENT``.
+    """
+
+    setUp = CliTests.setUp
+    tearDown = CliTests.tearDown
+    run_cli = CliTests.run_cli
+
+    def tmp_path(self, name, text):
+        path = self.tmp / name
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def assert_refused_step(self, doc):
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors, "a whitespace-only identity was accepted")
+        self.assertEqual(errors[0].split(":", 1)[0], owner.INVALID_STEP, errors)
+        return errors
+
+    def test_a_whitespace_only_step_id_is_refused(self):
+        doc = base_contract()
+        doc["steps"][0]["step_id"] = "   "
+        self.assert_refused_step(doc)
+
+    def test_a_whitespace_only_control_id_is_refused(self):
+        doc = base_contract()
+        doc["steps"][0]["controls"] = ["  "]
+        self.assert_refused_step(doc)
+
+    def test_an_empty_step_id_is_refused(self):
+        doc = base_contract()
+        doc["steps"][0]["step_id"] = ""
+        self.assert_refused_step(doc)
+
+    def test_an_empty_control_id_is_refused(self):
+        doc = base_contract()
+        doc["steps"][0]["controls"] = [""]
+        self.assert_refused_step(doc)
+
+    def test_a_whitespace_only_step_id_is_refused_through_the_cli(self):
+        doc = base_contract()
+        doc["steps"][0]["step_id"] = "   "
+        path = self.tmp_path("blank-stepid.json", json.dumps(doc))
+        code, out, err = self.run_cli("validate", "--contract", path)
+        self.assertEqual(code, 1)
+        self.assertNotIn("Traceback", err)
+        payload = json.loads(out)
+        self.assertEqual(payload["status"], "refused")
+        self.assertIsNone(payload.get("route"))
+
+    def test_a_short_step_id_still_validates(self):
+        # Inverse: the rule is "not blank", not "long". A one-character id is
+        # legal and still routes, so the fix did not narrow what counts as an
+        # identity.
+        doc = controls_contract(steps=[
+            {"step_id": "s", "generation": 1, "controls": ["a"], "free_text": "accept"},
+        ])
+        self.assertEqual(owner.validate_contract(doc), [])
+        verdict = owner.resolve_event(
+            doc, {"kind": "control", "step_id": "s", "control_id": "a", "generation": 1})
+        self.assertEqual(verdict["status"], "accepted")
+
+    def test_the_routed_identity_is_the_owner_kind_not_the_responder_label(self):
+        # The responder `id` is a label: `_owner_record` builds the route from
+        # the owner kind, so a blank label can never become a routing key. The
+        # identities an event can echo -- step_id and control_id -- are the ones
+        # the contract refuses when blank.
+        doc = controls_contract(
+            owner={"kind": "openclaw_inbound"},
+            responders=[{"id": "  ", "kind": "openclaw_inbound"}],
+        )
+        self.assertEqual(owner.validate_contract(doc), [])
+        verdict = owner.resolve_event(
+            doc,
+            {"kind": "control", "step_id": "pick_time", "control_id": "tue_10am",
+             "generation": 3},
+        )
+        self.assertEqual(verdict["route"]["id"], owner.OWNER_OPENCLAW)
+
+
+class FreeTextGenerationTests(unittest.TestCase):
+    """PBB-261 M1: the generation is a tap rule, not a typed-message rule.
+
+    Contract §3 gives ``generation`` to the step re-render and §4 routes free
+    text on the step's policy alone, but ``resolve_event`` checked the
+    generation before branching, so a typed message was answered ``STALE_TAP``
+    and a ``reject`` step with a stale generation said ``STALE_TAP`` instead of
+    the ``FREE_TEXT_REJECTED`` §4 promises.
+    """
+
+    def test_free_text_routes_on_a_stale_generation(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "pick_time", "generation": 2})
+        self.assertEqual(verdict["status"], "accepted")
+        self.assertEqual(verdict["code"], owner.ROUTED)
+        self.assertEqual(verdict["input"], "free_text")
+
+    def test_free_text_routes_on_a_future_generation(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "pick_time", "generation": 99})
+        self.assertEqual(verdict["status"], "accepted")
+
+    def test_free_text_routes_with_no_generation_at_all(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "pick_time"})
+        self.assertEqual(verdict["status"], "accepted")
+        self.assertEqual(verdict["input"], "free_text")
+
+    def test_rejected_free_text_says_free_text_rejected_on_a_stale_generation(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "confirm", "generation": 2})
+        self.assertEqual(verdict["code"], owner.FREE_TEXT_REJECTED)
+        self.assertIsNone(verdict["route"])
+
+    def test_rejected_free_text_says_free_text_rejected_on_a_future_generation(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "confirm", "generation": 9})
+        self.assertEqual(verdict["code"], owner.FREE_TEXT_REJECTED)
+
+    def test_a_tap_still_needs_the_current_generation(self):
+        # Inverse: dropping the generation from the free-text path did not drop
+        # it from the tap path. STALE_TAP is still derived for a control.
+        for generation in (2, 4):
+            verdict = owner.resolve_event(base_contract(), {
+                "kind": "control", "step_id": "pick_time", "control_id": "tue_10am",
+                "generation": generation})
+            self.assertEqual(verdict["code"], owner.STALE_TAP, generation)
+            self.assertIsNone(verdict["route"])
+
+    def test_an_unknown_control_answers_unknown_control_whatever_it_carries(self):
+        # The class behind "a long inline event is parsed and judged": the
+        # control identity is the routing fact, so a tap naming a control the
+        # step never rendered is UNKNOWN_CONTROL even when its generation is
+        # missing or wrong.
+        for event in (
+            {"kind": "control", "step_id": "pick_time", "control_id": "x" * 900},
+            {"kind": "control", "step_id": "pick_time", "control_id": "zzz",
+             "generation": 3},
+            {"kind": "control", "step_id": "pick_time", "control_id": "zzz",
+             "generation": "3"},
+        ):
+            with self.subTest(control=event["control_id"][:12]):
+                verdict = owner.resolve_event(base_contract(), event)
+                self.assertEqual(verdict["code"], owner.UNKNOWN_CONTROL)
+                self.assertIsNone(verdict["route"])
+
+    def test_a_known_control_with_no_generation_is_still_malformed(self):
+        verdict = owner.resolve_event(base_contract(), {
+            "kind": "control", "step_id": "pick_time", "control_id": "tue_10am"})
+        self.assertEqual(verdict["code"], owner.MALFORMED_EVENT)
+
+
+class DepthLimitTests(unittest.TestCase):
+    """PBB-261 M2: contract §7's exit 2 for over-deep input now exists.
+
+    3 000-deep and 100 000-deep JSON used to parse and return a verdict, so
+    "input nested deeper than the checker can walk" documented a failure mode
+    the tool did not have.
+    """
+
+    setUp = CliTests.setUp
+    tearDown = CliTests.tearDown
+    run_cli = CliTests.run_cli
+
+    def tmp_path(self, name, text):
+        path = self.tmp / name
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def assert_usage(self, argv):
+        code, out, err = self.run_cli(*argv)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(code, 2, (out, err))
+        self.assertEqual(out.strip(), "")
+        self.assertIn("usage:", err)
+
+    def test_a_deep_event_is_a_usage_exit(self):
+        for depth in (200, 3000):
+            with self.subTest(depth=depth):
+                self.assert_usage(("resolve", "--contract", fixture("valid.json"),
+                                   "--event", "[" * depth + "]" * depth))
+
+    def test_a_deep_contract_is_a_usage_exit(self):
+        for depth in (200, 3000):
+            with self.subTest(depth=depth):
+                path = self.tmp_path("deep-%d.json" % depth,
+                                     '{"a":' * depth + "1" + "}" * depth)
+                self.assert_usage(("validate", "--contract", path))
+
+    def test_a_contract_at_the_depth_a_real_one_uses_still_validates(self):
+        # Inverse: the limit is far above any real contract (four or five
+        # levels), so the guard never fires on a document a caller can write.
+        code, out, _ = self.run_cli("validate", "--contract", fixture("valid.json"))
+        self.assertEqual(code, 0)
+        self.assertEqual(owner.DEPTH_LIMIT, 64)
+
+
+class BookkeepingTests(unittest.TestCase):
+    """PBB-261 D1/D2: the shipped version is above main's, and unique.
+
+    The marker is compared remote-against-local by ``check-updates.sh``, so a
+    version at or below ``origin/main``'s reads as "not newer" on every deployed
+    box; and a CHANGELOG number already published on ``main`` for another task
+    makes one number name two changes. These tests read ``origin/main`` itself,
+    so they fail on the regression and pass on the fix.
+
+    Skipped only when the checkout has no ``origin/main`` to compare against;
+    on the reviewed bytes (which regress the marker to v2.0.31) every one of
+    them fails.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.git_ok = False
+        try:
+            probe = subprocess.run(
+                ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "origin/main"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        except OSError:
+            return
+        cls.git_ok = probe.returncode == 0
+
+    def git(self, *argv):
+        return subprocess.run(
+            ["git", "-C", str(REPO_ROOT)] + list(argv),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+
+    def main_marker(self):
+        return self.git("show", "origin/main:38-conversational-ai-system/"
+                                "skill-version.txt").stdout.strip()
+
+    def local_marker(self):
+        return (SKILL_ROOT / "skill-version.txt").read_text(encoding="utf-8").strip()
+
+    def changelog_versions(self):
+        text = (SKILL_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        return [tuple(int(p) for p in m.split("."))
+                for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
+
+    def test_the_shipped_version_is_strictly_above_main_s(self):
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        local = tuple(int(p) for p in self.local_marker().lstrip("v").split("."))
+        main = tuple(int(p) for p in self.main_marker().lstrip("v").split("."))
+        self.assertGreater(local, main,
+                           "the shipped version must never be at or below main's")
+
+    def test_no_version_this_branch_ships_appears_on_main(self):
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        shipped = {self.local_marker().lstrip("v")}
+        shipped.update("%d.%d.%d" % v for v in self.changelog_versions()[:4])
+        for version in sorted(shipped):
+            with self.subTest(version=version):
+                # `git grep` exits 1 on "no match", which is the answer we want
+                # here, so it is read without check=True and judged on stdout.
+                found = subprocess.run(
+                    ["git", "-C", str(REPO_ROOT), "grep", "-n", "--fixed-strings",
+                     version, "origin/main"],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                self.assertEqual(found.stdout.strip(), "",
+                                 "%s is already on origin/main" % version)
+
+    def main_changelog_versions(self):
+        text = self.git("show", "origin/main:38-conversational-ai-system/"
+                                "CHANGELOG.md").stdout
+        return [tuple(int(p) for p in m.split("."))
+                for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
+
+    def test_the_changelog_is_strictly_monotonic_where_this_change_speaks(self):
+        # Newest-first, and the entries this change owns sit strictly above
+        # main's newest. Below main's newest the file is main's own legacy
+        # history -- it already carries one deliberate reversal (1.0.0 then a
+        # v2.0.0 generation roll) -- and rewriting it is not this task's.
+        versions = self.changelog_versions()
+        self.assertGreaterEqual(len(versions), 4)
+        for earlier, later in zip(versions[:4], versions[1:4]):
+            self.assertGreater(earlier, later,
+                               "the four T-19 entries must be newest-first and "
+                               "distinct: %s" % (versions[:4],))
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        main_top = max(self.main_changelog_versions())
+        self.assertGreater(versions[0], main_top,
+                           "the newest entry must sit above main's newest")
+        owned = [v for v in versions if v >= main_top]
+        for earlier, later in zip(owned, owned[1:]):
+            self.assertGreaterEqual(earlier, later,
+                                     "the CHANGELOG is newest-first: %s then %s"
+                                     % (earlier, later))
+
+    def test_no_version_names_two_different_changes(self):
+        # D2 in its own words: "the same number now names three different
+        # changes". main's own file repeats one number per entry for a single
+        # task, so the rule is pinned against what this change owns: the four
+        # T-19 blocks are four distinct numbers and none of them may already
+        # name an entry on main.
+        t19 = self.changelog_versions()[:4]
+        self.assertEqual(len(set(t19)), 4,
+                         "the four T-19 entries must not share a version: %s" % t19)
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        main_headers = set(self.main_changelog_versions())
+        for version in t19:
+            self.assertNotIn(version, main_headers,
+                             "%s already names an entry on origin/main" % (version,))
 
 
 if __name__ == "__main__":
