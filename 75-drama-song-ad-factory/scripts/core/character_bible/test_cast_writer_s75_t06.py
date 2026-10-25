@@ -760,16 +760,33 @@ HOMOGLYPH_DISGUISES = [
     "Dog W\u0430lker", "\u0421ontent-Creator",
 ]
 
-#: Every one of these is a real person and must stay accepted: mononyms, a
-#: middle initial in any letter, an initial plus an ordinary surname, a given
-#: name and a surname that are both ordinary English words, and names whose
-#: only vowel is accented.
+#: Every one of these is a real person and must stay accepted.  The contract
+#: this list STATES is the contract this list TESTS, and it is the whole list:
+#:
+#:   * mononyms that are real people, whatever their tradition -- Dvo\u0159\u00e1k,
+#:     Beyonc\u00e9, Beyonce (unaccented), Adele, Bono, Cher, Plato, Aristotle,
+#:     Rihanna, Shakira, Zendaya;
+#:   * short opaque names from the traditions the factory ships -- Jun Seo
+#:     (Korean), Ng Wei (Vietnamese/Chinese), Nnamdi Obi (Nigerian);
+#:   * a middle initial in any letter, an initial plus an ordinary surname;
+#:   * a given name and a surname that are both ordinary English words;
+#:   * names whose only vowel is accented.
+#:
+#: S75-T06 round 10.  Round 9 moved EIGHT of these out of this list and into
+#: KNOWN_STILL_REFUSED_NAMES without touching this comment, so the file asserted
+#: "every one of these is a real person and must stay accepted" over a list that
+#: no longer contained them, and the suite could not see the twelve real people
+#: the rule was refusing.  All twelve are back here.  Accepting them is DATA --
+#: each carries a curated entry in ``real_content_names.txt.gz`` -- and not a
+#: relaxation of any rule.
 REAL_NAMES_RESTORED = [
-    "Dvo\u0159\u00e1k", "Beyonc\u00e9",
+    "Dvo\u0159\u00e1k", "Beyonc\u00e9", "Beyonce",
+    "Adele", "Aristotle", "Bono", "Cher", "Plato", "Rihanna", "Shakira",
+    "Zendaya", "Jun Seo", "Ng Wei", "Nnamdi Obi",
     "Mary A. Fields", "Harry S. Truman", "Marcus A. Bell", "Tom T. Hall",
     "Ann S. Drake", "Mary I. Fields", "Mary S. Fields", "Mary T. Fields",
     "J. Smith", "J. Baker", "J. Ewing", "J. Riley", "J. Presley", "J. Manning",
-    "Will Smith", "John May", "Mark May", "May Baker", "May Smith",
+    "Will Smith", "May Smith", "John May", "Mark May", "May Baker",
     "Grace Smith", "Pearl Rose", "Mara Bell", "A. J. Marchetti",
     "Liam N\u00ed Chonaill", "Kim Ng", "Tr\u1ea7n Th\u1ecb Hoa",
     "L\u00fd Minh", "Nguyen Van Anh", "Zo\u00eb Salda\u00f1a",
@@ -840,25 +857,22 @@ def test_a_restored_real_name_authors_a_complete_cast():
         assert W.profile_defects(result["identities"][0]) == [], name
 
 #: DECLARED RESIDUAL, pinned rather than hidden.  A name whose EVERY word is an
-#: ordinary English word and none of which is in the shipped 1,188-entry name
+#: ordinary English word and none of which is in the shipped 1,328-entry name
 #: lexicon cannot be told apart from a two-word description ("Old Man") by any
 #: rule that reads no list of names.  Refusing these is the cost of refusing
 #: those, and the cure is a bigger NAME lexicon -- a vocabulary, deliberately not
 #: added here.
+#:
+#: S75-T06 round 10.  This list is the residual and NOTHING ELSE.  Round 9
+#: parked eight real people in it ('Cher', 'Plato', 'Aristotle', 'Rihanna',
+#: 'Shakira', 'Zendaya', 'Ng Wei', 'Nnamdi Obi') as the price of closing an
+#: opaque-token bypass, and four more real people were refused without being
+#: listed anywhere ('Adele', 'Beyonce', 'Bono', 'Jun Seo').  All twelve are
+#: ACCEPTED now and live in REAL_NAMES_RESTORED above.  What is left here is
+#: refused for the reason stated, and each name is a person the rule still
+#: cannot see, not a person the rule has decided against.
 KNOWN_STILL_REFUSED_NAMES = [
     "Art Bell", "Drew Fox", "Pearl Green", "Madonna", "Sade",
-    # S75-T06 round 9.  A LONE opaque token is the missing-cast bypass the
-    # round-8 verdict named ('Balawir', 'Bedek', 'Buj', 'Cazomum'), and it is
-    # the same shape as these.  'Cher', 'Plato', 'Aristotle', 'Rihanna',
-    # 'Shakira' and 'Zendaya' carry no curated-name entry and no accent, so
-    # they now sit in the residual with 'Madonna' instead of being pinned as
-    # accepted.  The cure is a NAME_LEXICON entry, not a rule.
-    "Cher", "Plato", "Aristotle", "Rihanna", "Shakira", "Zendaya",
-    # 'Ng Wei' and 'Nnamdi Obi' are [opaque head][three-letter readable tail]
-    # -- literally the shape of 'Uber Man' and 'Uber Dee', which S75-A06
-    # requires to be refused.  'wei' and 'obi' read as ordinary words only
-    # because the 1913 lexicon carries those proper nouns.
-    "Ng Wei", "Nnamdi Obi",
     # 'Art Stanford' and its family: 'stanford' decomposes as 'stan'+'ford',
     # two substantial entries of the 1913 lexicon (both proper nouns there),
     # so the whole token reads as an ordinary compound and no token is opaque.
@@ -892,6 +906,48 @@ INVENTED_TOKENS = [
     "Fogolfun", "Fumomra", "Gemrur", "Dosmume", "Tifodar", "Zulkem",
 ]
 
+#: S75-T06 round 10.  The SAME coinages in the orthography that reopened the
+#: bypass at round-9 head.  Round 9 measured its corpus only in plain spelling
+#: and then called the family closed, while one capital letter mid-word turned
+#: every one of these into a complete featured/speaking identity in BOTH
+#: display_name and character_id (26 of 26 rows accepted).  TEST DATA, and it
+#: is here so the suite fails the moment the channel reopens: a corpus that
+#: exercises only plain orthography cannot see this hole at all.
+def _interior_capitals(tok):
+    """Every single interior capital of the token: BAlawir, BaLawir, BalawIr."""
+    return [tok[:i] + tok[i].upper() + tok[i + 1:] for i in range(1, len(tok))]
+
+INVENTED_TOKENS_ORTHOGRAPHIES = sorted({
+    spelling
+    for tok in INVENTED_TOKENS
+    for spelling in (
+        [tok, tok.casefold(), tok.upper(),
+         tok[:1].upper() + tok[1:].casefold(),
+         tok[:2] + "é" + tok[2:],          # accented: the other spelling channel
+         ] + _interior_capitals(tok)
+    )
+})
+
+#: Brands and product names -- real strings, not people.  Round 9 let these
+#: through the same orthographic channel as the coinages above.
+BRANDS_NOT_PEOPLE = [
+    "GoFundMe", "MacBook", "GitHub", "GitLab", "LinkedIn", "YouTube",
+    "WhatsApp", "PayPal", "FedEx", "HarperCollins", "DreamWorks",
+    "BellWeather", "Airbnb", "Bitcoin", "Instacart", "Netflix", "Spotify",
+    "TikTok", "iPhone", "eBay", "LaCroix", "O'Brien", "LaRue", "VanDerBerg",
+]
+
+#: The generic-extra residue round 9 could not close: a coinage head with a
+#: SHORT CURATED NAME in the family-name slot.  Every one reached ACCEPT via
+#: R_LEDGER on the tail, and the family behaved asymmetrically -- 'Uber Ann'
+#: refused, 'Bitcoin Ann' accepted.
+COINAGE_PLUS_SHORT_NAME = [
+    "Uber Bill", "Uber Mark", "Bitcoin Ann", "Bitcoin Bill", "Bitcoin Mark",
+    "Podcast Ann", "Podcast Bill", "Podcast Mark", "Snazzy Bill",
+    "Snazzy Mark", "Startup Bill", "Startup Mark", "Tiktok Bill",
+    "Tiktok Mark", "Wifi Bill", "Wifi Mark",
+]
+
 def test_the_declared_residual_is_exactly_what_the_rule_says_it_is():
     """The residual is BOUNDED, and pinned at both ends.
 
@@ -906,19 +962,53 @@ def test_the_declared_residual_is_exactly_what_the_rule_says_it_is():
     for name in KNOWN_STILL_ACCEPTED_DESCRIPTORS:
         for field in ("display_name", "character_id"):
             assert not _is_refused(name, field), (name, field)
-    for described in GENERIC_EXTRAS + GENERIC_EXTRA_LADDER:
+    for described in GENERIC_EXTRAS + GENERIC_EXTRA_LADDER + COINAGE_PLUS_SHORT_NAME:
         for field in ("display_name", "character_id"):
             assert _is_refused(described, field), (described, field)
 
 def test_an_opaque_single_token_is_not_a_person_identity():
     """THE missing-cast bypass.  A lone token clears profile_defects in both
-    positions only on positive designator evidence, never on "it is not a
-    dictionary word"."""
-    for invented in INVENTED_TOKENS:
+    positions only on positive designator evidence -- never on "it is not a
+    dictionary word", and never on how it is spelt.
+
+    Every orthography of every coinage is refused, and that includes the two
+    round 9 left open: an internal capital ('BAlawir') and an accented letter
+    (the same coinage with an 'é' in it) are spelling, not evidence that the
+    string names a person.
+    """
+    for invented in INVENTED_TOKENS_ORTHOGRAPHIES:
         for field in ("display_name", "character_id"):
             assert _is_refused(invented, field), (invented, field)
-            assert _is_refused(invented.casefold(), field), (invented, field)
-            assert _is_refused(invented.upper(), field), (invented, field)
+
+def test_a_brand_or_product_name_is_not_a_person_identity():
+    """'GitHub', 'GoFundMe', 'PayPal' and 'MacBook' carry exactly the internal
+    capital round 9 read as proper-noun evidence.  They are products."""
+    for brand in BRANDS_NOT_PEOPLE:
+        for field in ("display_name", "character_id"):
+            assert _is_refused(brand, field), (brand, field)
+
+def test_the_coinage_plus_short_curated_name_residue_is_closed():
+    """'Uber Bill', 'Bitcoin Ann', 'Podcast Mark'.  A curated name in the
+    family-name slot does not turn a product label into a person, and the
+    family is closed UNIFORMLY -- no head is favoured over another."""
+    for described in COINAGE_PLUS_SHORT_NAME:
+        for field in ("display_name", "character_id"):
+            assert _is_refused(described, field), (described, field)
+
+def test_bare_may_and_bare_will_carry_the_same_verdict():
+    """'May' and 'Will' are the two words that are both a closed-class
+    auxiliary and an ordinary given name.  The rule's own comment presents them
+    as an inseparable pair, so they get one verdict between them: both are
+    mononyms with a curated name entry, and both are people."""
+    verdicts = []
+    for modal in ("May", "Will"):
+        for field in ("display_name", "character_id"):
+            verdicts.append(_is_refused(modal, field))
+    assert len(set(verdicts)) == 1, verdicts
+    assert verdicts == [False, False, False, False], verdicts
+    for other in ("Can", "Must", "Shall", "Should", "Would", "Could", "Might"):
+        for field in ("display_name", "character_id"):
+            assert _is_refused(other, field), (other, field)
 
 def test_the_generic_extra_family_is_closed_in_both_positions():
     for described in GENERIC_EXTRAS:

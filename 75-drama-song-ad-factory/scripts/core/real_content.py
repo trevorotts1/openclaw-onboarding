@@ -35,7 +35,7 @@ Data
 ``english_words.txt.gz``      (already shipped) ordinary-English lexicon, used
                               as positive evidence that a token is a general
                               word rather than a designator.
-``real_content_names.txt.gz`` (shipped here) 1,188 curated given names and
+``real_content_names.txt.gz`` (shipped here) 1,328 curated given names and
                               unambiguous surnames.  Source is deliberately NOT
                               ``/usr/share/dict/propernames``: that list carries
                               "old", "butler", "king", "judge", "spy", "son",
@@ -366,20 +366,6 @@ ROLE_NOUNS = frozenset({
     "passenger", "crew", "staff", "resident", "citizen", "villager", "tourist",
 })
 
-def _orthographic_marker(tok):
-    """Orthography that is itself evidence of a proper noun: an internal capital
-    (McDonald) or an accented Latin letter (Zoe, Ní, Saldaña).
-
-    An ALL-CAPS token is deliberately NOT evidence: ``ACCOUNTANT`` has capitals
-    after the first character, but shouting a category noun does not turn it
-    into a name.  A glyph that only LOOKS like a Latin letter -- U+0131 DOTLESS
-    I, Greek omicron -- is refused by ``_decomposes_to_latin`` long before it
-    reaches here, so no disguise can buy proper-noun evidence."""
-    if not tok.isupper() and any(ch.isupper() for ch in tok[1:]):
-        return True
-    return any(ord(ch) > 127 for ch in tok)
-
-
 #: Inflectional endings stripped before asking whether a token is an ordinary
 #: English word ("guests" -> guest, "scared" -> scare, "teenagers" -> teenager).
 _INFLECTIONS = ("s", "es", "ed", "d", "ing", "er", "ers", "ly", "est")
@@ -461,24 +447,37 @@ def _english_form(low):
 def designator_evidence(tok):
     """Affirmative evidence that ONE token designates an individual.
 
-    Two positive signals and nothing else:
+    One positive signal and nothing else:
 
     ``NAME_LEXICON``   a curated given-name/surname lexicon -- a common noun or
                        an adjective is deliberately absent from it, so "Old",
-                       "King" and "Butler" carry no evidence;
-    ``_orthographic_marker``  internal capital or accented Latin letter.
+                       "King" and "Butler" carry no evidence.
 
     S75-T06 round 8: "not an ordinary English word" is no longer evidence of a
     name.  Absence from a 1913 lexicon is not a positive signal, and it is what
     admitted 'Barista Teenager', 'Uber Driver' and every modern coinage the
-    lexicon simply predates.  A token that is NOT ordinary English and NOT in
-    the name lexicon is UNKNOWn -- see ``person_name_ok``, which reads that
-    state as "could be a name", never as "is a name".
+    lexicon simply predates.
+
+    S75-T06 round 10: ORTHOGRAPHY is no longer evidence of a name either.  Round
+    9 kept ``_orthographic_marker`` -- an internal capital or an accented Latin
+    letter -- as a second signal here, and that second signal was the whole
+    missing-cast bypass: 'BAlawir', 'BEdek', 'BUj' and 'Cazomum' became complete
+    featured/speaking identities in BOTH ``display_name`` and ``character_id``
+    the moment one letter was capitalised mid-word (26 of 26 rows accepted at
+    round-9 head), and 'GitHub', 'GoFundMe', 'PayPal', 'MacBook' and
+    'HarperCollins' rode the same channel in as people.  An accented spelling
+    opened the identical channel one diacritic away ('Balàwir' 26 of 26), so
+    both orthographic signals are withdrawn together.  Spelling is spelling; it
+    says how a word is written, not whom it names.  A real name that carries
+    either spelling ("Dvořák", "Beyoncé", "Zoë") is curated DATA, which is
+    exactly what ``NAME_LEXICON`` is for and why the lexicon file is the right
+    place to restore people.
+
+    A token that is NOT ordinary English and NOT in the name lexicon is
+    UNKNOWN -- see ``person_name_ok``, which reads that state as "could be a
+    name", never as "is a name".
     """
-    low = tok.casefold()
-    if low in NAME_LEXICON:
-        return True
-    return _orthographic_marker(tok)
+    return tok.casefold() in NAME_LEXICON
 
 
 # ---------------------------------------------------------------------------
@@ -624,21 +623,25 @@ def _name_prefix(toks):
 
 def personal_name_prefix(toks):
     """The string opens like a personal name: a real first name from the lexicon
-    ("Dana", "Priya", "Will"), a single capital initial ("J.", "A. J."), or an
-    accented first word ("Saoirse", "Zoë", "Señorita").
+    ("Dana", "Priya", "Will"), a single capital initial ("J.", "A. J."), or a
+    title ("Dr", "Officer", "Señorita").
 
     "Uber Driver", "Wifi Password", "Muchacho Grande" and "Podcast Host" have
-    no such prefix and never will; "Dana Woman", "J. Baker", "Priya
-    Raghunathan" and "Saoirse Ní Chonaill" always do.  This is the signal that
-    separates a NAME from a phrase made of ordinary words, and it is positive
-    evidence about the string's own opening -- never a refusal for being absent
-    from a list.
+    no such prefix and never will; "Dana Woman", "J. Baker" and "Priya
+    Raghunathan" always do.  This is the signal that separates a NAME from a
+    phrase made of ordinary words, and it is positive evidence about the
+    string's own opening -- never a refusal for being absent from a list.
+
+    S75-T06 round 10: an accented first word is NOT a frame on its own.  That
+    reading is the same orthography-is-evidence error ``designator_evidence``
+    withdrew this round -- it admitted "Balàwir" and every camelCased coinage
+    before it.  An accented name ("Zoë", "Dvořák") is a curated entry now.
     """
     for tok in toks:
         if _initial(tok) or _honorific(tok):
             return True
         low = tok.casefold()
-        return (low in NAME_LEXICON or bool(_orthographic_marker(tok))
+        return (low in NAME_LEXICON
                 or (low in _MODAL_CLASS and len(toks) >= 2))
     return False
 
@@ -667,18 +670,21 @@ def person_name_ok(value):
     5. ``R_COIN``  an opaque coinage or brand ("Uber", "Podcast", "Wifi") in the
        given-name position with a common noun in the family-name position
        ("Uber Driver", "Podcast Host", "Muchacho Grande") is a product, not a
-       person; ``R_COIN_HEAD`` closes the short-head case of the same reading
-       ("Uber Man", "Uber Dee", "Snazzy Car"), which round 8 left open;
+       person; ``R_COIN_HEAD`` closes the same reading at EVERY tail length
+       ("Uber Man", "Uber Dee", "Snazzy Car", "Uber Bill", "Bitcoin Ann",
+       "Podcast Mark"), including the coinage head that decomposes into two
+       English words ("Bitcoin", "Podcast") and so hid from round 9;
     6. ``R_MOD``   ordinary English in the given-name position plus a
        person-forming word in the family-name position ("Dog Walker", "Tech
        Blogger", "Content-Creator") is a job, not a name;
     7. ``R_LEDGER``  a curated surname anywhere ("Renata Cruz-Whitfield",
        "A. J. Marchetti") settles the question;
     8. ``R_FREE``  "J. Baker", "Priya Cruz", "Priya Raghunathan" and "Nguyen
-       Van Anh" carry a name frame, an accent, or a family-name slot that is
-       not a category.  A LONE token passes only on positive designator
-       evidence ("Homer", "Beyonce"), never on "it is not a dictionary word",
-       which is absence and is the missing-cast bypass round 9 closes.
+       Van Anh" carry a name frame or a family-name slot that is not a
+       category.  A LONE token passes only on positive designator evidence
+       ("Homer", "Beyonce"), never on "it is not a dictionary word" and never
+       on how it is spelt ("BAlawir", "Balàwir") -- absence and orthography are
+       both nothing, and together they were the missing-cast bypass.
 
     The only vocabularies consulted are the grammatical closure of function
     words (``CLOSED_CLASS``), a curated LEXICON OF NAMES used solely as positive
@@ -686,25 +692,35 @@ def person_name_ok(value):
     a KIND of thing, and the story-role nouns this module already ships for
     ``episode_role``.  There is no list of what a cast member might be called.
 
-    KNOWN RESIDUAL, S75-T06 round 9: a title the lexicon does not carry
-    ("Señorita", "Fräulein", "Sensei") in front of a surname the lexicon does
-    not carry ("Gomez", "Schmidt", "Tanaka") is indistinguishable from "Nguyen
-    Van Anh" by any list-free rule -- both are two opaque name-shaped words.
-    Deciding that needs a LEXICON OF TITLES, which is a vocabulary and is not
-    added here.  Two further limits are the same limit in a different place,
-    and both are the curated NAME_LEXICON being 1,188 entries rather than the
-    whole onomasticon:
+    KNOWN RESIDUAL, S75-T06 round 10.  Three limits, all of them the same limit:
+    the curated ``NAME_LEXICON`` is a curated list, not the whole onomasticon.
 
-    * a family-name slot of three letters or fewer that carries no name
-      evidence ("Ng", "Ngo", "Anh", "Thi", "Hoa", "Wei", "Lim") is refused,
-      because "Bitcoin Bro", "Uber App" and "Uber Bro" are the same shape;
     * a name whose every word is an ordinary English word and none is in the
       shipped name lexicon ("Art Smith", "Pearl Green", "Art Stanford",
-      "Madonna") is refused, because "Old Man" and "Podcast Host" are the
-      same shape.
+      "Madonna") is refused, because "Old Man" and "Podcast Host" are the same
+      shape;
+    * a name whose every word is opaque and none is curated ("Priya
+      Raghunathan", "Balawir Cazomum") is accepted only on the family-name slot
+      being long and not a category.  Two invented words and two uncurated real
+      words are the same string shape, so this rule cannot separate them and
+      does not pretend to: what it will not do is accept ONE opaque token, which
+      is the bypass the row names;
+    * a title the lexicon does not carry ("Señorita", "Fräulein", "Sensei") in
+      front of a surname the lexicon does not carry ("Gomez", "Schmidt",
+      "Tanaka") is indistinguishable from "Nguyen Van Anh".  Deciding that
+      needs a LEXICON OF TITLES, which is a vocabulary and is not added here;
+    * a token that is a real name AND the acronym of a descriptor head cannot
+      be curated without admitting the descriptor: "Seo" is the surname in
+      "Jun Seo" and the head of "SEO Specialist", and to this rule the two are
+      one string shape.  "Jun Seo" is accepted and "Seo Jun" is refused, and
+      the one-line cure -- a curated "seo" entry -- is deliberately not taken,
+      because it would let "SEO Specialist" through R_NAME and R_LEDGER.
 
-    Closing either needs curated name entries, not a rule.  The ``NAME_LEXICON``
-    data file is not this module and is not in the round-9 lease.
+    Closing the first needs curated name entries, not a rule; the second and the
+    fourth are shape collisions and stay declared; the third needs a lexicon of
+    titles.  The round-10 lease does carry ``real_content_names.txt.gz``, and it
+    is where the twelve real people round 9 refused were restored -- by data,
+    not by weakening the rule.
     """
     toks = tokens(value)
     if not 1 <= len(toks) <= 4:
@@ -757,22 +773,30 @@ def person_name_ok(value):
             and _english_word(core[-1].casefold())):
         return False
 
-    # R_COIN_HEAD -- S75-T06 round 9.  Round 8 carved "a surname of three
-    # letters or fewer is never a category" out of R_COIN, and that one carve-out
-    # is the whole generic-extra family: every one of 'Uber Man', 'Uber Guy',
-    # 'Uber Boy', 'Uber Gal', 'Uber Dee', 'Uber Ann', 'Uber Abe', 'Uber Car',
-    # 'Uber Kid', 'Uber Bro', 'Uber App', 'Wifi Guy', 'Wifi Man', 'Podcast Guy',
-    # 'Snazzy Car', 'Startup Kid' and 'Tiktok Kid' ends in a head of three
-    # letters or fewer.  A coinage in the given-name position is a product at
-    # EVERY tail length, so the short case joins the long one here.  The tail
-    # must be READABLE for this limb: "Ng Wei", "Nnamdi Obi" fire it because
-    # "wei" and "obi" sit in the 1913 lexicon, while "Ngo", "Pham", "Anh",
-    # "Bro" and "App" denote nothing and fall through to R_FREE.
-    if (len(core) >= 2 and core[0].casefold() not in NAME_LEXICON
-            and not _orthographic_marker(core[0])
-            and _opaque(core[0].casefold())
-            and not _opaque(core[-1].casefold())
-            and len(core[-1]) < 4):
+    # R_COIN_HEAD -- S75-T06 round 10.  A coinage in the given-name position is
+    # a product at EVERY tail length, and a head is a coinage when it carries no
+    # name evidence and is not an ordinary English word in its own right.  That
+    # second half is what round 9 missed: it asked only ``_opaque(core[0])``,
+    # and 'bitcoin' ('bit'+'coin') and 'podcast' ('pod'+'cast') decompose into
+    # two lexicon entries, so they read as ordinary English and slid past.  That
+    # single miss IS the asymmetry the round-9 receipt could not explain --
+    # 'Uber Ann' was REFUSED while 'Bitcoin Ann' was ACCEPTED, same tail, two
+    # coinage heads, because 'uber' has no two-word split and 'bitcoin' does.
+    #
+    # The tail half names the residue that survived round 9: a SHORT CURATED
+    # NAME that is itself an ordinary word ("Ann", "Bill", "Mark", "Dee", "Joy",
+    # "Lee") sitting in the family-name slot of a product label.  That is
+    # exactly the sixteen strings 'Uber Bill', 'Uber Mark', 'Bitcoin Ann',
+    # 'Bitcoin Bill', 'Bitcoin Mark', 'Podcast Ann', 'Podcast Bill', 'Podcast
+    # Mark', 'Snazzy Bill', 'Snazzy Mark', 'Startup Bill', 'Startup Mark',
+    # 'Tiktok Bill', 'Tiktok Mark', 'Wifi Bill' and 'Wifi Mark'.  A family name
+    # that is a curated entry and NOT an ordinary word ("Delgado", "Zhang",
+    # "Marchetti") is a surname, so "Summer Delgado" keeps it.
+    if (len(core) >= 2
+            and core[0].casefold() not in NAME_LEXICON
+            and not _ordinary_word(core[0].casefold())
+            and core[-1].casefold() in NAME_LEXICON
+            and _ordinary_word(core[-1].casefold())):
         return False
 
     # R_MOD -- "Dog Walker", "Tech Blogger", "Content-Creator".
