@@ -11,7 +11,7 @@
   "75-drama-song-ad-factory/scripts/core/research_engine/test_claim_grounding.py"
  ],
  "index_note": "evidence/units/S75-T04/ did not exist at 513ea531 and no ref under refs/heads/s75/* or any local ref carries it; the task statement records that attempt-3 exists, so this file takes the next free index, 4, rather than overwriting an unseen attempt-3.",
- "head_sha": "PENDING_AT_WRITE_TIME",
+ "head_sha": "d680b0989b0017ee508e0c34a537bf395cd3bf14",
  "head_sha_note": "Amended after the code/test commit is pushed, to carry the resolved 40-hex sha of that commit. A file cannot carry the sha of the commit that contains it; the metadata amend that carries this value is a later commit on the same branch and is named in the final report.",
  "written_at": "2026-10-25T17:21:07Z",
  "defect": "claims.CLAUSE_ENDERS omits clause-separating punctuation and the tokeniser drops punctuation entirely, so _comparison_classes runs the exempt range from the relative pronoun to the end of the sentence; _check_topic then skips both the term-run test and the effect-predicate test over that span. Fix must keep the round-7 acceptances (A3-A9) intact.",
@@ -26,5 +26,15 @@
   "prove the six scored refusals refuse through both validate_bundle and run_stage, at head, against base where they were accepted",
   "prove A3-A9 still accept at head exactly as at base",
   "add the regression to test_claim_grounding.py; fixture files untouched"
- ]
+ ],
+ "amended_at": "2026-10-25T17:22:46Z",
+ "head_measurements": {
+  "harness": "python3 -I probes.py <head research_engine> head_probes.json; claims.validate_bundle AND research.run_stage, clean owner record",
+  "required_refusals_at_head": "R1 comma REFUSE/4, R2 semicolon REFUSE/4, R3 comma sale REFUSE/4, and-joined REFUSE/4, full-stop REFUSE/4, standalone sale REFUSE/4",
+  "required_acceptances_at_head": "A3..A8 ACCEPT/0 (6/6), accept_similar_vocabulary on the clean owner record ACCEPT/0",
+  "tests_before_base": "82 passed, 1 skipped (pytest -q, research_engine at 513ea531)",
+  "tests_after_head": "84 passed, 1 skipped (same command at this head)",
+  "collected_ids": "83 before, 85 after; diff = exactly the two added test_claim_grounding tests",
+  "fixtures_untouched": true
+ }
 }
