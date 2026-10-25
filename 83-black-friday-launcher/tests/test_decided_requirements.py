@@ -180,6 +180,38 @@ class EntitlementGateTests(unittest.TestCase):
         for forbidden in ("stripe", "requests", "urllib", "subprocess", "charge("):
             self.assertNotIn(forbidden, source)
 
+    def test_the_gate_labels_its_evidence_a_caller_attestation_not_purchase_proof(self):
+        """The gate reads no payment system; the operator must be told so."""
+        result = intake.validate(base_intake())["entitlement"]
+        self.assertEqual(result["evidence_kind"], "caller_attested_string")
+        self.assertIs(result["proves_purchase"], False)
+        boundary = result["attestation_boundary"].lower()
+        self.assertIn("not proof of purchase", boundary)
+        self.assertIn("declared", boundary)
+
+
+class DocumentationTests(unittest.TestCase):
+    """DISPATCH.md and DECISIONS-PENDING.md must match the code they describe."""
+
+    def test_dispatch_no_longer_claims_skill_md_lacks_implemented_commands(self):
+        cli = (SKILL_ROOT / "launcher_core" / "cli.py").read_text(encoding="utf-8")
+        for command in ("dispatch", "questions"):
+            self.assertIn(f'sub.add_parser("{command}"', cli)
+        dispatch = " ".join(
+            (SKILL_ROOT / "DISPATCH.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("no `dispatch` or `questions` command", dispatch)
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        for invocation in ("cli dispatch", "cli questions"):
+            self.assertIn(invocation, skill)
+
+    def test_each_open_seam_is_an_owner_decision_with_its_blocking_effect(self):
+        decisions = (SKILL_ROOT / "DECISIONS-PENDING.md").read_text(encoding="utf-8")
+        open_seams = decisions.split("## Still open", 1)[1]
+        for seam in SEAM_IDS:
+            self.assertIn(seam, open_seams)
+        self.assertEqual(open_seams.count("**Owner decision (open).**"), len(SEAM_IDS))
+        self.assertEqual(open_seams.count("**Blocks:**"), len(SEAM_IDS))
+
 
 class CouncilPlanningTests(unittest.TestCase):
     def setUp(self):
