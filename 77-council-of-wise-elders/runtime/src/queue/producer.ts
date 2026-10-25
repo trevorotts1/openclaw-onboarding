@@ -1,101 +1,79 @@
 /**
- * The one canonical durable job/event producer for the Council runtime
- * (WER-011 dependency-ready slice, unit W01-U003).
+ * Canonical durable operation producer (WER-011 dependency-ready slice).
  *
- * What this adds over DurableJobRunner.enqueueOperation alone:
- * enqueueOperation commits the job row and its dispatch descriptor, but
- * records no receipt, no journal event, and no outbox intent, and the
- * session transition that queues the work happens in a separate call.
- * This producer makes ADMISSION the single owning-store transaction:
- * the session transition to QUEUED, the durable job row, the
- * OperationAdmissionReceipt, the operation_reserved journal event, and the
- * outbox intent all commit in ONE short transaction (Section 16.4), or
- * none of them do. A crash between the writes cannot leave a session
- * QUEUED without its job, a job without its receipt, or a receipt
- * without its event.
+ * This is NOT a second scheduler and NOT a second state machine. It is
+ * the single owning path that turns one admission command into durable
+ * state, built entirely on the existing substrate:
  *
- * Composition law (no second state machine, no second scheduler):
- * - The job row itself is still CWE-006's council_jobs through
- *   CouncilJobs.claimJob (called on the SAME handle inside the
- *   producer's transaction via withHandle), so job identity,
- *   idempotency-key derivation, and CAS discipline stay in one place.
- * - Dispatch stays CWE-027's runner; this module only produces. It
- *   never claims, executes, heartbeats, or dispatches. Worker
- *   acknowledgment, real provider dispatch, and live replay are
- *   DEFERRED to the runner units; nothing here claims them.
- * - Budget reservation stays at claim time (CWE-049 admission); the
- *   receipt records the grant and estimate the dispatch will charge
- *   against, never a reservation id (which does not exist yet).
+ * - `CouncilJobs` (persistence/jobs.ts) owns the council_jobs row, its
+ *   deterministic operation identity `canonicalHash({session_id,
+ *   attempt, phase_job_key, input_sha256})`, and the job lifecycle
+ *   (queued -> leased -> running -> succeeded/failed/cancelled).
+ * - `CouncilRepositories.transitionState` owns session state legality
+ *   and the compare-and-swap state-version write.
+ * - `EventJournal` owns the ordered, hash-chained event.
+ * - `ProjectionOutbox` owns the durable event/outbox intent.
+ * - `council_request_keys` is the canonical idempotency registry:
+ *   `(tenant, source, operation, request_key) -> payload_fingerprint,
+ *   response_operation_id`. No new key table is introduced.
  *
- * OperationAdmissionReceipt semantics (v2.4):
- * - operation_id is the stable business key: the same
- *   canonicalHash({session_id, attempt, phase_job_key, input_sha256})
- *   identity the job row, budget reservation, attempt ledger, and card
- *   host stamp already use. It is never reset by restart.
- * - The admission fingerprint (canonicalStringify of descriptor +
- *   route snapshot fingerprint) is committed with the receipt; the
- *   same idempotency key with a DIFFERENT fingerprint is a conflict
- *   refused before any write.
- * - attempt_ordinal is the receipt's own per-operation dispatch
- *   ordinal: 1 at admission and never reset by restart; retries and
- *   repairs are separate operations with their own receipts.
- * - lease_generation is the fencing token the receipt was admitted
- *   under. Every later mutable commit against this receipt rechecks it
- *   (commitMutable checks job lease_epoch AND session lease_epoch),
- *   so a stale generation cannot commit over a newer claim.
+ * Transaction law: admission commits the requested session transition,
+ * the durable job, the `operation_reserved` event, and the outbox
+ * intent in ONE short transaction (`CouncilDatabase.write`). A failure
+ * anywhere rolls all of them back. No provider call ever runs here.
  *
- * State labels: every persisted state is an EXISTING canonical enum.
- * RECEIPT_STATE maps onto CWE-006 JobState; dispatch sublabels map
- * onto contracts OPERATION_STATUSES. No parallel state machine.
+ * Operation state labels map onto the existing enums (see
+ * OPERATION_STATE_LABEL_MAP and queue/producer.test.ts). The semantic
+ * label is stored in the existing job payload; the persisted `state`
+ * field is always the canonical `JobState`, and the safe accounting
+ * projection is the existing `OperationReceipt` contract, validated
+ * with `validateOperationReceipt`.
+ *
+ * Deferred, explicitly NOT claimed here: real provider dispatch, worker
+ * acknowledgment, replay against a live transport, and installed
+ * acceptance. Those require WER-014/026/027 and are untouched.
  */
 
 import {
+  SEAT_IDS,
+  assertTransition,
   canonicalHash,
   canonicalStringify,
+  isSha256Hex,
+  validateOperationReceipt,
   type Clock,
   type CouncilEventType,
   type IdSource,
+  type OperationReceipt as CanonicalOperationReceipt,
+  type OperationStatus,
   type SeatId,
+  type SessionState,
   type SessionStateRecord,
 } from '../contracts/index.js';
-import type { PinnedRouteSnapshot } from '../budgets/index.js';
-import { routeSnapshotFingerprint } from '../budgets/route-snapshot.js';
+import type { BudgetReservationKind } from '../budgets/index.js';
 import type { AuthorizationEnvelope } from '../persistence/envelope.js';
-import { assertEnvelopePurpose } from '../persistence/envelope.js';
-import { CouncilJobs, type JobRecord } from '../persistence/jobs.js';
+import { CouncilJobs, type JobState } from '../persistence/jobs.js';
+import type { StoredSession } from '../cli/host-ports.js';
+import { ProjectionOutbox } from '../persistence/outbox.js';
 import type { CouncilRepositories } from '../persistence/repositories.js';
 import type { CouncilDatabase, SqliteDatabaseHandle } from '../persistence/sqlite.js';
-import type { OperationDescriptor } from './runner.js';
 import { JobRunnerError } from './errors.js';
 
-// ------------------------------------------------------------ state labels
+/** Idempotency source of the admission command in council_request_keys. */
+export const OPERATION_ADMISSION_SOURCE = 'council-operation-admission';
+/** Outbox topic for safe operation state fan-out. */
+export const OPERATION_EVENT_TOPIC = 'council.operation';
+/** Default council operation lease, matching the runner's canonical TTL. */
+export const DEFAULT_OPERATION_LEASE_TTL_MS = 60_000;
 
 /**
- * Receipt lifecycle labels, each mapped onto the canonical enums the
- * repo already persists (recorded explicitly per WER-011):
- *
- * - never_dispatched: the operation was admitted durably; no worker
- *   has claimed the job yet. Maps onto JobState 'queued'.
- * - potentially_dispatched: a worker claimed the job (lease_epoch was
- *   bumped) but no provider response was observed. Covers JobState
- *   'leased' and 'running'.
- * - response_observed: a provider response was recorded by the
- *   attempt ledger but acceptance is not final. Maps onto
- *   OPERATION_STATUSES 'reserved'/'dispatched' rows on
- *   council_provider_attempts (JobState still leased/running).
- * - accepted: the job finished succeeded and the attempt ledger shows
- *   'accepted'. Maps onto JobState 'succeeded' + OPERATION_STATUSES
- *   'accepted'.
- * - known_failed: the job finished failed or dead_letter. Maps onto
- *   JobState 'failed'/'dead_letter' + OPERATION_STATUSES 'failed'.
- * - cancelled_fenced: the job was cancelled or fenced out (superseded
- *   cancel generation, session cancellation). Maps onto JobState
- *   'cancelled' + OPERATION_STATUSES 'cancelled'.
- * - outcome_unknown: provider completion is unknown. Maps onto
- *   OPERATION_STATUSES 'provider_completion_unknown' (JobState failed
- *   with that terminal reason per the runner's recovery law).
+ * The persisted semantic labels WER-011 requires. They are derived /
+ * mapped onto existing columns; they are never a parallel state enum in
+ * the database. `job_state` is council_jobs.state and
+ * `operation_status` is the canonical OPERATION_STATUSES enum used by
+ * council_provider_attempts and the OperationReceipt contract.
  */
-export type ReceiptStateLabel =
+export type OperationStateLabel =
   | 'never_dispatched'
   | 'potentially_dispatched'
   | 'response_observed'
@@ -104,837 +82,1131 @@ export type ReceiptStateLabel =
   | 'cancelled_fenced'
   | 'outcome_unknown';
 
-export const RECEIPT_STATE_TO_JOB_STATE: Record<ReceiptStateLabel, string> = {
-  never_dispatched: 'queued',
-  potentially_dispatched: 'leased',
-  response_observed: 'leased',
-  accepted: 'succeeded',
-  known_failed: 'failed',
-  cancelled_fenced: 'cancelled',
-  outcome_unknown: 'failed',
-};
+export const OPERATION_STATE_LABEL_MAP = {
+  never_dispatched: { job_state: 'queued', operation_status: 'reserved' },
+  potentially_dispatched: { job_state: 'running', operation_status: 'dispatched' },
+  response_observed: { job_state: 'running', operation_status: 'dispatched' },
+  accepted: { job_state: 'succeeded', operation_status: 'accepted' },
+  known_failed: { job_state: 'failed', operation_status: 'failed' },
+  cancelled_fenced: { job_state: 'cancelled', operation_status: 'cancelled' },
+  outcome_unknown: {
+    job_state: 'failed',
+    operation_status: 'provider_completion_unknown',
+  },
+} as const satisfies Record<
+  OperationStateLabel,
+  { job_state: JobState; operation_status: OperationStatus }
+>;
 
-// ---------------------------------------------------------------- receipt
-
-/** How the charge on the grant is known at receipt time. */
 export type CostKnowledge = 'estimated' | 'verified' | 'unknown';
-
-/**
- * What a caller should do with a receipt after a fault, per the v2.4
- * disposition law.
- */
 export type RetryDisposition =
   | 'not_needed'
   | 'safe_to_retry'
   | 'reconcile_first'
   | 'blocked';
 
-/**
- * The canonical admission receipt persisted in the job row's payload
- * (receipt_json). operation_id is the stable business key; every field
- * survives restart because it lives in the same committed payload as
- * the job itself.
- */
-export interface OperationAdmissionReceipt {
-  schema_version: 'wise-elders.operation-receipt/v1';
-  /** Stable business key; equals the job's idempotency key. */
-  operation_id: string;
-  operation_id_hash: string;
-  session_id: string;
-  owner_subject: string;
-  /** The session run generation (state lease_epoch) at admission. */
-  run_generation: number;
-  operation_kind: string;
-  round: number;
-  seat_id: string | null;
+/** Integer-unit reservation; unknown values stay null, never zero. */
+export interface OperationReservation {
+  requests: number;
+  tokens: number | null;
+  moneyMinorUnits: number | null;
+  currency: string | null;
+  costKnowledge: CostKnowledge;
+}
+
+/** The canonical durable operation record for this producer. */
+export interface ProducerOperationReceipt {
+  operationId: string;
+  sessionId: string;
+  ownerId: string;
+  runGeneration: number;
+  operationKind: BudgetReservationKind;
+  round: number | null;
+  seatId: SeatId | null;
   purpose: string;
-  input_hash: string;
-  route_snapshot_hash: string;
-  grant_id: string;
-  pack_hash: string;
-  /** The dispatch id when this operation is itself a follow-on. */
-  attempt_id: string;
-  /** Per-operation dispatch ordinal; 1 at admission, never reset. */
-  attempt_ordinal: number;
-  /** True when a later admission under the same key replayed. */
-  replayed: boolean;
-  lease_owner: string | null;
-  /** Fencing token at admission; rechecked on every mutable commit. */
-  lease_generation: number;
-  lease_expires_at: string | null;
-  provider_request_id: string | null;
-  /** Maps onto JobState (see RECEIPT_STATE_TO_JOB_STATE). */
-  state: string;
-  /** Integer-unit reservation estimate; charged at dispatch. */
-  reserved_units: number;
-  cost_knowledge: CostKnowledge;
-  observed_usage: { input_units: number | null; output_units: number | null } | null;
-  accepted_result_hash: string | null;
-  event_sequence: number;
-  retry_disposition: RetryDisposition;
-  admission_fingerprint: string;
-  created_at: string;
-  updated_at: string;
+  inputHash: string;
+  routeSnapshotHash: string;
+  grantId: string;
+  packHash: string | null;
+  attemptId: string;
+  /** Persisted; never reset by process restart. */
+  attemptOrdinal: number;
+  leaseOwner: string | null;
+  /** Fencing token rechecked on every mutable commit. */
+  leaseGeneration: number;
+  leaseExpiresAt: string | null;
+  providerRequestId: string | null;
+  /** Canonical persisted job state, never a parallel enum. */
+  state: JobState;
+  stateLabel: OperationStateLabel;
+  reservation: OperationReservation;
+  observedUsage: Record<string, unknown> | null;
+  acceptedResultHash: string | null;
+  eventSequence: number | null;
+  retryDisposition: RetryDisposition;
+  /** Safe accounting projection validated against the canonical contract. */
+  canonicalReceipt: CanonicalOperationReceipt;
 }
 
-export interface AdmitOperationRequest {
-  session_id: string;
-  phase_job_key: string;
-  seat_id: SeatId | null;
-  input_sha256: string;
-  descriptor: OperationDescriptor;
-  route_snapshot: PinnedRouteSnapshot;
-  /** Pack identity hash (source_pack_version by default). */
-  pack_hash?: string | null;
+export interface AdmissionCommand {
+  sessionId: string;
+  /** Caller idempotency key, scoped to this session and source. */
+  idempotencyKey: string;
+  operationKind: BudgetReservationKind;
+  purpose: string;
+  inputHash: string;
+  routeSnapshotHash: string;
+  grantId: string;
+  packHash?: string | null;
+  round?: number | null;
+  seatId?: SeatId | null;
+  ownerId?: string;
+  reservation: OperationReservation;
+  /**
+   * Optional session transition committed atomically with the job.
+   * expectedVersion is excluded from the idempotency fingerprint so an
+   * exact retry may retain its original revision after the first
+   * success advanced the session (plan Section "Admission, execution
+   * and recovery algorithm", step 2).
+   */
+  transition?: { to: SessionState; expectedVersion: number };
 }
 
-export type AdmitOperationResult =
-  | { outcome: 'committed'; receipt: OperationAdmissionReceipt; created: true }
-  | { outcome: 'committed'; receipt: OperationAdmissionReceipt; created: false };
-
-// -------------------------------------------------------------- internals
-
-const RECEIPT_STATE_EVENT_TYPES: ReadonlySet<CouncilEventType> = new Set([
-  'session_created',
-  'session_state_changed',
-  'session_paused',
-  'session_cancelled',
-  'session_blocked',
-  'session_failed',
-] as const satisfies readonly CouncilEventType[]);
-
-interface ReceiptedJobPayload {
-  receipt: OperationAdmissionReceipt;
-  [key: string]: unknown;
+export interface AdmissionResult {
+  outcome: 'admitted' | 'replayed';
+  receipt: ProducerOperationReceipt;
 }
 
-class ProducerStateConflict extends Error {
-  readonly code = 'PRODUCER_STATE_CONFLICT' as const;
-  constructor(message: string, readonly detail: Record<string, unknown>) {
-    super(message);
-    this.name = 'ProducerStateConflict';
-  }
+export interface OperationLeaseFence {
+  operationId: string;
+  leaseOwner: string;
+  leaseGeneration: number;
 }
 
-function operationKey(
-  sessionId: string,
-  attempt: number,
-  phaseJobKey: string,
-  inputSha256: string,
-): string {
-  // Identical derivation to CWE-006 CouncilJobs and CWE-027's runner:
-  // the admission operation id IS the job's idempotency key.
-  return canonicalHash({
-    session_id: sessionId,
-    attempt,
-    phase_job_key: phaseJobKey,
-    input_sha256: inputSha256,
-  });
+export interface ReconcileQueuedWithoutJobResult {
+  scanned: number;
+  blocked: Array<{ sessionId: string; reason: 'queued_without_job' }>;
 }
 
-/**
- * Run fn inside the owning store's transaction discipline. The
- * producer's writes are one commit unit, so nested participation is
- * correct: db.write opens BEGIN IMMEDIATE only at the outermost call.
- */
-function withHandle<T>(
-  db: CouncilDatabase,
-  fn: (handle: SqliteDatabaseHandle) => T,
-): T {
-  return db.write(fn);
-}
-
-// --------------------------------------------------------------- producer
-
-export interface OperationProducerDeps {
+export interface DurableOperationProducerDeps {
   db: CouncilDatabase;
   repositories: CouncilRepositories;
   jobs: CouncilJobs;
+  outbox?: ProjectionOutbox;
   clock: Clock;
   ids: IdSource;
+  /** Outbox delivery attempt bound; defaults to the outbox's own 5. */
+  outboxMaxAttempts?: number;
 }
 
-export class OperationProducer {
+interface StoredJobRow {
+  id: string;
+  session_id: string | null;
+  state: JobState;
+  lease_epoch: number;
+  lease_owner: string | null;
+  lease_expires_at: string | null;
+  payload_json: string;
+  updated_at: string;
+}
+
+interface ProducerPayload {
+  attempt: number;
+  brief_revision: number;
+  phase_job_key: string;
+  seat_id: string | null;
+  input_sha256: string;
+  cancel_generation: number;
+  producer?: {
+    idempotency_key: string;
+    fingerprint: string;
+    attempt_id: string;
+    attempt_ordinal: number;
+    receipt: ProducerOperationReceipt;
+  };
+}
+
+const OPERATION_KINDS: ReadonlySet<string> = new Set([
+  'provider_request',
+  'output_repair',
+  'transport_retry',
+  'semantic_verification',
+]);
+const COST_KNOWLEDGE: ReadonlySet<string> = new Set([
+  'estimated',
+  'verified',
+  'unknown',
+]);
+const CURRENCY = /^[A-Z]{3}$/;
+
+function nowPlus(clock: Clock, ms: number): string {
+  return new Date(Date.parse(clock.nowUtc()) + ms).toISOString();
+}
+
+function validateCommand(command: AdmissionCommand): void {
+  const fail = (message: string): never => {
+    throw new JobRunnerError('OPERATION_ADMISSION_INVALID', message, { retryable: false });
+  };
+  if (!command.sessionId) fail('sessionId is required.');
+  if (!command.idempotencyKey) fail('idempotencyKey is required.');
+  if (!OPERATION_KINDS.has(command.operationKind)) {
+    fail(`operationKind ${command.operationKind} is not a canonical operation kind.`);
+  }
+  if (!command.purpose) fail('purpose is required.');
+  if (!isSha256Hex(command.inputHash)) {
+    fail('inputHash must be a lowercase SHA-256 hex digest.');
+  }
+  if (!isSha256Hex(command.routeSnapshotHash)) {
+    fail('routeSnapshotHash must be a lowercase SHA-256 hex digest.');
+  }
+  if (!command.grantId) fail('grantId is required.');
+  if (command.packHash !== undefined && command.packHash !== null && !isSha256Hex(command.packHash)) {
+    fail('packHash must be null or a lowercase SHA-256 hex digest.');
+  }
+  if (command.round !== undefined && command.round !== null) {
+    if (!Number.isInteger(command.round) || command.round < 0) {
+      fail('round must be null or a non-negative integer.');
+    }
+  }
+  if (command.seatId !== undefined && command.seatId !== null) {
+    if (!(SEAT_IDS as readonly string[]).includes(command.seatId)) {
+      fail(`seatId ${command.seatId} is not one of the nine canonical seats.`);
+    }
+  }
+  const r = command.reservation;
+  if (!Number.isInteger(r.requests) || r.requests < 0) {
+    fail('reservation.requests must be a non-negative integer.');
+  }
+  if (r.tokens !== null && (!Number.isInteger(r.tokens) || r.tokens < 0)) {
+    fail('reservation.tokens must be null or a non-negative integer.');
+  }
+  if (r.moneyMinorUnits !== null) {
+    if (!Number.isInteger(r.moneyMinorUnits) || r.moneyMinorUnits < 0) {
+      fail('reservation.moneyMinorUnits must be null or a non-negative integer.');
+    }
+    if (r.currency === null || !CURRENCY.test(r.currency)) {
+      fail('reservation.currency is required when moneyMinorUnits is set.');
+    }
+  }
+  if (!COST_KNOWLEDGE.has(r.costKnowledge)) {
+    fail(`costKnowledge ${r.costKnowledge} is not estimated|verified|unknown.`);
+  }
+  if (command.transition && !Number.isInteger(command.transition.expectedVersion)) {
+    fail('transition.expectedVersion must be an integer.');
+  }
+}
+
+function operationIdentity(
+  sessionId: string,
+  attempt: number,
+  idempotencyKey: string,
+  fingerprint: string,
+): string {
+  // Deliberately the SAME derivation as CouncilJobs.operationKey in
+  // persistence/jobs.ts: one operation has one string across the job
+  // row, budget reservations, the attempt ledger, and host stamps.
+  return canonicalHash({
+    session_id: sessionId,
+    attempt,
+    phase_job_key: idempotencyKey,
+    input_sha256: fingerprint,
+  });
+}
+
+function buildCanonicalReceipt(
+  receipt: ProducerOperationReceipt,
+  completedAt: string | null = null,
+): CanonicalOperationReceipt {
+  const usage = receipt.observedUsage ?? {};
+  const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : null;
+  const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : null;
+  const money = receipt.reservation.moneyMinorUnits;
+  const candidate: CanonicalOperationReceipt = {
+    schema_version: 'wise-elders.operation-receipt/v1',
+    operation_id: receipt.operationId,
+    session_id: receipt.sessionId,
+    status: OPERATION_STATE_LABEL_MAP[receipt.stateLabel].operation_status,
+    provider_request_id: receipt.providerRequestId,
+    input_sha256: receipt.inputHash,
+    output_sha256: receipt.acceptedResultHash,
+    usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+    cost:
+      money !== null && receipt.reservation.currency !== null
+        ? { amount_minor: money, currency: receipt.reservation.currency }
+        : null,
+    completed_at: receipt.stateLabel === 'accepted' ? completedAt : null,
+  };
+  const check = validateOperationReceipt(candidate);
+  if (!check.ok) {
+    throw new JobRunnerError(
+      'OPERATION_ADMISSION_INVALID',
+      'The operation receipt failed canonical contract validation.',
+      { retryable: false, detail: { issues: check.issues } },
+    );
+  }
+  return check.value;
+}
+
+function isFencedJobState(state: JobState): boolean {
+  return state === 'leased' || state === 'running';
+}
+
+export class DurableOperationProducer {
   private readonly db: CouncilDatabase;
   private readonly repositories: CouncilRepositories;
   private readonly jobs: CouncilJobs;
+  private readonly outbox: ProjectionOutbox;
   private readonly clock: Clock;
   private readonly ids: IdSource;
 
-  constructor(deps: OperationProducerDeps) {
+  constructor(deps: DurableOperationProducerDeps) {
     this.db = deps.db;
     this.repositories = deps.repositories;
     this.jobs = deps.jobs;
+    this.outbox = deps.outbox ?? new ProjectionOutbox(deps.db, deps.outboxMaxAttempts ?? 5);
     this.clock = deps.clock;
     this.ids = deps.ids;
   }
 
-  private nowIso(): string {
-    return this.clock.nowUtc();
-  }
-
-  private operationId(request: AdmitOperationRequest, attempt: number): string {
-    return operationKey(request.session_id, attempt, request.phase_job_key, request.input_sha256);
-  }
+  // ------------------------------------------------------------- admission
 
   /**
-   * Fingerprint the admission: everything that must be identical for
-   * the same idempotency key. A changed fingerprint under the same key
-   * is a conflict refused before any write.
-   */
-  private admissionFingerprint(
-    request: AdmitOperationRequest,
-  ): string {
-    return canonicalHash({
-      descriptor: request.descriptor,
-      route_snapshot_hash: routeSnapshotFingerprint(request.route_snapshot),
-      seat_id: request.seat_id,
-      pack_hash: request.pack_hash ?? null,
-    });
-  }
-
-  private sessionStateRow(
-    handle: SqliteDatabaseHandle,
-    envelope: AuthorizationEnvelope,
-    sessionId: string,
-  ): {
-    state: string;
-    state_version: number;
-    cancellation_generation: number;
-    lease_owner: string | null;
-    owner_subject: string | null;
-  } {
-    // lease_epoch and attempt live in the journaled SessionStateRecord
-    // (the durable record Section 18 defines), not in the sessions row
-    // columns (CWE-006 mapping note); read them from
-    // sessionRecordFromJournal, never from the row.
-    const row = handle
-      .prepare(
-        `SELECT state, state_version, cancellation_generation, lease_owner,
-                owner_subject
-           FROM council_sessions
-          WHERE tenant_id = ? AND company_id = ? AND id = ?`,
-      )
-      .get(envelope.tenant_id, envelope.company_id, sessionId) as
-      | {
-          state: string;
-          state_version: number;
-          cancellation_generation: number;
-          lease_owner: string | null;
-          owner_subject: string | null;
-        }
-      | undefined;
-    if (!row) {
-      throw new JobRunnerError(
-        'JOB_SESSION_NOT_FOUND',
-        `No council session ${sessionId} exists in this scope; admission is refused.`,
-        { detail: { session_id: sessionId } },
-      );
-    }
-    return row;
-  }
-
-  private sessionRecordFromJournal(
-    handle: SqliteDatabaseHandle,
-    envelope: AuthorizationEnvelope,
-    sessionId: string,
-  ): SessionStateRecord | null {
-    // The journal carries the full SessionStateRecord on every state
-    // event payload (CWE-006 mapping note); the latest one is the
-    // authoritative in-transaction record.
-    const row = handle
-      .prepare(
-        `SELECT payload_json FROM council_events
-          WHERE tenant_id = ? AND company_id = ? AND session_id = ?
-            AND type IN ('session_created','session_state_changed','session_paused',
-                         'session_cancelled','session_blocked','session_failed')
-          ORDER BY sequence DESC LIMIT 1`,
-      )
-      .get(envelope.tenant_id, envelope.company_id, sessionId) as
-      | { payload_json: string }
-      | undefined;
-    if (!row) return null;
-    const payload = JSON.parse(row.payload_json) as {
-      state_record?: SessionStateRecord;
-    };
-    return payload.state_record ?? null;
-  }
-
-  /**
-   * The receipt for an existing job payload, when one was committed.
-   */
-  private receiptFromPayload(payloadJson: string): OperationAdmissionReceipt | null {
-    const payload = JSON.parse(payloadJson) as Partial<ReceiptedJobPayload>;
-    if (!payload.receipt) return null;
-    const receipt = payload.receipt;
-    if (receipt.schema_version !== 'wise-elders.operation-receipt/v1') {
-      return null;
-    }
-    return receipt;
-  }
-
-  private receiptedPayloadMutation(
-    handle: SqliteDatabaseHandle,
-    envelope: AuthorizationEnvelope,
-    operationId: string,
-    mutate: (payload: ReceiptedJobPayload) => boolean,
-  ): boolean {
-    // operationId is the job's idempotency key (the row's id column is
-    // a separate generated id, CWE-006 claimJob law).
-    const row = handle
-      .prepare(
-        `SELECT payload_json FROM council_jobs
-          WHERE tenant_id = ? AND company_id = ? AND kind = 'operation' AND idempotency_key = ?`,
-      )
-      .get(envelope.tenant_id, envelope.company_id, operationId) as
-      | { payload_json: string }
-      | undefined;
-    if (!row) {
-      throw new JobRunnerError(
-        'JOB_NOT_FOUND',
-        `Job for operation ${operationId} vanished inside the transaction.`,
-        { detail: { operation_id: operationId } },
-      );
-    }
-    const payload = JSON.parse(row.payload_json) as ReceiptedJobPayload;
-    if (!mutate(payload)) return true; // nothing to change
-    const result = handle
-      .prepare(
-        `UPDATE council_jobs SET payload_json = ?, updated_at = ?
-          WHERE tenant_id = ? AND company_id = ? AND kind = 'operation' AND idempotency_key = ?`,
-      )
-      .run(
-        canonicalStringify(payload),
-        this.nowIso(),
-        envelope.tenant_id,
-        envelope.company_id,
-        operationId,
-      );
-    return Number(result.changes) === 1;
-  }
-
-  /**
-   * Admit one operation durably: session transition to QUEUED (when
-   * the session is READY), the job row, the receipt, the
-   * operation_reserved journal event, and the outbox intent, all in
-   * ONE owning-store transaction.
+   * Admit one logical operation. One short owning-store transaction
+   * commits: request-key claim, optional session transition, durable
+   * job, `operation_reserved` event, and outbox intent.
    *
-   * Idempotency: the key is the operation identity. A replay under
-   * the same key with the SAME fingerprint returns the originally
-   * committed receipt (created: false) and writes nothing. A replay
-   * with a DIFFERENT fingerprint throws PRODUCER_FINGERPRINT_CONFLICT
-   * before any write. A losing concurrent duplicate (the transaction
-   * races another admission of the same identity) returns the winner's
-   * committed receipt.
-   *
-   * Invalid admission: a session record whose queueing transition or
-   * job identity would be inconsistent is refused before any write;
-   * in particular a QUEUED session state without its job row is never
-   * produced by this path, and reconciliation of historical
-   * queued-without-job rows is reconcileQueuedWithoutJob below.
+   * - Same idempotency key + same fingerprint: returns the committed
+   *   receipt, performs no mutation.
+   * - Same key + changed fingerprint: conflicts before any write.
+   * - Concurrent loser: the request-key primary key serializes the
+   *   race; the loser replays the committed matching receipt.
+   * - A recorded admission whose job row is absent is rejected as
+   *   QUEUED-without-job, never silently re-admitted.
    */
   admitOperation(
     envelope: AuthorizationEnvelope,
-    request: AdmitOperationRequest,
-  ): AdmitOperationResult {
-    assertEnvelopePurpose(envelope, 'write', 'Operation admission');
-    const fingerprint = this.admissionFingerprint(request);
-    const now = this.nowIso();
-
-    const outcome = withHandle(this.db, (handle) => {
-      const session = this.sessionStateRow(handle, envelope, request.session_id);
-      const record =
-        this.sessionRecordFromJournal(handle, envelope, request.session_id) ?? null;
-      if (!record) {
-        throw new JobRunnerError(
-          'JOB_SESSION_NOT_FOUND',
-          `Session ${request.session_id} has no journaled state record; admission is refused.`,
-          { detail: { session_id: request.session_id } },
-        );
-      }
-      const attempt = record.attempt;
-      const operationId = this.operationId(request, attempt);
-
-      // 1. Session transition to QUEUED when the session is READY.
-      //    The transition, its journal event, and everything below
-      //    commit in this one transaction. transitionState opens its
-      //    own db.write, which joins the outer unit (nested
-      //    participation, sqlite.ts tx law).
-      let stateVersion = record.state_version;
-      if (record.state === 'READY') {
-        const next = this.repositories.transitionState(
-          envelope,
-          request.session_id,
-          'QUEUED',
-          record.state_version,
-        );
-        stateVersion = next.state_version;
-      } else if (record.state === 'QUEUED') {
-        // QUEUED is valid ONLY with its committed job: a QUEUED
-        // session row without the operation job this admission is
-        // about to write is the historical broken state, and this
-        // path refuses it as invalid admission rather than passing it
-        // through. Reconciliation of historical queued-without-job
-        // rows is reconcileQueuedWithoutJob below, through this
-        // owning service.
-        const anyJob = handle
-          .prepare(
-            `SELECT id FROM council_jobs
-              WHERE tenant_id = ? AND company_id = ? AND session_id = ?
-                AND kind = 'operation'`,
-          )
-          .get(envelope.tenant_id, envelope.company_id, request.session_id);
-        if (!anyJob) {
-          throw new JobRunnerError(
-            'JOB_INVALID_INPUT',
-            `Session ${request.session_id} is QUEUED with no durable operation job: this is an invalid admission target, not a re-admission. Reconcile it through reconcileQueuedWithoutJob.`,
-            { detail: { session_id: request.session_id, queued_without_job: true } },
-          );
-        }
-      } else {
-        // Admission is only legal from READY or already-QUEUED: any
-        // other state means the session is not awaiting queueing.
-        throw new ProducerStateConflict(
-          `Session ${request.session_id} is ${record.state}; admission requires READY or QUEUED.`,
-          { session_state: record.state },
-        );
-      }
-
-      // 2. Job row (CWE-006 claimJob on the same handle/unit).
-      const job = this.jobs.claimJob(envelope, {
-        sessionId: request.session_id,
-        attempt,
-        briefRevision: record.brief_revision,
-        phaseJobKey: request.phase_job_key,
-        inputSha256: request.input_sha256,
-        cancelGeneration: record.cancel_generation,
-        seatId: request.seat_id,
-      });
-
-      // 3. Receipt + descriptor: same key, compare fingerprints.
-      const jobRow = handle
-        .prepare(
-          `SELECT payload_json FROM council_jobs
-            WHERE tenant_id = ? AND company_id = ? AND id = ? AND kind = 'operation'`,
-        )
-        .get(envelope.tenant_id, envelope.company_id, job.id) as
-        | { payload_json: string }
-        | undefined;
-      if (!jobRow) {
-        throw new JobRunnerError(
-          'JOB_NOT_FOUND',
-          `Job ${job.id} vanished inside the admission transaction.`,
-          { detail: { job_id: job.id } },
-        );
-      }
-      const payload = JSON.parse(jobRow.payload_json) as ReceiptedJobPayload & {
-        runner?: unknown;
-      };
-      const existingReceipt = payload.receipt ?? null;
-      if (existingReceipt) {
-        if (existingReceipt.admission_fingerprint !== fingerprint) {
-          throw new JobRunnerError(
-            'JOB_DESCRIPTOR_CONFLICT',
-            `Operation ${operationId} was already admitted with a different fingerprint (descriptor, route, seat, or pack changed). The same idempotency key with different dispatch meaning is a caller bug, not a re-admission.`,
-            { detail: { operation_id: operationId } },
-          );
-        }
-        // Losing concurrent duplicate or deliberate replay: return the
-        // committed receipt, write nothing.
-        return { receipt: existingReceipt, created: false } as const;
-      }
-
-      // 4. Journal event (operation_reserved) + outbox intent, in
-      //    this same transaction. Sequence allocation is inside the
-      //    transaction (journal law), so the event_sequence recorded
-      //    on the receipt is the one this commit allocated.
-      const journal = this.repositories.journal;
-      const event = journal.append(handle, envelope, request.session_id, {
-        event_id: this.ids.newId(),
-        type: 'operation_reserved',
-        from_state: record.state,
-        to_state: record.state === 'READY' ? 'QUEUED' : record.state,
-        actor_subject: envelope.actor_subject,
-        payload: {
-          operation_id: operationId,
-          grant_id: request.descriptor.grant_id,
-          kind: request.descriptor.kind,
-          purpose: request.descriptor.purpose ?? 'council_run',
-          original_operation_id: request.descriptor.original_operation_id ?? null,
-          estimate_minor: request.descriptor.estimate_minor,
-          round: request.descriptor.round,
-          seat_id: request.seat_id,
-          input_sha256: request.input_sha256,
-          route_snapshot_fingerprint: routeSnapshotFingerprint(request.route_snapshot),
-          admitted_by: 'operation-producer',
-        },
-        created_at: now,
-      });
-      this.repositories.outbox.enqueue(handle, envelope, {
-        id: this.ids.newId(),
-        session_id: request.session_id,
-        event_sequence: event.sequence,
-        topic: 'operation.admitted',
-        idempotency_key: operationId,
-        payload: {
-          session_id: request.session_id,
-          operation_id: operationId,
-          event_sequence: event.sequence,
-        },
-        created_at: now,
-      });
-
-      // 5. Receipt: commit descriptor (same law as enqueueOperation)
-      //    plus the receipt itself.
-      const descriptor = {
-        ...request.descriptor,
-        route_snapshot: request.route_snapshot,
-      };
-      const receipt: OperationAdmissionReceipt = {
-        schema_version: 'wise-elders.operation-receipt/v1',
-        operation_id: operationId,
-        operation_id_hash: canonicalHash({ operation_id: operationId }),
-        session_id: request.session_id,
-        owner_subject: session.owner_subject ?? envelope.actor_subject,
-        run_generation: record.lease_epoch,
-        operation_kind: request.descriptor.kind,
-        round: request.descriptor.round,
-        seat_id: request.seat_id,
-        purpose: request.descriptor.purpose ?? 'council_run',
-        input_hash: request.input_sha256,
-        route_snapshot_hash: routeSnapshotFingerprint(request.route_snapshot),
-        grant_id: request.descriptor.grant_id,
-        pack_hash: request.pack_hash ?? '',
-        attempt_id: request.descriptor.original_operation_id ?? operationId,
-        attempt_ordinal: 1,
-        replayed: false,
-        lease_owner: null,
-        lease_generation: record.lease_epoch,
-        lease_expires_at: null,
-        provider_request_id: null,
-        state: 'queued',
-        reserved_units: request.descriptor.estimate_minor,
-        cost_knowledge: 'estimated',
-        observed_usage: null,
-        accepted_result_hash: null,
-        event_sequence: event.sequence,
-        retry_disposition: 'not_needed',
-        admission_fingerprint: fingerprint,
-        created_at: now,
-        updated_at: now,
-      };
-      payload.receipt = receipt;
-      payload.runner = descriptor;
-      const result = handle
-        .prepare(
-          `UPDATE council_jobs SET payload_json = ?, updated_at = ?
-            WHERE tenant_id = ? AND company_id = ? AND id = ? AND state = 'queued'`,
-        )
-        .run(
-          canonicalStringify(payload),
-          now,
-          envelope.tenant_id,
-          envelope.company_id,
-          job.id,
-        );
-      if (Number(result.changes) !== 1) {
-        throw new JobRunnerError(
-          'JOB_LEASE_FENCED',
-          `Job ${job.id} was not admitted as queued; a concurrent writer changed it inside this transaction.`,
-          { detail: { job_id: job.id } },
-        );
-      }
-      return { receipt, created: true } as const;
+    command: AdmissionCommand,
+  ): AdmissionResult {
+    validateCommand(command);
+    const fingerprint = canonicalHash({
+      session_id: command.sessionId,
+      idempotency_key: command.idempotencyKey,
+      owner_id: command.ownerId ?? null,
+      operation_kind: command.operationKind,
+      purpose: command.purpose,
+      round: command.round ?? null,
+      seat_id: command.seatId ?? null,
+      input_sha256: command.inputHash,
+      route_snapshot_sha256: command.routeSnapshotHash,
+      grant_id: command.grantId,
+      pack_sha256: command.packHash ?? null,
+      reservation: command.reservation,
+      transition_to: command.transition?.to ?? null,
     });
-    return { outcome: 'committed', receipt: outcome.receipt, created: outcome.created };
-  }
 
-  /**
-   * The committed receipt for an operation identity, read-only. This
-   * is the replay path: after a restart, the caller re-derives the
-   * operation identity and reads the same committed receipt back,
-   * including its attempt_ordinal and lease_generation (never reset).
-   */
-  getReceipt(
-    envelope: AuthorizationEnvelope,
-    identity: {
-      session_id: string;
-      attempt: number;
-      phase_job_key: string;
-      input_sha256: string;
-    },
-  ): OperationAdmissionReceipt | null {
-    const operationId = operationKey(
-      identity.session_id,
-      identity.attempt,
-      identity.phase_job_key,
-      identity.input_sha256,
-    );
-    const row = this.db.read((handle) =>
-      handle
-        .prepare(
-          `SELECT payload_json FROM council_jobs
-            WHERE tenant_id = ? AND company_id = ? AND kind = 'operation' AND idempotency_key = ?`,
-        )
-        .get(envelope.tenant_id, envelope.company_id, operationId),
-    ) as { payload_json: string } | undefined;
-    if (!row) return null;
-    return this.receiptFromPayload(row.payload_json);
-  }
-
-  /**
-   * Mutable commit against an admitted receipt with the fencing token
-   * rechecked inside the transaction: a stale lease_generation (the
-   * job row's lease_epoch has moved on, or the session record's
-   * lease_epoch has moved on) cannot commit. Restart never resets the
-   * token: it is read from the committed receipt, not from memory.
-   */
-  commitMutable(
-    envelope: AuthorizationEnvelope,
-    identity: {
-      session_id: string;
-      attempt: number;
-      phase_job_key: string;
-      input_sha256: string;
-    },
-    mutation: {
-      expected_lease_generation: number;
-      lease_owner?: string | null;
-      lease_expires_at?: string | null;
-      provider_request_id?: string | null;
-      state?: ReceiptStateLabel;
-      cost_knowledge?: CostKnowledge;
-      observed_usage?: { input_units: number | null; output_units: number | null } | null;
-      accepted_result_hash?: string | null;
-      retry_disposition?: RetryDisposition;
-    },
-  ): { committed: boolean; receipt: OperationAdmissionReceipt | null } {
-    assertEnvelopePurpose(envelope, 'write', 'Receipt mutation');
-    const operationId = operationKey(
-      identity.session_id,
-      identity.attempt,
-      identity.phase_job_key,
-      identity.input_sha256,
-    );
-    return withHandle(this.db, (handle) => {
-      const jobRow = handle
-        .prepare(
-          `SELECT payload_json, lease_epoch FROM council_jobs
-            WHERE tenant_id = ? AND company_id = ? AND kind = 'operation' AND idempotency_key = ?`,
-        )
-        .get(envelope.tenant_id, envelope.company_id, operationId) as
-        | { payload_json: string; lease_epoch: number }
-        | undefined;
-      if (!jobRow) {
-        throw new JobRunnerError(
-          'JOB_NOT_FOUND',
-          `No admitted operation ${operationId} exists in this scope.`,
-          { detail: { operation_id: operationId } },
-        );
-      }
-      const receipt = this.receiptFromPayload(jobRow.payload_json);
-      if (!receipt) {
-        throw new JobRunnerError(
-          'JOB_INVALID_INPUT',
-          `Operation ${operationId} has no committed receipt; mutable commits require admission first.`,
-          { detail: { operation_id: operationId } },
-        );
-      }
-      // Fencing token recheck on EVERY mutable commit: the caller's
-      // generation must still be the committed receipt's generation,
-      // and the job row's lease_epoch must not have moved past it.
-      if (
-        mutation.expected_lease_generation !== receipt.lease_generation ||
-        jobRow.lease_epoch > receipt.lease_generation
-      ) {
-        return { committed: false, receipt } as const;
-      }
-      const session = this.sessionStateRow(handle, envelope, identity.session_id);
-      const sessionRecord = this.sessionRecordFromJournal(
-        handle,
-        envelope,
-        identity.session_id,
-      );
-      if (
-        sessionRecord &&
-        sessionRecord.lease_epoch > receipt.lease_generation
-      ) {
-        return { committed: false, receipt } as const;
-      }
-      const now = this.nowIso();
-      const next: OperationAdmissionReceipt = {
-        ...receipt,
-        lease_owner: mutation.lease_owner ?? receipt.lease_owner,
-        lease_expires_at: mutation.lease_expires_at ?? receipt.lease_expires_at,
-        provider_request_id: mutation.provider_request_id ?? receipt.provider_request_id,
-        state: mutation.state ? RECEIPT_STATE_TO_JOB_STATE[mutation.state] : receipt.state,
-        cost_knowledge: mutation.cost_knowledge ?? receipt.cost_knowledge,
-        observed_usage: mutation.observed_usage ?? receipt.observed_usage,
-        accepted_result_hash: mutation.accepted_result_hash ?? receipt.accepted_result_hash,
-        retry_disposition: mutation.retry_disposition ?? receipt.retry_disposition,
-        updated_at: now,
-      };
-      const updated = this.receiptedPayloadMutation(
-        handle,
-        envelope,
-        operationId,
-        (payload) => {
-          if (payload.receipt === receipt) return false;
-          payload.receipt = next;
-          return true;
-        },
-      );
-      if (!updated) {
-        return { committed: false, receipt } as const;
-      }
-      return { committed: true, receipt: next } as const;
-    });
-  }
-
-  /**
-   * Deterministic reconciliation for historical queued-without-job
-   * rows: a session left QUEUED (or later) with no operation job row
-   * for the identity the caller expected. The owning service resolves
-   * it truthfully: the session is transitioned out of the broken
-   * queueing state to FAILED with a session_blocked journal event, or
-   * the missing job is admitted now (when the caller still holds the
-   * full request). Queued-without-job is never silently passed
-   * through; each decision is journaled.
-   */
-  reconcileQueuedWithoutJob(
-    envelope: AuthorizationEnvelope,
-    identity: { session_id: string },
-    resolution: { action: 'fail_session' } | { action: 'readmit'; request: AdmitOperationRequest },
-  ): { reconciled: true; detail: Record<string, unknown> } {
-    assertEnvelopePurpose(envelope, 'write', 'Queued-without-job reconciliation');
-    return withHandle(this.db, (handle) => {
-      const session = this.sessionStateRow(handle, envelope, identity.session_id);
-      if (session.state === 'QUEUED') {
-        // Verify the claimed absence inside the transaction.
-        const anyJob = handle
-          .prepare(
-            `SELECT id FROM council_jobs
-              WHERE tenant_id = ? AND company_id = ? AND session_id = ? AND kind = 'operation'`,
-          )
-          .get(envelope.tenant_id, envelope.company_id, identity.session_id);
-        if (anyJob) {
-          return {
-            reconciled: true as const,
-            detail: { session_state: session.state, jobs_present: true, action: 'none' },
-          };
-        }
-        if (resolution.action === 'readmit') {
-          // Readmission closes the gap durably: the transition stays,
-          // the job and receipt are committed now. The recursion runs
-          // inside this outer transaction (nested participation).
-          const readmitted = this.admitOperation(envelope, resolution.request);
-          return {
-            reconciled: true as const,
-            detail: {
-              session_state: 'QUEUED',
-              jobs_present: false,
-              action: 'readmit',
-              operation_id: readmitted.receipt.operation_id,
+    return this.db.write((handle) => {
+      const session = this.requireSession(envelope, command.sessionId);
+      const existing = this.readRequestKey(handle, envelope, command.sessionId, command.idempotencyKey);
+      if (existing) {
+        if (existing.payload_fingerprint !== fingerprint) {
+          throw new JobRunnerError(
+            'OPERATION_ADMISSION_CONFLICT',
+            `Idempotency key ${command.idempotencyKey} is already committed with a different command fingerprint. Nothing was written.`,
+            {
+              retryable: false,
+              detail: {
+                session_id: command.sessionId,
+                operation_id: existing.response_operation_id,
+              },
             },
-          };
+          );
         }
-        // fail_session: the historical break is recorded truthfully.
-        const record =
-          this.sessionRecordFromJournal(handle, envelope, identity.session_id) ?? null;
-        if (!record) {
+        const job =
+          existing.response_operation_id === null
+            ? null
+            : this.readJobByOperationId(handle, envelope, existing.response_operation_id);
+        if (!job || !this.parsePayload(job).producer) {
           throw new JobRunnerError(
-            'JOB_SESSION_NOT_FOUND',
-            `Session ${identity.session_id} has no journaled state record to reconcile.`,
-            { detail: { session_id: identity.session_id } },
+            'OPERATION_QUEUED_WITHOUT_JOB',
+            `Admission key ${command.idempotencyKey} is recorded but its durable job ${existing.response_operation_id ?? '(none)'} is absent. A QUEUED row without its job is not a valid admission.`,
+            {
+              retryable: false,
+              detail: { session_id: command.sessionId },
+            },
+          );
+        }
+        return { outcome: 'replayed' as const, receipt: this.parsePayload(job).producer!.receipt };
+      }
+
+      if (command.transition) {
+        if (session.state.state_version !== command.transition.expectedVersion) {
+          throw new JobRunnerError(
+            'OPERATION_ADMISSION_CONFLICT',
+            `Expected session revision ${command.transition.expectedVersion}, current revision is ${session.state.state_version}. No admission was written.`,
+            { retryable: false, detail: { session_id: command.sessionId } },
           );
         }
         this.repositories.transitionState(
           envelope,
-          identity.session_id,
-          'FAILED',
-          record.state_version,
+          command.sessionId,
+          command.transition.to,
+          command.transition.expectedVersion,
         );
-        return {
-          reconciled: true as const,
-          detail: {
-            session_state: 'QUEUED',
-            jobs_present: false,
-            action: 'fail_session',
-            failed_to: 'FAILED',
-          },
-        };
       }
-      // Not queued: nothing to reconcile, report truthfully.
-      return {
-        reconciled: true as const,
-        detail: { session_state: session.state, jobs_present: null, action: 'none' },
+
+      const refreshed = this.requireSession(envelope, command.sessionId);
+      const operationId = operationIdentity(
+        command.sessionId,
+        refreshed.state.attempt,
+        command.idempotencyKey,
+        fingerprint,
+      );
+      const ownerId =
+        command.ownerId ?? refreshed.scope.owner_subject ?? envelope.actor_subject;
+      const attemptOrdinal = 1;
+      const attemptId = canonicalHash({
+        operation_id: operationId,
+        attempt_ordinal: attemptOrdinal,
+      });
+
+      // Reuse CWE-006's job substrate. Same deterministic identity,
+      // same payload fields, same session-usable checks.
+      const job = this.jobs.claimJob(envelope, {
+        sessionId: command.sessionId,
+        attempt: refreshed.state.attempt,
+        briefRevision: refreshed.state.brief_revision,
+        phaseJobKey: command.idempotencyKey,
+        inputSha256: fingerprint,
+        cancelGeneration: refreshed.state.cancel_generation,
+        seatId: command.seatId ?? null,
+      });
+
+      const receipt: ProducerOperationReceipt = {
+        operationId,
+        sessionId: command.sessionId,
+        ownerId,
+        runGeneration: refreshed.state.attempt,
+        operationKind: command.operationKind,
+        round: command.round ?? null,
+        seatId: command.seatId ?? null,
+        purpose: command.purpose,
+        inputHash: command.inputHash,
+        routeSnapshotHash: command.routeSnapshotHash,
+        grantId: command.grantId,
+        packHash: command.packHash ?? null,
+        attemptId,
+        attemptOrdinal,
+        leaseOwner: null,
+        leaseGeneration: job.lease_epoch,
+        leaseExpiresAt: null,
+        providerRequestId: null,
+        state: job.state,
+        stateLabel: 'never_dispatched',
+        reservation: { ...command.reservation },
+        observedUsage: null,
+        acceptedResultHash: null,
+        eventSequence: null,
+        retryDisposition: 'not_needed',
+        canonicalReceipt: {} as CanonicalOperationReceipt,
       };
+      receipt.canonicalReceipt = buildCanonicalReceipt(receipt);
+
+      const event = this.repositories.journal.append(handle, envelope, command.sessionId, {
+        event_id: this.ids.newId(),
+        type: 'operation_reserved',
+        from_state: null,
+        to_state: null,
+        actor_subject: envelope.actor_subject,
+        payload: {
+          operation_id: operationId,
+          operation_kind: command.operationKind,
+          purpose: command.purpose,
+          round: receipt.round,
+          seat_id: receipt.seatId,
+          input_sha256: receipt.inputHash,
+          route_snapshot_sha256: receipt.routeSnapshotHash,
+          grant_id: receipt.grantId,
+          pack_sha256: receipt.packHash,
+          job_id: job.id,
+          attempt_id: attemptId,
+          attempt_ordinal: attemptOrdinal,
+          state_label: receipt.stateLabel,
+        },
+        created_at: this.clock.nowUtc(),
+      });
+      receipt.eventSequence = event.sequence;
+      receipt.canonicalReceipt = buildCanonicalReceipt(receipt);
+
+      this.writeProducerPayload(handle, envelope, job.id, {
+        idempotency_key: command.idempotencyKey,
+        fingerprint,
+        attempt_id: attemptId,
+        attempt_ordinal: attemptOrdinal,
+        receipt,
+      });
+      this.insertRequestKey(
+        handle,
+        envelope,
+        command.sessionId,
+        command.idempotencyKey,
+        fingerprint,
+        operationId,
+      );
+      this.outbox.enqueue(handle, envelope, {
+        id: this.ids.newId(),
+        session_id: command.sessionId,
+        event_sequence: event.sequence,
+        topic: OPERATION_EVENT_TOPIC,
+        idempotency_key: `${operationId}:reserved`,
+        payload: {
+          operation_id: operationId,
+          session_id: command.sessionId,
+          job_id: job.id,
+          state: receipt.state,
+          state_label: receipt.stateLabel,
+          attempt_ordinal: attemptOrdinal,
+        },
+        created_at: this.clock.nowUtc(),
+      });
+      return { outcome: 'admitted' as const, receipt };
+    });
+  }
+
+  // ------------------------------------------------------------- read/lease
+
+  readReceipt(
+    envelope: AuthorizationEnvelope,
+    operationId: string,
+  ): ProducerOperationReceipt {
+    const job = this.db.read((handle) => this.readJobByOperationId(handle, envelope, operationId));
+    if (!job) {
+      const recorded = this.db.read((handle) =>
+        handle
+          .prepare(
+            `SELECT request_key FROM council_request_keys
+              WHERE tenant_id = ? AND source = ? AND response_operation_id = ?`,
+          )
+          .get(envelope.tenant_id, OPERATION_ADMISSION_SOURCE, operationId),
+      ) as { request_key: string } | undefined;
+      if (recorded) {
+        throw new JobRunnerError(
+          'OPERATION_QUEUED_WITHOUT_JOB',
+          `Operation ${operationId} is recorded as admitted but its durable job is absent.`,
+          { retryable: false, detail: { operation_id: operationId } },
+        );
+      }
+      throw new JobRunnerError('OPERATION_NOT_FOUND', `No operation ${operationId} exists in this scope.`, {
+        retryable: false,
+      });
+    }
+    const producer = this.parsePayload(job).producer;
+    if (!producer) {
+      throw new JobRunnerError(
+        'OPERATION_NOT_FOUND',
+        `Job ${job.id} was not created by the durable producer; it has no producer receipt.`,
+        { retryable: false },
+      );
+    }
+    return producer.receipt;
+  }
+
+  /**
+   * Claim a queued operation under a durable lease. The compare-and-swap
+   * bumps lease_epoch (the fencing generation); a losing claimer gets a
+   * typed fence error, never a second owner.
+   */
+  claimOperation(
+    envelope: AuthorizationEnvelope,
+    operationId: string,
+    workerId: string,
+    leaseTtlMs: number = DEFAULT_OPERATION_LEASE_TTL_MS,
+  ): ProducerOperationReceipt {
+    if (!Number.isInteger(leaseTtlMs) || leaseTtlMs < 1) {
+      throw new JobRunnerError('OPERATION_ADMISSION_INVALID', 'leaseTtlMs must be a positive integer.', {
+        retryable: false,
+      });
+    }
+    return this.db.write((handle) => {
+      const job = this.readJobByOperationId(handle, envelope, operationId);
+      if (!job) {
+        throw new JobRunnerError('OPERATION_NOT_FOUND', `No operation ${operationId} exists.`, {
+          retryable: false,
+        });
+      }
+      const payload = this.parsePayload(job);
+      if (!payload.producer) {
+        throw new JobRunnerError('OPERATION_NOT_FOUND', `Job ${job.id} has no producer receipt.`, {
+          retryable: false,
+        });
+      }
+      if (job.state !== 'queued') {
+        throw new JobRunnerError(
+          'OPERATION_LEASE_FENCED',
+          `Operation ${operationId} is ${job.state}; only a queued operation can be claimed.`,
+          { retryable: false, detail: { operation_id: operationId, state: job.state } },
+        );
+      }
+      const now = this.clock.nowUtc();
+      const expires = nowPlus(this.clock, leaseTtlMs);
+      const result = handle
+        .prepare(
+          `UPDATE council_jobs
+              SET state = 'leased', lease_owner = ?, lease_epoch = lease_epoch + 1,
+                  lease_expires_at = ?, updated_at = ?
+            WHERE tenant_id = ? AND company_id = ? AND id = ? AND kind = 'operation'
+              AND state = 'queued'`,
+        )
+        .run(workerId, expires, now, envelope.tenant_id, envelope.company_id, job.id);
+      if (Number(result.changes) !== 1) {
+        throw new JobRunnerError(
+          'OPERATION_LEASE_FENCED',
+          `Operation ${operationId} was claimed by another worker first.`,
+          { retryable: true, detail: { operation_id: operationId } },
+        );
+      }
+      const claimed = this.readJobByOperationId(handle, envelope, operationId)!;
+      const receipt: ProducerOperationReceipt = {
+        ...payload.producer.receipt,
+        state: claimed.state,
+        leaseOwner: workerId,
+        leaseGeneration: claimed.lease_epoch,
+        leaseExpiresAt: claimed.lease_expires_at,
+      };
+      receipt.canonicalReceipt = buildCanonicalReceipt(receipt);
+      this.writeProducerPayload(handle, envelope, job.id, {
+        ...payload.producer,
+        receipt,
+      });
+      return receipt;
+    });
+  }
+
+  /** Return a claimed operation to queued. Fence-checked. */
+  releaseLease(envelope: AuthorizationEnvelope, fence: OperationLeaseFence): boolean {
+    return this.db.write((handle) => {
+      const { job } = this.fence(handle, envelope, fence);
+      const result = handle
+        .prepare(
+          `UPDATE council_jobs
+              SET state = 'queued', lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
+            WHERE tenant_id = ? AND company_id = ? AND id = ?
+              AND state IN ('leased', 'running') AND lease_owner = ? AND lease_epoch = ?`,
+        )
+        .run(
+          this.clock.nowUtc(),
+          envelope.tenant_id,
+          envelope.company_id,
+          job.id,
+          fence.leaseOwner,
+          fence.leaseGeneration,
+        );
+      if (Number(result.changes) !== 1) {
+        throw new JobRunnerError('OPERATION_LEASE_FENCED', 'The lease could not be released; it moved.', {
+          retryable: false,
+        });
+      }
+      const fresh = this.readJobById(handle, envelope, job.id)!;
+      const payload = this.parsePayload(fresh);
+      const receipt: ProducerOperationReceipt = {
+        ...payload.producer!.receipt,
+        state: fresh.state,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      };
+      receipt.canonicalReceipt = buildCanonicalReceipt(receipt);
+      this.writeProducerPayload(handle, envelope, job.id, { ...payload.producer!, receipt });
+      return true;
+    });
+  }
+
+  // ------------------------------------------------------ fenced mutations
+
+  /**
+   * Persist the dispatch intent before any network call. The persisted
+   * label becomes `potentially_dispatched`: the intent exists, but the
+   * send outcome is not proved, so retry is `reconcile_first`.
+   */
+  recordDispatchIntent(
+    envelope: AuthorizationEnvelope,
+    fence: OperationLeaseFence,
+    input: { providerRequestId?: string | null } = {},
+  ): ProducerOperationReceipt {
+    return this.db.write((handle) => {
+      const { job, payload } = this.fence(handle, envelope, fence);
+      const receipt: ProducerOperationReceipt = {
+        ...payload.producer!.receipt,
+        state: 'running',
+        stateLabel: 'potentially_dispatched',
+        providerRequestId: input.providerRequestId ?? payload.producer!.receipt.providerRequestId,
+        retryDisposition: 'reconcile_first',
+      };
+      receipt.canonicalReceipt = buildCanonicalReceipt(receipt);
+      const result = handle
+        .prepare(
+          `UPDATE council_jobs SET state = 'running', updated_at = ?
+            WHERE tenant_id = ? AND company_id = ? AND id = ?
+              AND state IN ('leased', 'running') AND lease_owner = ? AND lease_epoch = ?`,
+        )
+        .run(
+          this.clock.nowUtc(),
+          envelope.tenant_id,
+          envelope.company_id,
+          job.id,
+          fence.leaseOwner,
+          fence.leaseGeneration,
+        );
+      if (Number(result.changes) !== 1) {
+        throw new JobRunnerError('OPERATION_LEASE_FENCED', 'Dispatch intent could not be recorded; lease moved.', {
+          retryable: false,
+        });
+      }
+      this.writeProducerPayload(handle, envelope, job.id, {
+        ...payload.producer!,
+        receipt,
+      });
+      return receipt;
+    });
+  }
+
+  /** Record that a provider response was observed but not yet accepted. */
+  recordResponseObserved(
+    envelope: AuthorizationEnvelope,
+    fence: OperationLeaseFence,
+    input: {
+      providerRequestId: string | null;
+      observedUsage?: Record<string, unknown> | null;
+    },
+  ): ProducerOperationReceipt {
+    return this.db.write((handle) => {
+      const { job, payload } = this.fence(handle, envelope, fence);
+      const previous = payload.producer!.receipt;
+      if (
+        previous.stateLabel !== 'potentially_dispatched' &&
+        previous.stateLabel !== 'response_observed'
+      ) {
+        throw new JobRunnerError(
+          'OPERATION_ADMISSION_CONFLICT',
+          `Cannot record a response for an operation in label ${previous.stateLabel}.`,
+          { retryable: false },
+        );
+      }
+      const receipt: ProducerOperationReceipt = {
+        ...previous,
+        state: 'running',
+        stateLabel: 'response_observed',
+        providerRequestId: input.providerRequestId,
+        observedUsage: input.observedUsage ?? previous.observedUsage,
+        retryDisposition: 'not_needed',
+      };
+      receipt.canonicalReceipt = buildCanonicalReceipt(receipt);
+      const result = handle
+        .prepare(
+          `UPDATE council_jobs SET state = 'running', updated_at = ?
+            WHERE tenant_id = ? AND company_id = ? AND id = ?
+              AND state IN ('leased', 'running') AND lease_owner = ? AND lease_epoch = ?`,
+        )
+        .run(
+          this.clock.nowUtc(),
+          envelope.tenant_id,
+          envelope.company_id,
+          job.id,
+          fence.leaseOwner,
+          fence.leaseGeneration,
+        );
+      if (Number(result.changes) !== 1) {
+        throw new JobRunnerError('OPERATION_LEASE_FENCED', 'Response could not be recorded; lease moved.', {
+          retryable: false,
+        });
+      }
+      this.writeProducerPayload(handle, envelope, job.id, {
+        ...payload.producer!,
+        receipt,
+      });
+      return receipt;
     });
   }
 
   /**
-   * State label for a receipt: derived from the durable job row and
-   * attempt ledger rows, mapped onto the canonical labels. This is a
-   * read; it never mutates and never invents a state.
+   * Accept a validated result. Finishes the durable job through the
+   * existing `CouncilJobs.finishJob` CAS, appends the canonical
+   * `operation_completed` event, and enqueues the outbox intent in the
+   * same transaction.
    */
-  stateLabel(
+  recordAcceptedResult(
     envelope: AuthorizationEnvelope,
-    identity: {
-      session_id: string;
-      attempt: number;
-      phase_job_key: string;
-      input_sha256: string;
+    fence: OperationLeaseFence,
+    input: {
+      acceptedResultHash: string;
+      providerRequestId?: string | null;
+      observedUsage?: Record<string, unknown> | null;
     },
-  ): ReceiptStateLabel | null {
-    const operationId = operationKey(
-      identity.session_id,
-      identity.attempt,
-      identity.phase_job_key,
-      identity.input_sha256,
-    );
-    const row = this.db.read((handle) =>
+  ): ProducerOperationReceipt {
+    if (!isSha256Hex(input.acceptedResultHash)) {
+      throw new JobRunnerError(
+        'OPERATION_ADMISSION_INVALID',
+        'acceptedResultHash must be a lowercase SHA-256 hex digest.',
+        { retryable: false },
+      );
+    }
+    return this.db.write((handle) => {
+      const { job, payload } = this.fence(handle, envelope, fence);
+      const previous = payload.producer!.receipt;
+      if (
+        previous.stateLabel !== 'potentially_dispatched' &&
+        previous.stateLabel !== 'response_observed'
+      ) {
+        throw new JobRunnerError(
+          'OPERATION_ADMISSION_CONFLICT',
+          `Cannot accept a result for an operation in label ${previous.stateLabel}.`,
+          { retryable: false },
+        );
+      }
+      const finished = this.jobs.finishJob(envelope, job.id, fence.leaseGeneration, {
+        status: 'succeeded',
+        resultRef: input.acceptedResultHash,
+      });
+      if (!finished) {
+        throw new JobRunnerError(
+          'OPERATION_LEASE_FENCED',
+          `Operation ${fence.operationId} could not finish; its lease generation is stale.`,
+          { retryable: false },
+        );
+      }
+      const event = this.repositories.journal.append(handle, envelope, previous.sessionId, {
+        event_id: this.ids.newId(),
+        type: 'operation_completed',
+        from_state: null,
+        to_state: null,
+        actor_subject: envelope.actor_subject,
+        payload: {
+          operation_id: previous.operationId,
+          provider_request_id: input.providerRequestId ?? previous.providerRequestId,
+          accepted_result_sha256: input.acceptedResultHash,
+          state_label: 'accepted',
+        },
+        created_at: this.clock.nowUtc(),
+      });
+      const receipt: ProducerOperationReceipt = {
+        ...previous,
+        state: 'succeeded',
+        stateLabel: 'accepted',
+        providerRequestId: input.providerRequestId ?? previous.providerRequestId,
+        observedUsage: input.observedUsage ?? previous.observedUsage,
+        acceptedResultHash: input.acceptedResultHash,
+        eventSequence: event.sequence,
+        retryDisposition: 'not_needed',
+      };
+      const completedAt = this.clock.nowUtc();
+      receipt.canonicalReceipt = buildCanonicalReceipt(receipt, completedAt);
+      this.writeProducerPayload(handle, envelope, job.id, {
+        ...payload.producer!,
+        receipt,
+      });
+      this.outbox.enqueue(handle, envelope, {
+        id: this.ids.newId(),
+        session_id: previous.sessionId,
+        event_sequence: event.sequence,
+        topic: OPERATION_EVENT_TOPIC,
+        idempotency_key: `${previous.operationId}:accepted`,
+        payload: {
+          operation_id: previous.operationId,
+          session_id: previous.sessionId,
+          state: receipt.state,
+          state_label: receipt.stateLabel,
+          accepted_result_sha256: input.acceptedResultHash,
+          attempt_ordinal: previous.attemptOrdinal,
+        },
+        created_at: completedAt,
+      });
+      return receipt;
+    });
+  }
+
+  // ------------------------------------------------------- reconciliation
+
+  /**
+   * Reject a QUEUED session that has no durable operation job. This is
+   * the explicit "QUEUED without its job is not a valid admission"
+   * check; it never writes.
+   */
+  assertQueuedHasJob(envelope: AuthorizationEnvelope, sessionId: string): void {
+    const session = this.db.read((handle) => this.sessionRow(handle, envelope, sessionId));
+    if (!session || session.state !== 'QUEUED') return;
+    const jobs = this.db.read((handle) =>
       handle
         .prepare(
-          `SELECT state, terminal_reason FROM council_jobs
-            WHERE tenant_id = ? AND company_id = ? AND kind = 'operation' AND idempotency_key = ?`,
+          `SELECT id FROM council_jobs
+            WHERE tenant_id = ? AND company_id = ? AND session_id = ? AND kind = 'operation'
+            LIMIT 1`,
         )
-        .get(envelope.tenant_id, envelope.company_id, operationId),
-    ) as { state: string; terminal_reason: string | null } | undefined;
-    if (!row) return null;
-    const attempt = this.db.read((handle) =>
-      handle
-        .prepare(
-          `SELECT status FROM council_provider_attempts
-            WHERE tenant_id = ? AND company_id = ? AND operation_id = ?`,
-        )
-        .get(envelope.tenant_id, envelope.company_id, operationId),
-    ) as { status: string } | undefined;
-    switch (row.state) {
-      case 'queued':
-        return 'never_dispatched';
-      case 'leased':
-      case 'running':
-        if (attempt?.status === 'reserved') return 'response_observed';
-        if (attempt?.status === 'dispatched') return 'response_observed';
-        return 'potentially_dispatched';
-      case 'succeeded':
-        return 'accepted';
-      case 'dead_letter':
-        return 'known_failed';
-      case 'failed':
-        return attempt?.status === 'provider_completion_unknown'
-          ? 'outcome_unknown'
-          : 'known_failed';
-      case 'cancelled':
-        return 'cancelled_fenced';
-      default:
-        return null;
+        .get(envelope.tenant_id, envelope.company_id, sessionId),
+    ) as { id: string } | undefined;
+    if (!jobs) {
+      throw new JobRunnerError(
+        'OPERATION_QUEUED_WITHOUT_JOB',
+        `Session ${sessionId} is QUEUED but has no durable operation job. This is not a valid admission.`,
+        { retryable: false, detail: { session_id: sessionId } },
+      );
     }
   }
-}
 
-/** Exported for tests and CWE-050 reconciliation reporting. */
-export {
-  ProducerStateConflict,
-  RECEIPT_STATE_EVENT_TYPES,
-};
+  /**
+   * Deterministic historical repair through the owning service: every
+   * session in QUEUED with no operation job is moved to BLOCKED with a
+   * `queued_without_job` reason, in stable session-id order. Idempotent:
+   * a second pass finds nothing still QUEUED and orphans nothing. It
+   * never invents a job, a grant, or an input hash.
+   */
+  reconcileQueuedWithoutJob(
+    envelope: AuthorizationEnvelope,
+    actor: 'owner' | 'system' | 'worker' | 'chair' = 'system',
+  ): ReconcileQueuedWithoutJobResult {
+    const sessions = this.repositories
+      .listSessions(envelope, {})
+      .filter((session) => session.state.state === 'QUEUED')
+      .sort((a, b) => a.spec.session_id.localeCompare(b.spec.session_id));
+    const blocked: ReconcileQueuedWithoutJobResult['blocked'] = [];
+    for (const session of sessions) {
+      const hasJob = this.db.read((handle) => {
+        const row = handle
+          .prepare(
+            `SELECT id FROM council_jobs
+              WHERE tenant_id = ? AND company_id = ? AND session_id = ? AND kind = 'operation'
+              LIMIT 1`,
+          )
+          .get(envelope.tenant_id, envelope.company_id, session.spec.session_id);
+        return row !== undefined;
+      });
+      if (hasJob) continue;
+      const current = this.repositories.getSession(envelope, session.spec.session_id);
+      if (!current || current.state.state !== 'QUEUED') continue;
+      const { stateVersion } = assertTransition({
+        mode: current.state.mode,
+        from: current.state.state,
+        to: 'BLOCKED',
+        expectedVersion: current.state.state_version,
+        currentVersion: current.state.state_version,
+        actor,
+      });
+      const next: SessionStateRecord = {
+        ...current.state,
+        state: 'BLOCKED',
+        state_version: stateVersion,
+        updated_at: this.clock.nowUtc(),
+      };
+      this.repositories.writeStateRecord(envelope, next, current.state.state_version, {
+        type: 'session_blocked' as CouncilEventType,
+        payload: {
+          from_state: current.state.state,
+          to_state: 'BLOCKED',
+          reconciliation: 'queued_without_job',
+        },
+      });
+      blocked.push({ sessionId: session.spec.session_id, reason: 'queued_without_job' });
+    }
+    return { scanned: sessions.length, blocked };
+  }
+
+  // ------------------------------------------------------------- internals
+
+  private requireSession(
+    envelope: AuthorizationEnvelope,
+    sessionId: string,
+  ): StoredSession {
+    const session = this.repositories.getSession(envelope, sessionId);
+    if (!session) {
+      throw new JobRunnerError(
+        'JOB_SESSION_NOT_FOUND',
+        `No council session ${sessionId} exists in this scope (or it is not visible to this envelope).`,
+        { retryable: false, detail: { session_id: sessionId } },
+      );
+    }
+    return session;
+  }
+
+  private sessionRow(
+    handle: SqliteDatabaseHandle,
+    envelope: AuthorizationEnvelope,
+    sessionId: string,
+  ): { state: SessionState } | undefined {
+    return handle
+      .prepare(
+        `SELECT state FROM council_sessions
+          WHERE tenant_id = ? AND company_id = ? AND id = ?`,
+      )
+      .get(envelope.tenant_id, envelope.company_id, sessionId) as
+      | { state: SessionState }
+      | undefined;
+  }
+
+  private readJobById(
+    handle: SqliteDatabaseHandle,
+    envelope: AuthorizationEnvelope,
+    jobId: string,
+  ): StoredJobRow | undefined {
+    return handle
+      .prepare(
+        `SELECT id, session_id, state, lease_epoch, lease_owner, lease_expires_at,
+                payload_json, updated_at
+           FROM council_jobs
+          WHERE tenant_id = ? AND company_id = ? AND id = ? AND kind = 'operation'`,
+      )
+      .get(envelope.tenant_id, envelope.company_id, jobId) as StoredJobRow | undefined;
+  }
+
+  private readJobByOperationId(
+    handle: SqliteDatabaseHandle,
+    envelope: AuthorizationEnvelope,
+    operationId: string,
+  ): StoredJobRow | undefined {
+    return handle
+      .prepare(
+        `SELECT id, session_id, state, lease_epoch, lease_owner, lease_expires_at,
+                payload_json, updated_at
+           FROM council_jobs
+          WHERE tenant_id = ? AND company_id = ? AND kind = 'operation'
+            AND idempotency_key = ?`,
+      )
+      .get(envelope.tenant_id, envelope.company_id, operationId) as
+      | StoredJobRow
+      | undefined;
+  }
+
+  private readRequestKey(
+    handle: SqliteDatabaseHandle,
+    envelope: AuthorizationEnvelope,
+    sessionId: string,
+    requestKey: string,
+  ): { payload_fingerprint: string; response_operation_id: string | null } | undefined {
+    return handle
+      .prepare(
+        `SELECT payload_fingerprint, response_operation_id
+           FROM council_request_keys
+          WHERE tenant_id = ? AND source = ? AND operation = ? AND request_key = ?`,
+      )
+      .get(envelope.tenant_id, OPERATION_ADMISSION_SOURCE, sessionId, requestKey) as
+      | { payload_fingerprint: string; response_operation_id: string | null }
+      | undefined;
+  }
+
+  private insertRequestKey(
+    handle: SqliteDatabaseHandle,
+    envelope: AuthorizationEnvelope,
+    sessionId: string,
+    requestKey: string,
+    fingerprint: string,
+    operationId: string,
+  ): void {
+    handle
+      .prepare(
+        `INSERT INTO council_request_keys
+           (tenant_id, source, operation, request_key, payload_fingerprint, session_id,
+            response_operation_id, response_status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        envelope.tenant_id,
+        OPERATION_ADMISSION_SOURCE,
+        sessionId,
+        requestKey,
+        fingerprint,
+        sessionId,
+        operationId,
+        202,
+        this.clock.nowUtc(),
+      );
+  }
+
+  private parsePayload(job: StoredJobRow): ProducerPayload {
+    return JSON.parse(job.payload_json) as ProducerPayload;
+  }
+
+  private writeProducerPayload(
+    handle: SqliteDatabaseHandle,
+    envelope: AuthorizationEnvelope,
+    jobId: string,
+    producer: NonNullable<ProducerPayload['producer']>,
+  ): void {
+    const row = this.readJobById(handle, envelope, jobId);
+    if (!row) {
+      throw new JobRunnerError('OPERATION_NOT_FOUND', `Job ${jobId} vanished during a producer write.`, {
+        retryable: false,
+      });
+    }
+    const payload = this.parsePayload(row);
+    payload.producer = producer;
+    handle
+      .prepare(
+        `UPDATE council_jobs SET payload_json = ?, updated_at = ?
+          WHERE tenant_id = ? AND company_id = ? AND id = ?`,
+      )
+      .run(
+        canonicalStringify(payload),
+        this.clock.nowUtc(),
+        envelope.tenant_id,
+        envelope.company_id,
+        jobId,
+      );
+  }
+
+  /**
+   * Re-read the job and session inside the mutable transaction and
+   * recheck the fencing generation: owner, lease epoch, live expiry,
+   * and the session cancellation generation captured at admission.
+   * This is the one fence every mutable commit calls.
+   */
+  private fence(
+    handle: SqliteDatabaseHandle,
+    envelope: AuthorizationEnvelope,
+    fence: OperationLeaseFence,
+  ): { job: StoredJobRow; payload: ProducerPayload } {
+    const job = this.readJobByOperationId(handle, envelope, fence.operationId);
+    if (!job) {
+      throw new JobRunnerError('OPERATION_NOT_FOUND', `No operation ${fence.operationId} exists.`, {
+        retryable: false,
+      });
+    }
+    const payload = this.parsePayload(job);
+    const stored = payload.producer?.receipt;
+    if (!stored) {
+      throw new JobRunnerError('OPERATION_NOT_FOUND', `Job ${job.id} has no producer receipt.`, {
+        retryable: false,
+      });
+    }
+    const expired =
+      job.lease_expires_at !== null &&
+      Date.parse(job.lease_expires_at) <= Date.parse(this.clock.nowUtc());
+    if (
+      !isFencedJobState(job.state) ||
+      job.lease_owner !== fence.leaseOwner ||
+      job.lease_epoch !== fence.leaseGeneration ||
+      expired
+    ) {
+      throw new JobRunnerError(
+        'OPERATION_LEASE_FENCED',
+        `Operation ${fence.operationId} is not owned by ${fence.leaseOwner} at lease generation ${fence.leaseGeneration} (row: owner ${job.lease_owner ?? 'none'}, generation ${job.lease_epoch}, state ${job.state}${expired ? ', expired' : ''}). The commit was refused.`,
+        {
+          retryable: false,
+          detail: {
+            operation_id: fence.operationId,
+            lease_owner: fence.leaseOwner,
+            lease_generation: fence.leaseGeneration,
+          },
+        },
+      );
+    }
+    const session = this.requireSession(envelope, stored.sessionId);
+    if (
+      session.state.cancel_generation !== payload.cancel_generation ||
+      session.state.state === 'CANCELLED' ||
+      session.state.state === 'CANCEL_REQUESTED'
+    ) {
+      throw new JobRunnerError(
+        'OPERATION_LEASE_FENCED',
+        `Session ${stored.sessionId} moved to cancellation generation ${session.state.cancel_generation}; this operation's result is fenced out.`,
+        { retryable: false, detail: { operation_id: fence.operationId } },
+      );
+    }
+    return { job, payload };
+  }
+}
