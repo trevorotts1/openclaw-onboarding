@@ -13,23 +13,28 @@ the module and this document for the API shapes it enumerates (scheme URL, verb 
 path spaced or glued, bare or identifier-prefixed path, a trailing path segment with no
 segment after it, schemeless host plus path, a path split by a padded separator; dotted
 operation ids on the returned surface only). Before matching, the scan normalises the text:
-whitespace is flattened, a character with no visible glyph is dropped, and every separator
-look-alike — any character whose Unicode name calls it a solidus or a slash — reaches the
-same rule as `/`. A doubled separator collapses, except where the run is a scheme delimiter.
-A real Windows path and a scheme with an empty authority keep their own separators, because
-mapping those manufactured hits out of legitimate literals. It then decides the ROLE a token
-plays before any exemption applies. The head text before the token is read as a token
-stream, so a bracket inside a string literal is never a frame boundary and no wrapper
-spelling has to be listed to be read. A seam is any run carrying a non-whitespace separator
-character between a key token and the value, so no separator spelling has to be listed
-either. Behind an `api` / `route` / `operation` / `endpoint` / `method` / `path` / `url` /
-`uri` / `action` key the token is read as an operation value and is flagged, and a subscript
-key counts as a key, so `spec["api"]["inner"] = x` answers to `api`. The read walks out to
-the depth the text actually has, inside a 4000-character role window; outside that window
-the role is read as empty rather than guessed. Two exemptions are closed world.
-File provenance passes only when the token is a real file in this tree, or an f-string
-template whose variable is bound in the same text and whose whole expansion is a real file.
-A reviewed prose token passes only when one of the reviewed windows that contain it is
+whitespace is flattened, a character with no visible glyph is dropped unless Unicode names
+it a solidus or a slash, and every separator look-alike — any character whose Unicode name
+calls it a solidus or a slash, anywhere in the code space — reaches the same rule as `/`,
+outside the two literal shapes that keep their own separators: a real Windows path and a
+scheme with an empty authority. A doubled separator collapses, except where the run is a
+scheme delimiter. It then decides the ROLE a token plays before any exemption applies. The
+head text before the token is read as a token stream, so a bracket inside a string literal
+is never a frame boundary and no wrapper spelling has to be listed to be read. A seam is
+any run carrying a non-whitespace separator character between a key token and the value, so
+no separator spelling has to be listed either. A comma is a member separator and binds
+nothing. There is no list of key spellings: whatever the key names — `api`, `href`, `note`,
+`deeper` — the token behind it is a VALUE, and a value carries no shape-based exemption. A
+subscript key counts as a key, so `spec["api"]["inner"] = x` answers to `api`. The read
+walks out to the depth the text actually has, inside a 4000-character role window; outside
+that window the role is read as unresolved rather than guessed, and an unresolved token is
+flagged. A window the read cannot align to a token boundary is unresolved too. Two
+exemptions are closed world.
+File provenance passes only in prose: the token is a real file in this tree, or an f-string
+template whose variable is bound in the same text and whose whole expansion is a real file,
+and no key is bound to it. Inside a value the only way through is a reviewed ROW, present
+verbatim, that begins on a token boundary outside any frame and before the value token it
+excuses. A reviewed prose token passes only when one of the reviewed windows that contain it is
 present verbatim and does not itself begin inside a value. A new token, an unbound
 template, or a reviewed token outside its window, fails until a human reviews it. It is a
 pattern scan, not a proof: a fabrication in a shape the scan does not enumerate, or one

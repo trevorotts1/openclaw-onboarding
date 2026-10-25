@@ -11,7 +11,8 @@ refusal cases, so a future edit cannot quietly promote an unproved step to
   C-F07 original gift proceeds while the bonus is unavailable.
 
 Run: python3 -m unittest discover -s shared-utils/bonus/tests -v
-     python3 -m unittest shared-utils.bonus.tests.test_access_capability -v
+     (from the repository root; the dotted path does not resolve through the
+      hyphenated `shared-utils` directory, so it is not offered here)
 """
 
 from __future__ import annotations
@@ -129,15 +130,43 @@ _HTTP_VERBS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIO
 # Frames are walked to their real depth -- the stack is the nesting that is
 # actually in the text -- so a nested value answers to its parent key however
 # deep the nesting goes.
-_API_KEYS = frozenset(
-    {"api", "route", "operation", "endpoint", "method", "path", "url", "uri", "action"}
-)
+#
+# PBB-443 DEFECT 1: THE DEFAULT IS INVERTED. There is no key vocabulary here
+# any more. The previous read returned a role only for nine typed spellings
+# (`api`, `route`, ...), so behind any other key -- `href`, `target`, `op`,
+# `apis`, `end-point` -- a real repo path kept its file-provenance exemption
+# and read as an innocent citation. A hand-written list of spellings can never
+# be closed: every repair that adds nine more just moves the boundary. The read
+# now answers one structural question -- IS A KEY BOUND TO THIS TOKEN -- and
+# whatever that key spells, the token is a value. The DEFAULT is then fail
+# closed: a value carries no exemption at all, and the only way it is allowed
+# is a declared legitimate prose context (REVIEWED_PROSE_CONTEXTS or
+# LEGITIMATE_TEXT, both closed worlds below). So an unrecognised key carrying a
+# real repo path FAILS, and only a reviewed sentence lets it through. What is
+# derived is derived rather than typed: the quote characters and the path
+# separators come out of Unicode names, not out of a list somebody typed.
 _OPENERS = {"(": ")", "[": "]", "{": "}"}
 _CLOSERS = {v: k for k, v in _OPENERS.items()}
-_STRING_QUOTES = "\"'`"
+# A string delimiter is any character Unicode calls a quotation mark, plus the
+# two it calls an apostrophe and a grave accent. DERIVED from the name, like the
+# path-separator table below, so a delimiter nobody typed here is in class too.
+def _quote_table():
+    out = []
+    for codepoint in range(0x110000):
+        char = chr(codepoint)
+        name = unicodedata.name(char, "")
+        if "QUOTATION MARK" in name or name in ("APOSTROPHE", "GRAVE ACCENT"):
+            out.append(char)
+    return "".join(out)
+
+
+_STRING_QUOTES = _quote_table()
 # A string prefix is part of the literal it opens (`f"..."`, `rb'...'`), so the
-# prefix is never read as a key of its own.
-_STRING_PREFIX = re.compile(r"^[rRbBuUfF]{0,2}$")
+# prefix is never read as a key of its own. DERIVED, not typed: a prefix is a
+# run of one or two alphabetic characters sitting on a delimiter, whatever the
+# letters are. `api"..."` is three letters and stays a key; `zz'...'` is a
+# literal just like `rb'...'`.
+_STRING_PREFIX = re.compile(r"^[^\W\d_]{1,2}$")
 _ROLE_WINDOW = 4000
 
 
@@ -244,24 +273,34 @@ def _seam(tokens, at):
     """(key token, separator run) ending at `at`, or (None, "").
 
     A seam is a separator run carrying at least one non-whitespace character.
-    Whitespace alone joins words, not a key to a value.
+    Whitespace alone joins words, not a key to a value. A COMMA is a member
+    separator, not a binding: in `["a.md", "b.md"]` the run before `b.md` joins
+    two list members and binds nothing, so the second element is not the value
+    of the first. PBB-443: without this, every list element after the first
+    read as a value with the previous element as its key.
     """
     i = at
     run = ""
     while i > 0 and tokens[i - 1][0] == "SEP":
         run = tokens[i - 1][1] + run
         i -= 1
-    if not run or not run.strip():
+    if not run or not run.strip() or "," in run:
         return None, ""
     if i == 0 or tokens[i - 1][0] not in ("ID", "STR"):
         return None, ""
     return tokens[i - 1], run
 
 
-def _role_chain(tokens):
-    """Keys governing the expression `tokens` describes, innermost first."""
+def _role_chain(tokens, truncated=False):
+    """(keys governing the expression `tokens` describes, read is resolved).
+
+    Keys come back innermost first. `resolved` is False when the walk ran out of
+    window while it was still climbing a frame, so the governing key is outside
+    what the read could see. That is UNRESOLVED, never "no key" -- see
+    `_role_state`.
+    """
     if not tokens:
-        return []
+        return [], not truncated
     i = len(tokens)
     key, _ = _seam(tokens, i)
     if key is not None:
@@ -270,41 +309,101 @@ def _role_chain(tokens):
             rest_at -= 1
         key_at = rest_at - 1
         opener = _innermost_open_before(tokens, key_at)
-        rest = _role_chain(tokens[:opener]) if opener is not None else []
-        return [key[1]] + rest
-    # No seam: the expression is a bracketed group, or it is glued to whatever
-    # precedes it (a name, a prefix) and carries no key of its own.
+        if opener is None:
+            return [key[1]], True
+        rest, resolved = _role_chain(tokens[:opener], truncated)
+        return [key[1]] + rest, resolved
+    # No key across the seam. A member separator (a comma) binds nothing, but
+    # it does not end the expression either: the element still answers to the
+    # key that binds the list it sits in. So the walk climbs the frame instead
+    # of stopping -- `{"api": [1, "<token>"]}` answers to `api`, while a bare
+    # `["a.md", "<token>"]` at the top of the text still answers to nothing.
+    run_at = i
+    while run_at > 0 and tokens[run_at - 1][0] == "SEP":
+        run_at -= 1
+    member_run = "".join(tok[1] for tok in tokens[run_at:i])
+    if "," in member_run and run_at > 0:
+        opener = _innermost_open_before(tokens, run_at)
+        if opener is not None:
+            return _role_chain(tokens[:opener], truncated)
+    # The expression is a bracketed group, or it is glued to whatever precedes
+    # it (a name, a prefix) and carries no key of its own.
     while i > 0 and tokens[i - 1][0] == "SEP":
         i -= 1
     if i == 0:
-        return []
+        return [], not truncated
     kind, val, _, _ = tokens[i - 1]
     if kind == "CLOSE":
         opener = _match_opener(tokens, i - 1)
         if opener is None:
-            return []
+            return [], True
         inner_key = _bracket_key(tokens, opener, i - 1)
-        rest = _role_chain(tokens[:opener])
-        return ([inner_key] if inner_key else []) + rest
+        rest, resolved = _role_chain(tokens[:opener], truncated)
+        return ([inner_key] if inner_key else []) + rest, resolved
     if kind == "OPEN":
         if val == "(" and i > 1 and tokens[i - 2][0] == "ID":
-            return _role_chain(tokens[:i - 2])  # a call name is not a key
-        return _role_chain(tokens[:i - 1])
-    return []  # glued: `POST/...`, `v1/...` -- a prefix, not a key
+            # a call name is not a key
+            return _role_chain(tokens[:i - 2], truncated)
+        return _role_chain(tokens[:i - 1], truncated)
+    return [], True  # glued: `POST/...`, `v1/...` -- a prefix, not a key
 
 
-def _key_before(text, pos):
-    """The api-shaped key whose value holds `pos`, or "".
+BOUND = "bound"
+PROSE = "prose"
+UNRESOLVED = "unresolved"
 
-    Read off the token stream, so no wrapper spelling and no seam spelling can
-    hide the role: `api: x`, ``api: `x` ``, `api: **x**`, `| api | x |`,
-    `api -> x`, `api — x`, `api ⟹ x`, `api: | x`, `spec["api" -> x]`,
-    `spec["api"]["inner"] = x` and `{"operation": {"inner": x}}` all resolve.
-    The walk runs to the depth the text actually has, so a nested value answers
-    to its parent key however many frames it sits inside. An unreadable seam
-    returns "" rather than guessing a role it cannot see.
+
+def _role_window(text, pos):
+    """(base, aligned) for the head the role at `pos` is read off.
+
+    The head starts `_ROLE_WINDOW` characters back. A start in the middle of a
+    name or of a string literal DESYNCHRONISES the token stream -- the first
+    quote it meets opens a literal that swallows the frames behind it -- and a
+    desynchronised stream is not evidence of anything. So the start is walked
+    back to the nearest whitespace that is not inside a string literal, which
+    is a real token boundary. If no such point is reachable, the window is not
+    aligned and the read is UNRESOLVED. Fail closed, and cheap: an unaligned
+    head can only ever make the scan stricter.
     """
     base = max(0, pos - _ROLE_WINDOW)
+    if base == 0:
+        return 0, True
+    open_delimiters = {
+        quote for quote in _STRING_QUOTES if text[:base].count(quote) % 2
+    }
+    at = base
+    limit = max(0, base - _ROLE_WINDOW)
+    while at > limit:
+        if text[at - 1] in _STRING_QUOTES:
+            quote = text[at - 1]
+            open_delimiters.discard(quote) if quote in open_delimiters \
+                else open_delimiters.add(quote)
+        if not open_delimiters and text[at - 1].isspace():
+            return at, True
+        at -= 1
+    return limit, False
+
+
+def _role_state(text, pos):
+    """(state, key) for the token that holds `pos`.
+
+    `BOUND` -- a key governs the token across a seam or a bracket key. Any key
+    spelling: there is no vocabulary to be outside of.
+    `PROSE` -- no key governs it; the token is prose or a citation.
+    `UNRESOLVED` -- the governing key sits outside the 4000-character role
+    window, or the window could not be aligned, so the read cannot say what the
+    token is. FAIL CLOSED: an unresolved token is treated as a value and gets
+    no exemption, because the empty answer the window used to return fell
+    through to the file-provenance exemption and the token PASSED. A bound that
+    silently means "exempt" is a hole, not honesty.
+
+    Read off the token stream, so no wrapper spelling and no seam spelling can
+    hide the role: `api: x`, a quoted `api` value, `api: **x**`, `| api | x |`,
+    `api -> x`, an em-dash seam, an arrow seam, `api: | x`, a subscript with a
+    seam inside it, `spec["api"]["inner"] = x` and `{"operation": {"inner": x}}`
+    all resolve. The walk runs to the depth the text actually has.
+    """
+    base, aligned = _role_window(text, pos)
     window = text[base:pos + 1]
     tokens = _tokens(window)
     # The value is whatever token CONTAINS `pos` (a string literal swallows it).
@@ -314,10 +413,18 @@ def _key_before(text, pos):
         if tok[3] + base > pos:
             at = index
             break
-    for key in _role_chain(tokens[:at]):
-        if key.lower() in _API_KEYS:
-            return key.lower()
-    return ""
+    keys, resolved = _role_chain(tokens[:at], truncated=base > 0)
+    if keys:
+        return BOUND, keys[0]
+    if not aligned or not resolved:
+        return UNRESOLVED, ""
+    return PROSE, ""
+
+
+def _key_before(text, pos):
+    """The key whose value holds `pos`, or "" -- any spelling, no vocabulary."""
+    state, key = _role_state(text, pos)
+    return key if state == BOUND else ""
 
 # The exact sentence each reviewed slash token was reviewed in. This is the
 # closed world: outside one of these sentences the token is an operation shape
@@ -344,6 +451,51 @@ REVIEWED_PROSE_CONTEXTS = frozenset({
     'the assisted/operator path and the R-13 / D',
     'the assisted/operator path and the R-13 / DEC-16 authority',
     'tity": ["a documented memberships/communities operation in the froz',
+    # PBB-443. The reviewed ROWS the deliverable itself emits. With the default
+    # inverted, a real repo path sitting in a VALUE -- behind any key at all --
+    # has no shape-based way out, so the module's own citation rows have to be
+    # reviewed like any other sentence. These are the five `provenance` rows of
+    # the returned decision document and the decision line of the evidence doc,
+    # captured verbatim from what the module hands back and from the delivered
+    # text. Change either one and the scan stops passing until a human reviews
+    # the new row -- which is the point.
+    '"provenance": ["36-ghl-mcp-setup/ghl-mcp-setup-full.md", '
+    '"06-ghl-install-pages/tools/SELECTORS-LIVE-course.md", '
+    '"06-ghl-install-pages/tools/SELECTORS-LIVE-community.md"]',
+    '"provenance": ["44-convert-and-flow-operator/tools/engine/cli_anything/'
+    'gohighlevel/utils/workflow_builder.py", '
+    '"36-ghl-mcp-setup/ghl-mcp-setup-full.md", '
+    '"44-convert-and-flow-operator/automation-templates/launch-ghl-probe/'
+    'GHL-CAPABILITY-NOTE.md"]',
+    '"provenance": ["44-convert-and-flow-operator/tools/engine/cli_anything/'
+    'gohighlevel/public/operations.py", '
+    '"shared-utils/ghl/capability_inventory.py", '
+    '"06-ghl-install-pages/references/form-click-map.md"]',
+    '"provenance": ["44-convert-and-flow-operator/tools/engine/cli_anything/'
+    'gohighlevel/public/operations.py"]',
+    '"provenance": ["shared-utils/ghl/capability_inventory.py", '
+    '"05-ghl-setup/INSTRUCTIONS.md"]',
+    "**Decision:** **BLOCKED** for every automated route. Supported path is "
+    "**assisted/operator**. **Code:** `shared-utils/bonus/access_capability.py` "
+    "· `shared-utils/bonus/tests/test_access_capability.py`",
+    "The shared inventory answers this from its own data: "
+    "`select_route(EXECUTE, resource=\"memberships\")` returns `[]` "
+    "(`shared-utils/ghl/capability_inventory.py`).",
+    "The retired Tier-2 community MCP had the membership tool family "
+    "(~15 courses and memberships tools) and its create/delete entries are "
+    "documented as **possibly unverified shells** "
+    "(`36-ghl-mcp-setup/ghl-mcp-setup-full.md`).",
+    "send (`shared-utils/ghl/capability_inventory.py`, "
+    "`conversations.send_message`; `05-ghl-setup/INSTRUCTIONS.md`).",
+    "claims evidence levels 1–2 only; levels 3–4 (account grant, observed "
+    "on the box) are explicitly **not held** "
+    "(`shared-utils/ghl/capability_inventory.py`, `TRANSPORT_STATUS`).",
+    "all** (`44-convert-and-flow-operator/tools/engine/cli_anything/"
+    "gohighlevel/public/operations.py",
+    "code | |---|---|---| | \"Is there a membership route?\" | "
+    "`shared-utils/ghl/capability_inventory.py",
+    "wording: `38-conversational-ai-system/CHANGELOG.md",
+    "green: `38-conversational-ai-system/scripts/qc-pb-contracts.sh",
 })
 
 # The delivered prose may not promise more than the scan delivers. Each pattern
@@ -392,6 +544,28 @@ OVERSTATED_GUARANTEES = (
     r"\b(?:rules?|scan)\s+(?:never\s+)?miss(?:es)?\b[^.]{0,40}\bspelling\b",
     r"\bno\s+spellings?\s+(?:can|could|will|would)\s+be\s+(?:chosen|picked|found|used)\b",
     r"\bspellings?\b[^.]{0,40}\b(?:the\s+rules?|the\s+scan)\s+(?:miss|misses)\b",
+    # PBB-443 DEFECT 3: the guard could not see its own false sentence. The
+    # module claimed every separator look-alike -- any character whose Unicode
+    # name calls it a solidus or a slash -- reaches the same rule as `/`, while
+    # 16 of the 46 named look-alikes never reached it at all. These are the
+    # CLASS: a spelling-universality promise about named characters, stated
+    # without the shapes it excludes. The scoped sentence this round ships
+    # names those shapes ("outside the two literal shapes ..."), and the
+    # negative lookahead is what keeps the guard quiet on it.
+    r"\bevery\s+separator\s+look-alike\b"
+    r"(?![^.]{0,200}\b(?:outside|except|excepting|save|but\s+for)\b)",
+    r"\bany\s+character\s+whose\s+(?:unicode\s+)?name\b[^.]{0,80}"
+    r"\b(?:reaches|arrives?\s+at|hits)\b[^.]{0,60}\bsame\s+rule\b"
+    r"(?![^.]{0,200}\b(?:outside|except|excepting|save|but\s+for)\b)",
+    r"\b(?:no|not\s+one|nary\s+a)\s+(?:separator|slash|solidus|look-alike|"
+    r"character)\b[^.]{0,60}\b(?:escapes?|misses?|gets?\s+past)\b",
+    r"\bevery\s+(?:character|code\s*point|codepoint|spelling)\b[^.]{0,60}"
+    r"\b(?:reaches|arrives?\s+at|is\s+mapped|is\s+read)\b"
+    r"(?![^.]{0,200}\b(?:outside|except|excepting|save|but\s+for)\b)",
+    r"\bhowever\s+(?:it\s+is\s+|it\s+is\s+)?spelled\b",
+    r"\bwhatever\s+(?:the\s+)?spelling\b",
+    r"\bevery\s+(?:spelling|named?\s+character)\b[^.]{0,40}\b(?:is|are)\s+"
+    r"(?:in\s+class|covered|mapped|read)\b",
 )
 _OVERSTATED_RE = tuple(re.compile(p, re.I) for p in OVERSTATED_GUARANTEES)
 # What the prose must state so a reader knows what the scan does not cover.
@@ -457,9 +631,15 @@ def _bound_constants(text):
     return {m.group(1): m.group(2) for m in _TEMPLATE_BINDING.finditer(text)}
 
 
-def _in_api_value(text, start):
-    """True when the token at `start` sits in an operation value position."""
-    return bool(_key_before(text, start))
+def _in_value_position(text, start):
+    """True when the token at `start` is a VALUE, not prose.
+
+    A key governs it (BOUND), or the role read cannot reach far enough back to
+    say (UNRESOLVED). PROSE is the only state an exemption may attach to. This
+    is the inversion: the question is no longer "is this key API-ish", it is
+    "is this a value at all", and a value carries no exemption by default.
+    """
+    return _role_state(text, start)[0] in (BOUND, UNRESOLVED)
 
 
 def _resolves_to_real_file(token, text=""):
@@ -497,15 +677,78 @@ def _starts_value_run(text, at):
     it must start outside a value run. The seam is read off the token stream,
     so a label spelled with any separator counts and prose spacing does not.
     """
-    window = text[max(0, at - _ROLE_WINDOW):at]
-    tokens = _tokens(window)
+    window_start, aligned = _role_window(text, at)
+    if not aligned:
+        return True  # an unaligned head proves nothing; refuse the exemption
+    # A window that begins ON the separator run of a binding is still on the
+    # far side of that seam, so the run is read as part of the head. Without
+    # this, `wording: <path>` is excused by a phrase starting at the colon.
+    end = at
+    while end < len(text) and not (
+        text[end].isalnum()
+        or text[end] in "_-" + _STRING_QUOTES + "()[]{}"
+    ):
+        end += 1
+    tokens = _tokens(text[window_start:end])
     key, _ = _seam(tokens, len(tokens))
     return key is not None
 
 
-def _in_reviewed_prose(text, start, end):
+def _value_token_start(text, pos):
+    """Left edge of the token that holds `pos` -- a string literal swallows it.
+
+    A value wrapped in quotes or brackets -- api: then a quoted path, api: then
+    a bracketed path -- has its binding further left than the first byte of the
+    path. A window that starts at the path starts INSIDE the value, whatever
+    wrapper is around it.
+    """
+    for tok in _tokens(text[:pos + 1]):
+        if tok[2] <= pos < tok[3]:
+            return tok[2]
+    return pos
+
+
+def _starts_on_a_name(text, at):
+    """`at` falls INSIDE a name or a string literal.
+
+    A row may begin in the middle of a separator run -- `**Decision:**` starts
+    on the asterisks -- but never in the middle of a name: `wording: <path>` is
+    excused by a phrase starting at `g` of `wording` otherwise, which is the
+    value talking about itself.
+    """
+    for tok in _tokens(text[:at + 1]):
+        if tok[2] < at < tok[3]:
+            return tok[0] in ("ID", "STR")
+    return False
+
+
+def _begins_a_row(text, at):
+    """`at` starts a ROW, not the inside of a bracket someone opened on it.
+
+    A reviewed row is reviewed as a row -- the `"provenance": [...]` rows of the
+    returned document, the decision line of the evidence doc. What may NOT open
+    a row is a bracket: `api: {` and `api: (` are a key holding a frame, and a
+    window that starts inside that frame is the value talking about itself.
+    """
+    if at <= 0:
+        return True
+    head = _tokens(text[:at])
+    i = len(head)
+    while i > 0 and head[i - 1][0] == "SEP":
+        i -= 1
+    return i == 0 or head[i - 1][0] != "OPEN"
+
+
+def _in_reviewed_prose(text, start, end, phrases=None):
+    """The token sits inside one of the declared windows, verbatim.
+
+    The window is the unit of review, so it must not itself begin inside a
+    value run -- a reviewed sentence pasted behind `target: ` is a value, not
+    prose. `phrases` defaults to the reviewed prose contexts; the declared
+    legitimate windows below widen it to the other closed world.
+    """
     token = text[start:end]
-    for phrase in REVIEWED_PROSE_CONTEXTS:
+    for phrase in (REVIEWED_PROSE_CONTEXTS if phrases is None else phrases):
         offset = phrase.find(token)
         while offset != -1:
             at = start - offset
@@ -694,6 +937,52 @@ LEGITIMATE_TEXT = (
     "\\\\server\\share\\doc.md",
 )
 
+# PBB-443. THE ALLOW-PATH, DECLARED. A value -- behind any key, or beyond the
+# role window -- has no shape-based way out any more. The only thing that lets
+# it through is a sentence a human reviewed and that is listed here. Both
+# tables above are closed worlds; this set is their union, and nothing enters
+# it by looking like anything. That is what "an unrecognised key carrying a real
+# repo path must FAIL CLOSED, and only a declared legitimate prose context may
+# allow it" means in code.
+DECLARED_LEGITIMATE_WINDOWS = frozenset(
+    re.sub(r"\s+", " ", phrase).strip()
+    for phrase in set(REVIEWED_PROSE_CONTEXTS) | set(LEGITIMATE_TEXT)
+)
+
+
+def _in_declared_window(text, start, end):
+    """The one exemption a value may carry: a reviewed ROW, verbatim.
+
+    Three things have to hold, and each one is structural:
+      * the row begins a row -- the head of the text, or just after a group
+        close, which is where a reviewed row sits;
+      * the row begins BEFORE the value token it excuses, so `api: \\`<token>\\``
+        and `api: (<token>)` are the value talking about itself and are
+        refused;
+      * the row does not itself begin on the far side of a seam.
+
+    Reproducing a whole reviewed row verbatim is the closed world's documented
+    limit -- the same one the reviewed prose sentences have always had. A new
+    row, or a reviewed row reworded, fails until a human reviews it.
+    """
+    edge = _value_token_start(text, start)
+    token = text[start:end]
+    for phrase in DECLARED_LEGITIMATE_WINDOWS:
+        offset = phrase.find(token)
+        while offset != -1:
+            at = start - offset
+            if (
+                at >= 0
+                and at < edge
+                and not _starts_on_a_name(text, at)      # never inside a name
+                and _begins_a_row(text, at)              # never inside a frame
+                and text[at: at + len(phrase)] == phrase
+                and not _starts_value_run(text, at)
+            ):
+                return True
+            offset = phrase.find(token, offset + 1)
+    return False
+
 
 # PBB-311 A2/A3: a path split by a doubled separator or by a look-alike slash
 # walked past every rule. Normalising the separators means one rule decides one
@@ -705,22 +994,29 @@ LEGITIMATE_TEXT = (
 # anticipated (U+FF3C FULLWIDTH REVERSE SOLIDUS, U+FE68 SMALL REVERSE SOLIDUS,
 # U+29F5 REVERSE SOLIDUS OPERATOR) arrives at the same rule as `/`. A typed
 # list of five characters is exactly the device PBB-371 charged.
+#
+# PBB-443 DEFECT 3: the derivation used to stop at U+10FFF, so eleven named
+# separators above it (U+1D194, U+1D195, U+1D199, U+1D1A9, U+1F10D, U+1F10F,
+# U+1F16E, U+1F67C VERY HEAVY SOLIDUS, U+1F67D, U+E002F TAG SOLIDUS,
+# U+E005C TAG REVERSE SOLIDUS) were never mapped, and five more were mapped but
+# deleted first because they are combining marks. 16 of the 46 named look-alikes
+# did not reach the rule while the delivered prose claimed all of them did. The
+# derivation now covers the WHOLE code space, and `_drop_invisible` keeps a
+# named separator instead of deleting it. See the docstring for the two literal
+# shapes that still keep their own separators.
 def _slash_like_table():
     table = {}
-    for codepoint in range(0x11000):
+    for codepoint in range(0x110000):
         char = chr(codepoint)
         if char == "/":
             continue
-        try:
-            name = unicodedata.name(char)
-        except ValueError:
-            continue
+        name = unicodedata.name(char, "")
         if "SOLIDUS" in name or "SLASH" in name:
             table[codepoint] = ord("/")
     return str.maketrans(table)
 _SLASH_TRANSLATE = _slash_like_table()
 # The same derived set, as a character class for the path rules below.
-_SLASH_LIKE = "".join(chr(c) for c in range(0x11000) if c in _SLASH_TRANSLATE)
+_SLASH_LIKE = "".join(chr(c) for c in range(0x110000) if c in _SLASH_TRANSLATE)
 _SEPARATOR_LOOKALIKES = _SLASH_TRANSLATE
 # A backslash is a path separator like any other. The one shape it may not be
 # mapped inside is a real Windows path -- a drive root (`C:\...`) or a UNC
@@ -737,11 +1033,16 @@ _EMPTY_AUTHORITY_URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.\-]*:///[^\s\"'`|*<>]*
 # Characters with no visible glyph carry no role of their own: a zero-width
 # space inside `api` is not a different spelling of `api`. Structural -- the
 # Unicode categories for format, control, surrogate, unassigned and combining
-# marks, not a list of characters.
+# marks, not a list of characters. ONE exception, also derived rather than
+# typed: a character Unicode names a solidus or a slash is a SEPARATOR whatever
+# its category, so it is kept long enough to be mapped onto `/`. Deleting it
+# first is what used to hide U+0337, U+0338, U+20E0, U+20E5, U+20EB, U+E002F
+# and U+E005C from the rule the prose said they reached.
 def _drop_invisible(text):
     return "".join(
         char for char in text
         if not unicodedata.category(char).startswith(("C", "M"))
+        or char in _SLASH_LIKE
     )
 
 def _scan_text(text):
@@ -785,9 +1086,17 @@ def _path_literal_spans(text):
 def _dotted_operation_hits(text):
     text = _scan_text(text)
     local = _path_literal_spans(text)
+    # A dotted run inside a bare path is that path's OWN TAIL, not a second
+    # token with a key of its own. `shared-utils/ghl/capability_inventory.py`
+    # must not read `ghl` as a key bound to `capability_inventory.py` -- the
+    # key has to sit outside the token it governs, which is the same rule that
+    # keeps the bare-path read honest at its own left edge.
+    inside_path = [m.span() for m in _BARE_PATH.finditer(text)]
     hits = []
     for match in _DOTTED_OPERATION.finditer(text):
         if any(l < match.end() and match.start() < r for l, r in local):
+            continue
+        if any(l <= match.start() and match.end() <= r for l, r in inside_path):
             continue
         token = match.group(0)
         if match.start() > 0 and text[match.start() - 1] == "-":
@@ -796,7 +1105,12 @@ def _dotted_operation_hits(text):
             # operation id. The segment-boundary rule below is what makes this
             # distinction necessary.
             continue
-        if _in_api_value(text, match.start()):
+        if _in_value_position(text, match.start()):
+            if (
+                token in REVIEWED_SLASH_TOKENS
+                and _in_reviewed_prose(text, match.start(), match.end())
+            ) or _in_declared_window(text, match.start(), match.end()):
+                continue
             hits.append(token)  # a value is never filename provenance
             continue
         # Provenance, closed world: only a name that is the tail of a real path
@@ -820,8 +1134,19 @@ def _api_shape_hits(text):
         if any(l < match.end() and match.start() < r for l, r in local):
             continue
         token = match.group(0)
-        if _in_api_value(text, match.start()):
-            hits.append(f"bare-path:{token}")  # a value is never provenance
+        if _in_value_position(text, match.start()):
+            # A value gets no FILE-PROVENANCE exemption. Whatever the key
+            # spells -- `api`, `href`, `note`, `_REGISTRY`, `deeper` -- a real
+            # repo path sitting in a value is an operation value until a human
+            # has reviewed the row it appears in. A reviewed SLASH token keeps
+            # its own closed world: it passes only inside the exact sentence it
+            # was reviewed in, which is a declaration too.
+            if (
+                token in REVIEWED_SLASH_TOKENS
+                and _in_reviewed_prose(text, match.start(), match.end())
+            ) or _in_declared_window(text, match.start(), match.end()):
+                continue
+            hits.append(f"bare-path:{token}")
             continue
         if not token.startswith("/") and (
             _is_file_provenance(token, text)
@@ -834,8 +1159,13 @@ def _api_shape_hits(text):
         hits.append(f"bare-path:{token}")
     for match in _SPACED_PATH.finditer(text):
         token = match.group(0)
-        if _in_api_value(text, match.start()):
-            hits.append(f"bare-path:{token}")  # a value is never provenance
+        if _in_value_position(text, match.start()):
+            if (
+                token in REVIEWED_SLASH_TOKENS
+                and _in_reviewed_prose(text, match.start(), match.end())
+            ) or _in_declared_window(text, match.start(), match.end()):
+                continue
+            hits.append(f"bare-path:{token}")
             continue
         if _is_file_provenance(token, text) or (
             token in REVIEWED_SLASH_TOKENS
@@ -1470,13 +1800,33 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
         self.assertTrue(_fabricated_api_hits(
             '{"note": {"api": {"deep": "shared-utils/bonus/access_capability.py"}}}'
         ))
-        # Inverse: a value nested under a key that is not an api key is not an
-        # operation value, however deep it sits.
-        self.assertEqual(_fabricated_api_hits(
+        # PBB-443 RULING, ON THE RECORD. The two lines below used to assert
+        # that a real repo path nested under keys like `note` / `deep` /
+        # `deeper` reads CLEAN. That is exactly the hole PBB-429 charged:
+        # "behind any of those, a real repo path keeps its file-provenance
+        # exemption and reads as an innocent citation", and the brief's ruling
+        # is that "an unrecognised key that carries a real repo path must FAIL
+        # CLOSED, and only a declared legitimate prose context may allow it".
+        # `deeper` is an unrecognised key carrying a real repo path, so it
+        # FAILS. The over-refusal control moved to where the brief puts it: a
+        # declared legitimate prose context, and a citation with no key bound
+        # to it at all.
+        self.assertTrue(_fabricated_api_hits(
             '{"note": {"deep": {"deeper": "shared-utils/ghl/capability_inventory.py"}}}'
+        ))
+        self.assertTrue(_fabricated_api_hits(
+            'f(a[{"b": ({"c": [{"d": "shared-utils/ghl/capability_inventory.py"}]})}])'
+        ))
+        # Shallow legitimate nesting still passes: no key binds the citation,
+        # so it is prose and its file provenance is real.
+        self.assertEqual(_fabricated_api_hits(
+            '["shared-utils/ghl/capability_inventory.py", "05-ghl-setup/INSTRUCTIONS.md"]'
         ), [])
         self.assertEqual(_fabricated_api_hits(
-            'f(a[{"b": ({"c": [{"d": "shared-utils/ghl/capability_inventory.py"}]})}])'
+            '{"note": "plain", "other": 1}'
+        ), [])
+        self.assertEqual(_fabricated_api_hits(
+            "the assisted/operator path and the R-13 / DEC-16 authority"
         ), [])
 
     def test_the_three_falsified_sentences_are_gone_and_the_guard_sees_them(self):
@@ -1542,6 +1892,16 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
             "so a smuggling shape cannot choose a spelling the rules miss",
             "a smuggling shape cannot choose a spelling the rules miss",
             "no spelling can be chosen that the rules miss",
+            # PBB-443 defect 3: the false sentence the shipped guard could not
+            # see, and the rephrasings of the same promise.
+            "every separator look-alike -- any character whose Unicode name "
+            "calls it a solidus or a slash -- reaches the same rule as `/`.",
+            "every separator look-alike reaches the same rule",
+            "any character whose Unicode name calls it a solidus or a slash "
+            "arrives at the same rule as `/`",
+            "no separator escapes the rule",
+            "every character whose name calls it a slash is mapped",
+            "however it is spelled, the token is read",
         ):
             self.assertTrue(_overstated_guarantee_hits(claim), claim)
         for honest in (
@@ -1557,6 +1917,13 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
             "a bracket inside a string literal is never a frame boundary",
             "A seam is any run carrying a non-whitespace separator character "
             "between a key token and the value",
+            # PBB-443: the scoped separator sentence, which names the shapes
+            # it excludes and therefore is not the guarded class.
+            "every separator look-alike -- any character whose Unicode name "
+            "calls it a solidus or a slash, anywhere in the code space -- "
+            "reaches the same rule as `/`, outside the two literal shapes that "
+            "keep their own separators: a real Windows path and a scheme with "
+            "an empty authority.",
         ):
             self.assertEqual(_overstated_guarantee_hits(honest), [], honest)
 
@@ -1653,6 +2020,188 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
         self.assertEqual(_api_shape_hits("   \n\t "), [])
         self.assertTrue(_fabricated_api_hits("memberships/grant"))
         self.assertTrue(_fabricated_api_hits('"api": "/memberships/grant"'))
+
+class TestPbb443Closures(unittest.TestCase):
+    """The three defects PBB-429 charged, pinned, each with its inverse."""
+
+    REAL = "shared-utils/bonus/access_capability.py"
+
+    # The 27 key spellings PBB-429 measured. The 16 that used to read CLEAN
+    # are the reason the vocabulary is gone.
+    KEY_SPELLINGS = (
+        "api", "route", "operation", "endpoint", "method", "path", "url",
+        "uri", "action", "API", "Path", "href", "target", "link", "resource",
+        "op", "call", "endpoints", "api_url", "apiPath", "theApi", "uri_",
+        "operation_id", "fetch", "request", "end-point", "apis",
+    )
+
+    def test_no_key_vocabulary_decides_which_spellings_are_in_class(self):
+        # DEFECT 1. Every key spelling carries the real repo path as its value
+        # and every one of them is an operation value now. There is no list to
+        # be outside of.
+        for key in self.KEY_SPELLINGS:
+            text = "%s: %s" % (key, self.REAL)
+            self.assertTrue(_fabricated_api_hits(text), text)
+            self.assertEqual(_role_state(text, text.index(self.REAL))[0], BOUND,
+                             text)
+        # Over-refusal control, where the brief puts it: a declared legitimate
+        # prose context still passes.
+        for text in (
+            "the assisted/operator path and the R-13 / DEC-16 authority",
+            "shared-utils/ghl/capability_inventory.py",
+            "05-ghl-setup/INSTRUCTIONS.md",
+            "see shared-utils/ghl/capability_inventory.py for the inventory",
+            '    _GHL = "44-convert-and-flow-operator"\n'
+            '    _REGISTRY = f"{_GHL}/tools/engine/cli_anything/'
+            'gohighlevel/public/operations.py"',
+        ):
+            self.assertEqual(_fabricated_api_hits(text), [], text)
+
+    def test_a_reviewed_row_is_the_only_way_through_a_value(self):
+        # The allow-path, and the wall around it. A reviewed row reproduced
+        # verbatim at a row boundary passes; the same text behind a key, or
+        # opened inside a frame, does not.
+        row = ('"provenance": ["shared-utils/ghl/capability_inventory.py", '
+               '"05-ghl-setup/INSTRUCTIONS.md"]')
+        self.assertEqual(_fabricated_api_hits("x, " + row), [])
+        self.assertTrue(_fabricated_api_hits("api: {" + row + "}"))
+        self.assertTrue(_fabricated_api_hits("api: `" + self.REAL + "`"))
+        self.assertTrue(_fabricated_api_hits("api: (" + self.REAL + ")"))
+        self.assertTrue(_fabricated_api_hits('api: "' + self.REAL + '"'))
+        self.assertTrue(_fabricated_api_hits(
+            '{"note": {"deep": {"deeper": "%s"}}}' % self.REAL
+        ))
+
+    def test_every_named_separator_reaches_the_rule(self):
+        # DEFECT 3, EXTENDED. The derivation covers the whole code space and
+        # `_drop_invisible` keeps a named separator instead of deleting it, so
+        # the 11 above U+10FFF and the 5 combining overlays reach the rule.
+        named = [
+            cp for cp in range(0x110000)
+            if cp != ord("/")
+            and ("SOLIDUS" in (unicodedata.name(chr(cp), "") or "")
+                 or "SLASH" in (unicodedata.name(chr(cp), "") or ""))
+        ]
+        self.assertEqual(len(named), 46, "the named look-alike class changed")
+        for cp in named:
+            text = "memberships%sgrant" % chr(cp)
+            self.assertTrue(
+                _fabricated_api_hits(text),
+                "U+%04X %s does not reach the rule"
+                % (cp, unicodedata.name(chr(cp))),
+            )
+        # Two representatives the old derivation could not see, named so a
+        # regression to `range(0x11000)` or to dropping combining marks fails
+        # here by name.
+        for cp, name in (
+            (0x1F67C, "VERY HEAVY SOLIDUS"),
+            (0x0337, "COMBINING SHORT SOLIDUS OVERLAY"),
+            (0xE002F, "TAG SOLIDUS"),
+        ):
+            self.assertIn(name, unicodedata.name(chr(cp)))
+            self.assertTrue(_fabricated_api_hits("memberships%sgrant" % chr(cp)))
+        # Inverse: the scoped sentence the prose now ships is true, and the
+        # unscoped one is guarded.
+        self.assertEqual(_overstated_guarantee_hits(
+            "every separator look-alike -- any character whose Unicode name "
+            "calls it a solidus or a slash, anywhere in the code space -- "
+            "reaches the same rule as `/`, outside the two literal shapes that "
+            "keep their own separators: a real Windows path and a scheme with "
+            "an empty authority."
+        ), [])
+        self.assertTrue(_overstated_guarantee_hits(
+            "every separator look-alike -- any character whose Unicode name "
+            "calls it a solidus or a slash -- reaches the same rule as `/`."
+        ))
+
+    def test_a_token_past_the_role_window_is_refused_not_exempt(self):
+        # THE WINDOW BYPASS. A real repo path nested past the window used to
+        # read as empty and then fall through to the file-provenance exemption
+        # and PASS. It is unresolved now, and unresolved flags.
+        for depth in (2, 100, 300, 400, 460, 500, 570, 800, 1200):
+            keys = ["api"] + ["k%d" % i for i in range(depth - 1)]
+            text = (
+                "".join('{"%s":' % key for key in keys)
+                + '"%s"' % self.REAL + "}" * depth
+            )
+            self.assertTrue(_fabricated_api_hits(text), f"{depth} frames")
+            self.assertNotEqual(
+                _role_state(text, text.index(self.REAL))[0], PROSE,
+                f"{depth} frames read as prose",
+            )
+        # The same shape with no exemption to fall through to is flagged at
+        # every depth too -- so the difference above was the exemption, not
+        # the shape.
+        for depth in (2, 460, 1200):
+            keys = ["api"] + ["k%d" % i for i in range(depth - 1)]
+            text = (
+                "".join('{"%s":' % key for key in keys)
+                + '"memberships/grant"' + "}" * depth
+            )
+            self.assertTrue(_fabricated_api_hits(text), f"{depth} frames")
+        # Shallow legitimate nesting still passes: no key binds the citation.
+        self.assertEqual(_fabricated_api_hits(
+            '["shared-utils/ghl/capability_inventory.py", '
+            '"05-ghl-setup/INSTRUCTIONS.md"]'
+        ), [])
+        self.assertEqual(_fabricated_api_hits(
+            '{"note": "plain", "other": 1}'
+        ), [])
+        # And the window states its own consequence: a head the read cannot
+        # align to a token boundary is unresolved, never "no key". A 6000
+        # character run with no whitespace has no boundary to align to.
+        run = "a" * 6000 + " " + self.REAL
+        self.assertFalse(_role_window(run, run.index(self.REAL))[1])
+        self.assertEqual(
+            _role_state(run, run.index(self.REAL))[0], UNRESOLVED
+        )
+        self.assertTrue(_fabricated_api_hits(run))
+        # A list element answers to the key that binds the LIST, so a
+        # fabrication cannot hide behind a comma either.
+        self.assertTrue(_fabricated_api_hits(
+            '{"api": [1, "%s"]}' % self.REAL
+        ))
+
+    def test_the_rules_that_had_no_pin_are_pinned(self):
+        # PBB-429's mutation survivors M10, M11, M19, M20, M29. A rule with no
+        # pin that can fail is decoration.
+        # M10: `[` indexes something only when something precedes it.
+        self.assertTrue(_is_subscript(_tokens('spec["api"]'), 1))
+        self.assertFalse(_is_subscript(_tokens("a = [1]"), 2))
+        # M11: the string delimiters are DERIVED from Unicode names, so the
+        # single quote, the backtick and the typographic quotes are all in
+        # class. Shrinking the set to `"` alone fails here.
+        for quote in "\"'`“”‘’«»":
+            self.assertIn(quote, _STRING_QUOTES, repr(quote))
+        self.assertIn(
+            ("STR", "[x]"),
+            [(kind, val) for kind, val, _, _ in _tokens("a '[x]'")],
+        )
+        # M29: a string prefix is derived -- one or two letters, whatever they
+        # are -- and three letters is still a key.
+        self.assertTrue(_STRING_PREFIX.match("f"))
+        self.assertTrue(_STRING_PREFIX.match("rb"))
+        self.assertTrue(_STRING_PREFIX.match("zz"))
+        self.assertIsNone(_STRING_PREFIX.match("api"))
+        self.assertEqual(_tokens('f"[x]"')[0], ("STR", "[x]", 0, 6))
+        # M19: a call name is not a key, so `api: compute(x)` answers to `api`.
+        self.assertTrue(_fabricated_api_hits(
+            "api: compute(%s)" % self.REAL
+        ))
+        # M20: the required scope is pinned by its own contents.
+        self.assertEqual(len(REQUIRED_GUARANTEE_SCOPE), 5)
+        for clause in REQUIRED_GUARANTEE_SCOPE:
+            self.assertGreater(len(clause), 8, clause)
+        # And the comma rule the row read needs: a list element does not read
+        # the element before it as its key.
+        text = '["a.md", "shared-utils/ghl/capability_inventory.py"]'
+        self.assertEqual(
+            _role_state(text, text.index("shared-utils"))[0], PROSE
+        )
+        self.assertIsNone(
+            _seam(_tokens('["a.md", "b.md"]'), 2)[0]
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
