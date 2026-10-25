@@ -1,8 +1,51 @@
-## [2.0.94] - 2026-10-25 - test(T-08/F5): pin the trusted-contact-mapping decision that made F5 unreachable (T-08 repair 4, PBB-349)
+## [2.0.97] - 2026-10-25 - test(T-08/F5): pin the trusted-contact-mapping decision that made F5 unreachable (T-08 repair 4, PBB-349; renumbered in T-08 repair 5, PBB-378)
 
 Repair of the two defects the PBB-321 verifier failed on `9b73fabd6`: a version collision and an overstated coverage claim in the F5 evidence. This commit adds no product behaviour - the F5 gate bytes were already on main, no file carrying guard logic is touched, and the guard failure set is unchanged from `origin/main`.
 
-- **Version collision (fatal).** `9b73fabd6` claimed Skill 38 **v2.0.33**, but `origin/main` had already assigned v2.0.33 to different content at `53de3d0b5`, and main was at v2.0.35. The merge into main kept main's `CHANGELOG.md` and `skill-version.txt` verbatim; this entry re-adds this task's bookkeeping under **v2.0.94**, a number no ref has ever held - strictly above main (v2.0.35) and above every published branch allocation found by sweeping every local and remote ref: v2.0.36, v2.0.37, v2.0.90, v2.0.93. Absence proven with `git grep --fixed-strings "[2.0.94]"` and `git grep --fixed-strings "v2.0.94"` over every ref, both returning no match (rc 1).
+- **Version collision (fatal) - this entry is a RENUMBERING, and the collision is reported, not asserted away.** `9b73fabd6` claimed Skill 38 **v2.0.33**, but `origin/main` had already assigned v2.0.33 to different content at `53de3d0b5`, and main was at v2.0.35. The merge into main kept main's `CHANGELOG.md` and `skill-version.txt` verbatim; this entry re-adds this task's bookkeeping. The first renumber then repeated the same fault one number up: the entry that stood here claimed **v2.0.94** was "a number no ref has ever held - strictly above main (v2.0.35) and above every published branch allocation found by sweeping every local and remote ref: v2.0.36, v2.0.37, v2.0.90, v2.0.93", proven absent with `git grep --fixed-strings "[2.0.94]"` and `git grep --fixed-strings "v2.0.94"` over every ref, both returning no match (rc 1). **That sentence was false when written**, on two counts. (a) The enumeration was incomplete - it omitted v2.0.38 (`pb/PBB-343/t-21-repair4`, `87ce3e14`) and v2.0.94 itself (`pb/PBB-350/t-20-repair3`, `40d4c15d`). (b) `v2.0.94` was already held by **two** unlanded heads, `pb/PBB-349/t-08-repair4` (`3dd19e27`, this task's own parent) and `pb/PBB-350/t-20-repair3` (`40d4c15d`), so both greps returned hits, not rc 1. The false absence claim is corrected here rather than deleted, because the third unmeasured-absence attestation in a row is the defect, not the number.
+- **What was actually measured, and the number this entry takes.** `38-conversational-ai-system/skill-version.txt` was read for all **1968** heads on `origin` (1913 unique head objects) and the values compared numerically, not lexically. Every published allocation at or above v2.0.36: v2.0.36 (`pb/PBB-250/t-21-rebase` `884495b9`, `pb/PBB-318/t-04-repair3` `f0542970`, `pb/PBB-325/t-05-repair2` `66818475`), v2.0.37 (`pb/PBB-319/t-21-repair3` `bacfabb1`), v2.0.38 (`pb/PBB-343/t-21-repair4` `87ce3e14`), v2.0.90 (`pb/PBB-315/t-09-repair` `9b40d6e9`, `pb/PBB-361/t-09-repair2` `d8586e9d`), v2.0.93 (`pb/PBB-271/t-19-repair2` `67b892ed`), v2.0.94 (`pb/PBB-349/t-08-repair4` `3dd19e27`, `pb/PBB-350/t-20-repair3` `40d4c15d`), v2.0.95 (`pb/PBB-356/t-14-repair3` `dc5c25aa`, `pb/PBB-357/t-04-repair4` `ecfa37fc`, `pb/PBB-360/t-18-build` `979eb559`, `pb/PBB-365/t-19-batch` `61a60e9a`), v2.0.96 (`pb/PBB-370/t-28-repair3` `c5bf30e9`). The true numeric maximum on any head is **v2.0.96**; `origin/main` is **v2.0.35**. This entry therefore takes **v2.0.97**, strictly above the measured maximum. Below is the real pre-commit output for the new number, in bracketed-token form only, over `origin/main` and over all 1968 heads, with the same commands run against the disputed old number as the control that proves the instrument discriminates. The readings are pre-commit by construction - a CHANGELOG cannot cite the sweep that is run after the commit containing it is written - so the post-push sweep is recorded in the lane receipt alongside this entry.
+
+```
+$ git show origin/main:38-conversational-ai-system/skill-version.txt
+v2.0.35
+
+$ git for-each-ref --format='%(objectname)' refs/remotes/origin/ | grep -v origin/HEAD | sort -u | wc -l
+1913
+
+$ git grep --fixed-strings -l -e '[2.0.97]' origin/main; echo "rc=$?"
+rc=1
+$ git grep --fixed-strings -l -e 'v2.0.97' origin/main; echo "rc=$?"
+rc=1
+
+$ git grep --fixed-strings --full-name -l -e '[2.0.97]' <all 1913 head objects>; echo "rc=$?"
+rc=1
+$ git grep --fixed-strings --full-name -l -e 'v2.0.97' <all 1913 head objects>; echo "rc=$?"
+rc=1
+
+--- control on origin/main (instrument discriminates there too) ---
+$ git grep --fixed-strings -l -e '[2.0.35]' origin/main -- '38-conversational-ai-system/*'; echo "rc=$?"
+origin/main:38-conversational-ai-system/CHANGELOG.md
+rc=0
+$ git grep --fixed-strings -l -e 'v2.0.35' origin/main -- '38-conversational-ai-system/*'; echo "rc=$?"
+origin/main:38-conversational-ai-system/skill-version.txt
+rc=0
+
+--- control over all 1913 head objects: the disputed old number, same two commands ---
+$ git grep --fixed-strings --full-name -l -e '[2.0.94]' <all 1913 head objects>; echo "rc=$?"
+3dd19e2796dc7ff7a38877e0b7d4baefa653340d:38-conversational-ai-system/CHANGELOG.md
+40d4c15da71cc7d998115fccc455ec2d24f26717:38-conversational-ai-system/CHANGELOG.md
+rc=0
+$ git grep --fixed-strings --full-name -l -e 'v2.0.94' <all 1913 head objects>; echo "rc=$?"
+3dd19e2796dc7ff7a38877e0b7d4baefa653340d:38-conversational-ai-system/CHANGELOG.md
+3dd19e2796dc7ff7a38877e0b7d4baefa653340d:38-conversational-ai-system/skill-version.txt
+40d4c15da71cc7d998115fccc455ec2d24f26717:38-conversational-ai-system/CHANGELOG.md
+40d4c15da71cc7d998115fccc455ec2d24f26717:38-conversational-ai-system/skill-version.txt
+c5bf30e927e63b7fe3f9748ee910c40791253044:38-conversational-ai-system/CHANGELOG.md
+dc5c25aa598d8386f88c0737a8bef3c3d6eb1ff1:38-conversational-ai-system/CHANGELOG.md
+rc=0
+```
+
+The two hits on `c5bf30e9` and `dc5c25aa` are prose mentions of the old number inside their own CHANGELOG entries, not a third and fourth allocation - which is why the allocation is read from `skill-version.txt` by numeric value and the prose sweep is reported as prose. Nothing above is claimed from memory: every line is the output of the command shown above it.
 - **Overstated coverage claim.** The evidence reported 1/8 -> 4/8 -> 8/8 across `053c4fee` -> `8e98f155e` -> the repaired tree, and glossed the single pre-fix case as a hold. It was not a hold: under that case list the one case that "held" is the non-string case, and it held only because the pre-fix error text `$gate: unexpected property 'trusted_contact_mapping_evidence_id'` contains the key name, so an `any(<key> in e)` assertion is satisfied by the rejection message itself. Under the independent case list the same three trees give **0/8 -> 3/8 -> 8/8**. The end state is 8/8 under both lists; only the middle number was an artefact of the case list. `evidence/W05/T-08-f5-proof.md` now states the case list explicitly and drops the false gloss, and the instrument that produces every number in it, `evidence/W05/f5_proof.py`, is committed beside it - a saved number whose instrument is absent is not evidence. Set B is kept in the instrument only so the historical table can be reproduced.
 
 Proof, one instrument, three `git archive` trees: set A `053c4fee` **0/8** rc 1 -> `8e98f155e` **3/8** rc 1 -> this tree **8/8** rc 0; set B, kept for the record, **1/8** -> **4/8** -> **8/8**. The two suite tests that carry the decision and its control run **FAILED (failures=2, errors=1)** on `053c4fee` with this test file copied in, and **OK** here; real ids still dispatch on both, so the refusals are not a blanket refusal.
