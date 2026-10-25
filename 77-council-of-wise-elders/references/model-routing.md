@@ -39,8 +39,11 @@ to the configured id or to an older Flash.
 
 ## Council sizes
 
-Light (3 seats, 2 rounds), medium (all 9 seats, 1 to 4 rounds) and heavy
-(all 9 seats, 3 to 10 rounds). Convening with no `--mode` runs medium:
+Every mode seats the full nine-advisor council; the mode changes the
+rounds and the concurrency only. Light (all 9 seats, exactly 2 rounds, at
+most 3 provider calls in parallel in waves of 3), medium (all 9 seats, 1
+to 4 rounds) and heavy (all 9 seats, 3 to 10 rounds). Convening with no
+`--mode` runs medium:
 that default is deliberate, and the convene output always prints the size
 it ran. "quick answer" means light; "full council" means heavy.
 
