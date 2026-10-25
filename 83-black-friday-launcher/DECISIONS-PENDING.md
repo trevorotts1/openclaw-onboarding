@@ -105,7 +105,9 @@ code path invents a target or teaching content. Each is an owner decision, not a
 **Owner decision (open).** Installed into the customer's own OpenClaw/999 environment, or run inside
 BlackCEO's environment. Only the owner can pick.
 
-**Blocks:** the distribution and packaging step, and any claim that a run happened in a named environment.
+**Blocks:** the distribution step — installing the build into a named environment — and any claim that a
+run happened in a named environment. `assemble` builds the local package either way; that is listed under
+**Does not block** below.
 `registration.json:distribution` stays `status: open_decision` with `chosen_target: null` until the owner
 names one; no code may fill it in.
 

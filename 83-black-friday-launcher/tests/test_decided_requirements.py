@@ -181,13 +181,18 @@ class EntitlementGateTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
     def test_the_gate_labels_its_evidence_a_caller_attestation_not_purchase_proof(self):
-        """The gate reads no payment system; the operator must be told so."""
-        result = intake.validate(base_intake())["entitlement"]
-        self.assertEqual(result["evidence_kind"], "caller_attested_string")
-        self.assertIs(result["proves_purchase"], False)
-        boundary = result["attestation_boundary"].lower()
-        self.assertIn("not proof of purchase", boundary)
-        self.assertIn("declared", boundary)
+        """The gate reads no payment system; the operator must be told so.
+
+        Every qualifying basis, not just purchase: the label rides every result.
+        """
+        for basis in ("purchase", "brand_management_membership",
+                      "zhc_with_brand_management"):
+            result = intake.validate(base_intake(basis=basis))["entitlement"]
+            self.assertEqual(result["evidence_kind"], "caller_attested_string", basis)
+            self.assertIs(result["proves_purchase"], False, basis)
+            boundary = result["attestation_boundary"].lower()
+            self.assertIn("not proof of purchase", boundary, basis)
+            self.assertIn("declared", boundary, basis)
 
 
 class DocumentationTests(unittest.TestCase):
@@ -211,6 +216,7 @@ class DocumentationTests(unittest.TestCase):
             self.assertIn(seam, open_seams)
         self.assertEqual(open_seams.count("**Owner decision (open).**"), len(SEAM_IDS))
         self.assertEqual(open_seams.count("**Blocks:**"), len(SEAM_IDS))
+        self.assertEqual(open_seams.count("**Does not block:**"), len(SEAM_IDS))
 
 
 class CouncilPlanningTests(unittest.TestCase):
@@ -490,6 +496,16 @@ class PackageRecordTests(unittest.TestCase):
         self.assertTrue(manifest["offer_facts"])
         self.assertEqual(manifest["cross_sales"]["teaching"]["state"], "pending")
         self.assertIn("council-advice.json", self.out["receipt"]["council"]["advice_path"])
+
+    def test_the_manifest_carries_the_attestation_boundary_the_buyer_reads(self):
+        """The label must survive assembly, the surface a buyer actually reads."""
+        entitlement = self.out["manifest"]["entitlement"]
+        self.assertEqual(entitlement["evidence_kind"], "caller_attested_string")
+        self.assertIs(entitlement["proves_purchase"], False)
+        self.assertIn("Not proof of purchase", entitlement["attestation_boundary"])
+        on_disk = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["entitlement"]["attestation_boundary"],
+                         entitlement["attestation_boundary"])
 
     def test_clean_package_passes_every_check(self):
         self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
