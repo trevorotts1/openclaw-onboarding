@@ -1,0 +1,184 @@
+=== pin ===
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+
+=== run time (UTC) ===
+2026-10-24T22:13:47Z
+
+=== open pull requests (gh, live at run time) ===
+2549	batch/s75-b3	draft=false	2026-10-24T22:10:43Z	S75 batch 3: land accepted-but-unmerged T10 and T24
+2167	fix/update-skills-cp-r-preserve-symlinks	draft=false	2026-10-16T18:56:17Z	fix(update-skills): cp -R so macOS stops dereferencing a skill symlink and the version stamp can be written
+1889	fix/qc-falsefail-20261012	draft=false	2026-10-13T02:29:41Z	QC false-FAIL fix: personal-workspace skip + pointer-regex + Sunday owner-hold
+1702	fix/lipsync-process-LSP001	draft=false	2026-10-09T00:15:39Z	skill 75: approved lip-sync process (LSP001)
+1594	fix/kie-guard-bible-import	draft=true	2026-10-07T20:49:02Z	fix(kie): skill 75 style bible uses the shared prompt enforcer; unblocks red main (v26.4.3, skill 75 v2.4.1)
+1345	fix/rr-escalation-v4	draft=true	2026-09-28T23:37:49Z	fix(rescue): one escalation sender, section stamped into client AGENTS.md, box-carrying senders, lock takeover (v25.2.7)
+1165	fix/pd169-copy-is-the-slides-text	draft=false	2026-09-28T15:16:02Z	fix(pd-test-169): copy[] is the slide's TEXT, not a labelled form
+1083	codex/social-planner-private-links-20260909	draft=true	2026-09-10T00:17:37Z	Add verified private planner sheets and mini-app delivery instructions
+pr_list_rc=0
+
+=== remote heads ===
+    1901
+-- of which pb/* --
+       0
+
+=== local worktrees: branch vs detached ===
+BRANCH	/Volumes/mac	refs/heads/main
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-123/t-29
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-130/t-43-repair
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-131/t-46-repair
+BRANCH	/Volumes/mac	refs/heads/integ/pbb-041-batch
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-192/t-28
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-201/t-05
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-202/t-38
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-206/t01-inventory
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-207/t-20-repair
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-220/t-05
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-229/t-08
+DETACHED	/Volumes/mac
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-235/t-05
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-236/t01-inventory-rebase
+DETACHED	/Volumes/mac
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-122/t-28
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-177/t-04
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-132/t-14
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-113/t-16
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-134/t-17
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-115/t-19
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-142/t-20
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-143/t-21
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-136/t-23
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-119/t-25
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-145/t-26
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-146/t-27
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-137/t-28
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-138/t-29
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-139/t-38
+BRANCH	/Volumes/mac	refs/heads/pb/T-08/shared-contracts
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-067/t13-fulfillment
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-074/t36-idempotent-setup
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-068/t39-compat
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-069/t42-traces
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-130/t-43
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-131/t-46
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-070/t47-compat-proof
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-077/f39-clock
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-090/frontdoor-argv
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-083/t01-inventory
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-093/t01-inventory
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-101/t01-inventory
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-109/t01-inventory
+BRANCH	/Volumes/mac	refs/heads/pb/T-06b/brief-approval-binding
+BRANCH	/Volumes/mac	refs/heads/pb/T-06c/load-trust-boundary
+BRANCH	/Volumes/mac	refs/heads/pb/T-08b2/f5-adjudication
+BRANCH	/Volumes/mac	refs/heads/pb/T-08c/whitespace-gate
+BRANCH	/Volumes/mac	refs/heads/pb/T-08d/format-chars
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-081/t36-idem
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-078/t39-cas
+BRANCH	/Volumes/mac	refs/heads/batch/pbb-099-integration
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+BRANCH	/Volumes/mac	refs/heads/pb/QC-PBB-069/t42-qc
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+DETACHED	/Volumes/mac
+BRANCH	/Volumes/mac	refs/heads/pb/PBB-062/t01-inventory
+
+=== local worktree totals ===
+total_worktrees=      93
+attached_to_branch=53
+detached=40
+
+=== local pb/* branches ===
+pb/PBB-062/t01-inventory ad1a01ea25da26a94ec1ea679e05af1dfd7c77c0
+pb/PBB-067/t13-fulfillment d117da5ce8205b998bb3d7357dacf22f44f597ab
+pb/PBB-068/t39-compat 8ed3f6fbdf0115fb0b598fdeb5d64ed212ced2fb
+pb/PBB-069/t42-traces 277a3f043851bac7dd521909e48daa6b49e8d754
+pb/PBB-070/t47-compat-proof 21ce26aebe01ba506ee1af388de15d21e3b7c3ae
+pb/PBB-074/t36-idempotent-setup b6d8a42622a97fe35e203edc03740cf7392999f3
+pb/PBB-077/f39-clock 84f7658c3b4cabd5cee8b87b8cf19bc11222ad58
+pb/PBB-078/t39-cas dd185a0496d556452a9182fad4050268eb15301a
+pb/PBB-081/t36-idem a699effcdfbb0a624f9fd992dcffb683f10f7bde
+pb/PBB-083/t01-inventory 5bebbaf058bb5e457a102b371a8ec995fe827651
+pb/PBB-090/frontdoor-argv 5378a2d2b59da70350c7074b0fd6ad26841bf3a2
+pb/PBB-093/t01-inventory 9ed7985a3a469ea3a8017d99702420d7a029daf1
+pb/PBB-101/t01-inventory 925c01f426d9973535abe00e0dfcb9ca4b9c58f7
+pb/PBB-109/t01-inventory 00a8db3cd58122f1ae53c922b9766db33e6d4b48
+pb/PBB-112/t-14 2d5942e28c73d0c37477ed695209ae2fab81e781
+pb/PBB-113/t-16 2d679b209e580cf8b3ec0508634a83f771c5b143
+pb/PBB-114/t-17 5e8b38b9ccb6cd4522ccc2b2b0d30af5f57ea05c
+pb/PBB-115/t-19 c3906b923f62208adb15661781e609f335f1fae7
+pb/PBB-116/t-23 129bbf6b8b460911312ae01eec4eaa79e35cc3b1
+pb/PBB-117/t-20 e8cc412b038f3165f73a110b47dd8f6020e176b2
+pb/PBB-118/t-21 d0581e2064ad82929453d4555a2cd31280b408bd
+pb/PBB-119/t-25 ead48c654ff16bcc9c5de1cb683cf9637662b38b
+pb/PBB-120/t-26 76d80bc95a54e28b4950d0d756ec901ae21ba0cf
+pb/PBB-121/t-27 01f18e01b778484ccfcc0cf08bf95e7ee2de417d
+pb/PBB-122/t-28 c1c991f8f19542f39888a33d79f64f11ed1b7e96
+pb/PBB-123/t-29 3bb737341dfecd36769ae8cf87d9944ba2258a2b
+pb/PBB-124/t-38 b2a5c762cea07520f0e6b9122ad214114a4ee26a
+pb/PBB-130/t-43 b5a39964859dcd0fd1babbbfac4c8887233ec3f0
+pb/PBB-130/t-43-repair d32103b2f32571c16e82504e92e845e28bb21432
+pb/PBB-131/t-46 64fa09cfafa840e74d0ddcfcbca5dc9d63e7bab1
+pb/PBB-131/t-46-repair fe72a421cce304f8ea4e8202ff15c504b4da28b4
+pb/PBB-132/t-14 ffd6cc970bf7132e868ae7fbb5b8e39d2930496e
+pb/PBB-133/t-16 2f5c8cb16da9bc00c5408edc964da60132e496b8
+pb/PBB-134/t-17 6395572224bceb90d2203b4fb46686a87fe15738
+pb/PBB-135/t-19 cc79b30dbf56cc4634f678622123b392c29d792b
+pb/PBB-136/t-23 15e7b22d5cf660a51f01b5fc905d698f87bc8348
+pb/PBB-137/t-28 370b968aeaf8850044361ea64b5d861400f1fd27
+pb/PBB-138/t-29 a9725fcdbc8bbf5b9acf22de2546cce4f029227f
+pb/PBB-139/t-38 868b89492c5e5ca8b321758f9426a3a19a299166
+pb/PBB-142/t-20 b6f8c3626c635904de28daa9722eed0dc00724fe
+pb/PBB-143/t-21 a8084d45cfba5474a458f36e091311c0539b77e4
+pb/PBB-145/t-26 bd6fbd7ebf5d8fc8b659b37d5ff0f66dc6d509b7
+pb/PBB-146/t-27 d4f0b1a48f642d0e3397b6d0b1f9888290858c15
+pb/PBB-177/t-04 702d6e4cdb4e1b4737c48cd8359c8905d427e2bb
+pb/PBB-192/t-28 74ca36d59be4b4d9a6d852f676072e3dd33c8949
+pb/PBB-201/t-05 ec423c3e1533d010f8381e0da7c28e5507ff0ae4
+pb/PBB-202/t-38 868b89492c5e5ca8b321758f9426a3a19a299166
+pb/PBB-206/t01-inventory f30866c1faab0f2624448eedc84fda617814b240
+pb/PBB-207/t-20-repair b6f8c3626c635904de28daa9722eed0dc00724fe
+pb/PBB-220/t-05 e7f5d98a7f586de249789047ebcd1ae6b3f0ba6f
+pb/PBB-229/t-08 b0e5ee7f3f7974df32121f437d0ce7e9e86ea4d7
+pb/PBB-235/t-05 27b5f15fb4c86a7e2773c73364c1554762fa997d
+pb/PBB-236/t01-inventory-rebase 9ed73df16ec55dacf503ab0d01603544ea58469f
+pb/QC-PBB-069/t42-qc 277a3f043851bac7dd521909e48daa6b49e8d754
+pb/T-06b/brief-approval-binding 2209b2870c2a4401ff6887ce230876c21f5158e1
+pb/T-06c/load-trust-boundary 4286832a9a8e9ae6362db2003fdc76e3b707610e
+pb/T-08/shared-contracts 053c4fee91a3adc63231dc6212262e5c4e8b6a0d
+pb/T-08b2/f5-adjudication 7c05a16aaf28183b2c2cd8046691ab56d079d46f
+pb/T-08c/whitespace-gate aa1a27bcbaf8ba89e3c461566f731ba634bb0fbd
+pb/T-08d/format-chars 6b4e659e9eb915274156876dd966a68ab5545148
+local_pb_branch_count=      60

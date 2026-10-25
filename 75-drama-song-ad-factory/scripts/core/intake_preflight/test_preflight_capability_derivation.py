@@ -67,6 +67,8 @@ CAPS_OK = {"media": ["music", "lyrics", "voiceover", "clips", "assembly"],
 
 
 def _payload(**over):
+    # These are unbound dependency fixtures. Scope + four picks deliberately
+    # do not impersonate a confirmed run or authorize a production stage.
     p = {"auth": {"scope": "campaign"}, "summary_digest": "t",
          "card_receipt": _card_receipt(), "env": dict(ENV_OK),
          "capabilities": json.loads(json.dumps(CAPS_OK))}
@@ -144,8 +146,10 @@ def test_empty_lists_derive_real_checks_and_never_pass():
                   "after" in (rep.get("rerun") or {}) and
                   rep["rerun"]["after"].get("ffmpeg-binary") is True,
                   json.dumps(rep.get("rerun"), default=str)[:300])
-            check("post-repair result is preflight-pass",
-                  rep["result"].get("reason_code") == "preflight-pass",
+            check("post-repair dependencies pass without production authority",
+                  rep["result"].get("reason_code") == "preflight-pass-dependencies" and
+                  rep["result"].get("readiness") == "dependencies-only" and
+                  rep["result"].get("production_admitted") is False,
                   "%s/%s" % (rep["result"].get("outcome"),
                              rep["result"].get("reason_code")))
         finally:
@@ -178,8 +182,10 @@ def test_explicit_checks_keep_working():
                   "%s/%s" % (r.get("reason_code"), r.get("missing")))
             r = P.check(_payload(tools=["ffmpeg"], modules=[],
                                  credentials=["KIE_API_KEY"], env=dict(ENV_OK)))
-            check("explicit satisfied lists still reach preflight-pass",
-                  r.get("reason_code") == "preflight-pass",
+            check("explicit satisfied lists verify dependencies without production authority",
+                  r.get("reason_code") == "preflight-pass-dependencies" and
+                  r.get("readiness") == "dependencies-only" and
+                  r.get("production_admitted") is False,
                   "%s/%s" % (r.get("outcome"), r.get("reason_code")))
         finally:
             os.environ["PATH"] = old_path
@@ -254,8 +260,10 @@ def test_missing_ffmpeg_detected_before_use_with_plan_and_rerun():
                   rep["rerun"]["before"].get("ffmpeg-binary") is False and
                   rep["rerun"]["after"].get("ffmpeg-binary") is True,
                   json.dumps(rep.get("rerun"), default=str)[:300])
-            check("post-repair preflight passes",
-                  rep["result"].get("reason_code") == "preflight-pass",
+            check("post-repair dependency preflight passes without production authority",
+                  rep["result"].get("reason_code") == "preflight-pass-dependencies" and
+                  rep["result"].get("readiness") == "dependencies-only" and
+                  rep["result"].get("production_admitted") is False,
                   repr(rep["result"].get("reason_code")))
         finally:
             os.environ["PATH"] = old_path
@@ -307,8 +315,10 @@ def test_missing_asr_detected_and_required_never_optional():
                 check("module install records a launcher-verify probe",
                       any("launcher_verify" in a for a in rep.get("attempts", [])),
                       json.dumps(rep.get("attempts"), default=str)[:300])
-                check("post-repair preflight passes with ASR satisfied",
-                      rep["result"].get("reason_code") == "preflight-pass",
+                check("ASR repair verifies dependencies without production authority",
+                      rep["result"].get("reason_code") == "preflight-pass-dependencies" and
+                      rep["result"].get("readiness") == "dependencies-only" and
+                      rep["result"].get("production_admitted") is False,
                       repr(rep["result"].get("reason_code")))
             finally:
                 sys.path.remove(mods)

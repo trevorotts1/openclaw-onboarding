@@ -1,0 +1,73 @@
+{
+  "style_id": "acoustic-pop",
+  "label": "Acoustic Pop",
+  "description": "warm acoustic guitar, clear storytelling, and a catchy sung chorus.",
+  "catalog_revision": "2026-10-24",
+  "recipe_revision": "1.0.0",
+  "deliveries": ["spoken", "sung"],
+  "client_references": {
+    "artists": ["Ed Sheeran", "Jason Mraz"],
+    "explanation": "Warm acoustic-guitar pop with a conversational lead and a catchy sung chorus."
+  },
+  "production_traits": {
+    "musical_identity": "warm acoustic pop built on fingerpicked steel-string acoustic guitar, clear conversational storytelling and a catchy sung chorus",
+    "instrumentation": [
+      "fingerpicked steel-string acoustic guitar carrying the song",
+      "warm rounded electric bass",
+      "hand percussion, shaker and tambourine",
+      "restrained kick and snare, brushes under the verses",
+      "small upright piano entering at the first opening",
+      "single vocal harmony on the final chorus"
+    ],
+    "avoided_instrumentation": [
+      "wall of distorted electric guitars",
+      "orchestral trailer percussion",
+      "constant trap hi-hat pattern",
+      "synthetic all-purpose pop backing"
+    ],
+    "rhythm": "relaxed pocket, steady backbeat, guitar articulation carrying the groove",
+    "tempo": {
+      "min_bpm": 80,
+      "max_bpm": 112,
+      "meter": "4/4",
+      "note": "relaxed pocket; slower end for an intimate verse, faster end only when the story is already moving"
+    },
+    "vocal_delivery": "close, conversational and melodic lead with crisp consonants and modest embellishment, dry upfront vocal",
+    "energy_map": {
+      "consequence": "small guitar figure alone under the spoken line",
+      "obstacle": "clearer strum and warm bass enter when action becomes necessary",
+      "choice": "drums pull back to leave the decision exposed",
+      "change": "full strum, bass and shaker lift after the specific decision",
+      "hook": "sung chorus opens only after the decision",
+      "cta": "last chorus thins back to voice and guitar"
+    },
+    "hook_guidance": "compact repeated melodic phrase in the chorus that carries the emotional change; chorus lines shorter than verse lines; final return supports one CTA",
+    "spoken_sung_split": "spoken lines carry the consequence and bridging narration; verses are melodic and the chorus is sung; no rap passages",
+    "delivery_constraints": "keep the lead intelligible over the guitar, no vocal effect that blurs words, preserve the selected language, gender and accent",
+    "word_fit": "fit lyric phrases to natural guitar breathing, shorter chorus lines than verses, never machine-gun delivery to reach duration",
+    "mood_policy": "story_selected",
+    "story_energy": "warm and forward-leaning, with the lift earned by the decision rather than by the arrangement alone",
+    "duration_guidance": {
+      "60": "one verse, one chorus and the CTA; the spoken opener and the chorus both survive intact",
+      "90": "verse into chorus, a short second verse after the turn, final chorus and CTA",
+      "120": "two verse-chorus passes, a stripped bridge before the change, full final chorus",
+      "180": "add a second concrete scene and a guitar-only break before the decision",
+      "300": "three developed scenes, a quiet third verse, one earned key lift in the last chorus",
+      "600": "full narrative arc with instrumental answers between scenes; new consequential beats, never repeated filler"
+    },
+    "examples": [
+      "A customer closes the bakery door; one dry spoken line names the loss, then warm strums support the owner's decision to ask for help."
+    ]
+  },
+  "section_hint": "[Verse] conversational, [Pre-Chorus] strum opens, [Chorus] sung and warm, [Outro] one CTA",
+  "negative_constraints": [
+    "no distorted guitar wall",
+    "no orchestral trailer hits",
+    "no constant hi-hat roll",
+    "no imitation of a named performer's voice"
+  ],
+  "test_ids": [
+    "test_acoustic_pop_compiles_warm_acoustic_traits",
+    "test_acoustic_pop_is_distinct_from_folk_and_country"
+  ]
+}

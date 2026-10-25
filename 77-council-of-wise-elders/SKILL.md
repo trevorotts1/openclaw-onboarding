@@ -1,5 +1,5 @@
 ---
-version: 1.0.54
+version: 1.0.55
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -186,16 +186,32 @@ counsel artifact.
    the context does not state as an explicit unknown, and never runs
    past its 2000-word cap. Ask only the next material missing question.
    Preserve unknowns and show the prepared brief.
-4. Ask the client which model the council should use. Run
-   `blackceo-council routes` and list the options it returns, then offer
-   the default for the harness you are running in, and say which it is:
-   the claude-nine configured default on claude-nine, Sonnet on Claude
-   Code, or the latest DeepSeek Flash on DeepSeek (the exact id is
-   resolved from the provider's model list at the moment of the run, so
-   it is never an older pinned Flash). Never pick a model silently. If
-   the client names a route or model, pass it with `--route` and
-   `--model`. If the client says to use the default, pass nothing and the
-   detected harness decides (`--harness` overrides detection).
+4. Resolve the model route from the CALLING agent first, then the
+   runtime. The routes `blackceo-council routes` returns are the council
+   runtime's own configured providers on this box — they are NOT the
+   calling agent's models, and they must never be presented as if they
+   were (never list claude-nine, Claude Code, or DeepSeek options to an
+   OpenClaw client whose agent runs on a different provider).
+   a. Read the calling agent's configured provider and model from its own
+      environment: in OpenClaw, `openclaw agents list` (the agent's
+      `Model:` line, `<provider>/<model>`); on claude-nine or Claude Code,
+      the harness's configured default. Never guess it.
+   b. Run `blackceo-council routes` (or `models --json`). If a route
+      matches the caller's provider family, offer THAT as the default and
+      say plainly: "your agent's provider is <provider>, and the council
+      runs it through <route>".
+   c. If NO route matches the caller's provider, say exactly this and
+      stop: "The council runtime on this box is configured with: <the
+      routes it returned>. None of those is your agent's model
+      (<provider>/<model>), so I cannot run the council on it. Choose one
+      of those routes for the council, or configure <provider> for the
+      council runtime." Ask that one question with those names only.
+   d. Never pick a model silently. If exactly one usable route exists and
+      the client already said to use the default, use it and say which.
+   e. If the client names a route or model, pass it with `--route` and
+      `--model`. If the client says "my default" and a matching route
+      exists, pass nothing and let the detected harness decide
+      (`--harness` overrides detection).
 4a. When the question depends on current facts (prices, laws, markets,
    news, a competitor, anything that changes), research the web before
    convening. Use your own web tools, keep each finding as a short claim
