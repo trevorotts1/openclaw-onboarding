@@ -9,6 +9,32 @@
   },
   "budgets": {
     "max_provider_requests_per_session": 50,
+    "modes": {
+      "light": {
+        "cap": 50,
+        "max_rounds": 2,
+        "min_rounds": 2,
+        "planned_requests": 6,
+        "seats": 3,
+        "stop_from_round": null
+      },
+      "medium": {
+        "cap": 50,
+        "max_rounds": 4,
+        "min_rounds": 1,
+        "planned_requests": 36,
+        "seats": 9,
+        "stop_from_round": 1
+      },
+      "heavy": {
+        "cap": 100,
+        "max_rounds": 10,
+        "min_rounds": 3,
+        "planned_requests": 90,
+        "seats": 9,
+        "stop_from_round": 3
+      }
+    },
     "planned_full_council_requests": {
       "brief_preparation": 1,
       "planned_total": 33,
@@ -22,7 +48,12 @@
       "verdict_composition": 1
     },
     "repair_reconciliation_allowance": 9,
-    "rule": "Worst-case total can never exceed 50. A retry counts against the session ceiling. When a request's completion is uncertain it is recorded as unknown and never replayed to make a display green.",
+    "rule": "The provider-request cap is light 50, medium 50, heavy 100 per session; the four older modes keep 50. A retry counts against the session cap. When a request's completion is uncertain it is recorded as unknown and never replayed to make a display green.",
+    "stop_rule": {
+      "consensus_lead_points": 1.5,
+      "consensus_min_seats": 7,
+      "panel_seats": 9
+    },
     "transport_retry_allowance": 8
   },
   "diagnostic_error_states": [
