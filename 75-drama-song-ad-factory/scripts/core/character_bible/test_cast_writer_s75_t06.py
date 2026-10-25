@@ -765,16 +765,15 @@ HOMOGLYPH_DISGUISES = [
 #: name and a surname that are both ordinary English words, and names whose
 #: only vowel is accented.
 REAL_NAMES_RESTORED = [
-    "Dvo\u0159\u00e1k", "Beyonc\u00e9", "Cher", "Plato", "Aristotle",
-    "Rihanna", "Shakira", "Zendaya",
+    "Dvo\u0159\u00e1k", "Beyonc\u00e9",
     "Mary A. Fields", "Harry S. Truman", "Marcus A. Bell", "Tom T. Hall",
     "Ann S. Drake", "Mary I. Fields", "Mary S. Fields", "Mary T. Fields",
     "J. Smith", "J. Baker", "J. Ewing", "J. Riley", "J. Presley", "J. Manning",
     "Will Smith", "John May", "Mark May", "May Baker", "May Smith",
     "Grace Smith", "Pearl Rose", "Mara Bell", "A. J. Marchetti",
-    "Liam N\u00ed Chonaill", "Kim Ng", "Ng Wei", "Tr\u1ea7n Th\u1ecb Hoa",
+    "Liam N\u00ed Chonaill", "Kim Ng", "Tr\u1ea7n Th\u1ecb Hoa",
     "L\u00fd Minh", "Nguyen Van Anh", "Zo\u00eb Salda\u00f1a",
-    "Priya Raghunathan", "Nnamdi Obi", "Wei Zhang", "Beyonc\u00e9 Knowles",
+    "Priya Raghunathan", "Wei Zhang", "Beyonc\u00e9 Knowles",
     "Renata Cruz-Whitfield", "Dana Woman", "Theresa Manager",
     "Erik Narratorsson", "Officer Dan Whitfield",
 ]
@@ -848,26 +847,108 @@ def test_a_restored_real_name_authors_a_complete_cast():
 #: added here.
 KNOWN_STILL_REFUSED_NAMES = [
     "Art Bell", "Drew Fox", "Pearl Green", "Madonna", "Sade",
+    # S75-T06 round 9.  A LONE opaque token is the missing-cast bypass the
+    # round-8 verdict named ('Balawir', 'Bedek', 'Buj', 'Cazomum'), and it is
+    # the same shape as these.  'Cher', 'Plato', 'Aristotle', 'Rihanna',
+    # 'Shakira' and 'Zendaya' carry no curated-name entry and no accent, so
+    # they now sit in the residual with 'Madonna' instead of being pinned as
+    # accepted.  The cure is a NAME_LEXICON entry, not a rule.
+    "Cher", "Plato", "Aristotle", "Rihanna", "Shakira", "Zendaya",
+    # 'Ng Wei' and 'Nnamdi Obi' are [opaque head][three-letter readable tail]
+    # -- literally the shape of 'Uber Man' and 'Uber Dee', which S75-A06
+    # requires to be refused.  'wei' and 'obi' read as ordinary words only
+    # because the 1913 lexicon carries those proper nouns.
+    "Ng Wei", "Nnamdi Obi",
+    # 'Art Stanford' and its family: 'stanford' decomposes as 'stan'+'ford',
+    # two substantial entries of the 1913 lexicon (both proper nouns there),
+    # so the whole token reads as an ordinary compound and no token is opaque.
+    "Art Stanford", "Pearl Stanford", "Summer Stanford",
 ]
 #: A title the name lexicon does not carry in front of a surname it does not
 #: carry: indistinguishable from "Nguyen Van Anh", which must stay accepted.
 KNOWN_STILL_ACCEPTED_DESCRIPTORS = ["Senorita Gomez", "Fr\u00e4ulein Schmidt"]
 
+#: S75-T06 round 9.  The generic-extra family the round-8 verdict named and the
+#: length ladder around it.  Every one of these ends in a generic head of three
+#: letters or fewer.
+GENERIC_EXTRAS = [
+    "Uber Man", "Uber Guy", "Uber Boy", "Wifi Guy", "Wifi Man",
+    "Podcast Guy", "Bitcoin Bro", "Startup Kid", "Tiktok Kid",
+    "Snazzy Car", "Uber Dee", "Uber Gal",
+]
+GENERIC_EXTRA_LADDER = [
+    "Uber Abe", "Uber Ann", "Uber App", "Uber Bar", "Uber Bus", "Uber Cab",
+    "Uber Car", "Uber Cat", "Uber Dog", "Uber Kid", "Uber Pod", "Uber Pub",
+    "Uber Van", "Uber Star", "Uber Boss", "Uber Crew", "Uber Team",
+    "Uber Club", "Uber Site", "Uber Home", "Uber Work", "Uber Store",
+    "Uber Shop", "Uber Driver", "Uber Worker", "Uber Rider", "Uber Eater",
+    "Uber Guy Friend", "Wifi Password", "Podcast Host", "Muchacho Grande",
+]
+
+#: MY OWN invented tokens for this round -- deterministic CV/CVC coinages that
+#: are in no lexicon and in no earlier round's corpus.  Seed 770314.
+INVENTED_TOKENS = [
+    "Balawir", "Bedek", "Buj", "Cazomum", "Begibir", "Buponpe", "Defurpus",
+    "Fogolfun", "Fumomra", "Gemrur", "Dosmume", "Tifodar", "Zulkem",
+]
+
 def test_the_declared_residual_is_exactly_what_the_rule_says_it_is():
+    """The residual is BOUNDED, and pinned at both ends.
+
+    Not merely "these two are accepted" -- round 8 was criticised for asserting
+    a known defect as expected behaviour.  The assertion here is that the ONLY
+    descriptors that get through are the two declared ones, so widening the
+    hole breaks this test.
+    """
     for name in KNOWN_STILL_REFUSED_NAMES:
         for field in ("display_name", "character_id"):
             assert _is_refused(name, field), (name, field)
     for name in KNOWN_STILL_ACCEPTED_DESCRIPTORS:
         for field in ("display_name", "character_id"):
             assert not _is_refused(name, field), (name, field)
+    for described in GENERIC_EXTRAS + GENERIC_EXTRA_LADDER:
+        for field in ("display_name", "character_id"):
+            assert _is_refused(described, field), (described, field)
+
+def test_an_opaque_single_token_is_not_a_person_identity():
+    """THE missing-cast bypass.  A lone token clears profile_defects in both
+    positions only on positive designator evidence, never on "it is not a
+    dictionary word"."""
+    for invented in INVENTED_TOKENS:
+        for field in ("display_name", "character_id"):
+            assert _is_refused(invented, field), (invented, field)
+            assert _is_refused(invented.casefold(), field), (invented, field)
+            assert _is_refused(invented.upper(), field), (invented, field)
+
+def test_the_generic_extra_family_is_closed_in_both_positions():
+    for described in GENERIC_EXTRAS:
+        for field in ("display_name", "character_id"):
+            assert _is_refused(described, field), (described, field)
+
+def test_a_family_name_that_happens_to_end_in_er_still_stands():
+    """Round 8 refused fourteen 'Summer <surname>' rows because 'summer' ends
+    in the agentive 'er'.  A stem that is not ordinary English is not a role
+    form."""
+    for name in ("Summer Delgado", "Summer Zhang", "Summer Whitfield",
+                 "Summer Marchetti"):
+        for field in ("display_name", "character_id"):
+            assert not _is_refused(name, field), (name, field)
+    for described in ("Trader Joe", "Barista Teenager", "Mixologist Barback",
+                      "Tech Blogger", "Sommelier Barback", "Youtuber Vlogger"):
+        for field in ("display_name", "character_id"):
+            assert _is_refused(described, field), (described, field)
 
 def test_the_rule_still_carries_no_descriptor_vocabulary():
-    with open(os.path.join(HERE, "cast_writer.py"), "r", encoding="utf-8") as handle:
-        source = handle.read()
-    for forbidden in ("GENERIC_DESCRIPTOR_HEADS", "ANONYMOUS_SPEAKERS",
-                      "_DETERMINERS", "_TITLE_HEADS", "_FUNCTION_WORDS",
-                      "_DESCRIPTIVE_SUFFIX"):
-        assert forbidden not in source, forbidden
+    """S75-T06 round 9: scan BOTH leased modules.  Round 8 grepped only
+    cast_writer.py while every word list this unit can add lives in
+    real_content.py, so the assertion could not have noticed."""
+    for module in ("cast_writer.py", os.path.join("..", "real_content.py")):
+        with open(os.path.join(HERE, module), "r", encoding="utf-8") as handle:
+            source = handle.read()
+        for forbidden in ("GENERIC_DESCRIPTOR_HEADS", "ANONYMOUS_SPEAKERS",
+                          "_DETERMINERS", "_TITLE_HEADS", "_FUNCTION_WORDS",
+                          "_DESCRIPTIVE_SUFFIX"):
+            assert forbidden not in source, (module, forbidden)
 
 if __name__ == "__main__":
     failures = 0

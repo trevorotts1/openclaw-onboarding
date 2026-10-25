@@ -445,7 +445,13 @@ def _english_form(low):
         # Both halves substantial words, and neither half a curated NAME: "blue"
         # + "tooth" is a compound word, "raghu" + "nathan" is a personal name
         # and must not be read as ordinary English.
-        if (len(head) >= 4 and len(tail) >= 4
+        #
+        # S75-T06 round 9: the head half may be three letters ("bar" + "back"
+        # -> "barback"), which is the coined-head case the descriptor family
+        # hides behind.  The NAME_LEXICON guard is what keeps "Raghunathan"
+        # ("raghu" + "nathan") out of this reading; "Stanford" ("stan" + "ford")
+        # is NOT kept out, and is a declared residual of this rule.
+        if (len(head) >= 3 and len(tail) >= 4
                 and head not in NAME_LEXICON and tail not in NAME_LEXICON
                 and _ordinary_word(head) and _ordinary_word(tail)):
             return True
@@ -505,9 +511,35 @@ _AGENTIVE_SUFFIX = (
 
 
 def _agentive(tok):
+    """The token denotes a KIND OF PERSON by its own form.
+
+    S75-T06 round 9.  A bare ending is not a role form: "summer", "winner",
+    "dinner", "corner", "ladder", "scholar" and "quarter" all end in ``er`` and
+    none of them denotes a kind of person -- they are ordinary English words
+    that happen to carry the letters.  A token is agentive on one of two
+    positive observations about its form:
+
+    * it is transparently built on an English stem ("walk" -> "walker",
+      "trad"/"trade" -> "trader");
+    * or it is a COINED role form -- it carries the ending and is not an
+      ordinary English word in its own right ("blogger", "vlogger",
+      "mixologist", "teenager").
+
+    This keeps "Trader Joe", "Dog Walker", "Tech Blogger" and "Mixologist
+    Barback" descriptive while letting "Summer Delgado", "Summer Zhang" and
+    "Summer Whitfield" keep their family names.  It is morphology on the token's
+    own form and names no occupation a cast member might hold.
+    """
     low = tok.casefold()
-    return any(low.endswith(sfx) and len(low) > len(sfx) + 2
-               for sfx in _AGENTIVE_SUFFIX)
+    for sfx in _AGENTIVE_SUFFIX:
+        if not low.endswith(sfx) or len(low) <= len(sfx) + 2:
+            continue
+        stem = low[:-len(sfx)]
+        if _english_form(stem) or _english_form(stem + "e"):
+            return True
+        if not _ordinary_word(low) and not _english_form(low):
+            return True
+    return False
 
 
 def _category_word(tok):
@@ -572,12 +604,21 @@ def _ledger_name(tok):
 def _name_prefix(toks):
     """The string opens with a personal-name FRAME: a single capital initial
     ("J."), a title, a curated first name ("Dana"), or a modal homograph
-    ("May", "Will").  Structural only -- an accent is not a frame."""
+    ("May", "Will") in front of a family name.  Structural only -- an accent is
+    not a frame.
+
+    S75-T06 round 9: a MODAL is a name frame only where there is a frame to
+    fill, i.e. in the given-name position of a string that also carries a
+    family-name slot.  Standing alone, "Can", "Must", "Shall", "Should",
+    "Would", "Could" and "Might" are not people; "May Smith" and "Will Smith"
+    are, and they keep their family name.
+    """
     for tok in toks:
         if _initial(tok) or _honorific(tok):
             return True
         low = tok.casefold()
-        return low in NAME_LEXICON or low in _MODAL_CLASS
+        return (low in NAME_LEXICON
+                or (low in _MODAL_CLASS and len(toks) >= 2))
     return False
 
 
@@ -597,8 +638,8 @@ def personal_name_prefix(toks):
         if _initial(tok) or _honorific(tok):
             return True
         low = tok.casefold()
-        return (low in NAME_LEXICON or low in _MODAL_CLASS
-                or bool(_orthographic_marker(tok)))
+        return (low in NAME_LEXICON or bool(_orthographic_marker(tok))
+                or (low in _MODAL_CLASS and len(toks) >= 2))
     return False
 
 
@@ -626,15 +667,18 @@ def person_name_ok(value):
     5. ``R_COIN``  an opaque coinage or brand ("Uber", "Podcast", "Wifi") in the
        given-name position with a common noun in the family-name position
        ("Uber Driver", "Podcast Host", "Muchacho Grande") is a product, not a
-       person;
+       person; ``R_COIN_HEAD`` closes the short-head case of the same reading
+       ("Uber Man", "Uber Dee", "Snazzy Car"), which round 8 left open;
     6. ``R_MOD``   ordinary English in the given-name position plus a
        person-forming word in the family-name position ("Dog Walker", "Tech
        Blogger", "Content-Creator") is a job, not a name;
     7. ``R_LEDGER``  a curated surname anywhere ("Renata Cruz-Whitfield",
        "A. J. Marchetti") settles the question;
-    8. ``R_FREE``  "J. Baker", "Plato", "Priya Raghunathan", "Ng Wei" and
-       "Nguyen Van Anh" carry a name frame, an accent, or a token that denotes
-       no category at all.
+    8. ``R_FREE``  "J. Baker", "Priya Cruz", "Priya Raghunathan" and "Nguyen
+       Van Anh" carry a name frame, an accent, or a family-name slot that is
+       not a category.  A LONE token passes only on positive designator
+       evidence ("Homer", "Beyonce"), never on "it is not a dictionary word",
+       which is absence and is the missing-cast bypass round 9 closes.
 
     The only vocabularies consulted are the grammatical closure of function
     words (``CLOSED_CLASS``), a curated LEXICON OF NAMES used solely as positive
@@ -642,14 +686,25 @@ def person_name_ok(value):
     a KIND of thing, and the story-role nouns this module already ships for
     ``episode_role``.  There is no list of what a cast member might be called.
 
-    KNOWN RESIDUAL, S75-T06 round 8: a title the lexicon does not carry
+    KNOWN RESIDUAL, S75-T06 round 9: a title the lexicon does not carry
     ("Señorita", "Fräulein", "Sensei") in front of a surname the lexicon does
     not carry ("Gomez", "Schmidt", "Tanaka") is indistinguishable from "Nguyen
     Van Anh" by any list-free rule -- both are two opaque name-shaped words.
     Deciding that needs a LEXICON OF TITLES, which is a vocabulary and is not
-    added here.  The same limit refuses a real name whose every word is an
-    ordinary English word and none is in the shipped name lexicon ("Art Smith",
-    "Pearl Green", "Madonna").
+    added here.  Two further limits are the same limit in a different place,
+    and both are the curated NAME_LEXICON being 1,188 entries rather than the
+    whole onomasticon:
+
+    * a family-name slot of three letters or fewer that carries no name
+      evidence ("Ng", "Ngo", "Anh", "Thi", "Hoa", "Wei", "Lim") is refused,
+      because "Bitcoin Bro", "Uber App" and "Uber Bro" are the same shape;
+    * a name whose every word is an ordinary English word and none is in the
+      shipped name lexicon ("Art Smith", "Pearl Green", "Art Stanford",
+      "Madonna") is refused, because "Old Man" and "Podcast Host" are the
+      same shape.
+
+    Closing either needs curated name entries, not a rule.  The ``NAME_LEXICON``
+    data file is not this module and is not in the round-9 lease.
     """
     toks = tokens(value)
     if not 1 <= len(toks) <= 4:
@@ -702,6 +757,24 @@ def person_name_ok(value):
             and _english_word(core[-1].casefold())):
         return False
 
+    # R_COIN_HEAD -- S75-T06 round 9.  Round 8 carved "a surname of three
+    # letters or fewer is never a category" out of R_COIN, and that one carve-out
+    # is the whole generic-extra family: every one of 'Uber Man', 'Uber Guy',
+    # 'Uber Boy', 'Uber Gal', 'Uber Dee', 'Uber Ann', 'Uber Abe', 'Uber Car',
+    # 'Uber Kid', 'Uber Bro', 'Uber App', 'Wifi Guy', 'Wifi Man', 'Podcast Guy',
+    # 'Snazzy Car', 'Startup Kid' and 'Tiktok Kid' ends in a head of three
+    # letters or fewer.  A coinage in the given-name position is a product at
+    # EVERY tail length, so the short case joins the long one here.  The tail
+    # must be READABLE for this limb: "Ng Wei", "Nnamdi Obi" fire it because
+    # "wei" and "obi" sit in the 1913 lexicon, while "Ngo", "Pham", "Anh",
+    # "Bro" and "App" denote nothing and fall through to R_FREE.
+    if (len(core) >= 2 and core[0].casefold() not in NAME_LEXICON
+            and not _orthographic_marker(core[0])
+            and _opaque(core[0].casefold())
+            and not _opaque(core[-1].casefold())
+            and len(core[-1]) < 4):
+        return False
+
     # R_MOD -- "Dog Walker", "Tech Blogger", "Content-Creator".
     if (len(core) >= 2 and core[0].casefold() not in NAME_LEXICON
             and core[0].casefold() not in _MODAL_CLASS
@@ -714,16 +787,41 @@ def person_name_ok(value):
     if any(_ledger_name(t) for t in core):
         return True
 
-    # R_FREE -- "J. Baker", "Plato", "Priya Raghunathan", "Ng Wei" and "Nguyen
-    # Van Anh" are names; "Podcast Host" and "Barista Teenager" are phrases.
+    # R_FREE -- "J. Baker", "Priya Raghunathan", "Priya Cruz", "Saoirse Ní
+    # Chonaill" and "Nguyen Van Anh" are names; "Podcast Host", "Barista
+    # Teenager", "Tech Blogger" and "Bitcoin Bro" are phrases.
+    #
+    # S75-T06 round 9.  Two limbs of this fallback were reading ABSENCE as
+    # evidence, which is the one thing this module's own polarity forbids:
+    #
+    #   * ONE token passed on "it is not a category word".  That is the
+    #     missing-cast bypass: 253 of 300 invented tokens ("Balawir", "Bedek",
+    #     "Buj", "Cazomum") cleared profile_defects as display_name AND
+    #     character_id, where the base commit accepted none.  A lone token now
+    #     needs positive designator evidence.
+    #   * the family-name slot passed on "fewer than four letters", which let a
+    #     coinage with any short generic head through ("Uber Man", "Bitcoin
+    #     Bro").  A family-name slot now needs to be a name, a full word slot,
+    #     or at least as long as the shortest family names that carry no
+    #     evidence ("Cruz", "Pham").
+    #
+    # Name evidence outranks the category reading, because the 1913 lexicon
+    # carries proper nouns: "Whitfield", "Walker", "Taylor", "Lynch", "Wells"
+    # and "Ashford" are ordinary words there and curated surnames here.
     if len(core) == 1:
-        if _name_prefix(stripped):
-            return True
-        return not _category_word(core[0])
+        # the frame can sit OUTSIDE the core -- "J. Baker" is one core token
+        # behind an initial, "Dr Maya" one behind a title.
+        return designator_evidence(core[0]) or _name_prefix(stripped)
     if _name_prefix(core) or personal_name_prefix(core):
         return True
-    return (any(_opaque(t.casefold()) for t in core)
-            and (len(core[-1]) < 4 or not _category_word(core[-1])))
+    if not any(_opaque(t.casefold()) for t in core):
+        return False
+    tail = core[-1]
+    if designator_evidence(tail) or len(core) >= 3:
+        return True
+    if _category_word(tail):
+        return False
+    return len(tail) >= 4
 
 
 def story_role_ok(value):
