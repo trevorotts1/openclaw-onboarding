@@ -79,10 +79,11 @@ unweighted, deterministic, and never inferred from a timestamp.
    three open cruxes, typed fact, numbers, values, or execution.
 6. **Later challenge rounds.** Medium may run up to round 4 and heavy up
    to round 10. Each later round re-derives the open cruxes from the
-   previous round's cards, runs one request per seat, then one synthesis
-   request, and is entered only when the stop rule has not fired. Light
-   never runs a round after round 2. Round numbering is carried in the
-   job descriptor and on each advisor card.
+   previous round's cards and runs one request per seat, and is entered
+   only when the stop rule has not fired. Light never runs a round after
+   round 2. Round numbering is carried in the job descriptor and on each
+   advisor card. No chair synthesis request is made between these rounds:
+   the runtime derives the cruxes deterministically from the cards.
 7. **Ratification.** One request, after the rounds, for the four older
    modes only. `informational_revote` for direction and thresholds,
    `final_decision` for the bounded ratification mode. Light, medium and
@@ -113,18 +114,19 @@ unweighted, deterministic, and never inferred from a timestamp.
 The cap is per session and depends on the size: light 50, medium 50,
 heavy 100. The four older modes keep 50.
 
-- **Light.** 6 seat requests (3 openings, 3 challenges) + 2 chair
-  requests (brief, one synthesis) + 1 verdict + 1 quotation validation
-  = 10 planned, inside a cap of 50. Light runs no ratification and no
-  later round.
-- **Medium.** Up to 4 rounds x 9 seats = 36 seat requests + 4 chair
-  syntheses + 1 brief + 1 verdict + 1 quotation validation = 43
-  planned, inside a cap of 50.
-- **Heavy.** Up to 10 rounds x 9 seats = 90 seat requests + 10 chair
-  syntheses + 1 brief + 1 verdict + 1 quotation validation = 103
-  planned. The round loop therefore stops at the 100-request cap, which
-  is the only enforced limit; a heavy sitting that reaches the cap
-  reports it rather than exceeding it.
+For light, medium and heavy a provider request is one seat answering one
+round. The runtime makes no chair, synthesis, verdict or quotation
+provider request for these sizes: the brief, the cruxes, the draft and
+the verdict are composed deterministically from the frozen brief and the
+advisor cards. The planned counts are therefore exactly the seat
+requests:
+
+- **Light.** 3 seats x 2 rounds = 6 planned, inside a cap of 50. Light
+  runs no ratification and no later round.
+- **Medium.** Up to 4 rounds x 9 seats = 36 planned, inside a cap of 50.
+- **Heavy.** Up to 10 rounds x 9 seats = 90 planned, inside a cap of
+  100. A heavy sitting that reaches the cap stops there and reports it
+  rather than exceeding it.
 - **Full council (unchanged).** 27 seat requests (9 openings, 9
   challenges, 9 responses) + 4 chair requests (brief, two syntheses,
   verdict) + 2 pipeline requests (ratification, quotation validation)

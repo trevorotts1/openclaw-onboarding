@@ -574,6 +574,27 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       interactive_confirmation: true,
       expected_session_id: sessionId,
     });
+    // A fallback route needs its own approved grant: the grant's route
+    // pin is a security invariant, so a grant approved on the primary
+    // snapshot admits nothing on the fallback snapshot. Both grants carry
+    // the same mode ceilings; the budget service counts reservations per
+    // session, so the fallback never doubles the cap.
+    let fallbackGrantId: string | undefined;
+    if (fallback.snapshot !== null) {
+      const fallbackPreview = grants.previewRun(deps.envelope, {
+        session_id: sessionId,
+        purpose: 'council_run',
+        route_snapshot: fallback.snapshot,
+        route_policy_sha256: canonicalHash({ route_snapshot: fallback.snapshot }),
+        ceilings,
+      });
+      fallbackGrantId = grants.approveRun(deps.envelope, fallbackPreview.preview_id, {
+        principal: deps.principal,
+        authority_mode: 'local_interactive_owner',
+        interactive_confirmation: true,
+        expected_session_id: sessionId,
+      }).grant_id;
+    }
 
     mkdirSync(dirname(deps.auditLogPath), { recursive: true });
     appendFileSync(
@@ -586,6 +607,7 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
         selection_source: resolved.selection_source,
         harness: resolved.harness,
         grant_id: grant.grant_id,
+        fallback_grant_id: fallbackGrantId ?? null,
         requested_by: input.requested_by,
         approval_basis: APPROVAL_BASIS,
       })}\n`,
@@ -602,6 +624,7 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
           route_snapshot: resolved.snapshot,
           parallel_limit: parallelLimit,
           fallback_route_snapshot: fallback.snapshot,
+          fallback_grant_id: fallbackGrantId,
         });
       } catch (error) {
         settled = { status: 'error', code: errorCode(error) };
