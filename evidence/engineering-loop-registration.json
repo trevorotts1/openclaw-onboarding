@@ -93,7 +93,8 @@
    "native_job_id": "gui/501/ai.blackceo.pb-eng-loop",
    "command": "launchctl print gui/501/ai.blackceo.pb-eng-loop >/dev/null 2>&1",
    "rc": 0,
-   "raw": "gui/501/ai.blackceo.pb-eng-loop = { active count = 1; path = /Users/blackceomacmini/Library/LaunchAgents/ai.blackceo.pb-eng-loop.plist; type = LaunchAgent; state = running; arguments include tick --run-id pb-eng-loop-20261024T0807Z-g2 }",
+   "raw": "gui/501/ai.blackceo.pb-eng-loop = { active count = 1; path = /Users/{{operatorHome}}/Library/LaunchAgents/ai.blackceo.pb-eng-loop.plist; type = LaunchAgent; state = running; arguments include tick --run-id pb-eng-loop-20261024T0807Z-g2 }",
+   "raw_redaction": "Exactly one substitution in the raw launchctl line above: the real home-directory component of the plist path is rendered as the placeholder {{operatorHome}} (repo rule: no real operator or client names in tracked files; placeholder form follows the accepted set named in scripts/qc-assert-no-client-names.sh's remedy text: {{ownerName}}, Sample Company, {{agentName}}; {{operatorHome}} matches the {{...}} placeholder shape and is not in ALWAYS_ON_TOKENS). Everything else is byte-identical to what launchctl print returned: user domain gui/501, label ai.blackceo.pb-eng-loop, active count = 1, type = LaunchAgent, state = running, and the arguments tail 'tick --run-id pb-eng-loop-20261024T0807Z-g2' including the run id and generation suffix. The directory shape /Library/LaunchAgents/<label>.plist is unchanged and is the standard macOS user LaunchAgent location, so the record stays truthful and generalisable.",
    "claim": "Observed present and running. Not modified, not stopped, not re-registered by this build."
   },
   "duplicate_job_preflight": {
