@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -37,6 +38,23 @@ import receipt as R  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
 RUNNER = os.path.join(HERE, "facet_runner.py")
+
+_HEX40 = re.compile(r"^[0-9a-f]{40}$")
+
+# The N999 side is pinned to a NAMED REVISION, never to a live working tree.
+# Round 3 mis-measured six of nine N999 cells because this resolver walked into
+# a checkout that sat 55 commits behind its own origin/main and reported it as
+# the candidate. A path derived from a commit sha cannot do that: it is either
+# provisioned at that revision or it does not exist.
+# ponytail: one pin is enough while only one N999 revision is under measurement;
+# upgrade to a pins manifest when a second revision must be judged side by side.
+N999_PIN_REPOSITORY = "trevorotts1/999-setup"
+N999_PIN_REVISION = "33ef8ec5b17e171b646926ccb4ec77ee5e865d49"
+N999_PIN_ROOT = os.path.join(HERE, "pins", "999-setup", N999_PIN_REVISION)
+
+# The harness writes its own receipts here. Its own output is not candidate
+# drift, so it is excluded from the dirt check and the exclusion is recorded.
+_INSTRUMENT_OUTPUT = os.path.join("evidence", "acceptance")
 
 
 def _git(repo, *args):
@@ -52,37 +70,127 @@ def _first_existing(paths):
     return None
 
 
-def resolve_flavors(repo_root, args, order):
-    """Map each contract flavor to a candidate skill root; keep every path checked."""
+def _pinned_revision_of(path):
+    """The 40-hex revision an extracted tree is named by, or None."""
+    probe = path
+    while probe and probe != os.path.dirname(probe):
+        if _HEX40.match(os.path.basename(probe)):
+            return os.path.basename(probe)
+        probe = os.path.dirname(probe)
+    return None
+
+
+def revision_gate(root):
+    """Provenance of a resolved skill root. Refuses an unmeasurable one.
+
+    A live working tree is mutable and can look like an ordinary directory while
+    sitting 55 commits behind its own origin/main - the exact mechanism that
+    mis-reported eight S75-A32 cells in round 3. So a root is measurable only if
+    it is a pinned archive named by its revision, or a clean worktree whose HEAD
+    is a revision that exists on origin. Anything else is REFUSED, and every
+    reason is recorded here so the refusal cannot be silent.
+    """
+    gate = {"root": root, "status": "UNRESOLVED", "mode": None,
+            "revision": None, "revision_source": None,
+            "clean_excluding_instrument_output": None, "at_origin_main": None,
+            "is_origin_revision": None, "violations": []}
+    if not root:
+        gate["status"] = "REFUSED"
+        gate["violations"].append("no candidate skill root resolved")
+        return gate
+
+    probe = root if os.path.isdir(root) else os.path.dirname(root)
+    while probe and not os.path.isdir(probe):
+        probe = os.path.dirname(probe)
+    rc, top, _ = _git(probe, "rev-parse", "--show-toplevel")
+    if rc != 0 or not top:
+        gate["mode"] = "extracted_tree"
+        revision = _pinned_revision_of(root)
+        if revision:
+            gate["revision"] = revision
+            gate["revision_source"] = "directory name of the extracted tree"
+            gate["status"] = "PINNED_REVISION"
+        else:
+            gate["status"] = "REFUSED"
+            gate["violations"].append(
+                "not inside a git worktree and no ancestor directory names a 40-hex "
+                "revision; an extracted tree must be named by the revision it was cut from")
+        return gate
+
+    gate["mode"] = "git_worktree"
+    _, head, _ = _git(probe, "rev-parse", "HEAD")
+    gate["revision"] = head or None
+    gate["revision_source"] = "git rev-parse HEAD in %s" % top
+    _, status_out, _ = _git(top, "status", "--porcelain", "--untracked-files=no")
+    dirty = [line for line in status_out.splitlines()
+             if line.strip() and not line[3:].strip().startswith(_INSTRUMENT_OUTPUT + os.sep)]
+    gate["clean_excluding_instrument_output"] = not dirty
+    if dirty:
+        gate["violations"].append(
+            "worktree is dirty (%d tracked change(s), excluding %s): %s"
+            % (len(dirty), _INSTRUMENT_OUTPUT,
+               ", ".join(line.strip() for line in dirty[:5])))
+    _, origin_main, _ = _git(top, "rev-parse", "--verify", "--quiet", "origin/main")
+    gate["at_origin_main"] = bool(origin_main) and origin_main == head
+    rc_c, contains, _ = _git(top, "branch", "-r", "--contains", head)
+    gate["is_origin_revision"] = bool(gate["at_origin_main"]) or (rc_c == 0 and bool(contains))
+    if not gate["is_origin_revision"]:
+        gate["violations"].append(
+            "HEAD %s is not origin/main and is not a revision that exists on origin"
+            % (head or "<none>"))
+    if gate["violations"]:
+        gate["status"] = "REFUSED"
+    else:
+        gate["status"] = "AT_ORIGIN_MAIN" if gate["at_origin_main"] else "ORIGIN_REVISION"
+    return gate
+
+
+def default_n999_candidates(args):
+    """Every N999 root that may be used, in order. No live working tree is one."""
     skill_rel = os.path.join(".claude", "skills", "drama-song-ad-factory")
-    n999_candidates = [
+    return [
         args.n999_skill_root,
         os.environ.get("S75_999_SKILL_ROOT"),
-        os.path.join(os.path.dirname(repo_root), "999-setup", skill_rel),
-        os.path.join(os.path.expanduser("~"), "999-setup", skill_rel),
+        os.path.join(N999_PIN_ROOT, skill_rel),
     ]
+
+
+def resolve_flavors(repo_root, args, order):
+    """Map each contract flavor to a candidate skill root; gate and record provenance."""
+    n999_candidates = default_n999_candidates(args)
     out = {}
     for flavor in order:
         if flavor == "onboarding":
             onb_candidates = [args.onb_skill_root, os.path.join(repo_root, "75-drama-song-ad-factory")]
-            out[flavor] = {
-                "skill_root": _first_existing(onb_candidates),
-                "sources_checked": [p for p in onb_candidates if p],
-            }
         else:
-            out[flavor] = {
-                "skill_root": _first_existing(n999_candidates),
-                "sources_checked": [p for p in n999_candidates if p],
-            }
+            onb_candidates = n999_candidates
+        root = _first_existing(onb_candidates)
+        out[flavor] = {
+            "skill_root": root,
+            "sources_checked": [p for p in onb_candidates if p],
+            "revision_gate": revision_gate(root),
+        }
     return out
 
 
 def run_flavor(flavor, flavor_info):
+    gate = flavor_info.get("revision_gate") or {}
+    if gate.get("status") == "REFUSED":
+        # Refuse to measure, and say so where it cannot be missed.
+        return {
+            "status": "UNAVAILABLE",
+            "reason": ("REFUSED - resolved skill root is not a measurable revision: "
+                       + "; ".join(gate.get("violations") or ["unstated"])),
+            "missing_sources_checked": flavor_info["sources_checked"],
+            "revision_gate": gate,
+            "facets": [],
+        }
     if not flavor_info["skill_root"]:
         return {
             "status": "UNAVAILABLE",
             "reason": "no candidate skill root exists for this flavor",
             "missing_sources_checked": flavor_info["sources_checked"],
+            "revision_gate": gate,
             "facets": [],
         }
     proc = subprocess.run(
@@ -198,8 +306,8 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
         for facet in F.RECEIPT_FACETS:
             not_executed.append({
                 "facet": facet,
-                "reason": "candidate skill root lacks the shared contracts; sources checked: "
-                          + ", ".join(missing),
+                "reason": ((payload.get("reason") or "candidate skill root lacks the shared contracts")
+                           + "; sources checked: " + ", ".join(missing)),
                 "class": "CANDIDATE_NOT_LANDED",
             })
     for row in cell_not_executed:
@@ -218,6 +326,7 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
             "checkout_commit": checkout_head,
             "head_verified_at_execution": head_verified,
             "worktree_clean_excluding_receipts": candidate_clean,
+            "revision_gate": flavor_info.get("revision_gate") or {},
             "filing_note": ("this commit is the head the facets executed at; the "
                             "commit that files this receipt is its child and "
                             "changes only this receipt"),
@@ -259,7 +368,10 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
         coverage=F.coverage(),
         author=args.author,
         checker=args.checker,
-        cells=cells,
+        # A refused or unprovisioned flavor never ran, so it has no cells; that is
+        # the shape validate() already allows, not a free pass - a flavor that DID
+        # run still has to supply all nine.
+        cells=cells or None,
     )
 
 
@@ -309,6 +421,10 @@ def main(argv=None):
     failures = 0
     written = []
     for flavor in order:
+        gate = flavors[flavor].get("revision_gate") or {}
+        print("%-10s REVISION GATE %-13s revision=%s %s"
+              % (flavor, gate.get("status", "?"), gate.get("revision") or "-",
+                 ("violations: " + "; ".join(gate["violations"])) if gate.get("violations") else ""))
         payload = run_flavor(flavor, flavors[flavor])
         receipt = build_receipt(flavor, repo_root, args, payload, {
             "repository": repositories[flavor],

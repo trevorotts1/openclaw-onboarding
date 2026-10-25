@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -312,6 +313,121 @@ def test_receipt_refuses_a_cell_count_mismatch():
 def test_cell_instruments_discriminate():
     """A control that cannot go red is worthless; prove the predicates can."""
     assert C.selfcheck() is True
+
+
+# --- the revision pin (repair round 3) ------------------------------------
+# Round 3 measured six of nine N999 cells from a working tree sitting 55 commits
+# behind its own origin/main. These checks are the ones that make a silent stale
+# resolution impossible: take the pin out and they go red.
+
+import run_acceptance as RA  # noqa: E402
+
+
+def _git_run(path, *args):
+    return subprocess.run(["git", "-C", path] + list(args),
+                          capture_output=True, text=True, check=True)
+
+
+def _seed_tree(path):
+    """A one-commit worktree whose origin/main already holds that commit."""
+    os.makedirs(path)
+    _git_run(path, "init", "-q")
+    _git_run(path, "config", "user.email", "s75-t32@example.invalid")
+    _git_run(path, "config", "user.name", "S75-T32 self-check")
+    with open(os.path.join(path, "skill.txt"), "w") as fh:
+        fh.write("head\n")
+    _git_run(path, "add", "skill.txt")
+    _git_run(path, "commit", "-q", "-m", "seed")
+    head = _git_run(path, "rev-parse", "HEAD").stdout.strip()
+    _git_run(path, "update-ref", "refs/remotes/origin/main", head)
+    return head
+
+
+def test_resolve_flavors_refuses_a_dirty_checkout():
+    """A dirty root is refused, and the refusal records why."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = os.path.join(tmp, "skill")
+        _seed_tree(root)
+        with open(os.path.join(root, "skill.txt"), "a") as fh:
+            fh.write("uncommitted drift\n")
+        flavors = RA.resolve_flavors(
+            tmp, types.SimpleNamespace(onb_skill_root=root, n999_skill_root=None),
+            ["onboarding"])
+        gate = flavors["onboarding"]["revision_gate"]
+        assert gate["status"] == "REFUSED", gate
+        assert any("dirty" in line for line in gate["violations"]), gate["violations"]
+        payload = RA.run_flavor("onboarding", flavors["onboarding"])
+        assert payload["status"] == "UNAVAILABLE", payload["status"]
+        assert payload["reason"].startswith("REFUSED"), payload["reason"]
+        assert payload["revision_gate"]["violations"], "a refusal that states no reason is silent"
+        # and the refusal survives into the receipt, where it cannot be missed
+        receipt = RA.build_receipt(
+            "onboarding", root,
+            types.SimpleNamespace(base_ref="origin/main", candidate=None,
+                                  author="S75-T32 self-check", checker=None),
+            payload,
+            {"repository": "trevorotts1/openclaw-onboarding", "skill_root": root},
+            flavors["onboarding"])
+        assert receipt["execution"]["verdict"] == "UNAVAILABLE"
+        assert receipt["candidate"]["commit"] is None
+        assert receipt["candidate"]["revision_gate"]["status"] == "REFUSED"
+        assert any("REFUSED" in row["reason"] for row in receipt["not_executed"])
+
+
+def test_resolve_flavors_refuses_a_stale_non_origin_revision():
+    """The round-3 defect exactly: a clean tree that origin has never seen."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = os.path.join(tmp, "skill")
+        _seed_tree(root)                      # origin/main == HEAD here
+        with open(os.path.join(root, "skill.txt"), "a") as fh:
+            fh.write("55 commits of drift\n")
+        _git_run(root, "add", "skill.txt")
+        _git_run(root, "commit", "-q", "-m", "drift not on origin")
+        flavors = RA.resolve_flavors(
+            tmp, types.SimpleNamespace(onb_skill_root=root, n999_skill_root=None),
+            ["onboarding"])
+        gate = flavors["onboarding"]["revision_gate"]
+        assert gate["status"] == "REFUSED", gate
+        assert gate["is_origin_revision"] is False, gate
+        assert gate["at_origin_main"] is False, gate
+        assert any("origin" in line for line in gate["violations"]), gate["violations"]
+        payload = RA.run_flavor("onboarding", flavors["onboarding"])
+        assert payload["reason"].startswith("REFUSED"), payload["reason"]
+
+
+def test_resolve_flavors_accepts_a_clean_origin_revision():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = os.path.join(tmp, "skill")
+        _seed_tree(root)
+        gate = RA.revision_gate(root)
+        assert gate["status"] in ("AT_ORIGIN_MAIN", "ORIGIN_REVISION"), gate
+        assert gate["violations"] == [], gate["violations"]
+
+
+def test_extracted_tree_is_measurable_only_when_named_by_its_revision():
+    with tempfile.TemporaryDirectory() as tmp:
+        anonymous = os.path.join(tmp, "tree")
+        os.makedirs(anonymous)
+        assert RA.revision_gate(anonymous)["status"] == "REFUSED"
+        pinned = os.path.join(tmp, "pins", "999-setup", RA.N999_PIN_REVISION, "skill")
+        os.makedirs(pinned)
+        gate = RA.revision_gate(pinned)
+        assert gate["status"] == "PINNED_REVISION", gate
+        assert gate["revision"] == RA.N999_PIN_REVISION
+
+
+def test_default_n999_root_is_pinned_to_a_revision_not_a_live_tree():
+    """THE PIN. Remove it - or point the default back at ~/999-setup - and this fails."""
+    assert RA._pinned_revision_of(RA.N999_PIN_ROOT) == RA.N999_PIN_REVISION
+    assert RA.N999_PIN_ROOT == os.path.join(HERE, "pins", "999-setup",
+                                            RA.N999_PIN_REVISION)
+    default = os.path.join(RA.N999_PIN_ROOT, ".claude", "skills",
+                           "drama-song-ad-factory")
+    candidates = RA.default_n999_candidates(
+        types.SimpleNamespace(n999_skill_root=None))
+    built_in = [c for c in candidates
+                if c not in (None, os.environ.get("S75_999_SKILL_ROOT"))]
+    assert built_in == [default], built_in
 
 
 if __name__ == "__main__":
