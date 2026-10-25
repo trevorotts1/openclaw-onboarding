@@ -1,7 +1,7 @@
 ---
 name: convert-and-flow-operator
 description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflow/ghl) gives the agent direct CRM access for contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, and workflow builds via internal API (no MCP overhead). Standard ops run on the PIT alone. Workflow writes additionally require the Firebase refresh token; when absent, falls through to Tier 4 agent-browser as the backstop. Write-safe by default (dry-run, draft-only, location whitelist, approval gate).
-version: v2.1.24
+version: v2.1.25
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
@@ -450,3 +450,5 @@ discoverability.
     WF-1..21)
 
 > **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's build path relates to Skill 38 and its backstop rail relates to Skill 3.
+
+> **Build-only, never a responder (T-19):** this skill builds and QC's the GHL workflow that renders interactive controls; it **never answers a conversation or an interactive step**. The single-owner rule — OpenClaw inbound by default, with rendered controls, provider callbacks, free text and stale taps all resolving to that one owner — lives in `38-conversational-ai-system/launch/interactive-owner-contract.md`. A native GHL workflow node is a build artifact, not a second responder.
