@@ -43,7 +43,9 @@ included:
 import json
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -55,9 +57,11 @@ for p in (str(HERE), str(TOOLS_DIR)):
 
 from route_adapter import (  # noqa: E402
     ALLOW,
+    BASIS_CONSENT_RECORD,
     BASIS_CROSS_CHANNEL_MESSAGE,
     BASIS_INBOUND_MESSAGE,
     BASIS_OUTBOUND_MESSAGE,
+    BASIS_PLATFORM_ELIGIBILITY,
     CAP_COMMENT_PRIVATE_OPENER,
     CAP_COMMENT_PUBLIC_REPLY,
     CAP_DM_SEND,
@@ -72,6 +76,7 @@ from route_adapter import (  # noqa: E402
     InstagramEvent,
     InstagramRouteError,
     InstagramRouteStore,
+    OpenerState,
     PURPOSE_AI_REPLY,
     PURPOSE_CAPTURE_REMINDER,
     PURPOSE_COMMENT_PRIVATE_OPENER,
@@ -189,10 +194,12 @@ class _StoreCase(unittest.TestCase):
         event = make_dm_event(provider_event_id=provider_event_id,
                               thread_key=thread_key, **over)
         admission = admit_instagram_event(self.store, event,
+                                          account=make_account(),
                                           own_actor_ids=own_actor_ids)
         return self.routes.record_customer_interaction(
             tenant_id="tenant-1", account_id="ig-acct-1",
             thread_key=thread_key, provider_event_id=provider_event_id,
+            account=make_account(),
             event=event, admission=admission, own_actor_ids=own_actor_ids,
             now=now)
 
@@ -327,8 +334,8 @@ class SeparateEventTests(unittest.TestCase):
     def test_duplicate_event_is_admitted_once(self):
         event = make_comment_event()
         store = self.store_for_test()
-        first = admit_instagram_event(store, event)
-        second = admit_instagram_event(store, event)
+        first = admit_instagram_event(store, event, account=make_account())
+        second = admit_instagram_event(store, event, account=make_account())
         self.assertTrue(first["admitted"])
         self.assertFalse(second["admitted"])
         self.assertEqual(second["reason"], "duplicate")
@@ -336,15 +343,27 @@ class SeparateEventTests(unittest.TestCase):
     def test_own_and_outgoing_events_are_excluded(self):
         store = self.store_for_test()
         own = make_dm_event(actor_id="ourselves")
-        result = admit_instagram_event(store, own, own_actor_ids=("ourselves",))
+        result = admit_instagram_event(store, own, account=make_account(),
+                                       own_actor_ids=("ourselves",))
         self.assertFalse(result["admitted"])
         self.assertEqual(result["reason"], "excluded:own_actor")
 
         outgoing = make_comment_event(provider_event_id="evt-out-1",
                                       direction="outbound")
-        result = admit_instagram_event(store, outgoing)
+        result = admit_instagram_event(store, outgoing, account=make_account())
         self.assertFalse(result["admitted"])
         self.assertIn("excluded:direction", result["reason"])
+
+    def test_the_bound_account_actor_is_excluded_with_no_caller_list(self):
+        # Defect 4, the whole class: ownership used to be a hand-kept id set,
+        # so an unchanged caller admitted our OWN outbound activity as if it
+        # were a customer's. The authoritative account record now supplies it.
+        store = self.store_for_test()
+        account = make_account()
+        ours = make_dm_event(actor_id=account.ig_user_id)
+        result = admit_instagram_event(store, ours, account=account)
+        self.assertFalse(result["admitted"])
+        self.assertEqual(result["reason"], "excluded:own_actor")
 
     def test_a_bare_string_own_actor_ids_is_refused_before_the_inbox(self):
         # A bare string was read as its own characters, so our own actor
@@ -353,11 +372,13 @@ class SeparateEventTests(unittest.TestCase):
         own = make_dm_event(actor_id="ourselves")
         for bare in ("ourselves", b"ourselves", bytearray(b"ourselves")):
             with self.assertRaises(InstagramRouteError) as caught:
-                admit_instagram_event(store, own, own_actor_ids=bare)
+                admit_instagram_event(store, own, account=make_account(),
+                                      own_actor_ids=bare)
             self.assertIn("own_actor_ids", str(caught.exception), bare)
         # Nothing reached the inbox: the first real admission is not a
         # duplicate, and our own actor is still excluded.
-        result = admit_instagram_event(store, own, own_actor_ids=("ourselves",))
+        result = admit_instagram_event(store, own, account=make_account(),
+                                       own_actor_ids=("ourselves",))
         self.assertFalse(result["admitted"])
         self.assertEqual(result["reason"], "excluded:own_actor")
 
@@ -371,9 +392,11 @@ class SeparateEventTests(unittest.TestCase):
             customer = make_dm_event(provider_event_id="cust-%d" % i)
             ids = list(ids)
             self.assertEqual(admit_instagram_event(
-                store, own, own_actor_ids=ids)["reason"], "excluded:own_actor")
+                store, own, account=make_account(),
+                own_actor_ids=ids)["reason"], "excluded:own_actor")
             self.assertTrue(admit_instagram_event(
-                store, customer, own_actor_ids=ids)["admitted"])
+                store, customer, account=make_account(),
+                own_actor_ids=ids)["admitted"])
 
     def store_for_test(self):
         tmp = tempfile.TemporaryDirectory(prefix="ig-inbox-")
@@ -631,7 +654,10 @@ class IgnoredOpenerTests(_StoreCase):
             tenant_id="tenant-1", account_id="ig-acct-1",
             thread_key="thread-1", opener_action_id="act-opener-2", now=20.0)
         self.assertFalse(created_again)
-        self.assertEqual(second["opener_action_id"], "act-opener-1")
+        # Defect 3: one public method, one return type on every path.
+        self.assertIsInstance(first, OpenerState)
+        self.assertIsInstance(second, OpenerState)
+        self.assertEqual(second.opener_action_id, "act-opener-1")
         state = OpenerStateOf(self.routes)
         verdict = evaluate_eligibility(
             account=self.account, purpose=PURPOSE_COMMENT_PRIVATE_OPENER,
@@ -687,7 +713,8 @@ class VerifiedInteractionTests(_StoreCase):
 
     def assert_refused(self, **over):
         values = dict(tenant_id="tenant-1", account_id="ig-acct-1",
-                      thread_key="thread-1", now=20.0)
+                      thread_key="thread-1", account=make_account(),
+                      now=20.0)
         values.update(over)
         with self.assertRaises(InstagramRouteError) as caught:
             self.routes.record_customer_interaction(**values)
@@ -701,7 +728,8 @@ class VerifiedInteractionTests(_StoreCase):
     def test_a_dm_the_inbox_excluded_as_outbound_never_un_suppresses(self):
         outbound = make_dm_event(provider_event_id="dm-out-1",
                                  thread_key="thread-1", direction="outbound")
-        admission = admit_instagram_event(self.store, outbound)
+        admission = admit_instagram_event(self.store, outbound,
+                                          account=make_account())
         self.assertFalse(admission["admitted"])
         self.assert_refused(provider_event_id="dm-out-1", event=outbound,
                             admission=admission)
@@ -719,6 +747,7 @@ class VerifiedInteractionTests(_StoreCase):
         own = make_dm_event(provider_event_id="dm-own-1", thread_key="thread-1",
                             actor_id="ourselves")
         admission = admit_instagram_event(self.store, own,
+                                          account=make_account(),
                                           own_actor_ids=("ourselves",))
         self.assertFalse(admission["admitted"])
         self.assert_refused(provider_event_id="dm-own-1", event=own,
@@ -731,17 +760,20 @@ class VerifiedInteractionTests(_StoreCase):
         own = make_dm_event(provider_event_id="dm-own-bare-1",
                             thread_key="thread-1", actor_id="ourselves")
         with self.assertRaises(InstagramRouteError) as caught:
-            admit_instagram_event(self.store, own, own_actor_ids="ourselves")
+            admit_instagram_event(self.store, own, account=make_account(),
+                                  own_actor_ids="ourselves")
         self.assertIn("own_actor_ids", str(caught.exception))
         # Even handed a genuine admission of that DM, the record refuses the
         # bare string rather than reading it as letters.
-        admission = admit_instagram_event(self.store, own)
+        admission = admit_instagram_event(self.store, own,
+                                          account=make_account())
         self.assertTrue(admission["admitted"])
         for bare in ("ourselves", b"ourselves", bytearray(b"ourselves")):
             with self.assertRaises(InstagramRouteError) as caught:
                 self.routes.record_customer_interaction(
                     tenant_id="tenant-1", account_id="ig-acct-1",
                     thread_key="thread-1", provider_event_id="dm-own-bare-1",
+                    account=make_account(),
                     event=own, admission=admission, own_actor_ids=bare,
                     now=20.0)
             self.assertIn("own_actor_ids", str(caught.exception), bare)
@@ -773,7 +805,8 @@ class VerifiedInteractionTests(_StoreCase):
                               thread_key="thread-1")
         other = admit_instagram_event(
             self.store, make_dm_event(provider_event_id="dm-other-1",
-                                      thread_key="thread-1"))
+                                      thread_key="thread-1"),
+            account=make_account())
         self.assert_refused(provider_event_id="dm-mismatch-1", event=event,
                             admission=other)
         self.follow_up_is_still_ignored()
@@ -985,8 +1018,8 @@ class CommentOpenerTraceTests(_StoreCase):
         send = self.sender(log)
 
         # 1. The comment is admitted once, through the durable inbox.
-        first = admit_instagram_event(self.store, comment)
-        second = admit_instagram_event(self.store, comment)
+        first = admit_instagram_event(self.store, comment, account=account)
+        second = admit_instagram_event(self.store, comment, account=account)
         self.assertTrue(first["admitted"])
         self.assertFalse(second["admitted"])
 
@@ -1033,17 +1066,18 @@ class CommentOpenerTraceTests(_StoreCase):
             self.routes.record_customer_interaction(
                 tenant_id="tenant-1", account_id="ig-acct-1",
                 thread_key=comment.thread_key, provider_event_id="dm-reply-1",
-                now=4000.0)
+                account=account, now=4000.0)
 
         # 6. The customer answers and the inbox ADMITS the DM: that proof
         #    ends the ignored-opener state.
         reply = make_dm_event(provider_event_id="dm-reply-1",
                               thread_key=comment.thread_key)
-        admission = admit_instagram_event(self.store, reply)
+        admission = admit_instagram_event(self.store, reply, account=account)
         self.assertTrue(admission["admitted"])
         self.assertTrue(self.routes.record_customer_interaction(
             tenant_id="tenant-1", account_id="ig-acct-1",
             thread_key=comment.thread_key, provider_event_id="dm-reply-1",
+            account=account,
             event=reply, admission=admission, now=4000.0))
         retry_id = self.intent("trace-follow-2", purpose=PURPOSE_CAPTURE_REMINDER)
         sent = dispatch_instagram_action(
@@ -1080,7 +1114,7 @@ class VerifiedInteractionGuardTests(_StoreCase):
     def record(self, **over):
         values = dict(tenant_id="tenant-1", account_id="ig-acct-1",
                       thread_key="thread-1", provider_event_id="evt-dm-1",
-                      now=20.0)
+                      account=make_account(), now=20.0)
         values.update(over)
         return self.routes.record_customer_interaction(**values)
 
@@ -1103,7 +1137,8 @@ class VerifiedInteractionGuardTests(_StoreCase):
     def test_the_event_must_describe_the_interaction_being_recorded(self):
         # Same event id, a different thread: the pair is not this interaction.
         other = make_dm_event(thread_key="thread-2")
-        admission = admit_instagram_event(self.store, other)
+        admission = admit_instagram_event(self.store, other,
+                                          account=make_account())
         self.assert_refused_as("does not describe this interaction",
                                event=other, admission=admission)
 
@@ -1114,7 +1149,8 @@ class VerifiedInteractionGuardTests(_StoreCase):
 
     def test_our_own_event_actor_is_never_proof(self):
         own = make_dm_event(actor_id="ourselves")
-        admission = admit_instagram_event(self.store, own)
+        admission = admit_instagram_event(self.store, own,
+                                          account=make_account())
         self.assertTrue(admission["admitted"])
         self.assert_refused_as("is one of our own", event=own,
                                admission=admission,
@@ -1139,7 +1175,8 @@ class VerifiedInteractionGuardTests(_StoreCase):
     def test_the_admission_must_name_this_very_event(self):
         # A real admission, for a different event id.
         other = admit_instagram_event(
-            self.store, make_dm_event(provider_event_id="dm-other-row-1"))
+            self.store, make_dm_event(provider_event_id="dm-other-row-1"),
+            account=make_account())
         self.assert_refused_as("the admission belongs to another event",
                                event=make_dm_event(provider_event_id="dm-row-1"),
                                **{"provider_event_id": "dm-row-1"},
@@ -1151,8 +1188,9 @@ class VerifiedInteractionGuardTests(_StoreCase):
         # admitted/duplicate gate with an excluded row underneath it.
         outbound = make_dm_event(provider_event_id="dm-out-9",
                                  direction="outbound")
-        admit_instagram_event(self.store, outbound)
-        duplicate = admit_instagram_event(self.store, outbound)
+        admit_instagram_event(self.store, outbound, account=make_account())
+        duplicate = admit_instagram_event(self.store, outbound,
+                                          account=make_account())
         self.assertEqual(duplicate["reason"], "duplicate")
         self.assertEqual(duplicate["row"]["decision_ref"],
                          "excluded:direction=outbound")
@@ -1166,8 +1204,10 @@ class VerifiedInteractionGuardTests(_StoreCase):
         # of a REAL excluded row. `own_actor_ids` is empty here, so the later
         # own-actor guard cannot stand in for it: only `decision_ref` refuses.
         own = make_dm_event(provider_event_id="dm-own-10", actor_id="ourselves")
-        admit_instagram_event(self.store, own, own_actor_ids=("ourselves",))
+        admit_instagram_event(self.store, own, account=make_account(),
+                              own_actor_ids=("ourselves",))
         duplicate = admit_instagram_event(self.store, own,
+                                          account=make_account(),
                                           own_actor_ids=("ourselves",))
         self.assertEqual(duplicate["reason"], "duplicate")
         self.assertEqual(duplicate["row"]["decision_ref"], "excluded:own_actor")
@@ -1194,6 +1234,245 @@ class VerifiedInteractionGuardTests(_StoreCase):
         self.assertTrue(self.record_dm("dm-inverse-1", now=20.0))
         state = self.routes.opener_state("tenant-1", "ig-acct-1", "thread-1")
         self.assertTrue(state.customer_responded)
+
+
+class OpenerConcurrencyTests(_StoreCase):
+    """Defect 2 (PBB-259): "no second opener" must hold when workers RUN AT ONCE.
+
+    The sequential path was already solid. Under concurrency eligibility is
+    read-then-act: four workers each read "no opener" and all four sent. The
+    thread's one opener slot is now claimed by ONE conditional write in the
+    durable store, before dispatch.
+    """
+
+    def _race(self, count):
+        account = make_account()
+        comment = make_comment_event()
+        filter_ = make_filter()
+        action_ids = [self.intent("conc-%d" % i,
+                                  purpose=PURPOSE_COMMENT_PRIVATE_OPENER)
+                      for i in range(count)]
+        barrier = threading.Barrier(count)
+        # All workers that reach the gate wait for each other, so each one has
+        # read "no opener" before any of them records one. Timing alone would
+        # hide the race. A worker that never dispatches (a claim loser) lets
+        # the others through on timeout.
+        at_gate = threading.Barrier(count, timeout=2.0)
+        log = []
+        lock = threading.Lock()
+
+        def consent(ctx):
+            try:
+                at_gate.wait()
+            except threading.BrokenBarrierError:
+                pass
+            return allow_consent(ctx)
+
+        def worker(action_id):
+            store = DurableStore(self.db)
+            routes = InstagramRouteStore(self.db)
+            try:
+                def send(ctx):
+                    with lock:
+                        log.append(ctx["action_id"])
+                    return {"provider": "instagram",
+                            "provider_receipt_id": "rcpt-" + ctx["action_id"]}
+                barrier.wait()
+                return dispatch_instagram_action(
+                    store, account=account, route_store=routes,
+                    action_id=action_id, worker_id="worker-" + action_id,
+                    purpose=PURPOSE_COMMENT_PRIVATE_OPENER,
+                    channel=CHANNEL_IG_DM, thread_key=comment.thread_key,
+                    event=comment, filter_=filter_,
+                    capability=InstagramCapability(CAP_COMMENT_PRIVATE_OPENER),
+                    consent_evaluator=consent, sender=send, now=1000.0)
+            finally:
+                routes.close()
+                store.close()
+
+        with ThreadPoolExecutor(max_workers=count) as pool:
+            futures = [pool.submit(worker, a) for a in action_ids]
+            outcomes = [f.result() for f in futures]
+        return outcomes, log, comment
+
+    def test_four_concurrent_openers_produce_exactly_one_send(self):
+        outcomes, log, comment = self._race(4)
+        self.assertEqual(len(log), 1, [o.status for o in outcomes])
+        self.assertEqual([o.status for o in outcomes].count("sent"), 1,
+                         [o.status for o in outcomes])
+        state = self.routes.opener_state("tenant-1", "ig-acct-1",
+                                         comment.thread_key)
+        self.assertIsNotNone(state)
+        self.assertEqual(state.opener_action_id, log[0])
+
+    def test_every_losing_worker_sends_nothing_and_leaves_no_opener(self):
+        outcomes, log, comment = self._race(4)
+        losers = [o for o in outcomes if o.status != "sent"]
+        self.assertEqual(len(losers), 3, [o.status for o in outcomes])
+        for outcome in losers:
+            self.assertEqual(outcome.status, "refused_race_loss")
+            self.assertNotIn(outcome.action_id, log)
+            # Still queued: a later retry is re-evaluated, never dropped.
+            self.assertIn(self.store.get_action(outcome.action_id)["state"],
+                          ("queued", "suppressed"))
+        state = self.routes.opener_state("tenant-1", "ig-acct-1",
+                                         comment.thread_key)
+        self.assertEqual(state.opener_action_id, log[0])
+
+    def test_the_claim_is_refused_once_an_opener_row_exists(self):
+        self.routes.record_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", opener_action_id="act-opener", now=10.0)
+        self.assertFalse(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", claim_token="tok", action_id="act-2",
+            now=20.0))
+
+    def test_a_released_claim_can_be_taken_again(self):
+        self.assertTrue(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", claim_token="tok-1", action_id="act-1",
+            now=10.0))
+        self.assertFalse(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", claim_token="tok-2", action_id="act-2",
+            now=11.0))
+        self.assertTrue(self.routes.release_opener_claim(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", claim_token="tok-1", now=12.0))
+        self.assertTrue(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", claim_token="tok-2", action_id="act-2",
+            now=13.0))
+
+    def test_an_expired_claim_is_taken_over_by_a_live_worker(self):
+        # A crashed worker must not wedge the thread forever.
+        self.assertTrue(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", claim_token="dead", action_id="act-1",
+            now=10.0, lease_seconds=5.0))
+        self.assertFalse(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", claim_token="live", action_id="act-2",
+            now=14.0, lease_seconds=5.0))
+        self.assertTrue(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", claim_token="live", action_id="act-2",
+            now=16.0, lease_seconds=5.0))
+
+
+class NormaliseEventTrustBoundaryTests(unittest.TestCase):
+    """Defect 5 (PBB-259): provider payloads leave as OUR error class.
+
+    A malformed payload used to escape normalise_event() as a raw ValueError
+    (`float("abc")`), TypeError (`float([])`, `sorted()` on mixed key types)
+    or AttributeError. A caller that catches InstagramRouteError saw none of
+    them.
+    """
+
+    @staticmethod
+    def payload(**over):
+        values = dict(provider="instagram", provider_event_id="evt-1",
+                      tenant_id="tenant-1", account_id="ig-acct-1",
+                      kind=EVENT_COMMENT, direction="inbound",
+                      actor_id="customer-1", text="x",
+                      thread_key="comment-1", received_at=1000.0)
+        values.update(over)
+        return values
+
+    def test_malformed_provider_payloads_raise_the_domain_error(self):
+        def with_extra(*extra):
+            raw = self.payload()
+            for key, value in extra:
+                raw[key] = value
+            return raw
+
+        cases = [
+            ("non-numeric timestamp",
+             dict(self.payload(), received_at="not-a-number")),
+            ("list timestamp", dict(self.payload(), received_at=[1000.0])),
+            ("mapping timestamp", dict(self.payload(), received_at={"t": 1})),
+            ("mixed-type unknown keys", with_extra((1, "x"), ("zzz", "y"))),
+        ]
+        for label, raw in cases:
+            with self.assertRaises(InstagramRouteError, msg=label) as caught:
+                normalise_event(raw)
+            self.assertIn("bad_input", str(caught.exception), label)
+
+    def test_a_bool_is_not_a_timestamp(self):
+        with self.assertRaises(InstagramRouteError):
+            normalise_event(self.payload(received_at=True))
+
+    def test_a_valid_payload_still_normalises(self):
+        event = normalise_event(self.payload())
+        self.assertEqual(event.kind, EVENT_COMMENT)
+        self.assertEqual(event.received_at, 1000.0)
+
+
+class EligibilityBasisTests(unittest.TestCase):
+    """Defect 7 (PBB-259): the ALLOW record asserts only the basis supplied.
+
+    Every ALLOW used to report BASIS_INBOUND_MESSAGE even when the caller
+    offered CONSENT_RECORD or PLATFORM_ELIGIBILITY. The gate record therefore
+    asserted evidence the caller never offered.
+    """
+
+    def test_a_comment_allow_reports_the_offered_basis(self):
+        for basis in (BASIS_INBOUND_MESSAGE, BASIS_CONSENT_RECORD,
+                      BASIS_PLATFORM_ELIGIBILITY):
+            verdict = evaluate_eligibility(
+                account=make_account(), purpose=PURPOSE_PUBLIC_REPLY,
+                channel=CHANNEL_IG_PUBLIC, event=make_comment_event(),
+                filter_=make_filter(),
+                capability=InstagramCapability(CAP_COMMENT_PUBLIC_REPLY),
+                basis=basis)
+            self.assertTrue(verdict.allowed, basis)
+            self.assertEqual(verdict.basis, basis, basis)
+            self.assertEqual(verdict.refreshed_by, basis, basis)
+            self.assertEqual(verdict.as_gate_evidence()["basis"], basis, basis)
+
+    def test_a_comment_allow_never_claims_an_unoffered_inbound_message(self):
+        verdict = evaluate_eligibility(
+            account=make_account(), purpose=PURPOSE_PUBLIC_REPLY,
+            channel=CHANNEL_IG_PUBLIC, event=make_comment_event(),
+            filter_=make_filter(),
+            capability=InstagramCapability(CAP_COMMENT_PUBLIC_REPLY),
+            basis=BASIS_CONSENT_RECORD)
+        self.assertTrue(verdict.allowed)
+        self.assertNotEqual(verdict.basis, BASIS_INBOUND_MESSAGE)
+        self.assertNotEqual(verdict.refreshed_by, BASIS_INBOUND_MESSAGE)
+
+    def test_an_opener_allow_reports_the_offered_basis(self):
+        verdict = evaluate_eligibility(
+            account=make_account(), purpose=PURPOSE_COMMENT_PRIVATE_OPENER,
+            channel=CHANNEL_IG_DM, event=make_comment_event(),
+            filter_=make_filter(),
+            capability=InstagramCapability(CAP_COMMENT_PRIVATE_OPENER),
+            basis=BASIS_PLATFORM_ELIGIBILITY)
+        self.assertTrue(verdict.allowed)
+        self.assertEqual(verdict.basis, BASIS_PLATFORM_ELIGIBILITY)
+        self.assertEqual(verdict.refreshed_by, BASIS_PLATFORM_ELIGIBILITY)
+
+    def test_a_dm_allow_reports_the_offered_basis(self):
+        verdict = evaluate_eligibility(
+            account=make_account(), purpose=PURPOSE_AI_REPLY,
+            channel=CHANNEL_IG_DM, event=make_dm_event(),
+            capability=InstagramCapability(CAP_DM_SEND),
+            basis=BASIS_CONSENT_RECORD)
+        self.assertTrue(verdict.allowed)
+        self.assertEqual(verdict.basis, BASIS_CONSENT_RECORD)
+        self.assertEqual(verdict.refreshed_by, BASIS_CONSENT_RECORD)
+
+    def test_a_comment_refusal_also_reports_the_offered_basis(self):
+        verdict = evaluate_eligibility(
+            account=make_account(), purpose=PURPOSE_PUBLIC_REPLY,
+            channel=CHANNEL_IG_PUBLIC, event=make_comment_event(),
+            filter_=make_filter(),
+            capability=InstagramCapability(CAP_COMMENT_PUBLIC_REPLY,
+                                           granted=False),
+            basis=BASIS_PLATFORM_ELIGIBILITY)
+        self.assertFalse(verdict.allowed)
+        self.assertEqual(verdict.basis, BASIS_PLATFORM_ELIGIBILITY)
 
 
 class GuardCoverageTests(unittest.TestCase):

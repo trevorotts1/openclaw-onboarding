@@ -35,7 +35,17 @@ IGNORED OPENER, NO DRIP.  Once a private opener is recorded for a thread,
 every follow-up direct message is suppressed until the customer actually
 interacts: a verified inbound DM on that thread, proven by the event and the
 durable inbox admission that carries it. There is no timed drip and no second
-opener. The state is durable, so a restart changes nothing.
+opener. The state is durable, so a restart changes nothing. The "no second
+opener" half is enforced by an atomic claim in the durable store BEFORE
+dispatch, not by the eligibility read alone: four workers racing the same
+thread produce one send, not four.
+
+OWNERSHIP.  "Our own actor" is derived from the authoritative account record
+(its `ig_user_id`), never from a hand-kept id list a caller might forget. A
+caller may add further ids; it can never subtract the account's own.
+
+BASIS HONESTY.  A verdict reports the eligibility basis the CALLER supplied.
+It never substitutes a basis the caller did not offer.
 
 STOP AND HUMAN OWNER.  The upstream consent gate (consent_gate) decides every
 Instagram dispatch first: a global stop or a human taking the conversation
@@ -65,11 +75,17 @@ from __future__ import annotations
 import sqlite3
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2 adds ig_opener_claims (the opener mutual exclusion)
+
+# How long one worker's opener claim survives before another worker may take
+# the thread over. A crashed worker must not wedge a thread forever, and a
+# live worker's claim must outlast one provider call.
+DEFAULT_OPENER_CLAIM_S = 300.0
 
 PLATFORM_IG = "IG"
 PROVIDER_IG = "instagram"
@@ -200,24 +216,66 @@ def _text(value: Any, name: str, *, allow_none: bool = False) -> Optional[str]:
 
 
 def _ts(value: Optional[float]) -> float:
-    return time.time() if value is None else float(value)
+    """A timestamp, or now. Anything else is a domain error, never float().
+
+    Provider payloads are untrusted: `float("abc")` raises a raw ValueError
+    and `float([])` a raw TypeError. Both would escape this adapter's own
+    error class at the provider trust boundary.
+    """
+    if value is None:
+        return time.time()
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise InstagramRouteError(
+            "bad_input: timestamp must be a number, not %r" % (value,))
+    return float(value)
 
 
 def _revision(value: Any, name: str) -> str:
     return _id(value, name)
 
 
-def _own_actor_ids(value: Any) -> Iterable[str]:
-    """own_actor_ids is a collection of ids, never one bare value.
+def _extra_own_actor_ids(value: Any) -> Tuple[str, ...]:
+    """Validate caller-SUPPLIED extra own-actor ids (never the whole set).
 
     A bare string is iterated as its characters, so the exclusion set would
-    hold single letters and our own actor would pass as a customer.
+    hold single letters and our own actor would pass as a customer. This is
+    only the supplementary collection: the authoritative own actor is the
+    bound account's own `ig_user_id`, added in `_own_actor_set`.
     """
     if isinstance(value, (str, bytes, bytearray)):
         raise InstagramRouteError(
             "bad_input: own_actor_ids must be a collection of actor ids,"
             " not one bare value")
-    return value
+    return tuple(str(actor) for actor in value)
+
+
+def _own_actor_set(account: "InstagramAccount",
+                   extra_own_actor_ids: Any = ()) -> frozenset:
+    """The set of OUR OWN actor ids, derived from the authoritative record.
+
+    The bound account's own `ig_user_id` is the account record's statement of
+    who we are on Instagram. It is always in the set, so a caller cannot
+    forget it, cannot omit it, and cannot hand over a stale hand-kept list and
+    thereby admit our own outbound activity as a customer's. `own_actor_ids`
+    only ADDS further ids (for accounts behind a shared inbox); it can never
+    remove the authoritative one.
+    """
+    if not isinstance(account, InstagramAccount):
+        raise InstagramRouteError("bad_input: account must be InstagramAccount")
+    extra = _extra_own_actor_ids(extra_own_actor_ids)
+    return frozenset((account.ig_user_id,) + extra)
+
+
+def _assert_event_matches_account(account: "InstagramAccount",
+                                  event: Any) -> None:
+    """An event may only ever be judged against ITS OWN account record."""
+    if not isinstance(event, InstagramEvent):
+        raise InstagramRouteError("bad_input: event must be InstagramEvent")
+    if event.tenant_id != account.tenant_id or event.account_id != account.account_id:
+        raise InstagramRouteError(
+            "bad_input: %s (event %r/%r is not account %r/%r)"
+            % (R_EVENT_ACCOUNT_MISMATCH, event.tenant_id, event.account_id,
+               account.tenant_id, account.account_id))
 
 
 # ── separate account ───────────────────────────────────────────────────────
@@ -408,35 +466,51 @@ def normalise_event(raw: Dict[str, Any]) -> InstagramEvent:
 
     The adapter refuses anything that is not an Instagram COMMENT or DIRECT
     event. It never adapts a Facebook shape.
+
+    This is a trust boundary: the payload comes from the provider. Every
+    malformed shape leaves as InstagramRouteError, never as a raw KeyError,
+    TypeError, AttributeError or ValueError, so a caller that catches this
+    adapter's own error class cannot be surprised by an unclassified one.
     """
     if not isinstance(raw, dict):
         raise InstagramRouteError("bad_input: event must be a dict")
-    unknown = set(raw) - {
-        "provider", "provider_event_id", "tenant_id", "account_id", "kind",
-        "direction", "actor_id", "text", "thread_key", "received_at",
-        "comment_id", "payload_sha256",
-    }
-    if unknown:
+    try:
+        unknown = set(raw) - {
+            "provider", "provider_event_id", "tenant_id", "account_id", "kind",
+            "direction", "actor_id", "text", "thread_key", "received_at",
+            "comment_id", "payload_sha256",
+        }
+        if unknown:
+            raise InstagramRouteError(
+                "bad_input: %s (unknown event fields: %s)"
+                % (R_UNSUPPORTED_EVENT, sorted(unknown)))
+        return InstagramEvent(
+            provider=raw.get("provider"),
+            provider_event_id=raw.get("provider_event_id"),
+            tenant_id=raw.get("tenant_id"),
+            account_id=raw.get("account_id"),
+            kind=raw.get("kind"),
+            direction=raw.get("direction"),
+            actor_id=raw.get("actor_id"),
+            text=raw.get("text", ""),
+            thread_key=raw.get("thread_key"),
+            received_at=_ts(raw.get("received_at")),
+            comment_id=raw.get("comment_id"),
+            payload_sha256=raw.get("payload_sha256"),
+        )
+    except InstagramRouteError:
+        raise
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        # `sorted()` on mixed-typed keys, a payload object that lies about
+        # being a mapping, and anything else the provider shape can do to
+        # Python. Still this adapter's error, still a refusal, never adapted.
         raise InstagramRouteError(
-            "bad_input: %s (unknown event fields: %s)"
-            % (R_UNSUPPORTED_EVENT, sorted(unknown)))
-    return InstagramEvent(
-        provider=raw.get("provider"),
-        provider_event_id=raw.get("provider_event_id"),
-        tenant_id=raw.get("tenant_id"),
-        account_id=raw.get("account_id"),
-        kind=raw.get("kind"),
-        direction=raw.get("direction"),
-        actor_id=raw.get("actor_id"),
-        text=raw.get("text", ""),
-        thread_key=raw.get("thread_key"),
-        received_at=_ts(raw.get("received_at")),
-        comment_id=raw.get("comment_id"),
-        payload_sha256=raw.get("payload_sha256"),
-    )
+            "bad_input: %s (malformed provider payload: %s: %s)"
+            % (R_UNSUPPORTED_EVENT, type(exc).__name__, exc)) from None
 
 
 def admit_instagram_event(store: Any, event: InstagramEvent, *,
+                          account: InstagramAccount,
                           own_actor_ids: Iterable[str] = (),
                           now: Optional[float] = None) -> Dict[str, Any]:
     """Persist the event identity before any ACK, via durable_store.
@@ -444,11 +518,14 @@ def admit_instagram_event(store: Any, event: InstagramEvent, *,
     Returns durable_store.admit_event()'s dict. A duplicate event is not
     admitted twice; an outgoing event or one of our own actors is excluded,
     never decided on.
+
+    `account` is REQUIRED and is the authoritative ownership record: our own
+    `ig_user_id` comes from it, so no caller can forget to exclude us.
+    `own_actor_ids` only adds further ids.
     """
-    if not isinstance(event, InstagramEvent):
-        raise InstagramRouteError("bad_input: event must be InstagramEvent")
-    own_actor_ids = _own_actor_ids(own_actor_ids)
-    durable_store = _upstream("durable_store")
+    _assert_event_matches_account(account, event)
+    own_actor_ids = _own_actor_set(account, own_actor_ids)
+    _upstream("durable_store")
     return store.admit_event(
         provider=PROVIDER_IG,
         tenant_id=event.tenant_id,
@@ -587,7 +664,7 @@ def evaluate_eligibility(
             return denied
         return _comment_eligibility(
             account=account, purpose=purpose, channel=channel, route=route,
-            event=event, filter_=filter_, opener=opener, now=ts)
+            event=event, filter_=filter_, opener=opener, basis=basis, now=ts)
 
     if purpose == PURPOSE_COMMENT_PRIVATE_OPENER:
         denied = _capability_denied(capability, CAP_COMMENT_PRIVATE_OPENER,
@@ -600,7 +677,7 @@ def evaluate_eligibility(
                            detail={"opener_action_id": opener.opener_action_id})
         return _comment_eligibility(
             account=account, purpose=purpose, channel=channel, route=route,
-            event=event, filter_=filter_, opener=opener, now=ts,
+            event=event, filter_=filter_, opener=opener, basis=basis, now=ts,
             inbound_dm_window=False)
 
     # Follow-up direct messages.
@@ -625,9 +702,9 @@ def evaluate_eligibility(
         purpose=purpose,
         channel=channel,
         route=route,
-        basis=BASIS_INBOUND_MESSAGE,
+        basis=basis,
         inbound_dm_window=True,
-        refreshed_by=BASIS_INBOUND_MESSAGE,
+        refreshed_by=basis,
         evidence={
             "account_id": account.account_id,
             "binding_revision": account.binding_revision,
@@ -661,39 +738,39 @@ def _comment_eligibility(*, account: InstagramAccount, purpose: str,
                          channel: str, route: str,
                          event: Optional[InstagramEvent],
                          filter_: Optional[InstagramCommentFilter],
-                         opener: Optional[OpenerState], now: float,
+                         opener: Optional[OpenerState], basis: str, now: float,
                          inbound_dm_window: bool = False) -> EligibilityVerdict:
+    """The comment route's verdict. `basis` is the caller's OWN offered basis.
+
+    It is carried through unchanged on every path, so the gate record never
+    asserts a basis the caller did not offer.
+    """
     if event is None:
-        return _denied(R_UNSUPPORTED_EVENT, purpose, channel,
-                       BASIS_INBOUND_MESSAGE, now=now,
+        return _denied(R_UNSUPPORTED_EVENT, purpose, channel, basis, now=now,
                        detail={"missing": "comment event"})
     if event.kind != EVENT_COMMENT:
-        return _denied(R_EVENT_WRONG_KIND, purpose, channel,
-                       BASIS_INBOUND_MESSAGE, now=now,
+        return _denied(R_EVENT_WRONG_KIND, purpose, channel, basis, now=now,
                        detail={"kind": event.kind})
     if event.direction != DIRECTION_INBOUND:
-        return _denied(R_EVENT_WRONG_KIND, purpose, channel,
-                       BASIS_INBOUND_MESSAGE, now=now,
+        return _denied(R_EVENT_WRONG_KIND, purpose, channel, basis, now=now,
                        detail={"direction": event.direction})
     if event.account_id != account.account_id:
-        return _denied(R_EVENT_ACCOUNT_MISMATCH, purpose, channel,
-                       BASIS_INBOUND_MESSAGE, now=now,
+        return _denied(R_EVENT_ACCOUNT_MISMATCH, purpose, channel, basis,
+                       now=now,
                        detail={"event_account_id": event.account_id})
     if event.tenant_id != account.tenant_id:
-        return _denied(R_EVENT_ACCOUNT_MISMATCH, purpose, channel,
-                       BASIS_INBOUND_MESSAGE, now=now,
+        return _denied(R_EVENT_ACCOUNT_MISMATCH, purpose, channel, basis,
+                       now=now,
                        detail={"event_tenant_id": event.tenant_id})
     if filter_ is None:
-        return _denied(R_FILTER_NOT_MATCHED, purpose, channel,
-                       BASIS_INBOUND_MESSAGE, now=now,
+        return _denied(R_FILTER_NOT_MATCHED, purpose, channel, basis, now=now,
                        detail={"missing": "comment filter"})
     if filter_.account_id != account.account_id:
-        return _denied(R_FILTER_ACCOUNT_MISMATCH, purpose, channel,
-                       BASIS_INBOUND_MESSAGE, now=now,
+        return _denied(R_FILTER_ACCOUNT_MISMATCH, purpose, channel, basis,
+                       now=now,
                        detail={"filter_account_id": filter_.account_id})
     if not match_filter(filter_, event.text, account_id=account.account_id):
-        return _denied(R_FILTER_NOT_MATCHED, purpose, channel,
-                       BASIS_INBOUND_MESSAGE, now=now,
+        return _denied(R_FILTER_NOT_MATCHED, purpose, channel, basis, now=now,
                        detail={"filter_id": filter_.filter_id,
                                "filter_revision": filter_.revision})
     return EligibilityVerdict(
@@ -702,9 +779,9 @@ def _comment_eligibility(*, account: InstagramAccount, purpose: str,
         purpose=purpose,
         channel=channel,
         route=route,
-        basis=BASIS_INBOUND_MESSAGE,
+        basis=basis,
         inbound_dm_window=inbound_dm_window,
-        refreshed_by=BASIS_INBOUND_MESSAGE,
+        refreshed_by=basis,
         evidence={
             "account_id": account.account_id,
             "binding_revision": account.binding_revision,
@@ -792,6 +869,17 @@ CREATE TABLE IF NOT EXISTS ig_customer_interactions (
     received_at REAL NOT NULL,
     PRIMARY KEY (tenant_id, account_id, provider_event_id)
 );
+CREATE TABLE IF NOT EXISTS ig_opener_claims (
+    tenant_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    thread_key TEXT NOT NULL,
+    claim_token TEXT NOT NULL,
+    action_id TEXT NOT NULL,
+    acquired_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    released_at REAL,
+    PRIMARY KEY (tenant_id, account_id, thread_key)
+);
 """
 
 
@@ -807,6 +895,10 @@ def _verified_inbound_interaction(*, tenant_id: str, account_id: str,
     tenant and event id, inbound, and not one of our own actors. No proof, no
     un-suppression: an outbound event, an own-actor event, an event id the
     inbox never admitted, or another event's admission is refused.
+
+    `own_actor_ids` is already the authoritative set: `_own_actor_set` derives
+    our own `ig_user_id` from the account record, so the caller cannot leave
+    us out.
     """
     def refuse(why: str) -> InstagramRouteError:
         return InstagramRouteError(
@@ -867,11 +959,19 @@ class InstagramRouteStore:
     def record_opener(self, *, tenant_id: str, account_id: str,
                       thread_key: str, opener_action_id: str,
                       comment_id: Optional[str] = None,
-                      now: Optional[float] = None) -> Tuple[Dict[str, Any], bool]:
+                      now: Optional[float] = None
+                      ) -> Tuple[OpenerState, bool]:
         """Record the ONE private opener for a thread. Idempotent.
 
-        A second opener for the same thread returns the existing row with
+        Returns exactly ``(OpenerState, created)`` on EVERY path: the durable
+        opener row for the thread and whether THIS call created it. A second
+        opener for the same thread returns the existing row with
         created=False. The opener is never replaced by a newer action id.
+
+        The write is a single conditional INSERT (`ON CONFLICT ... DO NOTHING`
+        on the thread primary key), never a read-then-write: two workers that
+        race here cannot both insert, and neither can overwrite the other's
+        action id.
         """
         for name, value in (("tenant_id", tenant_id),
                             ("account_id", account_id),
@@ -879,30 +979,90 @@ class InstagramRouteStore:
                             ("opener_action_id", opener_action_id)):
             _id(value, name)
         ts = _ts(now)
-        self._db.execute("BEGIN IMMEDIATE")
-        try:
-            row = self._db.execute(
-                "SELECT * FROM ig_openers WHERE tenant_id=? AND account_id=?"
-                " AND thread_key=?", (tenant_id, account_id, thread_key)
-            ).fetchone()
-            if row is not None:
-                self._db.execute("COMMIT")
-                return dict(row), False
-            self._db.execute(
-                "INSERT INTO ig_openers (tenant_id, account_id, thread_key,"
-                " opener_action_id, comment_id, sent_at, customer_responded_at)"
-                " VALUES (?,?,?,?,?,?,NULL)",
-                (tenant_id, account_id, thread_key, opener_action_id,
-                 comment_id, ts),
-            )
-            self._db.execute("COMMIT")
-        except Exception:
-            self._db.execute("ROLLBACK")
-            raise
-        return self.opener_state(tenant_id, account_id, thread_key), True
+        cur = self._db.execute(
+            "INSERT INTO ig_openers (tenant_id, account_id, thread_key,"
+            " opener_action_id, comment_id, sent_at, customer_responded_at)"
+            " VALUES (?,?,?,?,?,?,NULL)"
+            " ON CONFLICT(tenant_id, account_id, thread_key) DO NOTHING",
+            (tenant_id, account_id, thread_key, opener_action_id,
+             comment_id, ts),
+        )
+        created = cur.rowcount == 1
+        state = self.opener_state(tenant_id, account_id, thread_key)
+        if state is None:  # the row vanished between insert and read
+            raise InstagramRouteError(
+                "not_found: the opener row for thread %r is missing" % thread_key)
+        return state, created
+
+    def claim_opener(self, *, tenant_id: str, account_id: str, thread_key: str,
+                     claim_token: str, action_id: str,
+                     now: Optional[float] = None,
+                     lease_seconds: float = DEFAULT_OPENER_CLAIM_S) -> bool:
+        """Atomically take this thread's ONE opener slot. True if we won it.
+
+        This is the mutual exclusion behind "no second opener". Eligibility
+        alone is read-then-act: four workers can each read "no opener" and all
+        four send. The claim is ONE conditional statement whose WHERE decides
+        the winner inside SQLite's write lock, so exactly one concurrent
+        worker can hold a thread at a time.
+
+        The claim is refused outright once an opener row exists, and it may
+        only be taken over from a claim that was released or has expired (a
+        crashed worker must not wedge a thread forever).
+        """
+        for name, value in (("tenant_id", tenant_id),
+                            ("account_id", account_id),
+                            ("thread_key", thread_key),
+                            ("claim_token", claim_token),
+                            ("action_id", action_id)):
+            _id(value, name)
+        ts = _ts(now)
+        if isinstance(lease_seconds, bool) or not isinstance(lease_seconds,
+                                                            (int, float)):
+            raise InstagramRouteError("bad_input: lease_seconds must be a number")
+        if float(lease_seconds) <= 0:
+            raise InstagramRouteError("bad_input: lease_seconds must be positive")
+        expires = ts + float(lease_seconds)
+        cur = self._db.execute(
+            "INSERT INTO ig_opener_claims (tenant_id, account_id, thread_key,"
+            " claim_token, action_id, acquired_at, expires_at, released_at)"
+            " SELECT ?,?,?,?,?,?,?,NULL"
+            " WHERE NOT EXISTS (SELECT 1 FROM ig_openers"
+            "  WHERE tenant_id=? AND account_id=? AND thread_key=?)"
+            " ON CONFLICT(tenant_id, account_id, thread_key) DO UPDATE SET"
+            "  claim_token=excluded.claim_token,"
+            "  action_id=excluded.action_id,"
+            "  acquired_at=excluded.acquired_at,"
+            "  expires_at=excluded.expires_at,"
+            "  released_at=NULL"
+            " WHERE ig_opener_claims.released_at IS NOT NULL"
+            "  OR ig_opener_claims.expires_at <= excluded.acquired_at",
+            (tenant_id, account_id, thread_key, claim_token, action_id, ts,
+             expires, tenant_id, account_id, thread_key),
+        )
+        return cur.rowcount == 1
+
+    def release_opener_claim(self, *, tenant_id: str, account_id: str,
+                             thread_key: str, claim_token: str,
+                             now: Optional[float] = None) -> bool:
+        """Release OUR claim only; another worker's claim is left alone."""
+        for name, value in (("tenant_id", tenant_id),
+                            ("account_id", account_id),
+                            ("thread_key", thread_key),
+                            ("claim_token", claim_token)):
+            _id(value, name)
+        ts = _ts(now)
+        cur = self._db.execute(
+            "UPDATE ig_opener_claims SET released_at=?"
+            " WHERE tenant_id=? AND account_id=? AND thread_key=?"
+            " AND claim_token=? AND released_at IS NULL",
+            (ts, tenant_id, account_id, thread_key, claim_token),
+        )
+        return cur.rowcount == 1
 
     def record_customer_interaction(self, *, tenant_id: str, account_id: str,
                                     thread_key: str, provider_event_id: str,
+                                    account: InstagramAccount,
                                     event: Optional[InstagramEvent] = None,
                                     admission: Any = None,
                                     own_actor_ids: Iterable[str] = (),
@@ -914,13 +1074,22 @@ class InstagramRouteStore:
         returned for it. Anything else is refused and NEVER ends the
         ignored-opener state. Deduped by provider event id, so the same
         delivered event keeps one row and returns False from then on.
+
+        `account` is REQUIRED: it is the authoritative ownership record, so
+        our own actor can never be mistaken for a customer. `own_actor_ids`
+        only adds further ids.
         """
         for name, value in (("tenant_id", tenant_id),
                             ("account_id", account_id),
                             ("thread_key", thread_key),
                             ("provider_event_id", provider_event_id)):
             _id(value, name)
-        own_actor_ids = _own_actor_ids(own_actor_ids)
+        if (tenant_id != account.tenant_id or account_id != account.account_id):
+            raise InstagramRouteError(
+                "bad_input: %s (account %r/%r is not this record's %r/%r)"
+                % (R_EVENT_ACCOUNT_MISMATCH, tenant_id, account_id,
+                   account.tenant_id, account.account_id))
+        own_actor_ids = _own_actor_set(account, own_actor_ids)
         proven = _verified_inbound_interaction(
             tenant_id=tenant_id, account_id=account_id, thread_key=thread_key,
             provider_event_id=provider_event_id, event=event,
@@ -1053,12 +1222,20 @@ def dispatch_instagram_action(
     context: Optional[Dict[str, Any]] = None,
     now: Optional[float] = None,
     lease_seconds: Optional[float] = None,
+    opener_claim_seconds: float = DEFAULT_OPENER_CLAIM_S,
 ) -> Any:
     """Send one Instagram action through the common fresh gate.
 
     The only dispatcher is outbound_gate.dispatch(). A recorded opener is
     written only after the provider accepted the send, so a blocked or
     failed attempt never creates ignored-opener state.
+
+    For a private opener the thread's ONE opener slot is claimed from the
+    durable store BEFORE dispatch. Eligibility is read-then-act; four workers
+    can each read "no opener" and all four send. The claim is one conditional
+    write, so exactly one worker proceeds and the others send nothing. The
+    claim is released on every non-send path, so a blocked or failed attempt
+    neither wedges the thread nor creates opener state.
     """
     outbound_gate = _upstream("outbound_gate")
     evaluator = make_gate_evaluator(
@@ -1072,14 +1249,38 @@ def dispatch_instagram_action(
     }
     if lease_seconds is not None:
         kwargs["lease_seconds"] = lease_seconds
-    outcome = outbound_gate.dispatch(
-        store, evaluator, sender, action_id, worker_id, **kwargs)
-    if outcome.status == outbound_gate.ST_SENT and purpose == PURPOSE_COMMENT_PRIVATE_OPENER:
-        route_store.record_opener(
-            tenant_id=account.tenant_id, account_id=account.account_id,
-            thread_key=thread_key, opener_action_id=action_id,
-            comment_id=event.comment_id if event else None,
-            now=now)
+
+    claim_token: Optional[str] = None
+    if purpose == PURPOSE_COMMENT_PRIVATE_OPENER:
+        claim_token = uuid.uuid4().hex
+        if not route_store.claim_opener(
+                tenant_id=account.tenant_id, account_id=account.account_id,
+                thread_key=thread_key, claim_token=claim_token,
+                action_id=action_id, now=now,
+                lease_seconds=opener_claim_seconds):
+            existing = route_store.opener_state(
+                account.tenant_id, account.account_id, thread_key)
+            note = ("this thread already has a recorded opener"
+                    if existing is not None and existing.opener_sent
+                    else "another worker holds this thread's opener claim")
+            return outbound_gate.DispatchOutcome(
+                outbound_gate.ST_REFUSED_RACE, action_id,
+                note=note + "; nothing sent")
+    try:
+        outcome = outbound_gate.dispatch(
+            store, evaluator, sender, action_id, worker_id, **kwargs)
+        if (outcome.status == outbound_gate.ST_SENT
+                and purpose == PURPOSE_COMMENT_PRIVATE_OPENER):
+            route_store.record_opener(
+                tenant_id=account.tenant_id, account_id=account.account_id,
+                thread_key=thread_key, opener_action_id=action_id,
+                comment_id=event.comment_id if event else None,
+                now=now)
+    finally:
+        if claim_token is not None:
+            route_store.release_opener_claim(
+                tenant_id=account.tenant_id, account_id=account.account_id,
+                thread_key=thread_key, claim_token=claim_token)
     return outcome
 
 
@@ -1222,7 +1423,7 @@ def _selfcheck() -> int:
     try:
         route_store.record_customer_interaction(
             tenant_id="t1", account_id="ig-acct-1", thread_key="th1",
-            provider_event_id="dm-1", now=35)
+            provider_event_id="dm-1", account=account, now=35)
         ok(False, "an unverified interaction is refused")
     except InstagramRouteError as exc:
         ok(R_UNVERIFIED_INTERACTION in str(exc),
@@ -1232,19 +1433,89 @@ def _selfcheck() -> int:
         "account_id": "ig-acct-1", "kind": "DIRECT", "direction": "inbound",
         "actor_id": "customer-1", "text": "yes", "thread_key": "th1",
         "received_at": 38})
-    admission = admit_instagram_event(inbox, dm)
+    admission = admit_instagram_event(inbox, dm, account=account)
     ok(route_store.record_customer_interaction(
         tenant_id="t1", account_id="ig-acct-1", thread_key="th1",
-        provider_event_id="dm-1", event=dm, admission=admission, now=40),
+        provider_event_id="dm-1", account=account,
+        event=dm, admission=admission, now=40),
        "a verified interaction ends the ignored state")
     state = route_store.opener_state("t1", "ig-acct-1", "th1")
     ok(state.opener_sent and state.customer_responded,
        "the verified interaction is on the thread's durable state")
-    second_opener = route_store.record_opener(
+    second_opener, created_again = route_store.record_opener(
         tenant_id="t1", account_id="ig-acct-1", thread_key="th1",
         opener_action_id="act-2", now=50)
-    ok(second_opener[1] is False and second_opener[0]["opener_action_id"] == "act-1",
-       "a thread never gets a second opener")
+    ok(created_again is False
+       and second_opener.opener_action_id == "act-1"
+       and isinstance(second_opener, OpenerState),
+       "a thread never gets a second opener and the return type is stable")
+
+    # ownership comes from the account record, not from a hand-kept list.
+    ours = normalise_event({
+        "provider": "instagram", "provider_event_id": "own-1", "tenant_id": "t1",
+        "account_id": "ig-acct-1", "kind": "DIRECT", "direction": "inbound",
+        "actor_id": account.ig_user_id, "text": "hi", "thread_key": "th1",
+        "received_at": 60})
+    ok(admit_instagram_event(inbox, ours, account=account)["reason"]
+       == "excluded:own_actor",
+       "our own ig_user_id is excluded without any caller-supplied list")
+
+    # a malformed provider payload leaves as this adapter's own error.
+    for bad in ({"received_at": "not-a-number"},
+                {"received_at": [1]}, {1: "x", "provider": "instagram"}):
+        raw = {"provider": "instagram", "provider_event_id": "bad",
+               "tenant_id": "t1", "account_id": "ig-acct-1",
+               "kind": "COMMENT", "direction": "inbound", "actor_id": "c",
+               "text": "x", "thread_key": "c1"}
+        raw.update(bad)
+        try:
+            normalise_event(raw)
+            ok(False, "a malformed payload is a domain error: %r" % (bad,))
+        except InstagramRouteError:
+            ok(True, "a malformed payload is a domain error: %r" % (bad,))
+
+    # the ALLOW record asserts the basis the caller actually offered.
+    candidate = normalise_event({
+        "provider": "instagram", "provider_event_id": "e2", "tenant_id": "t1",
+        "account_id": "ig-acct-1", "kind": "COMMENT", "direction": "inbound",
+        "actor_id": "customer-1", "text": "billboard", "thread_key": "c2",
+        "comment_id": "c2", "received_at": 70})
+    offered = evaluate_eligibility(
+        account=account, purpose=PURPOSE_PUBLIC_REPLY,
+        channel=CHANNEL_IG_PUBLIC, event=candidate, filter_=filter_,
+        capability=InstagramCapability(CAP_COMMENT_PUBLIC_REPLY),
+        basis=BASIS_CONSENT_RECORD, now=80)
+    ok(offered.allowed and offered.basis == BASIS_CONSENT_RECORD
+       and offered.refreshed_by == BASIS_CONSENT_RECORD,
+       "the ALLOW record asserts only the basis the caller offered")
+
+    # the opener claim is one conditional write: four racers, one winner.
+    import threading
+    claims = []
+    lock = threading.Lock()
+    ready = threading.Barrier(5)
+
+    def race(i: int) -> None:
+        store_i = InstagramRouteStore(str(workdir / "r.sqlite"))
+        try:
+            ready.wait()
+            won = store_i.claim_opener(
+                tenant_id="t1", account_id="ig-acct-1", thread_key="race",
+                claim_token="tok-%d" % i, action_id="act-%d" % i, now=100)
+            with lock:
+                claims.append(won)
+        finally:
+            store_i.close()
+
+    threads = [threading.Thread(target=race, args=(i,)) for i in range(4)]
+    for t in threads:
+        t.start()
+    ready.wait()
+    for t in threads:
+        t.join()
+    ok(sorted(claims) == [False, False, False, True],
+       "four concurrent claims on one thread have exactly one winner")
+
     route_store.close()
     inbox.close()
 
