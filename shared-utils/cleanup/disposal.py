@@ -8,19 +8,25 @@ Contract, in this order:
    ELIGIBLE, DEFERRED, BLOCKED or UNKNOWN. Only ELIGIBLE is dispatchable.
 2. UNKNOWN outranks BLOCKED, which outranks DEFERRED. An input this module
    cannot determine is UNKNOWN with a reason code -- never success, never a
-   silent ELIGIBLE, never a guessed default. A record that is not a mapping, or
-   whose list fields are the wrong shape, types as UNKNOWN_MALFORMED_ITEM and
-   one such record never aborts a batch.
+   silent ELIGIBLE, never a guessed default. A record that is not a mapping, a
+   batch container that is not iterable, or a record whose list fields are the
+   wrong shape, types as UNKNOWN_MALFORMED_ITEM and one such record never aborts
+   a batch. An identity is a real single path segment (never whitespace only,
+   never carrying a separator): it is the one segment of a preserved
+   destination, so anything else is UNKNOWN_MISSING_IDENTITY.
 3. Eligible resources are disposed inside the same call (immediate, no queue),
    content is preserved first -- a verified immediate copy when preserve_content
    is set, otherwise a caller copy only when the resource names its own
-   preservation receipts and the preserved location exists outside the resource
-   -- the receipt records the exact external path, and absence is proven by a
-   real lstat after removal.
+   preservation receipts AND a preserved copy whose content is proven
+   byte-for-byte against the resource -- the receipt records the exact external
+   path and its digest, and absence is proven by a real lstat after removal. A
+   directory merely existing is never proof. The preserved destination is proven
+   to sit inside the preserved root before and after the copy.
 4. Deletion never forces. `git worktree remove` is taken from the repository's
    accepted cleanup transaction module (scripts/lib/cleanup_transaction.py) and
-   must not carry --force; direct tree removal calls shutil.rmtree with default
-   error handling, so a failure surfaces as BLOCKED_REMOVAL_FAILED with the tree
+   must not carry --force in any of its forms (long, attached value, short
+   cluster); direct tree removal calls shutil.rmtree with default error
+   handling, so a failure surfaces as BLOCKED_REMOVAL_FAILED with the tree
    left in place.
 
 Deliberately not implemented here: global resource census (T-04), engineering
@@ -61,6 +67,7 @@ DEFERRED_UNIQUE_UNMERGED_WORK = 'DEFERRED_UNIQUE_UNMERGED_WORK'
 DEFERRED_ACTIVE_CONSUMER = 'DEFERRED_ACTIVE_CONSUMER'
 DEFERRED_LEASE_HELD = 'DEFERRED_LEASE_HELD'
 BLOCKED_UNOWNED = 'BLOCKED_UNOWNED'
+BLOCKED_UNSAFE_IDENTITY = 'BLOCKED_UNSAFE_IDENTITY'
 BLOCKED_OUTSIDE_APPROVED_ROOT = 'BLOCKED_OUTSIDE_APPROVED_ROOT'
 BLOCKED_SYMLINK_ESCAPE = 'BLOCKED_SYMLINK_ESCAPE'
 BLOCKED_VOLUME_IDENTITY_MISMATCH = 'BLOCKED_VOLUME_IDENTITY_MISMATCH'
@@ -108,6 +115,40 @@ def _receipt_ref(value):
                     for entry in value))
 
 
+def _safe_segment(value):
+    """One path segment, or None.
+
+    An identity is used as the single filename of a preserved destination, so
+    it is folded into one segment here (a branch name may carry separators) and
+    anything left that could steer a write -- an empty segment, '.' or '..' --
+    is refused. A caller-supplied identity can never choose a directory.
+    """
+    if not isinstance(value, str):
+        return None
+    folded = value.strip().replace('\x00', '')
+    for sep in (os.sep, '/', '\\'):
+        folded = folded.replace(sep, '_')
+    if folded in ('', '.', '..'):
+        return None
+    return folded
+
+
+def _identity_problem(value):
+    """(disposition, code, detail) for an identity that cannot name a resource,
+    or None when it can."""
+    if not isinstance(value, str) or not value.strip():
+        return (UNKNOWN, UNKNOWN_MISSING_IDENTITY,
+                'id must be a non-blank string to name a resource')
+    if any(part == '..' for part in value.replace('\\', '/').split('/')) \
+            or '\x00' in value or value.startswith('/'):
+        return (BLOCKED, BLOCKED_UNSAFE_IDENTITY,
+                f'id {value!r} carries path traversal or absolute syntax')
+    if _safe_segment(value) is None:
+        return (UNKNOWN, UNKNOWN_MISSING_IDENTITY,
+                'id does not fold into one safe path segment')
+    return None
+
+
 def _malformed_record(detail):
     """Typed UNKNOWN for a record this module cannot read. Fail closed: a record
     nobody can type is never ELIGIBLE and never deleted."""
@@ -142,11 +183,25 @@ def deletion_authority():
     return module
 
 
+def _is_force_flag(part):
+    """One spelling of force, in any of its forms.
+
+    A forcing flag is '--force', '--force=<anything>', or a short cluster that
+    carries 'f' ('-f', '-af'). The name is spelled apart from the guard so the
+    guard cannot drift into matching one spelling only.
+    """
+    if not isinstance(part, str) or not part.startswith('-') or part == '-':
+        return False
+    if part.startswith('--'):
+        return part == '--' + 'force' or part.startswith('--' + 'force=')
+    return part[1:].isalpha() and 'f' in part[1:]
+
+
 def worktree_remove_command(repo_path, target_path):
     """The exact removal command, owned by the accepted authority module."""
     module = deletion_authority()
     cmd = [str(part) for part in module.worktree_remove_cmd(repo_path, target_path)]
-    if any(part == '--force' or part.startswith('--force=') for part in cmd):
+    if any(_is_force_flag(part) for part in cmd):
         raise Refused('deletion authority produced a forcing command')
     return cmd
 
@@ -171,16 +226,33 @@ def _within(child, root):
 
 
 def _symlink_component(path, root):
-    """First symlinked component between root (exclusive) and path (inclusive)."""
-    try:
-        rel = Path(path).relative_to(Path(root))
-    except ValueError:
-        return None
-    current = Path(root)
-    for part in rel.parts:
-        current = current / part
-        if os.path.islink(str(current)):
-            return str(current)
+    """First symlinked component between root (exclusive) and path (inclusive).
+
+    root and path may be written in different lexical forms (one relative, one
+    absolute, one reached through a link), so the boundary between them is the
+    first ancestor of path that resolves to the resolved root, not a lexical
+    relative_to. A guard that silently returns None when the two forms differ
+    is a guard that cannot fire on the case it exists for.
+    """
+    root_real = _real(root)
+    node = Path(os.path.abspath(str(path)))
+    chain = []
+    found_root = False
+    while True:
+        if _real(node) == root_real:
+            found_root = True
+            break
+        chain.append(node)
+        parent = node.parent
+        if parent == node:
+            break
+        node = parent
+    chain.reverse()
+    if not found_root:
+        chain.append(Path(os.path.abspath(str(root))))
+    for part in chain:
+        if os.path.islink(str(part)):
+            return str(part)
     return None
 
 
@@ -219,13 +291,23 @@ def _tree_digest(path):
 
 
 def preserve(resource_path, preserved_root, resource_id):
-    """Copy resource content outside itself and prove the copy byte-for-byte."""
+    """Copy resource content outside itself and prove the copy byte-for-byte.
+
+    The destination is one folded segment beneath the preserved root and is
+    proven contained before the copy is made and again before the receipt is
+    handed back: an identity can never steer a write outside the preserved root.
+    """
     source = Path(resource_path)
     root = Path(preserved_root)
-    if _within(root, source):
+    if _within(root, source) or _within(source, root):
         raise Refused('preserved root is the resource being disposed or inside it')
     root.mkdir(parents=True, exist_ok=True)
-    destination = root / resource_id
+    segment = _safe_segment(resource_id)
+    if segment is None:
+        raise Refused(f'identity is not one safe path segment: {resource_id!r}')
+    destination = root / segment
+    if not _within(destination, root):
+        raise Refused(f'preserved destination escapes the preserved root: {destination}')
     if os.path.lexists(str(destination)):
         raise Refused(f'preserved destination already exists: {destination}')
     before = _tree_digest(source)
@@ -236,9 +318,11 @@ def preserve(resource_path, preserved_root, resource_id):
     after = _tree_digest(destination)
     if before != after:
         raise Refused(f'preserved copy differs from source: {destination}')
+    if not _within(destination, root):
+        raise Refused(f'preserved copy landed outside the preserved root: {destination}')
     files = sum(1 for value in after.values() if value[0] == 'file')
     total = sum(value[2] for value in after.values() if value[0] == 'file')
-    return {'destination': str(destination), 'verified': True,
+    return {'destination': str(_real(destination)), 'verified': True,
             'entries': len(after), 'files': files, 'bytes': total,
             'digest': hashlib.sha256(
                 json.dumps(sorted(after.items()), default=str).encode()).hexdigest()}
@@ -253,6 +337,56 @@ def _remove_tree(path):
         shutil.rmtree(str(p))
     elif os.path.lexists(str(p)):
         os.unlink(str(p))
+
+
+def _named_copy_candidates(item, preserved_paths):
+    """Where a caller copy of THIS resource may live: the exact external paths
+    the record names first, then the per-resource entry beneath each approved
+    preserved location. A bare preserved directory is a place, never proof."""
+    named = item.get('preserved_path') or item.get('preserved_paths')
+    for entry in _as_list(named) if not isinstance(named, str) else [named]:
+        if isinstance(entry, str) and entry.strip():
+            yield entry
+    for location in (preserved_paths or ()):
+        if location is None:
+            continue
+        yield str(location)
+        segment = _safe_segment(item.get('id'))
+        if segment is not None:
+            yield str(Path(str(location)) / segment)
+
+
+def _proven_copy(resource_path, candidate):
+    """candidate holds exactly this resource's content, outside it: a real
+    existence check plus a byte-for-byte tree digest. A directory merely
+    existing is never proof. Returns the same proof shape preserve() returns."""
+    source = Path(resource_path)
+    copy = Path(candidate)
+    if not os.path.lexists(str(copy)):
+        return None
+    if _within(copy, source) or _within(source, copy):
+        return None
+    before = _tree_digest(source)
+    after = _tree_digest(copy)
+    if after != before:
+        return None
+    files = sum(1 for value in after.values() if value[0] == 'file')
+    total = sum(value[2] for value in after.values() if value[0] == 'file')
+    return {'destination': str(_real(copy)), 'verified': True,
+            'entries': len(after), 'files': files, 'bytes': total,
+            'digest': hashlib.sha256(
+                json.dumps(sorted(after.items()), default=str).encode()).hexdigest()}
+
+
+def _usable_preserved_location(location, resource_path):
+    """A place the module may write a preserved copy to: outside the resource
+    in both directions, and not a file."""
+    if location is None:
+        return False
+    place = Path(location)
+    if os.path.lexists(str(place)) and (place.is_symlink() or not place.is_dir()):
+        return False
+    return not (_within(place, resource_path) or _within(resource_path, place))
 
 
 def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
@@ -281,7 +415,7 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
     resource_type = item.get('resource_type')
     raw_path = item.get('path')
     record = {
-        'id': resource_id if isinstance(resource_id, str) else '',
+        'id': resource_id.strip() if isinstance(resource_id, str) else '',
         'resource_type': resource_type if isinstance(resource_type, str) else '',
         'path': str(raw_path) if raw_path else '',
         'canonical_path': None,
@@ -290,7 +424,10 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
         'checks': {},
     }
 
-    if not record['id'] or not record['path']:
+    problem = _identity_problem(resource_id)
+    if problem is not None:
+        note(problem[0], problem[1], problem[2])
+    if not record['path']:
         note(UNKNOWN, UNKNOWN_MISSING_IDENTITY,
              'id and path are both required to type a resource')
     if resource_type not in RESOURCE_TYPES:
@@ -397,29 +534,43 @@ def evaluate(item, *, approved_root, expected_device, preserved_paths=(),
                  'merged work is not proven present in the remote target')
 
         # Preservation proof, strongest first. preserve_content is a promise the
-        # module keeps itself, so it outranks a caller copy; a caller copy is only
-        # proof when the resource names its own preservation receipts and the
-        # preserved location really exists outside the resource. A directory
-        # merely existing is never proof.
+        # module keeps itself, so it outranks a caller copy; a caller copy is
+        # only proof when the resource names its own preservation receipts AND a
+        # preserved copy of this resource is proven byte-for-byte at an exact
+        # external path. A directory merely existing is never proof.
         receipts = _as_list(item.get('preservation_receipt_ids'))
         proof = None
+        preserved = []
         if resource_type in WORKTREE_TYPES and remote_proofs:
             proof = 'remote_merge_proof'
             record['checks']['remote_merge_proof_ids'] = list(remote_proofs)
         if proof is None and preserve_content:
-            proof = 'immediate_copy'
-        if proof is None:
-            existing = [p for p in (preserved_paths or ())
-                        if os.path.lexists(str(p))
-                        and not _within(str(p), record['path'])
-                        and not _within(record['path'], str(p))]
-            if receipts and existing:
+            target = None
+            for candidate in preserved_paths or ():
+                if _usable_preserved_location(candidate, record['path']):
+                    target = candidate
+                    break
+            if target is None:
+                note(BLOCKED, BLOCKED_PRESERVATION_FAILED,
+                     'no preserved location outside the resource to copy into')
+            else:
+                proof = 'immediate_copy'
+        if proof is None and receipts:
+            for candidate in _named_copy_candidates(item, preserved_paths):
+                copy = _proven_copy(record['path'], candidate)
+                if copy is not None:
+                    preserved.append(copy)
+            if preserved:
                 proof = 'caller_preserved'
                 record['checks']['preservation_receipt_ids'] = list(receipts)
         record['checks']['preservation'] = proof
-        if proof is None:
+        if preserved:
+            record['checks']['preserved_copies'] = preserved
+        if proof is None and not any(
+                f['code'] == BLOCKED_PRESERVATION_FAILED for f in findings):
             note(BLOCKED, BLOCKED_MISSING_PRESERVATION,
-                 'no preserved content, no remote proof, and preserve_content is off')
+                 'no preserved content proven at an external path, no remote '
+                 'proof, and preserve_content is off')
 
     disposition = ELIGIBLE
     for candidate in PRECEDENCE:
@@ -504,7 +655,23 @@ def dispatch(items, *, approved_root, expected_device, receipt_path,
     deletions = []
     preservation = []
 
-    for item in items:
+    container_problem = None
+    try:
+        if isinstance(items, (Mapping, str, bytes, bytearray)):
+            raise TypeError(
+                f'batch container is {type(items).__name__}, not an iterable '
+                'of resource records')
+        batch = list(items)
+    except Exception as exc:  # an unreadable batch types, it never raises
+        batch = []
+        container_problem = f'{type(exc).__name__}: {exc}'
+    if container_problem is not None:
+        record = _malformed_record(
+            f'batch container cannot be read: {container_problem}')
+        record['disposed'] = False
+        records.append(record)
+
+    for item in batch:
         try:
             record = evaluate(
                 item, approved_root=approved_root, expected_device=expected_device,
@@ -536,19 +703,24 @@ def dispatch(items, *, approved_root, expected_device, receipt_path,
             if proof == 'immediate_copy':
                 if preserved_root is None:
                     raise Refused('preserve_content requires preserved_root')
-                preserved = preserve(record['path'], preserved_root, record['id'])
-                record['preserved'] = preserved
-                preservation.append(preserved)
+                kept = preserve(record['path'], preserved_root, record['id'])
+                record['preserved'] = kept
+                preservation.append(kept)
             elif proof == 'remote_merge_proof':
                 record['preserved'] = {
                     'proof': 'remote_merge_proof',
                     'proof_ids': list(
                         record['checks'].get('remote_merge_proof_ids') or [])}
             elif proof == 'caller_preserved':
-                record['preserved'] = {
-                    'proof': 'caller_preserved',
-                    'receipt_ids': list(
-                        record['checks'].get('preservation_receipt_ids') or [])}
+                copies = record['checks'].get('preserved_copies') or []
+                if not copies:
+                    raise Refused('no proven preserved copy to record')
+                kept = dict(copies[0])
+                kept['proof'] = 'caller_preserved'
+                kept['receipt_ids'] = list(
+                    record['checks'].get('preservation_receipt_ids') or [])
+                record['preserved'] = kept
+                preservation.append(kept)
             else:
                 raise Refused('no preservation proof was selected')
         except (Refused, OSError, shutil.Error) as exc:
@@ -616,12 +788,16 @@ def dispatch(items, *, approved_root, expected_device, receipt_path,
         else:
             record['disposed'] = True
             record['disposal_receipt_id'] = f'dispose-{record["id"]}-{int(now())}'
+            kept = record.get('preserved') or {}
             deletions.append({'id': record['id'],
                               'path': record['path'],
                               'canonical_path': record['canonical_path'],
                               'device': record['device'],
                               'bytes': size_before,
-                              'absence': absence})
+                              'absence': absence,
+                              'preserved_proof': kept.get('proof'),
+                              'preserved_destination': kept.get('destination'),
+                              'preserved_digest': kept.get('digest')})
         records.append(record)
 
     counts = {name: 0 for name in DISPOSITIONS}

@@ -529,8 +529,12 @@ class PreservationProofTests(Base):
     def test_caller_preserved_needs_per_resource_receipts(self):
         self.preserved.mkdir(parents=True)
         path = self.scratch()
+        store = self.root / 'caller-store' / 'unit'
+        store.parent.mkdir(parents=True)
+        shutil.copytree(str(path), str(store))
         result = self.dispatch(
-            [self.item(preservation_receipt_ids=['saved-artifact'])],
+            [self.item(preservation_receipt_ids=['saved-artifact'],
+                       preserved_path=str(store))],
             preserve_content=False)
         record = result['items'][0]
         self.assertEqual(disposal.ELIGIBLE, record['disposition'], record['reason'])
@@ -684,6 +688,190 @@ class ContainmentTests(Base):
                               record['reasons'])
                 self.assertTrue(os.path.lexists(str(path)), 'the only copy survives')
                 self.assertEqual('only copy', (path / 'unique.txt').read_text())
+
+
+class RepairProofTests(Base):
+    """Before/after proofs for the PBB-257 verdict defects. Every test here
+    fails on the reviewed commit bd832e5f0 and passes on this repair."""
+
+    def test_an_identity_cannot_steer_the_preserved_copy_outside_the_root(self):
+        # defect 1: preserve() used the id as a raw path segment
+        path = self.scratch(files={'unique.txt': 'only copy'})
+        outside = self.root / 'OUTSIDE-PRESERVED-ROOT'
+        outside.mkdir()
+        result = self.dispatch([self.item(id='../../OUTSIDE-PRESERVED-ROOT/escaped')],
+                               preserved_root=self.preserved)
+        record = result['items'][0]
+        self.assertNotEqual(disposal.ELIGIBLE, record['disposition'])
+        self.assertFalse(record['disposed'])
+        self.assertFalse((outside / 'escaped').exists(),
+                         'a preserved copy may never land outside the preserved root')
+        self.assertTrue(os.path.lexists(str(path)), 'the resource survives')
+        self.assertEqual('only copy', (path / 'unique.txt').read_text())
+
+    def test_preserve_refuses_a_destination_outside_the_preserved_root(self):
+        path = self.scratch()
+        self.preserved.mkdir(parents=True)
+        outside = self.root / 'escape'
+        outside.mkdir()
+        for identity in ('../../escape', '/etc/kept', 'sub/name', 'feature/one'):
+            with self.subTest(identity=identity):
+                proof = disposal.preserve(str(path), str(self.preserved), identity)
+                destination = Path(proof['destination']).resolve()
+                self.assertTrue(
+                    str(destination).startswith(str(self.preserved.resolve()) + os.sep),
+                    f'preserved copy escaped the preserved root: {destination}')
+                self.assertFalse((outside / 'escape').exists())
+        for unusable in ('', '.', '..', '   '):
+            with self.subTest(identity=unusable):
+                with self.assertRaises(disposal.Refused):
+                    disposal.preserve(str(path), str(self.preserved), unusable)
+
+    def test_a_folded_identity_still_preserves_inside_the_preserved_root(self):
+        path = self.scratch(name='one')
+        proof = disposal.preserve(str(path), str(self.preserved), 'feature/one')
+        self.assertTrue(proof['verified'])
+        self.assertTrue(str(Path(proof['destination']).resolve()).startswith(
+            str(self.preserved.resolve()) + os.sep),
+            f"copy escaped the preserved root: {proof['destination']}")
+        self.assertTrue((Path(proof['destination']) / 'notes.txt').exists())
+
+    def test_symlink_component_guard_fires_on_mixed_path_forms(self):
+        # defect 2: the guard compared root and path lexically and went quiet
+        other = self.approved / 'other-place' / 'unit'
+        other.mkdir(parents=True)
+        (other / 'keep.txt').write_text('keep')
+        bridge = self.approved / 'bridge'
+        os.symlink(str(self.approved / 'other-place'), str(bridge))
+        cwd = os.getcwd()
+        os.chdir(str(self.root))
+        try:
+            result = disposal.dispatch(
+                [self.item(path=str(bridge / 'unit'))],
+                approved_root='approved',
+                expected_device=self.device,
+                receipt_path='approved/receipts/disposal-receipt.json',
+                preserved_root='approved/preserved',
+                preserve_content=True)
+        finally:
+            os.chdir(cwd)
+        record = result['items'][0]
+        self.assertEqual(disposal.BLOCKED, record['disposition'], record['reason'])
+        self.assertIn(disposal.BLOCKED_SYMLINK_ESCAPE, record['reasons'])
+        self.assertFalse(record['disposed'])
+        self.assertTrue((other / 'keep.txt').exists(),
+                        'a symlinked component deletes nothing')
+
+    def test_worktree_remove_command_refuses_force_in_every_spelling(self):
+        # defect 3: the guard knew only the long form
+        def authority(command):
+            class Stub:
+                @staticmethod
+                def worktree_remove_cmd(repo_path, target_path):
+                    return list(command)
+            return Stub
+
+        for spelling in ('-f', '-af', '--force', '--force=1', '--force=x'):
+            with self.subTest(flag=spelling):
+                command = ['git', '-C', '/repo', 'worktree', 'remove',
+                           spelling, '/tree']
+                with mock.patch.object(disposal, 'deletion_authority',
+                                       return_value=authority(command)):
+                    with self.assertRaises(disposal.Refused):
+                        disposal.worktree_remove_command('/repo', '/tree')
+
+    def test_worktree_remove_command_still_accepts_a_plain_removal(self):
+        command = ['git', '-C', '/repo', 'worktree', 'remove', '/tree']
+        with mock.patch.object(disposal, 'deletion_authority',
+                               return_value=authority_for(command)):
+            self.assertEqual(command,
+                             disposal.worktree_remove_command('/repo', '/tree'))
+
+    def test_a_claimed_caller_copy_with_no_content_is_not_preservation_proof(self):
+        # defect 4 (first half): a directory merely existing is never proof
+        self.preserved.mkdir(parents=True)
+        path = self.scratch(files={'unique.txt': 'only copy'})
+        result = self.dispatch(
+            [self.item(preservation_receipt_ids=['claimed'])],
+            preserve_content=False)
+        record = result['items'][0]
+        self.assertEqual(disposal.BLOCKED, record['disposition'], record['reason'])
+        self.assertIn(disposal.BLOCKED_MISSING_PRESERVATION, record['reasons'])
+        self.assertFalse(record['disposed'])
+        self.assertEqual([], result['deletions'])
+        self.assertTrue(os.path.lexists(str(path)))
+        self.assertEqual('only copy', (path / 'unique.txt').read_text())
+
+    def test_a_proven_caller_copy_records_its_exact_external_path(self):
+        # defect 4 (second half): the receipt names the exact external path
+        self.preserved.mkdir(parents=True)
+        path = self.scratch(files={'unique.txt': 'only copy'})
+        store = self.root / 'caller-store' / 'unit'
+        store.parent.mkdir(parents=True)
+        shutil.copytree(str(path), str(store))
+        result = self.dispatch(
+            [self.item(preservation_receipt_ids=['claimed'],
+                       preserved_path=str(store))],
+            preserve_content=False)
+        record = result['items'][0]
+        self.assertEqual(disposal.ELIGIBLE, record['disposition'], record['reason'])
+        self.assertTrue(record['disposed'])
+        self.assertEqual(str(store.resolve()),
+                         record['preserved']['destination'])
+        self.assertTrue(record['preserved'].get('digest'))
+        on_disk = json.loads((self.receipts / 'disposal-receipt.json').read_text())
+        deletion = on_disk['deletions'][0]
+        self.assertEqual(str(store.resolve()), deletion['preserved_destination'])
+        self.assertEqual(record['preserved']['digest'],
+                         deletion['preserved_digest'])
+        self.assertTrue('preserved_proof' in deletion)
+        self.assertTrue(os.path.lexists(str(store)))
+
+    def test_a_caller_copy_that_differs_from_the_resource_is_not_proof(self):
+        self.preserved.mkdir(parents=True)
+        path = self.scratch(files={'unique.txt': 'only copy'})
+        store = self.root / 'caller-store' / 'unit'
+        store.parent.mkdir(parents=True)
+        shutil.copytree(str(path), str(store))
+        (store / 'unique.txt').write_text('half copy')
+        result = self.dispatch(
+            [self.item(preservation_receipt_ids=['claimed'],
+                       preserved_path=str(store))],
+            preserve_content=False)
+        record = result['items'][0]
+        self.assertEqual(disposal.BLOCKED, record['disposition'], record['reason'])
+        self.assertTrue(os.path.lexists(str(path)),
+                        'a partial copy never authorises a deletion')
+
+    def test_a_wrong_type_batch_container_types_unknown_instead_of_raising(self):
+        # defect 5: 'for item in items' ran before any typing
+        for bad in (None, 5, {'a': 1}, 'unit'):
+            with self.subTest(container=type(bad).__name__):
+                result = self.dispatch(bad)
+                self.assertEqual('INCOMPLETE', result['status'])
+                self.assertFalse(result['success'])
+                self.assertEqual(disposal.UNKNOWN,
+                                 result['items'][0]['disposition'])
+                self.assertIn(disposal.UNKNOWN_MALFORMED_ITEM,
+                              result['items'][0]['reasons'])
+
+    def test_a_whitespace_only_id_is_not_an_identity(self):
+        # defect 6: a blank id was accepted as an identity
+        path = self.scratch()
+        result = self.dispatch([self.item(id='   ')])
+        record = result['items'][0]
+        self.assertEqual(disposal.UNKNOWN, record['disposition'])
+        self.assertIn(disposal.UNKNOWN_MISSING_IDENTITY, record['reasons'])
+        self.assertFalse(record['disposed'])
+        self.assertTrue(os.path.lexists(str(path)))
+
+
+def authority_for(command):
+    class Stub:
+        @staticmethod
+        def worktree_remove_cmd(repo_path, target_path):
+            return list(command)
+    return Stub
 
 
 class SourceGuardTests(unittest.TestCase):
