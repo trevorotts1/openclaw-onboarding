@@ -8843,12 +8843,23 @@ PYEOF
     # cron registration permanent -- see the note at the sentinel write for
     # the full story).
     _INSTALLER_FAILED=0
-    for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh" "$SKILL_DIR"/scripts/install-*.sh; do
-      if [ -x "$_candidate" ]; then
-        SKILL_INSTALLER="$_candidate"
-        break
-      fi
-    done
+    # Skill 06 ships FOUR maintenance-cron installers under scripts/. The
+    # first-match loop below stopped at the alphabetically-first one
+    # (install-github-archive-reconcile-cron.sh), so the inventory,
+    # routing-drift and selector-drift jobs were never registered on any box.
+    # Its aggregate installer names all four explicitly and then reports which
+    # jobs are registered; it goes first so the glob below cannot shadow it.
+    if [ "$SKILL_NAME" = "06-ghl-install-pages" ] && [ -x "$SKILL_DIR/scripts/install-skill6-maintenance-crons.sh" ]; then
+      SKILL_INSTALLER="$SKILL_DIR/scripts/install-skill6-maintenance-crons.sh"
+    fi
+    if [ -z "$SKILL_INSTALLER" ]; then
+      for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh" "$SKILL_DIR"/scripts/install-*.sh; do
+        if [ -x "$_candidate" ]; then
+          SKILL_INSTALLER="$_candidate"
+          break
+        fi
+      done
+    fi
     # Also check for setup-*.sh pattern
     if [ -z "$SKILL_INSTALLER" ]; then
       for _candidate in "$SKILL_DIR"/setup-*.sh "$SKILL_DIR"/scripts/setup-*.sh; do
