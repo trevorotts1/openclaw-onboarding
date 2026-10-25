@@ -375,7 +375,7 @@ class TestRefusals(LaunchImportCase):
                             "page_role is 'checkout'")
         rp = self.request_variant("r8.json", assigned_skill=63)
         self.assert_refused(self.run_intake("--launch-context", str(rp)),
-                            "assigned_skill is 63")
+                            "assigned_skill is 63", "NEXT (operator, role:")
 
     def test_launch_identity_mismatch(self):
         lp = self.write("launch-bad.json",
@@ -565,7 +565,7 @@ class TestPromptPolicyDualAccept(LaunchImportCase):
         rp = self.request_11("request-unknown.json",
                               prompt_policy_id="no-such-policy")
         self.assert_refused(self.run_intake("--launch-context", str(rp)),
-                            "no-such-policy", "registry")
+                            "no-such-policy", "registry", "NEXT (operator, role:")
 
     def test_policy_id_wrong_types_are_refused(self):
         rp = self.request_11("request-intid.json", prompt_policy_id=71)

@@ -122,6 +122,59 @@ class AnswersFeedSkill71(unittest.TestCase):
         _, intake = self.intake("answers.elevation.json", "--image-cap", "6", "--design-style", "A")
         self.assertEqual((intake["image_cap"], intake["design_style"]), (6, "A"))
 
+    def test_documented_answers_command_fills_both_copy_selectors(self):
+        # Finding 17: INTAKE.md documents `write_intake.py RUN --answers-file A`
+        # with no --copy-version; the copy stage reads copy_version, so a run
+        # that records only page_version cannot close copy.
+        r = run("write_intake.py", self.run_dir, "--answers-file", FIX / "answers.elevation.json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        intake = json.loads((self.run_dir / "intake.json").read_text())
+        self.assertEqual((intake["page_version"], intake["copy_version"]), ("standard", "standard"))
+
+    def test_page_kind_is_collected_before_the_length(self):
+        # Finding 17: an answers file that records the page kind imports it,
+        # and the length is read against that kind.
+        d = doc("answers.7fig.json")  # copy_profile long_form, provided
+        d["answers"]["page_kind"] = {"value": "opt_in", "status": "provided", "source": "client"}
+        f = self.run_dir / "kind.json"
+        f.write_text(json.dumps(d))
+        r = run("write_intake.py", self.run_dir, "--answers-file", f)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        intake = json.loads((self.run_dir / "intake.json").read_text())
+        self.assertEqual((intake["page_kind"], intake["page_version"], intake["copy_version"]),
+                         ("opt_in", "long-form", "long-form"))
+
+    def test_a_recorded_kind_refuses_a_length_it_cannot_use_with_a_recovery_action(self):
+        d = doc("answers.elevation.json")  # copy_profile standard, provided
+        d["answers"]["page_kind"] = {"value": "opt_in", "status": "provided", "source": "client"}
+        f = self.run_dir / "kind-standard.json"
+        f.write_text(json.dumps(d))
+        r = run("write_intake.py", self.run_dir, "--answers-file", f)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("REFUSED", r.stdout)
+        self.assertIn("NEXT (operator, role:", r.stdout)
+        self.assertIn("long-form", r.stdout)
+        self.assertFalse((self.run_dir / "intake.json").exists())
+
+    def test_a_credential_refusal_names_the_operator_recovery_and_no_internals(self):
+        # Finding 24: the operator gets the exact recovery action and role; the
+        # summary is plain. Provisioning topology and tier backstops never print.
+        r = run("write_intake.py", self.run_dir, "--page-version", "standard",
+                "--brand-owner", "Fixture", "--image-cap", "1",
+                "--publish-target", "ghl", "--automation-scope", "workflows",
+                "--ghl-pit-absent", "--ghl-location-absent")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("NEXT (operator, role: account access)", r.stdout)
+        self.assertIn("GHL_PRIVATE_INTEGRATION_TOKEN", r.stdout)
+        r = run("write_intake.py", self.run_dir, "--page-version", "standard",
+                "--brand-owner", "Fixture", "--image-cap", "1",
+                "--publish-target", "ghl", "--automation-scope", "workflows",
+                "--ghl-pit-present", "--ghl-location-present", "--ghl-firebase-absent")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("firebase-choice", r.stdout)
+        for internal in ("fleet-contabo", "per-container", "Tier 4"):
+            self.assertNotIn(internal, r.stdout)
+
     def test_answers_file_of_another_schema_is_refused(self):
         f = self.run_dir / "bad.json"
         f.write_text(json.dumps({"schema": "nope"}))

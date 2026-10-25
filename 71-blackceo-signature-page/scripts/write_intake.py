@@ -24,11 +24,12 @@ intake without it (gate:intake_page_kind); test runs are exempt.
 Answers file (lane intake): --answers-file FILE reads the one client intake answers file
 (shared-utils/client_intake, schema client-intake-answers/v1) so the same questions asked in
 claude-nine, Claude Code or OpenClaw feed this writer. It fills --brand-owner (business_name),
---image-cap, --page-version (copy_profile), --design-style and --image-engine whenever the flag is not
-given, writes the run's client brand file (colors as roles, fonts, logo, photos; see
-scripts/brand_colors.py record-answers) and records answers_file, answers_file_sha256 and the
-to_confirm list in intake.json so the delivery report can name every default. A flag on the command
-line always wins over the answers file. Without --answers-file nothing changes.
+--image-cap, --page-version AND --copy-version (one copy_profile, both selectors), --page-kind
+(a page_kind answer, read before the length it constrains), --design-style and --image-engine
+whenever the flag is not given, writes the run's client brand file (colors as roles, fonts, logo,
+photos; see scripts/brand_colors.py record-answers) and records answers_file, answers_file_sha256
+and the to_confirm list in intake.json so the delivery report can name every default. A flag on the
+command line always wins over the answers file. Without --answers-file nothing changes.
 Exit 0 written, 2 invalid input.
 
 Delivery fields (Item 31, Amendment 4): the intake also records the publish
@@ -42,9 +43,15 @@ the record and never printed). Refusals are written, at intake:
   location ID present is refused, naming what to supply in this install's
   own secrets.env;
 - automation scope without the Firebase refresh token requires a recorded
-  choice (--firebase-choice): supply the token, declare the Tier 4 browser
-  backstop, or drop the automation scope. The page job may proceed; the
-  workflows may not pretend to exist.
+  choice (--firebase-choice): supply the token, record that the automation
+  falls back to the browser sign-in, or drop the automation scope. The page
+  job may proceed; the workflows may not pretend to exist.
+
+The credential, page-kind and page-length refusals print two registers: a
+plain summary line (REFUSED:) that an operator may relay to a client
+unchanged, and a NEXT line naming the exact recovery action and the role
+responsible for it. Registry names, provisioning topology and tier backstops
+appear in neither.
 
 Credential presence defaults to the process environment; the --*-present /
 --*-absent flags override it (for provisioning records written before the
@@ -135,6 +142,17 @@ CREDENTIALS = (
     ("location_id", "ghl_location", "GHL_LOCATION_ID"),
     ("firebase_refresh_token", "ghl_firebase", "GHL_FIREBASE_REFRESH_TOKEN"),
 )
+
+
+def refuse(summary, recovery, role):
+    """A refusal in two registers (finding 24): `summary` is the plain
+    blocker an operator may relay to a client unchanged; the NEXT line is
+    the exact recovery action and the role responsible for it, for the
+    operator. Registry names, provisioning topology and tier backstops
+    belong in neither line."""
+    print(f"REFUSED: {summary}")
+    print(f"NEXT (operator, role: {role}): {recovery}")
+    return 2
 
 
 def image_pixel_dimensions(path):
@@ -411,7 +429,14 @@ def founder_photo_form_problems(brand_path, run_dir):
 
 
 def read_answers(path):
-    """The answers file as (doc, defaults for this writer's flags). Refuses a file of another schema."""
+    """The answers file as (doc, defaults for this writer's flags). Refuses a file of another schema.
+
+    Page kind is read before length (finding 17): the kind decides which
+    lengths are allowed, so a client's recorded kind is imported and the
+    length is checked against it instead of colliding at the copy stage.
+    copy_profile fills BOTH copy selectors - page_version and copy_version -
+    because the copy stage reads copy_version, and a run that records only
+    page_version cannot close copy."""
     try:
         doc = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -419,18 +444,33 @@ def read_answers(path):
     if not isinstance(doc, dict) or doc.get("schema") != "client-intake-answers/v1":
         raise ValueError(f"--answers-file {path} is not a client-intake-answers/v1 file")
 
-    def value(key):
+    def entry(key):
         e = (doc.get("answers") or {}).get(key)
-        return e["value"] if isinstance(e, dict) and e.get("status") != "unknown" else None
+        return e if isinstance(e, dict) else {}
+
+    def value(key):
+        e = entry(key)
+        return e.get("value") if e.get("status") != "unknown" else None
 
     defaults = {}
     if value("business_name"):
         defaults["brand_owner"] = value("business_name")
     if isinstance(value("image_cap"), int):
         defaults["image_cap"] = value("image_cap")
+    kind = value("page_kind")
+    if kind is not None:
+        normalized = page_kinds.normalize(kind)
+        if normalized not in page_kinds.kind_ids():
+            raise ValueError(
+                f"--answers-file {path} records page_kind {kind!r}, which is not "
+                f"one of {', '.join(page_kinds.kind_ids())}; record the client's "
+                "answer as sales or opt_in and rerun")
+        defaults["page_kind"] = normalized
     profile = value("copy_profile")
     if profile in ("standard", "long_form"):
-        defaults["page_version"] = "standard" if profile == "standard" else "long-form"
+        form = "standard" if profile == "standard" else "long-form"
+        defaults["page_version"] = form
+        defaults["copy_version"] = form
     if value("design_style") in design_style.STYLE_IDS:
         defaults["design_style"] = value("design_style")
     provider = value("image_provider")
@@ -454,8 +494,7 @@ def main(argv=None):
     p.add_argument("run_dir", type=Path)
     p.add_argument("--answers-file", type=Path, default=None,
                    help="the client intake answers file (client-intake-answers/v1); fills the flags it can")
-    p.add_argument("--page-version", choices=list(copy_forms.FORMS), required="page_version" not in from_answers,
-                   default=from_answers.get("page_version"),
+    p.add_argument("--page-version", choices=list(copy_forms.FORMS), default=from_answers.get("page_version"),
                    help="standard or long-form for a landing page; a page type's own form "
                         "(thank-you) for that page, which also records its page_role")
     p.add_argument("--brand-owner", required="brand_owner" not in from_answers, default=from_answers.get("brand_owner"))
@@ -468,11 +507,11 @@ def main(argv=None):
                         "(references/design-styles.md); ask with `design_style.py question`")
     p.add_argument("--design-style-source", choices=DESIGN_STYLE_SOURCES, default=None,
                    help="how the style was chosen (default client_choice when --design-style is given)")
-    p.add_argument("--copy-version", choices=list(copy_forms.FORMS), default=None,
+    p.add_argument("--copy-version", choices=list(copy_forms.FORMS), default=from_answers.get("copy_version"),
                    help="the run's copy selection (required intake decision, "
                         "Amendment 6 Items 18/19); selects the copy guide, spec, "
                         "and emotional-quality extract for the copy stage")
-    p.add_argument("--page-kind", choices=page_kinds.kind_ids(), default=None,
+    p.add_argument("--page-kind", choices=page_kinds.kind_ids(), default=from_answers.get("page_kind"),
                    help="the landing-role page this run builds: sales (signature sales "
                         "page) or opt_in (signature landing opt-in page); decides the "
                         "canonical section sequence, wireframe closing band and Design "
@@ -544,6 +583,20 @@ def main(argv=None):
     if a.image_cap < 0 or not a.run_dir.is_dir():
         print("FAIL: run_dir must exist and image_cap must be >= 0")
         return 2
+    # One copy selection, two selectors (finding 17): whichever selector is
+    # given fills the other, so no run records a page_version with a null
+    # copy_version for the copy stage to trip on.
+    if a.page_version is None and a.copy_version is not None:
+        a.page_version = a.copy_version
+    if a.copy_version is None and a.page_version is not None:
+        a.copy_version = a.page_version
+    if a.page_version is None:
+        return refuse(
+            "the page length for this run was not recorded.",
+            "rerun with --page-version standard|long-form (or --copy-version), "
+            "or supply an answers file whose copy_profile answer records the "
+            "client's choice.",
+            "intake")
     forms = page_role.role_specs()
     if (forms.get(a.page_version) or forms.get(a.copy_version)) and a.copy_version not in (None, a.page_version):
         print(f"REFUSED: --page-version \"{a.page_version}\" and --copy-version \"{a.copy_version}\" "
@@ -587,8 +640,13 @@ def main(argv=None):
         try:
             page_kinds.check(a.page_kind, effective_copy)
         except page_kinds.KindError as exc:
-            print(f"REFUSED: {exc}")
-            return 2
+            return refuse(
+                "the page length recorded for this run does not fit the kind of "
+                "page being built, so intake stopped before writing anything.",
+                f"{exc}. Rerun with --copy-version long-form for an opt-in page "
+                "(standard or long-form for a sales page), or correct --page-kind "
+                "to the page the client chose.",
+                "intake")
 
     brand_path = resolve_brand_file(a.brand_file, a.run_dir)
     if brand_path is not None:
@@ -617,6 +675,10 @@ def main(argv=None):
     else:
         print("NOTE page_kind: none recorded. Rerun with --page-kind sales|opt_in; a "
               "production run cannot close intake without it (test runs are exempt).")
+        print("NEXT (operator, role: intake): ask the client which page this is (the "
+              "signature sales page or the signature landing opt-in page) and rerun "
+              "with --page-kind sales|opt_in, or record it as a page_kind answer in "
+              "the answers file.")
     if a.design_style:
         intake["design_style"] = a.design_style
         intake["design_style_source"] = a.design_style_source or "client_choice"
@@ -652,29 +714,34 @@ def main(argv=None):
             missing = [credentials[k]["variable"] for k in ("pit", "location_id")
                        if not credentials[k]["present"]]
             if missing:
-                print(f"REFUSED: publish_target \"ghl\" requires the GHL Private "
-                      f"Integration Token and the location ID in this install's own "
-                      f"secrets.env; not present: {', '.join(missing)}. Supply them "
-                      f"at provisioning (per-container on fleet-contabo, never "
-                      f"shared) and rerun intake.")
-                return 2
+                return refuse(
+                    "this page cannot be published to Convert and Flow yet: the "
+                    "account access it needs is not set up for this install.",
+                    "add the missing values to this install's own secrets.env and "
+                    f"rerun intake: {', '.join(missing)}",
+                    "account access")
         automation_scope = a.automation_scope
         extra = {}
         if automation_scope == "workflows" and not credentials["firebase_refresh_token"]["present"]:
             var = credentials["firebase_refresh_token"]["variable"]
             if a.firebase_choice is None:
-                print(f"REFUSED: automation_scope \"workflows\" needs the Firebase "
-                      f"refresh token ({var}) for workflow writes, or a recorded "
-                      f"choice: rerun with --firebase-choice supply (provide the "
-                      f"token), backstop (declare the Tier 4 browser backstop), or "
-                      f"drop (drop the automation scope). The page job may proceed; "
-                      f"the workflows may not pretend to exist.")
-                return 2
+                return refuse(
+                    "the automation part of this job cannot be prepared yet: the "
+                    "workflow sign-in it needs is not set up for this install. The "
+                    "page itself can still be built.",
+                    "rerun with one recorded choice: --firebase-choice supply (set "
+                    "up the workflow sign-in, then rerun), --firebase-choice "
+                    "backstop (record that the automation falls back to the "
+                    "browser sign-in), or --firebase-choice drop (build the page "
+                    "with no automation). The page job may proceed; the workflows "
+                    "may not pretend to exist.",
+                    "account access")
             if a.firebase_choice == "supply":
-                print(f"REFUSED: --firebase-choice supply was recorded but {var} is "
-                      f"still not present in this install's secrets.env. Supply it "
-                      f"and rerun intake.")
-                return 2
+                return refuse(
+                    "the automation part of this job still cannot be prepared: the "
+                    "workflow sign-in is not present for this install.",
+                    f"add {var} to this install's own secrets.env and rerun intake.",
+                    "account access")
             if a.firebase_choice == "backstop":
                 extra["firebase_backstop_declared"] = True
             elif a.firebase_choice == "drop":
