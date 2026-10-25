@@ -210,6 +210,194 @@ STYLES = {
     },
 }
 
+#: S75-T20: executable rap recipes. Melodic Rap, Trap Rap and Pop Rap are
+#: recipe records, not menu entries -- the eighteen-choice catalog is the
+#: T18 catalog owner's write, so ``style_ids()`` (the card menu) stays at the
+#: three D18 styles while these ids already resolve through style(),
+#: style_prompt(), spoken_target() and the payload compiler.
+#:
+#: Client recognition names live ONLY in ``client_references`` (display
+#: metadata). The provider compiler reads ``production_traits`` only, so no
+#: artist name can reach an outgoing style field by construction.
+#:
+#: Trap Rap does NOT enable explicitness: ``explicit_lyrics`` is an explicit
+#: False on every recipe, never inferred from the genre label. A genre word
+#: is not permission for profanity, violence or an invented biography.
+RAP_RECIPE_REVISION = "s75-t20/1"
+SOURCE_S75_T20 = "Owner S75-T20 approval 2026-10-24"
+
+RECIPES = {
+    "melodic-rap": {
+        "style_id": "melodic-rap",
+        "label": "Melodic Rap",
+        "description": ("emotional rap that moves between rhythmic lines and "
+                        "a tuneful hook."),
+        "recipe_revision": RAP_RECIPE_REVISION,
+        "deliveries": ("spoken", "rap", "sung"),
+        "explicit_lyrics": False,
+        "client_references": ("Drake", "Rod Wave"),
+        "production_traits": {
+            "genre": "melodic rap",
+            "tempo": ("70-90 bpm felt half-time or 140-180 counted "
+                      "double-time, one documented interpretation"),
+            "meter": "4/4",
+            "instrumentation": (
+                "restrained minor-key piano motif", "warm pad",
+                "controlled 808 bass", "sparse kick and snare",
+                "selective hi-hat movement"),
+            "avoided_instrumentation": (
+                "dense triplet hi-hat rolls", "wall of distorted guitars"),
+            "vocal_delivery": (
+                "clear rhythmic rap moving into a pitched melodic hook; "
+                "emotional cracks carried by dynamics, not a copied voice"),
+            "energy_map": (
+                "sparse under the spoken consequence, beat thins at the "
+                "costly admission, harmonic width after the character "
+                "chooses differently"),
+            "hook": ("pitched melodic hook is required after the rap states "
+                     "the tension; a spoken-only hook fails"),
+            "delivery_constraints": (
+                "names and offer words remain readable; pitch tuning is "
+                "texture only, never a voice change"),
+            "word_fit": ("separate rapid syllables from held notes and leave "
+                         "a breath before the hook"),
+            "example": ("fictional: the lead admits the missed call before "
+                        "the beat thickens; the sung line returns after they "
+                        "answer"),
+            "negatives": ("no spoken-only hook", "no doubled tempo",
+                          "no unreadable names"),
+        },
+    },
+    "trap-rap": {
+        "style_id": "trap-rap",
+        "label": "Trap Rap",
+        "description": ("punchy rap over deep bass and crisp, rolling "
+                        "hi-hats, with a strong hook."),
+        "recipe_revision": RAP_RECIPE_REVISION,
+        "deliveries": ("spoken", "rap", "sung"),
+        # A trap label is not a licence: clean by default, every audience.
+        "explicit_lyrics": False,
+        "client_references": ("Cardi B", "Future"),
+        "production_traits": {
+            "genre": "trap rap",
+            "tempo": ("65-85 bpm half-time or 130-170 counted double-time, "
+                      "one documented counted feel"),
+            "meter": "4/4",
+            "instrumentation": (
+                "controlled 808 low end", "punchy kick", "dry snare and clap",
+                "crisp rolling hi-hats", "sparse dark synth, bell or piano "
+                "motif"),
+            "avoided_instrumentation": (
+                "unbroken maximal triplet density", "generic four-on-the-floor"),
+            "vocal_delivery": (
+                "rhythmic, confident and intelligible lead; short emphatic "
+                "phrases and purposeful rests, not automatic triplet density"),
+            "energy_map": (
+                "bass and percussion articulate escalating pressure after "
+                "the spoken opening; bass drops out briefly for the "
+                "emotional admission, then returns"),
+            "hook": ("compact hook with a melodic or rhythmic anchor inside "
+                     "the accepted spoken/rap budget"),
+            "delivery_constraints": (
+                "ad-libs never mask names, business claims or the call to "
+                "action; lyrics stay inside the approved audience and tone"),
+            "word_fit": ("allocate rests and consonants explicitly; never "
+                         "solve overlength with all double-time delivery"),
+            "example": ("fictional: the counter goes silent as the payment "
+                        "is declined; a precise rap passage names the choice, "
+                        "then the hook carries the changed response"),
+            "negatives": ("no profanity", "no violence", "no invented street "
+                          "biography", "no rap-negative tags"),
+        },
+    },
+    "pop-rap": {
+        "style_id": "pop-rap",
+        "label": "Pop Rap",
+        "description": ("upbeat, easy-to-follow rap with a bright, catchy "
+                        "pop hook."),
+        "recipe_revision": RAP_RECIPE_REVISION,
+        "deliveries": ("spoken", "rap", "sung"),
+        "explicit_lyrics": False,
+        "client_references": ("Nelly", "Flo Rida", "Puff Daddy"),
+        "production_traits": {
+            "genre": "pop rap",
+            "tempo": "92-118 bpm",
+            "meter": "4/4",
+            "instrumentation": (
+                "bright bass", "crisp hip-hop and pop drums",
+                "buoyant piano or synth stabs",
+                "clean accessible melodic chorus"),
+            "avoided_instrumentation": (
+                "unbroken ominous trap texture",
+                "instrumental dance drop replacing the vocal hook"),
+            "vocal_delivery": (
+                "rhythmic, easy-to-follow rap with fewer crowded "
+                "subdivisions than trap, then a clearly sung or deliberately "
+                "chant-like hook"),
+            "energy_map": (
+                "serious spoken consequence even under an energetic sound; "
+                "action-focused rap builds pressure, the pre-hook clears "
+                "space, the bright hook arrives only when the choice earns it"),
+            "hook": ("immediately memorable original hook supporting the same "
+                     "single call to action; never a borrowed known tune"),
+            "delivery_constraints": (
+                "mix stays open for story words; light call and response only "
+                "for declared cast"),
+            "word_fit": "short rhyme units and a low-density hook",
+            "example": ("fictional: a failed handoff opens the scene; the rap "
+                        "follows two concrete attempts, and the chorus lifts "
+                        "when the team makes a clear plan"),
+            "negatives": ("no repeated brand slogan", "no unexplained party "
+                          "extras", "no second call to action"),
+        },
+    },
+}
+
+#: Trap Rap must never turn explicitness on by itself (owner hard rule).
+#: Named so a caller reads the rule instead of inferring it from a genre.
+EXPLICIT_NEVER_INFERRED = ("trap-rap",)
+
+
+def recipe_ids():
+    """The three S75-T20 rap recipe ids."""
+    return tuple(RECIPES)
+
+
+def _record(style_id):
+    """One style or recipe record by id (STYLES wins on a shared id)."""
+    sid = _style_key(style_id)
+    if sid in STYLES:
+        return STYLES[sid]
+    return RECIPES[sid]
+
+
+def enables_explicit_lyrics(style_id):
+    """Whether choosing this style turns explicitness on. Never, for any
+    recipe: rap and trap are genres, not consent to profanity."""
+    return bool(_record(style_id).get("explicit_lyrics", False))
+
+
+def recipe(style_id):
+    """Full recipe record including display-only client_references."""
+    return dict(_record(style_id))
+
+
+def _compile_traits(traits):
+    """Provider style text from production_traits ALONE.
+
+    Client reference metadata is a different key and is never read here, so
+    an artist name cannot reach a Suno field through this compiler.
+    """
+    parts = [traits["genre"], traits["tempo"], traits["meter"]]
+    parts.extend(traits["instrumentation"])
+    parts.append(traits["vocal_delivery"])
+    parts.append(traits["energy_map"])
+    parts.append(traits["hook"])
+    parts.append(traits["delivery_constraints"])
+    parts.extend("avoid %s" % a for a in traits["avoided_instrumentation"])
+    return ", ".join(parts)
+
+
 #: G1 amended: the two contradicting tag words, whole-word matched in a
 #: joined tag list by assert_no_contradiction().
 _CONTRADICTING_PATTERNS = tuple(
@@ -269,7 +457,7 @@ def delivery_map(sheet_text):
 
 def default_delivery_map(style_id):
     """The delivery-map sentence for a style when no sheet is at hand."""
-    return _map_sentence(set(STYLES[_style_key(style_id)]["deliveries"]))
+    return _map_sentence(set(_record(style_id)["deliveries"]))
 
 
 def _deliveries_of(deliveries):
@@ -356,6 +544,10 @@ SECTION_HINTS = {
     "rnb-flow": "[Verse] rap, [Hook] sung r&b, [Verse] rap, [Hook] sung r&b",
     "soul-rise": "[Verse] slow soul, [Build] pressure, "
                  "[Chorus] upbeat groove, [Outro] hold the lift",
+    "melodic-rap": "[Verse] rap, [Hook] sung melodic, [Verse] rap, "
+                   "[Hook] sung melodic",
+    "trap-rap": "[Verse] rap, [Hook] rap, [Verse] rap, [Hook] sung or rap",
+    "pop-rap": "[Verse] rap, [Pre-Hook] clear space, [Chorus] sung pop hook",
 }
 
 
@@ -373,13 +565,14 @@ def _style_key(style):
                               "style must be a non-empty string, got %r"
                               % (style,))
     key = style.strip().lower()
-    if key in STYLES:
+    if key in STYLES or key in RECIPES:
         return key
-    for sid, rec in STYLES.items():
+    for sid, rec in list(STYLES.items()) + list(RECIPES.items()):
         if key == rec["label"].lower():
             return sid
     raise MusicStyleError("UNKNOWN_STYLE",
-                          "not one of the three D18 styles: %r" % style)
+                          "not one of the three D18 styles or the S75-T20 "
+                          "rap recipes: %r" % style)
 
 
 def _length_key(length):
@@ -408,12 +601,33 @@ def _length_key(length):
 
 
 def style(style_id):
-    """Full record for one style. Raises MusicStyleError on an unknown id."""
-    return dict(STYLES[_style_key(style_id)])
+    """Full record for one style or rap recipe. Raises on an unknown id."""
+    sid = _style_key(style_id)
+    if sid in RECIPES:
+        return style_prompt_record(sid)
+    return dict(STYLES[sid])
+
+
+def style_prompt_record(style_id):
+    """A recipe exposed in the same shape as a STYLES menu record."""
+    rec = RECIPES[_style_key(style_id)]
+    return {
+        "style_id": rec["style_id"],
+        "label": rec["label"],
+        "sound": rec["description"],
+        "description": rec["description"],
+        "share_rule": _SHARE_RULE,
+        "deliveries": rec["deliveries"],
+        "explicit_lyrics": rec["explicit_lyrics"],
+        "recipe_revision": rec["recipe_revision"],
+        "notes": (SOURCE_S75_T20 + "; rap counts as spoken delivery; "
+                  "client references are display only"),
+        "suno_style_prompt": _compile_traits(rec["production_traits"]),
+    }
 
 
 def style_prompt(style_id, sung=None, sheet_text=None):
-    """Suno style-field text for one style (id or label accepted).
+    """Suno style-field text for one style or rap recipe (id or label).
 
     Contract consumed by core/style_defaults (V2B-AUDIO-U5): returns a
     non-empty str, raises only on an unknown style id.
@@ -427,12 +641,19 @@ def style_prompt(style_id, sung=None, sheet_text=None):
     are used, so a default prompt never ships unmapped. ``sung`` is
     accepted and ignored: the earlier 11:35 ban on spoken-word wording in
     the style text is REVERSED by this order.
+
+    S75-T20: a rap recipe's base text is compiled from production_traits
+    only, so its display-only client references can never be serialized.
+    The three D18 prompt strings stay byte-for-byte unchanged.
     """
     sid = _style_key(style_id)
-    text = STYLES[sid]["suno_style_prompt"]
+    if sid in RECIPES:
+        text = _compile_traits(RECIPES[sid]["production_traits"])
+    else:
+        text = STYLES[sid]["suno_style_prompt"]
     deliveries = sheet_deliveries(sheet_text) if sheet_text else set()
     if not deliveries:
-        deliveries = set(STYLES[sid]["deliveries"])
+        deliveries = set(_record(sid)["deliveries"])
     if not has_delivery_map(text, deliveries):
         # U15d (design 4.2): the base text ends with a PERIOD before the map is
         # appended. Without it "no distortion" ran into "The lead" and the style
@@ -470,7 +691,7 @@ def spoken_target(style_id, length):
     secs = _length_key(length)
     return {
         "style_id": sid,
-        "label": STYLES[sid]["label"],
+        "label": _record(sid)["label"],
         "length_seconds": secs,
         "d15_min": SPOKEN_SHARE_MIN,
         "d15_max": SPOKEN_SHARE_MAX,

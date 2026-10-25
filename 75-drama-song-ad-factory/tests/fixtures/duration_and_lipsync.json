@@ -1,0 +1,68 @@
+{
+  "schema": "blackceo.s75-t25.fixtures/v1",
+  "durations_s": [60, 90, 120, 180, 300, 600],
+  "rejected_durations": [0, 45, 75, 240, 601, "sixty"],
+  "style_ids": [
+    "soul-ballad", "rnb-flow", "soul-rise",
+    "acoustic-pop", "folk-storytelling", "country-pop",
+    "melodic-rap", "trap-rap", "pop-rap", "pop-rock",
+    "reggaeton", "cinematic-orchestral-song", "musical-theater",
+    "contemporary-gospel", "urban-gospel", "alternative-rnb",
+    "afro-soul", "country-rap"
+  ],
+  "route": "MiniMax H3",
+  "route_resolved": "minimax-h3/*",
+  "opener": {
+    "accepted": {"delivery": "spoken", "start_s": 0.0, "end_s": 12.0, "words": 26, "articulated": true},
+    "short": {"delivery": "spoken", "start_s": 0.0, "end_s": 11.9, "words": 25, "articulated": true},
+    "sung": {"delivery": "sung", "start_s": 0.0, "end_s": 12.0, "words": 26, "articulated": true},
+    "wordless_intro": {"delivery": "spoken", "start_s": 1.5, "end_s": 14.0, "words": 22, "articulated": true},
+    "swallowed": {"delivery": "spoken", "start_s": 0.0, "end_s": 12.0, "words": 26, "articulated": false}
+  },
+  "lipsync": {
+    "union": {
+      "intervals": [[0.0, 10.0], [5.0, 15.0], [100.0, 110.0]],
+      "final_runtime_s": 120,
+      "expected_union_s": 25.0,
+      "expected_share": 0.208333
+    },
+    "cap_violation_36pct": {
+      "intervals": [[0.0, 21.6]],
+      "final_runtime_s": 60,
+      "expected_share": 0.36
+    },
+    "cap_exact_35pct_120s": {
+      "intervals": [[0.0, 42.0]],
+      "final_runtime_s": 120,
+      "expected_share": 0.35
+    },
+    "at_target_30pct": {
+      "intervals": [[0.0, 18.0]],
+      "final_runtime_s": 60,
+      "expected_share": 0.3
+    },
+    "adversarial_offscreen_speech": {
+      "intervals": [[0.0, 12.0]],
+      "final_runtime_s": 60,
+      "spoken_seconds": 30,
+      "expected_lipsync_share": 0.2,
+      "expected_spoken_share": 0.5,
+      "note": "spoken voice over exterior: spoken audio 50%, zero extra visible lip-sync"
+    },
+    "adversarial_visible_sung_closeup": {
+      "intervals": [[0.0, 18.0]],
+      "final_runtime_s": 60,
+      "spoken_seconds": 12,
+      "expected_lipsync_share": 0.3,
+      "expected_spoken_share": 0.2,
+      "note": "sung close-up counts as visible lip-sync; the audio spoken ratio proves nothing"
+    }
+  },
+  "word_fit": {
+    "fit": {"style_id": "soul-ballad", "duration_s": 60, "instrumental_only_s": 6.0, "breath_allowance_s": 3.0,
+            "blocks": [{"delivery": "spoken", "words": 20, "pause_s": 0.5}, {"delivery": "sung", "words": 35, "pause_s": 1.0}],
+            "protected": ["free consultation"]},
+    "overflow": {"style_id": "soul-ballad", "duration_s": 60, "instrumental_only_s": 6.0, "breath_allowance_s": 3.0,
+                 "blocks": [{"delivery": "spoken", "words": 90, "pause_s": 0.0}, {"delivery": "sung", "words": 120, "pause_s": 0.0}]}
+  }
+}

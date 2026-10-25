@@ -1,6 +1,6 @@
 # Direct-to-Agent Update Message Template
 # Version 3.1 | 2026-10-17
-# Repo version at last roll: **v27.1.65** (kept in sync with `version` at repo root)
+# Repo version at last roll: **v27.1.66** (kept in sync with `version` at repo root)
 #
 # Copy-paste this to any client's agent on Telegram via Skill 15 (BlackCEO Management).
 #
@@ -19,7 +19,7 @@
 
 ---
 
-There is an update available for your OpenClaw / BlackCEO system. The latest version is **v27.1.65**; the operator supplies the target OpenClaw version `<V>` and the roll id `<ROLL_ID>`.
+There is an update available for your OpenClaw / BlackCEO system. The latest version is **v27.1.66**; the operator supplies the target OpenClaw version `<V>` and the roll id `<ROLL_ID>`.
 
 This release pairs with Command Center v7.6.112. Presentations pipeline hardening, interview reliability (ILJ), provider-routing and Rescue Rangers hardening have landed, with native Linux and Docker topologies supported on Hostinger and Contabo.
 

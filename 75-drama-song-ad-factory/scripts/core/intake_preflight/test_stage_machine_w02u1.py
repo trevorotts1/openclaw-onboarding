@@ -27,6 +27,7 @@ sys.path.insert(0, str(HERE))
 
 import factory as F  # noqa: E402
 import state_store as ss  # noqa: E402
+from test_production_process import confirmed_run, complete_stage, approve_script
 
 PASS = []
 
@@ -120,15 +121,10 @@ def test_strict_completion_requires_all_gates():
 def test_events_auto_continue():
     with tempfile.TemporaryDirectory() as td:
         run = Path(td) / "run-A"
-        (run / "control").mkdir(parents=True)
+        confirmed_run(run, song=False)
         db = run / "control" / "state.sqlite3"
-        st = ss.Store(db)
-        st.init_run("run-A", F.CANONICAL_STAGES)
-        # research complete, creative-strategy ready -> next should be creative
-        st.transition("run-A", "research", "READY", "w1")
-        st.claim("run-A", "research", "w1", 60)
-        st.transition("run-A", "research", "COMPLETE", "w1")
-        st.close()
+        # The real Store transition and artifact prove the completed predecessor.
+        complete_stage(run, "research")
 
         a1 = F.continuation_enqueue(run, "approval", run_id="run-A")
         assert a1["verdict"] == "runnable" and a1["next_stage"] == "creative-strategy", a1
@@ -137,15 +133,10 @@ def test_events_auto_continue():
         assert q and q[-1]["next_stage"] == "creative-strategy", q
 
         # a provider-completion event on music advances to continuity-bible
-        st = ss.Store(db)
-        for s in ("creative-strategy", "script-lyrics"):
-            st.transition("run-A", s, "READY", "w1")
-            st.claim("run-A", s, "w1", 60)
-            st.transition("run-A", s, "COMPLETE", "w1")
-        st.transition("run-A", "music", "READY", "w1")
-        st.claim("run-A", "music", "w1", 60)
-        st.transition("run-A", "music", "COMPLETE", "w1")
-        st.close()
+        for stage in ("creative-strategy", "script-lyrics"):
+            complete_stage(run, stage)
+        approve_script(run)
+        complete_stage(run, "music")
         a2 = F.continuation_enqueue(run, "provider-completion", run_id="run-A")
         assert a2["verdict"] == "runnable" and a2["next_stage"] == "continuity-bible", a2
         ok("approval + provider events auto-continue the correct run")
@@ -196,31 +187,25 @@ def test_expired_lease_fenced_reclaim():
 
 # ── 5. full registry traversal through final delivery (crash + revision) ────
 def _make_full_run(run, stages=F.CANONICAL_STAGES):
-    """Controlled fixture: complete every stage with the artifacts the
-    strict-completion gate needs. Includes an independent final-QC record,
-    current approvals, and delivery receipts."""
-    (run / "control").mkdir(parents=True, exist_ok=True)
-    reg = F.STAGE_REGISTRY
-    plan = {"revision": "r7"}
-    (run / "control" / "plan-revision.json").write_text(json.dumps(plan))
-    approvals = {}
-    for s in stages:
-        entry = reg[s]
-        for rel in entry["required_artifacts"]:
-            p = run / rel
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("artifact %s" % rel)
-        if entry["approval_policy"] != "none":
-            approvals[s] = {"state": "approved", "plan_revision": "r7"}
-        (run / entry["required_artifacts"][0]).write_text("artifact")
-    (run / "control" / "approvals.json").write_text(json.dumps(approvals))
-    fq = run / "final-qc" / "record.json"
-    fq.parent.mkdir(parents=True, exist_ok=True)
-    fq.write_text(json.dumps({"gate": "PASS",
-                              "producer": reg["final-qc"]["qc_producer"]}))
-    rec = run / "delivery" / "receipts.json"
-    rec.parent.mkdir(parents=True, exist_ok=True)
-    rec.write_text(json.dumps([{"dest": "chat", "status": "delivered"}]))
+    """Current intake, legal stage history and real artifact decision writers."""
+    from test_factory_method_agnes import make_run
+    from storyboard_director.test_registry_advancement import qc_record
+    import qc_gate
+
+    # Keep the generated root: its decisions, Store and recap bind its run ID.
+    run = make_run(run, None, agnes="no")
+    (run / "control" / "plan-revision.json").write_text(json.dumps({"revision": "r7"}))
+    record = qc_record(run.name)
+    record["stage"] = "final-qc"
+    verdict = qc_gate.evaluate(run.name, "final-qc", [record],
+                               {record["check_id"]: "fixture-build-worker"}, ["continuity"])
+    (run / "final-qc" / "record.json").write_text(json.dumps({
+        "gate": verdict["gate"], "producer": F.STAGE_REGISTRY["final-qc"]["qc_producer"],
+        "evaluation": verdict}))
+    # Controlled successful sink receipt; this fixture sends nothing externally.
+    (run / "delivery" / "receipts.json").write_text(json.dumps([
+        {"destination": "chat", "status": "delivered"}]))
+    return run
 
 
 def test_registry_traversal_and_completion():
@@ -229,7 +214,8 @@ def test_registry_traversal_and_completion():
 
     with tempfile.TemporaryDirectory() as td:
         run = Path(td) / "run-C"
-        _make_full_run(run)
+        run = _make_full_run(run)
+        assert not (run / "control" / "approvals.json").exists()
         got = {s: "COMPLETE" for s in F.CANONICAL_STAGES}
         d = F.select_next_action(got)
         assert d["all_complete"] is True, d
@@ -237,6 +223,13 @@ def test_registry_traversal_and_completion():
         assert delivered is True, report
         ok("complete registry traverses through final delivery -> delivered")
 
+        # Seed the negative-only legacy restriction from the real current proof.
+        # The cache was absent for successful delivery and cannot grant approval.
+        from production_process import inspect_completion_approvals
+        current = inspect_completion_approvals(run)
+        script = current["checks"]["script-lyrics"]["approved_script"]
+        (run / "control" / "approvals.json").write_text(json.dumps({
+            "script-lyrics": dict(script, state="approved", plan_revision="r7")}))
         # user revision: a script-lyrics approval invalidated (plan bump) -> not delivered
         (run / "control" / "plan-revision.json").write_text(json.dumps({"revision": "r8"}))
         delivered, report = F.evaluate_completion(run, got)
@@ -299,14 +292,9 @@ def test_wal_db_without_sidecars_reads():
     import sqlite3
     with tempfile.TemporaryDirectory() as td:
         run = Path(td) / "run-W"
-        (run / "control").mkdir(parents=True)
+        confirmed_run(run, song=False)
         db = run / "control" / "state.sqlite3"
-        st = ss.Store(db)
-        st.init_run("run-W", F.CANONICAL_STAGES)
-        st.transition("run-W", "research", "READY", "w1")
-        st.claim("run-W", "research", "w1", 60)
-        st.transition("run-W", "research", "COMPLETE", "w1")
-        st.close()
+        complete_stage(run, "research")
         # Reproduce the real fleet failure: a WAL db that still carries frames,
         # handed to a reader whose directory it cannot write (no -shm can be
         # attached). Plain mode=ro then raises SQLITE_CANTOPEN "unable to open
@@ -318,7 +306,8 @@ def test_wal_db_without_sidecars_reads():
                     "WHERE run_id='run-W' AND stage='research'")
         con.commit()
         sealed = Path(td) / "run-S"
-        (sealed / "control").mkdir(parents=True)
+        shutil.copytree(run, sealed, ignore=shutil.ignore_patterns(
+            "state.sqlite3", "state.sqlite3-wal", "state.sqlite3-shm"))
         sdb = sealed / "control" / "state.sqlite3"
         for suf in ("", "-wal"):
             if Path(str(db) + suf).exists():

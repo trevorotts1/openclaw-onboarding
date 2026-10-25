@@ -1,5 +1,13 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.55: route resolution is caller-first (W77S-ROUTE)
+
+In plain English: the council no longer offers the runtime's own provider list as if it were the client's model menu. It reads the calling agent's model first, maps it to a configured route when one matches, and otherwise says plainly that none of the runtime's routes is the caller's model.
+
+- `SKILL.md` step 4 rewritten: read the calling agent's provider/model (`openclaw agents list` in OpenClaw, the harness default on claude-nine/Claude Code), then `blackceo-council routes`; offer the matching route as the default, or refuse with the exact sentence naming the configured routes and the caller's provider. The hardcoded harness menu (claude-nine default / Sonnet / DeepSeek Flash) is gone.
+- Source-level test extended: the shipped SKILL.md must carry the caller-first rule and must not reintroduce the hardcoded menu.
+- No runtime code change: the bundle stays sha256 b10bb16b.
+
 ## v1.0.54: the selected-tree gate closes the false passes two independent reviews found (W77S)
 
 In plain English: three rounds of adversarial review found cases where the gate could still say OK without proving anything. Each is now refused with a specific reason instead of a pass.
