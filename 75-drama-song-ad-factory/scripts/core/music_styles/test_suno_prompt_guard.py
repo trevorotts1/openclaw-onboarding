@@ -41,6 +41,23 @@ APPROVED_LYRICS = (
     "[Sung] One honest call is all I need to make."
 )
 
+#: S75-T41 r8: a display block under the spellings a seventh writer would use.
+RENAMED_DISPLAY_KEYS = (
+    "artistReferences", "artist_references_v2", "Artist_References",
+    "client_references_extra", "recognition_ref", "artist_names",
+    "displayReference", "artist_reference",
+)
+DISPLAY_BLOCK = {"display_value": "Marisol Ferrer",
+                 "display_note": "client asked for this exact sound"}
+
+#: Approved sheets that carry an alias's WORDS with other material between
+#: them.  They are prose, not references, and must dispatch byte-identical.
+PROSE_SHEETS = (
+    "the band was bad that night but the bunny hop encore stole the show",
+    "the jelly sits on the plate while the whole room waits for it to roll",
+    "my heart will always search for the one who will go on loving me",
+)
+
 
 def load_catalog():
     with open(FIXTURE, encoding="utf-8") as handle:
@@ -531,6 +548,69 @@ class DisplayMetadataBoundary(unittest.TestCase):
         self.assertNotIn("Whitney", wire)
         self.assertEqual(G.find_matches(wire, self.aliases), [])
 
+    def test_display_block_under_every_renamed_key_never_reaches_the_transport(
+            self):
+        # S75-T41 r8: a seventh spelling of a display-only key is the SAME
+        # container.  Every renamed spelling is refused at the send boundary --
+        # the transport sees nothing at all -- and the display payload itself
+        # never reaches the serialized request.
+        sent = []
+
+        def fake_send(payload):
+            sent.append(payload)
+            return "job-1"
+
+        for key in RENAMED_DISPLAY_KEYS:
+            payload = envelope(self.catalog, "soul-ballad")
+            payload["input"]["mix"] = {key: copy.deepcopy(DISPLAY_BLOCK)}
+            with self.assertRaises(G.PromptGuardError) as ctx:
+                G.guarded_send(payload, self.catalog, fake_send)
+            self.assertIn("OUTGOING_REFERENCE_BLOCKED", str(ctx.exception), key)
+            self.assertEqual(sent, [], key)
+            receipt = G.guard(payload, self.catalog)
+            self.assertEqual(receipt["decision"], "BLOCKED", key)
+            self.assertFalse(receipt["sendable"], key)
+            self.assertIsNone(receipt["payload"], key)
+            self.assertEqual(receipt["provider_calls"], 0, key)
+            self.assertTrue(
+                any(b["reason"] == "CLIENT_METADATA_SERIALIZED"
+                    and b["field"].endswith(key) for b in receipt["blocked"]),
+                (key, receipt["blocked"]))
+        self.assertEqual(sent, [])
+
+    def test_a_display_block_cannot_hide_under_a_key_nobody_named_yet(self):
+        # the block keys live INSIDE the block: display_value / display_note are
+        # display-metadata names at any depth, under any outer key.
+        for key in ("totally_new_key", "mix", "zzz"):
+            payload = envelope(self.catalog, "soul-ballad")
+            payload["input"]["mix"] = {key: copy.deepcopy(DISPLAY_BLOCK)}
+            receipt = G.guard(payload, self.catalog)
+            self.assertEqual(receipt["decision"], "BLOCKED", key)
+            self.assertIsNone(receipt["payload"], key)
+            self.assertEqual(receipt["provider_calls"], 0, key)
+
+    def test_the_six_canonical_client_metadata_keys_keep_their_hard_block(self):
+        for key in sorted(G.CLIENT_METADATA_KEYS):
+            payload = envelope(self.catalog, "soul-ballad")
+            payload["input"][key] = copy.deepcopy(DISPLAY_BLOCK)
+            receipt = G.guard(payload, self.catalog)
+            self.assertEqual(receipt["decision"], "BLOCKED", key)
+            self.assertEqual([b["reason"] for b in receipt["blocked"]
+                              if b["field"] == "input." + key],
+                             ["CLIENT_METADATA_SERIALIZED"], key)
+            self.assertIsNone(receipt["payload"], key)
+            self.assertEqual(receipt["provider_calls"], 0, key)
+
+    def test_displayonly_type_is_still_refused_under_any_key(self):
+        for key in ("brand_new_key", "artistReferences", "mix"):
+            payload = envelope(self.catalog, "soul-ballad")
+            payload["input"]["mix"] = {key: PC.display_metadata(self.record)}
+            receipt = G.guard(payload, self.catalog)
+            self.assertEqual(receipt["decision"], "BLOCKED", key)
+            self.assertIsNone(receipt["payload"], key)
+            self.assertIn("DISPLAY_METADATA_NOT_SERIALIZABLE",
+                          [b["reason"] for b in receipt["blocked"]], key)
+
 class SquashedSpellings(unittest.TestCase):
     """S75-T41 defect 1: a squashed / hyphenated / punctuation-stripped
     spelling of a catalog reference is the SAME reference, in BOTH directions
@@ -656,6 +736,115 @@ class SquashedSpellings(unittest.TestCase):
         self.assertEqual(G.find_matches("andraday beat", {}), [])
         receipt = G.guard(envelope(self.catalog, "soul-rise"), {"styles": {}})
         self.assertEqual(receipt["decision"], "PASS")
+
+class JoinBoundaryRegression(unittest.TestCase):
+    """S75-T41 r8: the join is one UNIT at the word boundary, never a WORD.
+
+    Round 7 closed the join class with an UNBOUNDED gap, which turned ordinary
+    prose into catalog collisions -- a 55-character English clause presented to
+    the client as a reference.  The join stays open to any material AT the
+    boundary and closed to a whole word between an alias's words.
+    """
+
+    def setUp(self):
+        self.catalog = load_catalog()
+        self.aliases = G.alias_set(self.catalog)
+
+    def test_prose_carrying_an_aliass_words_with_material_between_dispatches(
+            self):
+        # the three sheets round 7 blocked as APPROVED_CONTENT_COLLISION: they
+        # carry an alias's words with prose between them and must dispatch
+        # byte-identical, at the guard and at the send boundary.
+        sent = []
+
+        def fake_send(payload):
+            sent.append(payload)
+            return "job-1"
+
+        for sheet in PROSE_SHEETS:
+            self.assertEqual(G.find_matches(sheet, self.aliases), [], sheet)
+            payload = envelope(self.catalog, "soul-ballad", lyrics=sheet)
+            before = hashlib.sha256(sheet.encode("utf-8")).hexdigest()
+            receipt = G.guard(payload, self.catalog)
+            self.assertEqual(receipt["decision"], "PASS", sheet)
+            self.assertTrue(receipt["sendable"], sheet)
+            self.assertEqual(receipt["payload"]["input"]["lyrics"], sheet)
+            self.assertEqual(
+                receipt["preserved_approved_content_digest"]["fields"],
+                {"input.lyrics": before}, sheet)
+            _, sent_receipt = G.guarded_send(
+                envelope(self.catalog, "soul-ballad", lyrics=sheet),
+                self.catalog, fake_send)
+            wire = json.dumps(sent[-1], ensure_ascii=False)
+            self.assertEqual(sent[-1]["input"]["lyrics"], sheet, sheet)
+            self.assertNotIn("display_value", wire)
+        self.assertEqual(len(sent), len(PROSE_SHEETS))
+
+    def test_the_ten_named_carriers_never_reach_any_wire_position(self):
+        # the ten carriers the round-6 verdict named, at all four wire
+        # positions (style, negative tags, style suffix and an outbound map
+        # key): the literal spelling must never appear in what the transport
+        # was handed.
+        spellings = ("BadXYBunny", "BadXYZBunny", "Bad_1_Bunny",
+                     "Bad__1__Bunny", "Bad_1'Bunny", "Bad'1_Bunny",
+                     "Bad-1-Bunny", "Bad.x.Bunny", "Bad 1 Bunny",
+                     "Bad1_1Bunny")
+        for text in spellings:
+            for position in ("style", "negative_tags", "style_suffix",
+                             "mix_key"):
+                payload = envelope(self.catalog, "trap-rap")
+                if position == "mix_key":
+                    payload["input"]["mix"] = {text: "clean"}
+                else:
+                    payload["input"][position] = {
+                        "style": "warm strings, %s groove" % text,
+                        "negative_tags": "do not sound like %s" % text,
+                        "style_suffix": "avoid %s grit" % text,
+                    }[position]
+                sent = []
+
+                def fake_send(request):
+                    sent.append(request)
+                    return "job-1"
+
+                try:
+                    G.guarded_send(payload, self.catalog, fake_send)
+                except G.PromptGuardError:
+                    pass
+                wire = "".join(json.dumps(request, ensure_ascii=False)
+                               for request in sent)
+                self.assertNotIn(text, wire, (position, text))
+                self.assertEqual(G.find_matches(wire, self.aliases), [],
+                                 (position, text))
+
+    def test_the_boundary_controls_the_round_named_match_nothing(self):
+        for text in ("bad boy bunny groove", "bad moon bunny groove",
+                     "cardigan b"):
+            self.assertEqual(G.find_matches(text, self.aliases), [], text)
+            payload = envelope(self.catalog, "trap-rap", lyrics=text)
+            receipt = G.guard(payload, self.catalog)
+            self.assertEqual(receipt["decision"], "PASS", text)
+
+    def test_the_join_is_still_open_to_any_material_at_the_boundary(self):
+        # one join UNIT at one word boundary: letters, digits, punctuation,
+        # runs of them, mixed, doubled, padded -- the same reference.
+        for text in ("BadxyBunny", "BadabcdBunny", "BadxyzzyxqBunny",
+                     "Bad 1 Bunny", "Bad 1 2 Bunny", "Bad'1'Bunny",
+                     "Bad-1-Bunny", "Bad.x.Bunny", "Bad1_1Bunny",
+                     "Bad_1'Bunny", "Bad_1_Bunny", "Bad__1__Bunny",
+                     "Bad___1___Bunny", "Bad1234Bunny", "P.xDiddy"):
+            self.assertTrue(G.find_matches(text, self.aliases), text)
+            payload = envelope(self.catalog, "trap-rap", style=text)
+            receipt = G.guard(payload, self.catalog)
+            self.assertIn(receipt["decision"], ("SANITIZED", "BLOCKED"), text)
+            self.assertNotEqual(receipt["decision"], "PASS", text)
+
+    def test_a_whole_word_between_the_alias_words_is_not_that_alias(self):
+        for text in ("bad boy bunny groove", "bad moon bunny groove",
+                     "bad that night but the bunny", "bead bunny drums",
+                     "brad bunny groove", "the jelly sits on the plate",
+                     "my heart will always search for the one"):
+            self.assertEqual(G.find_matches(text, self.aliases), [], text)
 
 class DispatchSeam(unittest.TestCase):
     """S75-T41 defect 2: the guard runs at the REAL outbound seam --

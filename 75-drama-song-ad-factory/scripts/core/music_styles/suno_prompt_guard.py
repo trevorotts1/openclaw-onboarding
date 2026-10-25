@@ -26,11 +26,14 @@ words may also be absent or replaced by ONE JOIN UNIT that carries whatever it
 carries -- a hyphen, an underscore, an apostrophe, a digit, a Roman numeral,
 ordinary letters, a punctuation run, several of them mixed or doubled -- so
 ``andraday``, ``ANDRA-DAY``, ``Bad_Bunny``, ``Jelly'Roll``, ``Bad①Bunny``,
-``BadⅠBunny``, ``Bad1Bunny``, ``BadxyBunny``, ``Bad_1_Bunny``, ``Bad 1 Bunny``
-and ``Bad1_1Bunny`` hit the same alias their spaced spelling does.  The WORDS
-identify the reference and the material sitting at their join does not change
-it -- but a squashed hit still has to be the WHOLE alias-shaped word run, never
-a substring of a longer word.
+``BadⅠBunny``, ``Bad1Bunny``, ``BadxyBunny``, ``Bad_1_Bunny``, ``Bad 1 Bunny``,
+``Bad1_1Bunny`` and ``BadabcdBunny`` hit the same alias their spaced spelling
+does.  A join UNIT is what sits AT one word boundary: it may carry any
+characters but never a whole WORD, so ``bad boy bunny`` and ``bad that night
+but the bunny`` are ordinary prose and never a reference.  The WORDS identify
+the reference and the material sitting at their join does not change it -- but
+a squashed hit still has to be the WHOLE alias-shaped word run, never a
+substring of a longer word.
 
 Object KEYS are outbound text too: every key at any depth is normalized and
 matched exactly like a value, so a name can never ride out of the payload
@@ -65,6 +68,16 @@ DEFAULT_PROTECTED_PATHS = ("input.lyrics",)
 #: Keys that are display-only by construction.  Seeing one anywhere in an
 #: outbound payload means client metadata was serialized into a provider
 #: request: a hard block, independent of whether a name is recognized.
+#:
+#: These six are only the spellings the CATALOG writes.  A seventh spelling of
+#: the same container -- ``artistReferences``, ``artist_names``,
+#: ``displayReference`` -- is the same container, so the block is on the SHAPE
+#: of a key as well as on these literals (``is_client_metadata_key``): a
+#: display subject (artist / client / recognition / display / reference / song)
+#: together with a display qualifier (reference(s) / name(s) / metadata /
+#: value / note(s) / text) names client metadata however it is spelled, at any
+#: depth.  That is why ``{"display_value": ...}`` cannot ride out under a key
+#: nobody has invented yet either: the block keys are inside the block.
 CLIENT_METADATA_KEYS = frozenset({
     "client_references",
     "display_metadata",
@@ -72,6 +85,16 @@ CLIENT_METADATA_KEYS = frozenset({
     "recognition_references",
     "reference_songs",
     "artist_references",
+})
+
+#: The two halves of a display-metadata key name, on its normalized tokens.
+_DISPLAY_SUBJECT = frozenset({
+    "artist", "artists", "client", "clients", "recognition",
+    "display", "reference", "references", "ref", "refs", "song", "songs",
+})
+_DISPLAY_QUALIFIER = frozenset({
+    "reference", "references", "ref", "refs", "name", "names",
+    "metadata", "value", "note", "notes", "text",
 })
 
 #: A field that may not become empty: an empty style field is not a payload.
@@ -271,17 +294,29 @@ _MATCHER_CACHE = {}
 
 #: ONE join unit sits where a reference's words meet, and it may carry ANY
 #: characters at all: ``Bad1Bunny``, ``Bad①Bunny``, ``BadxyBunny``,
-#: ``Bad_1_Bunny``, ``Bad 1 Bunny`` and ``Bad1_1Bunny`` are the same words with
-#: the join carrying whatever it carries, and ``Maroon15`` is ``Maroon 5`` the
-#: same way.  The words are what name the reference; the join is one unit of
-#: material at one word boundary, so it never turns the words into different
-#: words (``bead bunny`` is not ``bad bunny`` -- that would be a fuzzy match on
-#: the WORDS, which this never does).  What it costs is stated in the receipt's
-#: terms: any text carrying an alias's words in order with material between
-#: them resolves to that alias.  A squashed hit is still the WHOLE alias-shaped
-#: word run -- never a substring of a longer word -- which is the boundary in
-#: ``_matcher``, not the join.
-_JOIN = r"[\s\S]*?"
+#: ``Bad_1_Bunny``, ``Bad 1 Bunny``, ``Bad1_1Bunny`` and ``BadabcdBunny`` are
+#: the same words with the join carrying whatever it carries, and ``Maroon15``
+#: is ``Maroon 5`` the same way.  The words are what name the reference; the
+#: join is one unit of material AT one word boundary, so it never turns the
+#: words into different words (``bead bunny`` is not ``bad bunny`` -- that
+#: would be a fuzzy match on the WORDS, which this never does) and it never
+#: swallows a whole WORD (``bad boy bunny`` is not ``bad bunny``, and prose
+#: that carries an alias's words with sentences between them is prose).
+#:
+#: So the join is bounded in KIND and never in LENGTH.  A length bound cannot
+#: do this job: ``Bad 1 2 Bunny`` is a reference and ``bad boy bunny`` is a
+#: five-character word between the same two words, so any gap short enough to
+#: spare the prose also spares ``BadabcdBunny`` and ``Bad 1 2 Bunny``.  The
+#: rule instead follows the material's shape: with no whitespace it is glued
+#: to BOTH of the alias's words (one alias-shaped word run, letters and all),
+#: and with whitespace every piece it carries is a join fragment of at most
+#: one letter.  A squashed hit is still the WHOLE alias-shaped word run --
+#: never a substring of a longer word -- which is the boundary in ``_matcher``,
+#: not the join.
+_LETTER = r"[^\W\d_]"
+_NOT_LETTER = r"(?:[^\w\s]|[\d_])"
+_JOIN_PIECE = r"%s*(?:%s%s*)?" % (_NOT_LETTER, _LETTER, _NOT_LETTER)
+_JOIN = r"(?:[^\s]*?|(?:%s\s+)*%s)" % (_JOIN_PIECE, _JOIN_PIECE)
 
 
 def _alias_pattern(form):
@@ -313,6 +348,26 @@ def _matcher(aliases):
 
 def _dot(path):
     return ".".join(str(part) for part in path)
+
+
+def _key_tokens(key):
+    """Comparable tokens of an object key: camelCase and snake_case alike."""
+    return set(normalize(
+        re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(key))).split())
+
+
+def is_client_metadata_key(key):
+    """True for a display-only key name, however that name is spelled.
+
+    The six canonical names in ``CLIENT_METADATA_KEYS`` are the catalog's own
+    spellings; the shape test under them is what keeps a seventh spelling of
+    the same container (``artistReferences``, ``artist_names``,
+    ``recognition_ref``, ``displayReference``) from riding out beside them.
+    """
+    if str(key) in CLIENT_METADATA_KEYS:
+        return True
+    tokens = _key_tokens(key)
+    return bool(tokens & _DISPLAY_SUBJECT) and bool(tokens & _DISPLAY_QUALIFIER)
 
 
 def _walk_text(value, path=()):
@@ -437,7 +492,7 @@ def guard(payload, catalog, protected=DEFAULT_PROTECTED_PATHS):
                         sanitized=[], provider_calls=0)
 
     leaks = sorted({_dot(path) for path, key in _walk_keys(payload)
-                    if key in CLIENT_METADATA_KEYS})
+                    if is_client_metadata_key(key)})
     if leaks:
         return _receipt(payload, revision, aliases, inspected,
                         decision="BLOCKED", sendable=False,
