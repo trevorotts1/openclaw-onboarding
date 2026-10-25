@@ -6,9 +6,10 @@ invitation to redesign it.
 
 ## First run: create a run, write intake, check the first stage
 
-Run these three commands in order. The first one only makes an empty folder; the
-second writes the run's `intake.json`; the third asks the stage gate whether the
-first stage may start. That is the whole entry path.
+From this skill directory, run these commands in order. The first only makes an
+empty folder; `write_intake.py` writes the run's `intake.json`; `stage_gate.py
+init` prepares the run's state; the last asks the stage gate whether the first
+stage may start. That is the whole entry path.
 
 ```bash
 mkdir -p ~/signature-runs/demo

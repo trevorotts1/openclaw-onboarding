@@ -9,6 +9,7 @@ or different from the others. Run directly or through tests/run_tests.py.
 """
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -37,27 +38,33 @@ def stamps(root=ROOT):
 
 
 class VersionLockstepTests(unittest.TestCase):
-    def test_every_stamp_is_a_dotted_version(self):
-        for name, value in stamps().items():
-            self.assertRegex(value, DOTTED, f"{name} is {value!r}, not a dotted version")
-
-    def test_all_three_stamps_agree(self):
-        found = stamps()
+    def assert_lockstep(self, root=ROOT):
+        """The gate itself: three stamps, one version. Both the positive and
+        the negative test drive this exact assertion, so a split cannot pass
+        by the negative case recomputing its own private predicate."""
+        found = stamps(root)
         distinct = sorted(set(found.values()))
         self.assertEqual(
             len(distinct), 1,
             "release stamps disagree: " + ", ".join(f"{k}={v}" for k, v in sorted(found.items())),
         )
 
+    def test_every_stamp_is_a_dotted_version(self):
+        for name, value in stamps().items():
+            self.assertRegex(value, DOTTED, f"{name} is {value!r}, not a dotted version")
+
+    def test_all_three_stamps_agree(self):
+        self.assert_lockstep()
+
     def test_check_catches_a_split(self):
-        """The check must fail on the packed 1.3.4/1.3.7 split, not pass vacuously."""
-        import tempfile
+        """The gate must FAIL on the packed 1.3.4/1.3.7 split, not pass vacuously."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "SKILL.md").write_text("---\nname: x\nversion: 1.3.7\n---\n", encoding="utf-8")
             (root / "skill-version.txt").write_text("1.3.7\n", encoding="utf-8")
             (root / "VERSION").write_text("1.3.4\n", encoding="utf-8")
-            self.assertEqual(len(set(stamps(root).values())), 2)
+            with self.assertRaises(AssertionError):
+                self.assert_lockstep(root)
 
 
 if __name__ == "__main__":
