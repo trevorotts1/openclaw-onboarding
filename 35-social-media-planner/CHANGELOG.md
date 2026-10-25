@@ -1,6 +1,6 @@
 # Changelog - Social Media Planner (Skill 35)
 
-## [3.9.2] - 2026-10-25 - T-22c repair 4: the signing key is not a runtime input
+## [3.9.3] - 2026-10-25 - T-22c repair 4: the signing key is not a runtime input
 
 **Correction of the 3.9.1 entry below.** 3.9.1 closed the derivation channel and
 opened an injection channel, and its prose claimed more than its code supported.
@@ -49,8 +49,15 @@ opened an injection channel, and its prose claimed more than its code supported.
   provisioned at
   `<real home of the real uid>/.openclaw/state/personal-profile-capability/seal.key`
   and is never supplied by the caller.
+**Renumbered before landing.** The first cut of this entry claimed 3.9.2; a
+concurrent unlanded repair branch (`origin/pb/PBB-396/t-22-repair4`) claims
+3.9.2 as well, so 3.9.2 is a merge-time hazard rather than a free number. The
+value was measured across every fetched remote head (3113 refs):
+`v3.9.2` x2, `v3.9.1` x1, `v3.9.0` x1, `v3.9.3` x0 — so 3.9.3 is the next
+genuinely free number and this entry is filed under it.
+
 - **Version markers realigned for this skill.** `skill-version.txt`, `SKILL.md`
-  and this entry all read 3.9.2, so
+  and this entry all read 3.9.3, so
   `06-ghl-install-pages/scripts/check-version-drift.py 35-social-media-planner`
   exits 0. The 38-conversational-ai-system marker is deliberately untouched: this
   commit changes zero files under `38-conversational-ai-system/`, and the marker
