@@ -17,6 +17,16 @@ T08RepairProofs carries one test per defect the QC attack proved (A1-A9),
 each with its inverse leg. Those tests fail on the pre-repair module and pass
 after it: run them against `git show 5e8b38b9c:shared-utils/reminders/
 reminder_state_machine.py` and 12 of the 41 fail.
+
+T09QcRound2Proofs carries one test per defect the qc2-t-17 FAIL verdict
+reports (D1 admission-is-acceptance, D2 scope of a narrow refusal at the
+final, D3 the unreachable stopped_declined), each with an inverse leg that is
+green on both trees. The whole 50-test suite, run against the reviewed commit
+`git show 6395572224bceb90d2203b4fb46686a87fe15738:shared-utils/reminders/
+reminder_state_machine.py` in an identical tree, fails 10 of 50 (8 failures,
+2 errors) and passes 50 of 50 after it. No assertion was removed or weakened:
+the assertion inventory is 238 -> 304 across 51 -> 62 methods, with zero
+methods missing and zero carrying fewer assertions than before.
 """
 
 import json
@@ -87,6 +97,22 @@ class _Base(unittest.TestCase):
         def send(ctx):
             raise RuntimeError("provider connection lost mid-send")
         return send
+
+    def close_on_ack(self, final, seq=SEQ, contact=None, at=1302.0):
+        """The provider ACK lands after the admission.
+
+        The ACK receipt is the only proof the closing action landed
+        (durable_store.record_dispatch: "Provider admission is NOT completion;
+        ack is a separate receipt"), so the close runs through the module's one
+        ACK contract and only then may claim "sent".
+        """
+        contact = contact or self.contact
+        self.store.record_ack(
+            final.action_id,
+            {"provider": "sms", "provider_receipt_id": "ack-1"}, now=at)
+        return self.machine.dispatch_final(
+            TENANT, contact, seq, final.action_id, self.sender(),
+            channel="sms", now=at + 1)
 
     def ready(self, seq=SEQ, contact=None, now=1010.0):
         contact = contact or self.contact
@@ -601,7 +627,16 @@ class T06ActualTerminalStop(_Base):
         out = self.machine.dispatch_final(
             TENANT, self.contact, SEQ, final.action_id, self.sender(),
             channel="sms", now=1301.0)
-        self.assertTrue(out.sent)
+        # A bare provider admission proves nothing (qc2-t-17 D1): the claim is
+        # made only when the ACK receipt lands, so the acceptance leg below is
+        # what closes stopped_final.
+        self.assertEqual(out.status, "admitted")
+        self.assertFalse(out.sent)
+        self.assertEqual(out.state, rsm.STATE_CLOSING_FINAL)
+        accepted = self.close_on_ack(final, at=1302.0)
+        self.assertTrue(accepted.sent)
+        self.assertEqual(accepted.reason, "ack_receipt")
+        self.assertIn("ack", self.store.receipts(final.action_id))
         return final
 
     def test_terminal_state_refuses_every_further_effect(self):
@@ -809,9 +844,11 @@ class T08RepairProofs(_Base):
         final = self.machine.reserve_final(
             TENANT, self.contact, SEQ, channel="sms",
             content_sha256="sha-final", now=1300.0)
-        self.assertTrue(self.machine.dispatch_final(
+        out = self.machine.dispatch_final(
             TENANT, self.contact, SEQ, final.action_id, self.sender(),
-            channel="sms", now=1301.0).sent)
+            channel="sms", now=1301.0)
+        self.assertEqual(out.status, "admitted")
+        self.assertTrue(self.close_on_ack(final, at=1302.0).sent)
         before = self.snap()
         self.assertEqual(len(self.sends), 1)
         late = self.machine.open_sequence(TENANT, self.contact, "seq-late",
@@ -850,9 +887,11 @@ class T08RepairProofs(_Base):
         final = self.machine.reserve_final(
             TENANT, self.contact, SEQ, channel="sms",
             content_sha256="sha-final", now=1302.0)
-        self.assertTrue(self.machine.dispatch_final(
+        out = self.machine.dispatch_final(
             TENANT, self.contact, SEQ, final.action_id, self.sender(),
-            channel="sms", now=1303.0).sent)
+            channel="sms", now=1303.0)
+        self.assertEqual(out.status, "admitted")
+        self.assertTrue(self.close_on_ack(final, at=1304.0).sent)
 
     def test_a6_pause_after_the_reservation_still_refuses_the_dispatch(self):
         self.ready()
@@ -930,9 +969,221 @@ class T08RepairProofs(_Base):
         out = self.machine.dispatch_final(
             TENANT, self.contact, SEQ, final.action_id, self.sender(),
             channel="sms", now=1301.0)
+        # No field completion cancelled anything, so the send is not refused.
+        # The claim itself waits for the ACK (qc2-t-17 D1).
+        self.assertEqual(out.status, "admitted")
+        self.assertEqual(out.state, rsm.STATE_CLOSING_FINAL)
+        self.assertEqual(len(self.sends), 1)
+        accepted = self.close_on_ack(final, at=1302.0)
+        self.assertTrue(accepted.sent)
+        self.assertEqual(accepted.state, rsm.STATE_STOPPED_FINAL)
+        self.assertEqual(len(self.sends), 1)
+
+
+class T09QcRound2Proofs(_Base):
+    """One proof per defect the qc2-t-17 FAIL verdict reports (D1, D2, D3).
+
+    Each proof fails on the reviewed commit 639557222 and passes after this
+    repair; each defect also carries an inverse leg that passes on BOTH trees,
+    so a blanket refusal cannot masquerade as a fix. The two assertions that
+    the earlier suites carried over a bare provider admission (T06
+    `_stop_by_acceptance`, T08 `test_a9_a_final_with_no_completion_still_sends`)
+    are kept and strengthened onto the ACK acceptance leg; none was dropped.
+    """
+
+    def _admit_final(self, final, at=1301.0):
+        """Provider ADMISSION only: a dispatch receipt, and no ACK."""
+        claim = self.store.claim_for_dispatch(final.action_id, "worker-x",
+                                              now=at)
+        self.assertIsNotNone(claim, "action was not claimable for dispatch")
+        self.assertTrue(self.store.begin_attempt(
+            final.action_id, claim["fence"], "worker-x", now=at))
+        self.store.record_dispatch(
+            final.action_id, claim["fence"],
+            {"provider": "sms", "provider_receipt_id": "d1"}, now=at)
+
+    # D1 - an admission is not acceptance on ANY path.
+    def test_d1_dispatch_admission_never_claims_the_final_landed(self):
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        out = self.machine.dispatch_final(
+            TENANT, self.contact, SEQ, final.action_id, self.sender(),
+            channel="sms", now=1301.0)
+        # The defect: dispatch_final closed stopped_final and returned
+        # status='sent' on a bare dispatch receipt.
+        self.assertEqual(out.status, "admitted")
+        self.assertFalse(out.sent)
+        self.assertEqual(out.state, rsm.STATE_CLOSING_FINAL)
+        snap = self.snap()
+        self.assertEqual(snap["state"], rsm.STATE_CLOSING_FINAL)
+        self.assertFalse(snap["terminal"])
+        self.assertEqual(sorted(self.store.receipts(final.action_id)),
+                         ["dispatch"])
+
+    def test_d1_one_evidence_class_one_verdict_across_paths(self):
+        """The same bare admission must never be 'sent' on one path and
+        'canceled' on another."""
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        dispatched = self.machine.dispatch_final(
+            TENANT, self.contact, SEQ, final.action_id, self.sender(),
+            channel="sms", now=1301.0)
+        other = self.fresh()
+        self.ready(seq="seq-exp", contact=other)
+        second = self.machine.reserve_final(
+            TENANT, other, "seq-exp", channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        self._admit_final(second, at=1301.0)
+        expired = self.machine.expire_final(TENANT, other, "seq-exp", now=2000.0)
+        self.assertEqual(sorted(self.store.receipts(final.action_id)),
+                         sorted(self.store.receipts(second.action_id)))
+        for outcome in (dispatched, expired):
+            self.assertFalse(outcome.sent, outcome)
+            self.assertNotEqual(outcome.status, "sent")
+            self.assertNotEqual(outcome.state, rsm.STATE_STOPPED_FINAL)
+
+    def test_d1_reconciled_acceptance_still_closes_the_final(self):
+        """Inverse leg, green on both trees: provider acceptance evidence is
+        persisted as the ACK and then really does close the final."""
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        out = self.machine.reconcile_final(
+            TENANT, self.contact, SEQ, applied=True,
+            receipt={"provider": "sms", "provider_receipt_id": "a1"}, now=1301.0)
         self.assertTrue(out.sent)
         self.assertEqual(out.state, rsm.STATE_STOPPED_FINAL)
+        self.assertIn("ack", self.store.receipts(final.action_id))
+
+    # D2 - a narrow refusal covers only the ask it names.
+    def test_d2_a_narrow_refusal_refuses_only_the_final_it_covers(self):
+        other = self.fresh()
+        self.ready(seq="seq-d2", contact=other)
+        self.machine.consent.refuse(TENANT, other, scope_kind=cg.SCOPE_TOPIC,
+                                    scope_value="email_ask", actor="person")
+        with self.assertRaises(rsm.FinalRefused) as caught:
+            self.machine.reserve_final(TENANT, other, "seq-d2", channel="sms",
+                                       content_sha256="sha-final",
+                                       topic="email_ask", now=1300.0)
+        self.assertEqual(caught.exception.reason, cg.REASON_FIELD)
+        self.assertEqual(caught.exception.reason, rsm.REASON_FIELD)
+        # The defect: the narrow reason drove a broad terminal here.
+        self.assertNotEqual(self.snap("seq-d2", other)["state"],
+                            rsm.STATE_STOPPED_COMPLETE)
+        self.assertEqual(self.snap("seq-d2", other)["state"], rsm.STATE_INVITED)
+        self.assertIsNone(self.snap("seq-d2", other)["final_action_id"])
+        # Inverse leg: the same narrow refusal does not cover another ask.
+        final = self.machine.reserve_final(TENANT, other, "seq-d2", channel="sms",
+                                           content_sha256="sha-final",
+                                           topic="sms_access", now=1301.0)
+        self.assertTrue(final.created)
+        self.assertEqual(self.snap("seq-d2", other)["state"],
+                         rsm.STATE_CLOSING_FINAL)
+
+    def test_d2_a_refusal_after_the_reservation_still_closes_the_sequence(self):
+        """Once a final is reserved the sequence has one final, so a refusal
+        before dispatch cancels it and closes the sequence (DATA-CONTRACTS
+        section 8 step 3). Documented in the module's STOP contract."""
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", topic="email_ask", now=1300.0)
+
+        def refuse_after_reserve(_action_id):
+            self.machine.consent.refuse(TENANT, self.contact,
+                                        scope_kind=cg.SCOPE_TOPIC,
+                                        scope_value="email_ask", actor="person")
+
+        out = self.machine.dispatch_final(
+            TENANT, self.contact, SEQ, final.action_id, self.sender(),
+            channel="sms", topic="email_ask", now=1301.0,
+            before_dispatch=refuse_after_reserve)
+        self.assertFalse(out.sent)
+        self.assertEqual(out.status, "canceled")
+        self.assertEqual(out.reason, cg.REASON_FIELD)
+        self.assertEqual(out.state, rsm.STATE_STOPPED_COMPLETE)
+        self.assertEqual(self.sends, [])
+        # The gate suppresses the send outright, so the outbox action never
+        # began: it is recorded as suppressed, never as sent.
+        self.assertEqual(self.store.get_action(final.action_id)["state"],
+                         "suppressed")
+
+    def test_d2_a_global_stop_still_stops_the_whole_sequence(self):
+        """Inverse leg, green on both trees: the broad refusals are broad."""
+        self.ready()
+        self.machine.consent.global_stop(TENANT, self.contact, actor="person")
+        with self.assertRaises(rsm.FinalRefused) as caught:
+            self.machine.reserve_final(TENANT, self.contact, SEQ, channel="sms",
+                                       content_sha256="sha-final", now=1300.0)
+        self.assertEqual(caught.exception.reason, cg.REASON_GLOBAL)
+        self.assertEqual(self.snap()["state"], rsm.STATE_STOPPED_COMPLETE)
+
+    # D3 - a declined collection reaches its own terminal state.
+    def test_d3_a_declined_collection_closes_stopped_declined(self):
+        self.ready()
+        self.assertTrue(self.machine.send_reminder(
+            TENANT, self.contact, SEQ, self.sender(), channel="sms",
+            now=1020.0).sent)
+        row = self.machine.decline(TENANT, self.contact, SEQ, now=1021.0)
+        # The defect: STATE_STOPPED_DECLINED was declared but unreachable, and
+        # a declined collection closed stopped_complete instead.
+        self.assertEqual(row["state"], rsm.STATE_STOPPED_DECLINED)
+        snap = self.snap()
+        self.assertEqual(snap["state"], rsm.STATE_STOPPED_DECLINED)
+        self.assertTrue(snap["terminal"])
+        self.assertEqual([s["status"] for s in snap["slots"]],
+                         ["sent", "suppressed", "suppressed"])
+        self.assertEqual([s["reason"] for s in snap["slots"][1:]],
+                         [rsm.REASON_DECLINED, rsm.REASON_DECLINED])
+        self.assertEqual(snap["reminders_used"], 1)
+        self.assertEqual(self.snap()["reminders_total"], 3)
+        decision = self.machine.due_slot(TENANT, self.contact, SEQ, now=9999.0)
+        self.assertEqual(decision.reason, "sequence_terminal")
+        out = self.machine.send_reminder(TENANT, self.contact, SEQ,
+                                         self.sender(), channel="sms",
+                                         now=9999.0)
+        self.assertFalse(out.sent)
+        late = self.machine.open_sequence(TENANT, self.contact, "seq-late",
+                                          request_id="req-late", now=9999.0)
+        self.assertEqual(late["collection_sequence_id"], SEQ)
+        self.assertEqual(late["state"], rsm.STATE_STOPPED_DECLINED)
+        with self.assertRaises(rsm.SequenceTerminal):
+            self.machine.record_initial_invitation(
+                TENANT, self.contact, SEQ, invitation_id="inv-late", now=9999.0)
         self.assertEqual(len(self.sends), 1)
+
+    def test_d3_a_decline_refuses_a_reserved_final_without_claiming_sent(self):
+        self.ready()
+        final = self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        row = self.machine.decline(TENANT, self.contact, SEQ, now=1301.0)
+        self.assertEqual(row["state"], rsm.STATE_STOPPED_DECLINED)
+        self.assertTrue(self.snap()["terminal"])
+        self.assertEqual(self.store.get_action(final.action_id)["state"],
+                         "canceled")
+        self.assertEqual(self.store.receipts(final.action_id), {})
+        self.assertEqual(self.sends, [])
+        with self.assertRaises(rsm.SequenceTerminal):
+            self.machine.dispatch_final(
+                TENANT, self.contact, SEQ, final.action_id, self.sender(),
+                channel="sms", now=1302.0)
+        self.assertEqual(self.sends, [])
+
+    def test_d3_an_undeclined_sequence_still_sends_its_reminders(self):
+        """Inverse leg, green on both trees: only a decline declines."""
+        self.ready()
+        out = self.machine.send_reminder(
+            TENANT, self.contact, SEQ, self.sender(), channel="sms",
+            now=1020.0)
+        self.assertTrue(out.sent)
+        self.assertNotEqual(self.snap()["state"], rsm.STATE_STOPPED_DECLINED)
+        self.assertFalse(self.snap()["terminal"])
 
 
 class T07UpstreamReuse(unittest.TestCase):

@@ -36,10 +36,17 @@ What this module adds on top of them:
             are canceled; a crash reloads the reservation and never mints a
             second final.
   STOP      provider acceptance closes stopped_final; STOP, refusal, handoff
-            or a field completion closes stopped_complete; permanent
-            nonexecution or an expired slot closes stopped_ineligible without
-            ever claiming "sent". Provider admission is not acceptance: only
-            an ACK receipt proves the closing action landed.
+            or a field completion closes stopped_complete; a declined
+            collection closes stopped_declined; permanent nonexecution or an
+            expired slot closes stopped_ineligible without ever claiming
+            "sent". Provider admission is not acceptance: only a persisted ACK
+            receipt proves the closing action landed, and one helper
+            (_close_if_acknowledged) is the only writer of stopped_final, so
+            dispatch, reconciliation and expiry share one ACK contract.
+            A narrow refusal (channel opt-out, field refusal) refuses only the
+            final it covers at reservation time; once a final is reserved, any
+            refusal before dispatch cancels it (section 8 step 3) and the
+            sequence closes stopped_complete, because a sequence has one final.
 
 Storage is additive in the tenant identity database (the same file as
 tenant_identity/collection_lock/consent_gate) so one database stays one tenant
@@ -158,6 +165,7 @@ DECISION_WAIT = "wait"
 REASON_NO_CATCH_UP = "no_catch_up_burst"
 REASON_FINAL_RESERVED = "final_reserved"
 REASON_FIELD_COMPLETION = "field_completion"
+REASON_DECLINED = "declined"
 
 # DATA-CONTRACTS section 7: "channel opt-out blocks that channel; ...
 # field refusal suppresses that ask ... Unknown refusal scope is not broader
@@ -307,7 +315,7 @@ class FinalReservation:
 
 @dataclass(frozen=True)
 class FinalOutcome:
-    status: str                    # sent | canceled | unknown | reserved | not_claimed
+    status: str                    # sent | admitted | canceled | unknown | reserved | not_claimed
     action_id: str
     state: str
     reason: str = ""
@@ -728,6 +736,45 @@ class ReminderStateMachine:
 
     # ── slots ──────────────────────────────────────────────────────────────
 
+    def decline(self, tenant_id: str, contact: str, seq: str, *,
+                reason: str = REASON_DECLINED,
+                now: Optional[float] = None) -> Dict[str, Any]:
+        """The person declines the collection: it closes stopped_declined.
+
+        DATA-CONTRACTS section 8 names `stopped_declined` as its own terminal
+        state, so a declined collection must reach it through a real path and
+        never be folded into stopped_complete. A decline stops what is still
+        open - the pending reminders and a reserved final action - never
+        un-sends anything, and never claims a send it did not make.
+        """
+        key = _key(tenant_id, contact, seq)
+        row = self._require_row(*key)
+        if row["state"] in TERMINAL_STATES:
+            raise SequenceTerminal("sequence is already %s" % row["state"])
+        ts = time.time() if now is None else float(now)
+        conn = self._write()
+        try:
+            suppressed = self._cancel_siblings(conn, key, ts, reason=reason,
+                                               status=SLOT_SUPPRESSED)
+            self._bump(conn, key, at=ts, state=STATE_STOPPED_DECLINED)
+            self._event(conn, key, "collection_declined", {
+                "reason": reason,
+                "suppressed_action_ids": suppressed}, ts)
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+        if row["final_action_id"]:
+            try:
+                self.store.cancel(row["final_action_id"], reason, now=ts)
+            except DurableStoreError:
+                # Already dispatched or canceled: never claim it was unsent.
+                pass
+        return self._require_row(*key)
+
+
     def _policy(self, row: Dict[str, Any]) -> ReminderPolicy:
         if not row.get("policy_json") or not row.get("policy_version"):
             raise PolicyNotAdopted(
@@ -1146,11 +1193,22 @@ class ReminderStateMachine:
                 tenant_id, contact, channel=channel, topic=topic,
                 offer=offer, campaign=campaign)
             if not decision["allowed"]:
+                # Same scope rule as a reminder (DATA-CONTRACTS s7): a channel
+                # opt-out or a field refusal refuses only THIS final, so a
+                # final on another channel or topic can still be reserved. A
+                # global stop, a human fence or an unknown reason closes.
+                terminal = _consent_is_terminal(decision["reason"])
                 conn = self._write()
                 try:
-                    self._bump(conn, key, at=ts, state=STATE_STOPPED_COMPLETE)
+                    if terminal:
+                        self._bump(conn, key, at=ts,
+                                   state=STATE_STOPPED_COMPLETE)
+                    else:
+                        self._bump(conn, key, at=ts)
                     self._event(conn, key, "final_refused", {
-                        "channel": channel, "reason": decision["reason"]}, ts)
+                        "channel": channel, "reason": decision["reason"],
+                        "scope": "sequence" if terminal else "that_final"},
+                        ts)
                     conn.execute("COMMIT")
                 except BaseException:
                     conn.execute("ROLLBACK")
@@ -1217,7 +1275,9 @@ class ReminderStateMachine:
             conn.close()
 
     def _cancel_siblings(self, conn: sqlite3.Connection,
-                         key: Tuple[str, str, str], ts: float) -> List[str]:
+                         key: Tuple[str, str, str], ts: float, *,
+                         reason: str = REASON_FINAL_RESERVED,
+                         status: str = SLOT_CANCELED) -> List[str]:
         """Cancel every reminder that has not begun a send. Never un-sends."""
         canceled: List[str] = []
         rows = conn.execute(
@@ -1231,7 +1291,7 @@ class ReminderStateMachine:
                 try:
                     action = self.store.get_action(aid)
                     if action["state"] in (STATE_NOT_REQUESTED, STATE_QUEUED):
-                        self.store.cancel(aid, REASON_FINAL_RESERVED, now=ts)
+                        self.store.cancel(aid, reason, now=ts)
                         canceled.append(aid)
                 except DurableStoreError:
                     # Already dispatched or unknown: never claim it was unsent.
@@ -1240,9 +1300,66 @@ class ReminderStateMachine:
                 "UPDATE reminder_slots SET status=?, reason=?, updated_at=?"
                 " WHERE tenant_id=? AND canonical_contact_id=?"
                 " AND collection_sequence_id=? AND slot_index=?",
-                (SLOT_CANCELED, REASON_FINAL_RESERVED, ts)
-                + key + (int(slot["slot_index"]),))
+                (status, reason, ts) + key + (int(slot["slot_index"]),))
         return canceled
+
+    def _close_if_acknowledged(self, key: Tuple[str, str, str],
+                               action_id: str, ts: float, event: str
+                               ) -> Optional[FinalOutcome]:
+        """The ONLY writer of stopped_final. One ACK contract for the module.
+
+        DATA-CONTRACTS s4 "A 200 admission is not a completed reply" and
+        durable_store.record_dispatch "Provider admission is NOT completion;
+        ack is a separate receipt". So the closing action has landed only when
+        a persisted ACK receipt says so. Dispatch, reconciliation and expiry
+        all close through here; without an ACK this returns None and nothing
+        is claimed.
+        """
+        ack = self.store.receipts(action_id).get("ack")
+        if ack is None:
+            return None
+        conn = self._write()
+        try:
+            self._bump(conn, key, at=ts, state=STATE_STOPPED_FINAL)
+            self._event(conn, key, event, {
+                "action_id": action_id, "ack": ack["payload"]}, ts)
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+        return FinalOutcome("sent", action_id, STATE_STOPPED_FINAL,
+                            reason="ack_receipt",
+                            provider_receipt=ack["payload"])
+
+    def _admitted(self, key: Tuple[str, str, str], action_id: str, ts: float,
+                  *, source: str,
+                  receipt: Optional[Dict[str, Any]]) -> FinalOutcome:
+        """Record a provider ADMISSION that is not an ACK. Never claims sent.
+
+        outbound_gate documents ST_SENT as "provider returned an admission
+        receipt" and durable_store.record_dispatch as "Provider admission is
+        NOT completion; ack is a separate receipt". So the sequence stays
+        closing_final: it closes stopped_final only on a persisted ACK
+        (_close_if_acknowledged), and stopped_ineligible without claiming sent
+        when the reserved window expires first.
+        """
+        conn = self._write()
+        try:
+            self._event(conn, key, "final_admitted", {
+                "action_id": action_id, "source": source,
+                "provider_receipt": receipt,
+                "note": "provider admission is not acceptance"}, ts)
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+        return FinalOutcome("admitted", action_id, STATE_CLOSING_FINAL,
+                            reason="provider_admission_only",
+                            provider_receipt=receipt)
 
     def _field_completed_after(self, key: Tuple[str, str, str],
                                since: float) -> bool:
@@ -1322,6 +1439,12 @@ class ReminderStateMachine:
                                 " not %s" % row["state"])
 
         ts = time.time() if now is None else float(now)
+        # If this exact action already carries a persisted ACK, it landed:
+        # close through the one ACK helper and never dispatch it again.
+        landed = self._close_if_acknowledged(key, action_id, ts,
+                                            "final_accepted")
+        if landed is not None:
+            return landed
         if before_dispatch is not None:
             if not callable(before_dispatch):
                 raise ReminderError("bad_input: before_dispatch must be callable")
@@ -1347,17 +1470,22 @@ class ReminderStateMachine:
             context={"channel": channel, "topic": topic, "offer": offer,
                      "campaign": campaign})
 
+        if outcome.status == ST_SENT:
+            # ST_SENT is a provider ADMISSION receipt only (outbound_gate:
+            # "provider returned an admission receipt"). One ACK contract for
+            # the module: the close runs through _close_if_acknowledged, so a
+            # bare admission leaves the sequence closing_final and never
+            # claims "sent" (DATA-CONTRACTS s4: "A 200 admission is not a
+            # completed reply"; s8 step 4: closes without claiming sent).
+            closed = self._close_if_acknowledged(key, action_id, ts,
+                                                "final_accepted")
+            if closed is not None:
+                return closed
+            return self._admitted(key, action_id, ts, source="dispatch",
+                                  receipt=outcome.provider_receipt)
+
         conn = self._write()
         try:
-            if outcome.status == ST_SENT:
-                self._bump(conn, key, at=ts, state=STATE_STOPPED_FINAL)
-                self._event(conn, key, "final_accepted", {
-                    "action_id": action_id,
-                    "provider_receipt": outcome.provider_receipt}, ts)
-                conn.execute("COMMIT")
-                return FinalOutcome("sent", action_id, STATE_STOPPED_FINAL,
-                                    provider_receipt=outcome.provider_receipt)
-
             if outcome.status == ST_BLOCKED and outcome.verdict == "SUPPRESSED":
                 try:
                     self.store.cancel(action_id,
@@ -1407,7 +1535,10 @@ class ReminderStateMachine:
                         now: Optional[float] = None) -> FinalOutcome:
         """After a crash: reconcile the SAME action. Never reserve another.
 
-        applied=True  -> provider accepted: stopped_final
+        applied=True  -> provider acceptance: the receipt is persisted as the
+                         ACK and the close runs through the one ACK helper
+                         (stopped_final). Without a receipt nothing is proven,
+                         so nothing is claimed: "admitted", still closing_final.
         applied=False -> permanent nonexecution: closed, no "sent" claimed
         applied=None  -> still unknown: stays reserved and reconciling
         """
@@ -1450,19 +1581,16 @@ class ReminderStateMachine:
                     self.store.reconcile_applied(aid, receipt, now=ts)
                 except DurableStoreError:
                     pass  # already acknowledged by a previous reconciliation
-            conn = self._write()
-            try:
-                self._bump(conn, key, at=ts, state=STATE_STOPPED_FINAL)
-                self._event(conn, key, "final_reconciled_accepted", {
-                    "action_id": aid, "receipt": receipt}, ts)
-                conn.execute("COMMIT")
-            except BaseException:
-                conn.execute("ROLLBACK")
-                raise
-            finally:
-                conn.close()
-            return FinalOutcome("sent", aid, STATE_STOPPED_FINAL,
-                                provider_receipt=receipt)
+            # Provider acceptance is proven the same way everywhere: the
+            # receipt is persisted as the ACK and the close runs through the
+            # one ACK helper. Without a receipt nothing is proven, so nothing
+            # is claimed and the sequence stays closing_final.
+            closed = self._close_if_acknowledged(
+                key, aid, ts, "final_reconciled_accepted")
+            if closed is not None:
+                return closed
+            return self._admitted(key, aid, ts, source="reconcile",
+                                  receipt=receipt)
 
         # Permanent nonexecution: close without ever claiming a send.
         try:
@@ -1510,23 +1638,14 @@ class ReminderStateMachine:
         if ts < deadline:
             return FinalOutcome("reserved", reservation["action_id"],
                                 STATE_CLOSING_FINAL, reason="slot_not_expired")
-        # Acceptance is an ACK, never an admission. Expiry must not promote a
-        # bare dispatch receipt into a claimed send.
-        receipts = self.store.receipts(reservation["action_id"])
-        if "ack" in receipts:
-            conn = self._write()
-            try:
-                self._bump(conn, key, at=ts, state=STATE_STOPPED_FINAL)
-                self._event(conn, key, "final_accepted_at_expiry", {
-                    "action_id": reservation["action_id"]}, ts)
-                conn.execute("COMMIT")
-            except BaseException:
-                conn.execute("ROLLBACK")
-                raise
-            finally:
-                conn.close()
-            return FinalOutcome("sent", reservation["action_id"],
-                                STATE_STOPPED_FINAL, reason="ack_receipt")
+        # Acceptance is an ACK, never an admission, and it is proved the same
+        # way here as in dispatch and reconciliation: through the one ACK
+        # helper. Expiry must not promote a bare dispatch receipt into a
+        # claimed send.
+        closed = self._close_if_acknowledged(
+            key, reservation["action_id"], ts, "final_accepted_at_expiry")
+        if closed is not None:
+            return closed
         try:
             self.store.cancel(reservation["action_id"], "final_slot_expired",
                               now=ts)
@@ -1671,9 +1790,32 @@ def _selfcheck() -> int:
 
     out = machine.dispatch_final("t1", contact, seq, final.action_id, sender,
                                  channel="sms", now=1303.0)
-    ok(out.sent
+    ok(out.status == "admitted" and not out.sent,
+       "a provider admission is not acceptance")
+    ok(machine.snapshot("t1", contact, seq)["state"] == STATE_CLOSING_FINAL,
+       "an admitted final stays closing_final")
+    ok(store.receipts(final.action_id).get("ack") is None,
+       "a bare admission carries no ack receipt")
+    store.record_ack(final.action_id,
+                     {"provider": "selfcheck", "message_id": "ack-1"},
+                     now=1304.0)
+    accepted = machine.dispatch_final("t1", contact, seq, final.action_id,
+                                      sender, channel="sms", now=1305.0)
+    ok(accepted.sent
        and machine.snapshot("t1", contact, seq)["state"] == STATE_STOPPED_FINAL,
        "acceptance closes stopped_final")
+
+    contact2 = identity.bind("t1", [("sms_number", "+15550101", True)],
+                             source="selfcheck")
+    machine.open_sequence("t1", contact2, "seq-2", now=1400.0)
+    machine.adopt_policy("t1", contact2, "seq-2", policy, now=1401.0)
+    machine.record_initial_invitation("t1", contact2, "seq-2",
+                                      invitation_id="inv-2", now=1402.0)
+    machine.decline("t1", contact2, "seq-2", now=1403.0)
+    snap2 = machine.snapshot("t1", contact2, "seq-2")
+    ok(snap2["state"] == STATE_STOPPED_DECLINED,
+       "a declined collection closes stopped_declined")
+    ok(snap2["terminal"], "stopped_declined is terminal")
 
     print("reminder_state_machine self-check: %d assertions passed" % passed)
     return 0
