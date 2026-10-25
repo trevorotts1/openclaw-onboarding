@@ -223,6 +223,58 @@ def run_cli(args):
     return code, err.getvalue()
 
 
+# --- round 5: where this process's memory actually lives ----------------------
+#
+# The registries are no longer a module name. A caller that wants them has to
+# walk the closure cells of the enforcement functions -- which is exactly the
+# residue the round-5 report names as unclosable in CPython. These helpers take
+# that walk ONCE so every attack below can aim at the real objects instead of a
+# name that no longer exists.
+
+def cell_value(fn, name):
+    """The closure cell of ``fn`` holding ``name``, or None."""
+    for free, cell in zip(fn.__code__.co_freevars, fn.__closure__ or ()):
+        if free == name:
+            try:
+                return cell.cell_contents
+            except ValueError:  # empty cell
+                return None
+    return None
+
+
+def enforcement_scope():
+    """The private execution scope every enforcement function runs in. Nothing
+    the honest path reads lives anywhere else."""
+    return WW.dispatch_author.__globals__
+
+
+def guard():
+    return enforcement_scope()["_GUARD"]
+
+
+def mint_callable():
+    """The mint, reached the way a caller reaches it: through a closure cell of
+    ``dispatch_author``."""
+    return cell_value(WW.dispatch_author, "mint")
+
+
+def registry_records():
+    return cell_value(mint_callable(), "records")
+
+
+def registry_sealed():
+    return cell_value(type(guard()).__dict__["note_sealed"], "sealed")
+
+
+def registry_transports():
+    return cell_value(WW.dispatch_author, "transports")
+
+
+def live_count():
+    return guard().live_count()
+
+
+
 
 class CompleteWorldTests(unittest.TestCase):
     def test_complete_world_authors_and_seals(self):
@@ -607,6 +659,161 @@ class SettingChangeTests(unittest.TestCase):
         self.assertEqual(original, snapshot)
 
 
+# --- round 5: the four targets the verifier named -----------------------------
+
+class HonestPathReadsNoModuleStateTests(unittest.TestCase):
+    """Target B: rewriting a module attribute must change nothing the honest
+    path does -- not the digest, not the stamp, not a refusal."""
+
+    #: names the honest path must never read at call time. The public API
+    #: functions are NOT here: the test has to call those through the module.
+    POISONED = ("SESSION", "EXECUTION_VALUES", "IDENTITY_FIELDS", "REQUIRED_SECTIONS",
+                "SETTING_DEPENDENTS", "SCHEMA_VERSION", "WORLD_KIND", "DISPATCH_OPERATION",
+                "DISPATCH_HANDLER", "PROMPT_TEMPLATE_REVISION", "MODELS_LAYER",
+                "CODE_DISPATCH_UNPROVEN", "CODE_EXECUTION_STAMP", "CODE_HANDLE_MINT",
+                "CODE_TRANSPORT_MINT", "CODE_BINDING_STAMP", "CODE_CONTENT_DIGEST",
+                "CODE_LAYOUT_ACTION", "CODE_IMPOSSIBLE_TIMELINE", "CODE_REAL_LOCATION",
+                "DispatchHandle", "DispatchTransport", "WorldError",
+                "DispatchHandleMintRefused", "DispatchTransportMintRefused",
+                "_GUARD", "_HANDLES", "_SEALED", "EXECUTION_BY_KIND", "_dispatch_machinery",
+                "canonical_digest", "seal_digest", "_seal", "_json_digest", "_binding_identity",
+                "_live_dispatch_reason", "_parent_seal_reason", "_validate_cast",
+                "_dispatch_proof_errors", "_seal_proof_errors", "_load", "secrets", "hashlib")
+
+    def setUp(self):
+        self._saved = {name: (name in vars(WW), getattr(WW, name, None))
+                       for name in self.POISONED}
+        self._poison = object()
+        for name in self.POISONED:
+            setattr(WW, name, self._poison)
+
+    def tearDown(self):
+        for name, (existed, value) in self._saved.items():
+            if existed:
+                setattr(WW, name, value)
+            else:
+                vars(WW).pop(name, None)
+
+    def test_rewriting_module_state_cannot_change_the_honest_path(self):
+        baseline = author()
+        rewritten = author()
+        self.assertEqual(rewritten["content_digest"], baseline["content_digest"])
+        self.assertEqual(rewritten["provenance"]["execution"], "no_spend_fixture")
+        self.assertEqual(rewritten["provenance"]["attempt"]["binding_id"],
+                         baseline["provenance"]["attempt"]["binding_id"])
+
+    def test_rewriting_module_state_cannot_silence_a_refusal(self):
+        # WW.WorldError is poisoned here on purpose: the refusal must still be
+        # the REAL class, reached through the private execution scope
+        real_error = enforcement_scope()["WorldError"]
+        body = fixture_body()
+        body["cast_refs"][0]["background"] = "grew up on the coast"
+        with self.assertRaises(real_error) as caught:
+            author(body)
+        self.assertIn("reusable identity field", " | ".join(caught.exception.errors))
+        # and the forged-binding echo still does not happen
+        run_dir = tempfile.mkdtemp(prefix="world_poison_binding_")
+        forged_bindings(run_dir)
+        dispatch, _, _ = fixture_dispatch(fixture_body(), run_dir=run_dir,
+                                          attempt_id="attempt_poison_001")
+        self.assertNotEqual(dispatch["attempt"]["binding_id"], "forgedbinding001")
+
+    def test_a_substituted_guard_is_not_the_guard_the_honest_path_uses(self):
+        self.assertIs(WW._GUARD, self._poison)
+        record = author()
+        self.assertRegex(record["seal"]["seal_digest"], r"^[0-9a-f]{64}$")
+        self.assertEqual(record["seal"]["seal_digest"],
+                         enforcement_scope()["seal_digest"](record["seal"],
+                                                            record["content_digest"]))
+
+
+class ValidateRecomputesContentDigestTests(unittest.TestCase):
+    """Target C: validate() must recompute content_digest, never trust it."""
+
+    def test_validate_refuses_a_record_edited_after_sealing(self):
+        record = author()
+        edited = edited_record(record)
+        self.assertNotEqual(WW.canonical_digest(edited), edited["content_digest"])
+        # exactly the round-4 measurement: the stored digest is now a lie about
+        # the body, and the seal still verifies against that stored digest
+        self.assertEqual(edited["seal"]["seal_digest"],
+                         WW.seal_digest(edited["seal"], edited["content_digest"]))
+        named = [e for e in WW.validate(edited) if WW.CODE_CONTENT_DIGEST in e]
+        self.assertTrue(named, "validate accepted a record edited after sealing: %s"
+                        % WW.validate(edited))
+
+    def test_a_self_consistent_forgery_still_passes_the_checksum(self):
+        # honesty about what content_digest is: a checksum, not a signature. A
+        # caller that recomputes both digests is caught by the PARENT seal, not
+        # by validate() -- see attack_note_sealed_laundering.
+        record = author()
+        forged = tampered_record(record)
+        self.assertEqual(WW.validate(forged), [])
+
+    def test_the_cli_refuses_a_record_edited_after_sealing(self):
+        record = author()
+        edited = edited_record(record)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "world.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(edited, handle)
+            code, err = run_cli(["--validate", path])
+        self.assertEqual(code, 1)
+        self.assertIn(WW.CODE_CONTENT_DIGEST, err)
+        self.assertNotIn("OK:", err)
+
+    def test_an_untampered_record_still_validates(self):
+        record = author()
+        self.assertEqual(WW.validate(record), [])
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "world.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(record, handle)
+            with contextlib.redirect_stdout(out):
+                code, err = run_cli(["--validate", path])
+        self.assertEqual(code, 0)
+        self.assertIn("OK: world record is usable", out.getvalue())
+
+    def test_setting_change_still_refuses_a_record_edited_after_sealing(self):
+        record = author()
+        with self.assertRaises(WW.WorldError) as caught:
+            WW.change_setting(edited_record(record), locations=[
+                {"location_id": "loc_other_001", "name": "Other", "function": "x",
+                 "interior": True, "reality": "fiction",
+                 "layout": {"features": ["a window"]}}], reason="derived from an edited parent")
+        named = [e for e in caught.exception.errors if WW.CODE_CONTENT_DIGEST in e]
+        self.assertTrue(named, caught.exception.errors)
+
+
+class DigestStabilityTests(unittest.TestCase):
+    """The honest record must hash like its parent: no provenance note inside the
+    digested body."""
+
+    def test_the_provenance_note_is_outside_the_digested_body(self):
+        record = author()
+        body = {k: v for k, v in record.items() if k not in ("content_digest", "seal")}
+        self.assertNotIn("binding_id_source", json.dumps(body))
+        self.assertEqual(record["seal"].get("binding_id_source"),
+                         "recomputed_from_admitted_binding")
+        self.assertNotIn("binding_id_source", record["provenance"]["attempt"])
+        # the recomputed id itself is still inside the digested body
+        self.assertIn("binding_id", record["provenance"]["attempt"])
+
+    def test_the_digest_is_insensible_to_the_note(self):
+        record = author()
+        drifted = copy.deepcopy(record)
+        drifted["seal"]["binding_id_source"] = "any other note"
+        self.assertEqual(record["content_digest"], WW.canonical_digest(drifted))
+        self.assertEqual(WW.canonical_digest(record), record["content_digest"])
+
+    def test_the_digest_still_moves_with_the_world_body(self):
+        first = author()
+        changed = fixture_body()
+        changed["premise"] = changed["premise"] + " and a second sentence."
+        self.assertNotEqual(first["content_digest"], author(changed)["content_digest"])
+
+
 # --- round 4: REACHABILITY of the handle-minting capability -------------------
 #
 # Round 3 closed the file routes and left the capability reachable through
@@ -743,10 +950,10 @@ def attack_registry_setitem():
         ref = "f" * 64
 
     try:
-        WW._HANDLES["f" * 64] = Fake()
+        registry_records()["f" * 64] = Fake()
     except WW.WorldError as caught:
         return "REFUSED BY NAME: %s" % caught.errors[0]
-    return "ACCEPTED: _HANDLES[ref] = fake registered a handle"
+    return "ACCEPTED: records[ref] = fake registered a handle"
 
 
 def attack_registry_writes():
@@ -754,15 +961,20 @@ def attack_registry_writes():
         ref = "f" * 64
 
     refused = []
-    for write in (lambda: WW._HANDLES.update({"f" * 64: Fake()}),
-                  lambda: WW._HANDLES.pop("f" * 64),
-                  lambda: WW._HANDLES.clear(),
-                  lambda: WW._HANDLES.setdefault("f" * 64, Fake()),
-                  lambda: WW._HANDLES.add(Fake()),
-                  lambda: setattr(WW._HANDLES, "anything", Fake()),
-                  lambda: WW._SEALED.update({"0" * 64: "f" * 64}),
-                  lambda: WW._SEALED.clear(),
-                  lambda: setattr(WW._SEALED, "anything", Fake())):
+    records, sealed, transports = registry_records(), registry_sealed(), registry_transports()
+    for write in (lambda: records.update({"f" * 64: Fake()}),
+                  lambda: records.pop("f" * 64),
+                  lambda: records.clear(),
+                  lambda: records.setdefault("f" * 64, Fake()),
+                  lambda: records.__setitem__("f" * 64, Fake()),
+                  lambda: records.__delitem__("f" * 64),
+                  lambda: setattr(records, "anything", Fake()),
+                  lambda: sealed.update({"0" * 64: "f" * 64}),
+                  lambda: sealed.__setitem__("0" * 64, "f" * 64),
+                  lambda: sealed.clear(),
+                  lambda: setattr(sealed, "anything", Fake()),
+                  lambda: transports.clear(),
+                  lambda: transports.__setitem__("x", Fake())):
         try:
             write()
         except WW.WorldError as caught:
@@ -779,10 +991,10 @@ def attack_registry_dict_copy():
         ref = "f" * 64
 
     _, dispatch, _ = genuine_dispatch()   # so the registry holds a live handle
-    live = len(WW._HANDLES)
+    live = live_count()
     copied = {}
     try:
-        copied = dict(WW._HANDLES)
+        copied = dict(registry_records())
     except BaseException:  # noqa: BLE001
         pass
     copied["f" * 64] = Fake()
@@ -938,7 +1150,7 @@ def attack_file_only_provenance():
 
 
 def attack_poke_public_surface():
-    before = len(WW._HANDLES)
+    before = live_count()
     poked = 0
     minted = []
     targets = [(name, getattr(WW, name)) for name in dir(WW) if not name.startswith("_")]
@@ -964,7 +1176,211 @@ def attack_poke_public_surface():
         if outcome.startswith("ACCEPTED"):
             return "ACCEPTED: poking %s produced a usable handle (%s)" % (name, outcome)
     return ("REFUSED BY NAME: no usable handle from poking %d public attributes (%d live handles "
-            "before, %d after)" % (poked, before, len(WW._HANDLES)))
+            "before, %d after)" % (poked, before, live_count()))
+
+
+# --- round 5: the five sealing routes the base still had, plus three the round-4
+# author never disclosed. Each one is measured, not asserted.
+
+def forged_state():
+    """What a fake guard must hand back for a constructed handle to look live:
+    every field agreeing with the forged dispatch built around it."""
+    body = fixture_body()
+    raw_digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"),
+                                           ensure_ascii=False).encode("utf-8")).hexdigest()
+    return {"ref": "f" * 64, "session": WW.SESSION, "transport_id": "forgedtransport",
+            "transport_kind": "no_spend", "execution": "no_spend_fixture",
+            "attempt_id": "attempt_forged_001", "request_receipt": "f" * 64,
+            "receipt": {"transport_id": "forgedtransport", "kind": "no_spend",
+                        "nonce": "f" * 32, "session": "f" * 64, "receipt_digest": "f" * 64},
+            "raw_digest": raw_digest, "consumed_by": None}
+
+
+def attack_fake_guard_on_the_module():
+    """Route 1: WW._GUARD = a fake exposing lookup/by_ref/consume/note_sealed/
+    live_count, then DispatchHandle.__new__(DispatchHandle) is a 'live' handle."""
+    class FakeGuard:
+        def lookup(self, handle):
+            return dict(forged_state())
+
+        def by_ref(self, ref):
+            return None
+
+        def consume(self, handle, digest):
+            return None
+
+        def note_sealed(self, digest, ref):
+            return None
+
+        def live_count(self):
+            return 0
+
+    saved = getattr(WW, "_GUARD", "<absent>")
+    WW._GUARD = FakeGuard()
+    try:
+        handle = WW.DispatchHandle.__new__(WW.DispatchHandle)
+        outcome = seal_outcome(dispatch_around(handle))
+    finally:
+        if saved == "<absent>":
+            del WW._GUARD
+        else:
+            WW._GUARD = saved
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: WW._GUARD = a fake guard made DispatchHandle.__new__ a live handle"
+    return "REFUSED BY NAME: fake WW._GUARD substituted, then %s" % outcome
+
+
+def attack_execution_by_kind_rewrite():
+    """Route 2: rewrite the execution map so a no-spend transport stamps live."""
+    saved = getattr(WW, "EXECUTION_BY_KIND", "<absent>")
+    WW.EXECUTION_BY_KIND = {"no_spend": "live", "live": "live"}
+    dispatch = None
+    try:
+        body = fixture_body()
+        run_dir = tempfile.mkdtemp(prefix="world_stamp_rewrite_")
+        AM.bind_roles(run_dir, BUILD_MODEL, CHECK_MODEL, runtime="claude-nine", now=FIXTURE_NOW)
+        dispatch = WW.dispatch_author(run_dir=run_dir, attempt_id="attempt_stamp_rewrite_001",
+                                      inputs=FIXTURE_INPUTS,
+                                      runner=WW.no_spend_transport(fixture_runner(body, [])),
+                                      now=FIXTURE_NOW)
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    finally:
+        if saved == "<absent>":
+            del WW.EXECUTION_BY_KIND
+        else:
+            WW.EXECUTION_BY_KIND = saved
+    if dispatch["execution"] == "live":
+        return ("ACCEPTED: rewriting EXECUTION_BY_KIND stamped execution='live' on a no-spend "
+                "transport")
+    return ("REFUSED BY NAME: rewriting EXECUTION_BY_KIND changed nothing "
+            "(execution=%r)" % dispatch["execution"])
+
+
+def attack_subclass_written_into_the_registry():
+    """Route 3: a DispatchHandle SUBCLASS instance written into the registry."""
+    class Evil(WW.DispatchHandle):
+        def __init__(self, **kwargs):
+            pass
+
+    evil = Evil()
+    state = forged_state()
+    try:
+        registry_records()[evil] = state
+    except WW.WorldError as caught:
+        ordinary = "the registry refused it by name (%s)" % caught.errors[0].split(":")[0]
+    else:
+        ordinary = "ACCEPTED the write"
+    # and the one write route CPython leaves open: a raw dict.__setitem__
+    dict.__setitem__(registry_records(), evil, state)
+    outcome = seal_outcome(dispatch_around(evil))
+    if outcome.startswith("ACCEPTED"):
+        return ("ACCEPTED: a subclass instance written into the registry sealed a record "
+                "(%s)" % ordinary)
+    return ("REFUSED BY NAME: %s; raw dict.__setitem__ lands but the exact-class and identity "
+            "lookup refuse the subclass: %s" % (ordinary, outcome.split(":")[0]))
+
+
+def attack_mint_from_the_closure():
+    """Route 5: dispatch_author.__closure__ reaching 'mint'."""
+    mint = mint_callable()
+    if mint is None:
+        return "REFUSED BY NAME: no mint is reachable from dispatch_author's closure"
+    try:
+        handle = mint(attempt_id="attempt_forged_001", request_receipt="f" * 64,
+                      receipt=HANDLE_KWARGS["receipt"], execution="live", raw_digest="f" * 64)
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % caught.errors[0]
+    outcome = seal_outcome(dispatch_around(handle))
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: the mint reached through the closure produced a usable handle"
+    return "REFUSED BY NAME: the mint reached through the closure, then %s" % outcome
+
+
+def edited_record(record):
+    """What a caller does to a sealed record: one body field edited and NOTHING
+    recomputed. The stored content_digest is now a lie about the body."""
+    fake = copy.deepcopy(record)
+    fake["premise"] = record["premise"] + ", edited after sealing"
+    return fake
+
+
+def tampered_record(record):
+    """The stronger forgery: one body field edited AND both digests recomputed,
+    so the record validates and only the parent seal can tell. This is the shape
+    route 6 needs -- it is a fabricated record that validate() cannot fault."""
+    fake = copy.deepcopy(record)
+    fake["premise"] = record["premise"] + ", edited after sealing"
+    fake.pop("content_digest", None)
+    fake["content_digest"] = WW.canonical_digest(fake)
+    seal = dict(fake["seal"])
+    seal["seal_digest"] = WW.seal_digest(seal, fake["content_digest"])
+    fake["seal"] = seal
+    return fake
+
+
+def change_setting_outcome(record):
+    try:
+        WW.change_setting(record, locations=[
+            {"location_id": "loc_other_001", "name": "Other", "function": "x",
+             "interior": True, "reality": "fiction",
+             "layout": {"features": ["a window"]}}], reason="derived from a fabricated parent")
+    except WW.WorldError as caught:
+        return "REFUSED BY NAME: %s" % " | ".join(caught.errors)
+    except BaseException as caught:  # noqa: BLE001
+        return "REFUSED (%s): %s" % (type(caught).__name__, caught)
+    return "ACCEPTED: change_setting derived from a fabricated parent"
+
+
+def attack_note_sealed_laundering():
+    """Route 6: one real dispatch makes its ref public in a seal, then
+    note_sealed(digest, ref) launders a fabricated record into change_setting."""
+    body, dispatch, _ = genuine_dispatch()
+    real = WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                           dispatch=dispatch)
+    ref = real["seal"]["dispatch_handle"]
+    fake = tampered_record(real)
+    writer = getattr(WW, "_GUARD", None) or guard()
+    try:
+        writer.note_sealed(fake["content_digest"], ref)
+    except BaseException as caught:  # noqa: BLE001
+        return "REFUSED BY NAME: note_sealed is unreachable (%s: %s)" % (
+            type(caught).__name__, caught)
+    return change_setting_outcome(fake)
+
+
+def attack_rebuild_the_machinery():
+    """Route 7: _dispatch_machinery() is a public name that rebuilds it all."""
+    machinery = getattr(WW, "_dispatch_machinery", None)
+    if machinery is None:
+        return "REFUSED BY NAME: _dispatch_machinery is not a module name any more"
+    machinery()
+    return "ACCEPTED: _dispatch_machinery() rebuilt the machinery and handed back a mint path"
+
+
+def attack_hash_eq_alias_a_live_entry():
+    """Route 8: a subclass overriding __hash__/__eq__ aliases a live entry."""
+    body, dispatch, _ = genuine_dispatch()
+    target = dispatch["_handle"]
+
+    class Evil(WW.DispatchHandle):
+        def __init__(self, **kwargs):
+            pass
+
+        def __hash__(self):
+            return hash(target)
+
+        def __eq__(self, other):
+            return other is target or other is self
+
+    evil = Evil()
+    aliased = guard().lookup(evil)
+    if aliased is not None:
+        return "ACCEPTED: a __hash__/__eq__ subclass read a live registry entry (%r)" % aliased
+    outcome = seal_outcome(dispatch_around(evil))
+    if outcome.startswith("ACCEPTED"):
+        return "ACCEPTED: a __hash__/__eq__ subclass sealed with a live entry"
+    return "REFUSED BY NAME: __hash__/__eq__ aliasing a live entry, then %s" % outcome
 
 
 #: label -> attack. Each returns REFUSED BY NAME ... or ACCEPTED ... .
@@ -990,6 +1406,15 @@ REACHABILITY_MATRIX = (
     ("record read back from a JSON file", attack_record_read_back_from_file),
     ("file-only provenance with no dispatch at all", attack_file_only_provenance),
     ("poke every public attribute of module and classes", attack_poke_public_surface),
+    # --- round 5: the five sealing routes the base still had, plus the three
+    # the round-4 author never disclosed
+    ("WW._GUARD = a fake guard + DispatchHandle.__new__", attack_fake_guard_on_the_module),
+    ("rewrite EXECUTION_BY_KIND to stamp live on a no-spend mint", attack_execution_by_kind_rewrite),
+    ("DispatchHandle subclass instance written into the registry", attack_subclass_written_into_the_registry),
+    ("dispatch_author.__closure__ reaching 'mint'", attack_mint_from_the_closure),
+    ("_GUARD.note_sealed(digest, ref) on a fabricated record", attack_note_sealed_laundering),
+    ("_dispatch_machinery() rebuilds the whole machinery", attack_rebuild_the_machinery),
+    ("subclass aliasing a live entry via __hash__/__eq__", attack_hash_eq_alias_a_live_entry),
 )
 
 
@@ -1025,35 +1450,44 @@ class HandleReachabilityTests(unittest.TestCase):
         self.assertIsInstance(caught.exception, WW.WorldError)
 
     def test_direct_construction_registers_nothing(self):
-        before = len(WW._HANDLES)
+        before = live_count()
         for build in (lambda: WW.DispatchHandle(**HANDLE_KWARGS),
                       lambda: WW.DispatchHandle(),
                       lambda: WW.DispatchTransport(fixture_runner(fixture_body(), []),
                                                    kind="live")):
             with self.assertRaises(WW.WorldError):
                 build()
-        self.assertEqual(len(WW._HANDLES), before)
+        self.assertEqual(live_count(), before)
 
     def test_registry_views_refuse_writes_by_name(self):
-        for write in (lambda: WW._HANDLES.__setitem__("x", "y"),
-                      lambda: WW._HANDLES.__delitem__("x"),
-                      lambda: WW._HANDLES.__setattr__("x", "y"),
-                      lambda: WW._SEALED.__setitem__("x", "y"),
-                      lambda: WW._SEALED.clear()):
+        # r5: the read-only views are gone as module names, and the registries
+        # themselves now refuse every ordinary write BY NAME. The old test wrote
+        # through WW._HANDLES / WW._SEALED; those names no longer exist, so the
+        # writes below aim at the real registries reached through the documented
+        # closure residue.
+        for name in ("_HANDLES", "_SEALED", "_GUARD"):
+            self.assertFalse(hasattr(WW, name), "%s is still a module name" % name)
+        records, sealed = registry_records(), registry_sealed()
+        for write in (lambda: records.__setitem__("x", "y"),
+                      lambda: records.__delitem__("x"),
+                      lambda: records.__setattr__("x", "y"),
+                      lambda: sealed.__setitem__("x", "y"),
+                      lambda: sealed.clear()):
             with self.assertRaises(WW.DispatchHandleMintRefused):
                 write()
 
     def test_public_surface_is_pinned(self):
-        """Every public name on the module, pinned. A mint helper added to the
-        module shows up here and has to be justified."""
+        """The WHOLE surface, pinned: every public name, every underscore name,
+        and the one place the process memory is reachable from. A mint helper or
+        a registry added to the module shows up here and has to be justified."""
         public = sorted(name for name in dir(WW) if not name.startswith("_"))
         self.assertEqual(public, sorted([
-            "CHARACTER_ID_RE", "CODE_BINDING_STAMP", "CODE_DISPATCH_UNPROVEN",
-            "CODE_EXECUTION_STAMP", "CODE_HANDLE_MINT", "CODE_IMPOSSIBLE_TIMELINE",
-            "CODE_LAYOUT_ACTION", "CODE_REAL_LOCATION", "CODE_TRANSPORT_MINT",
-            "DISPATCH_HANDLER", "DISPATCH_OPERATION", "DispatchHandle",
+            "CHARACTER_ID_RE", "CODE_BINDING_STAMP", "CODE_CONTENT_DIGEST",
+            "CODE_DISPATCH_UNPROVEN", "CODE_EXECUTION_STAMP", "CODE_HANDLE_MINT",
+            "CODE_IMPOSSIBLE_TIMELINE", "CODE_LAYOUT_ACTION", "CODE_REAL_LOCATION",
+            "CODE_TRANSPORT_MINT", "DISPATCH_HANDLER", "DISPATCH_OPERATION", "DispatchHandle",
             "DispatchHandleMintRefused", "DispatchTransport", "DispatchTransportMintRefused",
-            "EXECUTION_BY_KIND", "EXECUTION_VALUES", "IDENTITY_FIELDS", "LOCATION_ID_RE",
+            "EXECUTION_VALUES", "IDENTITY_FIELDS", "LOCATION_ID_RE",
             "MODELS_LAYER", "PROMPT_TEMPLATE_REVISION", "REQUIRED_SECTIONS", "SCHEMA_VERSION",
             "SESSION", "SETTING_DEPENDENTS", "WORLD_KIND", "WorldError", "annotations",
             "argparse", "author_world", "build_author_request", "canonical_digest",
@@ -1061,6 +1495,38 @@ class HandleReachabilityTests(unittest.TestCase):
             "main", "no_spend_transport", "os", "re", "seal_digest", "secrets", "sys",
             "validate",
         ]))
+        # the underscore surface too: helpers only, no registry and no machinery
+        underscore = sorted(name for name in dir(WW) if name.startswith("_")
+                            and not name.startswith("__"))
+        self.assertEqual(underscore, sorted([
+            "_binding_identity", "_dispatch_proof_errors", "_json_digest",
+            "_live_dispatch_reason", "_load", "_nonempty", "_nonempty_list",
+            "_parent_seal_reason", "_seal", "_seal_proof_errors", "_validate_atmosphere",
+            "_validate_cast", "_validate_era", "_validate_light", "_validate_locations",
+            "_validate_never_list", "_validate_scenes", "_validate_sound",
+        ]))
+        # no name on the module -- public or underscore -- IS the registry, the
+        # sealed map, the guard or the mint
+        registries = {id(registry_records()), id(registry_sealed()), id(registry_transports())}
+        for name in dir(WW):
+            value = getattr(WW, name)
+            self.assertNotIn(id(value), registries, "%s is this process's registry" % name)
+            self.assertIsNot(value, guard(), "%s is the dispatch guard" % name)
+            self.assertIsNot(value, mint_callable(), "%s is the mint" % name)
+        # and no name's own closure cell holds one either -- except the ONE
+        # documented residue, dispatch_author's own closure
+        holders = set()
+        for name in dir(WW):
+            value = getattr(WW, name)
+            for cell in (getattr(value, "__closure__", None) or ()):
+                try:
+                    held = cell.cell_contents
+                except ValueError:
+                    continue
+                if id(held) in registries:
+                    holders.add(name)
+        self.assertEqual(holders, {"dispatch_author"},
+                         "the registries moved: %s" % sorted(holders))
 
     def test_the_only_mint_is_inside_dispatch_author(self):
         # the constructor refuses, the registry refuses, and the module exposes
@@ -1072,6 +1538,34 @@ class HandleReachabilityTests(unittest.TestCase):
                    and not inspect.isclass(getattr(WW, name))
                    and callable(getattr(WW, name)) and "mint" in name.lower()]
         self.assertEqual(minters, [])
+        # r5: the mint is not a module name at all, and the one reachable copy --
+        # through dispatch_author's closure cell -- refuses to register a handle
+        # unless dispatch_author's own frame is the caller.
+        self.assertNotIn("mint", vars(WW))
+        mint = mint_callable()
+        self.assertIsNotNone(mint, "the mint is not reachable even from dispatch_author")
+        before = live_count()
+        with self.assertRaises(WW.DispatchHandleMintRefused) as caught:
+            mint(attempt_id="attempt_forged_001", request_receipt="f" * 64,
+                 receipt=HANDLE_KWARGS["receipt"], execution="live", raw_digest="f" * 64)
+        self.assertIn(WW.CODE_HANDLE_MINT, caught.exception.errors[0])
+        self.assertEqual(live_count(), before, "the refused mint registered anyway")
+
+    def test_reaching_the_mint_through_the_closure_is_not_a_mint(self):
+        """Route 5 of the round-5 brief: dispatch_author.__closure__ reaches
+        'mint'. It is reachable -- and calling it is refused BY NAME, because the
+        mint only registers from inside dispatch_author's own frame."""
+        mint = mint_callable()
+        outcome = None
+        try:
+            handle = mint(attempt_id="attempt_forged_001", request_receipt="f" * 64,
+                          receipt=HANDLE_KWARGS["receipt"], execution="live", raw_digest="f" * 64)
+        except WW.WorldError as caught:
+            outcome = "REFUSED BY NAME: %s" % caught.errors[0]
+        else:
+            outcome = seal_outcome(dispatch_around(handle))
+        self.assertTrue(outcome.startswith("REFUSED"), outcome)
+        self.assertIn(WW.CODE_HANDLE_MINT, outcome)
 
 
 class ExecutionStampTests(unittest.TestCase):

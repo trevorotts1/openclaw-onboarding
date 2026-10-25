@@ -53,7 +53,8 @@
     },
     "content_digest": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 over the authored body: every key except content_digest and seal. It is never trusted -- validate() recomputes it and refuses a record edited after it was sealed (WORLD_CONTENT_DIGEST_MISMATCH). Provenance notes never sit inside the digested body: seal.binding_id_source is one, which is why identical world content digests identically whatever recompute note is carried."
     },
     "provenance": {
       "type": "object",
@@ -61,7 +62,7 @@
     },
     "seal": {
       "type": "object",
-      "description": "The dispatch seal: the handle the call returned, the receipt the transport minted at call time, and the seal digest binding both to content_digest. It proves a dispatch that happened in the run that sealed this record; a fixture file or a hand-written bindings file cannot produce one.",
+      "description": "The dispatch seal: the handle the call returned, the receipt the transport minted at call time, and the seal digest binding both to content_digest. It proves a dispatch that happened in the run that sealed this record; a fixture file or a hand-written bindings file cannot produce one. seal.binding_id_source (optional) is a PROVENANCE NOTE carried deliberately OUTSIDE the digested body: it records that provenance.attempt.binding_id was recomputed from the admitted binding, and keeping it here is what leaves an honest record byte-identical to its parent.",
       "required": [
         "dispatch_handle",
         "receipt",

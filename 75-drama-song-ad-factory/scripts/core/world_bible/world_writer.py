@@ -47,11 +47,40 @@ MINTING IS NOT A CONSTRUCTOR. The handle and the registry it lands in are minted
 inside ``dispatch_author`` and held in that call path's closure: there is no
 public (or private) constructor, class attribute, registry write or subclass
 that produces one. ``DispatchHandle()`` from anywhere else raises
-``WORLD_DISPATCH_HANDLE_MINT_REFUSED`` instead of registering itself, and the
-module's ``_HANDLES``/``_SEALED`` names are read-only views of process memory.
-A handle is registered by OBJECT IDENTITY, so a copy (``copy.deepcopy``, pickle
-round trip, subclass rebuild) is a different object and can never pass as the
-live one.
+``WORLD_DISPATCH_HANDLE_MINT_REFUSED`` instead of registering itself, and no
+module name holds the registry: the registries are refusing maps (every
+ordinary write route -- item, attribute, update, pop, clear -- refuses by name)
+whose entries are immutable snapshots keyed by OBJECT IDENTITY, so a copy
+(``copy.deepcopy``, pickle round trip, subclass rebuild) is a different object
+and can never pass as the live one. The mint itself refuses to register unless
+``dispatch_author``'s own frame is calling it, so reaching the mint through a
+closure cell is not enough to use it.
+
+ROUND FIVE HARDENING, measured in the round-5 report:
+
+  * the module surface exposes NO name that reaches registration or the
+    registry -- ``_GUARD``, ``_HANDLES``, ``_SEALED``, ``_dispatch_machinery``
+    and ``EXECUTION_BY_KIND`` are gone from the module namespace;
+  * the honest path reads NO caller-writable module state at call time. Every
+    enforcement function is re-bound at import to a private execution scope
+    (see :func:`_freeze_enforcement`), so rewriting any module attribute --
+    ``SESSION``, ``IDENTITY_FIELDS``, ``DispatchHandle``, a ``CODE_*`` string,
+    anything -- changes no behaviour;
+  * ``validate`` recomputes ``content_digest`` from the body instead of
+    trusting the stored one, so a record edited after it was sealed is refused
+    by name (``WORLD_CONTENT_DIGEST_MISMATCH``);
+  * the digest covers no provenance note: ``attempt.binding_id_source`` is
+    recorded OUTSIDE the digested body (in ``seal``), so an honest record is
+    byte-identical to its parent's content.
+
+What CPython cannot give, and is measured rather than claimed: any state a
+function can read is obtainable from that function (``__closure__``,
+``__globals__``), so a caller that introspects the enforcement scope can still
+reach the mint and the registry and write them with ``dict.__setitem__``. That
+residue needs an external trust anchor -- a transport-side signing key or a
+separate process -- to close; see the ``ponytail:`` note in
+:func:`_parent_seal_reason`.
+
 
 Two further claims are DERIVED, never asserted:
 
@@ -92,6 +121,8 @@ CODE_HANDLE_MINT = "WORLD_DISPATCH_HANDLE_MINT_REFUSED"
 CODE_TRANSPORT_MINT = "WORLD_DISPATCH_TRANSPORT_MINT_REFUSED"
 CODE_EXECUTION_STAMP = "WORLD_DISPATCH_EXECUTION_STAMP_MISMATCH"
 CODE_BINDING_STAMP = "WORLD_DISPATCH_BINDING_IDENTITY_UNPROVEN"
+#: A sealed record whose body no longer hashes to its own content_digest.
+CODE_CONTENT_DIGEST = "WORLD_CONTENT_DIGEST_MISMATCH"
 
 #: The real authoring dispatch identity (SPEC 56: operation + implemented
 #: handler + prompt/template revision are part of the captured provenance).
@@ -373,6 +404,14 @@ def validate(record):
     if not isinstance(record.get("continuity"), dict) or not _nonempty_list(
             (record.get("continuity") or {}).get("must_persist")):
         errors.append("continuity.must_persist must list what survives between scenes")
+    # The stored digest is never trusted: it is recomputed from the body, so a
+    # record edited after it was sealed is refused here rather than at the seal.
+    recomputed = canonical_digest(record)
+    if record.get("content_digest") != recomputed:
+        errors.append(
+            "%s: content_digest %r does not match the record body (recomputed %r); a world "
+            "edited after it was sealed is not usable"
+            % (CODE_CONTENT_DIGEST, record.get("content_digest"), recomputed))
     errors.extend(_dispatch_proof_errors(record.get("provenance"), "provenance"))
     errors.extend(_seal_proof_errors(record.get("seal"), "seal", record))
     _validate_locations(record, errors)
@@ -406,9 +445,10 @@ def _seal(record):
 #: advance.
 SESSION = secrets.token_hex(16)
 
-#: The provenance ``execution`` value each transport kind stamps at mint. The
-#: value comes from which transport minted the handle -- never from a caller.
-EXECUTION_BY_KIND = {"live": "live", "no_spend": "no_spend_fixture"}
+#: The provenance ``execution`` value each transport kind stamps at mint. There
+#: is no module-level map any more: the stamp is derived inside the mint path
+#: from the kind recorded at registration (see ``_dispatch_machinery``), so
+#: rewriting a name on the module cannot relabel a no-spend call as live.
 EXECUTION_VALUES = ("live", "no_spend_fixture")
 
 class DispatchHandleMintRefused(WorldError):
@@ -448,8 +488,11 @@ class DispatchTransport:
     def __call__(self, request):
         response = self.fn(request)
         nonce = secrets.token_hex(16)
+        # the session identity is stamped onto the transport at registration by
+        # the mint path, so this reads no module name a caller can rewrite
+        session = getattr(self, "_session", "")
         receipt = {"transport_id": self.transport_id, "kind": self.kind, "nonce": nonce,
-                   "session": hashlib.sha256((SESSION + ":" + nonce).encode("utf-8")).hexdigest()}
+                   "session": hashlib.sha256((session + ":" + nonce).encode("utf-8")).hexdigest()}
         receipt["receipt_digest"] = hashlib.sha256(json.dumps(
             receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         ).hexdigest()
@@ -573,24 +616,96 @@ def _dispatch_machinery():
     """The mint path and the process memory it owns, closed over by
     ``dispatch_author`` alone.
 
-    Nothing returned here can register anything: the two module registries are
-    read-only views, and the only writer is the code inside ``dispatch_author``.
-    The registries are keyed by object identity, so nothing that is copied can
-    ever come back as the live entry.
+    Nothing returned here can register anything by an ordinary write: the three
+    registries are refusing maps and their entries are immutable snapshots keyed
+    by object identity, so nothing that is copied can ever come back as the live
+    entry. The mint itself refuses unless ``dispatch_author``'s own frame is
+    calling it.
     """
-    records = {}       # handle OBJECT -> its state (identity-keyed)
-    transports = {}    # registered transport OBJECT -> {"kind", "transport_id"}
-    sealed = {}        # sealed content digest -> ref of the handle that sealed it
+    from types import MappingProxyType
+
+    class Registry(dict):
+        """Process memory. Every ordinary write route refuses by name; only the
+        mint path writes, through ``dict.__setitem__``. So a caller that reaches
+        this map through a closure cell still cannot register a handle with
+        ``registry[handle] = state`` -- the one route left is a raw
+        ``dict.__setitem__`` call, which the round-5 report names as residue.
+
+        A map keyed by OBJECTS (``identity_keys``) reads by identity too, so a
+        subclass that overrides ``__hash__``/``__eq__`` cannot alias a live
+        entry through ``get``/``[]``/``in`` either."""
+
+        __slots__ = ("_identity",)
+
+        def __init__(self, identity_keys=False):
+            super().__init__()
+            object.__setattr__(self, "_identity", identity_keys)
+
+        def _refuse(self, *args, **kwargs):
+            raise DispatchHandleMintRefused(
+                "%s: the dispatch registry is this process's memory, not a mint path; writing it, "
+                "clearing it or copying it into another registry can neither mint nor un-mint a "
+                "dispatch handle" % CODE_HANDLE_MINT)
+
+        __setitem__ = _refuse
+        __delitem__ = _refuse
+        __setattr__ = _refuse
+        __ior__ = _refuse
+        pop = _refuse
+        popitem = _refuse
+        update = _refuse
+        clear = _refuse
+        setdefault = _refuse
+
+        def _find(self, key):
+            if not self._identity:
+                return dict.get(self, key, _MISSING)
+            for obj in dict.__iter__(self):
+                if obj is key:
+                    return dict.get(self, obj)
+            return _MISSING
+
+        def get(self, key, default=None):
+            found = self._find(key)
+            return default if found is _MISSING else found
+
+        def __getitem__(self, key):
+            found = self._find(key)
+            if found is _MISSING:
+                raise KeyError(key)
+            return found
+
+        def __contains__(self, key):
+            return self._find(key) is not _MISSING
+
+    _MISSING = object()
+
+    records = Registry(identity_keys=True)   # handle OBJECT -> immutable state
+    transports = Registry(identity_keys=True)  # transport OBJECT -> immutable {"kind", "transport_id"}
+    sealed = Registry()    # sealed content digest -> ref of the handle that sealed it
     #: captured now: re-binding ``DispatchTransport.__call__`` on the class later
     #: cannot redirect what the mint path calls
     transport_call = DispatchTransport.__call__
+    #: stamped at registration onto every transport, so the receipt is minted
+    #: from the mint path's own session identity
+    session = SESSION
+    #: the one execution stamp each registered kind may claim, derived here and
+    #: not readable from any module name
+    execution_by_kind = {"live": "live", "no_spend": "no_spend_fixture"}
 
     def mint(*, attempt_id, request_receipt, receipt, execution, raw_digest):
+        # Only dispatch_author's own frame may register a handle. Reaching this
+        # function through a closure cell and calling it is refused by name.
+        frame = sys._getframe(1)
+        if frame.f_code is not dispatch_author.__code__:
+            raise DispatchHandleMintRefused(
+                "%s: the mint registers a handle only from inside dispatch_author's own frame; "
+                "reaching it through a closure cell is not a dispatch" % CODE_HANDLE_MINT)
         handle = DispatchHandle.__new__(DispatchHandle)
-        records[handle] = {
+        state = {
             "ref": hashlib.sha256(
-                (SESSION + ":" + secrets.token_hex(16)).encode("utf-8")).hexdigest(),
-            "session": SESSION,
+                (session + ":" + secrets.token_hex(16)).encode("utf-8")).hexdigest(),
+            "session": session,
             "transport_id": receipt.get("transport_id"),
             "transport_kind": receipt.get("kind"),
             "execution": execution,
@@ -600,17 +715,29 @@ def _dispatch_machinery():
             "raw_digest": raw_digest,
             "consumed_by": None,
         }
+        dict.__setitem__(records, handle, MappingProxyType(state))
         return handle
 
     class Guard:
         """Read-and-advance access to the registry. Nothing here mints, and
-        nothing here un-consumes: a handle can only ever become MORE spent."""
+        nothing here un-consumes: a handle can only ever become MORE spent.
+        Every lookup is by OBJECT IDENTITY and requires the exact
+        ``DispatchHandle`` class, so a subclass that overrides ``__hash__`` and
+        ``__eq__`` cannot alias a live entry."""
 
         __slots__ = ()
 
+        def _entry(self, handle):
+            if type(handle) is not DispatchHandle:
+                return None
+            for obj, state in records.items():
+                if obj is handle:
+                    return obj, state
+            return None
+
         def lookup(self, handle):
-            state = records.get(handle) if isinstance(handle, DispatchHandle) else None
-            return dict(state) if state else None
+            found = self._entry(handle)
+            return dict(found[1]) if found else None
 
         def by_ref(self, ref):
             for handle, state in list(records.items()):
@@ -619,71 +746,25 @@ def _dispatch_machinery():
             return None
 
         def consume(self, handle, digest):
-            state = records.get(handle)
-            if state is None:
+            found = self._entry(handle)
+            if found is None:
                 raise DispatchHandleMintRefused(
                     "%s: only a handle this run's dispatch minted can be consumed" % CODE_HANDLE_MINT)
-            state["consumed_by"] = digest
+            obj, state = found
+            spent = dict(state)
+            spent["consumed_by"] = digest
+            dict.__setitem__(records, obj, MappingProxyType(spent))
 
         def note_sealed(self, digest, ref):
-            sealed[digest] = ref
+            dict.__setitem__(sealed, digest, ref)
+
+        def sealed_ref(self, digest):
+            """The handle ref that sealed this digest, or None. Read-only: the
+            sealed map itself is never handed out."""
+            return sealed.get(digest)
 
         def live_count(self):
             return len(records)
-
-    def readonly_map(data, name):
-        """A registry a caller can read and copy but never write. Every write
-        route -- item, attribute, update, pop, clear -- refuses by name."""
-
-        def refuse(*args, **kwargs):
-            raise DispatchHandleMintRefused(
-                "%s: %s is this process's memory, not a mint path; writing it, clearing it or "
-                "copying it into another registry can neither mint nor un-mint a dispatch handle"
-                % (CODE_HANDLE_MINT, name))
-
-        class View:
-            __slots__ = ()
-
-            def get(self, key, default=None):
-                return data.get(key, default)
-
-            def __contains__(self, key):
-                return key in data
-
-            def __len__(self):
-                return len(data)
-
-            def __iter__(self):
-                return iter(list(data))
-
-            def keys(self):
-                return list(data)
-
-            def values(self):
-                return [data[k] for k in list(data)]
-
-            def items(self):
-                return [(k, data[k]) for k in list(data)]
-
-            def copy(self):
-                return {k: data[k] for k in list(data)}
-
-            def __repr__(self):
-                return "<%s, read-only, %d live entries>" % (name, len(data))
-
-            __setitem__ = refuse
-            __delitem__ = refuse
-            __setattr__ = refuse
-            pop = refuse
-            popitem = refuse
-            update = refuse
-            clear = refuse
-            setdefault = refuse
-            add = refuse
-            append = refuse
-            extend = refuse
-
-        return View()
 
     def make_transport(fn, kind):
         if not callable(fn):
@@ -694,10 +775,12 @@ def _dispatch_machinery():
         transport.fn = fn
         transport.kind = kind
         transport.transport_id = hashlib.sha256(
-            (SESSION + ":" + kind + ":" + secrets.token_hex(8)).encode("utf-8")).hexdigest()[:16]
+            (session + ":" + kind + ":" + secrets.token_hex(8)).encode("utf-8")).hexdigest()[:16]
+        transport._session = session
         # the convention the other stages read: a live worker is marked
         transport._s75_live_runner = (kind == "live")
-        transports[transport] = {"kind": kind, "transport_id": transport.transport_id}
+        dict.__setitem__(transports, transport,
+                         MappingProxyType({"kind": kind, "transport_id": transport.transport_id}))
         return transport
 
     def no_spend_transport(fn):
@@ -731,14 +814,25 @@ def _dispatch_machinery():
         with ``WORLD_AUTHORING_DISPATCH_UNPROVEN`` whenever the dispatch cannot
         be proven.
         """
-        if type(runner) is not DispatchTransport or runner not in transports:
+        if type(runner) is not DispatchTransport:
             raise WorldError(["%s: dispatch.runner is not a registered dispatch transport; a "
                               "response fixture, a hand-written model-bindings.json or any "
                               "caller-written callable is not a dispatch. Register the transport "
                               "with no_spend_transport() (tests) or live_transport() (production)."
                               % CODE_DISPATCH_UNPROVEN])
-        transport = transports[runner]
-        stamp = EXECUTION_BY_KIND[transport["kind"]]
+        registered = None
+        for obj, meta in transports.items():
+            if obj is runner:
+                registered = meta
+                break
+        if registered is None:
+            raise WorldError(["%s: dispatch.runner is not a registered dispatch transport; a "
+                              "response fixture, a hand-written model-bindings.json or any "
+                              "caller-written callable is not a dispatch. Register the transport "
+                              "with no_spend_transport() (tests) or live_transport() (production)."
+                              % CODE_DISPATCH_UNPROVEN])
+        transport = registered
+        stamp = execution_by_kind[transport["kind"]]
         if execution is not None and execution != stamp:
             raise WorldError(["%s: %s: dispatch.execution asserts %r but the handle would be "
                               "minted by the %r transport; execution is stamped from the "
@@ -808,7 +902,9 @@ def _dispatch_machinery():
         attempt = copy.deepcopy(recorded["attempt"])
         # Never echo the store's own binding_id: it is a string a caller can
         # write into model-bindings.json. The provenance carries the identity
-        # recomputed from the admitted binding itself.
+        # recomputed from the admitted binding itself. The source note travels
+        # with the dispatch and is lifted into ``seal`` by ``author_world``, so
+        # it never enters the digested body.
         attempt["binding_id"] = identity
         attempt["binding_id_source"] = "recomputed_from_admitted_binding"
         # The handle only exists because the call above really ran: it is minted
@@ -836,12 +932,10 @@ def _dispatch_machinery():
             "_handle": handle,
         }
 
-    return (Guard(), readonly_map(records, "_HANDLES"), readonly_map(sealed, "_SEALED"),
-            no_spend_transport, live_transport, dispatch_author)
+    return (Guard(), no_spend_transport, live_transport, dispatch_author)
 
 
-_GUARD, _HANDLES, _SEALED, no_spend_transport, live_transport, dispatch_author = \
-    _dispatch_machinery()
+_GUARD, no_spend_transport, live_transport, dispatch_author = _dispatch_machinery()
 
 def _live_dispatch_reason(dispatch):
     """Why this dispatch cannot be shown to be a call that ran in THIS process.
@@ -958,7 +1052,7 @@ def _seal_proof_errors(seal, where, record=None):
     if record is not None:
         if not _nonempty(seal.get("seal_digest")):
             errors.append("%s: %s.seal_digest is missing" % (CODE_DISPATCH_UNPROVEN, where))
-        elif seal.get("seal_digest") != seal_digest(seal, record.get("content_digest")):
+        elif seal.get("seal_digest") != seal_digest(seal, canonical_digest(record)):
             errors.append("%s: %s.seal_digest does not verify against the record's content digest"
                           % (CODE_DISPATCH_UNPROVEN, where))
     return errors
@@ -991,7 +1085,17 @@ def author_world(payload, *, artifact_id, run_id, revision=1, dispatch=None,
     if errors:
         raise WorldError(errors)
     handle = dispatch["_handle"]
-    provenance = {k: v for k, v in dispatch.items() if k not in ("seal", "_handle")}
+    provenance = copy.deepcopy({k: v for k, v in dispatch.items() if k not in ("seal", "_handle")})
+    # The recompute NOTE is provenance, not content: it is lifted out of the
+    # digested body and carried in ``seal`` instead, so an honest record hashes
+    # byte-identically to the record the same world produced before the note
+    # existed. The recomputed id itself stays in ``provenance.attempt``.
+    binding_source = None
+    if isinstance(provenance.get("attempt"), dict):
+        binding_source = provenance["attempt"].pop("binding_id_source", None)
+    seal = copy.deepcopy(dispatch["seal"])
+    if _nonempty(binding_source):
+        seal["binding_id_source"] = binding_source
     record = copy.deepcopy(payload)
     record.update({
         "schema_version": SCHEMA_VERSION,
@@ -999,8 +1103,8 @@ def author_world(payload, *, artifact_id, run_id, revision=1, dispatch=None,
         "artifact_id": artifact_id,
         "run_id": run_id,
         "revision": revision,
-        "provenance": copy.deepcopy(provenance),
-        "seal": copy.deepcopy(dispatch["seal"]),
+        "provenance": provenance,
+        "seal": seal,
         "dependencies": dependencies or {},
     })
     record = _seal(record)
@@ -1029,8 +1133,10 @@ def _parent_seal_reason(record):
     if digest != canonical_digest(record):
         return ("%s: the world record does not match its own content_digest; a setting change "
                 "must not launder a record edited after it was sealed" % CODE_DISPATCH_UNPROVEN)
-    ref = _SEALED.get(digest)
-    if ref is None or _GUARD.by_ref(ref) is None:
+    ref = _GUARD.sealed_ref(digest)
+    handle = _GUARD.by_ref(ref) if ref is not None else None
+    state = _GUARD.lookup(handle) if handle is not None else None
+    if state is None or state.get("consumed_by") != digest:
         return ("%s: this run cannot attribute the world record to a live dispatch; a setting "
                 "change derives from an authored world, and a record opened from a file proves "
                 "nothing about who authored it" % CODE_DISPATCH_UNPROVEN)
@@ -1071,7 +1177,7 @@ def change_setting(record, *, locations, reason, era=None):
         raise WorldError(errors)
     if sealed["cast_refs"] != record["cast_refs"]:
         raise WorldError(["a setting change must not rewrite reusable character identity"])
-    _GUARD.note_sealed(sealed["content_digest"], _SEALED.get(record["content_digest"]))
+    _GUARD.note_sealed(sealed["content_digest"], _GUARD.sealed_ref(record["content_digest"]))
 
     return {
         "world": sealed,
@@ -1126,6 +1232,81 @@ def main(argv=None):
           "world_writer.dispatch_author with a registered transport (no_spend_transport in "
           "tests, live_transport in production)." % CODE_DISPATCH_UNPROVEN, file=sys.stderr)
     return 1
+
+
+def _freeze_enforcement():
+    """Re-bind the enforcement code to a PRIVATE execution scope, then drop the
+    machinery names from the module namespace.
+
+    A Python function reads its globals through one dict. Re-binding every
+    enforcement function to a snapshot of that dict means rewriting a module
+    attribute afterwards -- ``SESSION``, ``IDENTITY_FIELDS``, ``DispatchHandle``,
+    a ``CODE_*`` string, ``secrets`` -- changes nothing the honest path does.
+    The same walk re-binds the functions held in closure cells (the mint and its
+    registries) and the methods of this module's classes, so there is no
+    enforcement code left reading a namespace a caller can write.
+
+    What this cannot do: the private scope itself is reachable from the
+    functions that use it (``__globals__``), and the registries are reachable
+    from the mint's closure. A caller that introspects that far can write the
+    registries with ``dict.__setitem__``. That residue is measured in the
+    round-5 report; closing it needs a trust anchor outside this process.
+    """
+    import types
+
+    private = dict(globals())
+    rebound = {}
+    rebound_classes = {}
+
+    def rebind_function(fn):
+        # the ORIGINAL is kept in the cache value: dropping it would free its id
+        # and let a later function land on a stale cache entry
+        if id(fn) in rebound:
+            return rebound[id(fn)][1]
+        new = types.FunctionType(fn.__code__, private, fn.__name__, fn.__defaults__,
+                                 fn.__closure__)
+        new.__kwdefaults__ = fn.__kwdefaults__
+        rebound[id(fn)] = (fn, new)
+        for cell in (fn.__closure__ or ()):
+            try:
+                value = cell.cell_contents
+            except ValueError:      # empty cell
+                continue
+            replacement = rebind_object(value)
+            if replacement is not value:
+                cell.cell_contents = replacement
+        return new
+
+    def rebind_class(cls):
+        if id(cls) in rebound_classes:
+            return
+        rebound_classes[id(cls)] = cls
+        for attr, member in list(vars(cls).items()):
+            if isinstance(member, types.FunctionType):
+                setattr(cls, attr, rebind_function(member))
+
+    def rebind_object(value):
+        if isinstance(value, types.FunctionType):
+            return rebind_function(value)
+        if isinstance(value, type) and value.__module__ == __name__:
+            rebind_class(value)
+        elif getattr(value.__class__, "__module__", None) == __name__:
+            rebind_class(value.__class__)
+        return value
+
+    for name, value in list(private.items()):
+        if isinstance(value, types.FunctionType):
+            private[name] = rebind_function(value)
+        else:
+            rebind_object(value)
+    for name, value in list(private.items()):
+        if isinstance(value, types.FunctionType):
+            globals()[name] = value
+    for name in ("_GUARD", "_dispatch_machinery", "_freeze_enforcement"):
+        globals().pop(name, None)
+
+
+_freeze_enforcement()
 
 
 if __name__ == "__main__":
