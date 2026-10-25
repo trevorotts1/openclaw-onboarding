@@ -724,16 +724,7 @@ export class DurableJobRunner {
       if (payload.cancel_generation !== session.state.cancel_generation) {
         // Written under a superseded cancellation generation: it can
         // never run. Retire it in place rather than stranding it.
-        this.db.write((handle) => {
-          handle
-            .prepare(
-              `UPDATE council_jobs
-                  SET state = 'cancelled', terminal_reason = 'superseded_cancel_generation',
-                      updated_at = ?
-                WHERE tenant_id = ? AND company_id = ? AND id = ? AND state = 'queued'`,
-            )
-            .run(this.nowIso(), envelope.tenant_id, envelope.company_id, candidate.id);
-        });
+        this.retireSupersededJob(envelope, candidate.id);
         continue;
       }
       const claimed = this.db.write((handle) => {
@@ -753,7 +744,7 @@ export class DurableJobRunner {
       const claimedRow = this.jobRow(envelope, candidate.id);
       if (!claimedRow) return null;
       session = this.sessionOrThrow(envelope, sessionId);
-      const bumped = this.bumpSessionEpoch(envelope, session, workerId, candidate.id);
+      const bumped = this.bumpSessionEpoch(envelope, session, workerId, [candidate.id]);
       const { route_snapshot, ...descriptor } = payload.runner;
       return {
         job: {
@@ -790,6 +781,149 @@ export class DurableJobRunner {
   }
 
   /**
+   * Claim up to `limit` queued runnable operations as ONE wave
+   * (W77S-MODES). The filters are exactly claimNextOperation's: a
+   * runnable session, no live lease anywhere in the session, and only
+   * queued jobs whose dispatch descriptor and cancellation generation
+   * are current. Expired leases are reconciled first, the same way.
+   *
+   * The wave bumps the session fencing generation ONCE, so every claim
+   * it returns carries the same `session_lease_epoch`. That is the
+   * whole point: the budget service and the card commit fence compare
+   * the presented epoch with the session's current one, so N claims
+   * each bumping their own epoch would fence the earlier settles out
+   * and lose paid responses. Waves run to completion before the next
+   * wave is claimed, so no in-flight operation is ever fenced.
+   *
+   * Returns [] when a live lease exists (another worker, or a previous
+   * wave, still owns work) or nothing is claimable: an empty wave IS
+   * the rejected claim, never an exception, because losing a claim
+   * race is normal operation.
+   */
+  claimWave(
+    envelope: AuthorizationEnvelope,
+    sessionId: string,
+    workerId: string,
+    limit: number,
+  ): JobClaim[] {
+    if (!Number.isSafeInteger(limit) || limit < 1) return [];
+    let session = this.sessionOrThrow(envelope, sessionId);
+    if (!RUNNABLE_STATES.has(session.state.state)) return [];
+
+    const liveLease = (): boolean =>
+      this.listSessionJobs(envelope, sessionId).some(
+        (c) =>
+          (c.state === 'leased' || c.state === 'running') &&
+          (c.lease_expires_at === null || Date.parse(c.lease_expires_at) > this.nowMs()),
+      );
+    if (liveLease()) return [];
+
+    // Reconcile a dead worker's lapsed lease before claiming, exactly as
+    // the single-claim path does: recovery may finish the job, fail it
+    // as provider-unknown, or return it to queued for this wave.
+    for (const candidate of this.listSessionJobs(envelope, sessionId)) {
+      if (candidate.state !== 'leased' && candidate.state !== 'running') continue;
+      if (candidate.lease_expires_at === null) continue;
+      if (Date.parse(candidate.lease_expires_at) > this.nowMs()) continue;
+      if (candidate.lease_owner === workerId) continue;
+      this.recoverExpiredLease(envelope, candidate.id, workerId);
+    }
+    if (liveLease()) return [];
+
+    session = this.sessionOrThrow(envelope, sessionId);
+    const taken: Array<{
+      id: string;
+      payload: StoredJobPayload;
+      descriptor: OperationDescriptor;
+      route_snapshot: PinnedRouteSnapshot;
+      job_lease_epoch: number;
+    }> = [];
+    for (const candidate of this.listSessionJobs(envelope, sessionId)) {
+      if (taken.length >= limit) break;
+      if (candidate.state !== 'queued') continue;
+      const fresh = this.jobRow(envelope, candidate.id);
+      if (!fresh || fresh.state !== 'queued') continue;
+      const payload = JSON.parse(fresh.payload_json) as StoredJobPayload;
+      if (!payload.runner) continue;
+      if (payload.cancel_generation !== session.state.cancel_generation) {
+        this.retireSupersededJob(envelope, candidate.id);
+        continue;
+      }
+      const claimed = this.db.write((handle) => {
+        const expires = new Date(this.nowMs() + this.leaseTtlMs).toISOString();
+        const result = handle
+          .prepare(
+            `UPDATE council_jobs
+                SET state = 'leased', lease_owner = ?, lease_epoch = lease_epoch + 1,
+                    lease_expires_at = ?, attempt_count = attempt_count + 1,
+                    updated_at = ?
+              WHERE tenant_id = ? AND company_id = ? AND id = ? AND state = 'queued'`,
+          )
+          .run(workerId, expires, this.nowIso(), envelope.tenant_id, envelope.company_id, candidate.id);
+        return Number(result.changes) === 1;
+      });
+      if (!claimed) continue; // lost the race to another worker
+      const claimedRow = this.jobRow(envelope, candidate.id);
+      if (!claimedRow) continue;
+      const { route_snapshot, ...descriptor } = payload.runner;
+      taken.push({
+        id: candidate.id,
+        payload,
+        descriptor,
+        route_snapshot,
+        job_lease_epoch: claimedRow.lease_epoch,
+      });
+    }
+    if (taken.length === 0) return [];
+
+    let bumped: SessionStateRecord;
+    try {
+      bumped = this.bumpSessionEpoch(
+        envelope,
+        session,
+        workerId,
+        taken.map((t) => t.id),
+      );
+    } catch (error) {
+      // A wave that never got a generation owns nothing: hand every
+      // claimed row straight back to queued so no lease is stranded
+      // under an epoch no worker holds.
+      for (const t of taken) this.returnJobToQueued(envelope, t.id, workerId, t.job_lease_epoch);
+      throw error;
+    }
+    // The wave runs as a unit, so the capacity service must admit the
+    // whole wave rather than refusing its later members.
+    this.capacity?.ensureConcurrentCapacity(taken.length);
+    return taken.map((t) => ({
+      job: {
+        id: t.id,
+        session_id: sessionId,
+        attempt: t.payload.attempt,
+        phase_job_key: t.payload.phase_job_key,
+        input_sha256: t.payload.input_sha256,
+        state: 'leased' as const,
+        lease_epoch: t.job_lease_epoch,
+        cancel_generation: t.payload.cancel_generation,
+        brief_revision: t.payload.brief_revision,
+      },
+      operation_id: operationKey(
+        sessionId,
+        t.payload.attempt,
+        t.payload.phase_job_key,
+        t.payload.input_sha256,
+      ),
+      seat_id: t.payload.seat_id as SeatId | null,
+      worker_id: workerId,
+      job_lease_epoch: t.job_lease_epoch,
+      session_lease_epoch: bumped.lease_epoch,
+      cancel_generation: t.payload.cancel_generation,
+      state_version_at_claim: bumped.state_version,
+      descriptor: t.descriptor,
+      route_snapshot: t.route_snapshot,
+    }));
+  }
+
+  /**
    * Advance the session fencing generation for a new claim. Any token
    * minted under an earlier epoch (budget reservations, card commit
    * fences, in-flight workers) goes stale at this instant. Retried on
@@ -802,7 +936,7 @@ export class DurableJobRunner {
     envelope: AuthorizationEnvelope,
     session: StoredSession,
     workerId: string,
-    jobId: string,
+    jobIds: readonly string[],
   ): SessionStateRecord {
     let current = session.state;
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -817,7 +951,8 @@ export class DurableJobRunner {
           payload: {
             lease_claim: {
               worker_id: workerId,
-              job_id: jobId,
+              job_id: jobIds[0] ?? null,
+              ...(jobIds.length > 1 ? { job_ids: [...jobIds] } : {}),
               lease_epoch: next.lease_epoch,
             },
           },
@@ -850,6 +985,20 @@ export class DurableJobRunner {
    * false, so a stale worker cannot free a live worker's job.
    */
   releaseClaim(envelope: AuthorizationEnvelope, claim: JobClaim): boolean {
+    return this.returnJobToQueued(envelope, claim.job.id, claim.worker_id, claim.job_lease_epoch);
+  }
+
+  /**
+   * Return one leased/running job to queued, but only for the owner at
+   * the epoch it holds. A stale owner's write matches nothing, so it
+   * cannot free a live worker's job.
+   */
+  private returnJobToQueued(
+    envelope: AuthorizationEnvelope,
+    jobId: string,
+    workerId: string,
+    jobLeaseEpoch: number,
+  ): boolean {
     return this.db.write((handle) => {
       const result = handle
         .prepare(
@@ -864,11 +1013,29 @@ export class DurableJobRunner {
           this.nowIso(),
           envelope.tenant_id,
           envelope.company_id,
-          claim.job.id,
-          claim.worker_id,
-          claim.job_lease_epoch,
+          jobId,
+          workerId,
+          jobLeaseEpoch,
         );
       return Number(result.changes) === 1;
+    });
+  }
+
+  /**
+   * Retire a queued job written under a superseded cancellation
+   * generation: it can never run, so it is cancelled in place instead
+   * of being stranded queued forever.
+   */
+  private retireSupersededJob(envelope: AuthorizationEnvelope, jobId: string): void {
+    this.db.write((handle) => {
+      handle
+        .prepare(
+          `UPDATE council_jobs
+              SET state = 'cancelled', terminal_reason = 'superseded_cancel_generation',
+                  updated_at = ?
+            WHERE tenant_id = ? AND company_id = ? AND id = ? AND state = 'queued'`,
+        )
+        .run(this.nowIso(), envelope.tenant_id, envelope.company_id, jobId);
     });
   }
 
@@ -1654,7 +1821,7 @@ export class DurableJobRunner {
       payload.input_sha256,
     );
     const session = this.sessionOrThrow(envelope, sessionId);
-    const epoch = this.bumpSessionEpoch(envelope, session, workerId, jobId).lease_epoch;
+    const epoch = this.bumpSessionEpoch(envelope, session, workerId, [jobId]).lease_epoch;
 
     const finalizeReservation = (
       action: 'unknown' | 'release' | 'none',

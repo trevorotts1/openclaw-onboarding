@@ -37,13 +37,34 @@ not trusted for this purpose. If the list cannot be fetched or contains
 no Flash model, the run refuses with a typed error. It never falls back
 to the configured id or to an older Flash.
 
+## Provider order and parallel limits
+
+The council offers its providers in this fixed order:
+
+1. **OpenRouter (first, and recommended).** It runs every advisor at
+   once: no parallel limit, so the sitting is the fastest.
+2. **The client's own Ollama.** Only when the client prefers it. If
+   their plan is not already known, ask once: the $20 a month plan runs
+   at most 3 advisors at a time; the $100 a month plan runs at most 10.
+   When Ollama fails, the council falls back to OpenRouter.
+3. **Agnes 3.0 Flash.** When the client selects it: no parallel limit.
+
+Every other provider runs the whole panel at once. A seat that cannot be
+run because the plan is unknown is a typed refusal, never a guess.
+
 ## Fallback policy
 
-`fallback_policy: none`. When the selected route is unavailable,
-unresponsive, or returns an unusable result, the council reports the
-blocker precisely (which route, what failed) and stops or waits. It
-never substitutes a different model and presents the output as if the
-selected route produced it.
+`fallback_policy: none` for the four older modes. When the selected route
+is unavailable, unresponsive, or returns an unusable result, the council
+reports the blocker precisely (which route, what failed) and stops or
+waits. It never substitutes a different model and presents the output as
+if the selected route produced it.
+
+The one exception is the client's own Ollama in light/medium/heavy: when
+Ollama fails, the seats that failed are re-run on the OpenRouter fallback
+model the caller named, and the output states which model answered. With
+no fallback model given, the older failure path applies and the output
+says `Fallback: none (<reason>)`.
 
 ## Route identity
 
@@ -60,10 +81,11 @@ fill the gap is a report defect.
 
 ## Usage accounting
 
-Every provider request counts against the session's 50-request ceiling
-(see protocol.md), including retries and repairs. Usage records keep
-the route, the request count, and the outcome per round, so a verdict
-can always be audited for what it actually cost and which route
+Every provider request counts against the session's ceiling (see
+protocol.md), including retries and repairs: 50 for light, 50 for medium,
+100 for heavy, and 50 for the four older modes. Usage records keep the
+route, the request count, and the outcome per round, so a verdict can
+always be audited for the provider requests it used and for which route
 actually produced it.
 
 ## What the installer must preserve
