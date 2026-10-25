@@ -167,6 +167,10 @@ ALLOWED_INSTANCES = {role: {row.get("role_instance")
                             if row["page_role"] == role
                             and row.get("role_instance")}
                      for role in PAGE_ROLES}
+# The instance each page identity declares: {"downsell-2": "downsell_2",
+# "checkout": None, ...}. A delivery node's role_instance must equal it.
+PAGE_TYPE_INSTANCE = {page_type: row.get("role_instance")
+                      for page_type, row in PAGE_ROLE_MAP["page_types"].items()}
 
 if set(ROLE_WRAPPERS) != set(PAGE_ROLES):
     raise RoleWrapperError(
@@ -340,9 +344,11 @@ class RoleWrapper:
         """Bind ONE actual page-result (+ delivery node) into a role record.
 
         Refuses, by name: a stub/simulated result, a result that does not
-        echo its request, a delivery node of another role. Records, never
-        invents: values absent from both inputs land in ``missing`` and the
-        record is bound_complete=False.
+        echo its request, a delivery node of another role, a delivery node
+        whose node_id is not this request's page_id, and a node whose
+        role_instance is not the instance that page identity declares.
+        Records, never invents: values absent from both inputs land in
+        ``missing`` and the record is bound_complete=False.
         """
         request = self._check_request(request)
         if is_simulated_result(result):
@@ -372,7 +378,18 @@ class RoleWrapper:
                     f"delivery node role {delivery_node['page_role']!r} does "
                     f"not match request role {self.role!r}; a wrapper never "
                     "consumes another role's page")
+            if delivery_node.get("node_id") != request["page_id"]:
+                raise RoleWrapperError(
+                    f"delivery node {delivery_node.get('node_id')!r} is not "
+                    f"this request's page {request['page_id']!r}; a wrapper "
+                    "binds only the page it was asked for")
             node_instance = delivery_node.get("role_instance")
+            declared = PAGE_TYPE_INSTANCE.get(request["page_id"])
+            if node_instance != declared:
+                raise RoleWrapperError(
+                    f"delivery node role_instance {node_instance!r} does not "
+                    f"match the instance declared for page "
+                    f"{request['page_id']!r} ({declared!r})")
             if role_instance is not None and node_instance != role_instance:
                 raise RoleWrapperError(
                     f"delivery node role_instance {node_instance!r} does not "
@@ -683,6 +700,15 @@ def _self_check() -> None:
     refuses(lambda: RoleWrapper("checkout").consume(
         req, res, delivery_node=_node("upsell_1", "upsell")),
         "delivery node of another role refused")
+    refuses(lambda: RoleWrapper("checkout").consume(
+        req, res, delivery_node=_node("checkout", "checkout-B",
+                                      logical_id="pg-other-page")),
+        "delivery node of another page refused (node_id != request page_id)")
+    refuses(lambda: RoleWrapper("downsell_1").consume(
+        _request("downsell_1", "downsell-2"),
+        _result(_request("downsell_1", "downsell-2")),
+        delivery_node=_node("downsell_1", "downsell-2")),
+        "delivery node dropping the page's declared instance refused")
     refuses(lambda: RoleWrapper("downsell_1").consume(
         _request("downsell_1", "downsell-2"), _result(_request("downsell_1", "downsell-2")),
         delivery_node=_node("downsell_1", "downsell-2",
