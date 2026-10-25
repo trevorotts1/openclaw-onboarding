@@ -272,10 +272,15 @@ to self-approve a run.
   speaking face that is not a lip-sync clip of that character's own line fails
   `FACE_SPEAKS_NO_LIPSYNC`; a lip-sync clip whose speaker is not on screen fails
   `LIPSYNC_WRONG_FACE`.
-- Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: 30-40 s
-  and 6-8 clips of 4-6 s in a 60 s ad (doubled 2026-10-08), scaled linearly with
-  length, with a 5-point grace; below the band or under the clip count fails
-  `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the
+- Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: it
+  measures the 25-30% target share of the selected duration -- a 15-18 s band
+  at 60 s, scaled with length -- against a clip floor that never drops below 3
+  (3 at 60 s), each clip 4-6 s. It fails `LIPSYNC_COVERAGE_BELOW_BAND` only
+  below the band minus the 5-point grace (3 s at 60 s) or under that clip
+  floor; a plan above the band is reported in `evidence` (`in_band` false),
+  never failed here. The 35% HARD MAXIMUM is a separate bound this measurement
+  does not enforce: `lipsync_clips.check_clips` and the card guard refuse
+  anything that crosses it. The planner (`plan_lipsync_lines`) picks the
   lines (every sung hook, the spoken opener and closing first, each cut to 6 s).
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
   paid lip-sync job (its close-up numbers are `picture_gate`'s, one rule set); a
