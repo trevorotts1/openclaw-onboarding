@@ -25,6 +25,9 @@ import {
   discoverHostLayout,
   resolveDiscoveredCredential,
   resolveRouteForDispatch,
+  routeDiscoveryInfo,
+  routeOffersModel,
+  routeUsableWithModel,
   type RouteSnapshotOptions,
 } from '../src/cli/route-discovery.js';
 import {
@@ -498,4 +501,134 @@ test('conflicting workspace pins fail explicitly instead of choosing one', () =>
   }
   assert.ok(thrown instanceof RouteDiscoveryError);
   assert.equal(thrown.code, 'ROUTE_HOST_CONFIG_INVALID');
+});
+
+// -------------------------------------------------- W77S-MODES: routes
+
+/** A host whose only provider is an Ollama endpoint, written as given. */
+function ollamaHome(label: string, provider: Record<string, unknown>): string {
+  const home = makeHome(label);
+  writeConfig(
+    join(home, '.openclaw'),
+    'openclaw.json',
+    JSON.stringify({ models: { providers: { ollama: provider } } }),
+  );
+  return home;
+}
+
+test('W77S: an ollama route composes through the /v1 compatible surface', () => {
+  const home = ollamaHome('ollama-local', {
+    baseUrl: 'http://127.0.0.1:11434',
+    api: 'ollama',
+    models: [{ id: 'llama3.1:8b' }],
+  });
+  const env = { OPENCLAW_ROOT: join(home, '.openclaw'), PATH: '' };
+  const routes = discoverConfiguredRoutes({ homeDir: home, env });
+  assert.equal(routes.length, 1);
+  const route = routes[0];
+  assert.equal(route.routeId, 'ollama-configured');
+  assert.equal(route.kind, 'compatible');
+  assert.equal(route.composable, true, route.notComposableReason ?? '');
+  assert.equal(route.failure, null);
+  assert.equal(route.compatible?.baseUrl, 'http://127.0.0.1:11434/v1');
+  assert.equal(route.compatible?.apiFamily, 'ollama_chat');
+  assert.equal(route.compatible?.modelId, 'llama3.1:8b');
+  // A local daemon needs no credential, and nothing is invented for it.
+  assert.equal(route.compatible?.credential.state, 'not_required');
+
+  // An endpoint that already carries /v1 is left exactly as configured.
+  const already = ollamaHome('ollama-v1', {
+    baseUrl: 'http://127.0.0.1:11434/v1',
+    api: 'ollama',
+    models: [{ id: 'llama3.1:8b' }],
+  });
+  const again = discoverConfiguredRoutes({
+    homeDir: already,
+    env: { OPENCLAW_ROOT: join(already, '.openclaw'), PATH: '' },
+  });
+  assert.equal(again[0].compatible?.baseUrl, 'http://127.0.0.1:11434/v1');
+});
+
+test('W77S: Ollama Cloud composes with its configured key reference and /v1', () => {
+  const home = makeHome('ollama-cloud');
+  writeConfig(
+    join(home, '.openclaw'),
+    'openclaw.json',
+    JSON.stringify({
+      models: {
+        providers: {
+          'ollama-cloud': {
+            baseUrl: 'https://ollama.com',
+            api: 'ollama',
+            apiKey: '${OLLAMA_CLOUD_KEY}',
+            models: [{ id: 'qwen3:cloud' }],
+          },
+        },
+      },
+    }),
+  );
+  const env = {
+    OPENCLAW_ROOT: join(home, '.openclaw'),
+    OLLAMA_CLOUD_KEY: 'fixture-value-not-a-real-key',
+    PATH: '',
+  };
+  const route = discoverConfiguredRoutes({ homeDir: home, env })[0];
+  assert.equal(route.composable, true, route.notComposableReason ?? '');
+  assert.equal(route.compatible?.baseUrl, 'https://ollama.com/v1');
+  assert.equal(route.compatible?.credential.state, 'present');
+  assert.equal(route.compatible?.credential.envVar, 'OLLAMA_CLOUD_KEY');
+  // The report carries the NAME and the checked stores, never the value.
+  assert.equal(JSON.stringify(route.compatible?.credential).includes('fixture-value'), false);
+});
+
+test('W77S: a route whose only failure is model ambiguity becomes usable with a named model', () => {
+  const home = makeHome('ambiguous');
+  writeConfig(
+    join(home, '.openclaw'),
+    'openclaw.json',
+    JSON.stringify({
+      models: {
+        providers: {
+          acme: {
+            baseUrl: 'http://127.0.0.1:1234/v1',
+            api: 'openai-completions',
+            models: [{ id: 'model-a' }, { id: 'model-b' }],
+          },
+        },
+      },
+    }),
+  );
+  const env = { OPENCLAW_ROOT: join(home, '.openclaw'), PATH: '' };
+  const route = discoverConfiguredRoutes({ homeDir: home, env })[0];
+  assert.equal(route.composable, false);
+  assert.equal(route.failure?.code, 'ROUTE_MODEL_AMBIGUOUS');
+  assert.equal(routeUsableWithModel(route), true, 'nothing else blocks this route');
+  assert.deepEqual(route.compatible?.modelCandidates, ['model-a', 'model-b']);
+  assert.equal(routeOffersModel(route, 'model-b'), true);
+  assert.equal(routeOffersModel(route, 'model-c'), false);
+  assert.equal(routeOffersModel(route, null), false);
+
+  // Strict resolution: no model is a refusal, never a guess.
+  assert.throws(
+    () => resolveRouteForDispatch('acme-configured', { homeDir: home, env }),
+    (error: unknown) =>
+      error instanceof RouteDiscoveryError && error.code === 'ROUTE_MODEL_AMBIGUOUS',
+  );
+  // A model outside the candidate list is refused the same way.
+  assert.throws(
+    () => resolveRouteForDispatch('acme-configured', { homeDir: home, env }, 'model-c'),
+    (error: unknown) =>
+      error instanceof RouteDiscoveryError && error.code === 'ROUTE_MODEL_AMBIGUOUS',
+  );
+  // An explicit candidate makes it usable, and the snapshot pins it.
+  const resolved = resolveRouteForDispatch('acme-configured', { homeDir: home, env }, 'model-b');
+  assert.equal(resolved.route.routeId, 'acme-configured');
+  const snapshot = buildRouteSnapshot(resolved.route, snapshotOptions({ model: 'model-b' }));
+  assert.equal(snapshot.selection.requestedModelOrAlias, 'model-b');
+  assert.equal(snapshot.identity.configured.modelId, 'model-b', 'the caller-chosen model is what the snapshot pins');
+
+  // The listing shows usable-with-a-model and the candidates.
+  const info = routeDiscoveryInfo(route, false);
+  assert.equal(info.usable_with_model, true);
+  assert.deepEqual(info.model_candidates, ['model-a', 'model-b']);
 });
