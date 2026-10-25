@@ -661,7 +661,7 @@ export class CompatibleHttpTransport implements ModelTransport {
         } catch {
           throw new TransportError(
             'TRANSPORT_BUDGET_EXHAUSTED',
-            `The session budget does not allow a transport retry for route ${this.selection.routeId}. The original failure stands: ${err.message}`,
+            `The session request limit does not allow a transport retry for route ${this.selection.routeId}. The original failure stands: ${err.message}`,
             { httpStatus: err.httpStatus },
           );
         }
