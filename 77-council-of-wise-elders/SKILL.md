@@ -1,5 +1,5 @@
 ---
-version: 1.0.59
+version: 1.0.60
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -12,9 +12,11 @@ description: Convene a source-grounded Council of Wise Elders for business or
 # Council of Wise Elders (Skill 77)
 
 Nine fixed advisory seats review a consequential decision from distinct,
-source-grounded perspectives. The council runs in three sizes: light (3
-seats, exactly 2 rounds), medium (all 9 seats, 1 to 4 rounds) and heavy
-(all 9 seats, 3 to 10 rounds). The council produces one recommendation with
+source-grounded perspectives. Every council size seats all nine advisors;
+the size sets the rounds and how many run at once: light (all 9 seats, 3
+at a time, exactly 2 rounds), medium (all 9 seats, up to 4 rounds) and
+heavy (all 9 seats, up to 10 rounds). The council produces one
+recommendation with
 its conditions, the strongest objection, and the next useful step. A council
 result is advice. It is never, by itself, permission to act.
 
@@ -258,9 +260,8 @@ counsel artifact.
    `blackceo-council convene --brief FILE --mode light|medium|heavy` (or
    `--sample` for the harmless built-in sample decision). Convening with no
    `--mode` runs medium; that default is deliberate, so name the mode you
-   announced. For a light
-   question pass the three chosen seats with `--seat-ids id,id,id`; when it
-   is omitted the driver picks the three best-fit seats itself. On the
+   announced. Every size seats all nine advisors; pass
+   `--seat-ids id,id,...` only to name that panel explicitly. On the
    client's own Ollama pass `--ollama-plan 20` or `--ollama-plan 100`, and
    `--fallback-model ID` to name the OpenRouter model used when Ollama
    fails. Convening is the approval: the client chose the model, so there

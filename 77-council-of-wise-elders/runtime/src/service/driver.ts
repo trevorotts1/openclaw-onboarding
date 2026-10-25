@@ -46,7 +46,6 @@ import {
   type SessionSpec,
   type SessionVisibility,
 } from '../contracts/index.js';
-import { recommendLightPanel } from '../intake/panel.js';
 import {
   isOllamaProvider,
   parallelLimitFor,
@@ -260,36 +259,6 @@ function errorCode(error: unknown): string {
   return typeof code === 'string' ? code : 'RUN_FAILED';
 }
 
-/**
- * The three best-fit seats for a light question. The brief names the
- * domains that matter (critical_domains required_seat_id, and weight 3),
- * so those seats are offered first in the same order recommendLightPanel
- * uses, and the roster fills any shortfall.
- */
-function lightPanelFor(brief: DecisionBrief): SeatId[] {
-  const responsible = new Set(
-    brief.critical_domains
-      .map((domain) => domain.required_seat_id)
-      .filter((seat): seat is SeatId => seat !== null),
-  );
-  const flagged = (seat: SeatId): boolean =>
-    responsible.has(seat) || brief.relevance_weights[seat] === 3;
-  const draft = {
-    answers: {
-      decision: {
-        flags: {
-          involves_money_commitment: flagged('tiffany-aliche'),
-          involves_offer_or_pricing: flagged('russell-brunson'),
-          involves_rebrand_or_pivot: flagged('simon-sinek'),
-          involves_stakeholder_trust: flagged('brene-brown'),
-          decision_is_communication: flagged('td-jakes'),
-        },
-      },
-    },
-  } as unknown as Parameters<typeof recommendLightPanel>[0];
-  return recommendLightPanel(draft);
-}
-
 export function createCouncilDriver(deps: CouncilDriverDeps): {
   convene(input: ConveneInput): Promise<ConveneAccepted>;
   inFlight(): number;
@@ -435,20 +404,19 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
     // default). The built-in sample keeps the mode its fixture carries:
     // it is a harmless demo, not a client decision to size.
     const mode: SessionMode = input.mode ?? (sample ? baseSpec.mode : 'medium');
-    // Light runs the three best-fit seats. Named seats win; otherwise the
-    // brief's own critical domains pick the panel.
+    // Every council size seats the full roster (Trevor decision
+    // 2026-10-25): mode changes rounds and concurrency, never the panel.
+    // A named panel still wins, so an explicit seat list is honoured.
     const seatIds: SeatId[] = input.seat_ids
       ? [...input.seat_ids]
-      : mode === 'light'
-        ? lightPanelFor(brief)
-        : [...baseSpec.seat_ids];
+      : [...baseSpec.seat_ids];
     // Every panel seat carries a weight: a seat missing from the brief's
     // relevance_weights blocks the sitting at DRAFT_RESOLUTION. A seat
     // that is NOT on the panel carries none: publication recomputes the
-    // decision over every weighted seat, so a light sitting that kept the
-    // other six weights scored the verdict over a three-seat card set but
-    // recomputed it over nine seats and failed its own scores_recomputed
-    // check (W77S-MODES review).
+    // decision over every weighted seat, so a sitting that kept weights
+    // for seats it does not seat scored the verdict over its own card set
+    // but recomputed it over every weighted seat and failed its own
+    // scores_recomputed check (W77S-MODES review).
     const panel = new Set<SeatId>(seatIds);
     const relevanceWeights: DecisionBrief['relevance_weights'] = {};
     for (const [seatId, weight] of Object.entries(brief.relevance_weights)) {
@@ -550,6 +518,9 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
         providerSlug: resolved.snapshot.providerSlug,
         ollamaPlan: plan,
         panelSize: session.spec.seat_ids.length,
+        // The mode's wave width: light runs 3 at a time, medium/heavy the
+        // whole roster (contracts/modes.ts).
+        waveWidth: MODE_ROUND_POLICY[mode as CouncilSize].max_concurrent_calls,
       });
       if (!parallel.ok) {
         throw new DriverRefusal(

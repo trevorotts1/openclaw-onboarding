@@ -346,7 +346,7 @@ const USAGE = [
   '                                      Convene a council on the running service (starts it now)',
   '                                      --mode defaults to medium; the four older modes (full, selected,',
   '                                      quick, consult) still convene exactly as before; --seat-ids names',
-  '                                      the light panel (3 seats), otherwise the brief picks them;',
+  '                                      the panel (every mode seats all nine by default);',
   '                                      --ollama-plan is asked once and remembered; --fallback-model is',
   '                                      the OpenRouter model used when an Ollama route fails',
   '',

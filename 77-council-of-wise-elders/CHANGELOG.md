@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.60: every council size seats all nine advisors; the size sets rounds and concurrency only (FIX-MODES-RUNTIME)
+
+In plain English: light used to mean "three advisors". It never should have. All three sizes now bring every elder to the table, and the size governs only how many rounds they run and how many speak at once.
+
+- Every council size seats the full nine-seat roster from one shared constant (`MODE_SEATS` in `runtime/src/contracts/modes.ts`). No mode has its own seat list any more, so a session can never be a smaller council.
+- Mode now controls two things and nothing else. Light: 2 rounds, at most 3 provider calls in flight (waves of three), 50-request cap. Medium: up to 4 rounds, 50-request cap. Heavy: up to 10 rounds, 100-request cap. The consensus stop rule still needs 7 of the 9 seats to agree.
+- Removing the three-seat light panel removed its consequences with it: the schema requirement, the intake panel rule, the "three best-fit seats" selector and the relevance-weight trimming that existed only to keep a three-seat verdict publishable.
+- The chamber caption and the CLI help no longer describe light as three advisors.
+- Tests: the mode suite now proves light seats all nine over two rounds and dispatches three at a time, medium and heavy seat the same roster, and a light session missing a seat still stops visibly instead of shrinking the council.
+
 ## v1.0.59: the packaged copy is proven against the release, never against its own claims (TREEGATE-REPAIR)
 
 In plain English: 1.0.58 started accepting a packaged copy of the council as "the same release" as the copy being updated. The review that followed found the check was asking the packaged copy to vouch for itself: anything it wrote about itself was believed. A copy that shared no files with the release at all could be accepted by filling in its own paperwork. This release makes the release do the vouching.

@@ -10,12 +10,21 @@
  * the isolated opening; every later pass challenges the open cruxes from
  * the previous round's cards.
  */
+import { SEAT_IDS } from './enums';
 
 export const COUNCIL_SIZES = ['light', 'medium', 'heavy'] as const;
 export type CouncilSize = (typeof COUNCIL_SIZES)[number];
 
+/**
+ * Every council size seats the FULL roster. Mode never selects a smaller
+ * panel (Trevor decision 2026-10-25: "all of the modes should be all of the
+ * agents... all council members are used"). Mode controls ROUNDS and
+ * CONCURRENCY only.
+ */
+export const MODE_SEATS = SEAT_IDS.length;
+
 export interface ModeRoundPolicy {
-  /** Panel seats: light 3, medium 9, heavy 9. */
+  /** Panel seats: the full roster in every mode. */
   seats: number;
   /** Rounds that always run before any stop rule may fire. */
   min_rounds: number;
@@ -25,29 +34,34 @@ export interface ModeRoundPolicy {
   stop_from_round: number | null;
   /** Provider-request cap for the session (the only enforced limit). */
   max_provider_requests: number;
+  /** Provider calls dispatched at once (wave width) — the one concurrency knob. */
+  max_concurrent_calls: number;
 }
 
 export const MODE_ROUND_POLICY: Readonly<Record<CouncilSize, ModeRoundPolicy>> = {
   light: {
-    seats: 3,
+    seats: MODE_SEATS,
     min_rounds: 2,
     max_rounds: 2,
     stop_from_round: null,
     max_provider_requests: 50,
+    max_concurrent_calls: 3,
   },
   medium: {
-    seats: 9,
+    seats: MODE_SEATS,
     min_rounds: 1,
     max_rounds: 4,
     stop_from_round: 1,
     max_provider_requests: 50,
+    max_concurrent_calls: MODE_SEATS,
   },
   heavy: {
-    seats: 9,
+    seats: MODE_SEATS,
     min_rounds: 3,
     max_rounds: 10,
     stop_from_round: 3,
     max_provider_requests: 100,
+    max_concurrent_calls: MODE_SEATS,
   },
 };
 

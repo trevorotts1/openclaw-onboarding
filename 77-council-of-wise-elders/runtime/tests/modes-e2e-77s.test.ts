@@ -90,7 +90,8 @@ const OPTIONS = [
   { id: 'C', label: 'Launch the revised offer broadly', kind: 'change' as const },
 ];
 
-const LIGHT_PANEL: readonly SeatId[] = SEAT_IDS.slice(0, 3);
+/** Every council size seats the full roster (Trevor, 2026-10-25). */
+const LIGHT_PANEL: readonly SeatId[] = SEAT_IDS;
 
 function seatSource(seatId: SeatId): SourceRecord {
   return {
@@ -552,11 +553,19 @@ class SpyCapacity extends RuntimeCapacity {
   }
 }
 
-test('W77S-E2E: light convenes 3 seats, 2 rounds, 3 at a time on an Ollama $20 plan', async () => {
+test('W77S-E2E: light convenes all 9 seats for 2 rounds, 3 at a time on any route', async () => {
+  await conveneAndCheck(
+    'light',
+    { routeId: 'openrouter-configured', providerSlug: 'openrouter-configured' },
+    { seats: SEAT_IDS.length, rounds: 2, parallel: 3 },
+  );
+});
+
+test('W77S-E2E: light on an Ollama $20 plan is still 9 seats, 2 rounds, 3 at a time', async () => {
   await conveneAndCheck(
     'light',
     { routeId: 'ollama-configured', providerSlug: 'ollama' },
-    { seats: 3, rounds: 2, parallel: 3, seat_ids: [...LIGHT_PANEL], ollama_plan: '20' },
+    { seats: SEAT_IDS.length, rounds: 2, parallel: 3, ollama_plan: '20' },
   );
 });
 
@@ -584,15 +593,14 @@ test('W77S-E2E: the production runner admits each wave member through capacity',
   );
   const accepted = await r.convene({
     mode: 'light',
-    seat_ids: [...LIGHT_PANEL],
     ollama_plan: '20',
   });
   await r.drain();
   assert.equal(r.settled[0]?.result.status, 'completed');
-  // Two waves of three: claimWave widened the pool for each wave and every
+  // Nine seats, two rounds, waves of three: six waves of three and every
   // dispatched operation took a slot.
-  assert.deepEqual(capacity.waveWidths.filter((width) => width > 0), [3, 3]);
-  assert.equal(capacity.acquires, 6, '3 seats x 2 rounds');
+  assert.deepEqual(capacity.waveWidths.filter((width) => width > 0), [3, 3, 3, 3, 3, 3]);
+  assert.equal(capacity.acquires, 18, '9 seats x 2 rounds');
   assert.equal(accepted.parallel_limit, 3);
 });
 
@@ -659,17 +667,14 @@ test('W77S-E2E: the Ollama fallback re-runs every failed seat in ONE wave on the
   assert.equal(r.settled[0].result.status, 'completed');
 });
 
-test('W77S-E2E: light freezes only its panel weights so the verdict passes publication', async () => {
-  // A light convene over a brief that carries all nine weights: the
-  // driver's panel is three seats, so the frozen brief must carry three
-  // weights. Keeping the other six made publication recompute the
-  // decision over nine seats while the verdict was built over three, and
-  // the light verdict failed its own scores_recomputed check.
+test('W77S-E2E: light freezes every panel weight so the verdict passes publication', async () => {
+  // Every council size seats all nine, so the frozen brief carries all
+  // nine weights and publication recomputes the decision over exactly the
+  // seats that sat.
   const r = rig({ routeId: 'openrouter-configured', providerSlug: 'openrouter-configured' });
   const allWeights = briefFor([...SEAT_IDS]);
   const accepted = await r.convene({
     mode: 'light',
-    seat_ids: [...LIGHT_PANEL],
     brief: allWeights,
   });
   await r.drain();
@@ -679,11 +684,11 @@ test('W77S-E2E: light freezes only its panel weights so the verdict passes publi
   assert.ok(stored);
   assert.deepEqual(
     Object.keys(stored.brief.relevance_weights).sort(),
-    [...LIGHT_PANEL].sort(),
-    'the frozen brief carries exactly the panel weights',
+    [...SEAT_IDS].sort(),
+    'the frozen brief carries the whole roster',
   );
   // Every panel seat keeps the weight the caller gave it.
-  for (const seatId of LIGHT_PANEL) {
+  for (const seatId of SEAT_IDS) {
     assert.equal(
       stored.brief.relevance_weights[seatId],
       allWeights.relevance_weights[seatId],
