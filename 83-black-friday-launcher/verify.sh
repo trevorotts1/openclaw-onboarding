@@ -5,17 +5,47 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
+# One interpreter for every step below, and it must be dependency-complete.
+# L25-BF-40 was exactly the split this removes: an isolated interpreter hid
+# user site-packages and reported jsonschema missing while the plain one
+# reported it present, so the route tests and check_package could accept a
+# missing validator. There is no isolated step left.
+PY="${PYTHON:-python3}"
+
+echo "== interpreter: $PY =="
+"$PY" - <<'PREFLIGHT'
+import importlib.util
+import sys
+
+missing = [name for name in ("jsonschema",)
+           if importlib.util.find_spec(name) is None]
+if missing:
+    raise SystemExit(
+        "verify: %s is not importable under %s. The Skill 79 checkout validator "
+        "cannot load, so verification would accept a missing validator. Install "
+        "the runtime requirement first: %s -m pip install -r requirements.txt"
+        % (", ".join(missing), sys.executable, sys.executable))
+print("dependency-complete interpreter:", sys.executable)
+print("runtime requirement present:", ", ".join(("jsonschema",)))
+PREFLIGHT
+
 echo "== open and decided seams =="
-python3 -m launcher_core.cli seams
+"$PY" -m launcher_core.cli seams
 
 echo "== unit + integration checks =="
-python3 -I -m unittest discover -s tests -p 'test_*.py' -v
+"$PY" -m unittest discover -s tests -p 'test_*.py' -v
 
 echo "== route invariants and adapter wiring =="
-python3 -I -m unittest discover -s "$HERE/routes/tests" -p 'test_routes.py'
+"$PY" -m unittest discover -s "$HERE/routes/tests" -p 'test_routes.py'
+
+echo "== browser diagnostic (offline) =="
+echo "no browser or Playwright is installed or reachable offline; the diagnostic"
+echo "below proves the landing -> checkout route wiring and the Skill 79 order"
+echo "form binding without a browser, and says so in its output"
+"$PY" "$HERE/routes/tests/test_routes.py" BrowserDiagnosticTests -v
 
 echo "== worked-example fixtures =="
-python3 -I "$HERE/fixtures/run_fixtures.py"
+"$PY" "$HERE/fixtures/run_fixtures.py"
 
 echo "== 999 dependency package =="
-python3 -m launcher_core.cli dependencies
+"$PY" -m launcher_core.cli dependencies
