@@ -205,6 +205,8 @@ test('route discovery and worker handles map into honest independent observation
       identity_level: 'configured',
       composed: false,
       not_composed_reason: 'ROUTE_ENDPOINT_MISSING',
+      usable_with_model: false,
+      model_candidates: [],
     },
   ]);
   assert.equal(notComposed.state, 'blocked');
@@ -219,6 +221,8 @@ test('route discovery and worker handles map into honest independent observation
       identity_level: 'configured',
       composed: true,
       not_composed_reason: null,
+      usable_with_model: false,
+      model_candidates: ['model-a'],
     },
     {
       route_id: 'route-b',
@@ -227,6 +231,8 @@ test('route discovery and worker handles map into honest independent observation
       identity_level: 'configured',
       composed: false,
       not_composed_reason: 'ROUTE_HARNESS_EXECUTABLE_MISSING',
+      usable_with_model: false,
+      model_candidates: [],
     },
   ]);
   assert.equal(composed.state, 'ready');

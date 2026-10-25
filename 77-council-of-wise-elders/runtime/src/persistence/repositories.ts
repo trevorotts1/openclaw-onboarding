@@ -55,6 +55,7 @@ import {
   type CouncilEventType,
   type DecisionBrief,
   type IdSource,
+  type SessionMode,
   type SessionState,
   type SessionStateRecord,
   type Verdict,
@@ -79,6 +80,20 @@ import type { CouncilPersistenceConfig } from './config.js';
 
 export const DELETION_TOMBSTONE_SOURCE = 'council-persistence';
 export const DELETION_TOMBSTONE_OPERATION = 'session_deleted';
+
+/**
+ * ponytail: council_sessions.mode has a SQL CHECK (0001-council-schema.sql)
+ * that lists only the four old modes, and the column is never read back —
+ * the spec is rebuilt from the session_created journal event and the state
+ * record carries the real mode. So the row column stores a CHECK-satisfying
+ * alias only; spec, state and events keep the real mode. Upgrade: widen the
+ * CHECK in a later migration and delete this map.
+ */
+export function sessionRowMode(mode: SessionMode): SessionMode {
+  if (mode === 'light') return 'selected';
+  if (mode === 'medium' || mode === 'heavy') return 'full';
+  return mode;
+}
 
 const STATE_EVENT_TYPES: CouncilEventType[] = [
   'session_created',
@@ -295,7 +310,7 @@ export class CouncilRepositories {
         session.scope.owner_subject,
         envelope.actor_subject,
         session.state.archived ? 1 : 0,
-        session.spec.mode,
+        sessionRowMode(session.spec.mode),
         session.spec.visibility,
         session.state.state,
         session.state.state_version,
