@@ -71,20 +71,48 @@ source changes; never guess a capability into existence.
    Authority is **provenance, not shape** (B-27): `prepare_assisted_placement` stamps
    the package with an HMAC-SHA256 provenance marker over its **whole** record, keyed
    by an installation signing key generated with `os.urandom()` and stored outside the
-   repository in a `0600` file (`PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE`, or an
-   inline hex key in `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY`; default
-   `~/.openclaw/state/personal-profile-capability/seal.key`).
-   `record_operator_confirmation` refuses any package that does not carry a marker
-   that fits its own bytes. A hand-built dict or a hand-edited file cannot mint a
-   placement id, an operator receipt or a status claim: the key is **not** derived
-   from the declaration or from any other shipped byte, so the marker cannot be
-   recomputed from the checkout, and because the MAC covers every field — placement
-   id, channel and account labels, route, status, action, placement, the operator
-   instruction, the capability reference, the receipt body and the publication flags
-   — a marker copied from a sanctioned record does not fit an edited, extended or
-   truncated one. Editing a sealed record invalidates the marker. The marker is not
-   a substitute for the operator: a caller that can read the installation's key file
-   can still sign, which is why the key is `0600` and outside the checkout.
+   repository in a `0600` file at
+   `<real home of the real uid>/.openclaw/state/personal-profile-capability/seal.key`.
+   **The key is not a runtime input.** `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` and
+   `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE` are **refused outright** when they are
+   set in the process environment, and the key location is derived from the real
+   uid's home rather than from `$HOME`. The file is honoured only when it is a
+   regular file (never a symlink) owned by the real uid and not group- or
+   world-readable, inside a directory owned by the real uid that grants no access to
+   group or others. `record_operator_confirmation` refuses any package that does not
+   carry a marker that fits its own bytes.
+
+   **Measured, not asserted.** With `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` set to a
+   caller-chosen 32-byte key, the module refuses to resolve a key at all, and the
+   three attacker entries are all refused: mint an approval from a hand-built
+   `awaiting-operator` dict, render `operator-confirmed` from a hand-built record,
+   and bless it with `assert_truthful_publication` — `is_sanctioned` is `False` for
+   the record whose marker the caller computed with `hashlib` + `hmac` alone. The
+   same happens through `..._SEAL_KEY_FILE` pointed at a caller-written key file, and
+   with `$HOME` pointed at a directory holding a caller-written key at the default
+   subpath — the key the module resolves is never the caller's. The inverse controls
+   in the same instrument are what make that a measurement rather than a blanket
+   refusal: with no override set the key resolves, a genuinely prepared placement
+   confirms and renders `operator-confirmed` with `provenance: sanctioned`, while the
+   same record sealed with the wrong key is refused and a record with no marker is
+   refused. A hand-built dict or a hand-edited file therefore cannot mint a placement
+   id, an operator receipt or a status claim **for a caller who holds the standard
+   library and control of the process environment**: the key is not derived from the
+   declaration or from any other shipped byte and cannot be selected at runtime, so
+   the marker can be recomputed from neither the checkout nor a caller's choice.
+   Because the MAC covers every field — placement id, channel and account labels,
+   route, status, action, placement, the operator instruction, the capability
+   reference, the receipt body and the publication flags — a marker copied from a
+   sanctioned record does not fit an edited, extended or truncated one. Editing a
+   sealed record invalidates the marker.
+
+   **Ceiling, stated honestly.** The marker is not a substitute for the operator: a
+   caller running as the installation owner who can read (or replace) the key file
+   can still sign. That read is the stated ceiling — the same privilege as editing
+   the module — and everything short of it is refused. There is deliberately **no**
+   override hook: an override would have to be authenticated by something the caller
+   does not control, and nothing inside a standard-library process is that thing.
+   The upgrade is an operator-held signer outside this process.
 5. **Never claim system publication.** `published-by-system` and bare `published` are
    forbidden statuses for an assisted placement.
 
@@ -223,7 +251,12 @@ python3 -m unittest tests/social-planner/test_t22_status_guard_matrix.py -v
 The suites prove: unattended personal-profile requests are refused with a clear
 reason; a receipt exists only after operator confirmation; a system-claimed
 publication without a receipt fails the guard; a hand-built dict cannot mint a
-placement id, an operator receipt or a status claim (B-27); and no unattended
-publication is claimed while its coverage is unproved (B-04). The tests are narrow
+placement id, an operator receipt or a status claim (B-27) — pinned both ways by
+`TestSealKeyIsNotARuntimeInput`, which asserts that an environment-supplied key, an
+environment-supplied key file, a `$HOME`-planted key, a group- or world-readable key
+file, a symlinked key file, a key directory open to group or others and a key file
+owned by another uid are all refused, and that each refusal has its inverse (the
+provisioned key resolves, seals and is accepted); and no unattended publication is
+claimed while its coverage is unproved (B-04). The tests are narrow
 by design: they exercise the declaration and the assisted code paths only. They do
 not assert anything about public monitoring, because this contract performs none.

@@ -28,15 +28,25 @@ if _SHARED not in sys.path:
     sys.path.insert(0, _SHARED)
 
 # The provenance signing key is per installation and lives outside the repository.
-# Point it at a per-run temporary directory so the suite is hermetic, and so the
-# CLI subprocesses below resolve the same key as this process.
+# The module accepts NO environment override of the key or of its location — that
+# was the B-27 injected-key channel — so this suite relocates the key the only way
+# that remains: by patching the module's private path resolver, which is a
+# code-level change with the same privilege as editing the module. The CLI
+# subprocesses below do the same thing inside their own process.
 _KEY_DIR = tempfile.mkdtemp(prefix="ppc-seal-")
 atexit.register(shutil.rmtree, _KEY_DIR, ignore_errors=True)
-os.environ.setdefault(
-    "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE", os.path.join(_KEY_DIR, "seal.key")
-)
+os.environ.pop("PERSONAL_PROFILE_CAPABILITY_SEAL_KEY", None)
+os.environ.pop("PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE", None)
 
 import personal_profile_capability as ppc  # noqa: E402
+
+# Saved once, before any patching, so the resolution tests can prove the real
+# location ignores $HOME whichever of the two suite files is imported first.
+if not hasattr(ppc, "_orig_seal_key_path"):
+    ppc._orig_seal_key_path = ppc._seal_key_path
+_REAL_SEAL_KEY_PATH = ppc._orig_seal_key_path
+_KEY_PATH = os.path.join(_KEY_DIR, "seal.key")
+ppc._seal_key_path = lambda: _KEY_PATH
 
 CAPABILITIES = os.path.join(
     _ONB_ROOT, "35-social-media-planner", "config", "profile-capabilities.json"
@@ -251,10 +261,26 @@ class TestSingleSourceRoundTrip(unittest.TestCase):
 
 
 class TestCapabilityCli(unittest.TestCase):
+    # The CLI runs in its own process, so it cannot inherit this module's patched
+    # path resolver. It gets the same code-level relocation through a small shim
+    # that patches the resolver and then runs the CLI. Nothing about the key or
+    # its location travels through the environment — the module refuses that.
+    _SHIM = (
+        "import runpy, sys\n"
+        "sys.path.insert(0, {shared!r})\n"
+        "import personal_profile_capability as _ppc\n"
+        "_ppc._seal_key_path = lambda: {key!r}\n"
+        "sys.argv = [{cli!r}] + sys.argv[1:]\n"
+        "runpy.run_path({cli!r}, run_name='__main__')\n"
+    )
+
     def _run(self, *args, cwd=_ONB_ROOT):
+        shim = self._SHIM.format(shared=_SHARED, key=_KEY_PATH, cli=CLI)
         env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+        env.pop("PERSONAL_PROFILE_CAPABILITY_SEAL_KEY", None)
+        env.pop("PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE", None)
         return subprocess.run(
-            [sys.executable, CLI, *args],
+            [sys.executable, "-I", "-B", "-c", shim, *args],
             cwd=cwd,
             env=env,
             capture_output=True,
