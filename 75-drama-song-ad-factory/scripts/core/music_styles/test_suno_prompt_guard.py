@@ -548,6 +548,18 @@ class SquashedSpellings(unittest.TestCase):
         ("reggaeton", "negative_tags", "do not sound like Cardi_B"),
         ("trap-rap", "style_suffix", "avoid Jelly'Roll grit"),
         ("country-pop", "mix", "avoid Bad_Bunny grit"),
+        # a NUMBER may not carry that join either.  NFKD decomposes the circled
+        # digit to "1" and the Roman numeral to "I", which used to leave one
+        # word no alias form could reach: ``bad1bunny`` / ``badibunny``.
+        # (S75-T41 r6)
+        ("pop-rap", "style", "warm strings, Maroon\u2460 5 groove"),
+        ("trap-rap", "negative_tags", "do not sound like Bad\u2460Bunny"),
+        ("reggaeton", "style_suffix", "avoid Cardi\u2460B grit"),
+        ("acoustic-pop", "style", "warm strings, Jelly\u2460Roll groove"),
+        ("country-pop", "mix", "avoid Celine\u2160Dion grit"),
+        ("soul-rise", "style", "warm strings, avoid Bad\u2160Bunny tone"),
+        ("soul-ballad", "negative_tags", "do not sound like Maroon\u21605"),
+        ("pop-rap", "style", "warm strings, Maroon15 groove"),
     )
 
     def setUp(self):
@@ -588,8 +600,31 @@ class SquashedSpellings(unittest.TestCase):
                      "Bad_Bunny groove", "Jelly_Roll groove",
                      "Maroon_5 groove", "Cardi_B groove", "Celine_Dion groove",
                      "Jelly'Roll groove", "Bad’Bunny groove",
-                     "Bad__Bunny groove", "Puff_Daddy groove"):
+                     "Bad__Bunny groove", "Puff_Daddy groove",
+                     "Bad\u2460Bunny groove", "Bad\u2160Bunny groove",
+                     "Bad1Bunny groove", "Maroon15 groove",
+                     "Maroon\u2460 5 groove", "My\u2460Heart\u2460Will"
+                     "\u2460Go\u2460On"):
             self.assertTrue(G.find_matches(text, self.aliases), text)
+
+    def test_a_number_is_a_join_and_a_word_is_not(self):
+        # The compatibility character is a SEPARATOR in its own right, whatever
+        # NFKD would have made of it -- the two families S75-T41 r6 closes.
+        for text in ("Bad\u2460Bunny", "Bad\u2160Bunny", "Bad\u2461Bunny",
+                     "Bad\u00b2Bunny", "Bad\u2081Bunny", "Bad\u00bdBunny",
+                     "Bad\u24ffBunny"):
+            self.assertEqual(G.normalize(text), "bad bunny", text)
+            self.assertTrue(G.find_matches(text, self.aliases), text)
+        # a digit between the words is one join, whatever carries it
+        for text in ("Bad1Bunny", "Bad\u0661Bunny", "Maroon15", "Cardi1B"):
+            self.assertTrue(G.find_matches(text, self.aliases), text)
+        # and it did NOT become a rule that any character is a separator:
+        # an accent still folds, and a word between the words is not a join
+        self.assertEqual(G.normalize("C\u00e9line Dion"), "celine dion")
+        self.assertTrue(G.find_matches("C\u00c9LINE DION", self.aliases))
+        for text in ("bead bunny drums", "brad bunny groove",
+                     "maroon5paint", "maroon5paint set", "jellyrollpan"):
+            self.assertEqual(G.find_matches(text, self.aliases), [], text)
 
     def test_no_alias_set_matches_nothing(self):
         self.assertEqual(G.find_matches("andraday beat", {}), [])

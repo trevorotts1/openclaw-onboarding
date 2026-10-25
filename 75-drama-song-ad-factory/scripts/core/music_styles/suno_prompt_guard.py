@@ -22,11 +22,13 @@ Three outcomes, never a silent pass:
 Case, Unicode accents, apostrophes (straight and curly) and punctuation are
 normalized before matching, so ``CÉLINE DION``, ``Celine Dion.`` and
 ``Celine Dion’s`` all hit the same alias.  The spaces between a reference's
-words may also be absent or replaced by any punctuation run -- a hyphen, an
-underscore, an apostrophe, any of them, doubled or mixed -- so ``andraday``,
-``ANDRA-DAY``, ``Bad_Bunny``, ``Jelly'Roll`` and ``EdSheeran groove`` hit the
-same alias their spaced spelling does -- and a squashed hit still has to be
-the WHOLE alias-shaped word run, never a substring of a longer word.
+words may also be absent or replaced by any run that is either whitespace or
+one run of non-space characters -- a hyphen, an underscore, an apostrophe, a
+digit, a Roman numeral, any of them, doubled or mixed -- so ``andraday``,
+``ANDRA-DAY``, ``Bad_Bunny``, ``Jelly'Roll``, ``Bad①Bunny``, ``BadⅠBunny``,
+``Bad1Bunny`` and ``EdSheeran groove`` hit the same alias their spaced
+spelling does -- and a squashed hit still has to be the WHOLE alias-shaped
+word run, never a substring of a longer word.
 
 Object KEYS are outbound text too: every key at any depth is normalized and
 matched exactly like a value, so a name can never ride out of the payload
@@ -88,18 +90,39 @@ class PromptGuardError(ValueError):
 
 
 # ------------------------------------------------------------------ alias ---
+def _fold_compat(text):
+    """COMPATIBILITY characters fold to a separator BEFORE NFKD runs.
+
+    NFKD flattens a compatibility character into plain letters or digits, and
+    that silently re-joins the words around it: ``Bad①Bunny`` becomes the one
+    word ``bad1bunny`` and ``BadⅠBunny`` becomes ``badibunny`` -- no alias
+    form, no boundary violation, so nothing downstream can see the join any
+    more.  A circled digit, a Roman numeral, a superscript, a subscript, a
+    fullwidth letter, a ligature and a fraction are all one of these.  An
+    accent is not: its decomposition is canonical, so ``Céline`` still folds to
+    ``celine`` and keeps matching.  A NUMBER-shaped symbol is one of these too
+    even where it has no decomposition at all, which is why the whole ``Nl``
+    and ``No`` categories are folded rather than only their compatible part.
+    """
+    return "".join(
+        " " if (unicodedata.decomposition(ch).startswith("<")
+                or unicodedata.category(ch) in ("Nl", "No")) else ch
+        for ch in text)
+
+
 def normalize(text, keep_hyphens=False):
     """Comparable form: NFKD, accents dropped, casefolded, punctuation -> space.
 
     ``keep_hyphens=True`` keeps ``-`` as a separator of its own, so the
     HYPHENATED spelling of a reference is matchable exactly like the spaced one.
     Every separator between words folds to a space -- including a JOIN carried
-    by ``_`` or an apostrophe (straight or curly), in any run, so ``Bad_Bunny``,
-    ``Bad'Bunny`` and ``Bad__Bunny`` all fold to ``bad bunny``.
+    by ``_``, an apostrophe (straight or curly) or a compatibility character,
+    in any run, so ``Bad_Bunny``, ``Bad'Bunny``, ``Bad__Bunny``, ``Bad①Bunny``
+    and ``BadⅠBunny`` all fold to ``bad bunny``.
     """
     if not isinstance(text, str):
         return ""
-    folded = unicodedata.normalize("NFKD", text)
+    folded = unicodedata.normalize("NFKD", _fold_compat(text))
     folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
     folded = folded.casefold()
     for curly in ("’", "‘", "ʼ", "`", "´"):
@@ -244,12 +267,29 @@ def find_matches(text, aliases):
 #: every payload, so a per-alias regex scan would be quadratic busywork.
 _MATCHER_CACHE = {}
 
+#: ONE join character is admitted where a reference's words meet, and nothing
+#: longer: ``Bad1Bunny``, ``Bad①Bunny`` and ``BadⅠBunny`` are the same words
+#: with one character where the space was, and ``Maroon15`` is ``Maroon 5`` the
+#: same way -- a digit RUN is one join, so ``Maroon125`` is covered too.  The
+#: gap is per word join, so two characters between the words is a different
+#: word (``bead bunny``, ``badxbunny`` stays whole) and the spaced spelling is
+#: still just the spaced spelling.
+_JOIN = r"(?:\s+|\d+|[^\s])?"
+
+
+def _alias_pattern(form):
+    """One comparable form, its word joins tolerant of a single character."""
+    words = [word for word in re.split(r"[_'\s-]+", form) if word]
+    if not words:
+        return re.escape(form)
+    return _JOIN.join(re.escape(word) for word in words)
+
 
 def _matcher(aliases):
     key = tuple(sorted(aliases))
     cached = _MATCHER_CACHE.get(key)
     if cached is None:
-        alternatives = "|".join(re.escape(alias) for alias in
+        alternatives = "|".join(_alias_pattern(alias) for alias in
                                 sorted(key, key=len, reverse=True))
         if not alternatives:
             alternatives = r"(?!)"   # no aliases: the empty alternation never matches
