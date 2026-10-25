@@ -436,12 +436,23 @@ class SyncEngine:
             exhausted.operation = op_id
             raise
 
-        reply = _plain_mapping(value, "transport reply")
-        revision = reply.get("revision")
-        if type(revision) is not int or revision < 1:
-            raise SyncError(
-                "The transport accepted %s but returned no revision, so the "
-                "operation cannot be recorded as applied." % op_id)
+        try:
+            reply = _plain_mapping(value, "transport reply")
+            revision = reply.get("revision")
+            if type(revision) is not int or revision < 1:
+                raise SyncError(
+                    "The transport accepted %s but returned no revision, so the "
+                    "operation cannot be recorded as applied." % op_id)
+        except SyncError as bad:
+            # Nothing is recorded as applied, and the id is NOT left IN_FLIGHT:
+            # a retry may try again with this same id, and the remote dedupes on
+            # that id if it did in fact apply the first time.
+            self.state.remember_operation(op_id, {
+                "operation_id": op_id, "object_id": object_id, "action": action,
+                "base_revision": base_revision, "payload_digest": digest,
+                "status": "FAILED", "revision": None, "reason": str(bad),
+            })
+            raise
         self.state.remember_operation(op_id, {
             "operation_id": op_id, "object_id": object_id, "action": action,
             "base_revision": base_revision, "payload_digest": digest,
@@ -464,10 +475,13 @@ class SyncEngine:
         Outcomes, all explicit:
           UNSEEN       no local copy; adopt the remote revision (ADOPTED)
           IN_SYNC      same revision; nothing to do
-          FAST_FORWARD the remote revision descends from the one we saw and
-                       nothing local is pending; accept it
-        Anything else is a divergence. It is recorded as a conflict record and
-        refused, unless the engine was built with a rule that names the winner.
+          FAST_FORWARD the remote revision is newer AND declares the revision we
+                       saw as its parent, and nothing local is pending
+        Anything else is a divergence. A newer remote revision whose parent is
+        unknown is a divergence too: descent that was not declared is not
+        proved, so it is surfaced rather than assumed. Divergence is recorded as
+        a conflict record and refused, unless the engine was built with a rule
+        that names the winner.
         """
         object_id = _text(object_id, "object id")
         remote_revision = _positive_int(remote_revision, "remote revision")
@@ -486,12 +500,15 @@ class SyncEngine:
             return {"object_id": object_id, "status": "IN_SYNC",
                     "revision": seen, "conflict": None}
         if not local_dirty and remote_revision > seen \
-                and remote_parent_revision in (None, seen):
+                and remote_parent_revision == seen:
             self.state.stamp(object_id, remote_revision)
             return {"object_id": object_id, "status": "FAST_FORWARD",
                     "revision": remote_revision, "conflict": None}
 
-        if not local_dirty and remote_revision > seen:
+        if not local_dirty and remote_revision > seen \
+                and remote_parent_revision is None:
+            reason = "REMOTE_PARENT_UNKNOWN"
+        elif not local_dirty and remote_revision > seen:
             reason = "REMOTE_REWRITTEN_BASE"
         elif not local_dirty:
             reason = "REMOTE_ROLLED_BACK"

@@ -231,6 +231,25 @@ class ExplicitConflicts(Base):
             engine.receive(CHAR, remote_revision=7, remote_parent_revision=5)
         self.assertEqual(caught.exception.record["reason_code"], "REMOTE_REWRITTEN_BASE")
 
+    def test_a_newer_revision_without_a_declared_parent_is_a_conflict(self):
+        # Descent that was not declared is not proved, so it is surfaced.
+        self.state().stamp(CHAR, 2)
+        with self.assertRaises(SP.SyncConflict) as caught:
+            self.engine(Transport()).receive(CHAR, remote_revision=3)
+        self.assertEqual(caught.exception.record["reason_code"],
+                         "REMOTE_PARENT_UNKNOWN")
+        self.assertEqual(self.state().last_seen(CHAR), 2)
+
+    def test_a_transport_reply_without_a_revision_is_recorded_as_failed(self):
+        engine = self.engine(Transport(reply_factory=lambda a, p, n: {}))
+        with self.assertRaises(SP.SyncError):
+            engine.apply(self.operation())
+        recorded = list(self.state().operations().values())[0]
+        self.assertEqual(recorded["status"], "FAILED")
+        # Not stuck IN_FLIGHT: a retry with the same id is attempted again.
+        retried = self.engine(Transport()).apply(self.operation())
+        self.assertEqual(retried["status"], "APPLIED")
+
     def test_unpushed_local_edit_refuses_and_records_the_conflict(self):
         self.state().stamp(CHAR, 5)
         engine = self.engine(Transport())
