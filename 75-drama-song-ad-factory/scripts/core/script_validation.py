@@ -85,9 +85,34 @@ about -- and that is what the rule rejects, never the vocabulary itself.
 Three further shapes of the same unfilled slot are refused by the same test: a
 value written entirely inside brackets or angle brackets ("[insert the
 confrontation]", "<the argument continues>"); a sentence ABOUT the missing
-writing, carrying a writing word and a deferral word ("The remaining speech is
-on the way.", "This passage is pending revision."); and a value carrying two
-authoring verbs ("Decide what she says here and paste it in.").
+writing, whose clause subject is the writing itself and whose predicate says it
+is not done ("The remaining speech is on the way.", "This passage is pending
+revision.", "The wording for this scene has not been settled yet."); and a note
+addressed to the writer ("Decide what she says here and paste it in.", "Pick
+what she does here and put it into the file.").
+
+WHERE THE RULE REACHES -- THE CLASS, NOT A LIST OF CASES
+-------------------------------------------------------
+A placeholder is any string, at any depth under any key of a scene, whose text
+names an unfilled slot in the writing or instructs the author to fill one. The
+parking spot and the JSON shape never change the answer: a bare string, a field
+of an object under any name, an element of a list and an element of a nested
+list are all read, and the key it sits under -- including the free-form contract
+keys "claims", "references" and "approval_bindings" -- is not a defence. A
+letter-spaced or run-together spelling ("t o b e f i l l e d i n l a t e r") is
+the same writing as the plain spelling and gets the same answer.
+
+What is deliberately NOT a placeholder: a keyword run (refused for its shape,
+KEYWORD_ONLY_CLAIM), a serialization literal, a value too short to state
+anything, an emotion that narrates instead of naming a state, and a real line
+that merely mentions writing, revision or the future in the story. The writing
+has to be what the clause is ABOUT, and the predicate has to say it is not done:
+"She settles the revision before the bell." is writing, "The wording for this
+scene has not been settled yet." is a stub. And a LEGACY record's own text is
+never examined by this rule at all -- the content test is a new-authoring test,
+so a legacy paid artifact carrying "to be filled in later" is still read, still
+marked COMPATIBILITY_LIMITED, and is still never regenerated. That is the
+second half of S75-A11 and it is not traded away for the first half.
 
 A serialization literal is code and stays refused when it is the whole value
 ("true", "false", "null"), but "yes" and "no" are NOT literals here: they are
@@ -303,13 +328,70 @@ eventually soon rewrite revision revised rewriting rewritten editing edited
 await awaiting awaited unfinished unwritten undelivered
 """.split())
 
+# The writing a slot is waiting for, named as what the clause is ABOUT. A
+# writing noun in subject position plus a not-yet marker is a stub written in
+# ordinary vocabulary: "The wording for this scene has not been settled yet."
+# is a sentence about the wording, and it says the wording is not done. The
+# subject position is what keeps real prose out: "She settles the revision
+# before the bell." is about her, not about the revision.
+_WRITING_SUBJECT_TOKENS = _SLOT_SUBJECT_TOKENS | frozenset("""
+wording phrasing prose narration outline
+""".split())
+
+# One adjective may stand in front of the writing noun without changing what
+# the clause is about ("the final wording ...").
+_SUBJECT_MODIFIERS = frozenset("""
+final remaining next new old first last whole full actual real current main
+proper exact right specific written spoken sung missing
+""".split())
+
+# Explicit negation or deferral of the writing. Narrow on purpose: "still" is
+# NOT here, because "the line is still there on the page" is a statement.
+_NOT_YET_TOKENS = frozenset("""
+not n't never yet pending awaiting awaited unwritten unfinished unsettled
+undecided unfilled incomplete missing absent undelivered overdue forthcoming
+upcoming later soon
+""".split())
+
+# Completion states a writing noun can be held to. A negation or a deferral
+# against one of these is the ordinary way to write a stub ("has not been
+# settled yet"); a bare negation against any verb is not ("the line is not read
+# before the bell" says something happens).
+_COMPLETE_STATE_TOKENS = frozenset("""
+written wrote settled settle settles decided decide decides determined chosen
+fixed ready done finished complete completed confirmed locked agreed known
+clear final added inserted replaced filled drafted revised edited defined
+resolved set
+""".split())
+
 # The same phrases with their spaces removed, so a letter-spaced spelling
-# cannot evade them. Only phrases whose compact form cannot start a longer
-# real word are matched compactly; the rest are matched on folded words only.
+# cannot evade them. Every compact form is kept: the old length cut dropped
+# "to be filled" (compacts to ten characters), and that cut is exactly what let
+# a letter-spaced "t o b e f i l l e d i n l a t e r" through. ponytail:
+# _STUB_PHRASES_COMPACT_MIN is the shortest compact form matched inside
+# ordinary running text; lower it only with reviewer evidence of a real
+# sentence whose letters carry a shorter stub compactly. A value spelled letter
+# by letter is matched against every compact form whatever its length -- see
+# _letter_spaced -- because there are no real words for a short form to hide in.
+_STUB_PHRASES_COMPACT_MIN = 9
+
 _STUB_PHRASES_COMPACT = tuple(
     compact for compact in ("".join(phrase.split()) for phrase in _STUB_PHRASES)
-    if len(compact) >= 12
+    if len(compact) >= _STUB_PHRASES_COMPACT_MIN
 )
+
+_STUB_PHRASES_COMPACT_ANY = tuple("".join(phrase.split()) for phrase in _STUB_PHRASES)
+
+
+def _letter_spaced(value):
+    """True when a value is spelled letter by letter ("t o b e f i l l e d")."""
+    folded = _fold(value)
+    if not folded:
+        return False
+    words = folded.split()
+    if len(words) < 4:
+        return False
+    return sum(1 for word in words if len(word) == 1) * 3 >= len(words) * 2
 
 # Verbs that write or edit a script when used as an instruction. Combined with
 # an authoring object and a deixis word, they are a note to the writer, not
@@ -329,6 +411,29 @@ note notes version draft part section
 
 _DEIXIS = frozenset("""
 here now later below above following instead this that these those
+""".split())
+
+# The base form of a choosing or writing verb, for the sentence-initial
+# imperative shape: "Pick what she does here and put it into the file." A real
+# sung imperative ("Seal the manifest tonight.", "Open the harbour manifest.")
+# uses a verb that is not here and is left alone.
+_AUTHORING_IMPERATIVES = frozenset("""
+pick picks choose chooses select selects decide decides write writes add adds
+insert inserts put puts fill fills replace replaces paste pastes type types
+draft drafts edit edits revise revises update updates complete completes
+finish finishes provide provides describe describes specify specifies swap
+swaps adjust adjusts change changes set sets redo delete deletes remove
+removes expand expands continue continues note notes mention mentions place
+places enter enters name names
+""".split())
+
+# The artifact being authored, or a slot in it. A note to the writer names one
+# of these and points at it.
+_ARTIFACT_TOKENS = frozenset("""
+file files scene scenes script scripts part parts line lines text texts words
+word copy dialogue lyric lyrics description descriptions placeholder slot
+slots section sections caption captions sentence sentences draft drafts
+version versions note notes beat beats
 """.split())
 
 # Verb forms a predicate is built from: base forms plus the irregular past and
@@ -394,6 +499,7 @@ figure assumes assume
 seal seals sealed slide slides slid
 count counts counted land lands landed
 ring rings rang rung come comes came come
+settle settles settled
 """.split())
 
 
@@ -514,14 +620,40 @@ def _is_placeholder_text(value):
     if letters in _PLACEHOLDER_TOKENS:
         return True
     if (any(phrase in folded for phrase in _STUB_PHRASES)
-            or any(phrase in letters for phrase in _STUB_PHRASES_COMPACT)):
+            or any(phrase in letters for phrase in
+                   (_STUB_PHRASES_COMPACT_ANY if _letter_spaced(value)
+                    else _STUB_PHRASES_COMPACT))):
         return True
     # A sentence ABOUT the missing writing is the same unfilled slot:
     # "The remaining speech is on the way.", "This passage is pending
     # revision.", "Copy arrives after the rewrite." -- a writing word and a
-    # deferral word in one value.
-    if set(tokens) & _SLOT_SUBJECT_TOKENS and set(tokens) & _DEFERRAL_TOKENS:
+    # DIFFERENT deferral word in one value. The deferral has to be a second
+    # word: "revision" and "edit" sit in both lists, so a single occurrence of
+    # one of them is not a writing word plus a deferral word, and "She settles
+    # the revision before the bell." stays writing.
+    slot = set(tokens) & _SLOT_SUBJECT_TOKENS
+    if slot and (set(tokens) & _DEFERRAL_TOKENS) - slot:
         return True
+    # The same stub in plain ordinary vocabulary, where neither half is a
+    # keyword: "The wording for this scene has not been settled yet." The
+    # writing has to be what the clause is ABOUT -- the first content word, or
+    # the second behind one modifier -- so "She settles the revision before the
+    # bell." and "The unread warning notice blocks that writing at the bench."
+    # stay writing. And the writing has to be unfinished: an explicit
+    # negation or deferral against a completion state, or an explicit
+    # deferral of its own. A bare negation against any verb is not enough --
+    # "the line is not read before the bell" says something happens.
+    content = [t for t in tokens
+               if t not in _FUNCTION_WORDS and t not in _ANCHOR_WORDS]
+    about_writing = bool(content) and (
+        content[0] in _WRITING_SUBJECT_TOKENS
+        or (len(content) > 1 and content[0] in _SUBJECT_MODIFIERS
+            and content[1] in _WRITING_SUBJECT_TOKENS))
+    if about_writing:
+        negated = set(tokens) & {"not", "n't", "never", "yet"}
+        deferred = set(tokens) & (_NOT_YET_TOKENS - {"not", "n't", "never", "yet"})
+        if deferred or (negated and set(tokens) & _COMPLETE_STATE_TOKENS):
+            return True
     # "Written later.", "Added here.", "Put there." -- a stub spelled as two or
     # three ordinary words: an authoring verb, where the writing goes, and no
     # participant it happens to.
@@ -539,21 +671,44 @@ def _is_instruction_to_author(value):
 
     "Insert the spoken line here after the editing." is written text with real
     words and real grammar, and it is still not a statement: it addresses the
-    author and names what to write. Any authoring verb with an authoring object
-    and a deixis word (or a "your") is such a note, whatever its vocabulary. So
-    is a value carrying two authoring verbs -- "Decide what she says here and
-    paste it in." -- because nothing in the scene is both decided and pasted.
+    author and names what to write. An authoring verb with an authoring object
+    and a deixis word (or a "your") is such a note, whatever its vocabulary.
+
+    The second shape is the imperative aimed at the writer -- "Pick what she
+    does here and put it into the file." It carries no authoring OBJECT ("file"
+    is the artifact, not a line), so it is caught by its own shape: a sentence
+    that STARTS with a choosing or writing verb, names the artifact or a slot
+    in it, and points at the slot with deixis.
+
+    A bare count of authoring verbs is deliberately NOT a rule. Two of the
+    stems in _AUTHORING_VERBS are closed-class English ("go", "come"), so
+    "gone" and "comes" counted as authoring verbs and a sentence like "He
+    writes the date in the margin and the light has gone out on the bench."
+    read as a note to the writer. Nothing in the scene is decided and pasted by
+    counting verbs; the address to the writer is what identifies the note.
     """
     tokens = _tokens(value)
     verbs = {t for t in tokens if t in _AUTHORING_VERBS or
              (_verb_stems(t) & _AUTHORING_VERBS)}
     if not verbs:
         return False
-    if len(verbs) >= 2:
+    objects = set(tokens) & _AUTHORING_OBJECTS
+    deixis = bool(set(tokens) & _DEIXIS) or "your" in tokens
+    if objects and deixis:
         return True
-    if not (set(tokens) & _AUTHORING_OBJECTS):
-        return False
-    return bool(set(tokens) & _DEIXIS) or "your" in tokens
+    first = tokens[0] if tokens else ""
+    if (first in _AUTHORING_IMPERATIVES
+            or _verb_stems(first) & _AUTHORING_IMPERATIVES):
+        if not deixis:
+            return False
+        if set(tokens) & _ARTIFACT_TOKENS:
+            return True
+        # "... and paste it in." A second imperative behind the first is the
+        # same note with no artifact named at all.
+        rest = tokens[1:]
+        return any(t in _AUTHORING_IMPERATIVES
+                   or _verb_stems(t) & _AUTHORING_IMPERATIVES for t in rest)
+    return False
 
 
 def is_keyword_only(text):
@@ -989,6 +1144,11 @@ def _line_texts(scene):
 # not a field of the contract at all: it is performed lines parked out of the
 # reach of the dialogue requirement. The contract's field list is closed (see
 # story_first_contracts.SCENE_FIELDS), so this list is closed with it.
+#
+# spoken_dialogue and sung_lyrics are named here because they ARE the performed
+# line fields: they are read by _line_texts, and reading them again as parking
+# spots counted every line twice and made the duration floor enforce 2*words
+# per second while documenting words per second.
 _NOT_PERFORMED_LINE_FIELDS = frozenset("""
 scene_id sequence causal_predecessor causal_outcome dramatic_purpose time
 location_id world_revision cast_ids identity_revisions crowd_group_ids
@@ -996,7 +1156,29 @@ immediate_want obstacle visible_action consequential_choice emotion_before
 emotion_after turn_trigger performance_order subtext_and_behavior
 sound_music_cues framing_movement_intent duration_seconds timing_basis
 transition visible_lip_sync claims references approval_bindings silent_scene
+spoken_dialogue sung_lyrics
 """.split())
+
+
+def _nested_texts(value):
+    """Every string inside a value, at any depth, in any container shape.
+
+    A stub does not become content by being wrapped: a bare string, a field of
+    an object ("line", "content", "text", anything else), an element of a list,
+    and an element of a nested list of any depth are all read here. This is the
+    only reader of "what strings does this value carry", so a new container
+    shape cannot become a new hiding place.
+    """
+    out = []
+    if isinstance(value, str):
+        out.append(value)
+    elif isinstance(value, dict):
+        for item in value.values():
+            out.extend(_nested_texts(item))
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            out.extend(_nested_texts(item))
+    return out
 
 
 def _parked_line_texts(scene):
@@ -1008,7 +1190,9 @@ def _parked_line_texts(scene):
     the declaration buys silence in order to escape the dialogue requirement the
     scene has already broken. A key carries a performed line when its value is
     line-shaped -- a run of strings, a run of objects with a text field, or a
-    string of at least MIN_SCENE_LINES words.
+    string of at least MIN_SCENE_LINES words -- and the value is read at any
+    depth and in any container shape, so a dict or a nested list is not a
+    hiding place.
     """
     texts = []
     if not isinstance(scene, dict):
@@ -1016,16 +1200,9 @@ def _parked_line_texts(scene):
     for key, value in scene.items():
         if key in _NOT_PERFORMED_LINE_FIELDS:
             continue
-        entries = value if isinstance(value, (list, tuple)) else [value]
-        for entry in entries:
-            if isinstance(entry, dict):
-                text = str(entry.get("text") or "").strip()
-            elif isinstance(entry, str):
-                text = entry.strip()
-            else:
-                continue
-            if C._words(text) >= MIN_SCENE_LINES:
-                texts.append(text)
+        for text in _nested_texts(value):
+            if C._words(text.strip()) >= MIN_SCENE_LINES:
+                texts.append(text.strip())
     return texts
 
 
@@ -1211,6 +1388,19 @@ def _scene_content_defects(scene):
     for text in _parked_line_texts(scene):
         defects.extend(_statement_defects(text, "performed_line", C.MIN_LINE_WORDS,
                                           shape=SHAPE_LINE))
+
+    # A placeholder is refused WHEREVER it is written. The parking spot and the
+    # value shape are not a defence: a stub under "claims", "references" or
+    # "approval_bindings", a stub inside a {"line": ...} object, and a stub
+    # inside a nested list are the same stub. Only the placeholder and the
+    # instruction tests run here -- the full content test is for fields whose
+    # value owes a particular shape -- so free-form contract prose is never
+    # held to a clause it never promised.
+    for text in _nested_texts(scene):
+        if _is_placeholder_text(text) or _is_instruction_to_author(text):
+            defects.append(_defect("PLACEHOLDER_SCENE", "scenes",
+                                   sid or "unstructured scene"))
+            break
 
     # 4. every written statement states something, through one content test.
     for field, min_words, shape in _STATEMENT_FIELDS:
