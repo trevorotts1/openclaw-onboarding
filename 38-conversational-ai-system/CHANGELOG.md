@@ -1,4 +1,5 @@
-## [2.0.106] - 2026-10-25 - feat(t26-duty): the owner reads the answer duty its handoffs carry (T-26 clause (d), PBB-479)
+
+## [2.0.134] - 2026-10-25 - feat(t26-duty): the owner reads the answer duty its handoffs carry (T-26 clause (d), PBB-479)
 
 T-26's clause (d) is "distinct public/private duty". Skill 35 stamps
 `- duty: public_answer` on every synthetic comment handoff, and Skill 38 is the
@@ -27,11 +28,13 @@ permissions rather than two names.
 - **The writer→owner contract is pinned from the writer's side.** Skill 35's
   `test_the_stamped_duty_is_the_one_the_owner_enforces` drives this module on a
   log skill 35 actually wrote, so changing the written duty VALUE turns it red.
-- **Bookkeeping.** Version `v2.0.106`, above `origin/main`'s `v2.0.105`; absence
-  measured with both token forms, `git grep -F '[2.0.106]' origin/main` rc 1 and
-  `git grep -F 'v2.0.106' origin/main` rc 1, against the known-present control
-  `[2.0.105]` rc 0 in this file. Required by the G3 gate because a file under
-  this skill's tree changed.
+- **Bookkeeping.** Version `v2.0.134`, allocated at landing time: `origin/main`
+  had advanced to `v2.0.133` before this branch merged it in, so the first
+  allocation (`v2.0.106`, taken when main was `v2.0.105`) was renumbered here,
+  not asserted. Absence on `origin/main` was measured with both token forms,
+  bracketed and `v`-prefixed, each returning rc 1, against the known-present
+  control `[2.0.133]` returning rc 0 in this file. Required by the G3 gate
+  because a file under this skill's tree changed.
 
 ## [2.0.105] - 2026-10-25 - chore(t05-hygiene): redact the operator home path from the T-05 registration evidence (T-05 hygiene, PBB-413)
 
