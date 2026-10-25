@@ -72,6 +72,8 @@
 
 import {
   canonicalHash,
+  isCouncilSize,
+  MAX_ADVISOR_ROUND,
   SEAT_IDS,
   SEAT_ROSTER,
   validateCardAgainstBrief,
@@ -476,11 +478,11 @@ function weightedMean(
  * no scored alternative to test.
  */
 export function unanimityStressCrux(
-  round1Cards: readonly AdvisorCard[],
+  previousCards: readonly AdvisorCard[],
   brief: DecisionBrief,
   seatOrder: readonly SeatId[],
 ): Crux | null {
-  const cards = inSeatOrder(dedupeCardsBySeat(round1Cards), seatOrder);
+  const cards = inSeatOrder(dedupeCardsBySeat(previousCards), seatOrder);
   const preferences = cards
     .map((c) => c.preferred_option_id)
     .filter((p): p is string => p !== null);
@@ -546,11 +548,11 @@ export function unanimityStressCrux(
  * competing claim is composed from values the cards actually recorded.
  */
 export function extractCruxes(
-  round1Cards: readonly AdvisorCard[],
+  previousCards: readonly AdvisorCard[],
   brief: DecisionBrief,
   seatOrder: readonly SeatId[],
 ): Crux[] {
-  const cards = inSeatOrder(dedupeCardsBySeat(round1Cards), seatOrder);
+  const cards = inSeatOrder(dedupeCardsBySeat(previousCards), seatOrder);
   const found: Crux[] = [];
 
   // numbers: a wide score spread on one option.
@@ -693,13 +695,13 @@ export interface PeerArgumentExcerpt {
 
 export function peerArgumentsFor(
   crux: Crux,
-  round1Cards: readonly AdvisorCard[],
+  previousCards: readonly AdvisorCard[],
   forSeatId: SeatId,
 ): PeerArgumentExcerpt[] {
   const excerpts: PeerArgumentExcerpt[] = [];
   for (const seatId of crux.responsible_seats) {
     if (seatId === forSeatId) continue;
-    const card = round1Cards.find((c) => c.seat_id === seatId);
+    const card = previousCards.find((c) => c.seat_id === seatId);
     if (!card) continue;
     excerpts.push({
       seat_id: seatId,
@@ -750,24 +752,36 @@ export interface ChallengeInputIdentity {
   readonly brief_sha256: string;
   readonly seat_id: SeatId;
   readonly pack_version: string;
-  /** CWE-022 content hash of this seat's assembled Round 2 context. */
+  /** CWE-022 content hash of this seat's assembled challenge context. */
   readonly context_sha256: string;
   /** CWE-028 fingerprint of the pinned route snapshot. */
   readonly route_fingerprint: string;
-  /** Digest of the committed Round 1 card set the cruxes derive from. */
+  /**
+   * Digest of the committed PREVIOUS round's card set the cruxes derive
+   * from: round 1 cards for pass 2, round k-1 cards for pass k. The
+   * field name is kept for the round-2 identity the earlier tests pin.
+   */
   readonly round1_cards_sha256: string;
   /** Digest of the crux set extracted from those cards. */
   readonly cruxes_sha256: string;
+  /**
+   * The challenge pass this operation is. Round 2 is the first pass;
+   * medium and heavy re-enter the challenge with rounds 3..10, and the
+   * round is part of the input identity so every pass hashes differently
+   * even when the committed card set repeats.
+   */
+  readonly round?: number;
 }
 
 export function challengeInputManifestSha256(identity: ChallengeInputIdentity): string {
+  const round = identity.round ?? 2;
   return canonicalHash({
     kind: CHALLENGE_INPUT_KIND,
     session_id: identity.session_id,
     brief_revision: identity.brief_revision,
     brief_sha256: identity.brief_sha256,
     seat_id: identity.seat_id,
-    round: 2,
+    round,
     pack_version: identity.pack_version,
     context_sha256: identity.context_sha256,
     route_fingerprint: identity.route_fingerprint,
@@ -808,7 +822,7 @@ interface PreparedChallenge {
   readonly plan: ChallengeSeatPlan;
   readonly context: AssembledContext;
   readonly cruxes: readonly Crux[];
-  readonly round1Cards: readonly AdvisorCard[];
+  readonly previousCards: readonly AdvisorCard[];
 }
 
 type PrepareChallengeResult =
@@ -824,33 +838,41 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     session: StoredSession,
     snapshot: PinnedRouteSnapshot,
     seatId: SeatId,
+    round = 2,
   ): ChallengePlanResult {
-    const prepared = this.prepareSeat(session, snapshot, seatId, null);
+    const prepared = this.prepareSeat(session, snapshot, seatId, null, round);
     if (prepared.status === 'context_too_small') return prepared;
     return { status: 'planned', plan: prepared.seat.plan };
   }
 
   /**
-   * Plan the whole challenge round: extract the cruxes from the
-   * committed opening record once, then plan EVERY panel seat in spec
-   * order, challenged or not (T149).
+   * Plan one challenge pass: extract the cruxes from the PREVIOUS
+   * round's committed record once, then plan EVERY panel seat in spec
+   * order, challenged or not (T149). Round 2 is the first pass; medium
+   * and heavy re-enter with rounds 3..MAX_ADVISOR_ROUND, each pass
+   * deriving its cruxes from the round before it.
    */
   planChallengeRound(
     session: StoredSession,
     snapshot: PinnedRouteSnapshot,
+    round = 2,
   ): ChallengeRoundPlan {
-    const round1Cards = this.openingCards(session);
-    const cruxes = extractCruxes(round1Cards, session.brief, session.spec.seat_ids);
+    const priorCards = this.previousCards(session, round);
+    const cruxes = extractCruxes(priorCards, session.brief, session.spec.seat_ids);
     const plans = new Map<SeatId, ChallengePlanResult>();
     for (const seatId of session.spec.seat_ids) {
-      plans.set(seatId, this.planSeat(session, snapshot, seatId));
+      plans.set(seatId, this.planSeat(session, snapshot, seatId, round));
     }
     return { cruxes, plans };
   }
 
-  /** The cruxes the committed opening record currently yields. */
-  cruxesFor(session: StoredSession): Crux[] {
-    return extractCruxes(this.openingCards(session), session.brief, session.spec.seat_ids);
+  /** The cruxes the committed record before `round` currently yields. */
+  cruxesFor(session: StoredSession, round = 2): Crux[] {
+    return extractCruxes(
+      this.previousCards(session, round),
+      session.brief,
+      session.spec.seat_ids,
+    );
   }
 
   // ------------------------------------------------------------ dispatch
@@ -865,9 +887,17 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
         'challenge dispatch refused: the claimed operation has no seat',
       );
     }
-    if (claim.descriptor.round !== 2 || claim.descriptor.kind !== 'provider_request') {
+    const claimedRound = claim.descriptor.round;
+    const round = claimedRound as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+    // Round 2 is the first challenge pass for every scored mode. The
+    // council sizes re-enter the challenge for passes 3..10; the four
+    // older modes never do, exactly as before.
+    const roundOk = isCouncilSize(session.spec.mode)
+      ? claimedRound >= 2 && claimedRound <= MAX_ADVISOR_ROUND
+      : claimedRound === 2;
+    if (!roundOk || claim.descriptor.kind !== 'provider_request') {
       throw definiteDispatchRefusal(
-        `challenge dispatch refused: operation is round ${claim.descriptor.round} kind ${claim.descriptor.kind}, not a round 2 provider request`,
+        `challenge dispatch refused: operation is round ${claimedRound} kind ${claim.descriptor.kind}, not a challenge provider request`,
       );
     }
     if (session.spec.mode === 'consult') {
@@ -878,7 +908,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
 
     let prepared: PrepareChallengeResult;
     try {
-      prepared = this.prepareSeat(session, claim.route_snapshot, seatId, claim);
+      prepared = this.prepareSeat(session, claim.route_snapshot, seatId, claim, round);
     } catch (error) {
       if (error instanceof ContextError || error instanceof AuthorizationError) {
         throw definiteDispatchRefusal(
@@ -892,7 +922,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
         `challenge dispatch refused before any provider call: CONTEXT_TOO_SMALL for seat ${seatId}: minimum ${prepared.minimum_required_bytes} canonical bytes, available ${prepared.available_bytes}`,
       );
     }
-    const { plan, context, cruxes, round1Cards } = prepared.seat;
+    const { plan, context, cruxes, previousCards } = prepared.seat;
 
     if (plan.input_manifest_sha256 !== claim.job.input_sha256) {
       throw definiteDispatchRefusal(
@@ -912,7 +942,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
       : null;
 
     const assigned = assignedCruxesFor(cruxes, seatId);
-    const ownOpening = round1Cards.find((c) => c.seat_id === seatId) ?? null;
+    const ownOpening = previousCards.find((c) => c.seat_id === seatId) ?? null;
     const briefView = payloadBriefView(context);
 
     const challengeIds = assigned.map((crux) => crux.crux_id);
@@ -930,7 +960,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
         purpose: 'advisor',
         session_id: session.spec.session_id,
         seat_id: seatId,
-        round: 2,
+        round,
         route_id: claim.route_snapshot.routeId,
         model_policy: session.spec.model_policy,
         system,
@@ -945,7 +975,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
           pack_briefing: pack?.briefing_text ?? null,
           input_manifest_sha256: plan.input_manifest_sha256,
           pack_version: plan.pack_version,
-          // Its own committed opening position, to confirm or update.
+          // Its own committed previous-round position, to confirm or update.
           own_opening_card: ownOpening ? authorOfCard(ownOpening) : null,
           // Only the challenges assigned to this seat, each with the
           // peer arguments necessary to answer it (Section 14.3).
@@ -955,11 +985,11 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
           })),
           assigned_cruxes: assigned.map((crux) => ({
             ...crux,
-            peer_arguments: peerArgumentsFor(crux, round1Cards, seatId),
+            peer_arguments: peerArgumentsFor(crux, previousCards, seatId),
           })),
           challenge_note:
             assigned.length === 0
-              ? 'No targeted challenge is assigned to your seat. Confirm or update your opening position against the evidence; a fresh Round 2 card is still required.'
+              ? `No targeted challenge is assigned to your seat. Confirm or update your previous position against the evidence; a fresh round ${round} card is still required.`
               : null,
           output_contract: cardOutputContract('advisor', challengeIds),
         },
@@ -1013,8 +1043,11 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
       return [`card_kind: expected an advisor card, got ${card.card_kind}`];
     }
     const author: AdvisorCardAuthor = card;
-    if (author.round !== 2) {
-      issues.push(`round: challenge cards are round 2, got ${author.round}`);
+    const round = claim.descriptor.round;
+    if (author.round !== round) {
+      issues.push(
+        `round: challenge cards are round ${round}, got ${author.round}`,
+      );
     }
     if (seatId === null || author.seat_id !== seatId) {
       issues.push(
@@ -1046,7 +1079,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     if (seatId !== null) {
       let prepared: PrepareChallengeResult | null = null;
       try {
-        prepared = this.prepareSeat(session, claim.route_snapshot, seatId, claim);
+        prepared = this.prepareSeat(session, claim.route_snapshot, seatId, claim, round);
       } catch (error) {
         issues.push(
           `input_manifest_sha256: the challenge inputs could not be reassembled for validation (${error instanceof Error ? error.message : 'unknown error'})`,
@@ -1058,7 +1091,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
             'input_manifest_sha256: the challenge inputs no longer fit the pinned route context budget',
           );
         } else {
-          const { plan, context, cruxes, round1Cards } = prepared.seat;
+          const { plan, context, cruxes, previousCards } = prepared.seat;
           if (author.input_manifest_sha256 !== plan.input_manifest_sha256) {
             issues.push(
               'input_manifest_sha256: card does not echo the challenge input manifest for this operation',
@@ -1095,7 +1128,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
             }
           }
           // Section 14.3: a changed score without an explanation fails.
-          const ownOpening = round1Cards.find((c) => c.seat_id === seatId);
+          const ownOpening = previousCards.find((c) => c.seat_id === seatId);
           if (ownOpening) {
             for (const score of author.option_scores) {
               const before = ownOpening.option_scores.find(
@@ -1125,11 +1158,13 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
 
   // ------------------------------------------------------------- helpers
 
-  private openingCards(session: StoredSession): AdvisorCard[] {
+  /** The committed advisor cards of the round BEFORE `round`. */
+  private previousCards(session: StoredSession, round: number): AdvisorCard[] {
+    const wanted = round - 1;
     return this.deps
       .loadCommittedCards(session)
       .filter(
-        (c): c is AdvisorCard => c.card_kind === 'advisor' && c.round === 1,
+        (c): c is AdvisorCard => c.card_kind === 'advisor' && c.round === wanted,
       );
   }
 
@@ -1138,6 +1173,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     snapshot: PinnedRouteSnapshot,
     seatId: SeatId,
     claim: { descriptor: { pack_version?: string | null } } | null,
+    round = 2,
   ): PrepareChallengeResult {
     const assembled = toSeatContextResult(
       assembleSeatContext({
@@ -1151,8 +1187,8 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
     );
     if (assembled.status === 'context_too_small') return assembled;
     const context = assembled.context;
-    const round1Cards = this.openingCards(session);
-    const cruxes = extractCruxes(round1Cards, session.brief, session.spec.seat_ids);
+    const previousCards = this.previousCards(session, round);
+    const cruxes = extractCruxes(previousCards, session.brief, session.spec.seat_ids);
     const packVersion =
       claim?.descriptor.pack_version ?? session.spec.source_pack_version;
     const identity: ChallengeInputIdentity = {
@@ -1163,8 +1199,9 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
       pack_version: packVersion,
       context_sha256: context.content_sha256,
       route_fingerprint: routeSnapshotFingerprint(snapshot),
-      round1_cards_sha256: cardSetSha256(round1Cards),
+      round1_cards_sha256: cardSetSha256(previousCards),
       cruxes_sha256: cruxSetSha256(cruxes),
+      round,
     };
     return {
       status: 'prepared',
@@ -1180,7 +1217,7 @@ export class ChallengeRoundExecutor implements OperationExecutorPort {
         },
         context,
         cruxes,
-        round1Cards,
+        previousCards,
       },
     };
   }

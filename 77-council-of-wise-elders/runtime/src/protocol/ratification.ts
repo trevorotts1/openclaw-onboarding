@@ -50,8 +50,11 @@
  *   missing seat is never disguised as an abstention (T021, T045);
  *   selected mode accounts for every selected seat by name (T023);
  *   quick mode completes without Round 3 only when the skip gate
- *   passes on the final proposed plan; three rounds is the ceiling,
- *   and a materially amended plan carries
+ *   passes on the final proposed plan; three rounds is the ceiling
+ *   for the four older modes (the council sizes run 2..10 advisor
+ *   rounds and no ratification pass, scoring from the LAST completed
+ *   round with ratification_status not_required), and a materially
+ *   amended plan carries
  *   material_change_unratified with its old support counted only
  *   against the original hash (T046, T047 family, T048, T147).
  *
@@ -64,6 +67,8 @@
 
 import {
   canonicalHash,
+  isCouncilSize,
+  MODE_ROUND_POLICY,
   SEAT_ROSTER,
   validateCardAgainstBrief,
   validateVerdict,
@@ -72,6 +77,7 @@ import {
   type ConsultCard,
   type ConsultCardAuthor,
   type CouncilCard,
+  type CouncilSize,
   type DecisionBrief,
   type DraftResolution,
   type HardConstraintFinding,
@@ -1338,6 +1344,14 @@ export interface DeliberationAccounting {
   readonly round1: Readonly<Partial<Record<SeatId, SeatRoundAccounting>>>;
   readonly round2: Readonly<Partial<Record<SeatId, SeatRoundAccounting>>>;
   readonly round3: Readonly<Partial<Record<SeatId, SeatRoundAccounting>>>;
+  /**
+   * Council sizes (light/medium/heavy) run 2..10 advisor rounds and no
+   * ratification pass, so every completed advisor round is accounted
+   * here by its own round number. Absent for the four older modes.
+   */
+  readonly rounds?: Readonly<
+    Record<number, Readonly<Partial<Record<SeatId, SeatRoundAccounting>>>>
+  >;
 }
 
 export interface DeliberationOutcomeComplete {
@@ -1361,7 +1375,7 @@ export interface DeliberationOutcomeIncomplete {
   readonly mode: SessionMode;
   readonly panel_seat_ids: readonly SeatId[];
   /** Every unaccounted seat, by round: the visible partial record. */
-  readonly missing: readonly { readonly round: 1 | 2 | 3; readonly seat_id: SeatId }[];
+  readonly missing: readonly { readonly round: number; readonly seat_id: SeatId }[];
   readonly detail: string;
   readonly accounting: DeliberationAccounting;
 }
@@ -1408,12 +1422,20 @@ function accountRound(
 
 function missingList(
   accounting: DeliberationAccounting,
-  rounds: readonly (1 | 2 | 3)[],
-): { round: 1 | 2 | 3; seat_id: SeatId }[] {
-  const out: { round: 1 | 2 | 3; seat_id: SeatId }[] = [];
-  const byRound = { 1: accounting.round1, 2: accounting.round2, 3: accounting.round3 };
+  rounds: readonly number[],
+): { round: number; seat_id: SeatId }[] {
+  const out: { round: number; seat_id: SeatId }[] = [];
+  const byRound: Record<
+    number,
+    Readonly<Partial<Record<SeatId, SeatRoundAccounting>>> | undefined
+  > = {
+    1: accounting.round1,
+    2: accounting.round2,
+    3: accounting.round3,
+    ...(accounting.rounds ?? {}),
+  };
   for (const round of rounds) {
-    for (const [seatId, state] of Object.entries(byRound[round])) {
+    for (const [seatId, state] of Object.entries(byRound[round] ?? {})) {
       if (state === 'missing') out.push({ round, seat_id: seatId as SeatId });
     }
   }
@@ -1449,12 +1471,47 @@ export function assembleDeliberationOutcome(
   const round3 = input.cards.filter(
     (c): c is RatificationCard => c.card_kind === 'ratification',
   );
-  const accounting: DeliberationAccounting = {
-    round1: accountRound(panel, round1),
-    round2: accountRound(panel, round2),
-    round3: accountRound(panel, round3),
-  };
-  const incomplete = (detail: string, rounds: readonly (1 | 2 | 3)[]): DeliberationOutcomeIncomplete => ({
+  // Council sizes (light/medium/heavy) score from the LAST completed
+  // advisor round and run no ratification pass. The four older modes
+  // keep their fixed round-2 (plus round-3) basis untouched.
+  const councilMode = isCouncilSize(mode);
+  const advisorCards = input.cards.filter(
+    (c): c is AdvisorCard => c.card_kind === 'advisor',
+  );
+  const advisorRounds = [...new Set(advisorCards.map((c) => c.round))].sort(
+    (a, b) => a - b,
+  );
+  const lastRound = councilMode
+    ? (advisorRounds[advisorRounds.length - 1] ?? 0)
+    : 2;
+  const lastCards = councilMode
+    ? advisorCards.filter((c) => c.round === lastRound)
+    : round2;
+  const accounting: DeliberationAccounting = councilMode
+    ? (() => {
+        const rounds: Record<
+          number,
+          Readonly<Partial<Record<SeatId, SeatRoundAccounting>>>
+        > = {};
+        for (const round of advisorRounds) {
+          rounds[round] = accountRound(
+            panel,
+            advisorCards.filter((c) => c.round === round),
+          );
+        }
+        return {
+          round1: rounds[1] ?? {},
+          round2: rounds[2] ?? {},
+          round3: {},
+          rounds,
+        };
+      })()
+    : {
+        round1: accountRound(panel, round1),
+        round2: accountRound(panel, round2),
+        round3: accountRound(panel, round3),
+      };
+  const incomplete = (detail: string, rounds: readonly number[]): DeliberationOutcomeIncomplete => ({
     status: 'incomplete',
     mode,
     panel_seat_ids: [...panel],
@@ -1477,14 +1534,44 @@ export function assembleDeliberationOutcome(
     }
   }
 
-  // The draft: composed deterministically from the Round 2 record
-  // when the caller did not supply the composition.
+  if (councilMode) {
+    const policy = MODE_ROUND_POLICY[mode as CouncilSize];
+    if (lastRound === 0) {
+      return incomplete(
+        `${mode} mode reached completion with no advisor cards committed; there is no round to compose a verdict from`,
+        [1],
+      );
+    }
+    if (round3.length > 0) {
+      return incomplete(
+        `${mode} mode runs no separate ratification pass, but ${round3.length} ratification card(s) are committed; the record is not this mode's protocol`,
+        [lastRound],
+      );
+    }
+    if (lastRound < policy.min_rounds) {
+      return incomplete(
+        `${mode} mode needs at least ${policy.min_rounds} completed rounds, and the last completed round is ${lastRound}`,
+        [lastRound + 1],
+      );
+    }
+    const requiredRounds = Array.from({ length: lastRound }, (_, i) => i + 1);
+    const missing = missingList(accounting, requiredRounds);
+    if (missing.length > 0) {
+      return incomplete(
+        `${mode} mode keeps its whole panel every round: ${missing.map((m) => `${m.seat_id} round ${m.round}`).join(', ')} missing; the result is a visible partial record, not a smaller council`,
+        requiredRounds,
+      );
+    }
+  }
+
+  // The draft: composed deterministically from the last completed
+  // round's record when the caller did not supply the composition.
   const composition =
     input.draft_composition ??
     composeDraftResolution({
       brief,
       active_seat_ids: panel,
-      round2Cards: round2,
+      round2Cards: lastCards,
       hard_constraint_findings: input.hard_constraint_findings,
       professional_reviews: input.professional_reviews,
     });
@@ -1507,10 +1594,13 @@ export function assembleDeliberationOutcome(
   }
 
   // Quick mode without Round 3 stands or falls on the Section 10 gate
-  // evaluated on the final proposed plan (T022).
+  // evaluated on the final proposed plan (T022). The council sizes run
+  // no ratification pass at all: their honest status is not_required.
   let quickSkip: QuickSkipEvaluation | null = null;
   let ratificationStatus: RatificationStatus;
-  if (round3.length === 0) {
+  if (councilMode) {
+    ratificationStatus = 'not_required';
+  } else if (round3.length === 0) {
     if (mode === 'quick') {
       if (!input.quick_policy) {
         return incomplete(
@@ -1581,11 +1671,11 @@ export function assembleDeliberationOutcome(
       ? computeResolutionSupport(round3, brief.relevance_weights, draft.semantic_sha256)
       : null;
 
-  // Final scoring cards: ratification cards when Round 3 ran, else
-  // the Round 2 cards (the same precedence CWE-026's publication
-  // validator recomputes with).
+  // Final scoring cards: ratification cards when Round 3 ran, else the
+  // LAST completed advisor round (the same precedence CWE-026's
+  // publication validator recomputes with).
   const finalCards: (AdvisorCard | RatificationCard)[] =
-    round3.length > 0 ? round3 : round2;
+    round3.length > 0 ? round3 : lastCards;
   const analysis = analyzeDecision(
     decisionInputForCards({
       brief,
@@ -1599,7 +1689,7 @@ export function assembleDeliberationOutcome(
   const verdictRevision = input.verdict_revision ?? 1;
   const recommended = analysis.recommended_option_id;
   const prerequisites: string[] = [...analysis.prerequisites_needed];
-  for (const card of round2) {
+  for (const card of lastCards) {
     for (const condition of card.conditions) {
       if (condition.blocking && !prerequisites.includes(condition.description)) {
         prerequisites.push(condition.description);
@@ -1638,13 +1728,13 @@ export function assembleDeliberationOutcome(
     weights: Object.fromEntries(
       panel.map((seatId) => [seatId, brief.relevance_weights[seatId] ?? 1]),
     ),
-    evidence_strength: aggregateEvidenceStrength(round2),
+    evidence_strength: aggregateEvidenceStrength(lastCards),
     hard_constraint_findings: [...(input.hard_constraint_findings ?? [])],
-    main_reasons: summarizeMainReasons(round2, recommended),
-    strongest_dissent: summarizeStrongestDissent(round2, recommended),
+    main_reasons: summarizeMainReasons(lastCards, recommended),
+    strongest_dissent: summarizeStrongestDissent(lastCards, recommended),
     accepted_amendments: acceptedAmendments,
     rejected_amendments: rejectedAmendments,
-    critical_unknowns: [...new Set(round2.flatMap((c) => c.critical_unknowns))].slice(0, 10),
+    critical_unknowns: [...new Set(lastCards.flatMap((c) => c.critical_unknowns))].slice(0, 10),
     prerequisites,
     action_proposals: proposals,
     cheapest_informative_test: boundedTest
@@ -1661,7 +1751,9 @@ export function assembleDeliberationOutcome(
   const publication = validateVerdictForPublication({
     verdict,
     brief,
-    final_cards: [...round2, ...round3],
+    // Council sizes count every completed pass for attribution; the
+    // older modes keep their round-2 (+round-3) set exactly as before.
+    final_cards: councilMode ? [...advisorCards, ...round3] : [...round2, ...round3],
     draft_resolution: draft,
     require_final_cards: true,
   });

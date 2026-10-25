@@ -59,7 +59,21 @@
     return out;
   }
 
-  ns.decision = { rowsModel: rowsModel, badgesModel: badgesModel };
+  // The format caption never hard-codes one round count: light, medium and
+  // heavy each say their own, and the empty state names the range.
+  var EMPTY_SUB = 'Light, medium or heavy: three advisors and two rounds, up to nine advisors and ten rounds. One verdict.';
+  var MODE_SUB = {
+    light: 'Light council: three advisors, two rounds, one verdict.',
+    medium: 'Medium council: nine advisors, up to four rounds, one verdict.',
+    heavy: 'Heavy council: nine advisors, up to ten rounds, one verdict.'
+  };
+
+  /** Pure: the one-line format caption for a mode, or null when it adds nothing. */
+  function subText(mode) {
+    return typeof mode === 'string' && Object.prototype.hasOwnProperty.call(MODE_SUB, mode) ? MODE_SUB[mode] : null;
+  }
+
+  ns.decision = { rowsModel: rowsModel, badgesModel: badgesModel, subText: subText };
 
   if (typeof document === 'undefined') return;
 
@@ -167,11 +181,12 @@
     var session = view ? view.session : null;
     var model = rowsModel(session);
     var empty = !session;
+    var caption = empty ? EMPTY_SUB : subText(session && session.mode);
 
     host.classList.toggle('ch-dec--empty', empty);
     setText(title, empty ? 'Ask the council a question' : session.question || 'Council question');
-    setText(sub, empty ? 'Nine advisors, three rounds, one verdict.' : '');
-    setHidden(sub, !empty);
+    setText(sub, caption || '');
+    setHidden(sub, !caption);
     // Hiding the focused empty-state button would drop focus to <body> (WCAG 2.4.3): park it on the title.
     if (!empty && actions.contains(document.activeElement)) {
       title.tabIndex = -1;
