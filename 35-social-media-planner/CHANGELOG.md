@@ -5,22 +5,30 @@
 Two defects closed here. Both were found by re-measuring rather than trusting an
 earlier round's figures.
 
-- **The release number was already taken, and was below the field.** `3.9.2` was
-  allocated as "claimed by no other ref across all 1978 remote heads" at the
-  8741377b round. Re-measured over **2040** refs enumerated with
-  `git for-each-ref --format=%(refname) refs/remotes/origin` (bare prefix, no
-  `/*` glob — the glob reports only 113 and hides 1927), `3.9.2` is held by
-  **two** refs: `pb/PBB-396/t-22-repair4` and `pb/PBB-441/t-22-update`. It is
-  also **below** the true numeric maximum `3.9.8` (held by
-  `pb/PBB-460/t-26-build`). One number was naming two branches. Scoring is
+- **The release number was below the field, and one branch was carrying it.**
+  `3.9.2` was allocated at the 8741377b round. Re-measured in this round — the
+  ref population moves as branches are pushed, so every figure below is
+  re-derived here, not carried over:
+  `git for-each-ref --format='%(refname)' refs/remotes/origin | wc -l` reports
+  **2043** refs (bare prefix, no `/*` glob; the glob form
+  `git for-each-ref --format='%(refname)' 'refs/remotes/origin/*' | wc -l`
+  reports only **113**). Reading `35-social-media-planner/skill-version.txt`
+  at the tip of every one of those 2043 refs, `3.9.2` is held by **one** ref:
+  `origin/pb/PBB-396/t-22-repair4`. This branch held `3.9.2` only at its own
+  parent commit (`git show 97d2d0bf2:35-social-media-planner/skill-version.txt`
+  → `v3.9.2`) — that pre-commit state is not a second ref, and the earlier
+  "held by two refs" wording conflated the two. `3.9.2` is also **below** the
+  numeric maximum `3.9.8` (held by `origin/pb/PBB-460/t-26-build`). Scoring is
   numeric `major*1000000 + minor*1000 + patch`, never lexical; the lexical trap
   is live in this very numbering (`"3.9.10" > "3.9.9"` is `False` as a string
   while `3009010 > 3009009`, so the next bump past `3.9.9` would sort below it).
   **`3.9.9` is the first number strictly above the measured maximum that no ref
-  claims** (checked against all 2040: zero holders). Main carries `3.8.2`, so
-  `3009009 > 3008002` — strictly above main. Both markers move together:
-  `skill-version.txt` and the `SKILL.md` front-matter `version:` line, which is
-  the pair `06-ghl-install-pages/scripts/check-version-drift.py` compares.
+  claims** (same scan: `3.9.9` has exactly one holder, this branch
+  `origin/pb/PBB-441/t-22-update`, and no other ref claims it). Main carries
+  `3.8.2`, so `3009009 > 3008002` — strictly above main. Both markers move
+  together: `skill-version.txt` and the `SKILL.md` front-matter `version:` line
+  (`SKILL.md:14` → `version: 3.9.9`), which is the pair
+  `06-ghl-install-pages/scripts/check-version-drift.py` compares.
 
 - **`PROFILE-CAPABILITIES.md` claimed "No channel or account is polled, observed
   or watched" while the same skill's `SKILL.md` §Phase 4 and `INSTRUCTIONS.md`
@@ -164,15 +172,23 @@ written. Two defects were proved against 858b3812 and are fixed here.
   coverage, the four required proofs and the pending owner decision. `SKILL.md` and
   `INSTRUCTIONS.md` now say the declaration grants unattended actions but coverage is
   unproved, instead of "what the system can do unattended".
-- Tests: `test_t22_status_guard_matrix.py` 10 -> 18 tests. New
-  `TestArbitraryDictCannotMint` (7 tests: hand-built package cannot become an
-  approval, hand-built confirmed record refused by both surfaces, copied marker
-  does not fit an edited record, undeclared account type refused, ungranted route
-  refused, no-placement record refused, refusal path takes no caller capability)
-  plus a sanctioned inverse control. The known-good page-publication control
+- Tests: `test_t22_status_guard_matrix.py` 10 -> 33 tests (before/after each
+  measured by running the suite on this branch's own commits: `git show
+  3bb547262:tests/social-planner/test_t22_status_guard_matrix.py` carries 10
+  test methods, the file at this commit carries 33 — `python3
+  tests/social-planner/test_t22_status_guard_matrix.py` → `Ran 33 tests ... OK`).
+  New `TestArbitraryDictCannotMint` (8 test methods, counted by importing the
+  file and enumerating `test_*` methods on that class: hand-built package cannot
+  become an approval, hand-built confirmed record refused by both surfaces,
+  copied marker does not fit an edited record, undeclared account type refused,
+  ungranted route refused, no-placement record refused, refusal path takes no
+  caller capability, sanctioned values still work) plus a sanctioned inverse
+  control. The known-good page-publication control
   encoded the B-04 over-claim (a hand-built `published-by-system` passed both
   surfaces); it now requires the sanctioned assisted paths to pass and the
-  unattended claim to be refused. `test_t22_profile_capability.py` stays 16 tests.
+  unattended claim to be refused. `test_t22_profile_capability.py` stays 16 tests
+  (measured: `python3 tests/social-planner/test_t22_profile_capability.py` →
+  `Ran 16 tests ... OK`).
   Mutation control: disabling both seal checks turns exactly the 3 seal-dependent
   tests red.
 - skill-version v3.8.2 -> v3.9.0.

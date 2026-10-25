@@ -239,9 +239,17 @@ python3 scripts/profile_capability.py guard --record record.json
 ## Tests
 
 ```bash
-python3 -m unittest tests/social-planner/test_t22_profile_capability.py -v
-python3 -m unittest tests/social-planner/test_t22_status_guard_matrix.py -v
+python3 tests/social-planner/test_t22_profile_capability.py
+python3 tests/social-planner/test_t22_status_guard_matrix.py
 ```
+
+Each file runs to completion (exit 0) this way: `test_t22_profile_capability.py`
+reports `Ran 16 tests ... OK`, `test_t22_status_guard_matrix.py` reports
+`Ran 33 tests ... OK`. Run the file directly, not `python3 -m unittest
+tests/social-planner/...` — `tests/social-planner` is a hyphenated directory
+with no `__init__.py`, so the `-m unittest <package>` form is loader-dependent
+and can fail with `ModuleNotFoundError: No module named 'tests'` /
+`ImportError: Start directory is not importable`.
 
 The suites prove: unattended personal-profile requests are refused with a clear
 reason; a receipt exists only after operator confirmation; a system-claimed
