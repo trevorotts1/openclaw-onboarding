@@ -13,8 +13,10 @@ Covers the four required behaviours:
 Run:  python3 -m unittest tests/social-planner/test_t22_profile_capability.py -v
 """
 
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,6 +26,15 @@ _ONB_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 _SHARED = os.path.join(_ONB_ROOT, "shared-utils")
 if _SHARED not in sys.path:
     sys.path.insert(0, _SHARED)
+
+# The provenance signing key is per installation and lives outside the repository.
+# Point it at a per-run temporary directory so the suite is hermetic, and so the
+# CLI subprocesses below resolve the same key as this process.
+_KEY_DIR = tempfile.mkdtemp(prefix="ppc-seal-")
+atexit.register(shutil.rmtree, _KEY_DIR, ignore_errors=True)
+os.environ.setdefault(
+    "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE", os.path.join(_KEY_DIR, "seal.key")
+)
 
 import personal_profile_capability as ppc  # noqa: E402
 

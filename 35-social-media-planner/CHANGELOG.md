@@ -1,5 +1,43 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.9.1] - 2026-10-25 - T-22c repair 3: the marker is unforgeable and covers the whole record
+
+**Correction of the 3.9.0 entry below.** The provenance claim in 3.9.0 was false as
+written. Two defects were proved against 858b3812 and are fixed here.
+
+- **The marker was forgeable from shipped bytes.** The 3.9.0 key was
+  `sha256(b"personal-profile-capability/seal-v1" + b"\x00" + <the declaration>)`.
+  Both inputs ship in the repository and on every deployed box, and the algorithm
+  and domain string were printed in the module source, so an outside caller with
+  stdlib `hashlib` + `hmac` could mint a marker on a hand-built dict without
+  importing the module. Reproduced: a hand-built package with an externally
+  computed marker was accepted by `record_operator_confirmation` (status
+  `operator-confirmed`, receipt issued, placement id minted), rendered as an
+  operator-confirmed claim, and blessed by `assert_truthful_publication`; the
+  control without a marker was refused. The key is now 32 bytes from
+  `os.urandom()`, stored outside the repository in a `0600` file (or supplied as
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` / `..._SEAL_KEY_FILE`), so no shipped byte
+  determines it and the old `sha256(domain + declaration)` key no longer validates.
+  Marker version is now 2; version 1 markers are refused.
+- **The MAC covered seven fields.** `operator_action`, `capability_ref`,
+  `channel_label` and `account_label` were outside it, so a marker copied from a
+  sanctioned record fitted an edited one. Reproduced: an attacker
+  `operator_action.instruction` still minted an operator-confirmed status; edited
+  `capability_ref` (`checked_at`, `source_urls`) still rendered; edited labels
+  still rendered "VERIFIED BUSINESS PAGE"; and dropping `operator_action` entirely
+  still confirmed. The payload is now the **whole record minus the marker**, so
+  every field that is rendered or acted upon is inside the MAC and any added,
+  removed or edited field breaks it. Serialisation is strict (no `default=str`).
+- **Version markers realigned.** 3.9.0 bumped `skill-version.txt` but left
+  `SKILL.md` at 3.8.2, so `06-ghl-install-pages/scripts/check-version-drift.py`
+  reported DRIFT (exit 1) and the Skill-06 gate at
+  `06-ghl-install-pages/qc-ghl-install-pages.sh:87` would have skipped every
+  deployed box. All three markers now read 3.9.1.
+- Docs corrected: `PROFILE-CAPABILITIES.md`, the module docstring and the module
+  ponytail comment now state the real ceiling (a caller that can read the
+  installation's key file can still sign) instead of claiming the key was
+  unreachable while it was derived from public bytes.
+
 ## [3.9.0] - 2026-10-25 - T-22b: authority is provenance, not shape (B-27) and unattended coverage is not claimed (B-04)
 
 - B-27 closed structurally. `prepare_assisted_placement` now stamps the package

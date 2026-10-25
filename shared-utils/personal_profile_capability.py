@@ -9,14 +9,28 @@ type is unattended only when the declaration says so, and a personal profile is
 always assisted (or unavailable), never automated.
 
 Provenance, not shape (B-27). A capability, a status claim or an operator
-receipt binds only when it carries the marker minted here: an HMAC over the
-record's own claim fields, produced by prepare_assisted_placement() and renewed
-by record_operator_confirmation(). A hand-built dict, a hand-edited JSON file, or
-a dict whose keys/types the sanctioned constructor never produced cannot mint
-one: _require_sanctioned() refuses a confirmation that lacks it, _truth_of()
-refuses an unsealed operator-confirmed record instead of labelling it verified,
-and every record is resolved against the declaration, so an undeclared channel,
-account type or action cannot be rendered at all.
+receipt binds only when it carries the marker minted here: an HMAC-SHA256 over
+the WHOLE record, produced by prepare_assisted_placement() and renewed by
+record_operator_confirmation(). The MAC key is an installation signing key
+generated with os.urandom() and kept outside the repository in a 0600 file (see
+_installation_seal_key); it is NOT derived from the capability declaration or
+from any other shipped byte, so an outside caller holding only the checkout
+cannot recompute it. Because the MAC covers every field of the record except the
+marker itself, a marker copied from a sanctioned record does not fit any edited,
+extended or truncated record — including the operator instruction, the
+capability reference, the rendered labels, the receipt body, the route/status
+and the publication flags. _require_sanctioned() refuses a confirmation that
+lacks a fitting marker, _truth_of() refuses an unsealed operator-confirmed
+record instead of labelling it verified, and every record is resolved against
+the declaration, so an undeclared channel, account type or action cannot be
+rendered at all.
+
+Ceiling, stated honestly: the key lives on the same filesystem as the process,
+so a caller that can read the installation's key file can still sign. What is
+closed is the case that matters here — a caller that has the repository bytes (or
+any other public material) and hands in a dict. The upgrade is an operator-held
+signer outside this process when unattended coverage is proved (see
+policy.unattended_coverage).
 
 Coverage honesty (B-04). The only test behind this contract is NARROW: it reads
 the declaration and exercises the assisted prepare/confirm/status/guard paths
@@ -37,7 +51,9 @@ Assisted contract:
      the operator explicitly confirms. The receipt is the only proof, and it is
      proof only for a placement whose id recomputes from that placement's own
      (channel, account_type, action, placement) — a carried placement_id is never
-     trusted on its own.
+     trusted on its own. The record it returns is sealed with the installation
+     signing key, and the seal covers every field, so the record cannot be
+     edited after the fact without the marker ceasing to fit.
   4. status_surface() reports awaiting-operator / operator-confirmed and never
      published-by-system for an assisted placement.
   5. assert_truthful_publication() raises UntruthfulPublication when a record
@@ -88,68 +104,182 @@ def _cap_path(path: Optional[str] = None) -> str:
 
 # --- provenance marker (B-27) ------------------------------------------------
 #
-# The marker is an HMAC over a record's own claim fields, keyed from the
-# declaration the record is checked against. It is minted ONLY by
-# prepare_assisted_placement() and record_operator_confirmation(), and it travels
-# with the record (so a prepared package read back from disk still verifies),
-# while a caller cannot produce one from a hand-built dict: the key never appears
-# in the record, and the MAC covers route/channel/account/action/placement/
-# status/receipt, so a copied marker does not fit an edited record.
+# The marker is an HMAC-SHA256 over the WHOLE record (every key except
+# "provenance" itself), keyed by an installation signing key that is generated
+# with os.urandom() and stored outside the repository in a 0600 file. It is
+# minted ONLY by prepare_assisted_placement() and record_operator_confirmation(),
+# and it travels with the record (so a prepared package read back from disk still
+# verifies in another process, as long as that process resolves the same key).
 #
-# ponytail: the key is derived from source-visible material, so code that imports
-# this module and calls the private sealer can still mint. The ceiling is an
-# unprivileged caller handing in dicts; the upgrade is an operator-held signing
-# key when unattended coverage is proved (see policy.unattended_coverage).
+# Why an outside caller cannot reconstruct it: the key is 32 random bytes that
+# appear in no repository byte and are not derived from the capability
+# declaration or from this source. Shipped material therefore does not determine
+# the key, so the old attack — sha256(domain + declaration) — no longer computes
+# a marker the module accepts. Because the payload is the whole record, a marker
+# copied from a sanctioned record does not fit an edited, extended or truncated
+# record: the operator instruction, capability reference, labels, receipt,
+# route, status and publication flags are all inside the MAC.
+#
+# ponytail: the key lives on the same filesystem as the process, so a caller that
+# can read the operator's key file can still sign. The ceiling is a caller that
+# has the checkout and a dict, which is the reproduced B-27 attack; the upgrade is
+# an operator-held signer outside this process when unattended coverage is proved
+# (see policy.unattended_coverage).
 
-_SEAL_DOMAIN = b"personal-profile-capability/seal-v1"
 _SEAL_ALGORITHM = "hmac-sha256"
-_SEAL_VERSION = 1
-_SEAL_RECEIPT_FIELDS = ("placement_id", "operator", "confirmed_at", "method", "evidence")
-_SEAL_KEYS: dict = {}
+_SEAL_VERSION = 2
+_SEAL_KEY_BYTES = 32
+_SEAL_KEY_ENV = "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY"
+_SEAL_KEY_FILE_ENV = "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE"
+_SEAL_KEY_DEFAULT = os.path.join(
+    "~", ".openclaw", "state", "personal-profile-capability", "seal.key"
+)
+_SEAL_KEY_CACHE: dict = {}
 
 
-def _seal_key(path: Optional[str] = None) -> bytes:
-    resolved = _cap_path(path)
-    cached = _SEAL_KEYS.get(resolved)
+def _seal_key_path() -> str:
+    configured = os.environ.get(_SEAL_KEY_FILE_ENV, "").strip()
+    if configured:
+        return os.path.abspath(os.path.expanduser(configured))
+    return os.path.abspath(os.path.expanduser(_SEAL_KEY_DEFAULT))
+
+
+def _decode_seal_key(raw: bytes, where: str) -> bytes:
+    text = raw.strip()
+    if len(text) == 2 * _SEAL_KEY_BYTES:
+        try:
+            key = bytes.fromhex(text.decode("ascii"))
+        except (UnicodeDecodeError, ValueError):
+            key = b""
+        if len(key) == _SEAL_KEY_BYTES:
+            return key
+    if len(raw) == _SEAL_KEY_BYTES:
+        return raw
+    raise CapabilityError(
+        f"{where} does not hold a {_SEAL_KEY_BYTES}-byte provenance signing key "
+        "(64 hex characters or 32 raw bytes)"
+    )
+
+
+def _create_seal_key(path: str) -> bytes:
+    """Mint the installation key once, 0600, outside the repository."""
+    directory = os.path.dirname(path)
+    try:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+    except OSError as exc:
+        raise CapabilityError(
+            f"no provenance signing key exists and its directory {directory} cannot "
+            f"be created: {exc}. Set {_SEAL_KEY_FILE_ENV} or {_SEAL_KEY_ENV}."
+        ) from exc
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        try:
+            with open(path, "rb") as handle:
+                return _decode_seal_key(handle.read(), path)
+        except OSError as exc:
+            raise CapabilityError(
+                f"cannot read the provenance signing key {path}: {exc}"
+            ) from exc
+    except OSError as exc:
+        raise CapabilityError(
+            f"no provenance signing key exists and one cannot be created at {path}: "
+            f"{exc}. Set {_SEAL_KEY_FILE_ENV} or {_SEAL_KEY_ENV}."
+        ) from exc
+    key = os.urandom(_SEAL_KEY_BYTES)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(key.hex().encode("ascii") + b"\n")
+    except OSError as exc:
+        raise CapabilityError(
+            f"cannot write the provenance signing key {path}: {exc}"
+        ) from exc
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return key
+
+
+def _installation_seal_key() -> bytes:
+    """The installation signing key — never derived from shipped bytes.
+
+    Resolution order: the inline hex key in ``PERSONAL_PROFILE_CAPABILITY_SEAL_KEY``,
+    then the key file named by ``PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE``, then
+    ~/.openclaw/state/personal-profile-capability/seal.key, created with
+    os.urandom() and mode 0600 on first use. There is no fallback to material that
+    ships in the repository: if no key can be resolved the module fails closed
+    rather than minting something an outside caller could reconstruct.
+    """
+    inline = os.environ.get(_SEAL_KEY_ENV, "").strip()
+    if inline:
+        if len(inline) != 2 * _SEAL_KEY_BYTES:
+            raise CapabilityError(
+                f"{_SEAL_KEY_ENV} must be {2 * _SEAL_KEY_BYTES} hex characters"
+            )
+        try:
+            key = bytes.fromhex(inline)
+        except ValueError as exc:
+            raise CapabilityError(f"{_SEAL_KEY_ENV} is not hex: {exc}") from exc
+        if len(key) != _SEAL_KEY_BYTES:
+            raise CapabilityError(
+                f"{_SEAL_KEY_ENV} must decode to {_SEAL_KEY_BYTES} bytes"
+            )
+        return key
+
+    path = _seal_key_path()
+    cached = _SEAL_KEY_CACHE.get(path)
     if cached:
         return cached
-    try:
-        with open(resolved, "rb") as handle:
-            declaration = handle.read()
-    except OSError as exc:
-        raise CapabilityError(f"cannot read capability declaration: {exc}") from exc
-    key = hashlib.sha256(_SEAL_DOMAIN + b"\x00" + declaration).digest()
-    _SEAL_KEYS[resolved] = key
+    if os.path.exists(path):
+        try:
+            with open(path, "rb") as handle:
+                key = _decode_seal_key(handle.read(), path)
+        except OSError as exc:
+            raise CapabilityError(
+                f"cannot read the provenance signing key {path}: {exc}"
+            ) from exc
+    else:
+        key = _create_seal_key(path)
+    _SEAL_KEY_CACHE[path] = key
     return key
 
 
 def _seal_payload(record: dict) -> bytes:
-    receipt = record.get("receipt") if isinstance(record.get("receipt"), dict) else None
-    core = (
-        {field: receipt.get(field) for field in _SEAL_RECEIPT_FIELDS}
-        if receipt is not None
-        else None
-    )
-    return json.dumps(
-        {
-            "route": record.get("route"),
-            "channel": record.get("channel"),
-            "account_type": record.get("account_type"),
-            "action": record.get("action"),
-            "placement": record.get("placement"),
-            "status": record.get("status"),
-            "receipt": core,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-        default=str,
-    ).encode("utf-8")
+    """Canonical bytes for EVERY field the record renders or acts on.
+
+    The payload is the whole record minus the marker itself. There is no
+    allow-list to fall out of date: a field that is added, removed or edited
+    changes the MAC, so a marker copied onto an edited record no longer fits.
+    Serialisation is strict (no ``default=str``), so a record carrying a value
+    that cannot be canonically represented is refused rather than coerced into
+    colliding with another value.
+    """
+    if not isinstance(record, dict):
+        raise CapabilityError("a placement record must be an object")
+    body = {key: value for key, value in record.items() if key != "provenance"}
+    for key in body:
+        if not isinstance(key, str):
+            raise CapabilityError("placement record keys must be strings")
+    try:
+        return json.dumps(
+            body,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise CapabilityError(
+            f"placement record is not canonically serialisable: {exc}"
+        ) from exc
 
 
 def _seal(record: dict, path: Optional[str] = None) -> dict:
     """Stamp a record with the provenance marker (constructor-side only)."""
-    mac = hmac.new(_seal_key(path), _seal_payload(record), hashlib.sha256).hexdigest()
+    mac = hmac.new(
+        _installation_seal_key(), _seal_payload(record), hashlib.sha256
+    ).hexdigest()
     record["provenance"] = {
         "algorithm": _SEAL_ALGORITHM,
         "version": _SEAL_VERSION,
@@ -159,7 +289,7 @@ def _seal(record: dict, path: Optional[str] = None) -> dict:
 
 
 def _is_sanctioned(record: Any, path: Optional[str] = None) -> bool:
-    """True only when the record carries a marker that fits its own fields."""
+    """True only when the record carries a marker that fits its own bytes."""
     if not isinstance(record, dict):
         return False
     provenance = record.get("provenance")
@@ -172,7 +302,11 @@ def _is_sanctioned(record: Any, path: Optional[str] = None) -> bool:
     mac = provenance.get("mac")
     if not isinstance(mac, str) or len(mac) != 64:
         return False
-    expected = hmac.new(_seal_key(path), _seal_payload(record), hashlib.sha256).hexdigest()
+    try:
+        payload = _seal_payload(record)
+    except CapabilityError:
+        return False
+    expected = hmac.new(_installation_seal_key(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(mac, expected)
 
 
@@ -182,8 +316,10 @@ def _require_sanctioned(record: Any, path: Optional[str] = None, what: str = "th
             f"{what} carries no sanctioned provenance marker, so it cannot mint "
             "authority. A placement id is minted only by "
             "prepare_assisted_placement(), and an operator receipt only by "
-            "record_operator_confirmation(); a hand-built dict, a hand-edited file "
-            "or a dict whose keys/types the constructor did not produce is refused."
+            "record_operator_confirmation(); the marker is an HMAC over the whole "
+            "record keyed by this installation's signing key, so a hand-built dict, "
+            "a hand-edited file, or a record whose bytes differ from the sealed ones "
+            "cannot carry a marker that fits."
         )
 
 

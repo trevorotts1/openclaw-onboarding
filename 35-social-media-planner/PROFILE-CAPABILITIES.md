@@ -69,12 +69,22 @@ source changes; never guess a capability into existence.
    a claim is never laundered into a receipt. The record it returns must pass its
    own truth check before it is handed back.
    Authority is **provenance, not shape** (B-27): `prepare_assisted_placement` stamps
-   the package with an HMAC provenance marker over its own claim fields, and
-   `record_operator_confirmation` refuses any package that does not carry one. A
-   hand-built dict, a hand-edited file, or a dict whose keys/types the constructor
-   never produced cannot mint a placement id, an operator receipt, or a status claim
-   — editing a sealed record invalidates the marker, because the MAC covers route,
-   channel, account type, action, placement, status and receipt.
+   the package with an HMAC-SHA256 provenance marker over its **whole** record, keyed
+   by an installation signing key generated with `os.urandom()` and stored outside the
+   repository in a `0600` file (`PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE`, or an
+   inline hex key in `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY`; default
+   `~/.openclaw/state/personal-profile-capability/seal.key`).
+   `record_operator_confirmation` refuses any package that does not carry a marker
+   that fits its own bytes. A hand-built dict or a hand-edited file cannot mint a
+   placement id, an operator receipt or a status claim: the key is **not** derived
+   from the declaration or from any other shipped byte, so the marker cannot be
+   recomputed from the checkout, and because the MAC covers every field — placement
+   id, channel and account labels, route, status, action, placement, the operator
+   instruction, the capability reference, the receipt body and the publication flags
+   — a marker copied from a sanctioned record does not fit an edited, extended or
+   truncated one. Editing a sealed record invalidates the marker. The marker is not
+   a substitute for the operator: a caller that can read the installation's key file
+   can still sign, which is why the key is `0600` and outside the checkout.
 5. **Never claim system publication.** `published-by-system` and bare `published` are
    forbidden statuses for an assisted placement.
 

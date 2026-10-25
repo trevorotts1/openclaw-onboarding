@@ -14,17 +14,31 @@ its coverage is unproved (B-04).
 Run:  python3 -m unittest tests/social-planner/test_t22_status_guard_matrix.py -v
 """
 
+import atexit
+import copy
 import hashlib
+import hmac
 import itertools
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 _ONB_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _SHARED = os.path.join(_ONB_ROOT, "shared-utils")
 if _SHARED not in sys.path:
     sys.path.insert(0, _SHARED)
+
+# The provenance signing key is per installation and lives outside the repository.
+# Point it at a per-run temporary directory so the suite is hermetic and never
+# writes to the operator's real state directory.
+_KEY_DIR = tempfile.mkdtemp(prefix="ppc-seal-")
+atexit.register(shutil.rmtree, _KEY_DIR, ignore_errors=True)
+os.environ.setdefault(
+    "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE", os.path.join(_KEY_DIR, "seal.key")
+)
 
 import personal_profile_capability as ppc  # noqa: E402
 
@@ -439,6 +453,203 @@ class TestArbitraryDictCannotMint(unittest.TestCase):
         self.assertEqual(surface["provenance"], "sanctioned")
         self.assertFalse(surface["published_by_system"])
         self.assertTrue(ppc.assert_truthful_publication(confirmed))
+
+
+def _public_placement_id(channel="facebook", account_type="personal", action="post"):
+    """The placement id an outside caller can compute from public knowledge."""
+    payload = json.dumps(
+        {
+            "channel": channel,
+            "account_type": account_type,
+            "action": action,
+            "placement": PLACEMENT,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    )
+    return "plc_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+class TestMarkerIsNotReconstructible(unittest.TestCase):
+    """B-27 class: the marker must not be derivable from shipped bytes.
+
+    The 3.9.0 marker key was `sha256(domain + b"\\x00" + declaration)`. Both inputs
+    ship in the repository, so any caller with stdlib `hashlib` + `hmac` could mint
+    a marker on a hand-built dict without importing the module. These two pins fail
+    if that derivation ever comes back, and fail if a marker computed from shipped
+    bytes — at the CURRENT marker version, over the current payload shape — is
+    accepted.
+    """
+
+    DOMAIN = b"personal-profile-capability/seal-v1"
+
+    def _public_key(self):
+        declaration = os.path.join(
+            _ONB_ROOT, "35-social-media-planner", "config", "profile-capabilities.json"
+        )
+        with open(declaration, "rb") as handle:
+            return hashlib.sha256(self.DOMAIN + b"\x00" + handle.read()).digest()
+
+    def _marker(self, record, key, version):
+        body = {k: v for k, v in record.items() if k != "provenance"}
+        payload = json.dumps(
+            body, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
+        return {
+            "algorithm": "hmac-sha256",
+            "version": version,
+            "mac": hmac.new(key, payload, hashlib.sha256).hexdigest(),
+        }
+
+    def _hand_built(self):
+        return {
+            "placement_id": _public_placement_id(),
+            "channel": "facebook",
+            "channel_label": "Facebook",
+            "account_type": "personal",
+            "account_label": "Personal Facebook profile",
+            "action": "post",
+            "route": "assisted",
+            "status": "awaiting-operator",
+            "placement": copy.deepcopy(PLACEMENT),
+            "operator_action": {
+                "step": "one-step-manual-action",
+                "instruction": "ATTACKER INSTRUCTION",
+                "expected_action": "post",
+            },
+            "receipt": None,
+            "published_by_system": False,
+            "capability_ref": {
+                "checked_at": "2026-10-24",
+                "source_urls": ["https://attacker.example/proof"],
+            },
+        }
+
+    def test_installation_key_is_not_derived_from_shipped_bytes(self):
+        self.assertNotEqual(ppc._installation_seal_key(), self._public_key())
+
+    def test_public_key_cannot_mint_a_marker_at_the_current_version(self):
+        record = self._hand_built()
+        record["provenance"] = self._marker(record, self._public_key(), ppc._SEAL_VERSION)
+        self.assertFalse(ppc._is_sanctioned(record))
+        with self.assertRaises(ppc.CapabilityError):
+            ppc.record_operator_confirmation(record, "Attacker Operator")
+
+        confirmed = dict(
+            self._hand_built(),
+            status="operator-confirmed",
+            receipt={
+                "placement_id": _public_placement_id(),
+                "operator": "Attacker Operator",
+                "confirmed_at": "2026-10-24T15:00:00Z",
+                "method": "operator-asserted",
+            },
+        )
+        confirmed["provenance"] = self._marker(
+            confirmed, self._public_key(), ppc._SEAL_VERSION
+        )
+        for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+            with self.assertRaises(ppc.UntruthfulPublication, msg=fn.__name__):
+                fn(confirmed)
+
+    def test_version_one_markers_are_refused(self):
+        package = ppc.prepare_assisted_placement("facebook", "personal", PLACEMENT)
+        package["provenance"]["version"] = 1
+        self.assertFalse(ppc._is_sanctioned(package))
+
+
+class TestSealCoversEveryRenderedField(unittest.TestCase):
+    """B-27 class: a field that can be edited without breaking the seal is a defect.
+
+    The 3.9.0 MAC covered route, channel, account_type, action, placement, status
+    and the receipt core. `operator_action`, `capability_ref`, `channel_label` and
+    `account_label` were outside it, so a copied marker fitted an edited record.
+    The payload is now the whole record minus the marker; every mutation below must
+    break the seal AND make the read path refuse the claim.
+    """
+
+    def _confirmed(self):
+        return ppc.record_operator_confirmation(
+            ppc.prepare_assisted_placement("facebook", "personal", PLACEMENT),
+            "Operator Name",
+            confirmed_at="2026-10-24T15:00:00Z",
+        )
+
+    def _edited(self, record, path, value):
+        mutated = copy.deepcopy(record)
+        target = mutated
+        keys = path.split(".")
+        for key in keys[:-1]:
+            target = target[key]
+        target[keys[-1]] = value
+        return mutated
+
+    def test_payload_covers_every_record_key(self):
+        record = self._confirmed()
+        covered = set(json.loads(ppc._seal_payload(record)))
+        self.assertEqual(covered, set(record) - {"provenance"})
+        for field in (
+            "placement_id",
+            "channel",
+            "channel_label",
+            "account_type",
+            "account_label",
+            "action",
+            "route",
+            "status",
+            "placement",
+            "operator_action",
+            "receipt",
+            "published_by_system",
+            "capability_ref",
+        ):
+            self.assertIn(field, covered)
+
+    def test_every_edit_breaks_the_seal_and_the_claim(self):
+        record = self._confirmed()
+        self.assertTrue(ppc._is_sanctioned(record))
+
+        mutations = {
+            "operator_action.instruction": self._edited(
+                record, "operator_action.instruction", "ATTACKER"
+            ),
+            "capability_ref.checked_at": self._edited(
+                record, "capability_ref.checked_at", "1999-01-01"
+            ),
+            "capability_ref.source_urls": self._edited(
+                record, "capability_ref.source_urls", ["https://attacker.example"]
+            ),
+            "channel_label": self._edited(record, "channel_label", "ATTACKER CHANNEL"),
+            "account_label": self._edited(
+                record, "account_label", "VERIFIED BUSINESS PAGE"
+            ),
+            "placement.text": self._edited(record, "placement.text", "ATTACKER TEXT"),
+            "receipt.operator": self._edited(record, "receipt.operator", "Someone Else"),
+            "receipt.evidence": self._edited(record, "receipt.evidence", {"forged": True}),
+            "status": self._edited(record, "status", "awaiting-operator"),
+            "published_by_system": self._edited(record, "published_by_system", True),
+            "route": self._edited(record, "route", "unattended"),
+            "placement_id": self._edited(record, "placement_id", "plc_attacker"),
+            "extra key added": dict(copy.deepcopy(record), smuggled="attacker"),
+        }
+        dropped = copy.deepcopy(record)
+        dropped.pop("operator_action")
+        mutations["operator_action (dropped)"] = dropped
+
+        for name, mutated in mutations.items():
+            self.assertFalse(ppc._is_sanctioned(mutated), name)
+            for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+                with self.assertRaises(ppc.CapabilityError, msg=f"{fn.__name__}/{name}"):
+                    fn(mutated)
+
+    def test_sanctioned_record_still_survives_a_json_round_trip(self):
+        """Inverse control: the seal travels with the record, not with the object."""
+        record = self._confirmed()
+        round_tripped = json.loads(json.dumps(record))
+        self.assertTrue(ppc._is_sanctioned(round_tripped))
+        self.assertEqual(ppc.status_surface(round_tripped)["claim"], "operator-confirmed")
 
 
 if __name__ == "__main__":
