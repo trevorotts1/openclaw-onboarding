@@ -114,7 +114,7 @@ knows which tenant it is serving for this inbound.
 - Two tenants MAY share one `agent_id` (the agent scopes itself per turn via the
   resolved `tenant_id`) OR each tenant MAY have its own dedicated agent. Either
   way, the `tenant_id` is what scopes the context — not the agent identity alone.
-- `deliver:false` + a model are still required per the standard inbound contract.
+- `deliver:false` is required and `agentId` is required and sufficient; the mapping's `model` override is OPTIONAL (PBB-017: the run uses the agent's own configured model), and a present-but-blank override is refused as `blank-model-override`.
 
 ## Storage — the per-tenant root (path/namespace per tenant_id)
 
