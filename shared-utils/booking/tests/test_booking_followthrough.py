@@ -1090,5 +1090,177 @@ class SelfExclusionLinkPins(BookingCase):
         self.assertEqual(len(provider.moves), 1)
 
 
+# ── PBB-420: the mover must be proven to hold the place it vacates ─────────
+# `_vacates_a_place` asked only whether the old place was occupied (`is_free`),
+# which is occupancy and not identity: after a move, the place a stale receipt
+# names is usually held by somebody else, and that was read as proof that this
+# booking had a place to vacate - so the day's count lost a booking it never
+# held and the day was overbooked. The two links below are that identity proof.
+# Each is pinned on its own, with its inverse, so dropping either is observable.
+
+class _Appointments:
+    """A live calendar: free/busy and a real booked count from who actually
+    holds what, keyed by provider booking id."""
+
+    def __init__(self, grid):
+        self.grid = list(grid)
+        self.occ = {}
+
+    def free_slots(self, calendar_id, start, end):
+        taken = list(self.occ.values())
+        return [s for s in self.grid
+                if s.calendar_id == calendar_id and start <= s.start
+                and s.end <= end and s not in taken]
+
+    def is_free(self, calendar_id, candidate):
+        return all(s != candidate for s in self.occ.values())
+
+    def booked_count(self, calendar_id, day):
+        return sum(1 for s in self.occ.values()
+                   if s.calendar_id == calendar_id
+                   and s.local("America/New_York").date() == day)
+
+
+class _NamedAppointments(_Appointments):
+    """The same calendar, naming its holders - the optional identity read
+    `holder_id` in the adapter contract."""
+
+    def holder_id(self, calendar_id, candidate):
+        for bid, s in self.occ.items():
+            if s == candidate and s.calendar_id == calendar_id:
+                return bid
+        return None
+
+
+class _AppointmentsProvider(FakeProvider):
+    """A provider whose writes really move the appointments."""
+
+    def __init__(self, cal):
+        super().__init__()
+        self.cal = cal
+        self.n = 0
+
+    def _rec(self, **over):
+        self.n += 1
+        base = receipt(provider_receipt_id="pr_%d" % self.n,
+                       provider_booking_id="bk_%d" % self.n,
+                       evidence_id="ev_%d" % self.n)
+        base.update(over)
+        return base
+
+    def create(self, *, slot, contact_id, idempotency_key):
+        self.creates.append((slot, contact_id, idempotency_key))
+        r = self._rec()
+        self.cal.occ[r["provider_booking_id"]] = slot
+        return r
+
+    def move(self, *, provider_booking_id, slot, idempotency_key):
+        self.moves.append((provider_booking_id, slot, idempotency_key))
+        self.cal.occ[provider_booking_id] = slot
+        return self._rec(provider_booking_id=provider_booking_id)
+
+    def cancel(self, *, provider_booking_id, idempotency_key):
+        self.cancels.append((provider_booking_id, idempotency_key))
+        self.cal.occ.pop(provider_booking_id, None)
+        return self._rec(provider_booking_id=provider_booking_id)
+
+
+class MoverHoldsThePlaceTests(BookingCase):
+    """PBB-420: the last link of `_vacates_a_place` is identity, not occupancy.
+    Each pair below pins one identity source and its inverse."""
+
+    DAY5 = datetime(2027, 5, 5).date()
+
+    def _eng(self, avail, provider, cap):
+        policy = BookingPolicy(
+            calendars={"default": CAL_A}, timezone="America/New_York",
+            location="x", change_path="y", max_window_days=14,
+            min_lead_hours=2, daily_cap=cap)
+        return BookingFollowThrough(store=self.store, availability=avail,
+                                    provider=provider, policy=policy,
+                                    tenant_id="tenant-1")
+
+    def _count(self, avail):
+        return avail.booked_count(CAL_A, self.DAY5)
+
+    def test_a_place_another_booking_holds_is_not_the_movers_to_vacate(self):
+        """A calendar that names its holders says 10:00 is bk_9's, not bk_1's.
+        Only the holder-identity link can refuse here (this module never wrote
+        a move), so that link must stay load-bearing."""
+        avail = _NamedAppointments([slot(5, 10), slot(5, 14), slot(5, 18)])
+        provider = _AppointmentsProvider(avail)
+        eng = self._eng(avail, provider, 2)
+        first = eng.book(purpose="consult", slot=slot(5, 10), contact_id="c1",
+                         confirmed=True, now=NOW)
+        eng.book(purpose="consult", slot=slot(5, 14), contact_id="c2",
+                 confirmed=True, now=NOW)
+        # the calendar changed hands behind this module, which wrote nothing
+        avail.occ["bk_1"] = slot(6, 9)
+        avail.occ["bk_9"] = slot(5, 10)
+        self.assertEqual(self._count(avail), 2, "the day is at its cap")
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 18), now=NOW)
+        self.assertEqual(provider.moves, [])
+        self.assertEqual(self._count(avail), 2, "never over the cap")
+
+    def test_the_place_the_mover_still_holds_is_the_movers_to_vacate(self):
+        """INVERSE of the link above: the calendar names bk_1 as the holder of
+        10:00, so that place is its own to vacate and a day at its cap still
+        takes the move."""
+        avail = _NamedAppointments([slot(5, 10), slot(5, 14), slot(5, 18)])
+        provider = _AppointmentsProvider(avail)
+        eng = self._eng(avail, provider, 2)
+        first = eng.book(purpose="consult", slot=slot(5, 10), contact_id="c1",
+                         confirmed=True, now=NOW)
+        eng.book(purpose="consult", slot=slot(5, 14), contact_id="c2",
+                 confirmed=True, now=NOW)
+        self.assertEqual(self._count(avail), 2, "the day is at its cap")
+        moved = eng.reschedule(booking_action_id=first.action_id,
+                               new_slot=slot(5, 18), now=NOW)
+        self.assertTrue(moved.claimed)
+        self.assertEqual(self._count(avail), 2, "never over the cap")
+
+    def test_a_booking_this_module_moved_off_the_place_frees_nothing(self):
+        """The five-step sequence: this module moved bk_1 off 05-05 10:00, a
+        third customer took that place, and bk_1's ORIGINAL record still names
+        it. This calendar cannot name holders, so only this module's own move
+        record can refuse - and it must."""
+        avail = _Appointments([slot(5, 10), slot(5, 14), slot(5, 18),
+                               slot(6, 9)])
+        provider = _AppointmentsProvider(avail)
+        eng = self._eng(avail, provider, 2)
+        first = eng.book(purpose="consult", slot=slot(5, 10), contact_id="c1",
+                         confirmed=True, now=NOW)
+        eng.book(purpose="consult", slot=slot(5, 14), contact_id="c2",
+                 confirmed=True, now=NOW)
+        eng.reschedule(booking_action_id=first.action_id,
+                       new_slot=slot(6, 9), now=NOW)
+        eng.book(purpose="consult", slot=slot(5, 10), contact_id="c3",
+                 confirmed=True, now=NOW)
+        self.assertEqual(self._count(avail), 2, "the day is at its cap")
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 18), now=NOW)
+        self.assertEqual(self._count(avail), 2, "never over the cap")
+        self.assertEqual(len(provider.moves), 1, "only the move in step 3")
+
+    def test_a_same_day_move_vacates_the_place_the_mover_holds(self):
+        """INVERSE of the link above: no move is on record, so 10:00 is still
+        this booking's own place and the exclusion is granted."""
+        avail = _Appointments([slot(5, 10), slot(5, 14), slot(5, 18)])
+        provider = _AppointmentsProvider(avail)
+        eng = self._eng(avail, provider, 2)
+        first = eng.book(purpose="consult", slot=slot(5, 10), contact_id="c1",
+                         confirmed=True, now=NOW)
+        eng.book(purpose="consult", slot=slot(5, 14), contact_id="c2",
+                 confirmed=True, now=NOW)
+        self.assertEqual(self._count(avail), 2, "the day is at its cap")
+        moved = eng.reschedule(booking_action_id=first.action_id,
+                               new_slot=slot(5, 18), now=NOW)
+        self.assertTrue(moved.claimed)
+        self.assertEqual(self._count(avail), 2, "never over the cap")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

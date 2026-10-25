@@ -312,6 +312,13 @@ class BookingFollowThrough:
         is_free(calendar_id, slot) -> bool                 # the commit recheck
         booked_count(calendar_id, day: date) -> int        # only when daily_cap set
 
+    It may also implement `holder_id(calendar_id, slot) -> Optional[str]`, the
+    provider booking id of whoever holds that place. `is_free` answers only
+    that somebody does, which is occupancy and not identity: the change path
+    needs to know whether the mover is the one holding the place it would
+    vacate. An adapter without `holder_id` is read through this module's own
+    record of its writes alone.
+
     `booked_count` answers the number of bookings the calendar holds on that
     day, whether or not one of them is the booking being changed. Which of the
     two readings an adapter implements is not assumed anywhere: it is measured
@@ -647,11 +654,16 @@ class BookingFollowThrough:
             raise Refusal(R_OUTSIDE_POLICY,
                           "new slot is outside lead time, window or exclusions")
         # A same-day move on the same calendar vacates one place and takes one,
-        # so it is not counted against its own place - but only when the module
-        # owns every link of that proof: the place it vacates is its own booked
-        # slot (never a field the provider echoed), it still holds that place
-        # (a cancelled booking holds none), and the day's count is known to hold
-        # it. Anything less is counted in full: it can refuse, never overbook.
+        # so it is not counted against its own place - but only when every link
+        # of that proof is the module's own to make: the place it vacates is its
+        # own booked slot (never a field the provider echoed), the booking is
+        # the one still holding it - identity, not mere occupancy, so a
+        # cancelled booking holds none, a booking this module already moved off
+        # that place holds none, and a place the live calendar names as another
+        # booking's is not this booking's to vacate - and the day's count is
+        # known to hold it. Anything less is counted in full: the move can be
+        # refused, and no day is overbooked on the strength of a place this
+        # booking is not proven to hold.
         same_day = int(self._vacates_a_place(prior["payload"], calendar_id,
                                              new_slot, booking_action_id))
         if not self._has_daily_capacity(calendar_id, new_slot,
@@ -681,6 +693,12 @@ class BookingFollowThrough:
         )
         if result.claimed:
             self._note_supersession(result.action_id, booking_action_id)
+            # The booking has left the place its receipt names. Until this is
+            # written, that record still reads as holding it, and a later move
+            # could free a place another customer now holds.
+            left = self._booked_place(prior["payload"])
+            if left is not None:
+                self._record_move(booking_action_id, left)
         return result
 
     def _occupies_day(self, payload: Mapping[str, Any], calendar_id: str,
@@ -788,11 +806,13 @@ class BookingFollowThrough:
         """True only on proof that this move frees a place in `slot`'s day.
 
         A move that frees no place takes a new one, so it is counted in full.
-        Proof is three links after the day itself (`_occupies_day`), and each is
+        Proof is the links after the day itself (`_occupies_day`), and each is
         the module's own to make: the booking still holds the place (a
         cancelled booking holds none - the same evidence `cancel` reads), the
-        place really is taken (a free slot holds nothing to vacate), and the
-        day's count is known to hold it (`booked_count_includes_self`,
+        place really is taken (a free slot holds nothing to vacate), the mover
+        is the booking holding it (`_still_holds` - another customer's
+        appointment in that place is not this customer's place to vacate), and
+        the day's count is known to hold it (`booked_count_includes_self`,
         measured at the booking's own write rather than assumed from an
         adapter contract that never promised it). An unproven link is not proof.
         """
@@ -810,9 +830,90 @@ class BookingFollowThrough:
         try:
             if self._verify_free(booked.calendar_id, booked):
                 return False          # a free slot holds no place to vacate
+            if not self._still_holds(payload, booked, booking_action_id):
+                return False          # the place held is not this mover's
         except Refusal:
             return False
         return True
+
+    def _still_holds(self, payload: Mapping[str, Any], booked: Slot,
+                     booking_action_id: str) -> bool:
+        """True only on proof that THIS booking is the one holding `booked`.
+
+        Mere occupancy is not that proof. `_verify_free` answers only that
+        somebody is there, and after a move the place a stale receipt names is
+        usually held by somebody else: reading that as "a place to vacate"
+        subtracts a booking from a day whose count never held this one, and the
+        day is overbooked. Identity comes from two places and both must agree.
+
+        The live calendar may name its holders (`holder_id`, optional in the
+        adapter contract): a holder who is not this booking is a refusal, and a
+        calendar that cannot name one gives no identity proof of its own.
+
+        And this module's own log knows when it took this booking off that
+        place - a completed move, the same durable observation `cancel` writes.
+        A record that has already been moved off is stale, whatever else it
+        says. No proof of holding is a refusal: the move is counted in full.
+        """
+        mover = str(payload.get("provider_booking_id") or "")
+        if not mover:
+            return False
+        if self._moved_off(booking_action_id, booked):
+            return False
+        holder = self._holder_id(booked)
+        return holder is None or holder == mover
+
+    def _holder_id(self, booked: Slot) -> Optional[str]:
+        """Who the live calendar says holds `booked`, by provider booking id.
+
+        `is_free` answers only whether somebody is there, which is occupancy
+        and not identity. Naming the holder is optional in the adapter
+        contract; an adapter without it, or one that cannot say, returns None
+        and this module falls back to its own record alone.
+        """
+        read = getattr(self.availability, "holder_id", None)
+        if not callable(read):
+            return None
+        try:
+            holder = read(booked.calendar_id, booked)
+        except Exception as exc:
+            raise Refusal(
+                R_CALENDAR_UNAVAILABLE,
+                f"holder verification failed ({type(exc).__name__})",
+            ) from exc
+        return None if holder is None else str(holder)
+
+    def _moved_off(self, booking_action_id: str, place: Slot) -> bool:
+        """True when this module already took that booking off `place`."""
+        want = place.fingerprint()
+        for run in self.store.reconciliation_runs(booking_action_id):
+            try:
+                evidence = json.loads(run["evidence_json"])
+            except (TypeError, ValueError):
+                continue
+            if (evidence.get("record") == "booking_place_change"
+                    and evidence.get("left") == want):
+                return True
+        return False
+
+    def _record_move(self, booking_action_id: str, left: Slot) -> None:
+        """Record, on the booking's own action, the place it has just left.
+
+        The move receipt is its own action; without this the booking would
+        still read as holding the place its first receipt names, and a change
+        path could free a place another customer now holds. It is an
+        observation in the store's append-only log - the same durable record
+        outcomes use - so it never moves the booking action through its own
+        state machine and never touches the old receipt, which stays
+        authoritative offline.
+        """
+        try:
+            self.store.record_reconciliation(
+                booking_action_id, "moved",
+                {"record": "booking_place_change", "schema": SCHEMA,
+                 "left": left.fingerprint()})
+        except DurableStoreError:
+            pass      # the move itself is receipted; the marker is best effort
 
     def cancel(self, *, booking_action_id: str, now: datetime,
                reason: str = "customer_request") -> Booking:
