@@ -250,8 +250,13 @@ def dispatch(store: DurableStore,
         started, guard_reason = store.begin_attempt_guarded(
             action_id, fence, worker_id, pre_send=pre_send, epoch=epoch, now=ts)
         if not started and guard_reason is not None:
-            store.apply_gate_block(action_id, STATE_SUPPRESSED,
-                                   "gate:pre_send:" + guard_reason, now=ts)
+            # The action may already be terminal (canceled underneath us). The
+            # outcome is the same either way: nothing was sent.
+            try:
+                store.apply_gate_block(action_id, STATE_SUPPRESSED,
+                                       "gate:pre_send:" + guard_reason, now=ts)
+            except DurableStoreError:
+                pass
             return DispatchOutcome(
                 ST_BLOCKED, action_id, attempt_no=attempt_no,
                 verdict="SUPPRESSED",
@@ -260,8 +265,8 @@ def dispatch(store: DurableStore,
             return DispatchOutcome(
                 ST_REFUSED_RACE, action_id, attempt_no=attempt_no,
                 verdict="ALLOW",
-                note="canceled, lease lost, or fence moved between gate and"
-                     " dispatch; nothing sent")
+                note="canceled or lease lost between gate and dispatch;"
+                     " nothing sent")
     elif not store.begin_attempt(action_id, fence, worker_id, now=ts):
         return DispatchOutcome(
             ST_REFUSED_RACE, action_id, attempt_no=attempt_no, verdict="ALLOW",
