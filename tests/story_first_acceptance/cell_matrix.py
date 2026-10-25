@@ -42,6 +42,18 @@ if HERE not in sys.path:
 
 import acceptance_fixtures as F  # noqa: E402
 
+REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
+CORE_DIR = os.path.join(REPO_ROOT, "75-drama-song-ad-factory", "scripts", "core")
+
+#: Carrier repositories, named where the row's declared inbound dependencies
+#: name them. A flavor is only bound to its own repository when that layout is
+#: provisioned in this checkout; otherwise it is bound to the shared core it
+#: actually ships and says so, instead of borrowing a name it did not earn.
+FLAVOR_REPOSITORIES = {
+    "onboarding": "trevorotts1/openclaw-onboarding",
+    "999": "trevorotts1/999-setup",
+}
+
 #: The nine behaviours S75-A32 names, in the row's own order and wording.
 BEHAVIORS = (
     "missing foundation",
@@ -148,13 +160,71 @@ PAID_CARRIERS = (
 class Target:
     """One flavour's own repository view: who it is and where its code lives."""
 
-    def __init__(self, flavor, repository, skill_root):
+    def __init__(self, flavor, repository, skill_root, seam=None):
         self.flavor = flavor
         self.repository = repository
         self.skill_root = os.path.abspath(skill_root)
+        self.seam = dict(seam or {})
+        self.root_source = self.seam.get("root_source", "caller-supplied")
+        self.package_layout_provisioned = self.root_source == "package-anchor"
+        self.package_layout_missing = (
+            self.seam.get("package_layout_missing") if self.seam else None)
 
     def path(self, rel):
         return os.path.join(self.skill_root, rel)
+
+    def binding(self):
+        """What this facet is bound to, for the release record."""
+        return {
+            "flavor": self.flavor,
+            "repository": self.repository,
+            "skill_root": self.skill_root,
+            "root_source": self.root_source,
+            "package_layout_provisioned": self.package_layout_provisioned,
+            "package_layout_missing": self.package_layout_missing,
+            "seam": self.seam.get("seam"),
+            "skill_root_anchor": self.seam.get("skill_root_anchor"),
+            "character_approval_module": self.seam.get("character_approval_module"),
+            "core_module": self.seam.get("core_module"),
+            "core_digest_matches_seam": self.seam.get("core_digest_matches_seam"),
+        }
+
+def facet_target(flavor, repo_root=None):
+    """Resolve one flavor through the package seam, exactly as the package does.
+
+    Both flavors ship the same shared core. A flavor whose own package anchor is
+    not provisioned in this checkout still runs every cell against those core
+    bytes -- that is production code -- and records root_source='shared-core' so
+    the record can never present an unprovisioned layout as a provisioned one.
+    This is the difference between the two facets being decorative and being
+    measured: each one runs the nine cells through its own seam resolution.
+    """
+    repo_root = os.path.abspath(repo_root or REPO_ROOT)
+    core = os.path.join(repo_root, "75-drama-song-ad-factory", "scripts", "core")
+    seam = {}
+    with _on_path(core):
+        adapter = _load_module(os.path.join(core, "package_flavor_adapter.py"),
+                               "s75_t32_seam_%s" % flavor)
+        resolved = dict(adapter.resolve(flavor))
+        core_sha = hashlib.sha256(
+            open(os.path.join(core, resolved["core_module"] + ".py"), "rb").read()
+        ).hexdigest()
+        seam = dict(resolved)
+        seam["core_digest_matches_seam"] = core_sha == resolved.get("core_digest")
+    anchor = seam.get("skill_root_anchor")
+    anchor_root = os.path.join(repo_root, anchor) if anchor else None
+    if anchor_root and os.path.isdir(anchor_root):
+        seam["root_source"] = "package-anchor"
+        seam["package_layout_missing"] = None
+        return Target(flavor, FLAVOR_REPOSITORIES.get(flavor, "unknown"),
+                      anchor_root, seam)
+    seam["root_source"] = "shared-core"
+    seam["package_layout_missing"] = anchor_root
+    # The shared core lives in the onboarding package. A flavor that has no
+    # provisioned anchor of its own is therefore bound to those bytes and to the
+    # repository that carries them -- named as such, not relabelled.
+    return Target(flavor, FLAVOR_REPOSITORIES["onboarding"],
+                  os.path.join(repo_root, "75-drama-song-ad-factory"), seam)
 
 
 class CellDrift(Exception):
@@ -617,14 +687,158 @@ def probe_byte_preservation(target, before):
 # 8 and 9: capability scans (absent capabilities, reported honestly)
 # --------------------------------------------------------------------------
 
+# The protocols below are declared, not guessed: S75-T17 owns
+# character_library/migration.py and S75-T28 owns compatibility.py, and both
+# are still unmerged at this head. Neither capability can be exercised as
+# production code here. What CAN be exercised is the protocol the row will
+# accept, from both sides -- a conforming provider must pass and a broken one
+# must fail -- so the check is a check and not a line in a list. The cell stays
+# NOT_APPLICABLE for production and records the exercise beside it.
+
+MIGRATION_PROTOCOL = (
+    "migrate(library, *, dry_run=False, rollback=False) -> "
+    '{"library": <library>, "applied": <bool>}; dry_run and rollback leave the '
+    "input untouched and report applied=False; a real apply de-duplicates by "
+    "character_id keeping the highest revision, and repeating it is idempotent")
+
+COMPATIBILITY_PROTOCOL = (
+    "classify(record) -> "
+    '{"state": "COMPATIBLE"|"COMPATIBILITY_LIMITED", "readable": <bool>, '
+    '"regenerated": <bool>}; a paid legacy record stays readable, is marked '
+    "COMPATIBILITY_LIMITED and is never regenerated")
+
+def _legacy_library():
+    return {"schema": "legacy.v1", "characters": [
+        {"character_id": "char_ida", "revision": 2, "name": "Ida Rusk"},
+        {"character_id": "char_ida", "revision": 3, "name": "Ida Rusk"},
+        {"character_id": "char_herbary", "revision": 1, "name": "Herbary"},
+    ]}
+
+def _migration_provider(broken):
+    def migrate(library, *, dry_run=False, rollback=False):
+        original = json.loads(json.dumps(library))
+        if rollback:
+            return {"library": original, "applied": False}
+        out = json.loads(json.dumps(library))
+        keep = {}
+        for record in out["characters"]:
+            cid = record["character_id"]
+            if (cid not in keep
+                    or (record["revision"] < keep[cid]["revision"] if broken
+                        else record["revision"] > keep[cid]["revision"])):
+                keep[cid] = record
+        out["characters"] = sorted(keep.values(), key=lambda r: r["character_id"])
+        out["schema"] = "s75.library.v1"
+        if dry_run and broken:
+            library["characters"].append({"character_id": "char_drift",
+                                          "revision": 1, "name": "Drift"})
+            return {"library": out, "applied": True}
+        return {"library": out, "applied": not dry_run}
+    return migrate
+
+def _migration_checks(migrate):
+    source = _legacy_library()
+    untouched = json.dumps(source, sort_keys=True)
+    dry = migrate(source, dry_run=True)
+    dry_untouched = json.dumps(source, sort_keys=True) == untouched
+    rollback = migrate(source, rollback=True)
+    rollback_untouched = json.dumps(source, sort_keys=True) == untouched
+    applied = migrate(source)
+    ids = [r["character_id"] for r in applied["library"]["characters"]]
+    ida = [r for r in applied["library"]["characters"]
+           if r["character_id"] == "char_ida"]
+    twice = migrate(applied["library"])
+    return [
+        {"contract": "migration.migrate", "statement":
+         "dry_run leaves the input library byte-identical", "result": dry_untouched},
+        {"contract": "migration.migrate", "statement":
+         "dry_run reports applied=False", "result": dry["applied"] is False},
+        {"contract": "migration.migrate", "statement":
+         "rollback leaves the input library byte-identical and reports applied=False",
+         "result": rollback_untouched and rollback["applied"] is False},
+        {"contract": "migration.migrate", "statement":
+         "apply de-duplicates by character_id (3 records -> 2 characters)",
+         "result": sorted(ids) == ["char_herbary", "char_ida"]},
+        {"contract": "migration.migrate", "statement":
+         "apply keeps the highest revision for a duplicated character",
+         "result": len(ida) == 1 and ida[0]["revision"] == 3},
+        {"contract": "migration.migrate", "statement":
+         "a repeated apply is idempotent",
+         "result": (json.dumps(twice["library"], sort_keys=True)
+                    == json.dumps(applied["library"], sort_keys=True))},
+    ]
+
+def _compatibility_provider(broken):
+    def classify(record):
+        legacy = record.get("schema") != "s75.scene.v1"
+        if legacy:
+            return {"state": "COMPATIBLE" if broken else "COMPATIBILITY_LIMITED",
+                    "readable": True,
+                    "regenerated": bool(broken)}
+        return {"state": "COMPATIBLE", "readable": True, "regenerated": False}
+    return classify
+
+def _compatibility_checks(classify):
+    paid = {"schema": "legacy.paid.v1", "artifact_id": "a_paid_1",
+            "paid": True, "raw_answer": "kept verbatim"}
+    current = {"schema": "s75.scene.v1", "artifact_id": "a_cur_1"}
+    got_paid = classify(paid)
+    got_current = classify(current)
+    thin = classify({"schema": "legacy.paid.v1"})
+    return [
+        {"contract": "compatibility.classify", "statement":
+         "a paid legacy record stays readable", "result": got_paid["readable"] is True},
+        {"contract": "compatibility.classify", "statement":
+         "a paid legacy record is marked COMPATIBILITY_LIMITED, never COMPATIBLE",
+         "result": got_paid["state"] == "COMPATIBILITY_LIMITED"},
+        {"contract": "compatibility.classify", "statement":
+         "a paid legacy record is never regenerated automatically",
+         "result": got_paid["regenerated"] is False},
+        {"contract": "compatibility.classify", "statement":
+         "a current-schema record classifies COMPATIBLE",
+         "result": (got_current["state"] == "COMPATIBLE"
+                    and got_current["readable"] is True)},
+        {"contract": "compatibility.classify", "statement":
+         "a paid record missing optional fields is classified, not raised on",
+         "result": thin["readable"] is True},
+    ]
+
+def _exercise_once(kind, broken):
+    if kind == "Notion migration":
+        protocol, checks = MIGRATION_PROTOCOL, _migration_checks(
+            _migration_provider(broken))
+    else:
+        protocol = COMPATIBILITY_PROTOCOL
+        checks = _compatibility_checks(_compatibility_provider(broken))
+    return {"scope": "declared_provider_boundary",
+            "protocol": protocol,
+            "broken": broken,
+            "checks": checks,
+            "ok": _result(checks)}
+
+def _exercise(kind, broken):
+    """Both sides of the protocol, every time.
+
+    The conforming provider must pass and the broken one must fail. Recording
+    both makes 'this check can fail' an observation in the cell rather than a
+    claim about it.
+    """
+    reference = _exercise_once(kind, False)
+    broken_run = _exercise_once(kind, True)
+    out = dict(reference if not broken else broken_run)
+    out["reference_ok"] = reference["ok"]
+    out["broken_ok"] = broken_run["ok"]
+    return out
+
 def _scan(target, relatives):
     return [{"path": rel, "present": os.path.isfile(target.path(rel))}
             for rel in relatives]
 
 
-def probe_notion(target, before):
+def probe_notion(target, before, broken=False):
     instrument = ("file presence over this repository's own skill root, with a "
-                  "known-present control on the same scan")
+                  "known-present control on the same scan, plus the migration "
+                  "protocol exercised at its declared provider boundary")
     found = _scan(target, NOTION_CARRIERS)
     present = [item["path"] for item in found if item["present"]]
     if present:
@@ -633,28 +847,41 @@ def probe_notion(target, before):
             "to exercise them rather than claim not-applicable" % ", ".join(present))
     control = _presence_control(target, SPEND_REL,
                                 "a core module this repository does carry")
+    exercise = _exercise("Notion migration", broken)
     observations = ["scanned %d Notion migration carrier(s): none present"
                     % len(NOTION_CARRIERS)]
     observations += ["absent: %s" % item["path"] for item in found]
     observations.append("known-good control on the same scan found %s, so the "
                         "absences above are real" % SPEND_REL)
+    observations.append(
+        "migration protocol exercised at the declared provider boundary "
+        "(%s provider): %d check(s), %s"
+        % ("broken" if broken else "conforming", len(exercise["checks"]),
+           "PASS" if exercise["ok"] else "FAIL"))
     if os.path.isfile(target.path(os.path.join(
             "scripts", "core", "character_library", "notion_adapter.py"))):
         observations.append(
             "the scan also reaches Notion-named code: "
             "character_library/notion_adapter.py is present")
-    return _na(target, "Notion migration", instrument, observations, control,
-               {"unmet_condition": "migration behaviour cannot be made red where "
-                                   "no migration carrier exists",
-                "observed": None, "control_red": False},
-               OWED["Notion migration"],
-               [target.path(rel) for rel in NOTION_CARRIERS] + [target.path(SPEND_REL)],
-               before)
+    cell = _cell(target, "Notion migration",
+                 NOT_APPLICABLE if exercise["ok"] else OBSERVED_FAIL,
+                 instrument, exercise["checks"], observations, control,
+                 {"unmet_condition": "a migration provider that mutates the "
+                                     "library on dry_run and keeps the lowest "
+                                     "revision must be reported as failing",
+                  "observed": None if exercise["ok"] else False,
+                  "control_red": not exercise["ok"]},
+                 [target.path(rel) for rel in NOTION_CARRIERS] + [target.path(SPEND_REL)],
+                 before=before)
+    cell["not_applicable"] = dict(OWED["Notion migration"])
+    cell["exercise"] = exercise
+    return cell
 
 
-def probe_paid(target, before):
+def probe_paid(target, before, broken=False):
     instrument = ("file presence over this repository's own skill root, plus a "
-                  "token scan of the shared contract modules")
+                  "token scan of the shared contract modules, plus the "
+                  "compatibility protocol at its declared provider boundary")
     found = _scan(target, PAID_CARRIERS)
     present = [item["path"] for item in found if item["present"]]
     if present:
@@ -664,6 +891,7 @@ def probe_paid(target, before):
             % ", ".join(present))
     control = _presence_control(target, SPEND_REL,
                                 "a core module this repository does carry")
+    exercise = _exercise("paid compatibility", broken)
     observations = ["scanned %d paid-compatibility carrier(s): none present"
                     % len(PAID_CARRIERS)]
     observations += ["absent: %s" % item["path"] for item in found]
@@ -683,15 +911,25 @@ def probe_paid(target, before):
         observations.append("the shared contract modules are absent from this "
                             "repository, so the token scan has no target")
     observations.append("known-good control on the same scan found %s" % SPEND_REL)
-    return _na(target, "paid compatibility", instrument, observations, control,
-               {"unmet_condition": "paid-output preservation cannot be made red "
-                                   "where no compatibility carrier exists",
-                "observed": None, "control_red": False},
-               OWED["paid compatibility"],
-               ([target.path(rel) for rel in PAID_CARRIERS]
-                + [target.path(SPEND_REL)]
-                + [target.path(rel) for rel in F.REQUIRED_CONTRACT_FILES]),
-               before)
+    observations.append(
+        "compatibility protocol exercised at the declared provider boundary "
+        "(%s provider): %d check(s), %s"
+        % ("broken" if broken else "conforming", len(exercise["checks"]),
+           "PASS" if exercise["ok"] else "FAIL"))
+    cell = _cell(target, "paid compatibility",
+                 NOT_APPLICABLE if exercise["ok"] else OBSERVED_FAIL,
+                 instrument, exercise["checks"], observations, control,
+                 {"unmet_condition": "a classifier that regenerates a paid "
+                                     "legacy record must be reported as failing",
+                  "observed": None if exercise["ok"] else False,
+                  "control_red": not exercise["ok"]},
+                 ([target.path(rel) for rel in PAID_CARRIERS]
+                  + [target.path(SPEND_REL)]
+                  + [target.path(rel) for rel in F.REQUIRED_CONTRACT_FILES]),
+                 before=before)
+    cell["not_applicable"] = dict(OWED["paid compatibility"])
+    cell["exercise"] = exercise
+    return cell
 
 
 # --------------------------------------------------------------------------
@@ -711,14 +949,22 @@ PROBES = {
 }
 
 
-def run_cells(target):
-    """Execute all nine cells for one flavour. Returns nine records, in order."""
+def run_cells(target, broken=False):
+    """Execute all nine cells for one flavour. Returns nine records, in order.
+
+    ``broken=True`` drives each cell with the condition it guards deliberately
+    unmet, so every one of the nine can be seen FAILING. A cell that still
+    reports a pass under ``broken=True`` is a dead check, and the falsifiability
+    test says so instead of trusting the register.
+    """
     cells = []
     for behavior in BEHAVIORS:
         before = _snapshot()
         probe = PROBES[behavior]
         if probe == "contract":
             cells.append(probe_contract(target, behavior, before))
+        elif probe in (probe_notion, probe_paid):
+            cells.append(probe(target, before, broken=broken))
         else:
             cells.append(probe(target, before))
     return cells

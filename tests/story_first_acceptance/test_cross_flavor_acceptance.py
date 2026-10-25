@@ -271,6 +271,84 @@ def test_cells_release_their_own_repository():
         assert release["foreign_repository_modules_loaded"] == [], cell["behavior"]
         assert release["all_paths_inside_own_repository"] is True, cell["behavior"]
 
+# --- both facets, all nine, each one able to fail (repair round 4) ---------
+# Round 3 shipped the cells for one flavor only and round 1 re-derived them on
+# a branch that never carried the pin fix. These three checks are the ones that
+# make "both facets exercise the full check set" and "each check can fail"
+# measurable rather than asserted: eighteen cells, nine per flavor, every one
+# with checks of its own, and every one shown red when its condition is broken.
+
+FACET_FLAVORS = ("onboarding", "999")
+
+def _facet_target(flavor):
+    return C.facet_target(flavor, REPO_ROOT)
+
+def _facet_cells(flavor, broken=False):
+    return C.run_cells(_facet_target(flavor), broken=broken)
+
+def test_both_facets_execute_all_nine_cells():
+    """Nine behaviours x two flavors = eighteen cells, all executed."""
+    seen = []
+    for flavor in FACET_FLAVORS:
+        cells = _facet_cells(flavor)
+        assert [c["behavior"] for c in cells] == list(C.BEHAVIORS), (
+            flavor, [c["behavior"] for c in cells])
+        for cell in cells:
+            seen.append((flavor, cell["behavior"]))
+            assert cell["flavor"] == flavor, cell["cell_id"]
+            assert cell["executed"] is True, (flavor, cell["behavior"])
+            assert cell["observations"], (flavor, cell["behavior"])
+            assert cell["checks"], ("%s reported no executed check" % cell["cell_id"])
+            assert cell["known_good_control"]["pass"] is True, cell["cell_id"]
+    assert len(seen) == 18, seen
+    assert len(set(seen)) == 18, seen
+
+def test_every_cell_can_be_shown_failing():
+    """A check that cannot go red is a line in a list, not a check."""
+    dead = []
+    for flavor in FACET_FLAVORS:
+        for cell in _facet_cells(flavor):
+            behavior = cell["behavior"]
+            if behavior in ("Notion migration", "paid compatibility"):
+                # exercised at its declared provider boundary; the broken
+                # provider is what has to make it red
+                exercise = cell["exercise"]
+                assert exercise["reference_ok"] is True, (flavor, behavior)
+                assert exercise["broken_ok"] is False, (
+                    "%s::%s stayed green on a broken provider"
+                    % (flavor, behavior))
+                continue
+            if cell["negative_control"]["control_red"] is not True:
+                dead.append("%s::%s never went red on its unmet condition"
+                            % (flavor, behavior))
+    assert dead == [], dead
+
+def test_broken_run_makes_the_dependency_cells_report_fail():
+    """Driven end to end: the same runner, the condition deliberately unmet."""
+    for flavor in FACET_FLAVORS:
+        broken = {c["behavior"]: c["status"] for c in _facet_cells(flavor, broken=True)}
+        assert broken["Notion migration"] == "OBSERVED_FAIL", (flavor, broken)
+        assert broken["paid compatibility"] == "OBSERVED_FAIL", (flavor, broken)
+        clean = {c["behavior"]: c["status"] for c in _facet_cells(flavor)}
+        assert clean["Notion migration"] != "OBSERVED_FAIL", (flavor, clean)
+        assert clean["paid compatibility"] != "OBSERVED_FAIL", (flavor, clean)
+
+def test_each_facet_records_its_own_package_binding():
+    """Each facet resolves the seam itself and states what it is bound to."""
+    onb = _facet_target("onboarding").binding()
+    n999 = _facet_target("999").binding()
+    assert onb["flavor"] == "onboarding" and n999["flavor"] == "999"
+    assert onb["core_digest_matches_seam"] is True, onb
+    assert n999["core_digest_matches_seam"] is True, n999
+    assert onb["skill_root_anchor"] != n999["skill_root_anchor"], (onb, n999)
+    assert onb["character_approval_module"] != n999["character_approval_module"], (
+        onb, n999)
+    # 999 has no provisioned anchor in this checkout; the record says so rather
+    # than presenting the shared core as a 999 package.
+    assert n999["package_layout_provisioned"] is False, n999
+    assert n999["root_source"] == "shared-core", n999
+    assert n999["package_layout_missing"], n999
+
 
 def test_receipt_refuses_a_cell_that_executed_nothing():
     cells = _valid_cells()
