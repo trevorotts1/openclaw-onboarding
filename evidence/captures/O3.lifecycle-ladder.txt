@@ -1,0 +1,7 @@
+# search: O3.lifecycle-ladder
+# command: git grep -nF LIFECYCLE_LADDER 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/pb_contracts.py
+# scope: pb_contracts.py
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:74:LIFECYCLE_LADDER = ["NOT_INSTALLED", "ADOPTING", "RUNNING", "PAUSED_RESUMABLE", "CLOSING", "CLOSED"]
