@@ -74,6 +74,27 @@
     },
     "envelope_schema_version": "blackceo.intake-preflight/envelope/v1"
   },
+  "capability_meanings": {
+    "existence": "EXISTING: the module file is present under the skill root, imports cleanly in this checker, and every declared symbol resolves.",
+    "exposure": "EXPOSED: the module is in the transitive static import closure of the supported entrypoint (scripts/core/intake_preflight/factory.py), i.e. the entrypoint process reaches it without this checker importing it directly. Existence is not exposure; only this column answers A29's word 'exposes'.",
+    "why_two_columns": "Round 1 (evidence/S75-T29.verdict.round1.json) failed exactly here: all four capability modules existed and the checker imported them directly, while the entrypoint's own import closure reached none of them. The receipt therefore reports existence and exposure as separate columns and a clause that claims exposure needs both."
+  },
+  "reachability": {
+    "entrypoint": "scripts/core/intake_preflight/factory.py",
+    "entrypoint_relayed_from": "scripts/openclaw_adapter.py relays to it as [sys.executable, entrypoint, *argv], so factory.py's import closure is the entrypoint process's import closure",
+    "capability_targets": [
+      "story_first_contracts",
+      "character_bible.identity",
+      "character_library.notion_adapter",
+      "music_styles.catalog"
+    ],
+    "positive_controls": [
+      "music_styles.music_styles",
+      "character_library.character_library"
+    ],
+    "why_a_positive_control": "the walker must reach a module known to be reached (music_styles.music_styles via suno_recipe.py, character_library.character_library via factory.py:3136). If it cannot, the walk is broken and the receipt says PROBE_INVALID instead of claiming anything is unreachable.",
+    "dynamic_imports": "factory.py loads some core modules through _core_mod()/importlib at call time (song_choices, song_dispatch, final_recap, qc_gate, length_formula, method_plan, agnes_plan, agnes_quota, onscreen_text). The walker counts those sites and reports them unresolved rather than following them; none of them names a capability target."
+  },
   "expected_artifact_order": [
     "research_premise",
     "cast_and_world",
@@ -90,6 +111,7 @@
   "clauses": {
     "artifact_order": {
       "acceptance_phrase": "exposes the new order",
+      "exposure_targets": ["story_first_contracts"],
       "providers": [
         {
           "id": "story_first_contracts",
@@ -138,6 +160,7 @@
     },
     "cast_world_script_gates": {
       "acceptance_phrase": "complete cast/world/script gates",
+      "exposure_targets": ["story_first_contracts", "character_bible.identity"],
       "providers": [
         {
           "id": "story_first_contracts",
@@ -239,6 +262,7 @@
     },
     "notion": {
       "acceptance_phrase": "Notion",
+      "exposure_targets": ["character_library.notion_adapter"],
       "providers": [
         {
           "id": "notion_adapter",
@@ -276,6 +300,7 @@
     },
     "styles_18": {
       "acceptance_phrase": "all18 styles",
+      "exposure_targets": ["music_styles.catalog"],
       "providers": [
         {
           "id": "style_catalogue",
@@ -386,6 +411,7 @@
     },
     "flavor_parity": {
       "acceptance_phrase": "onboarding flavor assembled through the owned package adapters",
+      "exposure_targets": [],
       "providers": [
         {
           "id": "package_flavor_adapter",
@@ -431,6 +457,7 @@
     },
     "emergency_fixes_read_only": {
       "acceptance_phrase": "adapter checks do not regress accepted emergency fixes",
+      "exposure_targets": [],
       "policy": "read_only",
       "owner": "UNKNOWN",
       "owner_evidence": "evidence/emergency-owner-handoff.json (S75-T01) records gate state NOT_HANDED_OFF and owner UNKNOWN for task 01a16e50-177f-7476-8bf1-dbd252a75030. This unit does not guess an owner.",
@@ -476,9 +503,31 @@
           "what": "sha256 and size of every held file present are reported in the receipt; no acceptance claim is made about their content"
         }
       ]
+    },
+    "entrypoint_reachability": {
+      "acceptance_phrase": "the supported entrypoint exposes what the row names (exposure, not existence)",
+      "exposure_targets": [],
+      "providers": [],
+      "probes": [
+        {
+          "id": "closure_is_non_empty_and_controlled",
+          "what": "the static import walk from scripts/core/intake_preflight/factory.py reaches a non-empty set and finds both declared positive controls (music_styles.music_styles, character_library.character_library); if not, the walk is invalid and nothing is called unreachable"
+        },
+        {
+          "id": "exposes_meaning_is_declared_and_bound",
+          "what": "the manifest declares what 'exposes' means and the adapter's own constants agree with that declaration, so existence and exposure cannot be read as one thing"
+        },
+        {
+          "id": "declared_capabilities_reachable_from_entrypoint",
+          "what": "every module in reachability.capability_targets is in the entrypoint's reachable set"
+        }
+      ],
+      "why": "Round 1 failed because the four capability modules were reachable only by the checker importing them directly. This clause is the unit's own check for that exact defect class, with a positive control so it cannot pass on an empty or broken walk."
     }
   },
   "not_claimed": [
+    "No claim that the four capability modules are exposed by the entrypoint. At this base they are EXISTING only: this checker imports them, and the entrypoint's own import closure reaches none of them (see the receipt's capability_exposure.rows). Closing that gap needs either an edit to scripts/core/intake_preflight/factory.py -- which is one of the five HELD files (owner UNKNOWN, NOT_HANDED_OFF) and out of this unit's lease -- or a scope decision on A29's word 'exposes'. Both belong to the owner; this unit records the gap and does not decide it.",
+    "No claim about how A29's 'all18 styles' should read. Recorded as fact only: the eighteen-entry catalogue is music_styles/catalog.py (18 ids) and the entrypoint-reachable style menu is music_styles.music_styles.style_ids() -- 3 ids ('soul-ballad','rnb-flow','soul-rise'), which music_styles.py:214-215 says is deliberate. Whether the row means the card menu must offer 18 or that 18 exist as a library surface is the owner's scope decision, not a repair author's.",
     "No acceptance claim is made about the content of the five held files; their owner handoff is still NOT_HANDED_OFF.",
     "No claim that all 18 styles have a per-style compiled recipe module (12 do; 6 compile through catalogue traits).",
     "No claim that S75-T07's content-groundedness hardening is in this base tree; it is bound when present and reported absent here.",

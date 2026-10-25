@@ -20,10 +20,18 @@
     "notion",
     "styles_18",
     "flavor_parity",
-    "emergency_fixes_read_only"
+    "emergency_fixes_read_only",
+    "entrypoint_reachability"
   ],
 
   "control": {
+    "entrypoint_root": "scripts/core/intake_preflight/factory.py",
+    "entrypoint_root_reason": "scripts/openclaw_adapter.py is a relay: it runs this file as [sys.executable, entrypoint, *argv] and returns its exit code, so this file's import closure is what the entrypoint process can reach. 'Exposed' means reachable from here, not importable by the checker.",
+    "reachability_positive_controls": [
+      "music_styles.music_styles",
+      "character_library.character_library"
+    ],
+    "reachability_positive_controls_reason": "both are known to be reached from factory.py (music_styles.music_styles via music_styles/suno_recipe.py, character_library.character_library via factory.py:3136). The walk must find them or the walk is broken and the receipt reports PROBE_INVALID instead of claiming anything is unreachable.",
     "required_commands": [
       "intake",
       "preflight",

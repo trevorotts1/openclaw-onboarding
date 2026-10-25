@@ -5,6 +5,16 @@ One job: prove that the ONB supported entrypoint still reaches the four things
 A29 names, using the modules the other accepted units own. It resolves, it
 reads, it reports. It never writes, never generates, never calls a provider.
 
+"Exposes" has one meaning here and the receipt reports it separately from
+existence: a module is EXISTING when this checker can import it and its symbols
+resolve, and EXPOSED when it is in the transitive import closure of the
+supported entrypoint (scripts/core/intake_preflight/factory.py, which
+scripts/openclaw_adapter.py relays to). Round 1 failed exactly on that gap --
+the four providers existed and the entrypoint reached none of them -- so a
+clause now needs BOTH columns to pass, and the entrypoint-reachability walker
+carries a positive control (a module known to be reached) so it can never
+report an empty closure and pass.
+
 What it consumes, by name, so nothing is forked here:
 
   scripts/core/package_flavor_adapter.py   the one flavor seam (S75-T03)
@@ -40,6 +50,40 @@ MANIFEST_NAME = "onboarding-manifest.json"
 FIXTURE_REL = os.path.join("tests", "fixtures", "onboarding_entrypoints.json")
 ENTRYPOINT_REL = os.path.join("scripts", "openclaw_adapter.py")
 
+#: The supported entrypoint whose import closure defines "exposed". The wrapper
+#: above is a relay: it runs this file as [sys.executable, entrypoint, *argv],
+#: so the entrypoint process is the one whose imports matter.
+ENTRYPOINT_ROOT_REL = os.path.join("scripts", "core", "intake_preflight", "factory.py")
+
+#: Import roots the entrypoint process has, in the order it has them: its own
+#: directory (sys.path[0] when factory.py runs as a script, which is what the
+#: wrapper does), then the sys.path.insert() factory.py itself performs
+#: (scripts/core), then the remaining tree roots. A provider that resolves only
+#: when THIS checker imports it from its own path is not in here -- that
+#: difference is the whole point of the probe.
+_IMPORT_ROOT_RELS = (
+    os.path.join("scripts", "core", "intake_preflight"),
+    os.path.join("scripts", "core"),
+    "scripts",
+    ".",
+)
+
+#: Modules known to be reached from the entrypoint. The walker must find these
+#: or it is broken, not the tree: a probe that can miss a known-positive would
+#: otherwise report an empty closure and pass.
+DEFAULT_POSITIVE_CONTROLS = ("music_styles.music_styles", "character_library.character_library")
+
+#: stdlib names are not tree gaps, so they are left out of unresolved_imports
+_STDLIB = frozenset(getattr(sys, "stdlib_module_names", ()))
+
+EXISTENCE_MEANING = ("EXISTING: the module file is present under the skill root, imports "
+                     "cleanly in this checker, and every declared symbol resolves.")
+EXPOSURE_MEANING = ("EXPOSED: the module is in the transitive static import closure of "
+                    "the supported entrypoint (%s), i.e. the entrypoint process reaches "
+                    "it without this checker importing it directly. Existence is not "
+                    "exposure; only this column answers A29's word 'exposes'."
+                    % ENTRYPOINT_ROOT_REL)
+
 #: Held by task 01a16e50 (owner UNKNOWN). Named so the AST probe can refuse
 #: any import of them; never imported and never edited here.
 HELD_MODULES = ("factory", "lyric_writer", "character_approval", "method_plan")
@@ -69,6 +113,15 @@ def _skill_root(explicit=None):
 def _read_json(path):
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def _read_json_optional(path):
+    """(data, error). A missing or unreadable file is a receipt row, never a traceback."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh), None
+    except (OSError, ValueError) as exc:
+        return None, "%s: %s: %s" % (path, type(exc).__name__, exc)
 
 
 def _digest(path):
@@ -142,6 +195,197 @@ def _provider_state(decl, skill_root, cache):
 
 def _module_of(decl, cache):
     return cache.get(decl["module"])
+
+
+# ── entrypoint reachability: exposure, not existence ──────────────────────────
+
+def _file_for_parts(base, parts):
+    """Exact module path under base -> file. None when that exact module is absent."""
+    if not parts:
+        return None
+    head = os.path.join(base, *parts)
+    if os.path.isfile(head + ".py"):
+        return os.path.abspath(head + ".py")
+    init = os.path.join(head, "__init__.py")
+    return os.path.abspath(init) if os.path.isfile(init) else None
+
+
+def _resolve_name(name, skill_root, entry_dir):
+    """Resolve one dotted module name the way the entrypoint process would."""
+    parts = [p for p in name.split(".") if p]
+    roots = [entry_dir] + [os.path.join(skill_root, r) for r in _IMPORT_ROOT_RELS]
+    seen = set()
+    for base in roots:
+        base = os.path.abspath(base)
+        if base in seen or not os.path.isdir(base):
+            continue
+        seen.add(base)
+        hit = _file_for_parts(base, parts)
+        if hit:
+            return hit
+    return None
+
+
+def _import_files(node, path, skill_root, entry_dir):
+    """Files one import statement can load, plus names nothing resolves.
+
+    Covers `import a.b.c` (with the intermediate packages Python loads),
+    `import a.b.c as x`, `from a.b import c` (c may be a submodule), and the
+    relative forms `from . import x` / `from .x import y`. A from-import name
+    that is not a submodule is an attribute of the module, not a gap.
+    """
+    found, unresolved = [], []
+
+    def _add(name_or_parts, base=None):
+        parts = (name_or_parts.split(".") if isinstance(name_or_parts, str)
+                 else list(name_or_parts))
+        hit = (_file_for_parts(base, parts) if base is not None
+               else _resolve_name(".".join(parts), skill_root, entry_dir))
+        if hit:
+            found.append((hit, ".".join(parts)))
+        return hit
+
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            parts = alias.name.split(".")
+            for i in range(1, len(parts) + 1):
+                hit = _add(parts[:i])
+                if not hit and i == len(parts):
+                    unresolved.append(alias.name)
+    else:
+        level = node.level or 0
+        base = os.path.dirname(os.path.abspath(path))
+        for _ in range(max(level - 1, 0)):
+            base = os.path.dirname(base)
+        mod_parts = [p for p in (node.module or "").split(".") if p]
+        if level:
+            if mod_parts and not _add(mod_parts, base):
+                unresolved.append("." * level + (node.module or ""))
+        elif node.module:
+            if not _add(mod_parts):
+                unresolved.append(node.module)
+        for alias in node.names:
+            if alias.name == "*":
+                continue
+            if level:
+                _add(mod_parts + [alias.name], base)
+            elif node.module:
+                _add(mod_parts + [alias.name])
+    return found, unresolved
+
+
+def _dynamic_import_sites(path, rel, tree):
+    """Call sites this static walk cannot follow. Reported, never resolved."""
+    sites = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.id if isinstance(func, ast.Name) else (
+            func.attr if isinstance(func, ast.Attribute) else None)
+        if name not in ("import_module", "__import__", "reload"):
+            continue
+        literal = None
+        if node.args and isinstance(node.args[0], ast.Constant):
+            literal = node.args[0].value
+        sites.append({"file": rel, "line": getattr(node, "lineno", None),
+                      "call": name, "literal": literal})
+    return sites
+
+
+def _entrypoint_closure(skill_root, targets, controls):
+    """Static import closure of the supported entrypoint, with its controls.
+
+    `valid` is False whenever the walker cannot be trusted (entrypoint missing
+    or unparsable, closure empty, or a positive control not reached). A probe
+    that cannot find a known-positive is broken, so the exposure verdict is
+    PROBE_INVALID rather than NOT_REACHABLE in that case.
+    """
+    root = os.path.abspath(skill_root)
+    entry = os.path.join(root, ENTRYPOINT_ROOT_REL)
+    row = {
+        "entrypoint": ENTRYPOINT_ROOT_REL,
+        "walker": "static AST import closure: absolute, package-qualified, "
+                  "from-import submodules and relative imports",
+        "import_roots": [os.path.join(root, r) for r in _IMPORT_ROOT_RELS],
+        "files_reached": 0,
+        "files": [],
+        "unresolved_imports": [],
+        "dynamic_import_sites": [],
+        "parse_errors": [],
+        "targets": [],
+        "controls": [],
+        "positive_controls_ok": False,
+        "valid": False,
+        "error": None,
+    }
+    if not os.path.isfile(entry):
+        row["error"] = "entrypoint file missing: %s" % ENTRYPOINT_ROOT_REL
+        return row
+    entry_dir = os.path.dirname(entry)
+    reached = {}
+    queue = [os.path.abspath(entry)]
+    reached[os.path.abspath(entry)] = {"via": None, "name": "<entrypoint>"}
+    while queue:
+        current = queue.pop(0)
+        rel = os.path.relpath(current, root)
+        try:
+            with open(current, encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=current)
+        except (OSError, SyntaxError, ValueError) as exc:
+            row["parse_errors"].append({"file": rel, "error": "%s: %s" % (type(exc).__name__, exc)})
+            continue
+        row["dynamic_import_sites"].extend(_dynamic_import_sites(current, rel, tree))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
+            found, unresolved = _import_files(node, current, root, entry_dir)
+            for name in unresolved:
+                if name.split(".")[0] in _STDLIB:
+                    continue  # stdlib is not a gap in the tree's own closure
+                if name not in row["unresolved_imports"]:
+                    row["unresolved_imports"].append(name)
+            for hit, name in found:
+                if hit not in reached:
+                    reached[hit] = {"via": rel, "name": name}
+                    queue.append(hit)
+    row["files_reached"] = len(reached)
+    row["files"] = sorted(os.path.relpath(p, root) for p in reached)
+
+    def _row_for(name, role):
+        path = _resolve_name(name, root, entry_dir)
+        got = reached.get(path) if path else None
+        return {"module": name, "role": role, "file": (
+                    os.path.relpath(path, root) if path else None),
+                "exists": bool(path), "reachable": bool(got),
+                "via": (got or {}).get("via")}
+
+    row["targets"] = [_row_for(name, "acceptance_capability") for name in targets]
+    row["controls"] = [_row_for(name, "positive_control") for name in controls]
+    row["positive_controls_ok"] = bool(row["controls"]) and all(
+        c["reachable"] for c in row["controls"])
+    problems = []
+    if not row["files_reached"]:
+        problems.append("closure is empty")
+    if row["parse_errors"]:
+        problems.append("entrypoint closure had %d parse errors" % len(row["parse_errors"]))
+    if not row["positive_controls_ok"]:
+        missed = [c["module"] for c in row["controls"] if not c["reachable"]]
+        problems.append("positive control not reached: %s"
+                        % (", ".join(missed) if missed else "none declared"))
+    row["error"] = "; ".join(problems) or None
+    row["valid"] = not problems
+    return row
+
+
+_CLOSURE_CACHE = {}
+
+
+def _closure_for(skill_root, targets, controls):
+    key = (os.path.abspath(skill_root), tuple(targets), tuple(controls))
+    if key not in _CLOSURE_CACHE:
+        _CLOSURE_CACHE[key] = _entrypoint_closure(skill_root, targets, controls)
+    return _CLOSURE_CACHE[key]
 
 
 # ── probes ───────────────────────────────────────────────────────────────────
@@ -383,20 +627,96 @@ def _probe_emergency(spec, skill_root):
 
 # ── clause assembly ──────────────────────────────────────────────────────────
 
+def _exposure_targets(spec):
+    """Modules whose EXPOSURE this clause claims. Declared, never inferred:
+    a clause with no exposure_targets makes no exposure claim (its acceptance
+    phrase is not about exposure), and existence alone never claims exposure."""
+    return list(spec.get("exposure_targets") or ())
+
+
+def _positive_controls(manifest, fixture):
+    control = (fixture or {}).get("control") or {}
+    return list(control.get("reachability_positive_controls")
+                or (manifest.get("reachability") or {}).get("positive_controls")
+                or DEFAULT_POSITIVE_CONTROLS)
+
+
+def _probe_exposure(spec, root, controls):
+    """Both columns, reported side by side: existence (imported here) vs exposure
+    (reached from the entrypoint without this checker importing it)."""
+    targets = _exposure_targets(spec)
+    closure = _closure_for(root, targets, controls)
+    rows = [{
+        "module": t["module"],
+        "existing": bool(t["exists"]),
+        "reachable_from_entrypoint": bool(t["reachable"]),
+        "file": t["file"],
+        "reached_via": t["via"],
+    } for t in closure["targets"]]
+    return [
+        _probe("positive_control_reaches_known_module",
+               closure["positive_controls_ok"],
+               {"controls": closure["controls"], "files_reached": closure["files_reached"],
+                "error": closure["error"]}),
+        _probe("capability_modules_exist_and_resolve",
+               all(t["existing"] for t in rows),
+               [{"module": t["module"], "existing": t["existing"]} for t in rows]),
+        _probe("capability_modules_are_exposed_by_entrypoint",
+               closure["valid"] and all(t["existing"] and t["reachable_from_entrypoint"]
+                                        for t in rows),
+               rows),
+    ]
+
+
+def _probe_reachability(spec, cache, root, manifest, fixture):
+    """The round-1 defect class, caught by the unit's own check."""
+    controls = _positive_controls(manifest, fixture)
+    targets = list((manifest.get("reachability") or {}).get("capability_targets") or ())
+    closure = _closure_for(root, targets, controls)
+    rows = closure["targets"]
+    meanings = manifest.get("capability_meanings") or {}
+    exposed = all(t["exists"] and t["reachable"] for t in rows) if rows else False
+    return [
+        _probe("closure_is_non_empty_and_controlled", closure["valid"],
+               {"entrypoint": closure["entrypoint"], "files_reached": closure["files_reached"],
+                "positive_controls_ok": closure["positive_controls_ok"],
+                "controls": closure["controls"],
+                "unresolved_imports": closure["unresolved_imports"],
+                "dynamic_import_sites": closure["dynamic_import_sites"],
+                "parse_errors": closure["parse_errors"],
+                "error": closure["error"]}),
+        _probe("exposes_meaning_is_declared_and_bound",
+               meanings.get("existence") == EXISTENCE_MEANING
+               and meanings.get("exposure") == EXPOSURE_MEANING
+               and bool(meanings.get("existence")) and bool(meanings.get("exposure"))
+               and (fixture.get("control") or {}).get("entrypoint_root") == ENTRYPOINT_ROOT_REL,
+               {"existence": meanings.get("existence"), "exposure": meanings.get("exposure"),
+                "entrypoint_root_declared_in_fixture":
+                    (fixture.get("control") or {}).get("entrypoint_root"),
+                "entrypoint_root_in_code": ENTRYPOINT_ROOT_REL}),
+        _probe("declared_capabilities_reachable_from_entrypoint",
+               closure["valid"] and exposed,
+               rows),
+    ]
+
+
 _PROBE_TABLE = {
-    "artifact_order": lambda spec, cache, root, manifest: _probe_order(spec, cache, root, manifest),
-    "cast_world_script_gates": lambda spec, cache, root, manifest: _probe_gates(spec, cache),
-    "notion": lambda spec, cache, root, manifest: _probe_notion(spec, cache),
-    "styles_18": lambda spec, cache, root, manifest: _probe_styles(spec, cache, root),
-    "flavor_parity": lambda spec, cache, root, manifest: _probe_flavor(spec, cache, root),
-    "emergency_fixes_read_only": lambda spec, cache, root, manifest: _probe_emergency(spec, root),
+    "artifact_order": lambda spec, cache, root, manifest, fixture: _probe_order(spec, cache, root, manifest),
+    "cast_world_script_gates": lambda spec, cache, root, manifest, fixture: _probe_gates(spec, cache),
+    "notion": lambda spec, cache, root, manifest, fixture: _probe_notion(spec, cache),
+    "styles_18": lambda spec, cache, root, manifest, fixture: _probe_styles(spec, cache, root),
+    "flavor_parity": lambda spec, cache, root, manifest, fixture: _probe_flavor(spec, cache, root),
+    "emergency_fixes_read_only": lambda spec, cache, root, manifest, fixture: _probe_emergency(spec, root),
+    "entrypoint_reachability": lambda spec, cache, root, manifest, fixture: _probe_reachability(
+        spec, cache, root, manifest, fixture),
 }
 
 
-def _entrypoint_report(skill_root, fixture):
+def _entrypoint_report(skill_root, fixture, fixture_error=None):
     path = os.path.join(skill_root, ENTRYPOINT_REL)
     row = {"path": ENTRYPOINT_REL, "exists": os.path.isfile(path),
            "help_rc": None, "command_surface": None, "required_present": False,
+           "required_surface_checked": False,
            "error": None}
     if not row["exists"]:
         row["error"] = "wrapper missing at %s" % ENTRYPOINT_REL
@@ -427,29 +747,66 @@ def _entrypoint_report(skill_root, fixture):
     missing = [c for c in required if c not in surface]
     row["required_present"] = not missing
     row["missing_required"] = missing
+    row["required_surface_checked"] = True
+    if fixture_error is not None:
+        # the fixture is where required_commands lives; without it the surface
+        # cannot be checked, so it is never reported as satisfied
+        row["required_present"] = False
+        row["required_surface_checked"] = False
+        row["error"] = ("fixture unreadable, so the required command surface "
+                        "cannot be checked: %s" % fixture_error)
     return row
 
 
 def report(skill_root=None):
-    """Build the receipt. Pure read: no write, no network, no provider call."""
+    """Build the receipt. Pure read: no write, no network, no provider call.
+
+    Every tree fact is a receipt row. A missing fixture, manifest or entrypoint
+    is a structured FAIL receipt -- never a traceback.
+    """
     root = _skill_root(skill_root)
     manifest_path = os.path.join(_here(), MANIFEST_NAME)
     fixture_path = os.path.join(root, FIXTURE_REL)
-    manifest = _read_json(manifest_path)
-    fixture = _read_json(fixture_path)
+    manifest, manifest_error = _read_json_optional(manifest_path)
+    fixture, fixture_error = _read_json_optional(fixture_path)
     cache = {}
 
+    tree_state = {
+        "skill_root_readable": os.path.isdir(root),
+        "manifest_present": manifest_error is None,
+        "manifest_error": manifest_error,
+        "fixture_present": fixture_error is None,
+        "fixture_error": fixture_error,
+        "fixture_expected_at": FIXTURE_REL,
+    }
+    fixture = fixture or {}
+    if manifest is None:
+        return {
+            "schema": SCHEMA,
+            "unit": None,
+            "seam": SEAM,
+            "skill_root": root,
+            "tree_state": tree_state,
+            "errors": ["manifest unreadable: %s" % manifest_error],
+            "clause_order": [],
+            "clauses": {},
+            "ok": False,
+        }
+
     clauses = {}
-    order = list((fixture.get("clause_order")
-                  or list(manifest["clauses"].keys())))
+    clause_order = list(fixture.get("clause_order")
+                        or list(manifest["clauses"].keys()))
+    controls = _positive_controls(manifest, fixture)
     extensions = {}
-    for name in order:
+    for name in clause_order:
         spec = manifest["clauses"][name]
         providers = [_provider_state(p, root, cache) for p in spec.get("providers") or ()]
         recipe_rows = [_provider_state(p, root, cache)
                        for p in spec.get("recipe_providers") or ()]
         probe_fn = _PROBE_TABLE.get(name)
-        probes = probe_fn(spec, cache, root, manifest) if probe_fn else []
+        probes = probe_fn(spec, cache, root, manifest, fixture) if probe_fn else []
+        if _exposure_targets(spec) and name != "entrypoint_reachability":
+            probes = probes + _probe_exposure(spec, root, controls)
         ext = [_provider_state(p, root, cache) for p in spec.get("extensions") or ()]
         extensions[name] = ext
 
@@ -467,6 +824,7 @@ def report(skill_root=None):
             "acceptance_phrase": spec.get("acceptance_phrase"),
             "status": status,
             "reason": reason,
+            "existence": [p["state"] for p in providers],
             "providers": providers,
             "probes": probes,
             "extensions": ext,
@@ -474,7 +832,10 @@ def report(skill_root=None):
         if spec.get("recipe_providers"):
             clauses[name]["recipe_providers"] = recipe_rows
 
-    entry = _entrypoint_report(root, fixture)
+    entry = _entrypoint_report(root, fixture, fixture_error)
+    closure = _closure_for(root,
+                           list((manifest.get("reachability") or {}).get("capability_targets") or ()),
+                           controls)
     held_spec = manifest["clauses"]["emergency_fixes_read_only"]
     held_rows = _held_rows(held_spec, root)
     flavor_provider = next((p for p in clauses["flavor_parity"]["providers"]), None)
@@ -486,8 +847,26 @@ def report(skill_root=None):
                 "S75-T07 hardening (%s) is not in this tree: %s. Bound automatically "
                 "when the accepted module lands; the base gates above are what is "
                 "proved here." % (row["path"], row["error"] or row["state"]))
+    if fixture_error is not None:
+        limitations.append(
+            "fixture unreadable at %s (%s): required_commands, clause_order and "
+            "reachability_positive_controls fell back to the manifest and to "
+            "built-in defaults" % (FIXTURE_REL, fixture_error))
+    if not closure["valid"]:
+        limitations.append("entrypoint reachability walk not valid: %s" % closure["error"])
+    unreachable = [t["module"] for t in closure["targets"]
+                   if t["exists"] and not t["reachable"]]
+    if unreachable:
+        limitations.append(
+            "exist but are NOT exposed by the entrypoint (declared but reachable "
+            "only because this checker imports them): %s. Closing that gap needs "
+            "either a wiring change in the held scripts/core/intake_preflight/factory.py "
+            "or a scope decision on A29's word 'exposes'; this unit does neither "
+            "(see not_claimed)." % ", ".join(unreachable))
 
-    ok = all(c["status"] == "PASS" for c in clauses.values()) and entry["required_present"]
+    ok = (all(c["status"] == "PASS" for c in clauses.values())
+          and entry["required_present"]
+          and tree_state["fixture_present"] and tree_state["manifest_present"])
     return {
         "schema": SCHEMA,
         "unit": manifest["unit"],
@@ -498,9 +877,26 @@ def report(skill_root=None):
         "python": sys.version.split()[0],
         "manifest": os.path.relpath(manifest_path, root),
         "fixture": FIXTURE_REL,
+        "tree_state": tree_state,
+        "capability_meanings": manifest.get("capability_meanings"),
+        "capability_exposure": {
+            "meaning": {"existence": EXISTENCE_MEANING, "exposure": EXPOSURE_MEANING},
+            "entrypoint": closure["entrypoint"],
+            "positive_controls": closure["controls"],
+            "positive_controls_ok": closure["positive_controls_ok"],
+            "walker_valid": closure["valid"],
+            "walker_error": closure["error"],
+            "files_reached": closure["files_reached"],
+            "unresolved_imports": closure["unresolved_imports"],
+            "dynamic_import_sites": closure["dynamic_import_sites"],
+            "rows": [{"module": t["module"], "existing": bool(t["exists"]),
+                      "reachable_from_entrypoint": bool(t["reachable"]),
+                      "file": t["file"], "reached_via": t["via"]}
+                     for t in closure["targets"]],
+        },
         "flavor_provider": flavor_provider,
         "entrypoint": entry,
-        "clause_order": order,
+        "clause_order": clause_order,
         "clauses": clauses,
         "held_owner": held_spec.get("owner"),
         "held_policy": held_spec.get("policy"),
@@ -516,9 +912,13 @@ def check(skill_root=None):
 
 
 def _entrypoints(skill_root=None):
-    fixture = _read_json(os.path.join(_skill_root(skill_root), FIXTURE_REL))
+    path = os.path.join(_skill_root(skill_root), FIXTURE_REL)
+    fixture, error = _read_json_optional(path)
+    fixture = fixture or {}
     return {"schema": fixture.get("schema"), "entrypoints": fixture.get("entrypoints"),
-            "not_advertised": fixture.get("not_advertised")}
+            "not_advertised": fixture.get("not_advertised"),
+            "fixture_expected_at": FIXTURE_REL,
+            "fixture_error": error}
 
 
 def main(argv=None):
