@@ -27,22 +27,36 @@ capability: a public comment reply needs IG_PUBLIC_REPLY, a comment private
 opener needs IG_COMMENT_PRIVATE_OPENER, a DM needs IG_DM_SEND, and a
 capability whose `granted` flag is False is no permission at all. A comment
 alone is NOT a normal inbound-DM window (`inbound_dm_window` is False). A
-direct message needs an actual inbound customer DM. Outbound and
-cross-channel messages never refresh Instagram eligibility, and an
-eligibility basis carried over from Facebook is refused.
+direct message needs an actual inbound customer DM, and the DM window opens
+only on a row the DURABLE INBOX holds for that event: an event object on its
+own is never proof, at dispatch or at record. Outbound and cross-channel
+messages never refresh Instagram eligibility, and an eligibility basis
+carried over from Facebook is refused.
 
 IGNORED OPENER, NO DRIP.  Once a private opener is recorded for a thread,
 every follow-up direct message is suppressed until the customer actually
-interacts: a verified inbound DM on that thread, proven by the event and the
-durable inbox admission that carries it. There is no timed drip and no second
-opener. The state is durable, so a restart changes nothing. The "no second
-opener" half is enforced by an atomic claim in the durable store BEFORE
-dispatch, not by the eligibility read alone: four workers racing the same
-thread produce one send, not four.
+interacts: a verified inbound DM on that thread, proven by the event AND by
+the durable inbox row this module re-reads for it -- never by a dict a caller
+hands over. There is no timed drip at any age. There is at most one opener
+per (tenant, account, thread) FOR THE LIFE OF THE OPENER CLAIM: the claim is
+taken before dispatch and released after it, its lease is
+DEFAULT_OPENER_CLAIM_S (300 s) by default, and a worker that stalls inside
+the provider call past that lease may be taken over and a second opener may
+then be sent. "No second opener" is therefore a claim about that window, not
+an unconditional invariant; the bound is stated in the same sentence because
+a probe can falsify the unqualified one. The state is durable, so a restart
+changes nothing. The mutual exclusion itself is an atomic claim in the
+durable store BEFORE dispatch, not the eligibility read alone: four workers
+racing the same thread inside the claim window produce one send, not four.
 
 OWNERSHIP.  "Our own actor" is derived from the authoritative account record
 (its `ig_user_id`), never from a hand-kept id list a caller might forget. A
-caller may add further ids; it can never subtract the account's own.
+caller may add further ids; it can never subtract the account's own. The
+supplementary ids are a list, tuple, set or frozenset of actor ids and
+NOTHING ELSE: a bare string is not a list of letters, a mapping's KEYS are
+never read as ids (so a caller cannot make a real customer look like our own
+actor), and every other value is a domain refusal, never a raw TypeError out
+of this boundary.
 
 BASIS HONESTY.  A verdict reports the eligibility basis the CALLER supplied.
 It never substitutes a basis the caller did not offer.
@@ -237,16 +251,44 @@ def _revision(value: Any, name: str) -> str:
 def _extra_own_actor_ids(value: Any) -> Tuple[str, ...]:
     """Validate caller-SUPPLIED extra own-actor ids (never the whole set).
 
-    A bare string is iterated as its characters, so the exclusion set would
-    hold single letters and our own actor would pass as a customer. This is
-    only the supplementary collection: the authoritative own actor is the
-    bound account's own `ig_user_id`, added in `_own_actor_set`.
+    This is only the supplementary collection: the authoritative own actor is
+    the bound account's own `ig_user_id`, added in `_own_actor_set`.
+
+    One rule closes the whole input CLASS, not the examples that happened to
+    be named:
+
+    * a bare `str`/`bytes`/`bytearray` is iterated as its characters, so the
+      exclusion set would hold single letters and our own actor would pass as
+      a customer;
+    * a MAPPING is iterated as its KEYS, so `{"customer-7": "x"}` would put a
+      real customer in the own-actor set and exclude them as one of us;
+    * any other non-collection (`3`, `None`, `1.5`, a stream, an object) is
+      iterated or not at all and used to raise a RAW `TypeError`, which is not
+      this boundary's contract;
+    * a member that is not a non-empty string is refused rather than coerced,
+      because `str(3)` turns a number into an actor id.
+
+    So the only accepted shapes are list, tuple, set and frozenset of
+    non-empty strings. Everything else is `InstagramRouteError("bad_input: ...")`.
     """
+    if value is None:
+        raise InstagramRouteError(
+            "bad_input: own_actor_ids must be a collection of actor ids,"
+            " not None")
     if isinstance(value, (str, bytes, bytearray)):
         raise InstagramRouteError(
             "bad_input: own_actor_ids must be a collection of actor ids,"
             " not one bare value")
-    return tuple(str(actor) for actor in value)
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        # dict, int, float, object(), generators, ... -- a mapping's keys are
+        # never the own-actor set, and nothing else may leak a raw TypeError.
+        raise InstagramRouteError(
+            "bad_input: own_actor_ids must be a list, tuple, set or frozenset"
+            " of actor ids, not %s" % type(value).__name__)
+    out: List[str] = []
+    for actor in value:
+        out.append(_id(actor, "own_actor_ids[]"))
+    return tuple(out)
 
 
 def _own_actor_set(account: "InstagramAccount",
@@ -511,7 +553,7 @@ def normalise_event(raw: Dict[str, Any]) -> InstagramEvent:
 
 def admit_instagram_event(store: Any, event: InstagramEvent, *,
                           account: InstagramAccount,
-                          own_actor_ids: Iterable[str] = (),
+                          own_actor_ids: Any = (),
                           now: Optional[float] = None) -> Dict[str, Any]:
     """Persist the event identity before any ACK, via durable_store.
 
@@ -629,11 +671,17 @@ def evaluate_eligibility(
     capability: Optional[InstagramCapability] = None,
     opener: Optional[OpenerState] = None,
     basis: str = BASIS_INBOUND_MESSAGE,
+    inbox: Any = None,
+    own_actor_ids: Any = (),
     now: Optional[float] = None,
 ) -> EligibilityVerdict:
     """Compute Instagram eligibility from Instagram facts only.
 
     Called fresh on every dispatch. It has no cache and no default ALLOW.
+
+    `inbox` is the durable store that owns `inbox_events`. It is what proves a
+    customer's inbound DM; without it the inbound-DM window is closed, because
+    an event object alone is a claim, not evidence.
     """
     if not isinstance(account, InstagramAccount):
         raise InstagramRouteError("bad_input: account must be InstagramAccount")
@@ -692,7 +740,7 @@ def evaluate_eligibility(
                        detail={"opener_action_id": opener.opener_action_id,
                                "sent_at": opener.sent_at})
 
-    inbound_dm = _has_inbound_dm(account, event)
+    inbound_dm = _has_inbound_dm(account, event, inbox, own_actor_ids)
     if not inbound_dm and not (opener is not None and opener.customer_responded):
         return _denied(R_NO_INBOUND_DM, purpose, channel, basis, now=ts)
 
@@ -796,15 +844,79 @@ def _comment_eligibility(*, account: InstagramAccount, purpose: str,
     )
 
 
+def _durable_inbox_row(inbox: Any,
+                       event: InstagramEvent) -> Optional[Dict[str, Any]]:
+    """RE-READ this event's row from the durable inbox. None when it is not there.
+
+    The inbox is the ONLY authority for "this event exists and was admitted".
+    A dict a caller hands over is never consulted here, so a hand-written
+    `admission` cannot conjure a row that `inbox_events` does not hold.
+
+    A missing store answers None (fail closed); a store that cannot answer an
+    inbox query at all is a domain error, not a silent pass.
+    """
+    if inbox is None:
+        return None
+    read = getattr(inbox, "inbox_row", None)
+    if not callable(read):
+        raise InstagramRouteError(
+            "bad_input: %s (inbox must be the durable store that owns"
+            " inbox_events, not %r)" % (R_UNVERIFIED_INTERACTION,
+                                        type(inbox).__name__))
+    try:
+        row = read(provider=PROVIDER_IG, tenant_id=event.tenant_id,
+                   provider_event_id=event.provider_event_id)
+    except ValueError:
+        # durable_store.DurableStoreError("unknown inbox event"): the inbox
+        # has never seen this event id. That is an absent row, not a crash.
+        return None
+    return dict(row) if isinstance(row, dict) else None
+
+
+def _durable_row_proves_customer(account: InstagramAccount,
+                                 event: InstagramEvent, inbox: Any,
+                                 own_actor_ids: Any = ()) -> bool:
+    """True only when the durable inbox holds a customer's inbound row for it.
+
+    The row must be there, inbound, not excluded by the inbox, and not one of
+    our own actors (the account's authoritative `ig_user_id` plus whatever the
+    caller adds). Without a store there is no proof, so this is False: an
+    event object alone never opens the inbound-DM window.
+    """
+    row = _durable_inbox_row(inbox, event)
+    if row is None:
+        return False
+    if row.get("provider_event_id") != event.provider_event_id:
+        return False
+    if row.get("tenant_id") != event.tenant_id:
+        return False
+    if row.get("direction") != DIRECTION_INBOUND:
+        return False
+    if str(row.get("decision_ref") or "").startswith("excluded:"):
+        return False
+    own = _own_actor_set(account, own_actor_ids)
+    if row.get("actor_id") is not None and row.get("actor_id") in own:
+        return False
+    return True
+
+
 def _has_inbound_dm(account: InstagramAccount,
-                    event: Optional[InstagramEvent]) -> bool:
-    return bool(
-        event is not None
-        and event.kind == EVENT_DIRECT
-        and event.direction == DIRECTION_INBOUND
-        and event.account_id == account.account_id
-        and event.tenant_id == account.tenant_id
-    )
+                    event: Optional[InstagramEvent],
+                    inbox: Any = None,
+                    own_actor_ids: Any = ()) -> bool:
+    """An inbound customer DM window, proven against the durable inbox.
+
+    Shape alone is not proof: an `InstagramEvent` says what a payload claimed,
+    while `inbox_events` says what this system actually admitted. Both must
+    agree, so an event the durable inbox never admitted is never proof here.
+    """
+    if not (event is not None
+            and event.kind == EVENT_DIRECT
+            and event.direction == DIRECTION_INBOUND
+            and event.account_id == account.account_id
+            and event.tenant_id == account.tenant_id):
+        return False
+    return _durable_row_proves_customer(account, event, inbox, own_actor_ids)
 
 
 def _denied(reason: str, purpose: str, channel: str, basis: str, *,
@@ -887,14 +999,18 @@ def _verified_inbound_interaction(*, tenant_id: str, account_id: str,
                                   thread_key: str, provider_event_id: str,
                                   event: Optional[InstagramEvent],
                                   admission: Any,
-                                  own_actor_ids: Iterable[str]) -> InstagramEvent:
-    """Return the event only when the durable inbox proves it is a customer's.
+                                  inbox: Any = None,
+                                  own_actor_ids: Any = ()) -> InstagramEvent:
+    """Return the event only when the DURABLE inbox proves it is a customer's.
 
-    The proof is `admission`: the answer admit_instagram_event() got from
-    durable_store for this very event. The inbox row it names must be the same
-    tenant and event id, inbound, and not one of our own actors. No proof, no
-    un-suppression: an outbound event, an own-actor event, an event id the
-    inbox never admitted, or another event's admission is refused.
+    Proof is required, not caller convention -- and the proof is not the
+    `admission` dict. `admission` is the answer admit_instagram_event() got
+    from durable_store, and its SHAPE is checked below so a malformed one is
+    refused with the reason that names it. But a shape is forgeable: a caller
+    can write `{"admitted": True, "row": {...}}` by hand. So the LAST word is
+    always the durable store itself, re-read here through `inbox`: unless
+    `inbox_events` really holds a row for this very event that is inbound, not
+    excluded and not one of our own actors, the record is refused.
 
     `own_actor_ids` is already the authoritative set: `_own_actor_set` derives
     our own `ig_user_id` from the account record, so the caller cannot leave
@@ -933,6 +1049,25 @@ def _verified_inbound_interaction(*, tenant_id: str, account_id: str,
         raise refuse("the inbox excluded this event: %s" % row.get("decision_ref"))
     if row.get("actor_id") is not None and row.get("actor_id") in own:
         raise refuse("the inbox recorded our own actor")
+    # LAST WORD: the durable store, not the dict. Everything above judged the
+    # shape the caller handed over; this judges what `inbox_events` actually
+    # holds, so a hand-written admission cannot release a suppressed thread.
+    if inbox is None:
+        raise refuse("no durable inbox store was supplied to prove this event")
+    durable_row = _durable_inbox_row(inbox, event)
+    if durable_row is None:
+        raise refuse("the durable inbox holds no row for this event")
+    if (durable_row.get("provider_event_id") != provider_event_id
+            or durable_row.get("tenant_id") != tenant_id):
+        raise refuse("the durable inbox row belongs to another event")
+    if durable_row.get("direction") != DIRECTION_INBOUND:
+        raise refuse("the durable inbox recorded direction %r"
+                     % durable_row.get("direction"))
+    if str(durable_row.get("decision_ref") or "").startswith("excluded:"):
+        raise refuse("the durable inbox excluded this event: %s"
+                     % durable_row.get("decision_ref"))
+    if durable_row.get("actor_id") is not None and durable_row.get("actor_id") in own:
+        raise refuse("the durable inbox recorded our own actor")
     return event
 
 
@@ -1000,11 +1135,18 @@ class InstagramRouteStore:
                      lease_seconds: float = DEFAULT_OPENER_CLAIM_S) -> bool:
         """Atomically take this thread's ONE opener slot. True if we won it.
 
-        This is the mutual exclusion behind "no second opener". Eligibility
-        alone is read-then-act: four workers can each read "no opener" and all
-        four send. The claim is ONE conditional statement whose WHERE decides
-        the winner inside SQLite's write lock, so exactly one concurrent
-        worker can hold a thread at a time.
+        This is the mutual exclusion behind "one opener per thread", and its
+        guarantee has an exact bound. Eligibility alone is read-then-act: four
+        workers can each read "no opener" and all four send. The claim is ONE
+        conditional statement whose WHERE decides the winner inside SQLite's
+        write lock, so exactly one concurrent worker can hold a thread at a
+        time -- FOR AS LONG AS ITS LEASE LASTS (`lease_seconds`, 300 s by
+        default). A holder that stalls past `expires_at` is indistinguishable
+        from a crashed one, so a later worker may take the claim over and send
+        a second opener; that is the ceiling, and it is stated rather than
+        hidden. Making it an invariant needs a lease heartbeat across the
+        provider call, which is a change to the dispatch loop, not to this
+        claim.
 
         The claim is refused outright once an opener row exists, and it may
         only be taken over from a claim that was released or has expired (a
@@ -1065,15 +1207,19 @@ class InstagramRouteStore:
                                     account: InstagramAccount,
                                     event: Optional[InstagramEvent] = None,
                                     admission: Any = None,
-                                    own_actor_ids: Iterable[str] = (),
+                                    inbox: Any = None,
+                                    own_actor_ids: Any = (),
                                     now: Optional[float] = None) -> bool:
         """Record a VERIFIED inbound customer interaction for a thread.
 
         Proof is required, not caller convention: pass the customer's own
-        inbound `event` and the `admission` record admit_instagram_event()
-        returned for it. Anything else is refused and NEVER ends the
-        ignored-opener state. Deduped by provider event id, so the same
-        delivered event keeps one row and returns False from then on.
+        inbound `event`, the `admission` record admit_instagram_event()
+        returned for it, AND `inbox` -- the durable store that owns
+        `inbox_events`. The store is what proves it: its row for this event is
+        re-read here, and a dict handed over as `admission` is never enough on
+        its own. Anything else is refused and NEVER ends the ignored-opener
+        state. Deduped by provider event id, so the same delivered event keeps
+        one row and returns False from then on.
 
         `account` is REQUIRED: it is the authoritative ownership record, so
         our own actor can never be mistaken for a customer. `own_actor_ids`
@@ -1093,7 +1239,7 @@ class InstagramRouteStore:
         proven = _verified_inbound_interaction(
             tenant_id=tenant_id, account_id=account_id, thread_key=thread_key,
             provider_event_id=provider_event_id, event=event,
-            admission=admission, own_actor_ids=own_actor_ids)
+            admission=admission, inbox=inbox, own_actor_ids=own_actor_ids)
         ts = _ts(now)
         self._db.execute("BEGIN IMMEDIATE")
         try:
@@ -1147,6 +1293,8 @@ def make_gate_evaluator(
     filter_: Optional[InstagramCommentFilter] = None,
     capability: Optional[InstagramCapability] = None,
     consent_evaluator: Optional[Any] = None,
+    inbox: Any = None,
+    own_actor_ids: Any = (),
     now_fn: Any = None,
 ):
     """Build the outbound_gate evaluator for one Instagram action.
@@ -1154,6 +1302,10 @@ def make_gate_evaluator(
     The evaluator reads durable opener state on every call, so a customer
     reply or an ignored opener changes the answer without a restart. It never
     caches a verdict and never returns ALLOW by default.
+
+    `inbox` is the durable store that owns `inbox_events`; it is the only
+    thing that can prove an inbound customer DM, so a direct-message window
+    without it is closed.
 
     `consent_evaluator` is the upstream consent gate (`consent_gate.
     make_gate_evaluator`): the global STOP and the human-ownership fence
@@ -1193,7 +1345,8 @@ def make_gate_evaluator(
             account.tenant_id, account.account_id, thread_key)
         verdict = evaluate_eligibility(
             account=account, purpose=purpose, channel=channel, event=event,
-            filter_=filter_, capability=capability, opener=opener, now=ts)
+            filter_=filter_, capability=capability, opener=opener,
+            inbox=inbox, own_actor_ids=own_actor_ids, now=ts)
         return {
             "verdict": verdict.decision,
             "checked_at": ts,
@@ -1219,6 +1372,7 @@ def dispatch_instagram_action(
     filter_: Optional[InstagramCommentFilter] = None,
     capability: Optional[InstagramCapability] = None,
     consent_evaluator: Optional[Any] = None,
+    own_actor_ids: Any = (),
     context: Optional[Dict[str, Any]] = None,
     now: Optional[float] = None,
     lease_seconds: Optional[float] = None,
@@ -1234,14 +1388,25 @@ def dispatch_instagram_action(
     durable store BEFORE dispatch. Eligibility is read-then-act; four workers
     can each read "no opener" and all four send. The claim is one conditional
     write, so exactly one worker proceeds and the others send nothing. The
-    claim is released on every non-send path, so a blocked or failed attempt
-    neither wedges the thread nor creates opener state.
+    claim is held across the whole send and released on every non-send path,
+    so a blocked or failed attempt neither wedges the thread nor creates
+    opener state. The guarantee is bounded by the claim lease
+    (`opener_claim_seconds`, DEFAULT_OPENER_CLAIM_S = 300 s): a worker that
+    stalls inside the provider call past that lease may be taken over and a
+    second opener may then be sent. Holding the claim for the life of the
+    send is what the lease buys; an unconditional "never a second opener"
+    would need a lease heartbeat across the provider call.
+
+    `store` is also the eligibility proof for a direct-message window: the
+    evaluator re-reads `inbox_events` through it, so an event the durable
+    inbox never admitted cannot authorise a send here.
     """
     outbound_gate = _upstream("outbound_gate")
     evaluator = make_gate_evaluator(
         account=account, route_store=route_store, purpose=purpose,
         channel=channel, thread_key=thread_key, event=event, filter_=filter_,
-        capability=capability, consent_evaluator=consent_evaluator)
+        capability=capability, consent_evaluator=consent_evaluator,
+        inbox=store, own_actor_ids=own_actor_ids)
     kwargs: Dict[str, Any] = {
         "now": now,
         "context": dict(context or {}, channel=channel,
@@ -1437,7 +1602,7 @@ def _selfcheck() -> int:
     ok(route_store.record_customer_interaction(
         tenant_id="t1", account_id="ig-acct-1", thread_key="th1",
         provider_event_id="dm-1", account=account,
-        event=dm, admission=admission, now=40),
+        event=dm, admission=admission, inbox=inbox, now=40),
        "a verified interaction ends the ignored state")
     state = route_store.opener_state("t1", "ig-acct-1", "th1")
     ok(state.opener_sent and state.customer_responded,
@@ -1459,6 +1624,37 @@ def _selfcheck() -> int:
     ok(admit_instagram_event(inbox, ours, account=account)["reason"]
        == "excluded:own_actor",
        "our own ig_user_id is excluded without any caller-supplied list")
+
+    # ownership CLASS: a mapping's keys are never the own-actor set, and no
+    # non-collection leaks a raw TypeError out of this boundary.
+    for bad in (3, None, 1.5, {"customer-1": "x"}, [3], object()):
+        try:
+            admit_instagram_event(inbox, dm, account=account,
+                                  own_actor_ids=bad)
+            ok(False, "own_actor_ids %r refused as a domain error" % (bad,))
+        except InstagramRouteError:
+            ok(True, "own_actor_ids %r refused as a domain error" % (bad,))
+
+    # proof is the durable inbox ROW, never a dict the caller hands over.
+    ghost = normalise_event({
+        "provider": "instagram", "provider_event_id": "ghost-1", "tenant_id": "t1",
+        "account_id": "ig-acct-1", "kind": "DIRECT", "direction": "inbound",
+        "actor_id": "customer-1", "text": "hi", "thread_key": "th2",
+        "received_at": 74})
+    try:
+        route_store.record_customer_interaction(
+            tenant_id="t1", account_id="ig-acct-1", thread_key="th2",
+            provider_event_id="ghost-1", account=account,
+            event=ghost, admission={"admitted": True, "reason": "admitted",
+                                    "row": {"provider_event_id": "ghost-1",
+                                            "tenant_id": "t1",
+                                            "direction": "inbound",
+                                            "actor_id": "customer-1"}},
+            inbox=inbox, now=75)
+        ok(False, "a hand-written admission is not proof")
+    except InstagramRouteError as exc:
+        ok("the durable inbox holds no row for this event" in str(exc),
+           "a hand-written admission is not proof")
 
     # a malformed provider payload leaves as this adapter's own error.
     for bad in ({"received_at": "not-a-number"},

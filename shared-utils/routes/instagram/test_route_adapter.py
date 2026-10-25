@@ -25,8 +25,9 @@ included:
   IGNORED OPENER        once an opener is recorded, every follow-up DM is
                         suppressed until a VERIFIED inbound customer
                         interaction (an event the durable inbox admitted and
-                        did not exclude); there is no timer and no second
-                        opener; survives a restart.
+                        did not exclude); there is no timer, and no second
+                        opener within the opener claim's lease; survives a
+                        restart.
   NO FB PARITY          FB-only capability names, FB filters and FB events
                         cannot produce Instagram eligibility.
   STOP / OWNER GATE     the upstream consent gate (global stop, human
@@ -41,6 +42,8 @@ included:
 """
 
 import json
+import re
+import subprocess
 import sys
 import tempfile
 import threading
@@ -55,6 +58,7 @@ for p in (str(HERE), str(TOOLS_DIR)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+import route_adapter  # noqa: E402
 from route_adapter import (  # noqa: E402
     ALLOW,
     BASIS_CONSENT_RECORD,
@@ -67,6 +71,7 @@ from route_adapter import (  # noqa: E402
     CAP_DM_SEND,
     CHANNEL_IG_DM,
     CHANNEL_IG_PUBLIC,
+    DEFAULT_OPENER_CLAIM_S,
     EVENT_COMMENT,
     EVENT_DIRECT,
     FB_ONLY_CAPABILITIES,
@@ -155,6 +160,23 @@ def allow_consent(_ctx):
     """The upstream consent gate's own ALLOW answer for a clear contact."""
     return {"verdict": ALLOW, "evidence": {"consent": "clear"}}
 
+def admitted_inbox(case, event, account=None):
+    """A durable inbox that has REALLY admitted `event`, and the store itself.
+
+    The proof of an inbound customer DM is the inbox ROW, so a probe or test
+    that wants the window has to earn it the way production does: through
+    `admit_instagram_event` against a live `inbox_events`. It returns the
+    STORE (the thing the adapter re-reads), never the admission dict.
+    """
+    tmp = tempfile.TemporaryDirectory(prefix="ig-inbox-proof-")
+    case.addCleanup(tmp.cleanup)
+    store = DurableStore(str(Path(tmp.name) / "inbox.sqlite"))
+    case.addCleanup(store.close)
+    admission = admit_instagram_event(store, event,
+                                      account=account or make_account())
+    assert admission["admitted"] is True, admission
+    return store
+
 
 class _StoreCase(unittest.TestCase):
     def setUp(self):
@@ -200,8 +222,8 @@ class _StoreCase(unittest.TestCase):
             tenant_id="tenant-1", account_id="ig-acct-1",
             thread_key=thread_key, provider_event_id=provider_event_id,
             account=make_account(),
-            event=event, admission=admission, own_actor_ids=own_actor_ids,
-            now=now)
+            event=event, admission=admission, inbox=self.store,
+            own_actor_ids=own_actor_ids, now=now)
 
 
 class SeparateAccountTests(unittest.TestCase):
@@ -503,15 +525,17 @@ class SeparateEligibilityTests(unittest.TestCase):
             self.assertIn("granted", str(caught.exception), repr(bad))
 
     def test_a_bool_grant_is_still_accepted_both_ways(self):
+        dm = make_dm_event()
+        inbox = admitted_inbox(self, dm)
         granted = evaluate_eligibility(
             account=self.account, purpose=PURPOSE_AI_REPLY,
-            channel=CHANNEL_IG_DM, event=make_dm_event(),
+            channel=CHANNEL_IG_DM, event=dm, inbox=inbox,
             capability=InstagramCapability(CAP_DM_SEND, granted=True))
         self.assertTrue(granted.allowed)
         self.assertTrue(InstagramCapability(CAP_DM_SEND).granted is True)
         refused = evaluate_eligibility(
             account=self.account, purpose=PURPOSE_AI_REPLY,
-            channel=CHANNEL_IG_DM, event=make_dm_event(),
+            channel=CHANNEL_IG_DM, event=dm, inbox=inbox,
             capability=InstagramCapability(CAP_DM_SEND, granted=False))
         self.assertFalse(refused.allowed)
         self.assertEqual(refused.reason, R_CAPABILITY_NOT_GRANTED)
@@ -542,9 +566,10 @@ class SeparateEligibilityTests(unittest.TestCase):
         self.assertEqual(verdict.reason, R_NO_INBOUND_DM)
 
     def test_inbound_customer_dm_is_a_window(self):
+        dm = make_dm_event()
         verdict = evaluate_eligibility(
             account=self.account, purpose=PURPOSE_AI_REPLY,
-            channel=CHANNEL_IG_DM, event=make_dm_event(),
+            channel=CHANNEL_IG_DM, event=dm, inbox=admitted_inbox(self, dm),
             capability=InstagramCapability(CAP_DM_SEND))
         self.assertTrue(verdict.allowed)
         self.assertTrue(verdict.inbound_dm_window)
@@ -1078,13 +1103,13 @@ class CommentOpenerTraceTests(_StoreCase):
             tenant_id="tenant-1", account_id="ig-acct-1",
             thread_key=comment.thread_key, provider_event_id="dm-reply-1",
             account=account,
-            event=reply, admission=admission, now=4000.0))
+            event=reply, admission=admission, inbox=self.store, now=4000.0))
         retry_id = self.intent("trace-follow-2", purpose=PURPOSE_CAPTURE_REMINDER)
         sent = dispatch_instagram_action(
             self.store, account=account, route_store=self.routes,
             action_id=retry_id, worker_id="worker-1",
             purpose=PURPOSE_CAPTURE_REMINDER, channel=CHANNEL_IG_DM,
-            thread_key=comment.thread_key, event=make_dm_event(),
+            thread_key=comment.thread_key, event=reply,
             capability=InstagramCapability(CAP_DM_SEND),
             consent_evaluator=allow_consent,
             sender=send, now=5000.0)
@@ -1237,7 +1262,7 @@ class VerifiedInteractionGuardTests(_StoreCase):
 
 
 class OpenerConcurrencyTests(_StoreCase):
-    """Defect 2 (PBB-259): "no second opener" must hold when workers RUN AT ONCE.
+    """Defect 2 (PBB-259): one opener per thread must hold when workers RUN AT ONCE.
 
     The sequential path was already solid. Under concurrency eligibility is
     read-then-act: four workers each read "no opener" and all four sent. The
@@ -1454,9 +1479,10 @@ class EligibilityBasisTests(unittest.TestCase):
         self.assertEqual(verdict.refreshed_by, BASIS_PLATFORM_ELIGIBILITY)
 
     def test_a_dm_allow_reports_the_offered_basis(self):
+        dm = make_dm_event()
         verdict = evaluate_eligibility(
             account=make_account(), purpose=PURPOSE_AI_REPLY,
-            channel=CHANNEL_IG_DM, event=make_dm_event(),
+            channel=CHANNEL_IG_DM, event=dm, inbox=admitted_inbox(self, dm),
             capability=InstagramCapability(CAP_DM_SEND),
             basis=BASIS_CONSENT_RECORD)
         self.assertTrue(verdict.allowed)
@@ -1674,6 +1700,394 @@ class GuardCoverageTests(unittest.TestCase):
         # Inverse control: the factory guards refuse bad pairings, not good ones.
         self.assertTrue(callable(self.gate()))
 
+
+class DurableInboxProofTests(_StoreCase):
+    """PBB-386 NEW-D1 / NEW-D2: the inbox ROW is the proof, never a dict.
+
+    Both defects had one shape -- something the caller SAID stood in for
+    something the durable store HOLDS. NEW-D1 let an `InstagramEvent` object
+    authorise a direct send the inbox had never admitted; NEW-D2 let a
+    hand-written `admission` dict release the ignored opener. Both are closed
+    by the same rule, pinned here on both paths: the store is re-read, and a
+    caller's dict is never authoritative.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.account = make_account()
+        self.filter = make_filter()
+        self.comment = make_comment_event()
+
+    def inbox_rows(self):
+        return self.store.counts()["inbox"]
+
+    def send_ghost(self, event, *, thread="thread-ghost", store=None):
+        action_id = self.intent("ghost-" + event.provider_event_id,
+                                purpose=PURPOSE_AI_REPLY)
+        log = []
+        outcome = dispatch_instagram_action(
+            store or self.store, account=self.account, route_store=self.routes,
+            action_id=action_id, worker_id="worker-1", purpose=PURPOSE_AI_REPLY,
+            channel=CHANNEL_IG_DM, thread_key=thread, event=event,
+            capability=InstagramCapability(CAP_DM_SEND),
+            consent_evaluator=allow_consent, sender=self.sender(log), now=2000.0)
+        return outcome, log, action_id
+
+    def test_a_direct_send_is_not_authorised_by_an_event_the_inbox_never_admitted(self):
+        # NEW-D1. The durable store has never seen "ghost-dm-1".
+        ghost = make_dm_event(provider_event_id="ghost-dm-1",
+                              thread_key="thread-ghost")
+        self.assertEqual(self.inbox_rows(), 0)
+        outcome, log, action_id = self.send_ghost(ghost)
+        self.assertNotEqual(outcome.status, "sent")
+        self.assertEqual(log, [])
+        self.assertEqual(self.inbox_rows(), 0)
+        self.assertIn(self.store.get_action(action_id)["state"],
+                      ("suppressed", "queued"))
+
+    def test_the_same_object_on_the_record_path_is_still_refused(self):
+        # The identical object must not be proof at dispatch and not-proof at
+        # record: it is not proof anywhere.
+        ghost = make_dm_event(provider_event_id="ghost-dm-1",
+                              thread_key="thread-1")
+        self.routes.record_opener(tenant_id="tenant-1", account_id="ig-acct-1",
+                                  thread_key="thread-1",
+                                  opener_action_id="opener-1", now=10.0)
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.routes.record_customer_interaction(
+                tenant_id="tenant-1", account_id="ig-acct-1",
+                thread_key="thread-1", provider_event_id="ghost-dm-1",
+                account=self.account, event=ghost, admission=None,
+                inbox=self.store, now=30.0)
+        self.assertIn(R_UNVERIFIED_INTERACTION, str(caught.exception))
+        self.assertFalse(self.routes.opener_state(
+            "tenant-1", "ig-acct-1", "thread-1").customer_responded)
+
+    def test_an_admitted_dm_still_opens_the_window_and_sends(self):
+        # Inverse: the fix narrows what counts as evidence, not what sends.
+        reply = make_dm_event(provider_event_id="dm-window-1",
+                              thread_key="thread-ghost")
+        admission = admit_instagram_event(self.store, reply,
+                                          account=self.account)
+        self.assertTrue(admission["admitted"])
+        outcome, log, action_id = self.send_ghost(reply)
+        self.assertEqual(outcome.status, "sent")
+        self.assertEqual(log, [action_id])
+        self.assertEqual(self.inbox_rows(), 1)
+
+    def test_a_hand_written_admission_dict_never_releases_the_ignored_opener(self):
+        # NEW-D2. The dict is perfectly shaped and there is no row behind it.
+        self.routes.record_opener(tenant_id="tenant-1", account_id="ig-acct-1",
+                                  thread_key="thread-1",
+                                  opener_action_id="opener-1", now=10.0)
+        self.assertFalse(self.routes.opener_state(
+            "tenant-1", "ig-acct-1", "thread-1").customer_responded)
+        self.assertEqual(self.inbox_rows(), 0)
+        forged = {"admitted": True, "reason": "admitted", "row": {
+            "provider_event_id": "ghost-1", "tenant_id": "tenant-1",
+            "account_id": "ig-acct-1", "thread_key": "thread-1",
+            "direction": "inbound", "actor_id": "ghost-customer"}}
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.routes.record_customer_interaction(
+                tenant_id="tenant-1", account_id="ig-acct-1",
+                thread_key="thread-1", provider_event_id="ghost-1",
+                account=self.account,
+                event=make_dm_event(provider_event_id="ghost-1"),
+                admission=forged, inbox=self.store, now=20.0)
+        self.assertIn("the durable inbox holds no row for this event",
+                      str(caught.exception))
+        self.assertFalse(self.routes.opener_state(
+            "tenant-1", "ig-acct-1", "thread-1").customer_responded)
+
+    def test_no_store_means_no_proof_at_all(self):
+        # The record path cannot prove anything without the inbox to re-read,
+        # even when the caller's dict is perfectly shaped.
+        self.routes.record_opener(tenant_id="tenant-1", account_id="ig-acct-1",
+                                  thread_key="thread-1",
+                                  opener_action_id="opener-1", now=10.0)
+        shaped = {"admitted": True, "reason": "admitted", "row": {
+            "provider_event_id": "dm-nostore-1", "tenant_id": "tenant-1",
+            "account_id": "ig-acct-1", "thread_key": "thread-1",
+            "direction": "inbound", "actor_id": "customer-1"}}
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.routes.record_customer_interaction(
+                tenant_id="tenant-1", account_id="ig-acct-1",
+                thread_key="thread-1", provider_event_id="dm-nostore-1",
+                account=self.account,
+                event=make_dm_event(provider_event_id="dm-nostore-1"),
+                admission=shaped, now=30.0)
+        self.assertIn("no durable inbox store was supplied",
+                      str(caught.exception))
+        self.assertFalse(self.routes.opener_state(
+            "tenant-1", "ig-acct-1", "thread-1").customer_responded)
+
+    def test_a_real_admitted_row_still_releases_the_opener(self):
+        # Inverse: proof earns un-suppression, and only proof does.
+        self.routes.record_opener(tenant_id="tenant-1", account_id="ig-acct-1",
+                                  thread_key="thread-1",
+                                  opener_action_id="opener-1", now=10.0)
+        self.assertTrue(self.record_dm("dm-proof-1", now=20.0))
+        self.assertTrue(self.routes.opener_state(
+            "tenant-1", "ig-acct-1", "thread-1").customer_responded)
+
+    def test_an_event_the_inbox_excluded_is_not_a_window_either(self):
+        # The store is consulted for eligibility too, so an excluded row never
+        # opens the DM window on the dispatch path.
+        own = make_dm_event(provider_event_id="dm-own-window",
+                            thread_key="thread-ghost", actor_id="ourselves")
+        admission = admit_instagram_event(self.store, own,
+                                          account=self.account,
+                                          own_actor_ids=("ourselves",))
+        self.assertEqual(admission["reason"], "excluded:own_actor")
+        outcome, log, action_id = self.send_ghost(own)
+        self.assertNotEqual(outcome.status, "sent")
+        self.assertEqual(log, [])
+
+class OwnActorInputClassTests(_StoreCase):
+    """PBB-386 OWNERSHIP-CLASS: the whole input class, not the cited examples.
+
+    `_extra_own_actor_ids` refused only a bare string and then iterated
+    whatever else arrived, so `3`, `None`, `1.5` and `object()` each escaped
+    as a raw `TypeError`, and a DICT's KEYS became the own-actor set -- which
+    excluded a real customer as one of us. Each shape below is handed to the
+    boundary and judged on the ERROR CLASS, so a future narrower patch that
+    closes only the named examples still fails here.
+    """
+
+    BAD_VALUES = (("int", 3), ("NoneType", None), ("float", 1.5),
+                  ("dict", {"customer-7": "x"}), ("set-of-int", {3}),
+                  ("list-of-int", [3]), ("object", object()),
+                  ("bool", True), ("generator", (i for i in (1,))))
+
+    def test_every_non_collection_refuses_as_the_domain_error(self):
+        for label, value in self.BAD_VALUES:
+            with self.subTest(value=label):
+                with self.assertRaises(InstagramRouteError) as caught:
+                    admit_instagram_event(
+                        self.store,
+                        make_dm_event(provider_event_id="own-" + label),
+                        account=make_account(), own_actor_ids=value)
+                self.assertIn("own_actor_ids", str(caught.exception))
+                self.assertIn("bad_input", str(caught.exception))
+
+    def test_the_record_path_refuses_the_same_shapes_the_same_way(self):
+        for label, value in self.BAD_VALUES:
+            with self.subTest(value=label):
+                with self.assertRaises(InstagramRouteError) as caught:
+                    self.routes.record_customer_interaction(
+                        tenant_id="tenant-1", account_id="ig-acct-1",
+                        thread_key="thread-1", provider_event_id="rec-" + label,
+                        account=make_account(), admission=None,
+                        own_actor_ids=value, now=20.0)
+                self.assertIn("own_actor_ids", str(caught.exception))
+
+    def test_a_dict_never_makes_a_real_customer_look_like_our_own_actor(self):
+        # The named hole: a dict's KEYS were read as the own-actor set, so a
+        # real customer was excluded as one of us. Now the dict cannot enter.
+        with self.assertRaises(InstagramRouteError) as caught:
+            admit_instagram_event(
+                self.store,
+                make_dm_event(provider_event_id="own-dictkeys",
+                              actor_id="customer-7"),
+                account=make_account(), own_actor_ids={"customer-7": "x"})
+        self.assertIn("own_actor_ids", str(caught.exception))
+        # And a customer is never excluded as our own actor on any accepted
+        # shape either: the exclusion set is the account's own id plus extras.
+        result = admit_instagram_event(
+            self.store,
+            make_dm_event(provider_event_id="own-customer-7",
+                          actor_id="customer-7"),
+            account=make_account(), own_actor_ids=["someone-else"])
+        self.assertEqual(result["reason"], "admitted")
+        self.assertIsNone(result["row"]["decision_ref"])
+
+    def test_the_accepted_shapes_still_add_ids(self):
+        account = make_account()
+        for label, value in (("list", ["someone-else"]),
+                             ("tuple", ("someone-else",)),
+                             ("set", {"someone-else"}),
+                             ("frozenset", frozenset({"someone-else"}))):
+            with self.subTest(value=label):
+                result = admit_instagram_event(
+                    self.store,
+                    make_dm_event(provider_event_id="own-ok-" + label),
+                    account=account, own_actor_ids=value)
+                self.assertEqual(result["reason"], "admitted", label)
+
+    def test_a_member_that_is_not_an_id_is_refused_not_coerced(self):
+        # str(3) would invent the actor id "3"; that is not a fix.
+        for label, member in (("int-member", 3), ("none-member", None),
+                              ("empty-string", ""), ("blank-string", "  ")):
+            with self.subTest(member=label):
+                with self.assertRaises(InstagramRouteError) as caught:
+                    admit_instagram_event(
+                        self.store,
+                        make_dm_event(provider_event_id="own-m-" + label),
+                        account=make_account(), own_actor_ids=[member])
+                self.assertIn("bad_input", str(caught.exception))
+
+    def test_our_own_authoritative_id_is_still_always_excluded(self):
+        account = make_account()
+        result = admit_instagram_event(
+            self.store,
+            make_dm_event(provider_event_id="own-authoritative",
+                          actor_id=account.ig_user_id),
+            account=account)
+        self.assertEqual(result["reason"], "excluded:own_actor")
+
+class VersionBookkeepingTests(unittest.TestCase):
+    """PBB-386 VERSION: the shipped marker is strictly above main and unique.
+
+    The marker is compared remote-against-local by `check-updates.sh`, so a
+    version at or below `origin/main`'s reads as "not newer" on every deployed
+    box -- that is exactly the regression the PBB-364 review found (this
+    branch shipped `v2.0.38` while `main` was at `v2.0.95`). These read
+    `origin/main` itself and skip only when the checkout has no remote,
+    exactly as the repo's own `BookkeepingTests` does.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.git_ok = False
+        try:
+            probe = subprocess.run(
+                ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify",
+                 "origin/main"], stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True)
+        except OSError:
+            return
+        cls.git_ok = probe.returncode == 0
+
+    def git(self, *argv):
+        return subprocess.run(["git", "-C", str(REPO_ROOT)] + list(argv),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True)
+
+    @staticmethod
+    def marker():
+        return (TOOLS_DIR.parent / "skill-version.txt").read_text(
+            encoding="utf-8").strip()
+
+    @staticmethod
+    def number(text):
+        return tuple(int(p) for p in text.lstrip("v").split("."))
+
+    def test_the_shipped_version_is_strictly_above_main_s(self):
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        main = self.git("show",
+                        "origin/main:38-conversational-ai-system/"
+                        "skill-version.txt").stdout.strip()
+        self.assertGreater(self.number(self.marker()), self.number(main),
+                           "the shipped version must never be at or below main's")
+
+    def test_the_shipped_version_is_not_already_on_main(self):
+        # Bracketed token form: a bare number false-matches the presentations
+        # skill's v22.0.3x..v22.0.8x as a substring.
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        token = self.marker().lstrip("v")
+        for form in ("[%s]" % token, "v%s" % token):
+            with self.subTest(form=form):
+                found = self.git("grep", "--fixed-strings", form, "origin/main")
+                self.assertEqual(found.stdout.strip(), "",
+                                 "%s is already on origin/main" % form)
+
+class OpenerClaimBoundTests(_StoreCase):
+    """PBB-386 LEASE CEILING: the claim's bound is stated and it is real.
+
+    A 1 s lease and a 2 s stall lets a second worker take the thread over and
+    send a second opener. That is correct crash recovery, so the guarantee is
+    a bounded one: one opener per thread FOR THE LIFE OF THE OPENER CLAIM.
+    The tests below pin BOTH halves -- that the bound is held while the lease
+    is alive, and that the sentence making the claim names the bound rather
+    than asserting an absolute its own probe falsifies.
+    """
+
+    def test_the_default_claim_lease_is_the_documented_bound(self):
+        self.assertEqual(DEFAULT_OPENER_CLAIM_S, 300.0)
+
+    def test_the_no_second_opener_sentence_carries_its_bound(self):
+        # A content assertion on our own module: an unqualified absolute is
+        # falsified by the probe, so it must not be re-introduced.
+        source = Path(route_adapter.__file__).read_text(encoding="utf-8")
+        unqualified = [raw.strip() for raw in source.splitlines()
+                       if "no second opener" in raw
+                       and not re.search(r"(?i)\bleas(e|es|ed|ing)\b|"
+                                         r"claim window|"
+                                         r"for the life of the .{0,12}claim",
+                                         raw)]
+        self.assertEqual(unqualified, [])
+        self.assertRegex(source, r"(?i)for the life of the .{0,12}claim")
+        self.assertIn("DEFAULT_OPENER_CLAIM_S", source)
+
+    def test_a_live_holder_inside_the_send_is_never_taken_over(self):
+        # The bound is real, not decorative: while the lease is alive a second
+        # worker is refused and calls the sender ZERO times.
+        account = make_account()
+        comment = make_comment_event()
+        filter_ = make_filter()
+        a_id = self.intent("bound-a", purpose=PURPOSE_COMMENT_PRIVATE_OPENER)
+        b_id = self.intent("bound-b", purpose=PURPOSE_COMMENT_PRIVATE_OPENER)
+        in_send = threading.Event()
+        release = threading.Event()
+        log = []
+        lock = threading.Lock()
+
+        def send_a(ctx):
+            with lock:
+                log.append(ctx["action_id"])
+            in_send.set()
+            release.wait(10.0)
+            return {"provider": "instagram", "provider_receipt_id": "rcpt-a"}
+
+        def run_a():
+            store = DurableStore(self.db)
+            routes = InstagramRouteStore(self.db)
+            try:
+                return dispatch_instagram_action(
+                    store, account=account, route_store=routes, action_id=a_id,
+                    worker_id="worker-a",
+                    purpose=PURPOSE_COMMENT_PRIVATE_OPENER, channel=CHANNEL_IG_DM,
+                    thread_key="thread-bound", event=comment, filter_=filter_,
+                    capability=InstagramCapability(CAP_COMMENT_PRIVATE_OPENER),
+                    consent_evaluator=allow_consent, sender=send_a, now=1000.0)
+            finally:
+                routes.close()
+                store.close()
+
+        thread = threading.Thread(target=run_a)
+        thread.start()
+        self.assertTrue(in_send.wait(10.0))
+        try:
+            outcome_b = dispatch_instagram_action(
+                self.store, account=account, route_store=self.routes,
+                action_id=b_id, worker_id="worker-b",
+                purpose=PURPOSE_COMMENT_PRIVATE_OPENER, channel=CHANNEL_IG_DM,
+                thread_key="thread-bound", event=comment, filter_=filter_,
+                capability=InstagramCapability(CAP_COMMENT_PRIVATE_OPENER),
+                consent_evaluator=allow_consent,
+                sender=self.sender(log), now=1000.5)
+        finally:
+            release.set()
+            thread.join(10.0)
+        self.assertEqual(outcome_b.status, "refused_race_loss")
+        self.assertEqual(log, [a_id])
+
+    def test_a_holder_that_stalls_past_its_lease_may_be_taken_over(self):
+        # The documented ceiling, pinned so nobody re-asserts the absolute.
+        self.assertTrue(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1", thread_key="thread-1",
+            claim_token="tok-dead", action_id="act-1", now=10.0,
+            lease_seconds=1.0))
+        self.assertFalse(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1", thread_key="thread-1",
+            claim_token="tok-live", action_id="act-2", now=10.5,
+            lease_seconds=1.0))
+        self.assertTrue(self.routes.claim_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1", thread_key="thread-1",
+            claim_token="tok-live", action_id="act-2", now=12.0,
+            lease_seconds=1.0))
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
