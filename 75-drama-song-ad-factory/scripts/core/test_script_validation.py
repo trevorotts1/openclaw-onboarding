@@ -818,6 +818,38 @@ def test_label_runs_refused_and_short_prose_accepted():
     assert ok is True, codes
 
 
+def test_run_together_stub_spellings_refused_in_every_container():
+    """The five short compact stubs are refused wherever they are written.
+
+    "goeshere" is the phrase "goes here" written as one word. The compact match
+    used to keep only forms of nine letters or more, so these five eight-letter
+    spellings were admitted while "wordshere" (nine) was refused. The match is
+    now over whole tokens at any length, so a length cut cannot decide these.
+    """
+    containers = (
+        lambda stub: {"claims": stub},
+        lambda stub: {"claims": {"inner": [stub]}},
+        lambda stub: {"references": [[stub]]},
+        lambda stub: {"approval_bindings": [[{"text": stub}]]},
+        lambda stub: {"claims": {"line": stub}},
+    )
+    for spelled in ("goeshere", "copyhere", "addlater", "texthere", "linehere"):
+        assert V._is_placeholder_text(spelled) is True, spelled
+        for make in containers:
+            scene = _good_scene()
+            scene.update(make(spelled))
+            script = _single_scene_script(scene)
+            verdict = V.validate_script(script, world=WORLD, cast_manifest=CAST)
+            assert verdict["ok"] is False, (spelled, make)
+            assert "PLACEHOLDER_SCENE" in _codes(verdict), (spelled, _codes(verdict))
+            try:
+                V.assert_new_generation(script, world=WORLD, cast_manifest=CAST)
+            except C.ContractError:
+                pass
+            else:
+                raise AssertionError("assert_new_generation accepted %r" % (spelled,))
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failures = 0

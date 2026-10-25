@@ -364,23 +364,45 @@ clear final added inserted replaced filled drafted revised edited defined
 resolved set
 """.split())
 
-# The same phrases with their spaces removed, so a letter-spaced spelling
-# cannot evade them. Every compact form is kept: the old length cut dropped
-# "to be filled" (compacts to ten characters), and that cut is exactly what let
-# a letter-spaced "t o b e f i l l e d i n l a t e r" through. ponytail:
-# _STUB_PHRASES_COMPACT_MIN is the shortest compact form matched inside
-# ordinary running text; lower it only with reviewer evidence of a real
-# sentence whose letters carry a shorter stub compactly. A value spelled letter
-# by letter is matched against every compact form whatever its length -- see
-# _letter_spaced -- because there are no real words for a short form to hide in.
-_STUB_PHRASES_COMPACT_MIN = 9
+# The same phrases with their spaces removed, so a run-together spelling
+# ("goeshere") or a letter-spaced one ("t o b e f i l l e d i n l a t e r")
+# cannot evade them. There is no length cut: a phrase is matched at whatever
+# number of letters it happens to carry, because the old cut at nine letters is
+# exactly what admitted "goeshere" (eight) while refusing "wordshere" (nine).
+#
+# The run-together match is taken over WHOLE TOKENS, never over a substring of
+# the value: a compact form counts only where it is the exact letters of one
+# token or of consecutive whole tokens. That is what keeps real prose out --
+# "context here" joins to "contexthere", which is not "texthere", and
+# "deadline here" joins to "deadlinehere", which is not "linehere".
+_STUB_PHRASES_RUN_TOGETHER = frozenset(
+    "".join(phrase.split()) for phrase in _STUB_PHRASES)
 
-_STUB_PHRASES_COMPACT = tuple(
-    compact for compact in ("".join(phrase.split()) for phrase in _STUB_PHRASES)
-    if len(compact) >= _STUB_PHRASES_COMPACT_MIN
-)
+# The longest compact form in the list. It only stops the search once a run has
+# more letters than any stub could have; it is a property of the phrase table,
+# not a decision about length. Every run that could reach a compact is probed,
+# because a run spelling a compact carries exactly that compact's letters.
+_STUB_PHRASES_MAX_COMPACT_LEN = max(len(compact) for compact in _STUB_PHRASES_RUN_TOGETHER)
 
-_STUB_PHRASES_COMPACT_ANY = tuple("".join(phrase.split()) for phrase in _STUB_PHRASES)
+
+def _stub_written_together(tokens):
+    """True when whole tokens spell a stub phrase with no spaces between them.
+
+    "goeshere" is the phrase "goes here" written as one word, so it is refused
+    whatever its letter count: nothing here compares a length floor. The run is
+    taken over whole tokens only, so letters inside an ordinary word never
+    count.
+    """
+    longest = _STUB_PHRASES_MAX_COMPACT_LEN
+    for start in range(len(tokens)):
+        joined = ""
+        for token in tokens[start:]:
+            joined += token
+            if len(joined) > longest:
+                break
+            if joined in _STUB_PHRASES_RUN_TOGETHER:
+                return True
+    return False
 
 
 def _letter_spaced(value):
@@ -619,10 +641,12 @@ def _is_placeholder_text(value):
         return True
     if letters in _PLACEHOLDER_TOKENS:
         return True
-    if (any(phrase in folded for phrase in _STUB_PHRASES)
-            or any(phrase in letters for phrase in
-                   (_STUB_PHRASES_COMPACT_ANY if _letter_spaced(value)
-                    else _STUB_PHRASES_COMPACT))):
+    if any(phrase in folded for phrase in _STUB_PHRASES):
+        return True
+    if _stub_written_together(tokens):
+        return True
+    if _letter_spaced(value) and any(
+            compact in letters for compact in _STUB_PHRASES_RUN_TOGETHER):
         return True
     # A sentence ABOUT the missing writing is the same unfilled slot:
     # "The remaining speech is on the way.", "This passage is pending

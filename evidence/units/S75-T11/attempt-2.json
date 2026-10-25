@@ -1,0 +1,40 @@
+{
+  "unit": "S75-T11",
+  "acceptance_row": "S75-A11",
+  "round": 7,
+  "role": "REPAIR AUTHOR",
+  "branch": "s75/S75-T11-r7",
+  "base_sha": "9a795db21a9ab7cb2efd67081d7743f28612e464",
+  "base_note": "origin/s75/S75-T11-r6 head, the tree the round-6 verifier graded. Not main, not 006fc4260 (that tree carries no script_validation.py).",
+  "lease": [
+    "75-drama-song-ad-factory/scripts/core/script_validation.py",
+    "75-drama-song-ad-factory/scripts/core/test_script_validation.py"
+  ],
+  "head_sha": "PENDING_AT_WRITE_TIME",
+  "head_sha_note": "Amended after the code commit is pushed, to carry the resolved 40-hex sha of the code/test commit this file describes. A file cannot contain the sha of the commit that carries it; the metadata amend that carries this value is a later commit on the same branch and its sha is reported in the round report.",
+  "written_at": "2026-10-25T17:17:27Z",
+  "base_measurements_taken_before_this_write": {
+    "tests": "54 passed, 54 'def test' definitions, 0 skipped/xfailed",
+    "instrument": "good scene _good_scene() -> ok=True codes=[] (instrument discriminates)",
+    "five_run_together_spellings": "all 5 ADMITTED at base (goeshere/copyhere/addlater/texthere/linehere: ok=True, no placeholder code, assert_new_generation does not raise) in all 5 containers = 25/25 cells admitted",
+    "container_controls": "same 5 containers with a legitimate sentence -> ok=True codes=[] (so the cells are not failing for an unrelated reason)",
+    "plain_spellings": "all 5 plain forms (goes here, copy here, add later, text here, line here) REFUSED at base",
+    "every_compact_probe": "76 stub-phrase compacts probed; 71 refused, 5 admitted -- exactly the five 8-letter compacts",
+    "three_overfires": "all 3 refuse at base (_is_placeholder_text=True; PLACEHOLDER_CLAIM + PLACEHOLDER_SCENE) -- pre-existing, not introduced here",
+    "ten_round6_vectors": "10/10 refuse at base (R6-R01..R6-R10)",
+    "legacy_half": "LEGACY -> ok=True compatibility_limited=True regenerate=False scene_count=2 unresolved=19 input unmutated; NEW -> LEGACY_NOT_NEW_AUTHORING",
+    "false_positive_battery": "26 sentences measured; 15 accepted, 11 refused at base -- the 11 refusals are the pre-existing substring match of the spaced phrases ('conTEXT HERE', 'deadLINE HERE'), not this round's rule"
+  },
+  "plan": [
+    "Measure base first (done above): whole test_script_validation.py counts and 'def test' counts, the five run-together spellings in five containers, the five plain forms, all 76 compacts, the three named over-fires, the ten round-6 closed vectors and the legacy clause-2 fixture, so the instrument is proved not stuck before it is trusted.",
+    "Fix the mechanism, not the cut. The run-together spellings are dropped because the compact match keeps only compacts of nine or more letters, and the any-length list is reachable only through _letter_spaced, which a one-word value never satisfies. Replace the length-gated compact match with a whole-word-run match over the stub phrases' space-free letters at any length: one token that spells a phrase with no spaces, or consecutive whole tokens that do, is refused. The match is over whole tokens only, never a substring, so 'context here' does not read as 'text here'.",
+    "State the enforced predicate in one sentence, show it carries no length floor, and name every length constant that survives with why it cannot decide these five and what input would defeat it.",
+    "False-positive control of my own design, named verbatim: 26 legitimate sentences carrying stub-adjacent letter sequences inside ordinary words or as ordinary words, plus tests/fixtures/rich_causal_script.json with world and cast, measured for ok=True codes=[]. Report exact accepted/refused counts, name every refusal, and prove every refusal is pre-existing by re-measuring the same sentence at base.",
+    "Re-measure the three round-6 over-fires at head and state plainly whether they still refuse. Do not touch the slot-plus-deferral rule: loosening it would open the refusal side, so the over-fires are left standing and declared, not claimed fixed.",
+    "Zero regression on the ten round-6 closed vectors (R6-R01..R6-R10), re-measured at base and at head.",
+    "Clause 2 untouched and its fixture unedited: LEGACY -> ok=True compatibility_limited=True regenerate=False scene_count=2 unresolved=19 with input unmutated; the same record under origin=NEW must refuse LEGACY_NOT_NEW_AUTHORING.",
+    "Add one regression test to test_script_validation.py that asserts the refusal of all five run-together spellings in all five containers and would fail if any were admitted again.",
+    "Work in an isolated clone under scratch; never checkout, stash, reset, clean or commit in /Users/blackceomacmini/openclaw-onboarding; push only branch s75/S75-T11-r7; no main, no merge, no pull request.",
+    "Prove the push from origin: git ls-remote naming the branch at the pushed head, the push output, the sole parent of the head equal to the base, and merge-base --is-ancestor rc values reported separately (0 ancestor, 1 not ancestor, 128 unusable)."
+  ]
+}
