@@ -922,6 +922,15 @@ def _statement_defects(value, field, min_words, *, shape=SHAPE_CLAUSE):
         if not short_spec and not (glue or anchor):
             return [_defect("KEYWORD_ONLY_CLAIM", field,
                             "keyword list, not a written value: no clause glue, no anchor")]
+        # One glue WORD repeated is not grammar, it is a separator. "the gauge
+        # the drive the shutter the lamp the clamp" carries five articles and
+        # no verb: it is five labels stacked, and the articles are what the
+        # writer typed between them. Real writing binds with more than one
+        # word ("the empty ledger and his direct question"), or with a verb.
+        if len(glue) >= 3 and len(set(glue)) == 1 and not predicate:
+            return [_defect("KEYWORD_ONLY_CLAIM", field,
+                            "label run, not a written value: %d labels stacked behind "
+                            "one repeated word, with nothing said" % len(tokens))]
         # A performed line is held to what it says, not to how many articles it
         # carries: "Seal the manifest tonight." and "Bring your own ledger if
         # you think mine is wrong." are speech.
