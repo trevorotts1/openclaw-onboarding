@@ -112,6 +112,19 @@ def handoff_route(intake):
         return {"error": str(exc)}
     handoff = kind.get("handoff") if isinstance(kind.get("handoff"), dict) else {}
     action = kind.get("action")
+    if action not in (FORM_ROUTE, CHECKOUT_ROUTE):
+        return {"error": f"page kind {intake['page_kind']!r} declares action "
+                         f"{action!r}; this check serves exactly the form "
+                         f"({FORM_ROUTE!r}) and checkout ({CHECKOUT_ROUTE!r}) "
+                         f"routes (references/page-kinds.json)"}
+    expect_type = EXTERNAL_LINK if action == CHECKOUT_ROUTE else BEHAVIOR
+    if handoff.get("primary_handoff_type") != expect_type:
+        return {"error": f"page kind {intake['page_kind']!r} declares "
+                         f"handoff.primary_handoff_type "
+                         f"{handoff.get('primary_handoff_type')!r}; its action "
+                         f"{action!r} requires {expect_type!r}: the required "
+                         f"handoff is declared in references/page-kinds.json, "
+                         f"never assumed"}
     if action == CHECKOUT_ROUTE:
         requirement = ("a sales page's primary CTA is the client's checkout "
                        "page or payment link (external_link), never the form pop")
@@ -119,7 +132,7 @@ def handoff_route(intake):
         requirement = ("the primary CTA's handoff is the form pop (form_pop)")
     return {"kind": page_kinds.normalize(intake["page_kind"]),
             "action": action,
-            "primary_handoff_type": handoff.get("primary_handoff_type"),
+            "primary_handoff_type": expect_type,
             "behavior": handoff.get("behavior"),
             "step_order": handoff.get("step_order"),
             "requirement": requirement}
@@ -209,10 +222,11 @@ def validate(run_dir):
             return failures
         if failures:
             return failures
+        missing_what = "checkout destination" if checkout else "form identity"
         print(f"PASS: funnel handoff carried under the recorded missing "
-              f"input ({handoff.get('missing') or 'handoff destination'} "
-              f"missing: {reason.strip()}); a placeholder primary CTA on this "
-              f"page is carried under that flag, never silently")
+              f"input ({missing_what} missing: {reason.strip()}); a "
+              f"placeholder primary CTA on this page is carried under that "
+              f"flag, never silently")
         return []
 
     form = handoff.get("form")
@@ -226,7 +240,7 @@ def validate(run_dir):
         return failures
     form_name = form.get("name") if isinstance(form, dict) else None
     form_id = form.get("form_id") if isinstance(form, dict) else None
-    expect = route.get("primary_handoff_type") or BEHAVIOR
+    expect = route["primary_handoff_type"]
 
     manifest = load_json(run_dir / "copy" / "copy-manifest.json")
     if not isinstance(manifest, dict):

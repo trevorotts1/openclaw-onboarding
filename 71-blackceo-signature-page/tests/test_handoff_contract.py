@@ -13,6 +13,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 PY = sys.executable
@@ -28,6 +29,10 @@ def load_module(name, path):
 
 VCS = load_module("validate_copy_structure",
                   ROOT / "scripts" / "validate_copy_structure.py")
+
+sys.path.insert(0, str(ROOT / "scripts"))  # validate_handoff imports page_kinds
+VH = load_module("validate_handoff", VALIDATE_HANDOFF)
+sys.path.pop(0)
 
 # The handoff typing rule is spec-independent; the minimal spec keeps every
 # other validate() leg inert (no sections, no sequence, no CTA map rules).
@@ -383,6 +388,62 @@ class ValidateHandoffTest(unittest.TestCase):
         proc = self.validate(run)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("bogus", proc.stdout)
+
+    def test_every_recorded_checkout_destination_shape_is_compared(self):
+        # funnel_handoff.checkout_url, funnel_handoff.checkout.url and
+        # intake.json checkout_url: whichever is recorded, the page must
+        # lead there.
+        records = [{"checkout_url": "https://pay.example.com/other"},
+                   {"checkout": {"url": "https://pay.example.com/other"}}]
+        for record in records:
+            with self.subTest(record=record):
+                run = make_page_run(self.td, record, page=SALES_PAGE,
+                                    manifest_ctas=sales_ctas(),
+                                    page_kind="sales")
+                proc = self.validate(run)
+                self.assertEqual(proc.returncode, 1, proc.stdout)
+                self.assertIn("not the checkout destination recorded at "
+                              "intake", proc.stdout)
+        run = make_page_run(self.td, {}, page=SALES_PAGE,
+                            manifest_ctas=sales_ctas(), page_kind="sales")
+        intake = json.loads((run / "intake.json").read_text())
+        intake["checkout_url"] = "https://pay.example.com/other"
+        write(run / "intake.json", intake)
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 1, proc.stdout)
+        self.assertIn("not the checkout destination recorded at intake",
+                      proc.stdout)
+
+    def test_sales_page_without_a_recorded_destination_passes_printed(self):
+        # Deliberate while scripts/write_intake.py has no checkout flag:
+        # with nothing on record the page's own absolute link is accepted
+        # and the absence is printed, never silent.
+        run = make_page_run(self.td, {}, page=SALES_PAGE,
+                            manifest_ctas=sales_ctas(), page_kind="sales")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertIn("no destination recorded at intake", proc.stdout)
+
+
+class HandoffRouteTest(unittest.TestCase):
+    """The route a kind requires is declared in references/page-kinds.json,
+    never assumed by the validator."""
+
+    def route(self, entry):
+        with mock.patch.object(VH.page_kinds, "entry", return_value=entry):
+            return VH.handoff_route({"page_kind": "sales"})
+
+    def test_an_undeclared_action_fails_by_name(self):
+        route = self.route({"action": "booking"})
+        self.assertIn("error", route)
+        self.assertIn("booking", route["error"])
+
+    def test_a_handoff_type_contradicting_the_action_fails(self):
+        route = self.route({"action": "checkout",
+                            "handoff": {"primary_handoff_type": "form_pop"}})
+        self.assertIn("error", route)
+        self.assertIn("form_pop", route["error"])
+        self.assertIn("error", self.route({"action": "checkout"}))
 
 
 if __name__ == "__main__":
