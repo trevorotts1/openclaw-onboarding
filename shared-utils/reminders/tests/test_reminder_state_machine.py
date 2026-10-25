@@ -5,8 +5,11 @@ Acceptance (build.json T-17): "Initial invite separate, three total, no reset,
 pause/window/STOP race, reserved final action and actual terminal stop."
 Criteria C-17 / C-F02 / C-F05 / C-F06 / C-F19.
 
-Run from the repo root:
-    python3 -m unittest discover -s shared-utils/reminders/tests -v
+Run from the repo root (explicit -t/-p; the bare `discover -s` form is
+version-dependent and fails on some interpreters with "Start directory is
+not importable", so the CI workflow and this docstring both use this):
+    python3 -m unittest discover -s shared-utils/reminders/tests \
+        -t shared-utils/reminders/tests -p 'test_*.py' -v
 or directly:
     python3 shared-utils/reminders/tests/test_reminder_state_machine.py
 

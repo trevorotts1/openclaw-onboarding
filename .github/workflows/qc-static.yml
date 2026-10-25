@@ -853,6 +853,28 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-playbook-engine.sh
           echo "✓ Skill 38 playbook_engine.py (U-16) unit tests are green"
 
+      - name: T-17 shared reminder slots + reserved final action (state machine suite)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # DATA-CONTRACTS 8 reminder/final-action state machine (shared-utils/reminders).
+          # This runs BOTH suites by explicit name: the T-17 behavioural suite
+          # (test_reminder_state_machine.py, 51 cases) and the wiring proof
+          # (test_reminder_wiring.py) that FAILS if the production call site in
+          # shared-utils/nudge-incomplete-interviews.py is unwired. The wiring
+          # test is what keeps reminder_state_machine.py reachable from production
+          # code, so a wiring removal is a red here, not a silent drift.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t1="shared-utils/reminders/tests/test_reminder_state_machine.py"
+          t2="shared-utils/reminders/tests/test_reminder_wiring.py"
+          if [ ! -f "$t1" ] || [ ! -f "$t2" ]; then
+            echo "✗ T-17 reminders suite is absent from this checkout: $t1 and/or $t2 missing. A MISSING suite is a red, not a skip."
+            exit 1
+          fi
+          python3 -m unittest discover -s shared-utils/reminders/tests -t shared-utils/reminders/tests -p 'test_*.py' -v
+          echo "✓ T-17 shared reminder slots (51 behavioural + 3 wiring) unit tests are green"
+
       - name: Skill 38 Per-phase tool gating (U-1)
         shell: bash
         run: |
