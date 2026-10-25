@@ -360,14 +360,34 @@ def test_access_resolution() -> None:
     say(plan["access"]["prerequisites"] == ["community-access"],
         "entitlement prerequisites are resolved, not assumed")
 
+    # No delivery, destination still on file: the builder must not owe access,
+    # the units must carry none, and the validator + check() must both agree.
     no_delivery = _answers(**{"launch.access_delivery": "No, nothing to deliver"})
     plan = launch_plan.build_launch_plan(_launch(), no_delivery)["plan"]
     say(plan["access"]["deliver_access"] is False,
         "the access-delivery choice is respected (no delivery)")
+    _contract(plan, "no delivery, destination present")
+    errors = launch_plan.check(plan)
+    say(errors == [], "no delivery with a destination on file passes check()"
+        + ("" if not errors else f" — {errors}"))
     welcome = [u for u in plan["email_sequences"] if u["id"] == "email_welcome_access"]
     say(welcome and welcome[0]["access_destination"] is None
         and welcome[0]["entitlements"] == [],
         "no-delivery choice: welcome units carry no destination or entitlements")
+
+    # No delivery, no destination at all: nothing is owed, so nothing blocks.
+    no_delivery_absent = dict(no_delivery)
+    for key in ("launch.access_url", "launch.login_url", "launch.member_area_url",
+                "launch.thank_you_url"):
+        no_delivery_absent.pop(key, None)
+    result = launch_plan.build_launch_plan(_launch(), no_delivery_absent)
+    say(result["state"] == "ready",
+        "no delivery needs no destination (the builder does not block)")
+    plan = result["plan"]
+    _contract(plan, "no delivery, destination absent")
+    errors = launch_plan.check(plan)
+    say(errors == [], "no delivery without any destination passes check()"
+        + ("" if not errors else f" — {errors}"))
 
     yes_delivery = _answers(
         **{"launch.access_delivery": "Yes, send access after purchase"})
@@ -377,6 +397,45 @@ def test_access_resolution() -> None:
         and welcome and welcome[0]["entitlements"] == ["base-a"],
         "yes-delivery choice: welcome units carry the base entitlements")
 
+
+def test_access_url_must_be_web() -> None:
+    base = dict(ANSWERS)
+    for key in ("launch.login_url", "launch.member_area_url", "launch.thank_you_url"):
+        base.pop(key, None)
+    bad_urls = ("javascript:alert(1)", "data:text/html,<script>alert(1)</script>",
+                "mailto:buyer@example.test", "ftp://example.test/access",
+                "https://", "https://exa mple.test/access", "not a url",
+                "//example.test/access")
+    for bad in bad_urls:
+        result = launch_plan.build_launch_plan(
+            _launch(), dict(base, **{"launch.access_url": bad}))
+        say(result["state"] == "awaiting_missing_fact"
+            and any("access destination" in m for m in result["missing"]),
+            f"{bad!r} is refused as an access destination")
+
+    fallback_bad = dict(base)
+    fallback_bad.pop("launch.access_url", None)
+    fallback_bad["launch.thank_you_url"] = "javascript:alert(1)"
+    result = launch_plan.build_launch_plan(_launch(), fallback_bad)
+    say(result["state"] == "awaiting_missing_fact",
+        "a non-web thank-you URL is not an approved fallback destination")
+
+    plan = launch_plan.build_launch_plan(
+        _launch(), _answers(**{"launch.login_url": "javascript:alert(1)"}))["plan"]
+    say(plan["access"]["login_url"] is None,
+        "a non-web login URL is never carried as a destination")
+
+    # check() is the second gate: a supplied plan carrying an executable
+    # destination is refused even though the builder never emits one.
+    poisoned = json.loads(json.dumps(
+        launch_plan.build_launch_plan(_launch(), _answers())["plan"]))
+    poisoned["access"]["destination"] = "javascript:alert(1)"
+    for unit in (poisoned["email_sequences"] + poisoned["text_sets"]
+                 + poisoned["automations"]):
+        if "access_destination" in unit:
+            unit["access_destination"] = "javascript:alert(1)"
+    say(launch_plan.check(poisoned) != [],
+        "check() refuses an executable access destination in a supplied plan")
 
 # ---------------------------------------------------------------------------
 # Founder identity is never inferred; offer ids are never invented.
@@ -404,6 +463,7 @@ def main() -> int:
     test_no_event_facts_plans_no_event_units()
     test_live_event_start_separate_from_sale_opening()
     test_access_resolution()
+    test_access_url_must_be_web()
     test_no_founder_inference()
     print("RESULT:", "PASS" if _ok else "FAIL")
     return 0 if _ok else 1
