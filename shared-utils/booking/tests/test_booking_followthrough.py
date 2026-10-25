@@ -732,6 +732,106 @@ class DailyCapChangePathTests(BookingCase):
 
 # ── outcomes: authoritative or labelled, never guessed ─────────────────────
 
+class OthersOnlyCounting(CalendarCountingAvailability):
+    """A second plausible reading of the adapter contract: `booked_count`
+    answers for the OTHER bookings on the day, not for the caller's own.
+
+    Nothing in the contract says which reading an adapter implements, so the
+    change path may not assume either (PBB-258 defect 2).
+    """
+
+    def booked_count(self, calendar_id, day):
+        return sum(1 for s in self.others
+                   if s.calendar_id == calendar_id
+                   and s.local("America/New_York").date() == day)
+
+
+class UnprovenSelfExclusionTests(BookingCase):
+    """PBB-258: a same-day move frees its own place only when every link of
+    that is proven. A place already gone, a count that never held the booking,
+    a receipt claiming another day: none of them frees a place, so each is
+    counted in full - a refusal, never an overbooked day."""
+
+    def _capped(self, cap, avail):
+        policy = BookingPolicy(
+            calendars={"default": CAL_A}, timezone="America/New_York",
+            location="x", change_path="y", max_window_days=14,
+            min_lead_hours=2, daily_cap=cap)
+        return BookingFollowThrough(store=self.store, availability=avail,
+                                    provider=self.provider, policy=policy,
+                                    tenant_id="tenant-1")
+
+    def test_a_cancelled_booking_has_no_place_left_to_vacate(self):
+        """Defect 1: the exclusion was granted to a booking that held none."""
+        avail = CalendarCountingAvailability(
+            [slot(5, 10), slot(5, 16), slot(5, 14)], self.provider)
+        eng = self._capped(1, avail)
+        first = eng.book(purpose="consult", slot=slot(5, 10),
+                         contact_id="c1", confirmed=True, now=NOW)
+        avail.free.remove(slot(5, 10))
+        self.assertTrue(eng.cancel(booking_action_id=first.action_id,
+                                   now=NOW).claimed)
+        avail.free.append(slot(5, 10))       # the place is vacated
+        avail.others.append(slot(5, 16))     # and someone else takes the day
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_the_exclusion_never_rests_on_a_count_that_may_exclude_the_mover(
+            self):
+        """Defect 2: the subtraction assumed a precondition no contract gave.
+
+        The inverse - a count that does hold the mover - is what
+        `test_C6a_the_only_booking_on_a_cap_1_day_moves_within_that_day`
+        proves is still accepted.
+        """
+        avail = OthersOnlyCounting([slot(5, 10), slot(5, 14)], self.provider)
+        eng = self._capped(1, avail)
+        first = eng.book(purpose="consult", slot=slot(5, 10),
+                         contact_id="c1", confirmed=True, now=NOW)
+        avail.free.remove(slot(5, 10))
+        avail.others.append(slot(5, 16))     # the day's one place, by another
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_a_receipt_that_claims_another_day_buys_no_exclusion(self):
+        """Defect 3: the guard read the provider's echo, which can say any day."""
+        self.provider.receipt = receipt(
+            start="2027-05-05T10:00:00-04:00", end="2027-05-05T11:00:00-04:00")
+        avail = CalendarCountingAvailability(
+            [slot(6, 10), slot(5, 14)], self.provider)
+        avail.others.append(slot(5, 16))
+        eng = self._capped(1, avail)
+        first = eng.book(purpose="consult", slot=slot(6, 10),
+                         contact_id="c1", confirmed=True, now=NOW)
+        avail.free.remove(slot(6, 10))
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_cancel_frees_the_slot_this_module_booked_not_the_receipts_echo(
+            self):
+        """The same provider-owned field, one path along: the place to free."""
+        self.provider.receipt = receipt(
+            start=slot(5, 10).start.isoformat(), end=slot(5, 10).end.isoformat())
+        avail = CalendarCountingAvailability([slot(6, 10), slot(5, 10)],
+                                             self.provider)
+        eng = self._capped(1, avail)
+        first = eng.book(purpose="consult", slot=slot(6, 10),
+                         contact_id="c1", confirmed=True, now=NOW)
+        avail.free.remove(slot(6, 10))
+        self.assertTrue(eng.cancel(booking_action_id=first.action_id,
+                                   now=NOW).claimed)
+        self.assertEqual(len(self.provider.cancels), 1)
+
+
+
+# ── outcomes: authoritative or labelled, never guessed ─────────────────────
+
 class OutcomeTests(BookingCase):
     def _booked(self):
         return self.eng.book(purpose="consult", slot=slot(5, 10),

@@ -312,6 +312,15 @@ class BookingFollowThrough:
         is_free(calendar_id, slot) -> bool                 # the commit recheck
         booked_count(calendar_id, day: date) -> int        # only when daily_cap set
 
+    `booked_count` answers the number of bookings the calendar holds on that
+    day, whether or not one of them is the booking being changed. Which of the
+    two readings an adapter implements is not assumed anywhere: it is measured
+    around this module's own create and remembered with the receipt
+    (`_counted_self`, `booked_count_includes_self`), and the same-day change
+    path subtracts its own place only when that measurement says the count
+    holds it. A count that cannot be measured is counted in full - it can
+    refuse a move, never overbook a day.
+
     `provider` must implement:
 
         provider_name: str
@@ -553,7 +562,8 @@ class BookingFollowThrough:
 
     def _commit(self, *, action_id: str, slot: Slot, recheck: Any, write: Any,
                 force_unconfirmed: bool = False,
-                failure_code: str = R_SLOT_TAKEN) -> Booking:
+                failure_code: str = R_SLOT_TAKEN,
+                counted_self: Optional[bool] = None) -> Booking:
         """Recheck the exact slot, then write once inside a fenced attempt."""
         state = self.store.get_action(action_id)["state"]
         if state in _TERMINAL_INTENT_STATES:
@@ -589,6 +599,7 @@ class BookingFollowThrough:
             return Booking(action_id, False, self.store.get_action(action_id)["state"],
                            slot, reason="canceled or lease lost; nothing was written")
 
+        day_count_before = self._day_count(slot)
         try:
             receipt = write(self._idempotency_key(action_id))
         except Exception as exc:
@@ -602,7 +613,9 @@ class BookingFollowThrough:
                                             "incomplete_provider_receipt")
             return Booking(action_id, False, STATE_UNKNOWN, slot,
                            reason="provider did not return a complete receipt")
-        receipt = self._enrich(receipt, slot)
+        if counted_self is None:
+            counted_self = self._counted_self(day_count_before, slot)
+        receipt = self._enrich(receipt, slot, counted_self)
 
         # Admission, confirmation and the booking receipt are three states.
         self.store.record_dispatch(action_id, fence, dict(receipt))
@@ -633,10 +646,14 @@ class BookingFollowThrough:
         if not self._within_policy(new_slot, now):
             raise Refusal(R_OUTSIDE_POLICY,
                           "new slot is outside lead time, window or exclusions")
-        # A same-day move on the same calendar already holds one place in that
-        # day's real count; it vacates it, so it is not counted against itself.
-        # A move onto a different day (or calendar) takes a new place.
-        same_day = int(self._occupies_day(prior["payload"], calendar_id, new_slot))
+        # A same-day move on the same calendar vacates one place and takes one,
+        # so it is not counted against its own place - but only when the module
+        # owns every link of that proof: the place it vacates is its own booked
+        # slot (never a field the provider echoed), it still holds that place
+        # (a cancelled booking holds none), and the day's count is known to hold
+        # it. Anything less is counted in full: it can refuse, never overbook.
+        same_day = int(self._vacates_a_place(prior["payload"], calendar_id,
+                                             new_slot, booking_action_id))
         if not self._has_daily_capacity(calendar_id, new_slot,
                                         already_counted=same_day):
             raise Refusal(R_OUTSIDE_POLICY, "the daily cap is already reached")
@@ -658,6 +675,9 @@ class BookingFollowThrough:
                 provider_booking_id=str(prior["payload"]["provider_booking_id"]),
                 slot=new_slot, idempotency_key=idem),
             force_unconfirmed=(not created and existing["state"] == STATE_UNKNOWN),
+            # whether the day's count holds this booking is a property of the
+            # adapter, not of the day: carry the measurement made at its write.
+            counted_self=bool(prior["payload"].get("booked_count_includes_self")),
         )
         if result.claimed:
             self._note_supersession(result.action_id, booking_action_id)
@@ -665,30 +685,147 @@ class BookingFollowThrough:
 
     def _occupies_day(self, payload: Mapping[str, Any], calendar_id: str,
                       slot: Slot) -> bool:
-        """True when the receipted booking sits on `slot`'s calendar and local day.
-        An unreadable or naive start is not proof of the same day, so the full
-        count applies (the conservative side: it can refuse, never overbook)."""
-        if str(payload.get("calendar_id") or "") != calendar_id:
+        """True when the booking sits on `slot`'s calendar and local day.
+
+        "Sits" is read from the record this module wrote (`_booked_place`),
+        never from the provider's echo of it alone, and the echo must not
+        contradict that record. An unreadable, naive or contradicting claim is
+        not proof of the same day, so the full count applies (the conservative
+        side: it can refuse, never overbook).
+        """
+        tz_name = self.policy.timezone
+        booked = self._booked_place(payload)
+        if booked is None:
+            return False
+        if booked.calendar_id != calendar_id:
+            return False
+        if booked.local(tz_name).date() != slot.local(tz_name).date():
+            return False
+        return self._echo_agrees(payload, booked, tz_name)
+
+    def _aware(self, value: Any, tz_name: str) -> Optional[datetime]:
+        """`value` as an aware datetime in `tz_name`, or None when it is not
+        proof of one. A naive stamp is not a time, and unreadable is not a day."""
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return None
+        return parsed.astimezone(_tz(tz_name))
+
+    def _booked_place(self, payload: Mapping[str, Any]) -> Optional[Slot]:
+        """The slot this module booked, from the record it wrote itself.
+
+        `booked_start`/`booked_end`/`booked_calendar_id` come from `_enrich`,
+        which writes the slot this module was asked to book. The provider
+        receipt's own `start`/`end`/`calendar_id` are that provider's echo and
+        are never read back as the booking's place: a receipt can claim any day
+        it likes. For a receipt written before that record existed, the echo is
+        the only description there is, so it is used only when it is readable,
+        aware and self-consistent.
+        """
+        tz_name = self.policy.timezone
+        if payload.get("booked_start"):
+            start = self._aware(payload.get("booked_start"), tz_name)
+            end = self._aware(payload.get("booked_end"), tz_name)
+            if start is None or end is None:
+                return None
+            place = (start, end, str(payload.get("booked_calendar_id") or ""))
+        else:
+            if not (payload.get("start") and payload.get("end")
+                    and payload.get("calendar_id")):
+                return None
+            start = self._aware(payload.get("start"), tz_name)
+            end = self._aware(payload.get("end"), tz_name)
+            if start is None or end is None:
+                return None
+            place = (start, end, str(payload.get("calendar_id") or ""))
+        try:
+            return Slot(start=place[0], end=place[1], calendar_id=place[2])
+        except Refusal:
+            return None
+
+    def _echo_agrees(self, payload: Mapping[str, Any], booked: Slot,
+                     tz_name: str) -> bool:
+        """The provider's own claim must not contradict the record this module
+        wrote. A claim of another day, or one that cannot be read as a day, is
+        not proof that the booking is where the record says: the full count
+        applies."""
+        if "start" in payload:
+            day = self._aware(payload.get("start"), tz_name)
+            if day is None or day.date() != booked.local(tz_name).date():
+                return False
+        if "calendar_id" in payload:
+            if str(payload.get("calendar_id") or "") != booked.calendar_id:
+                return False
+        return True
+
+    def _cancel_recorded(self, booking_action_id: str,
+                         payload: Mapping[str, Any]) -> bool:
+        """True when this module receipted a cancel for that booking.
+
+        The intent key is rebuilt from the same place `cancel` acts on, so a
+        cancel that really was receipted is found whatever else the record says.
+        """
+        place = self._booked_place(payload)
+        if place is None:
+            return False
+        key = self._intent_key(
+            "cancel", place.calendar_id,
+            str(payload.get("canonical_contact_id") or ""), place,
+            booking_action_id)
+        try:
+            row = self.store.action_by_intent(key)
+        except DurableStoreError:
+            return False
+        return bool(row) and row.get("state") == STATE_COMPLETED
+
+    def _vacates_a_place(self, payload: Mapping[str, Any], calendar_id: str,
+                         slot: Slot, booking_action_id: str) -> bool:
+        """True only on proof that this move frees a place in `slot`'s day.
+
+        A move that frees no place takes a new one, so it is counted in full.
+        Proof is three links after the day itself (`_occupies_day`), and each is
+        the module's own to make: the booking still holds the place (a
+        cancelled booking holds none - the same evidence `cancel` reads), the
+        place really is taken (a free slot holds nothing to vacate), and the
+        day's count is known to hold it (`booked_count_includes_self`,
+        measured at the booking's own write rather than assumed from an
+        adapter contract that never promised it). An unproven link is not proof.
+        """
+        if not self._occupies_day(payload, calendar_id, slot):
+            return False
+        if payload.get("booked_count_includes_self") is not True:
+            return False
+        if self._was_cancelled(booking_action_id):
+            return False
+        if self._cancel_recorded(booking_action_id, payload):
+            return False
+        booked = self._booked_place(payload)
+        if booked is None:
             return False
         try:
-            start = datetime.fromisoformat(str(payload["start"]))
-        except (KeyError, TypeError, ValueError):
+            if self._verify_free(booked.calendar_id, booked):
+                return False          # a free slot holds no place to vacate
+        except Refusal:
             return False
-        if start.tzinfo is None:
-            return False
-        tz_name = self.policy.timezone
-        return start.astimezone(_tz(tz_name)).date() == slot.local(tz_name).date()
+        return True
 
     def cancel(self, *, booking_action_id: str, now: datetime,
                reason: str = "customer_request") -> Booking:
         prior = self._completion_receipt(booking_action_id)
-        calendar_id = str(prior["payload"].get("calendar_id") or "")
-        zone = _tz(str(prior["payload"].get("timezone") or self.policy.timezone))
-        slot = Slot(
-            start=datetime.fromisoformat(str(prior["payload"]["start"])).astimezone(zone),
-            end=datetime.fromisoformat(str(prior["payload"]["end"])).astimezone(zone),
-            calendar_id=calendar_id,
-        )
+        # The place to free is the slot this module booked. The provider's echo
+        # of it is a claim, not a place: a receipt can date a booking anywhere.
+        booked = self._booked_place(prior["payload"])
+        if booked is None:
+            raise Refusal(R_NO_BOOKING,
+                          "the receipt does not say what was booked, so there "
+                          "is no place proven to free")
+        calendar_id = booked.calendar_id
+        slot = booked
         contact = prior["payload"].get("canonical_contact_id")
         intent_key = self._intent_key("cancel", calendar_id, contact or "",
                                       slot, booking_action_id)
@@ -697,7 +834,7 @@ class BookingFollowThrough:
         existing = self.store.get_action(action_id)
         if not created and existing["state"] == STATE_COMPLETED:
             return self._replay_completed(action_id, slot)
-        return self._commit(
+        result = self._commit(
             action_id=action_id, slot=slot,
             # cancel only when the appointment really occupies the calendar;
             # a free slot means the booking is already gone, so reconcile.
@@ -708,6 +845,36 @@ class BookingFollowThrough:
             force_unconfirmed=(not created and existing["state"] == STATE_UNKNOWN),
             failure_code=R_BOOKING_NOT_PRESENT,
         )
+        if result.claimed:
+            self._record_cancellation(booking_action_id)
+        return result
+
+    def _record_cancellation(self, booking_action_id: str) -> None:
+        """Record, on the booking's own action, that it was cancelled.
+
+        The cancel receipt is its own action; without this the booking would
+        still read as holding its place, and a change path could move a booking
+        that no longer holds one. It is an observation in the store's
+        append-only log - the same durable record outcomes use - so it never
+        moves the booking action through its own state machine and never
+        touches the old receipt, which stays authoritative offline.
+        """
+        try:
+            self.store.record_reconciliation(
+                booking_action_id, "cancelled",
+                {"record": "booking_cancellation", "schema": SCHEMA})
+        except DurableStoreError:
+            pass      # the cancel itself is receipted; the marker is best effort
+
+    def _was_cancelled(self, booking_action_id: str) -> bool:
+        for run in self.store.reconciliation_runs(booking_action_id):
+            try:
+                evidence = json.loads(run["evidence_json"])
+            except (TypeError, ValueError):
+                continue
+            if evidence.get("record") == "booking_cancellation":
+                return True
+        return False
 
     # ── outcomes: authoritative or labelled, never guessed ─────────────
 
@@ -856,8 +1023,44 @@ class BookingFollowThrough:
             self._intent_notes[row["action_id"]] = note
         return str(row["action_id"]), created
 
-    def _enrich(self, receipt: Mapping[str, Any], slot: Slot) -> Dict[str, Any]:
-        """Persist the canonical booking record beside the provider receipt."""
+    def _day_count(self, slot: Slot) -> Optional[int]:
+        """The day's real count, or None when it cannot be read.
+
+        Only meaningful with a daily cap: an adapter without one need not
+        answer `booked_count` at all. An unreadable count is never guessed.
+        """
+        if self.policy.daily_cap is None:
+            return None
+        try:
+            return int(self.availability.booked_count(
+                slot.calendar_id, slot.local(self.policy.timezone).date()))
+        except Exception:                              # noqa: BLE001
+            return None
+
+    def _counted_self(self, before: Optional[int], slot: Slot) -> bool:
+        """Did this module's own write land in the day's count?
+
+        `booked_count` may or may not hold the booking being changed - the
+        adapter contract does not say. It is measured here, around this
+        module's own write, instead of assumed: when the count did not move
+        for a booking this module just wrote, it does not hold such bookings,
+        and the change path must never subtract one. Unreadable is not proof.
+        """
+        after = self._day_count(slot)
+        return before is not None and after is not None and after > before
+
+    def _enrich(self, receipt: Mapping[str, Any], slot: Slot,
+                counted_self: Optional[bool] = None) -> Dict[str, Any]:
+        """Persist the canonical booking record beside the provider receipt.
+
+        `start`/`end`/`calendar_id` stay as the provider receipt carried them
+        (this module fills only what the receipt left out), because that echo
+        is the receipt's own claim. What this module BOOKED is written beside
+        it in `booked_*`, from the slot this module was asked to book - never
+        from anything the provider said back. The capacity guard reads the
+        module's own record; the echo is corroboration and cannot buy an
+        exclusion on its own.
+        """
         record = dict(receipt)
         record.setdefault("start", slot.start.isoformat())
         record.setdefault("end", slot.end.isoformat())
@@ -865,6 +1068,10 @@ class BookingFollowThrough:
         record.setdefault("timezone", slot.timezone)
         record.setdefault("location", self.policy.location)
         record.setdefault("change_path", self.policy.change_path)
+        record["booked_start"] = slot.start.isoformat()
+        record["booked_end"] = slot.end.isoformat()
+        record["booked_calendar_id"] = slot.calendar_id
+        record["booked_count_includes_self"] = bool(counted_self)
         return record
 
     @staticmethod
