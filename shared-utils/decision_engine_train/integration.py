@@ -117,6 +117,34 @@ def _as_records(value):
         return value
     return None
 
+def _as_names(value):
+    """A sequence of names, or None when the shape was not observed.
+
+    Strings and mappings are NOT name sequences: ``"AB"`` iterating as
+    characters is one malformed owner, never two observed owners. ``None``
+    is the observed empty set (the caller passed nothing).
+    """
+    if value is None:
+        return ()
+    if not isinstance(value, (list, tuple)):
+        return None
+    names = []
+    for raw in value:
+        if not isinstance(raw, str) or not raw:
+            return None
+        names.append(raw)
+    return tuple(names)
+
+def _as_number(value):
+    """A real count of seconds, or None when the shape was not observed.
+
+    A string is never a timestamp and ``bool`` is never an interval: an
+    unobserved clock is never read as an instant.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value
+
 
 def _normalise_units(units):
     """Normalise unit records. Returns ``(units, problems)``.
@@ -160,6 +188,14 @@ def _normalise_units(units):
                 problems.append(_reason(str(uid), RULE_DEPENDENCY,
                                         "unit_depends_on_malformed"))
                 continue
+        if record.get("depends_on_repos") is None:
+            dep_repos = ()
+        else:
+            dep_repos = _as_names(record.get("depends_on_repos"))
+            if dep_repos is None:
+                problems.append(_reason(str(uid), RULE_CROSS_REPO,
+                                        "unit_depends_on_repos_malformed"))
+                continue
         if record.get("schema") is None:
             schema = {}
         else:
@@ -177,6 +213,7 @@ def _normalise_units(units):
         unit["sha"] = str(sha)
         unit["files"] = tuple(str(f) for f in files)
         unit["depends_on"] = tuple(str(d) for d in deps)
+        unit["depends_on_repos"] = tuple(dep_repos)
         unit["state"] = str(record.get("state"))
         unit["schema"] = dict(schema)
         unit["repo"] = str(record.get("repo") or "")
@@ -216,7 +253,7 @@ def _schema_verdict(unit):
 
 def _cross_repo_verdict(unit, by_id, repository, publication_order):
     """BC-06: a cross-repository unit lands after its producer's repository."""
-    order = [str(r) for r in publication_order or ()]
+    order = list(_as_names(publication_order) or ())
     repo = unit["repo"] or repository
     producers = set()
     for dep_id in unit["depends_on"]:
@@ -225,7 +262,7 @@ def _cross_repo_verdict(unit, by_id, repository, publication_order):
             dep_repo = dep["repo"] or repository
             if dep_repo != repo:
                 producers.add(dep_repo)
-    for dep_repo in unit.get("depends_on_repos") or ():
+    for dep_repo in _as_names(unit.get("depends_on_repos")) or ():
         dep_repo = str(dep_repo)
         if dep_repo != repo:
             producers.add(dep_repo)
@@ -282,7 +319,11 @@ def evaluate_cohort(units, *, repository="onboarding", combined_owner=(),
     unrelated green candidates stay admitted. A unit that does not declare
     ``files`` or ``state`` renders ``UNKNOWN`` — an unobserved field is
     never a silent default, so BC-02 and BC-07 always run. A cohort that was
-    not observed at all renders ``UNKNOWN``, never ``ADMITTED``.
+    not observed at all renders ``UNKNOWN``, never ``ADMITTED``. The name
+    collections follow the same law: a string is never a sequence of names,
+    so ``combined_owner="AB"`` is one malformed owner, never two observed
+    ones, and it renders ``UNKNOWN`` instead of collapsing a BC-02
+    collision or satisfying a BC-03 contract.
     """
     raw_units = _as_records(units)
     problems = [] if raw_units is not None else [
@@ -291,6 +332,18 @@ def evaluate_cohort(units, *, repository="onboarding", combined_owner=(),
     unknown = problems + normalised_problems
     if not norm and not unknown:
         unknown.append(_reason("", RULE_SEPARATE_FILES, "cohort_empty"))
+    combined_names = _as_names(combined_owner)
+    if combined_names is None:
+        unknown.append(_reason("", RULE_SHARED_FILE, "combined_owner_malformed"))
+        combined_names = ()
+    landed_names = _as_names(already_landed)
+    if landed_names is None:
+        unknown.append(_reason("", RULE_DEPENDENCY, "already_landed_malformed"))
+        landed_names = ()
+    order_names = _as_names(publication_order)
+    if order_names is None:
+        unknown.append(_reason("", RULE_CROSS_REPO, "publication_order_malformed"))
+        order_names = ()
     hold, valid = [], []
     seen = set()
     for unit in norm:
@@ -303,7 +356,7 @@ def evaluate_cohort(units, *, repository="onboarding", combined_owner=(),
 
     by_id = {unit["unit_id"]: unit for unit in valid}
     valid_ids = set(by_id)
-    landed = {str(value) for value in already_landed or ()}
+    landed = set(landed_names)
 
     # BC-07 red-subset isolation: the red unit and its TRUE dependents only.
     red_roots = sorted(uid for uid, unit in by_id.items() if unit["state"] == "red")
@@ -331,7 +384,7 @@ def evaluate_cohort(units, *, repository="onboarding", combined_owner=(),
         owners = sorted(file_owners[path])
         if len(owners) > 1:
             shared_groups.append({"file": path, "unit_ids": owners})
-    covered = {str(value) for value in combined_owner or ()}
+    covered = set(combined_names)
     combined_candidates = []
     for group in shared_groups:
         group_ids = set(group["unit_ids"])
@@ -358,7 +411,7 @@ def evaluate_cohort(units, *, repository="onboarding", combined_owner=(),
     # BC-06 cross-repository publication order.
     for uid in list(remaining):
         verdict = _cross_repo_verdict(by_id[uid], by_id, repository,
-                                      publication_order)
+                                      order_names)
         if verdict is not None:
             hold.append(_reason(uid, verdict[0], verdict[1]))
             blocked.add(uid)
@@ -403,7 +456,7 @@ def evaluate_cohort(units, *, repository="onboarding", combined_owner=(),
         "red_subset": {"roots": red_roots, "held": sorted(parked)},
         "shared_files": shared_groups,
         "combined_candidates": combined_candidates,
-        "cross_repo_order": [str(r) for r in publication_order or ()],
+        "cross_repo_order": list(order_names),
     }
 
 
@@ -413,7 +466,10 @@ def exact_independent_gate(unit, receipt, required_checks=("unit", "integration"
     Reuses ``train.validate_qc_receipt`` for the exact-SHA/independent-route
     laws. A broad ``ALL_PASS`` aggregate is not exact evidence and is
     refused. Missing receipt or missing required-check results render
-    ``UNKNOWN``; a failure renders ``CONTRADICTED``.
+    ``UNKNOWN``; a failure renders ``CONTRADICTED``. The named-check law is
+    never a caller-optional knob: an empty or malformed ``required_checks``
+    is an unobserved requirement and renders ``UNKNOWN``, so a gate can
+    never prove on zero named checks.
     """
     record = _as_mapping(unit)
     if record is None:
@@ -463,7 +519,11 @@ def exact_independent_gate(unit, receipt, required_checks=("unit", "integration"
         return {"unit_id": unit_id, "state": UNKNOWN,
                 "reason": "required_check_results_unobserved",
                 "checks": check_list}
-    for name in required_checks or ():
+    required = _as_names(required_checks)
+    if required is None or not required:
+        return {"unit_id": unit_id, "state": UNKNOWN,
+                "reason": "required_checks_unobserved", "checks": check_list}
+    for name in required:
         if name not in observed:
             return {"unit_id": unit_id, "state": UNKNOWN,
                     "reason": "required_check_unobserved:%s" % name,
@@ -565,9 +625,24 @@ def target_owner(store, key, owner, now, ttl=900):
     ``UNKNOWN``. The store must expose ``get(key)`` and
     ``compare_and_set(key, expected, value)``. Only a won, read-back
     compare-and-set proves ownership.
+
+    An identity that was not observed is never str()-coerced into a lease:
+    ``None`` is not an owner and not a key. A lease record is never read
+    with silent defaults either — no ``expires`` is not "expired", and an
+    unobserved holder is not "nobody" — so a live foreign lease can never
+    be stolen and a malformed clock never raises.
     """
-    key = str(key)
-    owner = str(owner)
+    if not isinstance(key, str) or not key:
+        return {"state": UNKNOWN, "reason": "lease_key_unobserved",
+                "owner": owner, "key": key}
+    if not isinstance(owner, str) or not owner:
+        return {"state": UNKNOWN, "reason": "lease_owner_unobserved",
+                "owner": owner, "key": key}
+    clock = _as_number(now)
+    window = _as_number(ttl)
+    if clock is None or window is None or window <= 0:
+        return {"state": UNKNOWN, "reason": "lease_clock_unobserved",
+                "owner": owner, "key": key}
     if store is None:
         return {"state": UNKNOWN, "reason": "no_shared_lease_backend",
                 "owner": owner, "key": key}
@@ -587,10 +662,21 @@ def target_owner(store, key, owner, now, ttl=900):
         if not isinstance(current, dict):
             return {"state": UNKNOWN, "reason": "lease_record_malformed",
                     "owner": owner, "key": key}
-        if current.get("expires", 0) > now and current.get("owner") != owner:
+        holder = current.get("owner")
+        if not isinstance(holder, str) or not holder:
+            return {"state": UNKNOWN, "reason": "lease_record_owner_unobserved",
+                    "owner": owner, "key": key}
+        if "expires" not in current:
+            return {"state": UNKNOWN, "reason": "lease_expiry_unobserved",
+                    "owner": owner, "key": key}
+        expires = _as_number(current.get("expires"))
+        if expires is None:
+            return {"state": UNKNOWN, "reason": "lease_expiry_malformed",
+                    "owner": owner, "key": key}
+        if expires > clock and holder != owner:
             return {"state": HELD, "reason": "lease_held_by_other:%s"
-                    % current.get("owner"), "owner": owner, "key": key}
-    value = {"owner": owner, "acquired": now, "expires": now + ttl}
+                    % holder, "owner": owner, "key": key}
+    value = {"owner": owner, "acquired": clock, "expires": clock + window}
     try:
         won = store.compare_and_set(key, current, value)
     except Exception as exc:  # noqa: BLE001
@@ -623,12 +709,21 @@ def merge_due(state, repository, now, *, new_events=False, busy_until=None,
     ``state`` is ``PROVEN`` when the schedule was determined from observed
     inputs and ``UNKNOWN`` when the caller's state store was unobserved or
     malformed — a malformed store renders ``UNKNOWN``, it never raises and
-    never schedules.
+    never schedules. The clock, the busy window and the sweep interval are
+    inputs of the same kind: a string is never an instant, so a malformed
+    parameter renders ``UNKNOWN`` too instead of raising on a comparison.
     """
     repo = str(repository)
     unknown_result = {"repository": repo, "due": False, "immediate": False,
                       "next_check": None, "reason": "merge_state_unobserved",
                       "first_due": None, "state": UNKNOWN}
+    clock = _as_number(now)
+    window = _as_number(sweep_interval)
+    busy = None if busy_until is None else _as_number(busy_until)
+    if clock is None or window is None or window <= 0:
+        return dict(unknown_result)
+    if busy_until is not None and busy is None:
+        return dict(unknown_result)
     store = _as_mapping(state)
     if store is None:
         return dict(unknown_result)
@@ -646,31 +741,36 @@ def merge_due(state, repository, now, *, new_events=False, busy_until=None,
     record = _as_mapping(record)
     if record is None:
         return dict(unknown_result)
-    if record.get("first_due") is None:
-        record["first_due"] = now
-    if busy_until is not None and busy_until > now:
-        next_check = min(busy_until, now + BUSY_RECHECK_SECONDS)
+    stored_due = record.get("first_due")
+    stored_sweep = record.get("last_sweep")
+    if (stored_due is not None and _as_number(stored_due) is None) or (
+            stored_sweep is not None and _as_number(stored_sweep) is None):
+        return dict(unknown_result)
+    if stored_due is None:
+        stored_due = clock
+        record["first_due"] = stored_due
+    if busy is not None and busy > clock:
+        next_check = min(busy, clock + BUSY_RECHECK_SECONDS)
         record["last_reason"] = "target_busy_remains_due"
         return {"repository": repo, "due": True, "immediate": False,
                 "next_check": next_check, "reason": record["last_reason"],
                 "first_due": record["first_due"], "state": PROVEN}
     if new_events:
         record["last_reason"] = "event_requests_owner"
-        record["last_sweep"] = now
+        record["last_sweep"] = clock
         return {"repository": repo, "due": True, "immediate": True,
-                "next_check": now, "reason": record["last_reason"],
+                "next_check": clock, "reason": record["last_reason"],
                 "first_due": record["first_due"], "state": PROVEN}
-    last_sweep = record.get("last_sweep")
-    if last_sweep is not None and now - last_sweep < sweep_interval:
+    if stored_sweep is not None and clock - stored_sweep < window:
         record["last_reason"] = "hourly_sweep_not_due"
         return {"repository": repo, "due": False, "immediate": False,
-                "next_check": last_sweep + sweep_interval,
+                "next_check": stored_sweep + window,
                 "reason": record["last_reason"],
                 "first_due": record["first_due"], "state": PROVEN}
-    record["last_sweep"] = now
+    record["last_sweep"] = clock
     record["last_reason"] = "backlog_sweep_due"
     return {"repository": repo, "due": True, "immediate": False,
-            "next_check": now, "reason": record["last_reason"],
+            "next_check": clock, "reason": record["last_reason"],
             "first_due": record["first_due"], "state": PROVEN}
 
 
@@ -895,7 +995,9 @@ def verify_receipt(receipt):
     carrying an exact 40-hex SHA, and at least one gate, and no reasons.
     Every cleanup handoff must already be ``eligible`` — ``deferred`` and
     ``UNKNOWN`` are both unresolved. An ``UNKNOWN`` receipt must name a
-    reason.
+    reason. A malformed collection is a shape failure reported as
+    ``(False, reason)`` — this re-check never raises, whatever the receipt
+    carries.
     """
     if not isinstance(receipt, dict):
         return False, "receipt must be an object"
@@ -904,6 +1006,17 @@ def verify_receipt(receipt):
     state = receipt.get("state")
     if state not in (PROVEN, CONTRADICTED, UNKNOWN):
         return False, "unknown receipt state: %r" % state
+    for field in ("candidates", "gates", "named_repairs", "cleanup"):
+        raw = receipt.get(field)
+        records = _as_records(raw)
+        if raw is not None and records is None:
+            return False, "receipt %s must be a list of records" % field
+        for entry in records or ():
+            if _as_mapping(entry) is None:
+                return False, "receipt %s must be a list of records" % field
+    proof = receipt.get("proof")
+    if proof is not None and _as_mapping(proof) is None:
+        return False, "receipt proof must be an object"
     if state == PROVEN:
         if receipt.get("reasons"):
             return False, "proven receipt carries reasons"

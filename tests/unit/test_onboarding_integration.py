@@ -158,6 +158,44 @@ class TargetOwner(unittest.TestCase):
         self.assertEqual(result["state"], UNKNOWN)
         self.assertTrue(result["reason"].startswith("lease_backend_error:"))
 
+    def test_lease_with_no_expiry_is_unknown_not_stolen(self):
+        """C1: no `expires` is unobserved, never 'expired' — a live lease is safe."""
+        store = SharedStore()
+        store.data["onb/main"] = {"owner": "w13-a"}
+        result = target_owner(store, "onb/main", "w13-b", 1000)
+        self.assertEqual(result["state"], UNKNOWN)
+        self.assertEqual(result["reason"], "lease_expiry_unobserved")
+        self.assertEqual(store.get("onb/main"), {"owner": "w13-a"})
+
+    def test_malformed_expiry_is_unknown_never_raises(self):
+        """C1: a string expiry is an unobserved clock, not an instant."""
+        store = SharedStore()
+        store.data["onb/main"] = {"owner": "w13-a", "expires": "soon"}
+        result = target_owner(store, "onb/main", "w13-b", 1000)
+        self.assertEqual(result["state"], UNKNOWN)
+        self.assertEqual(result["reason"], "lease_expiry_malformed")
+        self.assertEqual(store.get("onb/main")["owner"], "w13-a")
+
+    def test_unobserved_owner_is_unknown_not_a_proven_lease(self):
+        """C1: `None` is not an owner; str() must not invent one."""
+        result = target_owner(SharedStore(), "onb/main", None, 1000)
+        self.assertEqual(result["state"], UNKNOWN)
+        self.assertEqual(result["reason"], "lease_owner_unobserved")
+
+    def test_unobserved_key_is_unknown_not_a_proven_lease(self):
+        """C1: `None` is not a key; str() must not invent one."""
+        result = target_owner(SharedStore(), None, "w13", 1000)
+        self.assertEqual(result["state"], UNKNOWN)
+        self.assertEqual(result["reason"], "lease_key_unobserved")
+
+    def test_malformed_clock_is_unknown_never_raises(self):
+        """C1: `now` and `ttl` are observed seconds or the fact is unobserved."""
+        for now, ttl in ((1000, "900"), ("now", 900), (1000, True)):
+            with self.subTest((now, ttl)):
+                result = target_owner(SharedStore(), "onb/main", "w13", now, ttl)
+                self.assertEqual(result["state"], UNKNOWN)
+                self.assertEqual(result["reason"], "lease_clock_unobserved")
+
 
 class Compatibility(unittest.TestCase):
     """Clause: shared-file/schema/dependency/cross-repo compatibility."""
@@ -346,6 +384,61 @@ class Compatibility(unittest.TestCase):
                 self.assertEqual(report["state"], UNKNOWN)
                 self.assertTrue(report["unknown"])
 
+    def test_string_combined_owner_never_collapses_a_shared_file(self):
+        """C2: "AB" is one malformed owner, never two observed ones."""
+        report = evaluate_cohort([
+            unit("A", SHA_A, files=["x.py"]),
+            unit("B", SHA_B, files=["x.py"]),
+        ], combined_owner="AB")
+        self.assertEqual(report["state"], UNKNOWN)
+        self.assertEqual(report["admit"], [])
+        self.assertEqual(report["combined_candidates"], [])
+        self.assertIn("combined_owner_malformed",
+                      [entry["reason"] for entry in report["unknown"]])
+        self.assertEqual({entry["rule_id"] for entry in report["hold"]},
+                         {RULE_SHARED_FILE})
+        control = evaluate_cohort([
+            unit("A", SHA_A, files=["x.py"]),
+            unit("B", SHA_B, files=["x.py"]),
+        ], combined_owner=["A", "B"])
+        self.assertEqual(control["state"], ADMITTED)
+
+    def test_string_already_landed_never_satisfies_a_dependency(self):
+        """C2: "A" is one malformed landed id, never an observed landed set."""
+        report = evaluate_cohort([unit("B", SHA_B, depends_on=["A"])],
+                                 already_landed="A")
+        self.assertEqual(report["state"], UNKNOWN)
+        self.assertEqual(report["admit"], [])
+        self.assertIn("already_landed_malformed",
+                      [entry["reason"] for entry in report["unknown"]])
+        control = evaluate_cohort([unit("B", SHA_B, depends_on=["A"])],
+                                  already_landed=["A"])
+        self.assertEqual(control["state"], ADMITTED)
+
+    def test_string_publication_order_never_iterates_as_characters(self):
+        """C2: a string order is malformed, never a list of repository names."""
+        report = evaluate_cohort(
+            [unit("consumer", SHA_B, repo="cc", depends_on_repos=["onb"])],
+            repository="cc", publication_order="onbcc")
+        self.assertEqual(report["state"], UNKNOWN)
+        self.assertIn("publication_order_malformed",
+                      [entry["reason"] for entry in report["unknown"]])
+        self.assertEqual(report["cross_repo_order"], [])
+        control = evaluate_cohort(
+            [unit("consumer", SHA_B, repo="cc", depends_on_repos=["onb"])],
+            repository="cc", publication_order=["onb", "cc"])
+        self.assertEqual(control["state"], ADMITTED)
+
+    def test_string_depends_on_repos_never_iterates_as_characters(self):
+        """C2: "onb" is one malformed repo id, never three producer letters."""
+        report = evaluate_cohort(
+            [unit("consumer", SHA_B, repo="cc", depends_on_repos="onb")],
+            repository="cc", publication_order=["cc", "onb"])
+        self.assertEqual(report["state"], UNKNOWN)
+        self.assertIn("unit_depends_on_repos_malformed",
+                      [entry["reason"] for entry in report["unknown"]])
+        self.assertEqual(report["admit"], [])
+
 
 class RedSubset(unittest.TestCase):
     """Clause: red-subset isolation keeps unrelated green work moving."""
@@ -462,6 +555,21 @@ class ExactGates(unittest.TestCase):
         result = exact_independent_gate("A", receipt(SHA_A))
         self.assertEqual(result["state"], UNKNOWN)
         self.assertTrue(result["reason"])
+
+    def test_gate_never_proves_on_zero_named_checks(self):
+        """C3: the named-check law is never a caller-optional knob."""
+        one = receipt(SHA_A, checks=[{"name": "unit", "status": "pass"}])
+        for required in ((), None, [], "unit"):
+            with self.subTest(required):
+                result = exact_independent_gate(unit("A", SHA_A), one,
+                                                required_checks=required)
+                self.assertEqual(result["state"], UNKNOWN)
+                self.assertEqual(result["reason"], "required_checks_unobserved")
+
+    def test_gate_with_the_default_checks_still_proves(self):
+        """C3 inverse: a real named-check list is unchanged by the guard."""
+        result = exact_independent_gate(unit("A", SHA_A), receipt(SHA_A))
+        self.assertEqual(result["state"], PROVEN)
 
 
 class ExactShaLaw(unittest.TestCase):
@@ -620,6 +728,34 @@ class MergeDue(unittest.TestCase):
         self.assertEqual(result["state"], UNKNOWN)
         self.assertFalse(result["due"])
         self.assertTrue(result["reason"])
+
+    def test_malformed_parameters_render_unknown_never_raise(self):
+        """C5: the clock and the busy window are observed seconds or UNKNOWN."""
+        for now, kw in ((1000, {"busy_until": "x"}),
+                        ("not-a-number", {}),
+                        (1000, {"sweep_interval": "hourly"}),
+                        (1000, {"sweep_interval": 0})):
+            with self.subTest((now, kw)):
+                result = merge_due({"merge_due": {}}, "onb", now, **kw)
+                self.assertEqual(result["state"], UNKNOWN)
+                self.assertFalse(result["due"])
+
+    def test_malformed_persisted_sweep_renders_unknown_never_raises(self):
+        """C5: a stored string sweep is an unobserved clock, not an instant."""
+        result = merge_due({"merge_due": {"onb": {"last_sweep": "yesterday"}}},
+                           "onb", 1000)
+        self.assertEqual(result["state"], UNKNOWN)
+        self.assertFalse(result["due"])
+
+    def test_observed_sweep_schedule_is_unchanged(self):
+        """C5 inverse: real numbers still schedule exactly as before."""
+        state = {}
+        first = merge_due(state, "onb", 1000)
+        self.assertEqual(first["state"], PROVEN)
+        self.assertTrue(first["due"])
+        self.assertEqual(first["next_check"], 1000)
+        busy = merge_due(state, "onb", 2000, busy_until=5000)
+        self.assertEqual(busy["next_check"], 2600)
 
 
 class CleanupDispositions(unittest.TestCase):
@@ -872,6 +1008,37 @@ class Receipts(unittest.TestCase):
                                     cleanup="z", proof={})
         self.assertEqual(receipt_doc["state"], UNKNOWN)
         self.assertTrue(receipt_doc["reasons"])
+
+    def test_verify_receipt_rejects_malformed_collections_never_raises(self):
+        """C7: a malformed collection is a shape failure, never an exception."""
+        base = {"artifact": ARTIFACT, "state": PROVEN, "reasons": [],
+                "owner": {"state": PROVEN},
+                "target": {"remote": "origin", "before": "1", "after": "2"},
+                "candidates": [{"unit_id": "A", "sha": SHA_A}],
+                "cohort": {"admit": ["A"], "hold": [], "unknown": []},
+                "gates": [{"unit_id": "A", "state": PROVEN}],
+                "named_repairs": [], "cleanup": [], "proof": {"state": PROVEN}}
+        for field, bad in (("cleanup", "z"), ("gates", "x"),
+                           ("named_repairs", "y"), ("candidates", "w"),
+                           ("cleanup", ["not-a-record"]), ("gates", ["junk"]),
+                           ("named_repairs", ["junk"]), ("proof", "p")):
+            with self.subTest((field, bad)):
+                forged = dict(base)
+                forged[field] = bad
+                ok, reason = verify_receipt(forged)
+                self.assertFalse(ok)
+                self.assertTrue(reason)
+
+    def test_verify_receipt_accepts_the_honest_receipt(self):
+        """C7 inverse: the well-formed PROVEN receipt still verifies."""
+        owner, cohort, gates = self._proven_parts()
+        receipt_doc = build_receipt(
+            owner=owner, target={"remote": "origin", "before": HEAD_BEFORE,
+                                 "after": HEAD_AFTER},
+            cohort=cohort, gates=gates,
+            proof={"state": PROVEN, "reason": "target_head_observed"})
+        ok, reason = verify_receipt(receipt_doc)
+        self.assertTrue(ok, reason)
 
 
 class ReuseAndIsolation(unittest.TestCase):
