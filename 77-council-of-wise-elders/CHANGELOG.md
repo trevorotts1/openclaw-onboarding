@@ -1,5 +1,27 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.59: the packaged copy is proven against the release, never against its own claims (TREEGATE-REPAIR)
+
+In plain English: 1.0.58 started accepting a packaged copy of the council as "the same release" as the copy being updated. The review that followed found the check was asking the packaged copy to vouch for itself: anything it wrote about itself was believed. A copy that shared no files with the release at all could be accepted by filling in its own paperwork. This release makes the release do the vouching.
+
+- The release now declares, at packaging time, exactly what its distributable form looks like: the per-file digests of the content it expects to see (after the private material is removed and the wording scrubbed), and the per-file digests of the executable it built. `scripts/build-bundles.mjs` writes that record into `manifest.json` as `distribution`.
+- The gate proves a packaged copy against that record and nothing else. Every file it carries must be a file the release records, byte for byte; every file it adds must be a path the release declared in advance; every vendored executable byte must be a byte the release built; and the executable it presents must be the executable the release recorded.
+- A modified `runtime/dist` payload is refused per file. Previously the whole built runtime was excluded from every fingerprint, so 329 of 330 files were unverified; a swapped entry point was accepted as long as its own manifest agreed with it; a symlink could source content from outside the tree; an arbitrary `.skill` archive could ride along unread.
+- The `hash_method` a packaged copy records is now honoured: an aggregate is only meaningful under the method it names, and a method this gate cannot recompute is refused instead of being silently re-hashed the repo's way.
+- `DISTRIBUTION-RECONCILIATION.json` is parsed and held to the release: its canonical fingerprint, its declared kinds and every file it names must match what was actually observed. A record that lies about the source, names a file it did not change, or omits a file that did change is refused.
+- A tree that cannot be reconstructed exactly (a dangling or live symlink, an unreadable file, an unshipped dependency tree) is a clean refusal with a reason, never a stack trace: the gate always prints its `SELECTED-TREE:` summary line.
+- Tests: `scripts/tests/selected-tree-gate.test.mjs` keeps all 28 earlier cases, keeps the eight packaged-copy cases, adds one case per review bypass (impostor tree, unrecorded extra executable, modified build, replaced entry point, lying record, unhonoured hash method, symlink smuggling, stray archive) and two crash regressions.
+
+## v1.0.58: a box that carries the reusable package of the same release now updates cleanly (TREEGATE-1058)
+
+In plain English: some boxes keep two copies of the council. One is the copy the update writes; the other is the packaged copy the agents actually read, built from the same release but deliberately different — private material removed, wording scrubbed, the executable prebuilt. Until now the update compared the two file by file and refused, because they do not match. It now checks whether they are the same release, and only says yes when it can prove it.
+
+- The gate accepts two trees whose files differ only when the packaged copy carries its reconciliation record and a manifest naming the canonical release, both trees recompute exactly to the fingerprints their own manifests record, the packaged copy names the same canonical fingerprint as the copy being updated, both copies claim the same version, and the packaged copy's executable checks pass.
+- When that holds, the gate prints a plain line naming both folders and the canonical fingerprint, and passes. It no longer refuses a legitimate update.
+- Every other mismatch still fails with the same message as before. A packaged copy that does not match its own manifest, that names a different canonical release, that is missing its reconciliation record, or whose counterpart was edited after it was built is refused, and the line now says which check failed and why.
+- The manifest hashing used by `build-bundles`, `verify-bundles`, `doctor` and this gate now lives in one shared module, `scripts/manifest-tree.mjs`, so the four can never drift apart.
+- Tests: `scripts/tests/selected-tree-gate.test.mjs` gains one passing case for a real packaged copy and seven refused cases covering each kind of mismatch.
+
 ## v1.0.57: the limits and readiness the council reports are the ones it enforces (LOWFIX-1057)
 
 In plain English: four independent reviews of 1.0.56 found places where the council said one thing and did another. Every one of them is now either fixed or stated honestly.
