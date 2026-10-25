@@ -1,3 +1,9 @@
+## [Unreleased]  -  2026-10-25  -  PBB-325 / T-05 repair 2: the engineering loop reads PB_* configuration at use time, and malformed stop/payload input is refused
+
+- Repair of verifier PBB-279's FAIL on `e7f5d98a` (T-05). `CONTROL/eng_loop.py` no longer captures `PB_STATE_DIR` / `PB_LABEL` / `PB_PLIST` / `PB_TMP` / `PB_CACHE` at import: the owner-handler child and the launchd job read the runtime environment, so an isolated proof no longer writes the production store. Three guards that could not fire now refuse: a `--run-id` flag with no value, an out-of-range `--generation`, and a malformed `--payload` / `--body`.
+- In plain English: running the loop's own self-test against an isolated store now actually stays isolated, and bad input gets a refusal with a reason instead of a Python traceback.
+- Adds `CONTROL/tests/test_eng_loop_guards.py` (8 tests; 4 failures and 1 error on the reviewed bytes, 8 OK after). Skill 38 version `v2.0.97`.
+- Risk level: MEDIUM — runtime behaviour changes only for the malformed and boundary inputs named, and every inverse control is pinned in the new tests.
 ## [v27.1.67]  -  2026-10-24  -  Cleanup (PBB-131 T-46): typed disposal decisions for scratch, merged, dirty and shared-consumer resources, with immediate eligible removal, preserved content and proven absence
 
 - In plain English: a new `shared-utils/cleanup/` module decides what may be deleted and then deletes it straight away, but only when it can prove the resource is owned, outside-only, on the expected drive, free of live consumers and already preserved. Anything it cannot determine comes back as UNKNOWN with a reason, never as success, and nothing is ever force-deleted.
@@ -11,6 +17,11 @@
 - In plain English: a human can now see which three code checkouts were checked against each other, how each commit was read, and where the pairing still has a hole.
 - Nothing is deployed. Two gaps are recorded, not papered over: the Skill 71 `/api/skill-runs/ingest` receiver is absent at the Command Center pin (present only on unpinned main), and the 999-setup vendored skill trees lag canonical main.
 - Risk level: LOW (documentation only; no runtime, installer, or skill-behavior change).
+
+## [v27.1.66]  -  2026-10-24  -  S75 batch 3: land accepted-but-unmerged T10 and T24
+
+- Merges pull request #2549 (`batch/s75-b3`, merged 2026-10-24T22:32:03Z), which lands two Skill 75 units that were accepted and independently attested but never merged: S75-T10 `SCRIPT-WRITER-OWNER` and S75-T24 `VISUAL-UX-OWNER`. Both merged `--no-ff` with no hand edits.
+- In plain English: two Skill 75 pieces that had already passed review were found sitting unmerged and were put into the package.
 
 ## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
 

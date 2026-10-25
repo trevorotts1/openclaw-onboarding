@@ -392,3 +392,92 @@ test('transportForSnapshot sets CLAUDE_CONFIG_DIR only for non-default config ro
     if (saved !== undefined) process.env.CLAUDE_CONFIG_DIR = saved;
   }
 });
+
+// -------------------------------------------------- W77S-MODES: routes
+
+function providerHome(label: string, providers: Record<string, unknown>): string {
+  const home = mkdtempSync(join(tmpdir(), `w77s-route-choice-${label}-`));
+  mkdirSync(join(home, '.openclaw'), { recursive: true });
+  writeFileSync(
+    join(home, '.openclaw', 'openclaw.json'),
+    JSON.stringify({ models: { providers } }),
+    'utf8',
+  );
+  return home;
+}
+
+test('W77S: an ambiguous-model route is listed as usable-with-a-model, and resolves when one is named', async () => {
+  const home = providerHome('ambiguous', {
+    acme: {
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      api: 'openai-completions',
+      models: [{ id: 'model-a' }, { id: 'model-b' }],
+    },
+  });
+  const options = listRouteOptions({ homeDir: home, env: { PATH: '' } });
+  const acme = options.find((option) => option.route_id === 'acme-configured');
+  assert.ok(acme);
+  assert.equal(acme.composable, false);
+  assert.equal(acme.failure_code, 'ROUTE_MODEL_AMBIGUOUS');
+  assert.equal(acme.usable_with_model, true);
+  assert.deepEqual(acme.model_candidates, ['model-a', 'model-b']);
+
+  // Without a model the council refuses and names the candidates; it
+  // never picks one itself.
+  const bare = await refusal(resolveSessionRoute({ route_id: 'acme-configured' }, opts(home)));
+  assert.equal(bare.code, 'ROUTE_NOT_COMPOSABLE');
+  assert.ok(bare.message.includes('model-a'), 'the refusal names the candidates');
+  assert.ok(bare.message.includes('model-b'));
+
+  // With an explicit candidate the session route resolves and the
+  // snapshot pins exactly that model.
+  const resolved = await resolveSessionRoute(
+    { route_id: 'acme-configured', model: 'model-b' },
+    opts(home),
+  );
+  assert.equal(resolved.route.routeId, 'acme-configured');
+  assert.equal(resolved.snapshot.requestedModelOrAlias, 'model-b');
+  assert.equal(resolved.model_policy.requested_model_id, 'model-b');
+  assert.equal(resolved.selection_source, 'explicit');
+  assert.equal(resolved.model_label, 'model-b');
+  // A model the route does not list is refused as not composable: the
+  // route still has no usable model, and the council never substitutes.
+  const notListed = await refusal(
+    resolveSessionRoute(
+      { route_id: 'acme-configured', model: 'model-z' },
+      opts(home, modelList([])),
+    ),
+  );
+  assert.equal(notListed.code, 'ROUTE_NOT_COMPOSABLE');
+  assert.ok(notListed.message.includes('model-a'), 'the refusal names the candidates');
+});
+
+test('W77S: an Ollama route resolves and composes through the /v1 compatible profile', async () => {
+  const home = providerHome('ollama', {
+    ollama: {
+      baseUrl: 'http://127.0.0.1:11434',
+      api: 'ollama',
+      models: [{ id: 'llama3.1:8b' }],
+    },
+  });
+  const resolved = await resolveSessionRoute({ route_id: 'ollama-configured' }, opts(home));
+  assert.equal(resolved.snapshot.requestedModelOrAlias, 'llama3.1:8b');
+  assert.equal(resolved.route.compatible?.baseUrl, 'http://127.0.0.1:11434/v1');
+  const transport = transportForSnapshot(resolved.snapshot, {
+    homeDir: home,
+    env: { PATH: '' },
+  });
+  assert.ok(transport instanceof CompatibleHttpTransport, 'the Ollama profile is the compatible transport');
+
+  // An explicit model from the configured candidates is honoured on the
+  // snapshot and still composes.
+  const explicit = await resolveSessionRoute(
+    { route_id: 'ollama-configured', model: 'llama3.1:8b' },
+    opts(home),
+  );
+  assert.equal(explicit.snapshot.requestedModelOrAlias, 'llama3.1:8b');
+  assert.ok(
+    transportForSnapshot(explicit.snapshot, { homeDir: home, env: { PATH: '' } }) instanceof
+      CompatibleHttpTransport,
+  );
+});
