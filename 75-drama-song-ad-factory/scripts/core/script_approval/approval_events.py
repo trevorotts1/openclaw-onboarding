@@ -116,6 +116,35 @@ _SCOPE_MARKS = ("except", "excepting", "except that", "other than", "apart from"
 _SELECTION_RE = re.compile(
     r"\b(?:option|choice|number|no)\s*[-:.]?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b")
 
+#: a word that picks ONE artifact out of a list by its position
+_ORDINAL_RE = re.compile(
+    r"\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
+    r"one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:st|nd|rd|th)?)\b")
+
+#: the words an ordinal may NUMBER instead of selecting -- a revision
+_REVISION_NOUNS = frozenset(
+    "revision revisions rev revs version versions ver v".split())
+
+
+def selects_one_artifact(text):
+    """True when the reply picks ONE artifact out of a list by position.
+
+    "the second script", "script two" and "the 2nd script" are SELECTIONS: the
+    presentation shows exactly one artifact of each kind, so the ordinal names a
+    member of a list that was never shown. An ordinal that numbers a revision
+    ("version 1", "the second revision") is not a selection -- the revision rule
+    binds that -- and is left alone here.
+    """
+    words = re.findall(r"[a-z0-9]+", str(text or "").lower())
+    for i, word in enumerate(words):
+        if not _ORDINAL_RE.fullmatch(word):
+            continue
+        near = [w for w in (words[i - 1:i] + words[i + 1:i + 2]) if w]
+        if any(w in _REVISION_NOUNS for w in near):
+            continue
+        return True
+    return False
+
 _QUESTION_START = ("am", "are", "can", "could", "did", "do", "does", "had", "has",
                    "have", "how", "is", "may", "might", "shall", "should", "was",
                    "were", "what", "when", "where", "which", "who", "why", "will",

@@ -78,6 +78,31 @@ NAMED_REFUSAL_CODES = ("APPROVAL_NAMES_UNSEEN_REVISION",
                        "APPROVAL_NAMES_UNKNOWN_ARTIFACT",
                        "APPROVAL_NAMES_UNSEEN_ARTIFACT")
 
+#: an ordinal that SELECTS one artifact names nothing that was presented
+ORDINAL_SELECTIONS = (
+    "We approve the second script.",
+    "We approve the second script and the lyrics.",
+    "We approve the first script.",
+    "We approve the third lyric.",
+    "We approve the 2nd script.",
+    "We approve script two.",
+    "We approve the second script at revision 1.",
+)
+
+#: a selection beside a package name never falls through to the whole package
+ORDINAL_SELECTION_BESIDE_PACKAGE = (
+    "We approve the second script and the drama song ad package.",
+    "We approve the drama song ad package and the first lyric.",
+)
+
+#: an ordinal that NUMBERS a presented revision is not a selection
+ORDINAL_REVISION_REFERENCES = (
+    ("We approve the script at revision 1.", ["script"]),
+    ("We approve version 1 of the script.", ["script"]),
+    ("We approve the script, rev 1.", ["script"]),
+    ("We approve the first revision of the script.", ["script"]),
+)
+
 
 def components():
     return {k: {"revision": 1, "digest": "digest-" + k} for k in B.COMPONENTS}
@@ -179,6 +204,40 @@ def test_idiom_affirmatives_still_open_at_their_named_scope():
         receipt = book.approve("package", client_ctx(text))
         assert sorted(receipt["components"]) == sorted(B.COMPONENTS), text
         assert book.admissibility("package")["ok"] is True, text
+
+
+def test_an_ordinal_selection_never_mints_a_receipt():
+    """"We approve the second script." names no presented artifact: one script
+    was shown, so "the second" is a member of a list that was never presented.
+    It must never reach the name-gap carve-out and mint a receipt."""
+    for text in ORDINAL_SELECTIONS:
+        book = _bound_book()
+        exc = _raises(book.approve, "package", client_ctx(text))
+        assert exc.code == "APPROVAL_IS_A_SELECTION", (text, exc.code)
+        _assert_refused(book, exc, text)
+
+
+def test_an_ordinal_beside_a_package_name_mints_nothing():
+    """A selection beside a package name never falls through to a whole-package
+    mint the client did not name."""
+    for text in ORDINAL_SELECTION_BESIDE_PACKAGE:
+        book = _bound_book()
+        exc = _raises(book.approve, "package", client_ctx(text))
+        assert exc.code == "APPROVAL_IS_A_SELECTION", (text, exc.code)
+        _assert_refused(book, exc, text)
+
+
+def test_an_ordinal_that_numbers_a_revision_still_resolves():
+    """The other half of the screen: a numeral that numbers a presented
+    revision is not a selection, and still opens at its own scope. A screen that
+    refused these too would be a blanket refusal, not a repair."""
+    for text, covers in ORDINAL_REVISION_REFERENCES:
+        book = _bound_book()
+        receipt = book.approve("package", client_ctx(text))
+        assert receipt["decision"] == "approved" and receipt["state"] == B.ACTIVE, text
+        assert sorted(receipt["components"]) == covers, (text, receipt["components"])
+        verdict = book.admissibility("package")
+        assert verdict["code"] == "APPROVAL_INCOMPLETE", (text, verdict)
 
 
 if __name__ == "__main__":

@@ -503,6 +503,22 @@ class ApprovalBook:
                     {"intent": intent, "reason_code": reason,
                      "named": list(unknown or kinds),
                      "components": list(COMPONENTS)})
+        # AN ORDINAL THAT SELECTS ONE ARTIFACT NAMES NOTHING THAT WAS PRESENTED.
+        # "the second script" leaves the word "second" behind and the interpreter
+        # reports it as REPLY_NAMES_NO_WHOLE_ARTIFACT -- the very code it reports
+        # for a real name gap ("the characters", "the scene plan"), where the
+        # vocabulary cannot carry the artifact the client named. The two are not
+        # the same thing: a name gap is an artifact this scope resolves, a
+        # selection is a member of a list this presentation never showed. Only
+        # the first may open the carve-out below, so a selection can never mint.
+        selection = AE.selects_one_artifact(text) if AE is not None else False
+        if selection and status in ("all", "some"):
+            raise BindingError(
+                "APPROVAL_IS_A_SELECTION",
+                "that reply picks one artifact out of a list this presentation "
+                "never showed; name the artifact itself",
+                {"named": sorted(kinds), "components": list(COMPONENTS),
+                 "intent": intent, "reason_code": reason})
         # The interpreter's form screens still decide what KIND of reply this
         # is: a question, a quote, a condition, a selection, an edit request or
         # a negation never approves. Two of its reads are only its vocabulary
@@ -513,8 +529,10 @@ class ApprovalBook:
         # that names its referent and passes the very same screens.
         reads_as_decision = (
             (intent == "approve" and AE.is_affirmative(text))
-            or (reason == "REPLY_NAMES_NO_WHOLE_ARTIFACT" and status in ("all", "some"))
-            or (status in ("all", "some") and AE.is_idiom_approval(text, _SCOPE_WORDS)))
+            or (reason == "REPLY_NAMES_NO_WHOLE_ARTIFACT" and status in ("all", "some")
+                and not selection)
+            or (status in ("all", "some") and not selection
+                and AE.is_idiom_approval(text, _SCOPE_WORDS)))
         if not reads_as_decision:
             raise BindingError("APPROVAL_NOT_ACTUAL",
                                "that reply is not an approval: %s" % (intent,),
