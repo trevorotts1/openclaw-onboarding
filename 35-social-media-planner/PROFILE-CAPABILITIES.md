@@ -10,7 +10,7 @@ is declared in exactly one of three honest modes:
 
 | Mode | Meaning |
 |---|---|
-| `unattended` | The system performs the action without a human step, through the named path. |
+| `unattended` | The declaration says the platform supports the action through the named path. **This contract does not monitor or verify that path yet** — unattended coverage is `unproved`, so no unattended publication is ever reported (see [Coverage honesty](#coverage-honesty-b-04)). |
 | `assisted` | The system prepares the exact placement and hands it to the operator for one manual step. The operator's confirmation is the receipt. |
 | `unavailable` | The system cannot do it and offers no assisted route. |
 
@@ -68,11 +68,50 @@ source changes; never guess a capability into existence.
    is not an ISO-8601 timestamp, and a package that already claims publication —
    a claim is never laundered into a receipt. The record it returns must pass its
    own truth check before it is handed back.
+   Authority is **provenance, not shape** (B-27): `prepare_assisted_placement` stamps
+   the package with an HMAC provenance marker over its own claim fields, and
+   `record_operator_confirmation` refuses any package that does not carry one. A
+   hand-built dict, a hand-edited file, or a dict whose keys/types the constructor
+   never produced cannot mint a placement id, an operator receipt, or a status claim
+   — editing a sealed record invalidates the marker, because the MAC covers route,
+   channel, account type, action, placement, status and receipt.
 5. **Never claim system publication.** `published-by-system` and bare `published` are
    forbidden statuses for an assisted placement.
 
 The system never confirms on the operator's behalf, and an empty operator name is
 refused.
+
+## Coverage honesty (B-04)
+
+The browser test behind this contract is **narrow**: it reads the declaration and
+exercises the assisted prepare / confirm / status / guard paths in-process and
+through the CLI. **Public monitoring is not claimed.** No channel or account is
+polled, observed or watched by this contract, and no platform publication is read
+back from a platform API. Consequently:
+
+- unattended coverage is `unproved`, and `_truth_of()` **refuses every unattended
+  publication record** instead of rendering `published-by-system`;
+- `unattended_coverage()` returns `status: unproved`, `monitoring: false`,
+  `claim: coverage-unproved`, the proof that would be required, and the owner who
+  must decide it — never a coverage claim.
+
+Before an unattended publication may be reported, all of the following must exist
+(declared in `policy.unattended_coverage.required_proof`):
+
+1. a named, running public monitor for the exact channel and account type, with its
+   own allow-listed credentials;
+2. an observed publication whose platform-side identifier is recorded and
+   independently read back from the platform API;
+3. a monitor run log showing that readback within the declared window;
+4. a re-run of the readback after a restart, proving the coverage survives a
+   process death.
+
+**Owner decision (pending):** the operator who owns this fleet installation
+(Trevor Otts) must decide whether to fund and build that per-channel monitor
+coverage, and what evidence is accepted as proof. Until that decision is recorded
+and the proof exists, `published-by-system` stays unreportable. The declaration's
+own flag alone cannot mint coverage: the read path refuses the claim regardless of
+what the flag says.
 
 ## Refusal path
 
@@ -104,8 +143,8 @@ with no Business Profile) refuses with `capability_unavailable` and `offer: null
 | Route | Allowed status | Claim |
 |---|---|---|
 | assisted | `awaiting-operator` | nothing-posted |
-| assisted | `operator-confirmed` | operator-confirmed |
-| unattended | `published-by-system` | published-by-system |
+| assisted | `operator-confirmed` | operator-confirmed (requires the sanctioned provenance marker **and** a valid receipt) |
+| unattended | — | **none.** No unattended publication is rendered; coverage is unproved |
 
 Any assisted record that reports `published-by-system`, `published`, or
 `operator-confirmed` without a valid receipt raises `UntruthfulPublication`. A
@@ -118,9 +157,14 @@ surface never renders that claim.
 
 - an assisted or personal record claims `published-by-system`, `published`, or
   `published_by_system: true`;
-- `operator-confirmed` has no valid receipt bound to that placement;
+- `operator-confirmed` has no sanctioned provenance marker or no valid receipt bound
+  to that placement;
 - `awaiting-operator` carries a receipt;
-- a personal profile record uses the unattended route at all.
+- the record's channel or account type is not declared, or the route it claims is not
+  the route the declaration grants that account type;
+- the record's action is not declared for that channel and account type;
+- a personal profile record uses the unattended route at all;
+- any record claims an unattended publication (coverage is unproved — see above).
 
 The status surface and the truth guard are ONE code path: both call
 `_truth_of()`, and the personal-profile/unattended rule lives in one place
@@ -163,9 +207,13 @@ python3 scripts/profile_capability.py guard --record record.json
 
 ```bash
 python3 -m unittest tests/social-planner/test_t22_profile_capability.py -v
+python3 -m unittest tests/social-planner/test_t22_status_guard_matrix.py -v
 ```
 
-The suite proves: unattended personal-profile requests are refused with a clear
+The suites prove: unattended personal-profile requests are refused with a clear
 reason; a receipt exists only after operator confirmation; a system-claimed
-publication without a receipt fails the guard; and the capability data round-trips
-as the single source consumed by the status surface.
+publication without a receipt fails the guard; a hand-built dict cannot mint a
+placement id, an operator receipt or a status claim (B-27); and no unattended
+publication is claimed while its coverage is unproved (B-04). The tests are narrow
+by design: they exercise the declaration and the assisted code paths only. They do
+not assert anything about public monitoring, because this contract performs none.

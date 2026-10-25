@@ -7,13 +7,16 @@ personal_profile, status and receipt presence: never one blessing a claim the
 other refuses, and never one refusing a claim the other blesses.
 
 Both now delegate to the same truth evaluator, so agreement is structural; this
-matrix is the proof that it holds, plus the known-good control where a genuine
-page publication passes both.
+matrix is the proof that it holds, plus the known-good controls where a sanctioned
+assisted placement passes both and an unattended publication is refused because
+its coverage is unproved (B-04).
 
 Run:  python3 -m unittest tests/social-planner/test_t22_status_guard_matrix.py -v
 """
 
+import hashlib
 import itertools
+import json
 import os
 import sys
 import unittest
@@ -134,46 +137,52 @@ class TestStatusGuardAgreement(unittest.TestCase):
                 with self.assertRaises(ppc.UntruthfulPublication):
                     fn(record)
 
-    def test_known_good_page_publication_passes_both(self):
-        controls = [
-            # a genuine page publication on the declared unattended path
-            {
-                "placement_id": "plc_page",
-                "route": "unattended",
-                "channel": "facebook",
-                "account_type": "page",
-                "personal_profile": False,
-                "status": "published-by-system",
-                "receipt": None,
-            },
-            # a non-personal (page-class) placement the operator confirmed, with a
-            # bound receipt. T-22c: this control is built through the real
-            # workflow instead of hand-written, because a hand-written one with a
-            # fabricated placement_id and no placement is exactly the mint this
-            # suite now refuses.
-            ppc.record_operator_confirmation(
-                ppc.prepare_assisted_placement("threads", "business", PLACEMENT),
-                "Operator Name",
-                confirmed_at="2026-10-24T15:00:00Z",
-            ),
-            # an honest personal placement, awaiting the operator
-            {
-                "placement_id": PLACEMENT_ID,
-                "route": "assisted",
-                "channel": "facebook",
-                "account_type": "personal",
-                "personal_profile": True,
-                "status": "awaiting-operator",
-                "receipt": None,
-            },
-        ]
-        for record in controls:
+    def test_known_good_assisted_placements_pass_both_and_unattended_is_not_claimed(self):
+        """B-04: only the assisted paths are proved here.
+
+        No public monitor runs in this contract, so no unattended publication is
+        certified — coverage is 'unproved' and the refusal names the proof needed
+        and the owner who must decide it.
+        """
+        confirmed = ppc.record_operator_confirmation(
+            ppc.prepare_assisted_placement("threads", "business", PLACEMENT),
+            "Operator Name",
+            confirmed_at="2026-10-24T15:00:00Z",
+        )
+        awaiting = ppc.prepare_assisted_placement("facebook", "personal", PLACEMENT)
+        for record in (confirmed, awaiting):
             surface = ppc.status_surface(record)
             self.assertTrue(ppc.assert_truthful_publication(record), repr(record))
             self.assertEqual(surface["status"], record["status"])
-        self.assertEqual(ppc.status_surface(controls[0])["claim"], "published-by-system")
-        self.assertTrue(ppc.status_surface(controls[0])["published_by_system"])
-        self.assertFalse(ppc.status_surface(controls[2])["published_by_system"])
+            self.assertFalse(surface["published_by_system"])
+            self.assertEqual(surface["provenance"], "sanctioned")
+        self.assertEqual(ppc.status_surface(confirmed)["claim"], "operator-confirmed")
+        self.assertEqual(ppc.status_surface(awaiting)["claim"], "nothing-posted")
+
+        # A hand-built page publication is refused: this contract monitors nothing.
+        page = {
+            "placement_id": "plc_page",
+            "route": "unattended",
+            "channel": "facebook",
+            "account_type": "page",
+            "personal_profile": False,
+            "status": "published-by-system",
+            "receipt": None,
+        }
+        for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+            with self.assertRaises(ppc.UntruthfulPublication) as caught:
+                fn(page)
+            self.assertIn("coverage is 'unproved'", str(caught.exception))
+            self.assertIn("Owner who must decide it", str(caught.exception))
+
+        coverage = ppc.unattended_coverage()
+        self.assertEqual(coverage["status"], "unproved")
+        self.assertFalse(coverage["monitoring"])
+        self.assertEqual(coverage["claim"], "coverage-unproved")
+        self.assertTrue(coverage["required_proof"])
+        self.assertTrue(coverage["owner_decision"]["owner"])
+        self.assertTrue(coverage["owner_decision"]["decision"])
+        self.assertEqual(coverage["owner_decision"]["status"], "pending")
 
 
 class TestUnattendedRefusalHeld(unittest.TestCase):
@@ -295,6 +304,141 @@ class TestOperatorConfirmationHardening(unittest.TestCase):
             ppc.record_operator_confirmation(
                 dict(package, placement=dict(typed)), "Operator Name"
             )
+
+
+class TestArbitraryDictCannotMint(unittest.TestCase):
+    """B-27: authority is minted only by the sanctioned constructor.
+
+    Every attack here is a caller-supplied dict. The forged placement id is
+    recomputed from public knowledge (the same canonical digest), so the tests do
+    not depend on a private helper to show what an attacker can build.
+    """
+
+    def _forged_placement_id(self, channel="instagram", account_type="personal", action="post"):
+        payload = json.dumps(
+            {
+                "channel": channel,
+                "account_type": account_type,
+                "action": action,
+                "placement": PLACEMENT,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            default=str,
+        )
+        return "plc_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+    def _forged_package(self):
+        return {
+            "placement_id": self._forged_placement_id(),
+            "channel": "instagram",
+            "account_type": "personal",
+            "action": "post",
+            "route": "assisted",
+            "status": "awaiting-operator",
+            "placement": PLACEMENT,
+            "receipt": None,
+            "published_by_system": False,
+        }
+
+    def test_hand_built_package_cannot_become_an_approval(self):
+        with self.assertRaises(ppc.CapabilityError) as caught:
+            ppc.record_operator_confirmation(self._forged_package(), "Operator Name")
+        self.assertIn("sanctioned provenance marker", str(caught.exception))
+
+    def test_hand_built_operator_confirmed_record_is_refused_by_both(self):
+        forged = dict(
+            self._forged_package(),
+            status="operator-confirmed",
+            receipt={
+                "placement_id": self._forged_placement_id(),
+                "operator": "Operator Name",
+                "confirmed_at": "2026-10-24T15:00:00Z",
+                "method": "operator-asserted",
+            },
+        )
+        for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+            with self.assertRaises(ppc.UntruthfulPublication, msg=fn.__name__):
+                fn(forged)
+
+    def test_a_copied_marker_does_not_fit_an_edited_record(self):
+        package = ppc.prepare_assisted_placement("facebook", "personal", PLACEMENT)
+        edited = dict(
+            package,
+            status="operator-confirmed",
+            receipt={
+                "placement_id": package["placement_id"],
+                "operator": "Operator Name",
+                "confirmed_at": "2026-10-24T15:00:00Z",
+                "method": "operator-asserted",
+            },
+        )
+        self.assertIn("provenance", edited)  # the marker travels with the copy
+        for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+            with self.assertRaises(ppc.UntruthfulPublication, msg=fn.__name__):
+                fn(edited)
+
+    def test_undeclared_account_type_cannot_mint_a_publication(self):
+        forged = {
+            "placement_id": "plc_made_up",
+            "channel": "instagram",
+            "account_type": "brand",  # never declared; launders a personal profile
+            "route": "unattended",
+            "status": "published-by-system",
+            "account_label": "Instagram personal profile",
+        }
+        for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+            with self.assertRaises(ppc.CapabilityError, msg=fn.__name__) as caught:
+                fn(forged)
+            self.assertIn("no declared account type", str(caught.exception))
+
+    def test_route_the_declaration_does_not_grant_is_refused(self):
+        # facebook/page is declared unattended; a hand-built assisted record for
+        # it must not be renderable.
+        forged = {
+            "placement_id": "plc_made_up",
+            "channel": "facebook",
+            "account_type": "page",
+            "route": "assisted",
+            "status": "awaiting-operator",
+            "receipt": None,
+        }
+        for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+            with self.assertRaises(ppc.CapabilityError, msg=fn.__name__):
+                fn(forged)
+
+    def test_record_with_no_placement_cannot_render_a_status(self):
+        for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+            with self.assertRaises(ppc.CapabilityError, msg=fn.__name__):
+                fn({"route": "assisted", "status": "awaiting-operator"})
+
+    def test_refusal_path_takes_no_caller_capability(self):
+        """A forged capability dict has no door left: _refusal resolves its own."""
+        import inspect
+
+        params = inspect.signature(ppc._refusal).parameters
+        self.assertNotIn("capability", params)
+        refused = ppc.request_placement(
+            "instagram", "personal", action="post", unattended=True
+        )
+        self.assertTrue(refused["refused"])
+        self.assertEqual(refused["capability"], ppc.get_capability("instagram", "personal"))
+
+    def test_sanctioned_values_still_work(self):
+        """Inverse control: the legitimate constructor path is untouched."""
+        package = ppc.prepare_assisted_placement("instagram", "personal", PLACEMENT)
+        awaiting = ppc.status_surface(package)
+        self.assertEqual(awaiting["claim"], "nothing-posted")
+        self.assertEqual(awaiting["provenance"], "sanctioned")
+        confirmed = ppc.record_operator_confirmation(
+            package, "Operator Name", confirmed_at="2026-10-24T15:00:00Z"
+        )
+        surface = ppc.status_surface(confirmed)
+        self.assertEqual(surface["claim"], "operator-confirmed")
+        self.assertEqual(surface["provenance"], "sanctioned")
+        self.assertFalse(surface["published_by_system"])
+        self.assertTrue(ppc.assert_truthful_publication(confirmed))
 
 
 if __name__ == "__main__":

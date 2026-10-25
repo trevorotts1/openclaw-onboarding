@@ -8,6 +8,24 @@ the refusal path and the truth guard. Nothing here guesses: a channel/account
 type is unattended only when the declaration says so, and a personal profile is
 always assisted (or unavailable), never automated.
 
+Provenance, not shape (B-27). A capability, a status claim or an operator
+receipt binds only when it carries the marker minted here: an HMAC over the
+record's own claim fields, produced by prepare_assisted_placement() and renewed
+by record_operator_confirmation(). A hand-built dict, a hand-edited JSON file, or
+a dict whose keys/types the sanctioned constructor never produced cannot mint
+one: _require_sanctioned() refuses a confirmation that lacks it, _truth_of()
+refuses an unsealed operator-confirmed record instead of labelling it verified,
+and every record is resolved against the declaration, so an undeclared channel,
+account type or action cannot be rendered at all.
+
+Coverage honesty (B-04). The only test behind this contract is NARROW: it reads
+the declaration and exercises the assisted prepare/confirm/status/guard paths
+in-process and through the CLI. No public monitoring of any channel or account is
+run, observed or claimed here, so unattended coverage is UNPROVED and
+_truth_of() refuses every unattended publication claim rather than asserting one.
+The proof that would be required, and the owner who must decide to fund it, are
+declared in policy.unattended_coverage and reported by unattended_coverage().
+
 Assisted contract:
   1. request_placement(unattended=True) on a personal profile is REFUSED with a
      plain limitation and an explicit assisted offer. No silent downgrade and no
@@ -38,6 +56,7 @@ from __future__ import annotations
 import copy
 import datetime as _dt
 import hashlib
+import hmac
 import json
 import os
 from typing import Any, Optional
@@ -65,6 +84,128 @@ class UntruthfulPublication(CapabilityError):
 
 def _cap_path(path: Optional[str] = None) -> str:
     return os.path.abspath(path or CAPABILITIES_PATH)
+
+
+# --- provenance marker (B-27) ------------------------------------------------
+#
+# The marker is an HMAC over a record's own claim fields, keyed from the
+# declaration the record is checked against. It is minted ONLY by
+# prepare_assisted_placement() and record_operator_confirmation(), and it travels
+# with the record (so a prepared package read back from disk still verifies),
+# while a caller cannot produce one from a hand-built dict: the key never appears
+# in the record, and the MAC covers route/channel/account/action/placement/
+# status/receipt, so a copied marker does not fit an edited record.
+#
+# ponytail: the key is derived from source-visible material, so code that imports
+# this module and calls the private sealer can still mint. The ceiling is an
+# unprivileged caller handing in dicts; the upgrade is an operator-held signing
+# key when unattended coverage is proved (see policy.unattended_coverage).
+
+_SEAL_DOMAIN = b"personal-profile-capability/seal-v1"
+_SEAL_ALGORITHM = "hmac-sha256"
+_SEAL_VERSION = 1
+_SEAL_RECEIPT_FIELDS = ("placement_id", "operator", "confirmed_at", "method", "evidence")
+_SEAL_KEYS: dict = {}
+
+
+def _seal_key(path: Optional[str] = None) -> bytes:
+    resolved = _cap_path(path)
+    cached = _SEAL_KEYS.get(resolved)
+    if cached:
+        return cached
+    try:
+        with open(resolved, "rb") as handle:
+            declaration = handle.read()
+    except OSError as exc:
+        raise CapabilityError(f"cannot read capability declaration: {exc}") from exc
+    key = hashlib.sha256(_SEAL_DOMAIN + b"\x00" + declaration).digest()
+    _SEAL_KEYS[resolved] = key
+    return key
+
+
+def _seal_payload(record: dict) -> bytes:
+    receipt = record.get("receipt") if isinstance(record.get("receipt"), dict) else None
+    core = (
+        {field: receipt.get(field) for field in _SEAL_RECEIPT_FIELDS}
+        if receipt is not None
+        else None
+    )
+    return json.dumps(
+        {
+            "route": record.get("route"),
+            "channel": record.get("channel"),
+            "account_type": record.get("account_type"),
+            "action": record.get("action"),
+            "placement": record.get("placement"),
+            "status": record.get("status"),
+            "receipt": core,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    ).encode("utf-8")
+
+
+def _seal(record: dict, path: Optional[str] = None) -> dict:
+    """Stamp a record with the provenance marker (constructor-side only)."""
+    mac = hmac.new(_seal_key(path), _seal_payload(record), hashlib.sha256).hexdigest()
+    record["provenance"] = {
+        "algorithm": _SEAL_ALGORITHM,
+        "version": _SEAL_VERSION,
+        "mac": mac,
+    }
+    return record
+
+
+def _is_sanctioned(record: Any, path: Optional[str] = None) -> bool:
+    """True only when the record carries a marker that fits its own fields."""
+    if not isinstance(record, dict):
+        return False
+    provenance = record.get("provenance")
+    if not isinstance(provenance, dict):
+        return False
+    if provenance.get("algorithm") != _SEAL_ALGORITHM:
+        return False
+    if provenance.get("version") != _SEAL_VERSION:
+        return False
+    mac = provenance.get("mac")
+    if not isinstance(mac, str) or len(mac) != 64:
+        return False
+    expected = hmac.new(_seal_key(path), _seal_payload(record), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(mac, expected)
+
+
+def _require_sanctioned(record: Any, path: Optional[str] = None, what: str = "this package") -> None:
+    if not _is_sanctioned(record, path):
+        raise CapabilityError(
+            f"{what} carries no sanctioned provenance marker, so it cannot mint "
+            "authority. A placement id is minted only by "
+            "prepare_assisted_placement(), and an operator receipt only by "
+            "record_operator_confirmation(); a hand-built dict, a hand-edited file "
+            "or a dict whose keys/types the constructor did not produce is refused."
+        )
+
+
+def _resolve_declared(caps: dict, channel: Any, account_type: Any) -> dict:
+    """Resolve a record's channel + account type against the declaration."""
+    channel_id = channel.strip().lower() if isinstance(channel, str) else ""
+    account_id = account_type.strip().lower() if isinstance(account_type, str) else ""
+    channel_block = (caps.get("channels") or {}).get(channel_id)
+    if channel_block is None:
+        raise CapabilityError(
+            f"record names no declared channel '{channel}' (declared: "
+            f"{sorted(caps.get('channels') or {})}); an undeclared channel cannot "
+            "carry a capability or a status claim"
+        )
+    account = (channel_block.get("account_types") or {}).get(account_id)
+    if account is None:
+        raise CapabilityError(
+            f"record names no declared account type '{account_type}' for channel "
+            f"'{channel_id}' (declared: {sorted(channel_block['account_types'])}); "
+            "an undeclared account type cannot carry a capability or a status claim"
+        )
+    return account
 
 
 def load_capabilities(path: Optional[str] = None) -> dict:
@@ -106,6 +247,31 @@ def _validate_capabilities(caps: dict) -> None:
         raise CapabilityError("policy.no_system_publication_without_receipt must be true")
     if not policy.get("refusal_language") or not policy.get("assisted_offer_language"):
         raise CapabilityError("policy refusal/offer language must be present")
+
+    coverage = policy.get("unattended_coverage")
+    if not isinstance(coverage, dict):
+        raise CapabilityError(
+            "policy.unattended_coverage must be declared: what is NOT proved about "
+            "unattended publication, the proof required, and the owner who decides it"
+        )
+    if not str(coverage.get("status") or "").strip():
+        raise CapabilityError("policy.unattended_coverage.status must be declared")
+    proof = coverage.get("required_proof")
+    if not isinstance(proof, list) or not proof or not all(
+        isinstance(item, str) and item.strip() for item in proof
+    ):
+        raise CapabilityError(
+            "policy.unattended_coverage.required_proof must list the proof required "
+            "before an unattended publication could be claimed"
+        )
+    decision = coverage.get("owner_decision")
+    if not isinstance(decision, dict):
+        raise CapabilityError("policy.unattended_coverage.owner_decision must be declared")
+    for field in ("owner", "decision", "status"):
+        if not str(decision.get(field) or "").strip():
+            raise CapabilityError(
+                f"policy.unattended_coverage.owner_decision.{field} must be declared"
+            )
 
     channels = caps.get("channels")
     if not isinstance(channels, dict) or not channels:
@@ -198,9 +364,15 @@ def _refusal(
     action: str,
     reason_code: str,
     reason: str,
-    capability: dict,
     offer_assisted: bool,
+    path: Optional[str] = None,
 ) -> dict:
+    """Build a refusal. The capability block is resolved HERE, from the declaration.
+
+    It is never accepted as a caller argument: a refusal that echoed a caller's own
+    capability dict would mint an authority the declaration never granted.
+    """
+    capability = get_capability(channel, account_type, path)
     offer = None
     if offer_assisted:
         offer = {
@@ -255,8 +427,8 @@ def request_placement(
                 f"Action '{action_id}' is not declared for {capability['channel_label']} "
                 f"{capability['label']}. The declaration covers: {sorted(known_actions)}."
             ),
-            capability,
             offer_assisted=bool(capability["operator_action"]),
+            path=path,
         )
 
     if action_id in capability["unavailable"] or capability["mode"] == "unavailable":
@@ -270,8 +442,8 @@ def request_placement(
                 f"{capability['label']} cannot perform '{action_id}' in this system. "
                 f"{capability['notes']}"
             ).strip(),
-            capability,
             offer_assisted=False,
+            path=path,
         )
 
     if unattended:
@@ -291,8 +463,8 @@ def request_placement(
             action_id,
             "unattended_not_supported",
             caps["policy"]["refusal_language"],
-            capability,
             offer_assisted=action_id in capability["operator_action"],
+            path=path,
         )
 
     if action_id in capability["operator_action"] or capability["mode"] == "assisted":
@@ -402,7 +574,7 @@ def prepare_assisted_placement(
     """Prepare the exact placement and the one-step operator handoff."""
     capability = get_capability(channel, account_type, path)
     action_id = (action or "post").strip().lower()
-    if capability["mode"] not in ("assisted", "unattended"):
+    if capability["mode"] != "assisted":
         raise CapabilityError(
             f"{capability['channel']}/{capability['account_type']} is "
             f"'{capability['mode']}' and has no assisted placement route"
@@ -428,7 +600,7 @@ def prepare_assisted_placement(
         "placement": clean,
     }
     placement_id = _placement_provenance(package)
-    return {
+    result = {
         "placement_id": placement_id,
         "channel": package["channel"],
         "channel_label": package["channel_label"],
@@ -450,6 +622,8 @@ def prepare_assisted_placement(
             "source_urls": capability["source_urls"],
         },
     }
+    # The only place an awaiting-operator package becomes authoritative.
+    return _seal(result, path)
 
 
 def _now_utc() -> str:
@@ -461,7 +635,7 @@ def _now_utc() -> str:
     )
 
 
-def _valid_receipt(receipt: Any, record: Any) -> bool:
+def _valid_receipt(receipt: Any, record: Any, path: Optional[str] = None) -> bool:
     """A receipt is proof only when it binds to a placement that is REAL.
 
     Real means provenance, not self-consistency: the record's placement_id must
@@ -473,7 +647,7 @@ def _valid_receipt(receipt: Any, record: Any) -> bool:
     """
     if not isinstance(receipt, dict) or not isinstance(record, dict):
         return False
-    caps = load_capabilities()
+    caps = load_capabilities(path)
     for field in caps["policy"]["receipt_required_fields"]:
         value = receipt.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
@@ -519,6 +693,7 @@ def record_operator_confirmation(
             f"placement {package.get('placement_id')} is '{package.get('status')}', "
             "not awaiting-operator"
         )
+    _require_sanctioned(package)
     name = (operator or "").strip()
     if not name:
         raise CapabilityError(
@@ -557,28 +732,35 @@ def record_operator_confirmation(
     confirmed["receipt"] = receipt
     confirmed["status"] = "operator-confirmed"
     confirmed["published_by_system"] = False
+    # The only place an operator receipt becomes authoritative.
+    _seal(confirmed)
     _truth_of(confirmed)
     return confirmed
 
 
-def _is_personal_record(record: dict) -> bool:
-    """The ONE predicate for "this record is a personal profile / personal account"."""
-    return bool(record.get("personal_profile")) or record.get("account_type") == "personal"
-
-
-def _reject_personal_on_unattended(record: dict) -> None:
+def _reject_personal_on_unattended(record: dict, personal: Optional[bool] = None) -> None:
     """The ONE honesty rule the read path and the guard must both enforce.
 
     PROFILE-CAPABILITIES.md lists "a personal profile record uses the unattended
     route at all" as fail closed. This is its only implementation: status_surface
     and assert_truthful_publication both call it, so the two cannot drift apart.
+    `personal` is the resolved verdict (record flag, account_type, or the
+    declaration's own personal_profile) so a renamed account type cannot launder
+    a personal profile past the rule.
     """
-    if record.get("route") == "unattended" and _is_personal_record(record):
+    if personal is None:
+        personal = _is_personal_record(record)
+    if record.get("route") == "unattended" and personal:
         raise UntruthfulPublication(
             f"record {record.get('placement_id')} is a personal profile on the "
             "unattended route; a personal profile can never use the unattended "
             "publication route"
         )
+
+
+def _is_personal_record(record: dict) -> bool:
+    """The ONE predicate for "this record is a personal profile / personal account"."""
+    return bool(record.get("personal_profile")) or record.get("account_type") == "personal"
 
 
 def _truth_of(record: dict, path: Optional[str] = None) -> dict:
@@ -600,9 +782,36 @@ def _truth_of(record: dict, path: Optional[str] = None) -> dict:
     placement_id = record.get("placement_id")
     receipt = record.get("receipt") if isinstance(record.get("receipt"), dict) else None
 
-    _reject_personal_on_unattended(record)
+    if route not in ("assisted", "unattended"):
+        raise UntruthfulPublication(
+            f"record {placement_id} has no declared route; publication "
+            "cannot be claimed"
+        )
 
-    if route == "assisted" or _is_personal_record(record):
+    # The declaration is the only source of capability. An undeclared channel,
+    # account type or action is refused before any claim is rendered, so a
+    # hand-built record cannot invent a capability the declaration never granted.
+    declared = _resolve_declared(caps, channel, account_type)
+    personal = _is_personal_record(record) or bool(declared.get("personal_profile"))
+    _reject_personal_on_unattended(record, personal)
+
+    if route == "assisted":
+        if declared.get("mode") != "assisted":
+            raise CapabilityError(
+                f"record {placement_id} claims the assisted route for "
+                f"{channel}/{account_type}, but the declaration gives that account "
+                f"type mode '{declared.get('mode')}'; a route the declaration does "
+                "not grant cannot be rendered"
+            )
+        action = record.get("action")
+        if isinstance(action, str) and action.strip():
+            action_id = action.strip().lower()
+            if action_id not in declared.get("operator_action", []):
+                raise CapabilityError(
+                    f"record {placement_id} claims action '{action_id}' for "
+                    f"{channel}/{account_type}, which the declaration does not list "
+                    f"as an operator action (declared: {declared.get('operator_action')})"
+                )
         forbidden = policy["assisted_forbidden_statuses"]
         if status in forbidden:
             raise UntruthfulPublication(
@@ -621,8 +830,29 @@ def _truth_of(record: dict, path: Optional[str] = None) -> dict:
                 "assisted/personal placement requires an operator receipt and may "
                 "never be reported as published by the system"
             )
+        # A claim must bind to a placement its own inputs can reproduce.
+        try:
+            provenance = _placement_provenance(record)
+        except CapabilityError as exc:
+            raise UntruthfulPublication(
+                f"record {placement_id} cannot reproduce its own placement, so its "
+                f"status claim proves nothing: {exc}"
+            ) from exc
+        if provenance != placement_id:
+            raise UntruthfulPublication(
+                f"record {placement_id} does not recompute to its own placement "
+                f"(digest '{provenance}'); a status claim is proof only for the "
+                "placement it can be derived from"
+            )
         if status == "operator-confirmed":
-            if not _valid_receipt(receipt, record):
+            if not _is_sanctioned(record, path):
+                raise UntruthfulPublication(
+                    f"record {placement_id} is operator-confirmed without the "
+                    "sanctioned provenance marker; an operator receipt is minted only "
+                    "by record_operator_confirmation(), and a hand-built dict cannot "
+                    "be rendered as a verified approval"
+                )
+            if not _valid_receipt(receipt, record, path):
                 raise UntruthfulPublication(
                     f"record {placement_id} is operator-confirmed without a "
                     "valid operator receipt"
@@ -643,30 +873,40 @@ def _truth_of(record: dict, path: Optional[str] = None) -> dict:
             "status": status,
             "label": allowed[status],
             "claim": claim,
+            "provenance": "sanctioned" if _is_sanctioned(record, path) else "unverified",
             "published_by_system": False,
             "receipt": receipt,
         }
 
-    if route == "unattended":
-        if status != "published-by-system":
+    # Unattended. The declaration may grant the route, but this contract collects
+    # and verifies NO public-monitor evidence, so an unattended publication is
+    # never claimed. Refusing here is what keeps "published-by-system" honest.
+    if declared.get("mode") != "unattended":
+        raise CapabilityError(
+            f"record {placement_id} claims the unattended route for "
+            f"{channel}/{account_type}, but the declaration gives that account type "
+            f"mode '{declared.get('mode')}'; a route the declaration does not grant "
+            "cannot be rendered"
+        )
+    action = record.get("action")
+    if isinstance(action, str) and action.strip():
+        action_id = action.strip().lower()
+        if action_id not in declared.get("unattended", []):
             raise CapabilityError(
-                f"unattended placement status '{status}' is not supported"
+                f"record {placement_id} claims unattended action '{action_id}' for "
+                f"{channel}/{account_type}, which the declaration does not list as "
+                f"unattended (declared: {declared.get('unattended')})"
             )
-        return {
-            "placement_id": placement_id,
-            "channel": channel,
-            "account_type": account_type,
-            "route": "unattended",
-            "status": status,
-            "label": "Published by the system through the declared unattended path.",
-            "claim": "published-by-system",
-            "published_by_system": True,
-            "receipt": receipt,
-        }
-
+    coverage = policy["unattended_coverage"]
+    decision = coverage["owner_decision"]
     raise UntruthfulPublication(
-        f"record {placement_id} has no declared route; publication "
-        "cannot be claimed"
+        f"record {placement_id} claims '{status}' on the unattended route, but no "
+        f"public-monitor evidence exists for {channel}/{account_type} in this "
+        f"contract: coverage is '{coverage['status']}', so no system publication may "
+        "be reported. Required proof before the claim is allowed: "
+        f"{'; '.join(coverage['required_proof'])}. Owner who must decide it: "
+        f"{decision['owner']} (decision: {decision['decision']}; status: "
+        f"{decision['status']})."
     )
 
 
@@ -679,6 +919,26 @@ def assert_truthful_publication(record: dict, path: Optional[str] = None) -> boo
     """Guard: a publication claim without an operator receipt is a failure."""
     _truth_of(record, path)
     return True
+
+
+def unattended_coverage(path: Optional[str] = None) -> dict:
+    """Report what is NOT proved about unattended publication.
+
+    This never returns a monitoring claim. It states the coverage status, the
+    proof that would be required, and the owner who must decide it, straight from
+    the declaration, so a consumer cannot mistake "declared unattended" for
+    "observed and monitored".
+    """
+    caps = load_capabilities(path)
+    coverage = copy.deepcopy(caps["policy"]["unattended_coverage"])
+    coverage["monitoring"] = False
+    coverage["claim"] = "coverage-unproved"
+    coverage["note"] = (
+        "No public monitor runs in this contract. An unattended publication may "
+        "not be reported until the required proof exists and the named owner "
+        "approves it."
+    )
+    return coverage
 
 
 def capability_summary(path: Optional[str] = None) -> dict:
@@ -710,5 +970,6 @@ def capability_summary(path: Optional[str] = None) -> dict:
         "forbidden_assisted_statuses": list(
             caps["policy"]["assisted_forbidden_statuses"]
         ),
+        "unattended_coverage": unattended_coverage(path),
         "records": rows,
     }

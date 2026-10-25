@@ -1,5 +1,53 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.9.0] - 2026-10-25 - T-22b: authority is provenance, not shape (B-27) and unattended coverage is not claimed (B-04)
+
+- B-27 closed structurally. `prepare_assisted_placement` now stamps the package
+  with a provenance marker (HMAC-SHA256 over route, channel, account_type, action,
+  placement, status and receipt, keyed from the declaration it is checked
+  against), and `record_operator_confirmation` refuses any package that does not
+  carry one (`_require_sanctioned`). Before this, a hand-built dict carrying the
+  correctly recomputed `placement_id` was confirmed as `operator-confirmed`, and a
+  hand-built `operator-confirmed` record with a self-consistent receipt passed the
+  guard: `minted=6 refused=0` across six arbitrary-dict attacks. After this,
+  `minted=0 refused=6`. A copied marker does not fit an edited record, because the
+  MAC covers the fields an edit changes.
+- The read path is bound to the declaration. `_truth_of` resolves channel, account
+  type and action against `config/profile-capabilities.json` before rendering any
+  claim, and refuses a route the declaration does not grant that account type. An
+  undeclared account type (e.g. `instagram/brand`) can no longer mint a
+  `published-by-system` claim, and a personal profile cannot be laundered past the
+  unattended rule by renaming its account type. Every assisted claim must also
+  recompute to its own `placement_id`; a record with no placement is refused.
+- `_refusal` no longer accepts a caller-supplied capability dict: it resolves the
+  capability itself, so a forged capability object has no path into a refusal.
+- B-04 made honest. Unattended coverage is declared `unproved` in
+  `policy.unattended_coverage` (status, `monitoring: false`, the narrow test scope,
+  the required proof, and the pending owner decision), and `_truth_of` REFUSES
+  every unattended publication claim instead of rendering `published-by-system`.
+  The refusal names the required proof and the owner who must decide it.
+  `unattended_coverage()` reports the same block and never claims monitoring.
+  The browser test is stated as narrow: declaration plus assisted paths only, no
+  public monitoring.
+- `PROFILE-CAPABILITIES.md`: mode table no longer says the system performs
+  unattended actions; the status-surface table no longer offers an unattended
+  claim; new "Coverage honesty (B-04)" section states the narrow test, the unproved
+  coverage, the four required proofs and the pending owner decision. `SKILL.md` and
+  `INSTRUCTIONS.md` now say the declaration grants unattended actions but coverage is
+  unproved, instead of "what the system can do unattended".
+- Tests: `test_t22_status_guard_matrix.py` 10 -> 18 tests. New
+  `TestArbitraryDictCannotMint` (7 tests: hand-built package cannot become an
+  approval, hand-built confirmed record refused by both surfaces, copied marker
+  does not fit an edited record, undeclared account type refused, ungranted route
+  refused, no-placement record refused, refusal path takes no caller capability)
+  plus a sanctioned inverse control. The known-good page-publication control
+  encoded the B-04 over-claim (a hand-built `published-by-system` passed both
+  surfaces); it now requires the sanctioned assisted paths to pass and the
+  unattended claim to be refused. `test_t22_profile_capability.py` stays 16 tests.
+  Mutation control: disabling both seal checks turns exactly the 3 seal-dependent
+  tests red.
+- skill-version v3.8.2 -> v3.9.0.
+
 ## [3.8.2] - 2026-10-24 - T-22c repair: a receipt is proof only when the placement_id recomputes
 
 - The receipt is now provable, not self-consistent. `prepare_assisted_placement`
