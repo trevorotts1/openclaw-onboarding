@@ -64,11 +64,101 @@ export function manifestEntries(dir, { includeRuntimeDist = false } = {}) {
   return files;
 }
 
+/** The one aggregate formula over [{path, sha256}], sorted by path. */
+export function aggregateEntries(entries) {
+  const sorted = [...entries].sort((a, b) => (a.path < b.path ? -1 : 1));
+  return createHash("sha256")
+    .update(sorted.map((f) => `${f.sha256}  ${f.path}`).join("\n") + "\n")
+    .digest("hex");
+}
+
 /** The aggregate a manifest records, recomputed from the tree as it is now. */
 export function treeAggregate(dir, opts = {}) {
   const entries = manifestEntries(dir, opts);
-  const aggregate = createHash("sha256")
-    .update(entries.map((f) => `${f.sha256}  ${f.path}`).join("\n") + "\n")
-    .digest("hex");
-  return { entries, aggregate, fileCount: entries.length };
+  return { entries, aggregate: aggregateEntries(entries), fileCount: entries.length };
+}
+
+// The only distribution differences a verifier can prove from the canonical
+// release alone. A distribution may declare nothing outside this set.
+export const DISTRIBUTION_KINDS = Object.freeze([
+  "private_scope_items_dropped",
+  "sentences_scrubbed",
+  "generated_archive_not_vendored",
+  "file_added",
+  "manifest_regenerated",
+]);
+
+/**
+ * Fail-closed walk for verification. Unlike walkTree()/treeAggregate(), this
+ * never throws and never follows a symlink: anything it cannot reconstruct
+ * exactly (a link, an unreadable or unstattable entry, an unshippable
+ * dependency tree) becomes a problem the caller must refuse on. It also
+ * reports what the aggregate deliberately excludes, so a verifier can bound
+ * those paths instead of ignoring them:
+ *   entries   [{path, sha256, bytes}] for the files a manifest covers
+ *   dist      the same, for the built runtime under runtime/dist
+ *   archives  [{path, sha256, bytes}] for every *.skill archive present
+ *   generated [{path, kind}] for runtime/node_modules and root .wired-* files
+ *   problems  [{path, reason}] for every entry that cannot be verified
+ */
+export function treeAudit(dir, { includeRuntimeDist = true } = {}) {
+  const entries = [];
+  const dist = [];
+  const archives = [];
+  const generated = [];
+  const problems = [];
+  const push = (entry) => (entry.path.startsWith("runtime/dist/") ? dist : entries).push(entry);
+  const walk = (rel) => {
+    const abs = rel ? join(dir, rel) : dir;
+    let dirents;
+    try {
+      dirents = readdirSync(abs, { withFileTypes: true });
+    } catch (error) {
+      problems.push({ path: rel || ".", reason: `unreadable directory (${String(error.message).split("\n")[0]})` });
+      return;
+    }
+    for (const e of dirents.sort((x, y) => x.name.localeCompare(y.name))) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      const full = join(dir, r);
+      // Version-control metadata and bytecode caches are never skill content;
+      // treeIdentity() skips them too, so the proof must not diverge on them.
+      if (e.name === ".git" || e.name === "__pycache__") continue;
+      if (e.name === "node_modules") {
+        generated.push({ path: r, kind: "runtime/node_modules" });
+        continue;
+      }
+      if (/^\.wired-/.test(e.name) && !rel) {
+        generated.push({ path: r, kind: "roll-sentinel" });
+        continue;
+      }
+      if (e.isSymbolicLink()) {
+        problems.push({ path: r, reason: "is a symlink — a vendored tree must ship regular files, never a link to content outside it" });
+        continue;
+      }
+      if (e.isDirectory()) {
+        walk(r);
+        continue;
+      }
+      if (!e.isFile()) {
+        problems.push({ path: r, reason: "is not a regular file" });
+        continue;
+      }
+      let bytes;
+      try {
+        bytes = readFileSync(full);
+      } catch (error) {
+        problems.push({ path: r, reason: `unreadable (${String(error.message).split("\n")[0]})` });
+        continue;
+      }
+      const entry = { path: r, sha256: createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length };
+      if (r === "manifest.json") continue;
+      if (r.endsWith(".skill")) archives.push(entry);
+      else if (includeRuntimeDist || !isGeneratedRuntimePath(r)) push(entry);
+    }
+  };
+  walk("");
+  entries.sort((a, b) => (a.path < b.path ? -1 : 1));
+  dist.sort((a, b) => (a.path < b.path ? -1 : 1));
+  archives.sort((a, b) => (a.path < b.path ? -1 : 1));
+  return { entries, dist, archives, generated, problems };
 }
