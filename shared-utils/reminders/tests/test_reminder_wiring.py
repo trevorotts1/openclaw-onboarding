@@ -26,6 +26,7 @@ Run from the repo root:
 
 import importlib.util
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -55,6 +56,7 @@ class TestReminderWiring(unittest.TestCase):
     def setUp(self):
         self.nudge = _load_nudge()
         self.tmp = Path(tempfile.mkdtemp(prefix="t17-wire-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.company_root = self.tmp / "zero-human-company"
         self.workspace = self.tmp / "workspace"
         self.company = self.company_root / "acme"

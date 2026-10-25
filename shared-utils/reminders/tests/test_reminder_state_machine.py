@@ -43,6 +43,7 @@ of the file, not a regex over this prose.
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,7 @@ SEQ = "seq-main"
 class _Base(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="t17-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.db = str(self.tmp / "identity.sqlite")
         self.outbox = str(self.tmp / "outbox.sqlite")
         self.identity = TenantIdentity(self.db)
