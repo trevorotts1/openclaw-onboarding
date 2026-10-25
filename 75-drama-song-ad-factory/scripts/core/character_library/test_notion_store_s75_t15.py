@@ -953,6 +953,76 @@ class OutOfProcessMintTest(unittest.TestCase):
         self.assertEqual(store.get_identity(CHAR)["draft_state"], "DRAFT_COMPLETE")
         self.assertEqual(store.get_identity(CHAR)["approval_bindings"], [])
 
+    # --- round 6: the module namespace cannot mint, and the signer checks ---
+
+    def test_the_module_namespace_carries_no_mint_at_all(self):
+        # Round 5's decisive counterexample, probe A1c: a plain caller imports
+        # character_bible.identity and asks its request function for a mint. It
+        # got a genuine signer-minted receipt, which restore_from_notion stored
+        # as APPROVED with NotionStore.promote() called zero times. The round-5
+        # report claimed no such callable was reachable; one leading underscore
+        # was the only thing standing in the way. It is an allowlist in code now.
+        store = self.store()
+        store.put_identity(for_client(NS_A))
+        store.promote(CHAR, "DRAFT_COMPLETE")
+        fields = receipt({"receipt_id": "rcp-round6-a1c"})
+        fields.pop(identity.MINT_FIELD, None)
+        scope = store.approval_scope()
+
+        asked = (("mint", {"scope": scope[1], "client": scope[0],
+                           "claim": dict(fields, to_state="APPROVED")}),
+                 ("capability", {"scope": scope[1], "client": scope[0]}),
+                 ("register", {"scope": scope[1], "client": scope[0]}))
+        for op, extra in asked:
+            with self.subTest(op=op):
+                reply = identity._signer_request({"op": op, **extra})
+                self.assertFalse(reply.get("ok"))
+                self.assertIn("verify", reply.get("reason", ""))
+
+        # nothing was minted and nothing was stored: the record is where the
+        # last explicit promotion step left it
+        self.assertEqual(store.get_identity(CHAR)["draft_state"], "DRAFT_COMPLETE")
+        self.assertEqual(store.get_identity(CHAR)["approval_bindings"], [])
+
+    def test_the_signer_refuses_a_claim_the_store_does_not_hold(self):
+        # Round 5 deleted the caller-writable CHARS table and took the signer's
+        # only precondition with it: it then minted for any claim a caller built.
+        # The check is restored against a source no caller writes -- the store's
+        # own cache directory. The reach below is the store's own transport,
+        # used here on purpose: it is the only surface left that can ask for a
+        # mint, and the point of the test is that even there the claim has to
+        # name a state this store actually holds.
+        store = self.store()
+        store.put_identity(for_client(NS_A))
+        store.promote(CHAR, "DRAFT_COMPLETE")
+        scope = store.approval_scope()
+        # Reach whichever transport this build mints through, so the test runs
+        # against the pre-round-6 code too and fails on the missing check rather
+        # than on a method name that did not exist yet.
+        send = getattr(store, "_NotionStore__transact", None)
+        if send is None:                       # round 5 and earlier: the module
+            def send(payload):
+                return identity._signer_request(payload)
+        get_cap = getattr(store, "_NotionStore__store_capability", lambda: "")
+        capability = get_cap()
+
+        for wrong in ("APPROVED", "DRAFT_INCOMPLETE", "NOT_A_STATE", None):
+            claim = dict(receipt({"receipt_id": "rcp-round6-held-%s" % wrong}),
+                         to_state="APPROVED")
+            claim.pop(identity.MINT_FIELD, None)
+            claim["from_state"] = wrong
+            with self.subTest(from_state=wrong):
+                reply = send({"op": "mint", "scope": scope[1],
+                              "client": scope[0], "capability": capability,
+                              "claim": claim})
+                self.assertFalse(reply.get("ok"))
+                self.assertIn("no %r to approve" % (wrong,),
+                              reply.get("reason", ""))
+
+        # and the state the store DOES hold is still the only one it will mint
+        self.assertEqual(store.get_identity(CHAR)["draft_state"], "DRAFT_COMPLETE")
+        self.assertEqual(store.get_identity(CHAR)["approval_bindings"], [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -209,17 +209,44 @@ def library_digest(snapshot):
 # signer's ``mint`` request is constructed in exactly one place, inside
 # ``NotionStore.promote()``; ``mint_receipt()`` below refuses unconditionally for
 # every caller and every argument, and ``register_character()`` no longer exists.
-# A receipt therefore cannot name a promotion step that did not happen, because
-# nothing but the promotion step can ask for one.
+#
+# Round 6 (the round-5 verdict's two named holes, both closed here):
+#
+# 1. THE MODULE-NAMESPACE MINT CHANNEL. Round 5 left ``_signer_request`` able to
+#    carry ``{"op": "mint"}`` for any caller: one leading underscore is a naming
+#    convention, not a control, and a plain module-level call handed back a
+#    genuine signer-minted receipt that ``restore_from_notion`` stored as
+#    APPROVED with the promotion step called zero times. So the underscore is no
+#    longer what does the work. ``_signer_request`` is now an ALLOWLIST: it
+#    answers ``verify`` and refuses every other operation in code. The requests
+#    that carry a ``mint`` are built by :meth:`NotionStore.promote` and sent over
+#    the store's own transport (:meth:`NotionStore._NotionStore__transact`), and
+#    the signer refuses a mint that does not carry THIS STORE'S capability -- a
+#    32-byte token the signer issues per store and hands back only to a store's
+#    own request. It is held on the store instance and is in no module
+#    namespace: not in ``__all__``, not in any module attribute, and not
+#    returned by any function here. There is no ``bind`` or ``capability``
+#    operation reachable from this module either.
+#
+# 2. THE CHECK THE DELETED TABLE USED TO PERFORM. Deleting the caller-writable
+#    ``CHARS`` table was right -- a caller could write it -- but it also deleted
+#    the signer's only precondition, so round 5's signer minted for any claim a
+#    caller constructed. The check is back, and it now reads something no caller
+#    can write: the signer opens the store's own cache directory and refuses a
+#    mint unless the record it finds there is held at the claim's ``from_state``.
+#    "this store holds X at DRAFT_COMPLETE, so there is no APPROVED to approve".
 #
 # Declared residual, and the deployment impact: this machine gives the caller
 # and the signer the SAME unix user, so a caller that is willing to re-point the
-# pipe (or to rewrite this module) can answer as the signer. That is tampering
-# with the transport itself, not a reachable capability -- there is no object,
-# key or registry inside this process that can produce or bless a mark. Closing
-# it needs an OS boundary this environment cannot create: run the signer under a
-# different uid, with the caller holding only what that uid hands it. Production
-# therefore runs a signer process alongside the store.
+# pipe (or to rewrite this module) can answer as the signer, and a caller that
+# already holds a live NotionStore can ask that store for anything that store
+# can do -- including its own promote(). That is tampering with the transport or
+# holding the authority, not a capability this module hands out. No in-process
+# control in this codebase is unforgeable against a determined in-process
+# attacker; what round 6 removes is the reachability, which is what the row
+# scores. Closing the rest needs an OS boundary this environment cannot create:
+# run the signer under a different uid. Production therefore runs a signer
+# process alongside the store.
 
 MINT_FIELD = "mint_mark"
 RECEIPT_KIND = "approval_receipt"
@@ -233,7 +260,7 @@ CLAIM_KEYS = frozenset(APPROVAL_BINDING_KEYS - {MINT_FIELD})
 #: The signer: a standalone program, no import from this package. It generates
 #: its own mint secret at startup (``secrets.token_bytes(32)``), keeps it in its
 #: own memory, and answers exactly three requests over the pipe it is started
-#: with: ``register`` (a store declares a character at a draft state), ``mint``
+#: with: ``capability`` (a store asks for the token that names it), ``mint``
 #: (the promotion step) and ``verify`` (is this receipt one this signer minted,
 #: for this client and this store). It exits when its parent closes that pipe.
 _SIGNER_SOURCE = r'''
@@ -246,6 +273,7 @@ KEY = secrets.token_bytes(32)
 CLAIMS = {}
 BINDS = {}
 DONE = {}
+CAPS = {}
 
 
 def canon(obj):
@@ -256,12 +284,90 @@ def mark(claim):
     return hmac.new(KEY, canon(claim).encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def held_state(store_dir, client, character_id):
+    """What THIS store's own cache holds for one character, read from disk.
+
+    The base build kept a table here that a caller wrote (``register``), so a
+    caller could declare any state and the signer would believe it. There is no
+    writable table now: the answer is read out of the store's cache directory,
+    which only the store writes. None means the store holds no such character.
+    """
+    if type(store_dir) is not str or not store_dir:
+        return None
+    try:
+        names = sorted(os.listdir(store_dir))
+    except OSError:
+        return None
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(store_dir, name), encoding="utf-8") as fh:
+                envelope = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(envelope, dict):
+            continue
+        if envelope.get("client_namespace") != client:
+            continue
+        value = envelope.get("value")
+        if not isinstance(value, dict) or value.get("character_id") != character_id:
+            continue
+        state = value.get("draft_state")
+        return state if isinstance(state, str) else None
+    return None
+
+
+def capability(req):
+    """The token that names one store. Issued here, handed to a store's request.
+
+    One token per (client, store), stable for the signer's life. It is returned
+    only over the pipe the store's own request came in on -- see
+    ``NotionStore._NotionStore__transact`` -- and this program answers that
+    request for anyone who sends it. What makes it a capability rather than a
+    shared password is that no module-level callable in ``character_bible.
+    identity`` will send it: that namespace answers ``verify`` and refuses
+    everything else in code.
+    """
+    client, scope = req.get("client"), req.get("scope")
+    if type(client) is not str or type(scope) is not str or not scope:
+        return {"ok": False, "reason": (
+            "a store capability names one client and one store")}
+    key = (client, scope)
+    held = CAPS.get(key)
+    if held is None:
+        held = secrets.token_hex(32)
+        CAPS[key] = held
+    return {"ok": True, "capability": held}
+
+
 def handle(req):
     op = req.get("op")
+    if op == "capability":
+        return capability(req)
     if op == "mint":
         claim = req.get("claim") or {}
         rid = claim.get("receipt_id")
         scope = req.get("scope")
+        client = req.get("client")
+        key = (client, scope) if type(client) is str and type(scope) is str else None
+        want = CAPS.get(key) if key is not None else None
+        presented = req.get("capability")
+        if want is None or type(presented) is not str \
+                or not hmac.compare_digest(want, presented):
+            return {"ok": False, "reason": (
+                "this request carries no capability for the store it claims, so "
+                "it is not that store's promotion step; a receipt is minted only "
+                "inside the store's own promotion step")}
+        held = held_state(scope, client, claim.get("character_id"))
+        if held is None:
+            return {"ok": False, "reason": (
+                "this store holds %s at None, so there is no %s to approve"
+                % (claim.get("character_id"), claim.get("from_state")))}
+        if held != claim.get("from_state"):
+            return {"ok": False, "reason": (
+                "this store holds %s at %r, so there is no %r to approve"
+                % (claim.get("character_id"), held, claim.get("from_state")))}
         prior = CLAIMS.get(rid)
         if prior is not None and prior != claim:
             return {"ok": False, "reason": (
@@ -357,47 +463,81 @@ def _signer_start():
     return (proc, send_fd, recv_fd)
 
 
+def _signer_channel():
+    """The live signer pipe ends, starting the signer if this is the first use.
+
+    Byte-level transport, nothing more: it hands back file descriptors. It is
+    the same class of thing as ``os.write``, and the round-4/5 boundary already
+    treats re-pointing the pipe as tampering with the transport rather than a
+    reachable capability. What it is NOT is a request API: nothing here builds a
+    request, so nothing here can ask for a mint. The only request API in this
+    module is :func:`_signer_request`, which answers ``verify`` and refuses the
+    rest in code.
+    """
+    with _SIGNER_LOCK:
+        held = _SIGNER_PIPES.get(os.getpid())
+        if held is None:
+            held = _signer_start()
+            _SIGNER_PIPES[os.getpid()] = held
+        return held
+
+
+def _signer_drop():
+    """Forget this process's signer after a transport failure. Fails closed."""
+    with _SIGNER_LOCK:
+        held = _SIGNER_PIPES.pop(os.getpid(), None)
+    for fd in (held[1], held[2]) if held is not None else ():
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
 def _signer_request(payload):
-    """One request to the approval signer over an OS pipe. Fails closed.
+    """One request to the approval signer. ``verify`` only. Fails closed.
 
     No socket, no network and no file: the endpoint is a pipe the signer is
     started with. An answer that is not the signer's is refused exactly like a
     missing one.
+
+    THE ALLOWLIST (do not loosen in a later round): this function answers
+    ``verify`` and refuses every other operation -- ``mint`` and ``capability``
+    included -- for every caller and every argument. Round 5 shipped the
+    opposite: this same function carried ``{"op": "mint"}`` for a plain caller
+    and handed back a genuine signer-minted receipt, which is exactly how a
+    draft reached APPROVED with the promotion step called zero times. One
+    leading underscore was the whole control that day. The control is now this
+    branch. A mint is built only by :meth:`NotionStore.promote` and sent over
+    the store's own transport, carrying the store's own capability.
     """
-    with _SIGNER_LOCK:
-        reason = "the approval signer did not answer"
-        for attempt in (0, 1):
-            held = _SIGNER_PIPES.get(os.getpid())
-            if held is None:
-                try:
-                    held = _signer_start()
-                except Exception as exc:
+    if type(payload) is not dict or payload.get("op") != "verify":
+        return {"ok": False, "reason": (
+            "this transport answers only 'verify'; a receipt is minted only "
+            "inside the store's own promotion step, which builds that request "
+            "itself and carries a capability this module cannot supply")}
+    reason = "the approval signer did not answer"
+    for attempt in (0, 1):
+        try:
+            _proc, send_fd, recv_fd = _signer_channel()
+        except Exception as exc:
+            return {"ok": False,
+                    "reason": "the approval signer could not start (%s)" % exc}
+        try:
+            os.write(send_fd, json.dumps(payload).encode("utf-8") + b"\n")
+            data = b""
+            while not data.endswith(b"\n"):
+                chunk = os.read(recv_fd, 65536)
+                if not chunk:
                     return {"ok": False,
-                            "reason": "the approval signer could not start (%s)"
-                                      % exc}
-                _SIGNER_PIPES[os.getpid()] = held
-            _proc, send_fd, recv_fd = held
-            try:
-                os.write(send_fd, json.dumps(payload).encode("utf-8") + b"\n")
-                data = b""
-                while not data.endswith(b"\n"):
-                    chunk = os.read(recv_fd, 65536)
-                    if not chunk:
-                        return {"ok": False,
-                                "reason": "the approval signer stopped"}
-                    data += chunk
-                return json.loads(data.decode("utf-8"))
-            except Exception as exc:
-                reason = "the approval signer is unreachable (%s)" % exc
-                _SIGNER_PIPES.pop(os.getpid(), None)
-                for fd in (send_fd, recv_fd):
-                    try:
-                        os.close(fd)
-                    except OSError:
-                        pass
-                if attempt == 0:
-                    continue
-        return {"ok": False, "reason": reason}
+                            "reason": "the approval signer stopped"}
+                data += chunk
+            return json.loads(data.decode("utf-8"))
+        except Exception as exc:
+            reason = "the approval signer is unreachable (%s)" % exc
+            _signer_drop()
+            if attempt == 0:
+                continue
+    return {"ok": False, "reason": reason}
 
 
 def _scope_parts(scope):

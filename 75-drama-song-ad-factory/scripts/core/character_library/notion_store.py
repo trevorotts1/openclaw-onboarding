@@ -18,6 +18,7 @@ read, held or stored.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -116,6 +117,74 @@ class NotionStore:
     def __init__(self, root, client_namespace):
         self.cache = cache_mod.Cache(root, client_namespace)
         self.client_namespace = self.cache.client_namespace
+        # The token that names THIS store to the approval signer. Issued by the
+        # signer to this store's own request (see __transact), held on this
+        # instance and nowhere else: not in a module namespace, not in
+        # identity.__all__, not returned by any function a caller can reach
+        # without holding a store. Nothing asks for it until a promotion step
+        # needs it, so a store that never approves never speaks to the signer.
+        self.__capability = None
+
+    def __transact(self, payload):
+        """One request to the approval signer, built and sent by THIS store.
+
+        This method is the only place a ``mint`` request exists. Round 5 built
+        it in promote() and then handed it to ``identity._signer_request``, a
+        module-level function that carried ``{"op": "mint"}`` for any caller --
+        a plain module call produced a genuine signer-minted receipt with
+        ``promote()`` called zero times. identity's namespace now answers
+        ``verify`` and refuses the rest in code, and the raw pipe ends it does
+        expose are byte-level transport (``os.write`` by another name), not a
+        request API. Getting to this method needs a live store instance, and
+        the capability this store presents is the one the signer issued to it.
+        """
+        raw = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
+        reason = "the approval signer did not answer"
+        for attempt in (0, 1):
+            try:
+                _proc, send_fd, recv_fd = identity._signer_channel()
+            except Exception as exc:
+                return {"ok": False,
+                        "reason": "the approval signer could not start (%s)"
+                                  % exc}
+            try:
+                os.write(send_fd, raw)
+                data = b""
+                while not data.endswith(b"\n"):
+                    chunk = os.read(recv_fd, 65536)
+                    if not chunk:
+                        return {"ok": False,
+                                "reason": "the approval signer stopped"}
+                    data += chunk
+                reply = json.loads(data.decode("utf-8"))
+                return reply if type(reply) is dict else {
+                    "ok": False, "reason": "the approval signer gave an "
+                                           "unreadable answer"}
+            except Exception as exc:
+                reason = "the approval signer is unreachable (%s)" % exc
+                identity._signer_drop()
+                if attempt == 0:
+                    continue
+        return {"ok": False, "reason": reason}
+
+    def __store_capability(self):
+        """This store's capability, fetched once from the signer and kept here."""
+        if type(self.__capability) is str and self.__capability:
+            return self.__capability
+        scope = self.approval_scope()
+        reply = self.__transact({"op": "capability",
+                                 "client": scope[0], "scope": scope[1]})
+        token = reply.get("capability")
+        if reply.get("ok") is not True or type(token) is not str or not token:
+            raise identity.IdentityDefect([{
+                "field": "approval_bindings",
+                "code": "RECEIPT_MINT_REFUSED",
+                "message": reply.get("reason") or (
+                    "the approval signer did not issue this store a capability, "
+                    "so this store cannot perform a promotion step"),
+            }])
+        self.__capability = token
+        return token
 
     def approval_scope(self):
         """The scope a promotion receipt is minted for and bound to.
@@ -333,11 +402,17 @@ class NotionStore:
         updated["approval_bindings"] = bindings
         if to_state == "APPROVED":
             # THE RULE: a receipt is minted here and nowhere else. The signer's
-            # ``mint`` request is built in this method body -- not by a module
-            # function and not by a store method -- so there is no callable that
-            # a caller can reach to obtain a receipt without this promotion step
-            # running. identity.mint_receipt() is a named refusal, and the
-            # caller-writable state table it used to depend on no longer exists.
+            # ``mint`` request is built in this method body and sent over this
+            # store's own transport (``__transact``) carrying this store's own
+            # capability. identity's module namespace answers ``verify`` and
+            # refuses a mint in code, so there is no module-level callable that
+            # hands out a receipt, and no callable at all outside a live store
+            # instance. The signer then checks what this store actually holds:
+            # it reads the record out of this cache and refuses a mint unless
+            # the store holds the character at the claim's from_state. That is
+            # the check the deleted CHARS table used to perform, restored
+            # against a source no caller can write. identity.mint_receipt() is
+            # a named refusal for every caller and every argument.
             scope = self.approval_scope()
             claim = {
                 "kind": identity.RECEIPT_KIND,
@@ -347,9 +422,9 @@ class NotionStore:
                 "from_state": current,
                 "to_state": to_state,
             }
-            reply = identity._signer_request({
+            reply = self.__transact({
                 "op": "mint", "scope": scope[1], "client": scope[0],
-                "claim": claim})
+                "capability": self.__store_capability(), "claim": claim})
             receipt = reply.get("receipt")
             if reply.get("ok") is not True or type(receipt) is not dict:
                 # The signer's own refusal, surfaced unchanged: a second receipt
