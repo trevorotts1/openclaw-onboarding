@@ -394,7 +394,7 @@ deliver = chosen.get("deliver", None)
 problems = []
 if deliver is not False:
     problems.append("deliver-not-false")
-# PBB-017: an ABSENT `model` is valid (the agent's own configured model runs the
+# PBB-017: an ABSENT `model` is valid (the agent-configured model runs the
 # mapping). Only a present-but-blank override is refused — the same rule
 # lib-hook-mapping-contract.sh applies to every gate.
 if "model" in chosen and not str(chosen.get("model") or "").strip():
