@@ -866,6 +866,48 @@ class RepairProofTests(Base):
         self.assertTrue(os.path.lexists(str(path)))
 
 
+class ThirdRepairProofTests(Base):
+    """PBB-455: the absence proof is a measurement, and dispatch follows it.
+
+    PBB-434's mutation pass left M2 ("absence proof always absent") SURVIVING
+    at rc 0, 59 tests OK: nothing could tell a real absence proof from one that
+    claims absence for a path still on disk. Both directions are pinned here --
+    a genuinely proven absence dispatches, and a claim of absence for something
+    still present never does.
+    """
+
+    def test_a_genuine_absence_proof_dispatches(self):
+        path = self.scratch()
+        # the instrument reads both polarities: still here is NOT absent
+        self.assertEqual({'path': str(path), 'lexists': True, 'absent': False},
+                         disposal.prove_absence(str(path)))
+        result = self.dispatch([self.item()])
+        self.assertEqual('DISPATCHED', result['status'])
+        record = result['items'][0]
+        self.assertTrue(record['disposed'])
+        # gone after removal IS absent, proven at the exact recorded path
+        self.assertEqual({'path': str(path), 'lexists': False, 'absent': True},
+                         record['absence'])
+
+    def test_a_proof_claiming_absence_for_a_path_still_present_never_dispatches(self):
+        path = self.scratch()
+        # the removal is made to leave the tree on disk, so any claim of
+        # absence here is a claim about something still present
+        with mock.patch.object(disposal, '_remove_tree', lambda _p: None):
+            result = self.dispatch([self.item()])
+        self.assertTrue(os.path.lexists(str(path)), 'the tree is still present')
+        record = result['items'][0]
+        self.assertEqual({'path': str(path), 'lexists': True, 'absent': False},
+                         record['absence'],
+                         'the proof must report what is on disk, not what is wanted')
+        self.assertNotEqual(disposal.ELIGIBLE, record['disposition'])
+        self.assertIn(disposal.BLOCKED_REMOVAL_FAILED, record['reasons'])
+        self.assertFalse(record['disposed'])
+        self.assertEqual([], result['deletions'])
+        self.assertEqual('INCOMPLETE', result['status'])
+        self.assertFalse(result['success'])
+
+
 class SecondRepairProofTests(Base):
     """Before/after proofs for the PBB-312 verdict defects. Defects 1 and 2 fail
     on bd832e5f0 and a96a25e5 alike; defect 3 is the regression a96a25e5
