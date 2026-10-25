@@ -51,6 +51,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ENTRY_PATH, checkEntryPoint } from "./entry-point-gate.mjs";
+import { treeAggregate } from "./manifest-tree.mjs";
 
 export const SKILL_NAME = "council-of-wise-elders";
 // The convene contract carried by current SKILL.md (whitespace-normalized).
@@ -646,6 +647,86 @@ function treeIdentity(dir) {
   return `${createHash("sha256").update(lines.join("\n")).digest("hex")}:${lines.length}`;
 }
 
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/** True when the tree presents itself as a distribution of a canonical tree. */
+export function isDistributionCandidate(dir) {
+  const manifest = readJson(join(dir, "manifest.json"));
+  return existsSync(join(dir, "DISTRIBUTION-RECONCILIATION.json"))
+    || Boolean(manifest && typeof manifest.canonical_aggregate_sha256 === "string");
+}
+
+/**
+ * Proof that two trees whose identities DIFFER are nevertheless the SAME
+ * RELEASE: the selected copy is the 999 distribution of the canonical tree
+ * this update maintains. This is never a loosening of the tree comparison —
+ * every link is a recomputation with the one manifest hash algorithm
+ * (scripts/manifest-tree.mjs), so a distribution that is not exactly what its
+ * own manifest records is still refused:
+ *   (a) it carries DISTRIBUTION-RECONCILIATION.json and a manifest
+ *       canonical_aggregate_sha256,
+ *   (b) its tree recomputes to its own manifest aggregate_sha256 and count,
+ *   (c) the maintained tree recomputes to its own manifest aggregate_sha256
+ *       and count,
+ *   (d) its canonical_aggregate_sha256 equals the maintained manifest
+ *       aggregate_sha256,
+ *   (e) both copies claim the same version (carrier agreement, read above),
+ *   (f) the selected copy's executable checks passed.
+ * Returns {ok: true, aggregate, canonicalPath} or {ok: false, reason}.
+ */
+export function proveSameRelease({
+  selectedDir,
+  maintainedDir,
+  selectedVersion,
+  maintainedVersion,
+  entryChecksPassed = true,
+} = {}) {
+  const refuse = (reason) => ({ ok: false, reason });
+  const distManifest = readJson(join(selectedDir, "manifest.json"));
+  if (!distManifest) return refuse(`the selected copy ${selectedDir} has no readable manifest.json, so it cannot prove what it packages`);
+  if (!existsSync(join(selectedDir, "DISTRIBUTION-RECONCILIATION.json"))) {
+    return refuse(`the selected copy ${selectedDir} carries no DISTRIBUTION-RECONCILIATION.json: a distribution records every difference from the canonical tree`);
+  }
+  if (typeof distManifest.canonical_aggregate_sha256 !== "string" || !HEX64.test(distManifest.canonical_aggregate_sha256)) {
+    return refuse(`the selected copy ${selectedDir} records no valid canonical_aggregate_sha256 in its manifest`);
+  }
+  if (typeof distManifest.hash_method !== "string" || !distManifest.hash_method.trim()) {
+    return refuse(`the selected copy ${selectedDir} records no hash_method, so its aggregate cannot be recomputed`);
+  }
+  const distTree = treeAggregate(selectedDir);
+  if (distTree.aggregate !== distManifest.aggregate_sha256 || distTree.fileCount !== distManifest.file_count) {
+    return refuse(
+      `the selected copy ${selectedDir} is not the tree its own manifest records ` +
+      `(recomputed ${distTree.aggregate} over ${distTree.fileCount} files, manifest ${distManifest.aggregate_sha256} over ${distManifest.file_count})`,
+    );
+  }
+  const canonicalManifest = readJson(join(maintainedDir, "manifest.json"));
+  if (!canonicalManifest) return refuse(`the maintained tree ${maintainedDir} has no readable manifest.json to compare against`);
+  const canonicalTree = treeAggregate(maintainedDir);
+  if (canonicalTree.aggregate !== canonicalManifest.aggregate_sha256 || canonicalTree.fileCount !== canonicalManifest.file_count) {
+    return refuse(
+      `the maintained tree ${maintainedDir} is not the tree its own manifest records ` +
+      `(recomputed ${canonicalTree.aggregate} over ${canonicalTree.fileCount} files, manifest ${canonicalManifest.aggregate_sha256} over ${canonicalManifest.file_count})`,
+    );
+  }
+  if (distManifest.canonical_aggregate_sha256 !== canonicalManifest.aggregate_sha256) {
+    return refuse(
+      `the distribution records canonical aggregate ${distManifest.canonical_aggregate_sha256} but the maintained tree is ` +
+      `${canonicalManifest.aggregate_sha256}: they are packaging of DIFFERENT canonical releases`,
+    );
+  }
+  if (!selectedVersion || selectedVersion !== maintainedVersion) {
+    return refuse(
+      `versions differ (selected ${selectedVersion ?? "unknown"} vs maintained ${maintainedVersion ?? "unknown"}): ` +
+      `packaging of one release cannot carry another release's version`,
+    );
+  }
+  if (!entryChecksPassed) {
+    return refuse(`the selected copy ${selectedDir} did not pass its executable checks, so it is not a usable distribution`);
+  }
+  return { ok: true, aggregate: distManifest.canonical_aggregate_sha256, canonicalPath: maintainedDir };
+}
+
 /**
  * Full gate. Returns {ok, selectionProven, agentSelected, problems, warnings, selected, copies, records}.
  * `load` runs the entry-point smoke load (node --check + --help); hash and
@@ -766,38 +847,42 @@ export function checkSelectedTree(opts = {}) {
         `("${CURRENT_CONTRACT_MARKER}"): convening is approval, no grant is resolved`,
       );
     }
-    // (c)+(d) the selected artifact must ship a verifiable executable
+    // (c)+(d) the selected artifact must ship a verifiable executable.
+    // Collected separately: the same result answers condition (f) of the
+    // same-release proof below — an unusable copy is never "the distribution".
+    const artifactProblems = [];
     const state = executableStatus(selected, records);
     if (state === "packaged") {
       const manifest = readJson(join(selected.physical, "manifest.json"));
       const gate = checkEntryPoint(selected.physical, manifest, { load });
-      if (!gate.ok) problems.push(...gate.problems.map((p) => `SELECTED copy ${selected.path}: ${p}`));
+      if (!gate.ok) artifactProblems.push(...gate.problems.map((p) => `SELECTED copy ${selected.path}: ${p}`));
     } else if (state === "packaged-missing-entry") {
-      problems.push(
+      artifactProblems.push(
         `SELECTED artifact ${selected.path} records runtime_entry ${selected.runtimeEntry.path} ` +
         `but does not ship it (no runtime/dist entry, no archive, no installed release): ` +
         `every shipped artifact includes its executable`,
       );
     } else if (state === "record-without-entry") {
-      problems.push(
+      artifactProblems.push(
         `the install-record naming ${selected.path} points at a release with no executable entry; ` +
         `the resolver-selected copy is unusable`,
       );
     } else if (state === "source-only") {
-      problems.push(
+      artifactProblems.push(
         `source-only artifact at ${selected.path}: no runtime/dist entry, no manifest runtime_entry, ` +
         `no archive, and no installed release naming this tree — every shipped artifact includes its executable`,
       );
     } else if (state === "archive") {
-      problems.push(...verifyArchive(selected, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
+      artifactProblems.push(...verifyArchive(selected, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
     } else if (state === "installed") {
       const rec = records.find((r) => samePath(r.skillDir, selected.physical));
       if (!rec) {
-        problems.push(`the selected copy ${selected.path} was classified installed without a matching install-record`);
+        artifactProblems.push(`the selected copy ${selected.path} was classified installed without a matching install-record`);
       } else {
-        problems.push(...verifyInstalledEntry(rec, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
+        artifactProblems.push(...verifyInstalledEntry(rec, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
       }
     }
+    problems.push(...artifactProblems);
     // "archive" (executable ships inside the .skill archive) and "installed"
     // (a release named by the resolver's own install-record carries it) both
     // satisfy the shipped-executable rule.
@@ -805,14 +890,36 @@ export function checkSelectedTree(opts = {}) {
       const selectedIdentity = treeIdentity(selected.physical);
       const maintainedIdentity = treeIdentity(skillDir);
       if (selectedIdentity !== maintainedIdentity) {
-        problems.push(
-          `the selected copy ${selected.path} and the tree this update maintains ${skillDir} ` +
-          (selected.version && selected.version === canonicalVersion
-            ? `both claim ${selected.version} `
-            : "") +
-          `but their trees differ (selected ${selectedIdentity} vs maintained ${maintainedIdentity}): ` +
-          `an update that wrote any other file must not report success`,
-        );
+        // Different bytes are not automatically a different release: the 999
+        // distribution of the same canonical tree differs by design. Accept it
+        // only on a complete recomputation proof, and say so out loud.
+        const proof = proveSameRelease({
+          selectedDir: selected.physical,
+          maintainedDir: skillDir,
+          selectedVersion: selected.version,
+          maintainedVersion: canonicalVersion,
+          entryChecksPassed: artifactProblems.length === 0,
+        });
+        if (proof.ok) {
+          warnings.push(
+            `SAME RELEASE: distribution ${selected.path} is the 999 packaging of canonical aggregate ` +
+            `${proof.aggregate}, proven by manifest recomputation (canonical tree ${skillDir})`,
+          );
+        } else {
+          problems.push(
+            `the selected copy ${selected.path} and the tree this update maintains ${skillDir} ` +
+            (selected.version && selected.version === canonicalVersion
+              ? `both claim ${selected.version} `
+              : "") +
+            `but their trees differ (selected ${selectedIdentity} vs maintained ${maintainedIdentity}): ` +
+            `an update that wrote any other file must not report success`,
+          );
+          // A tree that presents itself as a distribution gets the specific
+          // reason its proof failed, never a silent generic refusal.
+          if (isDistributionCandidate(selected.physical) || isDistributionCandidate(skillDir)) {
+            problems.push(`SAME-RELEASE PROOF REFUSED: ${proof.reason}`);
+          }
+        }
       }
       warnings.push(
         `the resolver selects ${selected.path} (via ${selection.via}) while this update maintains ${skillDir}; ` +

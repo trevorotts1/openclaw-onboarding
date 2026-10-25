@@ -1,5 +1,15 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.58: a box that carries the reusable package of the same release now updates cleanly (TREEGATE-1058)
+
+In plain English: some boxes keep two copies of the council. One is the copy the update writes; the other is the packaged copy the agents actually read, built from the same release but deliberately different — private material removed, wording scrubbed, the executable prebuilt. Until now the update compared the two file by file and refused, because they do not match. It now checks whether they are the same release, and only says yes when it can prove it.
+
+- The gate accepts two trees whose files differ only when the packaged copy carries its reconciliation record and a manifest naming the canonical release, both trees recompute exactly to the fingerprints their own manifests record, the packaged copy names the same canonical fingerprint as the copy being updated, both copies claim the same version, and the packaged copy's executable checks pass.
+- When that holds, the gate prints a plain line naming both folders and the canonical fingerprint, and passes. It no longer refuses a legitimate update.
+- Every other mismatch still fails with the same message as before. A packaged copy that does not match its own manifest, that names a different canonical release, that is missing its reconciliation record, or whose counterpart was edited after it was built is refused, and the line now says which check failed and why.
+- The manifest hashing used by `build-bundles`, `verify-bundles`, `doctor` and this gate now lives in one shared module, `scripts/manifest-tree.mjs`, so the four can never drift apart.
+- Tests: `scripts/tests/selected-tree-gate.test.mjs` gains one passing case for a real packaged copy and seven refused cases covering each kind of mismatch.
+
 ## v1.0.57: the limits and readiness the council reports are the ones it enforces (LOWFIX-1057)
 
 In plain English: four independent reviews of 1.0.56 found places where the council said one thing and did another. Every one of them is now either fixed or stated honestly.

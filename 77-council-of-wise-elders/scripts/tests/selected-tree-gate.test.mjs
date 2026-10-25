@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -16,6 +16,7 @@ import {
   checkSelectedTree,
 } from "../selected-tree-gate.mjs";
 import { ENTRY_PATH } from "../entry-point-gate.mjs";
+import { HASH_METHOD, treeAggregate } from "../manifest-tree.mjs";
 
 const GOOD_ENTRY = "#!/usr/bin/env node\nif (process.argv.includes('--help')) process.exit(0);\nprocess.exit(2);\n";
 const CURRENT_CONTRACT =
@@ -458,4 +459,168 @@ test("(e) the shipped SKILL.md carries the current convene contract, not grant t
     !text.includes("the claude-nine configured default on claude-nine, Sonnet on Claude Code"),
     "canonical SKILL.md reintroduced the hardcoded harness menu",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Same-release proof: the 999 distribution of the canonical release this update
+// maintains differs BY DESIGN. It must pass — and only on a complete manifest
+// recomputation, with the proof named out loud. Every other mismatch still
+// fails with the same message as before.
+// ---------------------------------------------------------------------------
+
+/** Rewrite manifest.json so it records the tree exactly as it is now. */
+function manifestTree(dir, extra = {}) {
+  const manifestPath = join(dir, "manifest.json");
+  const base = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const { entries, aggregate } = treeAggregate(dir);
+  const manifest = {
+    ...base,
+    ...extra,
+    file_count: entries.length,
+    aggregate_sha256: aggregate,
+    hash_method: HASH_METHOD,
+    files: entries,
+  };
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  return manifest;
+}
+
+/** A canonical release tree: a council copy whose manifest records it. */
+function makeReleaseTree(dir, { version = "1.0.58" } = {}) {
+  makeCopy(dir, { version });
+  writeFileSync(join(dir, "advisors", "pack.json"), '{"items":[1,2,3]}\n');
+  manifestTree(dir);
+  return dir;
+}
+
+/**
+ * The 999 distribution of a canonical tree: a built runtime/dist (generated,
+ * never in a manifest), one scrubbed pack file, the reconciliation record, and
+ * a regenerated manifest naming the canonical aggregate.
+ */
+function deriveDistribution(canonicalDir, distDir, { canonicalAggregate } = {}) {
+  cpSync(canonicalDir, distDir, { recursive: true });
+  const canonical = JSON.parse(readFileSync(join(canonicalDir, "manifest.json"), "utf8"));
+  writeFileSync(join(distDir, "runtime", "dist", "vendored-bundle.mjs"), "export const vendored = true;\n");
+  writeFileSync(join(distDir, "advisors", "pack.json"), '{"items":[1,2]}\n');
+  writeFileSync(
+    join(distDir, "DISTRIBUTION-RECONCILIATION.json"),
+    JSON.stringify({
+      artifact: "council-of-wise-elders 999 distribution reconciliation",
+      canonical_source: {
+        canonical_aggregate_sha256: canonicalAggregate ?? canonical.aggregate_sha256,
+        canonical_file_count: canonical.file_count,
+        skill_version: canonical.skill_version,
+      },
+      intentional_distribution_differences: [
+        { kind: "private_scope_items_dropped" },
+        { kind: "sentences_scrubbed" },
+        { kind: "generated_archive_not_vendored" },
+      ],
+    }, null, 2),
+  );
+  manifestTree(distDir, { canonical_aggregate_sha256: canonicalAggregate ?? canonical.aggregate_sha256 });
+  return distDir;
+}
+
+function distributionFixture(t) {
+  const home = fixtureHome(t);
+  const canonical = makeReleaseTree(join(home, "wired", "council-of-wise-elders"));
+  const dist = deriveDistribution(canonical, join(home, ".agents", "skills", "council-of-wise-elders"));
+  return { home, canonical, dist };
+}
+
+function runPair(home, canonical, dist) {
+  return checkSelectedTree({
+    home,
+    skillDir: canonical,
+    agentSelected: dist,
+    agentSource: "distribution test",
+    load: false,
+  });
+}
+
+test("(same release) the 999 distribution of the maintained tree passes and says so", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  const gate = runPair(home, canonical, dist);
+  assert.equal(gate.ok, true, gate.problems.join(" | "));
+  const manifest = JSON.parse(readFileSync(join(dist, "manifest.json"), "utf8"));
+  const warnings = gate.warnings.join("\n");
+  assert.match(warnings, /SAME RELEASE: distribution .* is the 999 packaging of canonical aggregate/);
+  assert.ok(warnings.includes(manifest.canonical_aggregate_sha256), "the proof must name the canonical aggregate");
+  assert.match(warnings, /proven by manifest recomputation/);
+});
+
+test("(same release) a distribution with an extra unmanifested non-dist file is refused", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  writeFileSync(join(dist, "EXAMPLES.md"), "a file the distribution manifest does not record\n");
+  const gate = runPair(home, canonical, dist);
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /but their trees differ/);
+  assert.match(gate.problems.join("\n"), /SAME-RELEASE PROOF REFUSED: .*is not the tree its own manifest records/);
+});
+
+test("(same release) a distribution file tampered against its own manifest is refused", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  writeFileSync(join(dist, "advisors", "pack.json"), '{"items":[1,2,3],"planted":true}\n');
+  const gate = runPair(home, canonical, dist);
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /SAME-RELEASE PROOF REFUSED: .*recomputed [0-9a-f]{64} over \d+ files, manifest/);
+});
+
+test("(same release) a distribution of a DIFFERENT canonical aggregate is refused", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  const manifest = JSON.parse(readFileSync(join(dist, "manifest.json"), "utf8"));
+  manifest.canonical_aggregate_sha256 = "0".repeat(64);
+  writeFileSync(join(dist, "manifest.json"), JSON.stringify(manifest, null, 2));
+  const gate = runPair(home, canonical, dist);
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /SAME-RELEASE PROOF REFUSED: .*packaging of DIFFERENT canonical releases/);
+});
+
+test("(same release) a distribution without its reconciliation record is refused", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  rmSync(join(dist, "DISTRIBUTION-RECONCILIATION.json"));
+  const gate = runPair(home, canonical, dist);
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /SAME-RELEASE PROOF REFUSED: .*carries no DISTRIBUTION-RECONCILIATION\.json/);
+});
+
+test("(same release) a maintained tree tampered against its own manifest is refused", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  writeFileSync(join(canonical, "advisors", "pack.json"), '{"items":[1,2,3],"edited-after-build":true}\n');
+  const gate = runPair(home, canonical, dist);
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /SAME-RELEASE PROOF REFUSED: the maintained tree .*is not the tree its own manifest records/);
+});
+
+test("(same release) a distribution claiming another version is refused", (t) => {
+  const { home, canonical, dist } = distributionFixture(t);
+  const canonicalManifest = JSON.parse(readFileSync(join(canonical, "manifest.json"), "utf8"));
+  writeFileSync(join(dist, "version"), "1.0.59\n");
+  writeFileSync(join(dist, "skill-version.txt"), "v1.0.59\n");
+  writeFileSync(
+    join(dist, "SKILL.md"),
+    readFileSync(join(dist, "SKILL.md"), "utf8").replace(/^version:\s*\S+$/m, "version: 1.0.59"),
+  );
+  manifestTree(dist, {
+    skill_version: "1.0.59",
+    canonical_aggregate_sha256: canonicalManifest.aggregate_sha256,
+  });
+  const gate = runPair(home, canonical, dist);
+  assert.equal(gate.ok, false);
+  assert.match(gate.problems.join("\n"), /SAME-RELEASE PROOF REFUSED: versions differ \(selected 1\.0\.59 vs maintained 1\.0\.58\)/);
+});
+
+test("(same release) a plain mismatch is never dressed up as a distribution", (t) => {
+  const home = fixtureHome(t);
+  const selected = makeCopy(join(home, ".claude", "skills", "council-of-wise-elders"));
+  const wired = makeCopy(join(home, "wired", "council-of-wise-elders"));
+  writeFileSync(join(wired, "EXAMPLES.md"), "a file the selected copy does not have\n");
+  const gate = checkSelectedTree({ home, skillDir: wired, agentSelected: selected, load: false });
+  assert.equal(gate.ok, false);
+  const problems = gate.problems.join("\n");
+  assert.match(problems, /but their trees differ .*an update that wrote any other file must not report success/);
+  assert.ok(!problems.includes("SAME-RELEASE PROOF REFUSED"), "a non-distribution must not get a proof line");
+  assert.ok(!gate.warnings.join("\n").includes("SAME RELEASE"), "a non-distribution must not be accepted");
 });
