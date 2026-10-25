@@ -1,5 +1,18 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.57: the limits and readiness the council reports are the ones it enforces (LOWFIX-1057)
+
+In plain English: four independent reviews of 1.0.56 found places where the council said one thing and did another. Every one of them is now either fixed or stated honestly.
+
+- CLI help and doctor output no longer use money wording. They say plainly that a command is offline with no provider calls.
+- `status` reports the provider-request cap the session is actually held to (the approved session grant, for example 50 for a light or an older-mode sitting) instead of the service-wide maximum of 100.
+- The capacity service is now part of the shipped runtime, not only of tests: a claimed wave widens the pool so a heavy nine-seat wave fits, and every dispatched advisor takes a capacity slot. Two sessions can run full waves at the same time and the private-work share is still reserved.
+- Readiness treats a route whose only blocker is which model to use as ready, with a note naming the models and saying that convene needs `--model`. A host with no configured route still reports blocked.
+- A blocked light/medium/heavy sitting blames the challenge pass it is short in, not a failure from an earlier pass that was already repaired.
+- `references/model-routing.md` now matches the code: the convene output names the fallback route and model it will use, and the doc no longer claims the verdict records which model answered each seat. The Ollama fallback line says it needs `--fallback-model`.
+- Docs say plainly that convening with no `--mode` runs medium, by design (`SKILL.md`, `INSTRUCTIONS.md`, `references/model-routing.md`; `references/protocol.md` already said it). The cap statements match the enforced caps: light 50, medium 50, heavy 100, the four older modes 50.
+- Regression tests: `runtime/tests/lowfix-1057.test.ts` (reported cap, capacity pool, readiness with a named model, blocked-reason pass window) and a production-capacity case in `runtime/tests/modes-e2e-77s.test.ts`.
+
 ## v1.0.56: light, medium and heavy councils; advisors run at the same time (W77S-MODES)
 
 In plain English: the council now sizes the question before it convenes, so a simple question no longer runs a nine-advisor, three-round debate. Advisors in a round answer at the same time instead of one after another, and the council no longer acts as a spending overseer.

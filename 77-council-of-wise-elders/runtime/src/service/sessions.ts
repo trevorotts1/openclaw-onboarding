@@ -208,9 +208,21 @@ export function buildBlockedReason(input: {
   }
   // Only what happened since the session entered the short round counts: a
   // validation failure repaired in an earlier round is not this round's cause.
-  const enteredAt = input.events.findIndex(
-    (e) => missingRound !== null && e.to_state === stateForRound(input.mode, missingRound),
-  );
+  // The council sizes re-enter ROUND_2 for every challenge pass, so the
+  // window starts at the LAST real transition into the round's state (the
+  // pass that is short now). A lease-claim state write repeats the current
+  // state, so those entries are not transitions and do not move the window.
+  const roundState = missingRound === null ? null : stateForRound(input.mode, missingRound);
+  let enteredAt = -1;
+  let seenState: string | null = null;
+  if (roundState !== null) {
+    for (let index = 0; index < input.events.length; index += 1) {
+      const to = input.events[index].to_state;
+      if (typeof to !== 'string' || to === seenState) continue;
+      seenState = to;
+      if (to === roundState) enteredAt = index;
+    }
+  }
   const sinceRound = missingRound === null ? input.events : input.events.slice(Math.max(0, enteredAt));
   const roundFailures = missingRound === null
     ? input.failures
