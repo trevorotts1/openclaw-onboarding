@@ -22,13 +22,15 @@ Three outcomes, never a silent pass:
 Case, Unicode accents, apostrophes (straight and curly) and punctuation are
 normalized before matching, so ``CÉLINE DION``, ``Celine Dion.`` and
 ``Celine Dion’s`` all hit the same alias.  The spaces between a reference's
-words may also be absent or replaced by any run that is either whitespace or
-one run of non-space characters -- a hyphen, an underscore, an apostrophe, a
-digit, a Roman numeral, any of them, doubled or mixed -- so ``andraday``,
-``ANDRA-DAY``, ``Bad_Bunny``, ``Jelly'Roll``, ``Bad①Bunny``, ``BadⅠBunny``,
-``Bad1Bunny`` and ``EdSheeran groove`` hit the same alias their spaced
-spelling does -- and a squashed hit still has to be the WHOLE alias-shaped
-word run, never a substring of a longer word.
+words may also be absent or replaced by ONE JOIN UNIT that carries whatever it
+carries -- a hyphen, an underscore, an apostrophe, a digit, a Roman numeral,
+ordinary letters, a punctuation run, several of them mixed or doubled -- so
+``andraday``, ``ANDRA-DAY``, ``Bad_Bunny``, ``Jelly'Roll``, ``Bad①Bunny``,
+``BadⅠBunny``, ``Bad1Bunny``, ``BadxyBunny``, ``Bad_1_Bunny``, ``Bad 1 Bunny``
+and ``Bad1_1Bunny`` hit the same alias their spaced spelling does.  The WORDS
+identify the reference and the material sitting at their join does not change
+it -- but a squashed hit still has to be the WHOLE alias-shaped word run, never
+a substring of a longer word.
 
 Object KEYS are outbound text too: every key at any depth is normalized and
 matched exactly like a value, so a name can never ride out of the payload
@@ -267,18 +269,23 @@ def find_matches(text, aliases):
 #: every payload, so a per-alias regex scan would be quadratic busywork.
 _MATCHER_CACHE = {}
 
-#: ONE join character is admitted where a reference's words meet, and nothing
-#: longer: ``Bad1Bunny``, ``Bad①Bunny`` and ``BadⅠBunny`` are the same words
-#: with one character where the space was, and ``Maroon15`` is ``Maroon 5`` the
-#: same way -- a digit RUN is one join, so ``Maroon125`` is covered too.  The
-#: gap is per word join, so two characters between the words is a different
-#: word (``bead bunny``, ``badxbunny`` stays whole) and the spaced spelling is
-#: still just the spaced spelling.
-_JOIN = r"(?:\s+|\d+|[^\s])?"
+#: ONE join unit sits where a reference's words meet, and it may carry ANY
+#: characters at all: ``Bad1Bunny``, ``Bad①Bunny``, ``BadxyBunny``,
+#: ``Bad_1_Bunny``, ``Bad 1 Bunny`` and ``Bad1_1Bunny`` are the same words with
+#: the join carrying whatever it carries, and ``Maroon15`` is ``Maroon 5`` the
+#: same way.  The words are what name the reference; the join is one unit of
+#: material at one word boundary, so it never turns the words into different
+#: words (``bead bunny`` is not ``bad bunny`` -- that would be a fuzzy match on
+#: the WORDS, which this never does).  What it costs is stated in the receipt's
+#: terms: any text carrying an alias's words in order with material between
+#: them resolves to that alias.  A squashed hit is still the WHOLE alias-shaped
+#: word run -- never a substring of a longer word -- which is the boundary in
+#: ``_matcher``, not the join.
+_JOIN = r"[\s\S]*?"
 
 
 def _alias_pattern(form):
-    """One comparable form, its word joins tolerant of a single character."""
+    """One comparable form, its word joins tolerant of any join unit."""
     words = [word for word in re.split(r"[_'\s-]+", form) if word]
     if not words:
         return re.escape(form)

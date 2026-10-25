@@ -619,11 +619,37 @@ class SquashedSpellings(unittest.TestCase):
         for text in ("Bad1Bunny", "Bad\u0661Bunny", "Maroon15", "Cardi1B"):
             self.assertTrue(G.find_matches(text, self.aliases), text)
         # and it did NOT become a rule that any character is a separator:
-        # an accent still folds, and a word between the words is not a join
+        # an accent still folds, and a DIFFERENT WORD in an alias's place is
+        # not that alias (``bead bunny`` is not ``bad bunny`` -- matching those
+        # would be a fuzzy match on the words, which this never draws).  What is
+        # a join is any material AT the word join -- see
+        # ``test_a_join_unit_carries_any_characters_and_still_names_the_reference``.
         self.assertEqual(G.normalize("C\u00e9line Dion"), "celine dion")
         self.assertTrue(G.find_matches("C\u00c9LINE DION", self.aliases))
         for text in ("bead bunny drums", "brad bunny groove",
                      "maroon5paint", "maroon5paint set", "jellyrollpan"):
+            self.assertEqual(G.find_matches(text, self.aliases), [], text)
+
+    def test_a_join_unit_carries_any_characters_and_still_names_the_reference(
+            self):
+        # S75-T41 r7: the material sitting at an alias's word join may carry
+        # ANY characters -- one letter, two, a digit, a digit run, punctuation,
+        # a mix of all of them -- and the WORDS still name the reference.
+        # Round 6 left nine of these dispatching verbatim: only the digit family
+        # had been closed, and the two-letter join, the space-padded join and
+        # the mixed join runs were still open.
+        for text in ("BadxyBunny", "Bad 1 Bunny", "Bad'1'Bunny",
+                     "Bad-1-Bunny", "Bad.x.Bunny", "Bad1_1Bunny",
+                     "Bad_1'Bunny", "Bad_1_Bunny", "Bad__1__Bunny",
+                     "BadxyzBunny", "BadabcdBunny", "Bad  x  Bunny",
+                     "Bad 1 2 Bunny", "Bad___1___Bunny", "P.xDiddy"):
+            self.assertTrue(G.find_matches(text, self.aliases), text)
+        # the words are still what names it: a different word in an alias's
+        # place is not the alias, and a squashed alias is never a substring of
+        # a longer word.
+        for text in ("bead bunny drums", "brad bunny groove",
+                     "andradaybeat drums", "bedsheeran groove",
+                     "jellyrollpan", "maroon5paint set"):
             self.assertEqual(G.find_matches(text, self.aliases), [], text)
 
     def test_no_alias_set_matches_nothing(self):
@@ -699,6 +725,35 @@ class DispatchSeam(unittest.TestCase):
             self.assertEqual(sent, [], (field, text))
             self.assertIsNotNone(err, (field, text))
             self.assertIn("OUTGOING_REFERENCE_BLOCKED", str(err), (field, text))
+
+    def test_join_carriers_are_refused_at_every_wire_position(self):
+        # S75-T41 r7: the join class is closed at the REAL seam -- the same nine
+        # spellings round 6 measured reaching the transport, in every position
+        # that goes on the wire (style, negative tags, style suffix and an
+        # outbound map key).  The criterion is the round-6 one: the literal
+        # spelling must never appear in anything the transport was handed.
+        spellings = ("BadxyBunny", "Bad 1 Bunny", "Bad'1'Bunny",
+                     "Bad-1-Bunny", "Bad.x.Bunny", "Bad1_1Bunny",
+                     "Bad_1'Bunny", "Bad_1_Bunny", "Bad__1__Bunny")
+        for text in spellings:
+            self.assertTrue(G.find_matches(text, self.aliases), text)
+            for position in ("style", "negative_tags", "style_suffix",
+                             "mix_key"):
+                def mutate(inp, position=position, text=text):
+                    if position == "mix_key":
+                        inp["mix"] = {text: "clean"}
+                    else:
+                        inp[position] = {
+                            "style": "warm strings, %s groove" % text,
+                            "negative_tags": "do not sound like %s" % text,
+                            "style_suffix": "avoid %s grit" % text,
+                        }[position]
+                sent, _err = self._dispatch(mutate)
+                wire = "".join(json.dumps(request, ensure_ascii=False)
+                               for request in sent)
+                self.assertNotIn(text, wire, (position, text))
+                self.assertEqual(G.find_matches(wire, self.aliases), [],
+                                 (position, text))
 
     def test_squashed_leak_dispatches_only_approved_traits(self):
         def mutate(inp):
