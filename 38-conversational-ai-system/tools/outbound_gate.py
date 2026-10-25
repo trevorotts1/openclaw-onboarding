@@ -149,13 +149,34 @@ def dispatch(store: DurableStore,
              action_id: str, worker_id: str, *,
              now: Optional[float] = None,
              lease_seconds: float = DEFAULT_LEASE_S,
-             context: Optional[Dict[str, Any]] = None) -> DispatchOutcome:
+             context: Optional[Dict[str, Any]] = None,
+             ledger: Optional[Any] = None,
+             pre_send: Optional[Callable[[], Any]] = None) -> DispatchOutcome:
     """Run one dispatch attempt through the common gate.
 
     Every call re-evaluates the gate. Never reuse the returned outcome as
     permission for a later attempt.
+
+    POINT OF USE. Two guards run inside the same IMMEDIATE transaction that
+    creates the attempt row, so nothing can commit in between:
+
+      pre_send   a callable returning True/False or (ok, reason). When the
+                 evaluator was built by consent_gate.make_gate_evaluator it is
+                 re-run here automatically, so a suppression that landed while
+                 the first verdict was being computed still blocks the send.
+      ledger     a suppression_ledger.SuppressionLedger on the SAME database.
+                 Its epoch is read before the first verdict and compare-and-
+                 swapped in the INSERT, which closes the torn-read window even
+                 when the re-evaluation has already run.
     """
     ts = time.time() if now is None else float(now)
+    if ledger is not None:
+        same = getattr(ledger, "same_file", None)
+        if not callable(same) or not same(store.path):
+            raise GateError(
+                "bad_input: ledger must be the store's own database so the"
+                " suppression fence and the attempt share one transaction")
+
     claim = store.claim_for_dispatch(action_id, worker_id, now=ts,
                                      lease_seconds=lease_seconds)
     if claim is None:
@@ -170,6 +191,15 @@ def dispatch(store: DurableStore,
     ctx.update({"action": action, "action_id": action_id,
                 "attempt_no": attempt_no, "fence": fence,
                 "worker_id": worker_id, "now": ts})
+
+    # The fence token is read BEFORE the verdict: a suppression that lands after
+    # this read invalidates the token, and the attempt insert will not match.
+    epoch = None
+    if ledger is not None:
+        tenant = action.get("tenant_id")
+        contact = action.get("canonical_contact_id")
+        if tenant and contact:
+            epoch = ledger.expect(tenant, contact)
 
     # 1. FRESH verdict for THIS attempt.
     verdict = evaluate_gate(evaluator, ctx, now=ts, fence=fence)
@@ -198,8 +228,41 @@ def dispatch(store: DurableStore,
                                verdict=verdict.verdict,
                                note=str(verdict.evidence.get("reason", "")))
 
-    # 2. FENCED commit of the send. Cancel or a stolen lease makes this False.
-    if not store.begin_attempt(action_id, fence, worker_id, now=ts):
+    if pre_send is None and getattr(evaluator, "consent_guard", False):
+        # The consent evaluator reads durable state on every call, so running it
+        # again inside the transaction is the fresh check, not a second opinion.
+        guard_ctx = dict(ctx)
+
+        def recheck() -> Any:
+            again = evaluate_gate(evaluator, guard_ctx, now=time.time(),
+                                  fence=fence)
+            if again.verdict == "ALLOW":
+                return (True, "allow")
+            return (False, str(again.evidence.get("reason",
+                                                 "gate:recheck_" + again.verdict)))
+
+        pre_send = recheck
+
+    # 2. FENCED commit of the send, with the point-of-use guards inside the
+    #    transaction. Cancel, a stolen lease, a failed guard or a moved fence
+    #    all make this False, and then NOTHING is sent.
+    if pre_send is not None or epoch is not None:
+        started, guard_reason = store.begin_attempt_guarded(
+            action_id, fence, worker_id, pre_send=pre_send, epoch=epoch, now=ts)
+        if not started and guard_reason is not None:
+            store.apply_gate_block(action_id, STATE_SUPPRESSED,
+                                   "gate:pre_send:" + guard_reason, now=ts)
+            return DispatchOutcome(
+                ST_BLOCKED, action_id, attempt_no=attempt_no,
+                verdict="SUPPRESSED",
+                note="point-of-use guard refused: " + guard_reason)
+        if not started:
+            return DispatchOutcome(
+                ST_REFUSED_RACE, action_id, attempt_no=attempt_no,
+                verdict="ALLOW",
+                note="canceled, lease lost, or fence moved between gate and"
+                     " dispatch; nothing sent")
+    elif not store.begin_attempt(action_id, fence, worker_id, now=ts):
         return DispatchOutcome(
             ST_REFUSED_RACE, action_id, attempt_no=attempt_no, verdict="ALLOW",
             note="canceled or lease lost between gate and dispatch; nothing sent")
