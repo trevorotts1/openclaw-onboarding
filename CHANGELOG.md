@@ -1,6 +1,6 @@
 ## [Unreleased]  -  2026-10-25  -  PBB-357 / T-04 repair round 2: record and proof repaired, verified external storage binding, child temp propagation and measured global capacity
 
-- Bumps Skill 38 to v2.0.128 with its own changelog entry, and re-lands `evidence/storage-and-resource-receipt.json` byte-identical (blob `e8cfbbad1f54d20233c60996bc155504d817885b`).
+- Bumps Skill 38 to v2.0.151 with its own changelog entry, and re-lands `evidence/storage-and-resource-receipt.json` byte-identical (blob `e8cfbbad1f54d20233c60996bc155504d817885b`).
 - Repairs PBB-339 D1: the gate's rule 4 scanned the whole root CHANGELOG for the first "bumps Skill 38 to" line, so it refused a wholly true record. Repaired to read only the newest entry. A true fixture exits 1 on the old gate (`VIOLATION ... first 'bumps Skill 38 to' line is v2.0.8 but ... is v2.0.9`) and 0 on the repaired gate; reverting the fix makes `--self-test` exit 1 with `SELF-TEST FAIL — 1 fixture(s) behaved wrongly`.
 - Repairs PBB-339 D2: the previous message claimed "no control code ... changed" while the same commit added this gate and extended `skill-version-newline-guard.sh`. This record states what the diff does instead.
 - Adds the class-wide gate `scripts/qc-assert-commit-version-claim.py`, run from `skill-version-newline-guard` on every `skill-version.txt` change. Embedded self-test: 12 fixtures, wrong records fail, right records pass.
