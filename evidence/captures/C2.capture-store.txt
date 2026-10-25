@@ -1,0 +1,7 @@
+# search: C2.capture-store
+# command: git grep -nF class CaptureStore 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/collection_lock.py
+# scope: collection_lock.py
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/collection_lock.py:501:class CaptureStore:
