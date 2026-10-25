@@ -4,21 +4,614 @@
     "checker_distinct_from_author": null,
     "verdict": "UNAVAILABLE"
   },
-  "author": "S75-T32 builder (deepseek-chain)",
+  "author": "S75-T32 repair author (round 1)",
   "base": {
-    "commit": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
-    "ref": "origin/main",
+    "commit": "b94f3102081743ba9ccae7a3598f7902812f2610",
+    "ref": "b94f3102081743ba9ccae7a3598f7902812f2610",
     "repository": "trevorotts1/openclaw-onboarding"
   },
   "candidate": {
     "branch": "unit/W77S-999-vendor",
     "checkout_commit": "d056770b4a3e62e6fa52e5c300a999bf6dd0e69f",
     "commit": null,
+    "filing_note": "this commit is the head the facets executed at; the commit that files this receipt is its child and changes only this receipt",
     "head_verified_at_execution": false,
     "repository": "trevorotts1/999-setup",
-    "worktree_clean_excluding_receipts": true
+    "worktree_clean_excluding_receipts": false
   },
+  "cells": [
+    {
+      "behavior": "missing foundation",
+      "cell_id": "999::missing foundation",
+      "checks": [],
+      "executed": true,
+      "flavor": "999",
+      "instrument": "story_first_contracts.missing_foundation_refused",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "instrument": "file presence",
+        "label": "a module this repository does carry",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "a contract-bound refusal cannot be made red where the contract module is absent"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T07",
+          "S75-T11",
+          "S75-T13",
+          "S75-T16",
+          "S75-T17",
+          "S75-T23",
+          "S75-T24",
+          "S75-T25",
+          "S75-T27",
+          "S75-T28"
+        ],
+        "missing_capability": "the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json",
+        "owed_by": "S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+      },
+      "observations": [
+        "resolved 3 required contract file(s) under this skill root; 3 absent",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
+      ],
+      "repository": "trevorotts1/999-setup",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [
+          "scripts/core/story_first_contracts.py"
+        ],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/999-setup",
+        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    },
+    {
+      "behavior": "cast bypass",
+      "cell_id": "999::cast bypass",
+      "checks": [],
+      "executed": true,
+      "flavor": "999",
+      "instrument": "story_first_contracts.missing_cast_refused / undefined_speaker_refused",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "instrument": "file presence",
+        "label": "a module this repository does carry",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "a contract-bound refusal cannot be made red where the contract module is absent"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T07",
+          "S75-T11",
+          "S75-T13",
+          "S75-T16",
+          "S75-T17",
+          "S75-T23",
+          "S75-T24",
+          "S75-T25",
+          "S75-T27",
+          "S75-T28"
+        ],
+        "missing_capability": "the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json",
+        "owed_by": "S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+      },
+      "observations": [
+        "resolved 3 required contract file(s) under this skill root; 3 absent",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
+      ],
+      "repository": "trevorotts1/999-setup",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/999-setup",
+        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    },
+    {
+      "behavior": "scene richness",
+      "cell_id": "999::scene richness",
+      "checks": [],
+      "executed": true,
+      "flavor": "999",
+      "instrument": "story_first_contracts.one_line_scene_refused / complete_fixture_validates",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "instrument": "file presence",
+        "label": "a module this repository does carry",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "a contract-bound refusal cannot be made red where the contract module is absent"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T07",
+          "S75-T11",
+          "S75-T13",
+          "S75-T16",
+          "S75-T17",
+          "S75-T23",
+          "S75-T24",
+          "S75-T25",
+          "S75-T27",
+          "S75-T28"
+        ],
+        "missing_capability": "the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json",
+        "owed_by": "S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+      },
+      "observations": [
+        "resolved 3 required contract file(s) under this skill root; 3 absent",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
+      ],
+      "repository": "trevorotts1/999-setup",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/999-setup",
+        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    },
+    {
+      "behavior": "Notion migration",
+      "cell_id": "999::Notion migration",
+      "checks": [],
+      "executed": true,
+      "flavor": "999",
+      "instrument": "file presence over this repository's own skill root, with a known-present control on the same scan",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "instrument": "file presence",
+        "label": "a core module this repository does carry",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "migration behaviour cannot be made red where no migration carrier exists"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T15",
+          "S75-T16",
+          "S75-T28"
+        ],
+        "missing_capability": "Notion library migration: character_library/migration.py with idempotent dry-run and rollback, over the sync layer (character_library/sync.py) and the persistence store (character_library/notion_store.py) that unit depends on",
+        "owed_by": "S75-T17"
+      },
+      "observations": [
+        "scanned 4 Notion migration carrier(s): none present",
+        "absent: scripts/core/character_library/migration.py",
+        "absent: scripts/core/character_library/sync.py",
+        "absent: scripts/core/character_library/notion_store.py",
+        "absent: scripts/core/character_library/cache.py",
+        "known-good control on the same scan found scripts/core/spend_ledger.py, so the absences above are real"
+      ],
+      "repository": "trevorotts1/999-setup",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/character_library/migration.py",
+          "scripts/core/character_library/sync.py",
+          "scripts/core/character_library/notion_store.py",
+          "scripts/core/character_library/cache.py",
+          "scripts/core/spend_ledger.py"
+        ],
+        "repository": "trevorotts1/999-setup",
+        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    },
+    {
+      "behavior": "identity setting changes",
+      "cell_id": "999::identity setting changes",
+      "checks": [],
+      "executed": true,
+      "flavor": "999",
+      "instrument": "story_first_contracts.identity_survives_world_revision",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "instrument": "file presence",
+        "label": "a module this repository does carry",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "a contract-bound refusal cannot be made red where the contract module is absent"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T07",
+          "S75-T11",
+          "S75-T13",
+          "S75-T16",
+          "S75-T17",
+          "S75-T23",
+          "S75-T24",
+          "S75-T25",
+          "S75-T27",
+          "S75-T28"
+        ],
+        "missing_capability": "the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json",
+        "owed_by": "S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+      },
+      "observations": [
+        "resolved 3 required contract file(s) under this skill root; 3 absent",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
+      ],
+      "repository": "trevorotts1/999-setup",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/999-setup",
+        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    },
+    {
+      "behavior": "approval ordering",
+      "cell_id": "999::approval ordering",
+      "checks": [],
+      "executed": true,
+      "flavor": "999",
+      "instrument": "story_first_contracts.approval_ordering_and_binding",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "instrument": "file presence",
+        "label": "a module this repository does carry",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "a contract-bound refusal cannot be made red where the contract module is absent"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T07",
+          "S75-T11",
+          "S75-T13",
+          "S75-T16",
+          "S75-T17",
+          "S75-T23",
+          "S75-T24",
+          "S75-T25",
+          "S75-T27",
+          "S75-T28"
+        ],
+        "missing_capability": "the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json",
+        "owed_by": "S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+      },
+      "observations": [
+        "resolved 3 required contract file(s) under this skill root; 3 absent",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
+      ],
+      "repository": "trevorotts1/999-setup",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/999-setup",
+        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    },
+    {
+      "behavior": "style18",
+      "cell_id": "999::style18",
+      "checks": [],
+      "executed": true,
+      "flavor": "999",
+      "instrument": "music_styles.catalog (loaded from this repository's skill root)",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "instrument": "file presence",
+        "label": "the music carrier this repository does have",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "an eighteen-id carrier cannot be made red where no catalog exists"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T30"
+        ],
+        "missing_capability": "the eighteen-style catalog in the N999 repository: scripts/core/music_styles/catalog.py is absent, and music_styles.music_styles.STYLES still holds the old three-item menu",
+        "owed_by": "S75-T18 (owns the catalog); delivered into N999 by S75-T30"
+      },
+      "observations": [
+        "scripts/core/music_styles/catalog.py is absent from this repository",
+        "the same resolver found scripts/core/music_styles/music_styles.py, so the scan is sound",
+        "invoked scripts/core/music_styles/music_styles.py: STYLES holds 3 id(s): soul-ballad, rnb-flow, soul-rise"
+      ],
+      "repository": "trevorotts1/999-setup",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/music_styles/music_styles.py",
+          "scripts/core/spoken_share/__init__.py",
+          "scripts/core/spoken_share/spoken_share.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [
+          "scripts/core/music_styles/music_styles.py",
+          "scripts/core/spoken_share/__init__.py",
+          "scripts/core/spoken_share/spoken_share.py"
+        ],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/music_styles/catalog.py",
+          "scripts/core/music_styles/music_styles.py"
+        ],
+        "repository": "trevorotts1/999-setup",
+        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    },
+    {
+      "behavior": "original byte preservation",
+      "cell_id": "999::original byte preservation",
+      "checks": [
+        {
+          "contract": "choice_card.intake_card._MUSIC_SENTENCE",
+          "result": true,
+          "statement": "rnb-flow: bytes equal the pinned owner description"
+        },
+        {
+          "contract": "choice_card.intake_card._MUSIC_SENTENCE",
+          "result": true,
+          "statement": "soul-ballad: bytes equal the pinned owner description"
+        },
+        {
+          "contract": "choice_card.intake_card._MUSIC_SENTENCE",
+          "result": true,
+          "statement": "soul-rise: bytes equal the pinned owner description"
+        }
+      ],
+      "executed": true,
+      "flavor": "999",
+      "instrument": "UTF-8 byte comparison of source literals (ast) against the pinned owner descriptions; no normalization",
+      "known_good_control": {
+        "expected": "untouched byte-equal; case-flipped byte-unequal while casefold-equal",
+        "input": "an untouched description compared with itself, then a case-flipped copy of it",
+        "instrument": "UTF-8 byte comparison of source literals (ast) against the pinned owner descriptions; no normalization",
+        "observed": {
+          "case_flipped_compares_byte_unequal": true,
+          "case_flipped_is_casefold_equal": true,
+          "untouched_compares_byte_equal": true
+        },
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": true,
+        "observed": true,
+        "unmet_condition": "a case flip is invisible to casefold but must be caught by bytes"
+      },
+      "not_applicable": null,
+      "observations": [
+        "carrier: scripts/core/choice_card/intake_card/intake_card.py (3 description(s))",
+        "catalog source literal carrier: absent, not required for the pinned comparison",
+        "all three sha256 values match the owner pins typed from MUSIC-AND-VIDEO-UX.md section 2"
+      ],
+      "repository": "trevorotts1/999-setup",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/music_styles/music_styles.py",
+          "scripts/core/spoken_share/__init__.py",
+          "scripts/core/spoken_share/spoken_share.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/choice_card/intake_card/intake_card.py"
+        ],
+        "repository": "trevorotts1/999-setup",
+        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "status": "OBSERVED_PASS"
+    },
+    {
+      "behavior": "paid compatibility",
+      "cell_id": "999::paid compatibility",
+      "checks": [],
+      "executed": true,
+      "flavor": "999",
+      "instrument": "file presence over this repository's own skill root, plus a token scan of the shared contract modules",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "instrument": "file presence",
+        "label": "a core module this repository does carry",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "paid-output preservation cannot be made red where no compatibility carrier exists"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T01",
+          "S75-T03"
+        ],
+        "missing_capability": "paid-asset / raw-answer / legacy-approval preservation: compatibility.py, contracts/legacy-compatibility-map.json and tests/fixtures/paid_artifact_preservation.json",
+        "owed_by": "S75-T28"
+      },
+      "observations": [
+        "scanned 3 paid-compatibility carrier(s): none present",
+        "absent: scripts/core/compatibility.py",
+        "absent: scripts/core/contracts/legacy-compatibility-map.json",
+        "absent: scripts/core/tests/fixtures/paid_artifact_preservation.json",
+        "the shared contract modules are absent from this repository, so the token scan has no target",
+        "known-good control on the same scan found scripts/core/spend_ledger.py"
+      ],
+      "repository": "trevorotts1/999-setup",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/music_styles/music_styles.py",
+          "scripts/core/spoken_share/__init__.py",
+          "scripts/core/spoken_share/spoken_share.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/compatibility.py",
+          "scripts/core/contracts/legacy-compatibility-map.json",
+          "scripts/core/tests/fixtures/paid_artifact_preservation.json",
+          "scripts/core/spend_ledger.py",
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/999-setup",
+        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    }
+  ],
   "checks": {
+    "cells_fail": 0,
+    "cells_not_applicable": 8,
+    "cells_pass": 1,
+    "cells_total": 9,
     "controls_green": 0,
     "controls_red": 0,
     "facets_green": 0,
@@ -35,6 +628,74 @@
     "stage_count": null
   },
   "coverage": {
+    "cells": {
+      "Notion migration": {
+        "clause": "Notion migration is exercised by both flavour facets (product gap; see not_covered for the owing unit)",
+        "rows": [
+          "S75-A32"
+        ]
+      },
+      "approval ordering": {
+        "clause": "preference is not approval; approval binds to current digests",
+        "rows": [
+          "S75-A12",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "cast bypass": {
+        "clause": "cast cannot be bypassed: empty, partial and undefined speakers all fail closed",
+        "rows": [
+          "S75-A07",
+          "S75-A09",
+          "S75-A32"
+        ]
+      },
+      "identity setting changes": {
+        "clause": "a setting change cannot rewrite identity; a pinned stale world revision is refused",
+        "rows": [
+          "S75-A05",
+          "S75-A08",
+          "S75-A32"
+        ]
+      },
+      "missing foundation": {
+        "clause": "missing foundation cannot bypass the gate",
+        "rows": [
+          "S75-A09",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "original byte preservation": {
+        "clause": "original descriptions survive byte-for-byte",
+        "rows": [
+          "S75-A18",
+          "S75-A32"
+        ]
+      },
+      "paid compatibility": {
+        "clause": "paid compatibility is exercised by both flavour facets (product gap; see not_covered for the owing unit)",
+        "rows": [
+          "S75-A32"
+        ]
+      },
+      "scene richness": {
+        "clause": "one-line placeholders are refused; a rich scene validates",
+        "rows": [
+          "S75-A09",
+          "S75-A11",
+          "S75-A32"
+        ]
+      },
+      "style18": {
+        "clause": "exactly eighteen styles, unique and resolvable",
+        "rows": [
+          "S75-A18",
+          "S75-A32"
+        ]
+      }
+    },
     "covered": {
       "approval_ordering_and_binding": {
         "clause": "preference is not artifact approval; full-script approval before music; storyboard approval before video; bindings must match current digests",
@@ -115,13 +776,12 @@
       }
     },
     "not_covered": {
-      "18 style end-to-end paths": "the 18-style catalog is not defined in the shared contract modules",
-      "Notion offline snapshot / new-existing-mixed / retry / conflict / migration": "Notion sync is not modelled in story_first_contracts or package_flavor_adapter",
-      "affected-only invalidation of plan/script/visual outputs": "the shared contracts declare stage dependencies and approval bindings but implement no output invalidation",
-      "elected full-script-before-music via user election": "ordering is enforced; the election record itself is outside these modules",
-      "exact original description bytes": "byte-preservation of intake text is not stated in the shared contract modules",
+      "18 style end-to-end render/dispatch paths": "the eighteen styles are delivered and ARE exercised (cell_matrix style18 resolves all eighteen ids in music_styles.catalog); what is not covered here is end-to-end render and dispatch through the production pipeline. Owed by S75-T29 (ONB-PACKAGE-OWNER) for the onboarding flavour and S75-T30 (N999-PACKAGE-OWNER) for 999.",
+      "Notion offline snapshot / new-existing-mixed / retry / conflict / migration": "capability absent from both repositories. Owed by S75-T17 (CHARACTER-MIGRATION-OWNER), blocked on S75-T15, S75-T16, S75-T28. The cell_matrix Notion migration cell executes a presence scan over character_library/migration.py, sync.py, notion_store.py and cache.py and reports NOT_APPLICABLE with this reason.",
+      "affected-only invalidation of plan/script/visual outputs": "the shared contracts declare stage dependencies and approval bindings but implement no output invalidation. Owed by S75-T28 (COMPATIBILITY-OWNER).",
+      "elected full-script-before-music via user election": "ordering is enforced; the election record itself is outside these modules. Owed by S75-T29 (ONB-PACKAGE-OWNER) / S75-T30 (N999-PACKAGE-OWNER).",
       "genuine writing dispatch": "no dispatch call exists in the shared contract modules; asserting it here would invent a criterion",
-      "old paid output / raw answer / approval preservation": "paid-asset compatibility is not modelled in the shared contract modules"
+      "old paid output / raw answer / approval preservation": "capability absent from both repositories. Owed by S75-T28 (COMPATIBILITY-OWNER: compatibility.py, contracts/legacy-compatibility-map.json, tests/fixtures/paid_artifact_preservation.json), blocked on S75-T01, S75-T03. The cell_matrix paid compatibility cell executes a presence scan over those three carriers and a token scan of the shared contracts, and reports NOT_APPLICABLE with this reason."
     },
     "note": "a row is touched only for the named clause; no row is claimed fully covered",
     "rows_touched": [
@@ -133,6 +793,7 @@
       "S75-A11",
       "S75-A12",
       "S75-A13",
+      "S75-A18",
       "S75-A32"
     ]
   },
@@ -142,15 +803,27 @@
     "python": null,
     "spend": "none"
   },
-  "executed": [],
+  "executed": [
+    {
+      "checks": 3,
+      "facet": "cell:original byte preservation",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": true,
+        "unmet_condition": "a case flip is invisible to casefold but must be caught by bytes"
+      },
+      "ok": true,
+      "reason": "carrier: scripts/core/choice_card/intake_card/intake_card.py (3 description(s)); catalog source literal carrier: absent, not required for the pinned comparison"
+    }
+  ],
   "execution": {
     "verdict": "UNAVAILABLE"
   },
   "flavor": "999",
-  "generated_at": "2026-10-24T22:11:36Z",
+  "generated_at": "2026-10-25T13:13:48Z",
   "harness": {
-    "branch": "s75/T32",
-    "commit": "81c6d51b9ac1d12f5167f15d21bddee5a43ca42a",
+    "branch": "s75/T32-repair-r1",
+    "commit": "fbd4059b23771f290bb72052549e2693dd3f0a46",
     "repository": "trevorotts1/openclaw-onboarding"
   },
   "literal_binding": {
@@ -214,29 +887,64 @@
       "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "cell:missing foundation",
+      "reason": "capability not present in this repository: the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json; owed by S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "cell:cast bypass",
+      "reason": "capability not present in this repository: the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json; owed by S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "cell:scene richness",
+      "reason": "capability not present in this repository: the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json; owed by S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "cell:Notion migration",
+      "reason": "capability not present in this repository: Notion library migration: character_library/migration.py with idempotent dry-run and rollback, over the sync layer (character_library/sync.py) and the persistence store (character_library/notion_store.py) that unit depends on; owed by S75-T17"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "cell:identity setting changes",
+      "reason": "capability not present in this repository: the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json; owed by S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "cell:approval ordering",
+      "reason": "capability not present in this repository: the shared story-first contract module in the N999 repository: scripts/core/story_first_contracts.py, scripts/core/package_flavor_adapter.py, scripts/core/contracts/flavor-999.json; owed by S75-T30 (999 flavour package assembly, N999-PACKAGE-OWNER)"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "cell:style18",
+      "reason": "capability not present in this repository: the eighteen-style catalog in the N999 repository: scripts/core/music_styles/catalog.py is absent, and music_styles.music_styles.STYLES still holds the old three-item menu; owed by S75-T18 (owns the catalog); delivered into N999 by S75-T30"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "cell:paid compatibility",
+      "reason": "capability not present in this repository: paid-asset / raw-answer / legacy-approval preservation: compatibility.py, contracts/legacy-compatibility-map.json and tests/fixtures/paid_artifact_preservation.json; owed by S75-T28"
+    },
+    {
       "class": "NOT_MODELLED_BY_CONTRACTS",
-      "facet": "18 style end-to-end paths",
-      "reason": "not stated by the shared contracts: the 18-style catalog is not defined in the shared contract modules"
+      "facet": "18 style end-to-end render/dispatch paths",
+      "reason": "not stated by the shared contracts: the eighteen styles are delivered and ARE exercised (cell_matrix style18 resolves all eighteen ids in music_styles.catalog); what is not covered here is end-to-end render and dispatch through the production pipeline. Owed by S75-T29 (ONB-PACKAGE-OWNER) for the onboarding flavour and S75-T30 (N999-PACKAGE-OWNER) for 999."
     },
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
       "facet": "Notion offline snapshot / new-existing-mixed / retry / conflict / migration",
-      "reason": "not stated by the shared contracts: Notion sync is not modelled in story_first_contracts or package_flavor_adapter"
+      "reason": "not stated by the shared contracts: capability absent from both repositories. Owed by S75-T17 (CHARACTER-MIGRATION-OWNER), blocked on S75-T15, S75-T16, S75-T28. The cell_matrix Notion migration cell executes a presence scan over character_library/migration.py, sync.py, notion_store.py and cache.py and reports NOT_APPLICABLE with this reason."
     },
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
       "facet": "affected-only invalidation of plan/script/visual outputs",
-      "reason": "not stated by the shared contracts: the shared contracts declare stage dependencies and approval bindings but implement no output invalidation"
+      "reason": "not stated by the shared contracts: the shared contracts declare stage dependencies and approval bindings but implement no output invalidation. Owed by S75-T28 (COMPATIBILITY-OWNER)."
     },
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
       "facet": "elected full-script-before-music via user election",
-      "reason": "not stated by the shared contracts: ordering is enforced; the election record itself is outside these modules"
-    },
-    {
-      "class": "NOT_MODELLED_BY_CONTRACTS",
-      "facet": "exact original description bytes",
-      "reason": "not stated by the shared contracts: byte-preservation of intake text is not stated in the shared contract modules"
+      "reason": "not stated by the shared contracts: ordering is enforced; the election record itself is outside these modules. Owed by S75-T29 (ONB-PACKAGE-OWNER) / S75-T30 (N999-PACKAGE-OWNER)."
     },
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
@@ -246,7 +954,7 @@
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
       "facet": "old paid output / raw answer / approval preservation",
-      "reason": "not stated by the shared contracts: paid-asset compatibility is not modelled in the shared contract modules"
+      "reason": "not stated by the shared contracts: capability absent from both repositories. Owed by S75-T28 (COMPATIBILITY-OWNER: compatibility.py, contracts/legacy-compatibility-map.json, tests/fixtures/paid_artifact_preservation.json), blocked on S75-T01, S75-T03. The cell_matrix paid compatibility cell executes a presence scan over those three carriers and a token scan of the shared contracts, and reports NOT_APPLICABLE with this reason."
     }
   ],
   "receipt_version": "s75.cross_flavor.receipt.v1",

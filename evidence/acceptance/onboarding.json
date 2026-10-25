@@ -4,21 +4,671 @@
     "checker_distinct_from_author": null,
     "verdict": "PENDING_INDEPENDENT_CHECK"
   },
-  "author": "S75-T32 builder (deepseek-chain)",
+  "author": "S75-T32 repair author (round 1)",
   "base": {
-    "commit": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
-    "ref": "origin/main",
+    "commit": "b94f3102081743ba9ccae7a3598f7902812f2610",
+    "ref": "b94f3102081743ba9ccae7a3598f7902812f2610",
     "repository": "trevorotts1/openclaw-onboarding"
   },
   "candidate": {
-    "branch": "s75/T32",
-    "checkout_commit": "81c6d51b9ac1d12f5167f15d21bddee5a43ca42a",
-    "commit": "81c6d51b9ac1d12f5167f15d21bddee5a43ca42a",
+    "branch": "s75/T32-repair-r1",
+    "checkout_commit": "fbd4059b23771f290bb72052549e2693dd3f0a46",
+    "commit": "fbd4059b23771f290bb72052549e2693dd3f0a46",
+    "filing_note": "this commit is the head the facets executed at; the commit that files this receipt is its child and changes only this receipt",
     "head_verified_at_execution": true,
     "repository": "trevorotts1/openclaw-onboarding",
     "worktree_clean_excluding_receipts": true
   },
+  "cells": [
+    {
+      "behavior": "missing foundation",
+      "cell_id": "onboarding::missing foundation",
+      "checks": [
+        {
+          "contract": "story_first_contracts.check_stage",
+          "result": true,
+          "statement": "script_lyrics refuses when a required foundation artifact is absent"
+        },
+        {
+          "contract": "story_first_contracts.STAGE_REQUIRES",
+          "result": true,
+          "statement": "the refusal names the exact missing contract kinds"
+        }
+      ],
+      "executed": true,
+      "flavor": "onboarding",
+      "instrument": "story_first_contracts.missing_foundation_refused",
+      "known_good_control": {
+        "expected": "admitted=True",
+        "input": "every required artifact supplied in stage order",
+        "instrument": "check_stage",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": true,
+        "observed": false,
+        "unmet_condition": "the missing foundation artifact supplied"
+      },
+      "not_applicable": null,
+      "observations": [
+        "missing_foundation_refused: ok=True, 2 check(s), negative control red=True",
+        "known-good control: all 5 required artifacts supplied -> admitted=True"
+      ],
+      "repository": "trevorotts1/openclaw-onboarding",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/openclaw-onboarding",
+        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "status": "OBSERVED_PASS"
+    },
+    {
+      "behavior": "cast bypass",
+      "cell_id": "onboarding::cast bypass",
+      "checks": [
+        {
+          "contract": "story_first_contracts.validate_cast_manifest",
+          "result": true,
+          "statement": "absent cast, empty cast and an incomplete cast entry each produce a defect"
+        },
+        {
+          "contract": "story_first_contracts.check_stage",
+          "result": true,
+          "statement": "script_lyrics refuses without episode_cast_manifest"
+        },
+        {
+          "contract": "story_first_contracts.validate_cast_manifest",
+          "result": true,
+          "statement": "undefined speaker in cast_ids/performance_order is a defect"
+        }
+      ],
+      "executed": true,
+      "flavor": "onboarding",
+      "instrument": "story_first_contracts.missing_cast_refused / undefined_speaker_refused",
+      "known_good_control": {
+        "expected": "admitted=True",
+        "input": "every required artifact supplied in stage order",
+        "instrument": "check_stage",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": true,
+        "observed": false,
+        "unmet_condition": "a valid non-empty cast supplied"
+      },
+      "not_applicable": null,
+      "observations": [
+        "missing_cast_refused: ok=True, 2 check(s), negative control red=True",
+        "undefined_speaker_refused: ok=True, 1 check(s), negative control red=True",
+        "known-good control: all 5 required artifacts supplied -> admitted=True"
+      ],
+      "repository": "trevorotts1/openclaw-onboarding",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/openclaw-onboarding",
+        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "status": "OBSERVED_PASS"
+    },
+    {
+      "behavior": "scene richness",
+      "cell_id": "onboarding::scene richness",
+      "checks": [
+        {
+          "contract": "story_first_contracts.MIN_PURPOSE_WORDS",
+          "result": true,
+          "statement": "a thin dramatic purpose is a defect"
+        },
+        {
+          "contract": "story_first_contracts.MIN_ACTION_WORDS",
+          "result": true,
+          "statement": "a one-line visible action is a defect"
+        },
+        {
+          "contract": "story_first_contracts.validate_scene",
+          "result": true,
+          "statement": "placeholder dialogue is a defect"
+        },
+        {
+          "contract": "story_first_contracts.validate_identity",
+          "result": true,
+          "statement": "complete fixture yields no defects"
+        },
+        {
+          "contract": "story_first_contracts.validate_world",
+          "result": true,
+          "statement": "complete fixture yields no defects"
+        },
+        {
+          "contract": "story_first_contracts.validate_cast_manifest",
+          "result": true,
+          "statement": "complete fixture yields no defects"
+        },
+        {
+          "contract": "story_first_contracts.validate_scene",
+          "result": true,
+          "statement": "complete fixture yields no defects"
+        },
+        {
+          "contract": "story_first_contracts.validate_scene_plan",
+          "result": true,
+          "statement": "complete fixture yields no defects"
+        }
+      ],
+      "executed": true,
+      "flavor": "onboarding",
+      "instrument": "story_first_contracts.one_line_scene_refused / complete_fixture_validates",
+      "known_good_control": {
+        "expected": "admitted=True",
+        "input": "every required artifact supplied in stage order",
+        "instrument": "check_stage",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": true,
+        "observed": false,
+        "unmet_condition": "a rich scene supplied in place of the one-line record"
+      },
+      "not_applicable": null,
+      "observations": [
+        "one_line_scene_refused: ok=True, 3 check(s), negative control red=True",
+        "complete_fixture_validates: ok=True, 5 check(s), negative control red=True",
+        "known-good control: all 5 required artifacts supplied -> admitted=True"
+      ],
+      "repository": "trevorotts1/openclaw-onboarding",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/openclaw-onboarding",
+        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "status": "OBSERVED_PASS"
+    },
+    {
+      "behavior": "Notion migration",
+      "cell_id": "onboarding::Notion migration",
+      "checks": [],
+      "executed": true,
+      "flavor": "onboarding",
+      "instrument": "file presence over this repository's own skill root, with a known-present control on the same scan",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "instrument": "file presence",
+        "label": "a core module this repository does carry",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "migration behaviour cannot be made red where no migration carrier exists"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T15",
+          "S75-T16",
+          "S75-T28"
+        ],
+        "missing_capability": "Notion library migration: character_library/migration.py with idempotent dry-run and rollback, over the sync layer (character_library/sync.py) and the persistence store (character_library/notion_store.py) that unit depends on",
+        "owed_by": "S75-T17"
+      },
+      "observations": [
+        "scanned 4 Notion migration carrier(s): none present",
+        "absent: scripts/core/character_library/migration.py",
+        "absent: scripts/core/character_library/sync.py",
+        "absent: scripts/core/character_library/notion_store.py",
+        "absent: scripts/core/character_library/cache.py",
+        "known-good control on the same scan found scripts/core/spend_ledger.py, so the absences above are real",
+        "the scan also reaches Notion-named code: character_library/notion_adapter.py is present"
+      ],
+      "repository": "trevorotts1/openclaw-onboarding",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/character_library/migration.py",
+          "scripts/core/character_library/sync.py",
+          "scripts/core/character_library/notion_store.py",
+          "scripts/core/character_library/cache.py",
+          "scripts/core/spend_ledger.py"
+        ],
+        "repository": "trevorotts1/openclaw-onboarding",
+        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    },
+    {
+      "behavior": "identity setting changes",
+      "cell_id": "onboarding::identity setting changes",
+      "checks": [
+        {
+          "contract": "story_first_contracts.IDENTITY_FIELDS",
+          "result": true,
+          "statement": "no identity field binds an episode world"
+        },
+        {
+          "contract": "story_first_contracts.validate_identity",
+          "result": true,
+          "statement": "identity validation is identical across world revisions"
+        },
+        {
+          "contract": "story_first_contracts.validate_world",
+          "result": true,
+          "statement": "the revised world is still a valid world record"
+        }
+      ],
+      "executed": true,
+      "flavor": "onboarding",
+      "instrument": "story_first_contracts.identity_survives_world_revision",
+      "known_good_control": {
+        "expected": "admitted=True",
+        "input": "every required artifact supplied in stage order",
+        "instrument": "check_stage",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": true,
+        "observed": false,
+        "unmet_condition": "a required identity field removed between revisions"
+      },
+      "not_applicable": null,
+      "observations": [
+        "identity_survives_world_revision: ok=True, 3 check(s), negative control red=True",
+        "known-good control: all 5 required artifacts supplied -> admitted=True"
+      ],
+      "repository": "trevorotts1/openclaw-onboarding",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/openclaw-onboarding",
+        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "status": "OBSERVED_PASS"
+    },
+    {
+      "behavior": "approval ordering",
+      "cell_id": "onboarding::approval ordering",
+      "checks": [
+        {
+          "contract": "story_first_contracts.APPROVAL_BINDS",
+          "result": true,
+          "statement": "a COMPLETE preference cannot admit music"
+        },
+        {
+          "contract": "story_first_contracts.check_stage",
+          "result": true,
+          "statement": "a bound APPROVED package approval admits music"
+        },
+        {
+          "contract": "story_first_contracts.APPROVAL_BINDS",
+          "result": true,
+          "statement": "changing a bound script digest invalidates only that binding"
+        }
+      ],
+      "executed": true,
+      "flavor": "onboarding",
+      "instrument": "story_first_contracts.approval_ordering_and_binding",
+      "known_good_control": {
+        "expected": "admitted=True",
+        "input": "every required artifact supplied in stage order",
+        "instrument": "check_stage",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": true,
+        "observed": false,
+        "unmet_condition": "a bound, digest-matched APPROVED package approval supplied"
+      },
+      "not_applicable": null,
+      "observations": [
+        "approval_ordering_and_binding: ok=True, 3 check(s), negative control red=True",
+        "known-good control: all 5 required artifacts supplied -> admitted=True"
+      ],
+      "repository": "trevorotts1/openclaw-onboarding",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/openclaw-onboarding",
+        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "status": "OBSERVED_PASS"
+    },
+    {
+      "behavior": "style18",
+      "cell_id": "onboarding::style18",
+      "checks": [
+        {
+          "contract": "music_styles.catalog.STYLE_IDS",
+          "result": true,
+          "statement": "the catalog holds exactly eighteen ids"
+        },
+        {
+          "contract": "music_styles.catalog.STYLE_IDS",
+          "result": true,
+          "statement": "the eighteen ids are unique"
+        },
+        {
+          "contract": "music_styles.catalog.MAX_STYLES",
+          "result": true,
+          "statement": "the declared maximum is eighteen"
+        },
+        {
+          "contract": "music_styles.catalog.validate_catalog",
+          "result": true,
+          "statement": "validate_catalog accepts all eighteen records"
+        },
+        {
+          "contract": "music_styles.catalog.choice_rows",
+          "result": true,
+          "statement": "all eighteen render as client choice rows"
+        },
+        {
+          "contract": "music_styles.catalog.style",
+          "result": true,
+          "statement": "every id resolves back to itself"
+        }
+      ],
+      "executed": true,
+      "flavor": "onboarding",
+      "instrument": "music_styles.catalog (loaded from this repository's skill root)",
+      "known_good_control": {
+        "expected": "resolves to soul-ballad",
+        "input": "style('soul-ballad')",
+        "instrument": "music_styles.catalog (loaded from this repository's skill root)",
+        "observed": "soul-ballad",
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": true,
+        "observed": false,
+        "unmet_condition": "a seventeen-id carrier, checked by the same predicate"
+      },
+      "not_applicable": null,
+      "observations": [
+        "18 style ids: soul-ballad, rnb-flow, soul-rise, acoustic-pop, folk-storytelling, country-pop, melodic-rap, trap-rap, pop-rap, pop-rock, reggaeton, cinematic-orchestral-song, musical-theater, contemporary-gospel, urban-gospel, alternative-rnb, afro-soul, country-rap",
+        "validate_catalog() -> 18",
+        "choice_rows() -> 18 rows",
+        "old menu compatibility: ORIGINAL_STYLE_IDS == STYLE_IDS[:3] -> True"
+      ],
+      "repository": "trevorotts1/openclaw-onboarding",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/music_styles/catalog.py",
+          "scripts/core/spoken_share/__init__.py",
+          "scripts/core/spoken_share/spoken_share.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [
+          "scripts/core/music_styles/catalog.py",
+          "scripts/core/spoken_share/__init__.py",
+          "scripts/core/spoken_share/spoken_share.py"
+        ],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/music_styles/catalog.py"
+        ],
+        "repository": "trevorotts1/openclaw-onboarding",
+        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "status": "OBSERVED_PASS"
+    },
+    {
+      "behavior": "original byte preservation",
+      "cell_id": "onboarding::original byte preservation",
+      "checks": [
+        {
+          "contract": "choice_card.intake_card._MUSIC_SENTENCE",
+          "result": true,
+          "statement": "rnb-flow: bytes equal the pinned owner description"
+        },
+        {
+          "contract": "music_styles.catalog.ORIGINAL_DESCRIPTIONS",
+          "result": true,
+          "statement": "rnb-flow: source literal bytes equal total runtime bytes"
+        },
+        {
+          "contract": "choice_card.intake_card._MUSIC_SENTENCE",
+          "result": true,
+          "statement": "soul-ballad: bytes equal the pinned owner description"
+        },
+        {
+          "contract": "music_styles.catalog.ORIGINAL_DESCRIPTIONS",
+          "result": true,
+          "statement": "soul-ballad: source literal bytes equal total runtime bytes"
+        },
+        {
+          "contract": "choice_card.intake_card._MUSIC_SENTENCE",
+          "result": true,
+          "statement": "soul-rise: bytes equal the pinned owner description"
+        },
+        {
+          "contract": "music_styles.catalog.ORIGINAL_DESCRIPTIONS",
+          "result": true,
+          "statement": "soul-rise: source literal bytes equal total runtime bytes"
+        }
+      ],
+      "executed": true,
+      "flavor": "onboarding",
+      "instrument": "UTF-8 byte comparison of source literals (ast) against the pinned owner descriptions; no normalization",
+      "known_good_control": {
+        "expected": "untouched byte-equal; case-flipped byte-unequal while casefold-equal",
+        "input": "an untouched description compared with itself, then a case-flipped copy of it",
+        "instrument": "UTF-8 byte comparison of source literals (ast) against the pinned owner descriptions; no normalization",
+        "observed": {
+          "case_flipped_compares_byte_unequal": true,
+          "case_flipped_is_casefold_equal": true,
+          "untouched_compares_byte_equal": true
+        },
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": true,
+        "observed": true,
+        "unmet_condition": "a case flip is invisible to casefold but must be caught by bytes"
+      },
+      "not_applicable": null,
+      "observations": [
+        "carrier: scripts/core/choice_card/intake_card/intake_card.py (3 description(s))",
+        "catalog source literal carrier: present",
+        "all three sha256 values match the owner pins typed from MUSIC-AND-VIDEO-UX.md section 2"
+      ],
+      "repository": "trevorotts1/openclaw-onboarding",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/music_styles/catalog.py",
+          "scripts/core/music_styles/catalog.py",
+          "scripts/core/spoken_share/__init__.py",
+          "scripts/core/spoken_share/spoken_share.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [
+          "scripts/core/music_styles/catalog.py"
+        ],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/choice_card/intake_card/intake_card.py",
+          "scripts/core/music_styles/catalog.py"
+        ],
+        "repository": "trevorotts1/openclaw-onboarding",
+        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "status": "OBSERVED_PASS"
+    },
+    {
+      "behavior": "paid compatibility",
+      "cell_id": "onboarding::paid compatibility",
+      "checks": [],
+      "executed": true,
+      "flavor": "onboarding",
+      "instrument": "file presence over this repository's own skill root, plus a token scan of the shared contract modules",
+      "known_good_control": {
+        "expected": "present",
+        "input": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "instrument": "file presence",
+        "label": "a core module this repository does carry",
+        "observed": true,
+        "pass": true
+      },
+      "negative_control": {
+        "control_red": false,
+        "observed": null,
+        "unmet_condition": "paid-output preservation cannot be made red where no compatibility carrier exists"
+      },
+      "not_applicable": {
+        "blocked_by": [
+          "S75-T01",
+          "S75-T03"
+        ],
+        "missing_capability": "paid-asset / raw-answer / legacy-approval preservation: compatibility.py, contracts/legacy-compatibility-map.json and tests/fixtures/paid_artifact_preservation.json",
+        "owed_by": "S75-T28"
+      },
+      "observations": [
+        "scanned 3 paid-compatibility carrier(s): none present",
+        "absent: scripts/core/compatibility.py",
+        "absent: scripts/core/contracts/legacy-compatibility-map.json",
+        "absent: scripts/core/tests/fixtures/paid_artifact_preservation.json",
+        "token scan of the shared contract modules: {\"scripts/core/contracts/flavor-999.json\": 0, \"scripts/core/package_flavor_adapter.py\": 0, \"scripts/core/story_first_contracts.py\": 0}",
+        "known-good control on the same scan found scripts/core/spend_ledger.py"
+      ],
+      "repository": "trevorotts1/openclaw-onboarding",
+      "repository_release": {
+        "all_paths_inside_own_repository": true,
+        "foreign_repository_modules_loaded": [],
+        "foreign_repository_sys_path_entries": [],
+        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "modules_from_own_repository_in_use": [
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/music_styles/catalog.py",
+          "scripts/core/music_styles/catalog.py",
+          "scripts/core/spoken_share/__init__.py",
+          "scripts/core/spoken_share/spoken_share.py",
+          "scripts/core/story_first_contracts.py"
+        ],
+        "modules_loaded_for_this_cell": [],
+        "own_repository_released": true,
+        "paths_inspected": [
+          "scripts/core/compatibility.py",
+          "scripts/core/contracts/legacy-compatibility-map.json",
+          "scripts/core/tests/fixtures/paid_artifact_preservation.json",
+          "scripts/core/spend_ledger.py",
+          "scripts/core/story_first_contracts.py",
+          "scripts/core/package_flavor_adapter.py",
+          "scripts/core/contracts/flavor-999.json"
+        ],
+        "repository": "trevorotts1/openclaw-onboarding",
+        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+      },
+      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "status": "NOT_APPLICABLE"
+    }
+  ],
   "checks": {
+    "cells_fail": 0,
+    "cells_not_applicable": 2,
+    "cells_pass": 7,
+    "cells_total": 9,
     "controls_green": 0,
     "controls_red": 10,
     "facets_green": 10,
@@ -35,10 +685,78 @@
       "scripts/core/story_first_contracts.py": "56796e0c43142431cadb6d285b95025d93411e2a42262f99f043e306499f5e50"
     },
     "seam": "package_flavor_adapter.resolve",
-    "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75-t103/t32wt/75-drama-song-ad-factory",
+    "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
     "stage_count": 11
   },
   "coverage": {
+    "cells": {
+      "Notion migration": {
+        "clause": "Notion migration is exercised by both flavour facets (product gap; see not_covered for the owing unit)",
+        "rows": [
+          "S75-A32"
+        ]
+      },
+      "approval ordering": {
+        "clause": "preference is not approval; approval binds to current digests",
+        "rows": [
+          "S75-A12",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "cast bypass": {
+        "clause": "cast cannot be bypassed: empty, partial and undefined speakers all fail closed",
+        "rows": [
+          "S75-A07",
+          "S75-A09",
+          "S75-A32"
+        ]
+      },
+      "identity setting changes": {
+        "clause": "a setting change cannot rewrite identity; a pinned stale world revision is refused",
+        "rows": [
+          "S75-A05",
+          "S75-A08",
+          "S75-A32"
+        ]
+      },
+      "missing foundation": {
+        "clause": "missing foundation cannot bypass the gate",
+        "rows": [
+          "S75-A09",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "original byte preservation": {
+        "clause": "original descriptions survive byte-for-byte",
+        "rows": [
+          "S75-A18",
+          "S75-A32"
+        ]
+      },
+      "paid compatibility": {
+        "clause": "paid compatibility is exercised by both flavour facets (product gap; see not_covered for the owing unit)",
+        "rows": [
+          "S75-A32"
+        ]
+      },
+      "scene richness": {
+        "clause": "one-line placeholders are refused; a rich scene validates",
+        "rows": [
+          "S75-A09",
+          "S75-A11",
+          "S75-A32"
+        ]
+      },
+      "style18": {
+        "clause": "exactly eighteen styles, unique and resolvable",
+        "rows": [
+          "S75-A18",
+          "S75-A32"
+        ]
+      }
+    },
     "covered": {
       "approval_ordering_and_binding": {
         "clause": "preference is not artifact approval; full-script approval before music; storyboard approval before video; bindings must match current digests",
@@ -119,13 +837,12 @@
       }
     },
     "not_covered": {
-      "18 style end-to-end paths": "the 18-style catalog is not defined in the shared contract modules",
-      "Notion offline snapshot / new-existing-mixed / retry / conflict / migration": "Notion sync is not modelled in story_first_contracts or package_flavor_adapter",
-      "affected-only invalidation of plan/script/visual outputs": "the shared contracts declare stage dependencies and approval bindings but implement no output invalidation",
-      "elected full-script-before-music via user election": "ordering is enforced; the election record itself is outside these modules",
-      "exact original description bytes": "byte-preservation of intake text is not stated in the shared contract modules",
+      "18 style end-to-end render/dispatch paths": "the eighteen styles are delivered and ARE exercised (cell_matrix style18 resolves all eighteen ids in music_styles.catalog); what is not covered here is end-to-end render and dispatch through the production pipeline. Owed by S75-T29 (ONB-PACKAGE-OWNER) for the onboarding flavour and S75-T30 (N999-PACKAGE-OWNER) for 999.",
+      "Notion offline snapshot / new-existing-mixed / retry / conflict / migration": "capability absent from both repositories. Owed by S75-T17 (CHARACTER-MIGRATION-OWNER), blocked on S75-T15, S75-T16, S75-T28. The cell_matrix Notion migration cell executes a presence scan over character_library/migration.py, sync.py, notion_store.py and cache.py and reports NOT_APPLICABLE with this reason.",
+      "affected-only invalidation of plan/script/visual outputs": "the shared contracts declare stage dependencies and approval bindings but implement no output invalidation. Owed by S75-T28 (COMPATIBILITY-OWNER).",
+      "elected full-script-before-music via user election": "ordering is enforced; the election record itself is outside these modules. Owed by S75-T29 (ONB-PACKAGE-OWNER) / S75-T30 (N999-PACKAGE-OWNER).",
       "genuine writing dispatch": "no dispatch call exists in the shared contract modules; asserting it here would invent a criterion",
-      "old paid output / raw answer / approval preservation": "paid-asset compatibility is not modelled in the shared contract modules"
+      "old paid output / raw answer / approval preservation": "capability absent from both repositories. Owed by S75-T28 (COMPATIBILITY-OWNER: compatibility.py, contracts/legacy-compatibility-map.json, tests/fixtures/paid_artifact_preservation.json), blocked on S75-T01, S75-T03. The cell_matrix paid compatibility cell executes a presence scan over those three carriers and a token scan of the shared contracts, and reports NOT_APPLICABLE with this reason."
     },
     "note": "a row is touched only for the named clause; no row is claimed fully covered",
     "rows_touched": [
@@ -137,6 +854,7 @@
       "S75-A11",
       "S75-A12",
       "S75-A13",
+      "S75-A18",
       "S75-A32"
     ]
   },
@@ -256,16 +974,93 @@
       },
       "ok": true,
       "reason": "[]"
+    },
+    {
+      "checks": 2,
+      "facet": "cell:missing foundation",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "the missing foundation artifact supplied"
+      },
+      "ok": true,
+      "reason": "missing_foundation_refused: ok=True, 2 check(s), negative control red=True; known-good control: all 5 required artifacts supplied -> admitted=True"
+    },
+    {
+      "checks": 3,
+      "facet": "cell:cast bypass",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a valid non-empty cast supplied"
+      },
+      "ok": true,
+      "reason": "missing_cast_refused: ok=True, 2 check(s), negative control red=True; undefined_speaker_refused: ok=True, 1 check(s), negative control red=True"
+    },
+    {
+      "checks": 8,
+      "facet": "cell:scene richness",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a rich scene supplied in place of the one-line record"
+      },
+      "ok": true,
+      "reason": "one_line_scene_refused: ok=True, 3 check(s), negative control red=True; complete_fixture_validates: ok=True, 5 check(s), negative control red=True"
+    },
+    {
+      "checks": 3,
+      "facet": "cell:identity setting changes",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a required identity field removed between revisions"
+      },
+      "ok": true,
+      "reason": "identity_survives_world_revision: ok=True, 3 check(s), negative control red=True; known-good control: all 5 required artifacts supplied -> admitted=True"
+    },
+    {
+      "checks": 3,
+      "facet": "cell:approval ordering",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a bound, digest-matched APPROVED package approval supplied"
+      },
+      "ok": true,
+      "reason": "approval_ordering_and_binding: ok=True, 3 check(s), negative control red=True; known-good control: all 5 required artifacts supplied -> admitted=True"
+    },
+    {
+      "checks": 6,
+      "facet": "cell:style18",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": false,
+        "unmet_condition": "a seventeen-id carrier, checked by the same predicate"
+      },
+      "ok": true,
+      "reason": "18 style ids: soul-ballad, rnb-flow, soul-rise, acoustic-pop, folk-storytelling, country-pop, melodic-rap, trap-rap, pop-rap, pop-rock, reggaeton, cinematic-orchestral-song, musical-theater, contemporary-gospel, urban-gospel, alternative-rnb, afro-soul, country-rap; validate_catalog() -> 18"
+    },
+    {
+      "checks": 6,
+      "facet": "cell:original byte preservation",
+      "negative_control": {
+        "control_red": true,
+        "facet_ok_on_unmet": true,
+        "unmet_condition": "a case flip is invisible to casefold but must be caught by bytes"
+      },
+      "ok": true,
+      "reason": "carrier: scripts/core/choice_card/intake_card/intake_card.py (3 description(s)); catalog source literal carrier: present"
     }
   ],
   "execution": {
     "verdict": "PASS"
   },
   "flavor": "onboarding",
-  "generated_at": "2026-10-24T22:11:36Z",
+  "generated_at": "2026-10-25T13:13:48Z",
   "harness": {
-    "branch": "s75/T32",
-    "commit": "81c6d51b9ac1d12f5167f15d21bddee5a43ca42a",
+    "branch": "s75/T32-repair-r1",
+    "commit": "fbd4059b23771f290bb72052549e2693dd3f0a46",
     "repository": "trevorotts1/openclaw-onboarding"
   },
   "literal_binding": {
@@ -280,28 +1075,33 @@
   "not_executed": [
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
-      "facet": "18 style end-to-end paths",
-      "reason": "not stated by the shared contracts: the 18-style catalog is not defined in the shared contract modules"
+      "facet": "cell:Notion migration",
+      "reason": "capability not present in this repository: Notion library migration: character_library/migration.py with idempotent dry-run and rollback, over the sync layer (character_library/sync.py) and the persistence store (character_library/notion_store.py) that unit depends on; owed by S75-T17"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "cell:paid compatibility",
+      "reason": "capability not present in this repository: paid-asset / raw-answer / legacy-approval preservation: compatibility.py, contracts/legacy-compatibility-map.json and tests/fixtures/paid_artifact_preservation.json; owed by S75-T28"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "18 style end-to-end render/dispatch paths",
+      "reason": "not stated by the shared contracts: the eighteen styles are delivered and ARE exercised (cell_matrix style18 resolves all eighteen ids in music_styles.catalog); what is not covered here is end-to-end render and dispatch through the production pipeline. Owed by S75-T29 (ONB-PACKAGE-OWNER) for the onboarding flavour and S75-T30 (N999-PACKAGE-OWNER) for 999."
     },
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
       "facet": "Notion offline snapshot / new-existing-mixed / retry / conflict / migration",
-      "reason": "not stated by the shared contracts: Notion sync is not modelled in story_first_contracts or package_flavor_adapter"
+      "reason": "not stated by the shared contracts: capability absent from both repositories. Owed by S75-T17 (CHARACTER-MIGRATION-OWNER), blocked on S75-T15, S75-T16, S75-T28. The cell_matrix Notion migration cell executes a presence scan over character_library/migration.py, sync.py, notion_store.py and cache.py and reports NOT_APPLICABLE with this reason."
     },
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
       "facet": "affected-only invalidation of plan/script/visual outputs",
-      "reason": "not stated by the shared contracts: the shared contracts declare stage dependencies and approval bindings but implement no output invalidation"
+      "reason": "not stated by the shared contracts: the shared contracts declare stage dependencies and approval bindings but implement no output invalidation. Owed by S75-T28 (COMPATIBILITY-OWNER)."
     },
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
       "facet": "elected full-script-before-music via user election",
-      "reason": "not stated by the shared contracts: ordering is enforced; the election record itself is outside these modules"
-    },
-    {
-      "class": "NOT_MODELLED_BY_CONTRACTS",
-      "facet": "exact original description bytes",
-      "reason": "not stated by the shared contracts: byte-preservation of intake text is not stated in the shared contract modules"
+      "reason": "not stated by the shared contracts: ordering is enforced; the election record itself is outside these modules. Owed by S75-T29 (ONB-PACKAGE-OWNER) / S75-T30 (N999-PACKAGE-OWNER)."
     },
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
@@ -311,7 +1111,7 @@
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
       "facet": "old paid output / raw answer / approval preservation",
-      "reason": "not stated by the shared contracts: paid-asset compatibility is not modelled in the shared contract modules"
+      "reason": "not stated by the shared contracts: capability absent from both repositories. Owed by S75-T28 (COMPATIBILITY-OWNER: compatibility.py, contracts/legacy-compatibility-map.json, tests/fixtures/paid_artifact_preservation.json), blocked on S75-T01, S75-T03. The cell_matrix paid compatibility cell executes a presence scan over those three carriers and a token scan of the shared contracts, and reports NOT_APPLICABLE with this reason."
     }
   ],
   "receipt_version": "s75.cross_flavor.receipt.v1",
