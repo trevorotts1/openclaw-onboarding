@@ -683,3 +683,83 @@ class TestRescueRangersOperatorOnly:
             assert not _GROUP_ID_LITERAL_RE.search(_read(f)), (
                 f"a Telegram group-id literal (-100…) must NOT be hardcoded in {f}"
             )
+
+
+# ---------------------------------------------------------------------------
+# (g) TEARDOWN ORDER + LOCK CLEANUP (finding 26)
+#
+# Regression: _bm_teardown released the box lock BEFORE closing the canonical
+# session and clearing its state, so a successor could acquire the lock and
+# have its own canonical session closed by the predecessor. On the Mac/BSD
+# mkdir branch a bare `rmdir` also failed because the owned `pid` file was
+# still inside the lock dir, leaving a stale lock behind after every teardown.
+# ---------------------------------------------------------------------------
+
+def _teardown_body(src: str) -> str:
+    m = re.search(r"_bm_teardown\(\)\s*\{(.*?)\n\}", src, re.DOTALL)
+    assert m, "could not locate _bm_teardown() body"
+    return m.group(1)
+
+
+class TestTeardownReleasesLockLast:
+    def test_teardown_releases_lock_after_close_and_state_clear(self):
+        """The lock release must be the LAST teardown step, after close + state
+        clear (before the fix it ran first — successor race)."""
+        body = _teardown_body(_read(_MANAGER_SH))
+        close_idx = body.index("close --session")
+        clear_idx = body.index("state clear")
+        release_idx = body.index("_bm_release_lock")
+        assert close_idx < clear_idx, "teardown must close the session, then clear state"
+        assert release_idx > clear_idx, (
+            "teardown must release the box lock AFTER close + state clear "
+            f"(release at {release_idx}, state clear at {clear_idx})"
+        )
+
+    def test_teardown_does_not_unlock_before_cleanup(self):
+        """No bare flock/rmdir unlock may appear before the close line."""
+        body = _teardown_body(_read(_MANAGER_SH))
+        close_idx = body.index("close --session")
+        for marker in ("flock -u", 'rmdir "$LOCKDIR/ab.lock.d"'):
+            assert marker not in body[:close_idx], (
+                f"teardown must not {marker!r} before closing the session"
+            )
+
+    def test_abort_leaves_no_lock_dir_or_pid(self, tmp_path):
+        """Runtime: after an abort path runs teardown, the mkdir lock dir (and
+        the owned pid inside it) must be gone — a leftover `pid` made `rmdir`
+        fail on the Mac branch."""
+        bindir = tmp_path / "bin"
+        log = tmp_path / "argv.log"
+        lockdir = tmp_path / "lockdir"
+        _write_stub_agent_browser(bindir, log, "")
+        harness = tmp_path / "abort_order_harness.sh"
+        harness.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            f'source "{_MANAGER_SH}"\n'
+            "bm_ensure\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        env = dict(
+            os.environ,
+            PATH=f"{bindir}:{os.environ.get('PATH','')}",
+            TMPDIR=str(lockdir),
+            HOME=str(tmp_path),
+            BM_DURABLE_ROOT_OVERRIDE="",
+            GHL_LOCATION_ID="lockorderloc",
+            AB_MAX_SESSIONS="1",
+            AB_LOCK_WAIT="2",
+            AB_SESSION_TTL="60",
+        )
+        res = subprocess.run(
+            ["bash", str(harness)],
+            capture_output=True, text=True, env=env, timeout=60,
+        )
+        assert res.returncode == 1, f"harness should exit 1, got {res.returncode}\n{res.stderr}"
+        lock_d = lockdir / "agent-browser" / "ab.lock.d"
+        assert not lock_d.exists(), (
+            "teardown must remove the mkdir lock dir entirely; found "
+            f"{sorted(p.name for p in lock_d.iterdir())}"
+        )
+        assert not (lock_d / "pid").exists(), "teardown must remove the owned pid file"

@@ -498,15 +498,25 @@ _bm_start_ttl() {
 }
 
 # ── GUARANTEED TEARDOWN ───────────────────────────────────────────────────────
+# _bm_release_lock — drop the box singleton lock WE hold. Call LAST, never first:
+# releasing before close/state-clear let a successor acquire the lock and then have
+# its canonical session closed by us (finding 26). On the mkdir branch the owned
+# `pid` file is still inside the lock dir, so a bare `rmdir` fails and leaves the
+# stale directory behind — remove the owned pid first, then rmdir.
+_bm_release_lock() {
+  flock -u 9 2>/dev/null || true
+  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
+    rm -f "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
+    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
+  fi
+  _BM_LOCK_HELD=0
+}
+
 # Closes ONLY the canonical session (NEVER close --all — blast-radius safety,
 # Approach 3 tradeoff; close --all is reserved for the reaper / breaker trip).
 _BM_SESSION=""
 _bm_teardown() {
   [ -n "$_TTL_PID" ] && kill "$_TTL_PID" 2>/dev/null || true
-  flock -u 9 2>/dev/null || true
-  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
-    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || true
-  fi
   if [ -n "$_BM_SESSION" ]; then
     command "$AB_BIN" --headed false close --session "$_BM_SESSION" 2>/dev/null || true
     command "$AB_BIN" --headed false state clear "$_BM_SESSION" 2>/dev/null || true
@@ -517,7 +527,7 @@ _bm_teardown() {
     # of a session regardless; this is hygiene, not a correctness dependency.)
     rm -f "$(_bm_auth_stamp_file "$_BM_SESSION")" 2>/dev/null || true
   fi
-  _BM_LOCK_HELD=0
+  _bm_release_lock   # LAST: close + clear happened while we still owned the lock
 }
 
 # ── B1 VERSION-GATE — refuse to launch a browser build through an old/headed guard
@@ -690,19 +700,14 @@ _bm_login_state() {
 _bm_release_lock_keep_session() {
   local session="$1"
   [ -n "$_TTL_PID" ] && kill "$_TTL_PID" 2>/dev/null || true
-  flock -u 9 2>/dev/null || true
-  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
-    # A bare `rmdir` FAILS on a non-empty directory — `ab.lock.d/pid` is still
-    # inside it. Remove the pid file first, then rmdir, with the SAME `rm -rf`
-    # fallback `_bm_lock_acquire`'s own stale-lock reclaim already uses. Without
-    # this, the directory survives, our own PID is still recorded+alive inside
-    # it, and the reacquire two lines below in _bm_self_heal_reseed spins the
-    # full AB_LOCK_WAIT waiting on a lock WE ourselves just "released" before
-    # REFUSING (exit 75) — self-deadlock, verified live in this fix's own test
-    # suite before this line was added.
-    rm -f "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
-    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
-  fi
+  # A bare `rmdir` FAILS on a non-empty directory — `ab.lock.d/pid` is still
+  # inside it. `_bm_release_lock` removes the owned pid first, then rmdir, with
+  # the SAME `rm -rf` fallback `_bm_lock_acquire`'s own stale-lock reclaim uses.
+  # Without this, the directory survives, our own PID is still recorded+alive
+  # inside it, and the reacquire in _bm_self_heal_reseed spins the full
+  # AB_LOCK_WAIT waiting on a lock WE ourselves just "released" before REFUSING
+  # (exit 75) — self-deadlock, verified live in this fix's own test suite.
+  _bm_release_lock
   rm -f "$LOCKDIR/leases/${session}.lease" 2>/dev/null || true
   _BM_LOCK_HELD=0
 }
