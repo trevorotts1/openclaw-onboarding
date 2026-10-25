@@ -21,12 +21,21 @@ reminder_state_machine.py` and 12 of the 41 fail.
 T09QcRound2Proofs carries one test per defect the qc2-t-17 FAIL verdict
 reports (D1 admission-is-acceptance, D2 scope of a narrow refusal at the
 final, D3 the unreachable stopped_declined), each with an inverse leg that is
-green on both trees. The whole 50-test suite, run against the reviewed commit
+green on both trees. The whole suite, run against the reviewed commit
 `git show 6395572224bceb90d2203b4fb46686a87fe15738:shared-utils/reminders/
-reminder_state_machine.py` in an identical tree, fails 10 of 50 (8 failures,
-2 errors) and passes 50 of 50 after it. No assertion was removed or weakened:
-the assertion inventory is 238 -> 304 across 51 -> 62 methods, with zero
-methods missing and zero carrying fewer assertions than before.
+reminder_state_machine.py` in an identical tree with only that module swapped
+in, fails 10 of 51 (8 failures, 2 errors) and passes 51 of 51 after it. No
+assertion was removed or weakened: the assertion inventory is 238 -> 317
+across 41 -> 51 test methods, with zero methods missing and zero carrying
+fewer assertions than before. (Repair 2 alone stood at 304 assertions across
+50 test methods; repair 4 adds the terminal-set pin below.)
+
+Count note (corrected in repair 4): "methods" was ambiguous here and is now
+split. 41 -> 51 is the TEST-method count (a `def` named `test_`), which is the
+only count that matches what the suite runs. The same file carries 61 -> 74
+`def` total and 51 -> 63 class-level methods, so a bare "methods" figure is
+unverifiable without saying which. Every figure above comes from an `ast` walk
+of the file, not a regex over this prose.
 """
 
 import json
@@ -705,6 +714,56 @@ class T06ActualTerminalStop(_Base):
                 TENANT, self.contact, SEQ, final.action_id, self.sender(),
                 channel="sms", now=1400.0)
         self.assertEqual(len(self.sends), before)
+
+    def test_stopped_ineligible_is_in_the_terminal_set(self):
+        """Pin the terminal set: `stopped_ineligible` TERMINATES the sequence.
+
+        `TERMINAL_STATES` is the one set every guard reads. `snapshot`'s
+        `terminal` flag is literally `row["state"] in TERMINAL_STATES`
+        (reminder_state_machine.snapshot), and each mutation entry point
+        raises `SequenceTerminal` behind that same membership test. So a state
+        dropped from the set does not merely lose a label: it silently becomes
+        RE-ENTERABLE while the suite stays green, because the other terminal
+        tests all drive `stopped_final`.
+
+        This test exists to make that mutation RED. It drives the one path that
+        lands in `stopped_ineligible` (a reserved final that expires with no
+        ACK) and then asserts the terminal flag and the by-name re-entry refusal
+        the set is responsible for. Both diverge under the mutation: the flag
+        reads False and a fresh invitation is accepted.
+        """
+        self.ready()
+        self.machine.reserve_final(
+            TENANT, self.contact, SEQ, channel="sms",
+            content_sha256="sha-final", now=1300.0)
+        out = self.machine.expire_final(TENANT, self.contact, SEQ, now=2000.0)
+        self.assertEqual(out.state, rsm.STATE_STOPPED_INELIGIBLE)
+        self.assertFalse(out.sent)
+        snap = self.snap()
+        self.assertEqual(snap["state"], rsm.STATE_STOPPED_INELIGIBLE)
+        # The exact expression the mutation flips.
+        self.assertTrue(snap["terminal"])
+        self.assertIn(rsm.STATE_STOPPED_INELIGIBLE, rsm.TERMINAL_STATES)
+        # Re-entry is refused BY NAME, exactly as for stopped_final.
+        with self.assertRaises(rsm.SequenceTerminal) as caught:
+            self.machine.record_initial_invitation(
+                TENANT, self.contact, SEQ, invitation_id="inv-late",
+                now=9999.0)
+        self.assertIn(rsm.STATE_STOPPED_INELIGIBLE, str(caught.exception))
+        with self.assertRaises(rsm.SequenceTerminal):
+            self.machine.reserve_final(TENANT, self.contact, SEQ,
+                                       channel="sms",
+                                       content_sha256="sha-2", now=9999.0)
+        decision = self.machine.due_slot(TENANT, self.contact, SEQ, now=9999.0)
+        self.assertEqual(decision.reason, "sequence_terminal")
+        # The stopped row is served back; no second episode is minted behind
+        # it, so there is no fresh t0, no fresh slots and no fresh budget.
+        again = self.machine.open_sequence(TENANT, self.contact, SEQ,
+                                           request_id="req-late", now=9999.0)
+        self.assertEqual(again["collection_sequence_id"], SEQ)
+        self.assertEqual(again["state"], rsm.STATE_STOPPED_INELIGIBLE)
+        self.assertEqual(self.snap()["state"], rsm.STATE_STOPPED_INELIGIBLE)
+        self.assertEqual(len(self.sends), 0)
 
 
 class T08RepairProofs(_Base):
