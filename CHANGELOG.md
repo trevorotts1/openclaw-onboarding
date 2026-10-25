@@ -1,6 +1,6 @@
 ## [Unreleased]  -  2026-10-25  -  PBB-357 / T-04 repair round 2: record and proof repaired, verified external storage binding, child temp propagation and measured global capacity
 
-- Bumps Skill 38 to v2.0.95 with its own changelog entry, and re-lands `evidence/storage-and-resource-receipt.json` byte-identical (blob `e8cfbbad1f54d20233c60996bc155504d817885b`).
+- Bumps Skill 38 to v2.0.128 with its own changelog entry, and re-lands `evidence/storage-and-resource-receipt.json` byte-identical (blob `e8cfbbad1f54d20233c60996bc155504d817885b`).
 - Repairs PBB-339 D1: the gate's rule 4 scanned the whole root CHANGELOG for the first "bumps Skill 38 to" line, so it refused a wholly true record. Repaired to read only the newest entry. A true fixture exits 1 on the old gate (`VIOLATION ... first 'bumps Skill 38 to' line is v2.0.8 but ... is v2.0.9`) and 0 on the repaired gate; reverting the fix makes `--self-test` exit 1 with `SELF-TEST FAIL — 1 fixture(s) behaved wrongly`.
 - Repairs PBB-339 D2: the previous message claimed "no control code ... changed" while the same commit added this gate and extended `skill-version-newline-guard.sh`. This record states what the diff does instead.
 - Adds the class-wide gate `scripts/qc-assert-commit-version-claim.py`, run from `skill-version-newline-guard` on every `skill-version.txt` change. Embedded self-test: 12 fixtures, wrong records fail, right records pass.
@@ -9,6 +9,13 @@
 - In plain English: the proof of where the work lives and where temporary files actually go is back, and the check that reads a commit's record of itself no longer accuses a true record — while still refusing a false one.
 - A read-only CI gate is added and the existing newline guard now runs it. No Purple-Billboard control-plane code, config, ledger, provider, limit or credential changed. The abandoned repair commit `702d6e4cdb` is not an ancestor of this branch.
 - Risk level: LOW (evidence artifact, bookkeeping and one read-only CI gate).
+
+## [Unreleased]  -  2026-10-25  -  PBB-325 / T-05 repair 2: the engineering loop reads PB_* configuration at use time, and malformed stop/payload input is refused
+
+- Repair of verifier PBB-279's FAIL on `e7f5d98a` (T-05). `CONTROL/eng_loop.py` no longer captures `PB_STATE_DIR` / `PB_LABEL` / `PB_PLIST` / `PB_TMP` / `PB_CACHE` at import: the owner-handler child and the launchd job read the runtime environment, so an isolated proof no longer writes the production store. Three guards that could not fire now refuse: a `--run-id` flag with no value, an out-of-range `--generation`, and a malformed `--payload` / `--body`.
+- In plain English: running the loop's own self-test against an isolated store now actually stays isolated, and bad input gets a refusal with a reason instead of a Python traceback.
+- Adds `CONTROL/tests/test_eng_loop_guards.py` (8 tests; 4 failures and 1 error on the reviewed bytes, 8 OK after). Skill 38 version `v2.0.97`.
+- Risk level: MEDIUM — runtime behaviour changes only for the malformed and boundary inputs named, and every inverse control is pinned in the new tests.
 
 ## [Unreleased]  -  2026-10-24  -  PBB-070 / T-47: cross-repository compatibility manifest and deployment evidence
 
