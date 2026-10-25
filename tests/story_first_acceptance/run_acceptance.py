@@ -236,11 +236,18 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
         raise SystemExit("--candidate %s does not match this checkout's HEAD %s"
                          % (expected, head))
     status = payload.get("status")
+    gate = flavor_info.get("revision_gate") or {}
     if flavor == "onboarding":
         candidate_head, candidate_branch, candidate_clean = head, branch, _repo_state(repo_root)[2]
     else:
         candidate_head, candidate_branch, candidate_clean = _repo_state(
             flavor_info.get("skill_root") or next(iter(flavor_info["sources_checked"]), None))
+    if not candidate_head:
+        # A pinned extraction carries no git metadata; its revision IS the pin.
+        candidate_head = gate.get("revision")
+        candidate_branch = (candidate_branch or
+                            "pinned archive of %s" % (gate.get("revision_source") or "a named revision"))
+        candidate_clean = gate.get("clean_excluding_instrument_output")
     checkout_head = candidate_head
     if status == "UNAVAILABLE":
         candidate_head = None  # no executed candidate skill root; null, never the harness head

@@ -430,6 +430,29 @@ def test_default_n999_root_is_pinned_to_a_revision_not_a_live_tree():
     assert built_in == [default], built_in
 
 
+def test_receipt_takes_the_candidate_revision_from_the_pin():
+    """An extracted tree has no git; the pin is its revision. Get it from the gate."""
+    with tempfile.TemporaryDirectory() as tmp:
+        checkout = os.path.join(tmp, "checkout")
+        _seed_tree(checkout)
+        root = os.path.join(tmp, "pins", "999-setup", RA.N999_PIN_REVISION, "skill")
+        os.makedirs(root)
+        flavors = RA.resolve_flavors(
+            tmp, types.SimpleNamespace(onb_skill_root=None, n999_skill_root=root),
+            ["999"])
+        info = flavors["999"]
+        assert info["revision_gate"]["status"] == "PINNED_REVISION", info["revision_gate"]
+        receipt = RA.build_receipt(
+            "999", checkout,
+            types.SimpleNamespace(base_ref="origin/main", candidate=None,
+                                  author="S75-T32 self-check",
+                                  checker="opus-chain reviewer #2"),
+            {"status": "PASS", "facets": [], "cells": _valid_cells(), "skill_root": root},
+            {"repository": "trevorotts1/999-setup", "skill_root": root}, info)
+        assert receipt["candidate"]["commit"] == RA.N999_PIN_REVISION
+        assert receipt["candidate"]["revision_gate"]["status"] == "PINNED_REVISION"
+
+
 if __name__ == "__main__":
     failures = 0
     tests = [(name, fn) for name, fn in sorted(globals().items())
