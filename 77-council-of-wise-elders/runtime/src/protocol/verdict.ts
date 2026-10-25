@@ -333,9 +333,14 @@ function scoringCardsOf(
     (c): c is RatificationCard => c.card_kind === 'ratification',
   );
   if (ratification.length > 0) return ratification;
-  return cards.filter(
-    (c): c is AdvisorCard => c.card_kind === 'advisor' && c.round === 2,
+  // No ratification pass: score from the LAST completed advisor round,
+  // which for the four older modes is round 2 and for the council sizes
+  // is whichever challenge pass the run stopped on (W77S-MODES).
+  const advisors = cards.filter(
+    (c): c is AdvisorCard => c.card_kind === 'advisor',
   );
+  const lastRound = advisors.reduce((latest, card) => Math.max(latest, card.round), 0);
+  return advisors.filter((card) => card.round === lastRound);
 }
 
 /**
