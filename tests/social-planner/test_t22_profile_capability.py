@@ -260,6 +260,52 @@ class TestSingleSourceRoundTrip(unittest.TestCase):
         self.assertEqual(os.path.abspath(ppc.CAPABILITIES_PATH), os.path.abspath(CAPABILITIES))
 
 
+class TestVersionMarkersAgree(unittest.TestCase):
+    """A one-line version revert must not leave the suite green.
+
+    Prior round's MUTATION-E put `skill-version.txt` back to v3.9.0 and the whole
+    matrix suite stayed rc 0 — only the shell drift checker noticed. This pin runs
+    that same checker inside the suite, so the skill's own three markers
+    (skill-version.txt, SKILL.md, CHANGELOG) are guarded by a test and not only by
+    a script someone has to remember to invoke. Inverse: the checker must report
+    OK here, and its own DRIFT direction is proven on the failed parent commit
+    (858b3812: skill-version.txt=3.9.0 vs SKILL.md=3.8.2 -> DRIFT, exit 1).
+    """
+
+    CHECKER = os.path.join(_ONB_ROOT, "06-ghl-install-pages", "scripts",
+                           "check-version-drift.py")
+
+    def test_this_skills_three_version_markers_agree(self):
+        result = subprocess.run(
+            [sys.executable, "-I", self.CHECKER, "35-social-media-planner"],
+            cwd=_ONB_ROOT, capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("markers-agree=True", result.stderr)
+        self.assertIn("-> OK", result.stderr)
+
+    def test_the_checker_still_detects_drift_when_the_markers_disagree(self):
+        scratch = tempfile.mkdtemp(prefix="ppc-drift-")
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        probe = os.path.join(scratch, "drift-probe")
+        os.makedirs(os.path.join(probe, "35-social-media-planner"), exist_ok=True)
+        shutil.copyfile(self.CHECKER, os.path.join(scratch, "check-version-drift.py"))
+        base = os.path.join(probe, "35-social-media-planner")
+        with open(os.path.join(base, "skill-version.txt"), "w", encoding="utf-8") as h:
+            h.write("v9.9.9\n")
+        with open(os.path.join(base, "SKILL.md"), "w", encoding="utf-8") as h:
+            h.write("---\nversion: 1.2.3\n---\n")
+        with open(os.path.join(base, "CHANGELOG.md"), "w", encoding="utf-8") as h:
+            h.write("# Changelog\n\n## [1.2.3] - 2026-01-01 - probe\n")
+        result = subprocess.run(
+            [sys.executable, "-I", os.path.join(scratch, "check-version-drift.py"),
+             "35-social-media-planner"],
+            cwd=probe, capture_output=True, text=True, timeout=60,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("DRIFT", result.stderr)
+
+
 class TestCapabilityCli(unittest.TestCase):
     # The CLI runs in its own process, so it cannot inherit this module's patched
     # path resolver. It gets the same code-level relocation through a small shim
