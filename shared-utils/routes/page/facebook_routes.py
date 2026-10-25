@@ -191,8 +191,12 @@ def _approved_table(table: Mapping[Any, Any], *, label: str,
             raise RouteError(f"bad_input: {label} route for {raw_key!r} must"
                              " be a non-empty string")
         if key in indexed and indexed[key] != route:
-            raise RouteError(f"bad_input: {label} keys {indexed[key]!r} and"
-                             f" {route!r} both normalise to {key!r}")
+            # Name the two APPROVED KEYS that collide, not their route values:
+            # an operator cannot find the conflicting approvals otherwise.
+            prior_key = next(k for k, v in table.items()
+                             if key_normaliser(k) == key)
+            raise RouteError(f"bad_input: {label} keys {prior_key!r} and"
+                             f" {raw_key!r} both normalise to {key!r}")
         indexed[key] = route
     return indexed
 
@@ -214,6 +218,15 @@ def resolve_entry(*, channel: Any, text: Any = None, ref: Any = None,
     Such a ref is recorded UNRECOGNIZED and falls through to the keyword.
     """
     channel_value = _text(channel, "channel")
+    # An absent field (None) carries no claim. A field that IS present but is
+    # not text cannot be read, and reporting it as absent would invent an
+    # absence -- the mirror image of inventing attribution. Refuse it.
+    if ref is not None and not isinstance(ref, str):
+        raise RouteError(f"bad_input: ref must be a string when present,"
+                         f" got {type(ref).__name__}")
+    if text is not None and not isinstance(text, str):
+        raise RouteError(f"bad_input: text must be a string when present,"
+                         f" got {type(text).__name__}")
     refs = _approved_table({} if ref_routes is None else ref_routes,
                            label="ref_routes",
                            key_normaliser=lambda k: k.strip())
@@ -259,7 +272,13 @@ def evaluate_eligibility(route: Any, facts: Mapping[str, Any], *,
         raise RouteError(f"bad_input: unknown route {route!r}")
     if not isinstance(facts, Mapping):
         raise RouteError("bad_input: facts must be a mapping")
-    ts = time.time() if now is None else float(now)
+    try:
+        ts = time.time() if now is None else float(now)
+    except (TypeError, ValueError):
+        # Malformed input is RouteError everywhere else in this module; a bare
+        # ValueError here would slip past a caller's RouteError handler.
+        raise RouteError("bad_input: now must be a number,"
+                         f" got {type(now).__name__}") from None
 
     def refuse(reason: str, **evidence: Any) -> GateVerdict:
         payload = {"reason": reason, "route": route}
@@ -377,6 +396,14 @@ def admit_inbound(store: Any, *, tenant_id: str, provider_event_id: str,
     if isinstance(own_actor_ids, (str, bytes, bytearray)):
         raise RouteError("bad_input: own_actor_ids must be a collection of"
                          " actor ids, not one bare value")
+    try:
+        iter(own_actor_ids)
+    except TypeError:
+        # A non-collection reaches the store, where the set comprehension
+        # raises TypeError after the caller already expects a refusal. Same
+        # defect as the bare string: refuse it here, write nothing.
+        raise RouteError("bad_input: own_actor_ids must be a collection of"
+                         " actor ids") from None
     result = store.admit_event(
         provider="facebook", tenant_id=_text(tenant_id, "tenant_id"),
         provider_event_id=_text(provider_event_id, "provider_event_id"),
@@ -406,6 +433,11 @@ def opener_decision(*, channel: Any, comment_only: Any,
         raise RouteError("bad_input: comment_only must be a bool")
     if isinstance(customer_reply, str) or not isinstance(customer_reply, bool):
         raise RouteError("bad_input: customer_reply must be a bool")
+    # opener_sent decides whether a second opener would be a drip (F-08), so it
+    # is typed like its two siblings: a falsy non-bool must not silently read
+    # as "no opener sent yet" and permit the drip.
+    if isinstance(opener_sent, str) or not isinstance(opener_sent, bool):
+        raise RouteError("bad_input: opener_sent must be a bool")
 
     if customer_reply:
         return OpenerDecision(action=OPENER_SUPPORTED_PATH, allowed=True,

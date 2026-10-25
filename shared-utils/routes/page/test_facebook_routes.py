@@ -868,5 +868,109 @@ class ApprovalTableChannelTests(unittest.TestCase):
         self.assertEqual(out.basis, routes.BASIS_KEYWORD_FALLBACK)
 
 
+class MalformedRouteInputTests(unittest.TestCase):
+    """PBB-350 repair: malformed input is refused by name, never downgraded
+    into a permissive answer or an invented absence.
+
+    Every case below is reproduced on the PBB-275 bytes (13959fbb) before the
+    fix and passes here.
+    """
+
+    def test_the_ambiguity_refusal_names_the_two_approved_keys(self):
+        # Before: the refusal printed the two ROUTE values ('item-guide' and
+        # 'item-other') as if they were the colliding keys.
+        with self.assertRaises(routes.RouteError) as caught:
+            routes.resolve_entry(
+                channel="FB_DM", text="guide",
+                keyword_routes={"GUIDE": "item-guide", "guide!": "item-other"})
+        message = str(caught.exception)
+        self.assertIn("GUIDE", message)
+        self.assertIn("guide!", message)
+        self.assertNotIn("item-guide", message)
+        self.assertNotIn("item-other", message)
+
+    def test_opener_sent_is_typed_like_its_siblings(self):
+        # Before: None/0/[] read as "no opener yet" and permitted a second
+        # opener (the drip F-08 forbids) while the other two args raised.
+        for bad in (None, 0, 1, "", "false", [], {}, [1]):
+            with self.subTest(opener_sent=bad):
+                with self.assertRaises(routes.RouteError):
+                    routes.opener_decision(
+                        channel="FB_DM", comment_only=True,
+                        customer_reply=False, opener_sent=bad)
+        already = routes.opener_decision(
+            channel="FB_DM", comment_only=True, customer_reply=False,
+            opener_sent=True)
+        self.assertEqual(already.action, routes.OPENER_NO_DRIP)
+        first = routes.opener_decision(
+            channel="FB_DM", comment_only=True, customer_reply=False,
+            opener_sent=False)
+        self.assertEqual(first.action, routes.OPENER_ONLY_NO_DRIP)
+        self.assertTrue(first.allowed)
+
+    def test_a_present_but_unreadable_ref_is_refused_not_reported_absent(self):
+        # Before: ref=123 came back attribution='ABSENT' -- an absence
+        # invented for a ref the event did carry.
+        for bad in (123, 4.5, ["mme-ref-1"], {"ref": "mme-ref-1"}, True):
+            with self.subTest(ref=bad):
+                with self.assertRaises(routes.RouteError):
+                    routes.resolve_entry(channel="FB_DM", ref=bad,
+                                         ref_routes={"mme-ref-1": "item-guide"})
+        # An absent ref is still legal and still honest.
+        absent = routes.resolve_entry(channel="FB_DM", ref=None)
+        self.assertEqual(absent.attribution, routes.ATTRIBUTION_ABSENT)
+        self.assertFalse(absent.routed)
+
+    def test_a_present_but_unreadable_text_is_refused(self):
+        for bad in (123, ["guide"], {"keyword": "guide"}, True):
+            with self.subTest(text=bad):
+                with self.assertRaises(routes.RouteError):
+                    routes.resolve_entry(channel="FB_DM", text=bad)
+        absent = routes.resolve_entry(channel="FB_DM", text=None)
+        self.assertFalse(absent.routed)
+        self.assertTrue(absent.prompt_keyword)
+
+    def test_a_malformed_now_is_a_route_error(self):
+        # Before: now="soon" raised bare ValueError and now=[] raised
+        # TypeError, slipping past a caller's RouteError handler.
+        for bad in ("soon", [], {}):
+            with self.subTest(now=bad):
+                with self.assertRaises(routes.RouteError):
+                    routes.evaluate_eligibility(
+                        routes.ROUTE_PUBLIC_REPLY, public_facts(), now=bad)
+        allowed = routes.evaluate_eligibility(
+            routes.ROUTE_PUBLIC_REPLY, public_facts(), now=1000.0)
+        self.assertEqual(allowed.verdict, "ALLOW")
+
+
+class OwnActorIdCollectionTests(unittest.TestCase):
+    """PBB-350 repair: the bare-string guard was the same defect one shape
+    over. A non-collection reached durable_store, whose set comprehension
+    raised TypeError after the caller already expected a refusal."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="fb-route-own-coll-")
+        self.store = DurableStore(str(Path(self.tmp.name) / "s.sqlite"))
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_a_non_collection_own_actor_ids_is_refused_and_writes_nothing(self):
+        for bad in (5, 4.2, True, object()):
+            with self.subTest(own_actor_ids=bad):
+                with self.assertRaises(routes.RouteError):
+                    routes.admit_inbound(
+                        self.store, tenant_id="t1",
+                        provider_event_id="e-noncoll", actor_id="page-1",
+                        own_actor_ids=bad)
+        # If the rejected call had written anything this would read "duplicate".
+        clean = routes.admit_inbound(self.store, tenant_id="t1",
+                                     provider_event_id="e-noncoll",
+                                     actor_id="reader-9",
+                                     own_actor_ids=("page-1",))
+        self.assertTrue(clean.admitted)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
