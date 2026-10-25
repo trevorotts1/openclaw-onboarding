@@ -39,7 +39,7 @@
 # is REFUSED by the legacy path, never silently run through the old pipeline.
 #
 # EXECUTION vs EMISSION: the approved consumer-adapter configuration travels in
-# launch-request.json ("adapters": {<page_role>: {"command": [...], "timeout_s": n}}),
+# launch-request.json ("adapters": {<page_role or extra-page key>: {"command": [...], "timeout_s": n}}),
 # and the dispatcher executes through it. This shell forwards the run dir only —
 # never a --simulate-executor flag — so a launch through the canonical entry can
 # execute the owning skills' real entrypoints but can never fabricate results.

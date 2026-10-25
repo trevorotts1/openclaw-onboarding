@@ -508,7 +508,30 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path,
     import subprocess
     import collect_launch_receipts as receipts
 
-    adapters = config.get("adapters") or {}
+    adapters = config.get("adapters")
+    if adapters is None:
+        adapters = {}
+    if not isinstance(adapters, dict):
+        raise DispatchError(
+            "adapters must be an object mapping a page role (or extra-page "
+            "key) -> {command: [...], timeout_s}")
+    # Shape first, then vocabulary: a command is a list of strings (a bare
+    # string would be iterated character by character into a garbage argv),
+    # and a malformed entry is a DispatchError, never a traceback mid-dispatch.
+    for key, spec in adapters.items():
+        if not isinstance(spec, dict):
+            raise DispatchError(f"adapter {key} must be an object with a "
+                                "command list")
+        cmd = spec.get("command")
+        if not isinstance(cmd, list) or not cmd \
+                or not all(isinstance(part, str) and part for part in cmd):
+            raise DispatchError(f"adapter {key} command must be a non-empty "
+                                f"list of strings, got {cmd!r}")
+        if spec.get("timeout_s") is not None:
+            try:
+                float(spec["timeout_s"])
+            except (TypeError, ValueError):
+                raise DispatchError(f"adapter {key} timeout_s must be a number")
     # An adapter key is a page_role, or an extra design page that rides on a
     # role's request (page_types.json role_instance, today downsell_2).
     allowed = set(PAGE_ROLES) | {k for k, p in pset.page_types()["pages"].items()

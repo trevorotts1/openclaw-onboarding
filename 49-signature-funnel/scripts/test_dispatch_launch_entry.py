@@ -89,6 +89,55 @@ class TheEntryExecutesApprovedAdapters(unittest.TestCase):
                 (rd / "dispatch" / "dispatch-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["execution"], "executed", out)
             self.assertEqual(len(manifest["results"]), len(dl.PAGE_ROLES), out)
+            # every result came from the consumer that ran, never a fabrication
+            self.assertTrue(
+                all(r["author_session"] == "entry-test" for r in manifest["results"]), out)
+
+
+class TheEntryRefusesFabricatedResults(unittest.TestCase):
+    def test_simulate_executor_is_never_forwardable(self):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            rd = make_run_dir(tdp, adapters=True)
+            p = run(["bash", str(SKILL / "signature-funnel-entry.sh"),
+                     "--mode", "signature_launch", "--run-dir", str(rd),
+                     "--simulate-executor"])
+            out = p.stdout + p.stderr
+            self.assertNotEqual(p.returncode, 0, out)
+            self.assertIn("unknown arg", out)
+
+
+class BadAdapterConfigFailsClosed(unittest.TestCase):
+    """A malformed adapters table is a named violation, never a traceback."""
+    def _run_with(self, mutate):
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            rd = make_run_dir(tdp, adapters=True)
+            req = json.loads((rd / "launch-request.json").read_text(encoding="utf-8"))
+            mutate(req)
+            (rd / "launch-request.json").write_text(json.dumps(req), encoding="utf-8")
+            p = run(["bash", str(SKILL / "signature-funnel-entry.sh"),
+                     "--mode", "signature_launch", "--run-dir", str(rd)])
+            return p.stdout + p.stderr, p.returncode
+
+    def test_an_adapter_entry_that_is_not_an_object_fails_closed(self):
+        out, rc = self._run_with(lambda req: req["adapters"].update(landing="consumer.py"))
+        self.assertEqual(rc, dl.EXIT_VIOLATION, out)
+        self.assertNotIn("Traceback", out)
+        self.assertIn("adapter landing", out)
+
+    def test_adapters_that_are_not_an_object_at_all_fail_closed(self):
+        out, rc = self._run_with(lambda req: req.update(adapters="not-an-object"))
+        self.assertEqual(rc, dl.EXIT_VIOLATION, out)
+        self.assertNotIn("Traceback", out)
+        self.assertIn("adapters", out)
+
+    def test_a_command_that_is_not_a_list_of_strings_fails_closed(self):
+        out, rc = self._run_with(
+            lambda req: req["adapters"]["landing"].update(command="consumer.py {request}"))
+        self.assertEqual(rc, dl.EXIT_VIOLATION, out)
+        self.assertNotIn("Traceback", out)
+        self.assertIn("adapter landing command", out)
 
 
 class ALoneInstallStillEmits(unittest.TestCase):
