@@ -221,6 +221,9 @@ class TestGuardCorpusMode:
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
         assert "CORPUS PASS" not in result.stdout
+        assert "corpus checker exited" in result.stdout, (
+            "the guard must blame the checker crash, not a corpus violation"
+        )
 
     def test_guard_fails_on_empty_corpus(self, tmp_path):
         """Negative: zero entries proves nothing and must not pass."""
@@ -236,6 +239,10 @@ class TestGuardCorpusMode:
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
         assert "CORPUS PASS" not in result.stdout
+        assert "no SUMMARY" in result.stdout, (
+            "the guard must report the missing-summary gate specifically, so "
+            "the 'positive entry count' fix cannot be deleted unnoticed"
+        )
 
 
 # ── guard-ghl-method-decision.sh --run-dir: widget vocabulary (S06-02) ───────
