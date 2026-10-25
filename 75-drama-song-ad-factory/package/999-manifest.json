@@ -1,0 +1,180 @@
+{
+  "schema": "s75.n999-package-manifest.v1",
+  "flavor": "999",
+  "unit": "S75-T30",
+  "acceptance": "S75-A30",
+  "owner_role": "N999-PACKAGE-OWNER",
+  "skill_root_anchor": ".claude/skills/drama-song-ad-factory",
+  "source_tree_anchor": "75-drama-song-ad-factory",
+  "statement": "The 999 normal entrypoint carries the same product requirements as the primary flavour and reaches them through its own adapters. Where this tree has no carrier for a requirement, the requirement is declared absent with the unit that owes it and the upgrade path; it is never simulated, and a declaration that stops matching the tree fails the check.",
+
+  "observed_n999_head": {
+    "repository": "https://github.com/trevorotts1/999-setup.git",
+    "branch": "batch/s75-story-first",
+    "sha": "9013117d902c0bc0342ee45e182ae0ebb8b11db3",
+    "observed_at": "2026-10-25",
+    "method": "read-only shallow clone, git cat-file and direct execution at .claude/skills/drama-song-ad-factory; no write, no install, no credential",
+    "present": [
+      "scripts/core/story_first_contracts.py",
+      "scripts/core/package_flavor_adapter.py",
+      "scripts/core/contracts/flavor-999.json",
+      "scripts/core/character_bible/identity.py",
+      "scripts/core/music_styles/catalog.py",
+      "scripts/core/choice_card/intake_card/intake_card.py",
+      "adapters/claude-code/README.md",
+      "adapters/claude-nine/README.md"
+    ],
+    "absent": {
+      "scripts/openclaw_adapter.py": "this is the primary flavour's runtime wrapper; the 999 normal entrypoint is its own adapters/ tree",
+      "scripts/core/character_library/notion_store.py": "owed by S75-T15",
+      "scripts/core/character_library/sync.py": "owed by S75-T16",
+      "scripts/core/character_library/migration.py": "owed by S75-T17",
+      "scripts/core/compatibility.py": "owed by S75-T28"
+    },
+    "control_cli_subcommands": [
+      "intake",
+      "preflight",
+      "next",
+      "event",
+      "storyboard",
+      "music",
+      "script-reply",
+      "card",
+      "character"
+    ],
+    "command_delta_vs_primary": {
+      "primary_only_at_this_base": ["final-recap", "production-go"],
+      "observed_at_999_head": "python3 scripts/core/intake_preflight/factory.py <cmd> --help exits 2 (argparse: invalid choice) for both names, so neither is advertised by this package",
+      "rule": "advertised commands must be a subset of the subcommands the operating factory.py actually implements"
+    }
+  },
+
+  "assembled_from": {
+    "shared_core": "scripts/core/story_first_contracts.py",
+    "flavor_seam": "scripts/core/package_flavor_adapter.py",
+    "flavor_data": "scripts/core/contracts/flavor-999.json",
+    "rule": "The seam and its data are consumed as delivered by S75-T03 and are not re-derived here. package/999_adapter.py calls package_flavor_adapter.resolve('999') and refuses when the values below disagree with it."
+  },
+
+  "package_differences": {
+    "consumed_from": "scripts/core/package_flavor_adapter.py:PACKAGE_DIFFERENCES (S75-T03)",
+    "values": {
+      "skill_root_anchor": ".claude/skills/drama-song-ad-factory",
+      "character_approval_module": null
+    }
+  },
+
+  "product_requirements": [
+    {
+      "id": "artifact_order",
+      "same_as_primary": true,
+      "state": "carried",
+      "carriers": ["scripts/core/story_first_contracts.py"],
+      "probe": "artifact_order",
+      "means": "A stage whose required artifacts are absent is refused, and the refusal names every required artifact that is missing."
+    },
+    {
+      "id": "cast_world_script_gates",
+      "same_as_primary": true,
+      "state": "carried",
+      "carriers": ["scripts/core/story_first_contracts.py", "scripts/core/character_bible/identity.py"],
+      "probe": "cast_world_script_gates",
+      "means": "An empty cast fails closed; a one-line placeholder scene fails closed on dialogue and duration."
+    },
+    {
+      "id": "notion",
+      "same_as_primary": true,
+      "state": "partial",
+      "carriers": [
+        "scripts/core/character_library/notion_adapter.py",
+        "scripts/core/character_library/sync_protocol.py"
+      ],
+      "probe": "notion_present_carriers",
+      "absent": [
+        {
+          "carrier": "scripts/core/character_library/notion_store.py",
+          "owed_by": "S75-T15",
+          "missing_capability": "text-first identity saves without an image and a later image attachment does not duplicate the identity",
+          "upgrade_path": "Land S75-T15's notion_store.py under scripts/core/character_library/; this row then flips to carried and its carrier is probed."
+        },
+        {
+          "carrier": "scripts/core/character_library/migration.py",
+          "owed_by": "S75-T17",
+          "missing_capability": "idempotent local-library migration with dry run and rollback",
+          "upgrade_path": "Land S75-T17's migration.py; this row then flips to carried and its carrier is probed."
+        }
+      ],
+      "means": "Discovery and the sync protocol ship in this tree; the store and the migration module do not, and the row says so instead of reporting Notion met."
+    },
+    {
+      "id": "styles_18",
+      "same_as_primary": true,
+      "state": "carried",
+      "carriers": ["scripts/core/music_styles/catalog.py"],
+      "probe": "styles_18",
+      "means": "Eighteen unique style ids resolve one-to-one, and the original three keep their order and their descriptions."
+    },
+    {
+      "id": "approval_ordering",
+      "same_as_primary": true,
+      "state": "carried",
+      "carriers": ["scripts/core/story_first_contracts.py"],
+      "probe": "approval_ordering",
+      "means": "Music is refused without a package approval and refused again when that approval's bound digests have moved; a current binding admits it."
+    },
+    {
+      "id": "flavor_parity",
+      "same_as_primary": true,
+      "state": "carried",
+      "carriers": [
+        "scripts/core/package_flavor_adapter.py",
+        "scripts/core/contracts/flavor-999.json",
+        "scripts/core/story_first_contracts.py"
+      ],
+      "probe": "flavor_parity",
+      "means": "Both flavours resolve against byte-identical shared core and differ in exactly the two declared package facts, so the 999 package reaches the same behaviour without forking it."
+    },
+    {
+      "id": "paid_compatibility",
+      "same_as_primary": true,
+      "state": "absent",
+      "carriers": [],
+      "absent": [
+        {
+          "carrier": "scripts/core/compatibility.py",
+          "owed_by": "S75-T28",
+          "missing_capability": "legacy paid artifacts remain readable and compatibility-limited without automatic regeneration",
+          "upgrade_path": "Land S75-T28's compatibility.py plus its legacy map; this row then flips to carried and its carrier is probed."
+        }
+      ],
+      "means": "No 999 carrier exists at this head for paid-artifact compatibility. The requirement is reported unmet with its owner, never reported met."
+    }
+  ],
+
+  "own_adapters": {
+    "rule": "The 999 normal entrypoint is this package's own adapter plus the 999 adapters/ tree. It never routes through the primary flavour's package adapter or its runtime wrapper.",
+    "primary_adapter_module_not_imported": "onboarding_adapter",
+    "primary_wrapper_not_used": "scripts/openclaw_adapter.py",
+    "layout_999": {
+      "detected_by": "skill root path ends with .claude/skills/drama-song-ad-factory",
+      "required": ["adapters/claude-code/README.md", "adapters/claude-nine/README.md"],
+      "forbidden": ["scripts/openclaw_adapter.py"]
+    },
+    "layout_source": {
+      "detected_by": "skill root basename is 75-drama-song-ad-factory (the primary flavour's physical tree, where S75 source ships before the 999 landing)",
+      "required": ["scripts/openclaw_adapter.py"],
+      "meaning": "The primary front door exists here; the 999 package must not call it."
+    }
+  },
+
+  "entrypoints": {
+    "fixture": "tests/fixtures/999_entrypoints.json",
+    "check_command": ["{python}", "package/999_adapter.py", "check", "--execute"],
+    "rule": "Every advertised step carries a complete argv and an observed exit code. A step that cannot execute at this head sits in fixture.excluded_steps with its observed failure; it is never advertised as runnable."
+  },
+
+  "unverified": [
+    "install into a live 999 box was not performed; no box, client or credential was touched.",
+    "The 999 tree observed at batch/s75-story-first does not yet carry the S75-T15/T16/T17/T28 modules, so the notion and paid-compatibility rows are declared partial/absent rather than met."
+  ]
+}
