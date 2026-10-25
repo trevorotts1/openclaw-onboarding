@@ -1060,22 +1060,29 @@ class RoundSevenTest(unittest.TestCase):
         record.pop("content_digest", None)
         attacked.put_identity(record)
         scope = attacked.approval_scope()
+        claim = receipt({"receipt_id": "rcp-r7-inversion"})
+        claim.pop(identity.MINT_FIELD, None)
         self.assertEqual(self.promote_calls, [])
 
         # the accessor the probe used is not a name on the module any more, and
-        # neither is any other signer transport: identity carries one
-        # verify-only entry point and nothing that holds a file descriptor
+        # neither is any other signer transport: what identity keeps is one
+        # verify-only function and the verify-only hook this store installs.
+        # Neither holds a file descriptor -- `_SIGNER_VERIFY` is a callable, and
+        # it refuses anything that is not a verify.
         for name in ("_signer_channel", "_signer_start", "_signer_drop",
                      "_SIGNER_PIPES", "_SIGNER_LOCK"):
             self.assertIsNone(getattr(identity, name, None), name)
         leaky = sorted(n for n in vars(identity)
                        if ("signer" in n.lower() or "pipe" in n.lower())
-                       and n not in ("_signer_request", "_SIGNER_SOURCE"))
+                       and n not in ("_signer_request", "_SIGNER_SOURCE",
+                                     "_SIGNER_VERIFY"))
         self.assertEqual(leaky, [])
+        self.assertTrue(callable(identity._SIGNER_VERIFY))
+        self.assertFalse(identity._SIGNER_VERIFY(
+            {"op": "mint", "client": scope[0], "scope": scope[1],
+             "claim": dict(claim, to_state="APPROVED")}).get("ok"))
 
         # and every request a caller can still make refuses in code
-        claim = receipt({"receipt_id": "rcp-r7-inversion"})
-        claim.pop(identity.MINT_FIELD, None)
         asked = ({"op": "capability", "client": scope[0], "scope": scope[1]},
                  {"op": "mint", "client": scope[0], "scope": scope[1],
                   "capability": "token-the-signer-issued-to-nobody",

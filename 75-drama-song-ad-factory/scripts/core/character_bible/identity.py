@@ -487,6 +487,19 @@ main()
 #: member of :class:`character_library.notion_store.NotionStore`, and the only
 #: entry this module keeps is :func:`_signer_request`, which is verify-only and
 #: never returns a file descriptor.
+#:
+#: ``_SIGNER_VERIFY`` is a CALLABLE, never a transport. ``notion_store`` installs
+#: it at import time (see the bottom of that module) so that a verify reaches
+#: the same signer the store minted with, even when this module and that one are
+#: each imported more than once in one interpreter -- the repository's pytest
+#: harness deliberately drops skill-tree modules from ``sys.modules`` between
+#: files, and a run-time ``import`` here would then bind a DIFFERENT copy of the
+#: store, with a signer of its own and a different key. A callable has neither
+#: of those problems: it is verify-only, and it refuses every other operation in
+#: code.
+_SIGNER_VERIFY = None
+
+
 def _signer_request(payload):
     """One request to the approval signer. ``verify`` only. Fails closed.
 
@@ -516,12 +529,15 @@ def _signer_request(payload):
             "this transport answers only 'verify'; a receipt is minted only "
             "inside the store's own promotion step, which builds that request "
             "itself and carries a capability this module cannot supply")}
-    try:
-        from character_library.notion_store import NotionStore as _store
-    except Exception as exc:                # fails closed, never falls back
-        return {"ok": False,
-                "reason": "the approval signer is unreachable (%s)" % exc}
-    return _store._NotionStore__signer_verify(payload)
+    verify = _SIGNER_VERIFY
+    if verify is None:                      # notion_store has not been imported
+        try:
+            from character_library.notion_store import NotionStore as _store
+        except Exception as exc:            # fails closed, never falls back
+            return {"ok": False,
+                    "reason": "the approval signer is unreachable (%s)" % exc}
+        verify = _store._NotionStore__signer_verify
+    return verify(payload)
 
 
 def _scope_parts(scope):
