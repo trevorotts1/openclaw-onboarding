@@ -316,6 +316,18 @@ def _schema_verdict(unit):
     if "kind" not in schema:
         return None
     kind = schema["kind"]
+    # SHAPE FIRST, VALUE SECOND (QC D-10). The observed type of `kind` is
+    # established before ANY equality test, so a value that merely CLAIMS
+    # equality with a known kind can never reach a known-kind branch -- and in
+    # particular can never reach the "no schema clause" return. `type(...) is
+    # str` rather than `isinstance(..., str)`, because a `str` subclass can
+    # override `__eq__` and lie about its own value; it is therefore not an
+    # observed plain string and is refused, not trusted.
+    if kind is None:
+        return (RULE_BREAKING_WRITER, "schema_kind_unobserved")
+    if type(kind) is not str or not kind:
+        return (RULE_BREAKING_WRITER, "schema_kind_malformed")
+    # From here `kind` is an observed non-empty exact `str`: equality is safe.
     if kind == "none":
         return None
     if kind == "additive":
@@ -332,10 +344,6 @@ def _schema_verdict(unit):
         if schema.get("writer_switch_enabled") is True:
             return (RULE_BREAKING_WRITER, "writer_switch_before_reader_proof")
         return None
-    if kind is None:
-        return (RULE_BREAKING_WRITER, "schema_kind_unobserved")
-    if not isinstance(kind, str) or not kind:
-        return (RULE_BREAKING_WRITER, "schema_kind_malformed")
     return (RULE_BREAKING_WRITER, "unknown_schema_kind:%s" % kind)
 
 
@@ -1159,8 +1167,21 @@ def verify_receipt(receipt):
             return False, "proven receipt has no gates"
         cohort = _as_mapping(receipt.get("cohort")) or {}
         admit = _as_names(cohort.get("admit"))
-        if (cohort.get("hold") or cohort.get("unknown")
-                or admit is None or not admit):
+        if admit is None or not admit:
+            return False, "proven receipt carries a non-admitted cohort"
+        # QC R-1 (PBB-452). "nothing is held" and "nothing is unknown" are
+        # FACTS a PROVEN receipt rests on, so an UNOBSERVED cohort disposition
+        # is not the empty one. The raw `or` at this site read `None` as
+        # "there was nothing" and verified a receipt whose cohort had never
+        # been observed. Each must be an OBSERVED list -- an empty list is
+        # allowed and means exactly what it says -- and `None` refuses.
+        for field, raw in (("cohort.hold", cohort.get("hold")),
+                           ("cohort.unknown", cohort.get("unknown"))):
+            if raw is None:
+                return False, "proven receipt carries an unobserved %s" % field
+            if _as_records(raw) is None:
+                return False, "proven receipt carries a malformed %s" % field
+        if cohort.get("hold") or cohort.get("unknown"):
             return False, "proven receipt carries a non-admitted cohort"
         for gate in receipt.get("gates") or ():
             if gate.get("state") != PROVEN:

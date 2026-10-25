@@ -18,6 +18,7 @@ Run: python3 -m pytest tests/unit/test_onboarding_integration.py -q
 from __future__ import annotations
 
 import ast
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -28,6 +29,18 @@ _REPO_ROOT = _HERE.parent.parent
 _SHARED = _REPO_ROOT / "shared-utils"
 assert _SHARED.is_dir(), "shared-utils missing: %s" % _SHARED
 sys.path.insert(0, str(_SHARED))
+
+# V-1 leg 2 pin. The SHA is NAMED and pinned -- never `origin/main`, which
+# moves and would make the pin read the drift gate once it merges.
+_SKILL_VERSION_PATH = "38-conversational-ai-system/skill-version.txt"
+_MAIN_PIN_SHA = "3c798db6659c576cc40e3ce8c81d2ede7acf3e0c"
+_MAIN_PIN_VERSION = "v2.0.105"
+
+
+def _numeric_version(text):
+    """major*1000000 + minor*1000 + patch. Numeric, never lexical."""
+    major, minor, patch = text.lstrip("v").split(".")
+    return int(major) * 1000000 + int(minor) * 1000 + int(patch)
 
 from decision_engine_train import (  # noqa: E402
     ADMITTED,
@@ -1439,7 +1452,20 @@ class FourthRepairProofTests(unittest.TestCase):
                          ("eligible", "disposable_scratch"))
 
     def test_the_skill_version_and_its_changelog_heading_are_one_number(self):
-        """V-1: a renumber that reaches one file and not the other is drift."""
+        """V-1: a renumber that reaches one file and not the other is drift.
+
+        Leg 2 (QC V-2) -- the pin is no longer self-referential. The original
+        compared the candidate marker against the candidate's own CHANGELOG
+        heading, both read from the SAME tree, so a candidate that was stale
+        against `origin/main` stayed green while `git merge-tree` proved real
+        conflicts in exactly those two files. The pin now also reads the
+        version declared at a NAMED `origin/main` SHA -- a pinned commit, never
+        the moving ref -- and requires the candidate marker to move strictly
+        above it, scored NUMERICALLY (major*1000000 + minor*1000 + patch), so
+        a stale renumber cannot pass and a lexical compare cannot either.
+        Absence is never evidence: if the named SHA cannot be read, this test
+        FAILS naming the reason rather than passing on an unmeasured claim.
+        """
         marker = (_REPO_ROOT / "38-conversational-ai-system"
                   / "skill-version.txt").read_text(encoding="utf-8").strip()
         self.assertRegex(marker, r"^v\d+\.\d+\.\d+$")
@@ -1448,6 +1474,118 @@ class FourthRepairProofTests(unittest.TestCase):
         self.assertTrue(heading.startswith("## ["), heading)
         self.assertEqual(heading.split("]")[0][4:], marker[1:])
         self.assertNotIn("next free number", heading)
+        # ---- leg 2: the same number, compared against a NAMED main SHA ----
+        proc = subprocess.run(
+            ["git", "show", "%s:%s" % (_MAIN_PIN_SHA, _SKILL_VERSION_PATH)],
+            cwd=str(_REPO_ROOT), capture_output=True, text=True)
+        self.assertEqual(
+            proc.returncode, 0,
+            "cannot read %s at the NAMED main SHA %s (rc=%d) -- the pin "
+            "cannot verify, so it must not pass silently: %s"
+            % (_SKILL_VERSION_PATH, _MAIN_PIN_SHA, proc.returncode,
+               proc.stderr.strip()))
+        on_main = proc.stdout.strip()
+        self.assertRegex(
+            on_main, r"^v\d+\.\d+\.\d+$",
+            "the NAMED main SHA %s declares a malformed version %r"
+            % (_MAIN_PIN_SHA, on_main))
+        self.assertEqual(
+            on_main, _MAIN_PIN_VERSION,
+            "the pinned literal _MAIN_PIN_VERSION=%r disagrees with what %s "
+            "actually declares at %s (%r) -- the literal is stale and must be "
+            "re-measured, not trusted"
+            % (_MAIN_PIN_VERSION, _SKILL_VERSION_PATH, _MAIN_PIN_SHA, on_main))
+        self.assertGreater(
+            _numeric_version(marker), _numeric_version(on_main),
+            "candidate marker %s does not move above the number %s declares "
+            "at the NAMED main SHA %s (%s): a stale renumber must not pass"
+            % (marker, _SKILL_VERSION_PATH, _MAIN_PIN_SHA, on_main))
+
+
+class FifthRepairProofTests(unittest.TestCase):
+    """QC round 5: the ``schema.kind`` discriminator is SHAPE-first, and the
+    version pin can see merge drift.
+
+    PBB-433 probed the public interface with a ``schema.kind`` that was not a
+    known string but CLAIMED equality with one, and got ADMITTED on both:
+    an object whose ``__eq__`` returned ``other == "none"``, and a ``str``
+    subclass whose value was ``"none"``. Round 4 closed the falsy instances
+    and those stay pinned above; the discriminator itself was still
+    value-first, so any non-observed kind that won an equality test reached
+    the "no schema clause" branch. Each case below is pinned, each carries its
+    inverse, and the whole set is re-driven after the merge.
+    """
+
+    class _Claims(object):
+        """A value that wins ``== <known kind>`` but is not a known string."""
+
+        def __init__(self, target):
+            self._target = target
+
+        def __eq__(self, other):
+            return other == self._target
+
+        def __hash__(self):
+            return hash(self._target)
+
+        def __bool__(self):
+            return True
+
+    def test_an_object_that_merely_claims_equality_never_reaches_a_clause(self):
+        """D-10: value-first meant ``__eq__`` decided the clause."""
+        for claimed in ("none", "additive", "required", "breaking"):
+            with self.subTest(claimed=claimed):
+                report = evaluate_cohort([
+                    unit("A", SHA_A, schema={"kind": self._Claims(claimed)})])
+                self.assertEqual(report["state"], HELD)
+                self.assertEqual(report["admit"], [])
+                self.assertEqual([h["reason"] for h in report["hold"]],
+                                 ["schema_kind_malformed"])
+
+    def test_a_str_subclass_is_not_an_observed_plain_string(self):
+        """A ``str`` subclass can override ``__eq__`` and lie about its value."""
+        for value in ("none", "additive", "required", "breaking", "JUNK"):
+            with self.subTest(value=value):
+                kind = type("LyingStr", (str,), {})(value)
+                report = evaluate_cohort([
+                    unit("A", SHA_A, schema={"kind": kind})])
+                self.assertEqual(report["state"], HELD)
+                self.assertEqual(report["admit"], [])
+                self.assertEqual([h["reason"] for h in report["hold"]],
+                                 ["schema_kind_malformed"])
+
+    def test_the_four_round4_kinds_stay_pinned_under_the_shape_first_law(self):
+        """Round 4's rows must survive the restructure, not be re-litigated."""
+        falsy = ("", 0, False, [], {}, 0.0, 5, True, b"none")
+        for kind in falsy:
+            with self.subTest(kind=kind):
+                report = evaluate_cohort([
+                    unit("A", SHA_A, schema={"kind": kind})])
+                self.assertEqual([h["reason"] for h in report["hold"]],
+                                 ["schema_kind_malformed"])
+        absent = evaluate_cohort([unit("A", SHA_A, schema={"kind": None})])
+        self.assertEqual([h["reason"] for h in absent["hold"]],
+                         ["schema_kind_unobserved"])
+
+    def test_an_observed_plain_string_still_runs_its_own_clause(self):
+        """INVERSE: the law refuses non-strings, it does not refuse everything."""
+        for record, state in (
+                (unit("A", SHA_A), ADMITTED),
+                (unit("A", SHA_A, schema={}), ADMITTED),
+                (unit("A", SHA_A, schema={"kind": "none"}), ADMITTED),
+                (unit("A", SHA_A, schema={
+                    "kind": "additive", "tolerant_readers_proved": True,
+                    "reader_trace": ["old->new"]}), ADMITTED),
+                (unit("A", SHA_A, schema={"kind": "additive"}), HELD),
+                (unit("A", SHA_A, schema={
+                    "kind": "breaking", "protocol_version": "1",
+                    "migration_checkpoint": "c",
+                    "writer_switch_enabled": True}), HELD)):
+            with self.subTest(schema=record.get("schema")):
+                self.assertEqual(evaluate_cohort([record])["state"], state)
+        named = evaluate_cohort([unit("A", SHA_A, schema={"kind": "JUNK"})])
+        self.assertEqual([h["reason"] for h in named["hold"]],
+                         ["unknown_schema_kind:JUNK"])
 
 
 class ReuseAndIsolation(unittest.TestCase):
