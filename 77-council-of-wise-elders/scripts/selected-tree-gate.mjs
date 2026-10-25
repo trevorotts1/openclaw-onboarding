@@ -51,6 +51,12 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ENTRY_PATH, checkEntryPoint } from "./entry-point-gate.mjs";
+import {
+  DISTRIBUTION_KINDS,
+  HASH_METHOD,
+  aggregateEntries,
+  treeAudit,
+} from "./manifest-tree.mjs";
 
 export const SKILL_NAME = "council-of-wise-elders";
 // The convene contract carried by current SKILL.md (whitespace-normalized).
@@ -646,6 +652,391 @@ function treeIdentity(dir) {
   return `${createHash("sha256").update(lines.join("\n")).digest("hex")}:${lines.length}`;
 }
 
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/** True when the tree presents itself as a distribution of a canonical tree. */
+export function isDistributionCandidate(dir) {
+  const manifest = readJson(join(dir, "manifest.json"));
+  return existsSync(join(dir, "DISTRIBUTION-RECONCILIATION.json"))
+    || Boolean(manifest && typeof manifest.canonical_aggregate_sha256 === "string");
+}
+
+// ------------------------------------------------------- distribution proof
+const byPath = (entries) => new Map(entries.map((f) => [f.path, f.sha256]));
+
+/** {aggregate, fileCount} over already-audited entries, one formula. */
+const treeAggregateFrom = (entries) => ({ aggregate: aggregateEntries(entries), fileCount: entries.length });
+
+/** Every path and digest of `expected` must appear identically in `actual`. */
+function missingOrDrifting(expected, actual) {
+  const have = byPath(actual);
+  const drifting = [];
+  for (const f of expected) {
+    if (!have.has(f.path)) drifting.push(`${f.path} (missing)`);
+    else if (have.get(f.path) !== f.sha256) drifting.push(`${f.path} (recomputed ${have.get(f.path)}, recorded ${f.sha256})`);
+  }
+  return drifting;
+}
+
+function isEntryList(list) {
+  return Array.isArray(list) && list.every((f) => f && typeof f.path === "string" && typeof f.sha256 === "string" && HEX64.test(f.sha256));
+}
+
+/** The reconciliation record, parsed and checked against the canonical tree. */
+function reconcileRecord(dir, { maintainedManifest, maintainedAggregate, maintainedFileCount, addedPaths, contentDiffs, maintainedHasArchive }) {
+  const record = readJson(join(dir, "DISTRIBUTION-RECONCILIATION.json"));
+  if (!record) return { problems: [`the selected copy ${dir} carries no DISTRIBUTION-RECONCILIATION.json (or it is unreadable): a distribution records every difference from the canonical tree`] };
+  const problems = [];
+  const source = record.canonical_source ?? {};
+  if (source.canonical_aggregate_sha256 !== maintainedAggregate) {
+    problems.push(
+      `its record names the canonical source ${source.canonical_aggregate_sha256 ?? "(none)"} but the maintained tree's canonical aggregate is ` +
+      `${maintainedAggregate}: the record describes a DIFFERENT canonical release`,
+    );
+  }
+  if (source.canonical_file_count !== undefined && source.canonical_file_count !== maintainedFileCount) {
+    problems.push(`its record names canonical_file_count ${source.canonical_file_count} but the maintained tree has ${maintainedFileCount} files`);
+  }
+  const declared = Array.isArray(record.intentional_distribution_differences) ? record.intentional_distribution_differences : null;
+  if (!declared) return { problems: [...problems, "its record carries no intentional_distribution_differences list, so it declares nothing it can be held to"] };
+  for (const d of declared) {
+    if (!d || typeof d.kind !== "string") problems.push("its record lists a distribution difference with no kind");
+    else if (!DISTRIBUTION_KINDS.includes(d.kind)) problems.push(`its record declares the unprovable difference kind "${d.kind}"`);
+  }
+  const kinds = new Set(declared.map((d) => d?.kind).filter(Boolean));
+  // Each declared kind must be one the canonical release allows.
+  const allowed = new Set(Array.isArray(maintainedManifest.distribution?.kinds) ? maintainedManifest.distribution.kinds : []);
+  for (const k of kinds) if (!allowed.has(k)) problems.push(`it declares the difference kind "${k}", which the canonical manifest does not allow`);
+
+  const named = new Set();
+  for (const d of declared) {
+    if (!d || typeof d !== "object") continue;
+    if (d.kind === "private_scope_items_dropped" || d.kind === "sentences_scrubbed") {
+      // Content-change kinds must name the files whose content actually moved.
+      const files = [d.file, ...(Array.isArray(d.items) ? d.items.map((i) => i?.file) : []), ...(Array.isArray(d.fields) ? d.fields.map((i) => i?.file) : [])];
+      for (const f of files) if (typeof f === "string") named.add(f);
+    }
+    if (d.kind === "manifest_regenerated" && d.file !== undefined && d.file !== "manifest.json") {
+      problems.push(`it records ${d.file} as the regenerated manifest, but a distribution regenerates manifest.json`);
+    }
+    if (d.kind === "generated_archive_not_vendored") {
+      const recorded = maintainedManifest.archive?.sha256 ?? null;
+      if (d.archive_sha256 !== undefined && d.archive_sha256 !== recorded) {
+        problems.push(`it records the canonical archive as ${d.archive_sha256} but the maintained manifest records ${recorded ?? "(none)"}`);
+      }
+      if (typeof d.file === "string" && existsSync(join(dir, d.file))) {
+        problems.push(`it records ${d.file} as not vendored, but the selected copy carries it`);
+      }
+    }
+    if (d.kind === "file_added" && typeof d.file === "string" && !addedPaths.includes(d.file)) {
+      problems.push(`it records ${d.file} as added, but the canonical manifest's added_paths do not name it`);
+    }
+  }
+  // A record that names a file it did not change is a lie about the difference.
+  for (const f of named) {
+    if (!contentDiffs.has(f)) problems.push(`it records ${f} as a distribution difference, but that file is byte-identical to the canonical copy`);
+  }
+  for (const f of contentDiffs.keys()) {
+    if (!named.has(f)) problems.push(`the selected copy differs from the canonical copy at ${f}, which the reconciliation record never declares`);
+  }
+  // The kinds present must be the kinds the observed packaging requires.
+  if (addedPaths.length && !kinds.has("file_added")) problems.push("the selected copy adds files but the record does not declare file_added");
+  if (contentDiffs.size && !(kinds.has("sentences_scrubbed") || kinds.has("private_scope_items_dropped"))) {
+    problems.push("the selected copy changes canonical file content but the record declares neither sentences_scrubbed nor private_scope_items_dropped");
+  }
+  if (!kinds.has("manifest_regenerated")) problems.push("the record does not declare manifest_regenerated, yet every distribution regenerates its manifest");
+  if (maintainedHasArchive && !kinds.has("generated_archive_not_vendored")) {
+    problems.push("the canonical tree carries a generated archive the distribution does not vendor, but the record does not declare generated_archive_not_vendored");
+  }
+  return { problems };
+}
+
+/**
+ * Proof that two trees whose identities DIFFER are nevertheless the SAME
+ * RELEASE: the selected copy is the 999 distribution of the canonical tree
+ * this update maintains.
+ *
+ * The witness is never the selected copy. The selected copy is the unit under
+ * test; anything it says about itself is only a claim. Every accepted fact
+ * therefore comes from the maintained tree's manifest — the release this
+ * update wrote — and every fact claimed by the selected copy is checked
+ * against that witness:
+ *   (a) the maintained manifest records a distribution contract
+ *       {kinds, files, runtime_dist, added_paths}: the canonical release
+ *       declares, in advance, exactly what its distributable form looks like;
+ *   (b) the maintained tree recomputes to its own manifest, per file
+ *       (aggregate, count AND the recorded per-file digests), so the witness
+ *       is truthful about the tree in front of us;
+ *   (c) the selected tree recomputes to its own manifest, per file, with no
+ *       symlinks, unreadable entries, unshipped dependency trees or
+ *       unaccounted archives;
+ *   (d) every file the witness records is byte-identical in the selected copy,
+ *       and every file the selected copy carries beyond that is a declared
+ *       added path — so no file, executable or not, is taken on trust;
+ *   (e) the vendored build is a byte-identical subset of the build the
+ *       canonical manifest records, and the executable it presents is exactly
+ *       the executable the canonical manifest records;
+ *   (f) the reconciliation record is parsed and held to the witness: its
+ *       canonical aggregate, its declared kinds and its named files must all
+ *       match what was actually observed;
+ *   (g) both copies claim the same version (carrier agreement, read above),
+ *       and the selected copy passed its executable checks.
+ * Every other mismatch is refused with a reason naming the failed link.
+ * Returns {ok: true, aggregate, canonicalPath, files, distFiles} or
+ * {ok: false, reason}.
+ */
+export function proveSameRelease({
+  selectedDir,
+  maintainedDir,
+  selectedVersion,
+  maintainedVersion,
+  entryChecksPassed = true,
+} = {}) {
+  const refuse = (reason) => ({ ok: false, reason });
+
+  // --- the witness: the release this update maintains ---------------------
+  const canonicalManifest = readJson(join(maintainedDir, "manifest.json"));
+  if (!canonicalManifest) return refuse(`the maintained tree ${maintainedDir} has no readable manifest.json to compare against`);
+  const witness = canonicalManifest.distribution;
+  if (!witness || typeof witness !== "object" || Array.isArray(witness)) {
+    return refuse(
+      `the maintained manifest records no distribution contract (distribution {kinds, files, runtime_dist, added_paths}), ` +
+      `so it cannot witness a distribution of itself`,
+    );
+  }
+  if (!Array.isArray(witness.kinds) || witness.kinds.length === 0) {
+    return refuse(`the maintained manifest records no allowed distribution difference kinds`);
+  }
+  const unprovableKinds = witness.kinds.filter((k) => typeof k !== "string" || !DISTRIBUTION_KINDS.includes(k));
+  if (unprovableKinds.length) {
+    return refuse(
+      `the maintained manifest declares distribution difference kinds this gate cannot prove ` +
+      `(${unprovableKinds.join(", ")}): only ${DISTRIBUTION_KINDS.join(", ")} are provable`,
+    );
+  }
+  if (!isEntryList(witness.files) || witness.files.length === 0) {
+    return refuse(`the maintained manifest records no per-file distribution map (distribution.files), so no distribution file can be proven`);
+  }
+  if (!isEntryList(witness.runtime_dist) || witness.runtime_dist.length === 0) {
+    return refuse(`the maintained manifest records no built runtime map (distribution.runtime_dist), so no vendored executable can be proven`);
+  }
+  const addedPaths = Array.isArray(witness.added_paths) ? witness.added_paths.filter((p) => typeof p === "string") : [];
+  if ((witness.added_paths ?? []).length !== addedPaths.length) {
+    return refuse(`the maintained manifest's distribution.added_paths holds entries that are not paths`);
+  }
+  if (!isEntryList(canonicalManifest.files) || canonicalManifest.files.length === 0) {
+    return refuse(`the maintained manifest records no per-file digest map of the canonical tree, so its aggregate cannot be tied to content`);
+  }
+  const recordedEntry = canonicalManifest.runtime_entry;
+  if (!recordedEntry || typeof recordedEntry.sha256 !== "string" || !HEX64.test(recordedEntry.sha256)) {
+    return refuse(`the maintained manifest records no runtime_entry (path + sha256), so no vendored executable can be checked against the release`);
+  }
+
+  // --- the witness must be truthful about the tree in front of us ---------
+  const canonicalAudit = treeAudit(maintainedDir);
+  if (canonicalAudit.problems.length) {
+    const p = canonicalAudit.problems[0];
+    return refuse(`the maintained tree ${maintainedDir} cannot be verified: ${p.path} ${p.reason}`);
+  }
+  const canonicalTree = treeAggregateFrom(canonicalAudit.entries);
+  if (canonicalTree.aggregate !== canonicalManifest.aggregate_sha256 || canonicalTree.fileCount !== canonicalManifest.file_count) {
+    return refuse(
+      `the maintained tree ${maintainedDir} is not the tree its own manifest records ` +
+      `(recomputed ${canonicalTree.aggregate} over ${canonicalTree.fileCount} files, manifest ${canonicalManifest.aggregate_sha256} over ${canonicalManifest.file_count})`,
+    );
+  }
+  const canonicalDrift = missingOrDrifting(canonicalManifest.files, canonicalAudit.entries);
+  if (canonicalDrift.length) {
+    return refuse(
+      `the maintained tree ${maintainedDir} is not the tree its own manifest records per file ` +
+      `(${canonicalDrift.slice(0, 3).join("; ")}): the canonical per-file witness is not truthful`,
+    );
+  }
+  // When the maintained tree carries the build it recorded, that record must
+  // describe it exactly; an installed tree may ship only the archive, in which
+  // case the recorded build is the packaging machine's build.
+  if (canonicalAudit.dist.length) {
+    const distDrift = missingOrDrifting(witness.runtime_dist, canonicalAudit.dist);
+    const unrecorded = canonicalAudit.dist.filter((f) => !witness.runtime_dist.some((r) => r.path === f.path));
+    if (distDrift.length || unrecorded.length) {
+      return refuse(
+        `the maintained tree's built runtime at ${maintainedDir} is not the build its manifest records ` +
+        `(${distDrift.concat(unrecorded.map((f) => `${f.path} (unrecorded)`)).slice(0, 3).join("; ")})`,
+      );
+    }
+  }
+
+  // --- the selected copy: claims first, then content ----------------------
+  const distManifest = readJson(join(selectedDir, "manifest.json"));
+  if (!distManifest) return refuse(`the selected copy ${selectedDir} has no readable manifest.json, so it cannot prove what it packages`);
+  if (typeof distManifest.canonical_aggregate_sha256 !== "string" || !HEX64.test(distManifest.canonical_aggregate_sha256)) {
+    return refuse(`the selected copy ${selectedDir} records no valid canonical_aggregate_sha256 in its manifest`);
+  }
+  if (typeof distManifest.hash_method !== "string" || !distManifest.hash_method.trim()) {
+    return refuse(`the selected copy ${selectedDir} records no hash_method, so its aggregate cannot be recomputed`);
+  }
+  if (distManifest.hash_method !== HASH_METHOD) {
+    return refuse(
+      `the selected copy ${selectedDir} records hash_method "${distManifest.hash_method}", which this gate cannot recompute: ` +
+      `an aggregate is only meaningful under the method it names, and only the canonical manifest hash method is implemented`,
+    );
+  }
+  if (!isEntryList(distManifest.files) || distManifest.files.length === 0) {
+    return refuse(`the selected copy ${selectedDir} records no per-file digest map, so its aggregate cannot be tied to content`);
+  }
+  if (!selectedVersion || selectedVersion !== maintainedVersion) {
+    return refuse(
+      `versions differ (selected ${selectedVersion ?? "unknown"} vs maintained ${maintainedVersion ?? "unknown"}): ` +
+      `packaging of one release cannot carry another release's version`,
+    );
+  }
+  if (distManifest.canonical_aggregate_sha256 !== canonicalManifest.aggregate_sha256) {
+    return refuse(
+      `the distribution records canonical aggregate ${distManifest.canonical_aggregate_sha256} but the maintained tree is ` +
+      `${canonicalManifest.aggregate_sha256}: they are packaging of DIFFERENT canonical releases`,
+    );
+  }
+  // The record is checked for existence and its canonical claim before any tree
+  // work, so a distribution that is missing or lying about its source is refused
+  // for THAT reason and not for a downstream count.
+  const record = readJson(join(selectedDir, "DISTRIBUTION-RECONCILIATION.json"));
+  if (!record) {
+    return refuse(
+      `the selected copy ${selectedDir} carries no DISTRIBUTION-RECONCILIATION.json (or it is unreadable): ` +
+      `a distribution records every difference from the canonical tree`,
+    );
+  }
+  const recordSource = record.canonical_source ?? {};
+  if (recordSource.canonical_aggregate_sha256 !== canonicalManifest.aggregate_sha256) {
+    return refuse(
+      `the reconciliation record of ${selectedDir} names the canonical source ${recordSource.canonical_aggregate_sha256 ?? "(none)"} ` +
+      `but the maintained tree's canonical aggregate is ${canonicalManifest.aggregate_sha256}: the record describes a DIFFERENT canonical release`,
+    );
+  }
+  const selectedAudit = treeAudit(selectedDir);
+  if (selectedAudit.problems.length) {
+    const p = selectedAudit.problems[0];
+    return refuse(`the selected copy ${selectedDir} cannot be verified: ${p.path} ${p.reason}`);
+  }
+  for (const g of selectedAudit.generated) {
+    if (g.kind === "roll-sentinel") {
+      // Roll bookkeeping written by update-skills.sh: a roll may legitimately
+      // leave an older sentinel behind until it is rewritten, so the bound is
+      // the sentinel's own name and content, not the release it sits beside.
+      const named = /^\.wired-(\d+\.\d+\.\d+)$/.exec(g.path);
+      const content = named ? normalizedText(join(selectedDir, g.path)).trim() : null;
+      if (!named || content !== named[1]) {
+        return refuse(
+          `the selected copy ${selectedDir} carries ${g.path}, which is not a roll sentinel recording its own version: ` +
+          `a roll sentinel names a version and contains it`,
+        );
+      }
+      continue;
+    }
+    return refuse(`the selected copy ${selectedDir} carries ${g.path}, an unshipped dependency tree: nothing in it can be verified against the release`);
+  }
+  for (const a of selectedAudit.archives) {
+    const recordedArchive = canonicalManifest.archive?.sha256 ?? null;
+    if (a.sha256 !== recordedArchive) {
+      return refuse(
+        `the selected copy ${selectedDir} carries the archive ${a.path} (sha256 ${a.sha256}) but the release generated ` +
+        `${recordedArchive ?? "(none)"}: an unverifiable archive is not a distribution artifact`,
+      );
+    }
+  }
+  const selectedTree = treeAggregateFrom(selectedAudit.entries);
+  if (selectedTree.aggregate !== distManifest.aggregate_sha256 || selectedTree.fileCount !== distManifest.file_count) {
+    return refuse(
+      `the selected copy ${selectedDir} is not the tree its own manifest records ` +
+      `(recomputed ${selectedTree.aggregate} over ${selectedTree.fileCount} files, manifest ${distManifest.aggregate_sha256} over ${distManifest.file_count})`,
+    );
+  }
+  const selectedDrift = missingOrDrifting(distManifest.files, selectedAudit.entries);
+  if (selectedDrift.length) {
+    return refuse(
+      `the selected copy ${selectedDir} is not the tree its own manifest records per file ` +
+      `(${selectedDrift.slice(0, 3).join("; ")})`,
+    );
+  }
+
+  // --- the distribution must be exactly the declared derivation -----------
+  const drift = missingOrDrifting(witness.files, selectedAudit.entries);
+  if (drift.length) {
+    return refuse(
+      `the selected copy ${selectedDir} does not carry the distribution the release records ` +
+      `(${drift.slice(0, 3).join("; ")})`,
+    );
+  }
+  const recordedPaths = new Set(witness.files.map((f) => f.path));
+  const extraFiles = selectedAudit.entries.filter((f) => !recordedPaths.has(f.path)).map((f) => f.path);
+  for (const p of extraFiles) {
+    if (!addedPaths.includes(p)) {
+      return refuse(`the selected copy ${selectedDir} carries ${p}, which the release neither records nor declares as an added distribution path`);
+    }
+  }
+  for (const p of addedPaths) {
+    if (!extraFiles.includes(p)) {
+      return refuse(`the release declares ${p} as an added distribution path, but the selected copy ${selectedDir} does not carry it`);
+    }
+  }
+  // Content the distribution is allowed to differ on is still declared, and
+  // the canonical manifest pins the digests it differs TO.
+  const selectedByPath = byPath(selectedAudit.entries);
+  const contentDiffs = new Map();
+  for (const f of canonicalManifest.files) {
+    if (!selectedByPath.has(f.path)) continue;
+    if (selectedByPath.get(f.path) !== f.sha256) contentDiffs.set(f.path, f.sha256);
+  }
+
+  // --- the vendored build must be the release's build ---------------------
+  const recordedBuild = byPath(witness.runtime_dist);
+  const shippedBuild = selectedAudit.dist;
+  if (!shippedBuild.length) return refuse(`the selected copy ${selectedDir} ships no built runtime, so it carries no executable`);
+  for (const f of shippedBuild) {
+    if (!recordedBuild.has(f.path)) {
+      return refuse(
+        `the selected copy ${selectedDir} ships ${f.path}, which the release's recorded build does not contain: ` +
+        `an executable the release never built cannot be accepted`,
+      );
+    }
+    if (recordedBuild.get(f.path) !== f.sha256) {
+      return refuse(
+        `the selected copy ${selectedDir} ships ${f.path} as sha256 ${f.sha256}, but the release built ${recordedBuild.get(f.path)}: ` +
+        `a modified build is not the release's build`,
+      );
+    }
+  }
+  const shippedEntry = shippedBuild.find((f) => f.path === recordedEntry.path);
+  if (!shippedEntry || shippedEntry.sha256 !== recordedEntry.sha256 || shippedEntry.bytes !== recordedEntry.bytes) {
+    return refuse(
+      `the selected copy ${selectedDir} does not ship the release's executable ` +
+      `(${recordedEntry.path} ${recordedEntry.sha256}): a distribution presents the build the release recorded`,
+    );
+  }
+
+  // --- the record ---------------------------------------------------------
+  const reconciled = reconcileRecord(selectedDir, {
+    maintainedManifest: canonicalManifest,
+    maintainedAggregate: canonicalManifest.aggregate_sha256,
+    maintainedFileCount: canonicalManifest.file_count,
+    addedPaths,
+    contentDiffs,
+    maintainedHasArchive: canonicalAudit.archives.length > 0,
+  });
+  if (reconciled.problems.length) return refuse(reconciled.problems[0]);
+
+  if (!entryChecksPassed) {
+    return refuse(`the selected copy ${selectedDir} did not pass its executable checks, so it is not a usable distribution`);
+  }
+  return {
+    ok: true,
+    aggregate: canonicalManifest.aggregate_sha256,
+    canonicalPath: maintainedDir,
+    files: witness.files.length,
+    distFiles: shippedBuild.length,
+  };
+}
+
 /**
  * Full gate. Returns {ok, selectionProven, agentSelected, problems, warnings, selected, copies, records}.
  * `load` runs the entry-point smoke load (node --check + --help); hash and
@@ -766,38 +1157,42 @@ export function checkSelectedTree(opts = {}) {
         `("${CURRENT_CONTRACT_MARKER}"): convening is approval, no grant is resolved`,
       );
     }
-    // (c)+(d) the selected artifact must ship a verifiable executable
+    // (c)+(d) the selected artifact must ship a verifiable executable.
+    // Collected separately: the same result answers condition (f) of the
+    // same-release proof below — an unusable copy is never "the distribution".
+    const artifactProblems = [];
     const state = executableStatus(selected, records);
     if (state === "packaged") {
       const manifest = readJson(join(selected.physical, "manifest.json"));
       const gate = checkEntryPoint(selected.physical, manifest, { load });
-      if (!gate.ok) problems.push(...gate.problems.map((p) => `SELECTED copy ${selected.path}: ${p}`));
+      if (!gate.ok) artifactProblems.push(...gate.problems.map((p) => `SELECTED copy ${selected.path}: ${p}`));
     } else if (state === "packaged-missing-entry") {
-      problems.push(
+      artifactProblems.push(
         `SELECTED artifact ${selected.path} records runtime_entry ${selected.runtimeEntry.path} ` +
         `but does not ship it (no runtime/dist entry, no archive, no installed release): ` +
         `every shipped artifact includes its executable`,
       );
     } else if (state === "record-without-entry") {
-      problems.push(
+      artifactProblems.push(
         `the install-record naming ${selected.path} points at a release with no executable entry; ` +
         `the resolver-selected copy is unusable`,
       );
     } else if (state === "source-only") {
-      problems.push(
+      artifactProblems.push(
         `source-only artifact at ${selected.path}: no runtime/dist entry, no manifest runtime_entry, ` +
         `no archive, and no installed release naming this tree — every shipped artifact includes its executable`,
       );
     } else if (state === "archive") {
-      problems.push(...verifyArchive(selected, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
+      artifactProblems.push(...verifyArchive(selected, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
     } else if (state === "installed") {
       const rec = records.find((r) => samePath(r.skillDir, selected.physical));
       if (!rec) {
-        problems.push(`the selected copy ${selected.path} was classified installed without a matching install-record`);
+        artifactProblems.push(`the selected copy ${selected.path} was classified installed without a matching install-record`);
       } else {
-        problems.push(...verifyInstalledEntry(rec, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
+        artifactProblems.push(...verifyInstalledEntry(rec, { load }).map((p) => `SELECTED copy ${selected.path}: ${p}`));
       }
     }
+    problems.push(...artifactProblems);
     // "archive" (executable ships inside the .skill archive) and "installed"
     // (a release named by the resolver's own install-record carries it) both
     // satisfy the shipped-executable rule.
@@ -805,14 +1200,44 @@ export function checkSelectedTree(opts = {}) {
       const selectedIdentity = treeIdentity(selected.physical);
       const maintainedIdentity = treeIdentity(skillDir);
       if (selectedIdentity !== maintainedIdentity) {
-        problems.push(
-          `the selected copy ${selected.path} and the tree this update maintains ${skillDir} ` +
-          (selected.version && selected.version === canonicalVersion
-            ? `both claim ${selected.version} `
-            : "") +
-          `but their trees differ (selected ${selectedIdentity} vs maintained ${maintainedIdentity}): ` +
-          `an update that wrote any other file must not report success`,
-        );
+        // Different bytes are not automatically a different release: the 999
+        // distribution of the same canonical tree differs by design. Accept it
+        // only on a complete recomputation proof, and say so out loud.
+        let proof;
+        try {
+          proof = proveSameRelease({
+            selectedDir: selected.physical,
+            maintainedDir: skillDir,
+            selectedVersion: selected.version,
+            maintainedVersion: canonicalVersion,
+            entryChecksPassed: artifactProblems.length === 0,
+          });
+        } catch (error) {
+          // A proof that cannot run is a refusal, never a crash: the caller
+          // parses this gate's summary line and must keep getting one.
+          proof = { ok: false, reason: `the proof itself failed: ${String(error?.message ?? error).split("\n")[0]}` };
+        }
+        if (proof.ok) {
+          warnings.push(
+            `SAME RELEASE: distribution ${selected.path} is the 999 packaging of canonical aggregate ` +
+            `${proof.aggregate}, proven by manifest recomputation ` +
+            `(${proof.files} recorded files and ${proof.distFiles} built files matched; canonical tree ${skillDir})`,
+          );
+        } else {
+          problems.push(
+            `the selected copy ${selected.path} and the tree this update maintains ${skillDir} ` +
+            (selected.version && selected.version === canonicalVersion
+              ? `both claim ${selected.version} `
+              : "") +
+            `but their trees differ (selected ${selectedIdentity} vs maintained ${maintainedIdentity}): ` +
+            `an update that wrote any other file must not report success`,
+          );
+          // A tree that presents itself as a distribution gets the specific
+          // reason its proof failed, never a silent generic refusal.
+          if (isDistributionCandidate(selected.physical) || isDistributionCandidate(skillDir)) {
+            problems.push(`SAME-RELEASE PROOF REFUSED: ${proof.reason}`);
+          }
+        }
       }
       warnings.push(
         `the resolver selects ${selected.path} (via ${selection.via}) while this update maintains ${skillDir}; ` +
