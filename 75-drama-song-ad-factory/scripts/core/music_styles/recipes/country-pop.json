@@ -1,0 +1,72 @@
+{
+  "style_id": "country-pop",
+  "label": "Country Pop",
+  "description": "plainspoken country storytelling with a polished, memorable pop chorus.",
+  "catalog_revision": "2026-10-24",
+  "recipe_revision": "1.0.0",
+  "deliveries": ["spoken", "sung"],
+  "client_references": {
+    "artists": ["Shania Twain", "Carrie Underwood"],
+    "explanation": "Plainspoken country narrative delivered with a polished, memorable pop chorus."
+  },
+  "production_traits": {
+    "musical_identity": "country pop: plainspoken country storytelling over live-feeling acoustic and clean electric guitar, with a polished, memorable pop chorus",
+    "instrumentation": [
+      "acoustic rhythm guitar driving the song",
+      "restrained clean electric guitar fills",
+      "steady electric bass",
+      "live-feeling drum kit",
+      "fiddle or pedal steel as tasteful punctuation, never parody"
+    ],
+    "avoided_instrumentation": [
+      "bluegrass virtuoso solo section",
+      "generic dance-synth drop",
+      "wall of distorted guitars",
+      "programmed trap hi-hat pattern"
+    ],
+    "rhythm": "steady 4/4 with a firm backbeat and a pop chorus that opens up; the pre-chorus tightens rather than speeds up",
+    "tempo": {
+      "min_bpm": 88,
+      "max_bpm": 120,
+      "meter": "4/4",
+      "note": "lower end for a lived-in verse, upper end only when the story already carries momentum"
+    },
+    "vocal_delivery": "clear, grounded narrative lead with a strong sung chorus; country inflection only where it is compatible with the client's accepted voice, dry upfront vocal",
+    "energy_map": {
+      "consequence": "acoustic guitar and voice state a concrete lived-in consequence",
+      "obstacle": "verse names the behaviour and the friction, kit enters lightly",
+      "choice": "pre-chorus tightens pressure over the actual decision",
+      "change": "chorus opens after the character acts",
+      "hook": "polished pop chorus repeats the emotional proposition",
+      "cta": "bridge exposes the mistaken belief, final resolved chorus carries the CTA"
+    },
+    "hook_guidance": "one memorable sung chorus stating the emotional proposition; the bridge reverses the mistaken belief before a more resolved final chorus",
+    "spoken_sung_split": "spoken dialogue is brief and intentional; sung verses and the chorus carry the melody; no rap passages",
+    "delivery_constraints": "never impose an accent, biography or regional stereotype; preserve the client's accepted voice, language and gender",
+    "word_fit": "short idiomatic lines with space for consonants and hook vowels; the chorus repeats one proposition, not several offers",
+    "mood_policy": "story_selected",
+    "story_energy": "grounded and rising; the lift belongs to the acted decision, not to an automatic stadium finish",
+    "duration_guidance": {
+      "60": "verse, pre-chorus, one full chorus and the CTA; the decision and the chorus stay adjacent",
+      "90": "two verses around one chorus plus a short resolved tag",
+      "120": "verse, pre-chorus, chorus, one bridge exposing the mistaken belief, final chorus",
+      "180": "add a second scene before the bridge and one fiddle or steel answer",
+      "300": "three scenes, a quiet third verse, an earned key lift in the last chorus",
+      "600": "full arc with a second act and a reprise that resolves the CTA; new consequential beats only"
+    },
+    "examples": [
+      "A shopkeeper turns an open sign to closed; the choice to make one honest call drives a drum-and-guitar lift."
+    ]
+  },
+  "section_hint": "[Verse] plainspoken, [Pre-Chorus] pressure tightens, [Chorus] pop payoff, [Bridge] mistaken belief",
+  "negative_constraints": [
+    "no bluegrass showpiece",
+    "no dance-synth drop",
+    "no inferred accent or regional stereotype",
+    "no new owner fact invented for the chorus"
+  ],
+  "test_ids": [
+    "test_country_pop_compiles_country_and_pop_hook_traits",
+    "test_country_pop_keeps_decision_and_chorus_adjacent"
+  ]
+}

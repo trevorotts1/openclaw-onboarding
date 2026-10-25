@@ -50,7 +50,8 @@ def test_each_option_on_its_own_numbered_line_recommended_marked():
             assert b.split("\n")[-1] == IC.FREE_TEXT_HINT, b
             continue
         lines = b.split("\n")
-        opts = [l for l in lines[2:] if not l.startswith("   Watch: ")]   # sample links sit under their option
+        opts = [l for l in lines[2:] if not l.startswith("   Watch: ")
+                and l != "   " + IC.SAMPLE_MISSING]   # sample lines sit under their option
         assert len(opts) == len(q["options"])
         for n, line in enumerate(opts, 1):
             label, description = q["options"][n - 1]

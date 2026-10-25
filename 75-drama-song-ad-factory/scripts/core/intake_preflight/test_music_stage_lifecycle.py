@@ -6,6 +6,8 @@ Proves the defect is closed: before this command nothing moved the music row out
 of NOT_STARTED, so `next` could never reach continuity-bible however many songs
 were bought."""
 import json
+import io
+from contextlib import redirect_stdout, redirect_stderr
 import os
 import subprocess
 import sys
@@ -19,21 +21,27 @@ sys.path.insert(0, str(HERE))
 import factory as F          # noqa: E402
 import state_store as SS     # noqa: E402
 from batch_mode.batch import STAGES  # noqa: E402
+from test_production_process import confirmed_run, complete_stage, approve_script
 
 RID = "eoe-test-60s"
 
 
-def new_run(tmp, upto="music"):
-    run = Path(tempfile.mkdtemp(dir=tmp, prefix="music-"))
-    (run / "control").mkdir()
+def new_run(tmp, upto="music", *, song=False):
+    run = Path(tempfile.mkdtemp(dir=tmp, prefix="music-")) / RID
+    confirmed_run(run, song=song)
     ids = [s for s, _ in STAGES]
-    with SS.Store(run / "control" / "state.sqlite3") as st:
-        st.init_run(RID, ids)
-        for s in ids[:ids.index(upto)]:         # earlier stages done the legal way
-            st.transition(RID, s, "READY", "seed")
-            st.claim(RID, s, "seed")
-            st.transition(RID, s, "COMPLETE", "seed")
+    for stage in ids[:ids.index(upto)]:
+        complete_stage(run, stage)
+    approve_script(run)
     return run
+
+
+def cli_command(*args):
+    """Exercise the real argparse entrypoint under the offline process guard."""
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = F.main(list(args))
+    return subprocess.CompletedProcess(args, code, out.getvalue(), err.getvalue())
 
 
 def row(run):
@@ -88,7 +96,7 @@ def main():
     print("ok: complete with no audio -> FAILED_BLOCKED (owner cleared, reason kept)")
 
     (run / "music").mkdir()
-    (run / "music" / "song.mp3").write_bytes(b"ID3" + b"\0" * 64)
+    (run / "music" / "picked-song.mp3").write_bytes(b"ID3" + b"\0" * 64)
     rf = F.music_stage(run, W, "complete", qc=qc("FAIL"))
     assert rf["reason_code"] == "QC_FAIL" and rf["row"]["state"] == "FAILED_BLOCKED", rf
     print("ok: independent QC FAIL -> FAILED_BLOCKED, never COMPLETE")
@@ -102,11 +110,11 @@ def main():
     print("ok c: RUNNING -> QC -> COMPLETE on independent PASS + audio; start after COMPLETE is a no-op")
 
     # three-song run with no client pick: waits for approval, never invents a pick
-    sp = new_run(tmp)
-    (sp / "song-choices").mkdir()
+    sp = new_run(tmp, song=True)
+    (sp / "song-choices").mkdir(exist_ok=True)
     (sp / "song-choices" / "state.json").write_text(json.dumps({"required": True, "offered": {}}))
     (sp / "music").mkdir()
-    (sp / "music" / "song.mp3").write_bytes(b"ID3" + b"\0" * 64)
+    (sp / "music" / "picked-song.mp3").write_bytes(b"ID3" + b"\0" * 64)
     F.music_stage(sp, W, "start")
     rw = F.music_stage(sp, W, "complete", qc=qc())
     assert rw["outcome"] == "waiting" and rw["reason_code"] == "SONG_PICK_MISSING", rw
@@ -114,8 +122,7 @@ def main():
     print("ok: SONG APPROVAL run without a pick -> WAITING_APPROVAL, not COMPLETE")
 
     # the Jennifer symptom: `next` now moves past music
-    p = subprocess.run([sys.executable, str(HERE / "factory.py"), "next", "--run-dir", str(run)],
-                       capture_output=True, text=True, cwd=str(CORE.parent.parent), timeout=60)
+    p = cli_command("next", "--run-dir", str(run))
     env = json.loads(p.stdout)
     assert env["data"].get("stage") == "continuity-bible", (p.returncode, env)
     print("ok: `next` after music COMPLETE -> continuity-bible")
@@ -133,8 +140,7 @@ def main():
     assert pk["outcome"] == "parked" and pk["row"]["state"] == "PARKED", pk
     print("ok c: provider failure -> FAILED_RETRYABLE -> reclaim -> PARKED (reason required)")
 
-    p = subprocess.run([sys.executable, str(HERE / "factory.py"), "next", "--run-dir", str(pf)],
-                       capture_output=True, text=True, cwd=str(CORE.parent.parent), timeout=60)
+    p = cli_command("next", "--run-dir", str(pf))
     env = json.loads(p.stdout)
     assert env["reason_code"] == "MUSIC_NOT_COMPLETE" and env["outcome"] == "rejected", env
     print("ok: `next` with music PARKED refuses MUSIC_NOT_COMPLETE, never skips to continuity-bible")
@@ -152,9 +158,7 @@ def main():
 
     # CLI wiring
     cli = new_run(tmp)
-    p = subprocess.run([sys.executable, str(HERE / "factory.py"), "music", "--run-dir", str(cli),
-                        "--owner", W, "--action", "start"],
-                       capture_output=True, text=True, cwd=str(CORE.parent.parent), timeout=60)
+    p = cli_command("music", "--run-dir", str(cli), "--owner", W, "--action", "start")
     env = json.loads(p.stdout)
     assert p.returncode == 0 and env["data"]["row"]["state"] == "RUNNING", (p.returncode, p.stderr)
     print("ok: CLI `factory.py music --action start` -> RUNNING, exit 0")

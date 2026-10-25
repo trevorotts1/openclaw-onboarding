@@ -1,5 +1,25 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.56: light, medium and heavy councils; advisors run at the same time (W77S-MODES)
+
+In plain English: the council now sizes the question before it convenes, so a simple question no longer runs a nine-advisor, three-round debate. Advisors in a round answer at the same time instead of one after another, and the council no longer acts as a spending overseer.
+
+- Three sizes (`--mode light|medium|heavy`, default medium): light is 3 best-fit advisors for exactly 2 rounds; medium is all 9 for 1 to 4 rounds; heavy is all 9 for 3 to 10 rounds. Medium and heavy stop early when at least 7 of 9 advisors share the same top option and it leads the runner-up by 1.5 points (heavy only from round 3). Provider-request caps: light 50, medium 50, heavy 100.
+- Sizing uses four checks only: can it be undone, are other people affected, does it lock the client in, do values pull against each other. There is no money check. "Quick answer" means light; "full council" means heavy.
+- No money overseer: the three sizes carry no money or token ceiling and no cost wording; the request cap is the only limit.
+- Advisors in a round run in parallel waves under one session lease. OpenRouter and Agnes 3.0 Flash run every advisor at once; Ollama runs at most 3 at once on the $20 plan and 10 on the $100 plan (`--ollama-plan 20|100`, asked once and remembered). With `--fallback-model ID`, seats that fail on Ollama re-run on OpenRouter under their own approved grant.
+- Routes: Ollama providers compose through the OpenAI-compatible Ollama profile; a provider with several allowed models becomes usable when the client names one of them.
+- A brief that omits a relevance weight no longer blocks the sitting at the draft: missing panel weights default to 1.
+- The four older modes (full, selected, quick, consult) are unchanged; their grant is 50/9/8, the cap they already enforced.
+
+## v1.0.55: route resolution is caller-first (W77S-ROUTE)
+
+In plain English: the council no longer offers the runtime's own provider list as if it were the client's model menu. It reads the calling agent's model first, maps it to a configured route when one matches, and otherwise says plainly that none of the runtime's routes is the caller's model.
+
+- `SKILL.md` step 4 rewritten: read the calling agent's provider/model (`openclaw agents list` in OpenClaw, the harness default on claude-nine/Claude Code), then `blackceo-council routes`; offer the matching route as the default, or refuse with the exact sentence naming the configured routes and the caller's provider. The hardcoded harness menu (claude-nine default / Sonnet / DeepSeek Flash) is gone.
+- Source-level test extended: the shipped SKILL.md must carry the caller-first rule and must not reintroduce the hardcoded menu.
+- No runtime code change: the bundle stays sha256 b10bb16b.
+
 ## v1.0.54: the selected-tree gate closes the false passes two independent reviews found (W77S)
 
 In plain English: three rounds of adversarial review found cases where the gate could still say OK without proving anything. Each is now refused with a specific reason instead of a pass.
