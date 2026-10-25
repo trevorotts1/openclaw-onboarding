@@ -150,11 +150,12 @@ def _probe(probe_id, ok, detail):
     return {"id": probe_id, "ok": bool(ok), "detail": detail}
 
 
-def _probe_order(spec, cache, manifest):
+def _probe_order(spec, cache, root, manifest):
     mod = _module_of(spec["providers"][0], cache)
     if mod is None:
         return [_probe("order_matches_declared", False, "provider not loaded"),
-                _probe("order_is_enforced", False, "provider not loaded")]
+                _probe("order_is_enforced", False, "provider not loaded"),
+                _probe("order_is_consumed_in_production", False, "provider not loaded")]
     expected = list(manifest["expected_artifact_order"])
     got = list(getattr(mod, "STAGE_ORDER", ()))
     out = [_probe("order_matches_declared", got == expected,
@@ -170,6 +171,24 @@ def _probe_order(spec, cache, manifest):
         enforced = code == "ORDER"
         detail = {"refused": True, "code": code}
     out.append(_probe("order_is_enforced", enforced, detail))
+
+    missing = []
+    for consumer in spec.get("consumers") or ():
+        path = os.path.join(root, consumer["path"])
+        if not os.path.isfile(path):
+            missing.append({"path": consumer["path"], "state": "missing"})
+            continue
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read(), filename=path)
+        imported = "story_first_contracts" in _imported_names(tree)
+        calls = [n for n in ast.walk(tree)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                 and n.func.attr in set(consumer.get("symbols") or ())]
+        missing.append({"path": consumer["path"], "imported": imported,
+                        "calls": [n.func.attr for n in calls]})
+    consumed = bool(missing) and all(
+        row.get("imported") and row.get("calls") for row in missing)
+    out.append(_probe("order_is_consumed_in_production", consumed, missing))
     return out
 
 
@@ -365,7 +384,7 @@ def _probe_emergency(spec, skill_root):
 # ── clause assembly ──────────────────────────────────────────────────────────
 
 _PROBE_TABLE = {
-    "artifact_order": lambda spec, cache, root, manifest: _probe_order(spec, cache, manifest),
+    "artifact_order": lambda spec, cache, root, manifest: _probe_order(spec, cache, root, manifest),
     "cast_world_script_gates": lambda spec, cache, root, manifest: _probe_gates(spec, cache),
     "notion": lambda spec, cache, root, manifest: _probe_notion(spec, cache),
     "styles_18": lambda spec, cache, root, manifest: _probe_styles(spec, cache, root),

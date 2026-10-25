@@ -119,6 +119,20 @@
         {
           "id": "order_is_enforced",
           "what": "check_stage('script_lyrics', empty RunRegistry) refuses with ContractError code ORDER"
+        },
+        {
+          "id": "order_is_consumed_in_production",
+          "what": "scripts/core/script_writer.py imports story_first_contracts and calls .check_stage"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "scripts/core/script_writer.py",
+          "symbols": [
+            "check_stage"
+          ],
+          "evidence": "module docstring: 'Order enforced before any model call (story_first_contracts.check_stage)'; the module does 'import story_first_contracts as C' and calls C.check_stage",
+          "why": "this is the production consumer of the order, so the order is not merely importable"
         }
       ]
     },
