@@ -1,0 +1,605 @@
+{
+  "constraints": {
+    "duration_seconds": 70,
+    "route": "drama-song",
+    "style_id": "soul-ballad-restrained"
+  },
+  "expected": {
+    "lyrics_revision": 1,
+    "response_id": "fixture-response-s75-t10-001",
+    "scene_ids": [
+      "scene_workshop_001",
+      "scene_workshop_002",
+      "scene_workshop_003"
+    ],
+    "script_revision": 1
+  },
+  "fixture": "rich_script",
+  "foundation": {
+    "causal_story_beats": {
+      "beats": [
+        {
+          "beat": "opening consequence",
+          "beat_id": "beat_001",
+          "beat_text": "Payroll bounces tomorrow because Mara hid the notice.",
+          "caused_by": null
+        },
+        {
+          "beat": "forced choice",
+          "beat_id": "beat_002",
+          "beat_text": "Mara opens the notice because Levi shows the empty total.",
+          "caused_by": "beat_001"
+        },
+        {
+          "beat": "earned repair",
+          "beat_id": "beat_003",
+          "beat_text": "The partners build a review because disclosure makes planning possible.",
+          "caused_by": "beat_002"
+        }
+      ]
+    },
+    "character_identity_library_snapshot": {
+      "identities": {
+        "char_levi_002": {
+          "aliases": [],
+          "appearance_traits": "Gray coveralls, rolled sleeves, steady hands.",
+          "approval_bindings": [],
+          "behavior_under_pressure": "Fixes the object in front of him and asks the direct question once.",
+          "character_id": "char_levi_002",
+          "client_id": "fiction_contract_demo",
+          "competence": [
+            "reconciles weekly ledgers",
+            "rebuilds carburettors"
+          ],
+          "content_digest": "identity-digest-levi",
+          "contradictions": [
+            "Stays calm in the room while pressing the hardest question."
+          ],
+          "display_name": "Levi Bell",
+          "draft_state": "COMPLETE",
+          "emotional_wound": "He learned about the family stall's closure from a sign on the door.",
+          "fears": [
+            "Being the last to know again",
+            "Losing the workshop to silence"
+          ],
+          "habits": [
+            "Squares the ledger to the table edge before speaking."
+          ],
+          "identity_summary": "The quieter partner who reads the numbers and refuses vague reassurance.",
+          "local_cache": null,
+          "mistaken_belief": "Patience alone can carry a partner past a hidden cost.",
+          "occupation": "Repair-cooperative partner and bookkeeper",
+          "provenance_by_field": {
+            "all_story_fields": "explicit proposed fiction"
+          },
+          "reference_ids": [],
+          "relationships": [
+            {
+              "character_id": "char_mara_001",
+              "dependency": "He needs her honesty more than her certainty.",
+              "history": "They built the workshop together.",
+              "present_tension": "He needs the warning she withheld.",
+              "type": "younger sister and partner"
+            }
+          ],
+          "relevant_background_history": [
+            "Kept the cooperative's books from the first week.",
+            "Watched his sister hide one bad total before and stayed anyway."
+          ],
+          "revision": 1,
+          "schema_version": "s75.identity.v1",
+          "shared_source": null,
+          "social_context": "The team treats him as the calm next step after bad news.",
+          "story_status": "PROPOSED_FICTION",
+          "sync_state": "ILLUSTRATIVE_NOT_PERSISTED",
+          "voice": {
+            "restraint": "Asks before he accuses.",
+            "rhythm": "Measured, one question at a time.",
+            "vocabulary": "Plain ledger words."
+          },
+          "wants": {
+            "external": "Reconcile the ledger before payroll clears.",
+            "internal": "Be treated as a partner, not a problem to shield."
+          }
+        },
+        "char_mara_001": {
+          "aliases": [],
+          "appearance_traits": "Short natural curls, alert eyes, compact work-ready posture.",
+          "approval_bindings": [],
+          "behavior_under_pressure": "Takes on physical work and conceals paperwork until forced.",
+          "character_id": "char_mara_001",
+          "client_id": "fiction_contract_demo",
+          "competence": [
+            "diagnoses small-engine failures",
+            "trains apprentices"
+          ],
+          "content_digest": "identity-digest-mara",
+          "contradictions": [
+            "Demands clear estimates while hiding the warning from her own partner."
+          ],
+          "display_name": "Mara Bell",
+          "draft_state": "COMPLETE",
+          "emotional_wound": "She was the last person told that her father's stall was closing.",
+          "fears": [
+            "Repeating her father's failure",
+            "Losing the team's respect"
+          ],
+          "habits": [
+            "Straightens tools when avoiding a question."
+          ],
+          "identity_summary": "A repair-cooperative owner who fixes motors faster than she admits mistakes.",
+          "local_cache": null,
+          "mistaken_belief": "A good leader protects everyone by solving problems alone.",
+          "occupation": "Repair-cooperative owner and working mechanic",
+          "provenance_by_field": {
+            "all_story_fields": "explicit proposed fiction"
+          },
+          "reference_ids": [],
+          "relationships": [
+            {
+              "character_id": "char_levi_002",
+              "dependency": "She trusts his judgment but fears his disappointment.",
+              "history": "They built the workshop together.",
+              "present_tension": "She withheld a payment warning he needs.",
+              "type": "older brother and partner"
+            }
+          ],
+          "relevant_background_history": [
+            "Helped her father close his repair stall after an avoidable cash crisis.",
+            "Built the cooperative with her brother Levi and promised no more surprises."
+          ],
+          "revision": 1,
+          "schema_version": "s75.identity.v1",
+          "shared_source": null,
+          "social_context": "Responsible for a small team that trusts her with its livelihoods.",
+          "story_status": "PROPOSED_FICTION",
+          "sync_state": "ILLUSTRATIVE_NOT_PERSISTED",
+          "voice": {
+            "restraint": "Admits the fact before naming the feeling.",
+            "rhythm": "Short practical sentences.",
+            "vocabulary": "Concrete workshop language."
+          },
+          "wants": {
+            "external": "Keep the cooperative open and pay the team.",
+            "internal": "Be trusted without appearing infallible."
+          }
+        }
+      }
+    },
+    "episode_cast_manifest": {
+      "cast": [
+        {
+          "character_id": "char_mara_001",
+          "choice_or_consequence": "Disclosure shifts her from isolation to shared responsibility.",
+          "episode_role": "lead",
+          "identity_digest": "identity-digest-mara",
+          "identity_revision": 1,
+          "immediate_story_function": "Must choose to expose the hidden warning.",
+          "scene_ids": [
+            "scene_workshop_001",
+            "scene_workshop_002",
+            "scene_workshop_003"
+          ]
+        },
+        {
+          "character_id": "char_levi_002",
+          "choice_or_consequence": "His restrained offer makes Mara's turn possible.",
+          "episode_role": "supporting partner",
+          "identity_digest": "identity-digest-levi",
+          "identity_revision": 1,
+          "immediate_story_function": "Refuses vague reassurance and shows the empty ledger.",
+          "scene_ids": [
+            "scene_workshop_001",
+            "scene_workshop_002",
+            "scene_workshop_003"
+          ]
+        }
+      ]
+    },
+    "episode_world": {
+      "approval_bindings": [],
+      "cast_world_relations": [
+        "char_mara_001",
+        "char_levi_002"
+      ],
+      "content_digest": "world-digest-1",
+      "continuity_rules": "Notice sealed before admission, open afterward; ledger stays on the table.",
+      "draft_state": "COMPLETE",
+      "episode_id": "ep_001",
+      "era_and_timeline": "One continuous evening at closing time.",
+      "layout_and_geography": "South entrance faces the central table; north wall holds the tool bench.",
+      "light_color_atmosphere": "Warm overhead work lights; cool fading daylight from the door.",
+      "locations": [
+        {
+          "access": "Mara and Levi, cooperative partners",
+          "entrances_exits": [
+            "south glass door",
+            "west corridor to the repair bay"
+          ],
+          "interior_exterior": "interior",
+          "location_id": "loc_workshop_front_001",
+          "name": "Workshop front room",
+          "story_function": "closing-time confrontation and shared repair",
+          "visible_geography": "central ledger table, north tool bench, east counter"
+        }
+      ],
+      "physical_and_story_rules": "Realistic drama; no unexplained rescue or new prop.",
+      "premise": "A neighborhood repair cooperative faces a payment shortfall.",
+      "revision": 1,
+      "schema_version": "s75.world.v1",
+      "set_dressing_and_props": [
+        {
+          "placement": "Mara's right hand",
+          "prop_id": "prop_notice_001"
+        },
+        {
+          "placement": "central table",
+          "prop_id": "prop_ledger_001"
+        }
+      ],
+      "social_rules": "Partners expect payroll warnings to be shared early.",
+      "sound_environment": "Distant workshop fan; quiet room tone once it stops.",
+      "sources_and_unknowns": {
+        "classification": "PROPOSED_FICTION"
+      },
+      "wardrobe_intent": "Practical workshop clothing with clear silhouettes.",
+      "world_id": "world_workshop_001"
+    },
+    "research_bundle": {
+      "claim_map": [
+        {
+          "assertion": "A fourteen-day cash-flow review surfaces a shortfall before payroll.",
+          "claim_id": "claim_001",
+          "classification": "OWNER_ASSERTION",
+          "relevance": "the story's repair routine",
+          "scene_ids": [
+            "scene_workshop_002"
+          ],
+          "sources": [
+            "owner_answer_001"
+          ],
+          "verification_state": "SUPPLIED_NOT_INDEPENDENTLY_VERIFIED"
+        }
+      ],
+      "external_sources": [],
+      "owner_answers": [
+        {
+          "assertion": "We run a fourteen-day cash-flow review before every payroll.",
+          "captured_at": "2026-10-20T10:00:00Z",
+          "owner_answer_id": "owner_answer_001",
+          "permission": "story use",
+          "provenance": "owner supplied",
+          "question": "What routine catches a shortfall early?"
+        }
+      ],
+      "premise": {
+        "blocks": "The ledger cannot be reconciled without the notice she hid.",
+        "classification": "PROPOSED_FICTION",
+        "consequence": "Payroll clears tomorrow whether or not the partners agree.",
+        "likely_change": "A shared weekly ledger turns concealment into a repair plan.",
+        "who_wants_what": "Mara wants to protect the cooperative without admitting the shortfall."
+      },
+      "unknowns": []
+    },
+    "scene_plan": {
+      "scenes": [
+        {
+          "approval_bindings": [],
+          "cast_ids": [
+            "char_mara_001",
+            "char_levi_002"
+          ],
+          "causal_outcome": "Because this happens, the next scene must answer it.",
+          "causal_outcome_id": "out_001",
+          "causal_predecessor": null,
+          "claims": [
+            "claim_001"
+          ],
+          "consequential_choice": "She gives up control of the information.",
+          "crowd_group_ids": [],
+          "dramatic_purpose": "Expose the immediate cost of concealment and force Mara's first honest choice.",
+          "duration_seconds": 24,
+          "emotion_after": "still afraid but less isolated",
+          "emotion_before": "defensive and ashamed",
+          "framing_movement_intent": "Medium close-up inside the door, then insert on the opening envelope.",
+          "identity_revisions": {
+            "char_levi_002": 1,
+            "char_mara_001": 1
+          },
+          "immediate_want": "Mara wants the conversation to stay vague a little longer.",
+          "location_id": "loc_workshop_front_001",
+          "obstacle": "The open ledger makes every vague answer visible.",
+          "performance_order": [
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_m1"
+            },
+            {
+              "character_id": "char_levi_002",
+              "line_id": "plan_l1"
+            },
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_m2"
+            }
+          ],
+          "references": [],
+          "scene_id": "scene_workshop_001",
+          "sequence": 1,
+          "sound_music_cues": [
+            "Fan clicks off before the first line."
+          ],
+          "spoken_dialogue": [
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_m1",
+              "text": "planned: Mara names the bounce cost of locking the door"
+            },
+            {
+              "character_id": "char_levi_002",
+              "line_id": "plan_l1",
+              "text": "planned: Levi asks why the ledger total is empty"
+            }
+          ],
+          "subtext_and_behavior": "She admits the fact before naming the feeling.",
+          "sung_lyrics": [
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_m2",
+              "text": "planned: Mara admits she hid the notice"
+            }
+          ],
+          "time": "evening, closing time",
+          "timing_basis": "authoring estimate before music",
+          "transition": "Match-cut from the shared ledger to the next scene's first action.",
+          "turn_trigger": "Putting the notice where Levi can read it.",
+          "visible_action": "Mara opens the sealed warning and sets it beside the open ledger.",
+          "visible_lip_sync": {
+            "intervals": [
+              [
+                0,
+                4
+              ]
+            ],
+            "performer": "char_mara_001"
+          },
+          "world_revision": 1
+        },
+        {
+          "approval_bindings": [],
+          "cast_ids": [
+            "char_mara_001",
+            "char_levi_002"
+          ],
+          "causal_outcome": "Because this happens, the next scene must answer it.",
+          "causal_outcome_id": "out_002",
+          "causal_predecessor": "out_001",
+          "claims": [
+            "claim_001"
+          ],
+          "consequential_choice": "Mara asks the team for help instead of absorbing the cost.",
+          "crowd_group_ids": [],
+          "dramatic_purpose": "Convert the disclosure into a concrete shared response to the shortfall.",
+          "duration_seconds": 26,
+          "emotion_after": "responsible and accompanied",
+          "emotion_before": "exposed and steadier",
+          "framing_movement_intent": "Medium close-up inside the door, then insert on the opening envelope.",
+          "identity_revisions": {
+            "char_levi_002": 1,
+            "char_mara_001": 1
+          },
+          "immediate_want": "Mara wants the conversation to stay vague a little longer.",
+          "location_id": "loc_workshop_front_001",
+          "obstacle": "The open ledger makes every vague answer visible.",
+          "performance_order": [
+            {
+              "character_id": "char_levi_002",
+              "line_id": "plan_l2"
+            },
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_m3"
+            }
+          ],
+          "references": [],
+          "scene_id": "scene_workshop_002",
+          "sequence": 2,
+          "sound_music_cues": [
+            "Fan clicks off before the first line."
+          ],
+          "spoken_dialogue": [
+            {
+              "character_id": "char_levi_002",
+              "line_id": "plan_l2",
+              "text": "planned: Levi proposes the fourteen-day review routine"
+            }
+          ],
+          "subtext_and_behavior": "She admits the fact before naming the feeling.",
+          "sung_lyrics": [
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_m3",
+              "text": "planned: Mara sings about reading the total together"
+            }
+          ],
+          "time": "evening, closing time",
+          "timing_basis": "authoring estimate before music",
+          "transition": "Match-cut from the shared ledger to the next scene's first action.",
+          "turn_trigger": "Levi sliding the blank calendar toward her.",
+          "visible_action": "Levi writes the two-week calendar while Mara calls the crew schedule.",
+          "visible_lip_sync": {
+            "intervals": [
+              [
+                0,
+                4
+              ]
+            ],
+            "performer": "char_mara_001"
+          },
+          "world_revision": 1
+        },
+        {
+          "approval_bindings": [],
+          "cast_ids": [
+            "char_mara_001",
+            "char_levi_002"
+          ],
+          "causal_outcome": "Because this happens, the next scene must answer it.",
+          "causal_outcome_id": "out_003",
+          "causal_predecessor": "out_002",
+          "claims": [
+            "claim_001"
+          ],
+          "consequential_choice": "She keeps the notice visible instead of filing it away.",
+          "crowd_group_ids": [],
+          "dramatic_purpose": "Show the visible transformation and one honest closing request.",
+          "duration_seconds": 20,
+          "emotion_after": "steady and public",
+          "emotion_before": "afraid but committed",
+          "framing_movement_intent": "Medium close-up inside the door, then insert on the opening envelope.",
+          "identity_revisions": {
+            "char_levi_002": 1,
+            "char_mara_001": 1
+          },
+          "immediate_want": "Mara wants the conversation to stay vague a little longer.",
+          "location_id": "loc_workshop_front_001",
+          "obstacle": "The open ledger makes every vague answer visible.",
+          "performance_order": [
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_cta"
+            },
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_m4"
+            }
+          ],
+          "references": [],
+          "scene_id": "scene_workshop_003",
+          "sequence": 3,
+          "sound_music_cues": [
+            "Fan clicks off before the first line."
+          ],
+          "spoken_dialogue": [
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_cta",
+              "text": "planned: one closing request to the audience"
+            }
+          ],
+          "subtext_and_behavior": "She admits the fact before naming the feeling.",
+          "sung_lyrics": [
+            {
+              "character_id": "char_mara_001",
+              "line_id": "plan_m4",
+              "text": "planned: Mara sings the changed morning after"
+            }
+          ],
+          "time": "evening, closing time",
+          "timing_basis": "authoring estimate before music",
+          "transition": "Match-cut from the shared ledger to the next scene's first action.",
+          "turn_trigger": "Hanging the calendar where the whole crew reads it.",
+          "visible_action": "Mara posts the review dates beside the tool bench and squares the ledger.",
+          "visible_lip_sync": {
+            "intervals": [
+              [
+                0,
+                4
+              ]
+            ],
+            "performer": "char_mara_001"
+          },
+          "world_revision": 1
+        }
+      ]
+    }
+  },
+  "model_binding": {
+    "method": "no-spend recorded dispatch",
+    "model": "recorded-fixture",
+    "provider": "recorded-fixture",
+    "tool": "script_writer"
+  },
+  "prompt_revision": "s75.script_writer.prompt.v1",
+  "request": {
+    "attempt": 1,
+    "binding": {
+      "effective": null,
+      "requested": {
+        "method": "no-spend recorded dispatch",
+        "model": "recorded-fixture",
+        "provider": "recorded-fixture",
+        "tool": "script_writer"
+      }
+    },
+    "constraints": {
+      "duration_seconds": 70,
+      "route": "drama-song",
+      "style_id": "soul-ballad-restrained"
+    },
+    "foundation": {
+      "causal_story_beats": {
+        "artifact_id": "causal_story_beats",
+        "digest": "3788794d4d66a756cfb29c61d831283c7695d3a9ffdcc34f2cea0bfda1848de7",
+        "revision": 1,
+        "state": "COMPLETE"
+      },
+      "character_identity_library_snapshot": {
+        "artifact_id": "character_identity_library_snapshot",
+        "digest": "2cf3f23a1c7c086cdc33dc9c5f5de0a55f62a1984995cfd0dd04254febf283d0",
+        "revision": 1,
+        "state": "COMPLETE"
+      },
+      "episode_cast_manifest": {
+        "artifact_id": "episode_cast_manifest",
+        "digest": "c6065b1e63132c757e365d49cf2184b3cf67e604a67aaea1100ebcc9e1df9425",
+        "revision": 1,
+        "state": "COMPLETE"
+      },
+      "episode_world": {
+        "artifact_id": "episode_world",
+        "digest": "0ae443aa1a1b3e1c88149254fde882e46773ea055d917295f1dc3e8dd3c3326b",
+        "revision": 1,
+        "state": "COMPLETE"
+      },
+      "research_bundle": {
+        "artifact_id": "research_bundle",
+        "digest": "1c1a97a7ed9abbbb90494630c3b3ce978ab3de39b7f162ea5f2c3bbd9f609861",
+        "revision": 1,
+        "state": "COMPLETE"
+      },
+      "scene_plan": {
+        "artifact_id": "scene_plan",
+        "digest": "5a07c5818a77f25e1fb77774ae297c0fc061ccccb8fa44ed97befac8c42aaad6",
+        "revision": 1,
+        "state": "COMPLETE"
+      }
+    },
+    "foundation_digest": "7ba9c638d33e80b4a8b0d55be6dd80ba8db7ab4888f0f86724fa1b2088bd9caa",
+    "idempotency_key": "3ee0f4ecae468086425e353379574d5d6a2c4b8730508d7bee307130d711cf1d:1",
+    "messages": [
+      {
+        "content": "You are the script and lyric writer for one drama-song episode.\nPROMPT REVISION: s75.script_writer.prompt.v1\n\nSELECTED CONSTRAINTS\n{\n  \"duration_seconds\": 70,\n  \"route\": \"drama-song\",\n  \"style_id\": \"soul-ballad-restrained\"\n}\n\nFOUNDATION REVISIONS\n{\n  \"causal_story_beats\": {\n    \"artifact_id\": \"causal_story_beats\",\n    \"digest\": \"3788794d4d66a756cfb29c61d831283c7695d3a9ffdcc34f2cea0bfda1848de7\",\n    \"revision\": 1,\n    \"state\": \"COMPLETE\"\n  },\n  \"character_identity_library_snapshot\": {\n    \"artifact_id\": \"character_identity_library_snapshot\",\n    \"digest\": \"2cf3f23a1c7c086cdc33dc9c5f5de0a55f62a1984995cfd0dd04254febf283d0\",\n    \"revision\": 1,\n    \"state\": \"COMPLETE\"\n  },\n  \"episode_cast_manifest\": {\n    \"artifact_id\": \"episode_cast_manifest\",\n    \"digest\": \"c6065b1e63132c757e365d49cf2184b3cf67e604a67aaea1100ebcc9e1df9425\",\n    \"revision\": 1,\n    \"state\": \"COMPLETE\"\n  },\n  \"episode_world\": {\n    \"artifact_id\": \"episode_world\",\n    \"digest\": \"0ae443aa1a1b3e1c88149254fde882e46773ea055d917295f1dc3e8dd3c3326b\",\n    \"revision\": 1,\n    \"state\": \"COMPLETE\"\n  },\n  \"research_bundle\": {\n    \"artifact_id\": \"research_bundle\",\n    \"digest\": \"1c1a97a7ed9abbbb90494630c3b3ce978ab3de39b7f162ea5f2c3bbd9f609861\",\n    \"revision\": 1,\n    \"state\": \"COMPLETE\"\n  },\n  \"scene_plan\": {\n    \"artifact_id\": \"scene_plan\",\n    \"digest\": \"5a07c5818a77f25e1fb77774ae297c0fc061ccccb8fa44ed97befac8c42aaad6\",\n    \"revision\": 1,\n    \"state\": \"COMPLETE\"\n  }\n}\n\nCHARACTER IDENTITIES (complete; each line must match one of these people)\n{\n  \"char_levi_002\": {\n    \"aliases\": [],\n    \"appearance_traits\": \"Gray coveralls, rolled sleeves, steady hands.\",\n    \"approval_bindings\": [],\n    \"behavior_under_pressure\": \"Fixes the object in front of him and asks the direct question once.\",\n    \"character_id\": \"char_levi_002\",\n    \"client_id\": \"fiction_contract_demo\",\n    \"competence\": [\n      \"reconciles weekly ledgers\",\n      \"rebuilds carburettors\"\n    ],\n    \"content_digest\": \"identity-digest-levi\",\n    \"contradictions\": [\n      \"Stays calm in the room while pressing the hardest question.\"\n    ],\n    \"display_name\": \"Levi Bell\",\n    \"draft_state\": \"COMPLETE\",\n    \"emotional_wound\": \"He learned about the family stall's closure from a sign on the door.\",\n    \"fears\": [\n      \"Being the last to know again\",\n      \"Losing the workshop to silence\"\n    ],\n    \"habits\": [\n      \"Squares the ledger to the table edge before speaking.\"\n    ],\n    \"identity_summary\": \"The quieter partner who reads the numbers and refuses vague reassurance.\",\n    \"local_cache\": null,\n    \"mistaken_belief\": \"Patience alone can carry a partner past a hidden cost.\",\n    \"occupation\": \"Repair-cooperative partner and bookkeeper\",\n    \"provenance_by_field\": {\n      \"all_story_fields\": \"explicit proposed fiction\"\n    },\n    \"reference_ids\": [],\n    \"relationships\": [\n      {\n        \"character_id\": \"char_mara_001\",\n        \"dependency\": \"He needs her honesty more than her certainty.\",\n        \"history\": \"They built the workshop together.\",\n        \"present_tension\": \"He needs the warning she withheld.\",\n        \"type\": \"younger sister and partner\"\n      }\n    ],\n    \"relevant_background_history\": [\n      \"Kept the cooperative's books from the first week.\",\n      \"Watched his sister hide one bad total before and stayed anyway.\"\n    ],\n    \"revision\": 1,\n    \"schema_version\": \"s75.identity.v1\",\n    \"shared_source\": null,\n    \"social_context\": \"The team treats him as the calm next step after bad news.\",\n    \"story_status\": \"PROPOSED_FICTION\",\n    \"sync_state\": \"ILLUSTRATIVE_NOT_PERSISTED\",\n    \"voice\": {\n      \"restraint\": \"Asks before he accuses.\",\n      \"rhythm\": \"Measured, one question at a time.\",\n      \"vocabulary\": \"Plain ledger words.\"\n    },\n    \"wants\": {\n      \"external\": \"Reconcile the ledger before payroll clears.\",\n      \"internal\": \"Be treated as a partner, not a problem to shield.\"\n    }\n  },\n  \"char_mara_001\": {\n    \"aliases\": [],\n    \"appearance_traits\": \"Short natural curls, alert eyes, compact work-ready posture.\",\n    \"approval_bindings\": [],\n    \"behavior_under_pressure\": \"Takes on physical work and conceals paperwork until forced.\",\n    \"character_id\": \"char_mara_001\",\n    \"client_id\": \"fiction_contract_demo\",\n    \"competence\": [\n      \"diagnoses small-engine failures\",\n      \"trains apprentices\"\n    ],\n    \"content_digest\": \"identity-digest-mara\",\n    \"contradictions\": [\n      \"Demands clear estimates while hiding the warning from her own partner.\"\n    ],\n    \"display_name\": \"Mara Bell\",\n    \"draft_state\": \"COMPLETE\",\n    \"emotional_wound\": \"She was the last person told that her father's stall was closing.\",\n    \"fears\": [\n      \"Repeating her father's failure\",\n      \"Losing the team's respect\"\n    ],\n    \"habits\": [\n      \"Straightens tools when avoiding a question.\"\n    ],\n    \"identity_summary\": \"A repair-cooperative owner who fixes motors faster than she admits mistakes.\",\n    \"local_cache\": null,\n    \"mistaken_belief\": \"A good leader protects everyone by solving problems alone.\",\n    \"occupation\": \"Repair-cooperative owner and working mechanic\",\n    \"provenance_by_field\": {\n      \"all_story_fields\": \"explicit proposed fiction\"\n    },\n    \"reference_ids\": [],\n    \"relationships\": [\n      {\n        \"character_id\": \"char_levi_002\",\n        \"dependency\": \"She trusts his judgment but fears his disappointment.\",\n        \"history\": \"They built the workshop together.\",\n        \"present_tension\": \"She withheld a payment warning he needs.\",\n        \"type\": \"older brother and partner\"\n      }\n    ],\n    \"relevant_background_history\": [\n      \"Helped her father close his repair stall after an avoidable cash crisis.\",\n      \"Built the cooperative with her brother Levi and promised no more surprises.\"\n    ],\n    \"revision\": 1,\n    \"schema_version\": \"s75.identity.v1\",\n    \"shared_source\": null,\n    \"social_context\": \"Responsible for a small team that trusts her with its livelihoods.\",\n    \"story_status\": \"PROPOSED_FICTION\",\n    \"sync_state\": \"ILLUSTRATIVE_NOT_PERSISTED\",\n    \"voice\": {\n      \"restraint\": \"Admits the fact before naming the feeling.\",\n      \"rhythm\": \"Short practical sentences.\",\n      \"vocabulary\": \"Concrete workshop language.\"\n    },\n    \"wants\": {\n      \"external\": \"Keep the cooperative open and pay the team.\",\n      \"internal\": \"Be trusted without appearing infallible.\"\n    }\n  }\n}\n\nEPISODE CAST MANIFEST\n{\n  \"cast\": [\n    {\n      \"character_id\": \"char_mara_001\",\n      \"choice_or_consequence\": \"Disclosure shifts her from isolation to shared responsibility.\",\n      \"episode_role\": \"lead\",\n      \"identity_digest\": \"identity-digest-mara\",\n      \"identity_revision\": 1,\n      \"immediate_story_function\": \"Must choose to expose the hidden warning.\",\n      \"scene_ids\": [\n        \"scene_workshop_001\",\n        \"scene_workshop_002\",\n        \"scene_workshop_003\"\n      ]\n    },\n    {\n      \"character_id\": \"char_levi_002\",\n      \"choice_or_consequence\": \"His restrained offer makes Mara's turn possible.\",\n      \"episode_role\": \"supporting partner\",\n      \"identity_digest\": \"identity-digest-levi\",\n      \"identity_revision\": 1,\n      \"immediate_story_function\": \"Refuses vague reassurance and shows the empty ledger.\",\n      \"scene_ids\": [\n        \"scene_workshop_001\",\n        \"scene_workshop_002\",\n        \"scene_workshop_003\"\n      ]\n    }\n  ]\n}\n\nEPISODE WORLD\n{\n  \"approval_bindings\": [],\n  \"cast_world_relations\": [\n    \"char_mara_001\",\n    \"char_levi_002\"\n  ],\n  \"content_digest\": \"world-digest-1\",\n  \"continuity_rules\": \"Notice sealed before admission, open afterward; ledger stays on the table.\",\n  \"draft_state\": \"COMPLETE\",\n  \"episode_id\": \"ep_001\",\n  \"era_and_timeline\": \"One continuous evening at closing time.\",\n  \"layout_and_geography\": \"South entrance faces the central table; north wall holds the tool bench.\",\n  \"light_color_atmosphere\": \"Warm overhead work lights; cool fading daylight from the door.\",\n  \"locations\": [\n    {\n      \"access\": \"Mara and Levi, cooperative partners\",\n      \"entrances_exits\": [\n        \"south glass door\",\n        \"west corridor to the repair bay\"\n      ],\n      \"interior_exterior\": \"interior\",\n      \"location_id\": \"loc_workshop_front_001\",\n      \"name\": \"Workshop front room\",\n      \"story_function\": \"closing-time confrontation and shared repair\",\n      \"visible_geography\": \"central ledger table, north tool bench, east counter\"\n    }\n  ],\n  \"physical_and_story_rules\": \"Realistic drama; no unexplained rescue or new prop.\",\n  \"premise\": \"A neighborhood repair cooperative faces a payment shortfall.\",\n  \"revision\": 1,\n  \"schema_version\": \"s75.world.v1\",\n  \"set_dressing_and_props\": [\n    {\n      \"placement\": \"Mara's right hand\",\n      \"prop_id\": \"prop_notice_001\"\n    },\n    {\n      \"placement\": \"central table\",\n      \"prop_id\": \"prop_ledger_001\"\n    }\n  ],\n  \"social_rules\": \"Partners expect payroll warnings to be shared early.\",\n  \"sound_environment\": \"Distant workshop fan; quiet room tone once it stops.\",\n  \"sources_and_unknowns\": {\n    \"classification\": \"PROPOSED_FICTION\"\n  },\n  \"wardrobe_intent\": \"Practical workshop clothing with clear silhouettes.\",\n  \"world_id\": \"world_workshop_001\"\n}\n\nRESEARCH AND PREMISE (verified facts and claims; invent no client result)\n{\n  \"claim_map\": [\n    {\n      \"assertion\": \"A fourteen-day cash-flow review surfaces a shortfall before payroll.\",\n      \"claim_id\": \"claim_001\",\n      \"classification\": \"OWNER_ASSERTION\",\n      \"relevance\": \"the story's repair routine\",\n      \"scene_ids\": [\n        \"scene_workshop_002\"\n      ],\n      \"sources\": [\n        \"owner_answer_001\"\n      ],\n      \"verification_state\": \"SUPPLIED_NOT_INDEPENDENTLY_VERIFIED\"\n    }\n  ],\n  \"external_sources\": [],\n  \"owner_answers\": [\n    {\n      \"assertion\": \"We run a fourteen-day cash-flow review before every payroll.\",\n      \"captured_at\": \"2026-10-20T10:00:00Z\",\n      \"owner_answer_id\": \"owner_answer_001\",\n      \"permission\": \"story use\",\n      \"provenance\": \"owner supplied\",\n      \"question\": \"What routine catches a shortfall early?\"\n    }\n  ],\n  \"premise\": {\n    \"blocks\": \"The ledger cannot be reconciled without the notice she hid.\",\n    \"classification\": \"PROPOSED_FICTION\",\n    \"consequence\": \"Payroll clears tomorrow whether or not the partners agree.\",\n    \"likely_change\": \"A shared weekly ledger turns concealment into a repair plan.\",\n    \"who_wants_what\": \"Mara wants to protect the cooperative without admitting the shortfall.\"\n  },\n  \"unknowns\": []\n}\n\nCAUSAL STORY BEATS (because/therefore, not and-then)\n{\n  \"beats\": [\n    {\n      \"beat\": \"opening consequence\",\n      \"beat_id\": \"beat_001\",\n      \"beat_text\": \"Payroll bounces tomorrow because Mara hid the notice.\",\n      \"caused_by\": null\n    },\n    {\n      \"beat\": \"forced choice\",\n      \"beat_id\": \"beat_002\",\n      \"beat_text\": \"Mara opens the notice because Levi shows the empty total.\",\n      \"caused_by\": \"beat_001\"\n    },\n    {\n      \"beat\": \"earned repair\",\n      \"beat_id\": \"beat_003\",\n      \"beat_text\": \"The partners build a review because disclosure makes planning possible.\",\n      \"caused_by\": \"beat_002\"\n    }\n  ]\n}\n\nFULL SCENE PLAN (author every scene in these terms)\n{\n  \"scenes\": [\n    {\n      \"approval_bindings\": [],\n      \"cast_ids\": [\n        \"char_mara_001\",\n        \"char_levi_002\"\n      ],\n      \"causal_outcome\": \"Because this happens, the next scene must answer it.\",\n      \"causal_outcome_id\": \"out_001\",\n      \"causal_predecessor\": null,\n      \"claims\": [\n        \"claim_001\"\n      ],\n      \"consequential_choice\": \"She gives up control of the information.\",\n      \"crowd_group_ids\": [],\n      \"dramatic_purpose\": \"Expose the immediate cost of concealment and force Mara's first honest choice.\",\n      \"duration_seconds\": 24,\n      \"emotion_after\": \"still afraid but less isolated\",\n      \"emotion_before\": \"defensive and ashamed\",\n      \"framing_movement_intent\": \"Medium close-up inside the door, then insert on the opening envelope.\",\n      \"identity_revisions\": {\n        \"char_levi_002\": 1,\n        \"char_mara_001\": 1\n      },\n      \"immediate_want\": \"Mara wants the conversation to stay vague a little longer.\",\n      \"location_id\": \"loc_workshop_front_001\",\n      \"obstacle\": \"The open ledger makes every vague answer visible.\",\n      \"performance_order\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_m1\"\n        },\n        {\n          \"character_id\": \"char_levi_002\",\n          \"line_id\": \"plan_l1\"\n        },\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_m2\"\n        }\n      ],\n      \"references\": [],\n      \"scene_id\": \"scene_workshop_001\",\n      \"sequence\": 1,\n      \"sound_music_cues\": [\n        \"Fan clicks off before the first line.\"\n      ],\n      \"spoken_dialogue\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_m1\",\n          \"text\": \"planned: Mara names the bounce cost of locking the door\"\n        },\n        {\n          \"character_id\": \"char_levi_002\",\n          \"line_id\": \"plan_l1\",\n          \"text\": \"planned: Levi asks why the ledger total is empty\"\n        }\n      ],\n      \"subtext_and_behavior\": \"She admits the fact before naming the feeling.\",\n      \"sung_lyrics\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_m2\",\n          \"text\": \"planned: Mara admits she hid the notice\"\n        }\n      ],\n      \"time\": \"evening, closing time\",\n      \"timing_basis\": \"authoring estimate before music\",\n      \"transition\": \"Match-cut from the shared ledger to the next scene's first action.\",\n      \"turn_trigger\": \"Putting the notice where Levi can read it.\",\n      \"visible_action\": \"Mara opens the sealed warning and sets it beside the open ledger.\",\n      \"visible_lip_sync\": {\n        \"intervals\": [\n          [\n            0,\n            4\n          ]\n        ],\n        \"performer\": \"char_mara_001\"\n      },\n      \"world_revision\": 1\n    },\n    {\n      \"approval_bindings\": [],\n      \"cast_ids\": [\n        \"char_mara_001\",\n        \"char_levi_002\"\n      ],\n      \"causal_outcome\": \"Because this happens, the next scene must answer it.\",\n      \"causal_outcome_id\": \"out_002\",\n      \"causal_predecessor\": \"out_001\",\n      \"claims\": [\n        \"claim_001\"\n      ],\n      \"consequential_choice\": \"Mara asks the team for help instead of absorbing the cost.\",\n      \"crowd_group_ids\": [],\n      \"dramatic_purpose\": \"Convert the disclosure into a concrete shared response to the shortfall.\",\n      \"duration_seconds\": 26,\n      \"emotion_after\": \"responsible and accompanied\",\n      \"emotion_before\": \"exposed and steadier\",\n      \"framing_movement_intent\": \"Medium close-up inside the door, then insert on the opening envelope.\",\n      \"identity_revisions\": {\n        \"char_levi_002\": 1,\n        \"char_mara_001\": 1\n      },\n      \"immediate_want\": \"Mara wants the conversation to stay vague a little longer.\",\n      \"location_id\": \"loc_workshop_front_001\",\n      \"obstacle\": \"The open ledger makes every vague answer visible.\",\n      \"performance_order\": [\n        {\n          \"character_id\": \"char_levi_002\",\n          \"line_id\": \"plan_l2\"\n        },\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_m3\"\n        }\n      ],\n      \"references\": [],\n      \"scene_id\": \"scene_workshop_002\",\n      \"sequence\": 2,\n      \"sound_music_cues\": [\n        \"Fan clicks off before the first line.\"\n      ],\n      \"spoken_dialogue\": [\n        {\n          \"character_id\": \"char_levi_002\",\n          \"line_id\": \"plan_l2\",\n          \"text\": \"planned: Levi proposes the fourteen-day review routine\"\n        }\n      ],\n      \"subtext_and_behavior\": \"She admits the fact before naming the feeling.\",\n      \"sung_lyrics\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_m3\",\n          \"text\": \"planned: Mara sings about reading the total together\"\n        }\n      ],\n      \"time\": \"evening, closing time\",\n      \"timing_basis\": \"authoring estimate before music\",\n      \"transition\": \"Match-cut from the shared ledger to the next scene's first action.\",\n      \"turn_trigger\": \"Levi sliding the blank calendar toward her.\",\n      \"visible_action\": \"Levi writes the two-week calendar while Mara calls the crew schedule.\",\n      \"visible_lip_sync\": {\n        \"intervals\": [\n          [\n            0,\n            4\n          ]\n        ],\n        \"performer\": \"char_mara_001\"\n      },\n      \"world_revision\": 1\n    },\n    {\n      \"approval_bindings\": [],\n      \"cast_ids\": [\n        \"char_mara_001\",\n        \"char_levi_002\"\n      ],\n      \"causal_outcome\": \"Because this happens, the next scene must answer it.\",\n      \"causal_outcome_id\": \"out_003\",\n      \"causal_predecessor\": \"out_002\",\n      \"claims\": [\n        \"claim_001\"\n      ],\n      \"consequential_choice\": \"She keeps the notice visible instead of filing it away.\",\n      \"crowd_group_ids\": [],\n      \"dramatic_purpose\": \"Show the visible transformation and one honest closing request.\",\n      \"duration_seconds\": 20,\n      \"emotion_after\": \"steady and public\",\n      \"emotion_before\": \"afraid but committed\",\n      \"framing_movement_intent\": \"Medium close-up inside the door, then insert on the opening envelope.\",\n      \"identity_revisions\": {\n        \"char_levi_002\": 1,\n        \"char_mara_001\": 1\n      },\n      \"immediate_want\": \"Mara wants the conversation to stay vague a little longer.\",\n      \"location_id\": \"loc_workshop_front_001\",\n      \"obstacle\": \"The open ledger makes every vague answer visible.\",\n      \"performance_order\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_cta\"\n        },\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_m4\"\n        }\n      ],\n      \"references\": [],\n      \"scene_id\": \"scene_workshop_003\",\n      \"sequence\": 3,\n      \"sound_music_cues\": [\n        \"Fan clicks off before the first line.\"\n      ],\n      \"spoken_dialogue\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_cta\",\n          \"text\": \"planned: one closing request to the audience\"\n        }\n      ],\n      \"subtext_and_behavior\": \"She admits the fact before naming the feeling.\",\n      \"sung_lyrics\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"plan_m4\",\n          \"text\": \"planned: Mara sings the changed morning after\"\n        }\n      ],\n      \"time\": \"evening, closing time\",\n      \"timing_basis\": \"authoring estimate before music\",\n      \"transition\": \"Match-cut from the shared ledger to the next scene's first action.\",\n      \"turn_trigger\": \"Hanging the calendar where the whole crew reads it.\",\n      \"visible_action\": \"Mara posts the review dates beside the tool bench and squares the ledger.\",\n      \"visible_lip_sync\": {\n        \"intervals\": [\n          [\n            0,\n            4\n          ]\n        ],\n        \"performer\": \"char_mara_001\"\n      },\n      \"world_revision\": 1\n    }\n  ]\n}\n\nOUTPUT CONTRACT\nschema_version: s75.script.v1\nTop-level keys: schema_version, lineage {split[], merged[]}, scenes[], lyric_sheet {lines[]}, cta {line_id}.\nWrite the COMPLETE script and lyric sheet for every planned scene. Preserve every scene_id and its sequence, or declare an explicit split/merge lineage. Use only the declared cast_ids; never add an undefined speaker or meaningful extra. Every line carries line_id, character_id, exact text, start_s, end_s and delivery (spoken|sung). The first 12 seconds carry spoken/articulated words. Each scene after the first must name its causal_predecessor (the previous scene_id or its causal_outcome_id) and a causal_outcome_id that makes the next scene necessary. Mark exactly ONE scene with solution_introduced=true, and it must come after the consequential choice and emotional turn. Mark every later scene where behavior visibly changes with behavior_change=true. Exactly one CTA line, marked role=\"cta\", after the earned outcome. Return lyric_sheet.lines repeating every sung line identically (line_id, character_id, text) so the song cannot bind to another draft. Reply with JSON only, no prose and no code fence.",
+        "role": "user"
+      }
+    ],
+    "prompt_revision": "s75.script_writer.prompt.v1",
+    "response_schema": "s75.script.v1",
+    "run_key": "3ee0f4ecae468086425e353379574d5d6a2c4b8730508d7bee307130d711cf1d",
+    "tool": "script_writer"
+  },
+  "response": {
+    "effective_binding": {
+      "model": "recorded-fixture",
+      "prompt_revision": "s75.script_writer.prompt.v1",
+      "provider": "recorded-fixture"
+    },
+    "model": "recorded-fixture",
+    "provider": "recorded-fixture",
+    "raw_text": "{\n  \"cta\": {\n    \"line_id\": \"line_mara_006\"\n  },\n  \"lineage\": {\n    \"merged\": [],\n    \"split\": []\n  },\n  \"lyric_sheet\": {\n    \"lines\": [\n      {\n        \"character_id\": \"char_mara_001\",\n        \"line_id\": \"line_mara_003\",\n        \"repeat_of\": null,\n        \"section\": \"verse\",\n        \"text\": \"I kept the light on, kept the truth outside.\"\n      },\n      {\n        \"character_id\": \"char_levi_002\",\n        \"line_id\": \"line_levi_002\",\n        \"repeat_of\": null,\n        \"section\": \"verse\",\n        \"text\": \"Open the book and let us stand.\"\n      },\n      {\n        \"character_id\": \"char_mara_001\",\n        \"line_id\": \"line_mara_004\",\n        \"repeat_of\": null,\n        \"section\": \"verse\",\n        \"text\": \"I read the total out loud this time.\"\n      },\n      {\n        \"character_id\": \"char_levi_002\",\n        \"line_id\": \"line_levi_004\",\n        \"repeat_of\": null,\n        \"section\": \"verse\",\n        \"text\": \"Two chairs, one page, nothing filed away.\"\n      },\n      {\n        \"character_id\": \"char_mara_001\",\n        \"line_id\": \"line_mara_005\",\n        \"repeat_of\": null,\n        \"section\": \"verse\",\n        \"text\": \"Morning finds the total already on the wall.\"\n      }\n    ]\n  },\n  \"lyrics\": {\n    \"lines\": [\n      {\n        \"character_id\": \"char_mara_001\",\n        \"line_id\": \"line_mara_003\",\n        \"repeat_of\": null,\n        \"scene_id\": \"scene_workshop_001\",\n        \"section\": \"verse\",\n        \"text\": \"I kept the light on, kept the truth outside.\"\n      },\n      {\n        \"character_id\": \"char_levi_002\",\n        \"line_id\": \"line_levi_002\",\n        \"repeat_of\": null,\n        \"scene_id\": \"scene_workshop_001\",\n        \"section\": \"verse\",\n        \"text\": \"Open the book and let us stand.\"\n      },\n      {\n        \"character_id\": \"char_mara_001\",\n        \"line_id\": \"line_mara_004\",\n        \"repeat_of\": null,\n        \"scene_id\": \"scene_workshop_002\",\n        \"section\": \"verse\",\n        \"text\": \"I read the total out loud this time.\"\n      },\n      {\n        \"character_id\": \"char_levi_002\",\n        \"line_id\": \"line_levi_004\",\n        \"repeat_of\": null,\n        \"scene_id\": \"scene_workshop_002\",\n        \"section\": \"verse\",\n        \"text\": \"Two chairs, one page, nothing filed away.\"\n      },\n      {\n        \"character_id\": \"char_mara_001\",\n        \"line_id\": \"line_mara_005\",\n        \"repeat_of\": null,\n        \"scene_id\": \"scene_workshop_003\",\n        \"section\": \"verse\",\n        \"text\": \"Morning finds the total already on the wall.\"\n      }\n    ],\n    \"repeat_structure\": [],\n    \"schema_version\": \"s75.script.v1\"\n  },\n  \"scenes\": [\n    {\n      \"approval_bindings\": [],\n      \"cast_ids\": [\n        \"char_mara_001\",\n        \"char_levi_002\"\n      ],\n      \"causal_outcome\": \"Because this happens, the next scene must answer it.\",\n      \"causal_outcome_id\": \"out_001\",\n      \"causal_predecessor\": null,\n      \"claims\": [\n        \"claim_001\"\n      ],\n      \"consequential_choice\": \"She gives up control of the information.\",\n      \"crowd_group_ids\": [],\n      \"dramatic_purpose\": \"Expose the immediate cost of concealment and force Mara's first honest choice.\",\n      \"duration_seconds\": 24,\n      \"emotion_after\": \"still afraid but less isolated\",\n      \"emotion_before\": \"defensive and ashamed\",\n      \"framing_movement_intent\": \"Medium close-up inside the door, then insert on the opening envelope.\",\n      \"identity_revisions\": {\n        \"char_levi_002\": 1,\n        \"char_mara_001\": 1\n      },\n      \"immediate_want\": \"Mara wants the conversation to stay vague a little longer.\",\n      \"location_id\": \"loc_workshop_front_001\",\n      \"obstacle\": \"The open ledger makes every vague answer visible.\",\n      \"performance_order\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"line_mara_001\"\n        },\n        {\n          \"character_id\": \"char_levi_002\",\n          \"line_id\": \"line_levi_001\"\n        },\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"line_mara_002\"\n        },\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"line_mara_003\"\n        },\n        {\n          \"character_id\": \"char_levi_002\",\n          \"line_id\": \"line_levi_002\"\n        }\n      ],\n      \"references\": [],\n      \"scene_id\": \"scene_workshop_001\",\n      \"sequence\": 1,\n      \"sound_music_cues\": [\n        \"Fan clicks off before the first line.\"\n      ],\n      \"spoken_dialogue\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"delivery\": \"spoken\",\n          \"end_s\": 4.0,\n          \"line_id\": \"line_mara_001\",\n          \"start_s\": 0.5,\n          \"text\": \"If I lock that door, their checks bounce tomorrow.\"\n        },\n        {\n          \"character_id\": \"char_levi_002\",\n          \"delivery\": \"spoken\",\n          \"end_s\": 7.0,\n          \"line_id\": \"line_levi_001\",\n          \"start_s\": 4.5,\n          \"text\": \"Then why is the ledger empty?\"\n        },\n        {\n          \"character_id\": \"char_mara_001\",\n          \"delivery\": \"spoken\",\n          \"end_s\": 12.0,\n          \"line_id\": \"line_mara_002\",\n          \"start_s\": 7.5,\n          \"text\": \"I hid the notice. I thought I could fix it.\"\n        }\n      ],\n      \"subtext_and_behavior\": \"She admits the fact before naming the feeling.\",\n      \"sung_lyrics\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"delivery\": \"sung\",\n          \"end_s\": 18.0,\n          \"line_id\": \"line_mara_003\",\n          \"start_s\": 12.5,\n          \"text\": \"I kept the light on, kept the truth outside.\"\n        },\n        {\n          \"character_id\": \"char_levi_002\",\n          \"delivery\": \"sung\",\n          \"end_s\": 22.5,\n          \"line_id\": \"line_levi_002\",\n          \"start_s\": 18.5,\n          \"text\": \"Open the book and let us stand.\"\n        }\n      ],\n      \"time\": \"evening, closing time\",\n      \"timing_basis\": \"authoring estimate before music\",\n      \"transition\": \"Match-cut from the shared ledger to the next scene's first action.\",\n      \"turn_trigger\": \"Putting the notice where Levi can read it.\",\n      \"visible_action\": \"Mara opens the sealed warning and sets it flat beside the open ledger.\",\n      \"visible_lip_sync\": {\n        \"intervals\": [\n          [\n            0,\n            4\n          ]\n        ],\n        \"performer\": \"char_mara_001\"\n      },\n      \"world_revision\": 1\n    },\n    {\n      \"approval_bindings\": [],\n      \"cast_ids\": [\n        \"char_mara_001\",\n        \"char_levi_002\"\n      ],\n      \"causal_outcome\": \"Because this happens, the next scene must answer it.\",\n      \"causal_outcome_id\": \"out_002\",\n      \"causal_predecessor\": \"out_001\",\n      \"claims\": [\n        \"claim_001\"\n      ],\n      \"consequential_choice\": \"Mara asks the team for help instead of absorbing the cost.\",\n      \"crowd_group_ids\": [],\n      \"dramatic_purpose\": \"Convert the disclosure into a concrete shared response to the shortfall.\",\n      \"duration_seconds\": 26,\n      \"emotion_after\": \"responsible and accompanied\",\n      \"emotion_before\": \"exposed and steadier\",\n      \"framing_movement_intent\": \"Medium close-up inside the door, then insert on the opening envelope.\",\n      \"identity_revisions\": {\n        \"char_levi_002\": 1,\n        \"char_mara_001\": 1\n      },\n      \"immediate_want\": \"Mara wants the conversation to stay vague a little longer.\",\n      \"location_id\": \"loc_workshop_front_001\",\n      \"obstacle\": \"The open ledger makes every vague answer visible.\",\n      \"performance_order\": [\n        {\n          \"character_id\": \"char_levi_002\",\n          \"line_id\": \"line_levi_003\"\n        },\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"line_mara_004\"\n        },\n        {\n          \"character_id\": \"char_levi_002\",\n          \"line_id\": \"line_levi_004\"\n        }\n      ],\n      \"references\": [],\n      \"scene_id\": \"scene_workshop_002\",\n      \"sequence\": 2,\n      \"solution_introduced\": true,\n      \"sound_music_cues\": [\n        \"Fan clicks off before the first line.\"\n      ],\n      \"spoken_dialogue\": [\n        {\n          \"character_id\": \"char_levi_002\",\n          \"delivery\": \"spoken\",\n          \"end_s\": 5.5,\n          \"line_id\": \"line_levi_003\",\n          \"start_s\": 0.5,\n          \"text\": \"Fourteen days, one line a day, written where we both look.\"\n        }\n      ],\n      \"subtext_and_behavior\": \"She admits the fact before naming the feeling.\",\n      \"sung_lyrics\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"delivery\": \"sung\",\n          \"end_s\": 12.0,\n          \"line_id\": \"line_mara_004\",\n          \"start_s\": 6.0,\n          \"text\": \"I read the total out loud this time.\"\n        },\n        {\n          \"character_id\": \"char_levi_002\",\n          \"delivery\": \"sung\",\n          \"end_s\": 19.0,\n          \"line_id\": \"line_levi_004\",\n          \"start_s\": 13.0,\n          \"text\": \"Two chairs, one page, nothing filed away.\"\n        }\n      ],\n      \"time\": \"evening, closing time\",\n      \"timing_basis\": \"authoring estimate before music\",\n      \"transition\": \"Match-cut from the shared ledger to the next scene's first action.\",\n      \"turn_trigger\": \"Levi sliding the blank calendar toward her.\",\n      \"visible_action\": \"Levi writes the two-week calendar while Mara calls the crew schedule.\",\n      \"visible_lip_sync\": {\n        \"intervals\": [\n          [\n            0,\n            4\n          ]\n        ],\n        \"performer\": \"char_mara_001\"\n      },\n      \"world_revision\": 1\n    },\n    {\n      \"approval_bindings\": [],\n      \"behavior_change\": true,\n      \"cast_ids\": [\n        \"char_mara_001\",\n        \"char_levi_002\"\n      ],\n      \"causal_outcome\": \"Because this happens, the next scene must answer it.\",\n      \"causal_outcome_id\": \"out_003\",\n      \"causal_predecessor\": \"out_002\",\n      \"claims\": [\n        \"claim_001\"\n      ],\n      \"consequential_choice\": \"She keeps the notice visible instead of filing it away.\",\n      \"crowd_group_ids\": [],\n      \"dramatic_purpose\": \"Show the visible transformation and one honest closing request.\",\n      \"duration_seconds\": 20,\n      \"emotion_after\": \"steady and public\",\n      \"emotion_before\": \"afraid but committed\",\n      \"framing_movement_intent\": \"Medium close-up inside the door, then insert on the opening envelope.\",\n      \"identity_revisions\": {\n        \"char_levi_002\": 1,\n        \"char_mara_001\": 1\n      },\n      \"immediate_want\": \"Mara wants the conversation to stay vague a little longer.\",\n      \"location_id\": \"loc_workshop_front_001\",\n      \"obstacle\": \"The open ledger makes every vague answer visible.\",\n      \"performance_order\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"line_mara_006\"\n        },\n        {\n          \"character_id\": \"char_mara_001\",\n          \"line_id\": \"line_mara_005\"\n        }\n      ],\n      \"references\": [],\n      \"scene_id\": \"scene_workshop_003\",\n      \"sequence\": 3,\n      \"sound_music_cues\": [\n        \"Fan clicks off before the first line.\"\n      ],\n      \"spoken_dialogue\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"delivery\": \"spoken\",\n          \"end_s\": 15.0,\n          \"line_id\": \"line_mara_006\",\n          \"role\": \"cta\",\n          \"start_s\": 10.0,\n          \"text\": \"Start your own fourteen-day review before the next payroll.\"\n        }\n      ],\n      \"subtext_and_behavior\": \"She admits the fact before naming the feeling.\",\n      \"sung_lyrics\": [\n        {\n          \"character_id\": \"char_mara_001\",\n          \"delivery\": \"sung\",\n          \"end_s\": 6.5,\n          \"line_id\": \"line_mara_005\",\n          \"start_s\": 1.0,\n          \"text\": \"Morning finds the total already on the wall.\"\n        }\n      ],\n      \"time\": \"evening, closing time\",\n      \"timing_basis\": \"authoring estimate before music\",\n      \"transition\": \"Match-cut from the shared ledger to the next scene's first action.\",\n      \"turn_trigger\": \"Hanging the calendar where the whole crew reads it.\",\n      \"visible_action\": \"Mara posts the review dates beside the tool bench and squares the ledger.\",\n      \"visible_lip_sync\": {\n        \"intervals\": [\n          [\n            0,\n            4\n          ]\n        ],\n        \"performer\": \"char_mara_001\"\n      },\n      \"world_revision\": 1\n    }\n  ],\n  \"schema_version\": \"s75.script.v1\"\n}",
+    "response_id": "fixture-response-s75-t10-001",
+    "transport": "recorded-fixture: no provider call, no spend"
+  },
+  "spend": "none: recorded request/response replay, no provider call",
+  "task": "S75-T10"
+}

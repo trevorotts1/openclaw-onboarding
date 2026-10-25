@@ -23,6 +23,8 @@ Script-style stdlib test: run by file. No network, no spend, no browser.
 Run: python3 scripts/core/song_dispatch/test_operator_decision_v2973.py
 """
 import json
+import io
+from contextlib import redirect_stdout, redirect_stderr
 import os
 import subprocess
 import sys
@@ -37,6 +39,7 @@ import factory as F                                # noqa: E402
 import state_store as SS                           # noqa: E402
 from song_dispatch import song_dispatch as SD      # noqa: E402
 from batch_mode.batch import STAGES                # noqa: E402
+from test_production_process import confirmed_run, complete_stage, approve_script
 
 RID = "rl2-decision-60s"
 OWNER = "music-worker"
@@ -59,7 +62,7 @@ def _binding(name):
 def new_run(tmp, variant="v1", d5="UNMEASURED"):
     """A run with a produced take and a NON-all-PASS acceptance record:
     four gates PASS, D5 (more than one character voice) measured not proven."""
-    run = os.path.join(tempfile.mkdtemp(dir=tmp, prefix="dec-"), "run")
+    run = os.path.join(tempfile.mkdtemp(dir=tmp, prefix="dec-"), RID)
     os.makedirs(os.path.join(run, "control"))
     os.makedirs(os.path.join(run, "music", "takes", variant))
     with open(os.path.join(run, "music", "picked-song.mp3"), "wb") as f:
@@ -71,13 +74,19 @@ def new_run(tmp, variant="v1", d5="UNMEASURED"):
     results["D5"] = {"verdict": d5, "binding": dict(b)}
     SD.record_acceptance(run, variant, b, results)
     ids = [s for s, _ in STAGES]
-    with SS.Store(os.path.join(run, "control", "state.sqlite3")) as st:
-        st.init_run(RID, ids)
-        for s in ids[:ids.index("music")]:
-            st.transition(RID, s, "READY", "seed")
-            st.claim(RID, s, "seed")
-            st.transition(RID, s, "COMPLETE", "seed")
+    confirmed_run(run, song=False)
+    for stage in ids[:ids.index("music")]:
+        complete_stage(run, stage)
+    approve_script(run)
     return run
+
+
+def _cli(*args):
+    """Exercise the actual CLI parser with no unguarded child process."""
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = F.main(list(args))
+    return subprocess.CompletedProcess(args, code, out.getvalue(), err.getvalue())
 
 
 def _row(run):
@@ -205,12 +214,8 @@ def main():
     badp = os.path.join(run2b, "dec-bad.json")
     with open(badp, "w", encoding="utf-8") as f:
         f.write("{not json")
-    p = subprocess.run([sys.executable,
-                        os.path.join(CORE, "intake_preflight", "factory.py"),
-                        "music", "--run-dir", run2b, "--owner", OWNER,
-                        "--action", "complete", "--operator-decision", badp,
-                        "--run-id", RID], capture_output=True, text=True,
-                       cwd=str(os.path.dirname(os.path.dirname(CORE))), timeout=60)
+    p = _cli("music", "--run-dir", run2b, "--owner", OWNER,
+             "--action", "complete", "--operator-decision", badp, "--run-id", RID)
     env = json.loads(p.stdout)
     print("  unreadable decision file -> outcome=%r code=%r" % (env["outcome"], env["reason_code"]))
     check("unreadable decision file refused",

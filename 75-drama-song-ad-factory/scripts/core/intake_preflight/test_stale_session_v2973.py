@@ -68,12 +68,9 @@ def check(name, cond, detail=""):
 
 def make_run(tmp):
     """A real run dir with an initialized store (all stages NOT_STARTED)."""
-    import state_store as SS
-    from batch_mode.batch import STAGES  # noqa: F401
+    from test_production_process import confirmed_run
     run = Path(tempfile.mkdtemp(prefix="stale-", dir=tmp))
-    (run / "control").mkdir(parents=True)
-    with SS.Store(run / "control" / "state.sqlite3") as st:
-        st.init_run("run-stale", [s for s, _ in STAGES])
+    confirmed_run(run, script=False, song=False, storyboard=False)
     return run
 
 
@@ -93,7 +90,27 @@ def main():
 
     # 1. boot older than installed -> refuse, both named
     F._BOOT_SKILL_VERSION = OLDER
-    env = F.cmd_next(A())
+    from test_production_process import run_hashes
+    before = run_hashes(run)
+    original_intake, original_authority = F._intake_session_gate, F._production_admission
+    original_stale, version_reads = F._stale_session, []
+    def changing_version():
+        # The first comparison is real. A changed second read must not send
+        # cmd_next into private stage selection without its admission checks.
+        value = original_stale() if not version_reads else (False, INSTALLED, INSTALLED)
+        version_reads.append(value)
+        return value
+    def forbidden_state_access(*args, **kwargs):
+        raise AssertionError("stale code reached intake or production state inspection")
+    F._intake_session_gate = F._production_admission = forbidden_state_access
+    F._stale_session = changing_version
+    try:
+        env = F.cmd_next(A())
+    finally:
+        F._intake_session_gate, F._production_admission = original_intake, original_authority
+        F._stale_session = original_stale
+    check("stale refusal uses its initial version snapshot", len(version_reads) == 1)
+    check("stale refusal leaves every run file unchanged", run_hashes(run) == before)
     check("older boot refuses: error SKILL_UPDATED",
           env["outcome"] == "error" and env["reason_code"] == "SKILL_UPDATED",
           str(env)[:220])

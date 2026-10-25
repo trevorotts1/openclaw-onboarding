@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from delivery_variants import cover_image as ci        # noqa: E402
 from delivery_variants import song_files as sf         # noqa: E402
 import qc_gate                                         # noqa: E402
+from storyboard_director import approval_runner as AR   # noqa: E402
 
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
@@ -96,6 +97,12 @@ class CoverImage(unittest.TestCase):
         contracts = {"s1": {"visible_emotion": ""},
                      "s2": {"visible_emotion": ""},
                      "s3": {"visible_emotion": "defiant"}}
+        for shot in shots:
+            sid = shot["shot_id"]
+            shot.update(story_stage="frozen", location_id="studio")
+            contracts[sid].update(lyric_text="Ana takes step " + sid,
+                                  viewer_understanding="Ana chooses her next step " + sid,
+                                  character_action="Ana takes step " + sid)
         if stills is None:
             stills = {"s1": "storyboard/s1.png",
                       "s2": "storyboard/s2.png",
@@ -107,8 +114,21 @@ class CoverImage(unittest.TestCase):
         (sb / "shot-list.json").write_text(json.dumps({"shots": shots}))
         (sb / "contracts.json").write_text(json.dumps(contracts))
         (sb / "stills.json").write_text(json.dumps(stills))
-        (sb / "approval.json").write_text(json.dumps(
-            {"state": "approved" if approved else "pending"}))
+        # Rebuild this test-owned package through the actual presentation
+        # and whole-package GO producer; bare state flags carry no authority.
+        for name in ("approval.json", "gate.json"):
+            (sb / name).unlink(missing_ok=True)
+        AR.record_card_answer(str(self.run), [{"id": "storyboard", "n": 1}],
+                              [{"id": "storyboard"}])
+        shown = []
+        pending = AR.run(str(self.run), lambda message, images: shown.append((message, images)))
+        self.assertEqual(pending["action"], "waiting")
+        self.assertTrue(shown)
+        self.assertFalse(AR.gate_open(str(self.run)))
+        if approved:
+            accepted = AR.run(str(self.run), lambda *_: None, reply="GO")
+            self.assertEqual(accepted["action"], "approved")
+            self.assertTrue(AR.gate_open(str(self.run)))
         (self.run / "creative" / "script.json").write_text(
             json.dumps({"title": title, "sheet": [{"tag": "verse", "lines": []}]}))
 
@@ -207,8 +227,6 @@ class CoverImage(unittest.TestCase):
     # -------------------------------------------------------------- render ---
     def test_argv_is_data_no_process_runs(self):
         calls = []
-        (self.run / "storyboard" / "approval.json").write_text(
-            json.dumps({"state": "approved"}))
         title_file = str(self.t / "title.txt")
         Path(title_file).write_text("The Long Road")
         argv = ci.build_cover_argv(str(self.run / "storyboard" / "s3.png"),

@@ -369,10 +369,12 @@ def _finish(state, answers, qs, run_dir, target, client_dir):
     return None
 
 
-def _result(state, path, answers, qs, code="INTAKE_WAITING", outcome="ok", detail=None):
+def _result(state, path, answers, qs, code="INTAKE_WAITING", outcome="ok", detail=None,
+            message=None):
     pending = state.get("pending") or {}
     result = {"answers": answers, "done": bool(state.get("done")),
-              "message": ("Locked in. I am starting now." if state.get("done")
+              "message": (message if message is not None else
+                          "Locked in. I am starting now." if state.get("done")
                           else pending.get("message", "")),
               "outcome": outcome, "reason_code": code,
               "question_id": None if state.get("done") else pending.get("id"),
@@ -500,6 +502,23 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
     if not new:
         return _result(state, path, answers, qs, "INTAKE_REPLAYED")
     raw = new[0]
+    if not state["done"] and current.get("definition"):
+        # S75-T23: "help me choose" and "reuse my answers" are guidance, not
+        # answers. They never advance the flow, never touch an answer record or
+        # an approval, and are journalled so an exact replay stays coherent.
+        from . import answer_reuse as reuse
+        guided = reuse.guided_reply(raw, current["definition"], state, qs)
+        if guided:
+            state["events"].append({
+                "sequence": len(state["events"]) + 1, "raw_answer": raw,
+                "source": source, "source_ref": source_ref, "at_utc": _now(),
+                "question_id": current["id"], "question_digest": current["digest"],
+                "rendered_question": current["message"], "accepted": False,
+                "guidance": guided["kind"]})
+            state["updated_at"] = _now()
+            _write(path, state)
+            return _result(state, path, answers, qs, guided["reason_code"],
+                           "waiting", message=guided["message"])
     if (raw.strip().isdigit() and state["pending"].get("requires_identity") and
             (question_id != current["id"] or question_digest != current["digest"])):
         return _result(state, path, answers, qs, "QUESTION_IDENTITY_REQUIRED", "waiting")

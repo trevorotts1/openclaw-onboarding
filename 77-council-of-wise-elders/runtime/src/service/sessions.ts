@@ -12,6 +12,7 @@ import {
   type SessionAuthorityRecord,
   type SessionTarget,
 } from './types.js';
+import { isCouncilSize } from '../contracts/index.js';
 
 /** Canonical local session path; the shared CC UI route is /council/<id>. */
 export function sessionPath(sessionId: string): string {
@@ -144,6 +145,24 @@ export interface BlockedReason {
 const ROUND_NAMES: Record<number, string> = { 1: 'round 1 (opening positions)', 2: 'round 2 (debate)', 3: 'round 3 (the vote)' };
 
 /**
+ * The blocked-reason label for a round. The four older modes keep their
+ * fixed three names; the council sizes run 1..10 advisor rounds with no
+ * ratification pass, so every pass after the opening is a challenge.
+ */
+function roundName(mode: string, round: number): string {
+  if (isCouncilSize(mode)) {
+    return round === 1 ? 'round 1 (opening positions)' : `round ${round} (challenge pass)`;
+  }
+  return ROUND_NAMES[round] ?? `round ${round}`;
+}
+
+/** The session state that carries a round number on the council-size paths. */
+function stateForRound(mode: string, round: number): string {
+  if (isCouncilSize(mode)) return round === 1 ? 'ROUND_1' : 'ROUND_2';
+  return `ROUND_${round}`;
+}
+
+/**
  * Why a BLOCKED session is blocked, computed at read time from stored
  * data (spec seats minus accepted cards, failed jobs, journaled attempt
  * failures, provider calls that never answered), so sessions blocked
@@ -165,8 +184,19 @@ export function buildBlockedReason(input: {
   // Round 3 counts only once the session reached it; blocked earlier, its seats are not "missing".
   const reachedRound3 =
     input.events.some((e) => e.to_state === 'ROUND_3') || input.cards.some((c) => c.card_kind === 'ratification');
-  for (const round of reachedRound3 ? [1, 2, 3] : [1, 2]) {
-    const kind = round === 3 ? 'ratification' : 'advisor';
+  const councilMode = isCouncilSize(input.mode);
+  // The council sizes have no ratification round: the rounds to check
+  // are every advisor round the record actually reached (at least one).
+  const reachedRounds: number[] = councilMode
+    ? Array.from(
+        { length: Math.max(1, ...input.cards.filter((c) => c.card_kind === 'advisor').map((c) => c.round)) },
+        (_, index) => index + 1,
+      )
+    : reachedRound3
+      ? [1, 2, 3]
+      : [1, 2];
+  for (const round of reachedRounds) {
+    const kind = !councilMode && round === 3 ? 'ratification' : 'advisor';
     const have = new Set(
       input.cards.filter((c) => c.card_kind === kind && c.round === round).map((c) => c.seat_id),
     );
@@ -178,7 +208,9 @@ export function buildBlockedReason(input: {
   }
   // Only what happened since the session entered the short round counts: a
   // validation failure repaired in an earlier round is not this round's cause.
-  const enteredAt = input.events.findIndex((e) => e.to_state === `ROUND_${missingRound}`);
+  const enteredAt = input.events.findIndex(
+    (e) => missingRound !== null && e.to_state === stateForRound(input.mode, missingRound),
+  );
   const sinceRound = missingRound === null ? input.events : input.events.slice(Math.max(0, enteredAt));
   const roundFailures = missingRound === null
     ? input.failures
@@ -227,7 +259,7 @@ export function buildBlockedReason(input: {
   const code = missing.length > 0
     ? input.mode === 'full' ? 'FULL_MODE_SEATS_MISSING' : 'SEATS_MISSING'
     : settled ?? 'BLOCKED_REASON_NOT_RECORDED';
-  const where = missingRound ? ` in ${ROUND_NAMES[missingRound]}` : '';
+  const where = missingRound ? ` in ${roundName(input.mode, missingRound)}` : '';
   const detail = missing.length > 0
     ? `${input.mode === 'full' ? 'Full mode needs all nine seats' : 'The council is short of seats'}; no accepted card${where} from: ${missing.join(', ')}.` +
       (unanswered && unfinished.length >= unexplained.length && unexplained.length > 0 ? ` Cause: ${unanswered}.` : '')
