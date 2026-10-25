@@ -1,3 +1,38 @@
+## [2.0.106] - 2026-10-25 - feat(t26-duty): the owner reads the answer duty its handoffs carry (T-26 clause (d), PBB-479)
+
+T-26's clause (d) is "distinct public/private duty". Skill 35 stamps
+`- duty: public_answer` on every synthetic comment handoff, and Skill 38 is the
+declared OWNER of the reply — but nothing here read the field. Measured against
+the first build: zero occurrences of `duty` under this skill, so the stamp was
+write-only and a public-answer turn could still have been answered with a private
+send. This adds the reader and the gate that make the two duties different
+permissions rather than two names.
+
+- **New `tools/answer_duty.py`.** `duty_from_log_text()` returns the duty of the
+  LAST `- duty:` line in a conversational log (append-only, so the last turn is
+  the current one) and `outbound_channel_allowed(duty, channel)` maps it to the
+  channels that may answer: `public_answer` permits only a public-comment answer
+  and REFUSES `dm` and `sms`; `private_answer` (opened by a real GHL
+  Conversations inbound event, never by a comment) permits `dm` and not the
+  public thread. An absent, unrecognised or misspelt duty permits nothing —
+  fail closed, never permissive. A trailing annotation still parses, so logs
+  written by the earlier build stay readable.
+- **Tests** `tools/tests/test_answer_duty.py` (new, 7 tests + 4 subtests): the
+  read path, the annotation tolerance, "last turn wins", the public permission
+  as a positive and a negative, the private permission as the inverse, and the
+  fail-closed cases. Mutation controls: making the gate return `True` turns 6 of
+  them red plus the cross-skill contract test in skill 35; anchoring the regex to
+  end-of-line turns the annotation case red; reordering the channel table stays
+  green. `python3 -I tools/answer_duty.py` self-check: `OK 11 PASS`.
+- **The writer→owner contract is pinned from the writer's side.** Skill 35's
+  `test_the_stamped_duty_is_the_one_the_owner_enforces` drives this module on a
+  log skill 35 actually wrote, so changing the written duty VALUE turns it red.
+- **Bookkeeping.** Version `v2.0.106`, above `origin/main`'s `v2.0.105`; absence
+  measured with both token forms, `git grep -F '[2.0.106]' origin/main` rc 1 and
+  `git grep -F 'v2.0.106' origin/main` rc 1, against the known-present control
+  `[2.0.105]` rc 0 in this file. Required by the G3 gate because a file under
+  this skill's tree changed.
+
 ## [2.0.105] - 2026-10-25 - chore(t05-hygiene): redact the operator home path from the T-05 registration evidence (T-05 hygiene, PBB-413)
 
 The recorded `launchctl print` capture in `evidence/engineering-loop-registration.json` embedded the real operator home directory in its `raw` field — an `ALWAYS_ON_TOKEN` banned by `scripts/qc-assert-no-client-names.sh`, which failed PR #2555's `QC static invariants` check with exactly 1 hit at that file's line 96. One substitution and one disclosure, nothing else: the home-directory component of the plist path is rendered as the placeholder `{{operatorHome}}` (the `{{...}}` placeholder shape named in that script's remedy text; `{{operatorHome}}` is not in `ALWAYS_ON_TOKENS`), and a new sibling `raw_redaction` field discloses exactly that substitution. The launchd attributes that make the T-05 acceptance proof real are byte-identical in that `raw` field — user domain `gui/501`, the job label exactly as launchd reported it, `active count = 1`, `type = LaunchAgent`, `state = running`, and the arguments tail `tick --run-id pb-eng-loop-20261024T0807Z-g2` with its run id and generation suffix. No record is deleted or hollowed out. (The label literal itself is quoted only in `evidence/`, outside this skill tree: this tree's own `qc-no-personal-data.sh` bans the operating brand token that label carries, so restating it here would red-block a gate whose whole purpose is that no identifier ships in skill content.)

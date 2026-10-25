@@ -1,39 +1,58 @@
 # Changelog - Social Media Planner (Skill 35)
 
-## [3.9.8] - 2026-10-25 - T-26: own-author exclusion + distinct public/private duty on the comment reader
+## [3.9.8] - 2026-10-25 - T-26 repair: an exclusion that refuses, a duty its owner enforces, a log keyed on the id alone
 
-Closes the two acceptance clauses the P3-08 reader never implemented. It already
-carried per-channel supported ability (`CHANNEL_COMMENT_SURFACE`, unsupported
-channels ledgered and skipped) and long-lived context (per-contact append into
-`conversational-logs/`); it had no own-author exclusion and no explicit
-public/private duty split.
+Closes the PBB-472 FAIL (repair PBB-479). The first build had the right intent and
+one clause of real code; five defects were proved against it. Each is closed
+below by a probe, and what did not earn its line was deleted rather than kept.
 
-- **Own-author exclusion.** The page's own comments arrive on the SAME read
-  surface as prospect comments — the reply the operator left under a prospect's
-  comment, or anything the page posted on its own post. Handing one of those back
-  as a prospect inbound turn makes Skill 38 answer itself, in a loop, inside the
-  prospect's long-lived log. `comment_reader.run()` now takes `own_author_ids`
-  (CLI: `--own-author-ids a,b`) and EXCLUDES every event authored by one of
-  those ids, ledgered in `skipped` with an explicit `own-author` reason. The ids
-  are account identity supplied by the orchestrator — an empty set excludes
-  nothing (an operator input gap), it is never guessed from comment text.
-- **Distinct public/private duty.** Every handoff entry now carries
-  `- duty: public_answer` — the answer belongs in the public comment thread, or
-  as an invitation to continue in DM; never SMS, never an unsolicited private
-  send. `PUBLIC_ANSWER_DUTY` / `PRIVATE_ANSWER_DUTY` are separate constants, and
-  the reader never emits the private one: the private (DM/Messenger) duty is
-  opened by a real GHL Conversations inbound event, not by a comment.
-- **Tests** (`test_comment_reader.py`, 9 -> 14): own-author excluded while a
-  prospect comment in the same run is still handed off; the CLI comma-string
-  form; inverse control (no own ids excludes nothing); long-lived context
-  preserved across two runs (same log, earlier turn survives); public duty
-  stamped and private duty never written.
-- **Mutation-checked:** removing the exclusion, removing the duty line, turning
-  the append into a truncate, and dropping the facebook surface each turn the
-  matching clause test RED and nothing else (see the T-26 derivation record).
-- Suites: `test_comment_reader.py` 14 passed; `test_prove_content_conversation_loop.py`
-  25 passed. skill-version v3.8.2 -> v3.9.8 (provisional; the merge-time single
-  writer renumbers every landing candidate).
+- **Own-author exclusion now REFUSES when it cannot work.** The page's own comment
+  arrives on the SAME read surface as a prospect's, so without the account ids
+  nothing can tell them apart. `comment_reader.run()` raises `ValueError` when
+  `own_author_ids` is absent or empty and the CLI exits 2, so the self-reply loop
+  cannot start silently. The earlier sentence "an empty id set … is never a
+  silent pass" was FALSE — the probe handed the page's own comment off with exit
+  0 — so it is replaced by the behaviour. `prove_content_conversation_loop.py`,
+  the only in-repo driver, now passes the fixture's account id.
+- **The duty is read and enforced by its OWNER, not stamped and ignored.** Every
+  handoff carries `- duty: public_answer`; the new
+  `38-conversational-ai-system/tools/answer_duty.py` parses that line out of the
+  log and permits only a public-comment answer for it — a DM or an SMS is
+  refused — while `private_answer` permits the DM and not the public thread. On
+  the first build `PRIVATE_ANSWER_DUTY` had no production reader anywhere in the
+  repository and no code path could emit or consume it; the constant is DELETED
+  rather than kept as a label. One written token, two permissions, one gate.
+- **Log identity is the stable author id alone.** The path was
+  `comment-<id>__<name>.md`, so a display-name change ("Jamie Rivers" →
+  "Jamie R.") or a missing name forked the thread and hid the earlier turns — and
+  the old test held the name constant, so it could not see it. The path is now
+  `comment-<id>.md`, and a log already on disk under the old shape is found and
+  reused so existing threads are not orphaned.
+- **The duty test now leads on behaviour.** It drives the real owner module and
+  asserts the outcome, so mutation M11 (`PUBLIC_ANSWER_DUTY = "zzz-not-a-duty"`)
+  turns it RED. It previously survived with every test green, because it compared
+  the constant to itself.
+- **Tests.** `test_comment_reader.py` 9 → 18; `tools/tests/test_answer_duty.py`
+  new, 7 tests + 4 subtests. Measured mutation counts replace the earlier
+  unmeasured claim: dropping the own-author branch turns 2 tests red, dropping
+  the `- duty:` line 1, append → truncate 2, a nonsense duty value 1, and
+  `facebook → None` **18** — that one takes out every supported-channel test
+  including the whole Leg-4 driver, so "each turns the matching clause test RED
+  and nothing else" was wrong and is gone. Two neutral inverses (a local rename,
+  a reordered channel table) stay green.
+- **Suites.** `35-social-media-planner/scripts/` 101 passed / 30 subtests, rc 0;
+  `test_comment_reader.py` 18 passed; `test_prove_content_conversation_loop.py`
+  25 passed. The `38-conversational-ai-system/tools/tests` window is not scored
+  here: its pre-existing failures are main's own (owner decision #237), and this
+  change adds tests to it without claiming it green.
+- **Not built, and named rather than implied.** The ledger title says "ongoing …
+  monitoring". This reader is PER-RUN — an orchestrator feeds it the events.
+  There is no poller, scheduler, cron or workflow for it and none is claimed
+  here; ongoing monitoring remains unbuilt.
+- **skill-version** stays `v3.9.8` (= 3009008), re-measured as the strict numeric
+  maximum across all 2033 refs under the bare `refs/remotes/origin` prefix, held
+  by this branch alone and above main's `v3.8.2` (3008002). A repair commit on
+  the same branch keeps the same allocation.
 
 ## [3.8.2] - 2026-10-24 - T-22c repair: a receipt is proof only when the placement_id recomputes
 

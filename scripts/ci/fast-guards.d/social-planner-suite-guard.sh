@@ -30,7 +30,8 @@ rc1=$?
 python3 35-social-media-planner/scripts/test_run_publishing_cycle.py \
   >>"$SUITE_LOG" 2>&1
 rc2=$?
-python3 -m pytest 35-social-media-planner/scripts/test_prove_content_conversation_loop.py -q \
+python3 -m pytest 35-social-media-planner/scripts/test_prove_content_conversation_loop.py \
+  35-social-media-planner/scripts/test_comment_reader.py -q \
   >>"$SUITE_LOG" 2>&1
 rc3=$?
 (cd 35-social-media-planner/scripts && python3 test_kie_media_plan.py && python3 test_validate_podcast_publish_payload.py) \

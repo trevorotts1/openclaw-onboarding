@@ -2606,6 +2606,8 @@
     "paths": [
      "35-social-media-planner/scripts/test_run_publishing_cycle.py",
      "35-social-media-planner/scripts/prove_content_conversation_loop.py",
+    "35-social-media-planner/scripts/comment_reader.py",
+    "35-social-media-planner/scripts/test_comment_reader.py",
      "35-social-media-planner/scripts/pregen_prompt_gate.py",
      "35-social-media-planner/scripts/run-publishing-cycle.sh",
      "35-social-media-planner/scripts/kie_media_plan.py",
@@ -2627,6 +2629,8 @@
     "paths": [
      "35-social-media-planner/scripts/test_run_publishing_cycle.py",
      "35-social-media-planner/scripts/prove_content_conversation_loop.py",
+    "35-social-media-planner/scripts/comment_reader.py",
+    "35-social-media-planner/scripts/test_comment_reader.py",
      "35-social-media-planner/scripts/pregen_prompt_gate.py",
      "35-social-media-planner/scripts/run-publishing-cycle.sh",
      "35-social-media-planner/scripts/kie_media_plan.py",
