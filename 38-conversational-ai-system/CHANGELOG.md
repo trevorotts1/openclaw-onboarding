@@ -1,3 +1,87 @@
+## [2.0.138] - 2026-10-25 - feat(bonus): the access adapter keeps five authorizations apart and one member together (T-15, PBB-458)
+
+Adds one stdlib-only module, `shared-utils/bonus/access_adapter.py`, with
+`shared-utils/bonus/tests/test_access_adapter.py` (39 tests). Acceptance, verbatim: **"Separate
+identity/grant/credential/SMS/resource authorization; return access and email-later same member."**
+
+- **Separate — five dimensions, five verdicts, no bleed.** `authorize()` takes exactly the five
+  states `identity`, `grant`, `credential`, `sms`, `resource` and returns one `DimensionVerdict`
+  each, in fixed order. A missing dimension is refused, never defaulted, because a default is an
+  authorization nobody granted. `AccessAuthorization.authorized` is true only when every dimension
+  is authorized on its own evidence; a denial reports in `blocked_dimensions` and does not cascade
+  into a sibling, and a pass does not mint a sibling pass. Credential is not resource (an expired
+  credential is not expired guides) and SMS permission is not identity (being allowed to text a
+  handle says nothing about who the member is). The separation is proven by a sweep rather than by
+  three examples: every dimension is driven through all three states and the other four verdicts
+  must stay byte-identical (`test_sweeping_every_dimension_never_moves_another_verdict`).
+- **Same member — one identity across both channels.** `AccessLedger` is the only place a member id
+  is associated with a channel handle. An SMS handle and an email handle bind to one member, and a
+  binding refuses to move to a different member. A failed step is recorded against the member the
+  channel resolved to, so a failure cannot be attributed to a member the record cannot prove was
+  reached. `defer_to_email()` is a deferral of the SAME member and refuses an address already owned
+  by someone else — the fork that collects an address and silently creates a second member.
+- **Resume — the exact failed step, on the same member.** `resume()` refuses a return path that
+  cannot arrive over the channel it names (`sms_return` over email and `email` over SMS are both
+  refused), refuses a handle bound to no member, and reports `nothing_to_resume` rather than success
+  when nothing is pending. The clause is proven end to end: one member, both channels, both return
+  paths, one `resumed_dimensions` set (`test_access_return_and_email_later_resolve_to_one_member`).
+- **Not a provider client.** No automated bonus-access route is proved: T-14's
+  `bonus-access-capability-decision` is **BLOCKED** for every automated route and lives on a
+  candidate (`origin/pb/PBB-356/t-14-repair3@dc5c25aa5`), not on main, so this module imports
+  nothing from it and restates the five-step vocabulary rather than coupling to an unmerged branch.
+  No vendor operation, URL or verb appears here, `automated` is False on every result, and even with
+  all five dimensions authorized the next action is an operator step (`operator_issue_credential`) —
+  authorization is not transport. When T-14 lands, its per-step states are passed into
+  `authorize(states=...)` unchanged.
+- **No original-lane coupling (C-F07).** The module exposes no original-lane field and imports no
+  fulfillment module, so a blocked bonus lane cannot gate the original promise.
+- **Ceiling, stated.** `AccessLedger` is in memory: the caller owns durability, and the SQLite
+  ledger of record for outbound effects remains `direct_fulfillment.FulfillmentLedger`. A process
+  restart loses pending resume state. This is written into the class docstring, not left implicit.
+
+SUITES, twice each, real counts and exit codes captured per command (no pipe on the measured
+command). Baseline is a detached `origin/main` worktree at `7477816dc2fd350a837a751dc8631aaaedb956ef`;
+candidate is this commit.
+  baseline `python3 -I shared-utils/bonus/tests/test_access_adapter.py` -> rc 2 (file absent, by design)
+  baseline `bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh` -> rc 0, Ran 42, OK (both passes)
+  baseline `python3 -I 38-conversational-ai-system/tools/tests/test_direct_fulfillment.py` -> rc 0, Ran 16, OK (both passes)
+  baseline `python3 -I shared-utils/handoff/tests/test_handoff.py` -> rc 0, Ran 50, OK (both passes)
+  candidate `python3 -I shared-utils/bonus/tests/test_access_adapter.py` -> rc 0, Ran 39, OK (both passes)
+  candidate `bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh` -> rc 0, Ran 42, OK (both passes)
+  candidate `python3 -I 38-conversational-ai-system/tools/tests/test_direct_fulfillment.py` -> rc 0, Ran 16, OK (both passes)
+  candidate `python3 -I shared-utils/handoff/tests/test_handoff.py` -> rc 0, Ran 50, OK (both passes)
+No failure delta and no count delta on any pre-existing suite; the only count change is the new file.
+
+MUTATIONS, verbatim (one edit per run against a saved copy; sha256 restored and green after each):
+  UNMUTATED rc=0 Ran 39 OK
+  M1 `authorized` becomes any-dimension -> FAILED (failures=3)
+  M2 a missing dimension defaults to authorized -> FAILED (failures=1)
+  M3 a reason is borrowed across dimensions -> FAILED (failures=2)
+  M4 a handle may move to another member -> FAILED (failures=1)
+  M5 email-later may fork a second member -> FAILED (failures=1)
+  M6 the return path is not tied to its channel -> FAILED (failures=1)
+  M7 an unbound resume resolves to a fabricated member -> FAILED (failures=1)
+  M8 the result claims automation -> FAILED (failures=1)
+  M9 blocked dimensions are always empty -> FAILED (failures=5)
+  M10 `verdict()` ignores the dimension asked for -> FAILED (failures=5)
+  RESTORED sha256 match=True rc=0 Ran 39 OK — survivors 0.
+
+TEST DIFF AGAINST THE PARENT: purely additive. `test_access_adapter.py` is a new file, no existing
+test file is touched, no assertion anywhere is changed or weakened, and no test method is dropped.
+
+BOOKKEEPING. Version allocated **`v2.0.138` PROVISIONAL** and assigned in this same commit.
+Enumerated NUMERICALLY (`major*1000000+minor*1000+patch`) over `git for-each-ref refs/remotes/origin`
+with the **bare** prefix and no `/*` glob (2,016 refs measured; a glob measures 113 and hides
+namespaced branches): maximum is `2.0.133` score `2000133` at `refs/remotes/origin/pb/PBB-451/t-38-update`,
+one carrier. Known-present control in the same harness: `refs/remotes/origin/main` -> `v2.0.105`.
+2.0.133 + 5 = **2.0.138**, reserved for the merge-time writer, which renumbers every landing
+candidate. Lexical comparison would have been wrong here in both directions, which is why the
+score is arithmetic. Absence on `origin/main` in both bracketed forms, each printing its own rc:
+`git grep --fixed-strings -- '[2.0.138]' origin/main` **rc 1** and
+`git grep --fixed-strings -- 'v2.0.138' origin/main` **rc 1**, against the known-present control
+`'[2.0.105]'` **rc 0** and `'v2.0.105'` **rc 0**. Brackets are mandatory: the bare probe `2.0.13`
+matches `[v22.0.13]` in the repository CHANGELOG as a substring.
+
 ## [2.0.105] - 2026-10-25 - chore(t05-hygiene): redact the operator home path from the T-05 registration evidence (T-05 hygiene, PBB-413)
 
 The recorded `launchctl print` capture in `evidence/engineering-loop-registration.json` embedded the real operator home directory in its `raw` field — an `ALWAYS_ON_TOKEN` banned by `scripts/qc-assert-no-client-names.sh`, which failed PR #2555's `QC static invariants` check with exactly 1 hit at that file's line 96. One substitution and one disclosure, nothing else: the home-directory component of the plist path is rendered as the placeholder `{{operatorHome}}` (the `{{...}}` placeholder shape named in that script's remedy text; `{{operatorHome}}` is not in `ALWAYS_ON_TOKENS`), and a new sibling `raw_redaction` field discloses exactly that substitution. The launchd attributes that make the T-05 acceptance proof real are byte-identical in that `raw` field — user domain `gui/501`, the job label exactly as launchd reported it, `active count = 1`, `type = LaunchAgent`, `state = running`, and the arguments tail `tick --run-id pb-eng-loop-20261024T0807Z-g2` with its run id and generation suffix. No record is deleted or hollowed out. (The label literal itself is quoted only in `evidence/`, outside this skill tree: this tree's own `qc-no-personal-data.sh` bans the operating brand token that label carries, so restating it here would red-block a gate whose whole purpose is that no identifier ships in skill content.)
