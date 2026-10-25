@@ -135,7 +135,8 @@ def check_tracked_files(onb_root: Path, nine_root: Path, allow: dict):
     (`.claude/skills/shared-utils/...`), which that repo provides as a link to
     its root `shared-utils/`. Comparing repo-root copies alone would pass while
     the installed skill resolved nothing, so an entry marked
-    `resolves_via_sibling` also requires that sibling path to resolve.
+    `resolves_via_sibling` also requires that sibling path to resolve to the
+    very copy compared here.
 
     A copy that resolves back to the onboarding file proves nothing either: a
     shared registry the 999 tree points at rather than carries certifies
@@ -167,8 +168,16 @@ def check_tracked_files(onb_root: Path, nine_root: Path, allow: dict):
                 failures.append(
                     f"tracked file unreachable from the 999 skill (sibling link "
                     f"missing): {rel} -> {sibling}")
+            elif not sibling.samefile(b):
+                # Present is not resolved: a sibling link that lands anywhere
+                # but the compared 999 copy -- the onboarding file above all --
+                # lets the skill read bytes parity never judged.
+                failures.append(
+                    f"tracked file sibling link does not reach the compared 999 "
+                    f"copy (self-certifying or drifted): {rel} -> "
+                    f"{sibling.resolve()}")
             else:
-                notes.append(f"shared sibling resolves: {rel}")
+                notes.append(f"shared sibling resolves to the compared copy: {rel}")
     return failures, notes
 
 
@@ -189,7 +198,8 @@ def self_check() -> int:
             bad.append(f"shared dependency does not require sibling resolution: {rel}")
     subset = {"tracked_repo_files": [entries[r] for r in SHARED_TRACKED if r in entries]}
 
-    def fixture(tmp: Path, nine_bytes=b"same", certifying=False, sibling=True):
+    def fixture(tmp: Path, nine_bytes=b"same", certifying=False, sibling=True,
+                sibling_to_onb=False):
         onb, nine = tmp / "onb", tmp / "nine"
         for rel in SHARED_TRACKED:
             (onb / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -202,7 +212,9 @@ def self_check() -> int:
                 (nine / rel).write_bytes(nine_bytes)
         skills = (nine / SKILL_999).parent
         skills.mkdir(parents=True, exist_ok=True)
-        if sibling:
+        if sibling_to_onb:
+            (skills / "shared-utils").symlink_to(onb / "shared-utils")
+        elif sibling:
             (skills / "shared-utils").symlink_to(Path("../../shared-utils"))
         return onb, nine
 
@@ -211,6 +223,8 @@ def self_check() -> int:
         (dict(nine_bytes=b"drift"), True, "byte drift"),
         (dict(certifying=True), True, "self-certifying link to the onboarding file"),
         (dict(sibling=False), True, "missing sibling link"),
+        (dict(sibling_to_onb=True), True,
+         "sibling link pointing at the onboarding tree"),
     )
     for kwargs, want_fail, label in cases:
         with tempfile.TemporaryDirectory() as td:
