@@ -471,7 +471,9 @@ class _BaseAdapter:
         """Open the retained ledger destination with the no-follow handle."""
         destinations = self.destinations(run_id, create=create)
         return open_destination(destinations["ledger"].path,
-                                expected=destinations["ledger"])
+                                expected=destinations["ledger"],
+                                root=self.bind.root,
+                                bind_proven=self.bind_proven())
 
     def tool_options(self, tool: str, run_id: str) -> Dict[str, Any]:
         destinations = self.destinations(run_id)

@@ -175,7 +175,12 @@ class RestartLedger:
 
     # -- state --------------------------------------------------------------
     def _handle(self):
-        return open_destination(self.destination.path, expected=self.destination)
+        # No `root` here, so no admission is made: `expected` is the Destination
+        # `resolve_destinations` already admitted and its device/inode identity
+        # is the re-check. `bind_proven` is stated because the entry point
+        # requires the proof to be an argument a caller cannot drop.
+        return open_destination(self.destination.path, expected=self.destination,
+                                bind_proven=False)
 
     def read(self) -> Dict[str, Any]:
         """Read the persisted record, or raise if it is absent or malformed."""
@@ -382,6 +387,7 @@ def _selfcheck() -> None:
     base = os.path.realpath(os.environ.get("TMPDIR") or os.getcwd())
     work = tempfile.mkdtemp(prefix="pbb-persistence-selfcheck-", dir=base)
     destinations = resolve_destinations(work, "selfcheck-persistence",
+                                        bind_proven=False,
                                         create=True, require_mount=False)
     try:
         ledger = RestartLedger(destinations["ledger"], run_id="selfcheck",

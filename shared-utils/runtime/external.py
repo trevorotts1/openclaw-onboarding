@@ -40,7 +40,9 @@ Assert-based self-check:  python3 -I external.py
 
 from __future__ import annotations
 
+import ast
 import errno
+import inspect
 import json
 import os
 import re
@@ -51,7 +53,7 @@ import sys
 import tempfile
 import uuid
 from dataclasses import dataclass, replace
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 # ── refusals ────────────────────────────────────────────────────────────────
 
@@ -346,11 +348,15 @@ def _reject_internal(path: str, *, home_roots: Sequence[str],
 def _home_default() -> Tuple[str, ...]:
     return (os.path.abspath(os.path.expanduser("~")),)
 
-def _admit_root(root: str, *, bind_proven: bool = False,
+def _admit_root(root: str, *, bind_proven: bool,
                 internal_roots: Sequence[str] = INTERNAL_ROOTS,
                 internal_temp_markers: Sequence[str] = INTERNAL_TEMP_MARKERS,
                 home_roots: Optional[Sequence[str]] = None) -> str:
-    """Admit an approved root, or raise. `bind_proven` is the caller stating it
+    """Admit an approved root, or raise. `bind_proven` is REQUIRED, not
+    defaulted, on this and on every entry point that reaches it: the proof of
+    binding is an argument a caller cannot forget to pass, so no wrapper can
+    silently re-run the admission with the proof dropped (the defect class that
+    has shipped three times). It is the caller stating it
     has already proven this root is an approved host bind (Docker mount-info
     proof, an operator-declared dedicated VPS volume); it never excuses an
     internal temp tree. `home_roots` defaults to the real user home and is
@@ -376,12 +382,18 @@ def _admit_root(root: str, *, bind_proven: bool = False,
     return normal
 
 def assert_external(path: str, root: Optional[str] = None, *,
+                    bind_proven: bool,
                     internal_roots: Sequence[str] = INTERNAL_ROOTS,
                     internal_temp_markers: Sequence[str] = INTERNAL_TEMP_MARKERS,
                     home_roots: Optional[Sequence[str]] = None,
-                    check_device: bool = True,
-                    bind_proven: bool = False) -> str:
+                    check_device: bool = True) -> str:
     """Admit one destination path or raise a named refusal.
+
+    `bind_proven` has NO default: it is the required proof-of-binding argument
+    on the admission path. Omitting it is a `TypeError`, so a call that drops
+    the proof cannot run at all; the omission is structurally impossible rather
+    than merely discouraged. Every public entry point that reaches this
+    function takes the same required argument and forwards it.
 
     Internal storage is named first, on the text AND on the OS resolution of the
     raw path, so neither a literal /tmp nor a symlink into one can be admitted.
@@ -436,20 +448,21 @@ def assert_external(path: str, root: Optional[str] = None, *,
             "destination must be on proven external storage" % (normal, os.stat(os.sep).st_dev))
     return normal
 
-def resolve_destinations(root: str, run_id: str, *, create: bool = False,
+def resolve_destinations(root: str, run_id: str, *, bind_proven: bool,
+                         create: bool = False,
                          required_bytes: int = 0,
                          expected_uuid: Optional[str] = None,
                          uuid_probe: Optional[Any] = None,
                          require_mount: bool = True,
                          require_media_uuid: bool = False,
-                         bind_proven: bool = False,
                          ) -> Dict[str, Destination]:
     """Resolve the required per-run layout. Writes nothing unless create=True.
 
     Roles: worktree, scratch, temp, cache, output, ledger. Every one is
     admitted through assert_external; a refusal names the clause. The root is
     admitted first: `require_mount=False` only relaxes the mount-point test,
-    it never admits a root on the internal disk.
+    it never admits a root on the internal disk. `bind_proven` is required and
+    is forwarded on every re-check inside the loop.
     """
     if not isinstance(run_id, str) or not RUN_ID_PATTERN.match(run_id):
         raise PathRejected("bad_run_id: %r" % (run_id,))
@@ -608,11 +621,27 @@ class DestinationHandle:
             os.close(self._fd)
             self._closed = True
 
-def open_destination(path: str, *, expected: Optional[Destination] = None,
+def open_destination(path: str, *, bind_proven: bool,
+                     expected: Optional[Destination] = None,
                      root: Optional[str] = None) -> DestinationHandle:
-    """Open a destination without following links and hold its identity."""
+    """Open a destination without following links and hold its identity.
+
+    `bind_proven` is REQUIRED and is forwarded to the admission, so this entry
+    point can no longer re-run the check with the proof dropped while every
+    other surface forwards it. With `root` the destination is admitted exactly
+    like `assert_external`; without one, `expected` must be a `Destination`
+    that `resolve_destinations` already admitted - that resolution is the
+    documented trust anchor and its device/inode identity is re-checked below.
+    A call with neither `root` nor `expected` is refused by name: there is no
+    un-proven public open and no internal fallback.
+    """
+    if root is None and expected is None:
+        raise PathRejected(
+            "unproven_open: %s was opened with no approved root and no "
+            "already-admitted Destination; there is no un-proven open and no "
+            "internal fallback" % (path,))
     if root is not None:
-        assert_external(path, root)
+        assert_external(path, root, bind_proven=bind_proven)
     linked = _symlink_component(path)
     if linked is not None:
         raise PathRejected("symlink_component: %s (component %s)" % (path, linked))
@@ -667,23 +696,24 @@ print(json.dumps({
 }))
 """
 
-def temp_env(temp_dir: str, *, root: Optional[str] = None,
-             bind_proven: bool = False) -> Dict[str, str]:
+def temp_env(temp_dir: str, *, bind_proven: bool,
+             root: Optional[str] = None) -> Dict[str, str]:
     """The per-process environment every engineering worker must be launched with.
 
     The directory is admitted exactly like a destination: an internal temp
     tree, an internal-disk path or the user home is a named refusal, so this
     function can never be the "try /tmp" branch of someone else's launcher.
+    `bind_proven` is required and forwarded, exactly as on `assert_external`.
     """
     admitted = assert_external(temp_dir, root, bind_proven=bind_proven)
     return {"TMPDIR": admitted, "TMP": admitted, "TEMP": admitted}
 
-def probe_child(temp_dir: str, *, python: str = sys.executable,
+def probe_child(temp_dir: str, *, bind_proven: bool,
+                python: str = sys.executable,
                 env: Optional[Mapping[str, str]] = None,
                 timeout: int = 60,
                 runner: Any = None,
-                root: Optional[str] = None,
-                bind_proven: bool = False) -> ChildProbe:
+                root: Optional[str] = None) -> ChildProbe:
     """Launch a real child with the intended temp environment and verify it.
 
     Proves: the three variables are the external directory, tempfile.gettempdir()
@@ -748,16 +778,18 @@ def probe_child(temp_dir: str, *, python: str = sys.executable,
 # Tools whose project cache/output paths this module can name. Anything else is
 # refused: claiming the variables control an unnamed tool would be a false pass.
 def tool_output_options(tool: str, destinations: Mapping[str, Destination],
-                        *, root: Optional[str] = None,
-                        bind_proven: bool = False) -> Dict[str, Any]:
+                        *, bind_proven: bool,
+                        root: Optional[str] = None) -> Dict[str, Any]:
     """Tool-specific cache/output configuration pointing at external paths.
 
     Ceiling, stated once: TMPDIR/TMP/TEMP and these settings cover the named
     tool's own project outputs. OS and library writes outside project control
     are disclosed by the caller's receipt, not silently included in a guarantee.
 
-    `bind_proven` is forwarded on every re-check so an operator-declared
-    dedicated volume is not re-refused here after it was admitted upstream.
+    `bind_proven` is REQUIRED and is forwarded on every re-check so an
+    operator-declared dedicated volume is not re-refused here after it was
+    admitted upstream - and so this surface cannot become the next place the
+    proof gets dropped.
     """
     try:
         temp_dir = destinations["temp"].path
@@ -789,6 +821,63 @@ def tool_output_options(tool: str, destinations: Mapping[str, Destination],
         % (tool,))
 
 
+# ── the admission surface, derived not typed ────────────────────────────────
+
+def admission_surfaces(exported: Sequence[str]) -> Tuple[Tuple[str, ...],
+                                                         Tuple[str, ...]]:
+    """(reaches_the_admission, carries_the_proof) over `exported`, derived.
+
+    A name is an admission surface exactly when its own bytecode references
+    `assert_external` or `_admit_root` - there is one admission path and this
+    finds every way into it. A name is proof-carrying exactly when its
+    signature has `bind_proven`. The two sets must be equal: a surface that
+    reaches the admission without a required proof argument, or a proof
+    argument on something that never admits, is the omission this module must
+    not be able to ship again. No typed list of surface names is kept anywhere,
+    because a typed list is what let a third instance reach `origin/main`.
+    """
+    reaches: List[str] = []
+    carries: List[str] = []
+    for name in exported:
+        obj = globals().get(name)
+        if obj is None or not callable(obj):
+            continue
+        code = getattr(obj, "__code__", None)
+        if code is not None and ("assert_external" in code.co_names
+                                 or "_admit_root" in code.co_names):
+            reaches.append(name)
+        try:
+            params = inspect.signature(obj).parameters
+        except (TypeError, ValueError):
+            continue
+        if "bind_proven" in params:
+            carries.append(name)
+    return tuple(sorted(reaches)), tuple(sorted(carries))
+
+def _selfcheck_proof_is_required() -> None:
+    """Every surface that admits must require the proof, with no default."""
+    exported = [name for name in globals() if not name.startswith("_")]
+    reaches, carries = admission_surfaces(exported)
+    assert reaches == carries, (reaches, carries)
+    assert reaches, "no admission surface was derived"
+    for name in reaches:
+        param = inspect.signature(globals()[name]).parameters["bind_proven"]
+        assert param.kind is inspect.Parameter.KEYWORD_ONLY, name
+        assert param.default is inspect.Parameter.empty, (
+            "%s still gives bind_proven a default, so the proof can be dropped"
+            % name)
+    with open(__file__, encoding="utf-8") as source:
+        tree = ast.parse(source.read())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "id", getattr(node.func, "attr", None))
+        if name in ("assert_external", "_admit_root"):
+            assert "bind_proven" in [kw.arg for kw in node.keywords], (
+                "line %d calls %s without forwarding bind_proven"
+                % (node.lineno, name))
+
+
 # ── assert-based self-check (stdlib only) ───────────────────────────────────
 
 def _selfcheck() -> None:
@@ -803,18 +892,26 @@ def _selfcheck() -> None:
         link = os.path.join(work, "link")
         os.symlink(work, link)
         try:
-            assert_external(os.path.join(link, "x"), work)
+            assert_external(os.path.join(link, "x"), work, bind_proven=False)
         except PathRejected as exc:
             assert str(exc).startswith("symlink_component:"), exc
         else:
             raise AssertionError("a symlink component was admitted")
         try:
-            assert_external("/private/tmp/pbb-nope", work)
+            assert_external("/private/tmp/pbb-nope", work, bind_proven=False)
         except PathRejected as exc:
             assert "internal" in str(exc), exc
         else:
             raise AssertionError("/private/tmp was admitted")
-        with open_destination(work) as handle:
+        try:
+            open_destination("/Users/Shared/pbb-nope", bind_proven=False)
+        except PathRejected as exc:
+            assert str(exc).startswith("unproven_open:"), exc
+        else:
+            raise AssertionError("a bare open with no root and no admitted "
+                                 "Destination was admitted")
+        with open_destination(work, root=os.path.dirname(work),
+                              bind_proven=False) as handle:
             handle.publish("one.txt", b"first")
             try:
                 handle.publish("one.txt", b"second")
@@ -825,8 +922,9 @@ def _selfcheck() -> None:
             assert handle.read("one.txt") == b"first"
             handle.replace("one.txt", b"second")
             assert handle.read("one.txt") == b"second"
-        probe = probe_child(base)
+        probe = probe_child(base, bind_proven=False)
         assert probe.observed["file_created"] is True
+        _selfcheck_proof_is_required()
         print("external.py self-check OK: %s" % probe.expected_temp)
     finally:
         shutil.rmtree(work, ignore_errors=True)

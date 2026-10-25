@@ -16,6 +16,7 @@ Deliberately no `tempfile` fallback: if TMPDIR is internal the suite refuses to
 run rather than proving propagation against the wrong device.
 """
 
+import inspect
 import os
 import shutil
 import sys
@@ -73,7 +74,8 @@ class ExternalTestCase(unittest.TestCase):
 
     def destinations(self, create=True):
         return ex.resolve_destinations(self.work, "run-" + uuid.uuid4().hex[:8],
-                                       create=create, require_mount=False)
+                                       bind_proven=False, create=create,
+                                       require_mount=False)
 
 
 # ── mount identity ──────────────────────────────────────────────────────────
@@ -144,32 +146,33 @@ class DestinationTests(ExternalTestCase):
         link = os.path.join(self.work, "link")
         os.symlink(self.base, link)
         with self.assertRaises(ex.PathRejected) as caught:
-            ex.assert_external(os.path.join(link, "x"), self.work)
+            ex.assert_external(os.path.join(link, "x"), self.work, bind_proven=False)
         self.assertTrue(str(caught.exception).startswith("symlink_component:"))
 
     def test_internal_temp_is_rejected_with_no_fallback(self):
         for path in ("/private/tmp/pbb-x", "/private/var/tmp/pbb-x",
                      "/private/var/folders/zz/pbb-x"):
             with self.assertRaises(ex.PathRejected) as caught:
-                ex.assert_external(path, self.work)
+                ex.assert_external(path, self.work, bind_proven=False)
             self.assertIn("internal", str(caught.exception))
 
     def test_user_home_is_rejected(self):
         home = os.path.expanduser("~")
         with self.assertRaises(ex.PathRejected) as caught:
-            ex.assert_external(os.path.join(home, "proj"), self.work)
+            ex.assert_external(os.path.join(home, "proj"), self.work, bind_proven=False)
         self.assertIn("internal_home", str(caught.exception))
 
     def test_escape_outside_the_approved_root_is_rejected(self):
         with self.assertRaises(ex.PathRejected) as caught:
             ex.assert_external(os.path.join(self.work, "..", "elsewhere"),
-                               self.work)
+                               self.work, bind_proven=False)
         self.assertIn("outside_approved_root", str(caught.exception))
 
     def test_a_destination_on_another_device_is_rejected(self):
         expected = ex.Destination("ledger", self.work, os.stat("/").st_dev, 0)
         with self.assertRaises(ex.ReboundDestination) as caught:
-            ex.open_destination(self.work, expected=expected)
+            ex.open_destination(self.work, expected=expected, root=self.base,
+                                bind_proven=False)
         self.assertTrue(str(caught.exception).startswith("destination_wrong_device:"))
 
     def test_the_layout_resolves_every_required_role(self):
@@ -205,8 +208,8 @@ class DestinationTests(ExternalTestCase):
         for bad in ("", "  ", "run q c", ".. ", "..", ".", "..\\..\\evil",
                     "a\nb", "/etc", "run/1"):
             with self.assertRaises(ex.PathRejected) as caught:
-                ex.resolve_destinations(self.work, bad, create=False,
-                                        require_mount=False)
+                ex.resolve_destinations(self.work, bad, bind_proven=False,
+                                        create=False, require_mount=False)
             self.assertIn("bad_run_id", str(caught.exception), bad)
 
     def test_a_laundered_dotdot_path_is_refused(self):
@@ -215,17 +218,18 @@ class DestinationTests(ExternalTestCase):
         link = os.path.join(self.work, "link-out")
         os.symlink(outside, link)
         with self.assertRaises(ex.PathRejected) as caught:
-            ex.assert_external(os.path.join(link, "..", "escaped"), self.work)
+            ex.assert_external(os.path.join(link, "..", "escaped"), self.work,
+                           bind_proven=False)
         self.assertIn("outside_approved_root", str(caught.exception))
 
     def test_an_interior_dotdot_inside_the_root_still_resolves(self):
         self.assertEqual(
             ex.assert_external(os.path.join(self.work, "sub", "..", "leaf"),
-                               self.work),
+                               self.work, bind_proven=False),
             os.path.join(self.work, "leaf"))
         self.assertEqual(
             ex.assert_external(os.path.join(self.work, "leaf") + os.sep,
-                               self.work),
+                               self.work, bind_proven=False),
             os.path.join(self.work, "leaf"))
 
     def test_a_home_path_under_a_proven_external_root_is_admitted(self):
@@ -234,10 +238,11 @@ class DestinationTests(ExternalTestCase):
         os.makedirs(os.path.join(root, "proj"))
         with mock.patch.dict(os.environ, {"HOME": home}):
             self.assertEqual(
-                ex.assert_external(os.path.join(root, "proj"), root),
+                ex.assert_external(os.path.join(root, "proj"), root, bind_proven=False),
                 os.path.join(root, "proj"))
             with self.assertRaises(ex.PathRejected) as caught:
-                ex.assert_external(os.path.join(home, "outside-proj"), root)
+                ex.assert_external(os.path.join(home, "outside-proj"), root,
+                           bind_proven=False)
             self.assertIn("internal_home", str(caught.exception))
 
     def test_the_home_rule_is_caller_tunable_like_the_internal_rules(self):
@@ -245,7 +250,7 @@ class DestinationTests(ExternalTestCase):
         root = os.path.join(home, "pbb-t38-home-proof")
         target = os.path.join(root, "proj")
         with self.assertRaises(ex.PathRejected) as caught:
-            ex.assert_external(target, root)
+            ex.assert_external(target, root, bind_proven=False)
         self.assertIn("internal_home", str(caught.exception))
         self.assertFalse(os.path.exists(target))
         self.assertEqual(
@@ -255,18 +260,18 @@ class DestinationTests(ExternalTestCase):
 
     def test_a_non_regular_existing_destination_is_refused_by_name(self):
         run_id = "run-collide"
-        unresolved = ex.resolve_destinations(self.work, run_id, create=False,
-                                             require_mount=False)
+        unresolved = ex.resolve_destinations(self.work, run_id, bind_proven=False,
+                                             create=False, require_mount=False)
         file_path = unresolved["ledger"].path
         os.makedirs(os.path.dirname(file_path))
         with open(file_path, "wb") as handle:
             handle.write(b"not a directory")
         with self.assertRaises(ex.PathRejected) as caught:
-            ex.resolve_destinations(self.work, run_id, create=True,
-                                    require_mount=False)
+            ex.resolve_destinations(self.work, run_id, bind_proven=False,
+                                    create=True, require_mount=False)
         self.assertIn("non_regular_destination", str(caught.exception))
         with self.assertRaises(ex.PathRejected) as caught:
-            ex.open_destination(file_path)
+            ex.open_destination(file_path, root=self.work, bind_proven=False)
         self.assertIn("non_regular_destination", str(caught.exception))
 
 
@@ -274,7 +279,8 @@ class DestinationTests(ExternalTestCase):
 
 class HandleTests(ExternalTestCase):
     def test_publication_never_replaces_an_existing_entry(self):
-        with ex.open_destination(self.work) as handle:
+        with ex.open_destination(self.work, root=self.base,
+                                  bind_proven=False) as handle:
             handle.publish("ledger.json", b"first")
             with self.assertRaises(ex.PathRejected) as caught:
                 handle.publish("ledger.json", b"second")
@@ -282,7 +288,8 @@ class HandleTests(ExternalTestCase):
             self.assertEqual(handle.read("ledger.json"), b"first")
 
     def test_an_update_is_atomic_and_re_read(self):
-        with ex.open_destination(self.work) as handle:
+        with ex.open_destination(self.work, root=self.base,
+                                  bind_proven=False) as handle:
             handle.publish("state.json", b"one")
             handle.replace("state.json", b"two")
             self.assertEqual(handle.read("state.json"), b"two")
@@ -291,7 +298,8 @@ class HandleTests(ExternalTestCase):
                              ["state.json"])
 
     def test_a_rebound_directory_is_refused(self):
-        handle = ex.open_destination(self.work)
+        handle = ex.open_destination(self.work, root=self.base,
+                                       bind_proven=False)
         moved = self.work + "-moved"
         os.rename(self.work, moved)
         self.addCleanup(shutil.rmtree, moved, True)
@@ -310,7 +318,8 @@ class HandleTests(ExternalTestCase):
         other = os.path.join(self.work, "other")
         os.mkdir(other)
         with self.assertRaises(ex.ReboundDestination) as caught:
-            ex.open_destination(other, expected=expected)
+            ex.open_destination(other, expected=expected, root=self.work,
+                                bind_proven=False)
         self.assertIn("destination_changed_since_resolution",
                       str(caught.exception))
 
@@ -319,7 +328,7 @@ class HandleTests(ExternalTestCase):
 
 class PropagationTests(ExternalTestCase):
     def test_an_actual_child_inherits_the_external_temp_directory(self):
-        probe = ex.probe_child(self.work)
+        probe = ex.probe_child(self.work, bind_proven=False)
         self.assertEqual(probe.expected_temp, os.path.realpath(self.work))
         for var in ("TMPDIR", "TMP", "TEMP"):
             self.assertEqual(probe.observed[var], self.work, var)
@@ -333,12 +342,13 @@ class PropagationTests(ExternalTestCase):
 
     def test_a_child_that_loses_the_environment_is_a_named_refusal(self):
         with self.assertRaises(ex.PropagationError) as caught:
-            ex.probe_child(self.work, env={"TMPDIR": "/var/folders/nope"})
+            ex.probe_child(self.work, bind_proven=False,
+                            env={"TMPDIR": "/var/folders/nope"})
         self.assertIn("child_env_TMPDIR", str(caught.exception))
 
     def test_missing_temp_dir_is_refused_before_any_child_starts(self):
         with self.assertRaises(ex.MissingMount):
-            ex.probe_child(os.path.join(self.work, "absent"))
+            ex.probe_child(os.path.join(self.work, "absent"), bind_proven=False)
 
     def test_every_named_tool_writes_its_cache_or_output_outside(self):
         destinations = self.destinations(create=True)
@@ -346,6 +356,7 @@ class PropagationTests(ExternalTestCase):
                                for role in ("temp", "cache", "output"))
         for tool in ("pytest", "npm", "pip", "go", "cargo"):
             options = ex.tool_output_options(tool, destinations,
+                                             bind_proven=False,
                                              root=self.work)
             self.assertTrue(options["env"], tool)
             for value in options["env"].values():
@@ -357,7 +368,8 @@ class PropagationTests(ExternalTestCase):
     def test_an_unverified_tool_is_refused_not_assumed(self):
         destinations = self.destinations(create=True)
         with self.assertRaises(ex.UnsupportedTool) as caught:
-            ex.tool_output_options("playwright", destinations, root=self.work)
+            ex.tool_output_options("playwright", destinations,
+                                     bind_proven=False, root=self.work)
         self.assertIn("tool_specific_options_unverified",
                       str(caught.exception))
 
@@ -365,9 +377,9 @@ class PropagationTests(ExternalTestCase):
         for path in ("/private/tmp/pbb-x", "/private/var/tmp/pbb-x",
                      "/Users/Shared/tmp/pbb-x"):
             with self.assertRaises(ex.PathRejected) as caught:
-                ex.temp_env(path)
+                ex.temp_env(path, bind_proven=False)
             self.assertIn("internal", str(caught.exception), path)
-        self.assertEqual(ex.temp_env(self.work),
+        self.assertEqual(ex.temp_env(self.work, bind_proven=False),
                          {"TMPDIR": self.work, "TMP": self.work,
                           "TEMP": self.work})
 
@@ -376,7 +388,7 @@ class PropagationTests(ExternalTestCase):
         for path in ("/private/tmp/pbb-x", "/private/var/folders/zz/pbb-x",
                      "/Users/Shared/tmp/pbb-x"):
             with self.assertRaises(ex.PathRejected) as caught:
-                ex.probe_child(path, runner=runner)
+                ex.probe_child(path, bind_proven=False, runner=runner)
             self.assertIn("internal", str(caught.exception), path)
         runner.assert_not_called()
 
@@ -401,7 +413,8 @@ class PropagationTests(ExternalTestCase):
         runner = mock.Mock()
         with mock.patch.object(ex, "_on_external_device", lambda p: False):
             with self.assertRaises(ex.PathRejected) as caught:
-                ex.probe_child(self.work, root=self.base, runner=runner)
+                ex.probe_child(self.work, root=self.base, bind_proven=False,
+                                       runner=runner)
         self.assertIn("internal_fallback", str(caught.exception))
         runner.assert_not_called()
 
@@ -412,19 +425,110 @@ class PropagationTests(ExternalTestCase):
                                              bind_proven=True)
             self.assertTrue(options["env"]["PIP_CACHE_DIR"])
             with self.assertRaises(ex.PathRejected):
-                ex.tool_output_options("pip", destinations, root=self.base)
+                ex.tool_output_options("pip", destinations, root=self.base,
+                                         bind_proven=False)
 
     def test_resolve_destinations_refuses_an_internal_disk_root(self):
         internal_root = "/Users/Shared"
         run_id = "run-internal-proof"
         for require_mount in (False, True):
             with self.assertRaises(ex.PathRejected):
-                ex.resolve_destinations(internal_root, run_id, create=True,
+                ex.resolve_destinations(internal_root, run_id, bind_proven=False,
+                                        create=True,
                                         require_mount=require_mount)
         for dirname in ex.LAYOUT.values():
             self.assertFalse(os.path.exists(
                 os.path.join(internal_root, dirname, run_id)),
                 "%s/%s was created on the internal disk" % (dirname, run_id))
+
+
+# ── the proof of binding cannot be dropped (the class, not the instance) ────
+
+class ProofRequiredTests(ExternalTestCase):
+    """T-38 repair 3. `open_destination` re-ran the admission without the
+    caller's `bind_proven` while `assert_external`, `temp_env`,
+    `resolve_destinations` and `tool_output_options` forwarded it - the third
+    instance of one defect class. The repair is not that one call site:
+    `bind_proven` is now a REQUIRED keyword-only argument on the admission path
+    and on every entry point that reaches it, so the omission cannot be written
+    at all. These tests derive the surface set from `runtime.__all__` and the
+    code objects; a typed list of names is exactly what let the third instance
+    ship, so none is kept."""
+
+    def surfaces(self):
+        reaches, carries = ex.admission_surfaces(list(runtime.__all__))
+        self.assertEqual(reaches, carries,
+                         "a derived surface reaches the admission without a "
+                         "required proof argument")
+        self.assertTrue(reaches, "no admission surface was derived")
+        return reaches
+
+    def test_the_derived_surfaces_all_carry_a_required_proof(self):
+        for name in self.surfaces():
+            param = inspect.signature(getattr(ex, name)).parameters["bind_proven"]
+            self.assertIs(param.kind, inspect.Parameter.KEYWORD_ONLY, name)
+            self.assertIs(param.default, inspect.Parameter.empty, name)
+
+    def test_the_call_shape_that_leaked_no_longer_binds(self):
+        # The exact shape PBB-430 drove: a TypeError now, never a silent
+        # re-check with the proof dropped.
+        with self.assertRaises(TypeError):
+            ex.open_destination(self.work, root=self.base)
+        with self.assertRaises(TypeError):
+            ex.assert_external(self.work, self.base)
+
+    def test_every_surface_admits_with_a_proven_bind_and_refuses_without(self):
+        with mock.patch.object(ex, "_on_external_device", lambda p: False):
+            destinations = ex.resolve_destinations(
+                self.base, "run-proof", bind_proven=True, create=False,
+                require_mount=False)
+            driven = {
+                "assert_external": lambda bp: ex.assert_external(
+                    self.work, self.base, bind_proven=bp),
+                "open_destination": lambda bp: ex.open_destination(
+                    self.work, root=self.base, bind_proven=bp),
+                "probe_child": lambda bp: ex.probe_child(
+                    self.work, root=self.base, bind_proven=bp),
+                "resolve_destinations": lambda bp: ex.resolve_destinations(
+                    self.base, "run-proof", bind_proven=bp, create=False,
+                    require_mount=False),
+                "temp_env": lambda bp: ex.temp_env(
+                    self.work, root=self.base, bind_proven=bp),
+                "tool_output_options": lambda bp: ex.tool_output_options(
+                    "pip", destinations, root=self.base, bind_proven=bp),
+            }
+            self.assertEqual(set(driven), set(self.surfaces()),
+                             "the drive table is not the derived surface set")
+            for name, call in sorted(driven.items()):
+                outcome = call(True)
+                if hasattr(outcome, "close"):
+                    outcome.close()
+                self.assertTrue(outcome, name)
+                with self.assertRaises(ex.PathRejected) as caught:
+                    call(False)
+                self.assertIn("internal_fallback", str(caught.exception), name)
+
+    def test_a_real_internal_destination_is_still_refused(self):
+        # Closing the leak must not turn a legitimate refusal into an admission.
+        for path in ("/private/tmp/pbb-x", "/private/var/folders/zz/pbb-x",
+                     "/dev/shm/pbb-x"):
+            with self.assertRaises(ex.PathRejected) as caught:
+                ex.assert_external(path, bind_proven=True)
+            self.assertIn("internal", str(caught.exception), path)
+        for name, call in (
+                ("temp_env", lambda: ex.temp_env("/private/tmp/pbb-x",
+                                                bind_proven=True)),
+                ("probe_child", lambda: ex.probe_child("/private/tmp/pbb-x",
+                                                       bind_proven=True))):
+            with self.assertRaises(ex.PathRejected) as caught:
+                call()
+            self.assertIn("internal", str(caught.exception), name)
+
+    def test_a_bare_open_with_no_root_and_no_admitted_destination_is_refused(self):
+        with self.assertRaises(ex.PathRejected) as caught:
+            ex.open_destination("/Users/Shared/pbb-x", bind_proven=True)
+        self.assertTrue(str(caught.exception).startswith("unproven_open:"),
+                        str(caught.exception))
 
 
 # ── host detection and adapter selection (C-38) ─────────────────────────────
