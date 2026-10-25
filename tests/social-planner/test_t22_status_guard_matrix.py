@@ -21,6 +21,7 @@ import hmac
 import itertools
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -31,16 +32,19 @@ _SHARED = os.path.join(_ONB_ROOT, "shared-utils")
 if _SHARED not in sys.path:
     sys.path.insert(0, _SHARED)
 
-# The provenance signing key is per installation and lives outside the repository.
-# Point it at a per-run temporary directory so the suite is hermetic and never
-# writes to the operator's real state directory.
+# The provenance signing key is per installation and lives outside the repository,
+# at a path no caller-supplied value can move: the module reads the operating
+# system account database, never $HOME and never any environment variable. The
+# suite is hermetic by relocating that one path in-process — a test controls the
+# module under test, an outside caller hands in data and does not — so nothing the
+# module trusts is set through the process environment.
 _KEY_DIR = tempfile.mkdtemp(prefix="ppc-seal-")
 atexit.register(shutil.rmtree, _KEY_DIR, ignore_errors=True)
-os.environ.setdefault(
-    "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE", os.path.join(_KEY_DIR, "seal.key")
-)
+_KEY_FILE = os.path.join(_KEY_DIR, "seal.key")
 
 import personal_profile_capability as ppc  # noqa: E402
+
+ppc._SEAL_KEY_PATH = _KEY_FILE
 
 PLACEMENT_ID = "plc_matrix"
 PLACEMENT = {
@@ -650,6 +654,248 @@ class TestSealCoversEveryRenderedField(unittest.TestCase):
         round_tripped = json.loads(json.dumps(record))
         self.assertTrue(ppc._is_sanctioned(round_tripped))
         self.assertEqual(ppc.status_surface(round_tripped)["claim"], "operator-confirmed")
+
+
+class TestSigningKeyIsNotCallerSelectable(unittest.TestCase):
+    """B-27, the INJECTION channel — the bypass verifier PBB-363 reproduced.
+
+    3.9.1 closed DERIVATION: the key is not computable from shipped bytes. It left
+    INJECTION wide open: `_installation_seal_key()` read two process-environment
+    hooks (an inline hex key in PERSONAL_PROFILE_CAPABILITY_SEAL_KEY, and a
+    caller-chosen key file in PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE) before it
+    ever looked at the key file, so a caller who could set the environment picked
+    the key and minted a fitting marker with stdlib hashlib + hmac while reading no
+    repository byte and no key file. Redirecting HOME reached the same forgery
+    through the key file's own path.
+
+    These pins fail if any of those three routes comes back, and the prose pin
+    fails if an unforgeability claim is ever written again without naming the two
+    signing paths that genuinely remain (reading the key file, and running code in
+    the process).
+    """
+
+    _ENV_HOOKS = (
+        "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY",
+        "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE",
+    )
+    _ATTACKER_KEY = bytes.fromhex("cd" * 32)
+
+    def setUp(self):
+        self._saved_env = {name: os.environ.get(name) for name in self._ENV_HOOKS}
+        self._saved_home = os.environ.get("HOME")
+        self._saved_path = ppc._SEAL_KEY_PATH
+
+    def tearDown(self):
+        for name, value in self._saved_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        if self._saved_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self._saved_home
+        ppc._SEAL_KEY_PATH = self._saved_path
+        ppc._SEAL_KEY_CACHE.clear()
+
+    # -- fixtures -----------------------------------------------------------
+    def _planted_key_file(self, name):
+        directory = tempfile.mkdtemp(prefix="ppc-plant-")
+        path = os.path.join(directory, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(self._ATTACKER_KEY.hex() + "\n")
+        return path
+
+    def _fake_home_for(self, planted_key_path):
+        return os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(planted_key_path)))
+        )
+
+    def _marker(self, record, key):
+        body = {k: v for k, v in record.items() if k != "provenance"}
+        payload = json.dumps(
+            body, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")
+        return {
+            "algorithm": "hmac-sha256",
+            "version": ppc._SEAL_VERSION,
+            "mac": hmac.new(key, payload, hashlib.sha256).hexdigest(),
+        }
+
+    def _hand_built(self):
+        """A record built by hand around a real placement digest, then edited."""
+        package = ppc.prepare_assisted_placement("facebook", "personal", PLACEMENT)
+        forged = copy.deepcopy(package)
+        forged.pop("provenance", None)
+        forged["account_label"] = "VERIFIED BUSINESS PAGE"
+        forged["operator_action"]["instruction"] = "SEND $500 TO ATTACKER - OVERRIDE"
+        forged["capability_ref"] = {
+            "checked_at": "1999-01-01",
+            "source_urls": ["https://attacker.example/proof"],
+        }
+        return forged
+
+    # -- the module must not read the environment at all ---------------------
+    def test_module_reads_no_environment_and_defines_no_env_key_hooks(self):
+        with open(ppc.__file__, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertNotIn("os.environ", source)
+        self.assertNotIn("_SEAL_KEY_ENV", source)
+        self.assertNotIn("_SEAL_KEY_FILE_ENV", source)
+        self.assertNotIn("expanduser", source)
+
+    # -- the three injection routes, one pin each ----------------------------
+    def test_inline_env_key_cannot_become_the_signing_key(self):
+        os.environ["PERSONAL_PROFILE_CAPABILITY_SEAL_KEY"] = self._ATTACKER_KEY.hex()
+        self.assertNotEqual(ppc._installation_seal_key(), self._ATTACKER_KEY)
+
+    def test_key_file_env_hook_cannot_relocate_the_key(self):
+        planted = self._planted_key_file("seal.key")
+        os.environ["PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE"] = planted
+        self.assertNotEqual(ppc._seal_key_path(), planted)
+        self.assertNotEqual(ppc._installation_seal_key(), self._ATTACKER_KEY)
+
+    def test_home_redirect_cannot_relocate_the_key(self):
+        planted = self._planted_key_file(
+            os.path.join(".openclaw", "state", "personal-profile-capability", "seal.key")
+        )
+        os.environ["HOME"] = self._fake_home_for(planted)
+        self.assertNotEqual(ppc._seal_key_path(), planted)
+        self.assertNotEqual(ppc._installation_seal_key(), self._ATTACKER_KEY)
+
+    def test_key_path_comes_from_the_account_database_not_from_home(self):
+        import pwd
+
+        expected = os.path.join(
+            pwd.getpwuid(os.getuid()).pw_dir,
+            ".openclaw", "state", "personal-profile-capability", "seal.key",
+        )
+        os.environ["HOME"] = tempfile.mkdtemp(prefix="ppc-fakehome-")
+        ppc._SEAL_KEY_PATH = None
+        self.assertEqual(ppc._seal_key_path(), expected)
+
+    def test_a_key_planted_through_the_environment_mints_nothing(self):
+        """The bypass end to end: planted key + hand-built dict + fitting marker."""
+        planted = self._planted_key_file("seal.key")
+        os.environ["PERSONAL_PROFILE_CAPABILITY_SEAL_KEY"] = self._ATTACKER_KEY.hex()
+        os.environ["PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE"] = planted
+        os.environ["HOME"] = self._fake_home_for(planted)
+
+        record = self._hand_built()
+        record["provenance"] = self._marker(record, self._ATTACKER_KEY)
+        self.assertFalse(ppc._is_sanctioned(record))
+        with self.assertRaises(ppc.CapabilityError):
+            ppc.record_operator_confirmation(
+                copy.deepcopy(record), "Attacker Operator"
+            )
+
+        confirmed = dict(
+            copy.deepcopy(record),
+            status="operator-confirmed",
+            receipt={
+                "placement_id": record["placement_id"],
+                "operator": "Attacker Operator",
+                "confirmed_at": "2026-10-24T15:00:00Z",
+                "method": "operator-asserted",
+            },
+        )
+        confirmed["provenance"] = self._marker(confirmed, self._ATTACKER_KEY)
+        for fn in (ppc.status_surface, ppc.assert_truthful_publication):
+            with self.assertRaises(ppc.UntruthfulPublication, msg=fn.__name__):
+                fn(copy.deepcopy(confirmed))
+
+    # -- the inverse control: a fix that refuses everything is a worse defect --
+    def test_the_genuine_operator_path_still_succeeds(self):
+        package = ppc.prepare_assisted_placement("facebook", "personal", PLACEMENT)
+        confirmed = ppc.record_operator_confirmation(
+            copy.deepcopy(package), "Trevor Otts", confirmed_at="2026-10-24T15:00:00Z"
+        )
+        self.assertEqual(confirmed["status"], "operator-confirmed")
+        self.assertEqual(
+            ppc.status_surface(copy.deepcopy(confirmed))["claim"], "operator-confirmed"
+        )
+        self.assertTrue(ppc.assert_truthful_publication(copy.deepcopy(confirmed)))
+
+    # -- the prose must name the signing paths that remain --------------------
+    def test_every_unforgeability_claim_names_the_residual_signing_paths(self):
+        with open(
+            os.path.join(
+                _ONB_ROOT, "35-social-media-planner", "PROFILE-CAPABILITIES.md"
+            ),
+            encoding="utf-8",
+        ) as handle:
+            prose = " ".join(handle.read().split())
+        claims = (
+            "cannot mint a placement id",
+            "cannot carry a marker that fits",
+            "cannot be rendered as a verified approval",
+        )
+        checked = 0
+        for sentence in re.split(r"(?<=[.!?])\s+", prose):
+            if any(claim in sentence for claim in claims):
+                checked += 1
+                self.assertIn("key file", sentence, sentence)
+        self.assertGreaterEqual(checked, 2)
+
+        # ...and the messages a caller actually sees.
+        record = self._hand_built()
+        record["provenance"] = self._marker(record, self._ATTACKER_KEY)
+        confirmed = dict(
+            copy.deepcopy(record),
+            status="operator-confirmed",
+            receipt={
+                "placement_id": record["placement_id"],
+                "operator": "Attacker Operator",
+                "confirmed_at": "2026-10-24T15:00:00Z",
+                "method": "operator-asserted",
+            },
+        )
+        confirmed["provenance"] = self._marker(confirmed, self._ATTACKER_KEY)
+        seen = 0
+        for call in (
+            lambda: ppc.record_operator_confirmation(copy.deepcopy(record), "X"),
+            lambda: ppc.status_surface(copy.deepcopy(confirmed)),
+            lambda: ppc.assert_truthful_publication(copy.deepcopy(confirmed)),
+        ):
+            with self.assertRaises(ppc.CapabilityError) as caught:
+                call()
+            seen += 1
+            self.assertIn("key file", str(caught.exception), str(caught.exception))
+        self.assertEqual(seen, 3)
+
+    def test_the_ceiling_names_both_signing_paths_and_no_browser_test_is_claimed(self):
+        with open(
+            os.path.join(
+                _ONB_ROOT, "35-social-media-planner", "PROFILE-CAPABILITIES.md"
+            ),
+            encoding="utf-8",
+        ) as handle:
+            prose = handle.read()
+        with open(ppc.__file__, encoding="utf-8") as handle:
+            source = handle.read()
+
+        def names_both(block):
+            lowered = block.lower()
+            return "key file" in lowered and "inside this process" in lowered
+
+        def qualifying(text):
+            return [
+                block
+                for block in re.split(r"\n\s*\n", text)
+                if names_both(block)
+            ]
+
+        # The module names both paths twice: once in the "Ceiling, stated honestly"
+        # docstring paragraph, once in the provenance ponytail comment.
+        self.assertGreaterEqual(
+            len(qualifying(source)), 2, source
+        )
+        self.assertTrue(qualifying(ppc.__doc__ or ""), ppc.__doc__)
+        self.assertTrue(qualifying(prose), prose)
+
+        # ...and it never claimed a browser test it does not have.
+        self.assertNotIn("The browser test behind this contract", prose)
 
 
 if __name__ == "__main__":

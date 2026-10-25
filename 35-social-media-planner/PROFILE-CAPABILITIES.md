@@ -71,20 +71,35 @@ source changes; never guess a capability into existence.
    Authority is **provenance, not shape** (B-27): `prepare_assisted_placement` stamps
    the package with an HMAC-SHA256 provenance marker over its **whole** record, keyed
    by an installation signing key generated with `os.urandom()` and stored outside the
-   repository in a `0600` file (`PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE`, or an
-   inline hex key in `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY`; default
-   `~/.openclaw/state/personal-profile-capability/seal.key`).
+   repository in a `0600` file at
+   `<account home>/.openclaw/state/personal-profile-capability/seal.key`, where
+   `<account home>` comes from the operating system's account database and is never
+   taken from `$HOME`. There is no second source and no override: the two environment
+   hooks this module used to read — an inline hex key in
+   `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY`, and a caller-chosen key file in
+   `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE` — are **removed**, because a caller who
+   can set the process environment is a caller of exactly the class this contract
+   defends against, and either hook let that caller pick the key and then mint a
+   fitting marker with stdlib `hashlib` + `hmac` while reading no repository byte and
+   no key file. Redirecting `$HOME` reached the same forgery through the key file's
+   own path, so it is closed too.
    `record_operator_confirmation` refuses any package that does not carry a marker
    that fits its own bytes. A hand-built dict or a hand-edited file cannot mint a
-   placement id, an operator receipt or a status claim: the key is **not** derived
-   from the declaration or from any other shipped byte, so the marker cannot be
-   recomputed from the checkout, and because the MAC covers every field — placement
-   id, channel and account labels, route, status, action, placement, the operator
-   instruction, the capability reference, the receipt body and the publication flags
-   — a marker copied from a sanctioned record does not fit an edited, extended or
-   truncated one. Editing a sealed record invalidates the marker. The marker is not
-   a substitute for the operator: a caller that can read the installation's key file
-   can still sign, which is why the key is `0600` and outside the checkout.
+   placement id, an operator receipt or a status claim — **unless its author can read
+   the installation key file, or run code inside this process, which are the only two
+   signing paths**. That holds because the key is **not** derived from the declaration
+   or from any other shipped byte **and** is not selectable by anything a caller hands
+   in or this process inherits, so the marker cannot be recomputed from the checkout;
+   and because the MAC covers every field — placement id, channel and account labels,
+   route, status, action, placement, the operator instruction, the capability
+   reference, the receipt body and the publication flags — a marker copied from a
+   sanctioned record does not fit an edited, extended or truncated one. Editing a
+   sealed record invalidates the marker. The marker is not a substitute for the
+   operator: the key file is `0600` and outside the checkout, which is what makes
+   "can read the installation key file" the whole of the first signing path, and the
+   second is running code inside this process — rewriting the module from in there,
+   which no Python module can prevent. The upgrade is an operator-held signer outside
+   this process when unattended coverage is proved.
 5. **Never claim system publication.** `published-by-system` and bare `published` are
    forbidden statuses for an assisted placement.
 
@@ -93,9 +108,10 @@ refused.
 
 ## Coverage honesty (B-04)
 
-The browser test behind this contract is **narrow**: it reads the declaration and
+The test behind this contract is **narrow**: it reads the declaration and
 exercises the assisted prepare / confirm / status / guard paths in-process and
-through the CLI. **Public monitoring is not claimed.** No channel or account is
+through the CLI. There is no browser test. **Public monitoring is not claimed.**
+No channel or account is
 polled, observed or watched by this contract, and no platform publication is read
 back from a platform API. Consequently:
 
@@ -223,7 +239,11 @@ python3 -m unittest tests/social-planner/test_t22_status_guard_matrix.py -v
 The suites prove: unattended personal-profile requests are refused with a clear
 reason; a receipt exists only after operator confirmation; a system-claimed
 publication without a receipt fails the guard; a hand-built dict cannot mint a
-placement id, an operator receipt or a status claim (B-27); and no unattended
-publication is claimed while its coverage is unproved (B-04). The tests are narrow
+placement id, an operator receipt or a status claim (B-27) — except through the
+two signing paths named above, reading the installation key file and running code
+inside this process, neither of which a caller with the checkout and a dict has;
+no environment variable, `$HOME` redirect or other inherited value can select or
+relocate that key; and no unattended publication is claimed while its coverage is
+unproved (B-04). The tests are narrow
 by design: they exercise the declaration and the assisted code paths only. They do
 not assert anything about public monitoring, because this contract performs none.

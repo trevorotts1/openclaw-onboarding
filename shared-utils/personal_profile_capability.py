@@ -14,8 +14,10 @@ the WHOLE record, produced by prepare_assisted_placement() and renewed by
 record_operator_confirmation(). The MAC key is an installation signing key
 generated with os.urandom() and kept outside the repository in a 0600 file (see
 _installation_seal_key); it is NOT derived from the capability declaration or
-from any other shipped byte, so an outside caller holding only the checkout
-cannot recompute it. Because the MAC covers every field of the record except the
+from any other shipped byte, and NOTHING a caller hands in or this process
+inherits can become it — no environment variable holds or names the key, the key
+path is not `$HOME`-relative, and no argument or shipped byte selects it — so an
+outside caller holding only the checkout cannot recompute it. Because the MAC covers every field of the record except the
 marker itself, a marker copied from a sanctioned record does not fit any edited,
 extended or truncated record — including the operator instruction, the
 capability reference, the rendered labels, the receipt body, the route/status
@@ -25,11 +27,18 @@ record instead of labelling it verified, and every record is resolved against
 the declaration, so an undeclared channel, account type or action cannot be
 rendered at all.
 
-Ceiling, stated honestly: the key lives on the same filesystem as the process,
-so a caller that can read the installation's key file can still sign. What is
-closed is the case that matters here — a caller that has the repository bytes (or
-any other public material) and hands in a dict. The upgrade is an operator-held
-signer outside this process when unattended coverage is proved (see
+Ceiling, stated honestly: exactly two signing paths survive this module, and
+every unforgeability claim below names both in its own sentence. (1) A caller
+that can READ the installation's key file can sign — a 0600 file outside the
+checkout, under the operating system account's own home. (2) A caller that can
+execute code INSIDE this process can sign, because code in the process can
+rewrite this module, including where it looks for that key file. Neither path is
+reachable from outside the process: the key path is read from the operating
+system's account database and is NOT `$HOME`-relative, and no environment
+variable, argument or other inherited value holds, names or relocates the key.
+What is closed is the case that matters here — a caller that has the repository
+bytes (or any other public material) and hands in a dict. The upgrade is an
+operator-held signer outside this process when unattended coverage is proved (see
 policy.unattended_coverage).
 
 Coverage honesty (B-04). The only test behind this contract is NARROW: it reads
@@ -112,36 +121,91 @@ def _cap_path(path: Optional[str] = None) -> str:
 # verifies in another process, as long as that process resolves the same key).
 #
 # Why an outside caller cannot reconstruct it: the key is 32 random bytes that
-# appear in no repository byte and are not derived from the capability
-# declaration or from this source. Shipped material therefore does not determine
-# the key, so the old attack — sha256(domain + declaration) — no longer computes
-# a marker the module accepts. Because the payload is the whole record, a marker
-# copied from a sanctioned record does not fit an edited, extended or truncated
-# record: the operator instruction, capability reference, labels, receipt,
-# route, status and publication flags are all inside the MAC.
+# appear in no repository byte, are not derived from the capability declaration
+# or from this source, and are not selectable by anything outside this process.
+# Two channels had to be shut for that to be true. DERIVATION: shipped material
+# does not determine the key, so sha256(domain + declaration) no longer computes
+# a marker the module accepts. INJECTION: nothing the process inherits names,
+# holds or relocates the key — the path comes from the operating system account
+# database, never from $HOME, and no environment variable is read at all — so the
+# attack that replaced derivation (hand the module a key through the environment,
+# then mint a marker with stdlib hashlib + hmac) has no hook left. Because the
+# payload is the whole record, a marker copied from a sanctioned record does not
+# fit an edited, extended or truncated record: the operator instruction,
+# capability reference, labels, receipt, route, status and publication flags are
+# all inside the MAC.
 #
-# ponytail: the key lives on the same filesystem as the process, so a caller that
-# can read the operator's key file can still sign. The ceiling is a caller that
-# has the checkout and a dict, which is the reproduced B-27 attack; the upgrade is
-# an operator-held signer outside this process when unattended coverage is proved
-# (see policy.unattended_coverage).
+# ponytail: the ceiling is exactly the two signing paths the docstring names —
+# reading the operator's key file, or running code inside this process. The
+# ceiling is a caller that has the checkout and a dict, which is the reproduced
+# B-27 attack; the upgrade is an operator-held signer outside this process when
+# unattended coverage is proved (see policy.unattended_coverage).
 
 _SEAL_ALGORITHM = "hmac-sha256"
 _SEAL_VERSION = 2
 _SEAL_KEY_BYTES = 32
-_SEAL_KEY_ENV = "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY"
-_SEAL_KEY_FILE_ENV = "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE"
-_SEAL_KEY_DEFAULT = os.path.join(
-    "~", ".openclaw", "state", "personal-profile-capability", "seal.key"
-)
+_SEAL_KEY_DIR = os.path.join(".openclaw", "state", "personal-profile-capability")
+_SEAL_KEY_NAME = "seal.key"
 _SEAL_KEY_CACHE: dict = {}
+
+# The installation key file, or None to resolve it from the account database.
+# Assigning this name is the ONLY way to relocate the key, and it takes code
+# already running inside this process (the test suite does exactly that). An
+# outside caller hands in data — a dict, a file, an inherited environment — and
+# none of those reach here.
+_SEAL_KEY_PATH: Optional[str] = None
+
+
+def _account_home() -> str:
+    """The home directory of the account running this process, read from the OS.
+
+    Deliberately NOT a home directory taken from the process environment: that
+    value is inherited from outside this process, so a caller who can set it
+    could relocate the key file and then mint markers under a key of their own
+    choosing — which is the injection attack this module must not have a hook
+    for. The account database is not reachable that way. Fails closed when the
+    platform has none.
+    """
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        raise CapabilityError(
+            "cannot resolve the installation signing key: this platform reports "
+            "no uid, and this module refuses to take a home directory from the "
+            "process environment"
+        )
+    try:
+        import pwd
+    except ImportError as exc:
+        raise CapabilityError(
+            "cannot resolve the installation signing key: this platform has no "
+            "account database (pwd), and this module refuses to take a home "
+            "directory from the process environment"
+        ) from exc
+    try:
+        home = pwd.getpwuid(getuid()).pw_dir
+    except (KeyError, OSError) as exc:
+        raise CapabilityError(
+            "cannot resolve the installation signing key: the account database "
+            f"gives no home directory for uid {getuid()}: {exc}"
+        ) from exc
+    if not isinstance(home, str) or not home.strip():
+        raise CapabilityError(
+            "cannot resolve the installation signing key: the account database "
+            f"gives an empty home directory for uid {getuid()}"
+        )
+    return home
 
 
 def _seal_key_path() -> str:
-    configured = os.environ.get(_SEAL_KEY_FILE_ENV, "").strip()
-    if configured:
-        return os.path.abspath(os.path.expanduser(configured))
-    return os.path.abspath(os.path.expanduser(_SEAL_KEY_DEFAULT))
+    """The ONE place the signing key lives. Fixed: nothing a caller hands in moves it.
+
+    There is no environment hook, no argument and no shipped byte that can name
+    or relocate this file; ``_SEAL_KEY_PATH`` is the only way to move it, and
+    setting that takes code already running inside this process.
+    """
+    if _SEAL_KEY_PATH is not None:
+        return _SEAL_KEY_PATH
+    return os.path.join(_account_home(), _SEAL_KEY_DIR, _SEAL_KEY_NAME)
 
 
 def _decode_seal_key(raw: bytes, where: str) -> bytes:
@@ -169,7 +233,10 @@ def _create_seal_key(path: str) -> bytes:
     except OSError as exc:
         raise CapabilityError(
             f"no provenance signing key exists and its directory {directory} cannot "
-            f"be created: {exc}. Set {_SEAL_KEY_FILE_ENV} or {_SEAL_KEY_ENV}."
+            f"be created: {exc}. The key is installation state owned by the account "
+            "that runs this module; give that account a writable home directory, or "
+            "run under the account that owns the installation. This module has no "
+            "environment override to fall back on."
         ) from exc
     try:
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -184,7 +251,9 @@ def _create_seal_key(path: str) -> bytes:
     except OSError as exc:
         raise CapabilityError(
             f"no provenance signing key exists and one cannot be created at {path}: "
-            f"{exc}. Set {_SEAL_KEY_FILE_ENV} or {_SEAL_KEY_ENV}."
+            f"{exc}. The key is installation state owned by the account that runs "
+            "this module; that account must be able to create the file there. This "
+            "module has no environment override to fall back on."
         ) from exc
     key = os.urandom(_SEAL_KEY_BYTES)
     try:
@@ -202,31 +271,23 @@ def _create_seal_key(path: str) -> bytes:
 
 
 def _installation_seal_key() -> bytes:
-    """The installation signing key — never derived from shipped bytes.
+    """The installation signing key — never derived, never injected.
 
-    Resolution order: the inline hex key in ``PERSONAL_PROFILE_CAPABILITY_SEAL_KEY``,
-    then the key file named by ``PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE``, then
-    ~/.openclaw/state/personal-profile-capability/seal.key, created with
-    os.urandom() and mode 0600 on first use. There is no fallback to material that
-    ships in the repository: if no key can be resolved the module fails closed
+    Exactly one source: the operator key file at
+    ``<account home>/.openclaw/state/personal-profile-capability/seal.key``,
+    created with os.urandom() and mode 0600 on first use. There is no second
+    source. Nothing handed to this process can become the key or name the file:
+    the two environment hooks this module used to read (an inline hex key and a
+    caller-chosen key file path) are GONE, because a caller who can set the
+    process environment is a caller of exactly the class this module defends
+    against, and either hook let that caller pick the key and then mint a fitting
+    marker with stdlib hashlib + hmac while reading no repository byte and no key
+    file. The path is not ``$HOME``-relative either, for the same reason.
+
+    There is no fallback to material that ships in the repository and no fallback
+    to anything inherited: if the key file cannot be read the module fails closed
     rather than minting something an outside caller could reconstruct.
     """
-    inline = os.environ.get(_SEAL_KEY_ENV, "").strip()
-    if inline:
-        if len(inline) != 2 * _SEAL_KEY_BYTES:
-            raise CapabilityError(
-                f"{_SEAL_KEY_ENV} must be {2 * _SEAL_KEY_BYTES} hex characters"
-            )
-        try:
-            key = bytes.fromhex(inline)
-        except ValueError as exc:
-            raise CapabilityError(f"{_SEAL_KEY_ENV} is not hex: {exc}") from exc
-        if len(key) != _SEAL_KEY_BYTES:
-            raise CapabilityError(
-                f"{_SEAL_KEY_ENV} must decode to {_SEAL_KEY_BYTES} bytes"
-            )
-        return key
-
     path = _seal_key_path()
     cached = _SEAL_KEY_CACHE.get(path)
     if cached:
@@ -317,9 +378,12 @@ def _require_sanctioned(record: Any, path: Optional[str] = None, what: str = "th
             "authority. A placement id is minted only by "
             "prepare_assisted_placement(), and an operator receipt only by "
             "record_operator_confirmation(); the marker is an HMAC over the whole "
-            "record keyed by this installation's signing key, so a hand-built dict, "
-            "a hand-edited file, or a record whose bytes differ from the sealed ones "
-            "cannot carry a marker that fits."
+            "record keyed by this installation's signing key, which is read from "
+            "one operator key file and is never a value this process inherits or a "
+            "caller hands in, so a hand-built dict, a hand-edited file, or a record "
+            "whose bytes differ from the sealed ones cannot carry a marker that "
+            "fits — unless its author can read that key file or run code inside "
+            "this process, which are the only two signing paths this module has."
         )
 
 
@@ -986,7 +1050,9 @@ def _truth_of(record: dict, path: Optional[str] = None) -> dict:
                     f"record {placement_id} is operator-confirmed without the "
                     "sanctioned provenance marker; an operator receipt is minted only "
                     "by record_operator_confirmation(), and a hand-built dict cannot "
-                    "be rendered as a verified approval"
+                    "be rendered as a verified approval unless its author can read "
+                    "the installation key file or run code inside this process — the "
+                    "only two signing paths"
                 )
             if not _valid_receipt(receipt, record, path):
                 raise UntruthfulPublication(

@@ -27,16 +27,20 @@ _SHARED = os.path.join(_ONB_ROOT, "shared-utils")
 if _SHARED not in sys.path:
     sys.path.insert(0, _SHARED)
 
-# The provenance signing key is per installation and lives outside the repository.
-# Point it at a per-run temporary directory so the suite is hermetic, and so the
-# CLI subprocesses below resolve the same key as this process.
+# The provenance signing key is per installation and lives outside the repository,
+# at a path no caller-supplied value can move: the module reads the operating
+# system account database, never $HOME and never any environment variable. The
+# suite is hermetic by relocating that one path in-process — a test controls the
+# module under test, an outside caller hands in data and does not — so nothing the
+# module trusts is set through the process environment, and the CLI subprocesses
+# below resolve the same key as this process.
 _KEY_DIR = tempfile.mkdtemp(prefix="ppc-seal-")
 atexit.register(shutil.rmtree, _KEY_DIR, ignore_errors=True)
-os.environ.setdefault(
-    "PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE", os.path.join(_KEY_DIR, "seal.key")
-)
+_KEY_FILE = os.path.join(_KEY_DIR, "seal.key")
 
 import personal_profile_capability as ppc  # noqa: E402
+
+ppc._SEAL_KEY_PATH = _KEY_FILE
 
 CAPABILITIES = os.path.join(
     _ONB_ROOT, "35-social-media-planner", "config", "profile-capabilities.json"
@@ -44,6 +48,19 @@ CAPABILITIES = os.path.join(
 CLI = os.path.join(
     _ONB_ROOT, "35-social-media-planner", "scripts", "profile_capability.py"
 )
+
+# The CLI runs in a child process, so it cannot see this process's in-memory key
+# path. The bootstrap hands it over as an ARGUMENT — never through the process
+# environment, which is the channel B-27 closes — and relocates the module's own
+# path constant before the CLI runs, exactly as this suite does in-process.
+_CLI_BOOTSTRAP = (
+    "import runpy, sys\n"
+    "sys.path.insert(0, {shared!r})\n"
+    "import personal_profile_capability as _ppc\n"
+    "_ppc._SEAL_KEY_PATH = sys.argv[1]\n"
+    "sys.argv = sys.argv[2:]\n"
+    "runpy.run_path(sys.argv[0], run_name='__main__')\n"
+).format(shared=_SHARED)
 
 PLACEMENT = {
     "text": "Three of Seven: the part nobody tells you about pricing.",
@@ -254,7 +271,7 @@ class TestCapabilityCli(unittest.TestCase):
     def _run(self, *args, cwd=_ONB_ROOT):
         env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
         return subprocess.run(
-            [sys.executable, CLI, *args],
+            [sys.executable, "-c", _CLI_BOOTSTRAP, _KEY_FILE, CLI, *args],
             cwd=cwd,
             env=env,
             capture_output=True,
