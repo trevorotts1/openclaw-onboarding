@@ -78,8 +78,8 @@ and dispatch are the proven live legs.
    runs medium; that default is deliberate, so name the mode you
    announced. Every mode seats all nine advisors; light simply runs them
    in waves of 3, so no mode and no flag reduces the roster. On the
-   client's own Ollama
-   pass `--ollama-plan 20` or `--ollama-plan 100`, and `--fallback-model
+   client's own Ollama pass `--ollama-plan 20` or `--ollama-plan 100`, and
+   `--fallback-model
    ID` to name the OpenRouter model used when Ollama fails. Convening is
    the approval: no grant, no approval prompt. Report the session id, the
    exact model
