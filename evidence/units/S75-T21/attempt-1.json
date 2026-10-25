@@ -1,0 +1,37 @@
+{
+  "schema_version": "blackceo.evidence.unit-attempt/v1",
+  "acceptance_row": "S75-A21",
+  "unit": "S75-T21",
+  "round": 2,
+  "role": "repair-author",
+  "branch": "s75/S75-T21-r2",
+  "base_ref": "origin/main",
+  "base_sha": "c883b35ce9f594b4450e5cffc654ec4945cef2d3",
+  "base_proved_from_origin": true,
+  "base_proof": "git ls-remote https://github.com/trevorotts1/openclaw-onboarding.git refs/heads/main -> c883b35ce9f594b4450e5cffc654ec4945cef2d3; cloned and checked out that exact 40-hex",
+  "head_sha": "PENDING_AT_WRITE_TIME",
+  "written_at": "2026-10-25T17:22:43Z",
+  "attempt_index_note": "evidence/units/S75-T21/ did not exist at base (git ls-tree -r origin/main -- evidence/units is empty) and was absent from the shared working tree, so index 1 is the first free index",
+  "why_round_2": "round 1's branch df7123b44268dfeff2541ea56ee18295feeb6159 is 100 commits behind origin/main; diffing it from current main shows accepted carriers (catalog.py, T19/T20/T22 recipe files and tests) as deleted. Round 2 branches from current origin/main and ADDS only.",
+  "deliverables": {
+    "new_module": "75-drama-song-ad-factory/scripts/core/music_styles/recipes_s75_t21.py",
+    "new_test": "75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_s75_t21.py",
+    "modified": {
+      "75-drama-song-ad-factory/scripts/core/suno_recipe/suno_recipe.py": "extracted the ONE style-text composer into compose_style_block(block, sheet, vocal_gender, pace_plan, style_id, deliveries); style_text now calls it; _sheet_deliveries gained the optional block/deliveries fallbacks",
+      "75-drama-song-ad-factory/scripts/core/suno_recipe/__init__.py": "exports compose_style_block (additive)"
+    }
+  },
+  "registry_shape": {
+    "choice": "one complete registry module per unit; T21 owns recipes_s75_t21.py, T19 keeps recipes.py, T22 keeps recipes_s75_t22.py, T20 stays inside music_styles.RECIPES",
+    "why": "T19's accepted suite pins recipes.recipe_ids() to exactly its five ids and pins 'reggaeton' as an UNKNOWN_RECIPE refusal in that module, so folding T21's three into recipes.py would either break an accepted test or leave one file with two scopes. T21's registry therefore carries ONE SCHEMA_VERSION (blackceo.music-styles/s75-t21-recipes/v1) and ONE RECIPE_REVISION (s75-t21/1) across all three records, all the same shape, validated on load.",
+    "catalog_ownership": "S75-T18 still owns the write. catalog.py already carries pop-rock, reggaeton and country-rap with their labels, descriptions, deliveries and reference names; catalog.validate_catalog() passes at 18 and catalog.register_style() refuses all three as DUPLICATE_STYLE. recipes_s75_t21.menu_record() exposes the catalog-shaped projection; nothing is registered and catalog.py is untouched."
+  },
+  "controls": {
+    "known_good": "T19's five ids load and compile to non-empty provider-ready text (1332-1589 chars) with their delivery verbs; T21's three compile to 806-859 chars through compose_style_block, under the 1000-char cap, each carrying the clean ending, the hook-order clause, the band wording and exactly its declared delivery map",
+    "composer_identity": "mock.patch on suno_recipe.suno_recipe.compose_style_block proves both recipes_s75_t21.compile_style and suno_recipe.style_text enter that ONE function",
+    "instrument": "a deliberately broken record is REFUSED by the same validator that accepts the intact one: missing style_parts (RECIPE_MISSING_FIELD), missing hook_guidance (RECIPE_MISSING_FIELD), wrong revision (RECIPE_BAD_REVISION), empty word_fit (RECIPE_BAD_WORD_FIT), an undeclared RAPS verb (RECIPE_UNDECLARED_DELIVERY), a missing {gender} slot (RECIPE_BAD_STYLE_PARTS)",
+    "behaviour_identity": "style_text output is byte-identical at base and head across 13 cases (3 live styles x 2 genders x plain/pace, plus a sheet-mapped rnb-flow), sha256-compared",
+    "deletion": "git diff --name-status <base> HEAD has no row starting with D"
+  },
+  "amended_at": null
+}
