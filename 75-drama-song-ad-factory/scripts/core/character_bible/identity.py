@@ -28,8 +28,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import threading
 
 __all__ = [
     "CastDefect", "IdentityDefect", "canonical_digest", "library_digest",
@@ -218,15 +216,7 @@ def library_digest(snapshot):
 #    genuine signer-minted receipt that ``restore_from_notion`` stored as
 #    APPROVED with the promotion step called zero times. So the underscore is no
 #    longer what does the work. ``_signer_request`` is now an ALLOWLIST: it
-#    answers ``verify`` and refuses every other operation in code. The requests
-#    that carry a ``mint`` are built by :meth:`NotionStore.promote` and sent over
-#    the store's own transport (:meth:`NotionStore._NotionStore__transact`), and
-#    the signer refuses a mint that does not carry THIS STORE'S capability -- a
-#    32-byte token the signer issues per store and hands back only to a store's
-#    own request. It is held on the store instance and is in no module
-#    namespace: not in ``__all__``, not in any module attribute, and not
-#    returned by any function here. There is no ``bind`` or ``capability``
-#    operation reachable from this module either.
+#    answers ``verify`` and refuses every other operation in code.
 #
 # 2. THE CHECK THE DELETED TABLE USED TO PERFORM. Deleting the caller-writable
 #    ``CHARS`` table was right -- a caller could write it -- but it also deleted
@@ -236,17 +226,45 @@ def library_digest(snapshot):
 #    mint unless the record it finds there is held at the claim's ``from_state``.
 #    "this store holds X at DRAFT_COMPLETE, so there is no APPROVED to approve".
 #
+# Round 7 (the round-6b verdict's one blocking finding, closed here):
+#
+# 3. THE SIGNER'S CHANNEL IS NOT ON THIS NAMESPACE ANY MORE. Round 6 closed the
+#    request API and left the transport behind it: ``identity._signer_channel()``
+#    still handed the signer's raw pipe ends to any caller, so a plain caller
+#    with zero standing wrote the ``capability`` and ``mint`` requests itself and
+#    fed the genuine receipt back through ``restore_from_notion`` --
+#    draft_state=APPROVED, ``promote()`` called zero times. ``_signer_channel``,
+#    ``_signer_start`` and ``_signer_drop`` are gone from this namespace (no
+#    module attribute here hands out a file descriptor). They are private
+#    members of :class:`character_library.notion_store.NotionStore`, and the pipe
+#    ends themselves are private state of a transport object that releases them
+#    to a live store and to nobody else. What this module exposes is
+#    :func:`_signer_request`: it answers ``verify`` and refuses the rest in code.
+#
+# 4. THE TOKEN IS A BEARER TOKEN, AND THE CODE SAYS SO. The signer's
+#    ``capability`` request is answered for ANY opener of that pipe, for the
+#    (client, store) pair it names -- its own docstring below says exactly that.
+#    So ``hmac.compare_digest`` on the token proves the caller asked for one,
+#    and nothing more: it is a bearer token, not an unforgeable capability. It
+#    is kept off this module's namespace and off every public method, so the
+#    only way to present it is to be inside the store's own promotion step --
+#    but that is a reachability fact about this module, not a property of the
+#    token. Binding it to something this module neither exposes nor hands out
+#    needs an OS boundary this environment cannot create: the signer under a
+#    different unix uid. Production therefore runs a signer process alongside
+#    the store.
+#
 # Declared residual, and the deployment impact: this machine gives the caller
 # and the signer the SAME unix user, so a caller that is willing to re-point the
 # pipe (or to rewrite this module) can answer as the signer, and a caller that
 # already holds a live NotionStore can ask that store for anything that store
-# can do -- including its own promote(). That is tampering with the transport or
-# holding the authority, not a capability this module hands out. No in-process
+# can do -- including its own promote() and its own private transport. Those are
+# tampering with the transport and holding the authority, not a reach this
+# module hands out; rounds 5, 6 and 6b all ruled them out of scope. No in-process
 # control in this codebase is unforgeable against a determined in-process
-# attacker; what round 6 removes is the reachability, which is what the row
+# attacker; what round 7 removes is the reachability, which is what the row
 # scores. Closing the rest needs an OS boundary this environment cannot create:
-# run the signer under a different uid. Production therefore runs a signer
-# process alongside the store.
+# run the signer under a different uid.
 
 MINT_FIELD = "mint_mark"
 RECEIPT_KIND = "approval_receipt"
@@ -319,15 +337,20 @@ def held_state(store_dir, client, character_id):
 
 
 def capability(req):
-    """The token that names one store. Issued here, handed to a store's request.
+    """The token that names one store. It is a BEARER TOKEN, not a capability.
 
-    One token per (client, store), stable for the signer's life. It is returned
-    only over the pipe the store's own request came in on -- see
-    ``NotionStore._NotionStore__transact`` -- and this program answers that
-    request for anyone who sends it. What makes it a capability rather than a
-    shared password is that no module-level callable in ``character_bible.
-    identity`` will send it: that namespace answers ``verify`` and refuses
-    everything else in code.
+    One token per (client, store), stable for the signer's life. This program
+    answers the request for ANYONE who sends it -- there is no opener to
+    authenticate, and the same token comes back for every request naming that
+    (client, store). So the only thing ``hmac.compare_digest`` proves at the
+    ``mint`` below is that the caller once asked for a token, and not that the
+    caller is the store it claims. What keeps a plain caller away from it is
+    reachability, not the token: this pipe is released only to a live
+    ``NotionStore`` (see ``NotionStore._NotionStore__transact``) and to the
+    verify-only entry point in ``character_bible.identity``, which refuses
+    ``capability`` in code. Binding the token to something neither module hands
+    out needs this signer under a different unix uid, which this environment
+    cannot create.
     """
     client, scope = req.get("client"), req.get("scope")
     if type(client) is not str or type(scope) is not str or not scope:
@@ -405,13 +428,33 @@ def handle(req):
                                                      req.get("mint_mark") or ""):
             return {"ok": False, "reason": wrong}
         scope = req.get("scope")
-        held = BINDS.get((scope, rid)) if scope is not None else BINDS.get(rid)
-        if scope is not None and held is None:
+        wanted = req.get("client")
+        if scope is None:
+            # No store named, so the cross-store half of the binding cannot be
+            # checked and is not claimed to be. The client half still is: a
+            # receipt minted for one client is not honoured for another, and a
+            # receipt that carries no binding at all is refused. Round 7: this
+            # path used to skip BOTH halves (``BINDS.get(rid)`` looked up a key
+            # that is always a ``(scope, receipt_id)`` pair, so it found nothing
+            # and every check below was skipped).
+            bound = [held for (held_scope, held_rid), held in BINDS.items()
+                     if held_rid == rid]
+            if not bound:
+                return {"ok": False, "reason": (
+                    "receipt %r was never minted by this signer's promotion "
+                    "step" % rid)}
+            if any(held[0] != wanted for held in bound):
+                return {"ok": False, "reason": (
+                    "receipt %r was minted for client %r, not %r; a receipt is "
+                    "bound to the client whose promotion step produced it"
+                    % (rid, bound[0][0], wanted))}
+            return {"ok": True}
+        held = BINDS.get((scope, rid))
+        if held is None:
             return {"ok": False, "reason": (
                 "receipt %r was minted by the promotion step of another store "
                 "and is not replayed here; a receipt is single-use" % rid)}
-        wanted = req.get("client")
-        if held is not None and held[0] != wanted:
+        if held[0] != wanted:
             return {"ok": False, "reason": (
                 "receipt %r was minted for client %r, not %r; a receipt is "
                 "bound to the client whose promotion step produced it"
@@ -439,60 +482,11 @@ def main():
 main()
 '''
 
-#: One live signer per process, keyed by pid: ``(proc, send_fd, recv_fd)``.
-#: Bookkeeping for the pipe, never consulted to answer a security question --
-#: the answer comes back over that pipe from the signer, and a caller who swaps
-#: this mapping swaps nothing the signer ever said.
-_SIGNER_PIPES = {}
-_SIGNER_LOCK = threading.Lock()
-
-
-def _signer_start():
-    """Spawn the signer and hand back its two pipe ends."""
-    import subprocess as _subprocess, sys as _sys
-    to_signer, send_fd = os.pipe()
-    recv_fd, to_parent = os.pipe()
-    proc = _subprocess.Popen(
-        [_sys.executable, "-I", "-c", _SIGNER_SOURCE, str(os.getpid()),
-         str(to_signer), str(to_parent)],
-        stdin=_subprocess.DEVNULL, stdout=_subprocess.DEVNULL,
-        stderr=_subprocess.DEVNULL, close_fds=True, start_new_session=True,
-        pass_fds=(to_signer, to_parent))
-    os.close(to_signer)
-    os.close(to_parent)
-    return (proc, send_fd, recv_fd)
-
-
-def _signer_channel():
-    """The live signer pipe ends, starting the signer if this is the first use.
-
-    Byte-level transport, nothing more: it hands back file descriptors. It is
-    the same class of thing as ``os.write``, and the round-4/5 boundary already
-    treats re-pointing the pipe as tampering with the transport rather than a
-    reachable capability. What it is NOT is a request API: nothing here builds a
-    request, so nothing here can ask for a mint. The only request API in this
-    module is :func:`_signer_request`, which answers ``verify`` and refuses the
-    rest in code.
-    """
-    with _SIGNER_LOCK:
-        held = _SIGNER_PIPES.get(os.getpid())
-        if held is None:
-            held = _signer_start()
-            _SIGNER_PIPES[os.getpid()] = held
-        return held
-
-
-def _signer_drop():
-    """Forget this process's signer after a transport failure. Fails closed."""
-    with _SIGNER_LOCK:
-        held = _SIGNER_PIPES.pop(os.getpid(), None)
-    for fd in (held[1], held[2]) if held is not None else ():
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-
-
+#: One live signer per process. Its pipe ends are NOT held here: this module has
+#: no signer transport at all any more (round 7). The transport is a private
+#: member of :class:`character_library.notion_store.NotionStore`, and the only
+#: entry this module keeps is :func:`_signer_request`, which is verify-only and
+#: never returns a file descriptor.
 def _signer_request(payload):
     """One request to the approval signer. ``verify`` only. Fails closed.
 
@@ -508,36 +502,26 @@ def _signer_request(payload):
     draft reached APPROVED with the promotion step called zero times. One
     leading underscore was the whole control that day. The control is now this
     branch. A mint is built only by :meth:`NotionStore.promote` and sent over
-    the store's own transport, carrying the store's own capability.
+    the store's own transport.
+
+    The transport this goes through is not in this namespace. ``_signer_channel``
+    used to be, and a caller wrote the wire protocol onto the pipe ends it
+    returned and had a genuine receipt stored with ``promote()`` never called.
+    Those names now belong to :class:`NotionStore` as private members, and this
+    function reaches the signer through that class's verify-only entry point --
+    which is the same allowlist as here, so nothing it hands back can mint.
     """
     if type(payload) is not dict or payload.get("op") != "verify":
         return {"ok": False, "reason": (
             "this transport answers only 'verify'; a receipt is minted only "
             "inside the store's own promotion step, which builds that request "
             "itself and carries a capability this module cannot supply")}
-    reason = "the approval signer did not answer"
-    for attempt in (0, 1):
-        try:
-            _proc, send_fd, recv_fd = _signer_channel()
-        except Exception as exc:
-            return {"ok": False,
-                    "reason": "the approval signer could not start (%s)" % exc}
-        try:
-            os.write(send_fd, json.dumps(payload).encode("utf-8") + b"\n")
-            data = b""
-            while not data.endswith(b"\n"):
-                chunk = os.read(recv_fd, 65536)
-                if not chunk:
-                    return {"ok": False,
-                            "reason": "the approval signer stopped"}
-                data += chunk
-            return json.loads(data.decode("utf-8"))
-        except Exception as exc:
-            reason = "the approval signer is unreachable (%s)" % exc
-            _signer_drop()
-            if attempt == 0:
-                continue
-    return {"ok": False, "reason": reason}
+    try:
+        from character_library.notion_store import NotionStore as _store
+    except Exception as exc:                # fails closed, never falls back
+        return {"ok": False,
+                "reason": "the approval signer is unreachable (%s)" % exc}
+    return _store._NotionStore__signer_verify(payload)
 
 
 def _scope_parts(scope):

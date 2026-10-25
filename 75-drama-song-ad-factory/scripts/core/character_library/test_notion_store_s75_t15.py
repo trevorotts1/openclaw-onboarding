@@ -1024,5 +1024,118 @@ class OutOfProcessMintTest(unittest.TestCase):
         self.assertEqual(store.get_identity(CHAR)["approval_bindings"], [])
 
 
+class RoundSevenTest(unittest.TestCase):
+    """Round 7: the raw signer channel, inverted exactly as the probe did it."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="s75-t15-")
+        # ONE counting instrument, used for both directions below: every call
+        # NotionStore.promote() receives is recorded, so a promote_calls=0
+        # reading is a fact about the target and not about the counter.
+        self.promote_calls = []
+        self.real_promote = store_mod.NotionStore.promote
+        calls = self.promote_calls
+
+        def counted(instance, *args, **kwargs):
+            calls.append((args, kwargs))
+            return self.real_promote(instance, *args, **kwargs)
+
+        store_mod.NotionStore.promote = counted
+
+    def tearDown(self):
+        store_mod.NotionStore.promote = self.real_promote
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_the_channel_inversion_cannot_reach_approved_and_the_honest_path_can(self):
+        # THE INVERSION, built exactly as the round-6b probe built it: a public
+        # constructor, put_identity at DRAFT_COMPLETE, store.approval_scope()
+        # from a public method, then the signer's raw channel -- and the two
+        # newline-delimited JSON requests a caller wrote onto the ends it
+        # returned ('capability', then 'mint' with that token), then the genuine
+        # receipt back through the public restore_from_notion().
+        attacked = store_mod.NotionStore(self.root, NS_A)
+        record = for_client(NS_A)
+        record["draft_state"] = "DRAFT_COMPLETE"
+        record["approval_bindings"] = []
+        record.pop("content_digest", None)
+        attacked.put_identity(record)
+        scope = attacked.approval_scope()
+        self.assertEqual(self.promote_calls, [])
+
+        # the accessor the probe used is not a name on the module any more, and
+        # neither is any other signer transport: identity carries one
+        # verify-only entry point and nothing that holds a file descriptor
+        for name in ("_signer_channel", "_signer_start", "_signer_drop",
+                     "_SIGNER_PIPES", "_SIGNER_LOCK"):
+            self.assertIsNone(getattr(identity, name, None), name)
+        leaky = sorted(n for n in vars(identity)
+                       if ("signer" in n.lower() or "pipe" in n.lower())
+                       and n not in ("_signer_request", "_SIGNER_SOURCE"))
+        self.assertEqual(leaky, [])
+
+        # and every request a caller can still make refuses in code
+        claim = receipt({"receipt_id": "rcp-r7-inversion"})
+        claim.pop(identity.MINT_FIELD, None)
+        asked = ({"op": "capability", "client": scope[0], "scope": scope[1]},
+                 {"op": "mint", "client": scope[0], "scope": scope[1],
+                  "capability": "token-the-signer-issued-to-nobody",
+                  "claim": dict(claim, to_state="APPROVED")},
+                 {"op": "register", "client": scope[0], "scope": scope[1]})
+        for payload in asked:
+            with self.subTest(op=payload["op"]):
+                reply = identity._signer_request(payload)
+                self.assertFalse(reply.get("ok"))
+                self.assertIn("verify", reply.get("reason", ""))
+
+        # nothing was minted, so nothing a caller hands to restore_from_notion
+        # carries a mark the signer will honour
+        forged = for_client(NS_A)
+        forged["draft_state"] = "APPROVED"
+        forged["approval_bindings"] = [claim]
+        forged.pop("content_digest", None)
+        with self.assertRaises(store_mod.StoreError):
+            attacked.restore_from_notion([forged])
+        self.assertEqual(self.promote_calls, [])
+        self.assertEqual(attacked.get_identity(CHAR)["draft_state"],
+                         "DRAFT_COMPLETE")
+        self.assertEqual(attacked.get_identity(CHAR)["approval_bindings"], [])
+
+        # THE HONEST PATH, on the same instrument: the promotion step is still
+        # what mints, and it still takes exactly two calls to reach APPROVED
+        honest = store_mod.NotionStore(self.root, NS_A + "-honest")
+        honest.put_identity(for_client(NS_A + "-honest"))
+        honest.promote(CHAR, "DRAFT_COMPLETE")
+        approved = honest.promote(
+            CHAR, "APPROVED",
+            approval={"approver": "client", "receipt_id": "rcp-r7-honest"})
+        self.assertEqual(len(self.promote_calls), 2)
+        self.assertEqual(approved["draft_state"], "APPROVED")
+        self.assertEqual(len(approved["approval_bindings"]), 1)
+        self.assertEqual(
+            len(approved["approval_bindings"][0][identity.MINT_FIELD]), 64)
+
+    def test_verify_without_a_scope_still_binds_the_receipt_to_its_client(self):
+        # Round 7, same class one level down: 'verify' with scope=None used to
+        # look the binding up under a key that is always a (scope, receipt_id)
+        # pair, find nothing, and skip both binding checks. It is refused for
+        # another client's record now. (The cross-store half still needs a
+        # scope; see the declared residual in the round-7 report.)
+        store = store_mod.NotionStore(self.root, NS_A)
+        real = minted(store, {"receipt_id": "rcp-r7-scope"})
+
+        other = for_client(NS_B)
+        other["character_id"] = CHAR
+        other["draft_state"] = "APPROVED"
+        other["approval_bindings"] = [real]
+        other.pop("content_digest", None)
+        sealed = identity.seal_identity(other)
+
+        reason = identity.resolve_receipt(real, sealed)     # no scope at all
+        self.assertIsNotNone(reason)
+        self.assertIn("client", reason)
+        with self.assertRaises(identity.IdentityDefect):
+            identity.validate_identity(sealed)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

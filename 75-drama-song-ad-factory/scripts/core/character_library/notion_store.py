@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
+import threading
 
 CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if CORE not in sys.path:
@@ -111,38 +113,99 @@ def _validated(record, scope):
     return sealed
 
 
-class NotionStore:
-    """One client's cached identity records. Scoped, never shared."""
+class _SignerTransport:
+    """The approval signer's pipe ends. One signer per process.
 
-    def __init__(self, root, client_namespace):
-        self.cache = cache_mod.Cache(root, client_namespace)
-        self.client_namespace = self.cache.client_namespace
-        # The token that names THIS store to the approval signer. Issued by the
-        # signer to this store's own request (see __transact), held on this
-        # instance and nowhere else: not in a module namespace, not in
-        # identity.__all__, not returned by any function a caller can reach
-        # without holding a store. Nothing asks for it until a promotion step
-        # needs it, so a store that never approves never speaks to the signer.
-        self.__capability = None
+    SECURITY (do not loosen in a later round): the file descriptors are private
+    state of THIS object and nothing else. They are not a module attribute of
+    ``character_bible.identity`` (round 7 removed ``_signer_channel`` from that
+    namespace, where any caller could take the raw ends and write the wire
+    protocol onto them itself) and they are not a return value of anything a
+    caller reaches without a live store. Every entry that can carry a ``mint``
+    or ask for a ``capability`` takes the store that owns the request and
+    refuses anything that is not a live ``NotionStore``. The one entry that
+    needs no store is :meth:`verify`, which is an allowlist in code: it answers
+    ``verify`` and refuses ``mint`` and ``capability``, exactly as
+    ``identity._signer_request`` does.
 
-    def __transact(self, payload):
-        """One request to the approval signer, built and sent by THIS store.
+    ponytail: this is reachability, not unforgeability. A caller holding a live
+    store can reach this transport through that store's private members, and a
+    caller willing to re-point the pipe or rewrite the module can answer as the
+    signer. Both are the tampering-with-internals class rounds 5, 6 and 6b ruled
+    out of scope. Making the channel unforgeable needs the signer under a
+    different unix uid, which this environment cannot create.
+    """
 
-        This method is the only place a ``mint`` request exists. Round 5 built
-        it in promote() and then handed it to ``identity._signer_request``, a
-        module-level function that carried ``{"op": "mint"}`` for any caller --
-        a plain module call produced a genuine signer-minted receipt with
-        ``promote()`` called zero times. identity's namespace now answers
-        ``verify`` and refuses the rest in code, and the raw pipe ends it does
-        expose are byte-level transport (``os.write`` by another name), not a
-        request API. Getting to this method needs a live store instance, and
-        the capability this store presents is the one the signer issued to it.
-        """
+    def __init__(self):
+        self.__pipes = {}
+        self.__lock = threading.Lock()
+
+    @staticmethod
+    def __owner(owner):
+        """The live store that owns the request, or None. A gate, not a check."""
+        return owner if type(owner) is NotionStore else None
+
+    def __start(self):
+        """Spawn this process's signer and hand back its two pipe ends."""
+        to_signer, send_fd = os.pipe()
+        recv_fd, to_parent = os.pipe()
+        proc = subprocess.Popen(
+            [sys.executable, "-I", "-c", identity._SIGNER_SOURCE,
+             str(os.getpid()), str(to_signer), str(to_parent)],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
+            pass_fds=(to_signer, to_parent))
+        os.close(to_signer)
+        os.close(to_parent)
+        return (proc, send_fd, recv_fd)
+
+    def __channel(self):
+        """The live pipe ends, starting the signer on first use."""
+        with self.__lock:
+            held = self.__pipes.get(os.getpid())
+            if held is None:
+                held = self.__start()
+                self.__pipes[os.getpid()] = held
+            return held
+
+    def __drop(self):
+        """Forget this process's signer after a transport failure. Fails closed."""
+        with self.__lock:
+            held = self.__pipes.pop(os.getpid(), None)
+        for fd in (held[1], held[2]) if held is not None else ():
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    def start(self, owner):
+        """Spawn this process's signer. A live store only."""
+        if self.__owner(owner) is None:
+            raise StoreError(
+                "The approval signer's transport belongs to a live store.")
+        return self.__start()
+
+    def channel(self, owner):
+        """The signer's raw pipe ends. A live store only -- see ponytail above."""
+        if self.__owner(owner) is None:
+            raise StoreError(
+                "The approval signer's transport belongs to a live store.")
+        return self.__channel()
+
+    def drop(self, owner):
+        """Forget this process's signer. A live store only. Fails closed."""
+        if self.__owner(owner) is None:
+            raise StoreError(
+                "The approval signer's transport belongs to a live store.")
+        return self.__drop()
+
+    def __exchange(self, payload):
+        """One request/reply on the signer's pipe. Private: no gate, no caller."""
         raw = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
         reason = "the approval signer did not answer"
         for attempt in (0, 1):
             try:
-                _proc, send_fd, recv_fd = identity._signer_channel()
+                _proc, send_fd, recv_fd = self.__channel()
             except Exception as exc:
                 return {"ok": False,
                         "reason": "the approval signer could not start (%s)"
@@ -162,10 +225,106 @@ class NotionStore:
                                            "unreadable answer"}
             except Exception as exc:
                 reason = "the approval signer is unreachable (%s)" % exc
-                identity._signer_drop()
+                self.__drop()
                 if attempt == 0:
                     continue
         return {"ok": False, "reason": reason}
+
+    def exchange(self, owner, payload):
+        """One request to the signer, for a live store only. Fails closed."""
+        if self.__owner(owner) is None:
+            return {"ok": False, "reason": (
+                "the approval signer's transport belongs to a live store, and a "
+                "receipt is minted only inside the store's own promotion step")}
+        return self.__exchange(payload)
+
+    def verify(self, payload):
+        """One ``verify`` request. ``verify`` only, for any caller. Fails closed.
+
+        THE ALLOWLIST: every other operation -- ``mint`` and ``capability``
+        included -- is refused in code, for every caller and every argument.
+        """
+        if type(payload) is not dict or payload.get("op") != "verify":
+            return {"ok": False, "reason": (
+                "this transport answers only 'verify'; a receipt is minted only "
+                "inside the store's own promotion step, which builds that "
+                "request itself and carries a capability this module cannot "
+                "supply")}
+        return self.__exchange(payload)
+
+
+class NotionStore:
+    """One client's cached identity records. Scoped, never shared."""
+
+    #: The signer's transport. Private to this class: the raw pipe ends live on
+    #: it and are released only to a live store (round 7).
+    __transport = _SignerTransport()
+
+    def __init__(self, root, client_namespace):
+        self.cache = cache_mod.Cache(root, client_namespace)
+        self.client_namespace = self.cache.client_namespace
+        # The token that names THIS store to the approval signer. It is a
+        # BEARER TOKEN, not a capability: the signer hands the identical token
+        # to anyone who asks for that (client, store), so ``compare_digest``
+        # proves only that a request carried a token that was issued. What keeps
+        # it away from a plain caller is reachability -- it is held on this
+        # instance, fetched through this store's private transport, and never
+        # returned by a public method. Nothing asks for it until a promotion
+        # step needs it, so a store that never approves never speaks to the
+        # signer.
+        self.__capability = None
+
+    # --- the approval signer's transport (round 7) -----------------------
+    #
+    # These three names used to be module functions in character_bible.identity
+    # -- ``identity._signer_channel()`` handed the signer's raw pipe ends to any
+    # caller, and a caller with zero standing wrote ``capability`` and ``mint``
+    # onto them by hand and had the genuine receipt stored through the public
+    # ``restore_from_notion()`` with ``promote()`` called zero times. They are
+    # private members of this class now, and the pipe ends behind them are
+    # private state of ``__transport``.
+
+    def __signer_start(self):
+        """Spawn this process's signer. Private member (round 7)."""
+        return self.__transport.start(self)
+
+    def __signer_channel(self):
+        """The signer's raw pipe ends. Private member (round 7).
+
+        What it hands back is a file descriptor pair, so a caller who gets here
+        can write the signer's wire protocol itself. Getting here needs a live
+        store and then a name-mangled private member of it -- the
+        implementation-internal class rounds 5, 6 and 6b ruled out of scope.
+        """
+        return self.__transport.channel(self)
+
+    def __signer_drop(self):
+        """Forget this process's signer after a transport failure. Private."""
+        return self.__transport.drop(self)
+
+    @staticmethod
+    def __signer_verify(payload):
+        """The verify-only entry point ``character_bible.identity`` uses.
+
+        An allowlist in code, exactly like ``identity._signer_request``: it
+        answers ``verify`` and refuses ``mint`` and ``capability``, so nothing
+        reachable through ``identity``'s namespace can produce a receipt.
+        """
+        return NotionStore.__transport.verify(payload)
+
+    def __transact(self, payload):
+        """One request to the approval signer, built and sent by THIS store.
+
+        This method is the only place a ``mint`` request exists. Round 5 built
+        it in promote() and then handed it to ``identity._signer_request``, a
+        module-level function that carried ``{"op": "mint"}`` for any caller --
+        a plain module call produced a genuine signer-minted receipt with
+        ``promote()`` called zero times. identity's namespace now answers
+        ``verify`` and refuses the rest in code, and it holds no signer
+        transport at all (round 7): the raw pipe ends live behind this class's
+        private members. Getting to this method needs a live store instance.
+        """
+        return self.__transport.exchange(self, payload)
 
     def __store_capability(self):
         """This store's capability, fetched once from the signer and kept here."""
