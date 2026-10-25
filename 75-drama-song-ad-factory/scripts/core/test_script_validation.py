@@ -850,6 +850,50 @@ def test_run_together_stub_spellings_refused_in_every_container():
                 raise AssertionError("assert_new_generation accepted %r" % (spelled,))
 
 
+def test_run_together_stub_inside_one_token_refused():
+    """A compact typed into one word is refused wherever it is written.
+
+    The whole-token rule refused "goeshere" but admitted "tobefilledlater",
+    "wordsherenow" and "xwordsherex" -- each carries a complete stub compact
+    inside ONE token, as a prefix, a suffix or surrounded by junk letters. The
+    probe is bounded to one token, so real prose written as two words never
+    spells a compact: "context here" is not "texthere", "deadline here" is not
+    "linehere". Both halves matter -- drop the one-token bound and the prose
+    goes, drop the whole-token run and "fill this in" goes.
+    """
+    fn = getattr(V, "_stub_written_together", None)
+    assert fn is not None, "run-together helper missing"
+    for spelled in ("tobefilledlater", "wordsherenow", "xwordsherex",
+                    "goeshere", "fillthisin"):
+        assert fn([spelled]) is True, spelled
+    assert fn(["fill", "this", "in"]) is True
+    for words in (["context", "here"], ["deadline", "here"],
+                  ["pipeline", "here"], ["skyline", "here"]):
+        assert fn(words) is False, words
+    containers = (
+        lambda stub: {"claims": stub},
+        lambda stub: {"claims": {"inner": [stub]}},
+        lambda stub: {"references": [[stub]]},
+        lambda stub: {"approval_bindings": [[{"text": stub}]]},
+        lambda stub: {"claims": {"line": stub}},
+    )
+    for spelled in ("tobefilledlater", "wordsherenow", "xwordsherex"):
+        assert V._is_placeholder_text(spelled) is True, spelled
+        for make in containers:
+            scene = _good_scene()
+            scene.update(make(spelled))
+            script = _single_scene_script(scene)
+            verdict = V.validate_script(script, world=WORLD, cast_manifest=CAST)
+            assert verdict["ok"] is False, (spelled, make)
+            assert "PLACEHOLDER_SCENE" in _codes(verdict), (spelled, _codes(verdict))
+            try:
+                V.assert_new_generation(script, world=WORLD, cast_manifest=CAST)
+            except C.ContractError:
+                pass
+            else:
+                raise AssertionError("assert_new_generation accepted %r" % (spelled,))
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failures = 0

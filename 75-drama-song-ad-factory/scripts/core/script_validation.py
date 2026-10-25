@@ -371,10 +371,17 @@ resolved set
 # exactly what admitted "goeshere" (eight) while refusing "wordshere" (nine).
 #
 # The run-together match is taken over WHOLE TOKENS, never over a substring of
-# the value: a compact form counts only where it is the exact letters of one
-# token or of consecutive whole tokens. That is what keeps real prose out --
-# "context here" joins to "contexthere", which is not "texthere", and
-# "deadline here" joins to "deadlinehere", which is not "linehere".
+# the whole value: a compact form counts where it is the exact letters of
+# consecutive whole tokens, or where it lies inside the letters of ONE token.
+# The one-token bound is what keeps real prose out -- "context here" is two
+# tokens and neither "context" nor "here" carries "texthere", and "deadline
+# here" is two tokens and "deadline" does not carry "linehere" -- while a
+# placeholder typed into a single word cannot hide: "tobefilledlater" carries
+# "tobefilled", "wordsherenow" carries "wordshere", "xwordsherex" carries
+# "wordshere" whatever surrounds it. ponytail: the one-token bound is the
+# ceiling; a run-together placeholder written ACROSS two real words is still
+# out of reach. Upgrade only with reviewer evidence of one, and never by
+# widening the probe back across the whole value.
 _STUB_PHRASES_RUN_TOGETHER = frozenset(
     "".join(phrase.split()) for phrase in _STUB_PHRASES)
 
@@ -389,12 +396,18 @@ def _stub_written_together(tokens):
     """True when whole tokens spell a stub phrase with no spaces between them.
 
     "goeshere" is the phrase "goes here" written as one word, so it is refused
-    whatever its letter count: nothing here compares a length floor. The run is
-    taken over whole tokens only, so letters inside an ordinary word never
-    count.
+    whatever its letter count: nothing here compares a length floor. A compact
+    form counts where consecutive whole tokens spell it exactly ("fill this
+    in"), and where ONE token carries it anywhere in its own letters
+    ("tobefilledlater", "wordsherenow", "xwordsherex"). The probe never spans
+    two tokens, so ordinary prose joined across a space is not a stub.
     """
     longest = _STUB_PHRASES_MAX_COMPACT_LEN
     for start in range(len(tokens)):
+        first = tokens[start]
+        for compact in _STUB_PHRASES_RUN_TOGETHER:
+            if compact in first:
+                return True
         joined = ""
         for token in tokens[start:]:
             joined += token
