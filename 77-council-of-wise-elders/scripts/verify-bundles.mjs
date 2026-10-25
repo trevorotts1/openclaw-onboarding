@@ -14,6 +14,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkArchiveContract } from "./archive-contract.mjs";
 import { checkEntryPoint } from "./entry-point-gate.mjs";
+import { manifestEntries, treeAggregate } from "./manifest-tree.mjs";
 
 const args = process.argv.slice(2);
 const distribution = args.includes("--distribution");
@@ -25,26 +26,6 @@ const root = rootIdx >= 0
 let failures = 0;
 const pass = (m) => console.log(`PASS ${m}`);
 const fail = (m) => { failures += 1; console.log(`FAIL ${m}`); };
-
-// Root-level .wired-<version> sentinels are written into every skill folder by
-// update-skills.sh during a fleet roll. They are roll bookkeeping, not skill
-// content, so they must not count toward the manifest tree hash.
-function isGeneratedRuntimePath(rel) {
-  return rel === "runtime/dist" || rel.startsWith("runtime/dist/")
-    || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/")
-    || /^\.wired-[^/]*$/.test(rel);
-}
-
-function walk(dir, out = [], base = dir) {
-  for (const name of readdirSync(dir).sort()) {
-    const p = join(dir, name);
-    const rel = relative(base, p).split("\\").join("/");
-    if (isGeneratedRuntimePath(rel)) continue;
-    if (statSync(p).isDirectory()) walk(p, out, base);
-    else out.push(p);
-  }
-  return out;
-}
 
 const manifestPath = join(root, "manifest.json");
 if (!existsSync(manifestPath)) {
@@ -61,12 +42,8 @@ if (fmName === manifest.skill && fmName === "council-of-wise-elders") {
   fail(`frontmatter name ${fmName ?? "(missing)"} != manifest skill ${manifest.skill}`);
 }
 
-const current = new Map();
-for (const p of walk(root)) {
-  const rel = relative(root, p).split("\\").join("/");
-  if (rel === "manifest.json" || rel.endsWith(".skill")) continue;
-  current.set(rel, createHash("sha256").update(readFileSync(p)).digest("hex"));
-}
+const tree = treeAggregate(root);
+const current = new Map(tree.entries.map((f) => [f.path, f.sha256]));
 const listed = new Map(manifest.files.map((f) => [f.path, f.sha256]));
 for (const [path, hash] of listed) {
   if (!current.has(path)) fail(`missing file: ${path}`);
@@ -75,11 +52,7 @@ for (const [path, hash] of listed) {
 for (const path of current.keys()) {
   if (!listed.has(path)) fail(`unlisted file: ${path}`);
 }
-const aggregate = createHash("sha256")
-  .update([...current.entries()]
-    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([path, hash]) => `${hash}  ${path}`).join("\n") + "\n")
-  .digest("hex");
+const aggregate = tree.aggregate;
 if (aggregate === manifest.aggregate_sha256) {
   pass(`aggregate tree hash matches (${manifest.file_count} files)`);
 } else {
