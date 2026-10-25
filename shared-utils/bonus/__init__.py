@@ -1,4 +1,4 @@
-"""Bonus membership / access capability (Purple Billboard, R-13 / T-14).
+"""Bonus membership and access capability (Purple Billboard, R-13 and T-14).
 
 The decision module is `access_capability`; it reports the honest capability
 state of the optional bonus membership and the supported route, and it refuses

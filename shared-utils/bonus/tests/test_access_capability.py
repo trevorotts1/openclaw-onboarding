@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -77,7 +78,22 @@ REVIEWED_SLASH_TOKENS = frozenset({
     "memberships/communities",
     "return/recovery",
     "shared-utils/ghl",
+    # PBB-387: the padded spelling of a path separator is the same class as the
+    # glued one, so a pair of segments split by spaces is an operation shape.
+    # This is the one sentence in the deliverable's own prose that carries such
+    # a pair -- a citation pair, not a path -- and it was reviewed in that exact
+    # sentence, which is the only way prose passes.
+    "R-13 / DEC-16",
 })
+# The SAME path-segment class, in its padded spelling: `x / y`. A whitespace run
+# on both sides of a solidus is a path separator like any other, so it is one
+# class with the glued form -- and it cannot be told apart from prose
+# alternation by shape, so the closed world below is what keeps prose readable
+# while an unpadded or padded spelling of a new operation still fails.
+_SPACED_PATH = re.compile(
+    r"(?<![A-Za-z0-9_/.-])[A-Za-z0-9_{][A-Za-z0-9_\-.{}]* / "
+    r"[A-Za-z0-9_{][A-Za-z0-9_\-.{}]*(?![A-Za-z0-9_/.-])"
+)
 _SCHEMELESS_HOST = re.compile(r"\b(?:[a-z0-9][a-z0-9-]*\.)+[a-z][a-z0-9-]*(?::\d+)?/[A-Za-z0-9]")
 _DOTTED_OPERATION = re.compile(r"\b[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\b")
 _FILE_SUFFIXES = (
@@ -96,67 +112,211 @@ _HTTP_VERBS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIO
 # PBB-260 and PBB-311 defects shared: the exemptions were keyed on what the
 # token looked like and applied whatever role the token was playing.
 #
-# PBB-311: the first attempt matched the seam with one regex and was defeated by
-# any wrapper between the key and the value (backtick, asterisk, bracket,
-# parenthesis, markdown cell, arrow, a nested object, a subscript). Role is
-# decided structurally now: strip the wrappers, find the separator, read the
-# key, and walk out through enclosing object frames so a nested value still
-# answers to its parent key. Wrappers cannot hide the role because they are
-# removed before the role is read.
+# PBB-387 DESIGN CHANGE. PBB-371 charged that the "structural" role check was
+# two enumerated lists -- a wrapper whitelist and a separator whitelist -- and
+# that any spelling outside them walked past every rule (angle brackets,
+# typographic quotes, an em dash, a doubled separator, unicode arrows,
+# zero-width characters, mixed seam spellings). Character stripping cannot
+# close that class, because every new spelling has to be typed into a list.
+# The role is read off a TOKEN STREAM instead: the head text is scanned once
+# into identifier / string / bracket / separator tokens, and the governing key
+# is the key token before the value across a seam. There is no wrapper spelling
+# and no separator spelling to enumerate, so there is none to miss.
+#
+# A seam is a run carrying at least one non-whitespace separator character
+# between a key token and the value. Whitespace alone is prose, not a seam, so
+# `see the path shared-utils/...` does not read `path` as a key.
+# Frames are walked to their real depth -- the stack is the nesting that is
+# actually in the text -- so a nested value answers to its parent key however
+# deep the nesting goes.
 _API_KEYS = frozenset(
     {"api", "route", "operation", "endpoint", "method", "path", "url", "uri", "action"}
 )
-# Characters that carry no role of their own: formatting wrappers and quoting.
-# Separator characters are deliberately NOT here, or stripping would eat the
-# `->` / `|` before it could be read.
-_WRAPPERS = " \t\"'`*~()[]{},;"
-_VALUE_SEPARATORS = ("->", "=>", ":=", "→", ":", "=", "|")
-_SUBSCRIPT_KEY = re.compile(r"\[\s*[\"']?([A-Za-z_][A-Za-z0-9_-]*)[\"']?\s*\]$")
-_KEY_TAIL = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*)$")
-_ROLE_WINDOW = 240
+_OPENERS = {"(": ")", "[": "]", "{": "}"}
+_CLOSERS = {v: k for k, v in _OPENERS.items()}
+_STRING_QUOTES = "\"'`"
+# A string prefix is part of the literal it opens (`f"..."`, `rb'...'`), so the
+# prefix is never read as a key of its own.
+_STRING_PREFIX = re.compile(r"^[rRbBuUfF]{0,2}$")
+_ROLE_WINDOW = 4000
 
 
-def _ends_with_separator(segment):
-    """The value separator `segment` ends with, longest match first."""
-    for sep in _VALUE_SEPARATORS:
-        if segment.endswith(sep):
-            return sep
+def _tokens(text):
+    """Identifier / string / bracket / separator tokens, with their offsets.
+
+    Brackets and quotes are STRUCTURE, so a bracket inside a string literal is
+    never mistaken for a frame boundary and the wrapper characters around a
+    value cannot be stripped away before the role is read.
+    """
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch.isalnum() or ch == "_":
+            j = i + 1
+            while j < n and (text[j].isalnum() or text[j] in "_-"):
+                j += 1
+            if j < n and text[j] in _STRING_QUOTES and _STRING_PREFIX.match(text[i:j]):
+                quote = text[j]
+                k = j + 1
+                while k < n and text[k] != quote:
+                    k += 2 if text[k] == "\\" else 1
+                k = min(k + 1, n)
+                out.append(("STR", text[j + 1:k - 1] if k - j > 2 else "", i, k))
+                i = k
+                continue
+            out.append(("ID", text[i:j], i, j))
+            i = j
+        elif ch in _STRING_QUOTES:
+            j = i + 1
+            while j < n and text[j] != ch:
+                j += 2 if text[j] == "\\" else 1
+            j = min(j + 1, n)
+            out.append(("STR", text[i + 1:j - 1] if j - i > 2 else "", i, j))
+            i = j
+        elif ch in _OPENERS or ch in _CLOSERS:
+            out.append(("OPEN" if ch in _OPENERS else "CLOSE", ch, i, i + 1))
+            i += 1
+        else:
+            j = i + 1
+            while j < n and not (
+                text[j].isalnum()
+                or text[j] in "_-" + _STRING_QUOTES + "()[]{}"
+            ):
+                j += 1
+            out.append(("SEP", text[i:j], i, j))
+            i = j
+    return out
+
+
+def _match_opener(tokens, close_at):
+    """Index of the opener that closes `tokens[close_at]`, or None."""
+    want = _CLOSERS[tokens[close_at][1]]
+    depth = 0
+    for k in range(close_at - 1, -1, -1):
+        kind, val, _, _ = tokens[k]
+        if kind == "CLOSE":
+            depth += 1
+        elif kind == "OPEN":
+            if depth == 0:
+                return k if val == want else None
+            depth -= 1
+    return None
+
+
+def _innermost_open_before(tokens, at):
+    depth = 0
+    for k in range(at - 1, -1, -1):
+        kind, _, _, _ = tokens[k]
+        if kind == "CLOSE":
+            depth += 1
+        elif kind == "OPEN":
+            if depth == 0:
+                return k
+            depth -= 1
+    return None
+
+
+def _is_subscript(tokens, open_at):
+    """`[` at `open_at` indexes something; it is not an array literal."""
+    return (
+        open_at > 0
+        and tokens[open_at - 1][0] in ("ID", "STR", "CLOSE")
+    )
+
+
+def _bracket_key(tokens, open_at, close_at):
+    """The key a bracket group carries, or "".
+
+    `spec["api"]` carries `api` as its key. `{"api": [ ... ]}` is an array
+    literal and carries no key of its own -- its key sits before the bracket,
+    where the walk finds it.
+    """
+    if tokens[open_at][1] != "[" or not _is_subscript(tokens, open_at):
+        return ""
+    for tok in reversed(tokens[open_at + 1:close_at]):
+        if tok[0] in ("ID", "STR") and tok[1]:
+            return tok[1]
     return ""
+
+
+def _seam(tokens, at):
+    """(key token, separator run) ending at `at`, or (None, "").
+
+    A seam is a separator run carrying at least one non-whitespace character.
+    Whitespace alone joins words, not a key to a value.
+    """
+    i = at
+    run = ""
+    while i > 0 and tokens[i - 1][0] == "SEP":
+        run = tokens[i - 1][1] + run
+        i -= 1
+    if not run or not run.strip():
+        return None, ""
+    if i == 0 or tokens[i - 1][0] not in ("ID", "STR"):
+        return None, ""
+    return tokens[i - 1], run
+
+
+def _role_chain(tokens):
+    """Keys governing the expression `tokens` describes, innermost first."""
+    if not tokens:
+        return []
+    i = len(tokens)
+    key, _ = _seam(tokens, i)
+    if key is not None:
+        rest_at = i
+        while rest_at > 0 and tokens[rest_at - 1][0] == "SEP":
+            rest_at -= 1
+        key_at = rest_at - 1
+        opener = _innermost_open_before(tokens, key_at)
+        rest = _role_chain(tokens[:opener]) if opener is not None else []
+        return [key[1]] + rest
+    # No seam: the expression is a bracketed group, or it is glued to whatever
+    # precedes it (a name, a prefix) and carries no key of its own.
+    while i > 0 and tokens[i - 1][0] == "SEP":
+        i -= 1
+    if i == 0:
+        return []
+    kind, val, _, _ = tokens[i - 1]
+    if kind == "CLOSE":
+        opener = _match_opener(tokens, i - 1)
+        if opener is None:
+            return []
+        inner_key = _bracket_key(tokens, opener, i - 1)
+        rest = _role_chain(tokens[:opener])
+        return ([inner_key] if inner_key else []) + rest
+    if kind == "OPEN":
+        if val == "(" and i > 1 and tokens[i - 2][0] == "ID":
+            return _role_chain(tokens[:i - 2])  # a call name is not a key
+        return _role_chain(tokens[:i - 1])
+    return []  # glued: `POST/...`, `v1/...` -- a prefix, not a key
 
 
 def _key_before(text, pos):
     """The api-shaped key whose value holds `pos`, or "".
 
-    Reads the seam structurally, so a wrapper character cannot hide it:
-    `api: x`, ``api: `x` ``, `api: **x**`, `| api | x |`, `api -> x`,
-    `spec["api"] = x` and `{"operation": {"inner": x}}` all resolve. The walk is
-    bounded (four frames); an unreadable seam returns "" rather than guessing a
-    role it cannot see.
+    Read off the token stream, so no wrapper spelling and no seam spelling can
+    hide the role: `api: x`, ``api: `x` ``, `api: **x**`, `| api | x |`,
+    `api -> x`, `api — x`, `api ⟹ x`, `api: | x`, `spec["api" -> x]`,
+    `spec["api"]["inner"] = x` and `{"operation": {"inner": x}}` all resolve.
+    The walk runs to the depth the text actually has, so a nested value answers
+    to its parent key however many frames it sits inside. An unreadable seam
+    returns "" rather than guessing a role it cannot see.
     """
-    seg = text[max(0, pos - _ROLE_WINDOW):pos]
-    for _ in range(4):
-        seg = seg.rstrip(_WRAPPERS)
-        match = _SUBSCRIPT_KEY.search(seg)
-        if match:
-            key = match.group(1).lower()
-            return key if key in _API_KEYS else ""
-        sep = _ends_with_separator(seg)
-        if not sep:
-            return ""
-        seg = seg[: len(seg) - len(sep)].rstrip(_WRAPPERS)
-        match = _SUBSCRIPT_KEY.search(seg)
-        if match:
-            key = match.group(1).lower()
-            return key if key in _API_KEYS else ""
-        match = _KEY_TAIL.search(seg)
-        if match and match.group(1).lower() in _API_KEYS:
-            return match.group(1).lower()
-        # Not this frame's key: step out to the enclosing object/array/call and
-        # read the key that owns THIS frame.
-        opener = max(seg.rfind("{"), seg.rfind("["), seg.rfind("("))
-        if opener < 0:
-            return ""
-        seg = seg[:opener]
+    base = max(0, pos - _ROLE_WINDOW)
+    window = text[base:pos + 1]
+    tokens = _tokens(window)
+    # The value is whatever token CONTAINS `pos` (a string literal swallows it).
+    # Everything before that token is the head the role is read off.
+    at = len(tokens)
+    for index, tok in enumerate(tokens):
+        if tok[3] + base > pos:
+            at = index
+            break
+    for key in _role_chain(tokens[:at]):
+        if key.lower() in _API_KEYS:
+            return key.lower()
     return ""
 
 # The exact sentence each reviewed slash token was reviewed in. This is the
@@ -182,6 +342,7 @@ REVIEWED_PROSE_CONTEXTS = frozenset({
     'ssing:** a documented memberships/communities operation in the froz',
     'ssing=( "a documented memberships/communities operation in the froz',
     'the assisted/operator path and the R-13 / D',
+    'the assisted/operator path and the R-13 / DEC-16 authority',
     'tity": ["a documented memberships/communities operation in the froz',
 })
 
@@ -212,6 +373,25 @@ OVERSTATED_GUARANTEES = (
     r"\b(?:no|zero)\s+fabricat\w+\s+(?:gets?|passes?|slips?|reaches?|escapes?)\b",
     r"\bevery\s+(?:fabricat\w+|shape|smuggle\w*|token)\s+(?:is|are|will\s+be|gets?)\b"
     r"[^.]{0,40}\b(?:caught|flagged|rejected|stopped|blocked)\b",
+    # PBB-387 defect 3: the guard could not see the overstatements the previous
+    # commit shipped -- three sentences that were all true of nothing. Each
+    # pattern below is the CLASS those phrasings belong to, not one frozen
+    # literal, so a fresh phrasing of the same promise still fails here.
+    # (a) a traversal that is claimed without its bound.
+    r"\b(?:walk|reach)\w*\s+out\s+(?:through|past|into)\b[^.]{0,60}\b(?:frames?|nesting|levels?)\b",
+    r"\bhowever\s+deep\b",
+    r"\bno\s+matter\s+how\s+(?:deep|far|many)\b",
+    r"\b(?:all|any|every)\s+(?:depth|nesting|frames?)\b[^.]{0,40}\b(?:walk|reach|read)\w*\b",
+    # (b) a wrapper claimed to be invisible to the read.
+    r"\bcannot\s+hide\s+(?:the\s+)?role\b",
+    r"\b(?:wrappers?|formatting|quoting|quotes?|punctuation)\s+cannot\s+hide\b",
+    r"\b(?:wrappers?|formatting)\s+(?:are|is)\s+removed\b[^.]{0,60}\brole\b",
+    # (c) a claim that no spelling can be chosen past the rules.
+    r"\bcannot\s+(?:choose|pick|find|select|use)\s+(?:a|any|the)\b[^.]{0,40}\bspelling\b",
+    r"\bspellings?\s+(?:the\s+rules?|the\s+scan)\s+(?:miss|misses|could\s+miss|would\s+miss)\b",
+    r"\b(?:rules?|scan)\s+(?:never\s+)?miss(?:es)?\b[^.]{0,40}\bspelling\b",
+    r"\bno\s+spellings?\s+(?:can|could|will|would)\s+be\s+(?:chosen|picked|found|used)\b",
+    r"\bspellings?\b[^.]{0,40}\b(?:the\s+rules?|the\s+scan)\s+(?:miss|misses)\b",
 )
 _OVERSTATED_RE = tuple(re.compile(p, re.I) for p in OVERSTATED_GUARANTEES)
 # What the prose must state so a reader knows what the scan does not cover.
@@ -310,13 +490,17 @@ def _is_file_provenance(token, text=""):
 
 
 def _starts_value_run(text, at):
-    """True when a reviewed window begins right after a labelled separator.
+    """True when a reviewed window begins on the far side of a seam.
 
     PBB-311 A5: a reviewed window pasted behind `target: ` exempted its token
     whatever role the window was playing. The window is the unit of review, so
-    it must start outside a value run.
+    it must start outside a value run. The seam is read off the token stream,
+    so a label spelled with any separator counts and prose spacing does not.
     """
-    return bool(_ends_with_separator(text[max(0, at - 80):at].rstrip(_WRAPPERS)))
+    window = text[max(0, at - _ROLE_WINDOW):at]
+    tokens = _tokens(window)
+    key, _ = _seam(tokens, len(tokens))
+    return key is not None
 
 
 def _in_reviewed_prose(text, start, end):
@@ -408,6 +592,74 @@ SMUGGLE_SHAPES = (
         "reviewed window behind a label",
         "target: The supported path is assisted/operator: the owner creates th",
     ),
+    # PBB-387: the class PBB-371 measured still open, and the spellings this
+    # round invented. PBB-371 charged that the role read was two enumerated
+    # lists and that every spelling outside them walked past the rule; these are
+    # the spellings nobody had typed when that commit shipped. They are pinned
+    # as FAMILIES (wrapper / seam / subscript / frame / invisible / padded
+    # separator), not as eight more rows of the same family.
+    ("angle wrapper value position", "api: <shared-utils/bonus/access_capability.py>"),
+    ("typographic quote value position",
+     "api: \u201cshared-utils/bonus/access_capability.py\u201d"),
+    ("em-dash seam", "api \u2014 shared-utils/bonus/access_capability.py"),
+    ("double separator seam", "api: | shared-utils/bonus/access_capability.py"),
+    ("long double arrow seam", "api \u27f9 shared-utils/bonus/access_capability.py"),
+    ("long rightwards arrow seam", "api \u27f6 shared-utils/bonus/access_capability.py"),
+    ("rightwards double arrow seam", "api \u21d2 shared-utils/bonus/access_capability.py"),
+    ("right-left harpoon seam", "api \u21cc shared-utils/bonus/access_capability.py"),
+    ("long left-right arrow seam", "api \u27f7 shared-utils/bonus/access_capability.py"),
+    ("arrowhead seam", "api \u2934 shared-utils/bonus/access_capability.py"),
+    ("colon then pipe seam", "api : | shared-utils/bonus/access_capability.py"),
+    ("arrow then colon seam", "api ->: shared-utils/bonus/access_capability.py"),
+    ("colon then em-dash seam", "api :\u2014 shared-utils/bonus/access_capability.py"),
+    ("colon-equals then pipe seam", "api := | shared-utils/bonus/access_capability.py"),
+    ("pipe then equals seam", "api |= shared-utils/bonus/access_capability.py"),
+    ("triple colon seam", "api ::: shared-utils/bonus/access_capability.py"),
+    ("equals then arrow seam", "api ==> shared-utils/bonus/access_capability.py"),
+    ("slash seam", "api / shared-utils/bonus/access_capability.py"),
+    ("arrow wrapper around the value",
+     "api: ->shared-utils/bonus/access_capability.py->"),
+    ("equals wrapper around the value",
+     "api: =shared-utils/bonus/access_capability.py="),
+    ("colon wrapper around the value",
+     "api: :shared-utils/bonus/access_capability.py:"),
+    ("pipe wrapper around the value",
+     "api: |shared-utils/bonus/access_capability.py|"),
+    ("arrow wrapper inside a markdown cell",
+     "| api | ->shared-utils/ghl/capability_inventory.py-> |"),
+    ("zero-width space before the value",
+     "api: \u200bshared-utils/bonus/access_capability.py"),
+    ("zero-width space inside the key",
+     "a\u200bpi: shared-utils/bonus/access_capability.py"),
+    ("zero-width joiner after the key",
+     "api\u200d: shared-utils/bonus/access_capability.py"),
+    ("byte-order mark before the key",
+     "\ufeffapi: shared-utils/bonus/access_capability.py"),
+    ("right-to-left mark before the key",
+     "\u200fapi: shared-utils/bonus/access_capability.py"),
+    ("zero-width non-joiner at the seam",
+     "api\u200c: shared-utils/bonus/access_capability.py"),
+    ("zero-width space inside the value path",
+     "api: shared-utils/bonus/access\u200b_capability.py"),
+    ("arrow inside a subscript",
+     'spec["api" -> "shared-utils/bonus/access_capability.py"]'),
+    ("colon inside a subscript",
+     'spec["api": "shared-utils/bonus/access_capability.py"]'),
+    ("pipe inside a subscript",
+     'spec["route" | "shared-utils/bonus/access_capability.py"]'),
+    ("seam inside a subscript holding a nested object",
+     'spec["operation" := {"inner": "shared-utils/bonus/access_capability.py"}]'),
+    ("subscript chain, parent is the api key",
+     'spec["operation"]["inner"] = "shared-utils/bonus/access_capability.py"'),
+    ("three-deep subscript chain",
+     'spec["api"]["inner"]["deep"] = "shared-utils/bonus/access_capability.py"'),
+    ("subscript then brace",
+     'spec["route"]["inner"] = {"deep": "shared-utils/bonus/access_capability.py"}'),
+    ("fullwidth reverse solidus U+FF3C", "memberships\uff3cgrant"),
+    ("padded solidus", "memberships / grant"),
+    ("padded fullwidth solidus", "memberships \uff0f grant"),
+    ("padded division slash", "memberships \u2215 grant"),
+    ("padded reverse solidus", "memberships \uff3c grant"),
 )
 
 # Text that must NOT be flagged: real repo provenance and plain prose.
@@ -426,17 +678,71 @@ LEGITIMATE_TEXT = (
     "select_route(OpClass.EXECUTE, resource=\"memberships\") returns []",
     "in the frozen v3 production spec, contact enrollment against an existing "
     "workflow is not authoring",
+    # PBB-387: the read must not UNWRAP a legitimate expression. Stripping the
+    # brackets out of `a[b]/c[d]` would manufacture `ab/cd`, an operation path
+    # that is not in the text. The token stream keeps the brackets where they
+    # are, so the expression reads as itself.
+    "ratio = a[b]/c[d]",
+    "res = compute(a[0], b[1])",
+    "value = table[key]",
+    'cfg = {"note": "plain", "other": 1}',
+    # PBB-371 defect 5: the normaliser used to rewrite legitimate filesystem
+    # literals into bare paths. A local-file URL, a drive-rooted path and a UNC
+    # path keep their own separators now.
+    "file:///Users/me/project/file.py",
+    "C:\\Users\\me\\project\\file.py",
+    "\\\\server\\share\\doc.md",
 )
 
 
 # PBB-311 A2/A3: a path split by a doubled separator or by a look-alike slash
 # walked past every rule. Normalising the separators means one rule decides one
 # class: the glued form, the doubled form and the look-alike form cannot be told
-# apart because they arrive identical. `https://` keeps its scheme slashes.
-_SEPARATOR_LOOKALIKES = str.maketrans(
-    {"／": "/", "∕": "/", "⁄": "/", "⧸": "/", "\\": "/"}
-)
-
+# apart because they arrive identical.
+#
+# PBB-387: the map is DERIVED, not typed. Any character whose Unicode name
+# calls it a solidus or a slash is a path separator, so a spelling nobody
+# anticipated (U+FF3C FULLWIDTH REVERSE SOLIDUS, U+FE68 SMALL REVERSE SOLIDUS,
+# U+29F5 REVERSE SOLIDUS OPERATOR) arrives at the same rule as `/`. A typed
+# list of five characters is exactly the device PBB-371 charged.
+def _slash_like_table():
+    table = {}
+    for codepoint in range(0x11000):
+        char = chr(codepoint)
+        if char == "/":
+            continue
+        try:
+            name = unicodedata.name(char)
+        except ValueError:
+            continue
+        if "SOLIDUS" in name or "SLASH" in name:
+            table[codepoint] = ord("/")
+    return str.maketrans(table)
+_SLASH_TRANSLATE = _slash_like_table()
+# The same derived set, as a character class for the path rules below.
+_SLASH_LIKE = "".join(chr(c) for c in range(0x11000) if c in _SLASH_TRANSLATE)
+_SEPARATOR_LOOKALIKES = _SLASH_TRANSLATE
+# A backslash is a path separator like any other. The one shape it may not be
+# mapped inside is a real Windows path -- a drive root (`C:\...`) or a UNC
+# (`\\server\...`) -- where it is the separator OF that path and mapping it to
+# `/` manufactures bare-path hits out of legitimate literals (PBB-371 defect 5).
+# The shape is defined structurally: a drive root, or a doubled leading
+# separator. No product is named.
+_PROTECTED_BACKSLASH = "\x00"
+_WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9_])(?:[A-Za-z]:\\|\\\\)[^\s\"'`|*<>]*")
+# A scheme with an EMPTY authority (`file:///x`, `data:///x`) names a local
+# object and not a host, so it is not an operation path. Structural again: the
+# authority slot is empty, which no host name ever is.
+_EMPTY_AUTHORITY_URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.\-]*:///[^\s\"'`|*<>]*")
+# Characters with no visible glyph carry no role of their own: a zero-width
+# space inside `api` is not a different spelling of `api`. Structural -- the
+# Unicode categories for format, control, surrogate, unassigned and combining
+# marks, not a list of characters.
+def _drop_invisible(text):
+    return "".join(
+        char for char in text
+        if not unicodedata.category(char).startswith(("C", "M"))
+    )
 
 def _scan_text(text):
     """The text the scan runs over.
@@ -444,23 +750,45 @@ def _scan_text(text):
     Whitespace is normalised first: the same sentence wraps across lines in the
     module and sits on one line in the evidence doc and in the returned surface,
     and the reviewed prose contexts below are captured from the normalised form.
-    Separator look-alikes are then mapped to `/` and doubled separators are
-    collapsed, so a smuggling shape cannot choose a spelling the rules miss. A
-    non-string is refused with the domain error, never a bare `TypeError` out of
-    a regex.
+    Invisible characters are then dropped (they carry no role), separator
+    look-alikes are mapped to `/` by Unicode name, and a doubled separator is
+    collapsed -- except where the run is a scheme delimiter (`file://`, `x://`),
+    which is not a path and must survive byte for byte. A non-string is refused
+    with the domain error, never a bare `TypeError` out of a regex.
     """
     if not isinstance(text, str):
         raise ac.BonusCapabilityError(
             f"api shape scan takes text, got {type(text).__name__}"
         )
-    flat = re.sub(r"\s+", " ", text).translate(_SEPARATOR_LOOKALIKES)
-    return re.sub(r"(?<!:)/{2,}", "/", flat)
+    flat = re.sub(r"\s+", " ", text)
+    flat = _drop_invisible(flat)
+    flat = _WINDOWS_PATH.sub(
+        lambda m: m.group(0).replace("\\", _PROTECTED_BACKSLASH), flat
+    )
+    flat = flat.translate(_SEPARATOR_LOOKALIKES)
+    flat = re.sub(r"(?<![:/])/{2,}", "/", flat)
+    return flat.replace(_PROTECTED_BACKSLASH, "\\")
+
+
+def _path_literal_spans(text):
+    """Spans of filesystem literals the path rules leave alone.
+
+    A real Windows path and a local-file URL each carry their own separator
+    syntax; mapping them onto `/` manufactured bare-path hits out of
+    legitimate literals. The ROLE rule is unaffected: a literal behind an
+    `api` key is an operation value like any other.
+    """
+    spans = [m.span() for m in _WINDOWS_PATH.finditer(text)]
+    return spans + [m.span() for m in _EMPTY_AUTHORITY_URL.finditer(text)]
 
 
 def _dotted_operation_hits(text):
     text = _scan_text(text)
+    local = _path_literal_spans(text)
     hits = []
     for match in _DOTTED_OPERATION.finditer(text):
+        if any(l < match.end() and match.start() < r for l, r in local):
+            continue
         token = match.group(0)
         if match.start() > 0 and text[match.start() - 1] == "-":
             # PBB-311: a dot-token glued behind a hyphen is part of a real
@@ -485,9 +813,12 @@ def _dotted_operation_hits(text):
 def _api_shape_hits(text):
     """API shapes that cannot be legitimate in this module's source or surface."""
     text = _scan_text(text)
+    local = _path_literal_spans(text)
     hits = [f"url:{m.group(0)}" for m in _URL.finditer(text)]
     hits += [f"verb+path:{m.group(0)}" for m in _VERB_PATH.finditer(text)]
     for match in _BARE_PATH.finditer(text):
+        if any(l < match.end() and match.start() < r for l, r in local):
+            continue
         token = match.group(0)
         if _in_api_value(text, match.start()):
             hits.append(f"bare-path:{token}")  # a value is never provenance
@@ -498,6 +829,17 @@ def _api_shape_hits(text):
                 token in REVIEWED_SLASH_TOKENS
                 and _in_reviewed_prose(text, match.start(), match.end())
             )
+        ):
+            continue  # file provenance or reviewed prose, not an operation
+        hits.append(f"bare-path:{token}")
+    for match in _SPACED_PATH.finditer(text):
+        token = match.group(0)
+        if _in_api_value(text, match.start()):
+            hits.append(f"bare-path:{token}")  # a value is never provenance
+            continue
+        if _is_file_provenance(token, text) or (
+            token in REVIEWED_SLASH_TOKENS
+            and _in_reviewed_prose(text, match.start(), match.end())
         ):
             continue  # file provenance or reviewed prose, not an operation
         hits.append(f"bare-path:{token}")
@@ -1106,6 +1448,74 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
         for label in ("target: ", "route: ", "url: ", "endpoint -> "):
             self.assertTrue(_fabricated_api_hits(label + window), label + window)
 
+    def test_the_role_walk_reaches_the_depth_the_text_has(self):
+        # Defect 3's bound. The previous read was `for _ in range(4)` while both
+        # delivered documents claimed the walk went out through nested frames.
+        # The read is off a token stack now, so the depth it reaches is the
+        # depth the text has; five frames and ten frames both answer to the key
+        # that owns them. Pinned at two depths past the old bound so a
+        # reintroduced ceiling fails here.
+        for depth in (5, 10):
+            keys = ["api"] + [f"k{i}" for i in range(depth - 1)]
+            text = (
+                "".join(f'{{"{key}":' for key in keys)
+                + '"shared-utils/bonus/access_capability.py"'
+                + "}" * depth
+            )
+            self.assertTrue(_fabricated_api_hits(text), f"{depth} frames")
+        # The key must be the one that OWNS the value, not the nearest one.
+        self.assertTrue(_fabricated_api_hits(
+            '{"api": {"note": "shared-utils/bonus/access_capability.py"}}'
+        ))
+        self.assertTrue(_fabricated_api_hits(
+            '{"note": {"api": {"deep": "shared-utils/bonus/access_capability.py"}}}'
+        ))
+        # Inverse: a value nested under a key that is not an api key is not an
+        # operation value, however deep it sits.
+        self.assertEqual(_fabricated_api_hits(
+            '{"note": {"deep": {"deeper": "shared-utils/ghl/capability_inventory.py"}}}'
+        ), [])
+        self.assertEqual(_fabricated_api_hits(
+            'f(a[{"b": ({"c": [{"d": "shared-utils/ghl/capability_inventory.py"}]})}])'
+        ), [])
+
+    def test_the_three_falsified_sentences_are_gone_and_the_guard_sees_them(self):
+        # Defect 3. PBB-371 measured three shipped sentences the guard could not
+        # see: an unbounded walk claim over code bounded at four, a claim that
+        # wrappers are removed before the role is read, and a claim that no
+        # spelling can be chosen past the rules. All three are gone from the
+        # delivered prose, and the guard fires on each as a CLASS.
+        falsified = (
+            "including a key reached by walking out through nested frames",
+            "Wrappers cannot hide the role because they are removed before the "
+            "role is read.",
+            "so a smuggling shape cannot choose a spelling the rules miss",
+            "a key reached by walking out through nested frames",
+            "Wrappers cannot hide the role",
+            "walks out through nested frames however deep they go",
+            "wrappers are removed before the role is read",
+            "a smuggling shape cannot choose a spelling the rules miss",
+        )
+        for claim in falsified:
+            self.assertTrue(_overstated_guarantee_hits(claim), claim)
+        for name, path in (
+            ("module", Path(ac.__file__)),
+            ("evidence doc", _BONUS / "BONUS-ACCESS-CAPABILITY-DECISION.md"),
+        ):
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            for claim in falsified[:3]:
+                self.assertNotIn(claim, flat, f"{name} still ships: {claim}")
+        # The scope is stated instead: the walk's window is named, and the
+        # bound of the read is the depth of the text rather than a claim about
+        # every nesting.
+        for name, path in (
+            ("module", Path(ac.__file__)),
+            ("evidence doc", _BONUS / "BONUS-ACCESS-CAPABILITY-DECISION.md"),
+        ):
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            self.assertIn("4000-character role window", flat, name)
+            self.assertIn("the depth the text actually has", flat, name)
+
     def test_the_prose_guard_sees_the_class_it_names(self):
         # B2. The guard must flag the falsified sentence itself and the common
         # rephrasings, and must stay silent on honest scoping prose.
@@ -1119,6 +1529,19 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
             "the scan is airtight",
             "every fabrication is stopped",
             "a later edit cannot slip one in",
+            # PBB-387 defect 3: the three sentences the shipped guard could not
+            # see, and two rephrasings of each.
+            "including a key reached by walking out through nested frames",
+            "a key reached by walking out through nested frames",
+            "walks out through nested frames however deep they go",
+            "the read walks out through any frames",
+            "Wrappers cannot hide the role because they are removed before the "
+            "role is read.",
+            "Wrappers cannot hide the role",
+            "wrappers are removed before the role is read",
+            "so a smuggling shape cannot choose a spelling the rules miss",
+            "a smuggling shape cannot choose a spelling the rules miss",
+            "no spelling can be chosen that the rules miss",
         ):
             self.assertTrue(_overstated_guarantee_hits(claim), claim)
         for honest in (
@@ -1126,6 +1549,14 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
             "coverage is not hollow",
             "the scan does not enumerate every shape",
             "the reviewer's table scores 46 of 46",
+            # PBB-387: the honest scope statements this round ships, which must
+            # stay silent under the wider guard.
+            "The read walks out to the depth the text actually has, inside a "
+            "4000-character role window.",
+            "no wrapper spelling has to be listed to be read",
+            "a bracket inside a string literal is never a frame boundary",
+            "A seam is any run carrying a non-whitespace separator character "
+            "between a key token and the value",
         ):
             self.assertEqual(_overstated_guarantee_hits(honest), [], honest)
 
@@ -1172,6 +1603,48 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
             ):
                 with self.assertRaises(ac.BonusCapabilityError):
                     fn(bad)
+
+    def test_a_legitimate_expression_is_not_unwrapped_into_a_shape(self):
+        # Defect 1's inverse. The read is over a token stream, so brackets stay
+        # where the text put them: stripping the wrappers out of `a[b]/c[d]`
+        # would manufacture `ab/cd`, an operation path that no sentence in the
+        # text contains. The normaliser must not rewrite a filesystem literal
+        # into a bare path either.
+        for text in (
+            "ratio = a[b]/c[d]",
+            "res = compute(a[0], b[1])",
+            "value = table[key]",
+            'cfg = {"note": "plain", "other": 1}',
+        ):
+            self.assertEqual(_fabricated_api_hits(text), [], text)
+        for text in (
+            "file:///Users/me/project/file.py",
+            "C:\\Users\\me\\project\\file.py",
+            "\\\\server\\share\\doc.md",
+        ):
+            self.assertEqual(_fabricated_api_hits(text), [], text)
+            self.assertEqual(_scan_text(text), text, text)
+
+    def test_a_python_attribute_access_is_a_source_shape_not_a_surface_one(self):
+        # The documented scope, pinned both ways. `cap.transport.value` is real
+        # Python, so the SOURCE scan leaves it alone; on the returned surface a
+        # dotted token is an operation id, and that is where the dotted rule
+        # runs. One instrument answering twice would be a scope claim the code
+        # does not make.
+        self.assertEqual(_api_shape_hits("value = cap.transport.value"), [])
+        self.assertTrue(_fabricated_api_hits("value = cap.transport.value"))
+
+    def test_the_harness_controls_are_not_stuck_in_one_polarity(self):
+        # Both polarities, on purpose. A probe that only ever passes proves
+        # nothing, and a probe that only ever fails is a broken instrument.
+        self.assertTrue(
+            _fabricated_api_hits("api: shared-utils/bonus/access_capability.py"),
+            "expected-FAIL control came back clean",
+        )
+        self.assertEqual(
+            _fabricated_api_hits("shared-utils/ghl/capability_inventory.py"), [],
+            "expected-PASS control came back flagged",
+        )
 
     def test_the_scan_still_takes_text_of_every_shape(self):
         # Inverse for the type guard: real text still scans, and the shapes the

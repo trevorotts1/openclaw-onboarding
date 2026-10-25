@@ -1,4 +1,4 @@
-# Bonus membership / access — capability decision (T-14)
+# Bonus membership and access — capability decision (T-14)
 
 **Task:** T-14 · `bonus-access-capability-decision` · PBB-112 · 2026-10-24
 **Requirement:** R-13 — "Actual optional access grant, credential, SMS, return and recovery"
@@ -11,15 +11,22 @@ here carries a URL, a verb or a path. `supported_route()` returns `api: None` on
 purpose and the suite pins that `None`. The suite also scans the returned surface,
 the module and this document for the API shapes it enumerates (scheme URL, verb plus
 path spaced or glued, bare or identifier-prefixed path, a trailing path segment with no
-segment after it, schemeless host plus path; dotted operation ids on the returned surface
-only). Before matching, the scan normalises the wrapper characters that formatting puts
-around a value (quotes, backticks, asterisks, brackets, parentheses, markdown cell pipes,
-arrows) and the separator look-alikes that spell a path differently (backslash, doubled
-slash, U+FF0F, U+2215, U+2044, U+29F8). It then decides the ROLE a token plays before any
-exemption applies: behind an `api` / `route` / `operation` / `endpoint` / `method` / `path`
-/ `url` / `uri` / `action` key that sits inside the 240-character role window — including a
-key reached by walking out through nested frames — a token is read as an operation value and
-is flagged. Two exemptions are closed world.
+segment after it, schemeless host plus path, a path split by a padded separator; dotted
+operation ids on the returned surface only). Before matching, the scan normalises the text:
+whitespace is flattened, a character with no visible glyph is dropped, and every separator
+look-alike — any character whose Unicode name calls it a solidus or a slash — reaches the
+same rule as `/`. A doubled separator collapses, except where the run is a scheme delimiter.
+A real Windows path and a scheme with an empty authority keep their own separators, because
+mapping those manufactured hits out of legitimate literals. It then decides the ROLE a token
+plays before any exemption applies. The head text before the token is read as a token
+stream, so a bracket inside a string literal is never a frame boundary and no wrapper
+spelling has to be listed to be read. A seam is any run carrying a non-whitespace separator
+character between a key token and the value, so no separator spelling has to be listed
+either. Behind an `api` / `route` / `operation` / `endpoint` / `method` / `path` / `url` /
+`uri` / `action` key the token is read as an operation value and is flagged, and a subscript
+key counts as a key, so `spec["api"]["inner"] = x` answers to `api`. The read walks out to
+the depth the text actually has, inside a 4000-character role window; outside that window
+the role is read as empty rather than guessed. Two exemptions are closed world.
 File provenance passes only when the token is a real file in this tree, or an f-string
 template whose variable is bound in the same text and whose whole expansion is a real file.
 A reviewed prose token passes only when one of the reviewed windows that contain it is
@@ -32,7 +39,7 @@ spelled with a character the normaliser does not map, is not caught.
 
 ## 1. What the capability actually needs
 
-DEC-16 / R-13 define five separate questions. They are separate because each one can
+DEC-16 and R-13 define five separate questions. They are separate because each one can
 fail alone, and a pass on one is not a pass on the next:
 
 | Step | Question |
@@ -95,7 +102,7 @@ completes with no email address.
   (`44-convert-and-flow-operator/automation-templates/launch-ghl-probe/GHL-CAPABILITY-NOTE.md`,
   which scopes its own ceiling to the v2 and v3 specs and admits the enrollment row
   is "enrollment only, not authoring").
-- The retired Tier-2 community MCP had the membership tool family (~15 courses /
+- The retired Tier-2 community MCP had the membership tool family (~15 courses and
   memberships tools) and its create/delete entries are documented as **possibly
   unverified shells** (`36-ghl-mcp-setup/ghl-mcp-setup-full.md`).
 
@@ -123,8 +130,8 @@ endpoints; a supported tier that still exposes them (Tier 2 is retired, not a fa
   (`shared-utils/ghl/capability_inventory.py`, `conversations.send_message`;
   `05-ghl-setup/INSTRUCTIONS.md`). Nothing resolves the SMS-bound person back to the
   same member record.
-- The one-logical-SMS-ask contract (D-26: queued / dispatching / accepted /
-  failed-not-sent / unknown / suppressed, one ask ID per sequence) is a **delivery**
+- The one-logical-SMS-ask contract (D-26: queued, dispatching, accepted, failed-not-sent, unknown or
+  suppressed; one ask ID per sequence) is a **delivery**
   contract owned by T-15. It does not create a member-return route.
 
 **Missing:** an operation that returns a member to gated content from an SMS identity;
@@ -151,7 +158,7 @@ recovery completing without an email address.
 |---|---|---|
 | Public REST | Location Private Integration Token + per-operation `Version` header | No membership operation in the frozen registry |
 | Official MCP | OAuth only; a PIT sent to an MCP endpoint is **not** an equivalent auth path | Dynamic catalog; account grant and on-box observation not held |
-| CAF CLI / internal engine | PIT for standard operations; **location Firebase refresh token** for workflow build writes | Only `membership_grant_offer` as a workflow action type; no workflow authoring in the frozen v3 production spec — the public workflow rows there are a read plus contact enrollment and unenrollment against an existing workflow |
+| CAF CLI or internal engine | PIT for standard operations; **location Firebase refresh token** for workflow build writes | Only `membership_grant_offer` as a workflow action type; no workflow authoring in the frozen v3 production spec — the public workflow rows there are a read plus contact enrollment and unenrollment against an existing workflow |
 | Managed browser | Gated singleton builder, one session, capture-locked anchors | Memberships area is UI; capture-pending anchors stop a live build |
 | Community MCP | **RETIRED** — absence is the required state | Never a route and never a fallback |
 | CUA | Approval-gated, bundled owner approval only | Not used |
@@ -271,7 +278,7 @@ Upstream suites re-run unchanged and green: `38-conversational-ai-system/scripts
 
 ---
 
-## 8. Not done / owned elsewhere
+## 8. Not done or owned elsewhere
 
 - **T-15** — the real bonus access adapter (identity/grant/credential/SMS/resource
   authorization, failed-step resume, return access, email-later same member). It is

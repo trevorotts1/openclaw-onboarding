@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""access_capability.py — T-14 honest bonus membership / access capability
+"""access_capability.py — T-14 honest bonus membership and access capability
 decision (R-13, DEC-16, D-19, D-26, D-28, D-34).
 
 ONE source of truth for the question "can this system grant the optional bonus
@@ -7,7 +7,7 @@ membership access?" The answer today is NO for every automated route, and the
 module says so with the exact evidence that is missing instead of inventing an
 interface.
 
-The five steps the capability actually needs (DEC-16 / R-13):
+The five steps the capability actually needs (DEC-16 and R-13):
   identity  — a member identity that works without an email address
   grant     — granting the offer to that identity
   credential— issuing the login credential
@@ -21,17 +21,26 @@ URL, a verb or a path: `supported_route()` returns `api: None` on purpose, and
 the test suite pins that `None`. The suite also scans the returned surface,
 this module and the evidence doc for the API shapes it enumerates (scheme URL,
 verb plus path spaced or glued, bare or identifier-prefixed path, a trailing
-path segment with no segment after it, schemeless host plus path; dotted
-operation ids on the returned surface only). Before matching, the scan
-normalises the wrapper characters that formatting puts around a value (quotes,
-backticks, asterisks, brackets, parentheses, markdown cell pipes, arrows) and
-the separator look-alikes that spell a path differently (backslash, doubled
-slash, U+FF0F, U+2215, U+2044, U+29F8). It then decides the ROLE a token plays
-before any exemption applies: behind an `api` / `route` / `operation` /
-`endpoint` / `method` / `path` / `url` / `uri` / `action` key that sits inside
-the 240-character role window -- including a key reached by walking out through
-nested frames -- a token is read as an operation value and is flagged. Two
-exemptions are closed world. File provenance passes
+path segment with no segment after it, schemeless host plus path, a path split
+by a padded separator; dotted operation ids on the returned surface only).
+Before matching, the scan normalises the text: whitespace is flattened, a
+character with no visible glyph is dropped, and every separator look-alike --
+any character whose Unicode name calls it a solidus or a slash -- reaches the
+same rule as `/`. A doubled separator collapses, except where the run is a
+scheme delimiter. A real Windows path and a scheme with an empty authority keep
+their own separators, because mapping those manufactured hits out of
+legitimate literals. It then decides the ROLE a token plays before any
+exemption applies. The head text before the token is read as a token stream, so
+a bracket inside a string literal is never a frame boundary and no wrapper
+spelling has to be listed to be read. A seam is any run carrying a
+non-whitespace separator character between a key token and the value, so no
+separator spelling has to be listed either. Behind an `api` / `route` /
+`operation` / `endpoint` / `method` / `path` / `url` / `uri` / `action` key the
+token is read as an operation value and is flagged, and a subscript key counts
+as a key, so `spec["api"]["inner"] = x` answers to `api`. The read walks out to
+the depth the text actually has, inside a 4000-character role window; outside
+that window the role is read as empty rather than guessed. Two exemptions are
+closed world. File provenance passes
 only when the token is a real file in this tree, or an f-string template whose
 variable is bound in the same text and whose whole expansion is a real file. A
 reviewed prose token passes only when one of the reviewed windows that contain
@@ -52,7 +61,7 @@ the one-step instruction and records an operator confirmation. There is no
 receipt until the operator confirms, and the system never claims it granted or
 recovered anything.
 
-Independent original gift (D-28 / C-F07): `plan_fulfillment()` derives the
+Independent original gift (D-28 and C-F07): `plan_fulfillment()` derives the
 original lane ONLY from the original lane's own inputs. The bonus lane cannot
 gate it, and `assert_original_not_gated_by_bonus()` fails if a caller builds a
 plan that does.
@@ -345,7 +354,7 @@ def request_bonus_access(*, unattended: bool = True) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Original gift independence (D-28 / C-F07)
+# Original gift independence (D-28 and C-F07)
 # --------------------------------------------------------------------------
 
 def plan_fulfillment(
