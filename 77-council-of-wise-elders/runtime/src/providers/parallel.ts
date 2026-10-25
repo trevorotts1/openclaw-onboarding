@@ -32,16 +32,23 @@ export function parallelLimitFor(input: {
   providerSlug: string;
   ollamaPlan: OllamaPlan | null;
   panelSize: number;
+  /**
+   * The mode's own wave width. Omitted means the mode adds no cap (the
+   * whole panel runs at once, subject to the provider limit).
+   */
+  waveWidth?: number;
 }): ParallelLimitResult {
+  const modeCap = Math.max(1, input.waveWidth ?? input.panelSize);
   if (!isOllamaProvider(input.providerSlug)) {
-    // OpenRouter, Agnes, DeepSeek and harness routes: all at once.
-    return { ok: true, limit: input.panelSize };
+    // OpenRouter, Agnes, DeepSeek and harness routes: all at once, up to
+    // the mode's wave width.
+    return { ok: true, limit: Math.min(input.panelSize, modeCap) };
   }
   if (input.ollamaPlan === null) {
     return { ok: false, code: 'OLLAMA_PLAN_REQUIRED' };
   }
   return {
     ok: true,
-    limit: Math.min(OLLAMA_PLAN_LIMITS[input.ollamaPlan], input.panelSize),
+    limit: Math.min(OLLAMA_PLAN_LIMITS[input.ollamaPlan], input.panelSize, modeCap),
   };
 }

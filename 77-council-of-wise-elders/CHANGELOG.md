@@ -11,6 +11,11 @@ In plain English: light mode was described as "3 seats". That was wrong. Light m
 - Consensus early stop is unchanged at 7 of 9 seats.
 - `SKILL.md` rewritten to match: the sizing line in step 2 now announces all nine advisors with the round and parallelism counts, step 4b no longer selects three seats for a light question, and step 5 states both the cap and the light concurrency limit.
 - This supersedes the light-mode wording in the v1.0.56 entry below, which described light as 3 best-fit advisors.
+- Runtime (FIX-MODES-RUNTIME) landed in the same batch: every council size now seats the full nine-seat roster from one shared constant (`MODE_SEATS` in `runtime/src/contracts/modes.ts`), so no mode has its own seat list any more.
+- Mode now controls two things and nothing else. Light: 2 rounds, at most 3 provider calls in flight (waves of three), 50-request cap. Medium: up to 4 rounds, 50-request cap. Heavy: up to 10 rounds, 100-request cap. The consensus stop rule still needs 7 of the 9 seats to agree.
+- Removing the three-seat light panel removed its consequences with it: the schema requirement, the intake panel rule, the "three best-fit seats" selector and the relevance-weight trimming that existed only to keep a three-seat verdict publishable.
+- The chamber caption and the CLI help no longer describe light as three advisors.
+- Tests: the mode suite now proves light seats all nine over two rounds and dispatches three at a time, medium and heavy seat the same roster, and a light session missing a seat still stops visibly instead of shrinking the council.
 
 ## v1.0.60: the hybrid supervisor and the queue operation producer land together (HYBRID-1060)
 

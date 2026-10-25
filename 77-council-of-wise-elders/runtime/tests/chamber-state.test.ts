@@ -316,7 +316,7 @@ test('the round denominator and its labels follow the council size', () => {
     record({ spec: { mode, seat_ids: seats, model_policy: { route_id: 'claude-configured', requested_model_id: 'sonnet-test' } } });
 
   const cases: Array<[string, number, string[]]> = [
-    ['light', 2, ['simon-sinek', 'td-jakes', 'oprah-winfrey']],
+    ['light', 2, SEATS],
     ['medium', 4, SEATS],
     ['heavy', 10, SEATS],
     // The four older modes keep their three-round denominator.
@@ -340,7 +340,7 @@ test('the round denominator and its labels follow the council size', () => {
 test('a light council shows two rounds, never a third', () => {
   const S = loadState();
   const m = S.create(
-    record({ spec: { mode: 'light', seat_ids: SEATS.slice(0, 3), model_policy: { route_id: 'r', requested_model_id: null } } }),
+    record({ spec: { mode: 'light', seat_ids: SEATS, model_policy: { route_id: 'r', requested_model_id: null } } }),
   );
   S.apply(m, stateFrame(1, 'ROUND_1'));
   assert.equal(S.view(m, 0).round.label, 'ROUND 1 OF 2');

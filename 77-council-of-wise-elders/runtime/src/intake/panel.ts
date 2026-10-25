@@ -66,8 +66,8 @@ export function validatePanel(
       }
       break;
     case 'light':
-      if (seatIds.length !== 3) {
-        fail('Light mode requires exactly three seats.');
+      if (seatIds.length !== SEAT_IDS.length) {
+        fail('Light mode keeps all nine seats.');
       }
       break;
     case 'medium':
@@ -247,22 +247,3 @@ export function recommendQuickPanel(draft: IntakeDraft): SeatId[] {
   return chosen;
 }
 
-/**
- * Recommend a light panel by decision relevance (W77S-MODES): the same
- * flag-driven best-fit pattern as recommendQuickPanel, stopped at three
- * seats. A recommendation only: the client selects or accepts the panel.
- */
-export function recommendLightPanel(draft: IntakeDraft): SeatId[] {
-  const chosen: SeatId[] = [];
-  const flags = draft.answers.decision?.flags;
-  const push = (seat: SeatId): void => {
-    if (!chosen.includes(seat) && chosen.length < 3) chosen.push(seat);
-  };
-  if (flags?.involves_money_commitment) push('tiffany-aliche');
-  if (flags?.involves_offer_or_pricing) push('russell-brunson');
-  if (flags?.involves_rebrand_or_pivot) push('simon-sinek');
-  if (flags?.involves_stakeholder_trust) push('brene-brown');
-  if (flags?.decision_is_communication) push('td-jakes');
-  for (const seat of SEAT_IDS) push(seat);
-  return chosen;
-}

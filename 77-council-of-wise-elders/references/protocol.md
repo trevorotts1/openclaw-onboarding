@@ -121,8 +121,8 @@ the verdict are composed deterministically from the frozen brief and the
 advisor cards. The planned counts are therefore exactly the seat
 requests:
 
-- **Light.** 3 seats x 2 rounds = 6 planned, inside a cap of 50. Light
-  runs no ratification and no later round.
+- **Light.** All 9 seats x 2 rounds = 18 planned, inside a cap of 50, run
+  three at a time. Light runs no ratification and no later round.
 - **Medium.** Up to 4 rounds x 9 seats = 36 planned, inside a cap of 50.
 - **Heavy.** Up to 10 rounds x 9 seats = 90 planned, inside a cap of
   100. A heavy sitting that reaches the cap stops there and reports it

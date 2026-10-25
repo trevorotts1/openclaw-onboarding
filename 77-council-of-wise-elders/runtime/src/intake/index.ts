@@ -51,7 +51,6 @@ export {
 export {
   assessPanel,
   quickModePolicyRecord,
-  recommendLightPanel,
   recommendQuickPanel,
   validatePanel,
   type PanelAssessment,
