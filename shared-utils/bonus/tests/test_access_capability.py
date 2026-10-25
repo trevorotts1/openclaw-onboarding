@@ -93,14 +93,71 @@ _HTTP_VERBS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIO
 # Role beats shape. Whatever a token names -- a real file, a reviewed sentence,
 # anything -- behind one of these keys it is an operation VALUE, and no
 # provenance or prose exemption survives that position. This is the class the
-# PBB-260 defects shared: the exemptions were keyed on what the token looked
-# like and applied whatever role the token was playing.
-_VALUE_POSITION = re.compile(
-    r"""(?ix)
-    ["']?(?:api|route|operation|endpoint|method|path|url|uri|action)["']?
-    \s*[:=|]\s*["']?$
-    """
+# PBB-260 and PBB-311 defects shared: the exemptions were keyed on what the
+# token looked like and applied whatever role the token was playing.
+#
+# PBB-311: the first attempt matched the seam with one regex and was defeated by
+# any wrapper between the key and the value (backtick, asterisk, bracket,
+# parenthesis, markdown cell, arrow, a nested object, a subscript). Role is
+# decided structurally now: strip the wrappers, find the separator, read the
+# key, and walk out through enclosing object frames so a nested value still
+# answers to its parent key. Wrappers cannot hide the role because they are
+# removed before the role is read.
+_API_KEYS = frozenset(
+    {"api", "route", "operation", "endpoint", "method", "path", "url", "uri", "action"}
 )
+# Characters that carry no role of their own: formatting wrappers and quoting.
+# Separator characters are deliberately NOT here, or stripping would eat the
+# `->` / `|` before it could be read.
+_WRAPPERS = " \t\"'`*~()[]{},;"
+_VALUE_SEPARATORS = ("->", "=>", ":=", "→", ":", "=", "|")
+_SUBSCRIPT_KEY = re.compile(r"\[\s*[\"']?([A-Za-z_][A-Za-z0-9_-]*)[\"']?\s*\]$")
+_KEY_TAIL = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*)$")
+_ROLE_WINDOW = 240
+
+
+def _ends_with_separator(segment):
+    """The value separator `segment` ends with, longest match first."""
+    for sep in _VALUE_SEPARATORS:
+        if segment.endswith(sep):
+            return sep
+    return ""
+
+
+def _key_before(text, pos):
+    """The api-shaped key whose value holds `pos`, or "".
+
+    Reads the seam structurally, so a wrapper character cannot hide it:
+    `api: x`, ``api: `x` ``, `api: **x**`, `| api | x |`, `api -> x`,
+    `spec["api"] = x` and `{"operation": {"inner": x}}` all resolve. The walk is
+    bounded (four frames); an unreadable seam returns "" rather than guessing a
+    role it cannot see.
+    """
+    seg = text[max(0, pos - _ROLE_WINDOW):pos]
+    for _ in range(4):
+        seg = seg.rstrip(_WRAPPERS)
+        match = _SUBSCRIPT_KEY.search(seg)
+        if match:
+            key = match.group(1).lower()
+            return key if key in _API_KEYS else ""
+        sep = _ends_with_separator(seg)
+        if not sep:
+            return ""
+        seg = seg[: len(seg) - len(sep)].rstrip(_WRAPPERS)
+        match = _SUBSCRIPT_KEY.search(seg)
+        if match:
+            key = match.group(1).lower()
+            return key if key in _API_KEYS else ""
+        match = _KEY_TAIL.search(seg)
+        if match and match.group(1).lower() in _API_KEYS:
+            return match.group(1).lower()
+        # Not this frame's key: step out to the enclosing object/array/call and
+        # read the key that owns THIS frame.
+        opener = max(seg.rfind("{"), seg.rfind("["), seg.rfind("("))
+        if opener < 0:
+            return ""
+        seg = seg[:opener]
+    return ""
 
 # The exact sentence each reviewed slash token was reviewed in. This is the
 # closed world: outside one of these sentences the token is an operation shape
@@ -142,6 +199,19 @@ OVERSTATED_GUARANTEES = (
     r"\bnothing\s+can\s+(?:slip|pass|reach|enter)",
     r"\bcatch(?:es)?\s+every\s+(?:possible|shape|fabrication|case|form)",
     r"\bevery\s+fabricat\w+\s+(?:is|are|will\s+be)\s+(?:caught|flagged|rejected)",
+    # PBB-311 B2: the patterns above could not see the very sentence the prior
+    # verdict falsified, nor the common rephrasings of the same promise. These
+    # are the CLASSES those phrasings share -- "the scan is total" and "an edit
+    # of an enumerated shape is guaranteed to fail" -- not one frozen literal.
+    r"\bedit\s+that\s+adds\b[^.]{0,80}\bfails?\s+the\s+suite\b",
+    r"\bcatches?\s+(?:everything|anything|all)\b",
+    r"\bcatch(?:es)?\s+every\s+(?:edit|version|revision)\b",
+    r"\b(?:the\s+)?scan\s+(?:is\s+)?airtight\b",
+    r"\bcannot\s+be\s+bypassed\b",
+    r"\bnothing\s+(?:slips?|passes?|gets?|escapes?)\s+(?:past|through|by)\b",
+    r"\b(?:no|zero)\s+fabricat\w+\s+(?:gets?|passes?|slips?|reaches?|escapes?)\b",
+    r"\bevery\s+(?:fabricat\w+|shape|smuggle\w*|token)\s+(?:is|are|will\s+be|gets?)\b"
+    r"[^.]{0,40}\b(?:caught|flagged|rejected|stopped|blocked)\b",
 )
 _OVERSTATED_RE = tuple(re.compile(p, re.I) for p in OVERSTATED_GUARANTEES)
 # What the prose must state so a reader knows what the scan does not cover.
@@ -150,10 +220,18 @@ REQUIRED_GUARANTEE_SCOPE = (
     "is not caught",
     "closed world",
     "fails until a human reviews",
+    "normalises",
 )
 
 
 def _overstated_guarantee_hits(text):
+    """Absolute detection claims in delivered prose.
+
+    A scan entry point like the shape scanners, so it takes the same input and
+    refuses a non-string with the same domain error (PBB-311 defect C: this one
+    leaked a bare `TypeError` out of a regex).
+    """
+    text = _scan_text(text)
     return [m.group(0) for rx in _OVERSTATED_RE for m in rx.finditer(text)]
 
 
@@ -173,48 +251,72 @@ def _repo_files():
 
 
 def _is_real_file_name(name):
-    """`name` is the tail of a real path in this tree (a cited file, or a
-    fragment of one such as a basename)."""
-    return any(p == name or p.endswith(name) for p in _repo_files())
+    """`name` is a real path in this tree, or a path-SEGMENT run that ends one.
 
-
-def _is_real_path_suffix(name):
-    """`name` is a real path with its leading directory taken off.
-
-    Stricter than `_is_real_file_name`: a bare basename is never enough, so a
-    template path may only be provenance when the part behind the variable is
-    genuinely a path segment run of a real file.
+    PBB-311 A4: `p.endswith(name)` with no boundary admitted any tail, so a
+    fabricated `.../s/bonus/access_capability.py` was "a real file". The
+    boundary is required now: a name may be the whole path or start at a
+    segment boundary, never mid-segment.
     """
-    return "/" in name and any(p.endswith(name) for p in _repo_files())
+    return any(p == name or p.endswith("/" + name) for p in _repo_files())
+
+
+_TEMPLATE_BINDING = re.compile(
+    r"(?:^|[\s;({,])([_A-Za-z][_A-Za-z0-9]*)\s*=\s*[\"']([^\"'\n]{1,200})[\"']"
+)
+
+
+def _bound_constants(text):
+    """String constants bound in this text, so an f-string head can be RESOLVED.
+
+    PBB-311 A4: the previous rule accepted any fabricated variable head plus a
+    real path tail, so `f"{TOTALLY_FAKE}/bonus/access_capability.py"` was
+    provenance even though no variable was ever bound. A template is provenance
+    only when its head is bound here AND the whole expansion is a real file.
+    """
+    return {m.group(1): m.group(2) for m in _TEMPLATE_BINDING.finditer(text)}
 
 
 def _in_api_value(text, start):
     """True when the token at `start` sits in an operation value position."""
-    return _VALUE_POSITION.search(text[max(0, start - 200):start]) is not None
+    return bool(_key_before(text, start))
 
 
-def _resolves_to_real_file(token):
+def _resolves_to_real_file(token, text=""):
     """File provenance, closed world.
 
     A literal path must be a real file in this tree. A path built from an
-    f-string variable is provenance only when the part behind the template head
-    is the tail of a real path. A name with no path behind it (`shared-utils/ghl`)
-    is a directory at best and never file provenance.
+    f-string variable is provenance only when that variable is bound in the same
+    text AND the expansion is a real file -- resolution, not tail-matching. A
+    name with no path behind it (`shared-utils/ghl`) is a directory at best and
+    never file provenance.
     """
     if token in _repo_files():
         return True
-    head, _, rest = token.partition("/")
-    if not rest:
+    match = re.fullmatch(r"\{([_A-Za-z][_A-Za-z0-9]*)\}/(.+)", token)
+    if not match:
         return False
-    if re.fullmatch(r"\{[_A-Za-z][_A-Za-z0-9]*\}", head):
-        return _is_real_path_suffix(rest)
-    return False
+    head, rest = match.group(1), match.group(2)
+    bound = _bound_constants(text).get(head)
+    if not bound:
+        return False
+    return f"{bound.rstrip('/')}/{rest}" in _repo_files()
 
 
-def _is_file_provenance(token):
+def _is_file_provenance(token, text=""):
     # A suffix alone proves nothing: `memberships/grant.py` ends in `.py` and is
     # still a fabricated operation. The suffix only says where to look.
-    return token.lower().endswith(_FILE_SUFFIXES) and _resolves_to_real_file(token)
+    return token.lower().endswith(_FILE_SUFFIXES) and _resolves_to_real_file(token, text)
+
+
+def _starts_value_run(text, at):
+    """True when a reviewed window begins right after a labelled separator.
+
+    PBB-311 A5: a reviewed window pasted behind `target: ` exempted its token
+    whatever role the window was playing. The window is the unit of review, so
+    it must start outside a value run.
+    """
+    return bool(_ends_with_separator(text[max(0, at - 80):at].rstrip(_WRAPPERS)))
 
 
 def _in_reviewed_prose(text, start, end):
@@ -223,7 +325,11 @@ def _in_reviewed_prose(text, start, end):
         offset = phrase.find(token)
         while offset != -1:
             at = start - offset
-            if at >= 0 and text[at: at + len(phrase)] == phrase:
+            if (
+                at >= 0
+                and text[at: at + len(phrase)] == phrase
+                and not _starts_value_run(text, at)
+            ):
                 return True
             offset = phrase.find(token, offset + 1)
     return False
@@ -272,11 +378,44 @@ SMUGGLE_SHAPES = (
     ("file-suffix behind an api key", "api: memberships/grant.py"),
     ("real file behind an api key", "api: shared-utils/bonus/access_capability.py"),
     ("trailing path segment", "memberships/"),
+    # PBB-311 A1: a wrapper character between the key and the value hid the
+    # role from a seam regex. Role is read structurally now, so every wrapper
+    # spelling resolves to the same key.
+    ("backtick value position", "api: `shared-utils/bonus/access_capability.py`"),
+    ("asterisk value position", "api: **shared-utils/bonus/access_capability.py**"),
+    ("paren value position", "api: (shared-utils/bonus/access_capability.py)"),
+    ("bracket value position", "api: [shared-utils/bonus/access_capability.py](x)"),
+    ("markdown cell value position", "| api | `shared-utils/ghl/capability_inventory.py` |"),
+    ("nested object parent key", '{"operation": {"inner": "shared-utils/ghl/capability_inventory.py"}}'),
+    ("arrow value position", "api -> shared-utils/bonus/access_capability.py"),
+    ("subscript value position", 'spec["api"] = "shared-utils/bonus/access_capability.py"'),
+    # PBB-311 A2/A3: separator spellings.
+    ("doubled separator", "memberships//grant"),
+    ("doubled separator behind a verb", "POST//memberships/grant"),
+    ("fullwidth slash U+FF0F", "memberships／grant"),
+    ("division slash U+2215", "memberships∕grant"),
+    ("fraction slash U+2044", "memberships⁄grant"),
+    ("big solidus U+29F8", "memberships⧸grant"),
+    ("fullwidth slash behind a verb", "POST／memberships／grant"),
+    ("backslash separator", "memberships\\grant"),
+    # PBB-311 A4: a fabricated f-string head was admitted as provenance because
+    # only the tail was checked. The head must be bound now.
+    ("unbound template head", 'f"{TOTALLY_FAKE}/bonus/access_capability.py"'),
+    ("unbound template head, nested tail", 'f"{X}/s/bonus/access_capability.py"'),
+    # PBB-311 A5: a reviewed window pasted behind a label exempted its token
+    # whatever role the window was playing.
+    (
+        "reviewed window behind a label",
+        "target: The supported path is assisted/operator: the owner creates th",
+    ),
 )
 
 # Text that must NOT be flagged: real repo provenance and plain prose.
 LEGITIMATE_TEXT = (
     "#!/usr/bin/env python3",
+    # PBB-311 A4: a template is legitimate only with its binding present. This
+    # is the module's own two lines, which is what real provenance looks like.
+    '    _GHL = "44-convert-and-flow-operator"\n'
     '    _REGISTRY = f"{_GHL}/tools/engine/cli_anything/gohighlevel/public/operations.py"',
     "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py",
     "shared-utils/ghl/capability_inventory.py",
@@ -290,20 +429,32 @@ LEGITIMATE_TEXT = (
 )
 
 
+# PBB-311 A2/A3: a path split by a doubled separator or by a look-alike slash
+# walked past every rule. Normalising the separators means one rule decides one
+# class: the glued form, the doubled form and the look-alike form cannot be told
+# apart because they arrive identical. `https://` keeps its scheme slashes.
+_SEPARATOR_LOOKALIKES = str.maketrans(
+    {"／": "/", "∕": "/", "⁄": "/", "⧸": "/", "\\": "/"}
+)
+
+
 def _scan_text(text):
     """The text the scan runs over.
 
     Whitespace is normalised first: the same sentence wraps across lines in the
     module and sits on one line in the evidence doc and in the returned surface,
     and the reviewed prose contexts below are captured from the normalised form.
-    A non-string is refused with the domain error, never a bare `TypeError` out
-    of a regex.
+    Separator look-alikes are then mapped to `/` and doubled separators are
+    collapsed, so a smuggling shape cannot choose a spelling the rules miss. A
+    non-string is refused with the domain error, never a bare `TypeError` out of
+    a regex.
     """
     if not isinstance(text, str):
         raise ac.BonusCapabilityError(
             f"api shape scan takes text, got {type(text).__name__}"
         )
-    return re.sub(r"\s+", " ", text)
+    flat = re.sub(r"\s+", " ", text).translate(_SEPARATOR_LOOKALIKES)
+    return re.sub(r"(?<!:)/{2,}", "/", flat)
 
 
 def _dotted_operation_hits(text):
@@ -311,6 +462,12 @@ def _dotted_operation_hits(text):
     hits = []
     for match in _DOTTED_OPERATION.finditer(text):
         token = match.group(0)
+        if match.start() > 0 and text[match.start() - 1] == "-":
+            # PBB-311: a dot-token glued behind a hyphen is part of a real
+            # hyphenated file name (`SELECTORS-LIVE-course.md`), not an
+            # operation id. The segment-boundary rule below is what makes this
+            # distinction necessary.
+            continue
         if _in_api_value(text, match.start()):
             hits.append(token)  # a value is never filename provenance
             continue
@@ -336,7 +493,7 @@ def _api_shape_hits(text):
             hits.append(f"bare-path:{token}")  # a value is never provenance
             continue
         if not token.startswith("/") and (
-            _is_file_provenance(token)
+            _is_file_provenance(token, text)
             or (
                 token in REVIEWED_SLASH_TOKENS
                 and _in_reviewed_prose(text, match.start(), match.end())
@@ -842,12 +999,18 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
         self.assertFalse(_fabricated_api_hits("05-ghl-setup/INSTRUCTIONS.md"))
         self.assertTrue(_fabricated_api_hits("memberships/grant.py"))
         self.assertTrue(_fabricated_api_hits("v1/tools/engine/memberships_grant.py"))
-        # An f-string variable is provenance only where the tail names a real
-        # file, which is why the module's own three citations stay clean.
+        # PBB-311 A4: an f-string variable is provenance only when the variable
+        # is BOUND in the same text and the whole expansion is a real file. The
+        # previously-shipped pin called the unbound line clean; it is not.
         self.assertFalse(_fabricated_api_hits(
+            '_GHL = "44-convert-and-flow-operator"\n'
             '_REGISTRY = f"{_GHL}/tools/engine/cli_anything/gohighlevel/public/operations.py"'
         ))
         self.assertTrue(_fabricated_api_hits(
+            '_REGISTRY = f"{_GHL}/tools/engine/cli_anything/gohighlevel/public/operations.py"'
+        ))
+        self.assertTrue(_fabricated_api_hits(
+            '_GHL = "44-convert-and-flow-operator"\n'
             '_REGISTRY = f"{_GHL}/tools/engine/cli_anything/memberships_grant.py"'
         ))
 
@@ -878,11 +1041,135 @@ class TestTheExemptionsAreClosedWorld(unittest.TestCase):
         for verb in ("GET", "post", "Put", "PATCH", "DELETE", "Head", "OPTIONS"):
             self.assertTrue(_fabricated_api_hits(f"{verb}/memberships/grant"), verb)
 
+    # PBB-311: each defect below is pinned by CLASS, so the same mistake in a
+    # spelling nobody typed here still fails.
+    WRAPPER_SEAMS = (
+        "api: `{token}`",
+        "api: **{token}**",
+        "api: ({token})",
+        "api: [{token}](x)",
+        "| api | `{token}` |",
+        '{{"operation": {{"inner": "{token}"}}}}',
+        "api -> {token}",
+        'spec["api"] = "{token}"',
+    )
+    def test_a_wrapper_cannot_hide_an_operation_value(self):
+        # A1. Every wrapper spelling resolves to the same key, so an exemption
+        # never survives the position.
+        for token in (
+            "shared-utils/bonus/access_capability.py",
+            "shared-utils/ghl/capability_inventory.py",
+            "assisted/operator",
+        ):
+            for seam in self.WRAPPER_SEAMS:
+                text = seam.format(token=token)
+                self.assertTrue(_fabricated_api_hits(text), text)
+
+    def test_a_separator_spelling_cannot_hide_an_operation_path(self):
+        # A2/A3. Doubled, backslash and look-alike slashes are one class.
+        for sep in ("/", "//", "\\\\", "／", "∕", "⁄", "⧸"):
+            text = f"memberships{sep}grant"
+            self.assertTrue(_fabricated_api_hits(text), repr(text))
+            verb = f"POST{sep}memberships{sep}grant"
+            self.assertTrue(_fabricated_api_hits(verb), repr(verb))
+        # the scheme slashes are not collapsed away
+        self.assertTrue(_fabricated_api_hits("https://api.leadconnectorhq.com/v1/x"))
+
+    def test_a_template_needs_its_variable_bound(self):
+        # A4. Resolution, not tail-matching: an unbound head is not provenance.
+        bound = (
+            '_GHL = "44-convert-and-flow-operator"\n'
+            '_REGISTRY = f"{_GHL}/tools/engine/cli_anything/gohighlevel/public/operations.py"'
+        )
+        self.assertFalse(_fabricated_api_hits(bound))
+        for unbound in (
+            'f"{TOTALLY_FAKE}/bonus/access_capability.py"',
+            'f"{X}/s/bonus/access_capability.py"',
+            'f"{X}/tools/engine/cli_anything/gohighlevel/public/operations.py"',
+        ):
+            self.assertTrue(_fabricated_api_hits(unbound), unbound)
+        # A4's other half: a provenance name must begin at a segment boundary,
+        # so a tail cut out of the middle of a real path is not the real path.
+        self.assertTrue(_is_real_file_name("bonus/access_capability.py"))
+        self.assertFalse(_is_real_file_name("s/bonus/access_capability.py"))
+        self.assertFalse(_is_real_file_name("{_GHL}/tools/engine/cli_anything/gohighlevel/public/operations.py"))
+        # a bound head that expands to a file that does not exist is not either
+        self.assertTrue(_fabricated_api_hits(
+            '_GHL = "44-convert-and-flow-operator"\n'
+            '_REGISTRY = f"{_GHL}/tools/engine/cli_anything/memberships_grant.py"'
+        ))
+
+    def test_a_reviewed_window_is_not_reviewed_inside_a_value(self):
+        # A5. The window is the unit of review, so it must start outside a value.
+        window = "The supported path is assisted/operator: the owner creates th"
+        self.assertFalse(_fabricated_api_hits(window))
+        for label in ("target: ", "route: ", "url: ", "endpoint -> "):
+            self.assertTrue(_fabricated_api_hits(label + window), label + window)
+
+    def test_the_prose_guard_sees_the_class_it_names(self):
+        # B2. The guard must flag the falsified sentence itself and the common
+        # rephrasings, and must stay silent on honest scoping prose.
+        for claim in (
+            "so an edit that adds one of those shapes fails the suite",
+            "an edit that adds one of those shapes fails the suite",
+            "nothing slips past the scan",
+            "the scan catches everything",
+            "no fabrication gets through",
+            "the scan cannot be bypassed",
+            "the scan is airtight",
+            "every fabrication is stopped",
+            "a later edit cannot slip one in",
+        ):
+            self.assertTrue(_overstated_guarantee_hits(claim), claim)
+        for honest in (
+            "It is a pattern scan, not a proof: a fabrication in a shape the scan does not enumerate is not caught.",
+            "coverage is not hollow",
+            "the scan does not enumerate every shape",
+            "the reviewer's table scores 46 of 46",
+        ):
+            self.assertEqual(_overstated_guarantee_hits(honest), [], honest)
+
+    def test_the_named_falsified_sentence_is_gone_from_every_delivered_document(self):
+        # B1/B3/B4/B5. The exact claim the prior verdict falsified, and the two
+        # absolute claims about provenance and reviewed prose, may not ship.
+        falsified = "an edit that adds one of those shapes fails the suite"
+        forbidden = (
+            falsified,
+            "resolves to a real file in this tree; a",
+            "passes only inside the exact sentence it was reviewed in",
+        )
+        for name, path in (
+            ("module", Path(ac.__file__)),
+            ("evidence doc", _BONUS / "BONUS-ACCESS-CAPABILITY-DECISION.md"),
+        ):
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            for claim in forbidden:
+                self.assertNotIn(claim, flat, f"{name} still ships: {claim}")
+
+    def test_the_changelog_entries_this_task_touched_claim_only_what_holds(self):
+        # B1/B5: the CHANGELOG shipped the same falsified sentence and an
+        # absolute about value positions. Both are gone, and the entries that
+        # remain carry no absolute detection claim of the guarded class.
+        flat = " ".join(
+            (_REPO / "38-conversational-ai-system/CHANGELOG.md")
+            .read_text(encoding="utf-8")
+            .split()
+        )
+        self.assertNotIn("an edit that adds one of those shapes fails the suite", flat)
+        self.assertNotIn("whatever a token names", flat)
+        head = flat.split("## [2.0.34]")[0]
+        self.assertEqual(_overstated_guarantee_hits(head), [], "changelog head")
+
     def test_the_scan_refuses_non_text_with_the_domain_error(self):
         # Defect C: a wrong type answers with the domain error, not a bare
         # TypeError thrown from inside a regex.
         for bad in (None, 123, 0.5, ["a/b"], {"a": "b/c"}, b"bytes", (1, 2)):
-            for fn in (_api_shape_hits, _fabricated_api_hits, _dotted_operation_hits):
+            for fn in (
+                _api_shape_hits,
+                _fabricated_api_hits,
+                _dotted_operation_hits,
+                _overstated_guarantee_hits,
+            ):
                 with self.assertRaises(ac.BonusCapabilityError):
                     fn(bad)
 

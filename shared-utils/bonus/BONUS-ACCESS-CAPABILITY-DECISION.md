@@ -12,11 +12,21 @@ purpose and the suite pins that `None`. The suite also scans the returned surfac
 the module and this document for the API shapes it enumerates (scheme URL, verb plus
 path spaced or glued, bare or identifier-prefixed path, a trailing path segment with no
 segment after it, schemeless host plus path; dotted operation ids on the returned surface
-only), so an edit that adds one of those shapes fails the suite. Two exemptions are closed
-world. File provenance passes only when the token resolves to a real file in this tree; a
-reviewed prose token passes only inside the exact sentence it was reviewed in. A new token,
-or a reviewed token outside that sentence, fails until a human reviews it. It is a pattern
-scan, not a proof: a fabrication in a shape the scan does not enumerate is not caught.
+only). Before matching, the scan normalises the wrapper characters that formatting puts
+around a value (quotes, backticks, asterisks, brackets, parentheses, markdown cell pipes,
+arrows) and the separator look-alikes that spell a path differently (backslash, doubled
+slash, U+FF0F, U+2215, U+2044, U+29F8). It then decides the ROLE a token plays before any
+exemption applies: behind an `api` / `route` / `operation` / `endpoint` / `method` / `path`
+/ `url` / `uri` / `action` key that sits inside the 240-character role window — including a
+key reached by walking out through nested frames — a token is read as an operation value and
+is flagged. Two exemptions are closed world.
+File provenance passes only when the token is a real file in this tree, or an f-string
+template whose variable is bound in the same text and whose whole expansion is a real file.
+A reviewed prose token passes only when one of the reviewed windows that contain it is
+present verbatim and does not itself begin inside a value. A new token, an unbound
+template, or a reviewed token outside its window, fails until a human reviews it. It is a
+pattern scan, not a proof: a fabrication in a shape the scan does not enumerate, or one
+spelled with a character the normaliser does not map, is not caught.
 
 ---
 
