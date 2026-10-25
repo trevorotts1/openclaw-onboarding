@@ -594,5 +594,181 @@ class LegacyAndCorruptBindingTests(unittest.TestCase):
                 ab.AcquisitionBrief(path, clock=fixed_clock)
 
 
+class ReadPathOwnerValidationTests(unittest.TestCase):
+    """The owner guarantee must survive a reload, not only the write call.
+
+    A brief is a persistent JSON document. Anything that can edit that file
+    reaches ``AcquisitionBrief(...)`` without ever calling ``bind_owner``, so
+    every refusal proved here happens at the constructor, on real bytes on
+    disk: build through the sanctioned API, hand-edit one field, reload.
+    """
+
+    def _document(self, path):
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def _write(self, path, document):
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+
+    def test_hand_edited_owner_fields_are_refused_on_reload(self):
+        mutations = (
+            ("name", "   "),
+            ("name", ""),
+            ("name", None),
+            ("name", 42),
+            ("role", ""),
+            ("role", "   "),
+            ("role", None),
+            ("email", ""),
+            ("email", "not-an-email"),
+            ("owner_id", ""),
+            ("owner_id", None),
+        )
+        for field, bad_value in mutations:
+            with self.subTest(field=field, value=bad_value):
+                with tempfile.TemporaryDirectory() as directory:
+                    path = os.path.join(directory, "brief.json")
+                    brief = ab.AcquisitionBrief(path, clock=fixed_clock)
+                    bind_everything(brief)
+                    self.assertTrue(brief.is_bound())
+
+                    document = self._document(path)
+                    document["binding"]["owners"]["owner-1"][field] = bad_value
+                    self._write(path, document)
+                    before = self._document(path)
+
+                    # Refusal at the point of use: a real reload of real bytes.
+                    with self.assertRaises(ab.BriefCorruptError):
+                        ab.AcquisitionBrief(path, clock=fixed_clock)
+                    # Refusal is not a silent repair of the file.
+                    self.assertEqual(self._document(path), before)
+
+    def test_hand_edited_owner_missing_a_required_field_is_refused(self):
+        for field in ("owner_id", "name", "role"):
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as directory:
+                    path = os.path.join(directory, "brief.json")
+                    brief = ab.AcquisitionBrief(path, clock=fixed_clock)
+                    bind_everything(brief)
+                    document = self._document(path)
+                    del document["binding"]["owners"]["owner-1"][field]
+                    self._write(path, document)
+                    with self.assertRaises(ab.BriefCorruptError):
+                        ab.AcquisitionBrief(path, clock=fixed_clock)
+
+    def test_hand_edited_foreign_tenant_owner_is_refused_on_reload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "brief.json")
+            brief = ab.AcquisitionBrief(path, clock=fixed_clock, tenant_id="tenant-a")
+            brief.bind_owner(
+                "owner-1", "Accountable Owner", email="owner@example.test",
+                tenant_id="tenant-a",
+            )
+            document = self._document(path)
+            document["binding"]["owners"]["owner-1"]["tenant_id"] = "tenant-b"
+            self._write(path, document)
+            with self.assertRaises(ab.BriefCorruptError):
+                ab.AcquisitionBrief(path, clock=fixed_clock, tenant_id="tenant-a")
+
+    def test_tenant_scoped_brief_refuses_a_reloaded_owner_with_no_tenant(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "brief.json")
+            brief = ab.AcquisitionBrief(path, clock=fixed_clock, tenant_id="tenant-a")
+            brief.bind_owner(
+                "owner-1", "Accountable Owner", email="owner@example.test",
+                tenant_id="tenant-a",
+            )
+            document = self._document(path)
+            document["binding"]["owners"]["owner-1"]["tenant_id"] = None
+            self._write(path, document)
+            with self.assertRaises(ab.BriefCorruptError):
+                ab.AcquisitionBrief(path, clock=fixed_clock, tenant_id="tenant-a")
+
+    def test_load_method_refuses_a_tampered_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "brief.json")
+            brief = ab.AcquisitionBrief(path, clock=fixed_clock)
+            bind_everything(brief)
+            self.assertTrue(brief.is_bound())
+            document = self._document(path)
+            document["binding"]["owners"]["owner-1"]["name"] = " "
+            self._write(path, document)
+            with self.assertRaises(ab.BriefCorruptError):
+                brief.load()
+
+    def test_a_legal_hand_edit_still_loads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "brief.json")
+            brief = ab.AcquisitionBrief(path, clock=fixed_clock)
+            bind_everything(brief)
+            document = self._document(path)
+            document["binding"]["owners"]["owner-1"]["name"] = "Renamed Owner"
+            self._write(path, document)
+
+            reloaded = ab.AcquisitionBrief(path, clock=fixed_clock)
+            self.assertEqual(reloaded.require_owner().name, "Renamed Owner")
+            self.assertTrue(reloaded.is_bound())
+
+    def test_bare_document_with_an_invalid_owner_is_corrupt(self):
+        # No API call ever ran here: exactly the reported hand-edited file.
+        for field, bad_value in (
+            ("name", "   "),
+            ("role", ""),
+            ("email", "nope"),
+        ):
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as directory:
+                    path = os.path.join(directory, "brief.json")
+                    owner = {
+                        "owner_id": "owner-1",
+                        "name": "Accountable Owner",
+                        "email": "owner@example.test",
+                        "role": "owner",
+                        "tenant_id": None,
+                        "recorded_at": FIXED_NOW.isoformat(timespec="microseconds"),
+                    }
+                    owner[field] = bad_value
+                    document = {
+                        "schema": ab.SCHEMA,
+                        "facts": {},
+                        "unresolved": {},
+                        "interview": {},
+                        "assets": {},
+                        "binding": {
+                            "owners": {"owner-1": owner},
+                            "approval": {
+                                "bound_by": "owner-1",
+                                "scope": "30-day campaign",
+                                "approved_at": FIXED_NOW.isoformat(
+                                    timespec="microseconds"
+                                ),
+                                "provenance": ab.PROVENANCE_CLIENT_STATED,
+                                "recorded_at": FIXED_NOW.isoformat(
+                                    timespec="microseconds"
+                                ),
+                            },
+                            "capacity": {
+                                "bound_by": "owner-1",
+                                "monthly_new_customers": 10,
+                                "fulfilment_lead_days": 14,
+                                "recorded_at": FIXED_NOW.isoformat(
+                                    timespec="microseconds"
+                                ),
+                            },
+                            "claims": {
+                                "bound_by": "owner-1",
+                                "claims": [],
+                                "recorded_at": FIXED_NOW.isoformat(
+                                    timespec="microseconds"
+                                ),
+                            },
+                        },
+                    }
+                    self._write(path, document)
+                    with self.assertRaises(ab.BriefCorruptError):
+                        ab.AcquisitionBrief(path, clock=fixed_clock)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

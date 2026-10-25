@@ -366,7 +366,6 @@ def _empty_binding() -> Dict[str, Any]:
         "capacity": None,
         "claims": None,
     }
-    return _datetime.datetime.now(_datetime.timezone.utc)
 
 
 def _utc_now() -> _datetime.datetime:
@@ -474,6 +473,17 @@ class AcquisitionBrief:
                         "acquisition brief at %s has a malformed owner %r"
                         % (self.path, owner_id)
                     )
+                # A brief is a persistent document, so the owner checks cannot
+                # live on the write path alone: a hand-edited record reaches
+                # this constructor exactly like one this module wrote. The
+                # same validator runs here, and refusal is a load-time refusal.
+                try:
+                    self._validated_owner_record(record)
+                except BindingError as exc:
+                    raise BriefCorruptError(
+                        "acquisition brief at %s has an invalid owner %r: %s"
+                        % (self.path, owner_id, exc)
+                    ) from exc
         self._state = document
         return self
 
@@ -1043,6 +1053,45 @@ class AcquisitionBrief:
     def _binding(self) -> Dict[str, Any]:
         return self._state["binding"]
 
+    def _validated_owner_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Check one owner record's shape and tenant, on write and on load.
+
+        Both paths call this, so the guarantee cannot drift back to being a
+        write-path-only guard. Raises BindingError; the loader converts that
+        into a BriefCorruptError at the point of use.
+        """
+        owner_id = self._required_text(record.get("owner_id"), "owner_id")
+        name = self._required_text(record.get("name"), "name")
+        role = self._required_text(record.get("role"), "role")
+        email = record.get("email")
+        if email is not None:
+            email = self._required_text(email, "email")
+            if "@" not in email:
+                raise BindingError("email %r is not an email address" % email)
+        tenant_id = record.get("tenant_id")
+        if tenant_id is not None:
+            tenant_id = self._required_text(tenant_id, "tenant_id")
+        if self._tenant_id is not None:
+            if tenant_id is None:
+                raise BindingError(
+                    "owner %r must name tenant %r; an owner with no tenant "
+                    "cannot be bound to a tenant-scoped brief"
+                    % (owner_id, self._tenant_id)
+                )
+            if tenant_id != self._tenant_id:
+                raise BindingError(
+                    "owner %r belongs to tenant %r but this brief is tenant %r"
+                    % (owner_id, tenant_id, self._tenant_id)
+                )
+        return {
+            "owner_id": owner_id,
+            "name": name,
+            "email": email,
+            "role": role,
+            "tenant_id": tenant_id,
+            "recorded_at": record.get("recorded_at"),
+        }
+
     @staticmethod
     def _as_owner(record: Dict[str, Any]) -> Owner:
         return Owner(
@@ -1101,27 +1150,21 @@ class AcquisitionBrief:
         tenant is refused: an owner from another tenant is not this client's
         owner.
         """
-        owner_id = self._required_text(owner_id, "owner_id")
-        name = self._required_text(name, "name")
-        role = self._required_text(role, "role")
-        if email is not None:
-            email = self._required_text(email, "email")
-            if "@" not in email:
-                raise BindingError("email %r is not an email address" % email)
-        if tenant_id is not None:
-            tenant_id = self._required_text(tenant_id, "tenant_id")
-        if self._tenant_id is not None:
-            if tenant_id is None:
-                raise BindingError(
-                    "owner %r must name tenant %r; an owner with no tenant "
-                    "cannot be bound to a tenant-scoped brief"
-                    % (owner_id, self._tenant_id)
-                )
-            if tenant_id != self._tenant_id:
-                raise BindingError(
-                    "owner %r belongs to tenant %r but this brief is tenant %r"
-                    % (owner_id, tenant_id, self._tenant_id)
-                )
+        candidate = self._validated_owner_record(
+            {
+                "owner_id": owner_id,
+                "name": name,
+                "email": email,
+                "role": role,
+                "tenant_id": tenant_id,
+                "recorded_at": None,
+            }
+        )
+        owner_id = candidate["owner_id"]
+        name = candidate["name"]
+        email = candidate["email"]
+        role = candidate["role"]
+        tenant_id = candidate["tenant_id"]
 
         owners = self._binding()["owners"]
         for existing_id in owners:
@@ -1141,14 +1184,8 @@ class AcquisitionBrief:
         ):
             return self._as_owner(existing)
 
-        owners[owner_id] = {
-            "owner_id": owner_id,
-            "name": name,
-            "email": email,
-            "role": role,
-            "tenant_id": tenant_id,
-            "recorded_at": self._now(),
-        }
+        candidate["recorded_at"] = self._now()
+        owners[owner_id] = candidate
         self._append_event(
             {
                 "event": "owner_bound" if existing is None else "owner_updated",
