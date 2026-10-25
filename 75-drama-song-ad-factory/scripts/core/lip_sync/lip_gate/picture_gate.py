@@ -464,7 +464,8 @@ class RegenerationFailed(Exception):
 
 def make_regenerate(character_image, *, save_dir, ledger_db, run_id, logical_key,
                     estimated_cost, card_receipt, adapter_path=None, runner=None,
-                    state_store=None, uploader=None, model=REGEN_MODEL):
+                    state_store=None, uploader=None, model=REGEN_MODEL,
+                    production_stage=None):
     """The default PAID regeneration for gate_picture(regenerate=...).
 
     gpt-image-2 image-to-image from the 3D character (`character_image`, a
@@ -472,21 +473,31 @@ def make_regenerate(character_image, *, save_dir, ledger_db, run_id, logical_key
     through kie_dispatch.dispatch: it reserves `estimated_cost` against the
     author's cap in the spend ledger, runs under the card gate, and every KIE
     call rides load_governor.kie_request. Each call is a new attempt id. A
-    non-ok envelope raises RegenerationFailed (gate_picture then refuses)."""
+    non-ok envelope raises RegenerationFailed (gate_picture then refuses).
+    Real execution also requires the actual production_stage (video-generation
+    or qc-retakes); constructing a repair callback never grants authority."""
     n = [0]
 
     def regenerate(_current, prompt):
+        if (runner is None or getattr(runner, "_s75_live_runner", False)
+                or production_stage is not None):
+            if production_stage not in ("video-generation", "qc-retakes"):
+                raise RegenerationFailed("PRODUCTION_STAGE_REQUIRED: name the actual "
+                                         "video-generation or qc-retakes stage before picture repair")
         D = _dispatch()
         n[0] += 1
         url = (uploader or adapter_uploader(adapter_path, runner))(character_image)
         req = {"input": {"prompt": prompt, "input_urls": [url], "aspect_ratio": "9:16"},
-               "card_receipt": card_receipt}
+               "card_receipt": card_receipt,
+               "request_kind": "lipsync-picture-regeneration"}
+        if production_stage is not None:
+            req["production_stage"] = production_stage
         env = D.dispatch(model=model, request=req, save_dir=save_dir,
                          ledger_db=ledger_db, run_id=run_id, logical_key=logical_key,
                          attempt_id="picture-regen-%d" % n[0],
                          estimated_cost=estimated_cost, prompt=prompt,
                          adapter_path=adapter_path, runner=runner,
-                         state_store=state_store)
+                         state_store=state_store, stage=production_stage or "kie")
         saved = (env.get("evidence") or {}).get("saved_paths") or []
         if env.get("outcome") != "ok" or not saved:
             raise RegenerationFailed("%s %s: %s" % (

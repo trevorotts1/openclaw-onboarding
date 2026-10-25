@@ -35,10 +35,9 @@ SKILL = HERE.parent.parent.parent          # 75-drama-song-ad-factory/
 FACTORY = HERE / "factory.py"
 RUNBOOK = SKILL / "references" / "stage-runbook.md"
 
-STAGES = ("research", "creative-strategy", "script-lyrics", "music",
-          "continuity-bible", "storyboard", "image-keyframes",
-          "video-generation", "qc-retakes", "assembly", "final-qc",
-          "delivery")
+sys.path.insert(0, str(HERE.parent))
+from batch_mode.batch import STAGES as _CANONICAL_STAGES
+STAGES = tuple(stage for stage, _ in _CANONICAL_STAGES)
 #: Stages that sit behind an unchanged stop of their own (SCRIPT APPROVAL,
 #: STORYBOARD APPROVAL); `next`'s answer there is checked separately.
 GATED = ("music", "video-generation")
@@ -76,43 +75,132 @@ def runbook_rows():
 ROWS = runbook_rows()
 
 
+def confirmed_fixture(run, *, video_model="minimax-h3/image-to-video"):
+    """Confirm each real renderer turn, including the fixture's explicit model."""
+    from choice_card.intake_card import intake_session
+    from choice_card.video_models import video_models
+    from kie_dispatch import model_lock
+    run = Path(run)
+    selected = next(row for row in video_models.MODELS
+                    if video_model in (row["kie_model"], row.get("lock")))
+    replies = {"offer": "New Chapter Coaching", "link": "https://example.com/coaching",
+               "audience": "successful founders 45–60 building a new chapter",
+               "character": "Christine, a lawyer on New Year's Eve",
+               "photos": "Generate the photos", "models": "deepseek-chain builds, opus-chain checks",
+               "length": "1", "model": str(selected["n"]), "spend": "$25",
+               "script": "1", "song": "2", "storyboard": "1"}
+    turn = intake_session.process([], run_dir=run, purpose_flow=False, runtime="claude-nine")
+    for _ in range(30):
+        qid = turn.get("question_id")
+        turn = intake_session.process(["yes" if qid == "recap" else replies.get(qid, "1")],
+                                      run_dir=run, purpose_flow=False, runtime="claude-nine",
+                                      question_id=qid, question_digest=turn.get("question_digest"),
+                                      source="client", source_ref="governed-ci-fixture:" + str(qid))
+        if turn.get("done"):
+            expected = selected.get("lock", selected["kie_model"])
+            assert model_lock.read_locked_model(run / "control/state.sqlite3", run.name) == expected
+            return run.name
+        if turn.get("outcome") not in ("ok", None):
+            raise AssertionError(turn)
+    raise AssertionError("renderer confirmation did not finish")
+
+
+def complete_fixture_stage(run, stage):
+    """Current required artifacts plus legal Store transitions, never SQL state fabrication."""
+    import state_store
+    from intake_preflight import factory
+    run = Path(run)
+    if stage == "storyboard" and not (run / "storyboard/contracts.json").exists():
+        storyboard_fixture(run, count=6, duration=60)
+    for rel in factory.STAGE_REGISTRY[stage].get("required_artifacts", []):
+        if stage == "storyboard" and rel == "storyboard/gate.json":
+            continue  # Future artifact approval cannot be invented by planning.
+        path = run / rel
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"fixture": stage}), encoding="utf-8")
+    with state_store.Store(run / "control/state.sqlite3") as store:
+        current = store.get(run.name, stage)["state"]
+        if current == "COMPLETE":
+            return
+        if current == "NOT_STARTED":
+            store.transition(run.name, stage, "READY", "fixture-worker")
+        store.claim(run.name, stage, "fixture-worker")
+        store.transition(run.name, stage, "COMPLETE", "fixture-worker")
+
+
+def storyboard_fixture(run, *, shots=None, contracts=None, stills=None, count=3,
+                       duration=24, approve=False):
+    """Synthetic local assets, validated and approved through the existing runner."""
+    from storyboard_director import approval_runner
+    run = Path(run)
+    sb = run / "storyboard"
+    sb.mkdir(parents=True, exist_ok=True)
+    shots = [dict(s) for s in shots] if shots is not None else [
+        {"shot_id": "s%d" % (n + 1), "song_start": n * duration / count,
+         "song_end": (n + 1) * duration / count} for n in range(count)]
+    contracts = dict(contracts or {})
+    stills = dict(stills or {})
+    for n, shot in enumerate(shots):
+        sid = shot["shot_id"]
+        defaults = {"lyric_line_ids": [sid + "a", sid + "b"], "story_stage": "new-chapter",
+                    "visual_objective": "Christine chooses step %d" % (n + 1),
+                    "character_ids": ["christine"], "wardrobe_ids": ["suit"], "location_id": "office",
+                    "camera_direction": "close-up direction %d" % (n % 3), "reference_assets": [],
+                    "image_model_capability_request": {}, "video_model_capability_request": {},
+                    "continuity_constraints": [], "negative_constraints": [], "cost_estimate": 10,
+                    "qc_requirements": ["speaker-visibility"], "status": "planned"}
+        for key, value in defaults.items():
+            shot.setdefault(key, value)
+        shot.setdefault("product_visibility", "none")
+        contracts.setdefault(sid, {"lyric_text": "line %d" % (n + 1), "viewer_understanding": "a new choice",
+                                   "character_action": "Christine takes step %d" % (n + 1), "visible_emotion": "hope"})
+        if sid not in stills:
+            path = sb / (sid + ".png")
+            path.write_bytes(b"synthetic local fixture still " + sid.encode())
+            stills[sid] = str(path)
+    if not any(s.get("product_visibility") == "featured" for s in shots):
+        shots[len(shots) // 2]["product_visibility"] = "featured"
+    for name, data in (("shot-list.json", {"shots": shots}), ("contracts.json", contracts), ("stills.json", stills)):
+        (sb / name).write_text(json.dumps(data), encoding="utf-8")
+    if approve:
+        pending = approval_runner.run(str(run), lambda message, images: None)
+        assert pending["action"] == "waiting", pending
+        result = approval_runner.run(str(run), lambda message, images: None, reply="GO")
+        assert result["action"] == "approved", result
+    return shots
+
+
 def make_run(tmp, stage, method=None, agnes=None, progress=None,
              storyboard=None):
-    """A run folder whose first non-COMPLETE stage is `stage` (None = none)."""
-    run = Path(tmp) / ("run-%s" % uuid.uuid4().hex[:8])
+    """A governed run whose first unfinished canonical stage is `stage`."""
+    from test_production_process import approve_script
+    run = Path(tmp) / ("run-%s" % uuid.uuid4().hex[:8]) / "R1"
     (run / "control").mkdir(parents=True)
-    idx = len(STAGES) if stage is None else STAGES.index(stage)
-    db = run / "control" / "state.sqlite3"
-    with sqlite3.connect(str(db)) as con:
-        con.execute("CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT)")
-        con.execute("INSERT INTO meta(k, v) VALUES('db_version', '1')")
-        con.execute("CREATE TABLE stages(run_id TEXT, stage TEXT,"
-                    " state TEXT, version INTEGER, owner TEXT,"
-                    " lease_expires REAL, reason TEXT, updated_at REAL,"
-                    " PRIMARY KEY(run_id, stage))")
-        con.execute("CREATE TABLE events(id TEXT PRIMARY KEY, run_id TEXT,"
-                    " stage TEXT, kind TEXT, detail TEXT, at REAL)")
-        for i, s in enumerate(STAGES):
-            con.execute("INSERT INTO stages VALUES('R1', ?, ?, 1, NULL,"
-                        " NULL, NULL, 12345.6)",
-                        (s, "COMPLETE" if i < idx else "NOT_STARTED"))
+    confirmed_fixture(run)
+    # Model the supported historical absence of these optional projections;
+    # authoritative raw answers and the explicit recap remain intact.
+    receipt = run / "control/card-receipt.json"
+    record = json.loads(receipt.read_text())
+    if agnes is None:
+        receipt.unlink()
+    else:
+        record["agnes"] = {"answer": agnes}
+        receipt.write_text(json.dumps(record), encoding="utf-8")
     if method is not None:
-        (run / "control" / "method.json").write_text(
-            json.dumps(method, indent=2, sort_keys=True), "utf-8")
-    if agnes is not None:
-        (run / "control" / "card-receipt.json").write_text(
-            json.dumps({"agnes": {"answer": agnes}}, indent=2), "utf-8")
+        (run / "control/method.json").write_text(json.dumps(method), encoding="utf-8")
     if progress is not None:
-        (run / "control" / "agnes-progress.json").write_text(
-            json.dumps(progress, indent=2, sort_keys=True), "utf-8")
-    if storyboard is not None:
-        (run / "storyboard").mkdir()
-        (run / "storyboard" / "approval.json").write_text(
-            json.dumps({"state": storyboard}), "utf-8")
+        (run / "control/agnes-progress.json").write_text(json.dumps(progress), encoding="utf-8")
+    idx = len(STAGES) if stage is None else STAGES.index(stage)
+    for sid in STAGES[:idx]:
+        if sid == "video-generation":
+            storyboard_fixture(run, count=6, duration=60, approve=True)
+            _seed_recap(run)
+        complete_fixture_stage(run, sid)
+        if sid == "script-lyrics":
+            approve_script(run)
     if stage == "video-generation" and storyboard == "approved":
-        # v3.0 B7/B8: the video paid stage holds on the ONE final recap + the
-        # operator's Go. Seed the measured sources a real run carries and
-        # record both, so these checks still exercise the Agnes routing.
+        storyboard_fixture(run, count=6, duration=60, approve=True)
         _seed_recap(run)
     return run
 
@@ -128,22 +216,11 @@ def _seed_recap(run):
     (run / "music").mkdir(exist_ok=True)
     master = run / "music" / "picked-song.mp3"
     master.write_bytes(b"the picked master")
-    (run / "song-choices").mkdir()
+    (run / "song-choices").mkdir(exist_ok=True)
     (run / "song-choices" / "pick.json").write_text(json.dumps({
         "pick": 1, "label": "warm-live-band",
         "sha256": hashlib.sha256(master.read_bytes()).hexdigest()}), "utf-8")
-    (run / "storyboard" / "shot-list.json").write_text(json.dumps({"shots": [
-        {"shot_id": "s1", "song_start": 0.0, "song_end": 30.0},
-        {"shot_id": "s2", "song_start": 30.0, "song_end": 60.0}]}), "utf-8")
-    with sqlite3.connect(str(run / "control" / "state.sqlite3")) as con:
-        con.execute("CREATE TABLE IF NOT EXISTS video_model_lock("
-                    " run_id TEXT PRIMARY KEY, model TEXT NOT NULL,"
-                    " locked_at TEXT NOT NULL,"
-                    " version INTEGER NOT NULL DEFAULT 0)")
-        con.execute("INSERT OR REPLACE INTO video_model_lock VALUES"
-                    "('R1', 'minimax-h3/image-to-video',"
-                    " '2026-10-22T00:00:00Z', 1)")
-    SL.init_run(str(run / "spend.sqlite3"), "R1", ceiling=50000,
+    SL.init_run(str(run / "spend.sqlite3"), run.name, ceiling=50000,
                 currency="USD")
     doc = FR.build(str(run))
     FR.record_go(str(run), {"schema": FR.GO_SCHEMA, "decision": "GO",

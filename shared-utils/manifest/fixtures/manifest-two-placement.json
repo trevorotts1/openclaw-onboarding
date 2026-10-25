@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "manifest_id": "manifest-2026-11",
+  "tenant_id": "tenant-alpha",
+  "campaign_cycle_id": "cycle-2026-11",
+  "revision": "rev-3",
+  "status": "APPROVED",
+  "approved_by": "client-owner-1",
+  "approved_at": "2026-10-20T18:00:00Z",
+  "campaign_window": {
+    "starts_on": "2026-11-01",
+    "ends_on": "2026-11-30"
+  },
+  "placements": [
+    {
+      "placement_id": "P-1",
+      "account_id": "acct-1",
+      "account_binding_revision": "binding-7",
+      "channel": "FB_PUBLIC",
+      "scheduled_at": "2026-11-01T15:00:00Z",
+      "timezone": "America/New_York",
+      "content_revision": "content-9",
+      "cta_text": "Comment GUIDE and I will send it.",
+      "keyword": "GUIDE",
+      "promised_item_version": "v3",
+      "bonus_asset_versions": [
+        "bonus-v1"
+      ],
+      "conversation_policy_version": "policy-3",
+      "allowed_spare_ids": [
+        "spare-a"
+      ],
+      "approval_status": "APPROVED",
+      "invalidated_at": null,
+      "invalidated_reason": null
+    },
+    {
+      "placement_id": "P-2",
+      "account_id": "acct-2",
+      "account_binding_revision": "binding-7",
+      "channel": "FB_PUBLIC",
+      "scheduled_at": "2026-11-08T15:00:00Z",
+      "timezone": "America/New_York",
+      "content_revision": "content-9",
+      "cta_text": "Comment BONUS and I will send it.",
+      "keyword": "BONUS",
+      "promised_item_version": "v2",
+      "bonus_asset_versions": [
+        "bonus-v2"
+      ],
+      "conversation_policy_version": "policy-3",
+      "allowed_spare_ids": [
+        "spare-b"
+      ],
+      "approval_status": "APPROVED",
+      "invalidated_at": null,
+      "invalidated_reason": null
+    }
+  ]
+}
