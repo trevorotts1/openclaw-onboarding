@@ -207,20 +207,53 @@ def receipt(over=None):
 
 
 def minted(store, over=None):
-    """The receipt the explicit promotion step mints, mint mark and all.
+    """The receipt this store's REAL promotion step produced for a claim.
 
-    This is the ONLY way to get a receipt the store will accept, and it is the
-    same call ``promote()`` makes: the mint runs in the approval signer, a
-    separate process that holds this store's character at the step's from_state
-    and binds the receipt to this client and this store. Nothing in this
-    process can produce a mark, and a receipt minted with no store is refused
-    by name. The store's own cache is untouched: the mint is the promotion
-    step's act, not a save.
+    Round 5: a caller cannot mint, and there is no test-only mint either. This
+    helper earns each receipt by performing the promotion step itself -- put,
+    promote DRAFT_COMPLETE, promote APPROVED -- so a receipt in these tests can
+    only ever be one a promotion step actually produced. The store's cache is
+    put back exactly as it was found, so building a fixture never leaves a
+    record behind. A claim the store already approved is answered from the
+    record it holds rather than by promoting a second time.
+
+    Round 4's version of this helper called ``identity.register_character`` and
+    ``identity.mint_receipt`` directly. That was the acceptance row's conjunct-4
+    breach dressed as fixture convenience, and it is gone.
     """
     fields = receipt(over)
     fields.pop(identity.MINT_FIELD, None)
-    identity.register_character(store.approval_scope(), CHAR, "DRAFT_COMPLETE")
-    return identity.mint_receipt(fields, scope=store.approval_scope())
+    character_id = fields["character_id"]
+
+    held = store.get_identity(character_id)
+    if held is not None and held.get("draft_state") == "APPROVED":
+        for binding in held.get("approval_bindings") or []:
+            if all(type(binding.get(key)) is str and binding.get(key) == value
+                   for key, value in fields.items()):
+                return dict(binding)
+
+    document = store_mod._doc(character_id)
+    prior = store.cache.load(document)
+    try:
+        record = for_client(store.client_namespace)
+        record["character_id"] = character_id
+        record["draft_state"] = "DRAFT_INCOMPLETE"
+        record["approval_bindings"] = []
+        record.pop("content_digest", None)
+        store.cache.drop(document)
+        store.put_identity(record)
+        store.promote(character_id, "DRAFT_COMPLETE")
+        approved = store.promote(
+            character_id, "APPROVED",
+            approval={"approver": fields["approver"],
+                      "receipt_id": fields["receipt_id"]})
+        return dict(approved["approval_bindings"][0])
+    finally:
+        store.cache.drop(document)
+        if prior is not None:
+            store.cache.store(document, prior["value"],
+                              revision=prior.get("revision", 1),
+                              source=prior.get("source", "LOCAL"))
 
 
 def with_bindings(bindings, state="APPROVED", namespace=NS_A):
@@ -887,35 +920,38 @@ class OutOfProcessMintTest(unittest.TestCase):
 
     # --- the boundary, stated rather than hidden -------------------------
 
-    def test_the_promotion_step_is_the_transport_not_a_call_site_gate(self):
-        # The mint is the promotion step, and the promotion step lives in the
-        # signer. A caller may ask that step to happen directly -- it is the
-        # same act NotionStore.promote() performs, and no call-site gate can
-        # sit in front of it inside one process -- but the receipt it gets is
-        # the step's own record, for a character this store holds at the step's
-        # from_state (test_f1), for this client and this store, and nowhere
-        # else (test_f2).
+    def test_the_promotion_step_is_not_a_caller_reachable_transport(self):
+        # Round 4 asserted the opposite here: that a caller may ask the mint
+        # directly, that the store will accept what comes back, and that "no
+        # call-site gate can sit in front of it inside one process". That is
+        # precisely the acceptance row's conjunct-4 breach (a caller reaching
+        # APPROVED with a genuine receipt while promote() was never called), so
+        # the assertion is inverted rather than removed. The rule now: the mint
+        # request is built inside NotionStore.promote() and nowhere else, and
+        # the caller-declared state table it used to consult no longer exists.
         store = self.store()
         store.put_identity(for_client(NS_A))
         store.promote(CHAR, "DRAFT_COMPLETE")
-        fields = receipt({"receipt_id": "rcp-round4-transport"})
+        fields = receipt({"receipt_id": "rcp-round5-transport"})
         fields.pop(identity.MINT_FIELD, None)
-        direct = identity.mint_receipt(fields, scope=store.approval_scope())
 
-        self.assertIsNone(identity.resolve_receipt(direct, with_bindings([dict(direct)]),
-                                                   scope=store.approval_scope()))
-        self.assertEqual(store.restore_from_notion([with_bindings([dict(direct)])]),
-                         [CHAR])
-        self.assertEqual(store.get_identity(CHAR)["approval_bindings"], [direct])
+        for kwargs in ({}, {"scope": store.approval_scope()}):
+            with self.subTest(kwargs=sorted(kwargs)):
+                with self.assertRaises(identity.IdentityDefect) as caught:
+                    identity.mint_receipt(fields, **kwargs)
+                self.assertEqual(caught.exception.defects[0]["code"],
+                                 "RECEIPT_MINT_REFUSED")
 
-        elsewhere = tempfile.mkdtemp(prefix="s75-t15-else-")
-        try:
-            other = store_mod.NotionStore(elsewhere, NS_A)
-            with self.assertRaises(store_mod.StoreError):
-                other.restore_from_notion([with_bindings([dict(direct)])])
-            self.assertEqual(other.identities(), [])
-        finally:
-            shutil.rmtree(elsewhere, ignore_errors=True)
+        # passing a scope is not what decides it: the same refusal, the same
+        # code, whether the store holds the character or not
+        self.assertFalse(hasattr(identity, "register_character"))
+        self.assertNotIn("mint_receipt", identity.__all__)
+        self.assertNotIn("register_character", identity.__all__)
+
+        # nothing was minted, nothing reached the store, and the record is still
+        # exactly where the last explicit step left it
+        self.assertEqual(store.get_identity(CHAR)["draft_state"], "DRAFT_COMPLETE")
+        self.assertEqual(store.get_identity(CHAR)["approval_bindings"], [])
 
 
 if __name__ == "__main__":

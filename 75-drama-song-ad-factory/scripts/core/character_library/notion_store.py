@@ -126,21 +126,6 @@ class NotionStore:
         """
         return (self.client_namespace, os.path.abspath(self.cache.dir()))
 
-    def _register(self, sealed):
-        """Tell the promotion step what state this store now holds.
-
-        This is what makes a receipt a record of a step that happened: the
-        signer refuses to approve a character it does not hold at the step's
-        from_state. An approval is never registered here -- only promote()
-        produces one, and only through the promotion step.
-        """
-        state = sealed.get("draft_state")
-        if type(state) is not str or state == "APPROVED":
-            return
-        identity.register_character(self.approval_scope(),
-                                    str(sealed.get("character_id") or ""),
-                                    state)
-
     # --- library / page / database IDs -----------------------------------
 
     def registry_path(self):
@@ -270,7 +255,6 @@ class NotionStore:
         sealed = _validated(prepared, self.approval_scope())
         self.cache.store(_doc(character_id), sealed,
                          revision=revision if revision is not None else sealed["revision"])
-        self._register(sealed)
         return sealed
 
     def attach_image(self, character_id, reference_id):
@@ -305,12 +289,19 @@ class NotionStore:
         """Move a draft forward one explicit step. Implicit promotion refused.
 
         Approving is the only place an approval receipt is ever minted, and the
-        mint happens OUTSIDE this process: :func:`character_bible.identity.
-        mint_receipt` asks the promotion signer, a separate process that holds
-        the mint secret in its own memory and mints only for a character this
-        store holds at the step's from_state. Nothing in this process can
-        produce a mark, so a dict typed by hand, a mark recomputed from module
-        state and a dict reloaded from a JSON file all carry none that verifies.
+        mint request is built in this method body: the promotion signer is a
+        separate process that holds the mint secret in its own memory, and it
+        mints only for a store that binds the receipt to this client and this
+        cache. Nothing in this process can produce a mark, so a dict typed by
+        hand, a mark recomputed from module state and a dict reloaded from a
+        JSON file all carry none that verifies.
+
+        There is no mint function to call instead. Round 4 exposed one
+        (``identity.mint_receipt``) and a caller could reach APPROVED with a
+        genuine receipt while this method was never called; round 5 removes the
+        function, the caller-writable state table it consulted, and every other
+        path to the signer's mint. See ``identity.mint_receipt``: it is now a
+        refusal for every caller and every argument.
         """
         existing = self.get_identity(character_id)
         if existing is None:
@@ -341,17 +332,39 @@ class NotionStore:
         updated["draft_state"] = to_state
         updated["approval_bindings"] = bindings
         if to_state == "APPROVED":
-            bindings.append(identity.mint_receipt({
+            # THE RULE: a receipt is minted here and nowhere else. The signer's
+            # ``mint`` request is built in this method body -- not by a module
+            # function and not by a store method -- so there is no callable that
+            # a caller can reach to obtain a receipt without this promotion step
+            # running. identity.mint_receipt() is a named refusal, and the
+            # caller-writable state table it used to depend on no longer exists.
+            scope = self.approval_scope()
+            claim = {
                 "kind": identity.RECEIPT_KIND,
                 "receipt_id": receipt_id.strip(),
                 "approver": approver.strip(),
                 "character_id": str(existing.get("character_id") or "").strip(),
                 "from_state": current,
                 "to_state": to_state,
-            }, scope=self.approval_scope()))
+            }
+            reply = identity._signer_request({
+                "op": "mint", "scope": scope[1], "client": scope[0],
+                "claim": claim})
+            receipt = reply.get("receipt")
+            if reply.get("ok") is not True or type(receipt) is not dict:
+                # The signer's own refusal, surfaced unchanged: a second receipt
+                # for one step, one receipt id asked to name a second record, or
+                # nothing minted at all. IdentityDefect is the mint's own error
+                # type, and promote() does not downgrade it.
+                raise identity.IdentityDefect([{
+                    "field": "approval_bindings",
+                    "code": "RECEIPT_MINT_REFUSED",
+                    "message": reply.get("reason") or (
+                        "the promotion step refused to mint an approval receipt"),
+                }])
+            bindings.append(dict(receipt))
         sealed = _validated(updated, self.approval_scope())
         self.cache.store(_doc(character_id), sealed, revision=sealed["revision"])
-        self._register(sealed)
         return sealed
 
     # --- Notion side -----------------------------------------------------
@@ -394,7 +407,6 @@ class NotionStore:
             sealed = _validated(prepared, self.approval_scope())
             self.cache.recover(_doc(sealed["character_id"]), sealed,
                                revision=sealed["revision"])
-            self._register(sealed)
             restored.append(sealed["character_id"])
         return sorted(restored)
 

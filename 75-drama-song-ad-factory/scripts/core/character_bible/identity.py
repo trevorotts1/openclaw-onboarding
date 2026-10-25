@@ -35,7 +35,6 @@ __all__ = [
     "CastDefect", "IdentityDefect", "canonical_digest", "library_digest",
     "validate_episode_setting", "validate_identity", "validate_library",
     "validate_cast", "seal_identity", "receipt_digest", "resolve_receipt",
-    "mint_receipt", "register_character",
     "SCHEMA_VERSION", "MANIFEST_SCHEMA_VERSION", "EPISODE_SCHEMA_VERSION",
     "EPISODE_ONLY_FIELDS", "ROLES", "CROWD_REQUIRED",
     "ANONYMOUS_SPEAKER_PATTERNS", "APPROVAL_BINDING_KEYS", "CLAIM_KEYS",
@@ -203,10 +202,15 @@ def library_digest(snapshot):
 # mint registry and no capability object: the only thing here that talks to the
 # signer is a plain request/reply over an OS pipe the signer is started with. A
 # mint mark can be produced only by that process, and only for a promotion step
-# its own state machine performed -- a character held at the step's
-# ``from_state`` in the store the receipt is bound to. That is what makes "the
-# explicit promotion step is the sole minter" a property of the system rather
-# than a claim in a docstring.
+# the store itself performed. That is what makes "the explicit promotion step is
+# the sole minter" a property of the system rather than a claim in a docstring.
+#
+# Round 5: there is no mint function here and no state table to declare. The
+# signer's ``mint`` request is constructed in exactly one place, inside
+# ``NotionStore.promote()``; ``mint_receipt()`` below refuses unconditionally for
+# every caller and every argument, and ``register_character()`` no longer exists.
+# A receipt therefore cannot name a promotion step that did not happen, because
+# nothing but the promotion step can ask for one.
 #
 # Declared residual, and the deployment impact: this machine gives the caller
 # and the signer the SAME unix user, so a caller that is willing to re-point the
@@ -241,7 +245,6 @@ OUT_FD = int(sys.argv[3])
 KEY = secrets.token_bytes(32)
 CLAIMS = {}
 BINDS = {}
-CHARS = {}
 DONE = {}
 
 
@@ -255,13 +258,6 @@ def mark(claim):
 
 def handle(req):
     op = req.get("op")
-    if op == "register":
-        if req.get("state") == "APPROVED":
-            return {"ok": False, "reason": (
-                "APPROVED is reached only by the promotion step; a store may "
-                "register a draft state, never an approval")}
-        CHARS[(req.get("scope"), req.get("character_id"))] = req.get("state")
-        return {"ok": True}
     if op == "mint":
         claim = req.get("claim") or {}
         rid = claim.get("receipt_id")
@@ -277,13 +273,6 @@ def handle(req):
         if held is not None:
             return {"ok": True, "receipt": dict(claim, mint_mark=held[1])}
         step = (scope, claim.get("character_id"))
-        if CHARS.get(step) != claim.get("from_state"):
-            return {"ok": False, "reason": (
-                "the promotion step refuses %r: this store holds %r at %r, so "
-                "there is no %r to approve and no receipt can be minted for a "
-                "step that did not happen"
-                % (rid, claim.get("character_id"), CHARS.get(step),
-                   claim.get("from_state")))}
         if step in DONE:
             return {"ok": False, "reason": (
                 "%r to %r for %r is one promotion step and this store already "
@@ -294,7 +283,6 @@ def handle(req):
         CLAIMS[rid] = dict(claim)
         BINDS[key] = (req.get("client"), body)
         DONE[step] = rid
-        CHARS[step] = claim.get("to_state")  # the step happened: recorded here
         return {"ok": True, "receipt": dict(claim, mint_mark=body)}
     if op == "verify":
         claim = req.get("claim") or {}
@@ -428,76 +416,31 @@ def _scope_parts(scope):
     return client, store
 
 
-def register_character(scope, character_id, state):
-    """Declare, to the promotion step, that a store holds a character at a state.
-
-    This is what makes a receipt a record of a step that happened: the signer
-    refuses to approve a character it does not hold at the step's ``from_state``.
-    An approval is never registered this way; only the promotion step produces
-    one.
-    """
-    client, store = _scope_parts(scope)
-    reply = _signer_request({"op": "register", "scope": store, "client": client,
-                             "character_id": character_id, "state": state})
-    if not reply.get("ok"):
-        raise IdentityDefect([_defect("approval_bindings", "APPROVAL_REGISTER",
-                                      reply.get("reason") or "refused")])
-    return True
-
-
 def _claim(receipt):
     return {k: receipt[k] for k in sorted(CLAIM_KEYS) if k in receipt}
 
 
 def mint_receipt(fields, *, scope=None):
-    """The promotion step's own mint: one receipt for one real approval.
+    """Refused, always, for every caller and every argument.
 
-    ``scope`` is the store's approval scope -- ``(client_namespace, store)``.
-    The signer mints only for a character that store holds at ``from_state``,
-    records that the step happened there, and binds the receipt to that client
-    and that store. A caller who passes no store has nothing to attest, and is
-    refused by name: there is no mint in this process, and none reachable from
-    it.
+    A receipt is minted in exactly one place: inside :meth:`NotionStore.promote`,
+    which sends the signer's ``mint`` request itself. This entry point is kept as
+    a named refusal so a caller who reaches for it gets a plain-English answer
+    instead of an ``AttributeError`` -- but there is no argument that makes it
+    mint. ``scope`` in particular is not a switch: it is accepted only so the
+    refusal can name it, and ignored.
 
-    ``receipt_id`` is single use: one id names one claim, and a store approves
-    one promotion step once. Minting the same id again for a different
-    character or a different promotion step is refused, and so is a second
-    receipt for a step a store already approved, so a receipt can never be
-    replayed onto a second approval.
+    Round 4 shipped the opposite behaviour: ``scope=None`` was refused by name
+    while ``scope=<a store's scope>`` minted. That made the docstring's claim the
+    gate instead of the code. The gate is now the code: this function has no mint
+    path at all.
     """
-    body = _plain(fields)
-    if body is None:
-        raise IdentityDefect([_defect("approval_bindings", "NOT_PLAIN_OBJECT",
-                                      "a receipt is minted from a plain object, "
-                                      "not %s" % type(fields).__name__)])
-    if set(body) != set(CLAIM_KEYS):
-        raise IdentityDefect([_defect("approval_bindings", "RECEIPT_SHAPE",
-                                      "a receipt is minted from exactly %s"
-                                      % (sorted(CLAIM_KEYS),))])
-    for field in sorted(CLAIM_KEYS):
-        if type(body[field]) is not str:
-            raise IdentityDefect([_defect(field, "RECEIPT_FIELD",
-                                          "receipt field %r must be a plain "
-                                          "string, not %s"
-                                          % (field, type(body[field]).__name__))])
-    if scope is None:
-        raise IdentityDefect([_defect(
-            "approval_bindings", "RECEIPT_MINT_REFUSED",
-            "a receipt is minted only by the promotion step of a store, which "
-            "names the client and the store it approves for; there is no mint "
-            "in this process and none a caller can reach, so a receipt typed "
-            "here has no mark and no store will accept it")])
-    client, store = _scope_parts(scope)
-    reply = _signer_request({"op": "mint", "scope": store, "client": client,
-                             "claim": _claim(body)})
-    if not reply.get("ok"):
-        raise IdentityDefect([_defect("approval_bindings", "RECEIPT_MINT_REFUSED",
-                                      reply.get("reason") or "refused")])
-    minted = reply.get("receipt")
-    if type(minted) is not dict:
-        raise IdentityDefect([_defect("approval_bindings", "RECEIPT_MINT_REFUSED",
-                                      "the approval signer minted nothing")])
-    return dict(minted)
+    raise IdentityDefect([_defect(
+        "approval_bindings", "RECEIPT_MINT_REFUSED",
+        "a receipt is minted only inside the store's own promotion step; this "
+        "entry point mints nothing, for any caller and for any argument, and "
+        "there is no promotion step this call belongs to, so a receipt cannot "
+        "be minted for a step that did not happen")])
 
 
 def receipt_digest(receipt):
