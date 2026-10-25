@@ -1,0 +1,7 @@
+# search: J4.approval-title
+# command: git grep -nF Revisioned monthly approval manifest 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/schemas/approval-manifest.schema.json
+# scope: approval-manifest.schema.json
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/schemas/approval-manifest.schema.json:3:  "title": "Revisioned monthly approval manifest, one joined 30-day campaign",
