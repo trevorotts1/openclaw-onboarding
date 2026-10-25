@@ -474,7 +474,7 @@ def _resolve_delivery_scope(requested: Optional[str],
         raise PackageError(
             "AF-LAUNCH-PLAN-REQUIRED",
             "full-launch delivery requires the shared launch plan (calendar and every planned "
-            "unit); pass delivery_scope='page_only' for a page-only package")
+            "unit); pass delivery_scope='page_only' (cli: --page-only) for a page-only package")
     if requested == DELIVERY_SCOPE_PAGE_ONLY and plan is not None:
         raise PackageError(
             "AF-LAUNCH-SCOPE-CONFLICT",

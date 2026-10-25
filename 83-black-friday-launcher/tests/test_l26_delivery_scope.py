@@ -19,9 +19,11 @@ from pathlib import Path
 from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = SKILL_ROOT.parent
+BF_PLAN = REPO_ROOT / "shared-utils/signature_launch_contract/fixtures/black-friday.json"
 sys.path.insert(0, str(SKILL_ROOT))
 
-from launcher_core import cli, council, intake, package, route  # noqa: E402
+from launcher_core import cli, council, intake, launch_plan, package, route  # noqa: E402
 
 
 def base_intake() -> dict:
@@ -45,6 +47,35 @@ def base_intake() -> dict:
 def stub_council(_launch):
     return {"status": "advice_returned", "ready": True,
             "advice": {"recommendation": "stub"}, "advice_state": "returned"}
+
+
+def plan_fixture() -> dict:
+    return json.loads(BF_PLAN.read_text(encoding="utf-8"))
+
+
+def lane_deliveries(plan: dict, run_dir: Path) -> dict:
+    """Producing-lane delivery receipts: staged bytes plus the lane's own
+    validation and request echo (mirrors test_launch_plan_law)."""
+    plan_sha = hashlib.sha256(
+        (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode("utf-8")).hexdigest()
+    out = {}
+    for unit in launch_plan.planned_units(plan):
+        rel = f"lane/{unit['id']}/delivery.html"
+        target = run_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(f"<html>{unit['id']}</html>\n".encode("utf-8"))
+        out[unit["id"]] = {
+            "state": "complete",
+            "artifacts": [{"path": rel,
+                           "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                           "size": target.stat().st_size}],
+            "lane_validation": {"lane": "L06", "contract": "lane.output.v1",
+                                "state": "passed"},
+            "request": {"plan_sha256": plan_sha,
+                        "request_id": f"lane-{unit['id']}",
+                        "input_hash": "d" * 64},
+        }
+    return out
 
 
 def pieces_for(run_dir: Path, graph: dict, normalized: dict) -> dict:
@@ -97,6 +128,7 @@ class PackageScopeTests(_Base):
                              delivery_scope=package.DELIVERY_SCOPE_FULL)
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-REQUIRED")
         self.assertFalse((self.run_dir / "package-manifest.json").exists())
+        self.assertFalse((self.run_dir / "receipt.json").exists())
 
     def test_plan_free_package_is_labelled_page_only(self):
         out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
@@ -116,6 +148,31 @@ class PackageScopeTests(_Base):
                              launch_plan={"launch_id": self.normalized["launch_id"]},
                              delivery_scope=package.DELIVERY_SCOPE_PAGE_ONLY)
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-SCOPE-CONFLICT")
+        self.assertFalse((self.run_dir / "package-manifest.json").exists())
+        self.assertFalse((self.run_dir / "receipt.json").exists())
+
+    def test_an_unknown_delivery_scope_is_refused(self):
+        with self.assertRaises(package.PackageError) as ctx:
+            package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
+                             council=self.advice, delivery_scope="launch_everything")
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-SCOPE-UNKNOWN")
+        self.assertFalse((self.run_dir / "package-manifest.json").exists())
+        self.assertFalse((self.run_dir / "receipt.json").exists())
+
+    @unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
+    def test_a_sealed_plan_labels_the_package_a_full_launch(self):
+        plan = plan_fixture()
+        out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
+                               council=self.advice, launch_plan=plan,
+                               deliveries=lane_deliveries(plan, self.run_dir))
+        manifest = out["manifest"]
+        self.assertIn("launch_plan", manifest)
+        self.assertEqual(manifest["delivery_scope"], package.DELIVERY_SCOPE_FULL)
+        self.assertEqual(manifest["delivery_label"],
+                         package.DELIVERY_LABELS[package.DELIVERY_SCOPE_FULL])
+        self.assertEqual(out["receipt"]["delivery_scope"], package.DELIVERY_SCOPE_FULL)
+        written = json.loads((self.run_dir / "package-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(written["delivery_scope"], package.DELIVERY_SCOPE_FULL)
 
 
 class CliScopeTests(_Base):
@@ -140,6 +197,7 @@ class CliScopeTests(_Base):
         rc, _out, err = self._assemble()
         self.assertEqual(rc, 2)
         self.assertIn("AF-LAUNCH-PLAN-REQUIRED", err)
+        self.assertIn("--page-only", err)  # the refusal must name the CLI's own opt-in
 
     def test_cli_page_only_result_is_labelled_page_only(self):
         rc, out, err = self._assemble("--page-only")
@@ -147,6 +205,14 @@ class CliScopeTests(_Base):
         payload = json.loads(out)
         self.assertEqual(payload["delivery_scope"], package.DELIVERY_SCOPE_PAGE_ONLY)
         self.assertIn("page-only", payload["delivery_label"])
+
+    def test_cli_page_only_with_a_plan_is_refused(self):
+        plan_path = Path(self.tmp.name) / "plan.json"
+        plan_path.write_text(json.dumps({"launch_id": "black-friday-2026"}), encoding="utf-8")
+        rc, out, err = self._assemble("--page-only", "--launch-plan", str(plan_path))
+        self.assertEqual(rc, 2)
+        self.assertIn("AF-LAUNCH-SCOPE-CONFLICT", err)
+        self.assertEqual(out.strip(), "")  # a refused assembly emits nothing
 
 
 if __name__ == "__main__":
