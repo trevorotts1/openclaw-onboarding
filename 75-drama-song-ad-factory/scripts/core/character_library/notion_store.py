@@ -185,12 +185,22 @@ class _SignerTransport:
                 "The approval signer's transport belongs to a live store.")
         return self.__start()
 
-    def channel(self, owner):
-        """The signer's raw pipe ends. A live store only -- see ponytail above."""
+    def channel(self, owner, spawn):
+        """The signer's raw pipe ends, ``spawn`` starting it on first use.
+
+        A live store only -- see the ponytail above. ``spawn`` is that store's
+        own ``__signer_start``, so the signer is always started by the store
+        that owns the request.
+        """
         if self.__owner(owner) is None:
             raise StoreError(
                 "The approval signer's transport belongs to a live store.")
-        return self.__channel()
+        with self.__lock:
+            held = self.__pipes.get(os.getpid())
+            if held is None:
+                held = spawn()
+                self.__pipes[os.getpid()] = held
+            return held
 
     def drop(self, owner):
         """Forget this process's signer. A live store only. Fails closed."""
@@ -211,18 +221,7 @@ class _SignerTransport:
                         "reason": "the approval signer could not start (%s)"
                                   % exc}
             try:
-                os.write(send_fd, raw)
-                data = b""
-                while not data.endswith(b"\n"):
-                    chunk = os.read(recv_fd, 65536)
-                    if not chunk:
-                        return {"ok": False,
-                                "reason": "the approval signer stopped"}
-                    data += chunk
-                reply = json.loads(data.decode("utf-8"))
-                return reply if type(reply) is dict else {
-                    "ok": False, "reason": "the approval signer gave an "
-                                           "unreadable answer"}
+                return self.trip(send_fd, recv_fd, raw)
             except Exception as exc:
                 reason = "the approval signer is unreachable (%s)" % exc
                 self.__drop()
@@ -230,13 +229,25 @@ class _SignerTransport:
                     continue
         return {"ok": False, "reason": reason}
 
-    def exchange(self, owner, payload):
-        """One request to the signer, for a live store only. Fails closed."""
-        if self.__owner(owner) is None:
-            return {"ok": False, "reason": (
-                "the approval signer's transport belongs to a live store, and a "
-                "receipt is minted only inside the store's own promotion step")}
-        return self.__exchange(payload)
+    @staticmethod
+    def trip(send_fd, recv_fd, raw):
+        """One framed write/read on a pipe. Takes file descriptors, holds none.
+
+        It is ``os.write`` plus framing: a caller who reaches it already holds
+        the pipe ends, and it hands back the signer's own answer and nothing
+        else.
+        """
+        os.write(send_fd, raw)
+        data = b""
+        while not data.endswith(b"\n"):
+            chunk = os.read(recv_fd, 65536)
+            if not chunk:
+                raise OSError("the approval signer stopped")
+            data += chunk
+        reply = json.loads(data.decode("utf-8"))
+        return reply if type(reply) is dict else {
+            "ok": False, "reason": "the approval signer gave an unreadable "
+                                   "answer"}
 
     def verify(self, payload):
         """One ``verify`` request. ``verify`` only, for any caller. Fails closed.
@@ -296,7 +307,7 @@ class NotionStore:
         store and then a name-mangled private member of it -- the
         implementation-internal class rounds 5, 6 and 6b ruled out of scope.
         """
-        return self.__transport.channel(self)
+        return self.__transport.channel(self, self.__signer_start)
 
     def __signer_drop(self):
         """Forget this process's signer after a transport failure. Private."""
@@ -322,9 +333,26 @@ class NotionStore:
         ``promote()`` called zero times. identity's namespace now answers
         ``verify`` and refuses the rest in code, and it holds no signer
         transport at all (round 7): the raw pipe ends live behind this class's
-        private members. Getting to this method needs a live store instance.
+        private members, reached through ``__signer_channel``. Getting to this
+        method needs a live store instance.
         """
-        return self.__transport.exchange(self, payload)
+        raw = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
+        reason = "the approval signer did not answer"
+        for attempt in (0, 1):
+            try:
+                _proc, send_fd, recv_fd = self.__signer_channel()
+            except Exception as exc:
+                return {"ok": False,
+                        "reason": "the approval signer could not start (%s)"
+                                  % exc}
+            try:
+                return self.__transport.trip(send_fd, recv_fd, raw)
+            except Exception as exc:
+                reason = "the approval signer is unreachable (%s)" % exc
+                self.__signer_drop()
+                if attempt == 0:
+                    continue
+        return {"ok": False, "reason": reason}
 
     def __store_capability(self):
         """This store's capability, fetched once from the signer and kept here."""
