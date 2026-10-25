@@ -88,7 +88,59 @@ _KIND_WORDS = {
     "music": ("music", "song", "audio"),
     "storyboard": ("storyboard", "shots"),
 }
-_REV_RE = re.compile(r"\b(?:rev(?:ision)?|ver(?:sion)?|v)\s*[-:.]?\s*(\d+)\b", re.I)
+#: every ordinal word, spelled out -- open-ended at both ends, so "eleventh",
+#: "twelfth", "zeroth", "nth", "last", "next", "previous", "penultimate" and
+#: "upper" are ordinals here too and never fall through to a bare approval
+_ORDINAL_WORDS = ("first second third fourth fifth sixth seventh eighth ninth "
+                  "tenth eleventh twelfth thirteenth fourteenth fifteenth "
+                  "sixteenth seventeenth eighteenth nineteenth twentieth").split()
+_NUM_WORDS = "one two three four five six seven eight nine ten".split()
+#: the number each word names; the words that read as an ordinal but name NO
+#: number at all ("the last revision") are deliberately left out of it
+_REV_WORD_VALUE = dict(
+    [(w, i + 1) for i, w in enumerate(_ORDINAL_WORDS)] +
+    [(w, i + 1) for i, w in enumerate(_NUM_WORDS)] +
+    [("zeroth", 0)])
+_ORDINAL_ALL = sorted(set(_REV_WORD_VALUE) |
+                      {"nth", "last", "next", "previous", "penultimate", "upper"},
+                      key=len, reverse=True)
+
+#: a revision reference: "revision 2", "rev 2", "version 2", "v2", and the same
+#: written with the number in front ("2nd revision", "the second revision").
+#: The separator class keeps "revision-2" and "revision 2" the same reference.
+_REV_NOUN_RE = r"(?:revisions?|revs?|versions?|ver|v)"
+_ORD_RE = r"(?:%s)" % "|".join(_ORDINAL_ALL)
+_DIG_RE = r"\d+(?:st|nd|rd|th)?"
+_REV_REF_RE = re.compile(
+    r"\b(?:%s)[\s\-:.']*?(?:%s)\b" % (_DIG_RE, _REV_NOUN_RE) +
+    r"|\b(?:%s)[\s\-:.']*?(?:%s)\b" % (_ORD_RE, _REV_NOUN_RE) +
+    r"|\b(?:%s)[\s\-:.']*?(?:%s)\b" % (_REV_NOUN_RE, _DIG_RE) +
+    r"|\b(?:%s)[\s\-:.']*?(?:%s)\b" % (_REV_NOUN_RE, _ORD_RE), re.I)
+
+
+def _revision_refs(text):
+    """Every revision reference the reply carries, as (span, number, num_span).
+
+    ``number`` is the revision it actually names, or None when it names none at
+    all ("the last revision"): a reference with no number is not a revision
+    number, and nothing here treats it as one. ``num_span`` is where that number
+    sits in ``text`` -- the span the selection screen must leave alone.
+    """
+    s = str(text or "").strip().lower()
+    out = []
+    for m in _REV_REF_RE.finditer(s):
+        number, num_span = None, None
+        for t in re.finditer(r"[a-z0-9]+", m.group(0)):
+            word = t.group(0)
+            if word in _REVISION_NOUNS:
+                continue
+            hit = re.match(r"(\d+)(?:st|nd|rd|th)?$", word)
+            number = int(hit.group(1)) if hit else _REV_WORD_VALUE.get(word)
+            span = (m.start() + t.start(), m.start() + t.end())
+            num_span = span if number is not None else None
+            break
+        out.append(((m.start(), m.end()), number, num_span))
+    return out
 
 #: idioms where a negation word is an affirmation ("approved, no changes").
 #: Masked BEFORE any screen, so a plain approval with no edits stays one.
@@ -116,14 +168,59 @@ _SCOPE_MARKS = ("except", "excepting", "except that", "other than", "apart from"
 _SELECTION_RE = re.compile(
     r"\b(?:option|choice|number|no)\s*[-:.]?\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b")
 
-#: a word that picks ONE artifact out of a list by its position
-_ORDINAL_RE = re.compile(
-    r"\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
-    r"one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:st|nd|rd|th)?)\b")
+#: a word that picks ONE artifact out of a list by its position. Open-ended at
+#: both ends: "eleventh", "twelfth", "zeroth", "nth", "last", "next",
+#: "previous", "penultimate" and "upper" are ordinals exactly as "second" is
+_ORDINAL_RE = re.compile(r"(?:%s|\d+(?:st|nd|rd|th)?)" % "|".join(_ORDINAL_ALL))
 
 #: the words an ordinal may NUMBER instead of selecting -- a revision
 _REVISION_NOUNS = frozenset(
     "revision revisions rev revs version versions ver v".split())
+
+#: the words that may sit between an ordinal and the artifact name it numbers
+#: and carry no noun of their own -- the name is then still the next one.
+#: "of" belongs here because "the last revision OF THE script" numbers the
+#: script exactly as "the last revision script" does.
+_ADJ_DETERMINERS = frozenset(
+    "a an the this that these those our your my his her its their some any each "
+    "every said same only other another such of".split())
+
+#: how many of those words an ordinal may look through to reach its name
+_ADJ_HOPS = 3
+
+
+def _selects_adjacent(span, s, tokens):
+    """True when ``span`` sits in the slot that names the artifact.
+
+    ADJACENCY, not presence. The name is the next word on either side, or the
+    name reached across determiners ("the second script") or across a revision
+    noun ("the second revision script"). Only whitespace may separate the words:
+    a comma ("the script, 2 verses") or a hyphen ("two-part") starts a new
+    phrase, where the ordinal numbers something else.
+    """
+    lo, hi = span
+    left = [t for t in tokens if t[1][1] <= lo]
+    right = [t for t in tokens if t[1][0] >= hi]
+    for side, near in (("L", left[-1:]), ("R", right[:1])):
+        if not near:
+            continue
+        target, hops = near[0], 0
+        while target[0] in _ADJ_DETERMINERS or target[0] in _REVISION_NOUNS:
+            hops += 1
+            if hops > _ADJ_HOPS:
+                break
+            step = ([t for t in left if t[1][1] <= target[1][0]][-1:] if side == "L"
+                    else [t for t in right if t[1][0] >= target[1][1]][:1])
+            if not step:
+                break
+            target = step[0]
+        if hops > _ADJ_HOPS or target[0] not in _ARTIFACT_WORDS:
+            continue
+        gap = s[min(target[1][0], lo):max(target[1][1], hi)]
+        if re.search(r"\S", re.sub(r"[a-z0-9]+", " ", gap)):
+            continue
+        return True
+    return False
 
 
 def selects_one_artifact(text):
@@ -131,19 +228,29 @@ def selects_one_artifact(text):
 
     "the second script", "script two" and "the 2nd script" are SELECTIONS: the
     presentation shows exactly one artifact of each kind, so the ordinal names a
-    member of a list that was never shown. An ordinal that numbers a revision
+    member of a list that was never shown. A numeral that numbers a REVISION
     ("version 1", "the second revision") is not a selection -- the revision rule
-    binds that -- and is left alone here.
+    binds that, and only where the reply names an actual revision NUMBER there.
+
+    The test is ADJACENCY, not presence: an ordinal counts only beside an
+    artifact name. A number anywhere else in the reply -- a clock time (2:30), a
+    date (2026-10-24), a duration (3 days, 4 minutes), an act/phase/verse/take
+    number, an fps rate (24 fps), a team size (five), a rating (10 out of 10),
+    "take two" -- names no artifact and never refuses an approval.
     """
-    words = re.findall(r"[a-z0-9]+", str(text or "").lower())
-    for i, word in enumerate(words):
+    s = str(text or "").strip().lower()
+    tokens = [(m.group(0), (m.start(), m.end()))
+              for m in re.finditer(r"[a-z0-9]+", s)]
+    refs = _revision_refs(s)
+    for word, span in tokens:
         if not _ORDINAL_RE.fullmatch(word):
             continue
-        near = [w for w in (words[i - 1:i] + words[i + 1:i + 2]) if w]
-        if any(w in _REVISION_NOUNS for w in near):
-            continue
-        return True
+        if any(number is not None and num == span for _, number, num in refs):
+            continue                       # names a revision: not a selection
+        if _selects_adjacent(span, s, tokens):
+            return True
     return False
+
 
 _QUESTION_START = ("am", "are", "can", "could", "did", "do", "does", "had", "has",
                    "have", "how", "is", "may", "might", "shall", "should", "was",
@@ -528,10 +635,14 @@ def _named_kinds(text):
 
 def named_revision(text):
     """The revision number the reply itself names ("revision 2", "rev 2",
-    "version 2", "v2"), or None. A reply that names one binds ONLY that
-    revision: a presented revision the reply never named is never approved."""
-    m = _REV_RE.search(_norm(text))
-    return int(m.group(1)) if m else None
+    "version 2", "v2", "2nd revision", "the second revision"), or None. A reply
+    that names one binds ONLY that revision: a presented revision the reply
+    never named is never approved.
+
+    A revision reference with no NUMBER ("the last revision") names none: it
+    returns None, so it never binds a revision and never exempts an ordinal."""
+    found = [number for _, number, _ in _revision_refs(text) if number is not None]
+    return found[0] if found else None
 
 
 def is_preference_reply(text):
@@ -612,6 +723,22 @@ REFERENT_PHRASES = (
     "scenes", "screenplay", "script", "setting", "shots", "soundtrack", "story",
     "storyboard", "words", "world",
 )
+
+
+#: every word that names a presented artifact, one token per word of
+#: REFERENT_PHRASES plus the artifact kinds. This is the vocabulary the
+#: selection screen needs: an ordinal beside a name is a selection, an ordinal
+#: beside anything else (a time, a date, a duration, an act, a verse count)
+#: names no artifact and refuses nothing. Built here, after the vocabulary it
+#: reads; the screen above resolves it when it runs.
+_ARTIFACT_NOT_NAMES = frozenset("""
+a an the of it all entire whole thing things everything else rest this that
+these those our your my his her its their some any each every said same only
+other another such creative new old latest final draft copy both
+""".split())
+_ARTIFACT_WORDS = (
+    frozenset(w for phrase in REFERENT_PHRASES for w in phrase.split())
+    | _KIND_TOKENS) - _ARTIFACT_NOT_NAMES - _REVISION_NOUNS
 
 
 def _phrase_re(phrase):
@@ -1020,10 +1147,10 @@ def interpret_reply(text, rec, ctx=None):
     else:
         kinds = []
 
-    # displayed revision labels disambiguate before any question is asked
-    m = _REV_RE.search(t)
-    if m:
-        want = int(m.group(1))
+    # displayed revision labels disambiguate before any question is asked.
+    # One parser for a revision number, shared with the revision guard.
+    want = named_revision(t)
+    if want is not None:
         hits = [(a, k) for a in asks
                 for k, v in (a.get("revisions") or {}).items()
                 if v == want and (not kinds or k in kinds)]

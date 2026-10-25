@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Round-5 regression battery for the idiom register and the revision binding.
+"""Battery for the idiom register, the revision binding and the selection screen.
+
+Round 5 locked the idiom register and the revision binding. Round 6 locks the
+SELECTION screen: an ordinal selects an artifact only beside an artifact name.
 
 The repair these lock in is b821a02dd ("refuse an unseen referent, open the
 idiom register"). This file adds the cases that repair's own battery does not
@@ -238,6 +241,212 @@ def test_an_ordinal_that_numbers_a_revision_still_resolves():
         assert sorted(receipt["components"]) == covers, (text, receipt["components"])
         verdict = book.admissibility("package")
         assert verdict["code"] == "APPROVAL_INCOMPLETE", (text, verdict)
+
+
+# =========================================================================== #
+# ROUND 6 -- the selection screen is ADJACENCY, not a scan of the whole reply
+# =========================================================================== #
+#
+# THE RULE, in one sentence: an ordinal or a number counts as SELECTING one
+# artifact only when it is adjacent to an artifact name -- the name being the
+# word next to it, or the name reached across a determiner ("the"), the
+# preposition "of" or a revision noun ("revision"), with only whitespace between
+# the words and no punctuation -- and a numeral that names a revision is exempt
+# from this screen only where the reply names an ACTUAL revision number there.
+#
+# That rule has two sides, and both are counted below so a regression in either
+# direction fails loudly. Refusing everything scores perfectly on the failure
+# the screen was built to catch, so the OPEN set is asserted with the same force
+# as the REFUSE set.
+
+#: MUST REFUSE -- picks one artifact out of a list that was never presented.
+#: The first 18 are the round-5 verifier's still_mints_should_not, reproduced
+#: verbatim; the rest are this round's own variants of the same two families.
+SELECTION_REFUSALS = (
+    # family A -- the round-5 ordinal register stopped at "tenth"
+    "We approve the eleventh script.",
+    "We approve the twelfth script.",
+    "We approve the zeroth script.",
+    "We approve the last script.",
+    "We approve the next script.",
+    "We approve the previous script.",
+    "We approve the penultimate script.",
+    "We approve the nth script.",
+    "We approve the upper script.",
+    # family B -- the revision-noun exemption fired with no revision number
+    "We approve the second revision script.",
+    "We approve the second rev script.",
+    "We approve the second v script.",
+    "We approve the second version script.",
+    "We approve the last revision script.",
+    "We approve revision second of the script.",
+    "We approve the second revision of the script.",
+    "We approve the 2nd revision of the script.",
+    "We approve the 2nd version of the script.",
+    # this round's variants of the same families
+    "We approve the thirteenth script.",
+    "We approve the twentieth script.",
+    "We approve the 21st script.",
+    "We approve the first script and the lyrics.",
+    "We approve the 3rd lyric.",
+    "We approve script two.",
+    "We approve the second story.",
+    "We approve the fifth storyboard.",
+    "We approve the 4th music.",
+    "We approve the 2nd revision script.",
+    "We approve the second revision of the lyrics.",
+    "We approve the last revision of the script.",
+    "We approve the next revision of the script.",
+    "We approve the previous revision script.",
+    "We approve the other script and the second lyrics.",
+    "We approve the second scene plan and the script.",
+)
+
+#: MUST OPEN -- a genuine approval of a presented artifact that also carries a
+#: number naming something else: a clock time, a date, a duration, an act/
+#: phase/take figure, an fps rate, a team size, a score, a part count. The first
+#: 20 are the round-5 verifier's over_refusal_regressions, reproduced verbatim.
+MEASUREMENT_APPROVALS = (
+    "We approve the drama song ad package at 2:30.",
+    "We approve the drama song ad package for client 7.",
+    "We approve the drama song ad package, delivery window 3 days.",
+    "We approve the drama song ad package - 3 verses, 2 choruses.",
+    "We approve the drama song ad package. One house: ours.",
+    "We approve the script and the lyrics; take two.",
+    "We approve the script and the lyrics on 2026-10-24.",
+    "We approve the script and the two-part harmony.",
+    "We approve the script and the three-act structure.",
+    "We approve the script for act 2.",
+    "We approve the script at 24 fps.",
+    "We approve the script, 2 verses.",
+    "We approve the script. It runs 4 minutes.",
+    "We approve the script. Our team of five is happy.",
+    "We approve the lyrics and the script for the second campaign.",
+    "We approve the lyrics in 4/4.",
+    "We approve the scene plan and the script at 30 fps.",
+    "We approve the research bundle and the scene plan for take 3.",
+    "We approve the episode world and the script for phase 1.",
+    "We approve the causal story beats and the script. 10 out of 10.",
+    # this round's variants
+    "We approve the script for take 2.",
+    "We approve the script at 1080p.",
+    "We approve the lyrics and the script. 5 stars.",
+    "We approve the script and the lyrics. 1st of October.",
+    "We approve the drama song ad package, one per week.",
+    "We approve the script. Team of three signed off.",
+    "We approve the script and the lyrics, 2 of us agree.",
+    "We approve the scene plan and the script for act three.",
+    "We approve the research bundle and the script. Rated 8.",
+    "We approve the script on 2026-10-25 at 09:30.",
+    "We approve the episode world and the script. 6 hours of work.",
+)
+
+#: one sentence -- asserted to be one sentence, and quoted in the refusal text
+ADJACENCY_RULE = (
+    "An ordinal or number selects one artifact only when it is adjacent to an "
+    "artifact name -- the next word, or the name reached across a determiner, "
+    "the preposition 'of' or a revision noun, with only whitespace between and "
+    "no punctuation -- and a numeral that names a revision is exempt only where "
+    "the reply names an actual revision number there.")
+
+#: the adjacency rule pinned at the predicate, BOTH sides, word by word
+ADJACENCY_PROBES = (
+    # the ordinal sits in the slot that names the artifact -> SELECTION
+    ("We approve the second script.", True),
+    ("We approve script two.", True),
+    ("We approve the 2nd script.", True),
+    ("We approve the eleventh script.", True),
+    ("We approve the penultimate script.", True),
+    ("We approve the last revision script.", True),
+    ("We approve the last revision of the script.", True),
+    ("We approve the second script and the lyrics.", True),
+    # the number names a measurement somewhere else -> NOT a selection
+    ("We approve the script at 2:30.", False),
+    ("We approve the script on 2026-10-24.", False),
+    ("We approve the script, 2 verses.", False),
+    ("We approve the script. It runs 4 minutes.", False),
+    ("We approve the script at 24 fps.", False),
+    ("We approve the script for act 2.", False),
+    ("We approve the script and the two-part harmony.", False),
+    ("We approve the script. Our team of five is happy.", False),
+    ("We approve the script. 10 out of 10.", False),
+)
+
+
+def _refused(book, text):
+    exc = _raises(book.approve, "package", client_ctx(text))
+    _assert_refused(book, exc, text)
+    return exc
+
+
+def test_the_selection_register_is_open_ended_and_refuses_every_member():
+    """Round 5's register stopped at "tenth" and its revision exemption fired
+    with no revision number at all. Every member of both families -- the 18 the
+    verifier measured plus this round's variants -- mints nothing."""
+    refused = 0
+    for text in SELECTION_REFUSALS:
+        _refused(_bound_book(), text)
+        refused += 1
+    assert refused == len(SELECTION_REFUSALS) == 34, refused
+
+
+def test_over_refusal_would_fail_loudly():
+    """THE OTHER SIDE, and the reason this file exists. Every reply here is a
+    genuine approval of a presented artifact that happens to carry a number.
+    Refusing one of them is the regression round 5 shipped, so the count is
+    asserted: a blanket refusal cannot pass this test."""
+    opened = []
+    for text in MEASUREMENT_APPROVALS:
+        book = _bound_book()
+        receipt = book.approve("package", client_ctx(text))
+        assert receipt["decision"] == "approved", text
+        assert receipt["components"], text
+        opened.append(text)
+    assert len(opened) == len(MEASUREMENT_APPROVALS) == 31, len(opened)
+
+
+def test_adjacency_not_presence_is_what_decides_a_selection():
+    """Both sides of the one-sentence rule, pinned at the predicate itself: the
+    ordinal selects beside a name and only beside a name."""
+    for text, expected in ADJACENCY_PROBES:
+        assert AE.selects_one_artifact(text) is expected, text
+
+
+def test_a_revision_reference_needs_an_actual_revision_number():
+    """A revision noun beside an ordinal is NOT an exemption on its own. Where
+    the reply names a number, that number must have been presented; where it
+    names none ("the last revision"), the ordinal is still judged as a
+    selection. Either way revision 1 is never bound without being named."""
+    unseen = (
+        "We approve the second revision of the script.",
+        "We approve the 2nd revision of the script.",
+        "We approve the 2nd version of the script.",
+        "We approve revision second of the script.",
+        "We approve the second revision script.",
+    )
+    for text in unseen:
+        book = _bound_book()
+        exc = _raises(book.approve, "package", client_ctx(text))
+        assert exc.code == "APPROVAL_NAMES_UNSEEN_REVISION", (text, exc.code)
+        assert AE.named_revision(text) == 2, (text, AE.named_revision(text))
+        _assert_refused(book, exc, text)
+    for text in ("We approve the last revision script.",
+                 "We approve the last revision of the script.",
+                 "We approve the next revision of the script."):
+        exc = _refused(_bound_book(), text)
+        assert exc.code == "APPROVAL_IS_A_SELECTION", (text, exc.code)
+        assert AE.named_revision(text) is None, (text, AE.named_revision(text))
+    # the number it DOES name still binds: "first revision" is revision 1
+    book = _bound_book()
+    receipt = book.approve("package",
+                           client_ctx("We approve the first revision of the script."))
+    assert sorted(receipt["components"]) == ["script"], receipt["components"]
+    assert receipt["components"]["script"]["revision"] == 1, receipt
+    assert AE.named_revision("We approve the first revision of the script.") == 1
+
+
+def test_the_rule_is_one_sentence():
+    assert ADJACENCY_RULE.count(".") == 1 and ADJACENCY_RULE.endswith("."), ADJACENCY_RULE
 
 
 if __name__ == "__main__":
