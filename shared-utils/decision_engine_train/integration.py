@@ -313,8 +313,10 @@ def _schema_verdict(unit):
     writer switch stays disabled until reader proof exists.
     """
     schema = unit["schema"]
-    kind = str(schema.get("kind") or "none")
-    if kind in ("none", ""):
+    if "kind" not in schema:
+        return None
+    kind = schema["kind"]
+    if kind == "none":
         return None
     if kind == "additive":
         if schema.get("tolerant_readers_proved") is not True:
@@ -330,6 +332,10 @@ def _schema_verdict(unit):
         if schema.get("writer_switch_enabled") is True:
             return (RULE_BREAKING_WRITER, "writer_switch_before_reader_proof")
         return None
+    if kind is None:
+        return (RULE_BREAKING_WRITER, "schema_kind_unobserved")
+    if not isinstance(kind, str) or not kind:
+        return (RULE_BREAKING_WRITER, "schema_kind_malformed")
     return (RULE_BREAKING_WRITER, "unknown_schema_kind:%s" % kind)
 
 

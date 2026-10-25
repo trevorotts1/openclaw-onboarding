@@ -57,6 +57,7 @@ from decision_engine_train import (  # noqa: E402
     validate_qc_receipt,
     verify_receipt,
 )
+from decision_engine_train.integration import _sha_for  # noqa: E402
 
 SHA_A = "a" * 40
 SHA_B = "b" * 40
@@ -1239,6 +1240,214 @@ class ThirdRepairProofTests(unittest.TestCase):
                                  "required_check_results_malformed")
         control = exact_independent_gate(unit("A", SHA_A), receipt(SHA_A))
         self.assertEqual(control["state"], PROVEN)
+
+
+class FourthRepairProofTests(unittest.TestCase):
+    """QC round 4: the observed/malformed law reaches every field it claims.
+
+    Round 3 closed the seven named defects and then left the same falsy-vs-
+    observed trap live at ``schema.kind`` (QC D-8) and left six of its own
+    guards unpinned, reopenable by a one-line edit with the whole suite green
+    (QC D-9). Every case below was reproduced on the reviewed commit
+    ``56f817dc`` before this repair; each one is pinned here so its removal
+    turns the suite red, and each carries its own inverse so the pin is not
+    satisfied by refusing everything.
+    """
+
+    def test_a_falsy_schema_kind_is_never_a_silent_no_clause(self):
+        """D-8: ``or "none"`` read 7 falsy kinds as "no schema clause".
+
+        ``schema.kind`` is a state, one of the four nouns the round-3 title
+        claims. The ``or`` made the discriminator falsy-vs-truthy, so a unit
+        was ADMITTED with BC-04/BC-05 never run while the same malformation
+        with a truthy value was HELD. The law is the one this file already
+        pins for ``unit.state``: ``None`` is unobserved, anything else that
+        is not a non-empty known string is malformed, and neither is a
+        silent default.
+        """
+        falsy = ("", 0, False, [], {}, 0.0)
+        for kind in falsy:
+            with self.subTest(kind):
+                report = evaluate_cohort([
+                    unit("A", SHA_A, schema={"kind": kind})])
+                self.assertEqual(report["state"], HELD)
+                self.assertEqual(report["admit"], [])
+                self.assertEqual([h["reason"] for h in report["hold"]],
+                                 ["schema_kind_malformed"])
+        absent = evaluate_cohort([
+            unit("A", SHA_A, schema={"kind": None})])
+        self.assertEqual(absent["state"], HELD)
+        self.assertEqual([h["reason"] for h in absent["hold"]],
+                         ["schema_kind_unobserved"])
+        for kind in (5, True, b"none"):
+            with self.subTest(kind):
+                report = evaluate_cohort([
+                    unit("A", SHA_A, schema={"kind": kind})])
+                self.assertEqual(report["state"], HELD)
+                self.assertEqual([h["reason"] for h in report["hold"]],
+                                 ["schema_kind_malformed"])
+        named = evaluate_cohort([unit("A", SHA_A, schema={"kind": "JUNK"})])
+        self.assertEqual(named["state"], HELD)
+        self.assertEqual([h["reason"] for h in named["hold"]],
+                         ["unknown_schema_kind:JUNK"])
+        # INVERSES — the legitimate readings still admit.
+        for record in (unit("A", SHA_A),
+                       unit("A", SHA_A, schema={}),
+                       unit("A", SHA_A, schema={"kind": "none"}),
+                       unit("A", SHA_A, schema={
+                           "kind": "additive", "tolerant_readers_proved": True,
+                           "reader_trace": ["old->new"]})):
+            with self.subTest(record.get("schema")):
+                report = evaluate_cohort([record])
+                self.assertEqual(report["state"], ADMITTED)
+                self.assertEqual(report["admit"], ["A"])
+        # A truthy kind still runs its own clause, so the pin is not a blanket hold.
+        breaking = evaluate_cohort([unit("A", SHA_A, schema={
+            "kind": "breaking", "protocol_version": "1",
+            "migration_checkpoint": "c", "writer_switch_enabled": True})])
+        self.assertEqual(breaking["state"], HELD)
+        self.assertEqual([h["reason"] for h in breaking["hold"]],
+                         ["writer_switch_before_reader_proof"])
+
+    def test_a_candidate_sha_is_exact_40_hex_or_the_unit_is_unknown(self):
+        """D-9 (M18): ``"zz"`` is never frozen as a candidate sha."""
+        for sha in ("zz", "A" * 40, "a" * 39, "a" * 41, "a" * 39 + "g"):
+            with self.subTest(sha):
+                report = evaluate_cohort([unit("A", sha)])
+                self.assertEqual(report["state"], UNKNOWN)
+                self.assertEqual(report["admit"], [])
+                self.assertEqual([e["reason"] for e in report["unknown"]],
+                                 ["candidate_sha_not_exact_40_hex"])
+        control = evaluate_cohort([unit("A", SHA_A)])
+        self.assertEqual(control["state"], ADMITTED)
+
+    def test_a_target_position_is_at_most_forty_hex_characters(self):
+        """D-9 (M13): a 41-char string is not a git object id."""
+        long_ref = "a" * 41
+        forged = {"artifact": ARTIFACT, "state": PROVEN, "reasons": [],
+                  "owner": {"state": PROVEN},
+                  "target": {"remote": "origin",
+                             "before": long_ref, "after": long_ref},
+                  "candidates": [{"unit_id": "A", "sha": SHA_A}],
+                  "cohort": {"admit": ["A"], "hold": [], "unknown": []},
+                  "gates": [{"unit_id": "A", "state": PROVEN}],
+                  "named_repairs": [], "cleanup": [],
+                  "proof": {"state": PROVEN}}
+        ok, reason = verify_receipt(forged)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "proven receipt lacks target before/after")
+        built = build_receipt(
+            owner={"state": PROVEN},
+            target={"remote": "origin", "before": long_ref, "after": long_ref},
+            cohort={"admit": ["A"], "order": ["A"], "hold": [], "unknown": [],
+                    "candidates": [{"unit_id": "A", "sha": SHA_A}]},
+            gates=[{"unit_id": "A", "state": PROVEN}],
+            proof={"state": PROVEN, "reason": "target_head_observed"})
+        self.assertEqual(built["state"], UNKNOWN)
+        self.assertEqual(built["reasons"],
+                         ["target_before_unobserved", "target_after_unobserved"])
+        # INVERSES — exactly 40 hex and an abbreviated prefix still prove.
+        ok, reason = verify_receipt(dict(forged, target={
+            "remote": "origin", "before": HEAD_BEFORE, "after": HEAD_AFTER}))
+        self.assertTrue(ok, reason)
+        short = build_receipt(
+            owner={"state": PROVEN},
+            target={"remote": "origin", "before": "1", "after": "2"},
+            cohort={"admit": ["A"], "order": ["A"], "hold": [], "unknown": [],
+                    "candidates": [{"unit_id": "A", "sha": SHA_A}]},
+            gates=[{"unit_id": "A", "state": PROVEN}],
+            proof={"state": PROVEN, "reason": "target_head_observed"})
+        self.assertEqual(short["state"], PROVEN)
+
+    def test_a_content_path_is_an_observed_string(self):
+        """D-9 (M14): ``{5: 'blob'}`` is not a path in a content proof."""
+        observation = {"remote": "origin", "target_ref": "refs/heads/main",
+                       "observed_head": HEAD_AFTER, "method": "squash"}
+        for blob_map in ({5: "blob-a"}, {"": "blob-a"}, {None: "blob-a"},
+                         {"a.py": 5}, {"a.py": ""}, {"a.py": None}):
+            with self.subTest(blob_map):
+                result = prove_named_repair(
+                    {"repair_id": "R1", "sha": SHA_R, "files": blob_map},
+                    dict(observation, tree=dict(blob_map)))
+                self.assertEqual(result["state"], UNKNOWN)
+                self.assertEqual(result["reason"], "repair_content_malformed")
+        control = prove_named_repair(
+            {"repair_id": "R1", "sha": SHA_R, "files": {"a.py": "blob-a"}},
+            dict(observation, tree={"a.py": "blob-a"}))
+        self.assertEqual(control["state"], PROVEN)
+
+    def test_an_unobserved_consumer_id_never_raises_and_never_defers(self):
+        """D-9 (M15): ``",".join`` over an int consumer id raises TypeError."""
+        base = {"id": "m", "resource_type": "merged_worktree",
+                "has_unique_unmerged_work": False, "clean_state": "CLEAN",
+                "remote_merge_proof_ids": ["M-1"]}
+        for consumer_id in (5, None, "", ["c"], True):
+            with self.subTest(consumer_id):
+                result = cleanup_disposition(dict(
+                    base, consumers=[{"id": consumer_id, "state": "active"}]))
+                self.assertEqual(result["disposition"], UNKNOWN)
+                self.assertEqual(result["reason"], "consumer_state_unobserved")
+        # INVERSE — an observed id still defers with that id named.
+        deferred = cleanup_disposition(dict(
+            base, consumers=[{"id": "c1", "state": "active"}]))
+        self.assertEqual((deferred["disposition"], deferred["reason"]),
+                         ("deferred", "consumer_active:c1"))
+
+    def test_a_frozen_sha_is_looked_up_by_an_observed_unit_id(self):
+        """D-9 (M17): ``_sha_for`` never resolves a sha for an unobserved id."""
+        for unit_id in (5, None, "", ["A"], True):
+            with self.subTest(unit_id):
+                self.assertIsNone(_sha_for(
+                    {"candidates": [{"unit_id": unit_id, "sha": SHA_A}]},
+                    unit_id))
+        self.assertEqual(
+            _sha_for({"candidates": [{"unit_id": "A", "sha": SHA_A}]}, "A"),
+            SHA_A)
+
+    def test_the_malformed_and_unobserved_proof_shapes_name_their_own_reason(self):
+        """D-9 (M20): the 9-shape matrix draws its distinction in the reason."""
+        base = {"id": "m", "resource_type": "merged_worktree", "consumers": [],
+                "has_unique_unmerged_work": False, "clean_state": "CLEAN"}
+        malformed = ("junk", [""], [None], [7], 1, {"p": 1}, {}, True, 0,
+                     "", b"M-1", 1.5, set(), ["M-1", 3], ["M-1", ""],
+                     [["M-1"]], {"0": "M-1"})
+        for shape in malformed:
+            with self.subTest(shape):
+                result = cleanup_disposition(
+                    dict(base, remote_merge_proof_ids=shape))
+                self.assertEqual(result["disposition"], UNKNOWN)
+                self.assertEqual(result["reason"],
+                                 "remote_merge_proof_malformed")
+        for shape in ((), [], None):
+            with self.subTest(shape):
+                result = cleanup_disposition(
+                    dict(base, remote_merge_proof_ids=shape))
+                self.assertEqual(result["disposition"], UNKNOWN)
+                self.assertEqual(result["reason"],
+                                 "remote_merge_proof_unobserved")
+        # INVERSES — a genuinely observed proof id still authorises.
+        for shape in (["M-1"], ("M-1",), ["M-1", "M-1"]):
+            with self.subTest(shape):
+                result = cleanup_disposition(
+                    dict(base, remote_merge_proof_ids=shape))
+                self.assertEqual((result["disposition"], result["reason"]),
+                                 ("eligible", "clean_merged_tree"))
+        scratch = cleanup_disposition({
+            "id": "m", "resource_type": "disposable_scratch", "consumers": [],
+            "has_unique_unmerged_work": False})
+        self.assertEqual((scratch["disposition"], scratch["reason"]),
+                         ("eligible", "disposable_scratch"))
+
+    def test_the_skill_version_and_its_changelog_heading_are_one_number(self):
+        """V-1: a renumber that reaches one file and not the other is drift."""
+        marker = (_REPO_ROOT / "38-conversational-ai-system"
+                  / "skill-version.txt").read_text(encoding="utf-8").strip()
+        self.assertRegex(marker, r"^v\d+\.\d+\.\d+$")
+        heading = (_REPO_ROOT / "38-conversational-ai-system" / "CHANGELOG.md"
+                   ).read_text(encoding="utf-8").splitlines()[0]
+        self.assertTrue(heading.startswith("## ["), heading)
+        self.assertEqual(heading.split("]")[0][4:], marker[1:])
+        self.assertNotIn("next free number", heading)
 
 
 class ReuseAndIsolation(unittest.TestCase):

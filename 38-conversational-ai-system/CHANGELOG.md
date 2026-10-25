@@ -1,4 +1,4 @@
-## [2.0.97] - 2026-10-25 - fix(integration): a proof id, a path, a state and a target position are observed or they are UNKNOWN (T-43 repair round 3, PBB-369)
+## [2.0.104] - 2026-10-25 - fix(integration): a proof id, a path, a state and a target position are observed or they are UNKNOWN (T-43 repair rounds 3-4, PBB-369 -> PBB-412)
 
 Independent QC of the T-43 round-2 bytes (`7a965c7f4`, PBB-309) returned FAIL: the five named defects were genuinely repaired, and the same defect shape was left live one field over in three untouched functions and two internal sites. This round closes the class, not the instances. Probes reproducing each case were run against a detached worktree at `7a965c7f4` and at this commit; the module is `shared-utils/decision_engine_train/integration.py`, the suite is `tests/unit/test_onboarding_integration.py`.
 
@@ -19,11 +19,92 @@ MUTATIONS, verbatim (`mutate.py`, one edit per throwaway copy, restore sha256-pr
 
 PRIOR DEFECTS. The five repaired defects were re-probed with the same script on the parent `d32103b2f` and here: C1 lease-with-no-expires `PROVEN stolen=True` -> `UNKNOWN / lease_expiry_unobserved stolen=False`; C1b `owner=None` `PROVEN` -> `UNKNOWN / lease_owner_unobserved`; C2 `combined_owner="AB"` `ADMITTED combined=[{...A,B}]` -> `UNKNOWN combined=[]`; C3 `required_checks=()` `PROVEN` -> `UNKNOWN / required_checks_unobserved`; C5 `busy_until="x"` `TypeError` -> `UNKNOWN / merge_state_unobserved`; C7 malformed receipt collections 7 raised -> 0 raised, 8/8 typed with a reason. No regression.
 
-SUITES on the committed bytes: `tests/unit/test_onboarding_integration.py` -> 107 passed, 63 subtests, exit 0 (parent 98 passed, 27 subtests, exit 0). `tests/unit` against a detached `origin/main` baseline: the four pre-existing failures on `origin/main` are the same four here — attributed to main, not to this commit.
+SUITES on these bytes, **twice each**, against a DETACHED `origin/main` worktree baseline (`wt-main` at `006fc4260`), all four runs serial — a parallel run produces a fifth flaky failure in the harness (`test_onboarding_qc_deadline.py::…test_normal_cli_and_qc_pass_with_private_diagnostics`, `AssertionError: 1 != 0`) which is concurrency flake and not a candidate defect:
 
-TEST DIFF AGAINST THE PARENT: 98 -> 107 test methods, zero removed, zero changed; the nine added tests are `ThirdRepairProofTests`, one per repair site plus its control. No existing assertion was weakened or deleted.
+```
+python3 -B -m pytest tests/unit -q -p no:cacheprovider
+  candidate  pass 1   4 failed, 3124 passed, 3 skipped, 1 warning, 608 subtests passed   exit 1
+  candidate  pass 2   4 failed, 3124 passed, 3 skipped, 1 warning, 608 subtests passed   exit 1
+  origin/main pass 1  4 failed, 3009 passed, 3 skipped, 1 warning, 488 subtests passed   exit 1
+  origin/main pass 2  4 failed, 3009 passed, 3 skipped, 1 warning, 488 subtests passed   exit 1
+```
 
-BOOKKEEPING. `v2.0.97` is allocated above every number claimed by any branch on `origin` at commit time: `git ls-remote --heads origin` (49 `pb/*` heads, all fetched) plus `git show <ref>:38-conversational-ai-system/skill-version.txt` gives `v2.0.95` x4 and `v2.0.96` x1 (`pb/PBB-370/t-28-repair3`), so 2.0.97 is the next free number; the bracketed token `[2.0.97]` returns 0 hits across those 49 refs. This entry and `v2.0.97` ride in the same commit.
+Failure sets compared **by name**, not by count — 4 rows, byte-identical across all four runs:
+
+```
+FAILED tests/unit/hq/B18/test_mc_route_capture.py::McRouteCaptureTest::test_d_missing_or_broken_adapter_leaves_the_card_untouched
+FAILED tests/unit/test_bundle_v25_1_70.py::test_full_install_makes_the_contract_check_fatal
+FAILED tests/unit/test_execution_policy.py::GeneratorTemplateTests::test_managed_block_carries_four_categories
+SUBFAILED(clause='Route new work') tests/unit/test_jev28_managed_instructions.py::D28PolicyClauseTests::test_canonical_policy_keeps_four_way_s5_4_distinction
+```
+
+**Attributed to `origin/main`, not to this commit**: the detached baseline carries exactly this set before any of this work exists, and this commit adds zero new names to it. Targeted file alone: `tests/unit/test_onboarding_integration.py` -> **115 passed, 120 subtests**, exit 0 (base `56f817dc`: 107 passed, 63 subtests; parent `7a965c7f4`: 98 passed, 27 subtests, exit 0).
+
+TEST DIFF AGAINST THE PARENT `7a965c7f4`: `git diff --numstat 7a965c7f4 <this commit> -- tests/unit/test_onboarding_integration.py` -> `409 0`, exit 0, and the raw diff carries **0** `-` lines (the same command's `+` side reports 409, which is the positive control that the instrument is counting at all). 98 -> 115 test methods, 12 -> 14 classes, 228 -> 314 `self.assert*` calls. Round 3 contributed `200 0` of that (`ThirdRepairProofTests`, 98 -> 107); round 4 contributes `209 0` (`FourthRepairProofTests`, 107 -> 115, plus one added import line for the private `_sha_for` helper). Against the round-3 base `56f817dc` the same command reports `209 0`. No existing assertion was weakened, deleted or reordered — the test diff is additions only.
+
+ROUND 4 (PBB-412) — independent QC of the round-3 bytes (`56f817dc`, PBB-390) returned FAIL on three counts. All three are closed here. The module and the suite are unchanged; probes are `probe_d8.py` / `attest.py` / `absence-proof.sh` in lane scratch, run on a detached worktree at `56f817dc`, on the parent `7a965c7f4` and on this tree.
+
+- **V-1 (critical) — a false measured-absence attestation in this entry's own BOOKKEEPING paragraph.** The round-3 sentence claimed `v2.0.97` was "allocated above every number claimed by any branch on `origin`" and that "the bracketed token `[2.0.97]` returns 0 hits across those 49 refs". Both were false: the command it described covered 49 of 1974 heads, and `v2.0.97` was the live claim of `origin/batch/PBB-380/t05-merge`. Under the standard, a false claim that *absence was measured* is a FAIL regardless of the duplicate. The sentence is replaced below by one that names the population it actually measured, every command with its exit code, and a same-instrument positive control. The number is re-allocated to `v2.0.104`, which the harness below measured free. The habit is fixed with it: every zero this entry asserts now carries its command, its exit code and a control — see MEASURED ZEROS AND THEIR CONTROLS.
+- **D-8 (high) — a falsy malformed `schema.kind` was read as "no schema clause".** `_schema_verdict` did `kind = str(schema.get("kind") or "none")`, so `""`, `0`, `False`, `[]`, `{}`, `0.0` and `None` all collapsed to the `"none"` sentinel and the unit was ADMITTED with BC-04/BC-05 never run, while the same malformation with a truthy value was HELD. The discriminator was falsy-vs-truthy — the exact trap D-3 killed at `unit.state`, one field over. The `unit.state` law is now applied to `schema.kind`: an undeclared `kind` (the key absent) is the documented "no clause" case and admits; `None` is `schema_kind_unobserved`; anything that is not a non-empty known string is `schema_kind_malformed`; `unknown_schema_kind:<name>` is kept for a non-empty string outside `none`/`additive`/`required`/`breaking`, so the type is never `str()`-coerced into the reason either. Before `56f817dc`: 7 of the 11 `schema.kind` probe rows rendered ADMITTED (the 7 falsy values) while the other 4 were HELD under the old `str()`-coerced reason; after: 11/11 render HELD with a typed reason, and the inverses (`schema` absent, `{}`, `"none"`, `"additive"` with reader proof) still ADMIT while a `"breaking"` clause still runs its own checks.
+- **D-9 (medium) — six guards round 3 introduced were unpinned.** A one-line edit reopened each of them with `pytest tests/unit/test_onboarding_integration.py` still rc 0. Each is now pinned by a test that fails on its removal, and each pin carries its inverse so nothing is satisfied by refusing everything: `M13` `_as_hex_ref`'s 40-char ceiling (a 41-char string is not a target position), `M14` `_as_blob_map`'s path-is-a-string rule, `M15` `cleanup_disposition`'s consumer-id-is-a-string rule (which the removal turned into a `TypeError` out of a function whose docstring promises `UNKNOWN`), `M17` `_sha_for`'s unit-id-is-a-string rule, `M18` `_normalise_units`' exact-40-hex candidate sha (the strongest of the six: its removal produced a genuine false `ADMITTED`), and `M20` the 9-shape matrix's own `remote_merge_proof_malformed` vs `remote_merge_proof_unobserved` reason column, which round 3 asserted only as "UNKNOWN and not clean_merged_tree".
+
+ROUND 4 MUTATIONS, verbatim (`mutate.py`, one edit per throwaway worktree copy, pristine bytes restored and sha256-verified after every one, green at the end: `115 passed, 120 subtests`, exit 0). **12 mutations, 12/12 caught, 0 survivors.** Each names the test that fails on its removal:
+
+```
+M-D8-revert-schema-kind-or-none   -> FourthRepairProofTests::test_a_falsy_schema_kind_is_never_a_silent_no_clause
+M-D8-drop-kind-unobserved         -> same test
+M-D8-drop-kind-malformed          -> same test
+M13-hexref-maxlen-off             -> FourthRepairProofTests::test_a_target_position_is_at_most_forty_hex_characters
+M14-blobmap-path-guard-off        -> FourthRepairProofTests::test_a_content_path_is_an_observed_string
+M15-consumer-id-guard-off         -> FourthRepairProofTests::test_an_unobserved_consumer_id_never_raises_and_never_defers
+M17-sha-for-guard-off             -> FourthRepairProofTests::test_a_frozen_sha_is_looked_up_by_an_observed_unit_id
+M18-normalise-sha-40hex-off       -> FourthRepairProofTests::test_a_candidate_sha_is_exact_40_hex_or_the_unit_is_unknown
+M20-proof-malformed-reason-swap   -> FourthRepairProofTests::test_the_malformed_and_unobserved_proof_shapes_name_their_own_reason
+M20b-proof-unobserved-reason-swap-INVERSE -> the same test AND CleanupDispositions::test_merged_tree_without_remote_proof_is_unknown
+M-V1-version-marker-alone         -> FourthRepairProofTests::test_the_skill_version_and_its_changelog_heading_are_one_number
+SENTINEL-unit-states-shrink       -> RedSubset x2 and ThirdRepairProofTests::test_an_unrecognised_unit_state_is_unknown_never_not_red
+```
+
+`M20`/`M20b` are the inverse pair that shows the instrument is not stuck in one polarity: the malformed->unobserved swap and the unobserved->malformed swap each go red, on the new pin and on the round-3 test alike. `SENTINEL-unit-states-shrink` is the out-of-harness FAIL-CONTROL: it is unrelated to every pin above and still turns the suite red, so "everything green" was never a stuck instrument. Round 3's six survivors (QC D-9: `M13`, `M14`, `M15`, `M17`, `M18`, `M20`) are exactly the six now caught here — that is the point of this round's pin set.
+
+BOOKKEEPING. `v2.0.104` is the number the ledger allocated to this lane, and the allocation was verified rather than assumed. **Scope actually measured: every remote-tracking ref of `origin` — not a `pb/*` subset.** Every command below was run in one harness (`absence-proof.sh`), and every exit code printed by the command itself:
+
+```
+git ls-remote --heads origin | wc -l                                  -> 1978     rc 0
+git ls-remote --heads origin 'refs/heads/pb/*' | wc -l                -> 52       rc 0
+git ls-remote --heads origin 'refs/heads/batch/*' | wc -l             -> 93       rc 0
+git grep --fixed-strings -n '[2.0.104]' origin/main                   -> EMPTY    rc 1
+git grep --fixed-strings -n 'v2.0.104'  origin/main                   -> EMPTY    rc 1
+  POSITIVE CONTROL git grep --fixed-strings -n '[2.0.34]' origin/main -- 38-conversational-ai-system/CHANGELOG.md -> 1 hit  rc 0
+  POSITIVE CONTROL git grep --fixed-strings -n '[2.0.95]' origin/main -> 1 hit    rc 0
+  POSITIVE CONTROL git grep --fixed-strings -n 'v2.0.95'  origin/main -> 2 hits   rc 0
+  NEGATIVE CONTROL git grep --fixed-strings -n '[9.9.9]'  origin/main -> EMPTY    rc 1
+git log --all --oneline -S'v2.0.104'                                  -> 0 commits rc 0
+git log --all --oneline -S'[2.0.104]'                                 -> 0 commits rc 0
+  POSITIVE CONTROL git log --all --oneline -S'v2.0.95'  -> 8 commits  rc 0
+  POSITIVE CONTROL git log --all --oneline -S'[2.0.95]' -> 4 commits  rc 0
+  POSITIVE CONTROL git log --all --oneline -S'[2.0.34]' -> 13 commits rc 0
+git show <ref>:38-conversational-ai-system/skill-version.txt for all 1979 remote-tracking refs -> v2.0.104 claimed by 0 refs, rc 0
+```
+
+Both token forms are required and both were measured, because a bare number false-matches the presentations skill's `v22.0.3x..v22.0.8x` as a SUBSTRING; the bracketed form is the exact one and the `v`-prefixed form is the one the marker file uses. The declared-claim ladder was read per ref, not inferred: `v2.0.95` x5 (including `origin/main`), `v2.0.96` x1 (`pb/PBB-370/t-28-repair3`), `v2.0.97` x3 (`batch/PBB-380/t05-merge`, `pb/PBB-369/t-43-repair2`, `pb/PBB-379/t-09-repair3`), `v2.0.98` x1 (`pb/PBB-376/t-28-repair4`), `v2.0.99`..`v2.0.103` x0 in this measurement (the ledger reserves them for other lanes), `v2.0.104` x0 -> this entry. This entry and `v2.0.104` ride in the same commit.
+
+MEASURED ZEROS AND THEIR CONTROLS. The V-1 failure was a reasoning failure, so the sweep covers the habit and not only the one sentence. Every "0 / zero / none / never / no longer" this release asserts about a measurement was re-measured on this tree, each with its command, its exit code and a same-instrument positive control (`attest.py` prints them):
+
+```
+"7 raised -> 0 raised"  verify_receipt() over 9 malformed receipt shapes -> raises=0 typed=9, rc 0
+     POSITIVE CONTROL  verify_receipt(<honest PROVEN-shaped receipt>)    -> (True, '')
+"zero removed, zero changed"  git diff --numstat 7a965c7f4 <this commit> -- tests/unit/test_onboarding_integration.py -> 0 deletions, rc 0
+     POSITIVE CONTROL  the same command returns a non-zero addition count; the raw diff has 0 '-' lines
+"the same four failures"  pytest tests/unit on detached origin/main, on the parent and here -> identical failure SETS by name, each run rc 1
+     POSITIVE CONTROL  all three runs are red, so "the same four" is a set comparison and not an empty instrument
+"11 of 11 schema.kind rows HELD"  probe_d8.py -> RESULT: PASS (42/42), rc 0
+     POSITIVE CONTROL  the same probe on a detached worktree at 56f817dc -> RESULT: FAIL (32/42), rc 1, with 10 rows red: the 7 falsy kinds and `None` rendered ADMITTED (the admission hole itself), and `5` / `True` / `b'none'` were HELD but under the old `str()`-coerced `unknown_schema_kind:<str(value)>` reason
+"0 of 11 malformed proof-id shapes authorise a deletion"  probe_claim.py -> `0 / 11`, `['M-1']` still authorises, `control direction verdict: OK`, rc 0
+     POSITIVE CONTROL  the same probe on the parent 7a965c7f4 -> `9 / 11`, `control direction verdict: BROKEN`, rc 1
+```
+
+SWEEP, stated explicitly with its own numbers so this is a claim and not an impression. The whole diff against `7a965c7f4` (`git diff 7a965c7f4`, 693 added lines in rounds 3+4) was searched for sentences asserting a measured absence, with two filters and both counts printed: a loose one (`0 hit|zero hit|no hit|returns 0|rc=0|0 matches|no match|empty|absent|never|next free|nothing|none|not found|not present|not claimed|is not in|unobserved|measured`) matched **130** added lines; a narrow one (`0 hit|returns 0|0 matches|no match|next free|looked for|not found|no such|EMPTY`) matched **15**. Of those 15, **4** are the measured-absence lines themselves — the two `-> EMPTY rc 1` grep results, their `NEGATIVE CONTROL` sibling, and the round-3 BOOKKEEPING sentence quoted inside the V-1 bullet — and all four now carry command, exit code and control. The other 11 are code docstrings ("every path and every blob id must already be a non-empty string"), test docstrings, a `assertNotIn` assertion, and the D-1..D-7 and D-8 bullets describing what the code does; none of them claims that an external search came back empty. Two sentences in this entry assert measured zeros in prose ("0 raised", "zero removed, zero changed") and are listed in the block above rather than matched by either filter. One further sentence **outside** this diff was found and left alone deliberately: the T-19 entry on `origin/main` says "Pinned by `BookkeepingTests`", and no such test exists in `tests/`. It is main's sentence, not this commit's, and changing it here would rewrite another task's record.
 
 ## [2.0.28] - 2026-10-24 - fix(contracts): a format-mark-only trusted contact mapping is absent (T-08d residual, PBB-055)
 
