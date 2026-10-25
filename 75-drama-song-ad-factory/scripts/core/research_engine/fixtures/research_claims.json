@@ -710,9 +710,9 @@
     ]
   },
   "accept_similar_vocabulary": {
-    "_comment": "A genuine sourced bundle carrying the spam's own vocabulary (backlinks, buy, best, listings) — accepted, because each entry asserts something about this run's owner facts and is cited for that claim.",
+    "_comment": "A genuine sourced bundle carrying the spam's own vocabulary (backlinks, buy, best, listings) — accepted because each entry asserts something about this run's owner facts and is cited for that claim. Round 5: the vocabulary is grounded in the OWNER's own recorded words above, not in the source's excerpts. The excerpts used to be what made these rows pass, which is the same mechanism spam laundering used; that mechanism is gone from claims._grounded_stems.",
     "offer": "a 12-week sleep coaching program for shift workers",
-    "audience": "nurses on rotating night shifts who cannot fall asleep after work",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work, most of whom found us through backlinks and placement ads they buy",
     "sources": [
       {
         "id": "src-1",

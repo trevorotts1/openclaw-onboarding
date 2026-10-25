@@ -302,6 +302,99 @@ def test_stage_refuses_the_self_supplied_fact_before_it_writes(tmp_path):
     assert not (tmp_path / "research").exists(), "no artifact on refusal"
 
 
+# ----------------- round five: the three families that survived round four
+
+MAJORITY_SPAM = [
+    "Tired nurses and weary mothers want backlinks after long winter shifts.",
+    "Sleep services give tired parents mattress deals every winter.",
+    "Sleep coaching keeps tired nurses awake with diet tea.",
+    "Sleep programs keep tired families awake with crypto pumps.",
+    "Sleep studies find tired nurses want diet tea after shifts.",
+    "Tired nurses want backlinks after shifts.",
+    "Sleep clinics find tired parents want diet tea after winter shifts.",
+]
+CAPITAL_SPAM = [
+    "Sleep coaches help tired nurses with Backlinks.",
+    "Sleep coaches rank Crypto and Backlinks for tired nurses.",
+    "Sleep coaches help tired nurses with Mattress Deals.",
+]
+LAUNDERED = [
+    "Sleep coaches sell mattress deals to tired parents.",
+    "Sleep programs offer crypto pumps to tired families.",
+    "Sleep services list diet tea for tired mothers.",
+    "Sleep clinics price mattress deals for tired parents.",
+    "Sleep coaches sell backlinks to tired clinics.",
+]
+
+
+def _about_offer():
+    return {"fact": "offer", "anchor": "sleep", "fact_text": OFFER}
+
+
+def test_a_minority_of_unrecorded_words_is_still_a_sentence_about_something_else():
+    """Round five. A majority of grounded words no longer buys a pass: the head
+    of a stretch of content is the word the stretch is ABOUT, and if the run
+    records no such word the sentence is about something else however many
+    grounded words pad it. Round four counted, and counting let these through."""
+    for i, text in enumerate(MAJORITY_SPAM):
+        _refused(_bundle([_claim("mv%d" % i, text, about=_about_offer())],
+                         facts=FACTS), "not about this run")
+
+
+def test_a_capital_letter_names_nothing_in_a_predicates_complement():
+    """Round five. 'Backlinks' where the predicate asserts it is content
+    exactly as 'backlinks' is. The lower-case twin is refused by the same rule,
+    which is what proves the capital letter was the only difference."""
+    for i, text in enumerate(CAPITAL_SPAM):
+        _refused(_bundle([_claim("cap%d" % i, text, about=_about_offer())],
+                         facts=FACTS), "not about this run")
+        _refused(_bundle([_claim("low%d" % i, text.lower(), about=_about_offer())],
+                         facts=FACTS), "not about this run")
+
+
+def test_the_filers_own_excerpt_is_never_grounding():
+    """Round five. A source record the filer wrote cannot be what makes the
+    filer's own claim about this run. Quoting the claim into `excerpts` used to
+    ground every word of it; it grounds nothing now, so the only place this
+    record appears is the citation check."""
+    for i, text in enumerate(LAUNDERED):
+        src = dict(SRC, excerpts=[text])
+        _refused(_bundle([_claim("ld%d" % i, text, about=_about_offer())],
+                         sources=[src], facts=FACTS), "not about this run")
+    # hidden among genuine excerpt sentences, and as one long excerpt
+    src = dict(SRC, excerpts=["Night-shift nurses report short sleep after "
+                              "rotating shifts."] + LAUNDERED)
+    _refused(_bundle([_claim("ld-hid", LAUNDERED[0], about=_about_offer())],
+                     sources=[src], facts=FACTS), "not about this run")
+    _refused(_bundle([_claim("ld-run", " ".join(LAUNDERED),
+                             about=_about_offer())],
+                     sources=[src], facts=FACTS), "not about this run")
+    # over-refusal control: a genuine sourced sentence never needed the excerpt
+    genuine = "Night-shift nurses report short sleep after rotating shifts."
+    _accepted(_bundle([_claim("ld-ok", genuine,
+                              about={"fact": "audience", "anchor": "nurses"})],
+                      sources=[dict(SRC, excerpts=[genuine])], facts=FACTS))
+
+
+def test_a_name_where_a_name_may_sit_is_still_a_name():
+    """Over-refusal control for round five's naming rule. A place name in the
+    subject, or after a non-transfer preposition, is naming material: it names,
+    it does not assert."""
+    for text, fact, anchor in (
+            ("Dallas has over 40 sleep coaching practices listed publicly.",
+             "offer", "sleep"),
+            ("Sleep coaching programs attract tired commuters in Dallas.",
+             "offer", "sleep"),
+            ("Registered nursing is one of the larger occupations in the "
+             "United States.", "audience", "nursing")):
+        kw = {"about": {"fact": fact, "anchor": anchor}}
+        if "40" in text:                   # 'listed' is a rank marker
+            kw["class"] = "market-size"
+            kw["support"] = {"source": "src-1", "locator": "p.1",
+                             "quote": "over 40 sleep coaching practices listed"}
+        _accepted(_bundle([_claim("nm", text, **kw)], facts=FACTS))
+
+
 def main():
     """Script-style run: same checks, plain output."""
     import inspect

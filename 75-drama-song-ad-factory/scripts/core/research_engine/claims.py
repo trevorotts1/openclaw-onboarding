@@ -34,17 +34,42 @@ manufacture:
      refused. If the validator can be satisfied by the thing it is validating,
      no wording of the claim can fail. A run of keywords typed over the
      business's vocabulary has no such relation; a sentence about something
-     else has none either.
+     else has none either. On the stage path `author_bundle` writes that record
+     from the brief's offer/audience/action, and that is what the run checks
+     against; a `facts[]` entry is honoured where a caller-authored bundle is
+     validated directly.
 
   2b. ON THE RUN'S OWN SUBJECT. The words the sentence asserts are read
-     against what the run records — the owner facts and the cited source's own
-     recorded `excerpts` — plus the closed research vocabulary below. A
-     sentence that predicates words grounded nowhere in the run is a sentence
-     about something else (it sells the domain's nouns to the domain's nouns),
-     and no reshaping of the wording makes it one. And the sentence must be a
-     clause: a predicate AND a word that binds it (determiner, pronoun,
-     preposition, auxiliary, numeral). A term run with one verb in it is still
-     a term run.
+     against what the run records — the owner facts — plus the closed research
+     vocabulary below. A sentence that predicates words grounded nowhere in the
+     run is a sentence about something else (it sells the domain's nouns to the
+     domain's nouns), and no reshaping of the wording makes it one. And the
+     sentence must be a clause: a predicate AND a word that binds it (determiner,
+     pronoun, preposition, auxiliary, numeral). A term run with one verb in it
+     is still a term run.
+
+     THE SOURCE'S OWN `excerpts` ARE NOT GROUNDING. They are the record a
+     citation quote is checked against (rule 1), and nothing else. A source
+     record the filer wrote cannot be what makes the filer's own claim about
+     this run: quoting spam into `excerpts` and then filing the same words as a
+     claim used to make every one of them "grounded". A word is on this run's
+     subject only where the OWNER recorded it, or when it is a research term.
+
+     EVERY PHRASE HEAD MUST BE GROUNDED. A sentence is split at its function
+     words, and the last content word of each stretch — the head, the word the
+     stretch is about — must be one the run records. A modifier may be a word
+     this vocabulary does not hold ("disturbed sleep"); a head may not
+     ("mattress deals", "diet tea", "backlinks"). This refuses 'Tired nurses
+     and weary mothers want backlinks after long winter shifts.' even though
+     its unrecorded words are a minority of it.
+
+     AND A CAPITAL LETTER NAMES NOTHING ON ITS OWN. A stretch is naming
+     material — exempt from the head test — only where a name may sit: after a
+     non-transfer preposition ("in Dallas", "in the United States"), and only
+     when it starts like a name. In the complement of a predicate a capital
+     letter is just a capital letter, so 'with Backlinks', 'rank Crypto and
+     Backlinks' and 'with Mattress Deals' are refused exactly as their
+     lower-case spellings are.
 
   3. ESCALATED CLAIMS — superlative, ranking, count, guarantee, and "$"/"#"
      styled price and rank claims — additionally declare an ALLOW-LIST class
@@ -247,12 +272,12 @@ begin believe build cause change charge choose cite claim come compare complete
 conclude consider continue cost create cut deliver depend design detail differ
 discover discuss drive drop earn elect emerge enable encounter end enrol enroll
 estimate examine exceed exist expand expect experience explain face fall feel
-find finish follow form gain generate give go grow guarantee happen help hold
+file find finish follow form gain generate give go grow guarantee happen help hold
 identify illustrate impact imply improve include increase indicate influence
 involve keep lack last lead learn limit link list live look lose maintain make
 manage mean measure mention move name need note observe occur offer operate
 outpace outweigh outperform overcome perform prefer predict prevent price
-produce promise propose provide publish rank rate reach receive record reduce
+produce promise project propose provide publish rank rate reach receive record reduce
 reflect remain report require respond result reveal review rise say score search
 seem sell serve show solve spend start state stay stop study suggest support
 survey take target tend test think trade treat trust turn use vary vote wake want
@@ -282,6 +307,8 @@ def _verb_forms():
         if stem.endswith("y"):
             forms.add(stem[:-1] + "ies")
             forms.add(stem[:-1] + "ied")
+        elif stem.endswith("e"):
+            forms.add(stem + "d")
         else:
             forms.add(stem + "ed")
         forms.add(stem[:-1] + "ing" if stem.endswith("e") else stem + "ing")
@@ -303,9 +330,11 @@ FUNCTION_WORDS = frozenset(
     "yet so because if though although while whereas unless whether not no "
     "rather very more most less least much many few several some any all each "
     "every both half one two three four five six seven eight nine ten eleven "
-    "twelve twenty thirty forty fifty hundred thousand million billion first "
+    "twelve twenty thirty forty fifty hundred thousand million billion "
+    "hundreds thousands millions billions dozens never "
+    "first "
     "second third fourth fifth once twice again also only just even still "
-    "already per via despite except besides instead last next previous "
+    "already often seldom rarely per via despite except besides instead last next previous "
     "current ago myself yourself himself herself itself ourselves yourselves "
     "themselves oneself".split())
 
@@ -328,7 +357,7 @@ studies studied research data evidence sample samples respondent respondents
 statistic statistics figure figures finding findings source sources
 occupation occupations job jobs role roles position positions employment
 workforce population populations adult adults people persons family families
-patient patients client clients customer customers student students member
+patient patients inpatient inpatients client clients customer customers student students member
 members user users employee employees staff workers nurse nurses doctor
 doctors parent parents mother mothers father fathers caregiver caregivers
 price prices pricing cost costs charge charges fee fees paid pay paying
@@ -336,7 +365,7 @@ spending budget budgets cheap cheaper cheapest expensive premium discount
 discounts competitor competitors competing compete competition rival rivals
 alternatives alternative local national regional nearby city cities town
 towns area areas region regions state states country countries location
-locations place places practice practices clinic clinics studio studios
+locations metro metros unit units place places practice practices clinic clinics studio studios
 program programs service services course courses session sessions coach
 coaches coaching provider providers brand brands product products company
 companies business businesses firm firms agency agencies listing listings
@@ -383,7 +412,6 @@ def _asserts(text):
 # something else: 'Sleep coaches sell backlinks to tired clinics.' predicates
 # the run's own subject onto words no part of this run holds. Wording it
 # differently cannot change that, and neither can filing it with a source.
-PROPER_RE = re.compile(r"[A-Za-z][A-Za-z'’-]*")
 
 # The verbs of transfer and sale: what a business does TO something it sells.
 # A sentence that has the run's own subject doing one of these to content no
@@ -397,86 +425,164 @@ COMMERCIAL_HINTS = (
     "send", "sent", "ship", "hand", "order", "quote", "stock", "carry",
     "distribut", "licen", "subscrib", "vendor", "push")
 
-def _proper_words(text):
-    """Naming material — words written with a capital letter (places, people,
-    organisations). They name; they do not assert."""
-    return {w.lower() for w in PROPER_RE.findall(_clean(text)) if w[:1].isupper()}
+# Where a name may sit. A stretch that follows one of these and starts with a
+# capital letter is naming material ("in Dallas", "in the United States") and
+# is exempt from the phrase-head test. A stretch that follows a transfer or
+# instrument preposition ("with Backlinks", "for Crypto") is asserted content
+# whatever its first letter is, and so is a stretch the predicate takes
+# directly ("rank Crypto and Backlinks").
+NAME_PREPS = frozenset(
+    "of in on at near around within across through over under beneath between "
+    "among along behind beside beyond during after before since until by per "
+    "via despite except against from toward towards into onto".split())
+TRANSFER_PREPS = frozenset("with for to".split())
+
+RAW_WORD_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
+
+
+def _word_pairs(text):
+    """(lower-cased, as-written) pairs from the SAME tokeniser as _words, so a
+    capital letter stays attached to the word it was written on."""
+    return [(w.lower(), w) for w in RAW_WORD_RE.findall(_clean(text))]
+
+
+def _is_name_stretch(prep, raw, subject=False):
+    """Naming material: a stretch that sits where a name may sit — as the
+    sentence's own subject, or after a non-transfer preposition — and starts
+    like one. It names; it does not assert. Anywhere else a capital letter is
+    just a capital letter."""
+    return bool(raw) and raw[0][:1].isupper() and (
+        (subject and prep is None)
+        or (prep is not None and prep not in TRANSFER_PREPS))
+
+
+def _stretches(pairs):
+    """(governing preposition, stretch, start index) for every run of words
+    between function words. The governing preposition is the last preposition
+    among the function words that closed the stretch before."""
+    out, prep, run, start = [], None, [], 0
+    for i, (low, raw) in enumerate(pairs):
+        if low in FUNCTION_WORDS:
+            if run:
+                out.append((prep, run, start))
+                run = []
+            if low in NAME_PREPS or low in TRANSFER_PREPS:
+                prep = low
+        else:
+            if not run:
+                start = i
+            run.append((low, raw))
+    if run:
+        out.append((prep, run, start))
+    return out
+
 
 def _grounded_stems(facts, source):
-    """Everything the run records as content, plus the research vocabulary."""
-    texts = list(facts.values())
-    excerpts = source.get("excerpts") if isinstance(source, dict) else None
-    for item in excerpts if isinstance(excerpts, list) else []:
-        if isinstance(item, str):
-            texts.append(item)
+    """Everything the OWNER recorded as content, plus the research vocabulary.
+
+    The source's own `excerpts` are deliberately absent. They are the record a
+    citation quote is checked against (rule 1), never the thing that makes a
+    sentence about this run: a record the filer wrote cannot vouch for the
+    filer's own claim, and a spam sentence quoted into `excerpts` used to make
+    every word of itself "grounded"."""
     stems = set()
-    for text in texts:
+    for text in facts.values():
         stems.update(_stem(w) for w in _content_tokens(text))
     stems.update(_stem(w) for w in RESEARCH_WORDS)
     return stems
 
-def _content_stems(words, proper):
-    """Content stems: everything that asserts rather than names, counts or
-    binds — no function words, no numerals, no proper nouns, no predicate, and
-    no manner adverb (it modifies an assertion, it does not add one)."""
-    out = []
-    for w in words:
-        if len(w) < 3 or w in STOPWORDS or w in FUNCTION_WORDS:
-            continue
-        if w in VERB_FORMS or w in proper or w.isdigit():
-            continue
-        if w.endswith("ly") and len(w) >= 5:
-            continue
-        out.append(_stem(w))
-    return out
+
+def _is_content(word):
+    """Content rather than a binder, a count or a predicate — no function
+    words, no numerals, no predicate, and no manner adverb (it modifies an
+    assertion, it does not add one). A capital letter is no excuse: 'Backlinks'
+    is content exactly as 'backlinks' is."""
+    if len(word) < 3 or word in STOPWORDS or word in FUNCTION_WORDS:
+        return False
+    if word in VERB_FORMS or word.isdigit():
+        return False
+    return not (word.endswith("ly") and len(word) >= 5)
+
+
+def _content_stems(words):
+    """Content stems: what the words assert rather than bind, count or
+    predicate."""
+    return [_stem(w.lower()) for w in words if _is_content(w.lower())]
 
 def _check_topic(claim, ref, text, facts, source, errors):
-    """Every sentence stays on the run's own subject. Checked twice: the words
-    the sentence asserts (what follows its first predicate) and the sentence as
-    a whole. A sentence fails when the words grounded nowhere in the run
-    outweigh the words grounded in it, when two or more of them tie with the
-    grounded ones, or when what it asserts is an unbound run of terms — no
-    binding word, and content the run does not hold.
+    """Every sentence stays on the run's own subject. Three tests, and the
+    sentence must pass all of them.
 
-    One sentence shape is refused on a single unrecorded word: a subject made
-    of the run's own recorded owner-fact words, doing one of the commercial
-    verbs (sell, offer, list, price, ...) to content the run does not record.
-    That is what 'Sleep coaches sell backlinks to nurses.' is."""
+    1. THE HEAD TEST. Each stretch of content between function words ends in a
+       head — the word the stretch is about — and that head must be one the run
+       records. A modifier may be a word this vocabulary does not hold; a head
+       may not. No counting, no majority: 'Tired nurses and weary mothers want
+       backlinks after long winter shifts.' has one unrecorded head and is
+       refused on it.
+
+    2. WHAT IT ASSERTS. The words after the sentence's first predicate are what
+       the sentence claims; if they are grounded nowhere in the run the
+       sentence is about something else.
+
+    3. THE TERM RUN. What it asserts with no word binding it is a run of terms
+       however it is punctuated.
+
+    And one shape is refused on a single unrecorded word whatever the counting
+    says: a subject made of the run's own recorded owner-fact words doing one
+    of the transfer and sale verbs (sell, offer, list, price, ...) to content
+    the run does not record. That is what 'Sleep coaches sell backlinks to
+    nurses.' is."""
     grounded = _grounded_stems(facts, source)
     fact_stems = set()
     for owner_text in facts.values():
         fact_stems.update(_stem(w) for w in _content_tokens(owner_text))
-    proper = _proper_words(text)
     for sentence in _sentences(text):
-        words = _words(sentence)
+        pairs = _word_pairs(sentence)
+        words = [low for low, _raw in pairs]
         cut = 0
         for i, w in enumerate(words):
             if w in VERB_FORMS:
                 cut = i + 1
                 break
         sells = bool(cut) and any(h in words[cut - 1] for h in COMMERCIAL_HINTS)
-        subject = _content_stems(words[:cut], proper)
+        subject = _content_stems(words[:cut])
         own_subject = bool(subject) and all(s in fact_stems for s in subject)
-        for label, span in (("what it asserts", words[cut:]), ("the sentence", words)):
-            stems = _content_stems(span, proper)
-            off = [s for s in stems if s not in grounded]
-            on = len(stems) - len(off)
-            if not off:
+
+        # 1. the head of every stretch of content must be one the run records.
+        heads = []
+        for prep, run, start in _stretches(pairs):
+            in_subject = start + len(run) <= cut
+            if _is_name_stretch(prep, [raw for _low, raw in run],
+                                subject=in_subject):
                 continue
-            bound = any(w in FUNCTION_WORDS for w in span)
-            unbound_run = label == "what it asserts" and not bound
-            sold = label == "what it asserts" and sells and own_subject
-            tie = len(off) == on
-            if not unbound_run and not sold and (
-                    len(off) < on or (tie and len(off) < 2)):
-                continue
+            kept = [low for low, _raw in run if _is_content(low)]
+            if kept and _stem(kept[-1]) not in grounded:
+                heads.append(kept[-1])
+        label, bad = "the phrase head", sorted(set(heads))
+
+        # 2. what it asserts, and 3. the sentence as a whole.
+        if not bad:
+            for label, span in (("what it asserts", words[cut:]),
+                                ("the sentence", words)):
+                stems = _content_stems(span)
+                off = sorted({s for s in stems if s not in grounded})
+                if not off:
+                    continue
+                on = len(stems) - len(off)
+                bound = any(w in FUNCTION_WORDS for w in span)
+                unbound_run = label == "what it asserts" and not bound
+                sold = label == "what it asserts" and sells and own_subject
+                if not unbound_run and not sold and (
+                        len(off) < on or (len(off) == on and len(off) < 2)):
+                    continue
+                bad = off
+                break
+        if bad:
             errors.append(
                 "%s: not about this run — %s carries %s, which appear in "
-                "nothing the run records (its owner facts, or source %s's own "
-                "excerpts) and in no research term. Ground the words in the "
-                "run's own record or drop the claim"
-                % (ref, label, ", ".join(sorted(set(off))),
-                   (source or {}).get("id", "?")))
+                "nothing the run records (its owner facts) and in no research "
+                "term. Ground the words in the run's own record or drop the "
+                "claim" % (ref, label, ", ".join(bad)))
             break
 
 # ---------------------------------------------------------------------------
