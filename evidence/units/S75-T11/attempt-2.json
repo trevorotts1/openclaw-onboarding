@@ -10,9 +10,22 @@
     "75-drama-song-ad-factory/scripts/core/script_validation.py",
     "75-drama-song-ad-factory/scripts/core/test_script_validation.py"
   ],
-  "head_sha": "PENDING_AT_WRITE_TIME",
-  "head_sha_note": "Amended after the code commit is pushed, to carry the resolved 40-hex sha of the code/test commit this file describes. A file cannot contain the sha of the commit that carries it; the metadata amend that carries this value is a later commit on the same branch and its sha is reported in the round report.",
+  "head_sha": "dd13d777abc7d84bdf173836aa38d6ab1e9180c7",
+  "head_sha_note": "Amended after the code commit was pushed. This is the 40-hex sha of the code/test/evidence commit whose sole parent is the base. A file cannot contain the sha of the commit that carries it, so this amended file rides a second commit on the same branch; that metadata commit is the branch tip and its sha is reported in the round report.",
   "written_at": "2026-10-25T17:17:27Z",
+  "head_sha_amended_at": "2026-10-25T17:19:34Z",
+  "measured_at_head_dd13d777a": {
+    "tests": "55 passed (base 54 passed); 55 'def test' definitions (base 54); 1 added, 0 removed, 0 skipped/xfailed",
+    "five_run_together_spellings": "25/25 container cells refused (ok=False, PLACEHOLDER_SCENE present, assert_new_generation raises ContractError)",
+    "container_controls": "5/5 containers ok=True codes=[] with a legitimate sentence",
+    "plain_spellings": "5/5 still refused",
+    "every_compact_probe": "76/76 compacts refused (base: 71/76, the 5 admitted were exactly these five)",
+    "false_positive_battery": "35 sentences, 24 accepted, 11 refused; the 11 are the same sentences that refuse at base (pre-existing substring match of the spaced phrases), and the new run-together rule fires on 0/35",
+    "rich_fixture": "tests/fixtures/rich_causal_script.json with world and cast -> ok=True codes=[]",
+    "three_overfires": "all 3 still refuse at head and refused identically at base -- NOT fixed, declared",
+    "ten_round6_vectors": "10/10 refuse at base and 10/10 at head",
+    "legacy_half": "LEGACY -> ok=True compatibility_limited=True regenerate=False scene_count=2 unresolved=19 input unmutated; NEW -> LEGACY_NOT_NEW_AUTHORING"
+  },
   "base_measurements_taken_before_this_write": {
     "tests": "54 passed, 54 'def test' definitions, 0 skipped/xfailed",
     "instrument": "good scene _good_scene() -> ok=True codes=[] (instrument discriminates)",
