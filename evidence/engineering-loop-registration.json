@@ -1,0 +1,552 @@
+{
+ "schema_version": 1,
+ "artifact": "engineering-loop-registration.json",
+ "task": "T-05",
+ "unit": "PBB-325",
+ "title": "Adopt/extend the existing persistent engineering loop and prove the observer/owner-action bridge",
+ "repository_scope": "control",
+ "repo": "trevorotts1/openclaw-onboarding",
+ "branch": "pb/PBB-325/t-05-repair2",
+ "base_commit": "9023e6b0e04cddb2c01a779c4bc0baef166d0a07",
+ "base_commit_note": "Cut from origin/main at this commit. The reviewed candidate e7f5d98a was parented on 702d6e4cdb4e (T-04/PBB-177), which verifier PBB-263 independently FAILED; T-05 was therefore re-parented off it. That commit is NOT an ancestor of this branch and nothing here depends on T-04's bytes.",
+ "author_alias": "deepseek-chain",
+ "author_model": "ds/deepseek-flash",
+ "authority_note": "Author receipt only. C-05, C-F15, C-F18 and C-F19 stay UNVERIFIED until an independent opus-chain QC review of this exact candidate. This is not self-approval and no check is marked passed here.",
+ "acceptance_clause_verbatim": "Bind the smallest existing supported observer/owner-action adapter; documented native background controls alone do not pass. Prove create/read/dispatch/ACK/completion/restart/stop on one synthetic action with actual IDs, duplicate safety and independent observation. Hold only dependent unattended effects.",
+ "spec_sources": [
+  {
+   "file": "TODO.md",
+   "lines": "73-87",
+   "used_for": "task identity, repository scope control, output name, verbatim acceptance clause, requirements/checks mapping"
+  },
+  {
+   "file": "ACCEPTANCE-MATRIX.md",
+   "lines": "73, 75, 83",
+   "used_for": "R-33/R-34/R-38 rows and their task/check mapping"
+  },
+  {
+   "file": "live-ledgers/requirements.json",
+   "lines": "items R-33, R-34, R-38",
+   "used_for": "required requirement statements and check_ids"
+  },
+  {
+   "file": "live-ledgers/checks.json",
+   "lines": "items C-05, C-F15, C-F18, C-F19",
+   "used_for": "required checks, scopes, evidence id E-T05-LOOP, required_qc_alias opus-chain"
+  },
+  {
+   "file": "LOOP-CONTROL.md",
+   "lines": "3-9, 19-21, 28-36",
+   "used_for": "lifecycle vocabulary, action states, ACK-is-not-completion, restart/shutdown sequence"
+  },
+  {
+   "file": "SCHEDULER-ADAPTER.md",
+   "lines": "18-37",
+   "used_for": "adapter choice A, required binding interface create/read/dispatch/acknowledge/complete/restart/stop, bounded acceptance list"
+  },
+  {
+   "file": "engineering-loop-registration.json (package copy)",
+   "lines": "1-60",
+   "used_for": "prior generations 1 and 2 of the production label, existing durable store, prior proof location"
+  }
+ ],
+ "adopted_existing_loop": {
+  "decision": "EXTEND_EXISTING",
+  "source_adapter": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/control/eng_loop.py",
+  "source_adapter_sha256": "b4fc4802610cc85361cefa87d7529230422b999e7c7100a8f575d11baf504c17",
+  "source_owner_handler": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/control/owner_handler.py",
+  "source_owner_handler_sha256": "bcd065bf314ae693970e516c58910db6f60db3f4520d65ba0f2c5e0e3693c06f",
+  "committed_adapter": "CONTROL/eng_loop.py",
+  "committed_adapter_sha256": "8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc",
+  "committed_owner_handler": "CONTROL/owner_handler.py",
+  "committed_owner_handler_sha256": "bcd065bf314ae693970e516c58910db6f60db3f4520d65ba0f2c5e0e3693c06f",
+  "not_replaced": "The owner handler is byte-identical to the existing one. The adapter differs only by the environment-override extension recorded below; every existing command, state machine, table, receipt marker, lease and ready-queue path is unchanged.",
+  "prior_proof_cited": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/T-05/PROOF.md (generations 1 and 2 of the production label; not re-used as this candidate's proof)"
+ },
+ "extension": {
+  "why": "A real launchd proof job must be registerable under its own label with its own durable store, so the running production generation 2 is not disturbed and no write leaves the mandated lane/temp roots. Without the propagation, the owner-handler child would silently write to the production control/state while the parent read the isolated store.",
+  "diff_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/17-extension.diff",
+  "changes": [
+   {
+    "lines": "LABEL/PLIST initialisation",
+    "change": "LABEL = os.environ.get('PB_LABEL') or 'ai.blackceo.pb-eng-loop'; PLIST = os.environ.get('PB_PLIST') or ~/Library/LaunchAgents/<LABEL>.plist. Unset, both keep the production identity exactly as before."
+   },
+   {
+    "lines": "EXTERNAL_ENV block",
+    "change": "Propagate PB_STATE_DIR/PB_LABEL/PB_PLIST/PB_TMP/PB_CACHE to the owner-handler child and the launchd plist when set."
+   }
+  ],
+  "not_changed": "No command, argument, state name, table, receipt/provenance rule, lease rule, tick lock, ready-queue rule, report interval or effect-once guard was changed."
+ },
+ "binding": {
+  "classification": "REAL_SUPPORTED_OBSERVER_OWNER_ACTION_BRIDGE (not a documented native control)",
+  "scheduler_type": "macOS launchd LaunchAgent, user domain gui/501 (choice A in SCHEDULER-ADAPTER.md:21)",
+  "native_job_id": "gui/501/ai.blackceo.pb-eng-loop-pbb220",
+  "label": "ai.blackceo.pb-eng-loop-pbb220",
+  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
+  "plist_outside_launchagents": "The proof plist is inside the mandated lane; launchctl bootstrap gui/501 <path> accepts it. The production plist at ~/Library/LaunchAgents/ai.blackceo.pb-eng-loop.plist was not read-modified or rewritten.",
+  "durable_store": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
+  "owner_handler": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL/owner_handler.py",
+  "observer": "launchd StartInterval 60s; every tick is a fresh bounded process",
+  "reports": "600s report interval; one independent report written by a launchd tick",
+  "production_loop_observed_read_only": {
+   "native_job_id": "gui/501/ai.blackceo.pb-eng-loop",
+   "command": "launchctl print gui/501/ai.blackceo.pb-eng-loop >/dev/null 2>&1",
+   "rc": 0,
+   "raw": "gui/501/ai.blackceo.pb-eng-loop = { active count = 1; path = /Users/{{operatorHome}}/Library/LaunchAgents/ai.blackceo.pb-eng-loop.plist; type = LaunchAgent; state = running; arguments include tick --run-id pb-eng-loop-20261024T0807Z-g2 }",
+   "raw_redaction": "Exactly one substitution in the raw launchctl line above: the real home-directory component of the plist path is rendered as the placeholder {{operatorHome}} (repo rule: no real operator or client names in tracked files; placeholder form follows the accepted set named in scripts/qc-assert-no-client-names.sh's remedy text: {{ownerName}}, Sample Company, {{agentName}}; {{operatorHome}} matches the {{...}} placeholder shape and is not in ALWAYS_ON_TOKENS). Everything else is byte-identical to what launchctl print returned: user domain gui/501, label ai.blackceo.pb-eng-loop, active count = 1, type = LaunchAgent, state = running, and the arguments tail 'tick --run-id pb-eng-loop-20261024T0807Z-g2' including the run id and generation suffix. The directory shape /Library/LaunchAgents/<label>.plist is unchanged and is the standard macOS user LaunchAgent location, so the record stays truthful and generalisable.",
+   "claim": "Observed present and running. Not modified, not stopped, not re-registered by this build."
+  },
+  "duplicate_job_preflight": {
+   "target_absent_before_registration": {
+    "command": "launchctl print gui/501/ai.blackceo.pb-eng-loop-pbb220 >/dev/null 2>&1; echo $?",
+    "rc": 113
+   },
+   "control_present_proof_label_family": {
+    "command": "launchctl print gui/501/ai.blackceo.pb-eng-loop >/dev/null 2>&1; echo $?",
+    "rc": 0
+   },
+   "control_present_other_project": {
+    "command": "launchctl print gui/501/com.blackceo.swarm-contract-tick >/dev/null 2>&1; echo $?",
+    "rc": 0
+   },
+   "meaning": "The absence reading is instrument-validated: the same launchctl print returns 0 for two known-present jobs."
+  }
+ },
+ "clauses": [
+  {
+   "id": "C05-1-create-or-extend-registration",
+   "verdict": "PROVEN",
+   "statement": "create_or_extend: an actual supported registration with an exact owning run, no duplicate job.",
+   "evidence": {
+    "command": "cd /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL && env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I eng_loop.py init --run-id pb-eng-loop-pbb220-20261024T210143Z-g1 --generation 1 --register",
+    "rc": 0,
+    "observed": {
+     "registered": true,
+     "native_job_id": "gui/501/ai.blackceo.pb-eng-loop-pbb220",
+     "readback_rc": 0,
+     "readback_state": "running",
+     "registration_receipt_id": "rcpt-registration-20261024T210148Z-4dfbde",
+     "owner_run_id": "pb-eng-loop-pbb220-20261024T210143Z-g1",
+     "owner_generation": 1
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/01-init-register.json"
+   }
+  },
+  {
+   "id": "C05-2-read-scheduler-and-native-status",
+   "verdict": "PROVEN",
+   "statement": "read: scheduler readback plus native status.",
+   "evidence": [
+    {
+     "command": "launchctl print gui/501/ai.blackceo.pb-eng-loop-pbb220",
+     "rc": 0,
+     "observed": "state = running, active count = 1, ProgramArguments include tick --run-id pb-eng-loop-pbb220-20261024T210143Z-g1",
+     "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/01-init-register.json"
+    },
+    {
+     "command": "cd /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL && env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I eng_loop.py status",
+     "rc": 0,
+     "observed": "job_present=true, run_id=pb-eng-loop-pbb220-20261024T210143Z-g1, owner_generation=1, one queued action",
+     "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/04-status-queued.json"
+    }
+   ]
+  },
+  {
+   "id": "C05-3-create-one-synthetic-action",
+   "verdict": "PROVEN",
+   "statement": "create: one synthetic action with no customer, provider, network or client message.",
+   "evidence": {
+    "command": "cd /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL && env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I eng_loop.py create --type synthetic.noop --idempotency-key pbb220-t05:synthetic-noop:g1 --payload '{\"proof\":\"PBB-220\",\"scope\":\"synthetic\",\"no_provider\":true}' --run-id pb-eng-loop-pbb220-20261024T210143Z-g1",
+    "rc": 0,
+    "observed": {
+     "result": "created",
+     "action_id": "act-f8063485556b46a1bcd841ce13a8118c",
+     "state": "queued",
+     "action_type": "synthetic.noop",
+     "owner_generation": 1
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/02-create.json"
+   }
+  },
+  {
+   "id": "C05-4-dispatch-by-persistent-observer",
+   "verdict": "PROVEN",
+   "statement": "dispatch: the queued action is moved to dispatched by a launchd-spawned tick, not by a blind resume.",
+   "evidence": {
+    "command": "launchd StartInterval tick (no manual dispatch)",
+    "rc": 0,
+    "observed": {
+     "tick_id": "tick-20261024T210258Z-ad5181",
+     "tick_pid": 57768,
+     "dispatched": 1,
+     "action_state_after": "acknowledged",
+     "attempts": 1,
+     "dispatch_ts": "2026-10-24T21:02:58Z"
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/18-final-effect-observation.json"
+   }
+  },
+  {
+   "id": "C05-5-owner-ack",
+   "verdict": "PROVEN",
+   "statement": "acknowledge: the owner handler records the action ID, generation and accepted precondition in a separate ACK receipt.",
+   "evidence": {
+    "command": "owner_handler.py invoked by the tick's dispatcher: env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I owner_handler.py --action-id act-f8063485556b46a1bcd841ce13a8118c --idempotency-key pbb220-t05:synthetic-noop:g1 --action-type synthetic.noop --owner-generation 1 --run-id pb-eng-loop-pbb220-20261024T210143Z-g1 --adapter /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL/eng_loop.py",
+    "rc": 0,
+    "observed": {
+     "ack_receipt_id": "rcpt-ack-f8063485556b46a1bcd841ce13a8118c-ab3682a1",
+     "tick_id": "tick-20261024T210258Z-ad5181",
+     "state": "acknowledged",
+     "receipt_marker": "MARKED",
+     "ack_ts": "2026-10-24T21:03:02Z"
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/18-final-effect-observation.json"
+   }
+  },
+  {
+   "id": "C05-6-completion",
+   "verdict": "PROVEN",
+   "statement": "complete: an actual result receipt, separate from ACK.",
+   "evidence": {
+    "command": "same owner handler, record-complete through the adapter",
+    "rc": 0,
+    "observed": {
+     "completion_receipt_id": "rcpt-completion-f8063485556b46a1bcd841ce13a8118c-ff462e31",
+     "ack_receipt_id": "rcpt-ack-f8063485556b46a1bcd841ce13a8118c-ab3682a1",
+     "ack_equals_completion": false,
+     "final_state": "completed",
+     "effect_execution_count": 1,
+     "completion_ts": "2026-10-24T21:03:09Z"
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/18-final-effect-observation.json"
+   }
+  },
+  {
+   "id": "C05-7-duplicate-safety-create",
+   "verdict": "PROVEN",
+   "statement": "The same intent created twice yields exactly one action and one effect.",
+   "evidence": {
+    "command": "same create command repeated with idempotency_key pbb220-t05:synthetic-noop:g1",
+    "rc": 0,
+    "observed": {
+     "result": "duplicate_idempotency_key",
+     "action_id": "act-f8063485556b46a1bcd841ce13a8118c",
+     "same_action_id": true,
+     "action_rows_after": 1
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/03-create-duplicate.json"
+   }
+  },
+  {
+   "id": "C05-8-duplicate-safety-dispatch",
+   "verdict": "PROVEN",
+   "statement": "Dispatching the completed action again is refused; the effect artifact stays exactly one.",
+   "evidence": {
+    "command": "cd /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL && env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I eng_loop.py dispatch --action-id act-f8063485556b46a1bcd841ce13a8118c --run-id pb-eng-loop-pbb220-20261024T210143Z-g1",
+    "rc": 0,
+    "observed": {
+     "result": "not_dispatchable",
+     "state": "completed",
+     "effect_files": 1,
+     "effects_log_lines": 1,
+     "execution_count": 1,
+     "action_rows": 1
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/06-dispatch-duplicate.json"
+   }
+  },
+  {
+   "id": "C05-9-restart-crash-persistence",
+   "verdict": "PROVEN",
+   "statement": "A host-level stop of the observer preserves the durable cursor and a queued action, and does not re-execute completed work.",
+   "evidence": {
+    "command": "launchctl bootout gui/501/ai.blackceo.pb-eng-loop-pbb220",
+    "rc": 0,
+    "observed": {
+     "after_bootout_print_rc": 113,
+     "control_print_rc": 0,
+     "completed_A_attempts": 1,
+     "completed_A_completion_receipt": "rcpt-completion-f8063485556b46a1bcd841ce13a8118c-ff462e31",
+     "queued_B_action_id": "act-3c0ee9573c6a4c6fabdd42a13c4c02d9",
+     "queued_B_attempts": 0,
+     "event_cursor_before_crash": 4
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/08-before-crash.json and /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/09-crash-bootout.txt"
+   }
+  },
+  {
+   "id": "C05-10-restart-resume-same-owner",
+   "verdict": "PROVEN",
+   "statement": "The replacement observer resumes the same run and dispatches the pending action; completed work and its receipts are unchanged.",
+   "evidence": {
+    "command": "cd /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL && env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I eng_loop.py init --run-id pb-eng-loop-pbb220-20261024T210143Z-g1 --generation 1 --register",
+    "rc": 0,
+    "observed": {
+     "registered": true,
+     "readback_rc": 0,
+     "registration_receipt_id": "rcpt-registration-20261024T210346Z-429f71",
+     "resume_tick_id": "tick-20261024T210346Z-e147b1",
+     "resume_tick_pid": 75858,
+     "resume_tick_dispatched": 1,
+     "resumed_action_id": "act-3c0ee9573c6a4c6fabdd42a13c4c02d9",
+     "resumed_state": "completed",
+     "resumed_ack_receipt_id": "rcpt-ack-3c0ee9573c6a4c6fabdd42a13c4c02d9-60772882",
+     "resumed_completion_receipt_id": "rcpt-completion-3c0ee9573c6a4c6fabdd42a13c4c02d9-505db0a5",
+     "action_A_attempts_after_restart": 1,
+     "action_A_completion_receipt_unchanged": true
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/10-restart-register.json and /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/11-status-after-restart.json"
+   }
+  },
+  {
+   "id": "C05-11-stop-request-and-ack",
+   "verdict": "PROVEN",
+   "statement": "A stop action S is persisted before the host request and the host ACK is recorded separately.",
+   "evidence": [
+    {
+     "command": "cd /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL && env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I eng_loop.py request-stop --run-id pb-eng-loop-pbb220-20261024T210143Z-g1 --generation 1",
+     "rc": 0,
+     "observed": {
+      "result": "stop_requested_persisted",
+      "action_id": "act-stop-06daf735cf444ff28f3cc7cc8d8a0069",
+      "action_type": "eng_loop.shutdown",
+      "state": "queued"
+     },
+     "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/12-request-stop.json"
+    },
+    {
+     "command": "cd /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL && env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I eng_loop.py dispatch-stop --action-id act-stop-06daf735cf444ff28f3cc7cc8d8a0069 --run-id pb-eng-loop-pbb220-20261024T210143Z-g1",
+     "rc": 0,
+     "observed": {
+      "result": "stop_dispatched",
+      "ack_receipt_id": "rcpt-ack-06daf735cf444ff28f3cc7cc8d8a0069-a8ae1caf",
+      "ack_rc": 0,
+      "ack_meaning": "host accepted the stop request; NOT completion"
+     },
+     "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/13-dispatch-stop.json"
+    }
+   ]
+  },
+  {
+   "id": "C05-12-stop-completion-readback",
+   "verdict": "PROVEN",
+   "statement": "Stop completion is read back from the host and is a different receipt from ACK.",
+   "evidence": {
+    "command": "same dispatch-stop invocation read-back loop",
+    "rc": 0,
+    "observed": {
+     "completion_receipt_id": "rcpt-completion-06daf735cf444ff28f3cc7cc8d8a0069-4f247881",
+     "ack_equals_completion": false,
+     "job_absent": true,
+     "last_print_rc": 113,
+     "seconds_to_absent": 0,
+     "ticks_after_stop": 0,
+     "final_state": "completed"
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/13-dispatch-stop.json"
+   }
+  },
+  {
+   "id": "C05-13-independent-observation",
+   "verdict": "PROVEN",
+   "statement": "The effect is observed through paths that are not the writer's return value.",
+   "evidence": [
+    {
+     "command": "python3 -I (separate process) reads state/effects/*.json and effects.log; computes sha256",
+     "rc": 0,
+     "observed": {
+      "effect_file_count": 2,
+      "effects_log_lines": 2,
+      "action_A_effect": {
+       "file": "pbb220-t05_synthetic-noop_g1.json",
+       "execution_count": 1,
+       "action_id": "act-f8063485556b46a1bcd841ce13a8118c",
+       "sha256": "5f54954f6574187bc247f171b20540d1507dc600825bfaaf0e412fd1c0cf2412"
+      },
+      "action_B_effect": {
+       "file": "pbb220-t05_synthetic-noop_g1_restart.json",
+       "execution_count": 1,
+       "action_id": "act-3c0ee9573c6a4c6fabdd42a13c4c02d9",
+       "sha256": "a91f5586ccab043f9e2a4b4bd757d8839947fba9dfe8b066a136cddb78fa4f3b"
+      }
+     },
+     "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/18-final-effect-observation.json"
+    },
+    {
+     "command": "sqlite3 read-only through a separate python process",
+     "rc": 0,
+     "observed": {
+      "action_rows": 3,
+      "receipt_rows": 8,
+      "tick_rows": 3,
+      "actions": [
+       {
+        "action_id": "act-f8063485556b46a1bcd841ce13a8118c",
+        "state": "completed",
+        "attempts": 1
+       },
+       {
+        "action_id": "act-3c0ee9573c6a4c6fabdd42a13c4c02d9",
+        "state": "completed",
+        "attempts": 1
+       },
+       {
+        "action_id": "act-stop-06daf735cf444ff28f3cc7cc8d8a0069",
+        "state": "completed",
+        "attempts": 1
+       }
+      ]
+     },
+     "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/18-final-effect-observation.json"
+    },
+    {
+     "command": "launchctl print gui/501/ai.blackceo.pb-eng-loop-pbb220 >/dev/null 2>&1; echo $? (after stop)",
+     "rc": 113,
+     "observed": "proof job absent",
+     "positive_controls": [
+      {
+       "label": "ai.blackceo.pb-eng-loop",
+       "rc": 0
+      },
+      {
+       "label": "com.blackceo.swarm-contract-tick",
+       "rc": 0
+      }
+     ],
+     "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/15-independent-stop-observation.txt"
+    }
+   ]
+  },
+  {
+   "id": "C05-14-receipt-provenance",
+   "verdict": "PROVEN",
+   "statement": "Every receipt in the proof store is producer-marked and verifies.",
+   "evidence": {
+    "command": "cd /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL && env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I eng_loop.py status",
+    "rc": 0,
+    "observed": {
+     "receipt_rows": 8,
+     "counts": {
+      "MARKED": 8,
+      "UNATTRIBUTABLE-LEGACY": 0,
+      "DETECTED-TAMPERED": 0,
+      "DETECTED-UNMARKED": 0,
+      "DETECTED-INCOMPLETE": 0
+     },
+     "unmarked_ids": []
+    },
+    "raw_file": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/14-status-final.json"
+   }
+  },
+  {
+   "id": "C05-15-selftest-duplicate-and-ack-gap",
+   "verdict": "PROVEN",
+   "statement": "The adapter's own hermetic selftest passes, including duplicate dispatch returning no work and ACK-gap recovery keeping the first ACK.",
+   "evidence": {
+    "command": "cd /Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL && env PB_STATE_DIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state\" PB_LABEL=\"ai.blackceo.pb-eng-loop-pbb220\" PB_PLIST=\"/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist\" PB_TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" PB_CACHE=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches/pb-skill38-20261024/pbb220\" TMPDIR=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" TEMP=\"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard/pb-skill38-20261024/pbb220\" python3 -I eng_loop.py selftest",
+    "rc": 0,
+    "observed": {
+     "selftest": "PASS",
+     "action_state": "completed",
+     "ack": "rcpt-ack-selftest-6e377978",
+     "completion": "rcpt-completion-selftest-b2e86bcf",
+     "asserted_duplicate_dispatch_returns_empty": true,
+     "asserted_ack_gap_execution_count": 1,
+     "asserted_first_ack_kept_on_replay": true
+    }
+   }
+  },
+  {
+   "id": "C05-16-hold-only-dependent-unattended-effects",
+   "verdict": "PROVEN",
+   "statement": "Only effects that depend on the unproven bridge are held; the synthetic proof invoked no customer, provider, network or client-message effect.",
+   "evidence": {
+    "command": "action payload and owner handler scope inspection",
+    "rc": 0,
+    "observed": {
+     "actions": [
+      "synthetic.noop",
+      "synthetic.noop",
+      "eng_loop.shutdown"
+     ],
+     "customer_effects": 0,
+     "provider_calls": 0,
+     "network_calls": 0,
+     "client_messages": 0,
+     "held_before_this_proof": "unattended effects that depend on the bridge",
+     "after_this_proof": "the bridge is proven for this exact candidate; unrelated product/admission work is not authorized by this artifact"
+    }
+   }
+  }
+ ],
+ "proof_artifacts": {
+  "root": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof",
+  "files": [
+   "01-init-register.json",
+   "02-create.json",
+   "03-create-duplicate.json",
+   "04-status-queued.json",
+   "05-status-completed.json",
+   "06-dispatch-duplicate.json",
+   "07-create-restart-action.json",
+   "08-before-crash.json",
+   "09-crash-bootout.txt",
+   "10-restart-register.json",
+   "11-status-after-restart.json",
+   "12-request-stop.json",
+   "13-dispatch-stop.json",
+   "14-status-final.json",
+   "15-independent-stop-observation.txt",
+   "16-hashes.txt",
+   "17-extension.diff",
+   "18-final-effect-observation.json",
+   "ai.blackceo.pb-eng-loop-pbb220.plist"
+  ],
+  "state_db": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
+  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist"
+ },
+ "unknowns": [
+  {
+   "id": "U-1",
+   "what": "600s periodic report beyond the first report",
+   "why": "the proof window was shorter than 600s; only report-20261024T210152Z-281447 was produced (by a launchd tick). The interval is code-constant and observed once, not exercised twice."
+  },
+  {
+   "id": "U-2",
+   "what": "Crash during the owner handler's effect write",
+   "why": "the crash was injected before dispatch. The torn-effect path in owner_handler.effect_once and the ACK-gap requeue path are covered only by the hermetic selftest, not by a live killed handler."
+  },
+  {
+   "id": "U-3",
+   "what": "Model/provider pause has no effect on the observer",
+   "why": "the adapter makes no model or provider call, so this was not exercised. No claim is made beyond that structural fact."
+  },
+  {
+   "id": "U-4",
+   "what": "External-volume write-through durability of the SQLite store",
+   "why": "no fsync failure injection or remount test was run."
+  },
+  {
+   "id": "U-5",
+   "what": "The package's engineering-loop-registration.json was not updated with this proof job",
+   "why": "that file is in the spec package, outside the mandated lane; mutating it would be a write outside the lane and outside the repo candidate."
+  },
+  {
+   "id": "U-6",
+   "what": "T-04 receipt",
+   "why": "T-04 was reported PASS at 702d6e4 but its receipt was still being produced; this artifact does not claim it is receipted."
+  },
+  {
+   "id": "U-7",
+   "what": "Independent QC",
+   "why": "C-05, C-F15, C-F18 and C-F19 remain UNVERIFIED until opus-chain reviews this candidate."
+  }
+ ],
+ "deviations": [
+  "The proof ran a real launchd job under the isolated label ai.blackceo.pb-eng-loop-pbb220 and an in-lane plist instead of reusing the running production label ai.blackceo.pb-eng-loop. Reason: the mandated write isolation allows writes only in this lane and the temp root, and the production generation 2 was already running. The production job was observed read-only (launchctl print rc 0).",
+  "The adapter gained two environment overrides and their propagation (extension diff above) to make the isolated real-launchd proof possible. Defaults are byte-for-byte the previous production identity; no existing behavior changed.",
+  "The restart proof restarts the same run_id/generation 1 (the replacement observes the same durable store). It does not create a second generation, because the acceptance asks for restart, not a new owner generation."
+ ],
+ "repair_note": "Repair of verifier PBB-279's FAIL on e7f5d98a. D1: PB_* configuration is read at use time (refresh_config/external_env) instead of captured at import, so the selftest child writes the sandbox store. D2/D3/D4: the stop ownership guard, the generation bound and the payload/body JSON boundary refuse with a reason instead of raising. Regression tests: CONTROL/tests/test_eng_loop_guards.py. The clause evidence below was produced on the earlier PBB-220 candidate and is retained as historical record, not as proof of this repair; this artifact makes no new PASS claim."
+}
