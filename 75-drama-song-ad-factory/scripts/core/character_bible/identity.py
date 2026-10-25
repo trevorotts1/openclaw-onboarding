@@ -235,10 +235,14 @@ def library_digest(snapshot):
 #    fed the genuine receipt back through ``restore_from_notion`` --
 #    draft_state=APPROVED, ``promote()`` called zero times. ``_signer_channel``,
 #    ``_signer_start`` and ``_signer_drop`` are gone from this namespace (no
-#    module attribute here hands out a file descriptor). They are private
-#    members of :class:`character_library.notion_store.NotionStore`, and the pipe
-#    ends themselves are private state of a transport object that releases them
-#    to a live store and to nobody else. What this module exposes is
+#    module attribute here hands out a file descriptor).
+#
+#    Round 7 moved the transport onto ``character_library.notion_store`` and
+#    left its ``start()`` and ``channel()`` PUBLIC, so the raw ends were handed
+#    out to any caller holding a store it had built itself; round 8 deletes
+#    those entries and stops every method on that transport from returning a
+#    file descriptor at all. The pipe ends are now held by the transport and
+#    used only inside its own request/reply. What this module exposes is
 #    :func:`_signer_request`: it answers ``verify`` and refuses the rest in code.
 #
 # 4. THE TOKEN IS A BEARER TOKEN, AND THE CODE SAYS SO. The signer's
@@ -258,11 +262,14 @@ def library_digest(snapshot):
 # and the signer the SAME unix user, so a caller that is willing to re-point the
 # pipe (or to rewrite this module) can answer as the signer, and a caller that
 # already holds a live NotionStore can ask that store for anything that store
-# can do -- including its own promote() and its own private transport. Those are
+# can do -- including its own promote() and its own private transport, and including the
+# per-promotion authority ``promote()`` carries, which that caller can forge
+# once it is reading name-mangled members. Those are
 # tampering with the transport and holding the authority, not a reach this
-# module hands out; rounds 5, 6 and 6b all ruled them out of scope. No in-process
+# module hands out; rounds 5, 6 and 6b all ruled them out of scope and round 8
+# keeps the ruling. No in-process
 # control in this codebase is unforgeable against a determined in-process
-# attacker; what round 7 removes is the reachability, which is what the row
+# attacker; what rounds 7 and 8 remove is the reachability, which is what the row
 # scores. Closing the rest needs an OS boundary this environment cannot create:
 # run the signer under a different uid.
 
@@ -520,9 +527,11 @@ def _signer_request(payload):
     The transport this goes through is not in this namespace. ``_signer_channel``
     used to be, and a caller wrote the wire protocol onto the pipe ends it
     returned and had a genuine receipt stored with ``promote()`` never called.
-    Those names now belong to :class:`NotionStore` as private members, and this
-    function reaches the signer through that class's verify-only entry point --
-    which is the same allowlist as here, so nothing it hands back can mint.
+    Round 8 deleted that entry and every other one that returns a file
+    descriptor: the pipe ends live on ``character_library.notion_store``'s
+    transport and are used only inside its own request/reply. This function
+    reaches the signer through that transport's verify-only entry point, which
+    is the same allowlist as here, so nothing it hands back can mint.
     """
     if type(payload) is not dict or payload.get("op") != "verify":
         return {"ok": False, "reason": (

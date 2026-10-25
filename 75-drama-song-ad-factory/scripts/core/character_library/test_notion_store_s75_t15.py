@@ -1001,9 +1001,10 @@ class OutOfProcessMintTest(unittest.TestCase):
         # than on a method name that did not exist yet.
         send = getattr(store, "_NotionStore__transact", None)
         if send is None:                       # round 5 and earlier: the module
-            def send(payload):
+            def send(payload, authority=None):
                 return identity._signer_request(payload)
-        get_cap = getattr(store, "_NotionStore__store_capability", lambda: "")
+        get_cap = getattr(store, "_NotionStore__store_capability",
+                          lambda authority=None: "")
         capability = get_cap()
 
         for wrong in ("APPROVED", "DRAFT_INCOMPLETE", "NOT_A_STATE", None):
@@ -1012,9 +1013,15 @@ class OutOfProcessMintTest(unittest.TestCase):
             claim.pop(identity.MINT_FIELD, None)
             claim["from_state"] = wrong
             with self.subTest(from_state=wrong):
+                # Round 8: a mint now needs this promotion's own nonce. The
+                # object() below is a FORGED one -- a caller who reaches this
+                # store's name-mangled members can make one, which is the
+                # residual the module states plainly at the top. It is passed
+                # here only so the request reaches the signer and the signer's
+                # own held-state check is what this test measures.
                 reply = send({"op": "mint", "scope": scope[1],
                               "client": scope[0], "capability": capability,
-                              "claim": claim})
+                              "claim": claim}, object())
                 self.assertFalse(reply.get("ok"))
                 self.assertIn("no %r to approve" % (wrong,),
                               reply.get("reason", ""))
@@ -1142,6 +1149,162 @@ class RoundSevenTest(unittest.TestCase):
         self.assertIn("client", reason)
         with self.assertRaises(identity.IdentityDefect):
             identity.validate_identity(sealed)
+
+
+class RoundEightTest(unittest.TestCase):
+    """Round 8: route D3 -- one module attribute, vars(), and public methods.
+
+    The round-7 verdict measured a full breach at 9add5de8e through exactly
+    this route and no private name at all. This test runs that route against the
+    shipped code and asserts it cannot reach APPROVED with ``promote()`` called
+    zero times, then runs the honest path on the SAME counter.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="s75-t15-")
+        # ONE counting instrument, both directions: every call
+        # NotionStore.promote() receives is recorded.
+        self.promote_calls = []
+        self.real_promote = store_mod.NotionStore.promote
+        calls = self.promote_calls
+
+        def counted(instance, *args, **kwargs):
+            calls.append((args, kwargs))
+            return self.real_promote(instance, *args, **kwargs)
+
+        store_mod.NotionStore.promote = counted
+
+    def tearDown(self):
+        store_mod.NotionStore.promote = self.real_promote
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    @staticmethod
+    def public_callables(obj):
+        return sorted(n for n, v in vars(obj).items()
+                      if not n.startswith("_") and callable(v))
+
+    def test_no_module_namespace_returns_a_file_descriptor_at_all(self):
+        # Requirement 1 of the round-8 brief, measured structurally: no entry on
+        # either module namespace, public or private, hands back a file
+        # descriptor. The transport holds the ends and exposes request/reply.
+        for name in ("start", "channel", "drop", "trip", "__start", "__channel",
+                     "__held"):
+            self.assertFalse(hasattr(store_mod._SignerTransport, name),
+                             "_SignerTransport still exposes %r" % name)
+        for name in ("_NotionStore__signer_channel", "_NotionStore__signer_start",
+                     "_NotionStore__signer_drop"):
+            self.assertIsNone(getattr(store_mod.NotionStore, name, None), name)
+        self.assertEqual(self.public_callables(store_mod._SignerTransport),
+                         ["verify"])
+        # and nothing reachable from either namespace is a signer transport but
+        # the one private class attribute of NotionStore
+        self.assertIs(store_mod.NotionStore._NotionStore__transport.__class__,
+                      store_mod._SignerTransport)
+        transports = [n for n, v in vars(store_mod).items()
+                      if isinstance(v, type) and hasattr(v, "verify")]
+        self.assertEqual(transports, ["_SignerTransport"])
+
+    def test_route_d3_through_vars_and_public_methods_cannot_reach_approved(self):
+        attacked = store_mod.NotionStore(self.root, NS_A)
+        record = for_client(NS_A)
+        record["draft_state"] = "DRAFT_COMPLETE"
+        record["approval_bindings"] = []
+        record.pop("content_digest", None)
+        attacked.put_identity(record)
+        scope = attacked.approval_scope()
+        claim = receipt({"receipt_id": "rcp-r8-route-d3"})
+        claim.pop(identity.MINT_FIELD, None)
+        self.assertEqual(self.promote_calls, [])
+
+        # (5) one module attribute, the public builtin vars(), scanned
+        # structurally for an object exposing callable channel() and start().
+        entries = [name for name, obj in vars(store_mod.NotionStore).items()
+                   if callable(getattr(obj, "channel", None))
+                   and callable(getattr(obj, "start", None))]
+        self.assertEqual(entries, [], "a transport is still reachable via vars()")
+        entries += [name for name, obj in vars(store_mod).items()
+                    if callable(getattr(obj, "channel", None))
+                    and callable(getattr(obj, "start", None))]
+        self.assertEqual(entries, [])
+
+        # (6) the public route, attempted anyway -- and by SHAPE, not by name,
+        # so a rename cannot make this pass. Every public callable on the live
+        # store and on the live transport is tried with the arguments the probe
+        # used, and NOTHING that comes back may contain an open file descriptor.
+        leaked = []
+
+        def live_fds(value):
+            if type(value) is int:
+                try:
+                    os.fstat(value)
+                except OSError:
+                    return
+                leaked.append(value)
+            elif isinstance(value, (tuple, list)):
+                for item in value:
+                    live_fds(item)
+
+        holders = (attacked, store_mod.NotionStore._NotionStore__transport)
+        for holder in holders:
+            for name in sorted(vars(holder.__class__)):
+                if name.startswith("_") or name == "promote":
+                    continue        # promote is the instrument, never called
+                fn = getattr(holder.__class__, name, None)
+                if not callable(fn):
+                    continue
+                for args in ((), (attacked,), (attacked, lambda: None),
+                             (None,), ({"op": "mint"},)):
+                    try:
+                        live_fds(fn(*args))
+                    except Exception:
+                        continue
+        self.assertEqual(leaked, [],
+                         "a file descriptor is still handed to a caller")
+
+        # (7)+(8) the two hand-written requests and the receipt they carry:
+        # with no ends there is nothing to write them onto, and the requests a
+        # caller can still make refuse in code.
+        scope_reply = identity._signer_request(
+            {"op": "capability", "client": scope[0], "scope": scope[1]})
+        self.assertFalse(scope_reply.get("ok"))
+        mint_reply = identity._signer_request(
+            {"op": "mint", "client": scope[0], "scope": scope[1],
+             "capability": "token-issued-to-nobody", "claim": dict(claim)})
+        self.assertFalse(mint_reply.get("ok"))
+        self.assertIsNone(mint_reply.get("receipt"))
+
+        # and the mint this store's own transport would send needs this
+        # promotion's own authority, which nothing outside promote() carries
+        blocked = attacked._NotionStore__transact(
+            {"op": "mint", "scope": scope[1], "client": scope[0],
+             "capability": "token-issued-to-nobody", "claim": dict(claim)})
+        self.assertFalse(blocked.get("ok"))
+
+        # (9) the genuine receipt a caller would have to bring back
+        forged = for_client(NS_A)
+        forged["draft_state"] = "APPROVED"
+        forged["approval_bindings"] = [dict(claim, to_state="APPROVED")]
+        forged.pop("content_digest", None)
+        with self.assertRaises(store_mod.StoreError):
+            attacked.restore_from_notion([forged])
+
+        self.assertEqual(self.promote_calls, [])
+        held = attacked.get_identity(CHAR)
+        self.assertEqual(held["draft_state"], "DRAFT_COMPLETE")
+        self.assertEqual(held["approval_bindings"], [])
+
+        # THE HONEST PATH on the same counter: still exactly two promote() calls
+        honest = store_mod.NotionStore(self.root, NS_A + "-honest")
+        honest.put_identity(for_client(NS_A + "-honest"))
+        honest.promote(CHAR, "DRAFT_COMPLETE")
+        approved = honest.promote(
+            CHAR, "APPROVED",
+            approval={"approver": "client", "receipt_id": "rcp-r8-honest"})
+        self.assertEqual(len(self.promote_calls), 2)
+        self.assertEqual(approved["draft_state"], "APPROVED")
+        self.assertEqual(len(approved["approval_bindings"]), 1)
+        self.assertEqual(
+            len(approved["approval_bindings"][0][identity.MINT_FIELD]), 64)
 
 
 if __name__ == "__main__":

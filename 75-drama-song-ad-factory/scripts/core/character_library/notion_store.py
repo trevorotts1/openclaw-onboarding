@@ -113,40 +113,69 @@ def _validated(record, scope):
     return sealed
 
 
+# ROUND 8, STATED PLAINLY (do not soften in a later round): PROMOTION IS NOT
+# GUARANTEED AGAINST A CALLER WHO CAN NAME THE STORE. ``NotionStore`` has a
+# public constructor, so "this request came from an exact NotionStore" proves
+# nothing and no gate in this module rests on it -- round 7's transport did rest
+# on it and its own docstring called it "A gate, not a check." What stops a
+# caller from putting a draft at APPROVED without calling ``promote()`` is
+# narrower: the signer's ``mint`` request is built inside ``promote()`` and is
+# sent by ``NotionStore.__transact`` alone, carrying that promotion step's own
+# nonce, which is a local of that method body and is stored nowhere a caller can
+# read. No public method and no name on this module's namespace reaches the
+# signer's ``mint``, and nothing hands out a file descriptor any more.
+#
+# That is REACHABILITY, not unforgeability, and the residual is named rather
+# than papered over. A caller who can read the name-mangled private members of a
+# live store or of ``_SignerTransport``, who can monkeypatch a function, rewrite
+# this module, or re-point the signer's OS pipe, is stopped by none of it: that
+# caller can hand the transport an authority object it made itself and speak as
+# the store, or answer as the signer outright. Rounds 5, 6 and 6b ruled that
+# class out of scope as tampering with implementation internals, and round 8
+# keeps the ruling. Making the channel unforgeable against an in-process caller
+# needs an OS boundary this environment cannot create: the signer under a
+# different unix uid.
+
 class _SignerTransport:
     """The approval signer's pipe ends. One signer per process.
 
-    SECURITY (do not loosen in a later round): the file descriptors are private
-    state of THIS object and nothing else. They are not a module attribute of
-    ``character_bible.identity`` (round 7 removed ``_signer_channel`` from that
-    namespace, where any caller could take the raw ends and write the wire
-    protocol onto them itself) and they are not a return value of anything a
-    caller reaches without a live store. Every entry that can carry a ``mint``
-    or ask for a ``capability`` takes the store that owns the request and
-    refuses anything that is not a live ``NotionStore``. The one entry that
-    needs no store is :meth:`verify`, which is an allowlist in code: it answers
-    ``verify`` and refuses ``mint`` and ``capability``, exactly as
-    ``identity._signer_request`` does.
+    SECURITY (do not loosen in a later round): this object holds the signer's
+    file descriptors and never hands one back. No method here -- public or
+    private -- returns a file descriptor, a pipe end or a (send, recv) pair, so
+    no caller can pick the ends up and write the signer's wire protocol onto
+    them itself. What this class exposes is request and reply: :meth:`verify`
+    for any caller, and the ``mint``/``capability`` exchange for
+    :meth:`NotionStore._NotionStore__transact` alone, which builds those
+    requests itself and carries the authority of the promotion step that is
+    running.
 
-    ponytail: this is reachability, not unforgeability. A caller holding a live
-    store can reach this transport through that store's private members, and a
-    caller willing to re-point the pipe or rewrite the module can answer as the
-    signer. Both are the tampering-with-internals class rounds 5, 6 and 6b ruled
-    out of scope. Making the channel unforgeable needs the signer under a
-    different unix uid, which this environment cannot create.
+    Round 7 shipped the opposite on this class: ``start()`` and ``channel()``
+    were PUBLIC and ``__start`` handed the raw ends to whoever asked, with no
+    owner check at all. A caller holding a store it built with the public
+    constructor took the ends, wrote ``capability`` and then ``mint`` onto them,
+    and had the genuine signer-minted receipt stored as APPROVED through the
+    public ``restore_from_notion()`` with ``promote()`` called zero times. Those
+    methods are deleted here, not renamed.
+
+    ponytail: this is reachability, not unforgeability. A caller willing to read
+    the name-mangled private members of a live store or of this class can still
+    reach ``_SignerTransport__exchange`` and can hand it an authority object it
+    made itself; a caller willing to re-point the pipe or rewrite this module
+    can answer as the signer. Rounds 5, 6 and 6b ruled the first class out of
+    scope and this round keeps that ruling. Making the channel unforgeable needs
+    the signer under a different unix uid, which this environment cannot create.
     """
 
     def __init__(self):
         self.__pipes = {}
         self.__lock = threading.Lock()
 
-    @staticmethod
-    def __owner(owner):
-        """The live store that owns the request, or None. A gate, not a check."""
-        return owner if type(owner) is NotionStore else None
+    def __spawn(self):
+        """Start this process's signer and KEEP its pipe ends here.
 
-    def __start(self):
-        """Spawn this process's signer and hand back its two pipe ends."""
+        Returns nothing at all. The ends are stored on this object and are never
+        handed out, not here and not anywhere else in this module.
+        """
         to_signer, send_fd = os.pipe()
         recv_fd, to_parent = os.pipe()
         proc = subprocess.Popen(
@@ -157,19 +186,13 @@ class _SignerTransport:
             pass_fds=(to_signer, to_parent))
         os.close(to_signer)
         os.close(to_parent)
-        return (proc, send_fd, recv_fd)
-
-    def __channel(self):
-        """The live pipe ends, starting the signer on first use."""
-        with self.__lock:
-            held = self.__pipes.get(os.getpid())
-            if held is None:
-                held = self.__start()
-                self.__pipes[os.getpid()] = held
-            return held
+        self.__pipes[os.getpid()] = (proc, send_fd, recv_fd)
 
     def __drop(self):
-        """Forget this process's signer after a transport failure. Fails closed."""
+        """Forget this process's signer after a transport failure. Fails closed.
+
+        Returns nothing. It closes the ends; it never hands one out.
+        """
         with self.__lock:
             held = self.__pipes.pop(os.getpid(), None)
         for fd in (held[1], held[2]) if held is not None else ():
@@ -178,50 +201,49 @@ class _SignerTransport:
             except OSError:
                 pass
 
-    def start(self, owner):
-        """Spawn this process's signer. A live store only."""
-        if self.__owner(owner) is None:
-            raise StoreError(
-                "The approval signer's transport belongs to a live store.")
-        return self.__start()
+    def __exchange(self, payload, authority):
+        """One request/reply on the signer's pipe. The ends never leave here.
 
-    def channel(self, owner, spawn):
-        """The signer's raw pipe ends, ``spawn`` starting it on first use.
-
-        A live store only -- see the ponytail above. ``spawn`` is that store's
-        own ``__signer_start``, so the signer is always started by the store
-        that owns the request.
+        Fails closed: a request that is not ``verify`` needs the authority of a
+        promotion step that is running right now, and one without it is refused
+        before a byte is written to the signer. This is the ONLY place in the
+        module that reads or writes the signer's pipe, and the ONLY place that
+        names a file descriptor at all -- as a local, never as a return value.
         """
-        if self.__owner(owner) is None:
-            raise StoreError(
-                "The approval signer's transport belongs to a live store.")
-        with self.__lock:
-            held = self.__pipes.get(os.getpid())
-            if held is None:
-                held = spawn()
-                self.__pipes[os.getpid()] = held
-            return held
-
-    def drop(self, owner):
-        """Forget this process's signer. A live store only. Fails closed."""
-        if self.__owner(owner) is None:
-            raise StoreError(
-                "The approval signer's transport belongs to a live store.")
-        return self.__drop()
-
-    def __exchange(self, payload):
-        """One request/reply on the signer's pipe. Private: no gate, no caller."""
+        if type(payload) is not dict:
+            return {"ok": False,
+                    "reason": "this transport answers only 'verify'"}
+        if payload.get("op") == "mint" and authority is None:
+            return {"ok": False, "reason": (
+                "this transport answers only 'verify'; a receipt is minted only "
+                "inside the store's own promotion step, which builds that "
+                "request itself and carries this promotion's own authority")}
         raw = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
         reason = "the approval signer did not answer"
         for attempt in (0, 1):
             try:
-                _proc, send_fd, recv_fd = self.__channel()
+                with self.__lock:
+                    held = self.__pipes.get(os.getpid())
+                    if held is None:
+                        self.__spawn()      # stores the ends, returns nothing
+                        held = self.__pipes[os.getpid()]
+                    _proc, send_fd, recv_fd = held
             except Exception as exc:
                 return {"ok": False,
                         "reason": "the approval signer could not start (%s)"
                                   % exc}
             try:
-                return self.trip(send_fd, recv_fd, raw)
+                os.write(send_fd, raw)
+                data = b""
+                while not data.endswith(b"\n"):
+                    chunk = os.read(recv_fd, 65536)
+                    if not chunk:
+                        raise OSError("the approval signer stopped")
+                    data += chunk
+                reply = json.loads(data.decode("utf-8"))
+                return reply if type(reply) is dict else {
+                    "ok": False,
+                    "reason": "the approval signer gave an unreadable answer"}
             except Exception as exc:
                 reason = "the approval signer is unreachable (%s)" % exc
                 self.__drop()
@@ -229,31 +251,13 @@ class _SignerTransport:
                     continue
         return {"ok": False, "reason": reason}
 
-    @staticmethod
-    def trip(send_fd, recv_fd, raw):
-        """One framed write/read on a pipe. Takes file descriptors, holds none.
-
-        It is ``os.write`` plus framing: a caller who reaches it already holds
-        the pipe ends, and it hands back the signer's own answer and nothing
-        else.
-        """
-        os.write(send_fd, raw)
-        data = b""
-        while not data.endswith(b"\n"):
-            chunk = os.read(recv_fd, 65536)
-            if not chunk:
-                raise OSError("the approval signer stopped")
-            data += chunk
-        reply = json.loads(data.decode("utf-8"))
-        return reply if type(reply) is dict else {
-            "ok": False, "reason": "the approval signer gave an unreadable "
-                                   "answer"}
-
     def verify(self, payload):
         """One ``verify`` request. ``verify`` only, for any caller. Fails closed.
 
         THE ALLOWLIST: every other operation -- ``mint`` and ``capability``
         included -- is refused in code, for every caller and every argument.
+        This is the only public method on this class and it never returns a file
+        descriptor.
         """
         if type(payload) is not dict or payload.get("op") != "verify":
             return {"ok": False, "reason": (
@@ -261,14 +265,14 @@ class _SignerTransport:
                 "inside the store's own promotion step, which builds that "
                 "request itself and carries a capability this module cannot "
                 "supply")}
-        return self.__exchange(payload)
+        return self.__exchange(payload, None)
 
 
 class NotionStore:
     """One client's cached identity records. Scoped, never shared."""
 
-    #: The signer's transport. Private to this class: the raw pipe ends live on
-    #: it and are released only to a live store (round 7).
+    #: The signer's transport. The raw pipe ends are its private state and are
+    #: never returned to any caller, store or no store (round 8).
     __transport = _SignerTransport()
 
     def __init__(self, root, client_namespace):
@@ -285,33 +289,16 @@ class NotionStore:
         # signer.
         self.__capability = None
 
-    # --- the approval signer's transport (round 7) -----------------------
+    # --- the approval signer's transport (round 8) -----------------------
     #
-    # These three names used to be module functions in character_bible.identity
-    # -- ``identity._signer_channel()`` handed the signer's raw pipe ends to any
-    # caller, and a caller with zero standing wrote ``capability`` and ``mint``
-    # onto them by hand and had the genuine receipt stored through the public
-    # ``restore_from_notion()`` with ``promote()`` called zero times. They are
-    # private members of this class now, and the pipe ends behind them are
-    # private state of ``__transport``.
-
-    def __signer_start(self):
-        """Spawn this process's signer. Private member (round 7)."""
-        return self.__transport.start(self)
-
-    def __signer_channel(self):
-        """The signer's raw pipe ends. Private member (round 7).
-
-        What it hands back is a file descriptor pair, so a caller who gets here
-        can write the signer's wire protocol itself. Getting here needs a live
-        store and then a name-mangled private member of it -- the
-        implementation-internal class rounds 5, 6 and 6b ruled out of scope.
-        """
-        return self.__transport.channel(self, self.__signer_start)
-
-    def __signer_drop(self):
-        """Forget this process's signer after a transport failure. Private."""
-        return self.__transport.drop(self)
+    # Round 7 moved the signer's channel off character_bible.identity and onto
+    # this class, but left ``_SignerTransport.start()`` and ``.channel()`` as
+    # PUBLIC methods that returned the raw pipe ends, so the same reach was one
+    # module attribute away (the round-7 verdict's route D3). Round 8 removes
+    # the entries that hand out a file descriptor: there is no ``__signer_start``
+    # and no ``__signer_channel`` on this class any more, and nothing on the
+    # transport returns an end. What is left is request and reply -- the
+    # ``__transact`` below, and the verify-only hook ``identity`` uses.
 
     @staticmethod
     def __signer_verify(payload):
@@ -323,44 +310,50 @@ class NotionStore:
         """
         return NotionStore.__transport.verify(payload)
 
-    def __transact(self, payload):
+    def __transact(self, payload, authority=None):
         """One request to the approval signer, built and sent by THIS store.
 
-        This method is the only place a ``mint`` request exists. Round 5 built
-        it in promote() and then handed it to ``identity._signer_request``, a
-        module-level function that carried ``{"op": "mint"}`` for any caller --
-        a plain module call produced a genuine signer-minted receipt with
-        ``promote()`` called zero times. identity's namespace now answers
-        ``verify`` and refuses the rest in code, and it holds no signer
-        transport at all (round 7): the raw pipe ends live behind this class's
-        private members, reached through ``__signer_channel``. Getting to this
-        method needs a live store instance.
-        """
-        raw = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
-        reason = "the approval signer did not answer"
-        for attempt in (0, 1):
-            try:
-                _proc, send_fd, recv_fd = self.__signer_channel()
-            except Exception as exc:
-                return {"ok": False,
-                        "reason": "the approval signer could not start (%s)"
-                                  % exc}
-            try:
-                return self.__transport.trip(send_fd, recv_fd, raw)
-            except Exception as exc:
-                reason = "the approval signer is unreachable (%s)" % exc
-                self.__signer_drop()
-                if attempt == 0:
-                    continue
-        return {"ok": False, "reason": reason}
+        This method is the only place a ``mint`` request exists, and the
+        transport it goes through hands back the signer's answer and never a
+        file descriptor. Round 5 built the mint in promote() and handed it to
+        ``identity._signer_request``, a module function that carried
+        ``{"op": "mint"}`` for any caller; round 7 left the transport's own
+        ``start()`` and ``channel()`` returning the raw ends to any caller who
+        held a store it had constructed itself. Both are gone.
 
-    def __store_capability(self):
-        """This store's capability, fetched once from the signer and kept here."""
+        A ``mint`` additionally needs ``authority``: this promotion step's own
+        nonce, made as a local inside :meth:`promote` and passed straight down.
+        It is never stored on the instance, on the class or on a module
+        attribute, and no method returns one. ``capability`` does not need it --
+        that token is a bearer token and proves nothing on its own (see
+        :meth:`__store_capability`).
+        """
+        if type(payload) is not dict \
+                or payload.get("op") not in ("mint", "capability"):
+            return {"ok": False, "reason": (
+                "this store's transport sends only 'mint' and 'capability'")}
+        if payload.get("op") == "mint" and authority is None:
+            return {"ok": False, "reason": (
+                "a receipt is minted only inside the store's own promotion "
+                "step, which carries that promotion's own authority; a request "
+                "that arrives without one is refused before it reaches the "
+                "signer")}
+        return self.__transport._SignerTransport__exchange(payload, authority)
+
+    def __store_capability(self, authority=None):
+        """This store's capability, fetched once from the signer and kept here.
+
+        It is a BEARER TOKEN: the signer hands the identical token to anyone who
+        asks for that (client, store), so presenting it proves only that somebody
+        asked for one. It is not the control that stops an implicit promotion --
+        see the ROUND 8 statement at the top of this module.
+        """
         if type(self.__capability) is str and self.__capability:
             return self.__capability
         scope = self.approval_scope()
         reply = self.__transact({"op": "capability",
-                                 "client": scope[0], "scope": scope[1]})
+                                 "client": scope[0], "scope": scope[1]},
+                                authority)
         token = reply.get("capability")
         if reply.get("ok") is not True or type(token) is not str or not token:
             raise identity.IdentityDefect([{
@@ -552,6 +545,19 @@ class NotionStore:
         hand, a mark recomputed from module state and a dict reloaded from a
         JSON file all carry none that verifies.
 
+        What a promotion step presents to the signer is its OWN nonce, made
+        right here as a local and passed straight down to ``__transact``. It is
+        never stored on this instance, on the class or on any module attribute,
+        and no method returns one, so a caller outside this method body has
+        nothing to present. THIS IS NOT A GUARANTEE against a caller who can
+        name the store and read this class's name-mangled members: a caller
+        willing to do that can hand the transport an authority object it made
+        itself, exactly as it could in rounds 5, 6 and 6b. Rounds 5, 6 and 6b
+        ruled that reach out of scope as tampering with implementation
+        internals, and this round keeps the ruling. What the nonce buys is the
+        narrower thing the row scores: no public entry point, and no name on any
+        module namespace, leads to the signer's ``mint``.
+
         There is no mint function to call instead. Round 4 exposed one
         (``identity.mint_receipt``) and a caller could reach APPROVED with a
         genuine receipt while this method was never called; round 5 removes the
@@ -601,6 +607,10 @@ class NotionStore:
             # against a source no caller can write. identity.mint_receipt() is
             # a named refusal for every caller and every argument.
             scope = self.approval_scope()
+            # THIS promotion's own authority: a local, passed straight down and
+            # stored nowhere. See the limitation above -- it is not a guarantee
+            # against a caller who reads this class's name-mangled members.
+            authority = object()
             claim = {
                 "kind": identity.RECEIPT_KIND,
                 "receipt_id": receipt_id.strip(),
@@ -611,7 +621,8 @@ class NotionStore:
             }
             reply = self.__transact({
                 "op": "mint", "scope": scope[1], "client": scope[0],
-                "capability": self.__store_capability(), "claim": claim})
+                "capability": self.__store_capability(authority),
+                "claim": claim}, authority)
             receipt = reply.get("receipt")
             if reply.get("ok") is not True or type(receipt) is not dict:
                 # The signer's own refusal, surfaced unchanged: a second receipt
