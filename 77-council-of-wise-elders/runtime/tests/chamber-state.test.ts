@@ -310,6 +310,71 @@ test('copy table: headline, round label and explainer for each state', () => {
   assert.equal(S.view(bare, 0).round.explain, 'Each advisor writes an independent position. Their lines play here as soon as the round is in.');
 });
 
+test('the round denominator and its labels follow the council size', () => {
+  const S = loadState();
+  const sized = (mode: string, seats: string[] = SEATS): Record<string, unknown> =>
+    record({ spec: { mode, seat_ids: seats, model_policy: { route_id: 'claude-configured', requested_model_id: 'sonnet-test' } } });
+
+  const cases: Array<[string, number, string[]]> = [
+    ['light', 2, ['simon-sinek', 'td-jakes', 'oprah-winfrey']],
+    ['medium', 4, SEATS],
+    ['heavy', 10, SEATS],
+    // The four older modes keep their three-round denominator.
+    ['full', 3, SEATS],
+    ['selected', 3, SEATS.slice(0, 4)],
+    ['quick', 3, SEATS.slice(0, 4)],
+  ];
+  for (const [mode, total, seats] of cases) {
+    for (const st of ['ROUND_1', 'ROUND_2', 'CRUX_REVIEW', 'DRAFT_RESOLUTION']) {
+      const m = S.create(sized(mode, seats));
+      S.apply(m, stateFrame(1, st));
+      const v = S.view(m, 0);
+      assert.equal(v.round.total, total, `${mode} ${st} total`);
+      const n = st === 'ROUND_1' || st === 'CRUX_REVIEW' ? 1 : 2;
+      const after = st === 'CRUX_REVIEW' || st === 'DRAFT_RESOLUTION' ? 'AFTER ROUND ' : 'ROUND ';
+      assert.equal(v.round.label, after + n + ' OF ' + total, `${mode} ${st} label`);
+    }
+  }
+});
+
+test('a light council shows two rounds, never a third', () => {
+  const S = loadState();
+  const m = S.create(
+    record({ spec: { mode: 'light', seat_ids: SEATS.slice(0, 3), model_policy: { route_id: 'r', requested_model_id: null } } }),
+  );
+  S.apply(m, stateFrame(1, 'ROUND_1'));
+  assert.equal(S.view(m, 0).round.label, 'ROUND 1 OF 2');
+  S.apply(m, stateFrame(2, 'CRUX_REVIEW'));
+  assert.equal(S.view(m, 0).round.label, 'AFTER ROUND 1 OF 2');
+  S.apply(m, stateFrame(3, 'ROUND_2'));
+  assert.equal(S.view(m, 0).round.label, 'ROUND 2 OF 2');
+  S.apply(m, stateFrame(4, 'DRAFT_RESOLUTION'));
+  assert.equal(S.view(m, 0).round.label, 'AFTER ROUND 2 OF 2');
+});
+
+test('a heavy council counts and renders rounds past three', () => {
+  const S = loadState();
+  const m = S.create(
+    record({ spec: { mode: 'heavy', seat_ids: SEATS, model_policy: { route_id: 'r', requested_model_id: null } } }),
+  );
+  S.apply(m, stateFrame(1, 'ROUND_1'));
+  assert.equal(S.view(m, 0).round.label, 'ROUND 1 OF 10');
+  S.apply(m, frame(2, 'card_accepted', { payload: { seat_id: 'simon-sinek', round: 6 } }));
+  S.applyRecord(m, { cards: [card('simon-sinek', 6, 'A')] });
+  const v = S.view(m, 0);
+  assert.equal(v.votesRound, 6, 'the tally round follows the cards, not a fixed 1..3');
+  assert.equal(v.round.total, 10);
+  const seat = v.seats.find((s: Any) => s.id === 'simon-sinek');
+  assert.equal(seat.cards[6].kind, 'advisor');
+  assert.equal(seat.cards[6].line, 'simon-sinek argument r6');
+
+  // Round 3 is an ordinary advisor round in heavy, never the vote pass.
+  S.apply(m, frame(3, 'card_accepted', { payload: { seat_id: 'td-jakes', round: 3 } }));
+  const pending = S.view(m, 0).seats.find((s: Any) => s.id === 'td-jakes');
+  assert.equal(pending.cards[3].kind, 'advisor');
+  assert.equal(pending.cards[3].pending, true);
+});
+
 test('verdict label text and key point', () => {
   const S = loadState();
   const texts: Record<string, string> = {
