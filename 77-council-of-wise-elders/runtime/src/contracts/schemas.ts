@@ -51,6 +51,7 @@ import {
   VERDICT_LABELS,
 } from './enums';
 import { isSha256Hex, isUtcTimestamp, isValidId } from './primitives';
+import { MAX_ADVISOR_ROUND } from './modes';
 import type { ValidationIssue, ValidationResult } from './errors';
 
 /** Current canonical contract version for this package surface. */
@@ -304,6 +305,23 @@ export const sessionSpecSchema = z
         message: 'selected mode requires 2 to 8 seats',
       });
     }
+    if (spec.mode === 'light' && spec.seat_ids.length !== 3) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['seat_ids'],
+        message: 'light mode requires exactly three seats',
+      });
+    }
+    if (
+      (spec.mode === 'medium' || spec.mode === 'heavy') &&
+      spec.seat_ids.length !== SEAT_IDS.length
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['seat_ids'],
+        message: `${spec.mode} mode requires all nine seats`,
+      });
+    }
   });
 export type SessionSpec = z.infer<typeof sessionSpecSchema>;
 
@@ -391,7 +409,7 @@ const cardBaseShape = {
 export const advisorCardAuthorSchema = z.strictObject({
   ...cardBaseShape,
   card_kind: z.literal('advisor'),
-  round: z.union([z.literal(1), z.literal(2)]),
+  round: z.number().int().min(1).max(MAX_ADVISOR_ROUND),
   stance: z.enum(STANCES),
   preferred_option_id: idSchema.nullable(),
   option_scores: z.array(optionScoreSchema),
@@ -742,7 +760,7 @@ export type CouncilEvent = z.infer<typeof councilEventSchema>;
 /** Session budget and behavior settings (defaults from Section 15.6). */
 export const councilSettingsSchema = z.strictObject({
   schema_version: z.literal('wise-elders.settings/v1'),
-  max_session_provider_requests: z.number().int().min(1).max(50),
+  max_session_provider_requests: z.number().int().min(1).max(100),
   max_output_repair_requests: z.number().int().min(0),
   max_semantic_verification_requests: z.number().int().min(0).max(2),
   max_transport_retries_total: z.number().int().min(0),

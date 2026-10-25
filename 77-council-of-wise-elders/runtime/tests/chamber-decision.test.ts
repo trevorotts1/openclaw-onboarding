@@ -31,6 +31,7 @@ type Row = {
 type Api = {
   rowsModel(session: unknown): Row[];
   badgesModel(session: unknown): Array<{ kind: string; text: string }>;
+  subText(mode: unknown): string | null;
 };
 
 function plain<T>(v: T): T {
@@ -146,8 +147,17 @@ test('badgesModel: Sample decision only when sample and not demo; Verdict when s
   assert.deepEqual(plain(api.badgesModel(null)), []);
 });
 
-// ------------------------------------------------------------ fake DOM
+test('subText: each council size names its own advisors and rounds; older modes add nothing', () => {
+  const api = loadApi();
+  assert.equal(api.subText('light'), 'Light council: three advisors, two rounds, one verdict.');
+  assert.equal(api.subText('medium'), 'Medium council: nine advisors, up to four rounds, one verdict.');
+  assert.equal(api.subText('heavy'), 'Heavy council: nine advisors, up to ten rounds, one verdict.');
+  for (const mode of ['full', 'quick', 'selected', 'consult', null, undefined, 3, 'Light']) {
+    assert.equal(api.subText(mode), null, String(mode));
+  }
+});
 
+// ------------------------------------------------------------ fake DOM
 const focused: { current: FakeNode | null } = { current: null };
 
 class FakeNode {
@@ -262,18 +272,33 @@ function boot() {
   return { host, events, details, live, push: (v: View) => push(v) };
 }
 
+const EMPTY_SUB =
+  'Light, medium or heavy: three advisors and two rounds, up to nine advisors and ten rounds. One verdict.';
+
 test('DOM: empty state shows the invitation and wires both buttons', () => {
   const { host, events, live } = boot();
   assert.equal(host.find('ch-dec-title')[0].textContent, 'Ask the council a question');
   assert.equal(host.find('ch-dec-title')[0].id, 'ch-decision-title');
   assert.equal(host.find('ch-dec-title')[0].tagName, 'h1');
-  assert.equal(host.find('ch-dec-sub')[0].textContent, 'Nine advisors, three rounds, one verdict.');
+  assert.equal(host.find('ch-dec-sub')[0].textContent, EMPTY_SUB);
   assert.equal(host.find('ch-dec-actions')[0].hidden, false);
   assert.equal(host.find('ch-dec-options')[0].hidden, true);
   host.find('ch-dec-new')[0].listeners.click[0]();
   host.find('ch-dec-demo')[0].listeners.click[0]();
   assert.deepEqual(events, ['chamber:open-composer']);
   assert.equal(live.started, 1);
+});
+
+test('DOM: a council-size session shows its own format caption; older modes stay captionless', () => {
+  const { host, push } = boot();
+  push({ mode: 'live', session: session([opt('o1', 'A', 'Launch now', null)], { mode: 'light' }) });
+  assert.equal(host.find('ch-dec-sub')[0].textContent, 'Light council: three advisors, two rounds, one verdict.');
+  assert.equal(host.find('ch-dec-sub')[0].hidden, false);
+  push({ mode: 'live', session: session([opt('o1', 'A', 'Launch now', null)], { mode: 'heavy' }) });
+  assert.equal(host.find('ch-dec-sub')[0].textContent, 'Heavy council: nine advisors, up to ten rounds, one verdict.');
+  push({ mode: 'live', session: session([opt('o1', 'A', 'Launch now', null)], { mode: 'full' }) });
+  assert.equal(host.find('ch-dec-sub')[0].textContent, '');
+  assert.equal(host.find('ch-dec-sub')[0].hidden, true);
 });
 
 test('DOM: focus moves to the title when the focused empty-state button is hidden', () => {

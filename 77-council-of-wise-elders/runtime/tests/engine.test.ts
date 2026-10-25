@@ -308,3 +308,56 @@ test('engine: replay returns committed events only and spends nothing', async ()
   assert.ok(events.some((e) => e.event_type === 'verdict_validated'));
   assert.equal(counting.calls.length, callsBefore);
 });
+
+test('engine: resume refuses a council size instead of walking the older-modes pipeline', async () => {
+  // The local engine runs only the four older modes' pipeline. A blocked
+  // light/medium/heavy session resumed here used to walk the legacy
+  // Round 2 -> DRAFT_RESOLUTION -> ROUND_3 path and die with
+  // ILLEGAL_TRANSITION (DRAFT_RESOLUTION -> ROUND_3 is not a legal edge
+  // for a council size). It must refuse with the same typed message
+  // create/start use, and leave the session exactly where it was.
+  const sample = buildSampleSession();
+  const sessionId = 'sess-light-blocked';
+  const spec: SessionSpec = {
+    ...clone(sample.spec),
+    session_id: sessionId,
+    mode: 'light',
+    seat_ids: sample.spec.seat_ids.slice(0, 3),
+  };
+  const brief: DecisionBrief = { ...clone(sample.brief), session_id: sessionId };
+  spec.brief_sha256 = canonicalHash(brief);
+  const host = grantHost(tempDataDir('engine-light-resume'), spec, sample.scope);
+  await host.store.createSession({
+    spec,
+    brief,
+    scope: sample.scope,
+    state: {
+      schema_version: 'wise-elders.session-state/v1',
+      session_id: sessionId,
+      mode: 'light',
+      state: 'BLOCKED',
+      state_version: 1,
+      brief_revision: 1,
+      resume_phase: 'ROUND_2',
+      cancel_generation: 0,
+      revocation_generation: 0,
+      attempt: 1,
+      lease_epoch: 0,
+      archived: false,
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+    sample: false,
+  });
+  const engine = new CouncilEngine(host);
+  await assert.rejects(
+    () => engine.resumeSession(sessionId, 'test-grant'),
+    (error: unknown) => {
+      assert.ok(error instanceof CouncilError, String(error));
+      assert.equal(error.code, 'COUNCIL_INVALID_INPUT');
+      assert.match(error.message, /convene --mode light/);
+      return true;
+    },
+  );
+  const after = await engine.getSession(sessionId);
+  assert.equal(after.state.state, 'BLOCKED');
+});
