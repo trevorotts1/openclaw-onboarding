@@ -57,6 +57,7 @@ import {
 import type { ModelTransport } from '../cli/host-ports.js';
 import {
   discoverConfiguredRoutes,
+  routeUsableWithModel,
   type DiscoveredRoute,
   type RouteDiscoveryOptions,
 } from '../cli/route-discovery.js';
@@ -521,7 +522,15 @@ function routeProbe(options: RouteProbeOptions): ReadinessProbe {
       );
     }
     const composable = discovered.filter((route) => route.composable);
-    if (composable.length === 0) {
+    // A route whose ONLY blocker is which of its configured models to use
+    // is usable the moment the caller names one, and convene works with it
+    // (GET /api/council/routes advertises it as usable_with_model). It is
+    // ready; the note below says a model must be named.
+    const usableWithModel = discovered.filter(
+      (route) => !route.composable && routeUsableWithModel(route),
+    );
+    const usable = [...composable, ...usableWithModel];
+    if (usable.length === 0) {
       const first = discovered[0];
       return blocked(
         first.failure?.code ?? 'ROUTE_NOT_COMPOSABLE',
@@ -536,10 +545,20 @@ function routeProbe(options: RouteProbeOptions): ReadinessProbe {
       })
       .join(', ');
     const notes = [
-      `${composable.length}/${discovered.length} route(s) composable: ${described}`,
+      `${composable.length}/${discovered.length} route(s) composable${described ? `: ${described}` : ''}`,
       'the route is chosen per session (the client picks, or the convening harness default applies)',
     ];
-    if (options.routeId && !composable.some((route) => route.routeId === options.routeId)) {
+    if (usableWithModel.length > 0) {
+      notes.push(
+        `usable once a model is named: ${usableWithModel
+          .map(
+            (route) =>
+              `${route.routeId} (${(route.compatible?.modelCandidates ?? []).join(' | ') || 'no candidates listed'})`,
+          )
+          .join(', ')}; convene with --model`,
+      );
+    }
+    if (options.routeId && !usable.some((route) => route.routeId === options.routeId)) {
       notes.push(`hinted route ${options.routeId} is not composable`);
     }
     if (typeof options.providerDispatch === 'function') notes.push('dispatch port bound');
@@ -554,8 +573,10 @@ function routeProbe(options: RouteProbeOptions): ReadinessProbe {
  */
 function routeCallableProbe(options: RouteProbeOptions): ReadinessProbe {
   return async (context) => {
-    const composable = discoverRoutes(options).filter((route) => route.composable);
-    if (composable.length === 0) {
+    const usable = discoverRoutes(options).filter(
+      (route) => route.composable || routeUsableWithModel(route),
+    );
+    if (usable.length === 0) {
       return blocked(
         'ROUTE_NOT_CONFIGURED',
         'No composable route resolved.',
@@ -573,7 +594,7 @@ function routeCallableProbe(options: RouteProbeOptions): ReadinessProbe {
       await context.dispatchProvider();
       return {
         state: 'ready',
-        artifact: `${composable.length} composable route(s); dispatch port answered`,
+        artifact: `${usable.length} usable route(s); dispatch port answered`,
       };
     } catch (error) {
       return blocked(
@@ -635,7 +656,7 @@ function workerProbe(
     } catch (error) {
       return blocked(
         'WORKER_LEDGER_UNREADABLE',
-        `The worker is running but the durable spend ledger could not be read (${error instanceof Error ? error.name : 'unknown error'}).`,
+        `The worker is running but the durable usage ledger could not be read (${error instanceof Error ? error.name : 'unknown error'}).`,
         'Check the council database handle, then re-run service-readiness; the supervisor keeps durable work intact.',
       );
     }
