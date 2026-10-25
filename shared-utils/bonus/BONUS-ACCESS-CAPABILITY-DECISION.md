@@ -10,10 +10,13 @@ This is a capability decision, not an adapter. Nothing here calls a provider; no
 here carries a URL, a verb or a path. `supported_route()` returns `api: None` on
 purpose and the suite pins that `None`. The suite also scans the returned surface,
 the module and this document for the API shapes it enumerates (scheme URL, verb plus
-path spaced or glued, bare or identifier-prefixed path, schemeless host plus path;
-dotted operation ids on the returned surface only), so an edit that adds one of those
-shapes fails the suite. It is a pattern scan, not a proof: a fabrication in a shape
-the scan does not enumerate is not caught.
+path spaced or glued, bare or identifier-prefixed path, a trailing path segment with no
+segment after it, schemeless host plus path; dotted operation ids on the returned surface
+only), so an edit that adds one of those shapes fails the suite. Two exemptions are closed
+world. File provenance passes only when the token resolves to a real file in this tree; a
+reviewed prose token passes only inside the exact sentence it was reviewed in. A new token,
+or a reviewed token outside that sentence, fails until a human reviews it. It is a pattern
+scan, not a proof: a fabrication in a shape the scan does not enumerate is not caught.
 
 ---
 
