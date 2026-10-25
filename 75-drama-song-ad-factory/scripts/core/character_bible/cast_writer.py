@@ -138,22 +138,33 @@ def _text_list(value):
 
 #: A person reference is a PERSON NAME, or an opaque stable id where the surface
 #: carries one. ``real_content.person_name_ok`` IS the person-name decision and
-#: the only one: it accepts on positive name shape -- 2-4 well-formed words,
-#: proper-noun orthography, a designator signal somewhere in the core -- and
-#: refuses otherwise, so "Old Man" is refused while "Dana Woman" passes. Nothing
-#: here reads a topic vocabulary, so no head word can be swapped in to open the
-#: gate; the one closed class the rule consults is the grammatical class of
-#: determiners, pronouns and prepositions, not a list of the things a cast
-#: member might be called.
+#: the only one: it accepts on positive name shape plus positive name evidence,
+#: and refuses otherwise, so "Old Man" is refused while "Dana Woman" passes.
+#: Nothing here reads a topic vocabulary, so no head word can be swapped in to
+#: open the gate.
 #:
-#: The id limb is the same positive polarity applied to the identifier surface a
-#: ``character_id`` or a scene binding actually carries ("char_mara_001"), which
-#: is not a name and is judged as opaque shape instead. A descriptor dressed up
-#: as an id fails BOTH limbs: ``real_content.id_ok`` demands identifier
-#: structure, and a descriptor has none.
+#: A display name is NEVER an identifier, so ``profile_defects`` judges it by the
+#: name rule alone.
+#:
+#: The id limb is for the identifier surface a ``character_id`` or a scene
+#: binding actually carries ("char_mara_001"), which is not a name and is judged
+#: as opaque CODED shape instead. Identifier structure is not enough on its own:
+#: round 7 accepted 'Content-Creator', 'Gig-Worker' and 'iPhone-Owner' here,
+#: because a hyphenated descriptor has two alphabetic segments and so looked like
+#: an id. A coded id carries a DIGIT or a hex run, which no descriptor written as
+#: words ever does.
+def _identifier_ok(value):
+    text = value if isinstance(value, str) else str(value)
+    if not real_content_ok(text, "id"):
+        return False
+    if any(ch.isdigit() for ch in text):
+        return True
+    return len(text) >= 8 and all(ch in "0123456789abcdefABCDEF" for ch in text)
+
+
 def _person_reference(value):
     text = value if isinstance(value, str) else str(value)
-    return person_name_ok(text) or real_content_ok(text, "id")
+    return person_name_ok(text) or _identifier_ok(text)
 
 
 def _defect(character_id, display_name, field, issue):
@@ -202,7 +213,7 @@ def profile_defects(record):
                            "every substantive assertion needs an origin"))
     if not _text(record.get("display_name")):
         out.append(_defect(cid, name, "display_name", "required"))
-    elif not _person_reference(str(name)):
+    elif not person_name_ok(str(name)):
         out.append(_defect(cid, name, "display_name",
                            "a generic descriptor is not an identity"))
     if not _text(record.get("character_id")):

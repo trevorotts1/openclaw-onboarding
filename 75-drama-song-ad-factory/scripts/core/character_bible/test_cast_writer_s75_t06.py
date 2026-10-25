@@ -727,6 +727,148 @@ def test_module_holds_no_provider_transport():
         assert forbidden not in source, forbidden
 
 
+# --- S75-T06 round 8: the residual class and the names it must not cost ------
+
+#: The generic person-describing strings round 7 left accepted, plus the
+#: letter-substitution disguises of the old descriptor heads.  TEST DATA: the
+#: rule reads none of these words -- it decides by shape and by positive name
+#: evidence -- so they live here, where they only say what the grid covers.
+RESIDUAL_DESCRIPTORS = [
+    "Barista Teenager", "Barista-Teenager", "Uber Driver", "Uber-Driver",
+    "Barre Instructor", "Instacart Shopper", "Airbnb Host", "Netflix Binger",
+    "Spotify Curator", "Macbook Owner", "Tiktok Star", "Podcast Host",
+    "Crypto Trader", "Bitcoin Miner", "Devops Engineer", "Selfie Stick",
+    "Wifi Password", "Hashtag Queen", "Emoji Artist", "Muchacho Grande",
+    "Ronin Master", "Startup Founder", "Self-Taught Barista", "Self-Taught",
+    "Full-Time Barista", "Part-Time Barista", "First-Responder",
+    "Barista-In-Training", "Manager-On-Duty", "QA Tester", "UX Designer",
+    "SEO Specialist", "API Developer", "CEO Founder", "CFO Manager",
+    "Barista Barback", "Mixologist Barback", "Sommelier Barback",
+    "Barista Manager", "Barista Trainer", "Travel Blogger", "Food Blogger",
+    "Lifestyle Blogger", "Tech Blogger", "Dog Walker", "Bluetooth Speaker",
+    "McDelivery Rider", "Content-Creator", "Gig-Worker", "iPhone-Owner",
+    "Youtuber Vlogger", "Trader Joe",
+]
+
+#: A letter of a head word swapped for a look-alike from another alphabet:
+#: Greek omicron for o, U+0131 DOTLESS I for i, Cyrillic for the Latin
+#: look-alikes.  A human reads these as the descriptor heads they replace.
+HOMOGLYPH_DISGUISES = [
+    "Pe\u03bfple", "Vo\u0131ce", "Off\u0131cer", "Wa\u0131ter",
+    "Wa\u0131tress", "Cust\u03bfmer",
+    "B\u0430rista Teenager", "Uber Dr\u0456ver", "Wifi P\u0430ssword",
+    "Dog W\u0430lker", "\u0421ontent-Creator",
+]
+
+#: Every one of these is a real person and must stay accepted: mononyms, a
+#: middle initial in any letter, an initial plus an ordinary surname, a given
+#: name and a surname that are both ordinary English words, and names whose
+#: only vowel is accented.
+REAL_NAMES_RESTORED = [
+    "Dvo\u0159\u00e1k", "Beyonc\u00e9", "Cher", "Plato", "Aristotle",
+    "Rihanna", "Shakira", "Zendaya",
+    "Mary A. Fields", "Harry S. Truman", "Marcus A. Bell", "Tom T. Hall",
+    "Ann S. Drake", "Mary I. Fields", "Mary S. Fields", "Mary T. Fields",
+    "J. Smith", "J. Baker", "J. Ewing", "J. Riley", "J. Presley", "J. Manning",
+    "Will Smith", "John May", "Mark May", "May Baker", "May Smith",
+    "Grace Smith", "Pearl Rose", "Mara Bell", "A. J. Marchetti",
+    "Liam N\u00ed Chonaill", "Kim Ng", "Ng Wei", "Tr\u1ea7n Th\u1ecb Hoa",
+    "L\u00fd Minh", "Nguyen Van Anh", "Zo\u00eb Salda\u00f1a",
+    "Priya Raghunathan", "Nnamdi Obi", "Wei Zhang", "Beyonc\u00e9 Knowles",
+    "Renata Cruz-Whitfield", "Dana Woman", "Theresa Manager",
+    "Erik Narratorsson", "Officer Dan Whitfield",
+]
+
+
+def _named_defect(exc, field):
+    return [d for d in exc.packet.get("incomplete", [])
+            if d.get("field") == field and "generic descriptor" in d.get("issue", "")]
+
+
+def _is_refused(value, field):
+    """The production gate author_cast() runs on every identity: the presence of
+    the 'generic descriptor' defect on the field under test."""
+    request, response = load()
+    record = response["identities"][0]
+    record[field] = value
+    return any(d.get("field") == field and "generic descriptor" in d.get("issue", "")
+               for d in W.profile_defects(record))
+
+
+def test_no_modern_coinage_descriptor_is_accepted_in_either_position():
+    """A descriptor the 1913 lexicon predates is still a descriptor."""
+    for described in RESIDUAL_DESCRIPTORS:
+        for field in ("display_name", "character_id"):
+            assert _is_refused(described, field), (described, field)
+
+def test_no_modern_coinage_descriptor_is_accepted_through_author_cast():
+    for described in ("Barista Teenager", "Uber Driver", "Dog Walker",
+                      "Content-Creator", "Trader Joe"):
+        request, response = load()
+        response["identities"][0]["display_name"] = described
+        exc = refuse(W.author_cast, request, dispatch=fake(response),
+                     model="fake-author")
+        assert exc.code == "INCOMPLETE_CAST", described
+        assert _named_defect(exc, "display_name"), described
+
+def test_a_letter_substitution_homoglyph_is_refused_in_either_position():
+    for disguised in HOMOGLYPH_DISGUISES:
+        for field in ("display_name", "character_id"):
+            assert _is_refused(disguised, field), (disguised, field)
+
+def test_a_descriptor_dressed_as_an_id_does_not_travel_through_the_id_limb():
+    for disguised in ("Content-Creator", "Gig-Worker", "iPhone-Owner",
+                      "Barista-Teenager", "Manager-On-Duty"):
+        assert not W._person_reference(disguised), disguised
+
+def test_a_coded_id_still_travels_through_the_id_limb():
+    for coded in ("char_mara_001", "char-levi-002", "identity-digest-1",
+                  "3f2a9c7b"):
+        assert W._person_reference(coded), coded
+
+def test_every_restored_real_name_is_accepted_in_either_position():
+    for name in REAL_NAMES_RESTORED:
+        for field in ("display_name", "character_id"):
+            assert not _is_refused(name, field), (name, field)
+
+def test_a_restored_real_name_authors_a_complete_cast():
+    for name in ("Will Smith", "Mary A. Fields", "Priya Raghunathan",
+                 "J. Baker", "Liam N\u00ed Chonaill", "Dvo\u0159\u00e1k"):
+        request, response = load()
+        response["identities"][0]["display_name"] = name
+        result = author(request=request, response=response)
+        assert result["state"] == "COMPLETE", name
+        assert W.profile_defects(result["identities"][0]) == [], name
+
+#: DECLARED RESIDUAL, pinned rather than hidden.  A name whose EVERY word is an
+#: ordinary English word and none of which is in the shipped 1,188-entry name
+#: lexicon cannot be told apart from a two-word description ("Old Man") by any
+#: rule that reads no list of names.  Refusing these is the cost of refusing
+#: those, and the cure is a bigger NAME lexicon -- a vocabulary, deliberately not
+#: added here.
+KNOWN_STILL_REFUSED_NAMES = [
+    "Art Bell", "Drew Fox", "Pearl Green", "Madonna", "Sade",
+]
+#: A title the name lexicon does not carry in front of a surname it does not
+#: carry: indistinguishable from "Nguyen Van Anh", which must stay accepted.
+KNOWN_STILL_ACCEPTED_DESCRIPTORS = ["Senorita Gomez", "Fr\u00e4ulein Schmidt"]
+
+def test_the_declared_residual_is_exactly_what_the_rule_says_it_is():
+    for name in KNOWN_STILL_REFUSED_NAMES:
+        for field in ("display_name", "character_id"):
+            assert _is_refused(name, field), (name, field)
+    for name in KNOWN_STILL_ACCEPTED_DESCRIPTORS:
+        for field in ("display_name", "character_id"):
+            assert not _is_refused(name, field), (name, field)
+
+def test_the_rule_still_carries_no_descriptor_vocabulary():
+    with open(os.path.join(HERE, "cast_writer.py"), "r", encoding="utf-8") as handle:
+        source = handle.read()
+    for forbidden in ("GENERIC_DESCRIPTOR_HEADS", "ANONYMOUS_SPEAKERS",
+                      "_DETERMINERS", "_TITLE_HEADS", "_FUNCTION_WORDS",
+                      "_DESCRIPTIVE_SUFFIX"):
+        assert forbidden not in source, forbidden
+
 if __name__ == "__main__":
     failures = 0
     tests = [(name, fn) for name, fn in sorted(globals().items())

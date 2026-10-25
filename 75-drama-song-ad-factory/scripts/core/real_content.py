@@ -141,6 +141,12 @@ def normalise(value):
     text = unicodedata.normalize("NFKC", value)
     text = text.translate(_JOIN)
     text = text.translate(_TRANSLATE)
+    # S75-T06 round 8: TAB, LF, CR, VT and FF are Cc, and deleting a Cc GLUED
+    # two words into one ("A\tWoman" -> "AWoman", whose internal capital then
+    # read as McDonald-style name orthography).  A whitespace control character
+    # is a word boundary; only the invisible format characters are deleted.
+    text = text.translate({0x09: " ", 0x0A: " ", 0x0B: " ", 0x0C: " ",
+                           0x0D: " "})
     text = "".join(ch for ch in text
                    if unicodedata.category(ch) not in _FORMAT_CATEGORIES)
     return _SPACES.sub(" ", text).strip()
@@ -163,8 +169,40 @@ def _latin(ch):
         return False
 
 
+def _decomposes_to_latin(ch):
+    """A character is a LETTER OF A NAME only if it is ASCII, or it is a Latin
+    letter that canonical-decomposes to an ASCII letter plus a combining mark
+    (``Zo`` + U+0308 + ``e``, ``n`` + U+0303).
+
+    S75-T06 round 8.  A look-alike from another alphabet -- U+03BF GREEK SMALL
+    LETTER OMICRON in ``People``, U+0430 CYRILLIC -- is not orthography, it is a
+    disguise, and U+0131 LATIN SMALL LETTER DOTLESS I does not decompose at all,
+    so ``Officer`` is a substituted glyph and not an accented form.  Every one of
+    them is refused here, at the shape gate, in ANY position in the string; the
+    rule never has to recognise the word it was hiding.
+    """
+    if ord(ch) < 128:
+        return True
+    # NFD peels every canonical layer, so "a with circumflex and grave" reaches
+    # its ASCII base "a" even though its one-step decomposition is "â" + U+0300.
+    folded = unicodedata.normalize("NFD", ch)
+    if not folded:
+        return False
+    base = folded[0]
+    return base.isalpha() and ord(base) < 128
+
+
 _KEYBOARD_ROWS = ("qwertyuiop", "asdfghjkl", "zxcvbnm")
-_VOWELS = frozenset("aeiou")
+#: A vowel is the ASCII set or any accented form of it (``a``, ``i``,
+#: ``u``), plus ``y``, which is the vowel of ``Lý``, ``Lynch`` and ``Ng'``
+#: surnames.  S75-T06 round 7 demanded an ASCII ``aeiou`` and so refused
+#: ``Kim Ng``, ``Trần Thị Hoa`` and ``Liam Ní Chonaill``.
+_VOWELS = frozenset("aeiouy")
+
+
+def _vowel(ch):
+    base = unicodedata.normalize("NFD", ch)[0].casefold()
+    return base in _VOWELS
 
 
 def _keyboard_run(word):
@@ -201,24 +239,33 @@ def _monotone(word):
 
 
 def word_shape_ok(tok):
-    """A token is a word at all: Latin script, letters only, >=2 chars, one
-    vowel AND one consonant, not one repeated character, not a cyclic
-    repetition, not a keyboard run, not a 4-letter monotone run.
+    """A token is a word at all: letters only, >=2 chars, one vowel AND one
+    consonant, not one repeated character, not a cyclic repetition, not a
+    keyboard run, not a 4-letter monotone run.
+
+    Letters are ASCII, or accented forms of ASCII letters
+    (``_decomposes_to_latin``): a Greek omicron, a Cyrillic ``a`` or a dotless
+    i is not a letter of a name.  The vowel set is ``aeiouy`` read through the
+    token's canonical decomposition, so ``Ní``, ``Thị``, ``Lý`` and ``Ng`` are
+    words.
 
     Every limb is a property of the token alone.  Nothing here consults a
     vocabulary, so nothing can be admitted or refused by list membership.
     """
     if not isinstance(tok, str) or len(tok) < 2:
         return False
-    if not all(_latin(ch) for ch in tok):
+    if not all(_decomposes_to_latin(ch) for ch in tok):
+        return False
+    if not tok.isalpha():
         return False
     low = tok.casefold()
-    if not low.isalpha():
-        return False
     letters = set(low)
     if len(letters) == 1:
-        return False
-    if not (letters & _VOWELS) or not (letters - _VOWELS):
+        return False                                    # one repeated letter
+    has_vowel = any(_vowel(ch) for ch in tok)
+    if not has_vowel and len(low) > 3:
+        return False                    # "Ng" is a name; "bcdfgh" is not
+    if not any(not _vowel(ch) for ch in tok):
         return False
     if _cyclic(low) or _keyboard_run(low) or _monotone(low):
         return False
@@ -245,7 +292,7 @@ CLOSED_CLASS = frozenset({
     "i", "me", "my", "mine", "we", "us", "our", "ours", "you", "your", "yours",
     "he", "him", "his", "she", "her", "hers", "it", "its", "they", "them",
     "their", "theirs", "myself", "yourself", "himself", "herself", "itself",
-    "ourselves", "themselves", "of", "in", "on", "at", "to", "for", "with",
+    "ourselves", "themselves", "self", "of", "in", "on", "at", "to", "for", "with",
     "by", "from", "into", "onto", "over", "under", "behind", "beside", "near",
     "across", "through", "during", "before", "after", "above", "below",
     "between", "against", "about", "around", "along", "among", "within",
@@ -319,31 +366,18 @@ ROLE_NOUNS = frozenset({
     "passenger", "crew", "staff", "resident", "citizen", "villager", "tourist",
 })
 
-#: Derivational endings that mark a word as DESCRIPTIVE rather than nominal.
-#: Used only to refuse opacity evidence (a described thing is not an opaque
-#: designator) -- it never admits anything.
-_DESCRIPTIVE_SUFFIX = (
-    "ous", "ful", "less", "able", "ible", "ive", "ish", "ly", "ness", "ment",
-    "tion", "sion", "ance", "ence", "ity", "est", "ing", "ed", "ic", "al",
-)
-
-
-def _has_descriptive_suffix(low):
-    return any(low.endswith(sfx) and len(low) > len(sfx) + 1
-               for sfx in _DESCRIPTIVE_SUFFIX)
-
-
 def _orthographic_marker(tok):
     """Orthography that is itself evidence of a proper noun: an internal capital
-    (McDonald) or a diacritic on a Latin letter.
+    (McDonald) or an accented Latin letter (Zoe, Ní, Saldaña).
 
     An ALL-CAPS token is deliberately NOT evidence: ``ACCOUNTANT`` has capitals
     after the first character, but shouting a category noun does not turn it
-    into a name.  Apostrophes and hyphens are consumed by ``normalise`` and so
-    are handled by the opacity signal instead."""
+    into a name.  A glyph that only LOOKS like a Latin letter -- U+0131 DOTLESS
+    I, Greek omicron -- is refused by ``_decomposes_to_latin`` long before it
+    reaches here, so no disguise can buy proper-noun evidence."""
     if not tok.isupper() and any(ch.isupper() for ch in tok[1:]):
         return True
-    return any(ord(ch) > 127 and _latin(ch) for ch in tok)
+    return any(ord(ch) > 127 for ch in tok)
 
 
 #: Inflectional endings stripped before asking whether a token is an ordinary
@@ -356,6 +390,10 @@ def _ordinary_word(low):
     English word.  Positive evidence that the token denotes a general thing."""
     if low in ENGLISH:
         return True
+    # The man/men ablaut plural is regular English morphology, not a word list:
+    # "women" -> "woman", "gentlemen" -> "gentleman".
+    if low.endswith("men") and low[:-3] + "man" in ENGLISH:
+        return True
     for suffix in _INFLECTIONS:
         if low.endswith(suffix) and len(low) > len(suffix) + 2:
             if low[:-len(suffix)] in ENGLISH:
@@ -363,31 +401,78 @@ def _ordinary_word(low):
     return False
 
 
-def _opaque(low):
-    """Not an ordinary English word and not descriptively suffixed, so it
-    cannot be read as naming a *category*.  This is the only designator signal
-    keyed on absence, and it can never accept anything by itself -- see
-    ``person_name_ok`` limbs 1-4."""
-    return not _ordinary_word(low) and not _has_descriptive_suffix(low)
+def _fold_ascii(text):
+    """Strip combining marks: "baker" -> "baker", "Zoe" -> "Zoe"."""
+    return "".join(ch for ch in unicodedata.normalize("NFD", text)
+                   if not unicodedata.combining(ch))
+
+
+def _english_word(low):
+    """True when the token is a form of ordinary English, so it denotes a KIND
+    of thing rather than an individual.
+
+    An accented spelling is judged by its UNACCENTED letters, but only against
+    the lexicon and its regular inflections -- never against the compound rule,
+    which would read "Beyonce" as "bey"+"once" and lose a real name.
+
+    Three shapes, all positive, all about the token's own form:
+
+    ``_ordinary_word``   the lexicon, or a regular inflection of a lexicon stem;
+    silent ``e``         "grande" -> "grand", "baker" -> "bak" no, "grande" yes;
+    a compound of two English words  "barback" -> bar+back, "lifestyle" ->
+    life+style, "youtuber" -> you+tuber.
+
+    This is what "barista", "teenager", "blogger", "barback", "grande" and
+    "tech" need to be recognised as ordinary words rather than as names -- the
+    1913 lexicon predates them.  It is EVIDENCE OF A COMMON WORD, never a list
+    of things a cast member might be called, and it can only ever remove a
+    candidate name, never add one.
+    """
+    if _english_form(low):
+        return True
+    folded = _fold_ascii(low)
+    return folded != low and _ordinary_word(folded)
+
+
+def _english_form(low):
+    """One spelling considered as ordinary English, before accent folding."""
+    if _ordinary_word(low):
+        return True
+    if len(low) > 3 and low.endswith("e") and _ordinary_word(low[:-1]):
+        return True
+    for cut in range(3, len(low) - 2):
+        head, tail = low[:cut], low[cut:]
+        # Both halves substantial words, and neither half a curated NAME: "blue"
+        # + "tooth" is a compound word, "raghu" + "nathan" is a personal name
+        # and must not be read as ordinary English.
+        if (len(head) >= 4 and len(tail) >= 4
+                and head not in NAME_LEXICON and tail not in NAME_LEXICON
+                and _ordinary_word(head) and _ordinary_word(tail)):
+            return True
+    return False
 
 
 def designator_evidence(tok):
     """Affirmative evidence that ONE token designates an individual.
 
-    Three independent positive signals:
+    Two positive signals and nothing else:
 
     ``NAME_LEXICON``   a curated given-name/surname lexicon -- a common noun or
                        an adjective is deliberately absent from it, so "Old",
                        "King" and "Butler" carry no evidence;
-    ``_orthographic_marker``  internal capital or diacritic;
-    ``_opaque``        not an ordinary English word and not a descriptive form.
+    ``_orthographic_marker``  internal capital or accented Latin letter.
+
+    S75-T06 round 8: "not an ordinary English word" is no longer evidence of a
+    name.  Absence from a 1913 lexicon is not a positive signal, and it is what
+    admitted 'Barista Teenager', 'Uber Driver' and every modern coinage the
+    lexicon simply predates.  A token that is NOT ordinary English and NOT in
+    the name lexicon is UNKNOWn -- see ``person_name_ok``, which reads that
+    state as "could be a name", never as "is a name".
     """
     low = tok.casefold()
     if low in NAME_LEXICON:
         return True
-    if _orthographic_marker(tok):
-        return True
-    return _opaque(low)
+    return _orthographic_marker(tok)
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +487,41 @@ def _honorific(tok):
     return tok.casefold().rstrip(".") in _HONORIFICS
 
 
+#: The MODAL/AUXILIARY half of ``CLOSED_CLASS``.  "May" and "Will" are the two
+#: words that are both a closed-class auxiliary and an ordinary given name, so
+#: they never refuse a string on their own.  This is a grammatical sub-class of
+#: the same closure -- still no list of things a cast member might be called.
+_MODAL_CLASS = frozenset({
+    "may", "will", "can", "could", "would", "should", "shall", "must", "might",
+})
+
+#: Agentive / role-forming endings: a token that ends in one of these denotes a
+#: KIND OF PERSON ("walker", "creator", "specialist", "mixologist"), which is
+#: morphology, not a list of names.
+_AGENTIVE_SUFFIX = (
+    "er", "ers", "or", "ors", "ist", "ists", "ant", "ants", "ent", "ents",
+    "ee", "ees", "ary", "ling", "lings", "eer", "icians", "ician", "ese",
+)
+
+
+def _agentive(tok):
+    low = tok.casefold()
+    return any(low.endswith(sfx) and len(low) > len(sfx) + 2
+               for sfx in _AGENTIVE_SUFFIX)
+
+
+def _category_word(tok):
+    """The token denotes a KIND OF THING or a KIND OF PERSON: an ordinary
+    English word, an agentive form, or a story-role noun.
+
+    Evidence that a token is a common noun.  It can only ever remove a candidate
+    name; it never admits anything and it names no particular occupation a cast
+    member might hold.
+    """
+    low = tok.casefold()
+    return _english_word(low) or _agentive(tok) or low in ROLE_NOUNS
+
+
 def _initial(tok):
     """A single capital letter: the ``J.`` of ``A. J. Marchetti``."""
     return len(tok) == 1 and tok.isupper()
@@ -410,13 +530,14 @@ def _initial(tok):
 def _strip_title_phrase(toks):
     """Drop a leading honorific phrase, allowing one article in front of it:
     "The Reverend Thomas Hale" -> ["Thomas", "Hale"], "Dr Amina Osei" ->
-    ["Amina", "Osei"].  A leading article NOT followed by an honorific is left
-    in place, so "the narrator" keeps its determiner and fails limb 3.
+    ["Amina", "Osei"], "Sensei Tanaka" -> ["Tanaka"].  A leading article NOT
+    followed by an honorific is left in place, so "the narrator" keeps its
+    determiner and fails limb 3.
 
-    S75-T06 round 7: an initial is set aside only when the token after it is
-    another initial or an honorific, so "A. J. Marchetti" keeps its initials and
-    "A Barista" keeps its determiner.  "A" is BOTH an initial and a determiner,
-    and limb 3 has to see it whenever it is standing in front of ordinary words.
+    S75-T06 round 8: the honorific case is folded into one test, so a title with
+    its own orthography -- "Seorita", "Fräulein", "Sra" -- is recognised by the
+    same rule as "Dr" and "Sergeant", with no title vocabulary and no accent
+    exception.
     """
     out = list(toks)
     while out:
@@ -435,29 +556,103 @@ def _strip_title_phrase(toks):
     return out
 
 
+def _opaque(low):
+    """The token is not a form of ordinary English, so it denotes nothing we can
+    read -- a personal name, a brand, or a coinage.  Absence of meaning is not
+    evidence of a name; it only says the token is not obviously a category."""
+    return not _english_word(low)
+
+
+def _ledger_name(tok):
+    """The token is a curated given name or surname.  This is the STRONG name
+    evidence, and the only evidence that outranks a phrase reading."""
+    return tok.casefold() in NAME_LEXICON
+
+
+def _name_prefix(toks):
+    """The string opens with a personal-name FRAME: a single capital initial
+    ("J."), a title, a curated first name ("Dana"), or a modal homograph
+    ("May", "Will").  Structural only -- an accent is not a frame."""
+    for tok in toks:
+        if _initial(tok) or _honorific(tok):
+            return True
+        low = tok.casefold()
+        return low in NAME_LEXICON or low in _MODAL_CLASS
+    return False
+
+
+def personal_name_prefix(toks):
+    """The string opens like a personal name: a real first name from the lexicon
+    ("Dana", "Priya", "Will"), a single capital initial ("J.", "A. J."), or an
+    accented first word ("Saoirse", "Zoë", "Señorita").
+
+    "Uber Driver", "Wifi Password", "Muchacho Grande" and "Podcast Host" have
+    no such prefix and never will; "Dana Woman", "J. Baker", "Priya
+    Raghunathan" and "Saoirse Ní Chonaill" always do.  This is the signal that
+    separates a NAME from a phrase made of ordinary words, and it is positive
+    evidence about the string's own opening -- never a refusal for being absent
+    from a list.
+    """
+    for tok in toks:
+        if _initial(tok) or _honorific(tok):
+            return True
+        low = tok.casefold()
+        return (low in NAME_LEXICON or low in _MODAL_CLASS
+                or bool(_orthographic_marker(tok)))
+    return False
+
+
 def person_name_ok(value):
     """A ``display_name`` / ``character_id`` is a PERSON only on positive shape.
 
-    ALL of the following must hold for the WHOLE string:
+    Shape, in order.  A refusal is only ever a positive observation about the
+    string -- never "it is absent from a list of names":
 
-    1. 2..4 tokens after normalisation -- a single opaque word is not a name,
-       because "is this word unknown to the dictionary?" is absence, not
-       evidence; a name needs at least a given name and a family name;
-    2. every token is either a well-formed word (``word_shape_ok``) or a single
-       capital initial;
-    3. after a leading honorific phrase is set aside, NO token is a member of
-       ``CLOSED_CLASS`` -- one determiner, pronoun, preposition or conjunction
-       anywhere means the string describes a person instead of naming one;
-    4. every token is capitalised (proper-noun orthography);
-    5. at least one remaining token carries ``designator_evidence``.
+    1. 1..4 tokens, every token a well-formed word, a single capital initial or
+       an honorific, every token capitalised; a substituted glyph ("Offıcer")
+       fails the letter test inside ``word_shape_ok`` and is never recognised as
+       the word it was standing in for;
+    2. ``R_FUNC``  a determiner, pronoun, preposition or conjunction in the
+       string ("The Barista", "A Waiter", "Manager-On-Duty", "Self-Taught")
+       describes a person.  A MODAL ("May", "Will") is also an ordinary given
+       name, and an INTERNAL single letter is a middle initial ("Mary A.
+       Fields"); neither refuses anything;
+    3. ``R_NAME``  a curated name in the GIVEN-NAME position is decisive before
+       any phrase test -- "Dana Woman", "Mary Baker", "May Smith" and "Theresa
+       Manager" are people whose surname happens to be a common noun.  It reads
+       only the opening token, so "Dog Walker" and "Trader Joe" still describe;
+    4. ``R_LEAD``  a leading word form denoting a KIND OF PERSON ("Trader Joe",
+       "Barista Teenager", "Mixologist Barback") is a description;
+    5. ``R_COIN``  an opaque coinage or brand ("Uber", "Podcast", "Wifi") in the
+       given-name position with a common noun in the family-name position
+       ("Uber Driver", "Podcast Host", "Muchacho Grande") is a product, not a
+       person;
+    6. ``R_MOD``   ordinary English in the given-name position plus a
+       person-forming word in the family-name position ("Dog Walker", "Tech
+       Blogger", "Content-Creator") is a job, not a name;
+    7. ``R_LEDGER``  a curated surname anywhere ("Renata Cruz-Whitfield",
+       "A. J. Marchetti") settles the question;
+    8. ``R_FREE``  "J. Baker", "Plato", "Priya Raghunathan", "Ng Wei" and
+       "Nguyen Van Anh" carry a name frame, an accent, or a token that denotes
+       no category at all.
 
-    A single token can only pass via a positive designator signal, so a bare
-    common noun ("soldier", "woman", "barista") can never pass.  Two-token
-    descriptor phrases ("Old Man", "Background People") fail limb 5 because
-    every one of their tokens is an ordinary English word.
+    The only vocabularies consulted are the grammatical closure of function
+    words (``CLOSED_CLASS``), a curated LEXICON OF NAMES used solely as positive
+    evidence, the ordinary-English lexicon used as evidence that a token denotes
+    a KIND of thing, and the story-role nouns this module already ships for
+    ``episode_role``.  There is no list of what a cast member might be called.
+
+    KNOWN RESIDUAL, S75-T06 round 8: a title the lexicon does not carry
+    ("Señorita", "Fräulein", "Sensei") in front of a surname the lexicon does
+    not carry ("Gomez", "Schmidt", "Tanaka") is indistinguishable from "Nguyen
+    Van Anh" by any list-free rule -- both are two opaque name-shaped words.
+    Deciding that needs a LEXICON OF TITLES, which is a vocabulary and is not
+    added here.  The same limit refuses a real name whose every word is an
+    ordinary English word and none is in the shipped name lexicon ("Art Smith",
+    "Pearl Green", "Madonna").
     """
     toks = tokens(value)
-    if not 2 <= len(toks) <= 4:
+    if not 1 <= len(toks) <= 4:
         return False
     if not all(word_shape_ok(t) or _initial(t) or _honorific(t) for t in toks):
         return False
@@ -466,12 +661,69 @@ def person_name_ok(value):
     stripped = _strip_title_phrase(toks)
     if not stripped:
         return False
-    if any(t.casefold() in CLOSED_CLASS for t in stripped):
-        return False
     core = [t for t in stripped if not _initial(t)]
     if not core:
         return False
-    return any(designator_evidence(t) for t in core)
+
+    # R_FUNC -- "The Barista", "A Waiter", "Manager-On-Duty", "Self-Taught".
+    # A MODAL is also an ordinary given name ("May Smith", "Will Smith"); an
+    # INTERNAL single letter is a middle initial ("Mary A. Fields"); a LEADING
+    # single letter standing in front of a real name is that initial ("A. Mary").
+    for index, tok in enumerate(stripped):
+        low = tok.casefold()
+        if low not in CLOSED_CLASS or low in _MODAL_CLASS:
+            continue
+        if _initial(tok) and index > 0:
+            continue
+        if (_initial(tok) and index + 1 < len(stripped)
+                and designator_evidence(stripped[index + 1])):
+            continue
+        return False
+
+    # R_NAME -- a curated name in the GIVEN-NAME position is decisive before any
+    # phrase test: "Dana Woman", "Mary Baker", "May Smith" and "Theresa Manager"
+    # are people whose surname happens to be a common noun.  It looks only at the
+    # opening token, so "Dog Walker" and "Trader Joe" still read as descriptions.
+    if _name_prefix(core):
+        return True
+
+    # R_LEAD -- "Trader Joe", "Barista Teenager", "Old Man".
+    if (len(core) >= 2 and core[0].casefold() not in NAME_LEXICON
+            and (_agentive(core[0]) or core[0].casefold() in ROLE_NOUNS)):
+        return False
+
+    # R_COIN -- "Uber Driver", "Wifi Password", "Muchacho Grande".
+    # The family-name position must carry a real common noun: a surname of three
+    # letters or fewer ("Ng", "Obi", "Wei", "Lim") is never a category.
+    if (len(core) >= 2 and core[0].casefold() not in NAME_LEXICON
+            and core[-1].casefold() not in NAME_LEXICON
+            and _opaque(core[0].casefold())
+            and len(core[-1]) >= 4
+            and _english_word(core[-1].casefold())):
+        return False
+
+    # R_MOD -- "Dog Walker", "Tech Blogger", "Content-Creator".
+    if (len(core) >= 2 and core[0].casefold() not in NAME_LEXICON
+            and core[0].casefold() not in _MODAL_CLASS
+            and _english_word(core[0].casefold())
+            and (_agentive(core[-1]) or core[-1].casefold() in ROLE_NOUNS)):
+        return False
+
+    # R_LEDGER -- a curated surname anywhere ("Renata Cruz-Whitfield", "A. J.
+    # Marchetti") settles the question once the phrase tests have had their say.
+    if any(_ledger_name(t) for t in core):
+        return True
+
+    # R_FREE -- "J. Baker", "Plato", "Priya Raghunathan", "Ng Wei" and "Nguyen
+    # Van Anh" are names; "Podcast Host" and "Barista Teenager" are phrases.
+    if len(core) == 1:
+        if _name_prefix(stripped):
+            return True
+        return not _category_word(core[0])
+    if _name_prefix(core) or personal_name_prefix(core):
+        return True
+    return (any(_opaque(t.casefold()) for t in core)
+            and (len(core[-1]) < 4 or not _category_word(core[-1])))
 
 
 def story_role_ok(value):
@@ -597,7 +849,19 @@ def id_ok(value):
         return False
     if re.fullmatch(r"[0-9a-fA-F]{8,}", text):
         return True
-    segments = [s for s in re.split(r"[^A-Za-z]+", text) if s]
+    # S75-T06 round 8: an alphabetic segment is a run of LETTERS, not a run of
+    # ASCII letters.  Splitting on ``[^A-Za-z]`` broke "Voıce" into "Vo"+"ce"
+    # and "Peοple" into "Pe"+"ple", giving a single disguised word the two
+    # segments identifier structure demands.
+    segments, current = [], []
+    for ch in text:
+        if ch.isalpha():
+            current.append(ch)
+        elif current:
+            segments.append("".join(current))
+            current = []
+    if current:
+        segments.append("".join(current))
     if not segments or not all(word_shape_ok(s) for s in segments):
         return False
     return len(segments) >= 2
@@ -644,9 +908,10 @@ def content_issue(value, kind):
         stripped = _strip_title_phrase(toks)
         if not stripped:
             return "honorific only"
-        if any(t.casefold() in CLOSED_CLASS for t in stripped):
+        if any(t.casefold() in CLOSED_CLASS and t.casefold() not in _MODAL_CLASS
+               and not _initial(t) for t in stripped):
             return "closed-class word inside the string"
-        return "no designator evidence: describes a category"
+        return "no name evidence: describes a category"
     if kind == "role":
         toks = tokens(value)
         if not toks:
