@@ -1,3 +1,14 @@
+## [Unreleased]  -  2026-10-25  -  PBB-318 / T-04 repair: verified external storage binding, child temp propagation and measured global capacity
+
+- Re-lands `evidence/storage-and-resource-receipt.json` (byte-identical, blob `e8cfbbad1f54d20233c60996bc155504d817885b`) and bumps Skill 38 to v2.0.36 with its own changelog entry.
+- Repairs verifier PBB-263 D1 on `7c6248c6`: that commit's message claimed Skill 38 v2.0.32 while its own files said v2.0.34. Reproduced with `scripts/qc-assert-commit-version-claim.py --commit 7c6248c6` → exit 1; the rebase, not the artifact, introduced the mismatch.
+- Adds the class-wide gate `scripts/qc-assert-commit-version-claim.py`, run from `skill-version-newline-guard` on every `skill-version.txt` change. It refuses a commit whose message names a Skill 38 version the commit does not contain, a silent bump, or a stale first heading/claim in either CHANGELOG. Embedded self-test: 10 fixtures, wrong records fail, right records pass.
+- Measured facts in the receipt, each with the command and exit code that produced it: mount `/dev/disk7s1`, `st_dev 16777244`, UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA`; filesystem 4000770232320 bytes total and 2524230701056 available; 24 GiB RAM; limits 10 agents per workflow / 50 workflows / 500 agents.
+- Recorded gaps, not papered over: the `config/storage.json` device pin is stale (`disk5s1` / `16777240`) and is never read by `tools/control.py`; macOS `mktemp` ignores `TMPDIR`; `PYTHONPYCACHEPREFIX` is ignored under `-I`; 9 `node_modules` symlinks under the run roots resolve off-volume. Provider quota, memory admission and unprobed tool caches remain UNKNOWN.
+- In plain English: the proof of where the work lives and where temporary files actually go is back, and the commit record that lied about its own version can no longer pass a gate.
+- Nothing is enforced by control code yet; no config, ledger, provider, limit or credential was changed. The abandoned repair commit `702d6e4cdb` is not an ancestor of this branch.
+- Risk level: LOW (evidence artifact, bookkeeping and one read-only CI gate).
+
 ## [Unreleased]  -  2026-10-24  -  PBB-070 / T-47: cross-repository compatibility manifest and deployment evidence
 
 - Adds `implementation/pbb-070/compatibility-manifest.json` and `implementation/pbb-070/DEPLOYMENT-EVIDENCE.md`. The manifest binds openclaw-onboarding `bccc4050f`, 999-setup `1d1545fc8`, and blackceo-command-center `ef6b9364e` (pinned tag v7.6.112) by exact commit, names the interfaces that were checked, and marks every interface that is not proven.
