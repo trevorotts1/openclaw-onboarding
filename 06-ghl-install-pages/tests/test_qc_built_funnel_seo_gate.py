@@ -32,14 +32,25 @@ VALID_SEO = {
 }
 
 
-def _layout(tmp_path, with_tools=True):
-    """Copy the wrapper into a throwaway skill dir whose FAB scorer always PASSES."""
+def _layout(tmp_path, with_tools=True, crash_tools=False):
+    """Copy the wrapper into a throwaway skill dir whose FAB scorer always PASSES.
+
+    crash_tools=True swaps the real ghl_builder for one whose assert_seo_populated
+    raises mid-gate: the pre-gate then dies with a traceback and NO "FAIL" line,
+    which is exactly the shape only the exit-status path can catch.
+    """
     layout = tmp_path / "layout"
     skill = layout / "skill"
     skill.mkdir(parents=True)
     script = skill / "qc-built-funnel.sh"
     shutil.copy2(SCRIPT, script)
-    if with_tools:
+    if crash_tools:
+        tools = skill / "tools"
+        tools.mkdir()
+        (tools / "ghl_builder.py").write_text(
+            "def assert_seo_populated(meta, *, brand=None, page_copy=None):\n"
+            "    raise RuntimeError('boom mid-gate')\n", encoding="utf-8")
+    elif with_tools:
         (skill / "tools").symlink_to(SKILL_DIR / "tools", target_is_directory=True)
     scorer_dir = layout / "shared-utils"
     scorer_dir.mkdir()
@@ -54,7 +65,8 @@ def _run(script, evidence, tmp_path, extra_env=None):
     tmpdir = tmp_path / "tmp"
     tmpdir.mkdir(exist_ok=True)
     env = dict(os.environ)
-    for key in ("CC_TASK_ID", "PAGE_QC_ENABLED", "QC_FUNNEL_LEGACY_EVIDENCE"):
+    for key in ("CC_TASK_ID", "PAGE_QC_ENABLED", "QC_FUNNEL_LEGACY_EVIDENCE",
+                "PYTHONPATH", "PYTHONHOME"):
         env.pop(key, None)
     env["TMPDIR"] = str(tmpdir)
     env.update(extra_env or {})
@@ -124,4 +136,54 @@ def test_import_failure_fails(tmp_path):
     rc, out = _run(script, evidence, tmp_path)
 
     assert "FAIL ghl_builder import failed" in out, out
+    assert rc == 1, (rc, out)
+
+
+def test_pre_gate_crash_without_fail_line_still_fails(tmp_path):
+    """The exit-status path, exercised alone: a pre-gate that dies with a traceback
+    and NO FAIL text must still hard-miss. Every other test in this file prints a
+    FAIL line, so the belt-and-braces `*FAIL*` scan passes them all — delete the
+    SEO_RC branch in qc-built-funnel.sh and only this test notices."""
+    script, evidence = _layout(tmp_path, crash_tools=True)
+    (evidence / "page.json").write_text(
+        json.dumps({"pageData": {"seoMeta": VALID_SEO}}), encoding="utf-8")
+
+    rc, out = _run(script, evidence, tmp_path)
+
+    assert "RuntimeError: boom mid-gate" in out, out   # the crash really happened
+    for marker in ("FAIL no seoMeta", "FAIL seoMeta invalid",
+                   "FAIL ghl_builder import", "FAIL unreadable"):
+        assert marker not in out, (marker, out)        # no FAIL text to scan for
+    assert "pre-gate exited" in out, out               # failure came from the status
+    assert rc == 1, (rc, out)
+
+
+def test_present_but_invalid_seo_meta_is_hard_miss_even_with_legacy(tmp_path):
+    """PRESENT-BUT-INVALID seoMeta is a HALT — and QC_FUNNEL_LEGACY_EVIDENCE=1
+    must never widen to rescue it (the opt-out covers MISSING only)."""
+    script, evidence = _layout(tmp_path)
+    (evidence / "page.json").write_text(
+        json.dumps({"pageData": {"seoMeta": dict(VALID_SEO, title="")}}),
+        encoding="utf-8")
+
+    rc, out = _run(script, evidence, tmp_path)
+    assert "FAIL seoMeta invalid in page.json" in out, out
+    assert rc == 1, (rc, out)
+
+    rc, out = _run(script, evidence, tmp_path,
+                   {"QC_FUNNEL_LEGACY_EVIDENCE": "1"})
+    assert "FAIL seoMeta invalid in page.json" in out, out
+    assert "WARN no seoMeta" not in out, out
+    assert rc == 1, (rc, out)
+
+
+def test_legacy_opt_out_does_not_rescue_unreadable_evidence(tmp_path):
+    """Unreadable evidence stays a hard miss under the legacy opt-out."""
+    script, evidence = _layout(tmp_path)
+    (evidence / "page.json").write_text('{"pageData": {', encoding="utf-8")
+
+    rc, out = _run(script, evidence, tmp_path,
+                   {"QC_FUNNEL_LEGACY_EVIDENCE": "1"})
+
+    assert "FAIL unreadable evidence page.json" in out, out
     assert rc == 1, (rc, out)
