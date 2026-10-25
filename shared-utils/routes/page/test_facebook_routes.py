@@ -608,5 +608,265 @@ class BindingVerificationTests(unittest.TestCase):
             store.close()
 
 
+class PermissionKeyIsTheGateTests(unittest.TestCase):
+    """Defect 4 (PBB-186): ROUTE_PERMISSION_KEY was a dead constant.
+
+    It named the one fact authorising each route and appeared in no other
+    line, so the map and the gate could drift apart unnoticed. Before the
+    repair `src.count("ROUTE_PERMISSION_KEY") == 1`.
+
+    Before: fails (count is 1).  After: passes (the gate consumes the map).
+    """
+
+    def verdict(self, route, facts):
+        return routes.evaluate_eligibility(route, facts, now=1000.0)
+
+    def test_the_permission_map_is_reachable_from_the_gate(self):
+        src = Path(routes.__file__).read_text()
+        self.assertGreater(src.count("ROUTE_PERMISSION_KEY"), 1,
+                           "ROUTE_PERMISSION_KEY defined but never referenced")
+
+    def test_every_route_names_exactly_one_permission_key(self):
+        self.assertEqual(
+            set(routes.ROUTE_PERMISSION_KEY), set(routes.ROUTES))
+        self.assertEqual(len(set(routes.ROUTE_PERMISSION_KEY.values())),
+                         len(routes.ROUTES), "one key per route, never shared")
+        # The gate's refusal wording is paired with the key in one place too.
+        refused = getattr(routes, "ROUTE_PERMISSION_REFUSED", None)
+        self.assertIsNotNone(refused,
+                             "ROUTE_PERMISSION_REFUSED is missing")
+        self.assertEqual(set(refused), set(routes.ROUTES))
+
+    def test_the_map_naming_the_fact_is_what_the_gate_consumes(self):
+        # Rename the mapped key in the fact payload: the route must then be
+        # refused on that exact key, proving the gate reads the map and not a
+        # private second spelling of the name.
+        cases = (
+            (routes.ROUTE_PUBLIC_REPLY, public_facts(),
+             routes.ROUTE_PERMISSION_KEY[routes.ROUTE_PUBLIC_REPLY],
+             "NO_PUBLIC_REPLY_PERMISSION"),
+            (routes.ROUTE_COMMENT_PRIVATE_OPENER, opener_facts(),
+             routes.ROUTE_PERMISSION_KEY[routes.ROUTE_COMMENT_PRIVATE_OPENER],
+             "NO_COMMENT_OPENER_PERMISSION"),
+            (routes.ROUTE_INBOUND_DM, inbound_facts(),
+             routes.ROUTE_PERMISSION_KEY[routes.ROUTE_INBOUND_DM],
+             "NO_INBOUND_DM_WINDOW"),
+        )
+        for route, facts, key, reason in cases:
+            with self.subTest(route=route, key=key):
+                renamed = {k: v for k, v in facts.items() if k != key}
+                renamed[key + "_renamed"] = True
+                out = self.verdict(route, renamed)
+                self.assertEqual((out.verdict, out.evidence["reason"]),
+                                 ("SUPPRESSED", reason))
+                self.assertEqual(out.evidence.get("missing"), key)
+                # And the unchanged payload still allows.
+                self.assertEqual(self.verdict(route, facts).verdict, "ALLOW")
+
+    def test_a_false_permission_still_refuses_on_the_mapped_reason(self):
+        for route, facts, reason in (
+                (routes.ROUTE_PUBLIC_REPLY, public_facts(
+                    public_reply_permission=False),
+                 "NO_PUBLIC_REPLY_PERMISSION"),
+                (routes.ROUTE_COMMENT_PRIVATE_OPENER, opener_facts(
+                    comment_private_opener_permission=0),
+                 "NO_COMMENT_OPENER_PERMISSION"),
+                (routes.ROUTE_INBOUND_DM, inbound_facts(inbound_dm_window="yes"),
+                 "NO_INBOUND_DM_WINDOW")):
+            with self.subTest(route=route):
+                out = self.verdict(route, facts)
+                self.assertEqual((out.verdict, out.evidence["reason"]),
+                                 ("SUPPRESSED", reason))
+
+
+class RefAttributionIsChannelBoundTests(unittest.TestCase):
+    """Defect 5 (PBB-186): resolve_entry ignored its channel argument.
+
+    `channel` was validated and then never read, so an IG_DM entry was
+    credited with an m.me Messenger link:
+      resolve_entry(channel="IG_DM", ref="mme-ref-1",
+                    ref_routes={"mme-ref-1": "item-guide"})
+      -> route='item-guide', basis='REF', attribution='PRESENT'
+    SPEC ("never assume link attribution") forbids that.
+
+    Before: fails (attribution is PRESENT).  After: passes (UNRECOGNIZED).
+    """
+
+    REFS = {"mme-ref-1": "item-guide"}
+
+    def test_an_instagram_entry_is_not_credited_with_a_messenger_link(self):
+        out = routes.resolve_entry(channel="IG_DM", ref="mme-ref-1",
+                                   ref_routes=self.REFS)
+        self.assertNotEqual(out.attribution, routes.ATTRIBUTION_PRESENT,
+                            f"IG_DM entry attributed to an m.me ref: {out}")
+        self.assertEqual(out.attribution, routes.ATTRIBUTION_UNRECOGNIZED)
+
+    def test_a_foreign_channel_ref_falls_through_to_the_keyword(self):
+        out = routes.resolve_entry(channel="IG_DM", ref="mme-ref-1",
+                                   text="vault",
+                                   ref_routes=self.REFS,
+                                   keyword_routes={"vault": "item-vault"})
+        self.assertEqual(out.route, "item-vault")
+        self.assertEqual(out.basis, routes.BASIS_KEYWORD_FALLBACK)
+        self.assertEqual(out.attribution, routes.ATTRIBUTION_UNRECOGNIZED)
+
+    def test_messenger_itself_still_credits_the_ref(self):
+        out = routes.resolve_entry(channel="FB_DM", ref="mme-ref-1",
+                                   ref_routes=self.REFS)
+        self.assertEqual((out.route, out.basis, out.attribution),
+                         ("item-guide", routes.BASIS_REF,
+                          routes.ATTRIBUTION_PRESENT))
+
+    def test_every_non_messenger_channel_is_refused_the_attribution(self):
+        for channel in ("IG_DM", "IG_COMMENT", "FB_PUBLIC", "SMS"):
+            with self.subTest(channel=channel):
+                out = routes.resolve_entry(channel=channel, ref="mme-ref-1",
+                                           ref_routes=self.REFS)
+                self.assertNotEqual(out.attribution,
+                                    routes.ATTRIBUTION_PRESENT)
+
+    def test_no_attribution_source_invented_on_a_foreign_channel(self):
+        out = routes.resolve_entry(channel="IG_DM", ref="mme-ref-1",
+                                   ref_routes=self.REFS)
+        self.assertIsNone(out.route)
+        self.assertTrue(out.prompt_keyword)  # the welcome is the only effect
+
+
+class ApprovedKeywordTableTests(unittest.TestCase):
+    """Defect 6 (PBB-186): keyword_routes keys were not normalised.
+
+    Only the typed text was normalised, so the routing table's own spelling
+    decided the contract. An approved keyword of "GUIDE" (or "Guide",
+    " guide ", "guide!") never routed, and every reader got the "which keyword
+    did you see" welcome. The approval schema allows any string with
+    minLength 1.
+
+    Before: fails (route is None).  After: passes (the key is indexed the
+    same way the text is).
+    """
+
+    def test_an_approved_keyword_typed_verbatim_routes(self):
+        for key in ("GUIDE", "Guide", " guide ", "guide!"):
+            with self.subTest(key=key):
+                out = routes.resolve_entry(channel="FB_DM", text=key,
+                                           keyword_routes={key: "item-guide"})
+                self.assertEqual(out.route, "item-guide",
+                                 f"approved key {key!r} typed verbatim -> {out}")
+
+    def test_typing_it_normalised_or_padded_also_routes(self):
+        for text in ("guide", "GUIDE", "  Guide!  ", "G U I D E".replace(" ", "")):
+            with self.subTest(text=text):
+                out = routes.resolve_entry(channel="FB_DM", text=text,
+                                           keyword_routes={"GUIDE": "item-guide"})
+                self.assertEqual(out.route, "item-guide")
+
+    def test_keys_that_only_differ_in_normalisable_form_agree(self):
+        # "guide" and "GUIDE" normalise to one token and name the same item:
+        # that is a duplicate approval, not a conflict, and it still routes.
+        out = routes.resolve_entry(
+            channel="FB_DM", text=" guide! ",
+            keyword_routes={"guide": "item-guide", "GUIDE": "item-guide"})
+        self.assertEqual(out.route, "item-guide")
+        out = routes.resolve_entry(channel="FB_DM", text="  GUIDE ",
+                                   keyword_routes={" guide ": "item-guide",
+                                                   "Guide.": "item-guide"})
+        self.assertEqual(out.route, "item-guide")
+
+    def test_two_keys_collapsing_to_one_route_agree(self):
+        out = routes.resolve_entry(channel="FB_DM", text="vault",
+                                   keyword_routes={"vault": "item-vault",
+                                                   "VAULT": "item-vault"})
+        self.assertEqual(out.route, "item-vault")
+
+    def test_two_approved_keys_that_collide_and_disagree_are_refused(self):
+        # Silent last-writer-wins would pick one of two different promises.
+        with self.assertRaises(routes.RouteError):
+            routes.resolve_entry(
+                channel="FB_DM", text="guide",
+                keyword_routes={"GUIDE": "item-guide", "guide!": "item-other"})
+
+    def test_a_key_that_normalises_to_nothing_is_refused(self):
+        for bad in ("   ", "!!!"):
+            with self.subTest(key=bad):
+                with self.assertRaises(routes.RouteError):
+                    routes.resolve_entry(channel="FB_DM", text="guide",
+                                         keyword_routes={bad: "item-guide"})
+
+    def test_non_string_keys_and_empty_routes_are_refused(self):
+        with self.assertRaises(routes.RouteError):
+            routes.resolve_entry(channel="FB_DM", text="guide",
+                                 keyword_routes={1: "item-guide"})
+        with self.assertRaises(routes.RouteError):
+            routes.resolve_entry(channel="FB_DM", text="guide",
+                                 keyword_routes={"guide": "  "})
+        with self.assertRaises(routes.RouteError):
+            routes.resolve_entry(channel="FB_DM", text="guide",
+                                 keyword_routes=["guide"])
+
+    def test_never_still_substring_matches_after_normalisation(self):
+        out = routes.resolve_entry(channel="FB_DM", text="GUIDED",
+                                   keyword_routes={"GUIDE": "item-guide"})
+        self.assertIsNone(out.route)
+        self.assertTrue(out.prompt_keyword)
+
+
+class UnverifiableBindingTests(unittest.TestCase):
+    """PROBE-MIRROR (PBB-186 'observed'): an action carrying a current
+    revision but no account_binding_revision evaluated ALLOW. The
+    outbound-action schema requires account_binding_revision, so there is
+    nothing to verify and the binding is not a passing one.
+
+    Before: fails (ALLOW).  After: passes (QUARANTINED / BINDING_UNVERIFIED).
+    """
+
+    def test_no_action_binding_to_check_quarantines(self):
+        for route, facts in ((routes.ROUTE_PUBLIC_REPLY, public_facts()),
+                             (routes.ROUTE_COMMENT_PRIVATE_OPENER,
+                              opener_facts()),
+                             (routes.ROUTE_INBOUND_DM, inbound_facts())):
+            with self.subTest(route=route):
+                unverified = {k: v for k, v in facts.items()
+                              if k != "account_binding_revision"}
+                out = routes.evaluate_eligibility(route, unverified,
+                                                  now=1000.0)
+                self.assertEqual(out.verdict, "QUARANTINED")
+                self.assertEqual(out.evidence["reason"], "BINDING_UNVERIFIED")
+                self.assertIsNone(
+                    out.evidence["account_binding_revision"])
+                self.assertEqual(out.evidence["current_binding_revision"],
+                                 "binding-7")
+
+    def test_a_quiet_thread_with_no_binding_at_all_still_sends(self):
+        # No binding claim anywhere is not a failed check; only a claimed
+        # current revision with nothing to compare is.
+        for route, facts in ((routes.ROUTE_PUBLIC_REPLY, public_facts()),
+                             (routes.ROUTE_COMMENT_PRIVATE_OPENER,
+                              opener_facts()),
+                             (routes.ROUTE_INBOUND_DM, inbound_facts())):
+            with self.subTest(route=route):
+                quiet = {k: v for k, v in facts.items()
+                         if k not in ("account_binding_revision",
+                                      "current_binding_revision")}
+                out = routes.evaluate_eligibility(route, quiet, now=1000.0)
+                self.assertEqual(out.verdict, "ALLOW")
+
+
+class ApprovalTableChannelTests(unittest.TestCase):
+    """The ref table is trimmed, the keyword table is normalised, and both are
+    indexed the way the lookup compares -- so no approved spelling is lost."""
+
+    def test_padded_ref_keys_still_match_a_trimmed_ref(self):
+        out = routes.resolve_entry(channel="FB_DM", ref="mme-ref-1",
+                                   ref_routes={"  mme-ref-1  ": "item-guide"})
+        self.assertEqual(out.route, "item-guide")
+
+    def test_an_empty_ref_table_falls_through_to_the_keyword(self):
+        out = routes.resolve_entry(channel="FB_DM", ref="mme-ref-1",
+                                   text="guide",
+                                   keyword_routes={"GUIDE": "item-guide"})
+        self.assertEqual(out.route, "item-guide")
+        self.assertEqual(out.basis, routes.BASIS_KEYWORD_FALLBACK)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

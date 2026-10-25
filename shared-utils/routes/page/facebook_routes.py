@@ -72,11 +72,27 @@ ROUTE_CHANNEL = {
     ROUTE_INBOUND_DM: "FB_DM",
 }
 
+# A ref is a LINK, and a link lives on exactly one channel. The only refs with
+# any evidence here are m.me Messenger links (D-05), so link attribution is
+# credited only on the Messenger channel. An entry on another channel is never
+# credited with a Messenger link ("never assume link attribution", SPEC): such
+# a ref is recorded UNRECOGNIZED and falls through to the keyword, exactly like
+# an unknown ref (ponytail: one channel of link evidence; add per-ref channel
+# scoping when a client ships a non-Messenger link table).
+MESSENGER_CHANNEL = "FB_DM"
+
 # The single fact that authorises each route. Deliberately not shared.
 ROUTE_PERMISSION_KEY = {
     ROUTE_PUBLIC_REPLY: "public_reply_permission",
     ROUTE_COMMENT_PRIVATE_OPENER: "comment_private_opener_permission",
     ROUTE_INBOUND_DM: "inbound_dm_window",
+}
+# Why the gate refuses when that one fact is not true. Paired with the key
+# above so the gate has no second spelling of either.
+ROUTE_PERMISSION_REFUSED = {
+    ROUTE_PUBLIC_REPLY: "NO_PUBLIC_REPLY_PERMISSION",
+    ROUTE_COMMENT_PRIVATE_OPENER: "NO_COMMENT_OPENER_PERMISSION",
+    ROUTE_INBOUND_DM: "NO_INBOUND_DM_WINDOW",
 }
 
 # Only these prove the reader is inside a window we may answer. An outbound or
@@ -145,6 +161,42 @@ def normalise_keyword(value: Any) -> str:
     return collapsed.strip(string.punctuation)
 
 
+def _approved_table(table: Mapping[Any, Any], *, label: str,
+                    key_normaliser: Any = normalise_keyword) -> Dict[str, str]:
+    """Index an approval table by the key the lookup will compare against.
+
+    The caller reads one event and normalises what it read (a keyword is
+    casefolded, a ref is trimmed). Comparing that against a table indexed by
+    the raw approved spelling means an approved keyword of "GUIDE" never
+    matches the reader who typed "GUIDE" -- the routing table would decide the
+    contract instead of the reader. So the table is normalised the same way,
+    before any lookup.
+
+    Two approved keys that normalise to one lookup value must agree on the
+    route. If they disagree the table is ambiguous and no reading of it can be
+    honest, so it is refused outright rather than silently picking one.
+    """
+    if not isinstance(table, Mapping):
+        raise RouteError(f"bad_input: {label} must be a mapping")
+    indexed: Dict[str, str] = {}
+    for raw_key, route in table.items():
+        if not isinstance(raw_key, str):
+            raise RouteError(f"bad_input: {label} keys must be strings,"
+                             f" got {type(raw_key).__name__}")
+        key = key_normaliser(raw_key)
+        if not key:
+            raise RouteError(f"bad_input: {label} key {raw_key!r} normalises"
+                             " to nothing")
+        if not isinstance(route, str) or not route.strip():
+            raise RouteError(f"bad_input: {label} route for {raw_key!r} must"
+                             " be a non-empty string")
+        if key in indexed and indexed[key] != route:
+            raise RouteError(f"bad_input: {label} keys {indexed[key]!r} and"
+                             f" {route!r} both normalise to {key!r}")
+        indexed[key] = route
+    return indexed
+
+
 def resolve_entry(*, channel: Any, text: Any = None, ref: Any = None,
                   ref_routes: Optional[Mapping[str, str]] = None,
                   keyword_routes: Optional[Mapping[str, str]] = None
@@ -154,24 +206,34 @@ def resolve_entry(*, channel: Any, text: Any = None, ref: Any = None,
     An unknown ref is recorded honestly as UNRECOGNIZED and falls through to
     the keyword. A known ref wins over a contradictory keyword: the keyword is
     a fallback, not a second attribution source.
+
+    Ref attribution is channel-bound. A ref is a link, and the only link
+    evidence here is an m.me Messenger link (D-05), so an entry that did not
+    arrive on Messenger is never credited with one -- an Instagram entry is
+    not attributed to a Messenger link ("never assume link attribution").
+    Such a ref is recorded UNRECOGNIZED and falls through to the keyword.
     """
-    _text(channel, "channel")
-    if ref_routes is None:
-        ref_routes = {}
-    if keyword_routes is None:
-        keyword_routes = {}
+    channel_value = _text(channel, "channel")
+    refs = _approved_table({} if ref_routes is None else ref_routes,
+                           label="ref_routes",
+                           key_normaliser=lambda k: k.strip())
+    words = _approved_table({} if keyword_routes is None else keyword_routes,
+                            label="keyword_routes")
 
     ref_value = ref.strip() if isinstance(ref, str) and ref.strip() else ""
-    if ref_value and ref_value in ref_routes:
-        return EntryResult(route=ref_routes[ref_value], basis=BASIS_REF,
+    matched_ref = (ref_value in refs
+                   and channel_value == MESSENGER_CHANNEL)
+    if matched_ref:
+        return EntryResult(route=refs[ref_value], basis=BASIS_REF,
                            attribution=ATTRIBUTION_PRESENT, reason="ref_matched")
     attribution = ATTRIBUTION_ABSENT
     if ref_value:
+        # Present in the event, but not attribution this channel may claim.
         attribution = ATTRIBUTION_UNRECOGNIZED
 
     keyword = normalise_keyword(text)
-    if keyword and keyword in keyword_routes:
-        return EntryResult(route=keyword_routes[keyword],
+    if keyword and keyword in words:
+        return EntryResult(route=words[keyword],
                            basis=BASIS_KEYWORD_FALLBACK,
                            attribution=attribution, keyword=keyword,
                            reason="keyword_fallback")
@@ -245,17 +307,27 @@ def evaluate_eligibility(route: Any, facts: Mapping[str, Any], *,
                       "route": route,
                       "account_binding_revision": bound,
                       "current_binding_revision": current})
+    if bound is None and current is not None:
+        # The action carries no binding to check against the current one. The
+        # outbound-action schema requires account_binding_revision on every
+        # action, so this is a malformed or unverifiable binding, and an
+        # unverifiable binding is not a passing one. (This is the PROBE-MIRROR
+        # shape PBB-186 observed passing ALLOW.)
+        return GateVerdict(
+            verdict="QUARANTINED", checked_at=ts,
+            binding_revision=current,
+            evidence={"reason": "BINDING_UNVERIFIED",
+                      "route": route,
+                      "account_binding_revision": bound,
+                      "current_binding_revision": current})
 
+    permission_key = ROUTE_PERMISSION_KEY[route]
     if route == ROUTE_PUBLIC_REPLY:
-        if facts.get("public_reply_permission") is not True:
-            return refuse("NO_PUBLIC_REPLY_PERMISSION")
         basis = "PLATFORM_ELIGIBILITY"
     elif route == ROUTE_COMMENT_PRIVATE_OPENER:
         # The opener needs the comment that opened it, not a DM window.
         if not facts.get("comment_event_id"):
             return refuse("NO_COMMENT_EVENT")
-        if facts.get("comment_private_opener_permission") is not True:
-            return refuse("NO_COMMENT_OPENER_PERMISSION")
         basis = "PLATFORM_ELIGIBILITY"
     else:  # ROUTE_INBOUND_DM
         if not facts.get("inbound_message_id"):
@@ -264,9 +336,12 @@ def evaluate_eligibility(route: Any, facts: Mapping[str, Any], *,
         if refreshed_by not in INBOUND_REFRESH_BASES:
             return refuse("ELIGIBILITY_NOT_REFRESHED",
                           eligibility_refreshed_by=refreshed_by)
-        if facts.get("inbound_dm_window") is not True:
-            return refuse("NO_INBOUND_DM_WINDOW")
         basis = "INBOUND_MESSAGE"
+
+    # The single fact that authorises this route, named by the map above. No
+    # second spelling of either the key or the refusal reason lives in here.
+    if facts.get(permission_key) is not True:
+        return refuse(ROUTE_PERMISSION_REFUSED[route], missing=permission_key)
 
     return GateVerdict(
         verdict="ALLOW", checked_at=ts,
