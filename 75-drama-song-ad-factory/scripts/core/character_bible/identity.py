@@ -27,15 +27,15 @@ Standard library only. Run the focused tests with::
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
-import secrets
+import os
+import threading
 
 __all__ = [
     "CastDefect", "IdentityDefect", "canonical_digest", "library_digest",
     "validate_episode_setting", "validate_identity", "validate_library",
     "validate_cast", "seal_identity", "receipt_digest", "resolve_receipt",
-    "mint_receipt",
+    "mint_receipt", "register_character",
     "SCHEMA_VERSION", "MANIFEST_SCHEMA_VERSION", "EPISODE_SCHEMA_VERSION",
     "EPISODE_ONLY_FIELDS", "ROLES", "CROWD_REQUIRED",
     "ANONYMOUS_SPEAKER_PATTERNS", "APPROVAL_BINDING_KEYS", "CLAIM_KEYS",
@@ -188,9 +188,35 @@ def library_digest(snapshot):
 
 
 # --- approval receipts ------------------------------------------------------
+#
+# SECURITY (do not loosen in a later round): the mint lives OUTSIDE this
+# process. Rounds one to three sealed receipts with a secret held in this
+# interpreter -- a module-global key plus a module-global registry -- and an
+# in-process caller read the key, wrote the registry, recomputed the mark and
+# had its forgery stored. No in-process seal of that shape can hold: module
+# globals, closure cells and the gc graph are reachable by any caller in the
+# same interpreter, so every key, registry and "read-only" view reachable from
+# here is reachable by whoever wants to forge.
+#
+# So the secret is generated and held by a SEPARATE SIGNER PROCESS (see
+# ``_SIGNER_SOURCE``) and never enters this one. This module holds no key, no
+# mint registry and no capability object: the only thing here that talks to the
+# signer is a plain request/reply over an OS pipe the signer is started with. A
+# mint mark can be produced only by that process, and only for a promotion step
+# its own state machine performed -- a character held at the step's
+# ``from_state`` in the store the receipt is bound to. That is what makes "the
+# explicit promotion step is the sole minter" a property of the system rather
+# than a claim in a docstring.
+#
+# Declared residual, and the deployment impact: this machine gives the caller
+# and the signer the SAME unix user, so a caller that is willing to re-point the
+# pipe (or to rewrite this module) can answer as the signer. That is tampering
+# with the transport itself, not a reachable capability -- there is no object,
+# key or registry inside this process that can produce or bless a mark. Closing
+# it needs an OS boundary this environment cannot create: run the signer under a
+# different uid, with the caller holding only what that uid hands it. Production
+# therefore runs a signer process alongside the store.
 
-#: One approval binding is ONE receipt, and a receipt is a closed shape. Any
-#: other key is a forged or hand-written object, not a record of an approval.
 MINT_FIELD = "mint_mark"
 RECEIPT_KIND = "approval_receipt"
 APPROVAL_BINDING_KEYS = frozenset({
@@ -200,52 +226,244 @@ APPROVAL_BINDING_KEYS = frozenset({
 #: The claim a receipt makes. The mint mark is computed over exactly this.
 CLAIM_KEYS = frozenset(APPROVAL_BINDING_KEYS - {MINT_FIELD})
 
-#: SECURITY (do not loosen in a later round): the mint key lives in process
-#: memory only. It is never written to disk, never stored in a record, never
-#: logged. A receipt typed by hand, and a receipt rebuilt from a JSON file any
-#: other run wrote, cannot both carry a mark this key reproduces -- so both are
-#: refused. This is what makes "the explicit promotion step is the sole minter"
-#: a property of the code instead of a claim in a docstring.
-_MINT_KEY = secrets.token_bytes(32)
-#: receipt_id -> the exact claim body that id was minted for. Memory only.
-#: Single use: an id is minted once, so it can never be re-pointed at another
-#: character or another promotion step.
-_MINTED = {}
+#: The signer: a standalone program, no import from this package. It generates
+#: its own mint secret at startup (``secrets.token_bytes(32)``), keeps it in its
+#: own memory, and answers exactly three requests over the pipe it is started
+#: with: ``register`` (a store declares a character at a draft state), ``mint``
+#: (the promotion step) and ``verify`` (is this receipt one this signer minted,
+#: for this client and this store). It exits when its parent closes that pipe.
+_SIGNER_SOURCE = r'''
+import hashlib, hmac, json, os, secrets, sys
+
+PARENT = int(sys.argv[1])
+IN_FD = int(sys.argv[2])
+OUT_FD = int(sys.argv[3])
+KEY = secrets.token_bytes(32)
+CLAIMS = {}
+BINDS = {}
+CHARS = {}
+DONE = {}
+
+
+def canon(obj):
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def mark(claim):
+    return hmac.new(KEY, canon(claim).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def handle(req):
+    op = req.get("op")
+    if op == "register":
+        if req.get("state") == "APPROVED":
+            return {"ok": False, "reason": (
+                "APPROVED is reached only by the promotion step; a store may "
+                "register a draft state, never an approval")}
+        CHARS[(req.get("scope"), req.get("character_id"))] = req.get("state")
+        return {"ok": True}
+    if op == "mint":
+        claim = req.get("claim") or {}
+        rid = claim.get("receipt_id")
+        scope = req.get("scope")
+        prior = CLAIMS.get(rid)
+        if prior is not None and prior != claim:
+            return {"ok": False, "reason": (
+                "receipt id %r is already minted for one promotion step and "
+                "cannot be minted again for another; a receipt is single-use"
+                % rid)}
+        key = (scope, rid)
+        held = BINDS.get(key)
+        if held is not None:
+            return {"ok": True, "receipt": dict(claim, mint_mark=held[1])}
+        step = (scope, claim.get("character_id"))
+        if CHARS.get(step) != claim.get("from_state"):
+            return {"ok": False, "reason": (
+                "the promotion step refuses %r: this store holds %r at %r, so "
+                "there is no %r to approve and no receipt can be minted for a "
+                "step that did not happen"
+                % (rid, claim.get("character_id"), CHARS.get(step),
+                   claim.get("from_state")))}
+        if step in DONE:
+            return {"ok": False, "reason": (
+                "%r to %r for %r is one promotion step and this store already "
+                "approved it with receipt %r; one step takes exactly one receipt"
+                % (claim.get("from_state"), claim.get("to_state"),
+                   claim.get("character_id"), DONE[step]))}
+        body = mark(claim)
+        CLAIMS[rid] = dict(claim)
+        BINDS[key] = (req.get("client"), body)
+        DONE[step] = rid
+        CHARS[step] = claim.get("to_state")  # the step happened: recorded here
+        return {"ok": True, "receipt": dict(claim, mint_mark=body)}
+    if op == "verify":
+        claim = req.get("claim") or {}
+        rid = claim.get("receipt_id")
+        prior = CLAIMS.get(rid)
+        wrong = ("the mint mark does not match the receipt's own fields, so "
+                 "this receipt was not minted by the approval step")
+        if prior is None:
+            return {"ok": False, "reason": (
+                "receipt id %r was never minted by the approval step; a receipt "
+                "is single-use and cannot be typed by hand or reloaded from a "
+                "JSON file" % rid)}
+        if prior != claim or not hmac.compare_digest(mark(claim),
+                                                     req.get("mint_mark") or ""):
+            return {"ok": False, "reason": wrong}
+        scope = req.get("scope")
+        held = BINDS.get((scope, rid)) if scope is not None else BINDS.get(rid)
+        if scope is not None and held is None:
+            return {"ok": False, "reason": (
+                "receipt %r was minted by the promotion step of another store "
+                "and is not replayed here; a receipt is single-use" % rid)}
+        wanted = req.get("client")
+        if held is not None and held[0] != wanted:
+            return {"ok": False, "reason": (
+                "receipt %r was minted for client %r, not %r; a receipt is "
+                "bound to the client whose promotion step produced it"
+                % (rid, held[0], wanted))}
+        return {"ok": True}
+    return {"ok": False, "reason": "unknown request"}
+
+
+def main():
+    buf = b""
+    while os.getppid() == PARENT:
+        chunk = os.read(IN_FD, 65536)
+        if not chunk:                       # parent closed its end: stop
+            return
+        buf += chunk
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            try:
+                reply = handle(json.loads(line.decode("utf-8")))
+            except Exception as exc:
+                reply = {"ok": False, "reason": "signer error: %s" % exc}
+            os.write(OUT_FD, json.dumps(reply).encode("utf-8") + b"\n")
+
+
+main()
+'''
+
+#: One live signer per process, keyed by pid: ``(proc, send_fd, recv_fd)``.
+#: Bookkeeping for the pipe, never consulted to answer a security question --
+#: the answer comes back over that pipe from the signer, and a caller who swaps
+#: this mapping swaps nothing the signer ever said.
+_SIGNER_PIPES = {}
+_SIGNER_LOCK = threading.Lock()
+
+
+def _signer_start():
+    """Spawn the signer and hand back its two pipe ends."""
+    import subprocess as _subprocess, sys as _sys
+    to_signer, send_fd = os.pipe()
+    recv_fd, to_parent = os.pipe()
+    proc = _subprocess.Popen(
+        [_sys.executable, "-I", "-c", _SIGNER_SOURCE, str(os.getpid()),
+         str(to_signer), str(to_parent)],
+        stdin=_subprocess.DEVNULL, stdout=_subprocess.DEVNULL,
+        stderr=_subprocess.DEVNULL, close_fds=True, start_new_session=True,
+        pass_fds=(to_signer, to_parent))
+    os.close(to_signer)
+    os.close(to_parent)
+    return (proc, send_fd, recv_fd)
+
+
+def _signer_request(payload):
+    """One request to the approval signer over an OS pipe. Fails closed.
+
+    No socket, no network and no file: the endpoint is a pipe the signer is
+    started with. An answer that is not the signer's is refused exactly like a
+    missing one.
+    """
+    with _SIGNER_LOCK:
+        reason = "the approval signer did not answer"
+        for attempt in (0, 1):
+            held = _SIGNER_PIPES.get(os.getpid())
+            if held is None:
+                try:
+                    held = _signer_start()
+                except Exception as exc:
+                    return {"ok": False,
+                            "reason": "the approval signer could not start (%s)"
+                                      % exc}
+                _SIGNER_PIPES[os.getpid()] = held
+            _proc, send_fd, recv_fd = held
+            try:
+                os.write(send_fd, json.dumps(payload).encode("utf-8") + b"\n")
+                data = b""
+                while not data.endswith(b"\n"):
+                    chunk = os.read(recv_fd, 65536)
+                    if not chunk:
+                        return {"ok": False,
+                                "reason": "the approval signer stopped"}
+                    data += chunk
+                return json.loads(data.decode("utf-8"))
+            except Exception as exc:
+                reason = "the approval signer is unreachable (%s)" % exc
+                _SIGNER_PIPES.pop(os.getpid(), None)
+                for fd in (send_fd, recv_fd):
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                if attempt == 0:
+                    continue
+        return {"ok": False, "reason": reason}
+
+
+def _scope_parts(scope):
+    """(client_namespace, store) from a store's approval scope, or None."""
+    if scope is None:
+        return None, None
+    if type(scope) is not tuple or len(scope) != 2:
+        raise IdentityDefect([_defect("approval_bindings", "APPROVAL_SCOPE",
+                                      "an approval scope names one client and "
+                                      "one store")])
+    client, store = scope
+    if type(client) is not str or type(store) is not str:
+        raise IdentityDefect([_defect("approval_bindings", "APPROVAL_SCOPE",
+                                      "an approval scope names one client and "
+                                      "one store")])
+    return client, store
+
+
+def register_character(scope, character_id, state):
+    """Declare, to the promotion step, that a store holds a character at a state.
+
+    This is what makes a receipt a record of a step that happened: the signer
+    refuses to approve a character it does not hold at the step's ``from_state``.
+    An approval is never registered this way; only the promotion step produces
+    one.
+    """
+    client, store = _scope_parts(scope)
+    reply = _signer_request({"op": "register", "scope": store, "client": client,
+                             "character_id": character_id, "state": state})
+    if not reply.get("ok"):
+        raise IdentityDefect([_defect("approval_bindings", "APPROVAL_REGISTER",
+                                      reply.get("reason") or "refused")])
+    return True
 
 
 def _claim(receipt):
     return {k: receipt[k] for k in sorted(CLAIM_KEYS) if k in receipt}
 
 
-def _mark(claim):
-    """The mint mark over a receipt's own claim fields. Only the mint produces it."""
-    return hmac.new(_MINT_KEY, _canonical(claim).encode("utf-8"),
-                    hashlib.sha256).hexdigest()
+def mint_receipt(fields, *, scope=None):
+    """The promotion step's own mint: one receipt for one real approval.
 
+    ``scope`` is the store's approval scope -- ``(client_namespace, store)``.
+    The signer mints only for a character that store holds at ``from_state``,
+    records that the step happened there, and binds the receipt to that client
+    and that store. A caller who passes no store has nothing to attest, and is
+    refused by name: there is no mint in this process, and none reachable from
+    it.
 
-def _verify_mint(body):
-    """Recompute the mint mark. Returns the refusal reason, or None."""
-    mark = body[MINT_FIELD]
-    if len(mark) != 64:
-        return ("an approval receipt carries a 64-character mint mark only the "
-                "approval step can produce; this one has none")
-    if not hmac.compare_digest(mark, _mark(_claim(body))):
-        return ("the mint mark does not match the receipt's own fields, so this "
-                "receipt was not minted by the approval step")
-    if _MINTED.get(body["receipt_id"]) != _claim(body):
-        return ("receipt id %r was never minted by the approval step; a receipt "
-                "is single-use and cannot be typed by hand or reloaded from a "
-                "JSON file" % body["receipt_id"])
-    return None
-
-
-def mint_receipt(fields):
-    """The single minting path: stamp a receipt with a mark only this module can
-    make. Only the explicit promotion step calls this.
-
-    ``receipt_id`` is single use. Minting the same id again for a different
-    character or a different promotion step is refused, so a receipt can never
-    be replayed onto a second approval.
+    ``receipt_id`` is single use: one id names one claim, and a store approves
+    one promotion step once. Minting the same id again for a different
+    character or a different promotion step is refused, and so is a second
+    receipt for a step a store already approved, so a receipt can never be
+    replayed onto a second approval.
     """
     body = _plain(fields)
     if body is None:
@@ -262,16 +480,24 @@ def mint_receipt(fields):
                                           "receipt field %r must be a plain "
                                           "string, not %s"
                                           % (field, type(body[field]).__name__))])
-    claim = _claim(body)
-    prior = _MINTED.get(claim["receipt_id"])
-    if prior is not None and prior != claim:
-        raise IdentityDefect([_defect("receipt_id", "RECEIPT_REUSE",
-                                      "receipt id %r is already minted for one "
-                                      "promotion step and cannot be minted again "
-                                      "for another; a receipt is single-use"
-                                      % claim["receipt_id"])])
-    _MINTED[claim["receipt_id"]] = claim
-    return {**claim, MINT_FIELD: _mark(claim)}
+    if scope is None:
+        raise IdentityDefect([_defect(
+            "approval_bindings", "RECEIPT_MINT_REFUSED",
+            "a receipt is minted only by the promotion step of a store, which "
+            "names the client and the store it approves for; there is no mint "
+            "in this process and none a caller can reach, so a receipt typed "
+            "here has no mark and no store will accept it")])
+    client, store = _scope_parts(scope)
+    reply = _signer_request({"op": "mint", "scope": store, "client": client,
+                             "claim": _claim(body)})
+    if not reply.get("ok"):
+        raise IdentityDefect([_defect("approval_bindings", "RECEIPT_MINT_REFUSED",
+                                      reply.get("reason") or "refused")])
+    minted = reply.get("receipt")
+    if type(minted) is not dict:
+        raise IdentityDefect([_defect("approval_bindings", "RECEIPT_MINT_REFUSED",
+                                      "the approval signer minted nothing")])
+    return dict(minted)
 
 
 def receipt_digest(receipt):
@@ -280,16 +506,22 @@ def receipt_digest(receipt):
                             exclude=frozenset({"content_digest"}))
 
 
-def resolve_receipt(binding, record):
+def resolve_receipt(binding, record, *, scope=None):
     """Resolve one binding against the approval record it claims.
 
     Returns ``None`` only when the binding is a receipt the approval step
     actually minted for THIS record: exact builtin types, the closed shape, a
-    mint mark that recomputes over the receipt's own fields, an approved id,
-    and exactly the one promotion step that put the record into its current
-    state. Otherwise the plain-English reason the binding is refused. A
-    non-empty list is never enough, and a receipt typed by hand or reloaded
-    from JSON never resolves.
+    mint mark the signer reproduces for the receipt's own fields, an id that
+    signer minted for this client (and, when a store asks, for this store), and
+    exactly the one promotion step that put the record into its current state --
+    with no other receipt already covering that step. Otherwise the plain-English
+    reason the binding is refused. A non-empty list is never enough, and a
+    receipt typed by hand or reloaded from JSON never resolves.
+
+    ``scope`` is a store's ``(client_namespace, store)`` approval scope. Without
+    it the receipt is checked against the record alone; a store always passes
+    its own scope, which is what stops a consumed receipt being replayed into
+    another store's cache.
     """
     body = _plain(binding)
     if body is None:
@@ -312,9 +544,20 @@ def resolve_receipt(binding, record):
         if type(body[field]) is not str:
             return ("an approval receipt field %r must be a plain string, not %s"
                     % (field, type(body[field]).__name__))
-    reason = _verify_mint(body)
-    if reason is not None:
-        return reason
+    if len(body[MINT_FIELD]) != 64:
+        return ("an approval receipt carries a 64-character mint mark only the "
+                "approval step can produce; this one has none")
+    client = target.get("client_id")
+    if type(client) is not str or not client.strip():
+        return ("the identity record must name the client it belongs to; an "
+                "approval receipt is bound to one client's promotion step")
+    client_scope, store_scope = _scope_parts(scope)
+    reply = _signer_request({
+        "op": "verify", "claim": _claim(body), MINT_FIELD: body[MINT_FIELD],
+        "client": client, "scope": store_scope})
+    if not reply.get("ok"):
+        return reply.get("reason") or ("this receipt was not minted by the "
+                                       "approval step")
     if not _is_text(body["kind"], RECEIPT_KIND):
         return "an approval binding must declare kind %r" % (RECEIPT_KIND,)
     for field in ("receipt_id", "approver"):
@@ -339,10 +582,25 @@ def resolve_receipt(binding, record):
     if end != DRAFT_ORDER[DRAFT_ORDER.index(start) + 1]:
         return ("approval receipt %r claims %r to %r, which is not one promotion "
                 "step" % (body["receipt_id"], start, end))
+    # One promotion step takes exactly one receipt. A second receipt for a step
+    # this record already approved is refused here, on the validation entry
+    # point itself, not only in the per-record pass below.
+    step = (body["character_id"], start, end)
+    for held in _plain_list(target.get("approval_bindings", [])) or []:
+        other = _plain(held)
+        if other is None or other.get("receipt_id") == body["receipt_id"]:
+            continue
+        if (other.get("character_id"), other.get("from_state"),
+                other.get("to_state")) == step:
+            return ("approval receipt %r claims %r to %r for %r, which is one "
+                    "promotion step and it is already approved by receipt %r; "
+                    "one step takes exactly one receipt"
+                    % (body["receipt_id"], start, end, body["character_id"],
+                       other.get("receipt_id")))
     return None
 
 
-def _validate_approval_bindings(record):
+def _validate_approval_bindings(record, scope=None):
     """Every binding must resolve as a receipt the approval step minted.
 
     Dedupe is keyed on BOTH the receipt id and the promotion step the receipt
@@ -371,7 +629,7 @@ def _validate_approval_bindings(record):
     seen_steps = {}
     for index, binding in enumerate(approvals):
         where = "approval_bindings[%d]" % index
-        reason = resolve_receipt(binding, record)
+        reason = resolve_receipt(binding, record, scope=scope)
         if reason is not None:
             out.append(_defect(where, "APPROVALS", "%s: %s" % (where, reason)))
             continue
@@ -412,7 +670,7 @@ _VISUAL_REQUIRED = ("face", "age", "hair", "wardrobe_rules",
                     "continuity_constraints", "prompt_block")
 
 
-def _validate_identity(record):
+def _validate_identity(record, scope=None):
     out = []
     given = record
     record = _plain(given)
@@ -508,7 +766,7 @@ def _validate_identity(record):
         out.append(_defect("draft_state", "DRAFT_STATE",
                            f"draft_state must be one of {sorted(DRAFT_STATES)}"))
     # A binding is a receipt or it is refused: never "a non-empty list".
-    out.extend(_validate_approval_bindings(record))
+    out.extend(_validate_approval_bindings(record, scope))
     for key in ("shared_source", "local_cache"):
         if record.get(key) is not None and type(record.get(key)) is not dict:
             out.append(_defect(key, "SYNC", f"{key} must be an object or null"))
@@ -539,9 +797,14 @@ def _validate_identity(record):
     return out
 
 
-def validate_identity(record):
-    """Validate one reusable identity; raise IdentityDefect with every defect."""
-    defects = _validate_identity(record)
+def validate_identity(record, *, scope=None):
+    """Validate one reusable identity; raise IdentityDefect with every defect.
+
+    ``scope`` is the store's ``(client_namespace, store)`` approval scope; a
+    store passes its own so a receipt bound to another store's promotion step
+    is refused here and not only at the store boundary.
+    """
+    defects = _validate_identity(record, scope)
     if defects:
         raise IdentityDefect(defects)
     return record

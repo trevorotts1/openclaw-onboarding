@@ -4,6 +4,9 @@
 Fixture only. No client workspace, credential or network call is used.
 Run: python3 test_notion_store_s75_t15.py
 """
+import gc
+import hashlib
+import hmac
 import json
 import os
 import shutil
@@ -203,15 +206,21 @@ def receipt(over=None):
     return binding
 
 
-def minted(over=None):
+def minted(store, over=None):
     """The receipt the explicit promotion step mints, mint mark and all.
 
     This is the ONLY way to get a receipt the store will accept, and it is the
-    same call ``promote()`` makes.
+    same call ``promote()`` makes: the mint runs in the approval signer, a
+    separate process that holds this store's character at the step's from_state
+    and binds the receipt to this client and this store. Nothing in this
+    process can produce a mark, and a receipt minted with no store is refused
+    by name. The store's own cache is untouched: the mint is the promotion
+    step's act, not a save.
     """
     fields = receipt(over)
     fields.pop(identity.MINT_FIELD, None)
-    return identity.mint_receipt(fields)
+    identity.register_character(store.approval_scope(), CHAR, "DRAFT_COMPLETE")
+    return identity.mint_receipt(fields, scope=store.approval_scope())
 
 
 def with_bindings(bindings, state="APPROVED", namespace=NS_A):
@@ -313,7 +322,7 @@ class ForgedApprovalTest(unittest.TestCase):
                 self.assertTrue(caught.exception.defects)
 
     def test_validate_identity_accepts_only_a_resolved_receipt(self):
-        identity.validate_identity(self.sealed([minted()]))
+        identity.validate_identity(self.sealed([minted(self.store())]))
         with self.assertRaises(identity.IdentityDefect):
             identity.validate_identity(self.sealed([]))  # approved, no receipt
         # a receipt written out by hand has no mint mark and never resolves
@@ -330,7 +339,7 @@ class ForgedApprovalTest(unittest.TestCase):
                                 approval={"approver": "client",
                                           "receipt_id": "receipt-001"})
         self.assertEqual(approved["draft_state"], "APPROVED")
-        self.assertEqual(approved["approval_bindings"], [minted()])
+        self.assertEqual(approved["approval_bindings"], [minted(store)])
         self.assertIsNone(identity.resolve_receipt(approved["approval_bindings"][0],
                                                    approved))
         identity.validate_identity(approved)
@@ -352,7 +361,7 @@ class ForgedApprovalTest(unittest.TestCase):
                 self.assertEqual(store.get_identity(CHAR), approved)
 
         # the one receipt the promotion wrote is kept exactly, never re-minted
-        self.assertEqual(store.put_identity(with_bindings([minted()])), approved)
+        self.assertEqual(store.put_identity(with_bindings([minted(store)])), approved)
         # a hand-written copy of that same receipt is still refused
         with self.assertRaises(store_mod.StoreError):
             store.put_identity(with_bindings([receipt()]))
@@ -370,6 +379,13 @@ class ForgedApprovalTest(unittest.TestCase):
                 self.assertEqual(store.identities(), [])
 
     def test_restore_accepts_a_notion_record_with_a_real_receipt(self):
+        # CONTRACT CHANGE (round 4, stated in the round-4 report): this test
+        # used to restore a receipt minted by one store into ANOTHER store's
+        # cache and require it to be accepted. That shape is exactly the replay
+        # the round-3 verdict counted as a single-use breach (F3), so it is
+        # refused now. The replacement is strictly stronger: the same record is
+        # accepted where the promotion step happened and refused everywhere
+        # else, proved in both directions below.
         source = self.store()
         source.put_identity(load_fixture())
         source.promote(CHAR, "DRAFT_COMPLETE")
@@ -377,12 +393,23 @@ class ForgedApprovalTest(unittest.TestCase):
                                   approval={"approver": "client",
                                             "receipt_id": "receipt-001"})
         self.assertTrue(source.cache.drop(store_mod._doc(CHAR)))
+        self.assertIsNone(source.get_identity(CHAR))
 
-        target = self.store("fixture-client-restored")
+        # this store rebuilds its own cache from the record it approved
+        self.assertEqual(source.restore_from_notion([approved]), [CHAR])
+        self.assertEqual(source.get_identity(CHAR)["approval_bindings"],
+                         [minted(source)])
+        self.assertIsNone(identity.resolve_receipt(
+            source.get_identity(CHAR)["approval_bindings"][0],
+            source.get_identity(CHAR), scope=source.approval_scope()))
+
+        # another client's store never accepts that receipt
+        other = self.store("fixture-client-restored")
         record = dict(approved)
         record["client_id"] = "fixture-client-restored"
-        self.assertEqual(target.restore_from_notion([record]), [CHAR])
-        self.assertEqual(target.get_identity(CHAR)["approval_bindings"], [minted()])
+        with self.assertRaises(store_mod.StoreError):
+            other.restore_from_notion([record])
+        self.assertIsNone(other.get_identity(CHAR))
 
     # --- the rest of the row stays intact --------------------------------
 
@@ -525,19 +552,19 @@ class MintMarkTest(unittest.TestCase):
         self.assertTrue(LyingStr("junk") == identity.RECEIPT_KIND)
         self.assertFalse(LyingStr("DRAFT_INCOMPLETE") != "APPROVED")
 
-        binding = dict(minted({"receipt_id": "rcp-lying-str"}),
-                       kind=LyingStr("junk"))
+        real = minted(self.store())
+        binding = dict(real, kind=LyingStr("junk"))
         reason = identity.resolve_receipt(binding, self.approved_record([binding]))
         self.assertIsNotNone(reason)
         self.assertIn("must be a plain string", reason)
 
-        record = with_bindings([minted()])
+        record = with_bindings([dict(real)])
         record["draft_state"] = LyingStr("DRAFT_INCOMPLETE")
         record.pop("content_digest", None)
         with self.assertRaises(identity.IdentityDefect):
             identity.validate_identity(identity.seal_identity(record))
 
-        poisoned = with_bindings([minted()])
+        poisoned = with_bindings([dict(real)])
         poisoned["approval_bindings"][0]["to_state"] = LyingStr("APPROVED")
         poisoned.pop("content_digest", None)
         with self.assertRaises(identity.IdentityDefect):
@@ -587,14 +614,14 @@ class MintMarkTest(unittest.TestCase):
         self.assertEqual(tree_bytes(self.root), before)
 
         with self.assertRaises(store_mod.StoreError):
-            store.restore_from_notion(LyingList([with_bindings([minted()])]))
+            store.restore_from_notion(LyingList([with_bindings([minted(store)])]))
         self.assertEqual(store.identities()[0]["character_id"], CHAR)
         self.assertEqual(store.identities()[0]["approval_bindings"], [])
 
     # --- 5. one receipt id, two characters; and one step, two receipts ----
 
     def test_receipt_id_is_single_use_and_never_moves_to_another_character(self):
-        mine = minted({"receipt_id": "rcp-reuse"})
+        mine = minted(self.store(), {"receipt_id": "rcp-reuse"})
         transplanted = dict(mine, character_id="chr-someone-else")
         reason = identity.resolve_receipt(transplanted,
                                           self.approved_record([transplanted]))
@@ -602,27 +629,47 @@ class MintMarkTest(unittest.TestCase):
         self.assertIn("was not minted by the approval step", reason)
 
         with self.assertRaises(identity.IdentityDefect) as caught:
-            minted({"receipt_id": "rcp-reuse", "character_id": "chr-someone-else"})
+            minted(self.store(),
+                   {"receipt_id": "rcp-reuse", "character_id": "chr-someone-else"})
         self.assertIn("single-use", str(caught.exception))
 
     def test_two_receipts_for_one_promotion_step_are_refused(self):
-        first = minted({"receipt_id": "rcp-step-first"})
-        second = minted({"receipt_id": "rcp-step-second"})
-        self.assertIsNone(identity.resolve_receipt(first,
-                                                   self.approved_record([first])))
-        self.assertIsNone(identity.resolve_receipt(second,
-                                                   self.approved_record([second])))
-
-        record = with_bindings([first, second])
-        with self.assertRaises(identity.IdentityDefect) as caught:
-            identity.validate_identity(identity.seal_identity(record))
-        self.assertTrue(any("one promotion step" in d["message"]
-                            for d in caught.exception.defects))
-
         store = self.store()
-        with self.assertRaises(store_mod.StoreError):
-            store.restore_from_notion([record])
-        self.assertEqual(store.identities(), [])
+        elsewhere = tempfile.mkdtemp(prefix="s75-t15-else-")
+        try:
+            other = store_mod.NotionStore(elsewhere, NS_A)
+            first = minted(store, {"receipt_id": "rcp-step-first"})
+            # round 4: a second receipt for that step cannot even be minted in
+            # the store that already approved it
+            with self.assertRaises(identity.IdentityDefect) as caught:
+                minted(store, {"receipt_id": "rcp-step-second"})
+            self.assertIn("one promotion step", str(caught.exception))
+            # a second store mints its own receipt for the same step ...
+            second = minted(other, {"receipt_id": "rcp-step-second"})
+
+            self.assertIsNone(identity.resolve_receipt(first,
+                                                       self.approved_record([first])))
+            self.assertIsNone(identity.resolve_receipt(second,
+                                                       self.approved_record([second])))
+
+            # round 4: a second receipt never resolves against a record this
+            # promotion step already approved. The rule sits on the validation
+            # entry point itself, not only in the per-record pass below.
+            reason = identity.resolve_receipt(second, self.approved_record([first]))
+            self.assertIsNotNone(reason)
+            self.assertIn("one promotion step", reason)
+
+            record = with_bindings([first, second])
+            with self.assertRaises(identity.IdentityDefect) as caught:
+                identity.validate_identity(identity.seal_identity(record))
+            self.assertTrue(any("one promotion step" in d["message"]
+                                for d in caught.exception.defects))
+
+            with self.assertRaises(store_mod.StoreError):
+                store.restore_from_notion([record])
+            self.assertEqual(store.identities(), [])
+        finally:
+            shutil.rmtree(elsewhere, ignore_errors=True)
 
     # --- the legitimate flow still seals end to end -----------------------
 
@@ -681,6 +728,194 @@ class MintMarkTest(unittest.TestCase):
         with self.assertRaises(store_mod.StoreError):
             target.restore_from_notion([reloaded])
         self.assertEqual(target.identities(), [])
+
+
+class OutOfProcessMintTest(unittest.TestCase):
+    """Round four: the mint lives outside this process.
+
+    Every shape the round-3 verifier accepted gets a probe here in the form it
+    took then: a caller-minted receipt (F1), a consumed receipt replayed into a
+    second store (F2), a second receipt for one promotion step (F3) and one
+    receipt id honoured on many records (F4).
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="s75-t15-")
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def store(self, namespace=NS_A, root=None):
+        return store_mod.NotionStore(root or self.root, namespace)
+
+    def approved(self, store, receipt_id):
+        store.put_identity(for_client(store.client_namespace))
+        store.promote(CHAR, "DRAFT_COMPLETE")
+        return store.promote(CHAR, "APPROVED",
+                             approval={"approver": "client",
+                                       "receipt_id": receipt_id})
+
+    # --- the mechanism ---------------------------------------------------
+
+    def test_no_secret_no_registry_and_no_mint_live_in_this_process(self):
+        for name in ("_MINT_KEY", "_MINTED", "_mark", "_verify_mint"):
+            self.assertIsNone(getattr(identity, name, None), name)
+        for module in (identity, store_mod):
+            self.assertEqual([name for name, value in vars(module).items()
+                              if isinstance(value, (bytes, bytearray))], [])
+
+    def test_no_object_in_this_process_reproduces_a_mint_mark(self):
+        approved = self.approved(self.store(), "rcp-round4-mark")
+        binding = approved["approval_bindings"][0]
+        claim = {k: binding[k] for k in sorted(identity.CLAIM_KEYS)}
+        body = json.dumps(claim, sort_keys=True, separators=(",", ":"),
+                          ensure_ascii=False).encode("utf-8")
+        reproduced = set()
+        for obj in gc.get_objects():        # every route the gc graph offers
+            if isinstance(obj, (bytes, bytearray)) and len(obj) == 32:
+                try:
+                    reproduced.add(hmac.new(bytes(obj), body,
+                                            hashlib.sha256).hexdigest())
+                except Exception:
+                    continue
+        self.assertTrue(binding[identity.MINT_FIELD])
+        self.assertNotIn(binding[identity.MINT_FIELD], reproduced)
+
+    # --- F1: hand-built claim, minted by the caller, promote() zero times --
+
+    def test_f1_a_caller_cannot_mint_a_receipt_at_all(self):
+        fields = receipt({"receipt_id": "rcp-round4-f1"})
+        fields.pop(identity.MINT_FIELD, None)
+
+        with self.assertRaises(identity.IdentityDefect) as caught:
+            identity.mint_receipt(fields)              # no store at all
+        self.assertEqual(caught.exception.defects[0]["code"],
+                         "RECEIPT_MINT_REFUSED")
+
+        store = self.store()
+        with self.assertRaises(identity.IdentityDefect) as caught:
+            identity.mint_receipt(fields, scope=store.approval_scope())
+        self.assertEqual(caught.exception.defects[0]["code"],
+                         "RECEIPT_MINT_REFUSED")
+        self.assertIn("did not happen", str(caught.exception))
+
+        for bogus in (fields, receipt({"receipt_id": "rcp-round4-f1b"}),
+                      {**fields, identity.MINT_FIELD: "0" * 64}):
+            with self.subTest(binding=bogus):
+                with self.assertRaises(store_mod.StoreError):
+                    store.restore_from_notion([with_bindings([bogus])])
+                self.assertEqual(store.identities(), [])
+
+    # --- F2: a consumed receipt replayed into a second store --------------
+
+    def test_f2_a_consumed_receipt_never_replays_into_a_second_store(self):
+        source = self.store()
+        approved = self.approved(source, "rcp-round4-f2")
+        real = approved["approval_bindings"][0]
+
+        other_client = self.store(NS_B)                # same cache, other client
+        replayed = dict(approved)
+        replayed["client_id"] = NS_B
+        with self.assertRaises(store_mod.StoreError):
+            other_client.restore_from_notion([replayed])
+        self.assertIsNone(other_client.get_identity(CHAR))
+
+        elsewhere = tempfile.mkdtemp(prefix="s75-t15-else-")
+        try:
+            other_cache = self.store(NS_A, elsewhere)  # same client, other cache
+            with self.assertRaises(store_mod.StoreError):
+                other_cache.restore_from_notion([dict(approved)])
+            self.assertEqual(other_cache.identities(), [])
+        finally:
+            shutil.rmtree(elsewhere, ignore_errors=True)
+
+        self.assertIsNone(identity.resolve_receipt(real, approved,
+                                                   scope=source.approval_scope()))
+
+    # --- F3: a second receipt for one promotion step ----------------------
+
+    def test_f3_a_second_receipt_for_one_step_never_resolves_or_stores(self):
+        store = self.store()
+        approved = self.approved(store, "rcp-round4-f3a")
+        first = approved["approval_bindings"][0]
+
+        # the step is already approved here, so no second receipt can even be
+        # minted for it in this store
+        with self.assertRaises(identity.IdentityDefect) as caught:
+            minted(store, {"receipt_id": "rcp-round4-f3b"})
+        self.assertIn("one promotion step", str(caught.exception))
+
+        # and a receipt minted elsewhere for the same step never resolves here
+        elsewhere = tempfile.mkdtemp(prefix="s75-t15-else-")
+        try:
+            second = minted(store_mod.NotionStore(elsewhere, NS_A),
+                            {"receipt_id": "rcp-round4-f3b"})
+            reason = identity.resolve_receipt(second, approved)
+            self.assertIsNotNone(reason)
+            self.assertIn("one promotion step", reason)
+
+            with self.assertRaises(store_mod.StoreError):
+                store.restore_from_notion([with_bindings([first, second])])
+            self.assertEqual(store.get_identity(CHAR), approved)
+        finally:
+            shutil.rmtree(elsewhere, ignore_errors=True)
+
+    # --- F4: one receipt id, many records ---------------------------------
+
+    def test_f4_one_receipt_id_honours_one_record_only(self):
+        store = self.store()
+        approved = self.approved(store, "rcp-round4-f4")
+        real = approved["approval_bindings"][0]
+
+        with self.assertRaises(identity.IdentityDefect) as caught:
+            minted(store, {"receipt_id": "rcp-round4-f4",
+                           "character_id": "chr-someone-else"})
+        self.assertIn("single-use", str(caught.exception))
+
+        moved = dict(real, character_id="chr-someone-else")
+        other = for_client(NS_A)
+        other["character_id"] = "chr-someone-else"
+        other["draft_state"] = "APPROVED"
+        other["approval_bindings"] = [moved]
+        other.pop("content_digest", None)
+        with self.assertRaises(store_mod.StoreError):
+            store.restore_from_notion([other])
+        self.assertEqual(store.identities(), [approved])
+        self.assertIsNotNone(identity.resolve_receipt(moved,
+                                                      identity.seal_identity(other)))
+
+
+    # --- the boundary, stated rather than hidden -------------------------
+
+    def test_the_promotion_step_is_the_transport_not_a_call_site_gate(self):
+        # The mint is the promotion step, and the promotion step lives in the
+        # signer. A caller may ask that step to happen directly -- it is the
+        # same act NotionStore.promote() performs, and no call-site gate can
+        # sit in front of it inside one process -- but the receipt it gets is
+        # the step's own record, for a character this store holds at the step's
+        # from_state (test_f1), for this client and this store, and nowhere
+        # else (test_f2).
+        store = self.store()
+        store.put_identity(for_client(NS_A))
+        store.promote(CHAR, "DRAFT_COMPLETE")
+        fields = receipt({"receipt_id": "rcp-round4-transport"})
+        fields.pop(identity.MINT_FIELD, None)
+        direct = identity.mint_receipt(fields, scope=store.approval_scope())
+
+        self.assertIsNone(identity.resolve_receipt(direct, with_bindings([dict(direct)]),
+                                                   scope=store.approval_scope()))
+        self.assertEqual(store.restore_from_notion([with_bindings([dict(direct)])]),
+                         [CHAR])
+        self.assertEqual(store.get_identity(CHAR)["approval_bindings"], [direct])
+
+        elsewhere = tempfile.mkdtemp(prefix="s75-t15-else-")
+        try:
+            other = store_mod.NotionStore(elsewhere, NS_A)
+            with self.assertRaises(store_mod.StoreError):
+                other.restore_from_notion([with_bindings([dict(direct)])])
+            self.assertEqual(other.identities(), [])
+        finally:
+            shutil.rmtree(elsewhere, ignore_errors=True)
 
 
 if __name__ == "__main__":

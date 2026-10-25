@@ -100,11 +100,11 @@ def _plain_text(value, what):
     return value
 
 
-def _validated(record):
+def _validated(record, scope):
     """Seal and validate, refusing every defect as a plain StoreError."""
     sealed = identity.seal_identity(record)
     try:
-        identity.validate_identity(sealed)
+        identity.validate_identity(sealed, scope=scope)
     except identity.IdentityDefect as defect:
         raise StoreError(str(defect)) from defect
     return sealed
@@ -116,6 +116,30 @@ class NotionStore:
     def __init__(self, root, client_namespace):
         self.cache = cache_mod.Cache(root, client_namespace)
         self.client_namespace = self.cache.client_namespace
+
+    def approval_scope(self):
+        """The scope a promotion receipt is minted for and bound to.
+
+        One client namespace in one cache directory. A receipt is bound to both
+        at the mint, so a receipt consumed here is never honoured by another
+        store's cache: replaying one is refused by the promotion step itself.
+        """
+        return (self.client_namespace, os.path.abspath(self.cache.dir()))
+
+    def _register(self, sealed):
+        """Tell the promotion step what state this store now holds.
+
+        This is what makes a receipt a record of a step that happened: the
+        signer refuses to approve a character it does not hold at the step's
+        from_state. An approval is never registered here -- only promote()
+        produces one, and only through the promotion step.
+        """
+        state = sealed.get("draft_state")
+        if type(state) is not str or state == "APPROVED":
+            return
+        identity.register_character(self.approval_scope(),
+                                    str(sealed.get("character_id") or ""),
+                                    state)
 
     # --- library / page / database IDs -----------------------------------
 
@@ -243,9 +267,10 @@ class NotionStore:
             if type(want) is not int or type(have) is not int:
                 raise StoreError("revision must be a positive integer.")
             prepared["revision"] = max(want, have)
-        sealed = _validated(prepared)
+        sealed = _validated(prepared, self.approval_scope())
         self.cache.store(_doc(character_id), sealed,
                          revision=revision if revision is not None else sealed["revision"])
+        self._register(sealed)
         return sealed
 
     def attach_image(self, character_id, reference_id):
@@ -272,18 +297,20 @@ class NotionStore:
         if type(prior) is not int:
             raise StoreError("revision must be a positive integer.")
         updated["revision"] = prior + 1
-        sealed = _validated(updated)
+        sealed = _validated(updated, self.approval_scope())
         self.cache.store(_doc(character_id), sealed, revision=sealed["revision"])
         return sealed
 
     def promote(self, character_id, to_state, *, approval=None):
         """Move a draft forward one explicit step. Implicit promotion refused.
 
-        Approving is the only place an approval receipt is ever minted. The
-        receipt is produced by :func:`character_bible.identity.mint_receipt`,
-        the one minting path: it carries a mint mark only that path can make,
-        keyed by a secret held in process memory. A dict typed by hand, and a
-        dict reloaded from a JSON file, have no such mark and are refused.
+        Approving is the only place an approval receipt is ever minted, and the
+        mint happens OUTSIDE this process: :func:`character_bible.identity.
+        mint_receipt` asks the promotion signer, a separate process that holds
+        the mint secret in its own memory and mints only for a character this
+        store holds at the step's from_state. Nothing in this process can
+        produce a mark, so a dict typed by hand, a mark recomputed from module
+        state and a dict reloaded from a JSON file all carry none that verifies.
         """
         existing = self.get_identity(character_id)
         if existing is None:
@@ -321,9 +348,10 @@ class NotionStore:
                 "character_id": str(existing.get("character_id") or "").strip(),
                 "from_state": current,
                 "to_state": to_state,
-            }))
-        sealed = _validated(updated)
+            }, scope=self.approval_scope()))
+        sealed = _validated(updated, self.approval_scope())
         self.cache.store(_doc(character_id), sealed, revision=sealed["revision"])
+        self._register(sealed)
         return sealed
 
     # --- Notion side -----------------------------------------------------
@@ -342,8 +370,9 @@ class NotionStore:
         ``remote_records`` are full identity records supplied by the Notion
         side. A character Notion does not have is never created locally. A
         record carrying a hand-written approval receipt is refused and NOTHING
-        is written: a receipt is only ever the one the approval step minted,
-        never a dict a caller typed or reloaded from a JSON file.
+        is written: a receipt is only ever the one the promotion step minted for
+        this client and this store, never a dict a caller typed, reloaded from a
+        JSON file, or replayed from another store's promotion.
         """
         records = [] if remote_records is None else _plain_sequence(
             remote_records, "Notion record list")
@@ -362,9 +391,10 @@ class NotionStore:
                     "A Notion record for another client cannot be restored here.")
             prepared = dict(remote)
             prepared["local_cache"] = cache_mod.describe()
-            sealed = _validated(prepared)
+            sealed = _validated(prepared, self.approval_scope())
             self.cache.recover(_doc(sealed["character_id"]), sealed,
                                revision=sealed["revision"])
+            self._register(sealed)
             restored.append(sealed["character_id"])
         return sorted(restored)
 
