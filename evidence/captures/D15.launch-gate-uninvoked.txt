@@ -1,0 +1,6 @@
+# search: D15.launch-gate-uninvoked
+# command: git grep -nF qc-launch-conversation-ai 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- install.sh update-skills.sh .github/workflows/
+# scope: install.sh, update-skills.sh, .github/workflows/
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 1  count: 0  verdict: absent
+# --- stdout ---

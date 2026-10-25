@@ -1,0 +1,1310 @@
+{
+  "schema_version": 1,
+  "unit": "PBB-206",
+  "ledger_task": "T-01",
+  "repository": "trevorotts1/openclaw-onboarding",
+  "pin": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+  "pin_fetched_utc": "2026-10-24T22:12:40Z",
+  "instrument_notes": [
+    "Every search runs through `git grep` or `git ls-tree` against the pinned commit, never against a working tree.",
+    "Extended-regex entries use plain `|` and never `\\b` or `\\|`; `\\b` is inert in this git grep ERE and manufactures false zeros.",
+    "Every claim of absence carries a control: the same instrument shape, same flag, same pathspec, and a pattern proven present. A control that returns nothing marks the row instrument-failed.",
+    "Exit codes: git grep 0 = match, 1 = no match, 2 = error. Only 1 may be read as absence."
+  ],
+  "searches": [
+    {
+      "id": "PIN.pin-resolves",
+      "interface": "PIN",
+      "claim": "the pin resolves to a commit object in this repository",
+      "kind": "git",
+      "args": [
+        "rev-parse",
+        "--verify",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865^{commit}"
+      ],
+      "scope": "object store",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.pin-is-commit",
+      "interface": "PIN",
+      "claim": "the pin object exists and is a commit",
+      "kind": "git",
+      "args": [
+        "cat-file",
+        "-t",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
+      ],
+      "scope": "object store",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.remote-main",
+      "interface": "PIN",
+      "claim": "remote refs/heads/main equals the pin",
+      "kind": "git",
+      "args": [
+        "ls-remote",
+        "origin",
+        "refs/heads/main"
+      ],
+      "scope": "remote origin",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.commits-ahead-of-bccc4050f",
+      "interface": "PIN",
+      "claim": "how far the pin is ahead of the previously cited base bccc4050f",
+      "kind": "git",
+      "args": [
+        "rev-list",
+        "--count",
+        "bccc4050f8ed98b2d9b55cfc087c27c924d62b03..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
+      ],
+      "scope": "commit graph",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.merges-ahead-of-bccc4050f",
+      "interface": "PIN",
+      "claim": "merge commits between the previously cited base and the pin",
+      "kind": "git",
+      "args": [
+        "rev-list",
+        "--count",
+        "--merges",
+        "bccc4050f8ed98b2d9b55cfc087c27c924d62b03..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
+      ],
+      "scope": "commit graph",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.commits-ahead-of-f0a9c80e",
+      "interface": "PIN",
+      "claim": "how far the pin is ahead of f0a9c80e, the SHA the FAIL verdict called current main",
+      "kind": "git",
+      "args": [
+        "rev-list",
+        "--count",
+        "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
+      ],
+      "scope": "commit graph",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.merges-ahead-of-f0a9c80e",
+      "interface": "PIN",
+      "claim": "merge commits between f0a9c80e and the pin",
+      "kind": "git",
+      "args": [
+        "rev-list",
+        "--count",
+        "--merges",
+        "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b..9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
+      ],
+      "scope": "commit graph",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.tracked-files",
+      "interface": "PIN",
+      "claim": "tracked file census at the pin",
+      "kind": "lstree",
+      "args": [
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865"
+      ],
+      "scope": "all tracked paths",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.remote-branches",
+      "interface": "PIN",
+      "claim": "open branch inventory on origin at the pin's fetch time",
+      "kind": "git",
+      "args": [
+        "ls-remote",
+        "--heads",
+        "origin"
+      ],
+      "scope": "remote origin heads",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.open-prs",
+      "interface": "PIN",
+      "claim": "open pull requests at the pin's fetch time",
+      "kind": "gh",
+      "args": [
+        "pr",
+        "list",
+        "--repo",
+        "trevorotts1/openclaw-onboarding",
+        "--state",
+        "open",
+        "--limit",
+        "200",
+        "--json",
+        "number,headRefName,isDraft,title,updatedAt"
+      ],
+      "scope": "GitHub pull requests",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.worktrees",
+      "interface": "PIN",
+      "claim": "local worktree inventory",
+      "kind": "git",
+      "args": [
+        "worktree",
+        "list",
+        "--porcelain"
+      ],
+      "scope": "local clone",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.worktree-count",
+      "interface": "PIN",
+      "claim": "number of local worktrees, one line each",
+      "kind": "git",
+      "args": [
+        "worktree",
+        "list"
+      ],
+      "scope": "local clone",
+      "expect": "nonempty"
+    },
+    {
+      "id": "PIN.open-pr-count",
+      "interface": "PIN",
+      "claim": "number of open pull requests at the pin's fetch time",
+      "kind": "gh",
+      "args": [
+        "pr",
+        "list",
+        "--repo",
+        "trevorotts1/openclaw-onboarding",
+        "--state",
+        "open",
+        "--limit",
+        "200",
+        "--json",
+        "number",
+        "--jq",
+        "length"
+      ],
+      "scope": "GitHub pull requests",
+      "expect": "nonempty"
+    },
+    {
+      "id": "G1.trigger-count",
+      "interface": "G1",
+      "claim": "installer documents eight kickoff paths",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "8 different ways to do it",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "ONBOARDING-TRIGGERS.md"
+      ],
+      "scope": "ONBOARDING-TRIGGERS.md",
+      "expect": "nonempty",
+      "control": {
+        "args": [
+          "-nF",
+          "install",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "ONBOARDING-TRIGGERS.md"
+        ],
+        "scope": "ONBOARDING-TRIGGERS.md",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "G1.install-entry",
+      "interface": "G1",
+      "claim": "install.sh carries the documented curl entry line",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "Run via: curl -fSL",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "install.sh"
+      ],
+      "scope": "install.sh",
+      "expect": "nonempty",
+      "control": {
+        "args": [
+          "-nF",
+          "OPENCLAW_PLATFORM",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "install.sh"
+        ],
+        "scope": "install.sh",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "G2.identity-def",
+      "interface": "G2",
+      "claim": "installer defines the identity collector",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "collect_onboarding_identity() {",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "install.sh"
+      ],
+      "scope": "install.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "G2.identity-exit8",
+      "interface": "G2",
+      "claim": "installer aborts with exit 8 when identity input is missing",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "collect_onboarding_identity || exit 8",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "install.sh"
+      ],
+      "scope": "install.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "G2.identity-questions",
+      "interface": "G2",
+      "claim": "identity script enumerates owner and company questions",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "QUESTIONS = {",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "scripts/onboarding-identity.py"
+      ],
+      "scope": "scripts/onboarding-identity.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "G3.intake-engine",
+      "interface": "G3",
+      "claim": "intake engine exposes next_question",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def next_question",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "shared-utils/client_intake/engine.py"
+      ],
+      "scope": "shared-utils/client_intake/engine.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "G4.acquisition-brief",
+      "interface": "G4",
+      "claim": "guided discovery brief class exists",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "class AcquisitionBrief",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/acquisition_brief.py"
+      ],
+      "scope": "38-conversational-ai-system/tools/acquisition_brief.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "G5.bootstrap-file",
+      "interface": "G5",
+      "claim": "client bootstrap engine module exists at the pin",
+      "kind": "lstree",
+      "args": [
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "38-conversational-ai-system/tools/bootstrap_engine.py"
+      ],
+      "scope": "38-conversational-ai-system/tools",
+      "expect": "nonempty"
+    },
+    {
+      "id": "G5.bootstrap-name",
+      "interface": "G5",
+      "claim": "the T-36 output name is bound to the module",
+      "kind": "grep",
+      "args": [
+        "-niF",
+        "client-bootstrap-engine",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "nonempty"
+    },
+    {
+      "id": "G5.bootstrap-plan",
+      "interface": "G5",
+      "claim": "bootstrap engine separates a pure plan from the writing run",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def plan",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/bootstrap_engine.py"
+      ],
+      "scope": "bootstrap_engine.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "G5.bootstrap-run",
+      "interface": "G5",
+      "claim": "bootstrap engine has the single writer entry point",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def run",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/bootstrap_engine.py"
+      ],
+      "scope": "bootstrap_engine.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J1.publishing-cycle",
+      "interface": "J1",
+      "claim": "single-topic publishing cycle entry exists",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "run-publishing-cycle.sh",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "35-social-media-planner/scripts/run-publishing-cycle.sh"
+      ],
+      "scope": "run-publishing-cycle.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J2.weekly-batch",
+      "interface": "J2",
+      "claim": "cron-driven weekly batch exists",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "Cron-driven weekly batch",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "35-social-media-planner/scripts/weekly-batch.sh"
+      ],
+      "scope": "weekly-batch.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J3.campaign-mode",
+      "interface": "J3",
+      "claim": "Skill 57 entry declares the campaign creative mode",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "campaign",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "57-social-media-in-a-box/modes.md"
+      ],
+      "scope": "57-social-media-in-a-box/modes.md",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J4.approval-schema",
+      "interface": "J4",
+      "claim": "revisioned monthly approval manifest schema exists at the pin",
+      "kind": "lstree",
+      "args": [
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "38-conversational-ai-system/schemas/approval-manifest.schema.json"
+      ],
+      "scope": "38-conversational-ai-system/schemas",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J4.approval-title",
+      "interface": "J4",
+      "claim": "the approval schema is the joined 30-day manifest",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "Revisioned monthly approval manifest",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/schemas/approval-manifest.schema.json"
+      ],
+      "scope": "approval-manifest.schema.json",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J4.approval-semantic",
+      "interface": "J4",
+      "claim": "approval manifest has semantic validation",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def semantic_approval",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/pb_contracts.py"
+      ],
+      "scope": "pb_contracts.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J4.approval-binding",
+      "interface": "J4",
+      "claim": "dispatch checks the action against the loaded manifest revision",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def approval_errors",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/pb_contracts.py"
+      ],
+      "scope": "pb_contracts.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J4.absent-artifact-name",
+      "interface": "J4",
+      "claim": "the literal output name monthly-approval-contract is absent",
+      "kind": "grep",
+      "args": [
+        "-niF",
+        "monthly-approval-contract",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-niF",
+          "book_appointment",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "."
+        ],
+        "scope": "all tracked paths",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "J5.promised-item",
+      "interface": "J5",
+      "claim": "promised item is a first-class value in the fulfillment module",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "class PromisedItem",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/direct_fulfillment.py"
+      ],
+      "scope": "direct_fulfillment.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J5.keyword-bound",
+      "interface": "J5",
+      "claim": "keyword is a manifest-bound placement field",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "keyword",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/pb_contracts.py"
+      ],
+      "scope": "pb_contracts.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J5.immutable-item",
+      "interface": "J5",
+      "claim": "item identity is (item_id, version, content_sha256)",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "IMMUTABLE.",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/direct_fulfillment.py"
+      ],
+      "scope": "direct_fulfillment.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "J5.name-probe",
+      "interface": "J5",
+      "claim": "the five strings previously used to claim J5 absence now match code in the contracts layer",
+      "kind": "grep",
+      "args": [
+        "-niE",
+        "stable keyword|promised-item|promised_item|keyword mapping|original promise",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "*.py",
+        "*.sh"
+      ],
+      "scope": "*.py and *.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "R1.capability-declaration",
+      "interface": "R1",
+      "claim": "honest capability declaration file exists",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "personal_profile_rule",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "35-social-media-planner/config/profile-capabilities.json"
+      ],
+      "scope": "profile-capabilities.json",
+      "expect": "nonempty"
+    },
+    {
+      "id": "R2.comment-surface",
+      "interface": "R2",
+      "claim": "comment reader declares per-channel surfaces",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "CHANNEL_COMMENT_SURFACE",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "35-social-media-planner/scripts/comment_reader.py"
+      ],
+      "scope": "comment_reader.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "R3.private-opener",
+      "interface": "R3",
+      "claim": "private comment opener purpose is implemented in the outbound gate",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "COMMENT_PRIVATE_OPENER",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "nonempty"
+    },
+    {
+      "id": "R3.hook-writer",
+      "interface": "R3",
+      "claim": "GHL inbound hook writer still exists",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "s38_canonical_mapping",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh"
+      ],
+      "scope": "15-configure-hooks-mappings.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "R4.absent-adapter-names",
+      "interface": "R4",
+      "claim": "the four per-surface adapter output names are absent",
+      "kind": "grep",
+      "args": [
+        "-niE",
+        "instagram-route-adapter|page-comment-adapter|messenger-route-adapter|private-opener-adapter",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-niE",
+          "book_appointment",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "."
+        ],
+        "scope": "all tracked paths",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "R4.adapter-file-census",
+      "interface": "R4",
+      "claim": "every tracked path whose name contains adapter, for scope adjudication",
+      "kind": "lstree_filter",
+      "args": [
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "adapter"
+      ],
+      "scope": "all tracked paths, case-insensitive substring on the path",
+      "expect": "nonempty"
+    },
+    {
+      "id": "F1.asset-registry",
+      "interface": "F1",
+      "claim": "asset registry records preparation state",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def record_present",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/asset_registry.py"
+      ],
+      "scope": "asset_registry.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "F2.fulfillment-file",
+      "interface": "F2",
+      "claim": "direct fulfillment module exists at the pin",
+      "kind": "lstree",
+      "args": [
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "38-conversational-ai-system/tools/direct_fulfillment.py"
+      ],
+      "scope": "38-conversational-ai-system/tools",
+      "expect": "nonempty"
+    },
+    {
+      "id": "F2.fulfill-entry",
+      "interface": "F2",
+      "claim": "direct fulfillment exposes the once-only fulfil entry point",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def fulfill(",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/direct_fulfillment.py"
+      ],
+      "scope": "direct_fulfillment.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "F2.receipt",
+      "interface": "F2",
+      "claim": "a completion receipt needs a supplied delivery proof",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def record_delivery_proof",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/direct_fulfillment.py"
+      ],
+      "scope": "direct_fulfillment.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "F2.absent-artifact-name",
+      "interface": "F2",
+      "claim": "the literal output name direct-original-fulfillment is absent",
+      "kind": "grep",
+      "args": [
+        "-niF",
+        "direct-original-fulfillment",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-niF",
+          "book_appointment",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "."
+        ],
+        "scope": "all tracked paths",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "C1.channel-identifier-types",
+      "interface": "C1",
+      "claim": "channel to identifier-kind map exists",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "CHANNEL_IDENTIFIER_TYPES",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/tenant_identity.py"
+      ],
+      "scope": "tenant_identity.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C1.reminder-column",
+      "interface": "C1",
+      "claim": "contact identity schema carries a reminder counter",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "reminder_total",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/tenant_identity.py"
+      ],
+      "scope": "tenant_identity.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C2.capture-store",
+      "interface": "C2",
+      "claim": "durable capture cursor store exists",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "class CaptureStore",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/collection_lock.py"
+      ],
+      "scope": "collection_lock.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C3.consent-offer-scope",
+      "interface": "C3",
+      "claim": "consent gate declares the offer scope",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "SCOPE_OFFER",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/consent_gate.py"
+      ],
+      "scope": "consent_gate.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C3.human-fence",
+      "interface": "C3",
+      "claim": "consent gate fences a human-owned thread",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def human_takeover",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/consent_gate.py"
+      ],
+      "scope": "consent_gate.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C4.capture-budget",
+      "interface": "C4",
+      "claim": "collection state carries a capture budget",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "capture_budget",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/schemas/collection-state.schema.json"
+      ],
+      "scope": "collection-state.schema.json",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C4.sms-email-ask",
+      "interface": "C4",
+      "claim": "the one logical SMS/email ask is budgeted",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "max_sms_email_asks",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C4.absent-artifact-name",
+      "interface": "C4",
+      "claim": "the literal output name progressive-capture-candidate is absent",
+      "kind": "grep",
+      "args": [
+        "-niF",
+        "progressive-capture-candidate",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-niF",
+          "book_appointment",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "."
+        ],
+        "scope": "all tracked paths",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "C5.reminder-slots",
+      "interface": "C5",
+      "claim": "reminder slots are a validated state, not only a counter",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "reminder_slots",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C5.slot-order-rule",
+      "interface": "C5",
+      "claim": "three distinct slots must be ordered by due_at",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "due_at must increase across slots",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/pb_contracts.py"
+      ],
+      "scope": "pb_contracts.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C5.absent-artifact-name",
+      "interface": "C5",
+      "claim": "the literal output name reminder-state-machine is absent",
+      "kind": "grep",
+      "args": [
+        "-niF",
+        "reminder-state-machine",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-niF",
+          "book_appointment",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "."
+        ],
+        "scope": "all tracked paths",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "C6.followup-protocol",
+      "interface": "C6",
+      "claim": "a follow-up cadence protocol document exists",
+      "kind": "lstree",
+      "args": [
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "38-conversational-ai-system/protocols/intelligent-followup-protocol.md"
+      ],
+      "scope": "38-conversational-ai-system/protocols",
+      "expect": "nonempty"
+    },
+    {
+      "id": "C6.protocol-readers",
+      "interface": "C6",
+      "claim": "the only code references to the follow-up protocol are a static QC linter",
+      "kind": "grep",
+      "args": [
+        "-niE",
+        "intelligent-followup-protocol|intelligent_followup",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "*.py",
+        "*.sh"
+      ],
+      "scope": "*.py and *.sh",
+      "expect": "nonempty",
+      "control": {
+        "args": [
+          "-niE",
+          "book_appointment",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "*.py",
+          "*.sh"
+        ],
+        "scope": "*.py and *.sh",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "C6.runtime-scheduler",
+      "interface": "C6",
+      "claim": "no cron or schedule asset binds the follow-up protocol to a run",
+      "kind": "grep",
+      "args": [
+        "-niF",
+        "intelligent-followup-protocol",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "*cron*",
+        "*schedule*",
+        "*04-register*"
+      ],
+      "scope": "paths whose name contains cron, schedule or 04-register",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-niF",
+          "cron",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "*cron*",
+          "*schedule*",
+          "*04-register*"
+        ],
+        "scope": "paths whose name contains cron, schedule or 04-register",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "O1.offer-scope",
+      "interface": "O1",
+      "claim": "offers are a first-class scoped value",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "SCOPE_OFFER",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools"
+      ],
+      "scope": "38-conversational-ai-system/tools",
+      "expect": "nonempty"
+    },
+    {
+      "id": "O1.offer-route-absent",
+      "interface": "O1",
+      "claim": "no offer selection or routing function inside the PBB conversation surface",
+      "kind": "grep",
+      "args": [
+        "-niE",
+        "select_offer|offer_route|pick_offer|choose_offer|offer_select",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system",
+        "35-social-media-planner",
+        "57-social-media-in-a-box"
+      ],
+      "scope": "38- / 35- / 57- skill directories",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-niE",
+          "book_appointment",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "38-conversational-ai-system",
+          "35-social-media-planner",
+          "57-social-media-in-a-box"
+        ],
+        "scope": "38- / 35- / 57- skill directories",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "O2.booking-protocol",
+      "interface": "O2",
+      "claim": "a booking protocol document exists",
+      "kind": "lstree",
+      "args": [
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "38-conversational-ai-system/protocols/smart-booking-protocol.md"
+      ],
+      "scope": "38-conversational-ai-system/protocols",
+      "expect": "nonempty"
+    },
+    {
+      "id": "O2.absent-artifact-name",
+      "interface": "O2",
+      "claim": "the literal output name booking-followthrough-adapter is absent",
+      "kind": "grep",
+      "args": [
+        "-niF",
+        "booking-followthrough-adapter",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-niF",
+          "book_appointment",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "."
+        ],
+        "scope": "all tracked paths",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "O3.human-fence",
+      "interface": "O3",
+      "claim": "the human handoff fence exists",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "def human_release",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/consent_gate.py"
+      ],
+      "scope": "consent_gate.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "O3.lifecycle-ladder",
+      "interface": "O3",
+      "claim": "engineering loop lifecycle ladder is validated",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "LIFECYCLE_LADDER",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/pb_contracts.py"
+      ],
+      "scope": "pb_contracts.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "O3.absent-handoff-lifecycle",
+      "interface": "O3",
+      "claim": "no handoff acceptance, due-time or backup-owner lifecycle",
+      "kind": "grep",
+      "args": [
+        "-niE",
+        "handoff_accept|handoff_due|handoff-lifecycle|backup_owner|backup-owner",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "."
+      ],
+      "scope": "all tracked paths",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-niE",
+          "book_appointment",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "."
+        ],
+        "scope": "all tracked paths",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "D11.mapping-migrate",
+      "interface": "D-11",
+      "claim": "the mapping writer migrates an existing divergent body instead of skipping it",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "s38_merge_mapping_body",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh"
+      ],
+      "scope": "15-configure-hooks-mappings.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "D11.repair-migrate",
+      "interface": "D-11",
+      "claim": "the repair stage calls the same canonical body migration",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "migrate_mapping_body(",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py"
+      ],
+      "scope": "repair-inbound-hooks.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "D12.shared-contract-lib",
+      "interface": "D-12",
+      "claim": "one shared hook-mapping predicate is sourced by both gates",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "lib-hook-mapping-contract.sh",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/scripts"
+      ],
+      "scope": "38-conversational-ai-system/scripts",
+      "expect": "nonempty"
+    },
+    {
+      "id": "D12.model-optional",
+      "interface": "D-12",
+      "claim": "the shared predicate records model as an optional override",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "model` is an OPTIONAL override",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/scripts/lib-hook-mapping-contract.sh"
+      ],
+      "scope": "lib-hook-mapping-contract.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "D13.admission-not-delivery",
+      "interface": "D-13",
+      "claim": "the contracts layer separates provider admission from delivered",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "never \"delivered\"",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/tools/direct_fulfillment.py"
+      ],
+      "scope": "direct_fulfillment.py",
+      "expect": "nonempty"
+    },
+    {
+      "id": "D13.selftest-200-only",
+      "interface": "D-13",
+      "claim": "the hook self-test accepts HTTP 200 + ok:true as a passing step",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "hook returned HTTP 200 + {ok:true}",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/scripts/24-self-test-hook.sh"
+      ],
+      "scope": "24-self-test-hook.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "D13.selftest-temp-contact-default",
+      "interface": "D-13",
+      "claim": "the only delivery proof in the self-test is gated behind CREATE_TEMP_CONTACT",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "CREATE_TEMP_CONTACT:-0",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "38-conversational-ai-system/scripts/24-self-test-hook.sh"
+      ],
+      "scope": "24-self-test-hook.sh",
+      "expect": "nonempty"
+    },
+    {
+      "id": "D15.launch-gate-uninvoked",
+      "interface": "D-15",
+      "claim": "no installer, updater or workflow invokes the launch reply-owner gate",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "qc-launch-conversation-ai",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "install.sh",
+        "update-skills.sh",
+        ".github/workflows/"
+      ],
+      "scope": "install.sh, update-skills.sh, .github/workflows/",
+      "expect": "empty",
+      "control": {
+        "args": [
+          "-nF",
+          "qc-launch-conversation-ai",
+          "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+          "--",
+          "38-conversational-ai-system/launch/"
+        ],
+        "scope": "38-conversational-ai-system/launch/",
+        "expect": "nonempty"
+      }
+    },
+    {
+      "id": "D15.launch-gate-exists",
+      "interface": "D-15",
+      "claim": "the launch reply-owner gate script exists",
+      "kind": "lstree",
+      "args": [
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "38-conversational-ai-system/launch/qc-launch-conversation-ai.sh"
+      ],
+      "scope": "38-conversational-ai-system/launch",
+      "expect": "nonempty"
+    },
+    {
+      "id": "D15.skill44-consumer",
+      "interface": "D-15",
+      "claim": "Skill 44 template names the launch reply-owner contract, so ownership is at least documented there",
+      "kind": "grep",
+      "args": [
+        "-nF",
+        "customer-replied-conversation-ai",
+        "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+        "--",
+        "44-convert-and-flow-operator"
+      ],
+      "scope": "44-convert-and-flow-operator",
+      "expect": "nonempty"
+    }
+  ]
+}
