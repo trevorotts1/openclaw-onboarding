@@ -120,7 +120,24 @@ def test_installer_dry_run():
 def test_installer_self_check():
     # Guard 1: src == dst must skip the write, never truncate the registry.
     # Guard 2: a symlinked registry destination must fail the copy dry run.
+    # Guard 3: --update into a same-file registry must replace the tree and
+    # leave the shared registry bytes untouched.
     run([PY, str(SCRIPTS / "install_local.py"), "--self-check"], 0)
+
+
+def test_installer_self_check_can_fail():
+    # The self-check is only a gate if it can fail: with the same-file guard
+    # disarmed, it must exit 1 and report the truncation it caught.
+    src = (SCRIPTS / "install_local.py").read_text(encoding="utf-8")
+    disarmed = src.replace("        return os.path.samefile(src, dst)", "        return False")
+    assert disarmed != src, "same_file guard text not found; update this test"
+    with tempfile.TemporaryDirectory() as td:
+        mutant = Path(td) / "install_local.py"
+        mutant.write_text(disarmed, encoding="utf-8")
+        proc = run([PY, str(mutant), "--self-check"], 1)
+        assert "SELF-CHECK FAIL" in proc.stdout, proc.stdout
+        assert "truncated" in proc.stdout, proc.stdout
+
 
 def main():
     tests = [
@@ -132,6 +149,7 @@ def main():
         test_intake_founder_photo_forms,
         test_installer_dry_run,
         test_installer_self_check,
+        test_installer_self_check_can_fail,
     ]
     for test in tests:
         test()

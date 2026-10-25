@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import argparse
+import contextlib
+import io
 import os
 import re
 import shutil
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -161,6 +164,7 @@ def same_file(src, dst):
     except OSError:
         return False
 
+
 def copy_no_follow(src, dst):
     """Copy src onto dst without following a symlink leaf.
 
@@ -172,9 +176,12 @@ def copy_no_follow(src, dst):
     if same_file(src, dst):
         return False
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(dst, flags, 0o644)
-    with open(src, "rb") as src_file, os.fdopen(fd, "wb") as dst_file:
-        shutil.copyfileobj(src_file, dst_file)
+    # Open the source first: a missing or unreadable source must never leave a
+    # truncated destination behind.
+    with open(src, "rb") as src_file:
+        fd = os.open(dst, flags, 0o644)
+        with os.fdopen(fd, "wb") as dst_file:
+            shutil.copyfileobj(src_file, dst_file)
     return True
 
 
@@ -195,16 +202,21 @@ def write_registry(writes):
     return 0 if ok else 1
 
 
+def plan_registry(writes):
+    """Dry-run plan: a same-file destination is a skip, never a planned write."""
+    for src, dst in writes:
+        if same_file(src, dst):
+            print(f"SKIP registry write (source and destination are the same file): {dst}")
+            continue
+        print(f"PLAN registry write: {src} -> {dst}")
+
+
 def install_registry(root, registry, dry_run):
     writes, failures = validate_registry(root, registry)
     for failure in failures:
         print(f"FAIL: {failure}")
     if dry_run:
-        for src, dst in writes:
-            if same_file(src, dst):
-                print(f"SKIP registry write (source and destination are the same file): {dst}")
-                continue
-            print(f"PLAN registry write: {src} -> {dst}")
+        plan_registry(writes)
         return 1 if failures else 0
     if failures:
         return 1
@@ -269,11 +281,7 @@ def install_one(root, source, mode, dry_run, registry, update=False):
             return 1
         if dry_run:
             print(f"PLAN: replace the copy at {target} from {source}")
-            for src, dst in writes:
-                if same_file(src, dst):
-                    print(f"SKIP registry write (source and destination are the same file): {dst}")
-                    continue
-                print(f"PLAN registry write: {src} -> {dst}")
+            plan_registry(writes)
             print("PASS: dry run only; no filesystem change was made.")
             return 0
         rc = replace_copy(root, target, source)
@@ -294,11 +302,14 @@ def install_one(root, source, mode, dry_run, registry, update=False):
         return 1
 
     if dry_run:
-        print("PASS: dry run only; target is free and no filesystem change was made.")
         if mode == "copy":
             # A refused registry destination is a refused install: returning 0
-            # here would approve a layout the real copy path rejects.
-            return install_registry(root, registry, dry_run=True)
+            # here would approve a layout the real copy path rejects. The
+            # verdict is known before any PASS line is printed.
+            rc = install_registry(root, registry, dry_run=True)
+            if rc != 0:
+                return rc
+        print("PASS: dry run only; target is free and no filesystem change was made.")
         return 0
 
     root.mkdir(parents=True, exist_ok=True)
@@ -318,14 +329,19 @@ def install_one(root, source, mode, dry_run, registry, update=False):
 
 
 def self_check():
-    """Prove the two installer guards on throwaway trees. No real root is touched."""
-    import contextlib
-    import io
-    import tempfile
-
+    """Prove the installer guards on throwaway trees. No real root is touched."""
     failures = []
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
+
+        def seed_skill(folder):
+            """A minimal tree identity_problems accepts."""
+            for rel in REQUIRED_FILES:
+                path = folder / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(rel, encoding="utf-8")
+            (folder / "SKILL.md").write_text(f"---\nname: {SKILL_NAME}\n---\n", encoding="utf-8")
+            (folder / "VERSION").write_text("1.0.0\n", encoding="utf-8")
 
         # Case 1: the registry src and dst are the same file, as they are when
         # a copy installs into a root that already holds the sibling
@@ -342,7 +358,6 @@ def self_check():
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc_dry = install_registry(same_root, registry, dry_run=True)
-            rc_real = install_registry(same_root, registry, dry_run=False)
         planned = buf.getvalue()
         if "PLAN registry write" in planned:
             failures.append("dry run planned a registry write when src and dst are one file")
@@ -350,8 +365,17 @@ def self_check():
             failures.append("dry run did not report the same-file skip")
         if rc_dry != 0:
             failures.append(f"same-file dry run returned {rc_dry}, expected 0")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc_real = install_registry(same_root, registry, dry_run=False)
+        applied = buf.getvalue()
         if rc_real != 0:
             failures.append(f"same-file install returned {rc_real}, expected 0")
+        if "SKIP: registry source and destination are the same file" not in applied:
+            failures.append("same-file install did not report the registry skip")
+        if "PASS: registry written" in applied:
+            failures.append("same-file install rewrote a registry it must skip")
         for name in REGISTRY_FILES:
             if (same_dir / name).read_bytes() != expected[name]:
                 failures.append(f"same-file install truncated {name}")
@@ -366,25 +390,68 @@ def self_check():
         source = td / "src"
         source_registry = source / REGISTRY_REL
         source_registry.mkdir(parents=True)
-        (source / "SKILL.md").write_text("---\nname: blackceo-signature-page\n---\n", encoding="utf-8")
-        for name in REGISTRY_FILES:
-            (source_registry / name).write_text("{}", encoding="utf-8")
+        seed_skill(source)
 
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc_link = install_one(link_root, source, "copy", True, (source_registry, []))
+        refused = buf.getvalue()
         if rc_link == 0:
             failures.append("copy dry run returned 0 with a symlinked registry destination")
-        if "FAIL" not in buf.getvalue():
-            failures.append("copy dry run did not report the symlinked registry destination")
+        if "registry destination escapes the skills root or is a symlink" not in refused:
+            failures.append("copy dry run did not refuse the symlinked registry destination")
+
+        # Case 3: --update into a root that already holds the sibling registry.
+        # The planner must skip the write, and the real update must replace the
+        # tree while leaving the shared registry bytes untouched.
+        upd_root = td / "update"
+        upd_target = upd_root / SKILL_NAME
+        upd_source = upd_root / "unnumbered"
+        seed_skill(upd_target)
+        seed_skill(upd_source)
+        (upd_target / "replaced-marker").write_text("old tree", encoding="utf-8")
+        upd_dir = upd_root / REGISTRY_REL
+        upd_dir.mkdir(parents=True)
+        upd_expected = {}
+        for name in REGISTRY_FILES:
+            (upd_dir / name).write_text(f'{{"case": "update {name}"}}', encoding="utf-8")
+            upd_expected[name] = (upd_dir / name).read_bytes()
+        upd_registry = (upd_dir, [])
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc_upd_dry = install_one(upd_root, upd_source, "copy", True, upd_registry, update=True)
+        planned = buf.getvalue()
+        if rc_upd_dry != 0:
+            failures.append(f"update same-file dry run returned {rc_upd_dry}, expected 0")
+        if "PLAN registry write" in planned:
+            failures.append("update dry run planned a registry write when src and dst are one file")
+        if "SKIP registry write" not in planned:
+            failures.append("update dry run did not report the same-file skip")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc_upd = install_one(upd_root, upd_source, "copy", False, upd_registry, update=True)
+        applied = buf.getvalue()
+        if rc_upd != 0:
+            failures.append(f"same-file update returned {rc_upd}, expected 0")
+        if "SKIP: registry source and destination are the same file" not in applied:
+            failures.append("same-file update did not report the registry skip")
+        if (upd_target / "replaced-marker").exists():
+            failures.append("update did not replace the installed tree")
+        for name in REGISTRY_FILES:
+            if (upd_dir / name).read_bytes() != upd_expected[name]:
+                failures.append(f"same-file update truncated {name}")
 
     for failure in failures:
         print(f"SELF-CHECK FAIL: {failure}")
     if failures:
         return 1
-    print("SELF-CHECK PASS — same-file registry writes are skipped and a symlinked "
-          "registry destination fails the copy dry run")
+    print("SELF-CHECK PASS — same-file registry writes are skipped, a symlinked "
+          "registry destination fails the copy dry run, and --update replaces the "
+          "tree without touching the shared registry")
     return 0
+
 
 def main():
     parser = argparse.ArgumentParser(description="Safely install/link the BlackCEO skill into local agent skills roots.")
