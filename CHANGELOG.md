@@ -1,3 +1,10 @@
+## [Unreleased]  -  2026-10-25  -  PBB-325 / T-05 repair 2: the engineering loop reads PB_* configuration at use time, and malformed stop/payload input is refused
+
+- Repair of verifier PBB-279's FAIL on `e7f5d98a` (T-05). `CONTROL/eng_loop.py` no longer captures `PB_STATE_DIR` / `PB_LABEL` / `PB_PLIST` / `PB_TMP` / `PB_CACHE` at import: the owner-handler child and the launchd job read the runtime environment, so an isolated proof no longer writes the production store. Three guards that could not fire now refuse: a `--run-id` flag with no value, an out-of-range `--generation`, and a malformed `--payload` / `--body`.
+- In plain English: running the loop's own self-test against an isolated store now actually stays isolated, and bad input gets a refusal with a reason instead of a Python traceback.
+- Adds `CONTROL/tests/test_eng_loop_guards.py` (8 tests; 4 failures and 1 error on the reviewed bytes, 8 OK after). Skill 38 version `v2.0.36`.
+- Risk level: MEDIUM — runtime behaviour changes only for the malformed and boundary inputs named, and every inverse control is pinned in the new tests.
+
 ## [Unreleased]  -  2026-10-24  -  PBB-070 / T-47: cross-repository compatibility manifest and deployment evidence
 
 - Adds `implementation/pbb-070/compatibility-manifest.json` and `implementation/pbb-070/DEPLOYMENT-EVIDENCE.md`. The manifest binds openclaw-onboarding `bccc4050f`, 999-setup `1d1545fc8`, and blackceo-command-center `ef6b9364e` (pinned tag v7.6.112) by exact commit, names the interfaces that were checked, and marks every interface that is not proven.
