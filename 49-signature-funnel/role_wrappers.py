@@ -167,8 +167,12 @@ ALLOWED_INSTANCES = {role: {row.get("role_instance")
                             if row["page_role"] == role
                             and row.get("role_instance")}
                      for role in PAGE_ROLES}
-# The instance each page identity declares: {"downsell-2": "downsell_2",
-# "checkout": None, ...}. A delivery node's role_instance must equal it.
+# The instance each page identity (page_type row) declares: {"downsell-2":
+# "downsell_2", "checkout": None, ...}. A delivery node's role_instance must
+# equal the declaration for the node's OWN page_type: request page ids are
+# free-form node ids (fixtures carry "signature-launch-l4-THANK_YOU"), never
+# table keys, so the lookup is keyed on the node's page_type and an undeclared
+# page identity is refused rather than read as "declares no instance".
 PAGE_TYPE_INSTANCE = {page_type: row.get("role_instance")
                       for page_type, row in PAGE_ROLE_MAP["page_types"].items()}
 
@@ -346,9 +350,10 @@ class RoleWrapper:
         Refuses, by name: a stub/simulated result, a result that does not
         echo its request, a delivery node of another role, a delivery node
         whose node_id is not this request's page_id, and a node whose
-        role_instance is not the instance that page identity declares.
-        Records, never invents: values absent from both inputs land in
-        ``missing`` and the record is bound_complete=False.
+        page_type is not a declared page identity (or declares another role)
+        or whose role_instance is not the instance that page identity
+        declares. Records, never invents: values absent from both inputs
+        land in ``missing`` and the record is bound_complete=False.
         """
         request = self._check_request(request)
         if is_simulated_result(result):
@@ -384,12 +389,25 @@ class RoleWrapper:
                     f"this request's page {request['page_id']!r}; a wrapper "
                     "binds only the page it was asked for")
             node_instance = delivery_node.get("role_instance")
-            declared = PAGE_TYPE_INSTANCE.get(request["page_id"])
+            # The declared instance comes from the node's page_type row, the
+            # one page identity vocabulary: request["page_id"] is a free-form
+            # node id and declares nothing.
+            node_type = delivery_node.get("page_type")
+            if node_type not in PAGE_TYPE_INSTANCE:
+                raise RoleWrapperError(
+                    f"delivery node page_type {node_type!r} is not a page "
+                    "identity the ONE page-role table declares")
+            if PAGE_TYPE_TO_ROLE[node_type] != self.role:
+                raise RoleWrapperError(
+                    f"delivery node page_type {node_type!r} declares role "
+                    f"{PAGE_TYPE_TO_ROLE[node_type]!r}, not this wrapper's "
+                    f"role {self.role!r}")
+            declared = PAGE_TYPE_INSTANCE[node_type]
             if node_instance != declared:
                 raise RoleWrapperError(
                     f"delivery node role_instance {node_instance!r} does not "
-                    f"match the instance declared for page "
-                    f"{request['page_id']!r} ({declared!r})")
+                    f"match the instance declared for page_type "
+                    f"{node_type!r} ({declared!r})")
             if role_instance is not None and node_instance != role_instance:
                 raise RoleWrapperError(
                     f"delivery node role_instance {node_instance!r} does not "
@@ -704,11 +722,37 @@ def _self_check() -> None:
         req, res, delivery_node=_node("checkout", "checkout-B",
                                       logical_id="pg-other-page")),
         "delivery node of another page refused (node_id != request page_id)")
+    req_d2 = _request("downsell_1", "downsell-2")
     refuses(lambda: RoleWrapper("downsell_1").consume(
-        _request("downsell_1", "downsell-2"),
-        _result(_request("downsell_1", "downsell-2")),
+        req_d2, _result(req_d2),
         delivery_node=_node("downsell_1", "downsell-2")),
         "delivery node dropping the page's declared instance refused")
+    # Real page ids are free-form node ids, never table keys: the declared
+    # instance must bind (and its absence must refuse) on the node's
+    # page_type alone.
+    req_ff = _request("downsell_1", "signature-launch-l4-DOWNSELL_2")
+    rec_ff = RoleWrapper("downsell_1").consume(
+        req_ff, _result(req_ff),
+        delivery_node=_node("downsell_1", "signature-launch-l4-DOWNSELL_2",
+                            page_type="downsell-2", role_instance="downsell_2"))
+    _ck(rec_ff["role_instance"] == "downsell_2"
+        and rec_ff["bound_complete"] is True,
+        "declared instance binds under a free-form page id")
+    refuses(lambda: RoleWrapper("downsell_1").consume(
+        req_ff, _result(req_ff),
+        delivery_node=_node("downsell_1", "signature-launch-l4-DOWNSELL_2",
+                            page_type="downsell-2")),
+        "dropped declared instance refused under a free-form page id")
+    req_up = _request("upsell_1", "signature-launch-l4-UPSELL")
+    refuses(lambda: RoleWrapper("upsell_1").consume(
+        req_up, _result(req_up),
+        delivery_node=_node("upsell_1", "signature-launch-l4-UPSELL",
+                            page_type="checkout")),
+        "page identity declaring another role refused")
+    refuses(lambda: RoleWrapper("checkout").consume(
+        req, res, delivery_node=_node("checkout", "checkout",
+                                      page_type="checkout-v2")),
+        "undeclared page identity refused")
     refuses(lambda: RoleWrapper("downsell_1").consume(
         _request("downsell_1", "downsell-2"), _result(_request("downsell_1", "downsell-2")),
         delivery_node=_node("downsell_1", "downsell-2",
