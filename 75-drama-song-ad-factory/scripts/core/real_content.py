@@ -35,7 +35,7 @@ Data
 ``english_words.txt.gz``      (already shipped) ordinary-English lexicon, used
                               as positive evidence that a token is a general
                               word rather than a designator.
-``real_content_names.txt.gz`` (shipped here) 1,328 curated given names and
+``real_content_names.txt.gz`` (shipped here) 1,377 curated given names and
                               unambiguous surnames.  Source is deliberately NOT
                               ``/usr/share/dict/propernames``: that list carries
                               "old", "butler", "king", "judge", "spy", "son",
@@ -721,6 +721,14 @@ def person_name_ok(value):
     titles.  The round-10 lease does carry ``real_content_names.txt.gz``, and it
     is where the twelve real people round 9 refused were restored -- by data,
     not by weakening the rule.
+
+    S75-T06 round 11.  Round 10's price for closing the orthography channel was
+    thirty-four real people: twenty-one accented names and thirteen surnames
+    spelt with an internal capital or an apostrophe.  They are restored the same
+    way and only that way -- one curated entry each in ``real_content_names.txt
+    .gz``, in the accented spelling AND the unaccented spelling the same person
+    is written with.  No limb of this rule reads spelling as evidence again:
+    ``designator_evidence`` still returns on ``NAME_LEXICON`` membership alone.
     """
     toks = tokens(value)
     if not 1 <= len(toks) <= 4:

@@ -793,6 +793,25 @@ REAL_NAMES_RESTORED = [
     "Priya Raghunathan", "Wei Zhang", "Beyonc\u00e9 Knowles",
     "Renata Cruz-Whitfield", "Dana Woman", "Theresa Manager",
     "Erik Narratorsson", "Officer Dan Whitfield",
+    # S75-T06 round 11.  Round 10 closed the orthography channel by refusing
+    # these real people, in BOTH positions, through the production gate.  A real
+    # name carrying a diacritic is a real name, and an internal capital is how
+    # McAllister and O'Brien are actually spelt.  Every one is restored by DATA
+    # -- a curated entry in real_content_names.txt.gz -- not by re-reading
+    # spelling as evidence.  Both spellings are pinned: the accented form
+    # because that is the person, the unaccented form because that is how the
+    # same person is often written.
+    "Amélie", "Amelie", "André", "Andre", "Björk", "Bjork",
+    "Chloé", "Chloe", "Céline", "Celine", "François",
+    "Francois", "José", "Jose", "Jürgen", "Jurgen", "Léa", "Lea",
+    "Lê", "Le", "María", "Maria", "Müller", "Muller",
+    "Nguyễn", "Nguyen", "Noémie", "Noemie", "Núñez",
+    "Nunez", "Pelé", "Pele", "Phạm", "Pham", "Renée", "Renee",
+    "Élodie", "Elodie", "Ólafsdóttir", "Olafsdottir",
+    "Škoda", "Skoda",
+    "D'Angelo", "DeNiro", "DeShawn", "DeVito", "DiCaprio", "LaToya",
+    "LeBron", "McAllister", "McGregor", "N'Golo", "O'Brien", "O'Neil",
+    "VanDyke", "LaRue", "VanDerBerg",
 ]
 
 
@@ -857,7 +876,7 @@ def test_a_restored_real_name_authors_a_complete_cast():
         assert W.profile_defects(result["identities"][0]) == [], name
 
 #: DECLARED RESIDUAL, pinned rather than hidden.  A name whose EVERY word is an
-#: ordinary English word and none of which is in the shipped 1,328-entry name
+#: ordinary English word and none of which is in the shipped 1,377-entry name
 #: lexicon cannot be told apart from a two-word description ("Old Man") by any
 #: rule that reads no list of names.  Refusing these is the cost of refusing
 #: those, and the cure is a bigger NAME lexicon -- a vocabulary, deliberately not
@@ -930,11 +949,20 @@ INVENTED_TOKENS_ORTHOGRAPHIES = sorted({
 
 #: Brands and product names -- real strings, not people.  Round 9 let these
 #: through the same orthographic channel as the coinages above.
+#:
+#: S75-T06 round 11.  This list carried four REAL SURNAMES ('O'Brien', 'LaRue',
+#: 'VanDerBerg', 'LaCroix') and the test below asserted every one of them was
+#: REFUSED.  A suite that pins a real person as must-refuse is a contract
+#: defect even while every test is green: it makes the regression untestable.
+#: The three the round named are now in REAL_NAMES_RESTORED, where the contract
+#: always intended them to be; 'LaCroix' is dropped rather than asserted either
+#: way, because the string is both a product and a French surname and this list
+#: exists only for unambiguous products.
 BRANDS_NOT_PEOPLE = [
     "GoFundMe", "MacBook", "GitHub", "GitLab", "LinkedIn", "YouTube",
     "WhatsApp", "PayPal", "FedEx", "HarperCollins", "DreamWorks",
     "BellWeather", "Airbnb", "Bitcoin", "Instacart", "Netflix", "Spotify",
-    "TikTok", "iPhone", "eBay", "LaCroix", "O'Brien", "LaRue", "VanDerBerg",
+    "TikTok", "iPhone", "eBay",
 ]
 
 #: The generic-extra residue round 9 could not close: a coinage head with a
