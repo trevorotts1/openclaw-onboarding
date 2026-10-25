@@ -454,14 +454,41 @@ than the pin. Absence claims are claims about **tracked content at `9488ccbc8`**
 
 ## 11. Citations
 
-Every `file:line` quoted in this document was re-checked against the pinned blob by
-`evidence/search/check_citations.py`, reading `git show <pin>:<path>` and never the working tree.
+`evidence/search/check_citations.py` re-checked every citation listed in
+`evidence/search/citations.json` against the pinned blob, reading `git show <pin>:<path>` and never
+the working tree.
 
 ```
 pin=9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 citations=80 mismatches=0
 ```
 
 Full report: `evidence/citations-report.txt`.
+
+**Scope of that 80 — what is checked and what is not.** The previous wording here said "every
+`file:line` quoted in this document was re-checked". That was an overstatement of process strength,
+raised as H1 by the independent verifier PBB-280 and repaired by PBB-351: it is narrowed here to
+what the manifest actually certifies, and the gap is named instead of implied.
+
+This document carries **102 line references**, counted as tokens of the form `path:NN` plus bare
+`:NN` tokens: 51 written with a path token, 51 bare. The manifest is not 102 entries, and the
+difference is not hidden:
+
+- **51 bare `:NN` references** carry no path of their own. No script can resolve them; a reader has
+  to take the file from the surrounding prose. **They are not machine-checked.**
+- **No handoff citation is in the manifest.** `citations.json` has **0 of 80** entries under
+  `shared-utils/handoff/`. That leaves uncovered the ten bare `handoff.py` references in section 6 —
+  `HandoffStore.create`, `.accept`, `.escalate`, `.backup_accept`, `.release` and `.get`, the
+  backup-owner guard, the stored `backup_owner_id`, and the module's `__main__` entry point and
+  `_self_check()` call — and the one path-anchored reference in that section, the O3 test in
+  `shared-utils/handoff/tests/test_handoff.py` (`test_create_requires_a_distinct_backup_owner`).
+- **Those 11 O3 citations were checked by hand**, line by line, against the pinned blob, and every
+  one is true. That check is a human reading of `git show`, not a reproducible script run, so the
+  manifest does not certify it.
+
+What the manifest certifies, exactly: the 80 citations it lists resolve at the pin with 0
+mismatches, reproducible by the command above. What it does not certify: the remaining line
+references in this document. Any finding that rests on a bare reference or a handoff reference rests
+on the hand check recorded here, not on the manifest.
 
 ---
 
