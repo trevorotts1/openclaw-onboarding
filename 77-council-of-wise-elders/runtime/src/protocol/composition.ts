@@ -650,8 +650,8 @@ export class DeliberationService {
         detail: unfinished
           ? `round ${round} ended with unfinished work (a job is still queued or running); the session is blocked and resumable instead of planning round ${round + 1} from a partial record`
           : session.spec.mode === 'full'
-            ? `full mode keeps all nine seats: ${missing.join(', ')} missing in round ${round}; stopped before round ${round + 1} so no paid call is spent on a session that cannot produce a verdict`
-            : `${session.spec.mode} mode keeps its whole panel: ${missing.join(', ')} missing in round ${round}; stopped before round ${round + 1} so no paid call is spent on a session that cannot produce a verdict`,
+            ? `full mode keeps all nine seats: ${missing.join(', ')} missing in round ${round}; stopped before round ${round + 1} because a session missing a seat cannot produce a verdict`
+            : `${session.spec.mode} mode keeps its whole panel: ${missing.join(', ')} missing in round ${round}; stopped before round ${round + 1} because a session missing a seat cannot produce a verdict`,
         missing: missing.map((seat_id) => ({ round, seat_id })),
         budget: snapshotBudget(),
       };
