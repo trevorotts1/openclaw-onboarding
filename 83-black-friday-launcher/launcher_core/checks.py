@@ -70,9 +70,13 @@ def checkout_mode_violations(checkout: Dict[str, Any]) -> List[str]:
     state = checkout.get("checkout_mode_state")
     if state == "resolved" and _nonempty_str(mode):
         return []
+    if state == "contract_gap":
+        return [f"AF-LAUNCH-CHECKOUT-MODE: checkout_mode is {mode!r} "
+                f"(state {state!r}); the Skill 79 contract names no mode for this "
+                "launch shape, so production delivery is blocked until it resolves"]
     return [f"AF-LAUNCH-CHECKOUT-MODE: checkout_mode is {mode!r} "
-            f"(state {state!r}); the Skill 79 contract names no mode for this "
-            "launch shape, so production delivery is blocked until it resolves"]
+            f"(state {state!r}) is not a resolved mode; production delivery is "
+            "blocked until a resolved, non-empty checkout_mode is recorded"]
 
 
 def _load_checkout_validator():

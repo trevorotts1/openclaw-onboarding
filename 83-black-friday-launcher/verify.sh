@@ -39,9 +39,9 @@ echo "== route invariants and adapter wiring =="
 "$PY" -m unittest discover -s "$HERE/routes/tests" -p 'test_routes.py'
 
 echo "== browser diagnostic (offline) =="
-echo "no browser or Playwright is installed or reachable offline; the diagnostic"
-echo "below proves the landing -> checkout route wiring and the Skill 79 order"
-echo "form binding without a browser, and says so in its output"
+echo "the diagnostic below probes this machine for browser tooling, reports what"
+echo "it finds, and proves the landing -> checkout route wiring and the Skill 79"
+echo "order form binding without driving a browser"
 "$PY" "$HERE/routes/tests/test_routes.py" BrowserDiagnosticTests -v
 
 echo "== worked-example fixtures =="

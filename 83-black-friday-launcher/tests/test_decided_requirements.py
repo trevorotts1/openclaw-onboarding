@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import json
 import sys
 import tempfile
@@ -277,16 +278,14 @@ class CheckoutMappingTests(unittest.TestCase):
         self.assertIsNone(price["native_price_id"])
         self.assertIn("currency_exponent", price["unknown"])
 
-    def test_the_real_s79_validator_is_bound_when_its_dependency_is_present(self):
+    def test_the_real_s79_validator_is_bound(self):
+        # jsonschema is the Launcher's own runtime requirement (requirements.txt),
+        # so under the verification interpreter the validator must bind: an
+        # "unavailable" state is a failure, never a recorded exception (L25-BF-40).
         mapping = self.mapping("single_simple")
         validator = mapping["validator"]
-        self.assertIn(validator["state"], ("bound", "unavailable"))
-        if validator["state"] == "bound":
-            self.assertIn(validator["probe"]["result"], ("accepted", "rejected"))
-        else:
-            # An isolated interpreter hides the user site-packages; the reason
-            # is recorded, never guessed, and the dependency package names it.
-            self.assertIn("jsonschema", validator.get("error", ""))
+        self.assertEqual(validator["state"], "bound", validator)
+        self.assertIn(validator["probe"]["result"], ("accepted", "rejected"))
 
     def test_the_mapping_is_derived_from_the_contract_file(self):
         mapping = self.mapping("single_simple")
@@ -459,8 +458,28 @@ class PackageRecordTests(unittest.TestCase):
         self.assertEqual(manifest["cross_sales"]["teaching"]["state"], "pending")
         self.assertIn("council-advice.json", self.out["receipt"]["council"]["advice_path"])
 
-    def test_clean_package_passes_every_check(self):
-        self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
+    def test_a_resolved_mode_package_passes_every_check(self):
+        # The clean-package guarantee, on a shape whose Skill 79 mode resolves.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        run_dir = Path(tmp.name) / "run"
+        normalized = intake.validate(base_intake("single_simple"))
+        advice = council.planning_step(normalized, runner=stub_council)
+        graph = route.compile_route(normalized, advice)
+        pieces = pieces_for(run_dir, graph, normalized)
+        out = package.assemble(run_dir, normalized, graph, pieces, council=advice)
+        self.assertEqual(
+            checks.check_package(Path(out["manifest_path"]), run_dir), [])
+
+    def test_the_folded_level_package_is_blocked_only_on_the_unresolved_mode(self):
+        # folded_levels has no mode in the Skill 79 contract (L25-BF-41): the
+        # package is otherwise clean, so the block must be exactly the one
+        # contract gap — never a silent pass, never a second defect hiding it.
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertEqual([f.split(":")[0] for f in fails],
+                         ["AF-LAUNCH-CHECKOUT-MODE"], fails)
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertIs(manifest["checkout"]["delivery_blocked"], True)
 
     def test_a_defaulted_price_fails_the_build_check(self):
         manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
@@ -546,8 +565,8 @@ class DependencyPackageTests(unittest.TestCase):
         manifest = dependencies.load_manifest()
         self.assertNotIn("enabled_in_999", manifest)
         report = dependencies.check()
-        # jsonschema is the one blocker that depends on the interpreter's
-        # site-packages (absent under `python3 -I` with a user-site install).
+        # jsonschema is the one blocker that depends on the running interpreter's
+        # site-packages; verify.sh refuses to run without it (L25-BF-40).
         self.assertLessEqual(set(report["blockers"]), {"runtime-jsonschema"})
         self.assertIs(report["enabled_in_999"], report["would_enable"])
 
@@ -567,7 +586,15 @@ class DependencyPackageTests(unittest.TestCase):
     def test_an_empty_root_reports_everything_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             report = dependencies.check(Path(tmp))
-        self.assertEqual(report["present"], [])
+        # Root-scoped entries resolve against the checked-out tree and must all
+        # be missing. Runtime packages are interpreter-level, so they report
+        # what the running interpreter imports (verify.sh refuses to run without
+        # jsonschema) and are the only entries an empty root may show present.
+        runtime_present = ["runtime-jsonschema"] if (
+            importlib.util.find_spec("jsonschema") is not None) else []
+        self.assertEqual(report["present"], runtime_present)
+        self.assertTrue(all(e["status"] == "missing" for e in report["entries"]
+                            if e["id"] != "runtime-jsonschema"))
         self.assertTrue(report["missing"])
         self.assertFalse(report["would_enable"])
 

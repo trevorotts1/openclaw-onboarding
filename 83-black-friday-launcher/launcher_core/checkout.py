@@ -226,7 +226,7 @@ def order_form_mapping(intake: Dict[str, Any], graph: Dict[str, Any]) -> Dict[st
         # An unresolved mode is a withheld delivery, not a recorded pass.
         # checks.checkout_mode_violations enforces it; recording it here means a
         # consumer of the mapping sees the block without re-deriving it.
-        "delivery_blocked": mode is None,
+        "delivery_blocked": not mode,
         "delivery_blockers": ([] if mode else [
             f"AF-LAUNCH-CHECKOUT-MODE: journey_mode {journey!r} has no Skill 79 "
             f"checkout_mode; delivery is blocked until the contract names one"]),

@@ -9,9 +9,11 @@ path; none of them is stubbed.
 from __future__ import annotations
 
 import copy
+import importlib.util
 import inspect
 import json
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -551,6 +553,28 @@ class CheckoutDeliveryGateTests(unittest.TestCase):
         self.assertEqual(mapping["delivery_blockers"], [])
         self.assertEqual(checks.checkout_mode_violations(mapping), [])
 
+    def test_every_state_except_a_resolved_nonempty_mode_is_blocked(self):
+        for checkout in ({"checkout_mode": None, "checkout_mode_state": "resolved"},
+                         {"checkout_mode": "", "checkout_mode_state": "resolved"},
+                         {"checkout_mode": "post_selection",
+                          "checkout_mode_state": "banana"},
+                         {"checkout_mode": None, "checkout_mode_state": None},
+                         {}):
+            with self.subTest(checkout=checkout):
+                fails = checks.checkout_mode_violations(checkout)
+                self.assertEqual(len(fails), 1, fails)
+                self.assertTrue(fails[0].startswith("AF-LAUNCH-CHECKOUT-MODE"),
+                                fails)
+                self.assertIn("blocked", fails[0])
+
+    def test_delivery_flags_agree_with_the_gate_on_both_fixtures(self):
+        for name in ("elevation", "seven-figure-preneur"):
+            mapping = fixture_checkout_mapping(name)
+            with self.subTest(fixture=name):
+                blocked = bool(checks.checkout_mode_violations(mapping))
+                self.assertIs(mapping["delivery_blocked"], blocked)
+                self.assertEqual(bool(mapping["delivery_blockers"]), blocked)
+
 
 class BrowserDiagnosticTests(unittest.TestCase):
     """The explicit offline browser diagnostic verify.sh runs.
@@ -563,14 +587,37 @@ class BrowserDiagnosticTests(unittest.TestCase):
     """
 
     def test_offline_diagnostic_proves_route_and_checkout_wiring_without_a_browser(self):
-        browser = {
-            "used": False,
-            "reason": ("offline: no browser or Playwright is installed or reachable; "
-                       "landing -> checkout wiring is proved from the real route "
-                       "compiler and the Skill 79 contract binding instead"),
+        probe = {
+            "playwright_module": (importlib.util.find_spec("playwright")
+                                  is not None),
+            "browser_binaries": [name for name in
+                                 ("chromium", "chromium-browser", "google-chrome",
+                                  "chrome", "msedge", "firefox")
+                                 if shutil.which(name)],
         }
+        if probe["playwright_module"] or probe["browser_binaries"]:
+            reason = ("browser tooling is present on this machine but this "
+                      "diagnostic runs offline and drives no browser; landing -> "
+                      "checkout wiring is proved from the real route compiler and "
+                      "the Skill 79 contract binding instead")
+        else:
+            reason = ("offline: probed for the Playwright module and browser "
+                      "binaries and found none; landing -> checkout wiring is "
+                      "proved from the real route compiler and the Skill 79 "
+                      "contract binding instead")
+        browser = {"used": False, "reason": reason, "probe": probe}
         print("\nbrowser diagnostic: " + json.dumps(browser, sort_keys=True))
         self.assertFalse(browser["used"])
+        # The recorded probe is re-derived here, so the printed claim can never
+        # describe an environment that differs from the one that ran it.
+        self.assertEqual(browser["probe"], {
+            "playwright_module": (importlib.util.find_spec("playwright")
+                                  is not None),
+            "browser_binaries": [name for name in
+                                 ("chromium", "chromium-browser", "google-chrome",
+                                  "chrome", "msedge", "firefox")
+                                 if shutil.which(name)],
+        })
 
         surface = adapters.NATIVE_SURFACES["checkout"]
         self.assertFalse(surface["dispatch_adapter"])
