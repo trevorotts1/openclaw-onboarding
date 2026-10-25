@@ -29,8 +29,15 @@ Guarantees, each one testable:
   * CONFLICT IS REFUSED. A second, different landing -- or a different base or
     check set for the same merge -- is refused; the first acknowledgement
     stands and the store is untouched.
-  * CORRECT TARGET. A proof whose target is not this entry's repository is
-    refused, so ONB can never be acknowledged from an N999 proof.
+  * CORRECT TARGET. The store is bound to one full target -- repository,
+    remote and branch. A proof whose target is not that exact target is
+    refused, so ONB can never be acknowledged from an N999 proof, and a
+    main-bound queue cannot acknowledge a landing proven on a side branch.
+  * TRUE STAMP. A proof proves ancestry of ONE branch. The acknowledgement
+    always records which target was actually proven (``proven_target``), and
+    asserts ``ancestor_of_main`` only when the proven branch WAS
+    ``origin/main``. A queue bound to a side branch records that branch and
+    makes no ancestry claim about main.
   * NO CROSS-FLAVOR GATE. Acknowledging an ONB entry requires nothing from
     N999. The store holds one repository's entries; another flavor's absence is
     not this entry's business.
@@ -157,13 +164,16 @@ def _same_proof(current, fresh):
 
 
 class QueueStore:
-    """One repository's queue. Entries are acknowledged in place, atomically."""
+    """One repository's queue, on one branch. Entries are acknowledged atomically."""
 
-    def __init__(self, path, repository):
-        if not isinstance(repository, str) or not repository.strip():
-            raise ValueError("repository is required")
+    def __init__(self, path, repository, branch="main", remote="origin"):
+        #: The one target this queue receives landings for. A proof is only
+        #: evidence about the target it was minted on, so anything else -- a
+        #: different repository, remote or branch -- is refused rather than
+        #: acknowledged with a claim the verification never tested.
+        self.target = IP.Target(repository, remote=remote, branch=branch)
         self.path = os.path.abspath(path)
-        self.repository = repository.strip()
+        self.repository = self.target.repository
 
     # -- reading ---------------------------------------------------------
     def load(self):
@@ -245,10 +255,13 @@ class QueueStore:
         head = entry.get("head_commit")
         if not IP.is_sha40(head):
             raise AckRefused("head-missing", f"{unit} has no reviewed head sha")
-        if valid.target.repository != self.repository:
-            raise AckRefused("wrong-target",
-                             f"proof is for {valid.target.repository!r}, queue "
-                             f"is {self.repository!r}")
+        if valid.target != self.target:
+            raise AckRefused(
+                "wrong-target",
+                f"proof is for {valid.target.repository!r} on "
+                f"{valid.target.remote}/{valid.target.branch}; this queue is "
+                f"{self.target.repository!r} on {self.target.remote}/"
+                f"{self.target.branch}")
         if valid.candidate != head:
             raise AckRefused("candidate-mismatch",
                              f"proof candidate {valid.candidate} is not the "
@@ -302,10 +315,16 @@ class QueueStore:
             "base": fresh.base,
             "merge_commit": fresh.merge_commit,
             "checks": [c.as_dict() for c in fresh.checks],
-            "ancestor_of_main": f"proven {observed_at or fresh.observed_at or ''}".strip(),
+            "proven_target": fresh.target.as_dict(),
             "proof_digest": fresh.digest,
             "proof": fresh.as_dict(),
         }
+        # reverify() tested the merge against ONE branch. Write the ancestry
+        # claim about main only when that branch was the one proven; otherwise
+        # ``proven_target`` is the whole truth and no main claim is asserted.
+        if (fresh.target.remote, fresh.target.branch) == ("origin", "main"):
+            entry["ack"]["ancestor_of_main"] = (
+                f"proven {observed_at or fresh.observed_at or ''}".strip())
         document["entries"][unit] = entry
         document["schema"] = ACK_SCHEMA
         document["repository"] = self.repository

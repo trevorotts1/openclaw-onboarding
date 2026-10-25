@@ -294,5 +294,63 @@ class RefusalReasonsAreAClosedSet(Base):
         self.assertEqual(len(QA.ACK_REASONS), len(set(QA.ACK_REASONS)))
 
 
+def proof_on(repository=ONB, remote="origin", branch="main",
+             merge_commit=MERGE, candidate=CANDIDATE):
+    """A genuine proof minted on a transport bound to one specific branch."""
+    parents = {candidate: [BASE], merge_commit: [candidate, BASE]}
+    return verify_incorporation(
+        FakeGit(Target(repository, remote=remote, branch=branch),
+                parents, merge_commit),
+        unit="S75-T36", candidate=candidate, base=BASE,
+        merge_commit=merge_commit,
+        checks=[Check("unit-suite", "PASS", cases=31)],
+        observed_at="2026-10-25T20:00:00Z")
+
+
+class TheStampNamesTheBranchActuallyProven(Base):
+    """An ancestry claim must be one the verification actually tested."""
+
+    def test_a_side_branch_landing_is_refused_by_a_main_bound_queue(self):
+        before = self.raw()
+        with self.assertRaises(QA.AckRefused) as caught:
+            self.store.ack("S75-T36", proof_on(branch="side"))
+        self.assertEqual(caught.exception.reason, "wrong-target")
+        self.assertIn("side", caught.exception.detail)
+        self.assert_untouched(before)
+        self.assertEqual(self.store.status("S75-T36"), QA.ACK_PENDING)
+
+    def test_a_queue_bound_to_a_side_branch_records_it_and_claims_no_main(self):
+        side = QA.QueueStore(os.path.join(self.temp, "side.json"), ONB,
+                             branch="side")
+        side.seed({"S75-T36": {"verdict": "PASS", "head_commit": CANDIDATE}})
+        outcome = side.ack("S75-T36", proof_on(branch="side"),
+                           observed_at="2026-10-25T20:06:00Z")
+        self.assertEqual(outcome, QA.ACKNOWLEDGED)
+        ack = side.entry("S75-T36")["ack"]
+        self.assertNotIn("ancestor_of_main", ack,
+                         "a side-branch landing is not evidence about main")
+        self.assertEqual(ack["proven_target"],
+                         {"repository": ONB, "remote": "origin",
+                          "branch": "side"})
+        self.assertEqual(ack["proof"]["target"]["branch"], "side")
+        self.assertEqual(ack["merge_commit"], MERGE)
+
+    def test_a_main_landing_still_carries_main_ancestry_and_its_target(self):
+        self.store.ack("S75-T36", proof_on(branch="main"),
+                       observed_at="2026-10-25T20:07:00Z")
+        ack = self.store.entry("S75-T36")["ack"]
+        self.assertEqual(ack["ancestor_of_main"], "proven 2026-10-25T20:07:00Z")
+        self.assertEqual(ack["proven_target"],
+                         {"repository": ONB, "remote": "origin",
+                          "branch": "main"})
+
+    def test_a_proof_on_another_remote_is_refused_not_claimed_as_main(self):
+        before = self.raw()
+        with self.assertRaises(QA.AckRefused) as caught:
+            self.store.ack("S75-T36", proof_on(remote="upstream"))
+        self.assertEqual(caught.exception.reason, "wrong-target")
+        self.assert_untouched(before)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
