@@ -117,6 +117,11 @@ def test_installer_dry_run():
         ], 0)
 
 
+def test_installer_self_check():
+    # Guard 1: src == dst must skip the write, never truncate the registry.
+    # Guard 2: a symlinked registry destination must fail the copy dry run.
+    run([PY, str(SCRIPTS / "install_local.py"), "--self-check"], 0)
+
 def main():
     tests = [
         test_state,
@@ -126,6 +131,7 @@ def main():
         test_pdf_pipeline,
         test_intake_founder_photo_forms,
         test_installer_dry_run,
+        test_installer_self_check,
     ]
     for test in tests:
         test()
