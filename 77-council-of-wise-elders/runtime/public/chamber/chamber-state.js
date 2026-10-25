@@ -25,6 +25,11 @@
   var ns = root.councilChamber = root.councilChamber || {};
 
   var TOTAL_ROUNDS = 3;
+  // One display denominator per council size. The four older modes keep 3.
+  var MODE_ROUNDS = { light: 2, medium: 4, heavy: 10 };
+  function totalRounds(mode) {
+    return has(MODE_ROUNDS, mode) ? MODE_ROUNDS[mode] : TOTAL_ROUNDS;
+  }
   var SPOTLIGHT_MS = 6000;
   var PLAYBACK_MS = 7000;
   var DEFAULT_SEATS = ['simon-sinek', 'td-jakes', 'oprah-winfrey', 'tiffany-aliche', 'russell-brunson',
@@ -96,10 +101,10 @@
     return has(STEP_INDEX, state) ? STEPS[STEP_INDEX[state]][0] : null;
   }
 
-  function contextRound(state, consult) {
+  function contextRound(state, consult, mode) {
     if (has(ROUND_OF, state)) return ROUND_OF[state];
     if (has(CONTEXT_ROUND, state)) return CONTEXT_ROUND[state];
-    if (state === 'VERIFYING' || state === 'COMPLETED') return consult ? 1 : TOTAL_ROUNDS;
+    if (state === 'VERIFYING' || state === 'COMPLETED') return consult ? 1 : totalRounds(mode);
     return null;
   }
 
@@ -131,7 +136,7 @@
     m.endedAt = TERMINAL[state] && isFinite(ms) ? ms : null;
     if (has(STEP_INDEX, state)) m.step = STEP_INDEX[state];
     if (state === 'CONSULTING') m.consult = true;
-    var r = contextRound(state, m.consult);
+    var r = contextRound(state, m.consult, m.mode);
     if (r !== null) m.round = r;
   }
 
@@ -173,7 +178,7 @@
       setState(m, snap.state, Date.parse(snap.updated_at));
       if (!has(STEP_INDEX, snap.state) && text(snap.resume_phase) && has(STEP_INDEX, snap.resume_phase)) {
         m.step = STEP_INDEX[snap.resume_phase];
-        var rr = contextRound(snap.resume_phase, m.consult);
+        var rr = contextRound(snap.resume_phase, m.consult, m.mode);
         if (rr !== null) m.round = rr;
       }
     }
@@ -243,7 +248,7 @@
       var r = isFinite(n) && n >= 1 ? n : (m.round || 1);
       var seat = addSeat(m, p.seat_id);
       seat.accepted[r] = true;
-      if (!m.consult && r <= TOTAL_ROUNDS && !m.roundNoted[r] && allAccepted(m, r)) {
+      if (!m.consult && r <= totalRounds(m.mode) && !m.roundNoted[r] && allAccepted(m, r)) {
         m.roundNoted[r] = true;
         m.roundDoneAt[r] = isFinite(ms) ? ms : m.since;
         point(m, 'ROUND ' + r + ': ALL ' + m.seatIds.length + ' POSITIONS IN', null, at);
@@ -273,6 +278,11 @@
   }
 
   var ROUND_PLAIN = { 1: 'round 1 (opening positions)', 2: 'round 2 (debate)', 3: 'round 3 (the vote)' };
+  function roundPlain(round) {
+    if (!isFinite(round)) return '';
+    if (has(ROUND_PLAIN, round)) return ROUND_PLAIN[round];
+    return 'round ' + round + ' (debate)';
+  }
 
   function listNames(ids) {
     var names = ids.map(nameOf);
@@ -287,7 +297,8 @@
     var b = obj(m.blocked);
     var missing = Array.isArray(b.missing_seats) ? b.missing_seats.filter(function (x) { return typeof x === 'string'; }) : [];
     if (!missing.length) return text(b.detail);
-    var where = has(ROUND_PLAIN, b.missing_round) ? ' in ' + ROUND_PLAIN[b.missing_round] : '';
+    var mr = Number(b.missing_round);
+    var where = isFinite(mr) && mr >= 1 ? ' in ' + roundPlain(mr) : '';
     var out = 'The council is blocked because ' + listNames(missing) + (missing.length === 1 ? ' has' : ' have') + ' not answered' + where + '.';
     var causes = [];
     (Array.isArray(b.last_errors) ? b.last_errors : []).forEach(function (e) {
@@ -331,7 +342,10 @@
 
   function cardView(m, round, card, accepted) {
     if (!card) {
-      return { round: round, kind: round === 3 && !m.consult ? 'ratification' : m.consult ? 'consult' : 'advisor', stance: null, stanceText: null,
+      // Round 3 is the ratification pass only for the four older modes; in
+      // light/medium/heavy it is another advisor round.
+      var vote = round === 3 && !m.consult && !has(MODE_ROUNDS, m.mode);
+      return { round: round, kind: vote ? 'ratification' : m.consult ? 'consult' : 'advisor', stance: null, stanceText: null,
         preferredOptionId: null, preferredLetter: null, line: null, resolutionStance: null, pending: accepted === true };
     }
     var kind = card.card_kind === 'ratification' ? 'ratification' : card.card_kind === 'consult' ? 'consult' : 'advisor';
@@ -353,10 +367,15 @@
   function seatCards(m, id) {
     var s = m.seats[id];
     var out = {};
-    [1, 2, 3].forEach(function (r) {
-      if (s.cards[r]) out[r] = cardView(m, r, s.cards[r], true);
-      else if (s.accepted[r]) out[r] = cardView(m, r, null, true);
-    });
+    var rounds = {};
+    Object.keys(s.cards).forEach(function (k) { rounds[k] = true; });
+    Object.keys(s.accepted).forEach(function (k) { rounds[k] = true; });
+    Object.keys(rounds).map(Number).filter(function (r) { return isFinite(r) && r >= 1; })
+      .sort(function (a, b) { return a - b; })
+      .forEach(function (r) {
+        if (s.cards[r]) out[r] = cardView(m, r, s.cards[r], true);
+        else out[r] = cardView(m, r, null, true);
+      });
     return out;
   }
 
@@ -387,9 +406,10 @@
   function roundLabel(m) {
     var s = m.state;
     if (!s || PREP[s]) return 'GETTING READY';
-    if (has(ROUND_OF, s)) return 'ROUND ' + ROUND_OF[s] + ' OF ' + TOTAL_ROUNDS;
-    if (s === 'CRUX_REVIEW') return 'AFTER ROUND 1 OF ' + TOTAL_ROUNDS;
-    if (s === 'DRAFT_RESOLUTION') return 'AFTER ROUND 2 OF ' + TOTAL_ROUNDS;
+    var of = ' OF ' + totalRounds(m.mode);
+    if (has(ROUND_OF, s)) return 'ROUND ' + ROUND_OF[s] + of;
+    if (s === 'CRUX_REVIEW') return 'AFTER ROUND 1' + of;
+    if (s === 'DRAFT_RESOLUTION') return 'AFTER ROUND 2' + of;
     if (s === 'VERIFYING') return 'FINAL CHECKS';
     if (s === 'COMPLETED') return 'VERDICT';
     if (s === 'CONSULTING') return 'CONSULT';
@@ -445,7 +465,7 @@
     var complete = inRound > 0 && total > 0 && done === total;
 
     // Lines play back once a round is in and through the chair phase that follows it.
-    var playRound = complete ? inRound : state === 'CRUX_REVIEW' ? 1 : state === 'DRAFT_RESOLUTION' ? 2 : state === 'VERIFYING' ? contextRound(state, m.consult) : 0;
+    var playRound = complete ? inRound : state === 'CRUX_REVIEW' ? 1 : state === 'DRAFT_RESOLUTION' ? 2 : state === 'VERIFYING' ? contextRound(state, m.consult, m.mode) : 0;
     var playable = [];
     if (playRound) {
       rows.forEach(function (row) {
@@ -484,7 +504,10 @@
     // Tallies come from the highest round with any card content.
     var votesRound = 0;
     m.seatIds.forEach(function (id) {
-      [1, 2, 3].forEach(function (r) { if (m.seats[id].cards[r] && r > votesRound) votesRound = r; });
+      Object.keys(m.seats[id].cards).forEach(function (k) {
+        var r = Number(k);
+        if (isFinite(r) && r >= 1 && r > votesRound) votesRound = r;
+      });
     });
     var voters = 0;
     var counts = {};
@@ -547,7 +570,7 @@
       state: state, status: status, statusText: statusText,
       steps: steps(m), options: options, votesRound: votesRound || null, voters: voters, verdict: verdict,
       round: {
-        label: roundLabel(m), number: inRound || null, total: TOTAL_ROUNDS, headline: headline, explain: explain,
+        label: roundLabel(m), number: inRound || null, total: totalRounds(m.mode), headline: headline, explain: explain,
         // Running: time in this state. Finished: how long the whole session took (frozen).
         timer: clock(end - (m.endedAt !== null && isFinite(m.startAt) ? m.startAt : isFinite(m.since) ? m.since : end)), progress: progress, progressText: progressText,
         weighing: weighing, complete: complete
