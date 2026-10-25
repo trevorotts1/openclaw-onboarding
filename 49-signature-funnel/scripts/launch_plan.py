@@ -178,6 +178,14 @@ def is_web_url(value: Any) -> bool:
     """
     if not isinstance(value, str) or not value.strip():
         return False
+    # The stored destination is this exact string (minus edge padding), so what
+    # the validator parsed must be what a buyer's mail client opens: no inner
+    # whitespace or control bytes (urlsplit silently drops \n\t\r and would
+    # validate a different host than the one shipped) and no backslash (browsers
+    # read it as '/', urlsplit does not: "https://a.com\@b.test/" parses as
+    # b.test but opens as a.com).
+    if any(ch.isspace() or not ch.isprintable() or ch == "\\" for ch in value.strip()):
+        return False
     try:
         parts = urlsplit(value.strip())
         host = parts.hostname or ""

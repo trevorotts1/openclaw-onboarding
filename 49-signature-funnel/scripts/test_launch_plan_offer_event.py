@@ -375,6 +375,19 @@ def test_access_resolution() -> None:
         and welcome[0]["entitlements"] == [],
         "no-delivery choice: welcome units carry no destination or entitlements")
 
+    # Negative for the same rule: a no-delivery plan whose units still carry a
+    # destination is inconsistent and must not pass check().
+    stray = json.loads(json.dumps(plan))
+    planted = 0
+    for unit in stray["email_sequences"] + stray["text_sets"] + stray["automations"]:
+        if unit.get("id") in ("email_welcome_access", "text_access_link",
+                              "auto_post_sale"):
+            unit["access_destination"] = "https://example.test/access"
+            planted += 1
+    errors = launch_plan.check(stray)
+    say(planted > 0 and any("access destination disagrees" in e for e in errors),
+        "no delivery: a unit that still carries a destination fails check()")
+
     # No delivery, no destination at all: nothing is owed, so nothing blocks.
     no_delivery_absent = dict(no_delivery)
     for key in ("launch.access_url", "launch.login_url", "launch.member_area_url",
@@ -405,7 +418,11 @@ def test_access_url_must_be_web() -> None:
     bad_urls = ("javascript:alert(1)", "data:text/html,<script>alert(1)</script>",
                 "mailto:buyer@example.test", "ftp://example.test/access",
                 "https://", "https://exa mple.test/access", "not a url",
-                "//example.test/access")
+                "//example.test/access",
+                # parse-vs-use traps: urlsplit normalises or disagrees with what
+                # a buyer's mail client actually opens.
+                "https://example.test/ac cess", "https://exa\nmple.test/x",
+                "https://example.com\\@evil.test/")
     for bad in bad_urls:
         result = launch_plan.build_launch_plan(
             _launch(), dict(base, **{"launch.access_url": bad}))
@@ -426,7 +443,8 @@ def test_access_url_must_be_web() -> None:
         "a non-web login URL is never carried as a destination")
 
     # check() is the second gate: a supplied plan carrying an executable
-    # destination is refused even though the builder never emits one.
+    # destination is refused even though the builder never emits one. The
+    # assertion names the exact error so an unrelated complaint cannot pass it.
     poisoned = json.loads(json.dumps(
         launch_plan.build_launch_plan(_launch(), _answers())["plan"]))
     poisoned["access"]["destination"] = "javascript:alert(1)"
@@ -434,8 +452,16 @@ def test_access_url_must_be_web() -> None:
                  + poisoned["automations"]):
         if "access_destination" in unit:
             unit["access_destination"] = "javascript:alert(1)"
-    say(launch_plan.check(poisoned) != [],
+    errors = launch_plan.check(poisoned)
+    say(any("destination is not an approved http(s) URL" in e for e in errors),
         "check() refuses an executable access destination in a supplied plan")
+
+    poisoned_login = json.loads(json.dumps(
+        launch_plan.build_launch_plan(_launch(), _answers())["plan"]))
+    poisoned_login["access"]["login_url"] = "javascript:alert(1)"
+    errors = launch_plan.check(poisoned_login)
+    say(any("login URL is not an approved http(s) URL" in e for e in errors),
+        "check() refuses a non-web login URL in a supplied plan")
 
 # ---------------------------------------------------------------------------
 # Founder identity is never inferred; offer ids are never invented.
