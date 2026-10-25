@@ -84,6 +84,7 @@ from route_adapter import (  # noqa: E402
     R_CAPABILITY_FB,
     R_CAPABILITY_MISSING,
     R_CAPABILITY_NOT_GRANTED,
+    R_CHANNEL_PURPOSE_MISMATCH,
     R_CONSENT_GATE_REQUIRED,
     R_EVENT_ACCOUNT_MISMATCH,
     R_EVENT_WRONG_KIND,
@@ -1057,6 +1058,342 @@ class CommentOpenerTraceTests(_StoreCase):
         self.assertEqual(log, [opener_id, retry_id])
         evidence = json.loads(self.store.gate_checks(retry_id)[0]["evidence_json"])
         self.assertTrue(evidence["inbound_dm_window"])
+
+
+class VerifiedInteractionGuardTests(_StoreCase):
+    """Every refusal inside `_verified_inbound_interaction`, pinned one by one.
+
+    PBB-319. The excluded-row guard (`decision_ref="excluded:..."`) had zero
+    coverage: deleting it left the suite green at 69. A sweep of the whole
+    module found the same hole on its siblings, because a later guard refused
+    the same input for a different reason and hid the gap. Each test below
+    therefore hands the validator ONE guard's shape at a time and asserts that
+    guard's own message, so removing it cannot hide behind another refusal.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.routes.record_opener(
+            tenant_id="tenant-1", account_id="ig-acct-1",
+            thread_key="thread-1", opener_action_id="act-opener", now=10.0)
+
+    def record(self, **over):
+        values = dict(tenant_id="tenant-1", account_id="ig-acct-1",
+                      thread_key="thread-1", provider_event_id="evt-dm-1",
+                      now=20.0)
+        values.update(over)
+        return self.routes.record_customer_interaction(**values)
+
+    def assert_refused_as(self, message, **over):
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.record(**over)
+        self.assertIn(R_UNVERIFIED_INTERACTION, str(caught.exception))
+        self.assertIn(message, str(caught.exception))
+
+    @staticmethod
+    def inbox_row(provider_event_id="evt-dm-1", *, direction="inbound",
+                  actor_id="customer-1", decision_ref=None,
+                  tenant_id="tenant-1"):
+        """The inbox's own row shape, handed to the adapter as its admission."""
+        return {"admitted": True, "reason": "admitted",
+                "row": {"provider_event_id": provider_event_id,
+                        "tenant_id": tenant_id, "direction": direction,
+                        "actor_id": actor_id, "decision_ref": decision_ref}}
+
+    def test_the_event_must_describe_the_interaction_being_recorded(self):
+        # Same event id, a different thread: the pair is not this interaction.
+        other = make_dm_event(thread_key="thread-2")
+        admission = admit_instagram_event(self.store, other)
+        self.assert_refused_as("does not describe this interaction",
+                               event=other, admission=admission)
+
+    def test_an_outbound_event_is_never_proof(self):
+        outbound = make_dm_event(direction="outbound")
+        self.assert_refused_as("is not a customer's inbound message",
+                               event=outbound, admission=self.inbox_row())
+
+    def test_our_own_event_actor_is_never_proof(self):
+        own = make_dm_event(actor_id="ourselves")
+        admission = admit_instagram_event(self.store, own)
+        self.assertTrue(admission["admitted"])
+        self.assert_refused_as("is one of our own", event=own,
+                               admission=admission,
+                               own_actor_ids=("ourselves",))
+
+    def test_an_admission_that_is_not_a_record_is_refused(self):
+        self.assert_refused_as("no durable inbox admission was supplied",
+                               event=make_dm_event(), admission=None)
+
+    def test_an_inbox_that_did_not_admit_the_event_is_not_proof(self):
+        admission = self.inbox_row()
+        admission["admitted"] = False
+        admission["reason"] = "not_admitted"
+        self.assert_refused_as("the inbox did not admit this event",
+                               event=make_dm_event(), admission=admission)
+
+    def test_an_admission_without_a_row_is_refused(self):
+        self.assert_refused_as(
+            "carries no event row", event=make_dm_event(),
+            admission={"admitted": True, "reason": "admitted", "row": None})
+
+    def test_the_admission_must_name_this_very_event(self):
+        # A real admission, for a different event id.
+        other = admit_instagram_event(
+            self.store, make_dm_event(provider_event_id="dm-other-row-1"))
+        self.assert_refused_as("the admission belongs to another event",
+                               event=make_dm_event(provider_event_id="dm-row-1"),
+                               **{"provider_event_id": "dm-row-1"},
+                               admission=other)
+
+    def test_a_redelivered_outbound_row_is_never_proof(self):
+        # A real duplicate: the inbox excluded the outbound row, then called
+        # the redelivery "duplicate", which is the one reason that passes the
+        # admitted/duplicate gate with an excluded row underneath it.
+        outbound = make_dm_event(provider_event_id="dm-out-9",
+                                 direction="outbound")
+        admit_instagram_event(self.store, outbound)
+        duplicate = admit_instagram_event(self.store, outbound)
+        self.assertEqual(duplicate["reason"], "duplicate")
+        self.assertEqual(duplicate["row"]["decision_ref"],
+                         "excluded:direction=outbound")
+        self.assert_refused_as("the inbox recorded direction",
+                               event=make_dm_event(provider_event_id="dm-out-9"),
+                               **{"provider_event_id": "dm-out-9"},
+                               admission=duplicate)
+
+    def test_a_redelivered_excluded_row_is_never_proof(self):
+        # PBB-319 Defect 1. The excluded-row guard, pinned on a REAL duplicate
+        # of a REAL excluded row. `own_actor_ids` is empty here, so the later
+        # own-actor guard cannot stand in for it: only `decision_ref` refuses.
+        own = make_dm_event(provider_event_id="dm-own-10", actor_id="ourselves")
+        admit_instagram_event(self.store, own, own_actor_ids=("ourselves",))
+        duplicate = admit_instagram_event(self.store, own,
+                                          own_actor_ids=("ourselves",))
+        self.assertEqual(duplicate["reason"], "duplicate")
+        self.assertEqual(duplicate["row"]["decision_ref"], "excluded:own_actor")
+        self.assert_refused_as("the inbox excluded this event",
+                               event=own, admission=duplicate,
+                               **{"provider_event_id": "dm-own-10"})
+        # Inverse: the excluded row never un-suppressed the thread.
+        state = self.routes.opener_state("tenant-1", "ig-acct-1", "thread-1")
+        self.assertFalse(state.customer_responded)
+
+    def test_an_admission_row_recording_our_own_actor_is_not_proof(self):
+        # The event is a customer's; the inbox row says the actor was ours.
+        self.assert_refused_as(
+            "the inbox recorded our own actor",
+            event=make_dm_event(provider_event_id="dm-11"),
+            **{"provider_event_id": "dm-11"},
+            admission=self.inbox_row(provider_event_id="dm-11",
+                                     actor_id="ourselves"),
+            own_actor_ids=("ourselves",))
+
+    def test_an_admitted_row_with_no_exclusion_still_ends_the_opener(self):
+        # Inverse control: the guards above refuse shapes, not success. A real
+        # admitted inbound customer DM still publishes its interaction.
+        self.assertTrue(self.record_dm("dm-inverse-1", now=20.0))
+        state = self.routes.opener_state("tenant-1", "ig-acct-1", "thread-1")
+        self.assertTrue(state.customer_responded)
+
+
+class GuardCoverageTests(unittest.TestCase):
+    """The remaining unpinned guards found by the PBB-319 sweep.
+
+    One test per guard whose deletion left the 69-test suite green. Same rule
+    as above: the assertion names the refusal, so a sibling guard that refuses
+    the same input for another reason cannot mask the removal.
+    """
+
+    def route_store(self):
+        tmp = tempfile.TemporaryDirectory(prefix="ig-t21-guard-")
+        self.addCleanup(tmp.cleanup)
+        store = InstagramRouteStore(str(Path(tmp.name) / "routes.sqlite"))
+        self.addCleanup(store.close)
+        return store
+
+    def verdict(self, **over):
+        values = dict(account=make_account(), purpose=PURPOSE_PUBLIC_REPLY,
+                      channel=CHANNEL_IG_PUBLIC, event=make_comment_event(),
+                      filter_=make_filter(),
+                      capability=InstagramCapability(CAP_COMMENT_PUBLIC_REPLY))
+        values.update(over)
+        return evaluate_eligibility(**values)
+
+    # ── constructor / normaliser input guards ────────────────────────────
+    def test_an_event_platform_that_is_not_instagram_is_refused(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            InstagramEvent(provider="instagram", provider_event_id="e",
+                           tenant_id="tenant-1", account_id="ig-acct-1",
+                           kind=EVENT_COMMENT, direction="inbound",
+                           actor_id="customer-1", text="hi",
+                           thread_key="c1", received_at=1.0, platform="FB")
+        self.assertIn(R_ACCOUNT_FB, str(caught.exception))
+
+    def test_an_event_requires_its_identifiers(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            InstagramEvent(provider="instagram", provider_event_id="e",
+                           tenant_id="tenant-1", account_id="ig-acct-1",
+                           kind=EVENT_COMMENT, direction="inbound",
+                           actor_id="", text="hi", thread_key="c1",
+                           received_at=1.0)
+        self.assertIn("actor_id", str(caught.exception))
+
+    def test_an_event_direction_must_be_known(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            InstagramEvent(provider="instagram", provider_event_id="e",
+                           tenant_id="tenant-1", account_id="ig-acct-1",
+                           kind=EVENT_COMMENT, direction="sideways",
+                           actor_id="customer-1", text="hi",
+                           thread_key="c1", received_at=1.0)
+        self.assertIn("direction", str(caught.exception))
+
+    def test_an_event_text_must_be_a_string(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            InstagramEvent(provider="instagram", provider_event_id="e",
+                           tenant_id="tenant-1", account_id="ig-acct-1",
+                           kind=EVENT_COMMENT, direction="inbound",
+                           actor_id="customer-1", text=123,
+                           thread_key="c1", received_at=1.0)
+        self.assertIn("text must be a string", str(caught.exception))
+
+    def test_an_event_comment_id_must_be_an_id(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            InstagramEvent(provider="instagram", provider_event_id="e",
+                           tenant_id="tenant-1", account_id="ig-acct-1",
+                           kind=EVENT_COMMENT, direction="inbound",
+                           actor_id="customer-1", text="hi",
+                           thread_key="c1", received_at=1.0, comment_id="")
+        self.assertIn("comment_id", str(caught.exception))
+
+    def test_an_account_requires_its_identifiers(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            make_account(tenant_id="")
+        self.assertIn("tenant_id", str(caught.exception))
+
+    def test_a_capability_requires_its_name(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            InstagramCapability("")
+        self.assertIn("name", str(caught.exception))
+
+    def test_a_filter_match_mode_must_be_known(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            make_filter(match_mode="regex")
+        self.assertIn("match_mode", str(caught.exception))
+
+    def test_a_filter_keywords_must_be_a_tuple(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            make_filter(keywords=["billboard"])
+        self.assertIn("keywords must be a tuple", str(caught.exception))
+
+    def test_normalise_refuses_a_non_mapping(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            normalise_event(None)
+        self.assertIn("event must be a dict", str(caught.exception))
+
+    def test_resolve_refuses_a_foreign_account_entry(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            resolve_account([object()], account_id="ig-acct-1")
+        self.assertIn("InstagramAccount", str(caught.exception))
+
+    # ── eligibility guards ───────────────────────────────────────────────
+    def test_eligibility_requires_an_instagram_account(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.verdict(account=object())
+        self.assertIn("InstagramAccount", str(caught.exception))
+
+    def test_an_unknown_basis_is_refused(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.verdict(basis="BOGUS_BASIS",
+                         purpose=PURPOSE_AI_REPLY, channel=CHANNEL_IG_DM)
+        self.assertIn("basis", str(caught.exception))
+
+    def test_a_public_reply_purpose_on_the_dm_channel_is_refused(self):
+        # `_route_for` refuses the pairing and eligibility denies it. Without
+        # that guard the public-reply branch would ALLOW a DM-channel action.
+        result = self.verdict(channel=CHANNEL_IG_DM)
+        self.assertFalse(result.allowed)
+        self.assertTrue(result.reason.startswith(R_CHANNEL_PURPOSE_MISMATCH),
+                        result.reason)
+
+    def test_a_comment_route_needs_a_comment_event(self):
+        result = self.verdict(event=None)
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.reason, R_UNSUPPORTED_EVENT)
+
+    def test_an_outbound_comment_event_is_not_a_comment_route(self):
+        result = self.verdict(event=make_comment_event(direction="outbound"))
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.reason, R_EVENT_WRONG_KIND)
+
+    def test_a_comment_event_from_another_tenant_is_refused(self):
+        result = self.verdict(event=make_comment_event(tenant_id="tenant-2"))
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.reason, R_EVENT_ACCOUNT_MISMATCH)
+
+    def test_a_comment_route_needs_a_filter(self):
+        result = self.verdict(filter_=None)
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.reason, R_FILTER_NOT_MATCHED)
+
+    # ── the inbound-DM window's own conjuncts ────────────────────────────
+    def dm_verdict(self, **over):
+        values = dict(account=make_account(), purpose=PURPOSE_AI_REPLY,
+                      channel=CHANNEL_IG_DM,
+                      capability=InstagramCapability(CAP_DM_SEND))
+        values.update(over)
+        return evaluate_eligibility(**values)
+
+    def test_an_outbound_dm_never_opens_the_window(self):
+        result = self.dm_verdict(event=make_dm_event(direction="outbound"))
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.reason, R_NO_INBOUND_DM)
+
+    def test_a_dm_on_another_account_never_opens_the_window(self):
+        result = self.dm_verdict(event=make_dm_event(account_id="ig-acct-2"))
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.reason, R_NO_INBOUND_DM)
+
+    def test_a_dm_from_another_tenant_never_opens_the_window(self):
+        result = self.dm_verdict(event=make_dm_event(tenant_id="tenant-2"))
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.reason, R_NO_INBOUND_DM)
+
+    # ── gate factory guards ──────────────────────────────────────────────
+    def gate(self, **over):
+        values = dict(account=make_account(), route_store=self.route_store(),
+                      purpose=PURPOSE_AI_REPLY, channel=CHANNEL_IG_DM,
+                      thread_key="thread-1")
+        values.update(over)
+        return make_gate_evaluator(**values)
+
+    def test_the_gate_requires_an_instagram_account(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.gate(account=object())
+        self.assertIn("InstagramAccount", str(caught.exception))
+
+    def test_the_gate_requires_an_instagram_route_store(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.gate(route_store=object())
+        self.assertIn("InstagramRouteStore", str(caught.exception))
+
+    def test_the_gate_requires_a_callable_consent_evaluator(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.gate(consent_evaluator="not callable")
+        self.assertIn("consent_evaluator", str(caught.exception))
+
+    def test_the_gate_requires_a_thread_key(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.gate(thread_key="")
+        self.assertIn("thread_key", str(caught.exception))
+
+    def test_the_gate_refuses_a_channel_purpose_mismatch_at_construction(self):
+        with self.assertRaises(InstagramRouteError) as caught:
+            self.gate(purpose=PURPOSE_PUBLIC_REPLY, channel=CHANNEL_IG_DM)
+        self.assertIn(R_CHANNEL_PURPOSE_MISMATCH, str(caught.exception))
+
+    def test_a_supported_pairing_still_builds_a_gate(self):
+        # Inverse control: the factory guards refuse bad pairings, not good ones.
+        self.assertTrue(callable(self.gate()))
 
 
 if __name__ == "__main__":
