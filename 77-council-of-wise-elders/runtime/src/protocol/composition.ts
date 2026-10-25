@@ -350,6 +350,16 @@ export class DeliberationService {
       route_snapshot: PinnedRouteSnapshot;
       /** Admission purpose the grant was approved under (default council_run). */
       purpose?: string;
+      /**
+       * Seats claimed per wave. Default 1 = one claim at a time, today's
+       * behaviour. Accepted here; lane C wires it into claimWave.
+       */
+      parallel_limit?: number;
+      /**
+       * Route used to re-run seats that failed on a transport or rate-limit
+       * class failure (Ollama route only). Accepted here; lane C wires it.
+       */
+      fallback_route_snapshot?: PinnedRouteSnapshot | null;
     },
   ): Promise<RunSessionResult> {
     this.assertReady();

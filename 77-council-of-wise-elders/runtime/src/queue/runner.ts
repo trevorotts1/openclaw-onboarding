@@ -790,6 +790,25 @@ export class DurableJobRunner {
   }
 
   /**
+   * Claim up to `limit` queued runnable operations as one wave.
+   *
+   * ponytail: delegate stub — returns the single claimNextOperation result
+   * as a one-element array, so a wave of one is exactly today's behaviour.
+   * Lane C replaces the body with a true multi-claim that bumps the session
+   * lease epoch ONCE so every claim in the wave carries the same epoch.
+   * The signature is final: callers already loop.
+   */
+  claimWave(
+    envelope: AuthorizationEnvelope,
+    sessionId: string,
+    workerId: string,
+    _limit: number,
+  ): JobClaim[] {
+    const claim = this.claimNextOperation(envelope, sessionId, workerId);
+    return claim === null ? [] : [claim];
+  }
+
+  /**
    * Advance the session fencing generation for a new claim. Any token
    * minted under an earlier epoch (budget reservations, card commit
    * fences, in-flight workers) goes stale at this instant. Retried on
