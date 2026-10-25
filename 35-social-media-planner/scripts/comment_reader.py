@@ -47,6 +47,16 @@ Input event shape (one per prospect comment reply), JSON list on --input/stdin:
     "created_at": "<iso8601>"                        # optional
   }
 
+T-26 additions:
+  * OWN-AUTHOR EXCLUSION — pass the page's/account's own ids as
+    `own_author_ids` (or `--own-author-ids a,b`). A comment authored by one of
+    those ids is the business talking to itself (its own reply, or a comment it
+    left on its own post); it is EXCLUDED and ledgered, never handed off.
+  * PUBLIC/PRIVATE DUTY — a public comment opens a PUBLIC answer duty, stamped
+    on the handoff entry. The private (DM/Messenger) duty is a DIFFERENT duty
+    and is opened by a real GHL Conversations inbound event; this reader never
+    emits it.
+
 Output: for every event on a SUPPORTED channel, a synthetic handoff appended to
 the contact's conversational log; a JSON summary of {handed_off, skipped} to
 stdout. Exit 0 always (per-channel skips are a normal, ledgered outcome, not a
@@ -54,6 +64,7 @@ run failure); exit 2 only on a usage / unreadable-input error.
 
 Usage:
   comment_reader.py --master-files-dir DIR [--input events.json] [--dry-run]
+      [--own-author-ids <page-id>,<account-id>]
   cat events.json | comment_reader.py --master-files-dir DIR
 """
 from __future__ import annotations
@@ -84,6 +95,31 @@ CHANNEL_COMMENT_SURFACE = {
     "pinterest": None,
     "tiktok": None,
 }
+
+# ── Own-author exclusion (T-26) ───────────────────────────────────────────────
+# The page's OWN comments arrive on the SAME read surface as prospect comments:
+# the reply the operator left under a prospect's comment, or anything the page
+# posted on its own post. Handing one of those back as a prospect inbound turn
+# makes Skill 38 answer itself — a self-feeding loop that also pollutes the
+# prospect's long-lived conversation log. The orchestrator supplies the account's
+# own ids (they are account identity, not derivable from the event stream); every
+# event whose `author_id` is one of them is EXCLUDED and ledgered. An empty set
+# excludes nothing — that is an operator input gap, not a silent pass.
+def _own_author_set(own_author_ids) -> set:
+    if not own_author_ids:
+        return set()
+    if isinstance(own_author_ids, str):
+        own_author_ids = own_author_ids.split(",")
+    return {str(value).strip() for value in own_author_ids if str(value).strip()}
+
+# ── Distinct public/private duty (T-26) ───────────────────────────────────────
+# A public comment opens a PUBLIC answer duty: the answer belongs in the public
+# comment thread, or as an invitation to continue in DM — never an unsolicited
+# private send and never SMS. The PRIVATE answer duty (DM / Messenger) is a
+# separate duty opened by a real GHL Conversations inbound event, and this reader
+# never emits it. Stamped on every handoff so Skill 38 answers under the right one.
+PUBLIC_ANSWER_DUTY = "public_answer"
+PRIVATE_ANSWER_DUTY = "private_answer"
 
 _SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -191,6 +227,8 @@ def render_handoff_entry(event: dict, now_iso: str) -> str:
     return (
         f"\n### Inbound — public comment ({channel}) — {created}\n"
         f"- source: Skill 35 comment-reader (synthetic handoff)\n"
+        f"- duty: {PUBLIC_ANSWER_DUTY} (answer in the public comment thread, or "
+        f"invite to DM; never SMS, never an unsolicited private send)\n"
         f"- post/permalink: {permalink}\n"
         f"- comment_id: {comment_id}\n"
         f"- author: {author}\n"
@@ -204,13 +242,16 @@ def render_handoff_entry(event: dict, now_iso: str) -> str:
     )
 
 
-def run(events, master_files_dir: str, dry_run: bool = False):
+def run(events, master_files_dir: str, dry_run: bool = False,
+        own_author_ids=None):
     """Process normalized comment events. Returns a summary dict:
       {"handed_off": [...], "skipped": [...]}
-    A skip carries an explicit per-channel reason (the ledgered no-surface case
-    or a malformed event) — it is a normal outcome, never a silent drop."""
+    A skip carries an explicit per-channel reason (the ledgered no-surface case,
+    an own-author exclusion, or a malformed event) — it is a normal outcome,
+    never a silent drop."""
     handed_off = []
     skipped = []
+    own = _own_author_set(own_author_ids)
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     for idx, event in enumerate(events):
@@ -221,6 +262,13 @@ def run(events, master_files_dir: str, dry_run: bool = False):
         if channel not in CHANNEL_COMMENT_SURFACE:
             skipped.append({"index": idx, "channel": channel or None,
                             "reason": "unknown channel"})
+            continue
+        if own and str(event.get("author_id") or "").strip() in own:
+            # The business talking to itself — excluded before any surface work
+            # so an own comment is never handed off, on any channel.
+            skipped.append({"index": idx, "channel": channel,
+                            "reason": "own-author (page/account id) — excluded, "
+                                      "not a prospect comment"})
             continue
         surface = CHANNEL_COMMENT_SURFACE[channel]
         if surface is None:
@@ -277,6 +325,9 @@ def main(argv=None):
                     help="JSON file of comment events (default: stdin)")
     ap.add_argument("--dry-run", action="store_true",
                     help="classify + report, write nothing")
+    ap.add_argument("--own-author-ids", default=None,
+                    help="comma-separated page/account ids whose comments are "
+                         "excluded as own-author (T-26)")
     args = ap.parse_args(argv)
 
     try:
@@ -285,7 +336,8 @@ def main(argv=None):
         print(f"comment_reader: cannot read input: {exc}", file=sys.stderr)
         return 2
 
-    summary = run(events, args.master_files_dir, dry_run=args.dry_run)
+    summary = run(events, args.master_files_dir, dry_run=args.dry_run,
+                  own_author_ids=args.own_author_ids)
     json.dump(summary, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0

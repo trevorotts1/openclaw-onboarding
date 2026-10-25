@@ -1106,6 +1106,10 @@ Comments are posted programmatically after the main post is published. See the G
 
 **Per-channel honesty (BINDING — 2.4):** the reader carries a per-channel capability registry (`CHANNEL_COMMENT_SURFACE`). A channel with a verified comment-read surface (FB/IG via the GHL Social Planner read path today) is processed; a channel with NO comment-read API surface is **LEDGERED per-channel (returned in `skipped` with an explicit reason) and skipped — NEVER fabricated**. There is no silent empty result and no invented comment feed. As each channel's surface is proven live, flip it from `None` to its surface string in the registry.
 
+**Own-author exclusion (BINDING — T-26):** the page's OWN comments arrive on the same read surface as prospect comments — the reply the operator left under a prospect's comment, or anything the page posted on its own post. Handing one of those back as a prospect inbound turn makes Skill 38 answer itself in a loop and writes the page's own words into the prospect's log. The orchestrator passes the account's own ids (`own_author_ids` / `--own-author-ids`); every event authored by one of them is EXCLUDED and ledgered with an explicit `own-author` reason. An empty id set excludes nothing — that is an input gap to close, never a silent pass, and the ids are never guessed from comment text.
+
+**Distinct public/private duty (BINDING — T-26):** a public comment opens the PUBLIC answer duty (`public_answer`), stamped on every handoff entry: the answer belongs in the public comment thread, or as an invitation to continue in DM — never an unsolicited private send and never SMS. The PRIVATE answer duty (`private_answer` — DM / Messenger) is a different duty opened by a real GHL Conversations inbound event; this reader never emits it, so a public comment can never be answered as if it were a private conversation.
+
 **Ownership:** Skill 35 only creates the synthetic handoff (the inbound turn). Skill 38 OWNS the reply — reading the log, drafting per the matching playbook, and replying on the comment thread (or inviting to DM). See the cross-reference in `38-conversational-ai-system/SKILL.md`.
 
 ---

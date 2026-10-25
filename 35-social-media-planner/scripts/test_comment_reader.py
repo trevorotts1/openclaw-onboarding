@@ -198,5 +198,111 @@ def test_cli_end_to_end(tmp_path):
     assert (mfd / "conversational-logs").is_dir()
 
 
+# ── T-26: ongoing supported public-answer ownership / monitoring ──────────────
+# The four acceptance clauses, one test each where the clause is code:
+#   per-channel supported ability  -> test_supported_channel_hands_off_...
+#                                     + test_unsupported_channel_is_ledgered_...
+#   own-author exclusion           -> test_own_author_comment_is_excluded_...
+#   long-lived context             -> test_conversation_context_is_long_lived_...
+#   distinct public/private duty   -> test_public_duty_is_stamped_...
+
+def test_own_author_comment_is_excluded_and_ledgered(tmp_path):
+    """The page's own reply is on the same read surface as a prospect comment.
+    Handing it off makes Skill 38 answer itself. Discriminating pair: the own
+    comment is excluded while a prospect comment in the SAME run still passes."""
+    cr = _load()
+    events = [
+        {"channel": "facebook", "post_id": "p", "comment_id": "own1",
+         "author_id": "page_999", "author_name": "Brand Page",
+         "text": "Thanks Jamie — just DM'd you the booking link."},
+        {"channel": "facebook", "post_id": "p", "comment_id": "c_prospect",
+         "author_id": "author_555", "author_name": "Jamie Rivers",
+         "text": "How do I book a call?"},
+    ]
+    summary = cr.run(events, str(tmp_path), own_author_ids=["page_999"])
+    assert [h["contact_ref"] for h in summary["handed_off"]] == ["author_555"], summary
+    assert len(summary["skipped"]) == 1, summary
+    skip = summary["skipped"][0]
+    assert skip["index"] == 0
+    assert "own-author" in skip["reason"]
+    # Nothing was written into the page's own log.
+    logs_dir = tmp_path / "conversational-logs"
+    written = sorted(p.name for p in logs_dir.iterdir()) if logs_dir.exists() else []
+    assert written == ["comment-author_555__Jamie-Rivers.md"], written
+    assert "just DM'd you" not in open(logs_dir / written[0], encoding="utf-8").read()
+
+
+def test_own_author_ids_accepts_comma_string_from_cli(tmp_path):
+    """The CLI flag form the orchestrator passes: a comma-separated id list."""
+    events = [
+        {"channel": "facebook", "post_id": "p", "comment_id": "x",
+         "author_id": "ig_42", "text": "our own comment"},
+        {"channel": "facebook", "post_id": "p", "comment_id": "y",
+         "author_id": "author_7", "text": "a real prospect"},
+    ]
+    infile = tmp_path / "events.json"
+    infile.write_text(json.dumps(events))
+    mfd = tmp_path / "master"
+    proc = subprocess.run(
+        [sys.executable, _MODULE_PATH, "--master-files-dir", str(mfd),
+         "--input", str(infile), "--own-author-ids", "page_1, ig_42"],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+    assert [h["contact_ref"] for h in out["handed_off"]] == ["author_7"], out
+    assert "own-author" in out["skipped"][0]["reason"]
+
+
+def test_no_own_author_ids_excludes_nothing(tmp_path):
+    """Inverse control: with no own-id input nothing is excluded — exclusion is
+    the operator-supplied identity, not a guess derived from the comment text."""
+    cr = _load()
+    events = [{"channel": "facebook", "post_id": "p", "comment_id": "c",
+               "author_id": "page_999", "text": "anything"}]
+    summary = cr.run(events, str(tmp_path))
+    assert len(summary["handed_off"]) == 1, summary
+    assert summary["skipped"] == [], summary
+
+
+def test_conversation_context_is_long_lived_across_runs(tmp_path):
+    """Long-lived context: a second monitoring run APPENDS to the same
+    per-contact log, so Skill 38 keeps the whole thread rather than seeing only
+    the newest comment."""
+    cr = _load()
+    first = [{"channel": "instagram", "post_id": "ig1", "comment_id": "c1",
+              "author_id": "author_555", "author_name": "Jamie Rivers",
+              "text": "first question",
+              "created_at": "2026-10-20T10:00:00Z"}]
+    second = [{"channel": "instagram", "post_id": "ig1", "comment_id": "c2",
+               "author_id": "author_555", "author_name": "Jamie Rivers",
+               "text": "following up",
+               "created_at": "2026-10-25T10:00:00Z"}]
+    path_one = cr.run(first, str(tmp_path))["handed_off"][0]["log_path"]
+    path_two = cr.run(second, str(tmp_path))["handed_off"][0]["log_path"]
+    assert path_one == path_two, "same contact must reuse the same long-lived log"
+    body = open(path_two, encoding="utf-8").read()
+    assert "first question" in body, "earlier turn must survive the later run"
+    assert "following up" in body
+    assert body.count("### Inbound — public comment") == 2
+
+
+def test_public_duty_is_stamped_and_private_duty_never_emitted(tmp_path):
+    """Distinct public/private duty: the handoff carries the PUBLIC answer duty
+    and nothing this reader writes can carry the private (DM/Messenger) duty."""
+    cr = _load()
+    events = [{"channel": "facebook", "post_id": "p", "comment_id": "c",
+               "author_id": "author_555", "text": "can you help?"}]
+    summary = cr.run(events, str(tmp_path))
+    entry = cr.render_handoff_entry(events[0], "2026-10-25T00:00:00Z")
+    assert f"- duty: {cr.PUBLIC_ANSWER_DUTY}" in entry, entry
+    assert cr.PRIVATE_ANSWER_DUTY not in entry, entry
+    body = open(summary["handed_off"][0]["log_path"], encoding="utf-8").read()
+    assert f"- duty: {cr.PUBLIC_ANSWER_DUTY}" in body
+    assert cr.PRIVATE_ANSWER_DUTY not in body
+    # And the two duties are genuinely distinct tokens, not one string.
+    assert cr.PUBLIC_ANSWER_DUTY != cr.PRIVATE_ANSWER_DUTY
+
+
 if __name__ == "__main__":
     raise SystemExit(subprocess.call([sys.executable, "-m", "pytest", __file__, "-q"]))

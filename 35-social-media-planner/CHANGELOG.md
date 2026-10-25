@@ -1,5 +1,40 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.9.8] - 2026-10-25 - T-26: own-author exclusion + distinct public/private duty on the comment reader
+
+Closes the two acceptance clauses the P3-08 reader never implemented. It already
+carried per-channel supported ability (`CHANNEL_COMMENT_SURFACE`, unsupported
+channels ledgered and skipped) and long-lived context (per-contact append into
+`conversational-logs/`); it had no own-author exclusion and no explicit
+public/private duty split.
+
+- **Own-author exclusion.** The page's own comments arrive on the SAME read
+  surface as prospect comments — the reply the operator left under a prospect's
+  comment, or anything the page posted on its own post. Handing one of those back
+  as a prospect inbound turn makes Skill 38 answer itself, in a loop, inside the
+  prospect's long-lived log. `comment_reader.run()` now takes `own_author_ids`
+  (CLI: `--own-author-ids a,b`) and EXCLUDES every event authored by one of
+  those ids, ledgered in `skipped` with an explicit `own-author` reason. The ids
+  are account identity supplied by the orchestrator — an empty set excludes
+  nothing (an operator input gap), it is never guessed from comment text.
+- **Distinct public/private duty.** Every handoff entry now carries
+  `- duty: public_answer` — the answer belongs in the public comment thread, or
+  as an invitation to continue in DM; never SMS, never an unsolicited private
+  send. `PUBLIC_ANSWER_DUTY` / `PRIVATE_ANSWER_DUTY` are separate constants, and
+  the reader never emits the private one: the private (DM/Messenger) duty is
+  opened by a real GHL Conversations inbound event, not by a comment.
+- **Tests** (`test_comment_reader.py`, 9 -> 14): own-author excluded while a
+  prospect comment in the same run is still handed off; the CLI comma-string
+  form; inverse control (no own ids excludes nothing); long-lived context
+  preserved across two runs (same log, earlier turn survives); public duty
+  stamped and private duty never written.
+- **Mutation-checked:** removing the exclusion, removing the duty line, turning
+  the append into a truncate, and dropping the facebook surface each turn the
+  matching clause test RED and nothing else (see the T-26 derivation record).
+- Suites: `test_comment_reader.py` 14 passed; `test_prove_content_conversation_loop.py`
+  25 passed. skill-version v3.8.2 -> v3.9.8 (provisional; the merge-time single
+  writer renumbers every landing candidate).
+
 ## [3.8.2] - 2026-10-24 - T-22c repair: a receipt is proof only when the placement_id recomputes
 
 - The receipt is now provable, not self-consistent. `prepare_assisted_placement`
