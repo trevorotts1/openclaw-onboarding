@@ -357,6 +357,124 @@ class DispatchTests(Fixture):
         self.assertEqual({}, migrated["actions"])
         self.assertIn(legacy_key, migrated["legacy_actions"])
 
+    def test_a_version_one_person_directed_retry_collapses(self):
+        """The migration dedupes EVERY scope, not only public placements.
+
+        A version 1 entry is moved to ``legacy_actions`` under its old key. For a
+        person_directed action that old key is still the live key, so the retry
+        must be found there: missing it treats an action the ledger already
+        records as sent as brand new and releases a second send.
+        """
+        legacy_key = "tenant-alpha::cycle-2026-11/contact-77/ORIGINAL_GIFT"
+        for status in ("sent", "dispatching"):
+            with self.subTest(status):
+                Path(self.ledger).write_text(json.dumps({
+                    "version": 1,
+                    "actions": {
+                        legacy_key: {
+                            "action_id": "act-person-1",
+                            "tenant_id": "tenant-alpha",
+                            "logical_intent_key": "cycle-2026-11/contact-77/ORIGINAL_GIFT",
+                            "canonical_contact_id": "contact-77",
+                            "scope": "person_directed",
+                            "purpose": "ORIGINAL_GIFT",
+                            "attempts": [{
+                                "attempt_no": 1, "attempt_id": "act-person-1#1",
+                                "gate_checked_at": "2026-10-24T10:00:00Z",
+                                "binding_revision": "binding-7", "owner_fence": 4,
+                                "recorded_at": "2026-10-24T10:00:00Z", "decision": "ALLOW",
+                            }],
+                            "receipts": [],
+                            "status": status,
+                            "updated_at": "2026-10-24T10:00:00Z",
+                        },
+                    },
+                }, indent=2), encoding="utf-8")
+
+                code, payload = run(
+                    "dispatch",
+                    "--action", fixture("outbound", "person-gift.json"),
+                    "--gate", fixture("gates", "person-allow.json"),
+                    "--ledger", self.ledger,
+                    "--now", "2026-10-24T10:01:00Z",
+                )
+                self.assertEqual(0, code, payload)
+                self.assertEqual("COLLAPSED", payload["decision"],
+                                 "an already-recorded %r person action must not be sent twice" % status)
+                self.assertEqual("DUPLICATE_LOGICAL_INTENT", payload["reason"])
+                self.assertEqual(1, payload["attempts"])
+                self.assertEqual(legacy_key, payload["idempotency_key"])
+
+                ledger = json.loads(Path(self.ledger).read_text(encoding="utf-8"))
+                self.assertEqual(1, len(ledger["actions"]), "a collapse writes nothing new")
+                self.assertEqual(status, ledger["actions"][legacy_key]["status"],
+                                 "the recorded status survives untouched")
+
+    def test_each_placement_identity_field_makes_a_new_placement(self):
+        """T-24 clause 2, pinned per field, not by the most convenient one.
+
+        campaign_cycle_id, placement_id, account_id, account_binding_revision and
+        content_revision each identify the placement. Dropping any one from
+        PLACEMENT_IDENTITY_FIELDS collapses a legitimately approved placement and
+        silently drops it, so each is proved on its own.
+        """
+        base = json.loads((FIXTURES / "outbound" / "public-placement.json").read_text(encoding="utf-8"))
+        manifest = json.loads((FIXTURES / "approval" / "manifest.json").read_text(encoding="utf-8"))
+        gate = json.loads((FIXTURES / "gates" / "public-allow.json").read_text(encoding="utf-8"))
+        cases = [
+            ("campaign_cycle_id", "cycle-2026-12"),
+            ("placement_id", "P-2"),
+            ("account_id", "acct-2"),
+            ("account_binding_revision", "binding-8"),
+            ("content_revision", "content-10"),
+        ]
+        for field, value in cases:
+            with self.subTest(field):
+                ledger = str(self.ledger_dir / ("ledger-%s.json" % field))
+                code, payload = run(
+                    "dispatch",
+                    "--action", fixture("outbound", "public-placement.json"),
+                    "--gate", fixture("gates", "public-allow.json"),
+                    "--manifest", fixture("approval", "manifest.json"),
+                    "--ledger", ledger,
+                    "--now", "2026-10-24T10:01:00Z",
+                )
+                self.assertEqual(0, code, payload)
+                self.assertEqual("DISPATCHED", payload["decision"], payload)
+
+                action = copy.deepcopy(base)
+                action.update({"action_id": "act-public-2", field: value})
+                next_manifest = copy.deepcopy(manifest)
+                next_gate = copy.deepcopy(gate)
+                if field == "campaign_cycle_id":
+                    next_manifest["campaign_cycle_id"] = value
+                else:
+                    for placement in next_manifest["placements"]:
+                        placement[field] = value
+                if field == "account_binding_revision":
+                    next_gate["binding_revision"] = value
+                elif field == "content_revision":
+                    next_gate["content_revision"] = value
+
+                self.assertNotEqual(
+                    contracts.idempotency_key(base), contracts.idempotency_key(action),
+                    "%s must be part of the placement identity" % field)
+
+                code, payload = run(
+                    "dispatch",
+                    "--action", self._write("action-%s.json" % field, action),
+                    "--gate", self._write("gate-%s.json" % field, next_gate),
+                    "--manifest", self._write("manifest-%s.json" % field, next_manifest),
+                    "--ledger", ledger,
+                    "--now", "2026-10-24T10:02:00Z",
+                )
+                self.assertEqual(0, code, payload)
+                self.assertEqual("DISPATCHED", payload["decision"],
+                                 "a new %s is a new placement, never a duplicate" % field)
+                recorded = json.loads(Path(ledger).read_text(encoding="utf-8"))
+                self.assertEqual(2, len(recorded["actions"]),
+                                 "%s: both placements are recorded" % field)
+
     def test_expired_gate_is_refused(self):
         code, payload = run(
             "dispatch",

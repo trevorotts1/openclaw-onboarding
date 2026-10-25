@@ -925,7 +925,10 @@ def cmd_dispatch(args):
     # so a retry must find it and collapse; it is written back where it lives.
     bucket = ledger["actions"]
     existing = bucket.get(key)
-    if existing is None and action["scope"] == "public_placement":
+    # Every scope, not only public placements: for a person_directed action the
+    # old key is still the live key, so a fallback guarded on scope would look up
+    # nothing and release a second send of an action already recorded as sent.
+    if existing is None:
         legacy = ledger.get("legacy_actions") or {}
         legacy_key = _legacy_idempotency_key(action)
         if legacy_key in legacy:
