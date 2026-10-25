@@ -304,7 +304,9 @@ def hydrate(doc, q):
 
 
 def _style_links():
-    """The design-style visual examples, wherever this distribution installs Skill 71."""
+    """The design-style visual examples, wherever this distribution installs Skill 71.
+    One line per style, never silently dropped: a style with no example image says so, so
+    the client is not told a picture exists when it does not."""
     names = ("71-blackceo-signature-page", "blackceo-signature-page")  # repo tree vs skills tree
     bases = [p / n for p in Path(__file__).resolve().parents for n in names]
     home = Path.home()
@@ -315,9 +317,17 @@ def _style_links():
         f = base / "references" / "design-styles.json"
         if f.is_file():
             try:
-                return [f"{s['id']} {s['name']} example: {s['example']['url']}" for s in json.loads(f.read_text())["styles"] if s["example"].get("url")]
-            except (OSError, ValueError, KeyError):
+                styles = json.loads(f.read_text())["styles"]
+            except (OSError, ValueError, KeyError, TypeError):
                 return []
+            out = []
+            for s in styles:
+                ex = s.get("example") if isinstance(s, dict) else None
+                url = ex.get("url") if isinstance(ex, dict) else None
+                name = f"{s.get('id', '?')} {s.get('name', '')}".strip()
+                out.append(f"{name} example: {url}" if url
+                           else f"{name} example: none available yet - this style has no example image")
+            return out
     return []
 
 

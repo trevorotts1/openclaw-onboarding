@@ -120,6 +120,42 @@ class Questions(unittest.TestCase):
         self.assertEqual([i for c in a for i in c["ids"]], [m["id"] for m in b])
 
 
+class StyleExamples(unittest.TestCase):
+    """Finding 20: the client must SEE the style examples before choosing A/B/C."""
+
+    Q = {"id": "design_style", "text": "Which look do you want for your page: A, B or C?",
+         "why": "The style sets the shape of the photos and sections.",
+         "choices": ["A Block", "B Circle", "C Hybrid"],
+         "help": {"examples": [
+             "Classic and professional: A",
+             "Warm and friendly: B",
+             "Modern and personal: C",
+             "A Block example: https://example.test/a.png",
+             "B Circle example: https://example.test/b.png",
+             "C Hybrid example: none available yet - this style has no example image",
+         ]}}
+
+    def test_chat_shows_the_style_images_above_the_question(self):
+        msg = rq.chat(self.Q, 1, 4)
+        self.assertIn("https://example.test/a.png", msg)
+        self.assertIn("https://example.test/b.png", msg)  # never truncated to two items
+        self.assertLess(msg.index("https://example.test/a.png"), msg.index("A, B or C"))
+        self.assertIn("C Hybrid example: none available yet", msg)  # a style with no example says so
+
+    def test_structured_carries_the_style_images(self):
+        text = rq.structured([self.Q])[0]["questions"][0]["question"]
+        self.assertIn("https://example.test/a.png", text)
+        self.assertIn("none available yet", text)
+        self.assertLess(text.index("https://example.test/a.png"), text.index("A, B or C"))
+
+    def test_engine_offers_an_image_or_says_there_is_none(self):
+        eng = rq._engine()
+        self.assertIsNotNone(eng, "client_intake engine must resolve in this checkout")
+        links = eng._style_links()
+        self.assertTrue(any("http" in l for l in links), links)
+        self.assertTrue(any("none available" in l for l in links), links)  # Style C has no example
+
+
 class Reports(unittest.TestCase):
     def test_progress_table_for_claude_and_messages_for_chat(self):
         t = pr.render(ROWS, hp.detect("claude-code"))
