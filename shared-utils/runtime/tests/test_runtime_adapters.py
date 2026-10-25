@@ -380,6 +380,40 @@ class PropagationTests(ExternalTestCase):
             self.assertIn("internal", str(caught.exception), path)
         runner.assert_not_called()
 
+    def test_a_proven_bind_reaches_the_child_instead_of_being_re_refused(self):
+        """The inner `temp_env` re-check must carry the same `root`/`bind_proven`
+        the caller proved. Dropping them re-refused an operator-declared
+        dedicated volume before any child started, so the required real child
+        propagation proof could never be produced (defect 4)."""
+        # Simulated internal device: only the proven bind admits this root.
+        with mock.patch.object(ex, "_on_external_device", lambda p: False):
+            self.assertEqual(ex.temp_env(self.work, root=self.base,
+                                         bind_proven=True)["TMPDIR"], self.work)
+            probe = ex.probe_child(self.work, root=self.base,
+                                   bind_proven=True)
+        self.assertEqual(probe.expected_temp, os.path.realpath(self.work))
+        self.assertEqual(probe.observed["gettempdir_real"],
+                         os.path.realpath(self.work))
+        self.assertTrue(probe.observed["file_created"])
+
+        # Without the proven bind the same root is still refused, and the
+        # refusal still happens before any child starts.
+        runner = mock.Mock()
+        with mock.patch.object(ex, "_on_external_device", lambda p: False):
+            with self.assertRaises(ex.PathRejected) as caught:
+                ex.probe_child(self.work, root=self.base, runner=runner)
+        self.assertIn("internal_fallback", str(caught.exception))
+        runner.assert_not_called()
+
+        # The same rule holds at the tool-options admission.
+        destinations = self.destinations(create=True)
+        with mock.patch.object(ex, "_on_external_device", lambda p: False):
+            options = ex.tool_output_options("pip", destinations, root=self.base,
+                                             bind_proven=True)
+            self.assertTrue(options["env"]["PIP_CACHE_DIR"])
+            with self.assertRaises(ex.PathRejected):
+                ex.tool_output_options("pip", destinations, root=self.base)
+
     def test_resolve_destinations_refuses_an_internal_disk_root(self):
         internal_root = "/Users/Shared"
         run_id = "run-internal-proof"
@@ -593,6 +627,83 @@ class PersistenceClaimTests(ExternalTestCase):
             plan, {"identity": plan.identity, "observed": impostor})
         self.assertFalse(mapped.verified)
         self.assertEqual(mapped.reason, "identity_mismatch")
+
+    def test_a_real_launchctl_readback_verifies_despite_its_path_line(self):
+        """`launchctl print gui/<uid>/<label>` always prints
+        `path = .../<label>.plist`. That file names THIS job's own property
+        list, so it must not read as a competing longer label - otherwise no
+        real Mac registration can ever verify (defect 2a)."""
+        facts = ho.detect_host(platform_name="Darwin")
+        plan = ho.MacAdapter(facts, ho.BindIdentity(root=os.sep)).persistence_plan()
+        readback = (
+            plan.identity + " = {\n"
+            "\tactive count = 0\n"
+            "\tpath = /Library/LaunchDaemons/" + plan.identity + ".plist\n"
+            "\tprogram = /usr/local/bin/pbb-runtime\n"
+            "\tprogram arguments = {\n"
+            "\t\t/usr/local/bin/pbb-runtime\n"
+            "\t}\n"
+            "\trun interval = 300\n"
+            "\tstate = running\n"
+            "\tuuid = 12345678-1234-1234-1234-123456789ABC\n"
+            "};\n")
+        raw = ho.verify_persistence(plan, readback)
+        self.assertTrue(raw.verified, raw.reason)
+        self.assertEqual(raw.reason, "read_back")
+        mapped = ho.verify_persistence(
+            plan, {"identity": plan.identity, "observed": readback})
+        self.assertTrue(mapped.verified, mapped.reason)
+        self.assertEqual(mapped.reason, "read_back")
+
+    def test_a_registration_file_basename_is_not_a_competing_label(self):
+        """The class rule, not the instance. A token reached from a path
+        separator is a file basename and stems to its own label; a bare token
+        is still a label, so a genuine rival continues to refuse."""
+        facts = ho.detect_host(platform_name="Darwin")
+        plan = ho.MacAdapter(facts, ho.BindIdentity(root=os.sep)).persistence_plan()
+        identity = plan.identity
+        for suffix in ho.REGISTRATION_FILE_SUFFIXES:
+            readback = ("state = running " + identity + "\n"
+                        "path = /somewhere/" + identity + suffix + "\n")
+            result = ho.verify_persistence(plan, readback)
+            self.assertTrue(result.verified, suffix)
+        # A rival that is only a path basename away still refuses ...
+        for suffix in ho.REGISTRATION_FILE_SUFFIXES:
+            self.assertTrue(
+                ho._names_longer_label(identity,
+                                       "path = /somewhere/%s-rival%s"
+                                       % (identity, suffix)),
+                suffix)
+        # ... and so does a bare label carrying a registration extension.
+        self.assertTrue(
+            ho._names_longer_label(identity,
+                                   "unit = %s.rival.service" % identity))
+        self.assertTrue(
+            ho._names_longer_label(identity,
+                                   "unit = %s" % identity + ".service"))
+
+    def test_a_non_active_systemd_state_never_verifies(self):
+        """`systemctl show` prints `ActiveState=`. The old bare token "active"
+        matched inside that word, so inactive/failed/deactivating all verified
+        (defect 2b). A persistent state is an exact key and an exact value."""
+        facts = ho.detect_host(platform_name="Linux", docker_env=False,
+                               cgroup_text="")
+        plan = ho.VpsAdapter(
+            facts, ho.BindIdentity(root=os.sep, source=os.sep,
+                                   dedicated=True)).persistence_plan()
+        for state in ("inactive", "failed", "deactivating", "activating",
+                      "reloading", ""):
+            observed = "ActiveState=%s\nUnitFileState=enabled" % state
+            for readback in ({"identity": plan.identity, "observed": observed},
+                             "Id=" + plan.identity + "\n" + observed):
+                result = ho.verify_persistence(plan, readback)
+                self.assertFalse(result.verified, state)
+                self.assertEqual(result.reason, "state_not_persistent", state)
+        good = ho.verify_persistence(
+            plan, {"identity": plan.identity,
+                   "observed": "ActiveState=active\nUnitFileState=enabled"})
+        self.assertTrue(good.verified, good.reason)
+        self.assertEqual(good.reason, "read_back")
 
     def test_an_empty_readback_reports_empty_readback(self):
         facts = ho.detect_host(platform_name="Darwin")

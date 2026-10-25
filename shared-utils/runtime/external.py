@@ -699,7 +699,7 @@ def probe_child(temp_dir: str, *, python: str = sys.executable,
         raise MissingMount("missing_temp_dir: %s" % admitted)
     real_expected = os.path.realpath(admitted)
     child_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
-    child_env.update(temp_env(admitted))
+    child_env.update(temp_env(admitted, root=root, bind_proven=bind_proven))
     if env:
         child_env.update(env)
     command = [python, "-I", "-c", CHILD_PROBE_SOURCE]
@@ -748,12 +748,16 @@ def probe_child(temp_dir: str, *, python: str = sys.executable,
 # Tools whose project cache/output paths this module can name. Anything else is
 # refused: claiming the variables control an unnamed tool would be a false pass.
 def tool_output_options(tool: str, destinations: Mapping[str, Destination],
-                        *, root: Optional[str] = None) -> Dict[str, Any]:
+                        *, root: Optional[str] = None,
+                        bind_proven: bool = False) -> Dict[str, Any]:
     """Tool-specific cache/output configuration pointing at external paths.
 
     Ceiling, stated once: TMPDIR/TMP/TEMP and these settings cover the named
     tool's own project outputs. OS and library writes outside project control
     are disclosed by the caller's receipt, not silently included in a guarantee.
+
+    `bind_proven` is forwarded on every re-check so an operator-declared
+    dedicated volume is not re-refused here after it was admitted upstream.
     """
     try:
         temp_dir = destinations["temp"].path
@@ -763,7 +767,7 @@ def tool_output_options(tool: str, destinations: Mapping[str, Destination],
         raise StorageError("missing_destination_role: %s" % exc) from None
     if root is not None:
         for path in (temp_dir, cache_dir, output_dir):
-            assert_external(path, root)
+            assert_external(path, root, bind_proven=bind_proven)
     name = (tool or "").strip().lower()
     if name == "pytest":
         return {"env": {"PYTEST_ADDOPTS":

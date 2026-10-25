@@ -102,11 +102,40 @@ def _is_managed_volume(source: str) -> bool:
             return True
     return False
 
+# A persistent state is matched as an exact key and an exact value word, never
+# as a substring. The old table's bare "active" token matched inside the word
+# "ActiveState", so `ActiveState=inactive`, `=failed` and `=deactivating` all
+# verified. key=None means the read-back is the bare value alone, which is what
+# `docker inspect --format '{{.HostConfig.RestartPolicy.Name}}'` returns.
 TERMINAL_STATES = {
-    "launchd": ("state = running", "state = waiting"),
-    "systemd": ("activestate=active", "active"),
-    "container_restart_policy": ("always", "unless-stopped"),
+    "launchd": ("state", ("running", "waiting")),
+    "systemd": ("activestate", ("active",)),
+    "container_restart_policy": (None, ("always", "unless-stopped")),
 }
+
+_ASSIGNMENT = re.compile(r"^\s*([^=]+?)\s*=\s*(.*?)\s*$")
+
+def _has_persistent_state(kind: str, text: str) -> bool:
+    """True when the read-back records a persistent state for this kind.
+
+    Exact key, exact value word. `ActiveState=inactive` never satisfies
+    `activestate=active`, and `state = running <identity>` does, because the
+    state word is matched whole rather than as a substring of the line.
+    """
+    spec = TERMINAL_STATES.get(kind)
+    if not spec:
+        return True
+    key, values = spec
+    wanted = {value.lower() for value in values}
+    if key is None:
+        return text.strip().lower() in wanted
+    for line in text.splitlines():
+        matched = _ASSIGNMENT.match(line)
+        if not matched or matched.group(1).strip().lower() != key:
+            continue
+        if any(word.lower() in wanted for word in matched.group(2).split()):
+            return True
+    return False
 
 
 # ── refusals ────────────────────────────────────────────────────────────────
@@ -287,10 +316,45 @@ def _names_identity(identity: str, text: str) -> bool:
     wanted = identity.strip().lower()
     return any(token.lower() == wanted for token in _labels(text))
 
+# A job's registration file is named after its label with a file extension
+# appended: `<label>.plist` for launchd, `<name>.service` for systemd. Real
+# read-backs always print that file's path (`path = .../<label>.plist`,
+# `FragmentPath=.../<name>.service`), so reading the file basename as a
+# competing longer label refused EVERY real registration. Only a token reached
+# from a path separator is a file basename; a bare token in a value is still a
+# label, so a rival named `com.foo.job.service` continues to refuse.
+REGISTRATION_FILE_SUFFIXES = (
+    ".plist", ".service", ".socket", ".timer", ".path", ".mount",
+    ".automount", ".swap", ".target", ".slice", ".scope", ".device",
+    ".snapshot",
+)
+
+_LABEL_TOKEN = re.compile(r"[A-Za-z0-9._-]+")
+
+def _path_stem(token: str) -> str:
+    """The label a registration-file basename names, or the token unchanged.
+
+    `<label>.plist` names `<label>`'s own property list. A suffix that is not a
+    known registration extension is left alone and stays a contradiction.
+    """
+    lowered = token.lower()
+    for suffix in REGISTRATION_FILE_SUFFIXES:
+        if lowered.endswith(suffix) and len(token) > len(suffix):
+            return token[: len(token) - len(suffix)]
+    return token
+
 def _names_longer_label(identity: str, text: str) -> bool:
     wanted = identity.strip().lower()
-    return any(token.lower().startswith(wanted) and len(token) > len(wanted)
-               for token in _labels(text))
+    for match in _LABEL_TOKEN.finditer(text):
+        token = match.group(0)
+        before = text[match.start() - 1] if match.start() else ""
+        # Only a path basename is a file name; anything else is a label.
+        stem = _path_stem(token) if before in "/\\" else token
+        if stem.lower() == wanted:
+            continue          # this job's own registration file, not a rival
+        if stem.lower().startswith(wanted) and len(stem) > len(wanted):
+            return True
+    return False
 
 def verify_persistence(plan: PersistencePlan, readback: Optional[Any]) -> PersistencePlan:
     """Promote the plan to verified ONLY from a real registration read-back.
@@ -325,9 +389,7 @@ def verify_persistence(plan: PersistencePlan, readback: Optional[Any]) -> Persis
         return replace(plan, verified=False, reason="identity_mismatch")
     if _names_longer_label(plan.identity, text):
         return replace(plan, verified=False, reason="identity_mismatch")
-    lowered = text.lower()
-    tokens = TERMINAL_STATES.get(plan.kind, ())
-    if tokens and not any(token in lowered for token in tokens):
+    if not _has_persistent_state(plan.kind, text):
         return replace(plan, verified=False, reason="state_not_persistent")
     return replace(plan, verified=True, reason="read_back")
 
@@ -413,7 +475,8 @@ class _BaseAdapter:
 
     def tool_options(self, tool: str, run_id: str) -> Dict[str, Any]:
         destinations = self.destinations(run_id)
-        return tool_output_options(tool, destinations, root=self.bind.root)
+        return tool_output_options(tool, destinations, root=self.bind.root,
+                                   bind_proven=self.bind_proven())
 
     def capabilities(self) -> Capabilities:
         return browser_capability(self._browser_probe)
