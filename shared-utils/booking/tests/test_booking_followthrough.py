@@ -951,5 +951,144 @@ class AttributionTests(BookingCase):
                          ("unknown", None, False))
 
 
+# ── PBB-376: pin every load-bearing link of the exclusion proof ────────────
+# The exclusion that lets a same-day move free its own place is proved by a
+# conjunction of independent links (_vacates_a_place). A cancelled booking is
+# caught by three of them at once (_was_cancelled, _cancel_recorded, and the
+# free-slot check), so any one of those can be dropped and the others still
+# refuse - which is why a single "cancelled booking" test leaves all three
+# unpinned. Each test below isolates ONE link so dropping it is observable.
+
+class _MarkerlessStore(DurableStore):
+    """The cancellation marker write is best-effort and can be lost while the
+    cancel receipt itself still lands (DurableStoreError is swallowed in
+    _record_cancellation). This double models that: no marker, only a receipt."""
+
+    def record_reconciliation(self, *args, **kwargs):  # the marker is never written
+        return None
+
+
+class _CancelUnknownProvider(FakeProvider):
+    """A cancel whose provider call raises before any verdict: the cancel action
+    is left UNKNOWN, not completed, so it is not proof the place was given up."""
+
+    def cancel(self, *, provider_booking_id, idempotency_key):
+        raise TimeoutError("no verdict")
+
+
+class SelfExclusionLinkPins(BookingCase):
+    """One pin per link of `_vacates_a_place` that the older tests left
+    redundant. Each test FAILS when its link is removed and PASSES when it is
+    present, because in each scenario that link is the only one that can refuse
+    (or, for the unconfirmed-cancel pin, the only one that can accept)."""
+
+    def _eng(self, cap, avail, provider=None, store=None):
+        policy = BookingPolicy(
+            calendars={"default": CAL_A}, timezone="America/New_York",
+            location="x", change_path="y", max_window_days=14,
+            min_lead_hours=2, daily_cap=cap)
+        return BookingFollowThrough(store=store or self.store, availability=avail,
+                                    provider=provider or self.provider,
+                                    policy=policy, tenant_id="tenant-1")
+
+    def _book(self, eng, avail, slot_to_book):
+        booked = eng.book(purpose="consult", slot=slot_to_book, contact_id="c1",
+                          confirmed=True, now=NOW)
+        self.assertTrue(booked.claimed)
+        return booked
+
+    def test_a_cancellation_marker_alone_frees_no_place(self):
+        """The booking is recorded as cancelled but still occupies its place on
+        the calendar (a stale free/busy read) and there is no cancel receipt.
+        Only the marker link refuses, so it must stay load-bearing."""
+        avail = CalendarCountingAvailability([slot(5, 10), slot(5, 14)],
+                                             self.provider)
+        eng = self._eng(1, avail)
+        first = self._book(eng, avail, slot(5, 10))
+        avail.free.remove(slot(5, 10))            # the place is still taken
+        self.store.record_reconciliation(first.action_id, "cancelled",
+                                         {"record": "booking_cancellation"})
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_a_cancel_receipt_without_the_marker_frees_no_place(self):
+        """The cancel receipt landed but the marker write was lost, and the
+        place is still taken. Only the cancel-receipt link refuses."""
+        store = _MarkerlessStore(str(Path(self.tmp.name) / "m5.sqlite"))
+        avail = CalendarCountingAvailability([slot(5, 10), slot(5, 14)],
+                                             self.provider)
+        eng = self._eng(1, avail, store=store)
+        first = self._book(eng, avail, slot(5, 10))
+        avail.free.remove(slot(5, 10))            # the place is still taken
+        self.assertTrue(eng.cancel(booking_action_id=first.action_id,
+                                   now=NOW).claimed)
+        avail.others.append(slot(5, 16))          # someone else fills the day
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_a_place_already_free_holds_nothing_to_vacate(self):
+        """The old place is already free on the read, so the move frees no new
+        place. Only the free-slot link refuses."""
+        avail = CalendarCountingAvailability([slot(5, 10), slot(5, 14)],
+                                             self.provider)
+        eng = self._eng(1, avail)
+        first = self._book(eng, avail, slot(5, 10))
+        self.assertTrue(avail.is_free(CAL_A, slot(5, 10)))   # left free on purpose
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_an_echo_of_another_day_still_frees_no_place(self):
+        """The record says the booking sits on day 5; the provider's echo claims
+        day 6. The echo must not buy an exclusion. Only the echo-agreement link
+        refuses (the start/day branch)."""
+        self.provider.receipt = receipt(
+            start="2027-05-06T10:00:00-04:00", end="2027-05-06T11:00:00-04:00")
+        avail = CalendarCountingAvailability([slot(5, 10), slot(5, 14)],
+                                             self.provider)
+        eng = self._eng(1, avail)
+        first = self._book(eng, avail, slot(5, 10))
+        avail.free.remove(slot(5, 10))            # the place is still taken
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_an_echo_of_another_calendar_still_frees_no_place(self):
+        """The record says CAL_A; the provider's echo claims CAL_B. Only the
+        echo-agreement link refuses (the calendar branch)."""
+        self.provider.receipt = receipt(calendar_id=CAL_B)
+        avail = CalendarCountingAvailability([slot(5, 10), slot(5, 14)],
+                                             self.provider)
+        eng = self._eng(1, avail)
+        first = self._book(eng, avail, slot(5, 10))
+        avail.free.remove(slot(5, 10))            # the place is still taken
+        self.assertRefused(R_OUTSIDE_POLICY, eng.reschedule,
+                           booking_action_id=first.action_id,
+                           new_slot=slot(5, 14), now=NOW)
+        self.assertEqual(self.provider.moves, [])
+
+    def test_an_unconfirmed_cancel_still_lets_the_move_free_its_place(self):
+        """The cancel never confirmed (UNKNOWN). A booking that still holds its
+        place keeps its exclusion. Only the completed-state link, if dropped,
+        would wrongly treat that in-flight cancel as proof of a given-up place."""
+        provider = _CancelUnknownProvider()
+        avail = CalendarCountingAvailability([slot(5, 10), slot(5, 14)], provider)
+        eng = self._eng(1, avail, provider=provider)
+        first = self._book(eng, avail, slot(5, 10))
+        avail.free.remove(slot(5, 10))            # the place is still taken
+        gone = eng.cancel(booking_action_id=first.action_id, now=NOW)
+        self.assertFalse(gone.claimed)            # unknown, not cancelled
+        moved = eng.reschedule(booking_action_id=first.action_id,
+                               new_slot=slot(5, 14), now=NOW)
+        self.assertTrue(moved.claimed)            # the move frees its own place
+        self.assertEqual(len(provider.moves), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
