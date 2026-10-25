@@ -288,6 +288,25 @@ class KeywordFallbackTests(unittest.TestCase):
         self.assertIsNone(out.route)
         self.assertTrue(out.prompt_keyword)
 
+    def test_keyword_matching_is_not_a_substring_match_in_either_direction(self):
+        # The pin above drives "GUIDED" against the approved "GUIDE": a
+        # SUPERSTRING, which exact, prefix and substring matching all reject,
+        # so it survives a substring mutation untouched. This one drives the
+        # SUBSTRING direction - "GUI" and "IDE" are substrings of the approved
+        # "GUIDE", so only an exact match rejects them - and keeps a positive
+        # control beside it, so the assertions cannot pass by the lookup being
+        # dead. Shipped behaviour is unchanged: these already answered None.
+        for text in ("GUI", "IDE", "gui", "ide"):
+            with self.subTest(text=text):
+                out = routes.resolve_entry(channel="FB_DM", text=text,
+                                           keyword_routes=self.KEYWORDS)
+                self.assertIsNone(out.route)
+                self.assertTrue(out.prompt_keyword)
+        matched = routes.resolve_entry(channel="FB_DM", text="GUIDE",
+                                       keyword_routes=self.KEYWORDS)
+        self.assertEqual(matched.route, "item-guide")
+        self.assertEqual(matched.reason, "keyword_fallback")
+
     def test_a_known_ref_beats_a_contradictory_keyword(self):
         # Handoff mistake: link attribution is not assumed from text.
         out = routes.resolve_entry(channel="FB_DM", ref="mme-ref-1",
