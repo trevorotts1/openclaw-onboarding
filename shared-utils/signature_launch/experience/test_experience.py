@@ -155,6 +155,37 @@ class StyleExamples(unittest.TestCase):
         self.assertTrue(any("http" in l for l in links), links)
         self.assertTrue(any("none available" in l for l in links), links)  # Style C has no example
 
+    def test_malformed_engine_entries_never_crash_or_invent_a_url(self):
+        eng = rq._engine()
+        self.assertIsNotNone(eng)
+        lines = eng._style_lines(["oops", 5, {"id": "X"},
+                                  {"id": "Y", "name": "Why", "example": {"url": "https://e/y.png"}}])
+        self.assertEqual(2, len(lines))  # malformed entries skipped, real styles kept
+        self.assertIn("Y Why example: https://e/y.png", lines)
+        self.assertNotIn("http", lines[0])  # a style with no example never claims a picture
+
+    def test_non_string_examples_never_crash_the_render(self):
+        q = {"id": "design_style", "text": "Pick one.",
+             "help": {"examples": [{"note": "dict"}, "C Hybrid example: none available yet"]}}
+        self.assertIn("none available yet", rq.chat(q))
+        self.assertIn("none available yet", rq.structured([q])[0]["questions"][0]["question"])
+
+    def test_no_style_block_without_style_lines(self):
+        q = {"id": "design_style", "text": "Pick one.",
+             "help": {"examples": ["Classic and professional: A"]}}
+        self.assertNotIn("Style examples", rq.chat(q))
+        self.assertNotIn("Style examples", rq.structured([q])[0]["questions"][0]["question"])
+
+    def test_only_design_style_gets_the_block_above_the_question(self):
+        q = {"id": "photos", "text": "What photos do you have?",
+             "help": {"examples": ["See https://example.test/p.png"]}}
+        msg = rq.chat(q)
+        self.assertNotIn("Style examples", msg)
+        self.assertGreater(msg.index("https://example.test/p.png"), msg.index("What photos do you have?"))
+        text = rq.structured([q])[0]["questions"][0]["question"]
+        self.assertNotIn("Style examples", text)
+        self.assertGreater(text.index("https://example.test/p.png"), text.index("What photos do you have?"))
+
 
 class Reports(unittest.TestCase):
     def test_progress_table_for_claude_and_messages_for_chat(self):

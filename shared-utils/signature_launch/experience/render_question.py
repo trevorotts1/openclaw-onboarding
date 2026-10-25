@@ -39,11 +39,19 @@ _URL = re.compile(r"https?://")
 _NO_EXAMPLE = re.compile(r"\bexample:\s*none\b", re.I)
 
 
-def _style_examples(examples):
-    """The style block: image links and the honest "no example" lines. Rendered BEFORE the
-    question so the client sees what they are choosing between; the feel examples
-    ("Warm and friendly: B") stay below it."""
-    return [e for e in examples if _URL.search(e) or _NO_EXAMPLE.search(e)]
+def _style_examples(n):
+    """The style block for design_style only: image links and the honest "no example" lines.
+    Rendered BEFORE the question so the client sees what they are choosing between; the feel
+    examples ("Warm and friendly: B") stay below it. Any other question keeps its examples
+    below the question and never gets a "Style examples" label."""
+    if n["id"] != "design_style":
+        return []
+    out = []
+    for e in n["examples"]:
+        s = str(e)  # a foreign bank may put non-strings here; they must never crash the ask
+        if _URL.search(s) or _NO_EXAMPLE.search(s):
+            out.append(s)
+    return out
 
 
 def _engine():
@@ -126,7 +134,7 @@ def _tool_question(n):
     if can_default(n):
         tail += ", or use a safe default you confirm later"
     opts.append({"label": HELP_LABEL, "description": tail})
-    style = _style_examples(n["examples"])
+    style = _style_examples(n)
     text = "" if not style else "Style examples:\n" + "\n".join(style) + "\n\n"
     text += n["text"] + (f"\n{n['why']}" if n["why"] else "")
     if n["example"]:
@@ -140,7 +148,7 @@ def _tool_question(n):
 def chat(q, index=None, total=None, estimate_note=None):
     n = normalize(q)
     head = f"Question {index} of {total}: " if index and total else ""
-    style = _style_examples(n["examples"])
+    style = _style_examples(n)
     lines = []
     if style:  # the promised examples come BEFORE the question (finding 20)
         lines.append("Style examples - open the picture links before you answer:")

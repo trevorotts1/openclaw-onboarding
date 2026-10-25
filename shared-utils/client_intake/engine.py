@@ -320,15 +320,23 @@ def _style_links():
                 styles = json.loads(f.read_text())["styles"]
             except (OSError, ValueError, KeyError, TypeError):
                 return []
-            out = []
-            for s in styles:
-                ex = s.get("example") if isinstance(s, dict) else None
-                url = ex.get("url") if isinstance(ex, dict) else None
-                name = f"{s.get('id', '?')} {s.get('name', '')}".strip()
-                out.append(f"{name} example: {url}" if url
-                           else f"{name} example: none available yet - this style has no example image")
-            return out
+            return _style_lines(styles)
     return []
+
+
+def _style_lines(styles):
+    """One honest line per style. A malformed entry is skipped, never crashes the ask
+    (a nameless entry has nothing to disclose); a missing or non-string URL is "none"."""
+    out = []
+    for s in styles if isinstance(styles, list) else []:
+        if not isinstance(s, dict):
+            continue
+        ex = s.get("example")
+        url = ex.get("url") if isinstance(ex, dict) else None
+        name = f"{s.get('id', '?')} {s.get('name', '')}".strip()
+        out.append(f"{name} example: {url}" if isinstance(url, str) and url
+                   else f"{name} example: none available yet - this style has no example image")
+    return out
 
 
 def _askable(doc, q):
