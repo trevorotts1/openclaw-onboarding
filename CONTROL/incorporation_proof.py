@@ -39,6 +39,7 @@ __all__ = [
     "Check",
     "IncorporationProof",
     "verify_incorporation",
+    "reverify",
     "validate_proof",
     "proof_is_current",
     "refresh_proof",
@@ -71,6 +72,7 @@ REASONS = (
     "proof-incomplete",
     "not-incorporated",
     "stale",
+    "no-transport",
 )
 
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
@@ -189,11 +191,12 @@ class IncorporationProof:
     """The receipt: candidate + base + checks + the merge commit, on one target."""
 
     __slots__ = ("schema", "unit", "candidate", "base", "merge_commit", "checks",
-                 "target", "remote_head", "observed_at", "refreshed_from")
+                 "target", "remote_head", "observed_at", "refreshed_from",
+                 "_transport")
 
     def __init__(self, *, unit, candidate, base, merge_commit, checks, target,
                  remote_head, observed_at, refreshed_from=None,
-                 schema=PROOF_SCHEMA):
+                 schema=PROOF_SCHEMA, _transport=None):
         self.schema = schema
         self.unit = unit
         self.candidate = candidate
@@ -204,6 +207,15 @@ class IncorporationProof:
         self.remote_head = remote_head
         self.observed_at = observed_at
         self.refreshed_from = refreshed_from
+        #: The transport that minted this proof, held so a consumer can re-prove
+        #: it instead of trusting the numbers on the receipt. Never serialised:
+        #: a proof read back from disk has no transport and cannot be re-proven.
+        self._transport = _transport
+
+    @property
+    def transport(self):
+        """The transport this proof was minted on, or None for a disk record."""
+        return self._transport
 
     @property
     def incorporated(self):
@@ -328,7 +340,36 @@ def verify_incorporation(git, *, unit, candidate, base, merge_commit,
     return IncorporationProof(
         unit=unit.strip(), candidate=candidate, base=base,
         merge_commit=merge_commit, checks=normalised, target=target,
-        remote_head=remote_head, observed_at=observed_at)
+        remote_head=remote_head, observed_at=observed_at, _transport=git)
+
+
+def reverify(proof, observed_at=None):
+    """Re-prove an existing proof, now, on the transport that minted it.
+
+    This is the difference between a receipt and a fact. The carried candidate,
+    base and checks are fed back through :func:`verify_incorporation`, which
+    re-reads the target branch and re-tests ancestry, so a hand-minted proof (no
+    transport, therefore never proven) is refused, and a base that is not
+    beneath the landing is refused, at the moment of consumption rather than
+    only at minting time. A moved branch is fine here: the merge only has to
+    still be an ancestor of the branch as it stands now.
+    """
+    obj = validate_proof(proof)
+    transport = obj.transport
+    if transport is None:
+        raise ProofRefused(
+            "no-transport",
+            "the proof carries no transport, so its landing cannot be re-proven")
+    fresh = verify_incorporation(
+        transport, unit=obj.unit, candidate=obj.candidate, base=obj.base,
+        merge_commit=obj.merge_commit, checks=obj.checks,
+        observed_at=observed_at)
+    if fresh.target != obj.target:
+        raise ProofRefused(
+            "wrong-target",
+            f"proof names {obj.target.repository!r}, its transport is bound to "
+            f"{fresh.target.repository!r}")
+    return fresh
 
 
 def validate_proof(proof):
@@ -384,7 +425,7 @@ def refresh_proof(git, proof, observed_at=None):
         unit=obj.unit, candidate=obj.candidate, base=obj.base,
         merge_commit=obj.merge_commit, checks=obj.checks, target=target,
         remote_head=remote_head, observed_at=observed_at,
-        refreshed_from=obj.digest)
+        refreshed_from=obj.digest, _transport=git)
 
 
 def proofs_affected_by(proofs, remote_heads):

@@ -14,13 +14,21 @@ Guarantees, each one testable:
     this store's repository, it carries a PASS verdict, its reviewed head is
     the proof's candidate, and the proof validates -- is checked before a byte
     of the store is touched.
+  * RE-PROVE, NEVER TRUST. The proof is re-run through
+    :func:`incorporation_proof.reverify` on the transport that minted it, so its
+    candidate, base and checks are correlated against the landing again at the
+    moment of acknowledgement. A hand-minted proof carries no transport and is
+    refused; a base that is not beneath the merge is refused. A proof read back
+    from disk cannot be re-proven and is refused for the same reason.
   * ONE WRITE. The acknowledged entry and its proof are serialised into a
     single document and installed with one atomic ``os.replace``. A reader can
     never observe an acknowledgement without its proof.
-  * IDEMPOTENT. Re-acknowledging the same landing with the same candidate and
-    merge commit returns ``ALREADY_ACKNOWLEDGED`` and writes nothing at all.
-  * CONFLICT IS REFUSED. A second, different landing for an acknowledged entry
-    is refused; the first acknowledgement stands and the store is untouched.
+  * IDEMPOTENT. Re-acknowledging the same landing with the same candidate,
+    base, checks and merge commit returns ``ALREADY_ACKNOWLEDGED`` and writes
+    nothing at all.
+  * CONFLICT IS REFUSED. A second, different landing -- or a different base or
+    check set for the same merge -- is refused; the first acknowledgement
+    stands and the store is untouched.
   * CORRECT TARGET. A proof whose target is not this entry's repository is
     refused, so ONB can never be acknowledged from an N999 proof.
   * NO CROSS-FLAVOR GATE. Acknowledging an ONB entry requires nothing from
@@ -64,7 +72,15 @@ ACK_REASONS = (
     "no-proof",
     "wrong-target",
     "candidate-mismatch",
+    "base-mismatch",
+    "checks-mismatch",
     "not-incorporated",
+    "no-transport",
+    "candidate-not-in-merge",
+    "base-not-ancestor",
+    "merge-not-on-remote",
+    "checks-failed",
+    "no-checks",
     "ack-conflict",
     "store-malformed",
 )
@@ -112,6 +128,34 @@ def _write_atomic(path, document):
         os.close(dirlock)
 
 
+def _complete_ack(ack):
+    """The proof carried by an ack block, or None when the ack is not complete.
+
+    A block that says ACKNOWLEDGED without a valid, self-describing proof is a
+    half acknowledgement: it is not readable as an acknowledgement at all.
+    """
+    if not isinstance(ack, dict) or ack.get("state") != ACKNOWLEDGED:
+        return None
+    try:
+        return IP.validate_proof(ack.get("proof"))
+    except IP.ProofRefused:
+        return None
+
+
+def _same_proof(current, fresh):
+    """One landing means the same candidate, base, checks, merge and target.
+
+    ``remote_head`` is deliberately excluded: a refreshed proof of the same
+    landing must still be idempotent.
+    """
+    return (current.candidate == fresh.candidate
+            and current.base == fresh.base
+            and current.merge_commit == fresh.merge_commit
+            and current.target == fresh.target
+            and [c.as_dict() for c in current.checks]
+            == [c.as_dict() for c in fresh.checks])
+
+
 class QueueStore:
     """One repository's queue. Entries are acknowledged in place, atomically."""
 
@@ -147,12 +191,11 @@ class QueueStore:
         if not entry:
             return None
         ack = entry.get("ack")
-        return ack if isinstance(ack, dict) and ack.get("state") == ACKNOWLEDGED else None
+        return ack if _complete_ack(ack) is not None else None
 
     def pending(self):
         return sorted(unit for unit, entry in self.entries().items()
-                      if not (isinstance(entry.get("ack"), dict)
-                              and entry["ack"].get("state") == ACKNOWLEDGED))
+                      if _complete_ack(entry.get("ack")) is None)
 
     def status(self, unit):
         ack = self.acknowledgement(unit)
@@ -211,24 +254,57 @@ class QueueStore:
                              f"proof candidate {valid.candidate} is not the "
                              f"reviewed head {head}")
 
+        # Re-prove the landing now, on the transport that minted the proof. A
+        # structurally valid receipt is not evidence: without this the queue
+        # would acknowledge a merge that merely exists, or a base that is not
+        # beneath it, because nothing correlated those fields to the landing.
+        try:
+            fresh = IP.reverify(valid, observed_at=observed_at)
+        except IP.ProofRefused as exc:
+            reason = exc.reason if exc.reason in ACK_REASONS else "not-incorporated"
+            raise AckRefused(reason, exc.detail)
+
+        # ... and tie base and checks to the entry, not only to the landing.
+        declared_base = entry.get("base_commit")
+        if declared_base is not None and declared_base != fresh.base:
+            raise AckRefused("base-mismatch",
+                             f"{unit} was reviewed against base {declared_base}, "
+                             f"the proof names {fresh.base}")
+        required = entry.get("required_checks")
+        if required is not None:
+            passing = {c.name for c in fresh.checks if c.outcome == "PASS"}
+            missing = [name for name in required if name not in passing]
+            if missing:
+                raise AckRefused("checks-mismatch",
+                                 f"{unit} requires {', '.join(missing)}, which "
+                                 f"the proof does not carry as PASS")
+
         existing = entry.get("ack") if isinstance(entry.get("ack"), dict) else {}
         if existing.get("state") == ACKNOWLEDGED:
-            current = IP.IncorporationProof.from_dict(existing.get("proof") or {})
-            if current.same_landing(valid):
+            current = _complete_ack(existing)
+            if current is None:
+                raise AckRefused(
+                    "store-malformed",
+                    f"{unit} claims an acknowledgement without its proof")
+            if _same_proof(current, fresh):
                 return ALREADY_ACKNOWLEDGED
             raise AckRefused("ack-conflict",
-                             f"{unit} is already acknowledged at "
-                             f"{current.merge_commit}; refusing a second landing")
+                             f"{unit} is already acknowledged for base "
+                             f"{current.base} and checks "
+                             f"{[c.name for c in current.checks]}; refusing a "
+                             f"different proof of {current.merge_commit}")
 
         entry["ack"] = {
             "state": ACKNOWLEDGED,
             "unit": unit,
             "repository": self.repository,
-            "candidate": valid.candidate,
-            "merge_commit": valid.merge_commit,
-            "ancestor_of_main": f"proven {observed_at or valid.observed_at or ''}".strip(),
-            "proof_digest": valid.digest,
-            "proof": valid.as_dict(),
+            "candidate": fresh.candidate,
+            "base": fresh.base,
+            "merge_commit": fresh.merge_commit,
+            "checks": [c.as_dict() for c in fresh.checks],
+            "ancestor_of_main": f"proven {observed_at or fresh.observed_at or ''}".strip(),
+            "proof_digest": fresh.digest,
+            "proof": fresh.as_dict(),
         }
         document["entries"][unit] = entry
         document["schema"] = ACK_SCHEMA
