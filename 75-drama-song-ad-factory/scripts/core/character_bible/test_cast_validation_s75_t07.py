@@ -436,6 +436,185 @@ def test_identifiers_are_shape_not_prose_but_filler_is_still_refused():
                                   "issue_contains": ""}), (value, packet["defects"])
 
 
+# --- round 8: content is GROUNDED, not token-shaped ------------------------
+#
+# The round-7 verdict proved that a token-shape proxy is beaten by any token
+# that is alphabetic, >=3, carries one vowel, is not one repeated character,
+# is not a keyboard run and is not on the FILLER_TOKENS list. Round 8 therefore
+# stops asking what a token looks like and asks what the field carries:
+# every word licensed, and a statement that states an act. These proofs are the
+# measurement: nonsense refused, real content kept, and the exact cost named.
+
+ROUND8_NAMED_FOUR = ("banana phone banana", "ababab", "hahaha", "aei")
+
+ROUND8_SHAPE_PASSING_NONSENSE = (
+    "blorpt zibble quank", "gribble frample wunk", "zeep zorp zalm",
+    "tralala", "tatata", "mamama", "yayaya", "lalala", "obobob", "aeaeae",
+    "abcabc", "eieie", "ueue", "qwertz", "asdfgj", "banana phone mango",
+    "the banana phones the mango", "aei eau iou", "ababab titit",
+    "zzz abc def ghi", "i\u0440sum", "flimp dorb nucket",
+)
+
+ROUND8_REAL_CONTENT = (
+    "Not yet.", "Wait for me.", "Lock the door.",
+    "If I lock that door, their checks bounce tomorrow.",
+    "opens the ledger where Mara can read it",
+    "Serves Wojciech before the queue moves.",
+    "Finds no hygge in the empty workshop.",
+    "Her choice turns ubuntu into a shared duty.",
+    "Absorbs the backpressure before the quorum breaks.",
+    "The choice raises throughput and ends the argument.",
+)
+
+ROUND8_REAL_CROWD_CONTENT = (
+    "two regulars, Siobhan and Niamh, waiting at the counter",
+    "four adults lingering after a long sobremesa at the counter",
+    "muted everyday clothes, one Nguyen family scarf",
+    "ordinary clothes, one Kubernetes conference hoodie",
+)
+
+#: Real words that the bounded vocabulary does NOT contain. Refusing them is the
+#: measured cost of the approach, not a hidden bug: see the round-8 report.
+ROUND8_OPEN_SET_COST = (
+    "Her checkout migrates the payload overnight.",
+    "The waveform stabilises after the calibration pass.",
+    "Hiraeth", "Saudade", "Defenestration", "Petrichor",
+)
+
+
+def _isf(value):
+    return {"cast_entry_patch": {"index": 0,
+                                 "set": {"immediate_story_function": value}}}
+
+
+def test_round8_named_four_strings_are_refused():
+    """The four strings the round-7 verdict named are refused by the predicate."""
+    data = _fixture()
+    for value in ROUND8_NAMED_FOUR:
+        packet = CV.validate_cast(*_case(data, _isf(value)))
+        assert packet["ok"] is False, value
+        assert _matching(packet, {"field": "cast.immediate_story_function",
+                                  "issue_contains": ""}), (value, packet["defects"])
+
+
+def test_round8_shape_passing_nonsense_family_is_refused():
+    """Nonsense that satisfied every token-shape rule of rounds 1-7 is refused."""
+    data = _fixture()
+    holes = []
+    for value in ROUND8_SHAPE_PASSING_NONSENSE:
+        packet = CV.validate_cast(*_case(data, _isf(value)))
+        if packet["ok"]:
+            holes.append(value)
+    assert not holes, holes
+
+
+def test_round8_list_record_and_id_holes_are_closed():
+    """A list entry, a record leaf and an id are each judged in full."""
+    data = _fixture()
+    for value in ("x y z", "foo bar baz", "blah blah blah", "a b c",
+                  "aaa bbb ccc", "blorpt zibble"):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch": {
+            "index": 0,
+            "set": {"choice_or_consequence": [
+                value, "Disclosure shifts her from isolation to shared responsibility."]}}}))
+        assert packet["ok"] is False, value
+    for record in ({"a": "zzz", "b": "four adult repair customers waiting"},
+                   {"a": 1, "b": "four adult repair customers waiting"},
+                   {"a": {"b": "zzz"}, "c": {"d": "four adult repair customers waiting"}},
+                   {"a": ["x y z", "four adult repair customers waiting"]},
+                   {"a": "", "b": "four adult repair customers waiting"}):
+        packet = CV.validate_cast(*_case(data, {"crowd_patch": {"age_range": record}}))
+        assert packet["ok"] is False, record
+    for identity in ("lorem-1", "tbd-1", "none-1", "test-1", "placeholder-1",
+                     "zzz1", "abc123", "aaa.aaa", "aaa-aaa-aaa", "aaaaab",
+                     "x1x", "blorpt"):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch": {
+            "index": 0, "set": {"identity_digest": identity}}}))
+        assert packet["ok"] is False, identity
+    for revision in (-7, 0):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch": {
+            "index": 0, "set": {"identity_revision": revision}}}))
+        assert packet["ok"] is False, revision
+
+
+def test_round8_scene_content_keys_fail_closed():
+    """An entry that never names its words is refused, not skipped."""
+    data = _fixture()
+    for patch in ({"spoken_dialogue": [{"line_id": "zzz", "character_id": "char_mara_001"}]},
+                  {"sung_lyrics": [{"line_id": "zzz", "character_id": "char_mara_001"}]},
+                  {"named_actions": [{"character_id": "char_mara_001"}]},
+                  {"spoken_dialogue": [{"line_id": "l1", "character_id": "char_mara_001",
+                                        "text": "blorpt zibble quank"}]}):
+        packet = CV.validate_cast(*_case(data, {"scene_patch": patch}))
+        assert packet["ok"] is False, patch
+
+
+def test_round8_placement_slot_for_an_undeclared_scene_is_refused():
+    """A slot nobody would have checked is a slot filler hides in."""
+    data = _fixture()
+    packet = CV.validate_cast(*_case(data, {"crowd_patch": {
+        "location_placement": {"scene_workshop_001": "two seated beside the north wall",
+                               "scene_dead_999": "zzz"}}}))
+    assert packet["ok"] is False
+    assert any("not one of this group's scene_ids" in d["message"]
+               for d in packet["defects"]), packet["defects"]
+
+
+def test_round8_legitimate_content_is_accepted():
+    """No refuse-everything fix: real lines, names, loanwords, technical words."""
+    data = _fixture()
+    for value in ROUND8_REAL_CONTENT:
+        packet = CV.validate_cast(*_case(data, _isf(value)))
+        assert packet["ok"] is True, (value, packet["defects"])
+    for value in ROUND8_REAL_CROWD_CONTENT:
+        packet = CV.validate_cast(*_case(data, {"crowd_patch": {"composition": value}}))
+        assert packet["ok"] is True, (value, packet["defects"])
+    for role in ("comic relief", "love interest", "lead", "supporting partner"):
+        packet = CV.validate_cast(*_case(data, {"cast_entry_patch": {
+            "index": 0, "set": {"episode_role": role}}}))
+        assert packet["ok"] is True, (role, packet["defects"])
+
+
+def test_round8_open_set_cost_is_measured_not_hidden():
+    """The bounded vocabulary's cost: a real word it lacks is refused.
+
+    This is asserted so the limit cannot silently drift. The round-8 report
+    records it as the approach's measured over-refusal.
+    """
+    data = _fixture()
+    for value in ROUND8_OPEN_SET_COST:
+        packet = CV.validate_cast(*_case(data, _isf(value)))
+        assert packet["ok"] is False, value
+
+
+def test_round8_residual_licensed_nonsense_is_recorded():
+    """Grammatical nonsense over licensed words still passes. Named, not hidden."""
+    data = _fixture()
+    packet = CV.validate_cast(*_case(data, _isf(
+        "She chooses to expose the ledger before the counter opens.")))
+    assert packet["ok"] is True, packet["defects"]
+
+
+def test_round8_a_value_cannot_license_itself():
+    """The corpus is the shipped vocabulary, never the record's own prose."""
+    data = _fixture()
+    packet = CV.validate_cast(*_case(data, _isf("blorpt zibble quank")))
+    assert packet["ok"] is False
+    ctx = CV.build_context(*_case(data, {"crowd_patch": {}}))
+    assert "blorpt" not in ctx.words
+
+
+def test_round8_vocabulary_is_not_read_on_import():
+    """Import stays IO-free; the vocabulary loads on the first judgement."""
+    import subprocess
+    probe = ("import sys; sys.path[:0] = [%r, %r]; import cast_validation as C; "
+             "print(C._LEXICON is None)" % (CORE, HERE))
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True,
+                         text=True, check=True)
+    assert out.stdout.strip() == "True", out.stdout
+    assert CV.content_lexicon()["words"], "vocabulary did not load"
+
+
 if __name__ == "__main__":
     tests = [(name, fn) for name, fn in sorted(globals().items())
              if name.startswith("test_") and callable(fn)]
