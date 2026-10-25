@@ -127,12 +127,27 @@ EXTERNAL_PAGE = """<!doctype html><html><body>
 <iframe id="inline-FORM-1" src="https://api.leadconnectorhq.com/widget/form/FORM-1"></iframe>
 </body></html>"""
 
+# Finding 16: a sales page hands off to the client's checkout, not to a form.
+SALES_PAGE = """<!doctype html><html><body>
+<h1>Elevate</h1>
+<a class="cta" href="https://pay.example.com/checkout/elevate">Claim Your Seat</a>
+</body></html>"""
 
-def make_page_run(td: Path, handoff, page=GOOD_PAGE, manifest_ctas="default"):
+SALES_CHECKOUT = "https://pay.example.com/checkout/elevate"
+
+def sales_ctas(handoff_type="external_link"):
+    return [{"section": "1", "label": "Claim Your Seat",
+             "handoff_type": handoff_type, "primary": True}]
+
+
+def make_page_run(td: Path, handoff, page=GOOD_PAGE, manifest_ctas="default",
+                  page_kind=None):
     run = td / "run"
     intake = {"page_version": "standard", "brand_owner": "Fixture",
               "brand_file": "brand-fixture.json", "image_cap": 5,
               "image_engine": "kie", "test_run": False}
+    if page_kind is not None:
+        intake["page_kind"] = page_kind
     if handoff is not None:
         intake["funnel_handoff"] = handoff
     write(run / "intake.json", intake)
@@ -276,6 +291,98 @@ class ValidateHandoffTest(unittest.TestCase):
         proc = self.validate(run)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("name AND object id", proc.stdout)
+
+    # --- finding 16: the handoff is derived from the page kind ----------
+    def test_sales_page_with_external_checkout_link_passes(self):
+        # FAILS BEFORE the finding-16 fix: the validator required form_pop and
+        # the fixed step order regardless of the page kind, so this sales page
+        # (a real checkout link, no form at all) was refused twice.
+        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
+                            page=SALES_PAGE, manifest_ctas=sales_ctas(),
+                            page_kind="sales")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertIn("action checkout", proc.stdout)
+        self.assertIn(SALES_CHECKOUT, proc.stdout)
+
+    def test_sales_page_with_a_form_pop_primary_fails_by_name(self):
+        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
+                            page=SALES_PAGE,
+                            manifest_ctas=sales_ctas("form_pop"),
+                            page_kind="sales")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("external_link", proc.stdout)
+
+    def test_sales_page_with_a_placeholder_checkout_link_fails(self):
+        page = ("<!doctype html><html><body><h1>Elevate</h1>"
+                "<a class=\"cta\" href=\"#checkout\">Claim Your Seat</a>"
+                "</body></html>")
+        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
+                            page=page, manifest_ctas=sales_ctas(),
+                            page_kind="sales")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("placeholder", proc.stdout)
+        self.assertIn("Claim Your Seat", proc.stdout)
+
+    def test_sales_page_with_a_non_checkout_primary_fails(self):
+        page = ("<!doctype html><html><body><h1>Elevate</h1>"
+                "<button class=\"cta\">Claim Your Seat</button>"
+                "</body></html>")
+        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
+                            page=page, manifest_ctas=sales_ctas(),
+                            page_kind="sales")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("not a link", proc.stdout)
+
+    def test_sales_page_must_lead_where_intake_says(self):
+        run = make_page_run(self.td,
+                            {"checkout_url": "https://pay.example.com/other"},
+                            page=SALES_PAGE, manifest_ctas=sales_ctas(),
+                            page_kind="sales")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("not the checkout destination recorded at intake",
+                      proc.stdout)
+
+    def test_sales_page_with_a_relative_link_fails(self):
+        page = ("<!doctype html><html><body><h1>Elevate</h1>"
+                "<a class=\"cta\" href=\"/checkout\">Claim Your Seat</a>"
+                "</body></html>")
+        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
+                            page=page, manifest_ctas=sales_ctas(),
+                            page_kind="sales")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("not an absolute http(s) checkout destination",
+                      proc.stdout)
+
+    def test_opt_in_without_a_registration_form_fails(self):
+        # The form route is unchanged: an opt-in page still must record the
+        # registration form (or the explicit missing input).
+        run = make_page_run(self.td, None, page=SALES_PAGE,
+                            page_kind="opt_in")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("records no funnel_handoff", proc.stdout)
+
+    def test_opt_in_with_the_registration_form_passes(self):
+        run = make_page_run(self.td, {"form": FORM, "behavior": "form_pop",
+                                      "step_order": STEP_ORDER},
+                            page_kind="opt_in")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+        self.assertIn("form_pop", proc.stdout)
+
+    def test_unknown_page_kind_fails_by_name(self):
+        run = make_page_run(self.td, {"form": FORM, "behavior": "form_pop",
+                                      "step_order": STEP_ORDER},
+                            page_kind="bogus")
+        proc = self.validate(run)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("bogus", proc.stdout)
 
 
 if __name__ == "__main__":

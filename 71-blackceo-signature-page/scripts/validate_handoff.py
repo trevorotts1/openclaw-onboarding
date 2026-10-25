@@ -4,32 +4,53 @@
   python3 scripts/validate_handoff.py <run_dir>
 
 Wired as a validator of the responsive-html stage in
-references/stage-contract.json. The handoff contract (update plan
-Item 32) is recorded at intake in intake.json's funnel_handoff (written
-by scripts/write_intake.py): the Convert and Flow form's identity (name
-and object id), the pop behavior, and the step order (signature page,
-then product selection page, then order form page). This check verifies,
-on the built page (responsive-html/index.html):
+references/stage-contract.json. The required handoff is derived from the
+page kind's declared action (intake.json's page_kind, read through
+scripts/page_kinds.py and references/page-kinds.json), because the two
+landing kinds hand off differently:
 
-- the intake record exists: a run with no form identity must carry the
-  explicit missing-input record; no record at all fails, because a
-  silent placeholder is not a handoff;
-- the copy manifest (copy/copy-manifest.json) carries a primary CTA
-  entry whose handoff type is form_pop, naming the button inspected;
-- the page's primary CTA is wired to the named form object: the element
-  itself references the form's object id, or (for a button) the page
-  does; a primary CTA that is a placeholder anchor ("#", "#join", any
-  in-page fragment) or an external link fails by name;
-- the page references the named form object id somewhere in its markup
-  or scripts: the pop targets the named GHL form object, never a
-  hand-rolled substitute.
+- action "form" (the signature landing / opt-in page): the handoff
+  contract (update plan Item 32) is recorded at intake in intake.json's
+  funnel_handoff (written by scripts/write_intake.py): the Convert and
+  Flow form's identity (name and object id), the pop behavior, and the
+  step order (signature page, then product selection page, then order
+  form page). The copy manifest's primary CTA is a form_pop, the page's
+  primary CTA is wired to the named form object, and the page references
+  the named form object id somewhere in its markup or scripts.
+- action "checkout" (the signature sales page): every button leads to
+  the client's checkout page or payment link, so no form identity and no
+  product-selection/order-form sequence applies. The copy manifest's
+  primary CTA is an external_link, and the page's primary CTA is an
+  anchor to an absolute http(s) checkout/payment link: never a fragment
+  or placeholder. When intake records the destination (funnel_handoff.
+  checkout_url, funnel_handoff.checkout.url, or intake.json
+  checkout_url), the page's link must be that destination.
+
+A run that declares no page_kind keeps the form route (the contract this
+check shipped with). This check verifies, on the built page
+(responsive-html/index.html):
+
+- on the form route, the intake record exists: a run with no form
+  identity must carry the explicit missing-input record; no record at
+  all fails, because a silent placeholder is not a handoff;
+- the copy manifest (copy/copy-manifest.json) carries exactly one
+  primary CTA entry whose handoff type the page kind requires, naming
+  the button inspected;
+- the primary CTA's destination satisfies that requirement: the named
+  form object on the form route (a placeholder anchor, any in-page
+  fragment, or an external link fails by name), an absolute external
+  checkout destination on the checkout route (a fragment, a relative or
+  non-http(s) link fails by name);
+- on the form route, the page references the named form object id
+  somewhere in its markup or scripts.
 
 When intake records the missing input, a placeholder primary CTA is
 carried under that recorded flag (printed here, never silent) and this
 check passes; the flag is the run's own record, not this check's
-invention. The live proof (the button actually opens the named form,
-and a test submission lands and routes onward) is the funnel-completion
-receipt's, verified by scripts/validate_funnel_completion.py.
+invention. The live proof (the button actually opens the named form, or
+the checkout page takes payment, and the journey lands and routes
+onward) is the funnel-completion receipt's, verified by
+scripts/validate_funnel_completion.py.
 
 Exit 0 pass, 1 fail, 2 usage error.
 """
@@ -38,8 +59,14 @@ import re
 import sys
 from pathlib import Path
 
+import page_kinds
+
 STEP_ORDER = ["signature_page", "product_selection_page", "order_form_page"]
 BEHAVIOR = "form_pop"
+FORM_ROUTE = "form"
+CHECKOUT_ROUTE = "checkout"
+EXTERNAL_LINK = "external_link"
+CHECKOUT_URL_RE = re.compile(r"^https?://[^/\s?#]+(?:[/?#]\S*)?$", re.I)
 
 ELEMENT_RE = re.compile(r"<(a|button)\b([^>]*)>(.*?)</\1\s*>", re.I | re.S)
 INPUT_RE = re.compile(r"<input\b[^>]*>", re.I)
@@ -69,6 +96,51 @@ def first_group(match):
     return None
 
 
+def handoff_route(intake):
+    """The handoff this run's page kind requires. page-kinds.json declares each
+    kind's action; a run with no page_kind on record keeps the Item 32 form
+    route. Returns the route dict, or {"error": ...} for an unknown kind."""
+    if not intake.get("page_kind"):
+        return {"kind": None, "action": FORM_ROUTE,
+                "primary_handoff_type": BEHAVIOR,
+                "behavior": BEHAVIOR, "step_order": STEP_ORDER,
+                "requirement": "the primary CTA's handoff is the form pop "
+                               "(form_pop)"}
+    try:
+        kind = page_kinds.entry(intake["page_kind"])
+    except page_kinds.KindError as exc:
+        return {"error": str(exc)}
+    handoff = kind.get("handoff") if isinstance(kind.get("handoff"), dict) else {}
+    action = kind.get("action")
+    if action == CHECKOUT_ROUTE:
+        requirement = ("a sales page's primary CTA is the client's checkout "
+                       "page or payment link (external_link), never the form pop")
+    else:
+        requirement = ("the primary CTA's handoff is the form pop (form_pop)")
+    return {"kind": page_kinds.normalize(intake["page_kind"]),
+            "action": action,
+            "primary_handoff_type": handoff.get("primary_handoff_type"),
+            "behavior": handoff.get("behavior"),
+            "step_order": handoff.get("step_order"),
+            "requirement": requirement}
+
+
+def declared_checkout(intake, handoff):
+    """The checkout destination recorded at intake, or None."""
+    checkout = handoff.get("checkout")
+    values = [handoff.get("checkout_url"),
+              checkout.get("url") if isinstance(checkout, dict) else None,
+              intake.get("checkout_url")]
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def norm_url(value):
+    return value.strip().rstrip("/")
+
+
 def find_primary_element(html, label):
     """Return (tag, attrs, markup) of the element carrying the primary
     CTA's label, or None."""
@@ -87,29 +159,39 @@ def find_primary_element(html, label):
 
 
 def validate(run_dir):
-    failures = []
     intake = load_json(run_dir / "intake.json")
     if not isinstance(intake, dict):
         return ["intake.json is missing or unreadable: the funnel handoff "
                 "record lives at intake (scripts/write_intake.py)"]
+    route = handoff_route(intake)
+    if route.get("error"):
+        return [route["error"]]
+    checkout = route["action"] == CHECKOUT_ROUTE
     handoff = intake.get("funnel_handoff")
     if not isinstance(handoff, dict):
-        return ["intake.json records no funnel_handoff: the signature "
-                "page's funnel handoff must be recorded at intake (the "
-                "form identity via scripts/write_intake.py "
-                "--handoff-form-name/--handoff-form-id, or the explicit "
-                "missing input via --handoff-missing-reason); a silent "
-                "placeholder is not a handoff"]
-    if handoff.get("behavior") not in (None, BEHAVIOR):
-        failures.append(f"funnel_handoff.behavior is "
-                        f"{handoff.get('behavior')!r}; the signature "
-                        f"page's handoff behavior is the form pop "
-                        f"({BEHAVIOR!r})")
-    if handoff.get("step_order") not in (None, STEP_ORDER):
-        failures.append(f"funnel_handoff.step_order is "
-                        f"{handoff.get('step_order')!r}; the recorded step "
-                        f"order is {STEP_ORDER} (signature page, then "
-                        f"product selection page, then order form page)")
+        if not checkout:
+            return ["intake.json records no funnel_handoff: the signature "
+                    "page's funnel handoff must be recorded at intake (the "
+                    "form identity via scripts/write_intake.py "
+                    "--handoff-form-name/--handoff-form-id, or the explicit "
+                    "missing input via --handoff-missing-reason); a silent "
+                    "placeholder is not a handoff"]
+        # A sales page's handoff is its checkout link, not a form identity:
+        # with no record on file the destination is verified on the page.
+        handoff = {}
+    failures = []
+    if not checkout:
+        if handoff.get("behavior") not in (None, route["behavior"]):
+            failures.append(f"funnel_handoff.behavior is "
+                            f"{handoff.get('behavior')!r}; the signature "
+                            f"page's handoff behavior is the form pop "
+                            f"({route['behavior']!r})")
+        if handoff.get("step_order") not in (None, route["step_order"]):
+            failures.append(f"funnel_handoff.step_order is "
+                            f"{handoff.get('step_order')!r}; the recorded step "
+                            f"order is {route['step_order']} (signature page, "
+                            f"then product selection page, then order form "
+                            f"page)")
 
     page_path = run_dir / "responsive-html" / "index.html"
     if not page_path.is_file():
@@ -128,27 +210,29 @@ def validate(run_dir):
         if failures:
             return failures
         print(f"PASS: funnel handoff carried under the recorded missing "
-              f"input (form identity missing: {reason.strip()}); a "
-              f"placeholder primary CTA on this page is carried under that "
-              f"flag, never silently")
+              f"input ({handoff.get('missing') or 'handoff destination'} "
+              f"missing: {reason.strip()}); a placeholder primary CTA on this "
+              f"page is carried under that flag, never silently")
         return []
 
     form = handoff.get("form")
-    if not isinstance(form, dict) or not form.get("name") \
-            or not form.get("form_id"):
+    if not checkout and (not isinstance(form, dict) or not form.get("name")
+                         or not form.get("form_id")):
         failures.append("funnel_handoff.form must carry the form's name AND "
                         "object id (the identity is both); record it with "
                         "scripts/write_intake.py --handoff-form-name and "
                         "--handoff-form-id, or record the explicit missing "
                         "input")
         return failures
-    form_name, form_id = form["name"], form["form_id"]
+    form_name = form.get("name") if isinstance(form, dict) else None
+    form_id = form.get("form_id") if isinstance(form, dict) else None
+    expect = route.get("primary_handoff_type") or BEHAVIOR
 
     manifest = load_json(run_dir / "copy" / "copy-manifest.json")
     if not isinstance(manifest, dict):
         failures.append("copy/copy-manifest.json is missing or unreadable: "
-                        "the primary CTA entry (handoff_type form_pop) is "
-                        "what names the button this check inspects")
+                        f"the primary CTA entry (handoff_type {expect}) is "
+                        f"what names the button this check inspects")
         return failures
     ctas = manifest.get("ctas")
     primaries = [e for e in ctas if isinstance(e, dict)
@@ -156,7 +240,7 @@ def validate(run_dir):
         else []
     if not primaries:
         failures.append("copy manifest carries no primary CTA entry: the "
-                        "primary CTA (handoff_type form_pop) must be marked "
+                        f"primary CTA (handoff_type {expect}) must be marked "
                         "\"primary\": true in copy/copy-manifest.json")
         return failures
     if len(primaries) > 1:
@@ -164,10 +248,10 @@ def validate(run_dir):
                         f"entries; the page has exactly one primary CTA")
         return failures
     primary = primaries[0]
-    if primary.get("handoff_type") != BEHAVIOR:
+    if primary.get("handoff_type") != expect:
         failures.append(f"the copy manifest's primary CTA carries "
-                        f"handoff_type {primary.get('handoff_type')!r}; the "
-                        f"primary CTA's handoff is the form pop (form_pop)")
+                        f"handoff_type {primary.get('handoff_type')!r}; "
+                        f"{route['requirement']}")
         return failures
     label = primary.get("label")
     if not (isinstance(label, str) and label.strip()):
@@ -178,11 +262,56 @@ def validate(run_dir):
 
     found = find_primary_element(html, label)
     if found is None:
+        wants = ("the page's primary CTA is the link that carries the "
+                 "client's checkout" if checkout else
+                 "the button that must pop the named form")
         failures.append(f"no element carries the primary CTA {label!r} "
-                        f"from the copy manifest: the page's primary CTA is "
-                        f"the button that must pop the named form")
+                        f"from the copy manifest: {wants}")
         return failures
     tag, attrs, markup = found
+
+    if checkout:
+        declared = declared_checkout(intake, handoff)
+        if tag != "a":
+            failures.append(
+                f"primary CTA {label!r} is a <{tag}>, not a link: a sales "
+                f"page's primary CTA is an anchor to the client's checkout "
+                f"page or payment link")
+            return failures
+        href = first_group(HREF_RE.search(attrs))
+        destination = href.strip() if isinstance(href, str) else ""
+        if destination == "" or destination.startswith("#"):
+            failures.append(
+                f"primary CTA {label!r} is a placeholder link "
+                f"(href={href!r}), not the client's checkout page or payment "
+                f"link: a placeholder destination fails the production "
+                f"publish path unless intake recorded it as an explicit "
+                f"missing input")
+            return failures
+        if not CHECKOUT_URL_RE.match(destination):
+            failures.append(
+                f"primary CTA {label!r} points at {destination!r}, which is "
+                f"not an absolute http(s) checkout destination: a sales "
+                f"page's button leads to the client's checkout page or "
+                f"payment link")
+            return failures
+        if declared is not None and norm_url(declared) != norm_url(destination):
+            failures.append(
+                f"primary CTA {label!r} points at {destination!r}, not the "
+                f"checkout destination recorded at intake ({declared!r}): "
+                f"the page must lead where the run's handoff says it does")
+            return failures
+        if failures:
+            return failures
+        print(f"PASS: funnel handoff verified (page kind {route['kind']!r} "
+              f"action checkout; copy manifest primary CTA {label!r} typed "
+              f"{expect}; the page's primary CTA is the checkout link "
+              f"{destination!r}"
+              + (f", the destination recorded at intake" if declared
+                 else ", no destination recorded at intake for comparison")
+              + "; no placeholder destination, no form pop required)")
+        return []
+
     if tag == "a":
         # The placeholder test applies to the primary CTA's href
         # regardless of what else the element's markup carries (Item 32
