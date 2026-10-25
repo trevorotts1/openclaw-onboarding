@@ -96,6 +96,7 @@ def main(argv=None) -> int:
     for stage in STAGES:
         name = f"production-request-{stage}.json"
         build = [HERE / "build_production_request.py", "--copy-version", a.copy_version,
+                 "--page-role", role,  # the role this run verified above, never the builder's default
                  "--copy-json", a.copy_json, "--bundle", a.bundle, "--stage", stage,
                  "--out", a.run_dir / name, "--run-dir", a.run_dir, *model]
         for flag, value in (("--design-prose", a.design_prose), ("--slots", a.slots)):
@@ -109,10 +110,21 @@ def main(argv=None) -> int:
         if run(build) or run(execute):
             print(f"FAIL: {stage} did not complete; nothing after it ran")
             return 1
-    print(f"DONE {role}: desktop and mobile wireframes and mockups "
-          f"({'composed, no provider call' if a.preflight else a.provider + ' provider'}). "
-          "NEXT: the image chain, then the Design Board for this page role (client approval), "
-          "then final-mockups (scripts/stage_executor.py --stages design-board, final-mockups).")
+    run_dir = a.run_dir.resolve()
+    request = run_dir / "production-request-visual-mockup.json"
+    executor = HERE / "stage_executor.py"
+    if a.preflight:  # prompts only: no provider call, no image, nothing is complete
+        print(f"PREVIEW {role}: desktop and mobile wireframe and mockup prompts composed and "
+              "validated; no provider was called, no image exists and no stage completed. "
+              "Nothing after this ran. Re-run without --preflight to generate.")
+    else:
+        print(f"DONE {role}: desktop and mobile wireframes and mockups ({a.provider} provider).")
+    print(f"NEXT 1, Design Board for this page role (client approval), on its own: "
+          f"{sys.executable} {executor} {run_dir} --stages design-board --request {request.name}")
+    print(f"NEXT 2, final-mockups, only after the client's approval is recorded and its request "
+          f"is built, in a separate run (the executor refuses the two stages together): "
+          f"{sys.executable} {executor} {run_dir} --stages final-mockups "
+          f"--request production-request-final-mockups.json")
     return 0
 
 

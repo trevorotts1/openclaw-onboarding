@@ -610,14 +610,10 @@ def declared_copy_version(run_dir: Path, request: dict):
 
 
 def allowed_section_sequences(spec: dict) -> list:
-    """The spec sequence, plus each optional-children expansion (5 -> 5A,5B,5C)."""
-    base = list(spec["sequence"])
-    out = [base]
-    for parent, child in (spec.get("containment", {}).get("child_sections") or {}).items():
-        if parent in base and child.get("ids"):
-            i = base.index(parent)
-            out.append(base[:i] + list(child["ids"]) + base[i + 1:])
-    return out
+    """The sequence the spec accepts: its own, plus each optional-children expansion
+    (5 -> 5A,5B,5C). page_role.allowed_sequences is the one resolver; the request
+    builder reads the same function, so the two never disagree."""
+    return page_role.allowed_sequences(spec)
 
 
 STRUCTURES_FILE = SKILL_ROOT / "references" / "page-structures.json"
@@ -691,13 +687,21 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
                 f"copy_version {version!r} is not one of {', '.join(copy_forms.FORMS)} "
                 "(no copy spec for it in references/copy-specs/)")
         spec = json.loads(copy_forms.spec_path(version).read_text(encoding="utf-8"))
-        spec_role = spec.get("page_role")
-        if (pspec or spec_role) and (spec_role or page_role.LANDING_ROLE) != role:
+        # copy_forms.form_for_role is the one registry of page role -> form (it reads a form's
+        # plural `page_roles` too), so this guard sees every page type, not only the specs
+        # page_role.spec_for_role knows (it needs wireframe.form_label).
+        want_form = copy_forms.form_for_role(role) if role != page_role.LANDING_ROLE else None
+        if want_form and want_form != version:
             raise ExecutorError(
-                f"page role {role!r} and copy_version {version!r} disagree: copy_version "
-                f"{version!r} is the {spec_role or 'landing'} page's canonical form, and "
-                f"{role!r} has its own ({pspec['copy_version'] if pspec else 'landing'}); "
-                "declare the page's own form (a page type is never forced into another's sections)")
+                f"page role {role!r} and copy_version {version!r} disagree: {version!r} is "
+                f"another page type's canonical form and {role!r} is built from the "
+                f"{want_form!r} form; declare the page's own form (a page type is never "
+                "forced into another's sections)")
+        if not want_form and version not in copy_forms.LANDING_FORMS:
+            raise ExecutorError(
+                f"page role {role!r} and copy_version {version!r} disagree: {version!r} is a "
+                f"page type's own form and {role!r} is a landing page, which takes standard "
+                "or long-form (a page type is never forced into another's sections)")
         try:  # SPF030: a declared page kind may only use the copy forms it allows (a landing-role page)
             kind = page_kinds.declared(run_dir, request)
             if kind:
