@@ -338,11 +338,19 @@ FUNCTION_WORDS = frozenset(
     "current ago myself yourself himself herself itself ourselves yourselves "
     "themselves oneself".split())
 
-# Closed research vocabulary: the words market and audience research prose is
-# made of. They describe a market, an audience or an evidence method; none of
-# them asserts anything about the named business's own results. Content the
-# run records (its owner facts, the cited source's own excerpts) grounds the
-# rest; content grounded nowhere is a sentence about something else.
+# Research vocabulary: the words market and audience research prose is made of.
+# They describe a market, an audience or an evidence method; none of them
+# asserts anything about the named business's own results.
+#
+# TOLERANCE, NOT A WHITELIST. Round five let this list decide acceptance, and a
+# list that decides acceptance is a cliff: 'firefighters', 'accountants',
+# 'problems', 'times', 'meals', 'nap' and 'peaks' are all ordinary research
+# prose and none of them is here, so ordinary research got refused. Nothing is
+# added to this list, and nothing is refused for being absent from it. What a
+# word does in the sentence — the role the predicate gives it — decides, and
+# this list only says "this is ordinary domain prose, do not treat it as an
+# outsider". Whether a sentence is about this run is decided structurally, in
+# _check_topic, below.
 RESEARCH_WORDS = frozenset("""
 market markets industry industries sector sectors category categories segment
 segments audience audiences demand supply growth grow growing grown trend
@@ -424,6 +432,58 @@ COMMERCIAL_HINTS = (
     "recommend", "list", "provide", "promise", "give", "gave", "given",
     "send", "sent", "ship", "hand", "order", "quote", "stock", "carry",
     "distribut", "licen", "subscrib", "vendor", "push")
+
+# ---------------------------------------------------------------------------
+# THE ASSERTION TYPE, NOT THE NOUN LIST.
+#
+# A research claim OBSERVES: it measures, counts, reports or states something
+# about its subject, and its subject may be any audience, population, quantity
+# or demand — one this run never named included. 'accountants report short
+# sleep.' is research whatever 'accountants' is.
+#
+# A promotion ASSERTS AN EFFECT: it says a thing helps, improves, sells, wants,
+# tracks or prices something. A sentence built that way is a claim ABOUT THE
+# THING, so the thing has to be something the run records. 'Backlinks improve
+# sleep quality for tired nurses.' is a claim about backlinks, and no part of
+# this run ever heard of backlinks — the sleep and the nurses are borrowed to
+# dress it up. That is the stuffing shape, and it is found from the predicate
+# and the role it gives its arguments, never from the word being on a list.
+#
+# Deliberately absent: report, measure, find, survey, note, observe, record,
+# estimate, study, appear, remain, tend, vary, rise, grow, increase, fall,
+# lose, wake, rest. Those OBSERVE. A closed noun list is what moved the cliff in
+# round five; this is the classification of what the sentence asserts, and no
+# new audience noun can walk around it.
+EFFECT_STEMS = """
+affect allow attract boost buy carry charge choose cut deliver drive enable
+follow generate give guarantee help impact improve influence involve keep lift
+list need offer order outpace outweigh outperform perform prefer price promise
+provide purchase push rank rate recommend sell send set shape solve
+stock supply target track trade trust use want
+""".split()
+
+
+def _effect_forms():
+    forms = set()
+    for stem in EFFECT_STEMS:
+        forms.add(stem)
+        forms.add(stem + "s")
+        if stem.endswith(("s", "x", "z", "ch", "sh")):
+            forms.add(stem + "es")
+        if stem.endswith("y"):
+            forms.add(stem[:-1] + "ies")
+            forms.add(stem[:-1] + "ied")
+        elif stem.endswith("e"):
+            forms.add(stem + "d")
+        else:
+            forms.add(stem + "ed")
+        forms.add(stem[:-1] + "ing" if stem.endswith("e") else stem + "ing")
+    for past in ("gave", "kept", "chose", "bought", "sold", "sent", "drove"):
+        forms.add(past)
+    return frozenset(forms)
+
+
+EFFECT_FORMS = _effect_forms()
 
 # Where a name may sit. A stretch that follows one of these and starts with a
 # capital letter is naming material ("in Dallas", "in the United States") and
@@ -509,20 +569,98 @@ def _content_stems(words):
     predicate."""
     return [_stem(w.lower()) for w in words if _is_content(w.lower())]
 
+
+def _is_attributive(word):
+    """An attributive FORM describes its head; it does not name a thing.
+    'disturbed sleep', 'irregular habits', 'quiet homes' are qualities of sleep,
+    habits and homes. 'a backlinks service' names a KIND of service. The
+    difference is the word's FORM — an inflected or derived attributive — never
+    its meaning and never its presence in a vocabulary. This is a list of
+    English endings, not a list of permitted nouns: it cannot be gamed by
+    swapping the stuffed word, because no noun ends in one of them by accident.
+    ponytail: a bare attributive outside the research vocabulary ('sturdy
+    chairs', 'ample space') is read as a referent and refused. Add a
+    part-of-speech lexicon only if that trade starts to cost real research."""
+    w = word.lower()
+    return w in VERB_FORMS or w.endswith(
+        ("ed", "ing", "ly", "al", "ar", "ary", "ory", "ous", "ive", "ful",
+         "less", "ic", "ish", "y", "ey", "able", "ible", "ent", "ant", "ile",
+         "ine", "ose", "ate", "ese", "an", "ian", "en", "et", "id", "oid",
+         "ward", "most"))
+def _predicate_tokens(words):
+    """Where the sentence predicates. A token is a predicate when it is a verb
+    form or one of the effect verbs below and no preposition governs it — a
+    preposition governs its own noun ('before driving home' does not assert
+    that anything drove)."""
+    preps = NAME_PREPS | TRANSFER_PREPS
+    out = []
+    for i, w in enumerate(words):
+        if w not in VERB_FORMS and w not in EFFECT_FORMS:
+            continue
+        if i and words[i - 1] in preps:
+            continue
+        out.append(i)
+    return out
+
+
+def _noun_phrases(pairs):
+    """(predicate indices, [ (start, [(index, low, raw)], governing prep) ]).
+    A noun phrase is a run of content between predicates and function words.
+    Splitting at the predicate is what makes "Mattress deals" a subject and
+    "sleep quality" its object instead of one blur of five words."""
+    words = [low for low, _raw in pairs]
+    preds = set(_predicate_tokens(words))
+    binders = FUNCTION_WORDS | NAME_PREPS | TRANSFER_PREPS
+    out, prep, run = [], None, []
+    for i, (low, raw) in enumerate(pairs):
+        if low in binders or i in preds:
+            if run:
+                out.append((run[0][0], run, prep))
+                run = []
+            if low in NAME_PREPS or low in TRANSFER_PREPS:
+                prep = low
+        else:
+            run.append((i, low, raw))
+    if run:
+        out.append((run[0][0], run, prep))
+    return sorted(preds), out
+
+
+def _is_name_word(index, raw, prep, in_subject):
+    """Naming material. A word names when it starts like one AND it is not the
+    sentence's first word — sentence-initial capitals are just capitalisation,
+    which is why 'Backlinks help tired nurses to sleep.' is asserted content
+    while 'Dallas has over 40 practices listed.' names a place. And a name sits
+    where a name may sit: as the subject, or after a non-transfer preposition.
+    'with Backlinks' and 'rank Crypto' are asserted content however they are
+    capitalised."""
+    return bool(raw) and raw[:1].isupper() and index != 0 and (
+        (in_subject and prep is None)
+        or (prep is not None and prep not in TRANSFER_PREPS))
+
+
 def _check_topic(claim, ref, text, facts, source, errors):
-    """Every sentence stays on the run's own subject. Three tests, and the
-    sentence must pass all of them.
+    """Every sentence stays on the run's own subject. Three structural tests,
+    and the sentence must pass all of them. None of them asks whether a word is
+    on a vocabulary list; each asks what the word DOES in this sentence.
 
-    1. THE HEAD TEST. Each stretch of content between function words ends in a
-       head — the word the stretch is about — and that head must be one the run
-       records. A modifier may be a word this vocabulary does not hold; a head
-       may not. No counting, no majority: 'Tired nurses and weary mothers want
-       backlinks after long winter shifts.' has one unrecorded head and is
-       refused on it.
+    1. THE EFFECT TEST. A sentence that asserts what a thing DOES — helps,
+       improves, sells, wants, tracks, prices — is a claim about that thing, so
+       every content word in it has to be one the run records. The thing and the
+       effect both come from the run, or the sentence is about something else.
+       'Backlinks help tired nurses to sleep.' borrows the run's nurses and its
+       sleep to sell the run a thing it never heard of; refused on 'backlinks',
+       whatever 'backlinks' happens to mean. Reporting and measuring predicates
+       are exempt, because they OBSERVE their subject and an audience the run
+       did not name may still be observed.
 
-    2. WHAT IT ASSERTS. The words after the sentence's first predicate are what
-       the sentence claims; if they are grounded nowhere in the run the
-       sentence is about something else.
+    2. THE SMUGGLED MODIFIER. In what the sentence asserts, a stretch whose head
+       the run records may not also carry a word it does not record. 'a
+       backlinks service' is a service the run never heard of, wearing a head
+       the run did record. A head the run does not record is left alone — it is
+       the generic head of a measured quantity ('sleep problems', 'travel
+       times', 'irregular meals'), which is where research prose puts words the
+       run never named.
 
     3. THE TERM RUN. What it asserts with no word binding it is a run of terms
        however it is punctuated.
@@ -539,28 +677,71 @@ def _check_topic(claim, ref, text, facts, source, errors):
     for sentence in _sentences(text):
         pairs = _word_pairs(sentence)
         words = [low for low, _raw in pairs]
-        cut = 0
-        for i, w in enumerate(words):
-            if w in VERB_FORMS:
-                cut = i + 1
-                break
+        preds, nps = _noun_phrases(pairs)
+        cut = preds[0] if preds else len(words)
         sells = bool(cut) and any(h in words[cut - 1] for h in COMMERCIAL_HINTS)
         subject = _content_stems(words[:cut])
         own_subject = bool(subject) and all(s in fact_stems for s in subject)
 
-        # 1. the head of every stretch of content must be one the run records.
-        heads = []
-        for prep, run, start in _stretches(pairs):
-            in_subject = start + len(run) <= cut
-            if _is_name_stretch(prep, [raw for _low, raw in run],
-                                subject=in_subject):
-                continue
-            kept = [low for low, _raw in run if _is_content(low)]
-            if kept and _stem(kept[-1]) not in grounded:
-                heads.append(kept[-1])
-        label, bad = "the phrase head", sorted(set(heads))
+        # the content of one noun phrase, naming material left out.
+        def content_of(np, in_subject):
+            _start, run, prep = np
+            return [low for _i, low, raw in run
+                    if not _is_name_word(_i, raw, prep, in_subject)
+                    and _is_content(low)]
 
-        # 2. what it asserts, and 3. the sentence as a whole.
+        label, bad = None, []
+
+        # 1. THE EFFECT TEST. What an effect predicate takes as its subject and
+        #    as its complement is the thing the sentence is about, so it has to
+        #    be material the run records. Argument-scoped on purpose: 'Dallas
+        #    has over 40 sleep coaching practices listed publicly.' names Dallas
+        #    and asserts 'listed' of the practices, so only the practices are
+        #    read — while 'Backlinks help tired nurses to sleep.' asserts
+        #    'help' of the backlinks, and the run has never heard of backlinks.
+        for i in preds:
+            if words[i] not in EFFECT_FORMS:
+                continue
+            following = [p for p in preds if p > i]
+            stop = following[0] if following else len(words)
+            spoken = []
+            for np in nps:
+                if np[0] < i:
+                    spoken = [content_of(np, True)]     # the subject
+                elif np[0] < stop:
+                    spoken.append(content_of(np, False))
+            off = sorted({s for run in spoken for s in run
+                          if _stem(s) not in grounded})
+            if off:
+                label, bad = "what it asserts", off
+                break
+
+        # 2. THE SMUGGLED MODIFIER. A phrase whose head the run records wears
+        #    recorded material and nothing else. Two carve-outs, both
+        #    structural. A head the run does not record is left alone: that is
+        #    the generic head of a measured quantity ('sleep problems', 'travel
+        #    times', 'irregular meals'), which is where research prose puts
+        #    words the run never named. And a modifier that is an attributive
+        #    FORM — a participle or a manner adverb ('disturbed sleep', 'closing
+        #    shifts') — describes its head, it does not name a thing. Only a
+        #    word that REFERS sits in the modifier of a recorded head, and
+        #    'a backlinks service' is exactly that.
+        if not bad:
+            for np in nps:
+                if np[0] <= cut:
+                    continue
+                kept = content_of(np, False)
+                if not kept or _stem(kept[-1]) not in grounded:
+                    continue
+                off = sorted({w for w in kept[:-1]
+                              if _stem(w) not in grounded
+                              and not _is_attributive(w)})
+                if off:
+                    label, bad = "what it asserts", off
+                    break
+
+        # 3. THE TERM RUN. What it asserts with no word binding it is a run of
+        #    terms however it is punctuated.
         if not bad:
             for label, span in (("what it asserts", words[cut:]),
                                 ("the sentence", words)):
@@ -572,8 +753,7 @@ def _check_topic(claim, ref, text, facts, source, errors):
                 bound = any(w in FUNCTION_WORDS for w in span)
                 unbound_run = label == "what it asserts" and not bound
                 sold = label == "what it asserts" and sells and own_subject
-                if not unbound_run and not sold and (
-                        len(off) < on or (len(off) == on and len(off) < 2)):
+                if not unbound_run and not sold and len(off) <= on:
                     continue
                 bad = off
                 break

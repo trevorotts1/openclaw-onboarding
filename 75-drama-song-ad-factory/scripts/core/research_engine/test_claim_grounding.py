@@ -395,6 +395,133 @@ def test_a_name_where_a_name_may_sit_is_still_a_name():
         _accepted(_bundle([_claim("nm", text, **kw)], facts=FACTS))
 
 
+# ----------------- round six: the modifier-position family round five opened
+#
+# Round five closed three families and left this one open: an irrelevant
+# keyword stuffed in FRONT of a grounded head, in a sentence that is otherwise
+# ordinary research prose. Eight such strings wrote a complete seven-file
+# bundle at both heads. The repair refuses them from what the sentence ASSERTS
+# — the predicate's type and the role it gives each argument — never from a
+# word being on a list.
+
+SLEEP = {"fact": "offer", "anchor": "sleep", "fact_text": OFFER}
+SHIFT = {"fact": "offer", "anchor": "shift", "fact_text": OFFER}
+NIGHT = {"fact": "audience", "anchor": "night", "fact_text": AUDIENCE}
+NURSE = {"fact": "audience", "anchor": "nurse", "fact_text": AUDIENCE}
+
+STUFFED = [
+    ("Backlinks help tired nurses to sleep.", SLEEP),
+    ("The backlinks help tired nurses sleep.", SLEEP),
+    ("Tired nurses want a backlinks service after long winter shifts.", SHIFT),
+    ("Backlinks improve sleep quality for tired nurses.", SLEEP),
+    ("Mattress deals improve sleep quality for tired nurses.", SLEEP),
+    ("Diet tea improves sleep duration for tired nurses.", SLEEP),
+    ("Crypto pumps improve sleep outcomes for tired nurses.", SLEEP),
+    ("Sleep coaches track backlinks, referral channels and search demand "
+     "for tired nurses.", SLEEP),
+    ("Backlinks drive sleep demand for tired nurses.", SLEEP),
+    ("Diet tea shapes sleep patterns for tired nurses.", SLEEP),
+    ("Mattress deals set the sleep rate for tired nurses.", SLEEP),
+    ("Crypto pumps lift sleep trends for tired nurses.", SLEEP),
+    ("Tired nurses follow backlinks to sleep services.", SLEEP),
+    ("Backlinks raise sleep enquiries from tired nurses.", SLEEP),
+    ("Nurses buy diet tea for sleep quality after winter shifts.", SLEEP),
+    ("Sleep coaches price mattress deals for tired nurses.", SLEEP),
+]
+
+# the same shape reached through a REPORTING predicate, which is the harder
+# half: the sentence only observes, so nothing in it looks like a sale.
+STUFFED_REPORTED = [
+    ("Nurses report backlinks service demand.", NURSE),
+    ("Nurses report mattress deals sleep quality.", SLEEP),
+    ("Sleep studies find backlinks referral demand.", SLEEP),
+    ("Sleep coaching searches rise with backlinks channels.", SLEEP),
+    ("Sleep research tracks backlinks and diet tea demand.", SLEEP),
+    ("Sleep demand among nurses reflects backlinks channels.", SLEEP),
+    ("Sleep quality research covers mattress deals patterns.", SLEEP),
+    ("Nurses report crypto pumps sleep outcomes.", SLEEP),
+]
+
+
+def test_a_stuffed_keyword_in_front_of_a_grounded_head_is_refused():
+    """Round six. Round five refused the run-of-keywords shapes and let these
+    through, because the stuffed word sat in a modifier position and the phrase
+    head behind it was a word the run records. The refusal now comes from the
+    assertion type: a sentence that asserts what a thing DOES is a claim about
+    that thing, and the thing has to be something the run records."""
+    for i, (text, about) in enumerate(STUFFED):
+        errors = _refused(_bundle([_claim("st%d" % i, text, about=about)],
+                                  facts=FACTS))
+        assert any("not about this run" in e or "keyword stuffing" in e
+                   for e in errors), (text, errors)
+
+
+def test_a_stuffed_keyword_reported_rather_than_sold_is_refused_too():
+    """The same stuffing put behind a verb that only observes. These carry no
+    sale and no benefit, so any rule keyed to selling misses all eight."""
+    for i, (text, about) in enumerate(STUFFED_REPORTED):
+        errors = _refused(_bundle([_claim("sr%d" % i, text, about=about)],
+                                  facts=FACTS))
+        assert any("not about this run" in e or "keyword stuffing" in e
+                   for e in errors), (text, errors)
+
+
+# Round six over-refusal controls. Every one of these is the kind of sentence
+# round five's closed RESEARCH_WORDS list refused, because its phrase head is
+# an ordinary research noun the list did not hold: firefighter, problems,
+# times, nap, meals, peaks, accountants.
+
+OUT_OF_VOCABULARY = [
+    ("firefighters on rotating shifts report short sleep.", SLEEP),
+    ("Remote workers report fewer sleep problems than commuters.", SLEEP),
+    ("Commuters lose sleep to long travel times.", SLEEP),
+    ("Retail staff on closing shifts nap before driving home.", SHIFT),
+    ("Hospitality workers report irregular meals and short sleep.", SLEEP),
+    ("New parents wake several times a night.", NIGHT),
+    ("Demand for sleep coaching among accountants rose last year.", SLEEP),
+    ("Search demand for sleep coaching peaks in January.", SLEEP),
+]
+
+# and the attributive adjectives, which describe their head rather than name a
+# thing: a rule that reads 'disturbed sleep' as stuffed research prose has
+# become the list it replaced.
+ATTRIBUTIVE = [
+    ("Hospitality workers report irregular habits and short sleep.", SLEEP),
+    ("Shift workers report disturbed sleep after rotating shifts.", SLEEP),
+    ("Hospitality workers report fresh meals and short sleep.", SLEEP),
+    ("New parents report broken sleep in the first months.", SLEEP),
+    ("Commuters report crowded travel and short sleep.", SLEEP),
+    ("Remote workers report quiet homes and long sleep.", SLEEP),
+]
+
+
+def test_research_prose_whose_nouns_are_not_in_the_vocabulary_still_passes():
+    """Over-refusal control for round six. These were refused at the round-five
+    head on exactly one phrase head each. The control is not vacuous: those
+    heads are in neither the closed research vocabulary nor the run's own owner
+    facts, so nothing except the sentence's own structure can let them pass."""
+    stray = {"firefighters", "problems", "times", "nap", "meals", "peaks",
+             "accountants"}
+    owned = set()
+    for text in FACTS.values():
+        owned.update(C._stem(w) for w in C._content_tokens(text))
+    assert not (stray & C.RESEARCH_WORDS), "control went vacuous: in the list"
+    assert not ({C._stem(w) for w in stray} & owned), (
+        "control went vacuous: in the owner facts")
+    for i, (text, about) in enumerate(OUT_OF_VOCABULARY):
+        _accepted(_bundle([_claim("ov%d" % i, text, about=about)],
+                          facts=FACTS))
+
+
+def test_an_attributive_describes_its_head_it_does_not_name_a_thing():
+    """Over-refusal control for round six's modifier rule. A participle or a
+    derived attributive qualifies its head; only a word that NAMES sits in a
+    modifier and gets read as a smuggled referent."""
+    for i, (text, about) in enumerate(ATTRIBUTIVE):
+        _accepted(_bundle([_claim("at%d" % i, text, about=about)],
+                          facts=FACTS))
+
+
 def main():
     """Script-style run: same checks, plain output."""
     import inspect
