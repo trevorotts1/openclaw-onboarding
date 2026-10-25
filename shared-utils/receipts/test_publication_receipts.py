@@ -427,6 +427,66 @@ class TrueReceiptTests(Base):
             "control: a comment receipt carrying its parent post is accepted",
         )
 
+    def test_the_parent_compare_is_by_identity_not_spelling(self):
+        # N1: a padded real provider id is a true receipt, so the parent compare
+        # must use the same normaliser the echo compare uses, in both directions.
+        comment = item("P-01", "REVEAL_COMMENT", 1, "reveal")
+        for parent, expected in (
+            ("fb-post-900", " fb-post-900 "),
+            (" fb-post-900 ", "fb-post-900"),
+            ("​fb-post-900", "fb-post-900﻿"),
+        ):
+            self.assertEqual(
+                receipts.validate_provider_receipt(
+                    comment, comment_receipt(parent=parent), expected_parent=expected
+                ),
+                [],
+                "parent %r is the receipted post %r" % (parent, expected),
+            )
+        errors = receipts.validate_provider_receipt(
+            comment, comment_receipt(parent=" fb-post-OTHER "), expected_parent=" fb-post-900 "
+        )
+        self.assertTrue(
+            any("is not the receipted post" in e for e in errors),
+            "control: a different post is still refused, got %r" % (errors,),
+        )
+
+    def test_a_local_id_echoed_as_the_parent_is_not_a_receipt(self):
+        # N2: the parent field is a provider id too; a local id echoed into it,
+        # decorated or not, is not the post the comment was published under.
+        comment = item("P-01", "REVEAL_COMMENT", 1, "reveal")
+        comment["idempotency_key"] = "idem-P-01-reveal-1"
+        for field in receipts.LOCAL_ID_FIELDS:
+            local = comment[field]
+            for echo in (local, " " + local + " ", "​" + local):
+                errors = receipts.validate_provider_receipt(comment, comment_receipt(parent=echo))
+                self.assertTrue(
+                    any(
+                        "$.parent_provider_object_id" in e and "echoes the local %s" % field in e
+                        for e in errors
+                    ),
+                    "a parent echoing %s as %r must refuse, got %r" % (field, echo, errors),
+                )
+        for not_a_string in (900, ["fb-post-900"], {"id": "fb-post-900"}):
+            errors = receipts.validate_provider_receipt(
+                comment, comment_receipt(parent=not_a_string)
+            )
+            self.assertTrue(
+                any("$.parent_provider_object_id: must be a string" in e for e in errors),
+                "a non-string parent %r must refuse, got %r" % (not_a_string, errors),
+            )
+
+        self.publish(comment, comment_receipt(parent=comment["action_id"]))
+        self.assertIsNone(
+            receipts.true_receipt(self.store, comment),
+            "a comment whose parent echoes a local id is not publication evidence",
+        )
+        self.assertEqual(
+            receipts.validate_provider_receipt(comment, comment_receipt(parent="fb-post-900")),
+            [],
+            "control: a real provider parent id is still accepted",
+        )
+
     def test_a_non_publication_status_is_not_a_receipt(self):
         entry = item("P-01", "SCHEDULED_POST", 1, "post")
         for status in ("unknown", "failed_not_sent", "suppressed", None):
@@ -565,6 +625,35 @@ class ResumeTests(Base):
         self.assertEqual(after["resume"], [])
         self.assertEqual(after["already_received"], [entry["logical_intent_key"]])
 
+    def test_a_padded_post_receipt_still_serves_its_missing_comment(self):
+        # N1 end to end: the post is a true receipt with a padded provider id;
+        # its comment must not be blocked forever by a spelling difference.
+        p1_post = item("P-01", "SCHEDULED_POST", 1, "post")
+        p1_reveal = item("P-01", "REVEAL_COMMENT", 1, "reveal")
+        p1_bonus = item("P-01", "BONUS_COMMENT", 1, "bonus")
+        self.publish(p1_post, post_receipt(object_id=" fb-post-900 "))
+        self.publish(p1_reveal, comment_receipt(parent="fb-post-900"))
+        self.admit(p1_bonus)
+        plan = self.plan([p1_post, p1_reveal, p1_bonus])
+        self.assertEqual(
+            plan["already_received"],
+            [p1_post["logical_intent_key"], p1_reveal["logical_intent_key"]],
+            "the comment published under the padded post id is received",
+        )
+        self.assertEqual(plan["resume"], [p1_bonus["logical_intent_key"]], "missing only")
+        self.assertEqual(plan["blocked"], [])
+
+        other = item("P-02", "SCHEDULED_POST", 1, "post")
+        other_reveal = item("P-02", "REVEAL_COMMENT", 1, "reveal")
+        self.publish(other, post_receipt(object_id="fb-post-950"))
+        self.publish(other_reveal, comment_receipt(object_id="fb-comment-951", parent=" fb-post-900 "))
+        control = self.plan([other, other_reveal])
+        self.assertEqual(
+            control["blocked"],
+            [{"item": other_reveal["logical_intent_key"], "reason": "EFFECT_WITHOUT_TRUE_RECEIPT"}],
+            "control: a comment under a different post is still not this post's reveal",
+        )
+
     def test_resume_excludes_a_possibly_sent_effect(self):
         entry = item("P-01", "SCHEDULED_POST", 1, "post")
         self.mark_unknown(entry)
@@ -632,6 +721,64 @@ class TimingTests(Base):
             receipts.reveal_timing_errors(post, comment_receipt()),
             ["$.recorded_at: both receipts need a numeric provider timestamp"],
         )
+
+    def test_a_bool_or_non_finite_timestamp_is_refused(self):
+        # N4: float(True) == 1.0 and NaN compares false both ways.
+        for bad in (True, False, float("nan"), float("inf"), "nan"):
+            self.assertEqual(
+                receipts.reveal_timing_errors(post_receipt(), comment_receipt(recorded_at=bad)),
+                ["$.recorded_at: both receipts need a numeric provider timestamp"],
+                "recorded_at %r is not a provider timestamp" % (bad,),
+            )
+        for good in (1005, 1005.5, "1005"):
+            self.assertEqual(
+                receipts.reveal_timing_errors(post_receipt(), comment_receipt(recorded_at=good)),
+                [],
+                "control: numeric timestamp %r is accepted" % (good,),
+            )
+
+
+class MalformedInputTests(Base):
+    """N3: malformed plan input fails closed as the documented ReceiptError."""
+
+    def test_a_non_object_plan_item_is_a_receipt_error(self):
+        post = item("P-01", "SCHEDULED_POST", 1, "post")
+        for bad in (None, "x", 5, ["P-01"]):
+            with self.assertRaises(receipts.ReceiptError, msg="plan item %r" % (bad,)):
+                self.plan([post, bad])
+            with self.assertRaises(receipts.ReceiptError, msg="item_key %r" % (bad,)):
+                receipts.item_key(bad)
+            with self.assertRaises(receipts.ReceiptError, msg="true_receipt %r" % (bad,)):
+                receipts.true_receipt(self.store, bad)
+            errors = receipts.validate_provider_receipt(bad, post_receipt())
+            self.assertTrue(
+                any("a plan item must be an object" in e for e in errors),
+                "validate_provider_receipt(%r) must name the malformed item, got %r" % (bad, errors),
+            )
+
+    def test_a_non_list_plan_or_unhashable_field_is_a_receipt_error(self):
+        for bad in (None, 5):
+            with self.assertRaises(receipts.ReceiptError, msg="items %r" % (bad,)):
+                self.plan(bad)
+        for field in ("purpose", "placement_id"):
+            for value in ([], {}):
+                entry = item("P-01", "SCHEDULED_POST", 1, "post")
+                entry[field] = value
+                with self.assertRaises(receipts.ReceiptError, msg="%s=%r" % (field, value)):
+                    self.plan([entry])
+        entry = item("P-01", "SCHEDULED_POST", 1, "post")
+        entry["purpose"] = []
+        self.assertTrue(
+            any("has no post/comment receipt kind" in e
+                for e in receipts.validate_provider_receipt(entry, post_receipt())),
+        )
+
+    def test_well_formed_input_is_still_planned(self):
+        post = item("P-01", "SCHEDULED_POST", 1, "post")
+        self.admit(post)
+        self.assertEqual(self.plan([post])["resume"], [post["logical_intent_key"]])
+        self.assertEqual(self.plan((post,))["resume"], [post["logical_intent_key"]],
+                         "control: any sequence of item objects is a plan")
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ durable_store.py (fenced receipts, action state).
 """
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -83,8 +84,35 @@ def _blank(value: Any) -> bool:
     return contracts.normalise_evidence_id(value) is None
 
 
+def _same_id(a: Any, b: Any) -> bool:
+    """Identity, not spelling: both sides through the T-08d normaliser."""
+    return contracts.normalise_evidence_id(a) == contracts.normalise_evidence_id(b)
+
+
+def _plan_item(item: Any) -> Mapping[str, Any]:
+    if not isinstance(item, Mapping):
+        raise ReceiptError(
+            "$.items: a plan item must be an object, got %s" % (type(item).__name__,)
+        )
+    return item
+
+
+def _provider_id_errors(item: Mapping[str, Any], field: str, value: Any) -> List[str]:
+    """A non-blank provider id must be a string and not a local id echoed back."""
+    if not isinstance(value, str):
+        return ["$.%s: must be a string, got %r" % (field, type(value).__name__)]
+    for local_field in LOCAL_ID_FIELDS:
+        local = item.get(local_field)
+        if isinstance(local, str) and local and _same_id(value, local):
+            return [
+                "$.%s: %r echoes the local %s, not a provider object"
+                % (field, value, local_field)
+            ]
+    return []
+
+
 def item_kind(purpose: Any) -> str:
-    kind = PURPOSE_KIND.get(purpose)
+    kind = PURPOSE_KIND.get(purpose) if isinstance(purpose, str) else None
     if kind is None:
         raise ReceiptError(
             "$.purpose: %r has no post/comment receipt kind (expected one of %s)"
@@ -94,7 +122,7 @@ def item_kind(purpose: Any) -> str:
 
 
 def item_key(item: Mapping[str, Any]) -> str:
-    key = item.get("logical_intent_key")
+    key = _plan_item(item).get("logical_intent_key")
     if _blank(key) or not isinstance(key, str):
         raise ReceiptError("$.logical_intent_key: a plan item needs its logical intent key")
     return key
@@ -111,8 +139,8 @@ def validate_provider_receipt(
     matches the purpose, the status is a published status, and a comment names
     the post it was published under.
     """
-    purpose = item.get("purpose")
     try:
+        purpose = _plan_item(item).get("purpose")
         kind = item_kind(purpose)
     except ReceiptError as exc:
         return [str(exc)]
@@ -123,27 +151,14 @@ def validate_provider_receipt(
     if _blank(receipt.get("provider")):
         errs.append("$.provider: a true receipt names the provider that returned it")
 
+    # Every id compare below is by identity, not spelling: the normaliser strips
+    # the padding a locally generated "receipt" would decorate an echo with, and
+    # the padding a real provider id may carry.
     object_id = receipt.get("provider_object_id")
     if _blank(object_id):
         errs.append("$.provider_object_id: a true receipt carries the provider's own object id")
-    elif not isinstance(object_id, str):
-        errs.append("$.provider_object_id: must be a string, got %r" % (type(object_id).__name__,))
     else:
-        # Compare identities, not spellings: the normaliser strips the padding a
-        # locally generated "receipt" would decorate an echo with.
-        normalised_id = contracts.normalise_evidence_id(object_id)
-        for field in LOCAL_ID_FIELDS:
-            local = item.get(field)
-            if (
-                isinstance(local, str)
-                and local
-                and normalised_id == contracts.normalise_evidence_id(local)
-            ):
-                errs.append(
-                    "$.provider_object_id: %r echoes the local %s, not a provider object"
-                    % (object_id, field)
-                )
-                break
+        errs.extend(_provider_id_errors(item, "provider_object_id", object_id))
 
     got = receipt.get("kind")
     if got != kind:
@@ -162,7 +177,10 @@ def validate_provider_receipt(
             errs.append(
                 "$.parent_provider_object_id: a comment receipt names the post it was published under"
             )
-        elif expected_parent is not None and parent != expected_parent:
+            return errs
+        parent_errs = _provider_id_errors(item, "parent_provider_object_id", parent)
+        errs.extend(parent_errs)
+        if not parent_errs and expected_parent is not None and not _same_id(parent, expected_parent):
             errs.append(
                 "$.parent_provider_object_id: %r is not the receipted post %r"
                 % (parent, expected_parent)
@@ -181,7 +199,7 @@ def true_receipt(
     or a persisted receipt that fails validate_provider_receipt, returns None -
     the item stays missing rather than being silently marked published.
     """
-    key = item.get("logical_intent_key")
+    key = _plan_item(item).get("logical_intent_key")
     if _blank(key) or not isinstance(key, str):
         return None
     row = store.action_by_intent(key)
@@ -216,6 +234,12 @@ def approved_order(
         raise ReceiptError("$.status: manifest is %r, nothing may be published" % (manifest["status"],))
     if manifest.get("campaign_window") is None:
         raise ReceiptError("$.campaign_window: a plan needs the approved campaign window")
+    try:
+        items = list(items)
+    except TypeError:
+        raise ReceiptError(
+            "$.items: a plan is a list of items, got %s" % (type(items).__name__,)
+        ) from None
 
     placement_index = {p["placement_id"]: i for i, p in enumerate(manifest["placements"])}
     entries: List[Dict[str, Any]] = []
@@ -232,14 +256,14 @@ def approved_order(
                 % (position, item.get("scope"))
             )
         purpose = item.get("purpose")
-        rank = ORDER_RANK.get(purpose)
+        rank = ORDER_RANK.get(purpose) if isinstance(purpose, str) else None
         if rank is None:
             raise ReceiptError(
                 "$.items[%d].purpose: %r is not a published post/comment purpose"
                 % (position, purpose)
             )
         placement_id = item.get("placement_id")
-        index = placement_index.get(placement_id)
+        index = placement_index.get(placement_id) if isinstance(placement_id, str) else None
         if index is None:
             raise ReceiptError(
                 "$.items[%d].placement_id: %r is not in the approved manifest"
@@ -369,6 +393,17 @@ def resume_plan(
     }
 
 
+def _timestamp(receipt: Mapping[str, Any]) -> float:
+    """A finite numeric provider timestamp; a bool or NaN is not a time."""
+    value = receipt["recorded_at"]
+    if isinstance(value, bool):
+        raise TypeError("a bool is not a timestamp")
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError("a timestamp is finite")
+    return value
+
+
 def reveal_timing_errors(
     post_receipt: Optional[Mapping[str, Any]],
     comment_receipt: Mapping[str, Any],
@@ -387,8 +422,8 @@ def reveal_timing_errors(
     if post_receipt is None:
         return ["PARENT_POST_NOT_RECEIPTED"]
     try:
-        post_at = float(post_receipt["recorded_at"])
-        comment_at = float(comment_receipt["recorded_at"])
+        post_at = _timestamp(post_receipt)
+        comment_at = _timestamp(comment_receipt)
     except (KeyError, TypeError, ValueError):
         return ["$.recorded_at: both receipts need a numeric provider timestamp"]
     if comment_at < post_at:
