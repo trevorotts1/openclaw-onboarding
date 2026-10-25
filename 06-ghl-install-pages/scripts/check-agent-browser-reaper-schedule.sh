@@ -79,12 +79,15 @@ if ! command -v jq >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
   exit 2
 fi
 
-if oc_cron_present "$CRON_NAME"; then
+_present_rc=0
+oc_cron_present "$CRON_NAME" || _present_rc=$?
+
+if [[ "$_present_rc" -eq 0 ]]; then
   # Read enabled-state + schedule for this one name (by name only — never the
-  # raw multi-job payload, which can carry OTHER jobs' message bodies). Use
-  # the SAME feature-detected "show disabled jobs" flags oc_cron_present just
-  # used, otherwise a disabled row can be absent from the listing and we would
-  # be guessing instead of proving.
+  # raw multi-job payload, which can carry OTHER jobs' message bodies). Re-run
+  # the listing with the SAME feature-detected "show disabled jobs" flags
+  # oc_cron_present just used, otherwise a disabled row can be absent from the
+  # listing and we would be guessing instead of proving.
   _detected="$(oc_cron_list_json_flags 2>/dev/null || true)"
   raw=""
   if [[ -n "$_detected" ]]; then
@@ -124,17 +127,31 @@ for j in jobs:
 PYEOF
 )"
   elif [[ -n "$raw" ]] && command -v jq >/dev/null 2>&1; then
+    # MUST mirror the python3 branch exactly (same verdicts for the same
+    # payload): a verdict that depends on which parser a box happens to have
+    # is a check that cannot be trusted. enabled bool -> 1/0; enabled string
+    # -> truthiness ("false"/"0"/"no"/"disabled"/"" = disabled); enabled
+    # absent/null -> computed status decides ("disabled" -> 0, else 1);
+    # anything else -> "?" (UNKNOWN).
     parsed="$(printf '%s' "$raw" | jq -r --arg n "$CRON_NAME" '
       ( if type == "array" then . elif (type == "object" and (.jobs | type) == "array") then .jobs else empty end )
       | map(select(.name == $n))
       | if length == 0 then empty else
           .[0]
-          | (if has("enabled") then .enabled
-             else (if (((.status // "") | ascii_downcase) == "disabled") then false else null end)
-             end) as $e
+          | ( .enabled ) as $raw_e
+          | ( if ($raw_e | type) == "boolean" then (if $raw_e then "1" else "0" end)
+              elif ($raw_e | type) == "string" then
+                ( ($raw_e | ascii_downcase | gsub("^\\s+|\\s+$"; "")) as $s
+                  | (if ($s != "" and $s != "false" and $s != "0" and $s != "no" and $s != "disabled")
+                     then "1" else "0" end) )
+              elif $raw_e == null then
+                ( if ((.status | type) == "string") then
+                    (if ((.status | ascii_downcase | gsub("^\\s+|\\s+$"; "")) == "disabled") then "0" else "1" end)
+                  else "?" end )
+              else "?" end ) as $e
           | ((.cron // .schedule // "")
               | if type == "object" then (.expr // .cron // "") else . end) as $s
-          | "\(if $e == true then "1" elif $e == false then "0" else "?" end)\t\($s)"
+          | "\($e)\t\($s)"
         end' 2>/dev/null
     )"
   fi
@@ -164,5 +181,15 @@ PYEOF
   exit 2
 fi
 
-_log "FAIL — ABSENT: no cron named '$CRON_NAME' found via 'openclaw cron list --json'. Register it: scripts/ensure-pipeline-crons.sh (idempotent, name-keyed) or install.sh/update-skills.sh's end-of-run cron wiring."
-exit 1
+# oc_cron_present returned non-zero. 1 = "list read and parsed, name not in
+# it" — a CONFIRMED absence. Anything else (2) = UNKNOWN (CLI failed, output
+# unparseable, no parser) and must NOT be reported as ABSENT: the exit-code
+# contract says 1 only when "openclaw cron list ran cleanly and found no such
+# name", and a failed query is not a clean one.
+if [[ "$_present_rc" -eq 1 ]]; then
+  _log "FAIL — ABSENT: no cron named '$CRON_NAME' found via 'openclaw cron list --json'. Register it: scripts/ensure-pipeline-crons.sh (idempotent, name-keyed) or install.sh/update-skills.sh's end-of-run cron wiring."
+  exit 1
+fi
+
+_log "UNKNOWN — 'openclaw cron list --json' could not confirm presence of '$CRON_NAME' (CLI call failed or output not parseable). NOT a confirmed absence."
+exit 2

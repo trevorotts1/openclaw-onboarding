@@ -477,8 +477,9 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   THAT BACKSTOP ONLY EXISTS IF THE CRON IS ENABLED, not merely registered:
   verify with `bash scripts/check-agent-browser-reaper-schedule.sh`, which
   reads the job's `enabled` state (falling back to the computed
-  `status: disabled`) out of the same `openclaw cron list --json` listing and
-  distinguishes REGISTERED from ENABLED. Exit `0` = registered AND enabled;
+  `status: disabled`) out of the same feature-detected
+  `openclaw cron list --json` query and distinguishes REGISTERED from
+  ENABLED. Exit `0` = registered AND enabled;
   `1` = absent; `2` = UNKNOWN (presence or enabled-state unreadable); `3` =
   REGISTERED BUT DISABLED — a loud failure, because a registered
   `enabled=false` reaper never runs and presence alone is the false-done
