@@ -61,16 +61,16 @@ def _run(env: dict) -> subprocess.CompletedProcess:
 
 
 class TestSchedulePresenceCheck:
-    def test_present_exits_0(self, tmp_path):
+    def test_present_and_enabled_exits_0(self, tmp_path):
         bindir = tmp_path / "bin"
         _write_stub_openclaw(bindir, [
-            {"name": "agent-browser-reaper", "cron": "13 * * * *"},
-            {"name": "some-other-cron", "cron": "0 * * * *"},
+            {"name": "agent-browser-reaper", "cron": "13 * * * *", "enabled": True},
+            {"name": "some-other-cron", "cron": "0 * * * *", "enabled": True},
         ])
         env = dict(os.environ, PATH=f"{bindir}:{os.environ.get('PATH', '')}")
         res = _run(env)
         assert res.returncode == 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
-        assert "PASS" in res.stdout and "PRESENT" in res.stdout
+        assert "PASS" in res.stdout and "ENABLED" in res.stdout
         assert "13 * * * *" in res.stdout, "must surface the registered schedule by name"
 
     def test_absent_exits_1(self, tmp_path):
@@ -124,7 +124,7 @@ class TestSchedulePresenceCheck:
         bindir = tmp_path / "bin"
         secret_marker = "OTHER-JOB-SECRET-PAYLOAD-MARKER"
         _write_stub_openclaw(bindir, [
-            {"name": "agent-browser-reaper", "cron": "13 * * * *"},
+            {"name": "agent-browser-reaper", "cron": "13 * * * *", "enabled": True},
             {"name": "some-other-cron", "cron": "0 * * * *", "command": secret_marker},
         ])
         env = dict(os.environ, PATH=f"{bindir}:{os.environ.get('PATH', '')}")
@@ -132,3 +132,76 @@ class TestSchedulePresenceCheck:
         assert res.returncode == 0
         assert secret_marker not in res.stdout
         assert secret_marker not in res.stderr
+
+
+class TestRegisteredIsNotEnabled:
+    """Finding 28 (oct-25-fixes.md): "The check is presence-based and counts
+    disabled jobs, so it can report PASS for a disabled reaper (live:
+    agent-browser-reaper exists with enabled=false)." A registered-but-disabled
+    reaper never runs, so presence must never be the verdict."""
+
+    def test_registered_but_disabled_exits_3(self, tmp_path):
+        bindir = tmp_path / "bin"
+        _write_stub_openclaw(bindir, [
+            {"name": "agent-browser-reaper", "cron": "13 * * * *", "enabled": False},
+        ])
+        env = dict(os.environ, PATH=f"{bindir}:{os.environ.get('PATH', '')}")
+        res = _run(env)
+        assert res.returncode == 3, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
+        assert "DISABLED" in res.stdout
+        assert "FAIL" in res.stdout
+        assert "PASS" not in res.stdout, "a disabled reaper must never print PASS"
+
+    def test_disabled_via_status_field_exits_3(self, tmp_path):
+        """No `enabled` key, computed `status: "disabled"` instead — the
+        documented fallback must still catch it."""
+        bindir = tmp_path / "bin"
+        _write_stub_openclaw(bindir, [
+            {"name": "agent-browser-reaper", "cron": "13 * * * *", "status": "disabled"},
+        ])
+        env = dict(os.environ, PATH=f"{bindir}:{os.environ.get('PATH', '')}")
+        res = _run(env)
+        assert res.returncode == 3, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
+        assert "DISABLED" in res.stdout
+
+    def test_enabled_unknown_exits_2_not_0(self, tmp_path):
+        """Neither `enabled` nor `status`: state is UNDETERMINED, and an
+        undetermined backstop is not a proven backstop."""
+        bindir = tmp_path / "bin"
+        _write_stub_openclaw(bindir, [
+            {"name": "agent-browser-reaper", "cron": "13 * * * *"},
+        ])
+        env = dict(os.environ, PATH=f"{bindir}:{os.environ.get('PATH', '')}")
+        res = _run(env)
+        assert res.returncode == 2, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
+        assert "UNKNOWN" in res.stdout
+        assert "PASS" not in res.stdout
+
+    def test_check_never_mutates_the_registry(self, tmp_path):
+        """Reactivation requires authorization: the check must issue no
+        mutating `cron` subcommand. The stub records every argv it was
+        called with and the test asserts only a `list` ever appears."""
+        bindir = tmp_path / "bin"
+        argv_log = tmp_path / "argv.log"
+        bindir.mkdir(parents=True, exist_ok=True)
+        stub = bindir / "openclaw"
+        payload = json.dumps({"jobs": [
+            {"name": "agent-browser-reaper", "cron": "13 * * * *", "enabled": False},
+        ]})
+        stub.write_text(
+            "#!/usr/bin/env bash\n"
+            f'printf "%s\\n" "$*" >> "{argv_log}"\n'
+            'case "$*" in\n'
+            f"  *\"cron list\"*) echo '{payload}' ;;\n"
+            '  *) echo "" ;;\n'
+            'esac\n'
+            'exit 0\n',
+            encoding="utf-8",
+        )
+        stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+        env = dict(os.environ, PATH=f"{bindir}:{os.environ.get('PATH', '')}")
+        res = _run(env)
+        assert res.returncode == 3
+        calls = [ln.strip() for ln in argv_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        mutating = [c for c in calls if "cron" in c and "cron list" not in c]
+        assert not mutating, f"check invoked a non-list cron subcommand: {mutating}"
