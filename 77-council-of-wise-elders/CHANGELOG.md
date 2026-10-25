@@ -1,5 +1,17 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.61: every mode seats the whole council; the mode only changes the rounds and the parallelism (FIX-MODES-DOCS)
+
+In plain English: light mode was described as "3 seats". That was wrong. Light mode still uses all nine elders — it just runs them in waves of three and gives them two rounds. Every mode seats the entire council. The mode controls how many rounds they run and how many provider calls may be in flight at once, and nothing else. All nine seats appear in a light session.
+
+- All three modes seat the full nine-advisor roster. No mode, and no flag, reduces the roster. A light session shows all nine seats.
+- Light: exactly 2 rounds, at most 3 provider calls in parallel (waves of 3), provider-request cap 50.
+- Medium: up to 4 rounds, provider-request cap 50.
+- Heavy: up to 10 rounds, provider-request cap 100.
+- Consensus early stop is unchanged at 7 of 9 seats.
+- `SKILL.md` rewritten to match: the sizing line in step 2 now announces all nine advisors with the round and parallelism counts, step 4b no longer selects three seats for a light question, and step 5 states both the cap and the light concurrency limit.
+- This supersedes the light-mode wording in the v1.0.56 entry below, which described light as 3 best-fit advisors.
+
 ## v1.0.60: the hybrid supervisor and the queue operation producer land together (HYBRID-1060)
 
 In plain English: this release adds the two halves of the hybrid council, landed as one batch. The supervisor decides which seats answer and in what order under the version 2 policy; the producer turns that decision into the queued work the runtime actually runs. Nothing about the existing council changes: both pieces are new files, and every earlier behaviour is untouched.
