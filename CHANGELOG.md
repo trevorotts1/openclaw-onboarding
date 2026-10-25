@@ -5,6 +5,11 @@
 - Nothing is deployed. Two gaps are recorded, not papered over: the Skill 71 `/api/skill-runs/ingest` receiver is absent at the Command Center pin (present only on unpinned main), and the 999-setup vendored skill trees lag canonical main.
 - Risk level: LOW (documentation only; no runtime, installer, or skill-behavior change).
 
+## [v27.1.66]  -  2026-10-24  -  S75 batch 3: land accepted-but-unmerged T10 and T24
+
+- Merges pull request #2549 (`batch/s75-b3`, merged 2026-10-24T22:32:03Z), which lands two Skill 75 units that were accepted and independently attested but never merged: S75-T10 `SCRIPT-WRITER-OWNER` and S75-T24 `VISUAL-UX-OWNER`. Both merged `--no-ff` with no hand edits.
+- In plain English: two Skill 75 pieces that had already passed review were found sitting unmerged and were put into the package.
+
 ## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
 
 ## [v27.1.64]  -  2026-10-22  -  W10 canary: A12 runtime-proof harness and the A-row execution runner

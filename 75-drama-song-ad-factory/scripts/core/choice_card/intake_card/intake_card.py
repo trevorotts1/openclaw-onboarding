@@ -100,6 +100,9 @@ _LOOK_SENTENCE = {
     "canvas-to-life": "painted cartoon that turns into real footage.",
     "canvas-to-3d": "painted cartoon that turns into lifelike 3D.",
 }
+#: Shown under a look whose source registry has no verified sample (Canvas to Life).
+#: Never substitute another look's link; the choice stays usable and explained.
+SAMPLE_MISSING = "Sample not available yet."
 #: Client-facing names. "Hybrid" is the official name of the sketch-and-real-footage
 #: look (its bible and id are still `hybrid`); the card label stays Sketch to Life.
 _LOOK_NAME = {"sketch-to-life": "Sketch to Life (Hybrid)"}
@@ -111,10 +114,10 @@ _MUSIC_SENTENCE = {
 
 
 def _sample_links():
-    """look id -> https sample-video link (style_samples.json); missing or null = no link."""
+    """look id -> https sample-video link (style_samples.json); None = no verified sample."""
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "style_samples.json"), encoding="utf-8") as f:
-        return {k: v for k, v in json.load(f).items() if v}
+        return json.load(f)
 
 
 def _menu(ids, labels, sentences):
@@ -128,10 +131,10 @@ def _looks():
 
 
 def _look_links():
-    """Sample link per look option, by option number (1-based); none = no entry."""
+    """Sample link per look option (1-based); an option with no verified sample is absent."""
     from choice_card.looks import looks as L
     links = _sample_links()
-    return {n: links[i] for n, i in enumerate(L.LOOK_ORDER, 1) if i in links}
+    return {n: links[i] for n, i in enumerate(L.LOOK_ORDER, 1) if links.get(i)}
 
 
 def _musics():
@@ -809,13 +812,17 @@ def song_required(answers):
 
 
 def _option_lines(q):
-    """Numbered option lines; an option with a sample link gets an indented line under it."""
+    """Numbered option lines; an option with a sample link gets an indented line under it.
+
+    A look with no verified sample says so plainly instead of borrowing a link."""
     out = []
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + q.get("rec_mark", REC)) if n - 1 == q.get("recommended") else ""
         out.append("%d. %s%s%s" % (n, opt, " - " + sentence if sentence else "", mark))
         if n in q.get("links", {}):
             out.append("   Watch: " + q["links"][n])
+        elif q["id"] == "look":
+            out.append("   " + SAMPLE_MISSING)
     return out
 
 
@@ -878,6 +885,10 @@ def render_step(i, questions=None):
     lines.append("")
     if q.get("reason"):                     # a question may only mark its pick
         lines.append("I recommend option %d (%s) because %s" % (r + 1, q["options"][r][0], q["reason"]))
+    if q.get("id") == "music":
+        # S75-T23: the plain help for every offered style is one word away; the
+        # question, its options and its recommendation are unchanged.
+        lines.append('Say "help me choose" to hear what each style sounds like.')
     lines.append(q.get("closing") or "Reply with a number, or say \"recommended\".")
     return "\n".join(lines)
 
