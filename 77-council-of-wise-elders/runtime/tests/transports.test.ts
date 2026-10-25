@@ -960,7 +960,23 @@ test('local: the Ollama profile preserves local and cloud identity byte-identica
   }
 });
 
-test('local: the Ollama profile refuses a non-loopback endpoint rather than mislabeling locality', async () => {
+test('local: the Ollama profile serves a TLS cloud endpoint but still refuses plain-http remote', () => {
+  // W77S-MODES: Ollama Cloud is a supported route through this same
+  // OpenAI-compatible profile. Its locality is reported honestly as
+  // public by the endpoint policy, never mislabeled as loopback.
+  const cloud = createOllamaTransport({
+    selection: fixedSelection({
+      providerSlug: 'ollama',
+      credential: { state: 'not_required', envVar: null, source: null, checked: [] },
+    }),
+    baseUrl: 'https://ollama.com/v1',
+  });
+  const described = cloud.describe();
+  assert.equal(described.endpointLocality, 'public');
+  assert.equal(described.endpointOrigin, 'https://ollama.com');
+
+  // A plain-http remote endpoint is still refused without the explicit
+  // insecure-http opt-in.
   assert.throws(
     () =>
       createOllamaTransport({
@@ -968,7 +984,7 @@ test('local: the Ollama profile refuses a non-loopback endpoint rather than misl
           providerSlug: 'ollama',
           credential: { state: 'not_required', envVar: null, source: null, checked: [] },
         }),
-        baseUrl: 'https://ollama.com/v1',
+        baseUrl: 'http://ollama.example.test/v1',
       }),
     (err: unknown) => isTransportError(err) && err.code === 'TRANSPORT_CONFIG_INVALID',
   );
