@@ -814,6 +814,141 @@ class DigestStabilityTests(unittest.TestCase):
         self.assertNotEqual(first["content_digest"], author(changed)["content_digest"])
 
 
+class RoundSixRegressionTests(unittest.TestCase):
+    """One test per defect the round-5 verdict names. Each one is a route the
+    round-5 suite either missed or aimed at the wrong object, and each one must
+    FAIL on the round-5 head and PASS here."""
+
+    def test_rewriting_the_registry_entry_cannot_un_spend_a_handle(self):
+        # D1 / route 13 and C5: dict.__setitem__ on the records registry reset
+        # consumed_by and the SAME handle sealed a second record.
+        body, dispatch, _ = genuine_dispatch()
+        first = WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                                dispatch=dispatch)
+        handle = dispatch["_handle"]
+        records = registry_records()
+        rewritten = 0
+        for obj, state in list(records.items()):
+            if obj is handle:
+                fresh = dict(state)
+                fresh["consumed_by"] = None
+                dict.__setitem__(records, obj, fresh)
+                rewritten += 1
+        self.assertEqual(rewritten, 1, "the handle's registry entry was not rewritten")
+        # the entry now CLAIMS to be unspent; the spend ledger must not agree
+        self.assertEqual(handle.consumed_by, first["content_digest"])
+        outcome = seal_outcome(dispatch)
+        self.assertTrue(outcome.startswith("REFUSED"),
+                        "a rewritten registry entry un-spent the handle: %s" % outcome)
+
+    def test_note_sealed_plus_registry_repair_cannot_launder_an_edited_record(self):
+        # D2 / F4: note_sealed(new_digest, ref) together with rewriting the real
+        # handle's state so consumed_by names the forged digest laundered a
+        # record whose body was edited after sealing.
+        body, dispatch, _ = genuine_dispatch()
+        real = WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                               dispatch=dispatch)
+        ref = real["seal"]["dispatch_handle"]
+        fake = tampered_record(real)
+        records = registry_records()
+        repaired = 0
+        for obj, state in list(records.items()):
+            if state["ref"] == ref:
+                forged = dict(state)
+                forged["consumed_by"] = fake["content_digest"]
+                dict.__setitem__(records, obj, forged)
+                repaired += 1
+        self.assertEqual(repaired, 1, "the handle's registry entry was not repaired")
+        try:
+            guard().note_sealed(fake["content_digest"], ref)
+        except BaseException:  # noqa: BLE001 -- a refusal here is one of the two outcomes
+            pass
+        outcome = change_setting_outcome(fake)
+        self.assertTrue(outcome.startswith("REFUSED"),
+                        "note_sealed plus a registry repair laundered an edited record: %s"
+                        % outcome)
+
+    def test_no_closure_map_can_relabel_a_no_spend_call_as_live(self):
+        # D3 / J1: the execution stamp came from a dict named execution_by_kind
+        # in dispatch_author.__closure__; rewriting it stamped 'live' onto a
+        # no-spend transport.
+        for cell in (WW.dispatch_author.__closure__ or ()):
+            try:
+                value = cell.cell_contents
+            except ValueError:  # empty cell
+                continue
+            if type(value) is dict:
+                value["no_spend"] = "live"
+                value["no_spend_fixture"] = "live"
+        body = fixture_body()
+        dispatch, _, _ = fixture_dispatch(body)
+        self.assertEqual(dispatch["execution"], "no_spend_fixture",
+                         "a no-spend transport claimed the live stamp")
+        record = WW.author_world(body, artifact_id="world_workshop_001", run_id="run_test_001",
+                                 dispatch=dispatch)
+        self.assertEqual(record["provenance"]["execution"], "no_spend_fixture")
+
+    def test_a_guard_swapped_in_the_private_scope_is_not_the_guard_the_honest_path_uses(self):
+        # D4 / A2: author_world.__globals__["_GUARD"] = a fake reporting a
+        # fabricated state made author_world seal a hand-built dispatch whose
+        # handle was a bare DispatchHandle.__new__ object.
+        class FakeGuard:
+            def lookup(self, handle):
+                return dict(forged_state())
+
+            def by_ref(self, ref):
+                return None
+
+            def consume(self, handle, digest):
+                return None
+
+            def note_sealed(self, digest, ref):
+                return None
+
+            def live_count(self):
+                return 0
+
+        scope = enforcement_scope()
+        saved = scope.get("_GUARD", "<absent>")
+        scope["_GUARD"] = FakeGuard()
+        try:
+            handle = WW.DispatchHandle.__new__(WW.DispatchHandle)
+            outcome = seal_outcome(dispatch_around(handle))
+        finally:
+            if saved == "<absent>":
+                scope.pop("_GUARD", None)
+            else:
+                scope["_GUARD"] = saved
+        self.assertTrue(outcome.startswith("REFUSED"),
+                        "a guard swapped in the private execution scope sealed a record: %s"
+                        % outcome)
+
+    def test_rebinding_the_handle_class_in_the_private_scope_defeats_nothing(self):
+        # D5 / H3: setting author_world.__globals__["DispatchHandle"] to another
+        # class made the exact-type check accept that class's instances.
+        class Evil(WW.DispatchHandle):
+            def __init__(self, **kwargs):
+                pass
+
+        evil = Evil()
+        dict.__setitem__(registry_records(), evil, dict(forged_state()))
+        scope = enforcement_scope()
+        saved = scope.get("DispatchHandle", "<absent>")
+        scope["DispatchHandle"] = Evil
+        try:
+            resolved = guard().lookup(evil)
+            outcome = seal_outcome(dispatch_around(evil))
+        finally:
+            if saved == "<absent>":
+                scope.pop("DispatchHandle", None)
+            else:
+                scope["DispatchHandle"] = saved
+        self.assertIsNone(resolved,
+                          "rebinding the handle class made the exact-type check accept a subclass")
+        self.assertTrue(outcome.startswith("REFUSED"),
+                        "a rebound handle class let a subclass seal: %s" % outcome)
+
+
 # --- round 4: REACHABILITY of the handle-minting capability -------------------
 #
 # Round 3 closed the file routes and left the capability reachable through
@@ -1054,11 +1189,23 @@ def attack_unconsume_by_attribute_write():
             cleared += 1
         except BaseException:  # noqa: BLE001
             pass
+    # round 5 aimed at the HANDLE, where consumed_by never lived. The write that
+    # mattered is the one CPython leaves open on the REGISTRY ENTRY: a raw
+    # dict.__setitem__ that resets consumed_by on the state the guard reads.
+    entries = 0
+    records = registry_records()
+    for obj, state in list(records.items()):
+        if obj is handle:
+            fresh = dict(state)
+            fresh["consumed_by"] = None
+            dict.__setitem__(records, obj, fresh)
+            entries += 1
     outcome = seal_outcome(dispatch)
     if outcome.startswith("ACCEPTED"):
-        return "ACCEPTED: clearing consumed_by (%d writes landed) un-spent the handle" % cleared
-    return "REFUSED BY NAME: %d un-consume writes landed but the handle stays spent (%s)" % (
-        cleared, outcome.split(":")[0])
+        return ("ACCEPTED: clearing consumed_by (%d attribute writes, %d registry entries "
+                "rewritten) un-spent the handle" % (cleared, entries))
+    return ("REFUSED BY NAME: %d un-consume writes and %d registry entry rewrites landed but the "
+            "handle stays spent (%s)" % (cleared, entries, outcome.split(":")[0]))
 
 
 def attack_mutate_handle_fields():
