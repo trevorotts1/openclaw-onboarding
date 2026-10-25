@@ -44,7 +44,8 @@ import {
 } from '../src/contracts/index.js';
 import type { EvidenceUnit, SourceRecord } from '../src/sources/index.js';
 import type { RunnerTimers } from '../src/queue/index.js';
-import { TransportDispatchError } from '../src/queue/index.js';
+import { RuntimeCapacity, TransportDispatchError } from '../src/queue/index.js';
+import type { CapacityClass, CapacityDecision } from '../src/queue/index.js';
 import { COUNCIL_SCHEMA_SQL } from '../src/persistence/index.js';
 import { envelopeFromScope } from '../src/persistence/envelope.js';
 import { CouncilDatabase } from '../src/persistence/sqlite.js';
@@ -355,6 +356,8 @@ function rig(
     failingSeats?: readonly SeatId[];
     /** Restrict the `failingSeats` failures to one round (keeps the run under the cap). */
     failRound?: number;
+    /** A capacity service to observe; the composition default is used otherwise. */
+    capacity?: RuntimeCapacity;
   } = {},
 ): Rig {
   const dir = mkdtempSync(join(tmpdir(), 'w77s-e2e-'));
@@ -399,6 +402,7 @@ function rig(
     }),
     timers: new FrozenTimers(),
     settings: CONVENING_SETTINGS,
+    capacity: opts.capacity,
   });
   const owner = envelopeFromScope(SCOPE, 'owner-1', 'owner', 'write');
   const snapshot = routeSnapshot(route.routeId, route.providerSlug);
@@ -526,6 +530,28 @@ async function conveneAndCheck(
 
 // ---------------------------------------------------------------- tests
 
+/**
+ * Observes CWE-028 admission on the production composition. Before
+ * LOWFIX-1057 no capacity service was wired, so neither hook ever ran and
+ * the wave code's capacity guarantee was vacuous.
+ */
+class SpyCapacity extends RuntimeCapacity {
+  acquires = 0;
+  waveWidths: number[] = [];
+  override ensureConcurrentCapacity(limit: number): void {
+    this.waveWidths.push(limit);
+    super.ensureConcurrentCapacity(limit);
+  }
+  override tryAcquire(input: {
+    operation_key: string;
+    work_class: CapacityClass;
+    scope_key: string;
+  }): CapacityDecision {
+    this.acquires += 1;
+    return super.tryAcquire(input);
+  }
+}
+
 test('W77S-E2E: light convenes 3 seats, 2 rounds, 3 at a time on an Ollama $20 plan', async () => {
   await conveneAndCheck(
     'light',
@@ -548,6 +574,26 @@ test('W77S-E2E: heavy convenes all 9 seats for 10 rounds, all at once on OpenRou
     { routeId: 'openrouter-configured', providerSlug: 'openrouter-configured' },
     { seats: SEAT_IDS.length, rounds: 10, parallel: SEAT_IDS.length },
   );
+});
+
+test('W77S-E2E: the production runner admits each wave member through capacity', async () => {
+  const capacity = new SpyCapacity();
+  const r = rig(
+    { routeId: 'ollama-configured', providerSlug: 'ollama' },
+    { capacity },
+  );
+  const accepted = await r.convene({
+    mode: 'light',
+    seat_ids: [...LIGHT_PANEL],
+    ollama_plan: '20',
+  });
+  await r.drain();
+  assert.equal(r.settled[0]?.result.status, 'completed');
+  // Two waves of three: claimWave widened the pool for each wave and every
+  // dispatched operation took a slot.
+  assert.deepEqual(capacity.waveWidths.filter((width) => width > 0), [3, 3]);
+  assert.equal(capacity.acquires, 6, '3 seats x 2 rounds');
+  assert.equal(accepted.parallel_limit, 3);
 });
 
 test('W77S-E2E: a rate-limited Ollama seat is re-run on the driver-approved fallback grant', async () => {

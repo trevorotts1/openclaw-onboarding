@@ -74,7 +74,9 @@ and dispatch are the proven live legs.
    tell the client, and never fabricate a finding, URL or date.
 7. Convene with
    `blackceo-council convene --brief FILE --mode light|medium|heavy` (or
-   `--sample` for the built-in sample decision). For a light question pass
+   `--sample` for the built-in sample decision). Convening with no `--mode`
+   runs medium; that default is deliberate, so name the mode you
+   announced. For a light question pass
    the three chosen seats with `--seat-ids id,id,id`; when it is omitted
    the driver picks the three best-fit seats. On the client's own Ollama
    pass `--ollama-plan 20` or `--ollama-plan 100`, and `--fallback-model

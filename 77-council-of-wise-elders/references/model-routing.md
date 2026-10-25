@@ -37,6 +37,13 @@ not trusted for this purpose. If the list cannot be fetched or contains
 no Flash model, the run refuses with a typed error. It never falls back
 to the configured id or to an older Flash.
 
+## Council sizes
+
+Light (3 seats, 2 rounds), medium (all 9 seats, 1 to 4 rounds) and heavy
+(all 9 seats, 3 to 10 rounds). Convening with no `--mode` runs medium:
+that default is deliberate, and the convene output always prints the size
+it ran. "quick answer" means light; "full council" means heavy.
+
 ## Provider order and parallel limits
 
 The council offers its providers in this fixed order:
@@ -46,7 +53,8 @@ The council offers its providers in this fixed order:
 2. **The client's own Ollama.** Only when the client prefers it. If
    their plan is not already known, ask once: the $20 a month plan runs
    at most 3 advisors at a time; the $100 a month plan runs at most 10.
-   When Ollama fails, the council falls back to OpenRouter.
+   When Ollama fails and the client named an OpenRouter fallback model,
+   the failed seats re-run on OpenRouter (see Fallback policy).
 3. **Agnes 3.0 Flash.** When the client selects it: no parallel limit.
 
 Every other provider runs the whole panel at once. A seat that cannot be
@@ -61,10 +69,12 @@ waits. It never substitutes a different model and presents the output as
 if the selected route produced it.
 
 The one exception is the client's own Ollama in light/medium/heavy: when
-Ollama fails, the seats that failed are re-run on the OpenRouter fallback
-model the caller named, and the output states which model answered. With
-no fallback model given, the older failure path applies and the output
-says `Fallback: none (<reason>)`.
+Ollama fails and the client named an OpenRouter fallback model, the seats
+that failed are re-run on that model. The convene output names the
+fallback route and model it will use (`Fallback: <route> / <model>`); the
+verdict itself does not record which route answered which seat. With no
+fallback model given, the older failure path applies and the output says
+`Fallback: none (<reason>)`.
 
 ## Route identity
 
