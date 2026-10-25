@@ -675,3 +675,16 @@ class NotionStore:
     def sync_state(self, character_id, remote_revision):
         """MISSING, STALE or IN_SYNC for one cached identity."""
         return self.cache.state(_doc(character_id), remote_revision)
+
+
+#: Install the verify-only entry point into ``character_bible.identity``.
+#:
+#: It is a CALLABLE, not a transport: identity's namespace never holds a pipe
+#: end. The wiring is done at import time and bound to THIS module's ``identity``
+#: object on purpose. The repository's pytest harness drops skill-tree modules
+#: from ``sys.modules`` between files, so this module and ``identity`` can each
+#: exist more than once in one interpreter; a run-time ``import`` from identity
+#: would then bind whichever copy ``sys.modules`` held last, whose signer is a
+#: different process with a different key, and a genuine receipt would stop
+#: verifying (measured: 16 failures in this file's own suite under pytest).
+identity._SIGNER_VERIFY = NotionStore._NotionStore__signer_verify
