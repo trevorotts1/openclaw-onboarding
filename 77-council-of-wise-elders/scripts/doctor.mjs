@@ -15,6 +15,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkArchiveContract } from "./archive-contract.mjs";
+import { treeAggregate, walkTree as walk } from "./manifest-tree.mjs";
 
 const args = process.argv.slice(2);
 const distribution = args.includes("--distribution");
@@ -47,26 +48,6 @@ let failures = 0;
 const pass = (m) => console.log(`PASS ${m}`);
 const fail = (m) => { failures += 1; console.log(`FAIL ${m}`); };
 const info = (m) => console.log(`INFO ${m}`);
-
-// Root-level .wired-<version> sentinels are written into every skill folder by
-// update-skills.sh during a fleet roll. They are roll bookkeeping, not skill
-// content, so they must not count toward the manifest tree hash.
-function isGeneratedRuntimePath(rel) {
-  return rel === "runtime/dist" || rel.startsWith("runtime/dist/")
-    || rel === "runtime/node_modules" || rel.startsWith("runtime/node_modules/")
-    || /^\.wired-[^/]*$/.test(rel);
-}
-
-function walk(dir, out = [], base = dir) {
-  for (const name of readdirSync(dir).sort()) {
-    const p = join(dir, name);
-    const rel = relative(base, p).split("\\").join("/");
-    if (isGeneratedRuntimePath(rel)) continue;
-    if (statSync(p).isDirectory()) walk(p, out, base);
-    else out.push(p);
-  }
-  return out;
-}
 
 console.log(`Council doctor: root = ${root}`);
 
@@ -185,21 +166,12 @@ if (existsSync(manifestPath)) {
   if (archiveErrors.length === 0) pass(distribution
     ? "explicit extracted distribution has no self-nested archive"
     : "source archive SHA-256 matches the source manifest");
-  const pairs = [];
-  for (const p of walk(root)) {
-    const rel = relative(root, p).split("\\").join("/");
-    if (rel === "manifest.json" || rel.endsWith(".skill")) continue;
-    const bytes = readFileSync(p);
-    pairs.push({ path: rel, hash: createHash("sha256").update(bytes).digest("hex") });
-  }
-  pairs.sort((a, b) => (a.path < b.path ? -1 : 1));
-  const entries = pairs.map((x) => `${x.hash}  ${x.path}`);
-  const aggregate = createHash("sha256").update(entries.join("\n") + "\n").digest("hex");
+  const { aggregate, fileCount } = treeAggregate(root);
   if (aggregate === manifest.aggregate_sha256
-    && entries.length === manifest.file_count) {
+    && fileCount === manifest.file_count) {
     pass(`manifest tree hash matches (${manifest.file_count} files)`);
   } else {
-    fail(`manifest drift: computed ${aggregate} over ${entries.length} files, manifest says ${manifest.aggregate_sha256} over ${manifest.file_count}. Rebuild with scripts/build-bundles.mjs`);
+    fail(`manifest drift: computed ${aggregate} over ${fileCount} files, manifest says ${manifest.aggregate_sha256} over ${manifest.file_count}. Rebuild with scripts/build-bundles.mjs`);
   }
 } else {
   fail("manifest.json missing: run scripts/build-bundles.mjs");

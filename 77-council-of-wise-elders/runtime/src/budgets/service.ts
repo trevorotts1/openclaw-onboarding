@@ -1105,7 +1105,13 @@ export class DurableBudgetService {
       this.sessionRows(handle, envelope, sessionId),
     );
     const facts = this.journalFacts(envelope, sessionId);
-    const ceilings = this.effectiveCeilings(null);
+    // The service settings are the maximum any grant may use; the cap this
+    // session is actually held to is the tighter of that and the session's
+    // approved run grant (a light session is refused at request 51 even
+    // though the service admits 100).
+    const ceilings = this.effectiveCeilings(
+      this.grantedCeilings(envelope, sessionId, grantId),
+    );
     const kindOf = (r: ReservationRow) => facts.get(r.operation_id)?.kind;
     const inStates = (states: BudgetReservationState[]) =>
       rows.filter((r) => states.includes(r.state));
@@ -1995,6 +2001,58 @@ export class DurableBudgetService {
       hold_expires_at: row.hold_expires_at,
       created_at: row.created_at,
       finalized_at: row.finalized_at,
+    };
+  }
+
+  /**
+   * The tightest count ceilings carried by the run grants funding this
+   * session, so a report states the cap that is actually enforced instead
+   * of the service-wide maximum. The grant's ceilings live in the
+   * council_approvals scope proof, the same durable record the admission
+   * path enforces. An unreadable proof is skipped: it can neither widen
+   * nor narrow the reported cap.
+   */
+  private grantedCeilings(
+    envelope: AuthorizationEnvelope,
+    sessionId: string,
+    grantId?: string,
+  ): Partial<RunCeilings> | null {
+    const rows = this.db.read((handle) => {
+      const select =
+        `SELECT id, scope_proof FROM council_approvals
+          WHERE tenant_id = ? AND company_id = ? AND kind = 'run_grant'`;
+      return (
+        grantId
+          ? handle
+              .prepare(`${select} AND id = ?`)
+              .all(envelope.tenant_id, envelope.company_id, grantId)
+          : handle
+              .prepare(`${select} AND session_id = ?`)
+              .all(envelope.tenant_id, envelope.company_id, sessionId)
+      ) as Array<{ id: string; scope_proof: string }>;
+    });
+    const found: Array<Partial<RunCeilings>> = [];
+    for (const row of rows) {
+      try {
+        const ceilings = (JSON.parse(row.scope_proof) as {
+          ceilings?: Partial<RunCeilings>;
+        }).ceilings;
+        if (ceilings) found.push(ceilings);
+      } catch {
+        // An unreadable proof narrows nothing.
+      }
+    }
+    if (found.length === 0) return null;
+    const tightest = (pick: (c: Partial<RunCeilings>) => number | undefined) => {
+      const values = found
+        .map(pick)
+        .filter((value): value is number => typeof value === 'number');
+      return values.length === 0 ? undefined : Math.min(...values);
+    };
+    return {
+      max_provider_requests: tightest((c) => c.max_provider_requests),
+      max_output_repairs: tightest((c) => c.max_output_repairs),
+      max_transport_retries: tightest((c) => c.max_transport_retries),
     };
   }
 

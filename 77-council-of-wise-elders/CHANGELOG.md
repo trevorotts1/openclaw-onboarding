@@ -1,5 +1,52 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.59: the packaged copy is proven against the release, never against its own claims (TREEGATE-REPAIR)
+
+In plain English: 1.0.58 started accepting a packaged copy of the council as "the same release" as the copy being updated. The review that followed found the check was asking the packaged copy to vouch for itself: anything it wrote about itself was believed. A copy that shared no files with the release at all could be accepted by filling in its own paperwork. This release makes the release do the vouching.
+
+- The release now declares, at packaging time, exactly what its distributable form looks like: the per-file digests of the content it expects to see (after the private material is removed and the wording scrubbed), and the per-file digests of the executable it built. `scripts/build-bundles.mjs` writes that record into `manifest.json` as `distribution`.
+- The gate proves a packaged copy against that record and nothing else. Every file it carries must be a file the release records, byte for byte; every file it adds must be a path the release declared in advance; every vendored executable byte must be a byte the release built; and the executable it presents must be the executable the release recorded.
+- A modified `runtime/dist` payload is refused per file. Previously the whole built runtime was excluded from every fingerprint, so 329 of 330 files were unverified; a swapped entry point was accepted as long as its own manifest agreed with it; a symlink could source content from outside the tree; an arbitrary `.skill` archive could ride along unread.
+- The `hash_method` a packaged copy records is now honoured: an aggregate is only meaningful under the method it names, and a method this gate cannot recompute is refused instead of being silently re-hashed the repo's way.
+- `DISTRIBUTION-RECONCILIATION.json` is parsed and held to the release: its canonical fingerprint, its declared kinds and every file it names must match what was actually observed. A record that lies about the source, names a file it did not change, or omits a file that did change is refused.
+- A tree that cannot be reconstructed exactly (a dangling or live symlink, an unreadable file, an unshipped dependency tree) is a clean refusal with a reason, never a stack trace: the gate always prints its `SELECTED-TREE:` summary line.
+- Tests: `scripts/tests/selected-tree-gate.test.mjs` keeps all 28 earlier cases, keeps the eight packaged-copy cases, adds one case per review bypass (impostor tree, unrecorded extra executable, modified build, replaced entry point, lying record, unhonoured hash method, symlink smuggling, stray archive) and two crash regressions.
+
+## v1.0.58: a box that carries the reusable package of the same release now updates cleanly (TREEGATE-1058)
+
+In plain English: some boxes keep two copies of the council. One is the copy the update writes; the other is the packaged copy the agents actually read, built from the same release but deliberately different — private material removed, wording scrubbed, the executable prebuilt. Until now the update compared the two file by file and refused, because they do not match. It now checks whether they are the same release, and only says yes when it can prove it.
+
+- The gate accepts two trees whose files differ only when the packaged copy carries its reconciliation record and a manifest naming the canonical release, both trees recompute exactly to the fingerprints their own manifests record, the packaged copy names the same canonical fingerprint as the copy being updated, both copies claim the same version, and the packaged copy's executable checks pass.
+- When that holds, the gate prints a plain line naming both folders and the canonical fingerprint, and passes. It no longer refuses a legitimate update.
+- Every other mismatch still fails with the same message as before. A packaged copy that does not match its own manifest, that names a different canonical release, that is missing its reconciliation record, or whose counterpart was edited after it was built is refused, and the line now says which check failed and why.
+- The manifest hashing used by `build-bundles`, `verify-bundles`, `doctor` and this gate now lives in one shared module, `scripts/manifest-tree.mjs`, so the four can never drift apart.
+- Tests: `scripts/tests/selected-tree-gate.test.mjs` gains one passing case for a real packaged copy and seven refused cases covering each kind of mismatch.
+
+## v1.0.57: the limits and readiness the council reports are the ones it enforces (LOWFIX-1057)
+
+In plain English: four independent reviews of 1.0.56 found places where the council said one thing and did another. Every one of them is now either fixed or stated honestly.
+
+- CLI help and doctor output no longer use money wording. They say plainly that a command is offline with no provider calls.
+- `status` reports the provider-request cap the session is actually held to (the approved session grant, for example 50 for a light or an older-mode sitting) instead of the service-wide maximum of 100.
+- The capacity service is now part of the shipped runtime, not only of tests: a claimed wave widens the pool so a heavy nine-seat wave fits, and every dispatched advisor takes a capacity slot. Two sessions can run full waves at the same time and the private-work share is still reserved.
+- Readiness treats a route whose only blocker is which model to use as ready, with a note naming the models and saying that convene needs `--model`. A host with no configured route still reports blocked.
+- A blocked light/medium/heavy sitting blames the challenge pass it is short in, not a failure from an earlier pass that was already repaired.
+- `references/model-routing.md` now matches the code: the convene output names the fallback route and model it will use, and the doc no longer claims the verdict records which model answered each seat. The Ollama fallback line says it needs `--fallback-model`.
+- Docs say plainly that convening with no `--mode` runs medium, by design (`SKILL.md`, `INSTRUCTIONS.md`, `references/model-routing.md`; `references/protocol.md` already said it). The cap statements match the enforced caps: light 50, medium 50, heavy 100, the four older modes 50.
+- Regression tests: `runtime/tests/lowfix-1057.test.ts` (reported cap, capacity pool, readiness with a named model, blocked-reason pass window) and a production-capacity case in `runtime/tests/modes-e2e-77s.test.ts`.
+
+## v1.0.56: light, medium and heavy councils; advisors run at the same time (W77S-MODES)
+
+In plain English: the council now sizes the question before it convenes, so a simple question no longer runs a nine-advisor, three-round debate. Advisors in a round answer at the same time instead of one after another, and the council no longer acts as a spending overseer.
+
+- Three sizes (`--mode light|medium|heavy`, default medium): light is 3 best-fit advisors for exactly 2 rounds; medium is all 9 for 1 to 4 rounds; heavy is all 9 for 3 to 10 rounds. Medium and heavy stop early when at least 7 of 9 advisors share the same top option and it leads the runner-up by 1.5 points (heavy only from round 3). Provider-request caps: light 50, medium 50, heavy 100.
+- Sizing uses four checks only: can it be undone, are other people affected, does it lock the client in, do values pull against each other. There is no money check. "Quick answer" means light; "full council" means heavy.
+- No money overseer: the three sizes carry no money or token ceiling and no cost wording; the request cap is the only limit.
+- Advisors in a round run in parallel waves under one session lease. OpenRouter and Agnes 3.0 Flash run every advisor at once; Ollama runs at most 3 at once on the $20 plan and 10 on the $100 plan (`--ollama-plan 20|100`, asked once and remembered). With `--fallback-model ID`, seats that fail on Ollama re-run on OpenRouter under their own approved grant.
+- Routes: Ollama providers compose through the OpenAI-compatible Ollama profile; a provider with several allowed models becomes usable when the client names one of them.
+- A brief that omits a relevance weight no longer blocks the sitting at the draft: missing panel weights default to 1.
+- The four older modes (full, selected, quick, consult) are unchanged; their grant is 50/9/8, the cap they already enforced.
+
 ## v1.0.55: route resolution is caller-first (W77S-ROUTE)
 
 In plain English: the council no longer offers the runtime's own provider list as if it were the client's model menu. It reads the calling agent's model first, maps it to a configured route when one matches, and otherwise says plainly that none of the runtime's routes is the caller's model.
