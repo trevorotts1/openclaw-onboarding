@@ -66,7 +66,7 @@ from consent_gate import (  # noqa: E402
     SCOPE_TOPIC,
     make_gate_evaluator,
 )
-from durable_store import DurableStore, STATE_SUPPRESSED  # noqa: E402
+from durable_store import DurableStore, STATE_DISPATCHED, STATE_SUPPRESSED  # noqa: E402
 from outbound_gate import (  # noqa: E402
     GateError,
     ST_BLOCKED,
@@ -637,6 +637,77 @@ class TestPointOfUseFence(_Base):
         result, row, sends = self._dispatch(action_id, flips_once)
         self.assertEqual(sends, [], "the in-transaction recheck must catch it")
         self.assertEqual(result.status, ST_BLOCKED)
+
+    def test_the_production_consent_guard_declaration_drives_the_recheck(self):
+        # The pin that was missing. The test above sets
+        # `flips_once.consent_guard = True` on a closure it built itself, so the
+        # PRODUCTION declaration inside `make_gate_evaluator` was never
+        # exercised: flipping `evaluator.consent_guard = True -> False` there
+        # left the whole suite green while silently dropping the suppression
+        # fence from the no-ledger dispatch path. This test enters
+        # `make_gate_evaluator` itself and copies the marker off the evaluator
+        # it returns, so the declaration under test is the production one. The
+        # state flip is a REAL global stop written to the durable ConsentStore
+        # between call 1 and call 2, not a hard-coded second verdict.
+        action_id = self._new_queued("L-prod-guard")
+        consent = self.consent
+        guard = make_gate_evaluator(consent)  # the production declaration
+        calls = []
+
+        def flipping(ctx):
+            calls.append(ctx.get("action_id"))
+            if len(calls) == 1:
+                consent.global_stop(TENANT, self.contact, actor="agent",
+                                    reason="customer said stop")
+                return {"verdict": "ALLOW", "evidence": {"first": True}}
+            return guard(ctx)
+
+        flipping.consent_guard = getattr(guard, "consent_guard", False)
+        self.assertIs(
+            flipping.consent_guard, True,
+            "make_gate_evaluator must declare itself a consent guard")
+
+        result, row, sends = self._dispatch(action_id, flipping)
+        self.assertEqual(len(calls), 2,
+                         "the evaluator must run again inside the transaction")
+        self.assertEqual(sends, [], "nothing may be sent after the stop landed")
+        self.assertEqual(result.status, ST_BLOCKED)
+        self.assertEqual(result.verdict, "SUPPRESSED")
+        self.assertEqual(row["state"], STATE_SUPPRESSED)
+        probe = DurableStore(self.store_path)
+        attempts = probe._db.execute(
+            "SELECT COUNT(*) AS n FROM outbox_attempts WHERE action_id=?",
+            (action_id,)).fetchone()["n"]
+        probe.close()
+        self.assertEqual(attempts, 0,
+                         "the refused attempt row was rolled back")
+
+    def test_control_the_same_probe_without_the_marker_does_send(self):
+        # The inverse of the pin above, and the reason the pin is a fact rather
+        # than a test that fails on everything: identical probe, identical real
+        # global stop, the only difference is that the marker is taken away. It
+        # must SEND and must run the evaluator once. If this one did not send,
+        # the RED above would be the probe, not the marker.
+        action_id = self._new_queued("L-prod-guard-control")
+        consent = self.consent
+        guard = make_gate_evaluator(consent)
+        calls = []
+
+        def flipping(ctx):
+            calls.append(ctx.get("action_id"))
+            if len(calls) == 1:
+                consent.global_stop(TENANT, self.contact, actor="agent",
+                                    reason="customer said stop")
+                return {"verdict": "ALLOW", "evidence": {"first": True}}
+            return guard(ctx)
+
+        flipping.consent_guard = False  # the marker removed; nothing else
+        result, row, sends = self._dispatch(action_id, flipping)
+        self.assertEqual(len(calls), 1,
+                         "without the marker dispatch never re-checks consent")
+        self.assertEqual(len(sends), 1)
+        self.assertEqual(result.status, ST_SENT)
+        self.assertEqual(row["state"], STATE_DISPATCHED)
 
     def test_a_ledger_from_another_database_is_refused(self):
         action_id = self._new_queued("L-wrongdb")
