@@ -1,4 +1,4 @@
-## [2.0.34] - 2026-10-24 - fix(receipts): a parent id is compared by identity, and malformed plan input is a ReceiptError (PBB-119 T-25 repair 3, PBB-273)
+## [2.0.101] - 2026-10-24 - fix(receipts): a parent id is compared by identity, and malformed plan input is a ReceiptError (PBB-119 T-25 repair 3, PBB-273)
 
 Repair round for the independent QC verdict `qc4-t-25`, which FAILED candidate `ead48c654ff16bcc9c5de1cb683cf9637662b38b` on three defects (its N1, N2, N3) plus carried non-gating notes N4/N5/N6. All three were reproduced on a `git archive` extraction of `ead48c654` before any edit. Scope unchanged: `shared-utils/receipts/` only, plus this entry and `skill-version.txt` in this one commit, as CONTRIBUTING.md (Release Ceremony Batching) requires. No live actions, no network code, no new storage, no new send path.
 
