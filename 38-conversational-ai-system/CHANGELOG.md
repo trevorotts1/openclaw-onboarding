@@ -1,4 +1,4 @@
-## [2.0.95] - 2026-10-25 - evidence(T-04): verified external storage binding, child temp propagation and measured global capacity (PBB-318 repair of PBB-177, record repaired under PBB-357)
+## [2.0.102] - 2026-10-25 - evidence(T-04): verified external storage binding, child temp propagation and measured global capacity (PBB-318 repair of PBB-177, record repaired under PBB-357)
 
 Repair round 2 for T-04. Verifier PBB-339 FAILED `f0542970` on two defects, both in the commit's own record/proof layer, with nothing weakened in tests: (D1) the new gate refused a wholly true record, and (D2) the message's closing "Evidence only; no control code ... changed" was contradicted by the commit's own diff. Both are repaired here.
 
