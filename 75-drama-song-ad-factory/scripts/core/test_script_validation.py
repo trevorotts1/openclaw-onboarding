@@ -676,6 +676,17 @@ def test_a_bare_serialization_literal_is_still_refused():
             assert "CLAIM_NOT_WRITTEN" in codes, (field, literal, codes)
 
 
+def test_the_literal_rule_alone_refuses_a_literal_and_alone_admits_yes():
+    """Correction (a) isolated: with a one-word floor the length rule cannot
+    fire, so the only rule left is the serialization-literal rule itself."""
+    assert [d["code"] for d in V._statement_defects("true", "x", 1, shape=V.SHAPE_PHRASE)] \
+        == ["CLAIM_NOT_WRITTEN"]
+    assert [d["code"] for d in V._statement_defects("null", "x", 1, shape=V.SHAPE_PHRASE)] \
+        == ["CLAIM_NOT_WRITTEN"]
+    assert V._statement_defects("yes", "x", 1, shape=V.SHAPE_PHRASE) == []
+    assert V._statement_defects("no", "x", 1, shape=V.SHAPE_PHRASE) == []
+
+
 def test_silent_laundering_reads_every_performed_line_key():
     """Correction (b): lines parked under any other key do not buy silence."""
     parked = ["Iris signs the manifest before the bell rings tonight.",
