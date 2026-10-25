@@ -306,6 +306,14 @@ def test_lip_sync_claim_without_intervals_refused():
 
 
 def test_specific_coherent_neighbouring_scene_accepted():
+    """A specific, coherent neighbour is accepted.
+
+    SPECIFIC is the load-bearing word: the neighbour states its own want, its own
+    obstacle, its own action, its own choice, its own turn and its own subtext.
+    A neighbour that re-uses the first scene's claims verbatim is not a second
+    scene, it is the first scene wearing a second id, and
+    _cross_scene_repetition_defects refuses it.
+    """
     script = _load("rich_causal_script.json")
     scene = _good_scene()
     scene["scene_id"] = "scene_shop_floor_002"
@@ -313,6 +321,12 @@ def test_specific_coherent_neighbouring_scene_accepted():
     scene["causal_predecessor"] = "scene_workshop_001"
     scene["location_id"] = "loc_shop_floor_002"
     scene["dramatic_purpose"] = "Force Levi to trade reassurance for a shared repair schedule."
+    scene["immediate_want"] = "Levi wants the repair schedule written down before the doors open."
+    scene["obstacle"] = "The unread warning notice blocks that writing at the bench."
+    scene["visible_action"] = "Levi sets the schedule on the bench and waits for Mara to sign it."
+    scene["consequential_choice"] = "Levi writes the schedule down and loses his last excuse."
+    scene["turn_trigger"] = "Mara slides the pen across the bench."
+    scene["subtext_and_behavior"] = "Levi hides the relief behind a flat voice at the bench."
     scene["emotion_before"] = "guarded"
     scene["emotion_after"] = "committed"
     scene["spoken_dialogue"] = [
@@ -615,6 +629,182 @@ def test_unstructured_scene_and_beat_only_bypass_refused():
     verdict = V.validate_script(script, world=WORLD, cast_manifest=CAST)
     assert verdict["ok"] is False
     assert "BEAT_ONLY_BYPASS" in _codes(verdict)
+
+
+# --- E: the round-5 additions ---------------------------------------------
+#
+# Every case below is one of the six things round 5 was directed to add or
+# correct: the four new checks (silent-scene laundering, duration versus
+# performed words, emotion-state shape, cross-scene repetition) and the two
+# corrections (_NON_PROSE_TOKENS cut to genuine serialization literals; the
+# performed-line reader reading every key that can carry a line).
+
+def _codes_for(**over):
+    verdict = V.validate_script(_single_scene_script(_with(**over)), world=WORLD,
+                                cast_manifest=CAST)
+    return verdict["ok"], _codes(verdict)
+
+
+def test_yes_and_no_are_dialogue_not_serialization_literals():
+    """Correction (a): "yes" and "no" are ordinary speech, not data literals."""
+    for line in ("Yes, I signed the manifest myself before the bell.",
+                 "No, put the ledger back on the counter tonight."):
+        scene = _with(sung_lyrics=[], spoken_dialogue=[
+            {"line_id": "l1", "character_id": "char_mara_001", "text": line},
+            {"line_id": "l2", "character_id": "char_levi_002",
+             "text": "Then tell me everything before the doors open."}])
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD,
+                                    cast_manifest=CAST)
+        assert verdict["ok"] is True, (line, verdict["defects"])
+    ok, codes = _codes_for(
+        subtext_and_behavior="She waits to see whether he says no before she speaks.")
+    assert ok is True, codes
+    ok, codes = _codes_for(spoken_dialogue=[
+        {"line_id": "l1", "character_id": "char_mara_001",
+         "text": "The tally is true because we both counted it twice."},
+        {"line_id": "l2", "character_id": "char_levi_002",
+         "text": "Then tell me everything before the doors open."}])
+    assert ok is True, codes
+
+
+def test_a_bare_serialization_literal_is_still_refused():
+    """Correction (a), other half: a bare literal in a prose field is a literal."""
+    for field in ("dramatic_purpose", "obstacle", "immediate_want"):
+        for literal in ("true", "false", "null", "none", "undefined"):
+            ok, codes = _codes_for(**{field: literal})
+            assert ok is False, (field, literal)
+            assert "CLAIM_NOT_WRITTEN" in codes, (field, literal, codes)
+
+
+def test_silent_laundering_reads_every_performed_line_key():
+    """Correction (b): lines parked under any other key do not buy silence."""
+    parked = ["Iris signs the manifest before the bell rings tonight.",
+              "Otto slides the ledger over at the counter."]
+    for key in ("dialogue", "lyrics", "voiceover_text"):
+        scene = _with(silent_scene=True, spoken_dialogue=[], sung_lyrics=[],
+                      performance_order=[], **{key: parked})
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD,
+                                    cast_manifest=CAST)
+        assert verdict["ok"] is False, key
+        assert "SILENT_SCENE_LAUNDERED" in _codes(verdict), (key, verdict["defects"])
+
+
+def test_silent_scene_still_proves_real_content():
+    """The shared base 4bd478de reading: silence exempts nothing."""
+    scene = _with(silent_scene=True, spoken_dialogue=[], sung_lyrics=[],
+                  performance_order=[], visible_lip_sync={"intervals": []})
+    verdict = V.validate_script(_single_scene_script(scene), world=WORLD,
+                                cast_manifest=CAST)
+    assert verdict["ok"] is False
+    assert "PLACEHOLDER_SCENE" in _codes(verdict), verdict["defects"]
+
+
+def test_duration_must_hold_the_words_the_scene_performs():
+    ok, codes = _codes_for(duration_seconds=3,
+                           visible_lip_sync={"intervals": [[0, 1], [2, 3]],
+                                             "performer": "char_mara_001"})
+    assert ok is False
+    assert "DURATION_TOO_SHORT" in codes, codes
+    ok, codes = _codes_for(duration_seconds=60)
+    assert ok is True, codes
+    ok, codes = _codes_for(duration_seconds=601)
+    assert ok is False
+    assert "DURATION_NOT_REAL" in codes, codes
+
+
+def test_emotion_names_a_state_not_a_sentence_about_a_person():
+    for value in ("she is guarded about the ledger at the counter",
+                  "he is guarded about the ledger at the counter and the bell",
+                  "guarded about the ledger and the bell and the counter and the room"):
+        ok, codes = _codes_for(emotion_before=value)
+        assert ok is False, value
+        assert "EMOTION_NOT_GENUINE" in codes, (value, codes)
+    ok, codes = _codes_for(emotion_before="ashamed and guarded about the bell",
+                           emotion_after="defiant about the bell")
+    assert ok is True, codes
+
+
+def test_cross_scene_claim_repetition_refused():
+    shared = dict(_good_scene())
+    shared["scene_id"] = "scene_shop_floor_002"
+    shared["sequence"] = 2
+    shared["causal_predecessor"] = "scene_workshop_001"
+    shared["location_id"] = "loc_shop_floor_002"
+    script = {"schema_version": "s75.script.v1", "artifact_id": "s_x",
+              "scenes": [_good_scene(), shared]}
+    verdict = V.validate_script(script, world=WORLD, cast_manifest=CAST)
+    assert verdict["ok"] is False
+    assert "CLAIM_REPEATED" in _codes(verdict), verdict["defects"]
+
+    neighbour = dict(shared)
+    neighbour["immediate_want"] = (
+        "Levi wants the repair schedule written down before the doors open.")
+    neighbour["obstacle"] = "The unread warning notice blocks that writing at the bench."
+    neighbour["visible_action"] = (
+        "Levi sets the schedule on the bench and waits for Mara to sign it.")
+    neighbour["consequential_choice"] = "Levi writes the schedule down and loses his last excuse."
+    neighbour["turn_trigger"] = "Mara slides the pen across the bench."
+    neighbour["subtext_and_behavior"] = "Levi hides the relief behind a flat voice at the bench."
+    neighbour["dramatic_purpose"] = "Force Levi to trade reassurance for a shared repair schedule."
+    script = {"schema_version": "s75.script.v1", "artifact_id": "s_y",
+              "scenes": [_good_scene(), neighbour]}
+    verdict = V.validate_script(script, world=WORLD, cast_manifest=CAST)
+    assert verdict["ok"] is True, verdict["defects"]
+
+
+def test_hyphen_spaced_statement_repetition_refused():
+    ok, codes = _codes_for(
+        immediate_want="Iris wants the tally read aloud before the bell rings.",
+        causal_outcome="I-r-i-s w-a-n-t-s the tally read aloud before the bell rings.")
+    assert ok is False
+    assert "CLAIM_REPEATED" in codes, codes
+
+
+def test_slot_meaning_stubs_refused():
+    for stub in ("The remaining speech is on the way.",
+                 "This passage is pending revision.",
+                 "Copy arrives after the rewrite.",
+                 "The dialogue is scheduled for later."):
+        for field in ("obstacle", "causal_outcome"):
+            ok, codes = _codes_for(**{field: stub})
+            assert ok is False, (field, stub)
+            assert "PLACEHOLDER_CLAIM" in codes, (field, stub, codes)
+
+
+def test_wholly_bracketed_value_is_a_placeholder():
+    for stub in ("[insert the confrontation]", "<the argument continues>",
+                 "{the song resumes}"):
+        ok, codes = _codes_for(obstacle=stub)
+        assert ok is False, stub
+        assert "PLACEHOLDER_CLAIM" in codes, (stub, codes)
+
+
+def test_label_runs_refused_and_short_prose_accepted():
+    """A label run is a list; a specification of two groups is writing."""
+    for field, run in (("dramatic_purpose",
+                        "Tighten the crane, the winch, the bollard, the fender, the davit."),
+                       ("visible_action",
+                        "Wren files the harbour roster, the tally, the manifest, the ledger."),
+                       ("time",
+                        "the harbour crane and the winch for the bollard and fender")):
+        ok, codes = _codes_for(**{field: run})
+        assert ok is False, (field, run)
+        assert "KEYWORD_ONLY_CLAIM" in codes, (field, run, codes)
+    # The four short-prose strings the round-4 verdict measured A refusing.
+    ok, codes = _codes_for(time="late evening closing hour")
+    assert ok is True, codes
+    ok, codes = _codes_for(turn_trigger="Otto slides the ledger over.")
+    assert ok is True, codes
+    for line in ("Seal the manifest tonight.", "Open the harbour manifest."):
+        scene = _with(sung_lyrics=[], spoken_dialogue=[
+            {"line_id": "l1", "character_id": "char_mara_001", "text": line},
+            {"line_id": "l2", "character_id": "char_levi_002",
+             "text": "Then tell me everything before the doors open."}])
+        verdict = V.validate_script(_single_scene_script(scene), world=WORLD,
+                                    cast_manifest=CAST)
+        assert verdict["ok"] is True, (line, verdict["defects"])
+    ok, codes = _codes_for(sound_music_cues=["low room tone and a distant horn"])
+    assert ok is True, codes
 
 
 if __name__ == "__main__":
