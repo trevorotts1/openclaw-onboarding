@@ -1,5 +1,39 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.9.9] - 2026-10-25 - T-22c repair 5: the release number is unique, and the coverage text names what it does not cover
+
+Two defects closed here. Both were found by re-measuring rather than trusting an
+earlier round's figures.
+
+- **The release number was already taken, and was below the field.** `3.9.2` was
+  allocated as "claimed by no other ref across all 1978 remote heads" at the
+  8741377b round. Re-measured over **2040** refs enumerated with
+  `git for-each-ref --format=%(refname) refs/remotes/origin` (bare prefix, no
+  `/*` glob — the glob reports only 113 and hides 1927), `3.9.2` is held by
+  **two** refs: `pb/PBB-396/t-22-repair4` and `pb/PBB-441/t-22-update`. It is
+  also **below** the true numeric maximum `3.9.8` (held by
+  `pb/PBB-460/t-26-build`). One number was naming two branches. Scoring is
+  numeric `major*1000000 + minor*1000 + patch`, never lexical; the lexical trap
+  is live in this very numbering (`"3.9.10" > "3.9.9"` is `False` as a string
+  while `3009010 > 3009009`, so the next bump past `3.9.9` would sort below it).
+  **`3.9.9` is the first number strictly above the measured maximum that no ref
+  claims** (checked against all 2040: zero holders). Main carries `3.8.2`, so
+  `3009009 > 3008002` — strictly above main. Both markers move together:
+  `skill-version.txt` and the `SKILL.md` front-matter `version:` line, which is
+  the pair `06-ghl-install-pages/scripts/check-version-drift.py` compares.
+
+- **`PROFILE-CAPABILITIES.md` claimed "No channel or account is polled, observed
+  or watched" while the same skill's `SKILL.md` §Phase 4 and `INSTRUCTIONS.md`
+  §Phase 5 declare an Engagement Monitor that "Poll APIs for likes/views" and
+  "runs continuously for 7 days post-publish".** Both cannot be true of the
+  skill. The clause this artefact serves is *"public monitoring not claimed"*, so
+  the sentence is narrowed to what this contract actually does, and the
+  Engagement Monitor is named and explicitly fenced off: it is not this contract,
+  `_truth_of()` never reads it, and it is not the public-monitor evidence
+  `policy.unattended_coverage.required_proof` demands. Coverage stays
+  `unproved` and `published-by-system` stays unreportable. Nothing is deleted
+  from `SKILL.md` or `INSTRUCTIONS.md` — those describe a different subsystem.
+
 ## [3.9.2] - 2026-10-25 - T-22c repair 4: the signing key is not selectable by the caller (B-27)
 
 **Correction of the 3.9.1 entry below.** 3.9.1 closed DERIVATION and left INJECTION

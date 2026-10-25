@@ -110,10 +110,17 @@ refused.
 
 The test behind this contract is **narrow**: it reads the declaration and
 exercises the assisted prepare / confirm / status / guard paths in-process and
-through the CLI. There is no browser test. **Public monitoring is not claimed.**
+through the CLI. There is no browser test. **This contract claims no public
+monitoring, and performs none.**
 No channel or account is
 polled, observed or watched by this contract, and no platform publication is read
-back from a platform API. Consequently:
+back from a platform API. Skill 35 does ship a separate Phase-4/Phase-5
+Engagement Monitor that polls provider metrics after a publish
+(`SKILL.md` §Phase 4, `INSTRUCTIONS.md` §Phase 5). It is not this contract, it is
+not read by `_truth_of()`, and it is **not** the public-monitor evidence
+`policy.unattended_coverage.required_proof` demands — so its existence does not
+lift this contract's coverage off `unproved`, and nothing here may be read as
+claiming that it does. Consequently:
 
 - unattended coverage is `unproved`, and `_truth_of()` **refuses every unattended
   publication record** instead of rendering `published-by-system`;
