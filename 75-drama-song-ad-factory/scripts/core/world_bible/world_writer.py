@@ -699,12 +699,32 @@ def _dispatch_machinery():
     records = Registry(identity_keys=True)   # handle OBJECT -> immutable state
     transports = Registry(identity_keys=True)  # transport OBJECT -> immutable {"kind", "transport_id"}
     sealed = Registry()    # sealed content digest -> ref of the handle that sealed it
-    #: APPEND-ONLY spend ledger: handle ref -> the content digest it sealed.
-    #: ``consumed_by`` is READ out of here and is never a field of the registry
-    #: entry, so the one write CPython leaves open -- ``dict.__setitem__`` on
-    #: ``records`` -- has nothing to reset: rewriting the entry can neither
-    #: un-spend a handle nor re-point a spend at another record.
-    spends = Registry()
+    #: APPEND-ONLY spend ledger: an immutable TUPLE of (handle ref, content
+    #: digest) pairs, rebound -- never mutated -- by each spend. ``consumed_by``
+    #: is READ out of here and is never a field of the registry entry, so the
+    #: writes CPython leaves open on a mapping -- ``dict.__setitem__``,
+    #: ``dict.__delitem__`` -- have no mapping to write: a tuple is not a dict
+    #: and raises TypeError. Rewriting the registry entry or the ledger can
+    #: therefore neither un-spend a handle nor re-point a spend at another
+    #: record.
+    spends = ()
+
+    def spend_of(ref):
+        """The digest this handle ref spent, or None.
+
+        Read from TWO independent stores and believed if EITHER reports it: the
+        immutable spend tuple and the sealed map. Clearing one is not enough to
+        make a spent handle look unspent, and clearing both needs two unrelated
+        CPython primitives (a closure-cell rebind and a mapping delete) on state
+        that is reached only by introspection.
+        """
+        for spent_ref, digest in spends:
+            if spent_ref == ref:
+                return digest
+        for digest, sealed_ref in sealed.items():
+            if sealed_ref == ref:
+                return digest
+        return None
     #: the two classes captured HERE. Every exact-type check reads these cells,
     #: never the names, so rebinding ``DispatchHandle`` to ``object`` in the
     #: private execution scope defeats nothing.
@@ -778,7 +798,7 @@ def _dispatch_machinery():
             # DERIVED from the append-only spend ledger, never read out of the
             # registry entry. Rewriting that entry can therefore neither
             # un-spend a handle nor move its spend onto another record.
-            state["consumed_by"] = spends.get(state["ref"])
+            state["consumed_by"] = spend_of(state["ref"])
             return state
 
         def by_ref(self, ref):
@@ -792,18 +812,20 @@ def _dispatch_machinery():
             if found is None:
                 raise DispatchHandleMintRefused(
                     "%s: only a handle this run's dispatch minted can be consumed" % CODE_HANDLE_MINT)
+            nonlocal spends
             ref = found[1]["ref"]
-            if ref in spends:
+            spent = spend_of(ref)
+            if spent is not None:
                 raise DispatchHandleMintRefused(
                     "%s: the dispatch handle already sealed %s; one dispatch proves one authoring "
-                    "record" % (CODE_HANDLE_MINT, spends.get(ref)))
-            dict.__setitem__(spends, ref, digest)
+                    "record" % (CODE_HANDLE_MINT, spent))
+            spends = spends + ((ref, digest),)
 
         def note_sealed(self, digest, ref):
             # only a digest a handle of this run ACTUALLY spent may be recorded
             # as sealed, so a caller cannot launder an edited body by naming any
             # ref it has seen in a seal
-            if ref not in spends:
+            if spend_of(ref) is None:
                 raise DispatchHandleMintRefused(
                     "%s: only a record sealed by a handle this run's dispatch spent can be "
                     "recorded as sealed" % CODE_HANDLE_MINT)
@@ -813,6 +835,9 @@ def _dispatch_machinery():
             """The handle ref that sealed this digest, or None. Read-only: the
             sealed map itself is never handed out."""
             return sealed.get(digest)
+
+        def spend_count(self):
+            return len(spends)
 
         def live_count(self):
             return len(records)

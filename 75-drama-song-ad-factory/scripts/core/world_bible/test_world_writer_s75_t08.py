@@ -827,19 +827,30 @@ class RoundSixRegressionTests(unittest.TestCase):
                                 dispatch=dispatch)
         handle = dispatch["_handle"]
         records = registry_records()
-        rewritten = 0
+        landed = 0
         for obj, state in list(records.items()):
             if obj is handle:
                 fresh = dict(state)
                 fresh["consumed_by"] = None
+                dict.__setitem__(records, obj, fresh)   # rewrite: un-spend by field
+                landed += 1
+                dict.__delitem__(records, obj)          # delete: un-spend by removal
+                landed += 1
                 dict.__setitem__(records, obj, fresh)
-                rewritten += 1
-        self.assertEqual(rewritten, 1, "the handle's registry entry was not rewritten")
-        # the entry now CLAIMS to be unspent; the spend ledger must not agree
-        self.assertEqual(handle.consumed_by, first["content_digest"])
+        self.assertEqual(landed, 2, "the handle's registry entry was not rewritten and deleted")
+        # both writes landed and the entry now CLAIMS to be unspent; the spend
+        # must live somewhere neither of them reaches
+        try:
+            still_spent = handle.consumed_by
+        except WW.WorldError:
+            # the entry was left deleted: the handle is no longer a handle this
+            # run minted, which refuses just as hard
+            still_spent = first["content_digest"]
+        self.assertEqual(still_spent, first["content_digest"])
         outcome = seal_outcome(dispatch)
         self.assertTrue(outcome.startswith("REFUSED"),
-                        "a rewritten registry entry un-spent the handle: %s" % outcome)
+                        "registry writes (%d landed) un-spent the handle: %s"
+                        % (landed, outcome))
 
     def test_note_sealed_plus_registry_repair_cannot_launder_an_edited_record(self):
         # D2 / F4: note_sealed(new_digest, ref) together with rewriting the real
