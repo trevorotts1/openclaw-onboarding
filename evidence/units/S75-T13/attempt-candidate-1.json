@@ -1,0 +1,61 @@
+{
+  "unit": "S75-T13",
+  "acceptance_row": "S75-A13",
+  "mode": "candidate-build",
+  "role": "BUILD-AHEAD CANDIDATE (decision-locked unit; D-9 owner unnamed)",
+  "title": "Absent foundations cannot bypass _cast_gate",
+  "branch": "s75/S75-T13-r1",
+  "base": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+  "base_note": "origin/main at lane creation (Merge pull request #2596 from trevorotts1/s75/T08-r7).",
+  "head": "f4bc197ebbd89265daadd1e9a76439e69ffd21d6",
+  "head_note": "The code+test commit whose sole parent is base. This receipt rides a second commit on the same branch (a file cannot contain the sha of the commit that carries it); that metadata commit is the branch tip.",
+  "written_at": "2026-10-26T00:00:00Z",
+  "files_changed": [
+    "75-drama-song-ad-factory/scripts/core/lyric_writer/lyric_writer.py",
+    "75-drama-song-ad-factory/scripts/core/lyric_writer/__init__.py",
+    "75-drama-song-ad-factory/scripts/core/lyric_writer/test_cast_gate_fail_closed_s75_t13.py"
+  ],
+  "file_digests_sha256": {
+    "75-drama-song-ad-factory/scripts/core/lyric_writer/lyric_writer.py": "dc7cfc0cf14f07b08f1fe78173ee0b25295cd94c1478cd6a584f57b9391d5464",
+    "75-drama-song-ad-factory/scripts/core/lyric_writer/__init__.py": "1bd149ddc9612e165ded6a972f9a38e89749d7e04d7b3130862db89beda958d1",
+    "75-drama-song-ad-factory/scripts/core/lyric_writer/test_cast_gate_fail_closed_s75_t13.py": "d3188920ec88f1441abf5130e8172e945ade6cc64bf694f52f4b2511ea688a49"
+  },
+  "diffstat": "3 files changed, 329 insertions(+), 16 deletions(-)",
+  "gate_location_evidence": "grep -rn _cast_gate over the worktree returns exactly: lyric_writer/lyric_writer.py:358 (definition), lyric_writer/lyric_writer.py:668 (validate_lyrics call site), music_qc/test_wwfix_u1.py:2898 (test). No other _cast_gate exists in scripts/core; the character_library and intake paths do not carry their own copy.",
+  "tests_run": [
+    "lyric_writer/test_cast_gate_fail_closed_s75_t13.py (new): 29 checks, 0 failed, RC=0",
+    "lyric_writer/test_brief_exemption_v2972.py: PASS (21 checks, 0 failures), RC=0",
+    "lyric_writer/test_delivery_grammar_amend.py: ALL PASS, RC=0",
+    "lyric_writer/test_steer_opening.py: RC=0",
+    "character_bible/test_cast_validation_s75_t07.py: 36 passed, 0 failed, 36 total, RC=0",
+    "character_bible/test_identity_s75_t05.py: Ran 26 tests, OK, RC=0",
+    "character_bible/test_character_approval_w06.py: RC=1, pre-existing circular ImportError ('cannot import name pdf_writer'); reproduced RC=1 identically in a pristine origin/main worktree, so not introduced here",
+    "character_bible/test_character_bible_del02.py: RC=1, same pre-existing circular ImportError; reproduced RC=1 on pristine origin/main",
+    "music_qc/test_wwfix_u1.py: PASS with 5 pre-existing UNDETERMINED notes (WW-11 two, WW-20, WW-25, WW-28), RC=0",
+    "script_approval/test_script_wiring.py: ALL PASS, RC=0",
+    "test_story_first_contracts.py: 9 passed, 0 failed, RC=0",
+    "intake_preflight/test_intake_preflight.py: all 13 H8+L4 tests passed, 0 checks failed, RC=0",
+    "intake_preflight/test_factory_next.py: PASS (35 checks, 0 failures), RC=0",
+    "py_compile of the three changed files with python3 -I: COMPILE_OK, RC=0"
+  ],
+  "claims": [
+    "require_cast_manifest never returns None: for {}, None, a non-dict brief and an unrelated brief it returns a FAIL receipt with reason_code CAST_FOUNDATION_MISSING, blocked=true and a reason string that says the absent field is missing input, never an opt-out.",
+    "The Skill 75 foundation envelope cannot be emptied into an opt-out: episode_cast_manifest of {}, null, a string, or {\"cast\": []} each returns FAIL (CAST_FOUNDATION_MISSING or CAST_FOUNDATION_INVALID).",
+    "A contract-valid episode_cast_manifest (two entries carrying every CAST_ENTRY_FIELDS member) returns PASS with characters_n=2; an under-specified manifest returns FAIL CAST_FOUNDATION_INVALID and names the missing field (identity_digest) in the reason.",
+    "The WW-27 declaration keeps its own verdicts through the required gate: the complete ensemble returns PASS / ENSEMBLE_CAST_OK; a declared-but-broken cast returns FAIL (CAST_NOT_ENSEMBLE or CAST_INCOMPLETE).",
+    "validate_authored_lyrics(lines, {}) returns rejected / CAST_FOUNDATION_MISSING with coverage.covered == 0 before any line is judged, and inspect.signature proves it exposes no argument that turns the cast requirement off.",
+    "A brief carrying the episode_cast_manifest envelope is rejected through the legacy validate_lyrics surface, so the gate cannot be skipped by changing the brief's shape.",
+    "_cast_gate(x, required=True) returns a FAIL receipt, never None, for {}, {'cast': None}, {'characters': []}, 'not-a-brief', 0 and [].",
+    "No regression for existing callers: a plain cast-less legacy brief and an H7 names-only characters list still return cast_decision=None and outcome=ok, and a declared cast is still gated on the legacy surface.",
+    "No owned or surrounding test regressed: every suite above returned RC=0 except the two character_bible files proven to fail identically on pristine origin/main."
+  ],
+  "not_claimed": [
+    "S75-T13 / S75-A13 are NOT accepted, verified or closed. The acceptance decision stays with the owner (Trevor); D-9 (no owner recorded) remains open and D-3 (emergency FACTORY-GATE-OWNER handoff) remains unverified.",
+    "No factory.py, registry.json or method_plan.py wiring was added. T13's exact deliverable (connect research->cast/world->plan->script/lyrics->whole-package approval->music and replace placeholder registry commands) requires the exact emergency-owner handoff, so the candidate stops at the gate itself.",
+    "No music-before-elected-full-script-approval enforcement and no continuity-bible/music dependency change: those are other facets of S75-A13 and are out of this candidate's scope.",
+    "The legacy validate_lyrics surface still reads a plain cast-less brief as before by design (WW-27/H7 compatibility). The required gate is entered through validate_authored_lyrics, require_cast_manifest, or any brief carrying episode_cast_manifest; a caller that never uses those entries is not yet forced to the gate.",
+    "Two pre-existing character_bible test failures (circular pdf_writer import) are not fixed here; they are baseline failures on origin/main.",
+    "999 flavor and installed-skill packaging were not exercised; this candidate is ONB-repo only and was measured in the lane worktree without checkout, stash, reset or clean of the shared operator checkout."
+  ],
+  "shape_statement": "For any brief, _cast_gate refuses (verdict FAIL, blocked true, a named CAST_FOUNDATION_MISSING / CAST_FOUNDATION_INVALID / WW-27 cast code) when the cast foundation is absent or invalid, and returns None only on the one documented legacy validation surface with no cast declaration and no foundation envelope; the authoring entry validate_authored_lyrics takes no argument that can disable it."
+}
