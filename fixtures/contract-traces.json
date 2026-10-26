@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "status": "UNVERIFIED_AGAINST_PRODUCT",
+  "cases": [
+    {
+      "fixture_id": "F-03",
+      "durable_state_persisted_before_ack": true,
+      "admission_acked": true,
+      "crash_after_ack": true,
+      "send_result": "UNKNOWN",
+      "expected": "RECONCILE_UNKNOWN_EFFECT_SINGLE_SEND"
+    },
+    {
+      "fixture_id": "F-04A",
+      "action_purpose": "ORIGINAL_GIFT",
+      "changed_binding": true,
+      "global_stop": false,
+      "owner_current": true,
+      "channel_eligible": true,
+      "expected": "QUARANTINED"
+    },
+    {
+      "fixture_id": "F-04B",
+      "action_purpose": "AI_REPLY",
+      "changed_binding": false,
+      "global_stop": true,
+      "owner_current": true,
+      "channel_eligible": true,
+      "expected": "SUPPRESSED"
+    },
+    {
+      "fixture_id": "F-04C",
+      "action_purpose": "PUBLIC_REPLY",
+      "changed_binding": false,
+      "global_stop": false,
+      "owner_current": false,
+      "channel_eligible": true,
+      "expected": "SUPPRESSED"
+    },
+    {
+      "fixture_id": "F-04D",
+      "action_purpose": "ACCESS_PASS",
+      "changed_binding": false,
+      "global_stop": false,
+      "owner_current": true,
+      "channel_eligible": false,
+      "expected": "SUPPRESSED"
+    },
+    {
+      "fixture_id": "F-05A",
+      "sequence_state": "closing_final",
+      "reserved_action_id": "fixture_final",
+      "action_id": "fixture_final",
+      "stop_arrived": false,
+      "expected": "CHECK_COMMON_GATE_NOT_BYPASS"
+    },
+    {
+      "fixture_id": "F-05B",
+      "sequence_state": "closing_final",
+      "reserved_action_id": "fixture_final",
+      "action_id": "fixture_sibling",
+      "stop_arrived": false,
+      "expected": "SUPPRESSED"
+    },
+    {
+      "fixture_id": "F-05C",
+      "sequence_state": "closing_final",
+      "reserved_action_id": "fixture_final",
+      "action_id": "fixture_final",
+      "stop_arrived": true,
+      "expected": "SUPPRESSED"
+    },
+    {
+      "fixture_id": "F-06A",
+      "sms_ask_state": "unknown",
+      "corrected_mobile": true,
+      "expected": "RECONCILE_SAME_ACTION_NO_NEW_ASK"
+    },
+    {
+      "fixture_id": "F-06B",
+      "sms_ask_state": "failed_not_sent",
+      "corrected_mobile": true,
+      "expected": "FRESH_GATE_SAME_ACTION"
+    },
+    {
+      "fixture_id": "F-07A",
+      "original_resource_valid": true,
+      "bonus_capability": "UNVERIFIED",
+      "expected": "ORIGINAL_INDEPENDENT_BONUS_NOT_READY"
+    },
+    {
+      "fixture_id": "F-08A",
+      "channel": "IG_DM",
+      "comment_only": true,
+      "customer_reply": false,
+      "expected": "OPENER_ONLY_NO_DRIP"
+    },
+    {
+      "fixture_id": "F-12",
+      "upgrade_wrote_config_revision": "rev_b",
+      "current_client_config_revision": "rev_b",
+      "rollback_requested": true,
+      "client_fix_after_upgrade": true,
+      "expected": "ROLLBACK_REFUSED_NO_STALE_OVERWRITE"
+    },
+    {
+      "fixture_id": "F-12A",
+      "upgrade_wrote_config_revision": "rev_a",
+      "current_client_config_revision": "rev_b",
+      "expected": "CAS_CONFLICT_FORWARD_REPAIR"
+    }
+  ]
+}
