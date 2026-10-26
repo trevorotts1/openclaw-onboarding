@@ -105,6 +105,15 @@ checks, and the text-capable model and PNG rule (see `71-blackceo-signature-page
 
 The package ends at approved local files. Skill 44, 50 and 06 install steps, live link checks, SOP-DIU-602,
 607 and 610 wiring, the SOP-07 and Skill 06 registry registration of Skill 83, the Command Center launch
-view, and the 999 package parity gap are not built here. SKILL.md's Entry list (no `dispatch` or
-`questions` command) and its "It does not build pages" line predate this command; the turn-on workflow owns
-SKILL.md, so they are to be corrected there once its Skill 83 branch merges.
+view, and the 999 package parity gap are not built here. SKILL.md's Entry now lists `dispatch` and
+`questions` beside the other commands, matching `launcher_core/cli.py`, and its "It does not build pages"
+line remains true: this skill composes the page-results Skills 71, 78, 79, 80, 81 and 82 return, it does
+not author them. A wording drift is left in SKILL.md's Entry — it spells `--landing-pages <file>` where
+`cli.py` takes a comma list (`landing,sales`) — and the turn-on workflow owns SKILL.md, so this file is
+authoritative until that branch merges. The attestation boundary label stops at this lane's edge the same
+way: `launcher_core/entitlement.py` records `evidence_kind`, `proves_purchase` and `attestation_boundary`
+on every gate result, and `package.py` copies that full block into `package-manifest.json`, but
+`receipt.json` (its entitlement block is an explicit subset in `package.py`) and the route/launch record
+(`launcher_core/route.py`) carry only `basis`, `requires_purchase` and `billing`, and `checks.py` does not
+re-check the label at package-check time. Those files are owned outside this lane; until they carry the
+label, `package-manifest.json` is the only artifact that tells a buyer the gate is not proof of purchase.
