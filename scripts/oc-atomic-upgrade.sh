@@ -1247,7 +1247,67 @@ main() {
   done
   case "$MODE" in
     detect)  do_detect;  exit $? ;;
-    upgrade) do_upgrade; exit $? ;;
+    upgrade)
+      # Shared installation lease (one box, one update owner): --detect takes
+      # none, --upgrade takes it BEFORE do_upgrade and releases on any exit.
+      # A LIVE holder means REFUSED — no retry, no second writer.
+      _bul_self_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+      if [ -f "$_bul_self_dir/box-update-lock.sh" ]; then
+        # shellcheck source=/dev/null
+        . "$_bul_self_dir/box-update-lock.sh"
+        box_update_lock_acquire "${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}" "${RUN_ID:-oc-atomic-$$}" "oc-atomic-upgrade" "${OC_ROOT_DIR:-$HOME/.openclaw}"
+        _bulrc=$?
+        if [ "$_bulrc" != 0 ]; then
+          _err "shared installation lease held by a live updater — no retry, no second writer"
+          exit 2
+        fi
+        trap 'command -v box_update_lock_release >/dev/null 2>&1 && box_update_lock_release' EXIT
+      else
+        # No helper beside the script (a box-only copy, or a test sandbox that
+        # copies this file alone): take the SAME contract inline — refuse only
+        # when a LIVE owner holds the lease, never fail just because the helper
+        # is absent. The record shape is identical to box-update-lock.sh, so a
+        # helper-present writer and this copy see each other; liveness is
+        # decided by the record, never by the file's mere existence.
+        _bul_lease="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+        _bul_inline=0
+        _bul_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//'; }
+        _bul_rec() {
+          printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=oc-atomic-upgrade\ninstall_path=%s\nutc=%s\n' \
+            "$$" "$(_bul_start $$)" "${RUN_ID:-oc-atomic-$$}" "${OC_ROOT_DIR:-$HOME/.openclaw}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        _bul_live() {
+          _bp="$(sed -n 's/^pid=\([0-9]*\).*/\1/p' "$_bul_lease" 2>/dev/null | head -1)"
+          _bs="$(sed -n 's/^start=//p' "$_bul_lease" 2>/dev/null | head -1)"
+          [ -n "$_bp" ] || return 1
+          kill -0 "$_bp" 2>/dev/null || return 1
+          if [ -n "$_bs" ]; then [ "$(_bul_start "$_bp")" = "$_bs" ] || return 1; fi
+          return 0
+        }
+        if ! ( set -o noclobber; _bul_rec > "$_bul_lease" ) 2>/dev/null; then
+          if _bul_live; then
+            _err "shared installation lease held by live pid $_bp — no retry, no second writer"
+            exit 2
+          fi
+          rm -f "$_bul_lease" 2>/dev/null
+          if ( set -o noclobber; _bul_rec > "$_bul_lease" ) 2>/dev/null; then
+            _bul_inline=1
+          else
+            _err "cannot take shared installation lease $_bul_lease"
+            exit 2
+          fi
+        else
+          _bul_inline=1
+        fi
+        box_update_lock_release() {
+          [ "${_bul_inline:-0}" = 1 ] || return 0
+          _bul_opid="$(sed -n 's/^pid=\([0-9]*\).*/\1/p' "$_bul_lease" 2>/dev/null | head -1)"
+          [ "$_bul_opid" = "$$" ] && rm -f "$_bul_lease" 2>/dev/null
+          return 0
+        }
+        trap 'box_update_lock_release' EXIT
+      fi
+      do_upgrade; exit $? ;;
     *) _err "one of --detect or --upgrade is required"; exit 2 ;;
   esac
 }

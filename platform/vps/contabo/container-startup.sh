@@ -70,6 +70,33 @@ fi
 # status cannot be the success test.)
 _merged() { ( cd "$1" && find . -mindepth 1 ! -type d -print ) | while IFS= read -r _f; do
   [ -e "$2/$_f" ] || [ -L "$2/$_f" ] || exit 1; done; }
+# Content-aware merge (never destroy a differing newer file):
+#   - a file present ONLY in the live folder is copied across (cp -np, no overwrite);
+#   - a file present in BOTH is compared byte-for-byte; any difference is a CONFLICT:
+#     the relink stops, both copies stay, the paths are printed, and no symlink is made.
+#     Existence-only checks are not preservation proof (cp -an silently skips the
+#     differing destination file, which a later rm -rf then destroys).
+_relink_conflicts() { # $1=live folder, $2=persistent folder; prints conflicting paths
+  ( cd "$1" && find . -mindepth 1 ! -type d -print ) | while IFS= read -r _f; do
+    if [ -e "$2/$_f" ] || [ -L "$2/$_f" ]; then
+      cmp -s "$1/$_f" "$2/$_f" 2>/dev/null || printf '%s\n' "$_f"
+    fi
+  done; }
+_safe_merge() { # $1=live folder, $2=persistent folder; returns 0 only when safe to remove live
+  local _c
+  ( cd "$1" && find . -mindepth 1 ! -type d -print ) | while IFS= read -r _f; do
+    if [ ! -e "$2/$_f" ] && [ ! -L "$2/$_f" ]; then
+      mkdir -p "$(dirname "$2/$_f")" 2>/dev/null
+      cp -np "$1/$_f" "$2/$_f" 2>/dev/null || exit 1
+    fi
+  done || return 1
+  _c="$(_relink_conflicts "$1" "$2")"
+  if [ -n "$_c" ]; then
+    printf '[persist-home] CONFLICT: differing file(s) between live and persistent copy; relink refused, both kept:\n%s\n' "$_c" >&2
+    return 1
+  fi
+  _merged "$1" "$2"
+}
 PERSIST_HOME="$OC/persist-home"
 mkdir -p "$PERSIST_HOME" 2>/dev/null || true
 for _n in 999-setup .claude .local; do
@@ -77,7 +104,7 @@ for _n in 999-setup .claude .local; do
   [ -L "$_p" ] && continue
   mkdir -p "$_d" 2>/dev/null || continue
   if [ -d "$_p" ]; then
-    cp -an "$_p"/. "$_d"/ 2>/dev/null; _merged "$_p" "$_d" && rm -rf "$_p"
+    _safe_merge "$_p" "$_d" && rm -rf "$_p"
   fi
   [ -e "$_p" ] || ln -s "$_d" "$_p" 2>/dev/null || true
 done

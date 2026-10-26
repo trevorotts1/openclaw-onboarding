@@ -395,6 +395,7 @@ lock_take() {
 cleanup() {
   [ -n "${WORK:-}" ] && rm -rf "$WORK" 2>/dev/null
   [ "${LOCK_OWNED:-0}" = 1 ] && rm -rf "$LOCK_DIR" 2>/dev/null
+  command -v box_update_lock_release >/dev/null 2>&1 && box_update_lock_release
   :
 }
 trap cleanup EXIT HUP INT TERM
@@ -413,6 +414,62 @@ if [ "$MODE_DETACHED" = 0 ]; then
 else
   # The launcher owns the lock for this child; release it here when the job ends.
   LOCK_OWNED=1
+fi
+
+# ── shared installation lease (one box, one update owner) ────────────────────
+# Every writer that can stop, rewrite or migrate this installation must hold the
+# shared lease (scripts/box-update-lock.sh: pid + start identity + run id). A
+# LIVE holder means this run REFUSES immediately — no retry loop, no second
+# writer. The helper is preferred; a box-only copy without it gets the same
+# contract inline (O_EXCL create + pid liveness) so updates never run leaseless.
+_bul_self_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+BUL_LEASE="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+if [ -f "$_bul_self_dir/box-update-lock.sh" ]; then
+  # shellcheck source=/dev/null
+  . "$_bul_self_dir/box-update-lock.sh"
+  box_update_lock_acquire "$BUL_LEASE" "$RUN_ID" "self-update" "${OPENCLAW_ROOT:-$HOME/.openclaw}"
+  _bulrc=$?
+  if [ "$_bulrc" != 0 ]; then
+    echo "self-update.sh: REFUSED — shared installation lease is held by a live updater — no retry, no second writer" >&2
+    exit "$EX_REFUSE"
+  fi
+else
+  # Same record shape as box-update-lock.sh, so a helper-present writer and this
+  # box-only copy see each other: liveness is decided by the RECORD (pid + start
+  # identity), never by the file's mere existence. A LIVE owner means REFUSE.
+  _bul_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//'; }
+  _bul_rec() {
+    printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=self-update\ninstall_path=%s\nutc=%s\n' \
+      "$$" "$(_bul_start $$)" "$RUN_ID" "${OPENCLAW_ROOT:-$HOME/.openclaw}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  }
+  _bul_live() {
+    _bp="$(sed -n 's/^pid=\([0-9]*\).*/\1/p' "$BUL_LEASE" 2>/dev/null | head -1)"
+    _bs="$(sed -n 's/^start=//p' "$BUL_LEASE" 2>/dev/null | head -1)"
+    [ -n "$_bp" ] || return 1
+    kill -0 "$_bp" 2>/dev/null || return 1
+    if [ -n "$_bs" ]; then [ "$(_bul_start "$_bp")" = "$_bs" ] || return 1; fi
+    return 0
+  }
+  if ( set -o noclobber; _bul_rec > "$BUL_LEASE" ) 2>/dev/null; then
+    _bul_inline=1
+  elif _bul_live; then
+    echo "self-update.sh: REFUSED — shared installation lease held by live pid $_bp — no retry, no second writer" >&2
+    exit "$EX_REFUSE"
+  else
+    rm -f "$BUL_LEASE" 2>/dev/null
+    if ( set -o noclobber; _bul_rec > "$BUL_LEASE" ) 2>/dev/null; then
+      _bul_inline=1
+    else
+      echo "self-update.sh: REFUSED — cannot take shared installation lease $BUL_LEASE" >&2
+      exit "$EX_REFUSE"
+    fi
+  fi
+  box_update_lock_release() {
+    [ "${_bul_inline:-0}" = 1 ] || return 0
+    _bul_opid="$(sed -n 's/^pid=\([0-9]*\).*/\1/p' "$BUL_LEASE" 2>/dev/null | head -1)"
+    [ "$_bul_opid" = "$$" ] && rm -f "$BUL_LEASE" 2>/dev/null
+    return 0
+  }
 fi
 
 # ── preflight ────────────────────────────────────────────────────────────────
