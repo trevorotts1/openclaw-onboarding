@@ -67,7 +67,7 @@ costs.
   real baseline is **`75a5a26a6bf7298eb4e3e1adcd7465ea4c6ec7c2`**, confirmed by
   three agreeing reads (`git rev-parse origin/main`,
   `git ls-remote --heads origin main`,
-  `gh api repos/trevorotts1/openclaw-onboarding/branches/main --jq .commit.sha`),
+  `gh api repos/<OWNER>/<REPO>/branches/main --jq .commit.sha`),
   each returning that sha, and
   `git merge-base --is-ancestor 75a5a26a6bf7 origin/main` **rc 0**. The suite table
   below is re-measured against a detached `origin/main` worktree at that commit;
