@@ -84,6 +84,9 @@ export class SweepTimeoutError extends SupervisorError {}
 
 export const SWEEP_KIND = Object.freeze({ SCHEDULED: 'SCHEDULED', EXTRA: 'EXTRA' });
 
+/** The only outcomes a recorded sweep run may carry. */
+const SWEEP_OUTCOME = Object.freeze({ SUCCESS: 'SUCCESS', FAILED: 'FAILED', TIMEOUT: 'TIMEOUT' });
+
 /** next_due_at = prior due + cadence. Never completion+interval. */
 export function nextDueAt(previousDueAtMs, cadenceMs = FULL_SWEEP_INTERVAL_MS) {
   if (!Number.isFinite(previousDueAtMs) || !Number.isFinite(cadenceMs) || cadenceMs <= 0) {
@@ -131,6 +134,11 @@ export function dueSweep(schedule, nowMs) {
 export function applySweepResult(schedule, result) {
   const { kind, startedAtMs, finishedAtMs, outcome } = result;
   if (!Object.values(SWEEP_KIND).includes(kind)) throw new TypeError(`applySweepResult: bad kind ${kind}`);
+  if (!Object.values(SWEEP_OUTCOME).includes(outcome)) {
+    throw new TypeError(
+      `applySweepResult: bad outcome ${outcome}; expected one of ${Object.values(SWEEP_OUTCOME).join('/')}`,
+    );
+  }
   if (!Number.isFinite(startedAtMs) || !Number.isFinite(finishedAtMs)) {
     throw new TypeError('applySweepResult: startedAtMs/finishedAtMs required');
   }
@@ -140,7 +148,7 @@ export function applySweepResult(schedule, result) {
     finishedAtMs,
     runtimeMs: finishedAtMs - startedAtMs,
     outcome,
-    successful: outcome === 'SUCCESS',
+    successful: outcome === SWEEP_OUTCOME.SUCCESS,
   };
   if (kind === SWEEP_KIND.EXTRA) {
     return {
@@ -192,10 +200,16 @@ export function createLeaseStore() {
 // return path and on exceptions.
 // ---------------------------------------------------------------------------
 
+/** Settles the sweep race when the runtime budget is breached. */
+const SWEEP_TIMEOUT = Symbol('sweep-timeout');
+
 /**
- * work({ kind, deadlineMs, shouldAbort }) may be async. Cleanup (lease release)
- * runs in a finally block on success, failure, timeout and exception alike, and
- * only ever releases the runner's own lease.
+ * work({ kind, deadlineMs, shouldAbort }) may be async. The work is raced
+ * against the runtime budget: when sweep_max_runtime elapses the sweep RETURNS
+ * TIMEOUT even if work never settles, and any result arriving after the breach
+ * is discarded, never recorded. Cleanup (lease release) runs in a finally block
+ * on success, failure, timeout and exception alike, and only ever releases the
+ * runner's own lease.
  *
  * `scheduler` is injectable ({setTimeout, clearTimeout}); default globalThis.
  * `nowMsFn` is injectable fake time; default Date.now.
@@ -217,34 +231,69 @@ export async function runSweep({
   let timedOut = false;
   let timerId = null;
   const shouldAbort = () => timedOut;
+  const budgetBreached = (finishedAtMs) => timedOut || finishedAtMs - startedAtMs > sweepMaxRuntimeMs;
+  const timeoutError = (cause) =>
+    new SweepTimeoutError(
+      `sweep exceeded sweep_max_runtime ${sweepMaxRuntimeMs}ms`,
+      cause === undefined ? undefined : { cause },
+    );
   try {
+    // The timer both flips shouldAbort (cooperative work) and settles the race
+    // below, so work that never settles cannot hold the sweep or its lease.
+    let timeoutSignal = null;
     if (scheduler && typeof scheduler.setTimeout === 'function') {
-      timerId = scheduler.setTimeout(() => {
-        timedOut = true;
-      }, sweepMaxRuntimeMs);
+      timeoutSignal = new Promise((resolve) => {
+        timerId = scheduler.setTimeout(() => {
+          timedOut = true;
+          resolve(SWEEP_TIMEOUT);
+        }, sweepMaxRuntimeMs);
+      });
     }
-    const workResult = await work({ kind, deadlineMs: startedAtMs + sweepMaxRuntimeMs, shouldAbort });
+    const workPromise = work({ kind, deadlineMs: startedAtMs + sweepMaxRuntimeMs, shouldAbort });
+    const workResult = timeoutSignal ? await Promise.race([workPromise, timeoutSignal]) : await workPromise;
     const finishedAtMs = nowMsFn();
     const runtimeMs = finishedAtMs - startedAtMs;
-    if (timedOut || runtimeMs > sweepMaxRuntimeMs) {
+    if (workResult === SWEEP_TIMEOUT || budgetBreached(finishedAtMs)) {
       return {
         ok: false,
-        outcome: 'TIMEOUT',
+        outcome: SWEEP_OUTCOME.TIMEOUT,
         kind,
         startedAtMs,
         finishedAtMs,
         runtimeMs,
-        error: new SweepTimeoutError(`sweep exceeded sweep_max_runtime ${sweepMaxRuntimeMs}ms`),
+        error: timeoutError(),
       };
     }
-    return { ok: true, outcome: 'SUCCESS', kind, startedAtMs, finishedAtMs, runtimeMs, workResult };
-  } catch (error) {
     return {
-      ok: false,
-      outcome: 'FAILED',
+      ok: true,
+      outcome: SWEEP_OUTCOME.SUCCESS,
       kind,
       startedAtMs,
-      finishedAtMs: nowMsFn(),
+      finishedAtMs,
+      runtimeMs,
+      workResult,
+    };
+  } catch (error) {
+    const finishedAtMs = nowMsFn();
+    // A breached runtime budget outranks whatever work threw: the sweep was
+    // already terminated at its deadline, so the record is TIMEOUT, not FAILED.
+    if (budgetBreached(finishedAtMs)) {
+      return {
+        ok: false,
+        outcome: SWEEP_OUTCOME.TIMEOUT,
+        kind,
+        startedAtMs,
+        finishedAtMs,
+        runtimeMs: finishedAtMs - startedAtMs,
+        error: timeoutError(error),
+      };
+    }
+    return {
+      ok: false,
+      outcome: SWEEP_OUTCOME.FAILED,
+      kind,
+      startedAtMs,
+      finishedAtMs,
       error,
     };
   } finally {
