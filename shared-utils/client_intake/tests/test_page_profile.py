@@ -46,6 +46,20 @@ class TestBank(unittest.TestCase):
         self.assertFalse(set(ids) - set(self.by_id), "profile names unknown questions")
         self.assertFalse(FUNNEL_ONLY & set(ids), "page profile still asks funnel work")
         self.assertFalse(PAGE_NEEDS - set(ids), "page profile is missing a page question")
+        self.assertNotIn("never the funnel-shape", profile["description"], "the profile may not disown a question it lists")
+
+    def test_every_unconditional_profile_question_is_offered_in_page_mode(self):
+        offered = {q["id"] for q in e.applicable(e.new_doc("page"))}
+        for qid in self.bank["profiles"]["page"]["questions"]:
+            if self.by_id[qid]["condition"] == "always":
+                self.assertIn(qid, offered, f"profile question {qid} is not offered in page mode")
+
+    def test_a_page_run_is_never_offered_the_funnel_or_seasonal_work(self):
+        offered = {q["id"] for q in e.applicable(e.new_doc("page"))}
+        gated = {"funnel_length", "bump", "upsell_1", "downsell_1", "upsell_2", "downsell_2",
+                 "page_set", "location", "community_truth", "entitlement",
+                 "bf_promotion", "bf_limitations", "bf_buyers", "bf_followup"}
+        self.assertFalse(gated & offered, f"page mode still offers funnel work: {sorted(gated & offered)}")
 
     def test_confirmed_answers_are_reused_never_asked_twice(self):
         profile = self.bank["profiles"]["page"]
@@ -54,12 +68,13 @@ class TestBank(unittest.TestCase):
         e.record(doc, "business_name", "Bright Path Studio")
         e.record(doc, "audience", "New coaches")
         asked = []
-        for _ in range(3):
+        for _ in range(30):
             q = e.next_question(doc)
-            if q is None:
+            if q is None or q["id"] in asked:
                 break
             asked.append(q["id"])
-            break
+            e.record(doc, q["id"], "x")
+        self.assertGreater(len(asked), 5, f"the walk stalled at {asked}")
         self.assertNotIn("business_name", asked)
         self.assertNotIn("audience", asked)
 
@@ -72,18 +87,30 @@ class TestBank(unittest.TestCase):
         q = self.by_id["founder_story"]
         self.assertEqual(q["required"], "optional")
         self.assertNotIn("low moment", q["text"].lower())
-        self.assertIn("skip", q["text"].lower())
+        self.assertIn("blank", q["text"].lower(), "the opt-out the text promises must be the one the engine honours")
+        doc = e.new_doc("page")
+        r = e.record(doc, "founder_story", "")
+        self.assertTrue(r["ok"], r)
+        self.assertIsNone(e.val(doc, "founder_story"), "a blank answer stays blank, never the word 'skip' in the letter")
+        self.assertEqual(e.get(doc, "founder_story")["note"], "left blank on purpose")
+        self.assertNotIn("founder_story", [b["id"] for b in e.check(doc)["blocking"]])
 
     def test_the_payment_plan_flag_is_derived_not_reasked(self):
         self.assertEqual(self.by_id["payment_plans"]["condition"], "payment_plans answered")
-        asked = [q["id"] for q in e.applicable(e.new_doc("launch"))]
-        self.assertNotIn("payment_plans", asked)
         self.assertIn("payment_plans", self.bank["system_fields"])
+        self.assertIn("billing", self.bank["system_fields"]["payment_plans"])
+        doc = e.new_doc("launch")
+        self.assertNotIn("payment_plans", [q["id"] for q in e.applicable(doc)])
+        e.record(doc, "billing", "Monthly")
+        self.assertNotIn("payment_plans", [q["id"] for q in e.applicable(doc)],
+                         "billing answered must derive the flag, never reopen the question")
 
     def test_the_access_link_follows_the_delivery_choice(self):
         q = self.by_id["access_url"]
         self.assertEqual(q["condition"], "access_delivery == yes")
         doc = e.new_doc("launch")
+        self.assertNotIn("access_url", [x["id"] for x in e.applicable(doc)],
+                         "no access link question before the delivery answer exists")
         e.record(doc, "access_delivery", "No, nothing to deliver")
         self.assertNotIn("access_url", [x["id"] for x in e.applicable(doc)])
         e.record(doc, "access_delivery", "Yes, send access after purchase")
@@ -123,6 +150,10 @@ class TestDocuments(unittest.TestCase):
         self.assertIn("--mode page", self.skill)
         self.assertIn("profiles.page", self.skill)
         self.assertIn("Long-Form only", self.skill)
+        self.assertIn("ask list", self.skill, "the profile must be named as the ask list")
+        self.assertNotIn("never asks the funnel-shape", self.skill,
+                         "the profile lists funnel_shape; the skill may not say the opposite")
+        self.assertNotIn("proof source", self.skill, "proof is not a never_default question")
 
 
 if __name__ == "__main__":

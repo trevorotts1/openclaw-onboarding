@@ -1,7 +1,7 @@
 {
   "schema": "client-intake-question-bank/v1",
   "version": "1.2.0",
-  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented. Mode page is Skill 71's page-only profile (profiles.page): one page, not a funnel, and it opens the client's existing answers file so every confirmed launch answer is reused instead of asked again. A signature page always needs its canonical renders, so the image questions no longer offer a no-pictures option. The payment-plan flag is derived from billing and is never asked; see system_fields.payment_plans.",
+  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented. Mode page is Skill 71's page-only profile (profiles.page): one page, not a funnel, and it opens the client's existing answers file so every confirmed launch answer is reused instead of asked again. The profile's question list is the ask list for a page run. A signature page always needs its canonical renders, so the image questions no longer offer a no-pictures option. The payment-plan flag is derived from billing and is never asked; see system_fields.payment_plans.",
   "help_label": "I'm not sure, help me",
   "introduction": "Let's build a launch that fits your business. I'll help you clarify what you're selling, who it helps, and how to present it. Then we'll turn your approved plan into the supported launch pages and follow-up materials. We'll take one question at a time. You can ask for an example, ask me to recommend an answer, or ask me to use what you've already shared. You'll review the plan before we build.",
   "question_estimate_template": "about {n} short questions, depending on what we already know",
@@ -38,8 +38,8 @@
   "profiles": {
     "page": {
       "skills": [71],
-      "description": "The page-only interview for one BlackCEO Signature page. It asks the offer, audience, proof, story, brand, image and length questions a page needs, and never the funnel-shape, checkout, upsell, launch-automation or approval work that belongs to Skill 49.",
-      "reuse": "Confirmed answers are never re-asked: a page run opens the client's existing answers file with --mode page, so every launch answer already confirmed is reused and only the open page questions are asked. A never_default answer stays open; it is never inferred from the earlier run.",
+      "description": "The page-only interview for one BlackCEO Signature page, and the page run's exact ask list: ask these questions and nothing else. It asks the offer, audience, proof, story, brand, image and length questions a page needs (including the one offer-shape question that decides price versus packages), and never the funnel length, page set, bump, upsell or downsell extras, account setup, launch-automation or plan-approval work that belongs to Skill 49.",
+      "reuse": "Confirmed answers are never re-asked: a page run opens the client's existing answers file with --mode page, every launch answer already confirmed is reused, and only the open questions of this profile are asked - the shared bank's full queue is never walked on a page run. A never_default answer stays open; it is never inferred from the earlier run.",
       "questions": [
         "interview_mode",
         "business_name",
@@ -453,14 +453,14 @@
     {
       "id": "founder_story",
       "group": "offer",
-      "text": "Share any founder context you want the page to use: how you got here, who you built this for, and what you want them to know about you. Skip anything private, or say 'skip'.",
+      "text": "Share any founder context you want the page to use: how you got here, who you built this for, and what you want them to know about you. Skip anything private. This one is optional: leaving it blank is a complete answer.",
       "why": "The personal letter on the page can carry your real context, and only the parts you choose to share.",
       "answer_type": "free_text",
       "choices": [],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Professional background, credentials, or the reason you started all count. Nothing sensitive is required, and 'skip' leaves the letter written from what you already told me.",
+        "explain": "Professional background, credentials, or the reason you started all count. Nothing sensitive is required. A blank answer leaves the letter written from what you already told me.",
         "examples": []
       },
       "default": null,
