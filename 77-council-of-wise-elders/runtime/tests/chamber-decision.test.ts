@@ -149,7 +149,7 @@ test('badgesModel: Sample decision only when sample and not demo; Verdict when s
 
 test('subText: each council size names its own advisors and rounds; older modes add nothing', () => {
   const api = loadApi();
-  assert.equal(api.subText('light'), 'Light council: three advisors, two rounds, one verdict.');
+  assert.equal(api.subText('light'), 'Light council: nine advisors, two rounds, three at a time, one verdict.');
   assert.equal(api.subText('medium'), 'Medium council: nine advisors, up to four rounds, one verdict.');
   assert.equal(api.subText('heavy'), 'Heavy council: nine advisors, up to ten rounds, one verdict.');
   for (const mode of ['full', 'quick', 'selected', 'consult', null, undefined, 3, 'Light']) {
@@ -273,7 +273,7 @@ function boot() {
 }
 
 const EMPTY_SUB =
-  'Light, medium or heavy: three advisors and two rounds, up to nine advisors and ten rounds. One verdict.';
+  'Light, medium or heavy: nine advisors, two to ten rounds. One verdict.';
 
 test('DOM: empty state shows the invitation and wires both buttons', () => {
   const { host, events, live } = boot();
@@ -292,7 +292,7 @@ test('DOM: empty state shows the invitation and wires both buttons', () => {
 test('DOM: a council-size session shows its own format caption; older modes stay captionless', () => {
   const { host, push } = boot();
   push({ mode: 'live', session: session([opt('o1', 'A', 'Launch now', null)], { mode: 'light' }) });
-  assert.equal(host.find('ch-dec-sub')[0].textContent, 'Light council: three advisors, two rounds, one verdict.');
+  assert.equal(host.find('ch-dec-sub')[0].textContent, 'Light council: nine advisors, two rounds, three at a time, one verdict.');
   assert.equal(host.find('ch-dec-sub')[0].hidden, false);
   push({ mode: 'live', session: session([opt('o1', 'A', 'Launch now', null)], { mode: 'heavy' }) });
   assert.equal(host.find('ch-dec-sub')[0].textContent, 'Heavy council: nine advisors, up to ten rounds, one verdict.');
