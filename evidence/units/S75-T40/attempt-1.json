@@ -34,11 +34,31 @@
     "runtime": "python3 3.14.7 (system), standard library only: hashlib, json, subprocess, argparse, copy, importlib.util, os, unittest",
     "third_party": "none; no requirements.txt/pyproject/package.json entry added",
     "inputs_read_only": [
-      {"name": "loop-control ledger (input census)", "path": "/Users/blackceomacmini/loop-control/s75/ledger.json", "mode": "READ_ONLY, opened for read only; never written, never renamed, never touched"},
-      {"name": "authority task-ledger (denominator source)", "path": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/task-ledger.json", "mode": "READ_ONLY"},
-      {"name": "required target 1", "path": "/Users/blackceomacmini/openclaw-onboarding", "mode": "READ_ONLY git rev-parse/ls-remote"},
-      {"name": "required target 2", "path": "/Users/blackceomacmini/blackceo-command-center", "mode": "READ_ONLY git rev-parse/ls-remote"},
-      {"name": "observed other target (not one of the 2)", "path": "/Users/blackceomacmini/999-setup", "mode": "READ_ONLY git rev-parse/ls-remote"}
+      {
+        "name": "loop-control ledger (input census)",
+        "path": "<PATH>/loop-control/s75/ledger.json",
+        "mode": "READ_ONLY, opened for read only; never written, never renamed, never touched"
+      },
+      {
+        "name": "authority task-ledger (denominator source)",
+        "path": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/task-ledger.json",
+        "mode": "READ_ONLY"
+      },
+      {
+        "name": "required target 1",
+        "path": "<PATH>/openclaw-onboarding",
+        "mode": "READ_ONLY git rev-parse/ls-remote"
+      },
+      {
+        "name": "required target 2",
+        "path": "<PATH>/blackceo-command-center",
+        "mode": "READ_ONLY git rev-parse/ls-remote"
+      },
+      {
+        "name": "observed other target (not one of the 2)",
+        "path": "<PATH>/999-setup",
+        "mode": "READ_ONLY git rev-parse/ls-remote"
+      }
     ]
   },
   "census_measured": {
@@ -57,38 +77,80 @@
     "authority_units": 41,
     "authority_unit_set_equal_to_ledger": true,
     "authority_fixed_current_weight": 41,
-    "declared_denominators": {"built": 41, "build_accepted": 41, "merged_required_targets": 2},
-    "denominator_after_reconciliation": {"built": 41, "build_accepted": 41, "merged_required_targets": 2},
-    "denominator_shrunk": false
+    "declared_denominators": {
+      "built": 41,
+      "build_accepted": 41,
+      "merged_required_targets": 2
+    },
+    "denominator_after_reconciliation": {
+      "built": 41,
+      "build_accepted": 41,
+      "merged_required_targets": 2
+    },
+    "denominator_shrunk": false,
+    "ledger_sha256_at_repair_run": "76ac1acdc033f0ca7807b7ba99453964906b87a2f046ca3722ee019c29c522bc",
+    "ledger_rows_at_repair_run": 43,
+    "ledger_obligation_rows_at_repair_run": 41,
+    "ledger_disposal_rows_at_repair_run": [
+      "S75-D2",
+      "S75-D20"
+    ],
+    "repair_note": "post-artifact live ledger appended two disposal rows (S75-D2, S75-D20: MERGED, null weight, null acceptance_row). reconcile.py census now scopes to S75-T obligation rows + census.obligation_scope_clean guard proves excluded rows are disposal-shaped. Obligation census 41/41, weight sum 41, 14/14 checks PASS, 12/12 tests OK.",
+    "reconciliation_artifact_sha256_repair": "7e0fee1b1f0b19f48b5261f26ecb67eb3552d00ebdacc614451761bb56e994e6"
   },
   "required_targets_measured": [
-    {"rank": 1, "path": "/Users/blackceomacmini/openclaw-onboarding", "ref": "origin/main", "sha": "13f86c3153703703072462dcc0d807f856ae553b", "local_head": "dd2240c547e3c2c6b53e0963a64d90fc022e2d1b", "remote_agrees": true, "revision_is_40hex": true},
-    {"rank": 2, "path": "/Users/blackceomacmini/blackceo-command-center", "ref": "origin/main", "sha": "c716c0164d487713370d8d5bcb4dd092de700d35", "local_head": "6fb636071f1cbc480721c8d658ce36ad627f57dd", "remote_agrees": true, "revision_is_40hex": true}
+    {
+      "rank": 1,
+      "path": "<PATH>/openclaw-onboarding",
+      "ref": "origin/main",
+      "sha": "13f86c3153703703072462dcc0d807f856ae553b",
+      "local_head": "dd2240c547e3c2c6b53e0963a64d90fc022e2d1b",
+      "remote_agrees": true,
+      "revision_is_40hex": true
+    },
+    {
+      "rank": 2,
+      "path": "<PATH>/blackceo-command-center",
+      "ref": "origin/main",
+      "sha": "c716c0164d487713370d8d5bcb4dd092de700d35",
+      "local_head": "6fb636071f1cbc480721c8d658ce36ad627f57dd",
+      "remote_agrees": true,
+      "revision_is_40hex": true
+    }
   ],
   "observed_other_targets_not_counted": [
-    {"path": "/Users/blackceomacmini/999-setup", "ref": "origin/main", "sha": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009", "local_head": "d056770b4a3e62e6fa52e5c300a999bf6dd0e69f", "remote_agrees": true}
+    {
+      "path": "<PATH>/999-setup",
+      "ref": "origin/main",
+      "sha": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009",
+      "local_head": "d056770b4a3e62e6fa52e5c300a999bf6dd0e69f",
+      "remote_agrees": true
+    }
   ],
   "required_target_reading_conflict": {
     "unit_note_reading": "the 2 required targets are openclaw-onboarding main and blackceo-command-center main (the pair measured above)",
     "authority_counter_text": "counters.merged_required_targets.unit reads 'required whole-scope ONB/N999 target handoffs' and its denominator is 2",
     "authority_canonical_targets": "ONB and N999 are the two named repositories; CC's repository is literally 'UNVERIFIED_T01_CONDITIONAL'",
-    "ledger_project_repos": ["/Users/blackceomacmini/openclaw-onboarding", "/Users/blackceomacmini/999-setup"],
+    "ledger_project_repos": [
+      "<PATH>/openclaw-onboarding",
+      "<PATH>/999-setup"
+    ],
     "what_this_receipt_does": "measures all three revisions and claims only the ACCOUNTING reconciliation of a 2-target denominator. It does not claim which pair is authoritative, does not change the denominator, and does not shrink it. The conflict is recorded, not resolved -- resolving it is an owner decision (D-16 territory)."
   },
   "tests_run": [
     {
       "command": "cd evidence/units/S75-T40 && python3 -I test_reconcile_s75_t40.py",
-      "result": "Ran 10 tests ... OK",
-      "covers": "live 41/41 census reconciles; declared denominators intact (41/41/2); NEGATIVE CONTROLS: 40-unit census refused, duplicated acceptance row refused, dropped weight refused, missing authority unit refused, shrunk declared denominator refused; target checks refuse 1 target and an unresolved revision"
+      "result": "Ran 12 tests ... OK",
+      "covers": "live 41/41 census reconciles; declared denominators intact (41/41/2); NEGATIVE CONTROLS: 40-unit census refused, duplicated acceptance row refused, dropped weight refused, missing authority unit refused, shrunk declared denominator refused; target checks refuse 1 target and an unresolved revision; NEW CONTROLS: disposal rows do not move denominator (live 43-row ledger reconciles at 41/41); non-disposal exclusion refused"
     },
     {
       "command": "cd evidence/units/S75-T40 && python3 -I reconcile.py --target <ONB> --target <CC> --observed <N999> --json-out reconciliation.json",
-      "result": "13 PASS, 0 FAIL, exit 0 -- run twice, at ledger sha256 c3732592... and again at ea35f9d2...; both green",
-      "covers": "census.unit_count, census.unit_ids, census.unit_ids_unique, census.denominator_weight, census.unit_weight_is_one, census.acceptance_rows, census.acceptance_rows_unique, authority.unit_set_equal, authority.weight, authority.fixed_current_weight, denominator.not_shrunk, targets.count, targets.exact_revision"
+      "result": "14 PASS, 0 FAIL, exit 0 -- repair run at live ledger 43 rows (41 obligations + 2 disposal)",
+      "covers": "census.unit_count, census.unit_ids, census.unit_ids_unique, census.denominator_weight, census.unit_weight_is_one, census.acceptance_rows, census.acceptance_rows_unique, authority.unit_set_equal, authority.weight, authority.fixed_current_weight, denominator.not_shrunk, targets.count, targets.exact_revision, census.obligation_scope_clean"
     },
     {
       "command": "cd evidence/units/S75-T40 && python3 -I -c \"json.load(open('reconciliation.json'))\"",
-      "result": "json ok, 41 units, 13 checks, ok=True, artifact sha256 8ae8a8a3b3a7564f17a8d84ecd4cf616a5c26a4373d96b1e1ddbb6e7c8451c1d"
+      "result": "json ok, 43 unit rows (41 obligations + 2 disposal), 14 checks, ok=True, artifact sha256 7e0fee1b..."
     },
     {
       "command": "python3 -I scripts/ci/test_fast_guards_mapping.py",

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 
 EXPECTED_UNITS = 41
@@ -30,7 +31,17 @@ def load_json(path):
 
 def census(ledger_doc, authority_doc):
     """Return the measurable facts both censuses agree or disagree on."""
-    units = ledger_doc.get("units") or []
+    all_units = ledger_doc.get("units") or []
+    # Obligation scope: fixed S75-T rows only. Disposal rows (S75-D*,
+    # MERGED, null weight/acceptance_row) are appended by sync lanes after
+    # the artifact run and must not move the fixed 41 denominator.
+    units = [u for u in all_units if (u.get("id") or "").startswith("S75-T")]
+    excluded = [u for u in all_units
+                if not (u.get("id") or "").startswith("S75-T")]
+    excluded_non_disposal = sorted(
+        u.get("id") for u in excluded
+        if u.get("weight") is not None or u.get("acceptance_row") is not None
+    )
     tasks = authority_doc.get("tasks") or []
     counters = authority_doc.get("counters") or {}
     led_ids = [u.get("id") for u in units]
@@ -48,6 +59,10 @@ def census(ledger_doc, authority_doc):
         "acceptance_rows_expected": ["S75-A%02d" % i for i in range(1, EXPECTED_UNITS + 1)],
         "ids_expected": ["S75-T%02d" % i for i in range(1, EXPECTED_UNITS + 1)],
         "ledger_ids": led_ids,
+        "ledger_excluded_non_obligation": sorted(
+            u.get("id") for u in excluded),
+        "ledger_excluded_non_disposal": excluded_non_disposal,
+        "ledger_total_rows": len(all_units),
         "authority_units": len(tasks),
         "authority_ids": auth_ids,
         "authority_weight_sum": sum(t.get("fixed_weight") or 0 for t in tasks),
@@ -77,6 +92,9 @@ def checks(c):
             (i for i, (a, b) in enumerate(zip(c["ledger_ids"], c["ids_expected"])) if a != b), "length"))
     add("census.unit_ids_unique", c["ledger_ids_unique"] == EXPECTED_UNITS,
         "unique ids=%d" % c["ledger_ids_unique"])
+    add("census.obligation_scope_clean", not c["ledger_excluded_non_disposal"],
+        "excluded non-obligation rows all disposal-shaped (null weight+row): %s"
+        % (c["ledger_excluded_non_disposal"] or "yes"))
     add("census.denominator_weight", c["ledger_weight_sum"] == EXPECTED_WEIGHT,
         "sum(weight)=%d expected=%d" % (c["ledger_weight_sum"], EXPECTED_WEIGHT))
     add("census.unit_weight_is_one", not c["ledger_non_unit_weight"],
@@ -188,7 +206,7 @@ def build_report(ledger_path, authority_path, targets, observed=None):
 def main():
     import argparse
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ledger", default="/Users/blackceomacmini/loop-control/s75/ledger.json")
+    ap.add_argument("--ledger", default=os.path.expanduser("~/loop-control/s75/ledger.json"))
     ap.add_argument("--authority", default=(
         "/Volumes/mac mini m4/Downloads/git trees and automations/"
         "S75_Story_First_Full_Cast_Build_20261024/task-ledger.json"),

@@ -14,7 +14,7 @@ import os
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LEDGER = os.environ.get("S75_LEDGER", "/Users/blackceomacmini/loop-control/s75/ledger.json")
+LEDGER = os.environ.get("S75_LEDGER", os.path.expanduser("~/loop-control/s75/ledger.json"))
 AUTHORITY = os.environ.get(
     "S75_AUTHORITY",
     "/Volumes/mac mini m4/Downloads/git trees and automations/"
@@ -97,6 +97,24 @@ class TestNegativeControls(unittest.TestCase):
         auth["counters"]["build_accepted"]["denominator"] = 40
         failed = _failing(_ledger(), auth)
         self.assertIn("denominator.not_shrunk", failed)
+
+    def test_disposal_rows_do_not_move_denominator(self):
+        c = R.census(_ledger(), _authority())
+        extras = [u.get("id") for u in _ledger()["units"]
+                  if not (u.get("id") or "").startswith("S75-T")]
+        self.assertTrue(len(extras) >= 2,
+                        "expected live disposal rows, found %s" % extras)
+        self.assertEqual([], c["ledger_excluded_non_disposal"])
+        self.assertEqual(41, c["ledger_units"])
+        self.assertEqual(41, c["ledger_weight_sum"])
+        self.assertEqual([], [ch["id"] for ch in R.checks(c) if not ch["ok"]])
+
+    def test_non_disposal_exclusion_is_refused(self):
+        led = copy.deepcopy(_ledger())
+        led["units"].append({"id": "S75-X99", "weight": 1,
+                             "acceptance_row": "S75-A99"})
+        failed = _failing(led, _authority())
+        self.assertIn("census.obligation_scope_clean", failed)
 
 
 class TestTargetChecks(unittest.TestCase):

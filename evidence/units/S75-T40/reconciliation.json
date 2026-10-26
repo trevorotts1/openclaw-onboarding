@@ -4,8 +4,8 @@
   "statement": "41 fixed obligations and 2 required targets reconcile; the denominator stays 41 for built/build_accepted and 2 for required targets. No row, weight or acceptance row was added, removed, merged or renumbered.",
   "inputs": {
     "ledger": {
-      "path": "/Users/blackceomacmini/loop-control/s75/ledger.json",
-      "sha256": "ea35f9d21c35c5546611f123ba330c359eae6ffa0bccf847e545bdfde7fb62f2",
+      "path": "<PATH>/loop-control/s75/ledger.json",
+      "sha256": "76ac1acdc033f0ca7807b7ba99453964906b87a2f046ca3722ee019c29c522bc",
       "mode": "READ_ONLY"
     },
     "authority": {
@@ -150,6 +150,12 @@
       "S75-T40",
       "S75-T41"
     ],
+    "ledger_excluded_non_obligation": [
+      "S75-D2",
+      "S75-D20"
+    ],
+    "ledger_excluded_non_disposal": [],
+    "ledger_total_rows": 43,
     "authority_units": 41,
     "authority_ids": [
       "S75-T01",
@@ -203,8 +209,8 @@
     },
     "required_target_unit_text": "required whole-scope ONB/N999 target handoffs",
     "project_repos": [
-      "/Users/blackceomacmini/openclaw-onboarding",
-      "/Users/blackceomacmini/999-setup"
+      "<PATH>/openclaw-onboarding",
+      "<PATH>/999-setup"
     ]
   },
   "units": [
@@ -236,7 +242,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "29819886a7ffce52abb988bf58eb1e42c85d7b51",
       "merge_sha": "5ddecc97f3ee20aabd9048c2429fde2c71903443"
@@ -247,7 +253,7 @@
       "weight": 1,
       "status": "PASS r9",
       "phase": "ACCEPTED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "21009a9ee4228d6dd90796eba346236795b24de2",
       "merge_sha": null
@@ -258,7 +264,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "87e87fef7b3d04ff0a7bfd7a44fd8a2ab2bca6d2",
       "merge_sha": "c20ab86248b6fa3b7ca5db0d01eb46a07100f1a5"
@@ -267,12 +273,12 @@
       "id": "S75-T06",
       "acceptance_row": "S75-A06",
       "weight": 1,
-      "status": "ACCEPTED",
-      "phase": "ACCEPTED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "status": "MERGED",
+      "phase": "MERGED",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
-      "head": "3466eba7c348f9429806ac976ac8db0ff4b85f5f",
-      "merge_sha": null
+      "head": "de80e8c23f7c7c3970a15abd7a3e2b8cc62b4aef",
+      "merge_sha": "c73b392b42dc8f2055d257c8eda4c254d4c89257"
     },
     {
       "id": "S75-T07",
@@ -280,7 +286,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "e320b7d5f7d89ac181f56cf12825145c0830433a",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -290,11 +296,11 @@
       "acceptance_row": "S75-A08",
       "weight": 1,
       "status": "ACCEPTED",
-      "phase": "ACCEPTED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "phase": "MERGED",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
-      "head": "72b98d86a3ef685ab987af4151575e0203ec97c4",
-      "merge_sha": null
+      "head": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e \u2014 landing tip of s75/T08-r7 (pickle repair ca6aaa4a2 + v2.9.118 version/frontmatter rolls 446e8e697/114b95d3c + main merges 234a6c0c5, c86cc745a); supersedes the prior head 72b98d86a3ef685ab987af4151575e0203ec97c4, which was merged by PR 2596 and is an ancestor of origin/main (merge-base --is-ancestor exit=0)",
+      "merge_sha": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e"
     },
     {
       "id": "S75-T09",
@@ -302,7 +308,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "cc2f9852d240373ff61b0ede3b530bd50334ce41",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -313,7 +319,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "dea0486ceac888dd2b86cfacb4c5def864130d04",
       "merge_sha": "7ea8b53bcafd4128a2dc84f7a563d300a0bcde12"
@@ -324,7 +330,7 @@
       "weight": 1,
       "status": "PASS r8",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "71d8c1cf40938ef140473305f2c8499c3ad744ac",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -335,7 +341,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "5087ad89b50535fbfe3d866b8ef576bbde033684",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -357,7 +363,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "3fabcc5eb11e84a70264171739c8bd69528424d9",
       "merge_sha": "6b15b883adabef4324cd4cb92fb49f3b3aeaf0e7"
@@ -368,7 +374,7 @@
       "weight": 1,
       "status": "PASS r8",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "f944f0aee2113640b389bb4b05a84f30c76b59b0",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -377,9 +383,9 @@
       "id": "S75-T16",
       "acceptance_row": "S75-A16",
       "weight": 1,
-      "status": "IN_QC",
+      "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "8d7487b2a22c8cfb3da386609a741bccebcb173a",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -388,9 +394,9 @@
       "id": "S75-T17",
       "acceptance_row": "S75-A17",
       "weight": 1,
-      "status": "NOT_STARTED",
+      "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "7512670a672430f328212be0a78c1a6556501629",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -401,7 +407,7 @@
       "weight": 1,
       "status": "PASS",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "afb07e76e76f18845401d0fbab13555d8cbb0da2",
       "merge_sha": "8d75072f342385d4feccd3ddd2e7d80a0fb6ad6c"
@@ -412,7 +418,7 @@
       "weight": 1,
       "status": "PASS",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "110640126a46e1350537806a8bfb71c093e002aa",
       "merge_sha": "ab318c0a05aa180183d33f0949d3fb8c53c9733f"
@@ -423,7 +429,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "4d6fb18e31af727fc6e4ce61a08b5571aebf1df6",
       "merge_sha": "5427505b0cd8d9b409d1c95a4a17a387e8585a14"
@@ -434,7 +440,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "2455411d89b1464f985de7ab1147ba5cd71fee51",
       "merge_sha": "51bc936ae0831fb7dccd24ac15d788bfac31bbe1"
@@ -445,7 +451,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "a00c36c1457d0c06eedc9e3ff02b65da1f1800f5",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -456,7 +462,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "13f86c3153703703072462dcc0d807f856ae553b",
       "merge_sha": "5ddecc97f3ee20aabd9048c2429fde2c71903443"
@@ -467,7 +473,7 @@
       "weight": 1,
       "status": "PASS",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "fe8f047982b4da299f53d34497850448ff0bf136",
       "merge_sha": "c697f5c49e89355f874fa97b60ae9b3a6f4117fa"
@@ -478,7 +484,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "5635e47fd5831136588c0a12e33795704c18c429",
       "merge_sha": "7bd36b01cf03c741e1dd9581523fa89fcc180df1"
@@ -489,7 +495,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "af6ff2af2b117888e058286150fca19228f87310",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -498,12 +504,12 @@
       "id": "S75-T27",
       "acceptance_row": "S75-A27",
       "weight": 1,
-      "status": "NOT_STARTED",
-      "phase": "BLOCKED_ON",
+      "status": "MERGED",
+      "phase": "MERGED",
       "repo": null,
       "repo_status": "NO_SOURCE",
-      "head": null,
-      "merge_sha": null
+      "head": "8a256bd29eead7b25bd17a30b1d15b8af42230f0",
+      "merge_sha": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7"
     },
     {
       "id": "S75-T28",
@@ -511,7 +517,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "7c311bc76c9409a31b53865d66ec669e0a44ae12",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -520,12 +526,12 @@
       "id": "S75-T29",
       "acceptance_row": "S75-A29",
       "weight": 1,
-      "status": "ACCEPTED",
-      "phase": "ACCEPTED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "status": "MERGED",
+      "phase": "MERGED",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
-      "head": null,
-      "merge_sha": null
+      "head": "3f189a22c6f1bde2501a558fc99268cd5ea3cec8",
+      "merge_sha": "a6bfbfb62ff7980ef6aae8ea9e2682fba98a31f8"
     },
     {
       "id": "S75-T30",
@@ -533,7 +539,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "b32d68bca31159ff7b1bd1a8cf8e87ecb2f799da",
       "merge_sha": "13f86c3153703703072462dcc0d807f856ae553b"
@@ -542,12 +548,12 @@
       "id": "S75-T31",
       "acceptance_row": "S75-A31",
       "weight": 1,
-      "status": "ACCEPTED",
+      "status": "MERGED",
       "phase": "MERGED",
       "repo": null,
       "repo_status": "NO_SOURCE",
-      "head": "6fb636071f1cbc480721c8d658ce36ad627f57dd",
-      "merge_sha": null
+      "head": "ac22536eea6397231991ec0596b8e8977b9c7017",
+      "merge_sha": "a6bfbfb62ff7980ef6aae8ea9e2682fba98a31f8"
     },
     {
       "id": "S75-T32",
@@ -555,7 +561,7 @@
       "weight": 1,
       "status": "FAILED",
       "phase": "BLOCKED_ON",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "c448e9aecd9ef04ffcbe463ffbc79bcfb0cf608a",
       "merge_sha": null
@@ -566,7 +572,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "67ed13601057c02c455f77be2aa89ec6154aaffa",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -577,7 +583,7 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "62bdf40ee287c41c7f2116c09f369c3fe58828c2",
       "merge_sha": "51bc936ae0831fb7dccd24ac15d788bfac31bbe1"
@@ -588,7 +594,7 @@
       "weight": 1,
       "status": "UNDETERMINED",
       "phase": "BLOCKED_ON",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "3d9969fcdb5ebabece0c323847698bbc2ba5e8aa",
       "merge_sha": null
@@ -599,7 +605,7 @@
       "weight": 1,
       "status": "NOT_STARTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "5fc1d31c3d8cbf911601f20c6a09fec47f508716",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
@@ -608,18 +614,18 @@
       "id": "S75-T37",
       "acceptance_row": "S75-A37",
       "weight": 1,
-      "status": "NOT_STARTED",
-      "phase": "BLOCKED_ON",
+      "status": "MERGED",
+      "phase": "MERGED",
       "repo": null,
       "repo_status": "NO_SOURCE",
-      "head": null,
-      "merge_sha": null
+      "head": "d234cd9547f97dc247c85516f55a6dc47bd47b73",
+      "merge_sha": "b449b180ff3622fb8edcac6830ce601fddafea62"
     },
     {
       "id": "S75-T38",
       "acceptance_row": "S75-A38",
       "weight": 1,
-      "status": "NOT_STARTED",
+      "status": "ACCEPTED",
       "phase": "BLOCKED_ON",
       "repo": null,
       "repo_status": "NO_SOURCE",
@@ -630,9 +636,9 @@
       "id": "S75-T39",
       "acceptance_row": "S75-A39",
       "weight": 1,
-      "status": "NOT_STARTED",
+      "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
       "head": "2bc48ff43ff8d16d69f8495aeb00f3aca95e06a2",
       "merge_sha": "51bc936ae0831fb7dccd24ac15d788bfac31bbe1"
@@ -641,7 +647,7 @@
       "id": "S75-T40",
       "acceptance_row": "S75-A40",
       "weight": 1,
-      "status": "NOT_STARTED",
+      "status": "ACCEPTED",
       "phase": "BLOCKED_ON",
       "repo": null,
       "repo_status": "NO_SOURCE",
@@ -654,33 +660,55 @@
       "weight": 1,
       "status": "ACCEPTED",
       "phase": "MERGED",
-      "repo": "/Users/blackceomacmini/openclaw-onboarding",
+      "repo": "<PATH>/openclaw-onboarding",
       "repo_status": "BOUND",
-      "head": "58eddfb88c425304724ee51fede8669c243dee3a",
+      "head": "c1c6906803f9f0d77e4a7188612d08ecad5ba5bb",
       "merge_sha": "e7e2e17e4ea675d66cd4669cf5bd89da26626ec7"
+    },
+    {
+      "id": "S75-D2",
+      "acceptance_row": null,
+      "weight": null,
+      "status": "MERGED",
+      "phase": "MERGED",
+      "repo": "<PATH>/openclaw-onboarding",
+      "repo_status": null,
+      "head": "b70d2b49c471f350d4b555fb2e8a8d35ff6ddd17",
+      "merge_sha": "a6bfbfb62ff7980ef6aae8ea9e2682fba98a31f8"
+    },
+    {
+      "id": "S75-D20",
+      "acceptance_row": null,
+      "weight": null,
+      "status": "MERGED",
+      "phase": "MERGED",
+      "repo": "<PATH>/openclaw-onboarding",
+      "repo_status": null,
+      "head": "35e7ce86c67dba8440d2d9acd9274b740346b97d",
+      "merge_sha": "a6bfbfb62ff7980ef6aae8ea9e2682fba98a31f8"
     }
   ],
   "targets": [
     {
-      "path": "/Users/blackceomacmini/openclaw-onboarding",
-      "head": "dd2240c547e3c2c6b53e0963a64d90fc022e2d1b",
+      "path": "<PATH>/openclaw-onboarding",
+      "head": "c4483ce75d20320ca1ed377296fe36f7d60ca197",
       "head_error": null,
       "target_ref": "origin/main",
-      "target_sha": "13f86c3153703703072462dcc0d807f856ae553b",
+      "target_sha": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7",
       "target_error": null,
-      "remote_sha": "13f86c3153703703072462dcc0d807f856ae553b",
+      "remote_sha": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7",
       "remote_proved": true,
       "remote_error": null,
       "revision_is_40hex": true
     },
     {
-      "path": "/Users/blackceomacmini/blackceo-command-center",
-      "head": "6fb636071f1cbc480721c8d658ce36ad627f57dd",
+      "path": "<PATH>/blackceo-command-center",
+      "head": "4f3c859d4a94a5303f45703aed334f8e997ac046",
       "head_error": null,
       "target_ref": "origin/main",
-      "target_sha": "c716c0164d487713370d8d5bcb4dd092de700d35",
+      "target_sha": "069d8290a6303d8f7271f27deba8bdde1f10329e",
       "target_error": null,
-      "remote_sha": "c716c0164d487713370d8d5bcb4dd092de700d35",
+      "remote_sha": "069d8290a6303d8f7271f27deba8bdde1f10329e",
       "remote_proved": true,
       "remote_error": null,
       "revision_is_40hex": true
@@ -688,13 +716,13 @@
   ],
   "observed_other_targets": [
     {
-      "path": "/Users/blackceomacmini/999-setup",
+      "path": "<PATH>/999-setup",
       "head": "d056770b4a3e62e6fa52e5c300a999bf6dd0e69f",
       "head_error": null,
       "target_ref": "origin/main",
-      "target_sha": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009",
+      "target_sha": "b449b180ff3622fb8edcac6830ce601fddafea62",
       "target_error": null,
-      "remote_sha": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009",
+      "remote_sha": "b449b180ff3622fb8edcac6830ce601fddafea62",
       "remote_proved": true,
       "remote_error": null,
       "revision_is_40hex": true
@@ -715,6 +743,11 @@
       "id": "census.unit_ids_unique",
       "ok": true,
       "detail": "unique ids=41"
+    },
+    {
+      "id": "census.obligation_scope_clean",
+      "ok": true,
+      "detail": "excluded non-obligation rows all disposal-shaped (null weight+row): yes"
     },
     {
       "id": "census.denominator_weight",
@@ -765,25 +798,25 @@
       "id": "targets.exact_revision",
       "ok": [
         {
-          "path": "/Users/blackceomacmini/openclaw-onboarding",
-          "head": "dd2240c547e3c2c6b53e0963a64d90fc022e2d1b",
+          "path": "<PATH>/openclaw-onboarding",
+          "head": "c4483ce75d20320ca1ed377296fe36f7d60ca197",
           "head_error": null,
           "target_ref": "origin/main",
-          "target_sha": "13f86c3153703703072462dcc0d807f856ae553b",
+          "target_sha": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7",
           "target_error": null,
-          "remote_sha": "13f86c3153703703072462dcc0d807f856ae553b",
+          "remote_sha": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7",
           "remote_proved": true,
           "remote_error": null,
           "revision_is_40hex": true
         },
         {
-          "path": "/Users/blackceomacmini/blackceo-command-center",
-          "head": "6fb636071f1cbc480721c8d658ce36ad627f57dd",
+          "path": "<PATH>/blackceo-command-center",
+          "head": "4f3c859d4a94a5303f45703aed334f8e997ac046",
           "head_error": null,
           "target_ref": "origin/main",
-          "target_sha": "c716c0164d487713370d8d5bcb4dd092de700d35",
+          "target_sha": "069d8290a6303d8f7271f27deba8bdde1f10329e",
           "target_error": null,
-          "remote_sha": "c716c0164d487713370d8d5bcb4dd092de700d35",
+          "remote_sha": "069d8290a6303d8f7271f27deba8bdde1f10329e",
           "remote_proved": true,
           "remote_error": null,
           "revision_is_40hex": true
