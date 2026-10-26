@@ -3240,3 +3240,12 @@ jobs:
             exit 1
           fi
           echo "✓ T-14 bonus access capability suite green ($n tests)"
+      # T-21 Instagram route adapter: the supported comment and direct routes
+      # (separate account/filter/event/eligibility, ignored opener no drip, no
+      # inferred FB parity). Without this step the suite never runs in CI.
+      - name: T-21 Instagram route adapter suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 shared-utils/routes/instagram/test_route_adapter.py
+          echo "✓ T-21 Instagram route adapter suite green"
