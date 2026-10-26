@@ -2,8 +2,8 @@
  * W77S-MODES lane D: the convening service and CLI for the council sizes.
  *
  * Proves, against fakes and no live route:
- *  - convene defaults to medium, every council size seats the full roster,
- *    and a named panel wins;
+ *  - convene with no mode classifies the question (AUTO-MODE-1062), every
+ *    council size seats the full roster, and a named panel wins;
  *  - the driver fills any panel seat missing from the brief's weights;
  *  - the Ollama plan is asked once, remembered in <dataDir>/provider-plan.json,
  *    and an unknown plan is the typed OLLAMA_PLAN_REQUIRED refusal;
@@ -209,14 +209,18 @@ function rig(
 
 // ------------------------------------------------------------ mode defaults
 
-test('W77S-D: a convene with no mode defaults to medium', async () => {
+test('W77S-D: a convene with no mode is classified from the question, not defaulted', async () => {
   const r = rig();
   const result = await r.convene({ brief: brief(), route: {} });
-  assert.equal(result.mode, 'medium');
+  // AUTO-MODE-1062: the question decides; the client is told who chose and why.
+  assert.equal(result.mode, result.mode_selection.mode);
+  assert.equal(result.mode_selection.source, 'auto');
+  assert.ok(result.mode_selection.reason.trim().length > 0);
+  assert.equal(result.mode, 'light', 'the fixture brief is a simple question');
   assert.equal(result.seats, 9);
-  assert.deepEqual(result.rounds, { min_rounds: 1, max_rounds: 4, stop_from_round: 1 });
+  assert.deepEqual(result.rounds, { min_rounds: 2, max_rounds: 2, stop_from_round: null });
   assert.equal(result.request_cap, 50);
-  assert.equal(r.accepted[0]?.spec.mode, 'medium');
+  assert.equal(r.accepted[0]?.spec.mode, 'light');
   // The nine-seat panel is the roster, unchanged.
   assert.deepEqual(r.accepted[0]?.spec.seat_ids, [...SEAT_IDS]);
 });
