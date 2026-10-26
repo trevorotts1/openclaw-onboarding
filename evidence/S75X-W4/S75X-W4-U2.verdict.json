@@ -1,0 +1,126 @@
+{
+  "schema": "s75x-unit-verdict/1",
+  "workflow_id": "S75X-W4",
+  "unit_id": "S75X-W4-U2",
+  "role": "builder",
+  "verdict": "PASS",
+  "judged_at": "2026-10-26",
+  "owned_output": "75-drama-song-ad-factory/scripts/core/music_director/",
+  "base_sha": "201d0a938922abb8611c4d89c5fb43c46cf0cca8",
+  "head_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "unit_commit_sha": "ca0a5b3de91ea5d440b8de1377ae8a3f369dfacf",
+  "cohort_merge_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "cohort_pr": 2604,
+  "diff_scope": {
+    "commits_touching_owned_output_between_base_and_head": 1,
+    "files": [
+      {"path": "75-drama-song-ad-factory/scripts/core/music_director/__init__.py", "added": 287, "removed": 0},
+      {"path": "75-drama-song-ad-factory/scripts/core/music_director/test_blueprint_inputs_s75xw4u2.py", "added": 292, "removed": 0, "status": "new"}
+    ],
+    "existing_tests_modified": 0,
+    "note": "Pure additions. No existing test file touched, so the acceptance cannot have been met by weakening a test."
+  },
+  "acceptance_elements": [
+    {
+      "element": "Music requests are generated from blueprint beats",
+      "result": "PASS",
+      "how_checked": "music_director.build_blueprint_request / blueprint_request_inputs read blueprint.music_cues[] and write the cues' own words into the createTask request inputs (instrumental, length_s, pace_plan seams, true_at_beat). Independent probe compared the director's output against the fixture's own start_s and direction strings rather than against the unit test's expectations.",
+      "checks": [
+        "A1 instrumental flag stated false for a singing blueprint: pass",
+        "A2 ERM seam == fixture ERM_DROP.start_s (22.0): pass",
+        "A3 Hero seam == fixture HERO_SHIFT.start_s (38.0): pass",
+        "A4 ERM clause quotes the blueprint's own pace_after + rhythmic_change: pass",
+        "A5 Hero clause quotes the blueprint's own words on all 3 axes: pass",
+        "E1 built request duration == blueprint-delivered length 88.0 s: pass",
+        "E2 final style carries the ERM direction: pass",
+        "E3 final style carries the Hero direction: pass",
+        "E4 hook plan measured at the blueprint's true_at_beat ('the_turn'): pass"
+      ]
+    },
+    {
+      "element": "The four required turns are distinguishable",
+      "result": "PASS",
+      "how_checked": "BLUEPRINT_TURNS receipt returned in story order at four strictly increasing clock positions; Hero Shift refused when it collapses onto the ERM moment or repeats an axis; spoken attention hook is the script's own line at 0 s; first singing is the ERM Drop; earned Solution Signature Hook sits at/after the breakthrough.",
+      "checks": [
+        "B1 exactly the four named turns, in order: pass",
+        "B2 four strictly increasing times 0 < 22 < 38 < 60: pass",
+        "B3 spoken attention hook source=script at 0.0 s: pass",
+        "B4 first singing cue_id=ERM_DROP, vocal_status=first_sung: pass",
+        "B5 Hero Shift changes pace, rhythm and emotional direction away from the ERM: pass",
+        "B6 earned hook at/after BREAKTHROUGH (60.0 >= 58.0): pass",
+        "unit-test collapsed-turn refusals HERO_SHIFT_NOT_DISTINCT (x2), ERM_NOT_FIRST_SUNG, BLUEPRINT_CUES_MISSING: 4/4 pass"
+      ]
+    },
+    {
+      "element": "No chorus precedes the earned point",
+      "result": "PASS",
+      "how_checked": "Two independent negative probes built on the shipped fixture: an injected CHORUS cue at 30 s (before BREAKTHROUGH at 58 s) and a SOLUTION_HOOK moved to 57 s are both refused with the named code, and the untouched fixture still builds (control), so the refusal is selective rather than a blanket error.",
+      "checks": [
+        "D1 injected chorus at 30 s refused with CHORUS_BEFORE_EARNED: pass",
+        "D2 hook at 57 s (before breakthrough) refused with HOOK_UNEARNED: pass",
+        "SINGING_BEFORE_ERM refusal for a sung PAIN_BUILD cue (unit test): pass",
+        "control F1 untouched fixture still builds a non-empty request: pass"
+      ]
+    },
+    {
+      "element": "Instrumental support before the first singing is permitted (work text)",
+      "result": "PASS",
+      "how_checked": "The support window is reported as ERM_DROP.start_s - BASELINE.start_s and the request still sings; it is never a refusal path.",
+      "checks": [
+        "C1 instrumental_support_s == 22.0 (0 -> 22 s), instrumental flag stays false: pass"
+      ]
+    },
+    {
+      "element": "Preserved distinction: spoken attention hook, first singing at the ERM Drop, distinct Hero Shift, later earned hook; no dead exposition opening",
+      "result": "PASS",
+      "how_checked": "Opening judged as the attention hook: sung opening refused, spoken opener capped by the recipe's own opener_max words (dead-exposition refusal), earned hook line forced into the opening refused.",
+      "checks": [
+        "G1 sung opening refused with OPENING_NOT_ATTENTION_HOOK: pass",
+        "unit test OPENING_DEAD_EXPOSITION (long spoken block): pass",
+        "unit test HOOK_FORCED_INTO_OPENING: pass"
+      ]
+    },
+    {
+      "element": "Existing music_director tests pass",
+      "result": "PASS",
+      "how_checked": "Ran every core test file that references music_director, plus its siblings that share the gate modules, with python3 -I from scripts/core; all exit 0.",
+      "checks": [
+        "test_blueprint_inputs_s75xw4u2.py rc=0, 34 ok lines, ALL PASS",
+        "test_prompt_limits_u6.py rc=0, 25 ok lines, ALL PASS",
+        "regression set: 19 test files, 19 rc=0, 326 verbatim 'ok:' lines, 0 'FAIL' lines",
+        "independent probe: 20 probes, 0 failed"
+      ]
+    }
+  ],
+  "checks": {
+    "unit_acceptance_test": {"file": "scripts/core/music_director/test_blueprint_inputs_s75xw4u2.py", "rc": 0, "ok_lines": 34, "fail_lines": 0, "tail": "ALL PASS"},
+    "existing_music_director_test": {"file": "scripts/core/music_director/test_prompt_limits_u6.py", "rc": 0, "ok_lines": 25, "fail_lines": 0, "tail": "ALL PASS"},
+    "regression_scope": "every 75-drama-song-ad-factory/**/*.py test file whose source references music_director, run with python3 -I",
+    "regression_files": 19,
+    "regression_rc0": 19,
+    "regression_ok_lines": 326,
+    "regression_fail_lines": 0,
+    "independent_probes": 20,
+    "independent_probe_failures": 0,
+    "control_runs": [
+      "untouched fixture builds a request (probe F1 and unit check 8)",
+      "negative probes are selective: the refusal fires on the injected chorus/hook and the clean fixture still passes"
+    ],
+    "network_calls": 0,
+    "spend": 0
+  },
+  "not_verified": [
+    "Production wiring: a repo-wide scan of every .py/.md/.json file finds build_blueprint_request / blueprint_request_inputs referenced only by music_director/__init__.py (definition), the unit's own test, and one mention in 75-drama-song-ad-factory/SKILL.md. No dispatch or installer path calls the blueprint-driven builder. Whether the pipeline should call it is not asserted by this unit's acceptance.",
+    "Only the shipped fixture method_plan/fixtures/blueprint-90s.json (runtime_target_seconds 90 -> delivered 88 s, soul-ballad) was exercised. Other blueprints, run lengths and style ids are unproven.",
+    "No real provider createTask call was made (zero network, zero spend by design); the request envelope is verified structurally only.",
+    "music_qc/test_wwfix_u1.py exits 0 but prints its own 'PASS (5 UNDETERMINED -- NOT a release pass)' line about WW-11/WW-08 gate-removal items that belong to another unit; those notes were not investigated and are not this unit's scope.",
+    "music_qc/test_method_pace.py and music_qc/test_wwfix_u1.py emit no 'ok:' lines (they print prose); they exit 0 but their internal assertion counts were not enumerated."
+  ],
+  "environment": {
+    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U2-build",
+    "repo": "trevorotts1/openclaw-onboarding",
+    "python": "python3 -I (isolated)",
+    "scratch": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/S75X-W4-U2"
+  },
+  "verdict_branch": "s75x/verdicts-S75X-W4"
+}
