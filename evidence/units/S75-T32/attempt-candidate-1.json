@@ -5,7 +5,7 @@
   "mode": "candidate-build",
   "decision_locked": true,
   "arbiter": {
-    "record": "/Users/blackceomacmini/loop-control/s75/qc/S75-T32-ARBITER.md",
+    "record": "<PATH>/loop-control/s75/qc/S75-T32-ARBITER.md",
     "outcome": "REJECT_AND_NARROW",
     "restriction": "built exactly the narrowed shape; acceptance stays with the owner"
   },

@@ -29,7 +29,7 @@
       "instrument": "story_first_contracts.missing_foundation_refused",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "input": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
         "instrument": "file presence",
         "label": "a module this repository does carry",
         "observed": true,
@@ -58,10 +58,10 @@
       },
       "observations": [
         "resolved 3 required contract file(s) under this skill root; 3 absent",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
-        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
         "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
       ],
       "repository": "trevorotts1/999-setup",
@@ -83,9 +83,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/999-setup",
-        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+        "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     },
     {
@@ -97,7 +97,7 @@
       "instrument": "story_first_contracts.missing_cast_refused / undefined_speaker_refused",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "input": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
         "instrument": "file presence",
         "label": "a module this repository does carry",
         "observed": true,
@@ -126,10 +126,10 @@
       },
       "observations": [
         "resolved 3 required contract file(s) under this skill root; 3 absent",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
-        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
         "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
       ],
       "repository": "trevorotts1/999-setup",
@@ -149,9 +149,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/999-setup",
-        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+        "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     },
     {
@@ -163,7 +163,7 @@
       "instrument": "story_first_contracts.one_line_scene_refused / complete_fixture_validates",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "input": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
         "instrument": "file presence",
         "label": "a module this repository does carry",
         "observed": true,
@@ -192,10 +192,10 @@
       },
       "observations": [
         "resolved 3 required contract file(s) under this skill root; 3 absent",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
-        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
         "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
       ],
       "repository": "trevorotts1/999-setup",
@@ -215,9 +215,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/999-setup",
-        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+        "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     },
     {
@@ -229,7 +229,7 @@
       "instrument": "file presence over this repository's own skill root, with a known-present control on the same scan",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "input": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/spend_ledger.py",
         "instrument": "file presence",
         "label": "a core module this repository does carry",
         "observed": true,
@@ -276,9 +276,9 @@
           "scripts/core/spend_ledger.py"
         ],
         "repository": "trevorotts1/999-setup",
-        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+        "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     },
     {
@@ -290,7 +290,7 @@
       "instrument": "story_first_contracts.identity_survives_world_revision",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "input": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
         "instrument": "file presence",
         "label": "a module this repository does carry",
         "observed": true,
@@ -319,10 +319,10 @@
       },
       "observations": [
         "resolved 3 required contract file(s) under this skill root; 3 absent",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
-        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
         "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
       ],
       "repository": "trevorotts1/999-setup",
@@ -342,9 +342,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/999-setup",
-        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+        "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     },
     {
@@ -356,7 +356,7 @@
       "instrument": "story_first_contracts.approval_ordering_and_binding",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "input": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
         "instrument": "file presence",
         "label": "a module this repository does carry",
         "observed": true,
@@ -385,10 +385,10 @@
       },
       "observations": [
         "resolved 3 required contract file(s) under this skill root; 3 absent",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
-        "absent: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
-        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+        "absent: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+        "load_package raised FileNotFoundError: [Errno 2] No such file or directory: '<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py'",
         "the same resolver found scripts/core/music_styles/music_styles.py, so the absence above is a property of this repository and not of the instrument"
       ],
       "repository": "trevorotts1/999-setup",
@@ -408,9 +408,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/999-setup",
-        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+        "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     },
     {
@@ -422,7 +422,7 @@
       "instrument": "music_styles.catalog (loaded from this repository's skill root)",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+        "input": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
         "instrument": "file presence",
         "label": "the music carrier this repository does have",
         "observed": true,
@@ -468,9 +468,9 @@
           "scripts/core/music_styles/music_styles.py"
         ],
         "repository": "trevorotts1/999-setup",
-        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+        "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     },
     {
@@ -536,9 +536,9 @@
           "scripts/core/choice_card/intake_card/intake_card.py"
         ],
         "repository": "trevorotts1/999-setup",
-        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+        "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -550,7 +550,7 @@
       "instrument": "file presence over this repository's own skill root, plus a token scan of the shared contract modules",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "input": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/spend_ledger.py",
         "instrument": "file presence",
         "label": "a core module this repository does carry",
         "observed": true,
@@ -601,9 +601,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/999-setup",
-        "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory"
+        "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+      "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     }
   ],
@@ -624,7 +624,7 @@
     "core_schema_version": null,
     "file_digests": {},
     "seam": null,
-    "skill_root": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory",
+    "skill_root": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory",
     "stage_count": null
   },
   "coverage": {
@@ -839,52 +839,52 @@
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "package_seam_and_differences",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "complete_fixture_validates",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "missing_cast_refused",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "undefined_speaker_refused",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "invalid_scene_reference_refused",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "missing_foundation_refused",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "one_line_scene_refused",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "approval_ordering_and_binding",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "no_future_artifact_deadlock",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",
       "facet": "identity_survives_world_revision",
-      "reason": "candidate skill root lacks the shared contracts; sources checked: /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, /Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
+      "reason": "candidate skill root lacks the shared contracts; sources checked: <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/story_first_contracts.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/package_flavor_adapter.py, <PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/contracts/flavor-999.json"
     },
     {
       "class": "CANDIDATE_NOT_LANDED",

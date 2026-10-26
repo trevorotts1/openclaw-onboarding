@@ -5,7 +5,7 @@
   "mode": "candidate-repair",
   "decision_locked": true,
   "repair_mandate": {
-    "source": "/Users/blackceomacmini/loop-control/s75/qc/S75-T32-ARBITER.md",
+    "source": "<PATH>/loop-control/s75/qc/S75-T32-ARBITER.md",
     "section": "STATED LIMITS (item 4 of RESIDUAL UNKNOWNS)",
     "verbatim": "two style18 breakages go undetected (`choice_rows()` rendering 17 of 18 rows, `validate_catalog()` hard-wired to 18)",
     "scope": "close exactly those two; nothing else changed, no existing check weakened"

@@ -76,9 +76,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -140,9 +140,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -229,9 +229,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -243,7 +243,7 @@
       "instrument": "file presence over this repository's own skill root, with a known-present control on the same scan",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "input": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory/scripts/core/spend_ledger.py",
         "instrument": "file presence",
         "label": "a core module this repository does carry",
         "observed": true,
@@ -292,9 +292,9 @@
           "scripts/core/spend_ledger.py"
         ],
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     },
     {
@@ -355,9 +355,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -418,9 +418,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -503,9 +503,9 @@
           "scripts/core/music_styles/catalog.py"
         ],
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -591,9 +591,9 @@
           "scripts/core/music_styles/catalog.py"
         ],
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -605,7 +605,7 @@
       "instrument": "file presence over this repository's own skill root, plus a token scan of the shared contract modules",
       "known_good_control": {
         "expected": "present",
-        "input": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "input": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory/scripts/core/spend_ledger.py",
         "instrument": "file presence",
         "label": "a core module this repository does carry",
         "observed": true,
@@ -658,9 +658,9 @@
           "scripts/core/contracts/flavor-999.json"
         ],
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
       },
-      "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
       "status": "NOT_APPLICABLE"
     }
   ],
@@ -685,7 +685,7 @@
       "scripts/core/story_first_contracts.py": "56796e0c43142431cadb6d285b95025d93411e2a42262f99f043e306499f5e50"
     },
     "seam": "package_flavor_adapter.resolve",
-    "skill_root": "/Users/blackceomacmini/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+    "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
     "stage_count": 11
   },
   "coverage": {
