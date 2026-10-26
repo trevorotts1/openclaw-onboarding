@@ -8849,10 +8849,19 @@ PYEOF
     # routing-drift and selector-drift jobs were never registered on any box.
     # Its aggregate installer names all four explicitly and then reports which
     # jobs are registered; it goes first so the glob below cannot shadow it.
-    if [ "$SKILL_NAME" = "06-ghl-install-pages" ] && [ -x "$SKILL_DIR/scripts/install-skill6-maintenance-crons.sh" ]; then
-      SKILL_INSTALLER="$SKILL_DIR/scripts/install-skill6-maintenance-crons.sh"
+    # NO FALLBACK for skill 06: if the aggregate is missing or not executable,
+    # the first-match loop would silently install ONE of the four jobs again —
+    # the exact defect this fixes, with "Installer OK" printed on top. Refuse
+    # loudly and leave the skill retryable instead.
+    if [ "$SKILL_NAME" = "06-ghl-install-pages" ]; then
+      if [ -x "$SKILL_DIR/scripts/install-skill6-maintenance-crons.sh" ]; then
+        SKILL_INSTALLER="$SKILL_DIR/scripts/install-skill6-maintenance-crons.sh"
+      else
+        echo "    Installer FAILED for $SKILL_NAME: scripts/install-skill6-maintenance-crons.sh missing or not executable -- refusing the first-match fallback (it installs only 1 of the 4 maintenance jobs); .wired sentinel withheld, will retry next roll"
+        _INSTALLER_FAILED=1
+      fi
     fi
-    if [ -z "$SKILL_INSTALLER" ]; then
+    if [ -z "$SKILL_INSTALLER" ] && [ "$SKILL_NAME" != "06-ghl-install-pages" ]; then
       for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh" "$SKILL_DIR"/scripts/install-*.sh; do
         if [ -x "$_candidate" ]; then
           SKILL_INSTALLER="$_candidate"
@@ -8860,8 +8869,9 @@ PYEOF
         fi
       done
     fi
-    # Also check for setup-*.sh pattern
-    if [ -z "$SKILL_INSTALLER" ]; then
+    # Also check for setup-*.sh pattern (skill 06 excluded — see above: its
+    # only installer is the aggregate, and any fallback hides its absence)
+    if [ -z "$SKILL_INSTALLER" ] && [ "$SKILL_NAME" != "06-ghl-install-pages" ]; then
       for _candidate in "$SKILL_DIR"/setup-*.sh "$SKILL_DIR"/scripts/setup-*.sh; do
         if [ -x "$_candidate" ]; then
           SKILL_INSTALLER="$_candidate"
