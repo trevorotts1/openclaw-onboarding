@@ -14,7 +14,7 @@ import os
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LEDGER = os.environ.get("S75_LEDGER", "/Users/blackceomacmini/loop-control/s75/ledger.json")
+LEDGER = os.environ.get("S75_LEDGER", os.path.expanduser("~/loop-control/s75/ledger.json"))
 AUTHORITY = os.environ.get(
     "S75_AUTHORITY",
     "/Volumes/mac mini m4/Downloads/git trees and automations/"

@@ -34,11 +34,11 @@
     "runtime": "python3 3.14.7 (system), standard library only: hashlib, json, subprocess, argparse, copy, importlib.util, os, unittest",
     "third_party": "none; no requirements.txt/pyproject/package.json entry added",
     "inputs_read_only": [
-      {"name": "loop-control ledger (input census)", "path": "/Users/blackceomacmini/loop-control/s75/ledger.json", "mode": "READ_ONLY, opened for read only; never written, never renamed, never touched"},
+      {"name": "loop-control ledger (input census)", "path": "<PATH>/loop-control/s75/ledger.json", "mode": "READ_ONLY, opened for read only; never written, never renamed, never touched"},
       {"name": "authority task-ledger (denominator source)", "path": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/task-ledger.json", "mode": "READ_ONLY"},
-      {"name": "required target 1", "path": "/Users/blackceomacmini/openclaw-onboarding", "mode": "READ_ONLY git rev-parse/ls-remote"},
-      {"name": "required target 2", "path": "/Users/blackceomacmini/blackceo-command-center", "mode": "READ_ONLY git rev-parse/ls-remote"},
-      {"name": "observed other target (not one of the 2)", "path": "/Users/blackceomacmini/999-setup", "mode": "READ_ONLY git rev-parse/ls-remote"}
+      {"name": "required target 1", "path": "<PATH>/openclaw-onboarding", "mode": "READ_ONLY git rev-parse/ls-remote"},
+      {"name": "required target 2", "path": "<PATH>/blackceo-command-center", "mode": "READ_ONLY git rev-parse/ls-remote"},
+      {"name": "observed other target (not one of the 2)", "path": "<PATH>/999-setup", "mode": "READ_ONLY git rev-parse/ls-remote"}
     ]
   },
   "census_measured": {
@@ -62,17 +62,17 @@
     "denominator_shrunk": false
   },
   "required_targets_measured": [
-    {"rank": 1, "path": "/Users/blackceomacmini/openclaw-onboarding", "ref": "origin/main", "sha": "13f86c3153703703072462dcc0d807f856ae553b", "local_head": "dd2240c547e3c2c6b53e0963a64d90fc022e2d1b", "remote_agrees": true, "revision_is_40hex": true},
-    {"rank": 2, "path": "/Users/blackceomacmini/blackceo-command-center", "ref": "origin/main", "sha": "c716c0164d487713370d8d5bcb4dd092de700d35", "local_head": "6fb636071f1cbc480721c8d658ce36ad627f57dd", "remote_agrees": true, "revision_is_40hex": true}
+    {"rank": 1, "path": "<PATH>/openclaw-onboarding", "ref": "origin/main", "sha": "13f86c3153703703072462dcc0d807f856ae553b", "local_head": "dd2240c547e3c2c6b53e0963a64d90fc022e2d1b", "remote_agrees": true, "revision_is_40hex": true},
+    {"rank": 2, "path": "<PATH>/blackceo-command-center", "ref": "origin/main", "sha": "c716c0164d487713370d8d5bcb4dd092de700d35", "local_head": "6fb636071f1cbc480721c8d658ce36ad627f57dd", "remote_agrees": true, "revision_is_40hex": true}
   ],
   "observed_other_targets_not_counted": [
-    {"path": "/Users/blackceomacmini/999-setup", "ref": "origin/main", "sha": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009", "local_head": "d056770b4a3e62e6fa52e5c300a999bf6dd0e69f", "remote_agrees": true}
+    {"path": "<PATH>/999-setup", "ref": "origin/main", "sha": "e8dc28ee86045ebc65da4b0dac8f4e149e1c2009", "local_head": "d056770b4a3e62e6fa52e5c300a999bf6dd0e69f", "remote_agrees": true}
   ],
   "required_target_reading_conflict": {
     "unit_note_reading": "the 2 required targets are openclaw-onboarding main and blackceo-command-center main (the pair measured above)",
     "authority_counter_text": "counters.merged_required_targets.unit reads 'required whole-scope ONB/N999 target handoffs' and its denominator is 2",
     "authority_canonical_targets": "ONB and N999 are the two named repositories; CC's repository is literally 'UNVERIFIED_T01_CONDITIONAL'",
-    "ledger_project_repos": ["/Users/blackceomacmini/openclaw-onboarding", "/Users/blackceomacmini/999-setup"],
+    "ledger_project_repos": ["<PATH>/openclaw-onboarding", "<PATH>/999-setup"],
     "what_this_receipt_does": "measures all three revisions and claims only the ACCOUNTING reconciliation of a 2-target denominator. It does not claim which pair is authoritative, does not change the denominator, and does not shrink it. The conflict is recorded, not resolved -- resolving it is an owner decision (D-16 territory)."
   },
   "tests_run": [

@@ -13,14 +13,14 @@
     "code_head": "5fd69aca95b4e041bd4f62f99d43b2abc0ba1791",
     "base": "13f86c3153703703072462dcc0d807f856ae553b",
     "base_is_ancestor_of_tip": true,
-    "lane": "/Users/blackceomacmini/skill75-repair/lanes/S75-T40-verify-lane",
+    "lane": "<PATH>/skill75-repair/lanes/S75-T40-verify-lane",
     "lane_note": "branch s75/S75-T40-r1 was already checked out in the builder's lane, so git worktree add <branch> was refused; the verify lane is a DETACHED worktree at the exact branch tip 9cc740a3. No builder lane, worktree, branch or receipt was touched."
   },
   "acceptance_elements": [
     {
       "element": "41 build/accepted obligations reconcile without denominator shrink",
       "result": "DEMONSTRATED",
-      "proof": "Independent read-only census of /Users/blackceomacmini/loop-control/s75/ledger.json: 41 units S75-T01..T41 in order, every weight 1, weight sum 41, 41 unique acceptance rows S75-A01..A41 one per unit, S75-A40 maps to S75-T40. Authority task-ledger sha256 e10310263440428a2bd7fe21f0f2013906686f16eaff65e69e6e15a2aa6eecf1 (matches receipt stamp), fixed_task_count 41, fixed_acceptance_count 41, fixed_current_weight 41, sum(fixed_weight) 41. Reconciler re-run twice live: 13 PASS / 0 FAIL / exit 0 both runs, including authority.unit_set_equal and denominator.not_shrunk; declared denominators built=41 build_accepted=41 unchanged before and after."
+      "proof": "Independent read-only census of <PATH>/loop-control/s75/ledger.json: 41 units S75-T01..T41 in order, every weight 1, weight sum 41, 41 unique acceptance rows S75-A01..A41 one per unit, S75-A40 maps to S75-T40. Authority task-ledger sha256 e10310263440428a2bd7fe21f0f2013906686f16eaff65e69e6e15a2aa6eecf1 (matches receipt stamp), fixed_task_count 41, fixed_acceptance_count 41, fixed_current_weight 41, sum(fixed_weight) 41. Reconciler re-run twice live: 13 PASS / 0 FAIL / exit 0 both runs, including authority.unit_set_equal and denominator.not_shrunk; declared denominators built=41 build_accepted=41 unchanged before and after."
     },
     {
       "element": "2 required targets reconcile without denominator shrink",
@@ -92,7 +92,7 @@
     "Force-push or rewrite history on any remote; only current remote refs were observed.",
     "The no-backup-copies guard script (aborts outside the CI harness env; its exit code proves nothing, consistent with the builder's report)."
   ],
-  "ledger_writes": "NONE. /Users/blackceomacmini/loop-control/s75/ledger.json was opened read-only only (census reads); no loop-control state file was written.",
+  "ledger_writes": "NONE. <PATH>/loop-control/s75/ledger.json was opened read-only only (census reads); no loop-control state file was written.",
   "written_at": "2026-10-26",
   "written_by": "independent QC verifier (opus-chain), separate from the builder agent"
 }

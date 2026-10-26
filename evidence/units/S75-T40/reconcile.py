@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 
 EXPECTED_UNITS = 41
@@ -188,7 +189,7 @@ def build_report(ledger_path, authority_path, targets, observed=None):
 def main():
     import argparse
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ledger", default="/Users/blackceomacmini/loop-control/s75/ledger.json")
+    ap.add_argument("--ledger", default=os.path.expanduser("~/loop-control/s75/ledger.json"))
     ap.add_argument("--authority", default=(
         "/Volumes/mac mini m4/Downloads/git trees and automations/"
         "S75_Story_First_Full_Cast_Build_20261024/task-ledger.json"),

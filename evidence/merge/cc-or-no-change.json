@@ -5,7 +5,7 @@
  "outcome": "CC_CHANGE_PRESENT",
  "no_change": false,
  "change": {
-  "repository": "/Users/blackceomacmini/blackceo-command-center",
+  "repository": "<PATH>/blackceo-command-center",
   "branch": "s75/S75-T38-cc-r1",
   "head": "b772bcf7d4890fed6dfb58adf4cc591feab5a689",
   "base": "c716c0164d487713370d8d5bcb4dd092de700d35",
@@ -13,7 +13,7 @@
    "scripts/check-tool-registry-references.py"
   ]
  },
- "incorporation_proof": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-build-lane/evidence/units/S75-T38/incorporation-proof.json",
- "receipt": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-build-lane/evidence/units/S75-T38/attempt-1.json",
+ "incorporation_proof": "<PATH>/skill75-repair/lanes/S75-T38-build-lane/evidence/units/S75-T38/incorporation-proof.json",
+ "receipt": "<PATH>/skill75-repair/lanes/S75-T38-build-lane/evidence/units/S75-T38/attempt-1.json",
  "note": "This file records that a real CC change was made; the 'no-change' alternative does not apply. It is not a verdict."
 }

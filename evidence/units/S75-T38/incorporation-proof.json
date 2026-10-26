@@ -3,12 +3,12 @@
  "unit_id": "S75-T38",
  "acceptance_id": "S75-A38",
  "written_at": "2026-10-26",
- "repository": "/Users/blackceomacmini/blackceo-command-center",
+ "repository": "<PATH>/blackceo-command-center",
  "remote": "https://github.com/trevorotts1/blackceo-command-center.git",
  "current_head": {
   "ref": "refs/heads/main",
   "sha": "c716c0164d487713370d8d5bcb4dd092de700d35",
-  "captured_by": "git -C /Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane rev-parse origin/main (after git fetch origin --prune)",
+  "captured_by": "git -C <PATH>/skill75-repair/lanes/S75-T38-cc-lane rev-parse origin/main (after git fetch origin --prune)",
   "captured_at": "2026-10-26"
  },
  "unit_change": {

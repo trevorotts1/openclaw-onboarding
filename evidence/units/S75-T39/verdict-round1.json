@@ -9,8 +9,8 @@
   "head_tested": "5b8f5749b511e9e5db702e099f4b77c1b093395e",
   "landed_candidate": "2bc48ff43ff8d16d69f8495aeb00f3aca95e06a2",
   "base_tested": "ecfe474cde4e62e7a4ab814818263bd1420c9607",
-  "repository": "/Users/blackceomacmini/openclaw-onboarding",
-  "verify_lane": "/Users/blackceomacmini/skill75-repair/lanes/S75-T39-verify-lane",
+  "repository": "<PATH>/openclaw-onboarding",
+  "verify_lane": "<PATH>/skill75-repair/lanes/S75-T39-verify-lane",
   "independence": "Verifier did not write the unit. All checks below were re-run by the verifier from scratch in a fresh detached worktree at origin/s75/S75-T39-r1; the builder's claims were re-checked, never copied. The verifier-authored probe and mutant battery are the independent checker named in the row's evidence column.",
   "row_text": "S75-A39 / S75-T39 | No global cleanup wave: each repo event starts its facet; class-specific ownership/consumer/approval proofs precede removal and compact receipts remain outside disposable paths. | `evidence/units/S75-T39/attempt-<verified-generation>.json`; exact candidate/base/dependencies and independent checker; repository required gates when applicable. | UNVERIFIED |",
   "row_text_source": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/ACCEPTANCE-MATRIX.md line 47, read verbatim by the verifier",
@@ -119,7 +119,7 @@
     "No live caller of dispatch_event exists in the repository (zero importers). The module is landed and tested but not wired into any runtime path - carried residual, matches the builder's not_claimed."
   ],
   "not_verified": [
-    "The prior round-1 verifier's 77-check probe and its full mutation battery were not re-run: /Users/blackceomacmini/loop-control/s75/t39verify no longer exists. The verifier substituted a fresh 57-check probe and a 6-mutant battery; coverage overlaps the four clauses but is not identical to the lost instrument.",
+    "The prior round-1 verifier's 77-check probe and its full mutation battery were not re-run: <PATH>/loop-control/s75/t39verify no longer exists. The verifier substituted a fresh 57-check probe and a 6-mutant battery; coverage overlaps the four clauses but is not identical to the lost instrument.",
     "Runtime integration of dispatch_event (no callers exist to exercise; static zero-importer grep is the strongest available proof).",
     "Whole-tree suite was run at branch tip 5b8f5749b (main@13f86c315 + receipt) and at base ecfe474cd only; it was not re-run at candidate 2bc48ff43 in isolation (irrelevant: the three owned files are byte-identical across 2bc48ff43, branch tip and current origin/main, and the receipt commit touches no source).",
     "Single interpreter only (python3.14.7 on Darwin 25.3.0); no other Python versions or platforms.",
@@ -127,6 +127,6 @@
   ],
   "temp_cleanup": "verifier's base worktree /tmp/t39-verify-base, probe /tmp/t39-verify-probe, mutants /tmp/t39-mutants, and run logs /tmp/t39-verify-*-discover.txt are verifier-created scratch; the base worktree registration is removed after this run",
   "authored_at": "2026-10-26",
-  "verifier_lane": "/Users/blackceomacmini/skill75-repair/lanes/S75-T39-verify-lane",
+  "verifier_lane": "<PATH>/skill75-repair/lanes/S75-T39-verify-lane",
   "branch": "s75/S75-T39-r1"
 }
