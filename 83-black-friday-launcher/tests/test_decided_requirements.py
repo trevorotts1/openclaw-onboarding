@@ -458,8 +458,8 @@ class PackageRecordTests(unittest.TestCase):
         self.assertEqual(manifest["cross_sales"]["teaching"]["state"], "pending")
         self.assertIn("council-advice.json", self.out["receipt"]["council"]["advice_path"])
 
-    def test_a_resolved_mode_package_passes_every_check(self):
-        # The clean-package guarantee, on a shape whose Skill 79 mode resolves.
+    def clean_package(self):
+        """A clean package on a shape whose Skill 79 mode resolves."""
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         run_dir = Path(tmp.name) / "run"
@@ -468,8 +468,27 @@ class PackageRecordTests(unittest.TestCase):
         graph = route.compile_route(normalized, advice)
         pieces = pieces_for(run_dir, graph, normalized)
         out = package.assemble(run_dir, normalized, graph, pieces, council=advice)
-        self.assertEqual(
-            checks.check_package(Path(out["manifest_path"]), run_dir), [])
+        return run_dir, Path(out["manifest_path"])
+
+    def test_a_resolved_mode_package_passes_every_check(self):
+        # The clean-package guarantee, on a shape whose Skill 79 mode resolves.
+        run_dir, manifest_path = self.clean_package()
+        self.assertEqual(checks.check_package(manifest_path, run_dir), [])
+
+    def test_an_unavailable_validator_at_replay_fails_the_build_check(self):
+        # L25-BF-40: the probe's "bound" verdict is earned by replaying its
+        # request through the real Skill 79 validator at check time. When the
+        # validator cannot load then, the binding is unproved: an interpreter
+        # without jsonschema must fail the package, never print PASS.
+        run_dir, manifest_path = self.clean_package()
+        self.assertEqual(checks.check_package(manifest_path, run_dir), [])
+        with mock.patch.object(
+                checks, "_replay_checkout",
+                return_value=("unavailable", "jsonschema is not importable")):
+            fails = checks.check_package(manifest_path, run_dir)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertTrue(fails[0].startswith("AF-LAUNCH-CHECKOUT-VALIDATOR"), fails)
+        self.assertIn("unavailable", fails[0])
 
     def test_the_folded_level_package_is_blocked_only_on_the_unresolved_mode(self):
         # folded_levels has no mode in the Skill 79 contract (L25-BF-41): the

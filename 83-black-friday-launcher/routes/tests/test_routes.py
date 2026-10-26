@@ -580,10 +580,11 @@ class BrowserDiagnosticTests(unittest.TestCase):
     """The explicit offline browser diagnostic verify.sh runs.
 
     A real browser would drive landing -> checkout -> thank-you against a live
-    page. No browser or Playwright is installed or reachable offline, so this
-    diagnostic says so and proves the same wiring without one: the compiled
-    graph the browser would follow and the native Skill 79 order form it would
-    reach, with its validator loaded. It is never reported as a browser run.
+    page. This diagnostic drives no browser whatever is installed: it probes for
+    the Playwright module and browser binaries, reports exactly what it found,
+    and proves the same wiring without one — the compiled graph the browser
+    would follow and the native Skill 79 order form it would reach, with its
+    validator loaded. It is never reported as a browser run.
     """
 
     def test_offline_diagnostic_proves_route_and_checkout_wiring_without_a_browser(self):

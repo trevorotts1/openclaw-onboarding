@@ -35,14 +35,12 @@ echo "== open and decided seams =="
 echo "== unit + integration checks =="
 "$PY" -m unittest discover -s tests -p 'test_*.py' -v
 
-echo "== route invariants and adapter wiring =="
-"$PY" -m unittest discover -s "$HERE/routes/tests" -p 'test_routes.py'
-
-echo "== browser diagnostic (offline) =="
-echo "the diagnostic below probes this machine for browser tooling, reports what"
-echo "it finds, and proves the landing -> checkout route wiring and the Skill 79"
-echo "order form binding without driving a browser"
-"$PY" "$HERE/routes/tests/test_routes.py" BrowserDiagnosticTests -v
+echo "== route invariants, adapter wiring and the offline browser diagnostic =="
+# BrowserDiagnosticTests lives in this file and runs here exactly once, through
+# discovery. It probes this machine for browser tooling, prints exactly what it
+# found, and proves the landing -> checkout route wiring and the Skill 79 order
+# form binding without driving a browser; a failure fails this script.
+"$PY" -m unittest discover -s "$HERE/routes/tests" -p 'test_routes.py' -v
 
 echo "== worked-example fixtures =="
 "$PY" "$HERE/fixtures/run_fixtures.py"

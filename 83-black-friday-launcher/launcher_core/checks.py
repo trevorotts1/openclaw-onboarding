@@ -145,7 +145,11 @@ def _checkout_probe_violations(checkout: Dict[str, Any],
                 "the inner checkout_request envelope must not carry it"]
     outcome, detail = _replay_checkout(request)
     if outcome == "unavailable":
-        return []  # the validator's own unavailability is recorded, never guessed
+        # The probe's "bound" verdict is only earned by replay. A validator that
+        # cannot load now leaves the binding unproved, so the build fails: an
+        # interpreter without jsonschema must never print PASS.
+        return [f"AF-LAUNCH-CHECKOUT-VALIDATOR: the S79 validator is unavailable "
+                f"at replay time ({detail})"]
     if outcome == "shape":
         return [f"AF-LAUNCH-CHECKOUT-VALIDATOR: the S79 request envelope is malformed "
                 f"({detail})"]
