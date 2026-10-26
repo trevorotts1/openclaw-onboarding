@@ -8,7 +8,10 @@ Five things, and nothing else:
     applied twice -- including after a restart, because the record is on disk;
   * a BOUNDED retry/backoff policy. A policy cannot ask for unbounded
     attempts: the attempt count is capped in the constructor and again in the
-    loop, and running out raises instead of spinning;
+    loop, and running out raises instead of spinning. A timeout leaves the
+    outcome unknown, so between a failed attempt and the retry that follows
+    it the engine RECONCILES: it asks the remote whether the operation
+    already landed, and a confirmed landing is recorded instead of re-sent;
   * a LAST-SEEN REVISION per object, so the store can say whether its copy is
     current, behind, or ahead of the remote side;
   * EXPLICIT CONFLICT HANDLING. A divergence is never resolved by silent
@@ -218,21 +221,40 @@ class RetryPolicy:
         return min(self.base_delay * (self.factor ** (attempt - 1)),
                    self.max_delay)
 
-    def run(self, call, *, sleep=time.sleep):
+    def run(self, call, *, sleep=time.sleep, reconcile=None):
         """Call until it returns, or raise RetryExhausted at the ceiling.
 
         Returns ``(value, log)`` where the log holds the attempt count and the
         delays actually slept, so a caller can show the backoff was bounded.
+
+        When ``reconcile`` is given it runs between a failed attempt and the
+        retry that follows it -- never before the first attempt, never after
+        the last. If it returns a value, that value is the outcome (the remote
+        side already settled the operation) and the retry is not sent; if it
+        raises or returns None the caller is unknown and the bounded retry
+        proceeds exactly as before.
         """
         if not callable(call):
             raise SyncError("A retry needs something to call.")
         delays = []
         reason = ""
+        reconciles = 0
         for attempt in range(1, self.max_attempts + 1):
             try:
-                return call(), {"attempts": attempt, "delays": delays}
+                return call(), {"attempts": attempt, "delays": delays,
+                                "reconciles": reconciles}
             except Exception as exc:            # transport-shaped; surfaced next
                 reason = "%s: %s" % (type(exc).__name__, exc)
+                if reconcile is not None:
+                    try:
+                        settled = reconcile()
+                    except Exception:       # consult unknown: retry proceeds
+                        settled = None
+                    reconciles += 1
+                    if settled is not None:
+                        return settled, {"attempts": attempt, "delays": delays,
+                                         "reconciles": reconciles,
+                                         "reconciled": True}
                 if attempt == self.max_attempts:
                     break
                 wait = self.delay_for(attempt)
@@ -423,9 +445,32 @@ class SyncEngine:
             "operation_id": op_id, "object_id": object_id,
             "base_revision": base_revision, "payload": payload,
         }
+
+        def reconcile_query():
+            """Reconcile a timed-out attempt against the remote side.
+
+            A timeout leaves the outcome unknown: the attempt may have landed.
+            Before any retry, ask the remote (a read-only consult on the same
+            injected transport, under a distinct action) whether THIS operation
+            id is applied. A confirmation carries the applied revision, so the
+            retry is unnecessary; anything else leaves the retry queue as it
+            was.
+            """
+            answer = _plain_mapping(
+                self.call("reconcile",
+                          {"operation_id": op_id, "object_id": object_id}),
+                "reconcile reply")
+            if answer.get("operation_id") == op_id \
+                    and answer.get("applied") is True \
+                    and type(answer.get("revision")) is int \
+                    and answer["revision"] >= 1:
+                return answer
+            return None
+
         try:
             value, log = self.policy.run(
-                lambda: self.call(action, envelope), sleep=self.sleep)
+                lambda: self.call(action, envelope), sleep=self.sleep,
+                reconcile=reconcile_query)
         except RetryExhausted as exhausted:
             self.state.remember_operation(op_id, {
                 "operation_id": op_id, "object_id": object_id, "action": action,
@@ -458,6 +503,7 @@ class SyncEngine:
             "base_revision": base_revision, "payload_digest": digest,
             "status": "APPLIED", "revision": revision,
             "attempts": log["attempts"], "delays": log["delays"],
+            "reconciles": log.get("reconciles", 0),
         })
         self.state.stamp(object_id, revision,
                          catalog_revision=str(reply.get("catalog_revision", "")))
@@ -465,6 +511,7 @@ class SyncEngine:
             "operation_id": op_id, "object_id": object_id, "status": "APPLIED",
             "duplicate": False, "applied": True, "revision": revision,
             "attempts": log["attempts"], "delays": list(log["delays"]),
+            "reconciled": bool(log.get("reconciled")),
         }
 
     # pull ----------------------------------------------------------------
