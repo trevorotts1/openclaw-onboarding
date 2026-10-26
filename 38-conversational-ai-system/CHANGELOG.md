@@ -1,86 +1,117 @@
-## [2.0.138] - 2026-10-25 - feat(bonus): the access adapter keeps five authorizations apart and one member together (T-15, PBB-458)
+## [2.0.138] - 2026-10-25 - fix(bonus): the bonus access adapter is unreachable from every production path, so it is deleted rather than wired to a shim (T-15 repair, PBB-559 of PBB-458)
 
-Adds one stdlib-only module, `shared-utils/bonus/access_adapter.py`, with
-`shared-utils/bonus/tests/test_access_adapter.py` (39 tests). Acceptance, verbatim: **"Separate
-identity/grant/credential/SMS/resource authorization; return access and email-later same member."**
+This branch carried `shared-utils/bonus/access_adapter.py` (427 lines) and
+`shared-utils/bonus/tests/test_access_adapter.py` (360 lines, 39 tests). Verifier
+PBB-557 returned FAIL on two structural defects that a green test run cannot see.
+Both are reproduced below before the change and proven after it. The decision is
+**DELETE — module and suite both removed**, recorded here with the capability it
+costs.
 
-- **Separate — five dimensions, five verdicts, no bleed.** `authorize()` takes exactly the five
-  states `identity`, `grant`, `credential`, `sms`, `resource` and returns one `DimensionVerdict`
-  each, in fixed order. A missing dimension is refused, never defaulted, because a default is an
-  authorization nobody granted. `AccessAuthorization.authorized` is true only when every dimension
-  is authorized on its own evidence; a denial reports in `blocked_dimensions` and does not cascade
-  into a sibling, and a pass does not mint a sibling pass. Credential is not resource (an expired
-  credential is not expired guides) and SMS permission is not identity (being allowed to text a
-  handle says nothing about who the member is). The separation is proven by a sweep rather than by
-  three examples: every dimension is driven through all three states and the other four verdicts
-  must stay byte-identical (`test_sweeping_every_dimension_never_moves_another_verdict`).
-- **Same member — one identity across both channels.** `AccessLedger` is the only place a member id
-  is associated with a channel handle. An SMS handle and an email handle bind to one member, and a
-  binding refuses to move to a different member. A failed step is recorded against the member the
-  channel resolved to, so a failure cannot be attributed to a member the record cannot prove was
-  reached. `defer_to_email()` is a deferral of the SAME member and refuses an address already owned
-  by someone else — the fork that collects an address and silently creates a second member.
-- **Resume — the exact failed step, on the same member.** `resume()` refuses a return path that
-  cannot arrive over the channel it names (`sms_return` over email and `email` over SMS are both
-  refused), refuses a handle bound to no member, and reports `nothing_to_resume` rather than success
-  when nothing is pending. The clause is proven end to end: one member, both channels, both return
-  paths, one `resumed_dimensions` set (`test_access_return_and_email_later_resolve_to_one_member`).
-- **Not a provider client.** No automated bonus-access route is proved: T-14's
-  `bonus-access-capability-decision` is **BLOCKED** for every automated route and lives on a
-  candidate (`origin/pb/PBB-356/t-14-repair3@dc5c25aa5`), not on main, so this module imports
-  nothing from it and restates the five-step vocabulary rather than coupling to an unmerged branch.
-  No vendor operation, URL or verb appears here, `automated` is False on every result, and even with
-  all five dimensions authorized the next action is an operator step (`operator_issue_credential`) —
-  authorization is not transport. When T-14 lands, its per-step states are passed into
-  `authorize(states=...)` unchanged.
-- **No original-lane coupling (C-F07).** The module exposes no original-lane field and imports no
-  fulfillment module, so a blocked bonus lane cannot gate the original promise.
-- **Ceiling, stated.** `AccessLedger` is in memory: the caller owns durability, and the SQLite
-  ledger of record for outbound effects remains `direct_fulfillment.FulfillmentLedger`. A process
-  restart loses pending resume state. This is written into the class docstring, not left implicit.
+- **DEFECT 1 reproduced — zero production call sites.** Whole-tree scan of every
+  tracked code file (`.py .sh .js .ts .yml .yaml .md .txt .json`, test paths
+  excluded) at head `28969668f` for the token `access_adapter`: **2 non-test hits**,
+  and both are the module's own docstring and this CHANGELOG's prose. The test
+  file is the only other reference. The scanner discriminates in the same run:
+  the known-present control token `presentation_job` returns **195 non-test files**
+  (`23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh`,
+  `shared-utils/persona_for_job.py`, `shared-utils/llm_score.py`, …). A 195-vs-2
+  split where both hits are prose is a real absence, not a broken search. The
+  verifier's narrower extension set measured the same split as 123-vs-1; both
+  instruments agree the module is reachable only from its own test file.
+- **The wire-or-delete decision and its justification.** Wiring was rejected on
+  evidence, not preference. The only states `authorize()` accepts are the five
+  dimension verdicts (identity/grant/credential/SMS/resource), and the only
+  systems that can produce them are **T-14 `bonus-access-capability-decision`
+  (ledger status `NOT_STARTED`, decision `BLOCKED` for every automated route, code
+  living on an unmerged candidate `origin/pb/PBB-356/t-14-repair3@dc5c25aa5`)**
+  and **T-48 `named-owner-live-proof` (ledger status `DEFERRED_AUTH`)**. Neither
+  ships. The spec-designated consumer is T-16 `shared-utils/capture/progressive_capture.py`
+  (ledger `build_depends_on` includes `T-15`), which is itself reachable only from
+  its own tests — 0 non-test callers on `origin/main` — so a call edge into it is
+  dead-to-dead. Every other candidate was ruled out by contract:
+  `38-conversational-ai-system/tools/direct_fulfillment.py` states in its own
+  docstring "There is no dependency on any bonus access module" and the adapter
+  states the mirror rule (C-F07, original gift must not depend on the bonus lane);
+  `consent_gate`/`tenant_identity`/`interactive_owner`/`pb_contracts` answer
+  different questions (consent scope, tenant identity, one-responder routing,
+  contract shapes) and none of them holds bonus-access verdicts to hand over.
+  Inventing a caller, or feeding `progressive_capture` fabricated states so a
+  search returns a hit, is the self-reference in a new shirt that already failed
+  two other units. So the module goes.
+- **Capability lost, stated plainly.** Deleting this module loses T-15's
+  acceptance capability entirely — the decomposition of bonus access into five
+  independently-refused authorizations, and the same-member ledger that binds an
+  SMS handle and an email handle to one member, records a failed step against the
+  member the channel resolved to, and resumes exactly that step on return.
+  Nothing on main provides it. `preparing_access` remains an inert capture state
+  in `shared-utils/capture/progressive_capture.py`, and `BONUS_COMMENT` in
+  `pb_contracts.py` remains a purpose label with no authorization semantics. The
+  clause is **unmet**, not met elsewhere. A future T-15 must land alongside its
+  real producer (T-14's route decision) and its real consumer (T-16/T-48), not
+  ahead of them. Checks **C-15, C-F04, C-F07, C-F11 stay UNVERIFIED**.
+- **DEFECT 2 resolved by removal, proven both ways.** The suite
+  `test_access_adapter.py` was executed by no workflow (0 of 66 files under
+  `.github/workflows/` name `test_access_adapter` or `bonus`; no `pytest.ini`,
+  `setup.cfg`, `tox.ini`, `pyproject.toml` or `conftest.py` at repo root, under
+  `shared-utils/` or under `shared-utils/bonus/` — all 12 probed paths absent).
+  Wiring a suite for a deleted module would name a path that never executes — the
+  same defect wearing a hat. After the deletion the suite file is absent from the
+  tree, so there is nothing for a workflow to collect and the defect is vacuous
+  rather than papered over: re-running the workflow scan reports
+  `test_access_adapter` **and** `bonus` at 0 hits with the file absent, and
+  `presentation_job` at 195 as the known-present control. The sibling suites this
+  entry does run are named explicitly by their own invocations below.
+- **DEFECT 3 corrected — the baseline was stale.** The prior entry recorded its
+  baseline as `7477816dc2fd350a837a751dc8631aaaedb956ef`; measured, that commit
+  exists and is an ancestor of head, but it is **not** current `origin/main`. The
+  real baseline is **`75a5a26a6bf7298eb4e3e1adcd7465ea4c6ec7c2`**, confirmed by
+  three agreeing reads (`git rev-parse origin/main`,
+  `git ls-remote --heads origin main`,
+  `gh api repos/trevorotts1/openclaw-onboarding/branches/main --jq .commit.sha`),
+  each returning that sha, and
+  `git merge-base --is-ancestor 75a5a26a6bf7 origin/main` **rc 0**. The suite table
+  below is re-measured against a detached `origin/main` worktree at that commit;
+  the earlier table was measured against a stale base and is superseded.
 
-SUITES, twice each, real counts and exit codes captured per command (no pipe on the measured
-command). Baseline is a detached `origin/main` worktree at `7477816dc2fd350a837a751dc8631aaaedb956ef`;
-candidate is this commit.
-  baseline `python3 -I shared-utils/bonus/tests/test_access_adapter.py` -> rc 2 (file absent, by design)
+SUITES, twice each, real counts and exit codes captured per command (no pipe on
+the measured command). Baseline = detached `origin/main` worktree at
+`75a5a26a6bf7298eb4e3e1adcd7465ea4c6ec7c2`; candidate = this commit.
   baseline `bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh` -> rc 0, Ran 42, OK (both passes)
   baseline `python3 -I 38-conversational-ai-system/tools/tests/test_direct_fulfillment.py` -> rc 0, Ran 16, OK (both passes)
   baseline `python3 -I shared-utils/handoff/tests/test_handoff.py` -> rc 0, Ran 50, OK (both passes)
-  candidate `python3 -I shared-utils/bonus/tests/test_access_adapter.py` -> rc 0, Ran 39, OK (both passes)
+  baseline `python3 -I shared-utils/bonus/tests/test_access_adapter.py` -> **rc 2, file absent on baseline** — absence, not a failing baseline
+  baseline `git cat-file -e 75a5a26a6bf7:shared-utils/bonus/tests/test_access_adapter.py` -> **rc 128, path does not exist**
   candidate `bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh` -> rc 0, Ran 42, OK (both passes)
   candidate `python3 -I 38-conversational-ai-system/tools/tests/test_direct_fulfillment.py` -> rc 0, Ran 16, OK (both passes)
   candidate `python3 -I shared-utils/handoff/tests/test_handoff.py` -> rc 0, Ran 50, OK (both passes)
-No failure delta and no count delta on any pre-existing suite; the only count change is the new file.
+  candidate `python3 -I shared-utils/bonus/tests/test_access_adapter.py` -> **cannot run — file deleted by this commit, by design**
+  pre-change run of the same suite from the head copy of the file -> rc 0, Ran 39, OK (the code itself was green; reachability is what failed it)
+No failure delta and no count delta on any pre-existing suite across baseline and
+candidate: 42 / 16 / 50 identical in both trees, twice each.
 
-MUTATIONS, verbatim (one edit per run against a saved copy; sha256 restored and green after each):
-  UNMUTATED rc=0 Ran 39 OK
-  M1 `authorized` becomes any-dimension -> FAILED (failures=3)
-  M2 a missing dimension defaults to authorized -> FAILED (failures=1)
-  M3 a reason is borrowed across dimensions -> FAILED (failures=2)
-  M4 a handle may move to another member -> FAILED (failures=1)
-  M5 email-later may fork a second member -> FAILED (failures=1)
-  M6 the return path is not tied to its channel -> FAILED (failures=1)
-  M7 an unbound resume resolves to a fabricated member -> FAILED (failures=1)
-  M8 the result claims automation -> FAILED (failures=1)
-  M9 blocked dimensions are always empty -> FAILED (failures=5)
-  M10 `verdict()` ignores the dimension asked for -> FAILED (failures=5)
-  RESTORED sha256 match=True rc=0 Ran 39 OK — survivors 0.
+INSTRUMENT PROOF, BOTH POLARITIES, on the same git that produced the tables:
+  expected-PASS ancestor `git merge-base --is-ancestor 75a5a26a6bf7 origin/main` -> rc 0
+  known-present `git cat-file -e 28969668f:README.md` -> rc 0
+  known-absent `git cat-file -e 28969668f:ZZZ-DEFINITELY-NOT-HERE-9f3a.txt` -> rc 128 (path-absent, instrument abort — absence, not a broken probe)
+  known-unlanded `git rev-list --count origin/main..063eb36307dd21465125d84f673cfefbad4e154c` -> 3 (expected 3)
+  control `git rev-list --count origin/main..75a5a26a6bf7` -> 0
+Every search above carries a known-present control. No 127 anywhere.
 
-TEST DIFF AGAINST THE PARENT: purely additive. `test_access_adapter.py` is a new file, no existing
-test file is touched, no assertion anywhere is changed or weakened, and no test method is dropped.
+D2 IS NOT THIS UNIT'S: `test_interactive_owner.BookkeepingTests` is
+**D2-attributed — unscored**; it influences no row here. `fast-guards` red is
+parity with main.
 
-BOOKKEEPING. Version allocated **`v2.0.138` PROVISIONAL** and assigned in this same commit.
-Enumerated NUMERICALLY (`major*1000000+minor*1000+patch`) over `git for-each-ref refs/remotes/origin`
-with the **bare** prefix and no `/*` glob (2,016 refs measured; a glob measures 113 and hides
-namespaced branches): maximum is `2.0.133` score `2000133` at `refs/remotes/origin/pb/PBB-451/t-38-update`,
-one carrier. Known-present control in the same harness: `refs/remotes/origin/main` -> `v2.0.105`.
-2.0.133 + 5 = **2.0.138**, reserved for the merge-time writer, which renumbers every landing
-candidate. Lexical comparison would have been wrong here in both directions, which is why the
-score is arithmetic. Absence on `origin/main` in both bracketed forms, each printing its own rc:
-`git grep --fixed-strings -- '[2.0.138]' origin/main` **rc 1** and
-`git grep --fixed-strings -- 'v2.0.138' origin/main` **rc 1**, against the known-present control
-`'[2.0.105]'` **rc 0** and `'v2.0.105'` **rc 0**. Brackets are mandatory: the bare probe `2.0.13`
-matches `[v22.0.13]` in the repository CHANGELOG as a substring.
+BOOKKEEPING. Version marker stays **`v2.0.138`** — this repair changes no number;
+version allocation is the orchestrator's alone. This entry keeps its heading and
+its number so the merge-time writer sees one stable candidate.
+
+TEST DIFF. Net effect versus head is a deletion: `shared-utils/bonus/__init__.py`,
+`shared-utils/bonus/access_adapter.py` and
+`shared-utils/bonus/tests/test_access_adapter.py` are removed (787 lines), this
+entry replaces the previous `[2.0.138]` text, and no other file is touched. The
+39 tests removed with the module are removed with the capability; they tested
+only the deleted code.
+
 ## [2.0.133] - 2026-10-25 - fix(cleanup): an absence proof is a measurement, and a claim of absence for a path still present never dispatches (T-46 repair 4, PBB-455)
 
 PBB-434's review of `ec3933772` returned FAIL for one reason: a hollow pin on a load-bearing acceptance clause. Its mutation pass over the pins that commit adds ran green at baseline (59 tests OK), killed seven of eight mutations, and left **M2 "absence proof always absent" SURVIVING at rc 0, 59 tests OK**. The suite asserted only the absent polarity (`{'lexists': False, 'absent': True}`), never the present one, so a proof that always claims absence was indistinguishable from a real one. The acceptance clause says "immediate eligible dispatch with preserved content, exact external path and actual absence proof", so a pin that cannot tell those apart is hollow on the clause itself.
