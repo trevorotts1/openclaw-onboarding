@@ -1141,6 +1141,43 @@ def _too_long_note(text, carried=None):
                carried or ("the delivery map, the band wording, the one clean ending, "
                            "the hook-placement clause and the approved pace clause")))
 
+def compose_style_block(block, sheet=None, vocal_gender="f", pace_plan=None,
+                        style_id=None, deliveries=None):
+    """THE one style-text composer, for any style data block.
+
+    ``style_text`` passes the live catalog's music/<style>.json block. A
+    recipe owned by another unit, not yet registered in the menu, passes its
+    own block, so one clean ending, the FU-HOOK-PLACEMENT order clause, the
+    G1 delivery map, the approved pace clause and the 1000-char cap are all
+    composed and checked HERE -- never a second copy in a recipe loader.
+
+    ``deliveries`` is the block's own delivery set when the sheet names none.
+    """
+    word = vocal_gender_word(vocal_gender)
+    parts = [_gender_variant(str(p).rstrip("."), word).rstrip(".") + "."
+             for p in block["style_parts"]]
+    # The clean-ending clause is ending_qc's, appended the way ending_qc
+    # appends it (comma, no double period). It is here so the measured
+    # style counts equal the design's (623/699/707, 733/809/817 with the
+    # FU-HOOK-PLACEMENT order clause) and so the final
+    # payload is the same whether or not with_clean_ending has run.
+    text = " ".join(parts).rstrip(".") + ", " + _EQ.STYLE_ENDING + "."
+    # FU-HOOK-PLACEMENT rule 5: the section order is the sheet's, and the
+    # song never opens with the hook (Suno added a hook at 13.6 s in v2).
+    text = "%s %s." % (text, _HP.PROMPT_CLAUSE)
+    # G1 delivery map: the map sentence must name the sheet's deliveries.
+    text = _MS.assert_delivery_map(
+        style_id, text, _sheet_deliveries(sheet, style_id, block, deliveries))
+    # WW-07: the approved pace direction goes LAST, after the ending, the
+    # hook-placement order clause and the delivery map, and the 1000-char
+    # cap is measured on the FINAL text (a raise, never a truncation).
+    pace = pace_clause(pace_plan)
+    if pace:
+        text = "%s %s" % (text.rstrip(), pace)
+    if len(text) > SUNO_STYLE_FIELD_MAX:
+        raise RecipeError("STYLE_TOO_LONG", _too_long_note(text))
+    return text
+
 def style_text(style_id, sheet=None, vocal_gender="f", pace_plan=None):
     """Suno style field: the style's OWN parts, in order, one clean ending.
 
@@ -1151,34 +1188,14 @@ def style_text(style_id, sheet=None, vocal_gender="f", pace_plan=None):
     brief (``vocal_gender``), never hard-coded female.
 
     The style's data owns the negatives; the ending clause is ending_qc's
-    (composed there, never restated here).
+    (composed there, never restated here). S75-T21 moved the composition into
+    ``compose_style_block`` so a recipe this menu does not carry yet composes
+    through the same code.
     """
     if style_id is not None and not is_exempt(style_id):
         sid = _style_key(style_id)
-        block = music_block(sid)
-        word = vocal_gender_word(vocal_gender)
-        parts = [_gender_variant(str(p).rstrip("."), word).rstrip(".") + "."
-                 for p in block["style_parts"]]
-        # The clean-ending clause is ending_qc's, appended the way ending_qc
-        # appends it (comma, no double period). It is here so the measured
-        # style counts equal the design's (623/699/707, 733/809/817 with the
-        # FU-HOOK-PLACEMENT order clause) and so the final
-        # payload is the same whether or not with_clean_ending has run.
-        text = " ".join(parts).rstrip(".") + ", " + _EQ.STYLE_ENDING + "."
-        # FU-HOOK-PLACEMENT rule 5: the section order is the sheet's, and the
-        # song never opens with the hook (Suno added a hook at 13.6 s in v2).
-        text = "%s %s." % (text, _HP.PROMPT_CLAUSE)
-        # G1 delivery map: the map sentence must name the sheet's deliveries.
-        text = _MS.assert_delivery_map(sid, text, _sheet_deliveries(sheet, sid))
-        # WW-07: the approved pace direction goes LAST, after the ending, the
-        # hook-placement order clause and the delivery map, and the 1000-char
-        # cap is measured on the FINAL text (a raise, never a truncation).
-        pace = pace_clause(pace_plan)
-        if pace:
-            text = "%s %s" % (text.rstrip(), pace)
-        if len(text) > SUNO_STYLE_FIELD_MAX:
-            raise RecipeError("STYLE_TOO_LONG", _too_long_note(text))
-        return text
+        return compose_style_block(music_block(sid), sheet, vocal_gender,
+                                   pace_plan, sid)
     text = "%s. Only the short intro and the final outro are spoken; %s." % (
         _MS.style_prompt(style_id).rstrip(".,"), BAND_WORDING)
     pace = pace_clause(pace_plan)
@@ -1191,12 +1208,20 @@ def style_text(style_id, sheet=None, vocal_gender="f", pace_plan=None):
     return text
 
 
-def _sheet_deliveries(sheet, style_id):
-    """The deliveries a sheet names, or the style's own when it names none."""
+def _sheet_deliveries(sheet, style_id, block=None, deliveries=None):
+    """The deliveries a sheet names, or the style's own when it names none.
+
+    ``block``/``deliveries`` let a recipe outside the live menu answer without
+    a catalog lookup; the catalog path is unchanged.
+    """
     if sheet:
         names = {s["delivery"] for s in sheet if s.get("delivery") and s.get("lines")}
         if names:
             return names
+    if deliveries:
+        return set(deliveries)
+    if block is not None:
+        return set(block["deliveries"])
     return set(music_block(style_id)["deliveries"])
 
 
