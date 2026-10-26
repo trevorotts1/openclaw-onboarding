@@ -1,0 +1,92 @@
+{
+ "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+ "schema_note": "This file records one BUILD attempt and its measurements. It approves nothing and it is NOT a verdict: the builder wrote the code under test and cannot clear it. Only an independent verifier may write a verdict.",
+ "unit": "S75-T38",
+ "unit_id": "S75-T38",
+ "acceptance_row": "S75-A38",
+ "acceptance_id": "S75-A38",
+ "title": "A real CC change has current-head incorporation proof",
+ "attempt": 1,
+ "written_at": "2026-10-26",
+ "role": "BUILDER",
+ "status": "COMPLETE",
+ "mode": "build",
+ "repository": "/Users/blackceomacmini/blackceo-command-center",
+ "base": "c716c0164d487713370d8d5bcb4dd092de700d35",
+ "base_source": "origin/main of https://github.com/trevorotts1/blackceo-command-center.git, after git fetch origin --prune",
+ "head": "b772bcf7d4890fed6dfb58adf4cc591feab5a689",
+ "head_source": "git rev-parse HEAD in the CC lane worktree after commit; git ls-remote confirms the pushed ref",
+ "branch": "s75/S75-T38-cc-r1",
+ "files_changed": [
+  "scripts/check-tool-registry-references.py"
+ ],
+ "change_summary": "The U094 tool-registry guard flagged NEGATED per-agent file claims that its own docstring declares acceptable (a false failure). It now skips a claim only when a negation word precedes it within the same clause, keeps 'not only ... but also' as a positive claim, and reports one finding per line+filename instead of one per overlapping pattern. Two self-test directions were added to prove the new behaviour.",
+ "tests_run": [
+  {
+   "command": "python3 -I scripts/check-tool-registry-references.py",
+   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "exit_code": 0,
+   "result": "PASS",
+   "summary": "real-repo scan passes; no dangling reference"
+  },
+  {
+   "command": "python3 -I scripts/check-tool-registry-references.py --self-test",
+   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "exit_code": 0,
+   "result": "PASS",
+   "summary": "5 directions PASS: clean tree, dangling reference, negated claim, not-only claim, real repo"
+  },
+  {
+   "command": "python3 -I scripts/check-agent-identity-guardrail.py --self-test",
+   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "exit_code": 0,
+   "result": "PASS",
+   "summary": "surrounding guard suite: 5 directions PASS"
+  },
+  {
+   "command": "python3 -I scripts/check-persona-dispatch-order.py",
+   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "exit_code": 0,
+   "result": "PASS",
+   "summary": "surrounding guard script exits 0"
+  },
+  {
+   "command": "python3 -I -m py_compile scripts/*.py",
+   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "exit_code": 0,
+   "result": "PASS",
+   "summary": "all CC python scripts compile"
+  }
+ ],
+ "pre_change_control": {
+  "command": "python3 -I (import guard module; scan a temp tree holding a negated how-to.md claim)",
+  "observed_before_fix": "exit 1 with two duplicate findings for the negated sentence",
+  "observed_after_fix": "exit 0",
+  "meaning": "the self-test direction proves a change of behaviour, not a no-op"
+ },
+ "claims": [
+  "A real, non-empty Command Center change exists on branch s75/S75-T38-cc-r1: one commit, one file, 73 insertions and 4 deletions in scripts/check-tool-registry-references.py.",
+  "The change is built directly on current origin/main c716c0164d487713370d8d5bcb4dd092de700d35: git merge-base --is-ancestor returned 0 and git rev-list --count returned 1.",
+  "For the changed file the branch parent blob equals the current-head blob (2ce8ca726a604e4f4f848f09fe901535d26157ef), so the change applies to current head without drift.",
+  "The branch is pushed and the remote ref s75/S75-T38-cc-r1 resolves to b772bcf7d4890fed6dfb58adf4cc591feab5a689.",
+  "A previously landed real Command Center change, 8220cfd136, is both an ancestor of current head and byte-identical at current head for both files it touched (ancestry plus documented content equivalence).",
+  "The owned guard self-test and the surrounding Python guard suite are green under python3 -I."
+ ],
+ "not_claimed": [
+  "The unit change is NOT merged into origin/main and is not in origin/main's tree; no main-branch commit or push was made.",
+  "No merge commit exists for s75/S75-T38-cc-r1 and no deployment was performed.",
+  "No repository CI workflow was run; only the local commands listed in tests_run were executed.",
+  "No files outside scripts/check-tool-registry-references.py were changed in the Command Center repository.",
+  "This is not a verdict and not an independent check; the author cannot clear the unit.",
+  "The 'current head' captured is origin/main c716c0164d487713370d8d5bcb4dd092de700d35 as of 2026-10-26; it is not asserted to remain the head later."
+ ],
+ "evidence": {
+  "incorporation_proof": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-build-lane/evidence/units/S75-T38/incorporation-proof.json",
+  "push_proof_command": "git ls-remote origin refs/heads/s75/S75-T38-cc-r1"
+ },
+ "residuals": [
+  "Whether the acceptance row requires the change to be present in main's tree rather than one commit ahead of current head is a verifier judgement; both ancestry and content-equivalence forms are recorded here."
+ ],
+ "written_by": "S75-T38 builder (ds/deepseek-flash via 9Router)",
+ "written_by_source": "agent role in session; no verdict written"
+}
