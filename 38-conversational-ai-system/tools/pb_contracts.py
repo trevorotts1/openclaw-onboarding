@@ -47,6 +47,13 @@ import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Direct-script execution (python3 -I pb_contracts.py) does not put this
+# directory on sys.path; the sibling module must still resolve.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import compat_guard  # noqa: E402
+
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = SKILL_ROOT / "schemas"
 
@@ -700,6 +707,14 @@ def load_ledger(path):
     version = ledger.get("version")
     if not isinstance(ledger.get("actions"), dict):
         raise UsageError("ledger %s has no actions map" % path)
+    # T-39 compat_guard: a ledger written by a newer build is refused by name
+    # (no silent downgrade), the same gate every versioned on-disk record gets.
+    try:
+        compat_guard.assert_compatible(ledger, known_version=LEDGER_VERSION)
+    except compat_guard.CompatError as exc:
+        raise UsageError(
+            "ledger %s is version %r; this build reads version 1 or %d"
+            % (path, version, LEDGER_VERSION)) from exc
     if version == 1:
         return _migrate_v1(ledger)
     if version != LEDGER_VERSION:
