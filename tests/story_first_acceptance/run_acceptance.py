@@ -34,6 +34,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 import acceptance_fixtures as F  # noqa: E402
+import provenance  # noqa: E402
 import receipt as R  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -48,8 +49,13 @@ _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 # provisioned at that revision or it does not exist.
 # ponytail: one pin is enough while only one N999 revision is under measurement;
 # upgrade to a pins manifest when a second revision must be judged side by side.
-N999_PIN_REPOSITORY = "trevorotts1/999-setup"
-N999_PIN_REVISION = "33ef8ec5b17e171b646926ccb4ec77ee5e865d49"
+PINS = provenance.load_pins()
+REPOSITORIES = {
+    "onboarding": PINS["onboarding"]["repository"],
+    "999": PINS["999"]["repository"],
+}
+N999_PIN_REPOSITORY = PINS["999"]["repository"]
+N999_PIN_REVISION = PINS["999"]["revision"]
 N999_PIN_ROOT = os.path.join(HERE, "pins", "999-setup", N999_PIN_REVISION)
 
 # The harness writes its own receipts here. Its own output is not candidate
@@ -80,7 +86,7 @@ def _pinned_revision_of(path):
     return None
 
 
-def revision_gate(root):
+def revision_gate(root, expected_repository=None, pin=None):
     """Provenance of a resolved skill root. Refuses an unmeasurable one.
 
     A live working tree is mutable and can look like an ordinary directory while
@@ -89,15 +95,29 @@ def revision_gate(root):
     it is a pinned archive named by its revision, or a clean worktree whose HEAD
     is a revision that exists on origin. Anything else is REFUSED, and every
     reason is recorded here so the refusal cannot be silent.
+
+    MEASURABLE IS NOT ATTRIBUTABLE. Round 4 minted a 999 release claim from a
+    planted directory because the only identity test was os.path.isdir. The gate
+    therefore also requires provenance.resolve to read a remote, a revision and
+    a digest that match the declared repository before the root is usable.
     """
     gate = {"root": root, "status": "UNRESOLVED", "mode": None,
             "revision": None, "revision_source": None,
             "clean_excluding_instrument_output": None, "at_origin_main": None,
             "is_origin_revision": None, "violations": []}
-    if not root:
-        gate["status"] = "REFUSED"
-        gate["violations"].append("no candidate skill root resolved")
+    proof = provenance.resolve(root, expected_repository, pin)
+    gate["provenance"] = proof
+    if not proof["identity_proven"]:
+        gate["violations"].extend(proof["refusals"])
+
+    def _finish():
+        if gate["violations"]:
+            gate["status"] = "REFUSED"
         return gate
+
+    if not root:
+        gate["violations"].append("no candidate skill root resolved")
+        return _finish()
 
     probe = root if os.path.isdir(root) else os.path.dirname(root)
     while probe and not os.path.isdir(probe):
@@ -111,11 +131,10 @@ def revision_gate(root):
             gate["revision_source"] = "directory name of the extracted tree"
             gate["status"] = "PINNED_REVISION"
         else:
-            gate["status"] = "REFUSED"
             gate["violations"].append(
                 "not inside a git worktree and no ancestor directory names a 40-hex "
                 "revision; an extracted tree must be named by the revision it was cut from")
-        return gate
+        return _finish()
 
     gate["mode"] = "git_worktree"
     _, head, _ = _git(probe, "rev-parse", "HEAD")
@@ -138,12 +157,9 @@ def revision_gate(root):
         gate["violations"].append(
             "HEAD %s is not origin/main and is not a revision that exists on origin"
             % (head or "<none>"))
-    if gate["violations"]:
-        gate["status"] = "REFUSED"
-    else:
+    if not gate["violations"]:
         gate["status"] = "AT_ORIGIN_MAIN" if gate["at_origin_main"] else "ORIGIN_REVISION"
-    return gate
-
+    return _finish()
 
 def default_n999_candidates(args):
     """Every N999 root that may be used, in order. No live working tree is one."""
@@ -168,7 +184,8 @@ def resolve_flavors(repo_root, args, order):
         out[flavor] = {
             "skill_root": root,
             "sources_checked": [p for p in onb_candidates if p],
-            "revision_gate": revision_gate(root),
+            "revision_gate": revision_gate(root, REPOSITORIES.get(flavor),
+                                           PINS.get(flavor)),
         }
     return out
 
@@ -225,6 +242,14 @@ def _repo_state(path):
 
 
 def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
+    # The repository label is not minted from the flavour name. It is the
+    # repository the gate PROVED, or the declared one with its refusal carried
+    # alongside; a release claim never outranks the evidence again.
+    proof = (flavor_info.get("revision_gate") or {}).get("provenance") or {}
+    if proof.get("identity_proven"):
+        repository = proof["proven_repository"]
+    else:
+        repository = contracts.get("repository", "unknown")
     _, head, _ = _git(repo_root, "rev-parse", "HEAD")
     _, branch, _ = _git(repo_root, "rev-parse", "--abbrev-ref", "HEAD")
     _, base_commit, _ = _git(repo_root, "rev-parse", args.base_ref)
@@ -325,9 +350,10 @@ def build_receipt(flavor, repo_root, args, payload, contracts, flavor_info):
 
     return R.build(
         flavor=flavor,
-        repository=contracts.get("repository", "unknown"),
+        repository=repository,
         candidate={
-            "repository": contracts.get("repository"),
+            "repository": repository,
+            "repository_identity": proof,
             "commit": candidate_head,
             "branch": candidate_branch,
             "checkout_commit": checkout_head,
@@ -420,10 +446,6 @@ def main(argv=None):
 
     out_dir = args.out_dir or os.path.join(repo_root, "evidence", "acceptance")
     flavors = resolve_flavors(repo_root, args, order)
-    repositories = {
-        "onboarding": "trevorotts1/openclaw-onboarding",
-        "999": "trevorotts1/999-setup",
-    }
 
     failures = 0
     written = []
@@ -434,7 +456,7 @@ def main(argv=None):
                  ("violations: " + "; ".join(gate["violations"])) if gate.get("violations") else ""))
         payload = run_flavor(flavor, flavors[flavor])
         receipt = build_receipt(flavor, repo_root, args, payload, {
-            "repository": repositories[flavor],
+            "repository": REPOSITORIES[flavor],
             "skill_root": flavors[flavor]["skill_root"],
         }, flavors[flavor])
         path = R.write(os.path.join(out_dir, "%s.json" % flavor), receipt)

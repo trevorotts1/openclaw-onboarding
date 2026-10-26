@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Run one cross-flavor acceptance facet AND the nine S75-A32 cells, in isolation.
+"""Run one cross-flavor acceptance facet AND its S75-A32 cells, in isolation.
 
 Isolation is deliberate: each flavor runs in its own process with only its own
 `scripts/core` on sys.path, so an ONB facet can never pick up an N999 module or
-the reverse. That is also the evidence that each facet releases its own
-repository (S75-A32 / S75-A36, S75-A37).
+the reverse. A release claim is separate from isolation and is not inferred
+from it: `provenance.resolve` must read a remote, a revision and a digest from
+the root that match the declared repository, or the cell refuses its release
+(S75-A32 / S75-A36, S75-A37).
 
-The nine cells run whether or not the shared contracts are present: a cell that
-runs nothing is absence of evidence, so a flavour without the contracts still
-records, for every cell, what its probe observed and which unit owes the
-capability it lacks.
+The seven narrowed cells run whether or not the shared contracts are present: a
+cell that runs nothing is absence of evidence, so a flavour without the
+contracts still records, for every cell, what its probe observed and which unit
+owes the capability it lacks. The two dependency behaviours are out of this row
+by arbiter decision and are named in cell_matrix.EXCLUDED_BEHAVIORS.
 
 Usage:
     python3 facet_runner.py --skill-root <root> --flavor onboarding --facet all
@@ -70,18 +73,31 @@ def main(argv=None):
     # record is the observation, and an absence is one of the observations.
     cells = C.run_cells(target)
     cell_counts = C.counts(cells)
+    releases = {
+        "cells_with_proven_release": sum(
+            1 for c in cells
+            if c["repository_release"]["own_repository_released"] is True),
+        "cells_refused": [
+            {"cell_id": c["cell_id"],
+             "reason": c["repository_release"]["release_refused"]}
+            for c in cells
+            if c["repository_release"]["own_repository_released"] is not True],
+    }
+    releases["all_cells_released"] = not releases["cells_refused"]
 
     absent = F.missing_contract_files(skill_root)
     if absent:
         json.dump({
             "flavor": args.flavor,
             "repository": repository,
+            "repository_identity": target.provenance,
             "skill_root": skill_root,
             "status": "UNAVAILABLE",
             "reason": "candidate skill root does not yet carry the shared contracts",
             "missing_sources_checked": absent,
             "cells": cells,
             "cell_counts": cell_counts,
+            "releases": releases,
         }, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
         return 2
@@ -98,11 +114,15 @@ def main(argv=None):
     results = [F.run_facet(ctx, facet) for facet in facets]
     ok = all(r["ok"] and r["control"]["control_red"] for r in results)
     cells_ok = cell_counts["cells_fail"] == 0
+    # Clause 2 of the narrowed row: a PASS is not a release claim unless every
+    # cell proved which repository it ran in. An unproven identity is a FAIL.
+    status_ok = ok and cells_ok and releases["all_cells_released"]
     json.dump({
         "flavor": args.flavor,
         "repository": repository,
+        "repository_identity": target.provenance,
         "skill_root": skill_root,
-        "status": "PASS" if (ok and cells_ok) else "FAIL",
+        "status": "PASS" if status_ok else "FAIL",
         "seam": ctx.adapter.SEAM,
         "core_digest": ctx.adapter.core_digest(),
         "core_schema_version": ctx.core.SCHEMA_VERSION,
@@ -112,10 +132,11 @@ def main(argv=None):
         "facets": results,
         "cells": cells,
         "cell_counts": cell_counts,
+        "releases": releases,
         "coverage": F.coverage(),
     }, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
-    return 0 if (ok and cells_ok) else 1
+    return 0 if status_ok else 1
 
 
 if __name__ == "__main__":

@@ -38,10 +38,14 @@ _REQUIRED = (
 _CELL_REQUIRED = ("cell_id", "flavor", "behavior", "repository", "executed",
                   "status", "instrument", "checks", "observations",
                   "known_good_control", "negative_control", "repository_release")
+#: The behaviours the NARROWED row owns (S75-T32-ARBITER.md, REJECT_AND_NARROW).
+#: "Notion migration" and "paid compatibility" left this row for S75-A17 and
+#: S75-A28: this unit cannot exercise code another unit has not landed, and the
+#: providers it used to drive were written inside the check module itself.
 _CELL_BEHAVIORS = (
-    "missing foundation", "cast bypass", "scene richness", "Notion migration",
+    "missing foundation", "cast bypass", "scene richness",
     "identity setting changes", "approval ordering", "style18",
-    "original byte preservation", "paid compatibility",
+    "original byte preservation",
 )
 
 
@@ -179,8 +183,9 @@ def _cell_defects(cells, checks):
     if cells is None:
         return defects  # an older receipt shape; cells are recorded when a runner supplies them
     if not isinstance(cells, list) or len(cells) != len(_CELL_BEHAVIORS):
-        defects.append("cells must list exactly %d cells (9 behaviours x 2 "
-                       "flavours is 18 across both receipts)" % len(_CELL_BEHAVIORS))
+        defects.append("cells must list exactly %d cells (7 narrowed behaviours "
+                       "x 2 flavours is 14 across both receipts)"
+                       % len(_CELL_BEHAVIORS))
         return defects
     behaviors = [cell.get("behavior") for cell in cells]
     for expected in _CELL_BEHAVIORS:
@@ -208,9 +213,19 @@ def _cell_defects(cells, checks):
         if not control.get("expected") and not control.get("pass"):
             defects.append("cell %r control does not state the known answer" % label)
         release = cell.get("repository_release") or {}
+        # Clause 2 of the narrowed row: a release claim is an identity claim, and
+        # an identity claim needs a remote, a revision and a digest. A cell that
+        # executed in an unattributable root must say so, and a receipt must not
+        # carry the claim. This is the gate that stops round 4's planted-directory
+        # spoof from being filed as a release.
+        if release.get("identity_proven") is not True:
+            defects.append("cell %r claims a release without proven repository "
+                           "identity: %s" % (label, release.get("identity_proven")))
         if release.get("own_repository_released") is not True:
             defects.append("cell %r did not prove it released only its own "
-                           "repository" % label)
+                           "repository: %s"
+                           % (label, release.get("release_refused")
+                              or "no refusal recorded"))
         if release.get("foreign_repository_modules_loaded"):
             defects.append("cell %r loaded modules from another repository: %s"
                            % (label, release["foreign_repository_modules_loaded"]))

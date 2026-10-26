@@ -41,6 +41,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 import acceptance_fixtures as F  # noqa: E402
+import provenance  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
 CORE_DIR = os.path.join(REPO_ROOT, "75-drama-song-ad-factory", "scripts", "core")
@@ -49,23 +50,45 @@ CORE_DIR = os.path.join(REPO_ROOT, "75-drama-song-ad-factory", "scripts", "core"
 #: name them. A flavor is only bound to its own repository when that layout is
 #: provisioned in this checkout; otherwise it is bound to the shared core it
 #: actually ships and says so, instead of borrowing a name it did not earn.
+#: The name is a DECLARATION now: provenance.resolve must prove it or the
+#: release claim is refused.
 FLAVOR_REPOSITORIES = {
     "onboarding": "trevorotts1/openclaw-onboarding",
     "999": "trevorotts1/999-setup",
 }
 
-#: The nine behaviours S75-A32 names, in the row's own order and wording.
+#: The behaviours this unit can actually exercise, in the row's own order.
+#: SEVEN, not nine: the arbiter (S75-T32-ARBITER.md, REJECT_AND_NARROW) moved
+#: the two dependency behaviours out of this row, because a unit cannot
+#: exercise code another unit has not landed and a cell driven by providers it
+#: writes for itself proves a protocol, not a behaviour.
 BEHAVIORS = (
     "missing foundation",
     "cast bypass",
     "scene richness",
-    "Notion migration",
     "identity setting changes",
     "approval ordering",
     "style18",
     "original byte preservation",
-    "paid compatibility",
 )
+
+#: Behaviours deliberately OUT of this row, with the row that now owns each.
+#: Recorded here so the narrowing is visible in the code and in every receipt's
+#: not_claimed list, never silent.
+EXCLUDED_BEHAVIORS = {
+    "Notion migration": {
+        "moved_to_row": "S75-A17",
+        "owed_by": "S75-T17",
+        "reason": "no character_library/migration.py, sync.py or notion_store.py "
+                  "exists in any head of this record",
+    },
+    "paid compatibility": {
+        "moved_to_row": "S75-A28",
+        "owed_by": "S75-T28",
+        "reason": "no compatibility.py, contracts/legacy-compatibility-map.json or "
+                  "tests/fixtures/paid_artifact_preservation.json exists at head",
+    },
+}
 
 OBSERVED_PASS = "OBSERVED_PASS"
 OBSERVED_FAIL = "OBSERVED_FAIL"
@@ -83,23 +106,6 @@ CONTRACT_FACETS = {
 #: Who owes a capability that is genuinely not in a repository, and on what.
 #: Read from task-ledger.json dependency edges, not guessed.
 OWED = {
-    "Notion migration": {
-        "missing_capability": (
-            "Notion library migration: character_library/migration.py with "
-            "idempotent dry-run and rollback, over the sync layer "
-            "(character_library/sync.py) and the persistence store "
-            "(character_library/notion_store.py) that unit depends on"),
-        "owed_by": "S75-T17",
-        "blocked_by": ["S75-T15", "S75-T16", "S75-T28"],
-    },
-    "paid compatibility": {
-        "missing_capability": (
-            "paid-asset / raw-answer / legacy-approval preservation: "
-            "compatibility.py, contracts/legacy-compatibility-map.json and "
-            "tests/fixtures/paid_artifact_preservation.json"),
-        "owed_by": "S75-T28",
-        "blocked_by": ["S75-T01", "S75-T03"],
-    },
     "style18": {
         "missing_capability": (
             "the eighteen-style catalog in the N999 repository: "
@@ -142,25 +148,17 @@ N999_MUSIC_REL = os.path.join("scripts", "core", "music_styles",
                               "music_styles.py")
 N999_CORE_REL = os.path.join("scripts", "core")
 
-NOTION_CARRIERS = (
-    os.path.join("scripts", "core", "character_library", "migration.py"),
-    os.path.join("scripts", "core", "character_library", "sync.py"),
-    os.path.join("scripts", "core", "character_library", "notion_store.py"),
-    os.path.join("scripts", "core", "character_library", "cache.py"),
-)
-PAID_CARRIERS = (
-    os.path.join("scripts", "core", "compatibility.py"),
-    os.path.join("scripts", "core", "contracts",
-                 "legacy-compatibility-map.json"),
-    os.path.join("scripts", "core", "tests", "fixtures",
-                 "paid_artifact_preservation.json"),
-)
-
 
 class Target:
-    """One flavour's own repository view: who it is and where its code lives."""
+    """One flavour's own repository view: who it is and where its code lives.
 
-    def __init__(self, flavor, repository, skill_root, seam=None):
+    Identity is PROVEN, never labelled. `provenance.resolve` reads a remote, a
+    revision and a digest from the root itself; a caller-supplied repository
+    string is only a declaration to check against. When proof fails the target
+    still executes its cells, but every cell refuses its release claim.
+    """
+
+    def __init__(self, flavor, repository, skill_root, seam=None, pin=None):
         self.flavor = flavor
         self.repository = repository
         self.skill_root = os.path.abspath(skill_root)
@@ -169,6 +167,8 @@ class Target:
         self.package_layout_provisioned = self.root_source == "package-anchor"
         self.package_layout_missing = (
             self.seam.get("package_layout_missing") if self.seam else None)
+        self.provenance = provenance.resolve(self.skill_root, repository, pin)
+        self.identity_proven = self.provenance["identity_proven"]
 
     def path(self, rel):
         return os.path.join(self.skill_root, rel)
@@ -187,19 +187,32 @@ class Target:
             "character_approval_module": self.seam.get("character_approval_module"),
             "core_module": self.seam.get("core_module"),
             "core_digest_matches_seam": self.seam.get("core_digest_matches_seam"),
+            "identity_proven": self.identity_proven,
+            "provenance": self.provenance,
         }
 
-def facet_target(flavor, repo_root=None):
+def _mark_unproven(target, reason):
+    """An anchor exists but its bytes are not attributable: say so, do not relabel."""
+    target.root_source = "unproven-anchor"
+    target.seam["root_source"] = "unproven-anchor"
+    target.package_layout_provisioned = False
+    target.package_layout_missing = reason
+    return target
+
+def facet_target(flavor, repo_root=None, pins=None):
     """Resolve one flavor through the package seam, exactly as the package does.
 
     Both flavors ship the same shared core. A flavor whose own package anchor is
     not provisioned in this checkout still runs every cell against those core
     bytes -- that is production code -- and records root_source='shared-core' so
     the record can never present an unprovisioned layout as a provisioned one.
-    This is the difference between the two facets being decorative and being
-    measured: each one runs the nine cells through its own seam resolution.
+    An anchor that EXISTS but cannot prove it is the declared repository is
+    neither used nor relabelled: it is marked unproven and every cell it runs
+    refuses its release claim. A directory is not a repository.
     """
     repo_root = os.path.abspath(repo_root or REPO_ROOT)
+    pins = provenance.load_pins() if pins is None else pins
+    pin = pins.get(flavor)
     core = os.path.join(repo_root, "75-drama-song-ad-factory", "scripts", "core")
     seam = {}
     with _on_path(core):
@@ -216,15 +229,20 @@ def facet_target(flavor, repo_root=None):
     if anchor_root and os.path.isdir(anchor_root):
         seam["root_source"] = "package-anchor"
         seam["package_layout_missing"] = None
-        return Target(flavor, FLAVOR_REPOSITORIES.get(flavor, "unknown"),
-                      anchor_root, seam)
+        declared = (pin or {}).get("repository") or FLAVOR_REPOSITORIES.get(
+            flavor, "unknown")
+        target = Target(flavor, declared, anchor_root, seam, pin=pin)
+        if not target.identity_proven:
+            _mark_unproven(target, anchor_root)
+        return target
     seam["root_source"] = "shared-core"
     seam["package_layout_missing"] = anchor_root
     # The shared core lives in the onboarding package. A flavor that has no
     # provisioned anchor of its own is therefore bound to those bytes and to the
     # repository that carries them -- named as such, not relabelled.
     return Target(flavor, FLAVOR_REPOSITORIES["onboarding"],
-                  os.path.join(repo_root, "75-drama-song-ad-factory"), seam)
+                  os.path.join(repo_root, "75-drama-song-ad-factory"), seam,
+                  pin=pins.get("onboarding"))
 
 
 class CellDrift(Exception):
@@ -322,10 +340,19 @@ def _snapshot():
 def _release(target, before, paths):
     """Prove this cell released its own repository and no other.
 
-    Three independent facts: which of this repository's modules the cell had in
-    play, which files it inspected, and that none of them, nor any sys.path
-    entry, came from the other flavour's skill root.
+    Four independent facts, and the first one is identity: the root must carry a
+    remote, a revision and a digest that match the declared repository. The
+    other three are what the cell had in play, which files it inspected, and
+    that none of them, nor any sys.path entry, came from another flavour's root.
+
+    Round 4 showed the old shape could not fail on a collision: `foreign` was
+    computed only against OTHER roots, so a planted directory became "own" and
+    everything under it was clean by construction. Identity is now decided
+    BEFORE the module scan, from the root itself, and a release claim is
+    refused outright when it cannot be proven.
     """
+    proven = target.provenance.get("proven_repository")
+    label_matches = target.identity_proven and proven == target.repository
     after = _snapshot()
     own_in_use, loaded_here, foreign = [], [], []
     for name, path in sorted(after.items()):
@@ -344,10 +371,35 @@ def _release(target, before, paths):
     foreign_paths = [p for p in sys.path
                      if any(_under(p, r) for r in _known_skill_roots()
                             if r != os.path.realpath(target.skill_root))]
-    released = (not foreign and not foreign_paths and inside
+    released = (target.identity_proven and label_matches
+                and not foreign and not foreign_paths and inside
                 and bool(own_in_use or paths))
+    refusal = None
+    if not released:
+        reasons = list(target.provenance.get("refusals") or [])
+        if target.identity_proven and not label_matches:
+            reasons.append("the root proves %r, not the declared %r"
+                           % (proven, target.repository))
+        if foreign:
+            reasons.append("modules from another repository loaded: %s" % foreign)
+        if foreign_paths:
+            reasons.append("sys.path entries from another repository: %s"
+                           % sorted(set(foreign_paths)))
+        if not inside:
+            reasons.append("inspected paths outside this repository")
+        if not (own_in_use or paths):
+            reasons.append("the cell put nothing in play")
+        refusal = "; ".join(reasons) or "unstated"
     return {
         "repository": target.repository,
+        "declared_repository": target.repository,
+        "proven_repository": proven,
+        "identity_proven": target.identity_proven,
+        "label_matches_provenance": label_matches,
+        "provenance": {key: target.provenance.get(key) for key in
+                       ("mode", "remote", "remote_url", "revision",
+                        "revision_source", "digest", "digest_scope")},
+        "provenance_refusals": list(target.provenance.get("refusals") or []),
         "skill_root": target.skill_root,
         "modules_from_own_repository_in_use": own_in_use,
         "modules_loaded_for_this_cell": loaded_here,
@@ -356,11 +408,13 @@ def _release(target, before, paths):
         "foreign_repository_modules_loaded": foreign,
         "foreign_repository_sys_path_entries": sorted(set(foreign_paths)),
         "own_repository_released": released,
-        "method": ("this repository's modules and inspected paths only; every "
-                   "sys.modules __file__ and sys.path entry checked against every "
-                   "known drama-song-ad-factory skill root"),
+        "release_refused": refusal,
+        "method": ("identity first: remote, revision and digest read from the root "
+                   "and matched against the declared repository (provenance.resolve); "
+                   "then this repository's modules and inspected paths only, with "
+                   "every sys.modules __file__ and sys.path entry checked against "
+                   "every known drama-song-ad-factory skill root"),
     }
-
 
 def _presence_control(target, rel, label):
     """Known-good control for the file-presence instrument.
@@ -684,255 +738,6 @@ def probe_byte_preservation(target, before):
 
 
 # --------------------------------------------------------------------------
-# 8 and 9: capability scans (absent capabilities, reported honestly)
-# --------------------------------------------------------------------------
-
-# The protocols below are declared, not guessed: S75-T17 owns
-# character_library/migration.py and S75-T28 owns compatibility.py, and both
-# are still unmerged at this head. Neither capability can be exercised as
-# production code here. What CAN be exercised is the protocol the row will
-# accept, from both sides -- a conforming provider must pass and a broken one
-# must fail -- so the check is a check and not a line in a list. The cell stays
-# NOT_APPLICABLE for production and records the exercise beside it.
-
-MIGRATION_PROTOCOL = (
-    "migrate(library, *, dry_run=False, rollback=False) -> "
-    '{"library": <library>, "applied": <bool>}; dry_run and rollback leave the '
-    "input untouched and report applied=False; a real apply de-duplicates by "
-    "character_id keeping the highest revision, and repeating it is idempotent")
-
-COMPATIBILITY_PROTOCOL = (
-    "classify(record) -> "
-    '{"state": "COMPATIBLE"|"COMPATIBILITY_LIMITED", "readable": <bool>, '
-    '"regenerated": <bool>}; a paid legacy record stays readable, is marked '
-    "COMPATIBILITY_LIMITED and is never regenerated")
-
-def _legacy_library():
-    return {"schema": "legacy.v1", "characters": [
-        {"character_id": "char_ida", "revision": 2, "name": "Ida Rusk"},
-        {"character_id": "char_ida", "revision": 3, "name": "Ida Rusk"},
-        {"character_id": "char_herbary", "revision": 1, "name": "Herbary"},
-    ]}
-
-def _migration_provider(broken):
-    def migrate(library, *, dry_run=False, rollback=False):
-        original = json.loads(json.dumps(library))
-        if rollback:
-            return {"library": original, "applied": False}
-        out = json.loads(json.dumps(library))
-        keep = {}
-        for record in out["characters"]:
-            cid = record["character_id"]
-            if (cid not in keep
-                    or (record["revision"] < keep[cid]["revision"] if broken
-                        else record["revision"] > keep[cid]["revision"])):
-                keep[cid] = record
-        out["characters"] = sorted(keep.values(), key=lambda r: r["character_id"])
-        out["schema"] = "s75.library.v1"
-        if dry_run and broken:
-            library["characters"].append({"character_id": "char_drift",
-                                          "revision": 1, "name": "Drift"})
-            return {"library": out, "applied": True}
-        return {"library": out, "applied": not dry_run}
-    return migrate
-
-def _migration_checks(migrate):
-    source = _legacy_library()
-    untouched = json.dumps(source, sort_keys=True)
-    dry = migrate(source, dry_run=True)
-    dry_untouched = json.dumps(source, sort_keys=True) == untouched
-    rollback = migrate(source, rollback=True)
-    rollback_untouched = json.dumps(source, sort_keys=True) == untouched
-    applied = migrate(source)
-    ids = [r["character_id"] for r in applied["library"]["characters"]]
-    ida = [r for r in applied["library"]["characters"]
-           if r["character_id"] == "char_ida"]
-    twice = migrate(applied["library"])
-    return [
-        {"contract": "migration.migrate", "statement":
-         "dry_run leaves the input library byte-identical", "result": dry_untouched},
-        {"contract": "migration.migrate", "statement":
-         "dry_run reports applied=False", "result": dry["applied"] is False},
-        {"contract": "migration.migrate", "statement":
-         "rollback leaves the input library byte-identical and reports applied=False",
-         "result": rollback_untouched and rollback["applied"] is False},
-        {"contract": "migration.migrate", "statement":
-         "apply de-duplicates by character_id (3 records -> 2 characters)",
-         "result": sorted(ids) == ["char_herbary", "char_ida"]},
-        {"contract": "migration.migrate", "statement":
-         "apply keeps the highest revision for a duplicated character",
-         "result": len(ida) == 1 and ida[0]["revision"] == 3},
-        {"contract": "migration.migrate", "statement":
-         "a repeated apply is idempotent",
-         "result": (json.dumps(twice["library"], sort_keys=True)
-                    == json.dumps(applied["library"], sort_keys=True))},
-    ]
-
-def _compatibility_provider(broken):
-    def classify(record):
-        legacy = record.get("schema") != "s75.scene.v1"
-        if legacy:
-            return {"state": "COMPATIBLE" if broken else "COMPATIBILITY_LIMITED",
-                    "readable": True,
-                    "regenerated": bool(broken)}
-        return {"state": "COMPATIBLE", "readable": True, "regenerated": False}
-    return classify
-
-def _compatibility_checks(classify):
-    paid = {"schema": "legacy.paid.v1", "artifact_id": "a_paid_1",
-            "paid": True, "raw_answer": "kept verbatim"}
-    current = {"schema": "s75.scene.v1", "artifact_id": "a_cur_1"}
-    got_paid = classify(paid)
-    got_current = classify(current)
-    thin = classify({"schema": "legacy.paid.v1"})
-    return [
-        {"contract": "compatibility.classify", "statement":
-         "a paid legacy record stays readable", "result": got_paid["readable"] is True},
-        {"contract": "compatibility.classify", "statement":
-         "a paid legacy record is marked COMPATIBILITY_LIMITED, never COMPATIBLE",
-         "result": got_paid["state"] == "COMPATIBILITY_LIMITED"},
-        {"contract": "compatibility.classify", "statement":
-         "a paid legacy record is never regenerated automatically",
-         "result": got_paid["regenerated"] is False},
-        {"contract": "compatibility.classify", "statement":
-         "a current-schema record classifies COMPATIBLE",
-         "result": (got_current["state"] == "COMPATIBLE"
-                    and got_current["readable"] is True)},
-        {"contract": "compatibility.classify", "statement":
-         "a paid record missing optional fields is classified, not raised on",
-         "result": thin["readable"] is True},
-    ]
-
-def _exercise_once(kind, broken):
-    if kind == "Notion migration":
-        protocol, checks = MIGRATION_PROTOCOL, _migration_checks(
-            _migration_provider(broken))
-    else:
-        protocol = COMPATIBILITY_PROTOCOL
-        checks = _compatibility_checks(_compatibility_provider(broken))
-    return {"scope": "declared_provider_boundary",
-            "protocol": protocol,
-            "broken": broken,
-            "checks": checks,
-            "ok": _result(checks)}
-
-def _exercise(kind, broken):
-    """Both sides of the protocol, every time.
-
-    The conforming provider must pass and the broken one must fail. Recording
-    both makes 'this check can fail' an observation in the cell rather than a
-    claim about it.
-    """
-    reference = _exercise_once(kind, False)
-    broken_run = _exercise_once(kind, True)
-    out = dict(reference if not broken else broken_run)
-    out["reference_ok"] = reference["ok"]
-    out["broken_ok"] = broken_run["ok"]
-    return out
-
-def _scan(target, relatives):
-    return [{"path": rel, "present": os.path.isfile(target.path(rel))}
-            for rel in relatives]
-
-
-def probe_notion(target, before, broken=False):
-    instrument = ("file presence over this repository's own skill root, with a "
-                  "known-present control on the same scan, plus the migration "
-                  "protocol exercised at its declared provider boundary")
-    found = _scan(target, NOTION_CARRIERS)
-    present = [item["path"] for item in found if item["present"]]
-    if present:
-        raise CellDrift(
-            "Notion migration carriers now exist (%s); this cell must be taught "
-            "to exercise them rather than claim not-applicable" % ", ".join(present))
-    control = _presence_control(target, SPEND_REL,
-                                "a core module this repository does carry")
-    exercise = _exercise("Notion migration", broken)
-    observations = ["scanned %d Notion migration carrier(s): none present"
-                    % len(NOTION_CARRIERS)]
-    observations += ["absent: %s" % item["path"] for item in found]
-    observations.append("known-good control on the same scan found %s, so the "
-                        "absences above are real" % SPEND_REL)
-    observations.append(
-        "migration protocol exercised at the declared provider boundary "
-        "(%s provider): %d check(s), %s"
-        % ("broken" if broken else "conforming", len(exercise["checks"]),
-           "PASS" if exercise["ok"] else "FAIL"))
-    if os.path.isfile(target.path(os.path.join(
-            "scripts", "core", "character_library", "notion_adapter.py"))):
-        observations.append(
-            "the scan also reaches Notion-named code: "
-            "character_library/notion_adapter.py is present")
-    cell = _cell(target, "Notion migration",
-                 NOT_APPLICABLE if exercise["ok"] else OBSERVED_FAIL,
-                 instrument, exercise["checks"], observations, control,
-                 {"unmet_condition": "a migration provider that mutates the "
-                                     "library on dry_run and keeps the lowest "
-                                     "revision must be reported as failing",
-                  "observed": None if exercise["ok"] else False,
-                  "control_red": not exercise["ok"]},
-                 [target.path(rel) for rel in NOTION_CARRIERS] + [target.path(SPEND_REL)],
-                 before=before)
-    cell["not_applicable"] = dict(OWED["Notion migration"])
-    cell["exercise"] = exercise
-    return cell
-
-
-def probe_paid(target, before, broken=False):
-    instrument = ("file presence over this repository's own skill root, plus a "
-                  "token scan of the shared contract modules, plus the "
-                  "compatibility protocol at its declared provider boundary")
-    found = _scan(target, PAID_CARRIERS)
-    present = [item["path"] for item in found if item["present"]]
-    if present:
-        raise CellDrift(
-            "paid-compatibility carriers now exist (%s); this cell must be "
-            "taught to exercise them rather than claim not-applicable"
-            % ", ".join(present))
-    control = _presence_control(target, SPEND_REL,
-                                "a core module this repository does carry")
-    exercise = _exercise("paid compatibility", broken)
-    observations = ["scanned %d paid-compatibility carrier(s): none present"
-                    % len(PAID_CARRIERS)]
-    observations += ["absent: %s" % item["path"] for item in found]
-    tokens = ("paid", "purchase", "billing", "raw_answer", "legacy_output")
-    hits = {}
-    for rel in F.REQUIRED_CONTRACT_FILES:
-        path = target.path(rel)
-        if not os.path.isfile(path):
-            continue
-        with open(path, "rb") as fh:
-            text = fh.read().decode("utf-8", "replace").casefold()
-        hits[rel] = sum(text.count(token) for token in tokens)
-    if hits:
-        observations.append("token scan of the shared contract modules: %s"
-                            % json.dumps(hits, sort_keys=True))
-    else:
-        observations.append("the shared contract modules are absent from this "
-                            "repository, so the token scan has no target")
-    observations.append("known-good control on the same scan found %s" % SPEND_REL)
-    observations.append(
-        "compatibility protocol exercised at the declared provider boundary "
-        "(%s provider): %d check(s), %s"
-        % ("broken" if broken else "conforming", len(exercise["checks"]),
-           "PASS" if exercise["ok"] else "FAIL"))
-    cell = _cell(target, "paid compatibility",
-                 NOT_APPLICABLE if exercise["ok"] else OBSERVED_FAIL,
-                 instrument, exercise["checks"], observations, control,
-                 {"unmet_condition": "a classifier that regenerates a paid "
-                                     "legacy record must be reported as failing",
-                  "observed": None if exercise["ok"] else False,
-                  "control_red": not exercise["ok"]},
-                 ([target.path(rel) for rel in PAID_CARRIERS]
-                  + [target.path(SPEND_REL)]
-                  + [target.path(rel) for rel in F.REQUIRED_CONTRACT_FILES]),
-                 before=before)
-    cell["not_applicable"] = dict(OWED["paid compatibility"])
-    cell["exercise"] = exercise
-    return cell
-
-
-# --------------------------------------------------------------------------
 # driver
 # --------------------------------------------------------------------------
 
@@ -944,18 +749,14 @@ PROBES = {
     "approval ordering": "contract",
     "style18": probe_style18,
     "original byte preservation": probe_byte_preservation,
-    "Notion migration": probe_notion,
-    "paid compatibility": probe_paid,
 }
 
+def run_cells(target):
+    """Execute all seven cells for one flavour. Returns seven records, in order.
 
-def run_cells(target, broken=False):
-    """Execute all nine cells for one flavour. Returns nine records, in order.
-
-    ``broken=True`` drives each cell with the condition it guards deliberately
-    unmet, so every one of the nine can be seen FAILING. A cell that still
-    reports a pass under ``broken=True`` is a dead check, and the falsifiability
-    test says so instead of trusting the register.
+    The two dependency behaviours are not here: the arbiter moved them to the
+    S75-A17 and S75-A28 rows, and EXCLUDED_BEHAVIORS records that in every
+    receipt's not_claimed list rather than leaving a silent gap.
     """
     cells = []
     for behavior in BEHAVIORS:
@@ -963,12 +764,9 @@ def run_cells(target, broken=False):
         probe = PROBES[behavior]
         if probe == "contract":
             cells.append(probe_contract(target, behavior, before))
-        elif probe in (probe_notion, probe_paid):
-            cells.append(probe(target, before, broken=broken))
         else:
             cells.append(probe(target, before))
     return cells
-
 
 def counts(cells):
     out = {"cells_total": len(cells), "cells_pass": 0, "cells_fail": 0,
@@ -1038,9 +836,21 @@ def selfcheck():
     assert _bytes(text[:1].swapcase() + text[1:]) != _bytes(text)
     assert (text[:1].swapcase() + text[1:]).casefold() == text.casefold()
     assert _ast_literal_dict.__name__ == "_ast_literal_dict"
-    assert BEHAVIORS[0] == "missing foundation" and len(BEHAVIORS) == 9
-    print("cell_matrix selfcheck ok: %d behaviours, instruments discriminate"
-          % len(BEHAVIORS))
+    assert BEHAVIORS[0] == "missing foundation" and len(BEHAVIORS) == 7
+    assert "Notion migration" not in BEHAVIORS and "paid compatibility" not in BEHAVIORS
+    assert set(EXCLUDED_BEHAVIORS) == {"Notion migration", "paid compatibility"}
+    # The provenance instrument must discriminate in BOTH directions, on the same
+    # call: a planted plain directory is refused, the real repository is proven.
+    plain = tempfile.mkdtemp(prefix="s75t32-unproven-")
+    unproven = provenance.resolve(plain, "trevorotts1/999-setup")
+    assert unproven["identity_proven"] is False and unproven["refusals"], unproven
+    proven = provenance.resolve(REPO_ROOT, "trevorotts1/openclaw-onboarding")
+    assert proven["identity_proven"] is True, proven
+    assert proven["remote"] == "trevorotts1/openclaw-onboarding", proven
+    assert proven["revision"] and proven["digest"], proven
+    print("cell_matrix selfcheck ok: %d behaviours, instruments discriminate, "
+          "planted=%r refused, repo=%r proven"
+          % (len(BEHAVIORS), os.path.basename(plain), proven["remote"]))
     return True
 
 
@@ -1057,7 +867,8 @@ if __name__ == "__main__":
         sys.exit(0)
     target = Target(args.flavor, args.repository or "unknown", args.skill_root)
     cells = run_cells(target)
-    json.dump({"flavor": args.flavor, "counts": counts(cells), "cells": cells},
+    json.dump({"flavor": args.flavor, "repository_identity": target.provenance,
+               "counts": counts(cells), "cells": cells},
               sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     sys.exit(0 if counts(cells)["cells_fail"] == 0 else 1)

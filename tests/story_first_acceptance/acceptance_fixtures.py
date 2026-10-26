@@ -185,23 +185,41 @@ class Ctx:
 
 
 def load_package(skill_root):
-    """Load one flavor's shared core + adapter from its skill root."""
+    """Load one flavor's shared core + adapter from its skill root.
+
+    A failed load must leave no trace: the module is registered only after its
+    source has executed, and the path entry this call added is removed again.
+    Without that, probing an absent or planted root left a half-built
+    `story_first_contracts` in sys.modules and poisoned every later facet.
+    """
     core_dir = os.path.join(skill_root, "scripts", "core")
     core_file = os.path.join(core_dir, "story_first_contracts.py")
     for name in ("story_first_contracts", "package_flavor_adapter"):
         sys.modules.pop(name, None)
-    if core_dir not in sys.path:
+    added = core_dir not in sys.path
+    if added:
         sys.path.insert(0, core_dir)
-    spec = importlib.util.spec_from_file_location("story_first_contracts", core_file)
-    if spec is None or spec.loader is None:
-        raise FileNotFoundError(core_file)
-    core = importlib.util.module_from_spec(spec)
-    sys.modules["story_first_contracts"] = core
-    spec.loader.exec_module(core)
-    importlib.invalidate_caches()
-    adapter = importlib.import_module("package_flavor_adapter")
+    try:
+        spec = importlib.util.spec_from_file_location("story_first_contracts", core_file)
+        if spec is None or spec.loader is None:
+            raise FileNotFoundError(core_file)
+        core = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(core)
+        sys.modules["story_first_contracts"] = core
+        importlib.invalidate_caches()
+        adapter = importlib.import_module("package_flavor_adapter")
+    except BaseException:
+        if added:
+            try:
+                sys.path.remove(core_dir)
+            except ValueError:
+                pass
+        for name in ("story_first_contracts", "package_flavor_adapter"):
+            module = sys.modules.get(name)
+            if module is None or getattr(module, "__file__", None) in (None, core_file):
+                sys.modules.pop(name, None)
+        raise
     return Ctx(core, adapter, skill_root)
-
 
 def missing_contract_files(skill_root):
     """Explicit list of contract files absent from a candidate skill root."""

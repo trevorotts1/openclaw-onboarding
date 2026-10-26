@@ -32,6 +32,8 @@
           "description": "true only when git rev-parse HEAD equalled candidate.commit during execution."},
         "worktree_clean_excluding_receipts": {"type": "boolean",
           "description": "tracked files clean; untracked receipt files are excluded on purpose."},
+        "repository_identity": {"type": "object",
+          "description": "The provenance the gate read from the candidate root: mode, remote, revision, digest and every refusal reason. identity_proven must be true before any release claim is filed."},
         "filing_note": {"type": "string",
           "description": "Names the self-reference limit outright: a file that records its own commit cannot be committed inside that commit."}
       }
@@ -127,7 +129,7 @@
         "controls_red": {"type": "integer", "minimum": 0},
         "controls_green": {"type": "integer", "minimum": 0,
           "description": "must be 0 for execution PASS: a green control is a vacuous fixture."},
-        "cells_total": {"type": "integer", "minimum": 9},
+        "cells_total": {"type": "integer", "minimum": 7},
         "cells_pass": {"type": "integer", "minimum": 0},
         "cells_fail": {"type": "integer", "minimum": 0},
         "cells_not_applicable": {"type": "integer", "minimum": 0}
@@ -135,7 +137,7 @@
     },
     "cells": {
       "type": "array",
-      "description": "The eighteen S75-A32 cells (nine per receipt): every cell executed with an observation, a known-good control and its own repository release, or an honest NOT_APPLICABLE naming the missing capability and the unit that owes it. A receipt whose cells executed nothing is refused.",
+      "description": "The fourteen narrowed S75-A32 cells (seven per receipt): every cell executed with an observation, a known-good control and a PROVEN repository release (remote, revision and digest read from the root), or an honest NOT_APPLICABLE naming the missing capability and the unit that owes it. A receipt whose cells executed nothing, or that claims a release without proven identity, is refused.",
       "items": {
         "type": "object",
         "required": ["cell_id", "flavor", "behavior", "repository", "executed", "status", "instrument", "checks", "observations", "known_good_control", "negative_control", "repository_release"],
