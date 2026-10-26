@@ -21,6 +21,7 @@ from .suno_recipe import (  # noqa: F401
     is_product_section, judge_duration_correction, kie_params, music_block,
     model_block, negative_tags, parse_lyrics, parse_tag, preflight_profiles,
     prepare, product_share_pct, profile_row, profiles, profiles_for,
+    recipe_style_ids,
     render_lyrics, score_take, set_constraint_policy, shapes, sheet_seconds,
     sheet_words, style_text, suno_style_ids,
     syllables, vocal_gender_word, GENDER_WORDS, check_voice_tags, parse_voice_tags,
