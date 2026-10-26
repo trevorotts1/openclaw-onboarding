@@ -14,8 +14,8 @@
         "cap": 50,
         "max_rounds": 2,
         "min_rounds": 2,
-        "planned_requests": 6,
-        "seats": 3,
+        "planned_requests": 18,
+        "seats": 9,
         "stop_from_round": null
       },
       "medium": {
