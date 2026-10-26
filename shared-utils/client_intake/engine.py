@@ -226,7 +226,10 @@ def roles(doc):
            "text": r["text"] or ph.readable_text_for((r["background"] or ["#FFFFFF"])[0])}
     if r["secondary"]:
         out["secondary"] = r["secondary"]
-    sts = [get(doc, f"brand_{k}")["status"] for k in ROLE_ORDER if get(doc, f"brand_{k}")]
+    # a derived piece (the contrast-rule text colour) is documented like derived fonts,
+    # never a proposal: it must not relabel the client's accepted palette
+    sts = [ent["status"] for ent in (get(doc, f"brand_{k}") for k in ROLE_ORDER)
+           if ent and ent.get("source") != "contrast rule"]
     status = ("default_to_confirm" if "default_to_confirm" in sts
               else "suggested" if "suggested" in sts else "provided")
     return {"roles": out, "status": status, "confirmed": status == "provided", "warnings": ph.check_palette(out)}
@@ -244,6 +247,16 @@ def profile(doc, bank=None):
 
 
 _BILLING_PAYMENT_PLANS = {"one_time": False, "recurring": True, "installment": True}
+# the bank's own answer text, which apply_default records verbatim
+_BILLING_TEXT = {"all at once": "one_time", "monthly": "recurring", "in parts or trial first": "installment"}
+
+
+def _billing_key(value):
+    """one_time / recurring / installment from the stored key or the bank's answer text.
+    Anything else - including a malformed hand-edited value - maps to None, never a crash."""
+    if not isinstance(value, str):
+        return None
+    return value if value in _BILLING_PAYMENT_PLANS else _BILLING_TEXT.get(_norm(value))
 
 
 def derive_payment_plans(doc):
@@ -256,9 +269,10 @@ def derive_payment_plans(doc):
     if have is not None and have["status"] != "unknown" and have.get("source") != "derived-billing":
         return have  # an answer recorded outside the derivation wins
     b = get(doc, "billing")
-    if b is None or b["status"] == "unknown" or b["value"] not in _BILLING_PAYMENT_PLANS:
+    key = _billing_key(b["value"]) if b is not None else None
+    if b is None or b["status"] == "unknown" or key is None:
         return have
-    return _set(doc, "payment_plans", _BILLING_PAYMENT_PLANS[b["value"]], b["status"], "derived-billing",
+    return _set(doc, "payment_plans", _BILLING_PAYMENT_PLANS[key], b["status"], "derived-billing",
                 f"Derived from your billing answer ({b['value']}); this is never asked.")
 
 
@@ -267,7 +281,9 @@ def page_kind(doc):
 
 
 def is_opt_in(doc):
-    return (doc.get("meta") or {}).get("mode") == "page" and page_kind(doc) == "opt_in"
+    """The recorded page kind governs the length rule - including when --page-kind was
+    stamped on a doc whose mode is not page. Enforcement never depends on two flags."""
+    return page_kind(doc) == "opt_in"
 
 
 # ---------------------------------------------------------------- conditions

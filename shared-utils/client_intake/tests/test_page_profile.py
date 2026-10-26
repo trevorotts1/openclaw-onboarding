@@ -212,6 +212,39 @@ class TestBank(unittest.TestCase):
         self.assertIn("Standard", q["choice_explanations"])
 
 
+    def test_a_defaulted_billing_answer_still_derives_the_flag(self):
+        doc = e.new_doc("launch")
+        e.apply_default(doc, "billing")  # records the bank's own answer text, not the stored key
+        self.assertEqual(e.val(doc, "billing"), "All at once")
+        e.derive_payment_plans(doc)
+        la = e.launch_answers(doc)
+        self.assertIs(la["launch.payment_plans"]["value"], False)
+        self.assertEqual(la["launch.payment_plans"]["state"], "recommended_unapproved")
+        self.assertEqual(la["launch.payment_plans"]["provenance"]["answer_source"], "derived-billing")
+
+    def test_a_malformed_billing_value_never_crashes_the_derivation(self):
+        doc = e.new_doc("launch")
+        doc["answers"]["billing"] = {"value": ["Monthly"], "status": "provided", "source": "client"}
+        e.derive_payment_plans(doc)  # must not raise
+        self.assertNotIn("launch.payment_plans", e.launch_answers(doc))
+
+    def test_a_client_provided_palette_is_never_labelled_a_proposal(self):
+        doc = e.new_doc("page")
+        e.record(doc, "brand_colors", "navy")
+        e.record(doc, "brand_background", "light")
+        r = e.roles(doc)
+        self.assertEqual(r["status"], "provided")
+        self.assertTrue(r["confirmed"])
+        self.assertEqual(e.get(doc, "brand_text")["source"], "contrast rule")  # documented derivation
+        self.assertNotIn("brand_text", [t["id"] for t in doc["to_confirm"]])
+
+    def test_the_recorded_page_kind_governs_the_length_rule(self):
+        doc = e.new_doc("launch")
+        doc["meta"]["page_kind"] = "opt_in"  # the CLI stamps this even on a non-page mode
+        self.assertFalse(e.record(doc, "copy_profile", "Standard")["ok"])
+        self.assertTrue(e.record(doc, "copy_profile", "Long-form")["ok"])
+
+
 class TestDocuments(unittest.TestCase):
     def setUp(self):
         self.skill = SKILL_MD.read_text(encoding="utf-8")
