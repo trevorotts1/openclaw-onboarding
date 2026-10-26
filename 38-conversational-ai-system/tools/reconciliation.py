@@ -53,6 +53,7 @@ Assert-based self-check:  python3 -I reconciliation.py
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,7 +62,6 @@ from typing import Any, Callable, Dict, List, Optional
 # Direct-script execution (python3 -I reconciliation.py) does not put this
 # directory on sys.path; the sibling module must still resolve.
 if __package__ in (None, ""):
-    import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from durable_store import (
@@ -70,6 +70,21 @@ from durable_store import (
     STATE_DISPATCHED,
     STATE_QUEUED,
     STATE_UNKNOWN,
+)
+
+# The shared publication-receipt layer (T-25) owns what counts as a TRUE
+# provider post/comment receipt. Resolving a send persists a dispatch receipt
+# from the caller's provider evidence, so that evidence passes the same rule
+# here: a claim, a local id echoed back, a wrong object kind, an unsupported
+# status or a comment with no receipted parent is not evidence.
+_RECEIPTS_DIR = Path(__file__).resolve().parents[2] / "shared-utils" / "receipts"
+if str(_RECEIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_RECEIPTS_DIR))
+
+from publication_receipts import (  # noqa: E402
+    ReceiptError,
+    item_kind,
+    validate_provider_receipt,
 )
 
 RECONCILE_OUTCOMES = ("applied", "not_applied", "unknown")
@@ -196,6 +211,27 @@ def resolve_unknown(store: DurableStore,
                 R_UNKNOWN, action_id, store.get_action(action_id)["state"],
                 attempt_no=attempt_no,
                 note="applied without a provider receipt is not evidence")
+        # A post/reveal receipt is only evidence when it is the provider's OWN
+        # object, not a claim or a local id echoed back. A non-publication item
+        # has no post/comment kind, so the publication rule does not apply.
+        receipt_errors: List[str] = []
+        try:
+            item_kind(action.get("purpose"))
+        except ReceiptError:
+            pass
+        else:
+            receipt_errors = validate_provider_receipt(action, receipt)
+        if receipt_errors:
+            # Applied without a true provider receipt is not evidence. Fail closed.
+            store.mark_reconcile_unknown(
+                action_id, "resolver_applied_without_true_provider_receipt", now=ts)
+            store.record_reconciliation(
+                action_id, R_UNKNOWN,
+                {"receipt_errors": receipt_errors, **evidence}, now=ts)
+            return ReconciliationOutcome(
+                R_UNKNOWN, action_id, store.get_action(action_id)["state"],
+                attempt_no=attempt_no,
+                note="applied without a true provider receipt is not evidence")
         try:
             after = store.reconcile_applied(action_id, receipt, now=ts)
         except DurableStoreError as exc:
