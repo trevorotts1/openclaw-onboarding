@@ -100,6 +100,12 @@ _DISPLAY_QUALIFIER = frozenset({
     "reference", "references", "ref", "refs", "name", "names",
     "metadata", "value", "values", "notes", "text", "texts",
 })
+#: A token that is BOTH halves is the container WORD itself: ``reference``,
+#: ``references``, ``ref`` and ``refs`` name a display collection with no
+#: second token beside them, so a key spelled exactly that IS the namespace,
+#: never a scalar beside it.  (S75-T41 r10: the two-token rule below let these
+#: four ride out, where r8 had refused them.)
+_CONTAINER_WORDS = _DISPLAY_SUBJECT & _DISPLAY_QUALIFIER
 
 #: A field that may not become empty: an empty style field is not a payload.
 REQUIRED_NONEMPTY_PATHS = ("input.style",)
@@ -383,6 +389,10 @@ def is_client_metadata_key(key):
     if str(key) in CLIENT_METADATA_KEYS:
         return True
     tokens = _key_tokens(key)
+    if tokens and tokens <= _CONTAINER_WORDS:
+        # The key IS a container word ("references"), so there is no scalar
+        # beside a container here: this is the display namespace itself.
+        return True
     subjects = tokens & _DISPLAY_SUBJECT
     qualifiers = tokens & _DISPLAY_QUALIFIER
     # The two halves must be TWO tokens: ``reference`` is both a subject and a
