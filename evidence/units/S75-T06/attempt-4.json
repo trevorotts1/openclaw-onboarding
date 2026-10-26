@@ -69,5 +69,7 @@
     "75-drama-song-ad-factory/scripts/core/real_content.py",
     "75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py"
   ],
-  "lexicon": {"before": 1328, "added": 49, "after": 1377}
+  "lexicon": {"before": 1328, "added": 49, "after": 1377},
+  "dependencies": ["openclaw-onboarding:75-drama-song-ad-factory/scripts/core/character_bible/cast_writer.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/real_content.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/real_content_names.txt.gz", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/story_first_contracts.py"],
+  "dependencies_source": "Import graph of the head's own changed files, read from git show at 89f1d616227eff8b09f4c01bcb585bec12f14325 and graded head 18280f93c16cc38007d85d8193ad66cf770b05ec: cast_writer.py imports story_first_contracts and real_content; real_content.py imports only stdlib (gzip, os, re, unicodedata) and opens real_content_names.txt.gz; test_cast_writer_s75_t06.py imports cast_writer and reads cast_writer.py/real_content.py. Verdict of record S75-T06.verdict.round11.json changed_files_vs_base names the same four files. Ledger S75-T06 needs=[] and owned_paths=[] ('not recorded') established none. No external/service dependency: dispatch is injected (attempt-4 'dispatch_contract': 'dispatch(prompt: dict) -> dict; injected only, no provider transport in the module')."
 }
