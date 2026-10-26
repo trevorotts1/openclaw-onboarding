@@ -1520,6 +1520,52 @@ it and the check that proves it; nothing below describes a plan.
 This note covers the canonical OpenClaw tree only; distribution parity is not
 claimed here.
 
+## Release v2.9.114: opening coaching, opening candidates, blueprint turns
+
+This release moves the version pair (`v2.9.113` -> `v2.9.114`) and records
+behaviour that already ships in the `v2.9.111`-`v2.9.113` code line, which
+carried G3 batch version bumps with no changelog entry. **It changes no
+behaviour.** The four behaviours of that line already written up in the
+`v2.9.103` note above (consequence-first presentation order, purpose-aware
+script validation, the one-package approval, the opening carried into the shot
+plan, blueprint music requests, lip-sync coverage as a share of the ad) are
+unchanged. What was not yet recorded anywhere:
+
+1. **A new run opens by asking what the video is for.** `intake_card.conversation`
+   takes `purpose_flow=None` and decides from the run: a NEW run folder asks
+   the purpose first, one plain question per message, and reuses what the client
+   already supplied (the brief's maximum as the recommended budget option, a
+   saved character by name) instead of asking again. A resumed run replays the
+   exact list it used and its approved artifacts stay byte-identical. No
+   client-facing question uses method jargon. Code:
+   `choice_card/intake_card/intake_card.py`. Check:
+   `test_opening_flow_default_s75x.py`.
+2. **Opening candidates are worked examples, not advice.** `references/
+   sensational-openings.md` and `references/opening-proposals.md` carry four
+   worked sets, three genuinely different candidates each (different crisis
+   type, question and opening line), every candidate naming its spoken first
+   line, headline, first visible action, the question it opens, why that
+   audience cares and how the crisis connects to the actual offer, with the
+   strongest recommended and a counterexample table showing tame openings
+   rejected. Fiction may invent a dramatic event again; an invented event is
+   still refused when it would read as a verified fact about a real person or
+   product.
+3. **Every required musical turn states its reason and its audible change.**
+   `method_plan.musical_turns` returns the four turns (spoken attention hook,
+   first singing at the ERM Drop, Hero Shift, earned Solution Signature Hook),
+   each carrying a written `reason` and an `audible_change`
+   (`from`, `to`, `rhythm`, `emotional_direction`, `vocal`); a turn with neither
+   raises `TURN_REASON_MISSING`, a turn with no audible change raises
+   `TURN_AUDIBLE_CHANGE_MISSING`, and an instrumental opening hook raises
+   `ATTENTION_HOOK_NOT_SPOKEN`. `shot_seeds` emits `shot_planner`'s own field
+   names and `storyboard_input` feeds the storyboard review. Check:
+   `method_plan/test_method_plan.py`.
+4. **Every supported launcher records the purpose.** A new run through the text,
+   `telegram-json`, `openclaw-json` or Studio launcher writes
+   `$RUN/control/method.json` with the purpose and the planned gates A-F, so
+   the later checks read a recorded fact instead of guessing. Code:
+   `intake_preflight/factory.py`. Check: `test_factory_card_purpose_w3u2.py`.
+
 ## Sections marked TODO (refresh when the named unit lands)
 
 - "Per-style bands (FU-U3...)" bullet in the Suno recipe, the matching
