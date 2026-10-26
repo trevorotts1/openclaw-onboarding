@@ -13,7 +13,7 @@
     "checker_id": "qc-conform-S75-T06",
     "checker_model": "opus-chain",
     "checker_role": "independent QC reviewer (authored nothing in this unit)",
-    "receipt": "/Users/blackceomacmini/loop-control/s75/qc/S75-T06.2e5eff3e3006f0ef5a876596bed2086e190f4061.json",
+    "receipt": "S75-T06.2e5eff3e3006f0ef5a876596bed2086e190f4061.json",
     "receipt_recorded_at": "2026-10-25T20:05:32-04:00",
     "receipt_verdict": "FAIL",
     "note": "The conformance reviewer whose receipt graded this unit. Recorded here because the acceptance row's evidence column requires a named independent checker and the repair-author role is not one. The reviewer's verdict on the row was FAIL, for the evidence-column defects this correction repairs (D1); the code-behaviour clauses it probed independently passed. The reviewer authored nothing in this unit."
@@ -65,7 +65,7 @@
     "removed_renamed_skipped_xfailed": 0
   },
   "channel_widening_adjudication": {
-    "defect": "D2-generic-descriptor-channel-widened-at-head, from the FAIL receipt at /Users/blackceomacmini/loop-control/s75/qc/S75-T06.2e5eff3e3006f0ef5a876596bed2086e190f4061.json (reviewed_at 2026-10-26T01:57:49Z, candidate head 18280f93c16cc38007d85d8193ad66cf770b05ec); the earlier FAIL receipt (reviewed_at 2026-10-25T20:05:32-04:00) measured the same family as D2.",
+    "defect": "D2-generic-descriptor-channel-widened-at-head, from the FAIL receipt S75-T06.2e5eff3e3006f0ef5a876596bed2086e190f4061.json (reviewed_at 2026-10-26T01:57:49Z, candidate head 18280f93c16cc38007d85d8193ad66cf770b05ec); the earlier FAIL receipt (reviewed_at 2026-10-25T20:05:32-04:00) measured the same family as D2.",
     "measured": "curated-prefix x role-head channel: 120/288 accepted at base, 168/288 at head, +48 = 'Le' and 'Le-with-circumflex' x 12 role heads x 2 positions. 'Le Woman', 'Le Manager', 'Le Driver', 'Le-with-circumflex Woman' reach state COMPLETE at head and are refused INCOMPLETE_CAST at base. Round-11 verdict of record measured the same family ('Le <role noun>' 82/90 at head vs 0/90 at base) and classified it 'residual, not a row failure on the measured text'.",
     "why_no_production_code_change": "The row's own committed control pins the identical shape: CONTROL_NAMES and REAL_NAMES_RESTORED in test_cast_writer_s75_t06.py require '<curated name> <descriptor word as surname>' accepted ('Dana Woman', 'Theresa Manager', 'Wanda Manager'), and the round-11 verdict records the same channel already open at base for 'Nguyen', 'Pham', 'Dana' and 'Mary' (82/90 accepted at base). Any shape rule that refuses 'Le Woman' refuses 'Dana Woman' (pinned must-accept); removing 'le' / 'Le-with-circumflex' from NAME_LEXICON refuses the real people those entries restore (pinned must-accept, REAL_NAMES_RESTORED). The only remaining cure is a given-name/surname vocabulary, which this module deliberately does not carry ('a vocabulary, deliberately not added here').",
     "decision_status": "Owner decision pending. Round-11 verdict of record post_pass_observations: 'the next round should decide whether a surname-position token may be decisive when the following token is a role noun.' The FAIL receipts record the row text alone does not settle it ('the row and its own control disagree').",
