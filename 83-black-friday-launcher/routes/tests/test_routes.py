@@ -1,27 +1,34 @@
 """LAUNCH-02 route-invariant and adapter-wiring tests (stdlib unittest).
 
-Run: python3 -I -m unittest discover -s <routes>/tests -v
+Run: python3 -m unittest discover -s <routes>/tests -v  (verify.sh uses one
+dependency-complete interpreter for every step; no isolated interpreter, so the
+Skill 79 validator's jsonschema requirement is visible to all of it.)
 Every assertion executes the real Skill 49/71/78/80/81/82 modules loaded by
 path; none of them is stubbed.
 """
 from __future__ import annotations
 
 import copy
+import importlib.util
 import inspect
 import json
 import re
+import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROUTES = Path(__file__).resolve().parents[1]
+SKILL_ROOT = ROUTES.parent
 sys.path.insert(0, str(ROUTES))
+sys.path.insert(0, str(SKILL_ROOT))
 
 import adapters  # noqa: E402
 import build_time  # noqa: E402
 import route_law  # noqa: E402
 import substrate  # noqa: E402
+from launcher_core import checks, checkout as checkout_core, intake  # noqa: E402
 
 
 def make_launch_record(**overrides):
@@ -326,19 +333,12 @@ class AdapterWiringTests(unittest.TestCase):
         }
 
     def test_all_real_entry_points_match_contract_signatures(self):
+        # Every real entry point must load under the verification interpreter.
+        # A missing runtime dependency is a verification failure, never a
+        # recorded discrepancy: verify.sh proves jsonschema is importable before
+        # it runs anything, and this assertion names the drift if it ever isn't.
         discrepancies = adapters.signature_discrepancies()
-        # The only admissible discrepancy is a recorded missing runtime
-        # dependency of the real Skill 79 validator, never a signature drift.
-        import importlib.util
-
-        if importlib.util.find_spec("jsonschema") is None:
-            self.assertTrue(discrepancies, "the S79 validator cannot import "
-                                           "without jsonschema; it must be reported")
-            self.assertEqual([d["entry"] for d in discrepancies],
-                             ["s79_validate_checkout.validate_request"])
-            self.assertIn("jsonschema", discrepancies[0]["error"])
-        else:
-            self.assertEqual(discrepancies, [], discrepancies)
+        self.assertEqual(discrepancies, [], discrepancies)
 
     def test_known_contract_discrepancies_are_recorded(self):
         ids = {item["id"] for item in adapters.CONTRACT_DISCREPANCIES}
@@ -482,15 +482,12 @@ class DecidedBehaviorTests(unittest.TestCase):
         module_path = substrate.source(
             "79-signature-order-form/scripts/validate_checkout.py")
         self.assertTrue(module_path.is_file())
-        try:
-            module = substrate.s79_validate_checkout()
-        except ModuleNotFoundError as exc:
-            # The S79 validator imports jsonschema. An isolated interpreter
-            # hides user site-packages; the missing dependency is named here
-            # and by the 999 dependency package, never silently ignored.
-            self.assertIn("jsonschema", str(exc))
-        else:
-            self.assertTrue(callable(module.validate_request))
+        # jsonschema is the Launcher's own runtime requirement (requirements.txt).
+        # An interpreter that cannot import it is not a verification environment,
+        # so the ModuleNotFoundError is allowed to fail this test loudly instead
+        # of being accepted as a recorded absence.
+        module = substrate.s79_validate_checkout()
+        self.assertTrue(callable(module.validate_request))
 
     def test_council_is_a_planning_record_never_a_route_node(self):
         record = make_launch_record(council={"step": "council_launch_planning",
@@ -512,6 +509,139 @@ class DecidedBehaviorTests(unittest.TestCase):
         thank_you = next(p for p in plan["pages"] if p["role"] == "thank_you")
         self.assertEqual(thank_you["cross_sales"]["teaching"]["state"], "pending")
         self.assertEqual(thank_you["cross_sales"]["route_node"], False)
+
+
+FIXTURES = SKILL_ROOT / "fixtures"
+
+
+def fixture_intake(name):
+    return json.loads((FIXTURES / name / "intake.json").read_text(encoding="utf-8"))
+
+
+def fixture_checkout_mapping(name):
+    """The real Skill 79 mapping for a worked example, through the real compiler."""
+    payload = fixture_intake(name)
+    normalized = intake.validate(payload)
+    graph = route_law.compile_route(
+        make_launch_record(journey_mode=payload["journey_mode"]))["graph"]
+    return checkout_core.order_form_mapping(normalized, graph)
+
+
+class CheckoutDeliveryGateTests(unittest.TestCase):
+    """An unresolved Skill 79 checkout mode blocks delivery (L25-BF-41).
+
+    The folded-level shape has no mode in the Skill 79 contract. Nothing is
+    invented to fill it, so the delivery stays blocked rather than passing.
+    """
+
+    def test_folded_levels_delivery_is_blocked_while_the_mode_is_unresolved(self):
+        mapping = fixture_checkout_mapping("seven-figure-preneur")
+        self.assertIsNone(mapping["checkout_mode"])
+        self.assertEqual(mapping["checkout_mode_state"], "contract_gap")
+        self.assertIs(mapping["delivery_blocked"], True)
+        self.assertTrue(mapping["delivery_blockers"], mapping)
+        fails = checks.checkout_mode_violations(mapping)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("AF-LAUNCH-CHECKOUT-MODE", fails[0])
+        self.assertIn("blocked", fails[0])
+
+    def test_a_resolved_mode_is_not_blocked(self):
+        mapping = fixture_checkout_mapping("elevation")
+        self.assertEqual(mapping["checkout_mode"], "post_selection")
+        self.assertEqual(mapping["checkout_mode_state"], "resolved")
+        self.assertIs(mapping["delivery_blocked"], False)
+        self.assertEqual(mapping["delivery_blockers"], [])
+        self.assertEqual(checks.checkout_mode_violations(mapping), [])
+
+    def test_every_state_except_a_resolved_nonempty_mode_is_blocked(self):
+        for checkout in ({"checkout_mode": None, "checkout_mode_state": "resolved"},
+                         {"checkout_mode": "", "checkout_mode_state": "resolved"},
+                         {"checkout_mode": "post_selection",
+                          "checkout_mode_state": "banana"},
+                         {"checkout_mode": None, "checkout_mode_state": None},
+                         {}):
+            with self.subTest(checkout=checkout):
+                fails = checks.checkout_mode_violations(checkout)
+                self.assertEqual(len(fails), 1, fails)
+                self.assertTrue(fails[0].startswith("AF-LAUNCH-CHECKOUT-MODE"),
+                                fails)
+                self.assertIn("blocked", fails[0])
+
+    def test_delivery_flags_agree_with_the_gate_on_both_fixtures(self):
+        for name in ("elevation", "seven-figure-preneur"):
+            mapping = fixture_checkout_mapping(name)
+            with self.subTest(fixture=name):
+                blocked = bool(checks.checkout_mode_violations(mapping))
+                self.assertIs(mapping["delivery_blocked"], blocked)
+                self.assertEqual(bool(mapping["delivery_blockers"]), blocked)
+
+
+class BrowserDiagnosticTests(unittest.TestCase):
+    """The explicit offline browser diagnostic verify.sh runs.
+
+    A real browser would drive landing -> checkout -> thank-you against a live
+    page. This diagnostic drives no browser whatever is installed: it probes for
+    the Playwright module and browser binaries, reports exactly what it found,
+    and proves the same wiring without one — the compiled graph the browser
+    would follow and the native Skill 79 order form it would reach, with its
+    validator loaded. It is never reported as a browser run.
+    """
+
+    def test_offline_diagnostic_proves_route_and_checkout_wiring_without_a_browser(self):
+        probe = {
+            "playwright_module": (importlib.util.find_spec("playwright")
+                                  is not None),
+            "browser_binaries": [name for name in
+                                 ("chromium", "chromium-browser", "google-chrome",
+                                  "chrome", "msedge", "firefox")
+                                 if shutil.which(name)],
+        }
+        if probe["playwright_module"] or probe["browser_binaries"]:
+            reason = ("browser tooling is present on this machine but this "
+                      "diagnostic runs offline and drives no browser; landing -> "
+                      "checkout wiring is proved from the real route compiler and "
+                      "the Skill 79 contract binding instead")
+        else:
+            reason = ("offline: probed for the Playwright module and browser "
+                      "binaries and found none; landing -> checkout wiring is "
+                      "proved from the real route compiler and the Skill 79 "
+                      "contract binding instead")
+        browser = {"used": False, "reason": reason, "probe": probe}
+        line = json.dumps(browser, sort_keys=True)
+        print("\nbrowser diagnostic: " + line)
+        # verify.sh surfaces this exact line: it must be a record of the probe
+        # this run took, reporting that no browser was used.
+        recorded = json.loads(line)
+        self.assertIs(recorded["used"], False)
+        self.assertEqual(recorded["probe"], probe)
+
+        surface = adapters.NATIVE_SURFACES["checkout"]
+        self.assertFalse(surface["dispatch_adapter"])
+        self.assertTrue(surface["route_node"])
+        self.assertEqual(surface["validator_entry"], "validate_request")
+        self.assertTrue(substrate.source(surface["contract"]).is_file())
+        self.assertTrue(substrate.source(surface["validator_module"]).is_file())
+        # The checkout the browser would land on has a validator that really loads.
+        self.assertTrue(callable(substrate.s79_validate_checkout().validate_request))
+
+        first_hop = {"multiple_options": "product_selection",
+                     "single_simple": "checkout",
+                     "folded_levels": "checkout"}
+        for mode, expected_stage in first_hop.items():
+            record = make_launch_record(journey_mode=mode)
+            graph = route_law.compile_route(record)["graph"]
+            self.assertEqual(route_law.graph_violations(record, graph), [])
+            step = route_law.navigate(graph, "landing", "interest_submitted", set())
+            self.assertEqual(step["to_stage"], expected_stage, mode)
+            if expected_stage == "product_selection":
+                step = route_law.navigate(graph, "product_selection",
+                                          "selection_validated", set())
+            self.assertEqual(step["to_stage"], "checkout", mode)
+            checkout_page = next(page for page in build_time.plan(record)["pages"]
+                                 if page["role"] == "checkout")
+            self.assertFalse(checkout_page["build_entry"]["dispatch_adapter"], mode)
+            with self.assertRaises(adapters.AdapterError):
+                adapters.adapter_for("checkout")
 
 
 if __name__ == "__main__":
