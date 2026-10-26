@@ -344,8 +344,11 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
             # exactly as its spec's `cta.note` declares. The package-card grammar below belongs
             # to product-selection only.
             note = str(section.get("cta_note") or "").strip().rstrip(".")
-            treatment = (note[0].lower() + note[1:] + "." if note else
-                         "the first action is filled in the primary brand colour and the rest are outlined rectangles.")
+            if not note:  # the spec states the treatment; a guessed one is a defect
+                raise SpecError(
+                    f"section {section.get('section_id')}: the utility actions carry no declared "
+                    "treatment (cta_note); the spec states it, never a guess")
+            treatment = note[0].lower() + note[1:] + "."
             lines.append(UTILITY_CTA_BLOCK.format(
                 treatment=treatment, labels=" | ".join(f'"{x}"' for x in many)))
             cta = "utility actions"

@@ -95,17 +95,18 @@ def main(argv=None) -> int:
               "generated real images.")
     fmt = lambda cmd: " ".join(shlex.quote(str(x)) for x in cmd)
     board = run_dir / "production-request.json"
-    print("next: stage_executor.py — Design Board for the role, on its own, on a run with real "
-          "images: " + fmt([sys.executable, executor, run_dir, "--stages", "design-board",
-                            "--request", board.name]))
+    print("NEXT 1, Design Board for the role (client approval), on its own: "
+          + fmt([sys.executable, executor, run_dir, "--stages", "design-board",
+                 "--request", board.name]))
     final = run_dir / "production-request-final-mockups.json"
     build_final = [sys.executable, str(HERE / "build_production_request.py"), "--copy-version", version,
                    "--manuscript", str(manuscript), "--stage", "final-mockups", "--out", str(final),
                    "--model", a.model, "--run-dir", str(run_dir)]
     if a.design_prose:
         build_final += ["--design-prose", str(a.design_prose)]
-    print("next 2: build the final-mockups request and run it, only after the client's approval "
-          "is recorded (the executor refuses the two stages together): " + fmt(build_final) + " && "
+    print("NEXT 2, final-mockups, only after the client's approval is recorded, in a run of its "
+          "own (the executor refuses the two stages together): build its request first, then "
+          "run it: " + fmt(build_final) + " && "
           + fmt([sys.executable, executor, run_dir, "--stages", "final-mockups", "--request", final.name]))
     return 0
 
