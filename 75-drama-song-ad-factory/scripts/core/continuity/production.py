@@ -396,10 +396,11 @@ def no_paid_regeneration(result):
     Checks against the plan's complete paid inventory (``paid_in_graph``),
     not just what the plan preserved: a plan that queues a paid id while
     recording no preserved entry must not read as clean. A plan without a
-    paid inventory is unverifiable, so the guard fails closed (False).
+    paid inventory -- absent or present-but-empty -- is unverifiable, so the
+    guard fails closed (False).
     """
     inventory = result.get("paid_in_graph")
-    if not isinstance(inventory, list):
+    if not isinstance(inventory, list) or not inventory:
         return False
     paid_ids = {entry["artifact_id"]
                 for entry in result.get("preserved_paid_assets", [])}
@@ -494,6 +495,35 @@ def selfcheck():
     for entry in music_plan["preserved_paid_assets"]:
         if entry["artifact_id"] == "music_audio":
             assert entry["provider_job_id"] == "suno_job_88117"
+
+    # clause 4, guard edges: no paid inventory evidence means no regeneration.
+    guard_cases = [
+        ({"preserved_paid_assets": [], "safe_to_regenerate": []},
+         False, "inventory absent"),
+        ({"paid_in_graph": [], "preserved_paid_assets": [],
+          "safe_to_regenerate": []},
+         False, "inventory present but empty"),
+        ({"paid_in_graph": None, "preserved_paid_assets": [],
+          "safe_to_regenerate": ["keyframe_previews"]},
+         False, "inventory not a list"),
+        ({"paid_in_graph": ["music_audio"], "preserved_paid_assets": [],
+          "safe_to_regenerate": ["music_audio"]},
+         False, "paid queued with no preserved entry"),
+        ({"paid_in_graph": ["music_audio"],
+          "preserved_paid_assets": [{"artifact_id": "music_audio"}],
+          "safe_to_regenerate": ["music_audio"]},
+         False, "paid preserved but also queued"),
+        ({"paid_in_graph": ["music_audio"],
+          "preserved_paid_assets": [{"artifact_id": "music_audio"}],
+          "safe_to_regenerate": ["keyframe_previews"]},
+         True, "paid genuinely preserved"),
+        ({"paid_in_graph": ["music_audio"], "preserved_paid_assets": [],
+          "safe_to_regenerate": ["keyframe_previews"]},
+         True, "paid in graph, nothing queued"),
+    ]
+    for plan, expected, label in guard_cases:
+        got = no_paid_regeneration(plan)
+        assert got is expected, "guard %s: %r != %r" % (label, got, expected)
 
     print("continuity.production selfcheck OK -- %d scenes, %d identities"
           % (len(after["scenes"]), len(before_identities)))
