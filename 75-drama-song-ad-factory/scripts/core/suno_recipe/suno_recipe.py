@@ -284,6 +284,14 @@ DEFAULT_CALLBACK_URL = "https://example.invalid/cb"
 #: The directions the createTask envelope must carry inside ``input``.
 REQUIRED_MUSIC_DIRECTIONS = ("custom_mode", "instrumental", "title", "lyrics",
                              "style", "negative_tags", "duration")
+#: EVERY key ``input`` may lawfully carry: the required directions, the lyrics
+#: alternative, the model value, the brief fields and the KIE param block.
+#: Allowed by LIST, so a key nobody named -- a display-metadata spelling the
+#: guard's shape rule never learned -- cannot legally ride out of the envelope.
+ENVELOPE_INPUT_KEYS = frozenset(REQUIRED_MUSIC_DIRECTIONS) | frozenset({
+    "model", "prompt", "vocal_gender", "style_weight", "weirdness_constraint",
+    "variety",
+})
 #: Keys that only ever existed on the retired FLAT contract: seeing one at the
 #: top level of an envelope proves a legacy payload, not a createTask one.
 LEGACY_FLAT_KEYS = ("lyrics", "custom_mode", "instrumental", "style",
@@ -1406,6 +1414,14 @@ def check_envelope(req):
     elif not lyrics and not prompt:
         errs.append("MISSING_DIRECTION: no lyrics source at all; input.lyrics "
                     "must carry the one approved sheet")
+    # -- every input key is one this contract names -------------------------
+    unknown = sorted(str(k) for k in inp if k not in ENVELOPE_INPUT_KEYS)
+    if unknown:
+        errs.append("UNKNOWN_INPUT_KEY: input carries %s outside the accepted "
+                    "createTask directions (%s); an unrecognised key is refused "
+                    "rather than sent"
+                    % (", ".join(unknown),
+                       ", ".join(sorted(ENVELOPE_INPUT_KEYS))))
     # -- required directions ------------------------------------------------
     missing = [f for f in REQUIRED_MUSIC_DIRECTIONS if f not in inp]
     if missing:
