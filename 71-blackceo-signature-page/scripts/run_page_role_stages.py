@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -80,8 +81,32 @@ def main(argv=None) -> int:
             if subprocess.run(argv_).returncode:
                 print(f"FAIL: {spec['page_label']} stage {stage} stopped at {Path(argv_[1]).name}")
                 return 1
-    print(f"{spec['page_label']} stages done; next: stage_executor.py {run_dir} --stages design-board "
-          "(client approval), then final-mockups")
+    if a.preflight:  # prompts only: no provider call, no image, nothing is complete
+        print(f"PREVIEW {spec['page_label']}: every prompt composed and validated; no provider was "
+              "called, no image exists and nothing is complete. Re-run without --preflight to generate.")
+    elif a.provider == "stub":  # placeholder PNGs only: never a completion
+        print(f"PREVIEW {spec['page_label']}: the stub provider wrote placeholder PNGs; no real image "
+              "exists and nothing is ready for a client. Re-run with --provider kie --allow-paid to generate.")
+    else:
+        print(f"{spec['page_label']} stages done with the {a.provider} provider.")
+    executor = HERE / "stage_executor.py"
+    if a.preflight or a.provider == "stub":
+        print("NOTE: nothing is complete yet; the next commands apply only to a run that "
+              "generated real images.")
+    fmt = lambda cmd: " ".join(shlex.quote(str(x)) for x in cmd)
+    board = run_dir / "production-request.json"
+    print("next: stage_executor.py — Design Board for the role, on its own, on a run with real "
+          "images: " + fmt([sys.executable, executor, run_dir, "--stages", "design-board",
+                            "--request", board.name]))
+    final = run_dir / "production-request-final-mockups.json"
+    build_final = [sys.executable, str(HERE / "build_production_request.py"), "--copy-version", version,
+                   "--manuscript", str(manuscript), "--stage", "final-mockups", "--out", str(final),
+                   "--model", a.model, "--run-dir", str(run_dir)]
+    if a.design_prose:
+        build_final += ["--design-prose", str(a.design_prose)]
+    print("next 2: build the final-mockups request and run it, only after the client's approval "
+          "is recorded (the executor refuses the two stages together): " + fmt(build_final) + " && "
+          + fmt([sys.executable, executor, run_dir, "--stages", "final-mockups", "--request", final.name]))
     return 0
 
 
