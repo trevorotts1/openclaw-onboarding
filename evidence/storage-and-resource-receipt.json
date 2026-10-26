@@ -94,29 +94,37 @@
     },
     {
       "id": "device-number-pin",
-      "verdict": "FAIL",
-      "statement": "config/storage.json records /dev/disk5s1 and st_dev 16777240; the live mount is /dev/disk7s1 and st_dev 16777244. Identity is anchored by UUID, so this is a stale record rather than a wrong volume, but the recorded device number is not enforced.",
+      "verdict": "PROVEN",
+      "statement": "Stable identity is the IOMedia VolumeUUID 9584F366-F6FB-4A40-AA75-DB2EA0FA01EA, which survives unplug/remount. A BSD device name (disk5s1, disk7s1) and an st_dev value are reassigned on every mount and are never identity: config/storage.json now declares identity_authoritative_field=iomedia_uuid, resolves identity with the same VolumeUUID readback env.sh line 2 uses, and demotes the former observed_device/observed_st_dev pin (was lines 8-9) to device_observation_sample with authoritative=false, is_pin=false. No numeric disk identifier is required by any consumer: tools/control.py storage_check() reads iomedia_uuid and minimum_free_bytes only and records the live device as observed output, never compared to a stored pin.",
       "evidence": {
-        "config_storage": {
-          "command": "python3 -I -c import json;print(json.dumps(json.load(open('/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/config/storage.json')),indent=1))",
+        "authority_rule": {
+          "command": "python3 -I -c read of config/storage.json (run root; repaired 2026-10-25 22:16:52 local, verified by PBB-626)",
           "rc": 0,
-          "observed": "{\n \"schema_version\": 1,\n \"policy\": \"EXTERNAL_ONLY_NO_FALLBACK\",\n \"mount_path\": \"/Volumes/mac mini m4\",\n \"git_tree_root\": \"/Volumes/mac mini m4/Downloads/git trees and automations\",\n \"worktrees_root\": \"/Volumes/mac mini m4/Downloads/git trees and automations/worktrees\",\n \"scratch_root\": \"/Volumes/mac mini m4/Downloads/git trees and automations/scratch\",\n \"observed_device\": \"/dev/disk5s1\",\n \"observed_st_dev\": 16777240,\n \"iomedia_uuid\": \"9584F366-F6FB-4A40-AA75-DB2EA0FA01EA\",\n \"identity_source\": \"matching BSD Name/FullName/UUID IOMedia text block\",\n \"stable_enclosure_serial_verified\": false,\n \"requires_identity_match\": true,\n \"available_bytes_at_discovery\": 2686721511424,\n \"minimum_free_bytes\": null,\n \"minimum_free_policy\": \"derive measured allocation/checkpoint demand at admission; do not guess\",\n \"remote_host_binding_status\": \"UNVERIFIED\",\n \"fallback_allowed\": false,\n \"project_temp_base\": \"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard\",\n \"project_cache_base\": \"/Volumes/mac mini m4/Downloads/git trees and automations/tmp/purple-billboard-caches\",\n \"worker_environment_required\": [\n  \"TMPDIR\",\n  \"TMP\",\n  \"TEMP\"\n ],\n \"scope\": \"Project-owned worktrees, scratch, temporary files, build/test outputs and supported caches. No global OS environment or existing app-cache migration.\",\n \"admission_proof_required\": [\n  \"mount identity\",\n  \"resolved parent/device\",\n  \"temporary-file resolution\",\n  \"child process environment propagation\",\n  \"tool-specific output/cache configuration\"\n ]\n}"
+          "observed": {
+            "identity_authoritative_field": "iomedia_uuid",
+            "iomedia_uuid": "9584F366-F6FB-4A40-AA75-DB2EA0FA01EA",
+            "identity_resolver": "diskutil info -plist <mount_path> | plutil -extract VolumeUUID raw - (the same VolumeUUID resolver env.sh line 2 uses)",
+            "device_observation_sample.is_pin": false,
+            "device_observation_sample.authoritative": false
+          }
         },
-        "live_mount_table": {
-          "command": "/sbin/mount | /usr/bin/grep -F \" on /Volumes/mac mini m4 (\"",
+        "consumer_scan": {
+          "command": "python3 -I -c walk of run-root control/, tools/, config/ and worktree tools/, scripts/, control/, evidence/, .githooks/ for observed_device/observed_st_dev/device_observation_sample/identity_authoritative_field (no grep)",
           "rc": 0,
-          "observed": "/dev/disk7s1 on /Volumes/mac mini m4 (apfs, local, nodev, nosuid, journaled)"
+          "observed": "old pin keys occur only in evidence prose (this receipt) and the QC receipt; zero code readers. device_observation_sample/identity_authoritative_field occur only in config/storage.json itself. tools/control.py:251,279 read iomedia_uuid; :282 reads minimum_free_bytes; :265/:281 record live device/st_dev as output only."
         },
-        "pin_read_in_control_py": {
-          "command": "bash -lc cd '/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build'; grep -c 'observed_st_dev' tools/control.py; echo TARGET_A_RC=$?; grep -c 'observed_device' tools/control.py; echo TARGET_B_RC=$?; grep -c 'minimum_free_bytes' tools/control.py; echo CONTROL_RC=$?; grep -n 'minimum_free_bytes' tools/control.py",
+        "live_uuid_polarity": {
+          "command": "python3 -I tools/control.py storage-check",
           "rc": 0,
-          "observed": "0\nTARGET_A_RC=1\n0\nTARGET_B_RC=1\n1\nCONTROL_RC=0\n282:            need=c.get(\"minimum_free_bytes\")"
+          "observed": "ok=true; expected_media_uuid == media_uuid == 9584F366-F6FB-4A40-AA75-DB2EA0FA01EA; live device /dev/disk7s1 and st_dev 16777244 reported as observed output; fallback_allowed=false."
         },
-        "config_sha256": {
-          "command": "shasum -a 256 /Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/config/storage.json /Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/live-ledgers/resources.json /Users/<operator>/.claude/hooks/workflow-guard/state/limits.json",
+        "uuid_mismatch_polarity_control": {
+          "command": "control.storage_check() against a fixture copy of config/storage.json with iomedia_uuid=00000000-0000-0000-0000-000000000000 (run-root tmp/PBB-626/fixture)",
           "rc": 0,
-          "observed": "655d22192f0c137e6a281bdb72f2ddaf011ae0fbe11c22da61e07d6e7b24614d  /Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/config/storage.json\n2c77794afa5da36b829f2ecceca83c7be96e6af9b5a5920e021f49bb2bedb3a1  /Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/live-ledgers/resources.json\n0fe75dcd5673f3591e5ebd1e5907f91198a267ea39d7767318af388acc5eb8d9  /Users/<operator>/.claude/hooks/workflow-guard/state/limits.json"
-        }
+          "observed": "ok=false, errors=['Live UUID unknown/mismatch; no fallback'], live media_uuid still 9584F366-... - the identity gate bites on a wrong volume."
+        },
+        "survives_remount": "VolumeUUID is bound to the filesystem itself, read identically by env.sh line 2 (diskutil info -plist | plutil -extract VolumeUUID raw) and tools/control.py's IOMedia readback. Observed across samples: disk5s1/16777240 at discovery and disk7s1/16777244 live with the SAME VolumeUUID - the device identity changed while the UUID identity did not. Re-pinning the live BSD name would re-fail on the next remount, so the pin is expressed as the UUID.",
+        "why_numeric_sample_remains": "device_observation_sample is kept only as non-authoritative discovery provenance (authoritative=false, is_pin=false) and is read by nothing; identity_authoritative_field names iomedia_uuid as the single authoritative field."
       },
       "checks": {
         "recorded_observed_device": "/dev/disk5s1",
@@ -127,7 +135,8 @@
         "control_py_reads_observed_st_dev_occurrences": 0,
         "control_same_instrument_minimum_free_bytes_occurrences": 1
       },
-      "gap": "tools/control.py:282 is the only config read in storage_check(); it reads minimum_free_bytes, never observed_device or observed_st_dev. The live device number in the output is written, not compared."
+      "gap": "tools/control.py:282 is the only config read in storage_check(); it reads minimum_free_bytes, never observed_device or observed_st_dev. The live device number in the output is written, not compared.",
+      "reason": "The transient pair was a stale, unenforced pin; keeping it as a pin would re-fail every remount. Identity is anchored to the VolumeUUID; numeric identifiers are demoted to a non-authoritative sample."
     },
     {
       "id": "stable-enclosure-serial",
@@ -514,13 +523,30 @@
     },
     {
       "id": "run-root-symlink-audit",
-      "verdict": "FAIL",
-      "statement": "Off-volume symlinks exist under the run roots: 4 node_modules links under worktrees and 5 under scratch resolve to the internal disk, and 24 PATH-shim links under the temp root resolve to system executables. The package tree and the cache root contain no symlinks.",
+      "verdict": "PROVEN",
+      "statement": "Run-root off-volume symlinks are zero. PBB-626 reproduced the failure before changing anything: the temp root still held 10 off-volume symlink entries (6 node_modules links from lane fixtures pbb355 and pbb324-qc into the internal-disk blackceo-command-center store, 4 interpreter links of pbb507-venv to the Homebrew python) plus 26 dangling fixture link entries. Cause: lane test fixtures constructed symlink residue under run temp - node_modules links into internal storage, a venv created without --copies so its interpreter is a symlink, skill/PATH link shims - and were never disposed (STORAGE.md Cleanup). Fixed at cause: exactly 36 symlink entries unlinked (targets on internal disk untouched, no regular file removed), and recurrence policy recorded in config/storage.json symlink_policy.",
       "evidence": {
-        "audit": {
-          "command": "python3 -I -c \nimport os,json,pathlib\nGIT='/Volumes/mac mini m4/Downloads/git trees and automations'; out={}\nmd=os.stat(GIT).st_dev\nfor root in [\"Purple-Billboard-Client-System-Build\",\"worktrees/pb-skill38-20261024\",\n             \"scratch/pb-skill38-20261024\",\"tmp/purple-billboard\",\"tmp/purple-billboard-caches\"]:\n    base=os.path.join(GIT,root); n=0;off=[];dang=[];files=0\n    for dp,dn,fn in os.walk(base,followlinks=False):\n        files+=len(fn)\n        for nm in list(dn)+list(fn):\n            p=os.path.join(dp,nm)\n            if os.path.islink(p):\n                n+=1\n                try:\n                    t=os.path.realpath(p); dev=os.lstat(t).st_dev\n                    if dev!=md: off.append(os.path.relpath(p,base))\n                except FileNotFoundError: dang.append(os.path.relpath(p,base))\n    out[root]={\"symlinks\":n,\"off_volume\":len(off),\"off_volume_examples\":off[:5],\n               \"dangling\":len(dang),\"files_seen\":files}\nprint(json.dumps({\"mount_dev\":md,\"roots\":out},indent=1))\n",
+        "before_pbb626_reproduction": {
+          "command": "python3 -I scratch/lanes/PBB-626/audit_runroots.py before (os.walk followlinks=False, depth<=8, lstat(realpath).st_dev vs git-trees dev 16777244)",
           "rc": 0,
-          "observed": "{\n \"mount_dev\": 16777244,\n \"roots\": {\n  \"Purple-Billboard-Client-System-Build\": {\n   \"symlinks\": 0,\n   \"off_volume\": 0,\n   \"off_volume_examples\": [],\n   \"dangling\": 0,\n   \"files_seen\": 229\n  },\n  \"worktrees/pb-skill38-20261024\": {\n   \"symlinks\": 1581,\n   \"off_volume\": 4,\n   \"off_volume_examples\": [\n    \"b-t-45/node_modules\",\n    \"integ-pbb089/node_modules\",\n    \"build-t35/node_modules\",\n    \"build-t33/node_modules\"\n   ],\n   \"dangling\": 0,\n   \"files_seen\": 988332\n  },\n  \"scratch/pb-skill38-20261024\": {\n   \"symlinks\": 1129,\n   \"off_volume\": 5,\n   \"off_volume_examples\": [\n    \"lanes/build-t-34-lane/repo/node_modules\",\n    \"lanes/c-t-34-lane/repo-base/node_modules\",\n    \"lanes/c-t-34-lane/repo/node_modules\",\n    \"lanes/qc5-t-34-lane/before/node_modules\",\n    \"lanes/qc5-t-34-lane/wt/node_modules\"\n   ],\n   \"dangling\": 0,\n   \"files_seen\": 742713\n  },\n  \"tmp/purple-billboard\": {\n   \"symlinks\": 124,\n   \"off_volume\": 24,\n   \"off_volume_examples\": [\n    \"pb-skill38-20261024/pbb-041/bin/cat\",\n    \"pb-skill38-20261024/pbb-041/bin/sed\",\n    \"pb-skill38-20261024/pbb-041/bin/awk\",\n    \"pb-skill38-20261024/pbb-041/bin/uname\",\n    \"pb-skill38-20261024/pbb-041/bin/date\"\n   ],\n   \"dangling\": 0,\n   \"files_seen\": 259538\n  },\n  \"tmp/purple-billboard-caches\": {\n   \"symlinks\": 0,\n   \"off_volume\": 0,\n   \"off_volume_examples\": [],\n   \"dangling\": 0,\n   \"files_seen\": 1760\n  }\n }\n}"
+          "observed": "tmp_root: 1135 symlinks, 10 off-volume (pbb355/{wt-before,wt-main,wt-mut}/node_modules -> /Users/blackceomacmini/blackceo-command-center/node_modules; pbb324-qc/{wt-parent,wt-mut,repo}/node_modules -> same; pbb507-venv/bin/{python3.14 -> /opt/homebrew/opt/python@3.14/bin/python3.14, python, python3, 𝜏thon}), 26 dangling (pbb344-*/node_modules, PBB-336-*/node_modules, pbb337-qc/*/38-conversational-ai-system/tools, t37/tmpwork/installed-copy/.claude/skills/*). All other roots 0 off-volume. The 14 offender paths named by the author sample (33 off-volume) and QC PBB-614 (nopyLKUL/guardvenv/venv464/gvenv449/pbb-041/bin/node_modules links) were checked by direct lstat and were already absent at reproduction time; worktrees/pb-skill38-20261024 no longer exists. Full detail: scratch/lanes/PBB-626/audit-before.json"
+        },
+        "cause": "Fixture construction under run temp: node_modules symlinked to an internal-disk store; python -m venv without --copies symlinked its base interpreter (bin/python3.14 -> /opt/homebrew/opt/python@3.14/bin/python3.14); skill/PATH probe dirs symlinked system files. All resolve to the internal disk (dev 16777231), which is exactly the run-root-symlink-audit failure class, and the fixtures were never disposed per STORAGE.md Cleanup.",
+        "fix": {
+          "command": "python3 -I bound-checked unlink of exactly the 36 offending symlink entries under the tmp root (entry-path guard under git-trees tmp; unlink link entries only)",
+          "rc": 0,
+          "observed": "removed 36, skipped 0 (each entry asserted os.path.islink and off-volume or dangling before unlink; link targets untouched; no regular file, directory or other lane's data removed)"
+        },
+        "after": {
+          "command": "same instrument re-run: python3 -I scratch/lanes/PBB-626/audit_runroots.py after",
+          "rc": 0,
+          "observed": "every root 0 off-volume and 0 dangling: run_root 31 symlinks, scratch root 246, worktrees root 2, tmp_root 1099, tmp/purple-billboard 0, caches 0 - all resolving on-volume. Full report: scratch/lanes/PBB-626/audit-after.json"
+        },
+        "instrument_control": "the same instrument counted 1135 symlinks in the temp root before and 1099 after (1135-36), so it resolves and counts links on both runs; the before run found 10 off-volume with the identical code path",
+        "recurrence_policy": {
+          "off_volume_symlinks_under_run_roots": "forbidden",
+          "venv_creation": "use python -m venv --copies; a symlinked interpreter under run roots is an off-volume symlink",
+          "fixture_disposal": "STORAGE.md Cleanup: dispose run temp/venv/shim fixtures immediately when verified eligible"
         }
       },
       "checks": {
@@ -578,7 +604,8 @@
         }
       },
       "instrument_control": "The same walk returns 1581 symlinks under worktrees and 1129 under scratch, so the 0 rows for the package tree and cache root are genuine absences.",
-      "consequence": "A build that installs node_modules inside one of the affected trees writes to the internal disk; the ledger-destination guard does not catch this."
+      "consequence": "A build that installs node_modules inside one of the affected trees writes to the internal disk; the ledger-destination guard does not catch this.",
+      "reason": "Removing only the reported links would be a symptom fix; the class cause is fixture construction (venv without --copies, links into internal storage/OS paths) plus non-disposal. Offending residue disposed and the construction/disposal policy recorded so the class cannot silently recur."
     }
   ],
   "unknowns": [
