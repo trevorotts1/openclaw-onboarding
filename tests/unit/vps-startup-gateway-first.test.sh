@@ -80,9 +80,12 @@ wait_for "pm2 resurrect"; sleep 0.5
 grep -q -x "pm2 resurrect" "$EV" && ok "contabo: pm2 resurrect still runs when the cap passes" || bad "contabo: no pm2 after cap"
 if grep -q -x -e autostart -e openclaw-cli "$EV"; then bad "contabo: autostart/CLI ran without a healthy gateway"; else ok "contabo: autostart (CLI) skipped when the gateway never answered"; fi
 
-# persist-home relink: real dirs merged without overwrite, links made, second run is a no-op
+# persist-home relink: real dirs merged without overwrite, links made, second run is a no-op.
+# NEVER destroy a differing file: an identical file relinks; a DIFFERING file is a
+# CONFLICT — that folder's relink is refused, both copies stay, the other folders
+# still link, and the template stays fail-soft (rc=0).
 mk_box ct3; H="$B/home"; OC="$H/.openclaw"; mkdir -p "$OC/persist-home/.claude" "$H/999-setup" "$H/.claude" "$H/.local/lib"
-echo repo > "$H/999-setup/README"; echo layer > "$H/.claude/a"; echo layer-only > "$H/.claude/b"; echo persisted > "$OC/persist-home/.claude/a"; echo pkg > "$H/.local/lib/p"
+echo repo > "$H/999-setup/README"; echo persisted > "$H/.claude/a"; echo layer-only > "$H/.claude/b"; echo persisted > "$OC/persist-home/.claude/a"; echo pkg > "$H/.local/lib/p"
 run_ct3() { HOME="$H" OPENCLAW_ROOT="$OC" PATH="$B/bin:/usr/bin:/bin" GW_READY_CAP=0 bash "$CT" >/dev/null 2>&1; }
 run_ct3; rc1=$?
 ok_links=1
@@ -93,6 +96,22 @@ for n in 999-setup .claude .local; do [ -L "$H/$n" ] && [ "$(readlink "$H/$n")" 
 before=$(cd "$OC/persist-home" && find . | sort | tr '\n' ' '); run_ct3
 after=$(cd "$OC/persist-home" && find . | sort | tr '\n' ' ')
 [ "$before" = "$after" ] && [ "$(readlink "$H/.claude")" = "$OC/persist-home/.claude" ] && [ "$(cat "$H/.claude/a")" = persisted ] && ok "contabo: relink is idempotent" || bad "contabo: second run changed state"
+
+# persist-home conflict: a differing file must never be destroyed. The conflict
+# folder's relink is refused, both copies stay, clean folders still link, and a
+# second run changes nothing (fail-soft: rc=0, conflict reported on stderr).
+mk_box ct4; H="$B/home"; OC="$H/.openclaw"; mkdir -p "$OC/persist-home/.claude" "$H/999-setup" "$H/.claude" "$H/.local/lib"
+echo repo > "$H/999-setup/README"; echo persisted > "$OC/persist-home/.claude/a"; echo layer-newer > "$H/.claude/a"; echo pkg > "$H/.local/lib/p"
+run_ct4() { HOME="$H" OPENCLAW_ROOT="$OC" PATH="$B/bin:/usr/bin:/bin" GW_READY_CAP=0 bash "$CT" >/dev/null 2>"$B/ct4.err"; }
+run_ct4; rc4=$?
+[ "$rc4" = 0 ] && ok "contabo: conflicting relink is fail-soft (rc=0)" || bad "contabo: conflict run rc=$rc4"
+[ -L "$H/999-setup" ] && [ -L "$H/.local" ] && ok "contabo: non-conflicting folders still linked" || bad "contabo: clean folders not linked on a conflict elsewhere"
+[ ! -L "$H/.claude" ] && [ -d "$H/.claude" ] && ok "contabo: conflicting folder keeps its real directory (no link)" || bad "contabo: conflicting folder was linked anyway"
+[ "$(cat "$H/.claude/a")" = layer-newer ] && ok "contabo: live differing file kept (nothing destroyed)" || bad "contabo: live differing file lost"
+[ "$(cat "$OC/persist-home/.claude/a")" = persisted ] && ok "contabo: persistent differing file kept (not overwritten)" || bad "contabo: persistent file overwritten"
+grep -q 'CONFLICT' "$B/ct4.err" && ok "contabo: conflict reported by path" || bad "contabo: conflict not reported"
+before=$(cd "$OC/persist-home" && find . | sort | tr '\n' ' '); run_ct4; after=$(cd "$OC/persist-home" && find . | sort | tr '\n' ' ')
+[ "$before" = "$after" ] && [ ! -L "$H/.claude" ] && [ "$(cat "$H/.claude/a")" = layer-newer ] && ok "contabo: conflicting relink is idempotent" || bad "contabo: conflict second run changed state"
 
 # ---------------------------------------------------------------- Hostinger
 mk_box hg1; D="$B/data"; mkdir -p "$D/.openclaw/scripts"

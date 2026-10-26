@@ -1263,8 +1263,39 @@ main() {
         fi
         trap 'command -v box_update_lock_release >/dev/null 2>&1 && box_update_lock_release' EXIT
       else
-        _err "box-update-lock.sh helper not found beside oc-atomic-upgrade.sh — lease cannot be taken"
-        exit 2
+        # No helper beside the script (a box-only copy, or a test sandbox that
+        # copies this file alone): take the SAME contract inline — refuse only
+        # when a LIVE owner holds the lease, never fail just because the helper
+        # is absent. O_EXCL create is atomic; a dead owner's record is cleared.
+        _bul_lease="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+        _bul_inline=0
+        if ! ( set -o noclobber; printf 'pid=%s start=%s run_id=%s role=oc-atomic-upgrade utc=%s\n' \
+                "$$" "$(ps -o lstart= -p $$ 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//')" \
+                "${RUN_ID:-oc-atomic-$$}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$_bul_lease" ) 2>/dev/null; then
+          _bul_pid="$(sed -n 's/^pid=\([0-9]*\).*/\1/p' "$_bul_lease" 2>/dev/null | head -1)"
+          if [ -n "$_bul_pid" ] && kill -0 "$_bul_pid" 2>/dev/null; then
+            _err "shared installation lease held by live pid $_bul_pid — no retry, no second writer"
+            exit 2
+          fi
+          rm -f "$_bul_lease" 2>/dev/null
+          if ( set -o noclobber; printf 'pid=%s start=%s run_id=%s role=oc-atomic-upgrade utc=%s\n' \
+                  "$$" "$(ps -o lstart= -p $$ 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//')" \
+                  "${RUN_ID:-oc-atomic-$$}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$_bul_lease" ) 2>/dev/null; then
+            _bul_inline=1
+          else
+            _err "cannot take shared installation lease $_bul_lease"
+            exit 2
+          fi
+        else
+          _bul_inline=1
+        fi
+        box_update_lock_release() {
+          [ "${_bul_inline:-0}" = 1 ] || return 0
+          _bul_opid="$(sed -n 's/^pid=\([0-9]*\).*/\1/p' "$_bul_lease" 2>/dev/null | head -1)"
+          [ "$_bul_opid" = "$$" ] && rm -f "$_bul_lease" 2>/dev/null
+          return 0
+        }
+        trap 'box_update_lock_release' EXIT
       fi
       do_upgrade; exit $? ;;
     *) _err "one of --detect or --upgrade is required"; exit 2 ;;
