@@ -42,6 +42,67 @@ frontmatter `version:` field).
   (ids, bounded retry, revisions, conflicts, offline snapshots) and its 31
   deterministic cases.
 
+## v2.9.114 - 2026-10-25 - Drama-to-Demand upgrades recorded (no behaviour change)
+
+Version pair moved `v2.9.113` -> `v2.9.114` so the release record matches the
+code. This release edits only `skill-version.txt`, the `SKILL.md` version field
+and the two documents that record behaviour; no product file changed. The
+behaviour below already ships in the `v2.9.111`-`v2.9.113` line, which carried
+batch version bumps with no changelog entry, so this is the first entry since
+`v2.9.110`.
+
+What a client or an operator sees:
+
+- **The card opens by asking what the video is for.** A new run asks one plain
+  question per message, starts on that question, offers the budget the client
+  already gave in the brief as the recommended option, and reuses a saved
+  character by name instead of asking again. No client-facing question uses
+  screenwriting or method jargon. A resumed project replays exactly the
+  questions it already answered and its approved files are untouched.
+- **Three real opening choices, not one tame line.** The reference library
+  holds four worked example sets; each shows three genuinely different
+  openings for the same business - a different kind of crisis, a different
+  question, a different first line - and every candidate spells out the spoken
+  first line, the headline, the first thing the viewer sees, the question it
+  opens, why that audience cares and how the story connects to the actual
+  offer. The strongest for shock, curiosity and relevance is recommended, and a
+  counterexample table shows tame openings rejected. Fiction may invent a
+  dramatic event again; an invented event is still refused when it would be
+  presented as a verified fact about a real person or product.
+- **The story may open on the consequence without losing its spine.** The
+  twelve beats keep their ids and their true cause-and-effect order; how they
+  are told is declared separately, and the script, the performed lines and the
+  shots must all agree with the declared order. Every beat still states its
+  action, its change, what the viewer now understands, the question it leaves
+  open and who carries it.
+- **Every musical turn says why and what the viewer hears.** The spoken hook,
+  the first singing at the drop, the hero shift and the earned solution hook
+  each carry a written reason and the intended audible change (from, to,
+  rhythm, emotional direction, vocal). A chorus that arrives before the story
+  has earned it is refused.
+- **The purpose the client chose decides which rules apply.** A lesson,
+  testimonial or sales run is judged by its own purpose's rules and the purpose
+  is never guessed from the script's words. Every supported launcher (text,
+  telegram-json, openclaw-json, Studio) records the purpose and the planned
+  gates in `control/method.json` for a new run.
+- **The approved opening actually reaches the film.** The approved opening line
+  and the first visible action are carried into the generated scene plan and
+  the shot order; an opening image that could be read two ways is refused until
+  the intended reading is recorded.
+- **Mouth-shape clips stay inside the policy.** 25-30% of the ad length
+  targeted, 35% hard maximum, clips 4-6 seconds, never fewer than three, and
+  the first 12 seconds clearly articulated. A request that cannot satisfy all
+  of that is surfaced, never silently changed.
+
+Provenance: S75X-W1 (opening coaching, opening candidates), S75X-W2
+(presentation order, blueprint turns), S75X-W3 (recorded purpose reaches the
+story check and every launcher), S75X-W4 (opening scene, blueprint music
+request, lip-sync policy). The accepted tests for all four pass on this tree:
+`test_opening_flow_default_s75x.py`, `test_presentation_order_u1.py`,
+`test_method_plan.py`, `test_factory_card_purpose_w3u2.py`,
+`test_stage_purpose.py`, `test_opening_scene_w4.py`,
+`test_blueprint_inputs_s75xw4u2.py`, `test_lipsync_clips.py`.
+
 ## v2.9.110 - 2026-10-24 - governed production admission
 
 Production entrypoints and paid dispatch require authoritative intake, the
