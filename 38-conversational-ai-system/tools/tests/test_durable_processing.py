@@ -33,6 +33,7 @@ the provider is a real append+fsync file on disk.
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -84,6 +85,7 @@ WORKER = str(TESTS_DIR / "_proc_worker.py")
 class _Base(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="t12-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.db = str(self.tmp / "store.sqlite")
         self.send_log = str(self.tmp / "provider-sends.log")
         self.effect_log = str(self.tmp / "effects.log")
