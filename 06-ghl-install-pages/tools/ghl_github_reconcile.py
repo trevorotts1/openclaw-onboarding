@@ -35,10 +35,14 @@ CLI
 
 Exit code (evidence-root / sweep-base modes): 0 if every vercel_deploy page
 has a verified archive (after retry, if requested); 1 if one or more remain
-missing/failed/flagged. ``--sweep-base`` adds 2: the base EXISTS but discovery
-found ZERO evidence runs — an empty set proves nothing was archived, so it is
-never reported clean. A base dir that does not exist at all is "nothing to
-sweep" and still exits 0 (discriminating these was finding 50).
+missing/failed/flagged. ``--sweep-base`` adds 2, for the two ways a sweep can
+prove NOTHING (finding 50): the base holds run-like directories but
+``cc_board.list_evidence_runs`` discovered ZERO of them (the discovery
+predicate rejected every candidate), or the base cannot be created or listed
+at all. A base with no run-like directories is "nothing to sweep" and still
+exits 0 — the documented 2026-07-18 non-alarm case, which must survive on the
+many fleet boxes that have never run a Skill-6 build (their installer creates
+the base dir, so "the directory exists" is NOT evidence that builds happened).
 
 Exit code (--verify-local-repo mode, B-U10 acceptance (b) — the offline
 byte-match proof): 0 if the compared file byte-matches; 1 on any mismatch or
@@ -177,18 +181,30 @@ class SweepReport:
     applicable: bool = True
     total_runs: int = 0
     runs: list = field(default_factory=list)   # [{"run": <run_id>, "report": <ReconcileReport.as_dict()>}]
+    candidate_dirs: list = field(default_factory=list)  # immediate run-like subdirs the discovery SAW
+    discovery_error: str = ""                  # set when the base could not be listed at all
     log_path: str = ""
 
     def empty_sweep(self) -> bool:
-        """The base EXISTS but discovery yielded ZERO evidence runs.
+        """The base HOLDS run-like directories but discovery yielded ZERO runs.
 
-        This is NOT the documented "nothing to sweep" case (that is
-        ``applicable=False``, no base dir at all): an empty discovered set
-        proves nothing was archived, so it must be loud, never clean.
+        This is finding 50's live failure: the operator box's base was right
+        and NOT empty (``v1-*``, ``v3-*``, ``acceptance-*`` plus three ``v2-*``
+        dirs), yet ``cc_board.list_evidence_runs`` returned nothing because
+        none of the ``v2-*`` dirs carried ``routing/intake-receipt.json`` —
+        the DISCOVERY PREDICATE under-discovered, and the sweep still logged
+        ``all_clean: true``. Candidates-present-but-undiscovered is the only
+        state that proves nothing was checked; a base with no run-like
+        directories at all is "nothing to sweep" (``applicable=False``), the
+        documented 2026-07-18 non-alarm case — not this. See
+        SKILL.md "ZERO CANDIDATES IS NOT A CLEAN SWEEP".
         """
         return self.applicable and not self.runs
 
     def all_clean(self) -> bool:
+        # A base we could not even list proves nothing, so it is never clean.
+        if self.discovery_error:
+            return False
         # "not applicable" (no evidence base exists yet on this box — e.g. it
         # has never run a Skill-6 build) is NOT an attention-needed condition;
         # it means there is nothing to sweep. Conflating the two was a genuine
@@ -208,6 +224,8 @@ class SweepReport:
             "base_dir": self.base_dir,
             "applicable": self.applicable,
             "total_runs": self.total_runs,
+            "candidate_dirs": self.candidate_dirs,
+            "discovery_error": self.discovery_error,
             "runs": self.runs,
             "empty_sweep": self.empty_sweep(),
             "all_clean": self.all_clean(),
@@ -215,10 +233,32 @@ class SweepReport:
         }
 
 
+def _candidate_run_dirs(base_dir: str) -> list:
+    """Every immediate subdirectory of ``base_dir`` that could be a run root.
+
+    This is the discovery's INPUT set, and it is what finding 50 asks a sweep
+    to assert: ``cc_board.list_evidence_runs`` is the discovery OUTPUT, and a
+    zero output over a non-zero input is a broken predicate, never a clean
+    box. Deliberately prefix-agnostic — the live operator base carried
+    ``v1-*``/``v3-*``/``acceptance-*`` runs the ``v2-*`` predicate rejects
+    outright, and a future naming change must surface the same way instead of
+    silently greening the sweep. Our own log dir and dot-dirs are excluded
+    (the sweep itself creates the log dir, so counting it would make every
+    never-built box look like it has evidence). Raises ``OSError`` when the
+    base cannot be listed — an unreadable base is not an empty one.
+    """
+    out = []
+    for name in sorted(os.listdir(base_dir)):
+        if name == _SWEEP_LOG_SUBDIR or name.startswith("."):
+            continue
+        if os.path.isdir(os.path.join(base_dir, name)):
+            out.append(name)
+    return out
+
+
 def sweep_base(base_dir: str, *, retry: bool = True,
                 requester=None, env: dict | None = None,
-                write_log: bool = True, clock=None,
-                empty_is_not_applicable: bool = False) -> SweepReport:
+                write_log: bool = True, clock=None) -> SweepReport:
     """Run ``reconcile()`` over EVERY Skill-6 evidence run under ``base_dir``
     and (by default) write ONE dated JSON log recording the pass — the
     on-disk proof a scheduled maintenance-window cron actually fired, every
@@ -226,27 +266,37 @@ def sweep_base(base_dir: str, *, retry: bool = True,
 
     Never raises. An unresolvable/absent ``base_dir`` (a bare checkout, a
     fresh box with no builds yet) is ``applicable=False`` — nothing to sweep,
-    not an error.
+    not an error. So is a base that exists but holds no run-like directories:
+    ``install-github-archive-reconcile-cron.sh`` creates the base on EVERY
+    box at install time, so its mere existence says nothing about whether a
+    build ever ran there.
 
-    ``empty_is_not_applicable``: the CLI creates a missing base dir (SK6002) so
-    the nightly job survives a recreated box. When the dir did not exist before
-    this sweep, an empty discovery set still means "nothing to sweep" for a box
-    that never built here — the documented 2026-07-18 non-alarm case — not the
-    finding-50 empty-sweep failure. Without that flag, an existing base that
-    yields zero runs stays ``applicable=True`` and ``all_clean()`` is False.
+    An existing base that HOLDS run-like directories while discovery returns
+    zero runs is the opposite: ``applicable=True``, ``empty_sweep()`` True,
+    ``all_clean()`` False.
     """
     report = SweepReport(base_dir=base_dir)
     if not base_dir or not os.path.isdir(base_dir):
         report.applicable = False
         return report
 
-    for run_dir in cc_board.list_evidence_runs(base_dir):
-        run_report = reconcile(run_dir, retry=retry, requester=requester, env=env)
-        report.runs.append({"run": os.path.basename(run_dir), "report": run_report.as_dict()})
-    report.total_runs = len(report.runs)
-
-    if empty_is_not_applicable and not report.runs:
+    try:
+        report.candidate_dirs = _candidate_run_dirs(base_dir)
+    except OSError as exc:
+        # An unreadable base yields the same empty discovery list as an empty
+        # one; reporting clean here would be the finding-50 lie again.
+        report.discovery_error = f"cannot list base dir {base_dir}: {exc}"
         report.applicable = False
+        return report
+
+    if not report.candidate_dirs:
+        # Nothing was ever built here (or the base holds only our own logs).
+        report.applicable = False
+    else:
+        for run_dir in cc_board.list_evidence_runs(base_dir):
+            run_report = reconcile(run_dir, retry=retry, requester=requester, env=env)
+            report.runs.append({"run": os.path.basename(run_dir), "report": run_report.as_dict()})
+        report.total_runs = len(report.runs)
 
     if write_log:
         _now = clock or (lambda: time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
@@ -366,30 +416,48 @@ def main(argv: Optional[list] = None) -> int:
 
     if args.sweep_base:
         # SK6002: a recreated Docker box can lose the folder; the nightly job
-        # must not depend on it existing. Best effort, never fatal. Whether it
-        # existed BEFORE this pass decides applicable-vs-empty (finding 50).
-        base_existed = os.path.isdir(args.sweep_base)
+        # must not depend on it existing. Best effort — but a folder that
+        # cannot be created at all means the sweep CANNOT run, and exiting 0
+        # there would be a green log over a job that never checked anything
+        # (finding 50's shape). The base's existence is deliberately NOT used
+        # to decide applicable-vs-empty: the installer creates it on every
+        # box, so it says nothing about whether a build ever happened.
         try:
             os.makedirs(args.sweep_base, exist_ok=True)
-        except OSError:
-            pass
-        sweep = sweep_base(args.sweep_base, retry=args.retry, write_log=not args.no_log,
-                           empty_is_not_applicable=not base_existed)
+        except OSError as exc:
+            print(f"SWEEP UNAVAILABLE: cannot create/access base dir {args.sweep_base}: {exc} — "
+                  f"the sweep did not run, so this is NOT a clean result.", file=sys.stderr)
+            return 2
+        sweep = sweep_base(args.sweep_base, retry=args.retry, write_log=not args.no_log)
         d = sweep.as_dict()
         if args.json:
             print(json.dumps(d, indent=2))
         else:
             print(f"Base dir: {d['base_dir']}")
+            print(f"Run-like candidate dirs found: {len(d['candidate_dirs'])} {d['candidate_dirs']}")
             print(f"Total evidence runs swept: {d['total_runs']}")
             for r in d["runs"]:
                 print(f"  {r['run']}: {'CLEAN' if r['report']['all_clean'] else 'ATTENTION NEEDED'} "
                       f"(deploys={r['report']['total_deploys']})")
             print(f"Log written: {d['log_path'] or '(none — --no-log)'}")
+            if not d["applicable"] and not d["empty_sweep"]:
+                print("Nothing to sweep: no run-like directories under the base "
+                      "(the 2026-07-18 non-alarm case — a box that never built here).")
             print("RESULT:", "CLEAN" if d["all_clean"] else "ATTENTION NEEDED")
+        if sweep.discovery_error:
+            print(f"SWEEP UNAVAILABLE: {sweep.discovery_error} — the sweep did not run, "
+                  f"so this is NOT a clean result.", file=sys.stderr)
+            return 2
         if sweep.empty_sweep():
-            print(f"EMPTY SWEEP: base dir {d['base_dir']} exists but discovery found "
-                  f"{d['total_runs']} evidence runs — nothing was archived, so this is "
-                  f"NOT a clean result.", file=sys.stderr)
+            shown = ", ".join(d["candidate_dirs"][:8])
+            if len(d["candidate_dirs"]) > 8:
+                shown += f", … (+{len(d['candidate_dirs']) - 8} more)"
+            print(f"EMPTY SWEEP: base dir {d['base_dir']} holds {len(d['candidate_dirs'])} "
+                  f"run-like dir(s) ({shown}) but discovery found {d['total_runs']} evidence "
+                  f"run(s) via cc_board.list_evidence_runs (immediate v2-* dirs carrying "
+                  f"routing/intake-receipt.json) — the DISCOVERY PREDICATE rejected every "
+                  f"candidate, so nothing was checked and this is NOT a clean result.",
+                  file=sys.stderr)
             return 2
         return 0 if sweep.all_clean() else 1
 

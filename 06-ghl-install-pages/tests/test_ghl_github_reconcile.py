@@ -254,46 +254,124 @@ class TestSweepBase:
         assert len(logs) == 1
         assert json.loads(capsys.readouterr().out)["all_clean"] is True
 
-    def test_cli_sweep_base_uncreatable_folder_still_exits_zero(self, tmp_path, capsys):
+    def test_cli_sweep_base_uncreatable_folder_is_not_clean(self, tmp_path, capsys):
+        """A base that cannot be created cannot be swept, so a green exit is a
+        false success: name the failure and exit 2. (Pre-fix this returned 0
+        with applicable=False — a green log for a job that never ran.)"""
         blocker = tmp_path / "file"
         blocker.write_text("x")
         rc = rec.main(["--sweep-base", str(blocker / "sub"), "--json", "--no-log"])
-        assert rc == 0
-        assert json.loads(capsys.readouterr().out)["applicable"] is False
+        assert rc == 2
+        captured = capsys.readouterr()
+        assert "SWEEP UNAVAILABLE" in captured.err
+        assert str(blocker / "sub") in captured.err
+
+    def test_unlistable_base_is_not_clean(self, tmp_path, monkeypatch, capsys):
+        """An unreadable base yields the same empty discovery list as an empty
+        one — the finding-50 lie. It must be reported, never greened."""
+        def _boom(_base):
+            raise PermissionError(13, "Permission denied")
+        monkeypatch.setattr(rec, "_candidate_run_dirs", _boom)
+        report = rec.sweep_base(str(tmp_path), write_log=False)
+        assert report.discovery_error
+        assert report.applicable is False
+        assert report.empty_sweep() is False
+        assert report.all_clean() is False
+        rc = rec.main(["--sweep-base", str(tmp_path), "--json", "--no-log"])
+        assert rc == 2
+        assert "SWEEP UNAVAILABLE" in capsys.readouterr().err
+
+    def test_bare_empty_existing_base_is_nothing_to_sweep(self, tmp_path):
+        """2026-07-18 non-alarm, restated for an existing-but-bare base — the
+        state the cron installer creates on EVERY box before any build. No
+        run-like directories means nothing to sweep, not an empty sweep."""
+        report = rec.sweep_base(str(tmp_path), write_log=False)
+        assert report.candidate_dirs == []
+        assert report.applicable is False
+        assert report.empty_sweep() is False
+        assert report.all_clean() is True
+
+    def test_cli_sweep_base_installer_created_dir_stays_clean(self, tmp_path, capsys):
+        """The real deployment shape: install-github-archive-reconcile-cron.sh
+        creates the base during install, then the nightly cron runs. A
+        never-built box must NOT alarm (exit 0), on the first run or any
+        later one."""
+        base = tmp_path / "clawd" / "skill6-fix"
+        base.mkdir(parents=True)
+        for _ in range(2):
+            rc = rec.main(["--sweep-base", str(base), "--json", "--no-log"])
+            assert rc == 0
+            data = json.loads(capsys.readouterr().out)
+            assert data["applicable"] is False
+            assert data["empty_sweep"] is False
+            assert data["all_clean"] is True
+
+    def test_cli_sweep_base_second_run_on_fresh_base_stays_clean(self, tmp_path, capsys):
+        """Regression: the CLI itself creates the base (SK6002) and writes its
+        log inside it, so judging "did the dir exist before?" made the SECOND
+        nightly run flip to exit 2 on a box that never built anything."""
+        base = str(tmp_path / "never-built")
+        assert rec.main(["--sweep-base", base, "--json"]) == 0
+        capsys.readouterr()
+        assert rec.main(["--sweep-base", base, "--json"]) == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["applicable"] is False
+        assert data["empty_sweep"] is False
+        assert data["all_clean"] is True
 
     def test_empty_existing_base_is_not_clean(self, tmp_path):
-        """Finding 50 — the base EXISTS but discovery yields zero runs.
+        """Finding 50 — the base is NOT empty, but discovery yields zero runs.
 
-        An empty discovered set proves nothing was archived, so it must never
-        read as clean. Before this fix ``all_clean()`` returned True here
-        because ``all([])`` is True. The genuine documented non-alarm case (no
-        evidence base directory at all) is covered by
-        ``test_missing_base_dir_is_not_an_alarm`` above and keeps its
-        clean/exit-0 behaviour."""
+        Live operator evidence (SKILL.md): the base held ``v1-*``, ``v3-*``,
+        ``acceptance-*`` and three ``v2-*`` dirs, yet ``total_runs`` was 0
+        because none carried ``routing/intake-receipt.json``. The candidates
+        the predicate rejected are what make this not-clean; before the fix
+        ``all([])`` returned True and the log said CLEAN."""
         base = str(tmp_path)
+        for run_id in ("v2-run1", "v2-run2", "v2-run3"):
+            os.makedirs(os.path.join(base, run_id))
         report = rec.sweep_base(base, write_log=False)
-        assert report.applicable is True
+        assert sorted(report.candidate_dirs) == ["v2-run1", "v2-run2", "v2-run3"]
         assert report.total_runs == 0
         assert report.empty_sweep() is True
         assert report.all_clean() is False
 
     def test_empty_existing_base_log_records_the_empty_sweep(self, tmp_path):
         """The dated log is the on-disk proof a sweep ran — it must carry the
-        empty-set verdict too, not a false CLEAN."""
+        candidate count and the empty-set verdict, not a false CLEAN."""
         base = str(tmp_path)
+        os.makedirs(os.path.join(base, "v2-run1"))
         report = rec.sweep_base(base, clock=lambda: "20261025T090000Z")
         assert report.log_path
         with open(report.log_path) as fh:
             logged = json.load(fh)
         assert logged["applicable"] is True
+        assert logged["candidate_dirs"] == ["v2-run1"]
         assert logged["total_runs"] == 0
         assert logged["empty_sweep"] is True
         assert logged["all_clean"] is False
 
+    def test_populated_base_is_not_an_empty_sweep(self, tmp_path):
+        """Negative control: a base whose run IS discovered must not carry the
+        empty-sweep verdict — otherwise the new signal is always-on noise."""
+        base = str(tmp_path)
+        r1 = self._seed_run(base, "v2-RUN1", tmp_path)
+        _write_deploy(r1, "PAGE-A")
+        _write_archive_ok(r1, "PAGE-A")
+        report = rec.sweep_base(base, retry=False, write_log=False)
+        assert report.candidate_dirs == ["v2-RUN1"]
+        assert report.total_runs == 1
+        assert report.empty_sweep() is False
+        assert report.all_clean() is True
+
     def test_cli_sweep_base_empty_existing_base_exits_two_and_names_base(self, tmp_path, capsys):
         """Loud, distinct, non-zero: exit 2 (not 0 'clean', not 1 'attention
-        needed') and a message naming the base and the zero count."""
+        needed'), naming the base, the rejected candidates, and the predicate
+        that rejected them — 'the base is empty' and 'the predicate is wrong'
+        are different operators' problems."""
         base = str(tmp_path)
+        for run_id in ("v2-run1", "v2-run2", "v2-run3"):
+            os.makedirs(os.path.join(base, run_id))
         rc = rec.main(["--sweep-base", base, "--json", "--no-log"])
         assert rc == 2
         captured = capsys.readouterr()
@@ -301,8 +379,10 @@ class TestSweepBase:
         assert data["empty_sweep"] is True
         assert data["all_clean"] is False
         assert data["total_runs"] == 0
+        assert len(data["candidate_dirs"]) == 3
         assert base in captured.err
-        assert "0 evidence runs" in captured.err
+        assert "3 run-like dir(s)" in captured.err
+        assert "DISCOVERY PREDICATE" in captured.err
 
     def test_cli_sweep_base_fresh_missing_base_still_exits_zero(self, tmp_path, capsys):
         """The 2026-07-18 false-alarm fix stands: a base the CLI had to create
