@@ -874,6 +874,18 @@ jobs:
           fi
           python3 -m unittest discover -s shared-utils/reminders/tests -t shared-utils/reminders/tests -p 'test_*.py' -v
           echo "✓ T-17 shared reminder slots (51 behavioural + 3 wiring) unit tests are green"
+      - name: shared-utils publication receipts unit tests (T-25)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # shared-utils/receipts/publication_receipts.py is the T-25 module: which
+          # provider object proves a publication, the order publications follow, and
+          # what a resume may re-issue. Its own test module is the ONLY thing that
+          # exercises those pins, so it has to run here or a pin can be deleted
+          # without a red build. BASH wrapper around python3 -I, in the same shape
+          # as the U-16 step above.
+          python3 -I shared-utils/receipts/test_publication_receipts.py
+          echo "✓ shared-utils publication_receipts.py (T-25) unit tests are green"
 
       - name: Skill 38 Per-phase tool gating (U-1)
         shell: bash
