@@ -1,0 +1,165 @@
+{
+  "unit": "S75X-W1-U2",
+  "workflow": "S75X-W1",
+  "program": "s75",
+  "role": "builder",
+  "verdict": "PASS",
+  "row_fully_met": true,
+  "verified_at": "origin/main content, checked out in the lane; the unit landed earlier than the cohort PR (see provenance.delta_commit)",
+  "base_tested": "96559ab1b531570534316d856006867606afd4e2",
+  "head_tested": "96559ab1b531570534316d856006867606afd4e2",
+  "provenance": {
+    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W1-U2-build",
+    "lane_branch": "s75x/verdicts-S75X-W1",
+    "origin_main": "96559ab1b531570534316d856006867606afd4e2",
+    "origin_main_subject": "Merge pull request #2604 from trevorotts1/batch/s75x-frontier-land",
+    "cohort_pr_2604_files": "8 files, none under 75-drama-song-ad-factory/references/ (CHANGELOG.md, QC.md, SKILL.md, agnes_price.py, test_agnes_price.py, intake_card.py, test_opening_flow_default_s75x.py, skill-version.txt)",
+    "delta_commit": "f9efd754022af19bc2249ec95ab729a94ea1e6d0",
+    "delta_commit_subject": "S75X-W1-U1 + S75X-W1-U2: opening flow default and doctrine references",
+    "delta_commit_date": "2026-10-23T15:49:45-04:00",
+    "delta_commit_reached_main_via": "01aa07960 Merge PR #2493 (merge train) - earlier than #2604; already an ancestor of origin/main at the base tested",
+    "delta_commit_stat": "5 files changed, 784 insertions(+), 13 deletions(-). U2-owned paths: references/opening-proposals.md +218 (new), references/sensational-openings.md +198 (new), references/stage-runbook.md +11",
+    "owned_output_declared": "75-drama-song-ad-factory/references/",
+    "artifacts": {
+      "75-drama-song-ad-factory/references/sensational-openings.md": "sha256 914ba03e59d27002627e4372d8fd2d75f0b8e88006ee5b74d68bfcc751245260, 198 lines, 10911 bytes",
+      "75-drama-song-ad-factory/references/opening-proposals.md": "sha256 04d24cd60fcb664b8e91d1f95d0097e580baaf9d044769834080215a01c3f5e3, 218 lines, 12779 bytes",
+      "75-drama-song-ad-factory/references/stage-runbook.md": "sha256 1faf5c93165a15c8a01584b4a5247cab0c3980bb16dffd5d71567196da6025aa, amended by the delta commit (+11)"
+    },
+    "writer_files_untouched": "no file outside 75-drama-song-ad-factory/references/ was written by this verdict run; the verdict file is the only addition"
+  },
+  "acceptance_results": [
+    {
+      "element": "Reference material shows three differentiated candidates with all six required elements",
+      "result": "MET",
+      "evidence": "references/opening-proposals.md carries 4 worked sets (A, B, C, D) x 3 candidates = 12 candidates. Every candidate carries the six fields in the order the plan names them: opening_line (exact spoken line), headline, first_action, question, why_this_audience, offer_link (mechanism from crisis to offer).",
+      "counts": "12/12 candidates complete, 72/72 field slots present (6 x 12), 0 missing fields",
+      "differentiation": "crisis type distinct within every set: A={revelation,humiliation,confrontation}; B={catastrophe,humiliation,discovery}; C={confrontation,humiliation,catastrophe}; D={discovery,catastrophe,reversal}. 4/4 sets pass. Scenes are also distinct per set (bank desk / driveway / phone; payroll app / client dinner / kitchen table; dental chair / car visor mirror / emergency room; truck outside the window / nursery / permit counter), so a set is not one actor in one room.",
+      "not_rewrites": "Set A carries the explicit anti-pattern, 'Rejected tame version of this set: I had some credit trouble a while back / My credit wasn't great, honestly / Things got a little difficult financially - One candidate in three costumes', and the doctrine file repeats the same three rewrites as counterexample row 7."
+    },
+    {
+      "element": "Recommend the strongest for shock, curiosity and relevance; never default to the mildest",
+      "result": "MET",
+      "evidence": "Every set scores all three candidates 0-5 on shock, curiosity and relevance, prints the three numbers and a total, and names a recommendation with a written rationale.",
+      "counts": "12/12 score rows arithmetic-correct (a+b+c == total). 4/4 recommendations are at the maximum total. 4/4 recommended candidates are not the mildest in their set.",
+      "per_set": "A: totals A1=13, A2=12, A3=15 -> recommended A3 (15, max). B: B1=14, B2=12, B3=13 -> recommended B1 (14, max). C: C1=15, C2=12, C3=14 -> recommended C1 (15, max). D: D1=14, D2=14, D3=14 -> three-way tie, recommended D2; the tie-break is written as the image ('a ceiling falling over a crib is the only one of the three that cannot be explained away as a misunderstanding'), not as the soft option.",
+      "rule_stated": "references/sensational-openings.md section 7 states the rule in the imperative: 'Recommend the strongest candidate. Never default to the mildest. A safe opening that everyone can live with is the failure mode this file exists to prevent', and adds that sliding to the soft version is not compliance."
+    },
+    {
+      "element": "The invented-event prohibition is removed for fiction and retained for factual claims",
+      "result": "MET",
+      "evidence_removed_for_fiction": "references/sensational-openings.md adds section 7.1 'Invented catastrophe is permitted in drama', which states 'There is no blanket rule here prohibiting invented catastrophic events in fictional or composite drama. This doctrine supersedes any such reading', lists the events a composite character may suffer (job, house, marriage, business, eviction, denial, foreclosure, recall, malpractice, betrayal, collapse) and says none is off-limits for being too severe. It also names the mildness reflex as the defect rather than as compliance.",
+      "evidence_removed_at_the_prior_site": "references/stage-runbook.md, FU-U16 story doctrine section, carried the phrase 'compelling true stories' (line 174). The delta commit inserts a 'Clarification (S75X-W1-U2)' directly beneath it (lines 179-188): 'True in this section means emotionally true and dramatically honest, not factually verified. There is no blanket rule against invented catastrophic events in fictional or composite drama', with the factual-claim ban restated in the same paragraph. The prohibition was therefore neutralised at the exact place it was readable, not only in a new file.",
+      "evidence_retained_for_factual_claims": "section 7.2 'The boundary that does not move' keeps the ban: no invented event or outcome presented as a verified fact about a real person or product; no real client, employee, doctor, officer or official named or depicted as the villain; no 'verified' / 'real customer' / 'actual results' / 'studies show' label over fiction; no invented review, testimonial, case result, award, licence or statistic. The veto list in section 7 makes 'the invented event is presented as a verified fact about a real person or real product' an override of the score, and section 10 reviewer check 6 tests it. Labelling is specified: FICTIONAL_PLOT_EVENT for invented plot events, COMPOSITE for invented characters, CLIENT_SUPPLIED_TRUE for client-supplied true stories.",
+      "scan_for_residual_blanket_ban": "Scanned all 59 .md files in 75-drama-song-ad-factory (1,091,861 bytes) for prohibition phrasings (never/must not/do not/no + invent|fabricate|make up) plus 'cannot invent', 'must be true', 'based on a real', 'too severe|extreme|dark|exaggerat', 'real|true story required'. 0 blanket bans on invented plot catastrophe survive. 12 matches found, all claim-scoped: business facts / customer results / prices / credentials / deadlines / testimonials (drama-to-demand-method.md:201), footage and source timestamps (:564), tempo measurement (:726), approvals and conversion results (:789), proof (:932), menu items and source identifiers (intake-session-contract.md:19,230), cover aspect (:choice-card-spec.md:593), and the verified-fact prohibitions (opening-proposals.md:217, sensational-openings.md:139,195, stage-runbook.md:186). drama-to-demand-method.md:201 is the required split stated positively: 'Draft missing fictional creative details when useful and label them as proposals. Never invent business facts, customer results, prices, credentials, deadlines, or testimonials.'"
+    },
+    {
+      "element": "A counterexample set shows tame openings rejected",
+      "result": "MET",
+      "evidence": "references/sensational-openings.md section 8 'Counterexamples - tame openings that were rejected' is an 8-row table: # / rejected opening / why it fails / repair direction.",
+      "counts": "8/8 rows complete, 24/24 cells non-empty (rejected opening, reason, repair). Covers biography+logo, generic question, statistic billboard, scenery, biography-before-crisis, business introduction, three rewrites of one tame line, and a strong event delivered in the past tense over a montage. Each of the four worked sets in references/opening-proposals.md also closes with its own 'Rejected tame version' line (4/4 present)."
+    },
+    {
+      "element": "Teaching / reference wiring (supporting, from the unit work text)",
+      "result": "MET",
+      "evidence": "The doctrine is discoverable from the operational paths: SKILL.md:1543-1552 states the teaching in the skill body; references/stage-runbook.md:188 points at section 7 of the doctrine at the story-doctrine section. 4 files reference the new material (SKILL.md, references/stage-runbook.md, references/opening-proposals.md, references/sensational-openings.md).",
+      "note": "references/drama-to-demand-method.md does not link back to names 'sensational-openings' or 'opening-proposals', although the doctrine header claims 'Used by: ... stage 2 and the BASELINE row'. See observations."
+    }
+  ],
+  "checks": [
+    {
+      "id": "C1",
+      "check": "candidate sets and candidate count",
+      "command": "python3 -I parse of references/opening-proposals.md",
+      "result": "4 sets, 12 candidates (A1-A3, B1-B3, C1-C3, D1-D3)",
+      "counts": "sets=4, candidates=12"
+    },
+    {
+      "id": "C2",
+      "check": "six-field completeness per candidate",
+      "result": "12/12 candidates carry all six fields",
+      "counts": "72/72 field slots present, 0 missing"
+    },
+    {
+      "id": "C3",
+      "check": "crisis-type distinctness within each set",
+      "result": "4/4 sets have 3 distinct crisis types, all drawn from the six-type table in section 2",
+      "counts": "4/4 pass"
+    },
+    {
+      "id": "C4",
+      "check": "score arithmetic (shock+curiosity+relevance == total)",
+      "result": "12/12 rows correct",
+      "counts": "12/12 pass"
+    },
+    {
+      "id": "C5",
+      "check": "recommendation equals the maximum total, and is not the mildest",
+      "result": "4/4 recommendations at max total; set D is a 3-way tie at 14 resolved by a written image tie-break",
+      "counts": "4/4 pass"
+    },
+    {
+      "id": "C6",
+      "check": "counterexample table completeness",
+      "result": "8 rows, each with rejected opening, why it fails and repair direction",
+      "counts": "8/8 rows, 24/24 cells non-empty"
+    },
+    {
+      "id": "C7",
+      "check": "rejected-tame-version note in every worked set",
+      "result": "4/4 present",
+      "counts": "4/4"
+    },
+    {
+      "id": "C8",
+      "check": "residual blanket prohibition scan over the whole skill .md surface",
+      "result": "0 blanket bans on invented plot catastrophe; 12 prohibition matches, all claim-scoped",
+      "counts": "files=59, bytes=1091861, blanket_bans=0, claim_scoped_matches=12"
+    },
+    {
+      "id": "C9",
+      "check": "fiction permission and factual retention markers present",
+      "result": "section 7.1 heading present, 'no blanket rule' sentence present, section 7.2 heading present, FICTIONAL_PLOT_EVENT and COMPOSITE labels specified, score veto present, reviewer check 6 present",
+      "counts": "6/6 markers"
+    },
+    {
+      "id": "C10",
+      "check": "doctrine wiring count",
+      "result": "4 files reference the new material (SKILL.md, stage-runbook.md, opening-proposals.md, sensational-openings.md)",
+      "counts": "4"
+    },
+    {
+      "id": "C11",
+      "check": "placeholder / truncation sweep on the two new files",
+      "result": "0 TODO/TBD/FIXME/placeholder/lorem hits; both files end with a newline; 198 and 218 lines",
+      "counts": "2/2 clean"
+    },
+    {
+      "id": "C12",
+      "check": "opening-adjacent regression tests",
+      "command": "python3 -I -m pytest shot_planner/test_opening_scene_w4.py story_coverage/test_story_opening_media_zero.py choice_card/intake_card/test_opening_flow_default_s75x.py -q",
+      "result": "37 passed",
+      "counts": "37 passed, 0 failed, 2.89s"
+    }
+  ],
+  "tests": {
+    "command": "cd 75-drama-song-ad-factory/scripts/core && python3 -I -m pytest shot_planner/test_opening_scene_w4.py story_coverage/test_story_opening_media_zero.py choice_card/intake_card/test_opening_flow_default_s75x.py -q",
+    "result": "37 passed in 2.89s",
+    "scope_note": "these are the opening-adjacent test files; the unit's own delta is documentation only and no test reads the two new reference files",
+    "suite_size_context": "335 test_*.py files exist in the skill; the full suite was not run for a documentation-only delta"
+  },
+  "not_verified": [
+    "No test or assertion anywhere reads references/sensational-openings.md or references/opening-proposals.md. 0 .py files in the skill reference either path. The content verdict rests on direct reading plus the mechanical counts in checks C1-C11, not on an executable assertion.",
+    "The full skill test suite (335 test files) was not run. Only the 3 opening-adjacent files were executed (37 passed), plus the placeholder and prohibition sweeps.",
+    "Set D's three candidates tie at 14, so 'strongest' there is decided by the written image tie-break rather than by a score margin. The recommendation is not the mildest, but the score does not discriminate.",
+    "The 999 twin distribution copy of these references was not inspected; only the 75-drama-song-ad-factory tree in openclaw-onboarding at origin/main.",
+    "No runtime or agent behaviour was exercised. Nothing was proven about how a live intake run consumes the doctrine - the files are documentation and the run-time reading path was not driven.",
+    "Whether an external judge considers an in-place supersession equivalent to deleting a blanket rule. No line was deleted by the delta commit in the U2-owned paths; the prohibition was neutralised by section 7.1 and by the stage-runbook clarification inserted under the 'compelling true stories' sentence. The scan shows no blanket ban survives, which is what the acceptance asks for, but the mechanism is supersession rather than excision."
+  ],
+  "observations": [
+    "Link asymmetry (non-blocking, not in the acceptance text): the header of sensational-openings.md claims 'Used by: the opening / backstory step of the twelve-stage arc (references/drama-to-demand-method.md, stage 2 and the BASELINE row)', but drama-to-demand-method.md contains neither 'sensational-openings' nor 'opening-proposals'. The doctrine is reachable from SKILL.md and from the stage-runbook story-doctrine section, so it is not orphaned; the one-directional claim is the only gap.",
+    "The plan says the unit code merged via cohort PR #2604; the U2 reference files in fact reached origin/main earlier, via merge 01aa07960 (PR #2493 merge train). The content is present at the base tested, so acceptance is unaffected; recorded so the ledger reflects where the delta actually landed.",
+    "Four worked sets exist where the acceptance asks for three. More than the minimum, not a defect."
+  ],
+  "findings": [],
+  "blockers": []
+}
