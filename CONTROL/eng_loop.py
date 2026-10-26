@@ -40,6 +40,13 @@ import fcntl
 
 CONTROL = os.path.dirname(os.path.abspath(__file__))
 HANDLER = os.path.join(CONTROL, "owner_handler.py")
+
+# T-38: the engineering temp/cache contract is the shared runtime adapter, not a
+# second hand-rolled copy of it. `shared-utils/` is the package root that carries
+# `runtime/`; the same sys.path form the runtime suite uses.
+sys.path.insert(0, os.path.join(os.path.dirname(CONTROL), "shared-utils"))
+from runtime.external import assert_external, temp_env  # noqa: E402
+
 UID = os.getuid()
 DOMAIN = "gui/%d" % UID
 DEFAULT_LABEL = "ai.blackceo.pb-eng-loop"
@@ -76,9 +83,13 @@ def external_env():
     store (PBB-279 D1)."""
     tmp = os.environ.get("PB_TMP") or DEFAULT_TMP
     cache = os.environ.get("PB_CACHE") or DEFAULT_CACHE
-    env = {"TMPDIR": tmp, "TMP": tmp, "TEMP": tmp,
-           "PYTHONPYCACHEPREFIX": os.path.join(cache, "pycache"),
-           "npm_config_cache": os.path.join(cache, "npm")}
+    # T-38: the temp/cache a child or the launchd job inherits is admitted through
+    # the verified external-storage contract first. An internal path is a named
+    # refusal (PathRejected), never a silent /tmp fallback.
+    env = temp_env(tmp, bind_proven=False)
+    assert_external(cache, bind_proven=False)
+    env.update({"PYTHONPYCACHEPREFIX": os.path.join(cache, "pycache"),
+                "npm_config_cache": os.path.join(cache, "npm")})
     for k in _CONFIG_ENV_KEYS:
         if os.environ.get(k):
             env[k] = os.environ[k]

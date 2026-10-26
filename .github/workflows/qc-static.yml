@@ -3051,6 +3051,26 @@ jobs:
       # The runner has no ~/openclaw-onboarding and no ~/Downloads, so these
       # steps run on a genuinely clean box; the static check makes any future
       # reintroduction of an operator path a red build, not a silent pass.
+      # T-38: the shared runtime adapter suite (host adapters, the verified
+      # external-storage contract, restart persistence) shipped with the unit and
+      # nothing ran it. It is named here by explicit file path. The suite refuses
+      # an internal TMPDIR by design — it proves propagation onto a device that is
+      # not the root disk — so /dev/shm (a real tmpfs mount) is the temp root; a
+      # same-device /dev/shm fails the step red instead of proving the wrong thing.
+      - name: T-38 shared runtime adapter suite (shared-utils/runtime/tests/test_runtime_adapters.py)
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [ "$(stat -c %d /dev/shm)" = "$(stat -c %d /)" ]; then
+            echo "::error::/dev/shm is on the root device; the suite needs a real second device"
+            exit 1
+          fi
+          tmpdir="$(mktemp -d /dev/shm/pbb-runtime-tests-XXXXXX)"
+          TMPDIR="$tmpdir" TMP="$tmpdir" TEMP="$tmpdir" \
+            python3 shared-utils/runtime/tests/test_runtime_adapters.py
+          rc=$?
+          rmdir "$tmpdir" 2>/dev/null || true
+          exit $rc
       - name: Skill 75 empty-home test suite (manual 02 B6)
         shell: bash
         run: |
