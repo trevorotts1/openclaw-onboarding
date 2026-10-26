@@ -94,13 +94,28 @@
       ],
       "handoff": {
         "intake_field": "funnel_handoff",
-        "behavior": "form_pop",
-        "step_order": [
-          "signature_page",
-          "product_selection_page",
-          "order_form_page"
-        ],
-        "note": "The signature page's funnel handoff (update plan Item 32): intake records the Convert and Flow form's identity (name and object id), the pop behavior, and the step order (signature page, then product selection page, then order form page). A run with no form identity records the handoff as an explicit missing input with its reason, never a silent placeholder. Written by scripts/write_intake.py (--handoff-form-name/--handoff-form-id, or --handoff-missing-reason); the built page is checked against the record by scripts/validate_handoff.py at the responsive-html stage, and the funnel-completion receipt proves the pop live at ghl-install-test."
+        "derived_from": "intake.json page_kind -> references/page-kinds.json kinds.<kind>.action; scripts/validate_handoff.py reads the requirement through scripts/page_kinds.py, so the same validator serves both landing kinds. A run that declares no page_kind keeps the form route.",
+        "routes": {
+          "checkout": {
+            "page_kind": "sales",
+            "primary_handoff_type": "external_link",
+            "behavior": null,
+            "step_order": null,
+            "note": "The signature sales page's handoff is its checkout destination: the copy manifest's primary CTA is an external_link, and the built page's primary CTA is an anchor to an absolute http(s) checkout page or payment link, compared with funnel_handoff.checkout_url / funnel_handoff.checkout.url / intake.json checkout_url when one is recorded. No form identity and no product-selection/order-form sequence applies."
+          },
+          "form": {
+            "page_kind": "opt_in",
+            "primary_handoff_type": "form_pop",
+            "behavior": "form_pop",
+            "step_order": [
+              "signature_page",
+              "product_selection_page",
+              "order_form_page"
+            ],
+            "note": "The signature landing (opt-in) page's handoff is the registration form: intake records the Convert and Flow form's identity (name and object id), the pop behavior, and the step order (signature page, then product selection page, then order form page). A run with no form identity records the handoff as an explicit missing input with its reason, never a silent placeholder."
+          }
+        },
+        "note": "Written by scripts/write_intake.py (--handoff-form-name/--handoff-form-id, or --handoff-missing-reason) for the form route; the built page is checked against the requirement its page kind declares by scripts/validate_handoff.py at the responsive-html stage, and the funnel-completion receipt proves the handoff live at ghl-install-test."
       },
       "review_required": false,
       "min_scores": null,
@@ -658,7 +673,7 @@
         "image-map-upload/image-map.json",
         "copy/public-copy.md",
         "copy/copy-manifest.json (the CTA entries and their handoff types; the primary CTA)",
-        "intake.json (funnel_handoff: the named form the primary CTA pops, or the recorded missing input)",
+        "intake.json (page_kind and funnel_handoff: the handoff the page kind requires — an opt-in page's named form the primary CTA pops, or a sales page's checkout destination the primary CTA links to — or the recorded missing input; scripts/validate_handoff.py is invoked for both kinds because it derives the requirement from the page kind)",
         "font-action-plan/font-map.json",
         "references/html-qc-rubric.md",
         "references/composition-treatments.json (build each slot's treatment in CSS and emit data-image-slot and data-treatment on every slot element)"
