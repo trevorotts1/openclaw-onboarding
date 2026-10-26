@@ -78,6 +78,17 @@ def checks():
         check("a recorded value beats the operator-box default",
               r["outcome"] == "ok" and r["owner"] == "Designated Dana", repr(r))
 
+        # 4b. explicit per-install PIN beats a recorded config value (doc chain order).
+        os.environ[EO.ENV_PIN] = "Pinned Pat"
+        try:
+            r = EO.resolve(home(config={"onCallOperator": "Designated Dana"}))
+            check("explicit OPENCLAW_EMERGENCY_OWNER PIN beats recorded config",
+                  r["outcome"] == "ok" and r["owner"] == "Pinned Pat"
+                  and r["source"] == "install_pin"
+                  and r["reason_code"] == EO.CODE_FROM_CONFIG, repr(r))
+        finally:
+            del os.environ[EO.ENV_PIN]
+
         # 5. blank / non-string / oversize values are refused, never defaulted.
         for bad in ("", "   ", 7, None, "x" * (EO.MAX_NAME + 1), "line\nbreak"):
             r = EO.resolve(home(marker=True, config={"onCallOperator": bad}))

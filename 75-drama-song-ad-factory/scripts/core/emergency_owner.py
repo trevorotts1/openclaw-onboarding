@@ -411,6 +411,13 @@ def resolve(install_home=None, config_path=None):
     operator = is_operator_box(home)
     receipt = _receipt(home, path, operator)
 
+    pinned = _clean_name(os.environ.get(ENV_PIN))
+    if pinned:
+        receipt.update(outcome="ok", owner=pinned, source="install_pin",
+                       reason_code=CODE_FROM_CONFIG,
+                       detail="%s pinned for this install" % ENV_PIN)
+        return receipt
+
     doc, problem = _read_config(path)
     if problem:
         receipt.update(reason_code=CODE_CONFIG_INVALID, blocked=True,
@@ -428,13 +435,6 @@ def resolve(install_home=None, config_path=None):
         receipt.update(outcome="ok", owner=name, source="install_config",
                        reason_code=CODE_FROM_CONFIG,
                        detail="%s recorded in this install's config" % CONFIG_KEY)
-        return receipt
-
-    pinned = _clean_name(os.environ.get(ENV_PIN))
-    if pinned:
-        receipt.update(outcome="ok", owner=pinned, source="install_pin",
-                       reason_code=CODE_FROM_CONFIG,
-                       detail="%s pinned for this install" % ENV_PIN)
         return receipt
 
     if isinstance(doc.get(IDENTITY_KEY), str):
