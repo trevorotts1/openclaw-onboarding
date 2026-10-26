@@ -1,0 +1,185 @@
+{
+  "schema": "blackceo.s75.t28-repair-report/v1",
+  "unit": "S75-T28",
+  "round": 5,
+  "role": "REPAIR AUTHOR (round 5). This author did not author rounds 1-4 and wrote no verdict for any round. NO VERDICT IS CLAIMED HERE.",
+  "verdict_claimed": "NO_VERDICT_CLAIMED",
+  "status": "COMPLETE_UNVERIFIED",
+  "generated_at_utc": "2026-10-25T02:45:00Z",
+  "receipt_written_incrementally": true,
+  "receipt_incremental_history": "First written at 02:05Z with base resolution and the defect list, committed and pushed as de63c28f8ce096a378564888de049ef739ca282c within the first minutes of the lease; rewritten as measurements landed; this is the final rewrite. A previous instance of this same round-5 lease wrote an earlier version of this receipt at 01:44:05Z and was cut off by a session restart before any measurement; its base-resolution work was re-verified from scratch here rather than trusted.",
+  "acceptance_row_S75_A28_verbatim": "| S75-A28 / S75-T28 | Existing paid assets remain readable and untouched; only affected descendants invalidate; absent approval becomes explicit missing evidence and never invented approval or regeneration. | `evidence/units/S75-T28/attempt-<verified-generation>.json`; exact candidate/base/dependencies and independent checker; repository required gates when applicable. | UNVERIFIED |",
+  "acceptance_row_source": "ACCEPTANCE-MATRIX.md line 36 of the package root, quoted byte-for-byte including the leading and trailing pipes and the UNVERIFIED initial result. grep -n 'S75-A28' ACCEPTANCE-MATRIX.md returned exactly one line (36).",
+
+  "base_resolution": {
+    "stale_branch_trap": "RESOLVED FROM ORIGIN before any code was written, and the resolved SHA was echoed as the first line of output and then used as the worktree's start commit.",
+    "first_line_of_output": "ROUND-4 HEAD (origin-resolved): NO git ref for S75-T28 exists on origin in any of the three repositories; the round-4 head is therefore the round-4 artefact content address, evidence/S75-T28.compatibility-map.round4.json sha256 4b942df7511a082c4984fc5dfcd6a96d05f10949c35299111f0a0a18893eb09a at 147635 bytes. GIT BASE for this round's new branch s75/S75-T28-r5 = origin/main 9023e6b0e04cddb2c01a779c4bc0baef166d0a07.",
+    "base_resolved_sha": "9023e6b0e04cddb2c01a779c4bc0baef166d0a07",
+    "base_was_origin": true,
+    "round_4_head_full_sha": "4b942df7511a082c4984fc5dfcd6a96d05f10949c35299111f0a0a18893eb09a",
+    "round_4_head_bytes": 147635,
+    "expected_vs_observed": "MATCH. The round-4 repair report pinned 4b942df7...eb09a at 147635 bytes; the round-4 verdict re-measured the same two values; this author re-measured from disk and got the same sha256 and the same byte count. The three earlier pinned maps also re-measured to their pinned values.",
+    "how_measured": "python3 -I hashlib.sha256 over the raw bytes, before any content of that file was read for the fix work.",
+    "git_head_available_for_this_unit_before_this_round": false,
+    "git_search": {
+      "command": "git -C /Users/blackceomacmini/openclaw-onboarding ls-remote --heads origin > /private/tmp/t28_lsremote_onb.txt (1944 ref lines, exit 0), then grep -c for T28",
+      "result": "T28: 0. Same captured ref list, same minute: T08: 3, T09: 2, T12: 3, T21: 1.",
+      "known_good_control_on_the_same_instrument": "PASS. grep -c T08 on the same file returned 3 (refs/heads/s75/T08, s75/T08-r4, s75/T08-r5) and grep -c T21 returned 1 (refs/heads/s75/S75-T21 at df7123b44268dfeff2541ea56ee18295feeb6159). The instrument finds refs that ARE there, so 0 for T28 is a real absence, not an instrument failure.",
+      "exit_codes": "git ls-remote exited 0 with 1944 lines; grep -c returned 0 with grep exit status 1 (zero matches), never 2 (instrument error).",
+      "sources_searched": "the full live ref list of origin = https://github.com/trevorotts1/openclaw-onboarding.git, plus the same ls-remote output of /Users/blackceomacmini/blackceo-command-center and /Users/blackceomacmini/999-setup, whose origin remote is a local path back to the same ONB clone (both show no T28 ref); plus git for-each-ref over local refs (grep -i T28, exit 1, zero matches) and git worktree list.",
+      "sources_not_searched": "forks of trevorotts1/openclaw-onboarding, refs deleted from origin at any earlier time, pull-request refs, tags, and any repository other than these three. NOT SEARCHED. The absence claim is only: no T28 ref on these three origins' live ref lists at 2026-10-25T01:5xZ."
+    },
+    "why_the_artefact_is_the_round_4_head": "S75-T28's work product across rounds 1-4 is the compatibility-map artefact and its repair report under evidence/. task-ledger.json tasks[S75-T28].output_path_status is PROPOSED_RELATIVE_PATHS_RESOLVE_AND_LEASE_BEFORE_EDIT and its proposed_owned_outputs (compatibility.py, contracts/legacy-compatibility-map.json, tests/fixtures/paid_artifact_preservation.json) are 3 of 3 ABSENT from origin/main (git cat-file -e origin/main:<path>, all three ABSENT, with a known-good control: git ls-tree origin/main:75-drama-song-ad-factory/scripts/core returned the full core directory listing). No round of this unit had ever written a repository file, so there was no round-4 commit to be behind.",
+    "git_base_for_this_round": {
+      "repository": "trevorotts1/openclaw-onboarding",
+      "worktree": "/Volumes/mac mini m4/Downloads/scratchpads/s75-t28-r5/wt",
+      "branch": "s75/S75-T28-r5",
+      "base_ref": "origin/main",
+      "base_resolved_sha": "9023e6b0e04cddb2c01a779c4bc0baef166d0a07",
+      "how_resolved": "git fetch origin main; git rev-parse origin/main; then git worktree add -b s75/S75-T28-r5 <worktree> 9023e6b0e04cddb2c01a779c4bc0baef166d0a07, and HEAD read back as that same 40-hex value ('HEAD is now at 9023e6b0e Merge pull request #2552 from trevorotts1/batch/auto-merge (merge train: #2551)').",
+      "why_a_new_branch": "the survival rule requires the work committed and pushed in minutes rather than held in an unpushed tree. This is the unit's own branch on its own lease. No other unit's branch was touched and nothing was merged."
+    }
+  },
+
+  "round_4_defect_list_source": "evidence/S75-T28.verdict.round4.json (INDEPENDENT VERIFIER, round_verified 4, verdict FAIL, verified_at_utc 2026-10-25T01:15:00Z), read in full from disk before any fix work. Its claims_audited V-18, V-24, V-25, V-26, V-27, V-28, V-29, V-30, V-32 and its numbers_restated_without_source_or_label block are the defect list. Not a summary of it: the file itself was read.",
+
+  "defects_extracted": [
+    {"id": "D1", "from": "V-18", "defect": "row 8 note claims three round-1 handoff strings are absent from this file and uncovered by any S entry. They are present at emergency_owner_handoff_CORRECTED.round_1_material_restored_verbatim (doctrine_full, does_merged_work_preserve_it_answer, does_merged_work_preserve_it_residual) and deep-equal to round 1. The round-4 repair report CL-02 says the opposite, so the two round-4 documents contradict each other."},
+    {"id": "D2", "from": "V-24", "defect": "row 15 / CA-06 claim '4 of 4 change strings and 4 of 4 risk strings are shortened relative to round 1' is false on the change side: 3 of 4 change strings are shortened (items 1, 2, 4) and item 3's change string is byte-identical to round 1. The 4-of-4 risk figure is true."},
+    {"id": "D3", "from": "V-25", "defect": "row 18 / CA-07 claim '2 of the 6 strings are shortened relative to round 1' is false: 3 of 6 differ and each is shorter (items 1, 2, 4). The 'byte-identical to round 2' part is true."},
+    {"id": "D4", "from": "V-26", "defect": "CONFIRMED_PRESERVED grouping_numbers sources do not produce their numbers: '11 keys' is cited to 'CONFIRMED_PRESERVED key count in this file', which is 14 because round 4 added three grouping keys, and '10 finding blocks' is cited to 'key count minus the provenance key', which gives 13."},
+    {"id": "D5", "from": "V-27, V-28", "defect": "stale round-3 self-description inside a round-4 file: row 16's note says 'Round 3 records its own.', and anything_i_mutated reads 'One new file only: this round-3 map at evidence/S75-T28.compatibility-map.round3.json ...', which contradicts the round-4 report's own anything_i_mutated.files_written."},
+    {"id": "D6", "from": "V-29", "defect": "commands_run_this_round in the round-4 artefact is byte-identical to round 3's list and presents repository reads as this round's commands while the round-4 repair report says 'No repository was read at all in round 4'. At least one of the two round-4 documents is wrong and artefact evidence cannot say which."},
+    {"id": "D7", "from": "V-30 and numbers_restated_without_source_or_label", "defect": "numbers discipline broken in eleven named groups: corpus counts, byte counts, decision-history counts, code line locations and '16/16 surviving findings carried' restated as fact with neither a file+location source nor an UNSOURCED label, plus the two numbers in D4 whose cited source does not produce them."}
+  ],
+
+  "what_is_different_this_round": "Round 4 changed the CONTENT (restoring round-1 text) and then re-asserted its own completeness in authored prose; that cannot close round 5 because every failing claim in the round-4 verdict is a sentence the round-4 artefact wrote ABOUT ITSELF (V-18, V-24, V-25, V-26, V-27, V-28) - a falsified self-description is not repaired by re-asserting it more carefully. Round 5 changes the INPUT CLASS: no self-description is asserted in prose, each one is COMPUTED from the pinned files and stored as a measurement record naming the field paths, the comparator and a measured boolean, and every number is either produced by a named field path or explicitly labelled UNSOURCED IN ROUND 5. Round 4 could not have closed this because its claims_audited list was authored by the same writer as the artefact and checked against its own prose.",
+
+  "what_changed": [
+    "D1: carry_forward_table[8].note rewritten - the three round-1 handoff strings are stated PRESENT at round_1_material_restored_verbatim and deep-equal to round 1, with note_correction pointing at measurement M1.",
+    "D2: carry_forward_table[15].note and completeness_claim_audit CA-06 rewritten with the measured figures - 3 of 4 change strings shortened (measured items 1, 2, 4), 1 of 4 byte-identical (item 3), 4 of 4 risk strings shortened - plus a per-item record in M2.",
+    "D3: carry_forward_table[18].note and CA-07 rewritten with the measured figure - 3 of 6 strings shortened (measured items 1, 2, 4), 3 of 6 byte-identical, whole list byte-identical to round 2 - plus a per-item record in M3.",
+    "D4: CONFIRMED_PRESERVED.grouping_basis_source and grouping_numbers[*]_source rewritten so each cited source produces its number (11 keys = key names excluding the three grouping keys, identical key set to round 2; 10 = 11 - 1 provenance; 8 = 10 - 2 collapsed C1 blocks). The two numbers_and_their_sources table rows whose source did not produce them now carry superseded_source_round_4 and a producing source.",
+    "D5: carry_forward_table[16].note, carry_forward_table[17].note and anything_i_mutated rewritten to state round 5's own commands and mutations; the round-3 statement is recorded as a superseded claim at round_5_corrections.SC-5 rather than repeated as an assertion.",
+    "D6: commands_run_this_round replaced with round 5's own command list; the git show / git status entries that belonged to round 3 are labelled NOT RUN IN THIS ROUND. Which round-4 document was right about repository reads is recorded UNDETERMINED (M6).",
+    "D7: numbers_and_their_sources.rule tightened, the eleven unlabelled corpus/code-location/count groups consolidated into three explicit UNSOURCED IN ROUND 5 entries with reasons and where_the_text_lives, and the numbers table row for 'round-1 handoff strings' annotated as a round-3 fact.",
+    "Plus one computed section, not an edit: round_5_measurements M1..M7, round_5_regression_set R1..R10, round_5_edit_surface, round_5_corrections SC-1..SC-7, round_5_pinned_hashes and does_not_establish_round_5."
+  ],
+
+  "one_defect_one_change_rule": "Seven targeted changes, exactly one per defect D1..D7, each confined to the sentence or the source line the verifier falsified. No product code, no other unit's file, no refactor, no tidying, no drive-by edit. Proven, not asserted: the checker recomputes the full round-4 to round-5 field-level diff and requires every changed or added path to fall inside the seven targeted edits (S2), and requires zero deleted paths (S1).",
+
+  "discriminating_test": {
+    "requirement": "FAIL at the round-4 head, PASS at the round-5 head.",
+    "round_4_head_resolved_from_origin": "no git ref exists for S75-T28 (see base_resolution.git_search); the round-4 head is the artefact content address 4b942df7511a082c4984fc5dfcd6a96d05f10949c35299111f0a0a18893eb09a at 147635 bytes",
+    "instrument": "evidence/s75/S75-T28/check_round5_claims.py in branch s75/S75-T28-r5 (assert-based, no framework, python3 -I)",
+    "tests_before": "python3 -I check_round5_claims.py --target S75-T28.compatibility-map.round4.json  =>  EXIT 1, 31 checks 10 failed (M0 no measurement block; F-D1..F-D6 all nine falsified sentences still present as assertions; S3 no stored edit surface). The content checks R1..R13 pass at the round-4 head, which is exactly why round 4 looked finished: its content is fine and its self-description is not.",
+    "tests_after": "python3 -I check_round5_claims.py --target S75-T28.compatibility-map.round5.json  =>  EXIT 0, 39 checks 0 failed.",
+    "what_the_test_does": "re-derives every round-5 measurement (M1..M7) from the four pinned files, requires the stored measurement records to equal the re-derivation, requires the nine falsified round-4 sentences to be absent from every assertion field (quote-carrying keys are excluded and named), recomputes the round-4 to round-5 field diff (S1 no deletion, S2 no drive-by, S3 stored surface equals recomputation), re-measures the pinned hashes, and runs both controls."
+  },
+
+  "over_correction_check": {
+    "checked": true,
+    "what_it_would_look_like": "fixing the seven false sentences by deleting or weakening what they describe - for example dropping the 29 restored evidence lines, the 7 required_decision strings, the row-8 handoff restoration, or trimming a true claim so it cannot be falsified again.",
+    "how_tested": "three independent ways. (1) Regression set R1..R10 recomputed from the round-1 file and required to pass on the round-5 file: 29 of 29 evidence lines, 7 of 7 required_decision_for_T29_T30, 9 of 9 conflict statements, precursors_consumed, old_run_inventory, all 13 emergency_behaviour_map rows with every round-1 field deep-equal, not_found_named_sources 3 items, acceptance_criterion_verbatim and exact_deliverable_verbatim, the three round-1 handoff strings, and old_run_fields_found at 8 records with 6 of 8 byte-identical and exactly the two shape keys reworded (round 4's own GAP-2 fix). All 10 of 10 PASS on the round-5 file. (2) Edit surface: the checker recomputes the complete round-4 to round-5 field diff and finds removed_paths = 0 and every changed/added path inside the seven targeted edits (34 changed, 15 added, 0 removed). (3) The count checks R11 what_remains_unverified = 10, R12 does_not_establish = 6 and byte-identical to round 2, R13 described_changes_not_applied_CARRIED = 4 with all applied:false. The shortening counts themselves were NOT weakened to fit: M2 measures 3 of 4 and 4 of 4, M3 measures 3 of 6, which is what the verifier measured and more than round 4 claimed on the change side."
+  },
+
+  "controls": {
+    "known_good_control": {
+      "purpose": "a check that cannot find what IS there proves nothing about what is missing",
+      "control": "check C1: the same substring instrument finds acceptance_criterion_verbatim, exact_deliverable_verbatim and all three round-1 handoff strings inside the target file",
+      "result": "PASS at both heads. The instrument finds present material, so its absence reports above are meaningful."
+    },
+    "instrument_control": {
+      "purpose": "prove the instrument DETECTS a difference",
+      "control": "check C2: the string 'scoped per artifact and never fleet-wide' is mutated by one character in memory only (fleet-wide -> fleet_wide); the instrument must report present before and absent after",
+      "result": "PASS at both heads. The real file is unmodified; the mutation never leaves memory."
+    }
+  },
+
+  "tests_before": "31 checks, 10 failed, exit 1 at the round-4 head",
+  "tests_after": "39 checks, 0 failed, exit 0 at the round-5 head",
+
+  "pinned_files_remeasured": {
+    "method": "python3 -I hashlib.sha256 over the raw bytes, measured again after the round-5 artefact write and re-measured by check_round5_claims.py on every run",
+    "results": [
+      {"file": "evidence/S75-T28.compatibility-map.json", "sha256": "e9ab7ac031706ceeec6c460959eea9a0bb4267106ef398f2b74370565eaeee19", "bytes": 53195, "unchanged": true},
+      {"file": "evidence/S75-T28.compatibility-map.round2.json", "sha256": "459d4bf79f8ddf1ee2802eefc16a8376616bb447e4025c4f8db5bb257ff97d46", "bytes": 55775, "unchanged": true},
+      {"file": "evidence/S75-T28.compatibility-map.round3.json", "sha256": "bd7b39a728fcd3848d4e963f95879f17dda82335a81031555f8cf8d9a14c75c5", "bytes": 100968, "unchanged": true},
+      {"file": "evidence/S75-T28.compatibility-map.round4.json", "sha256": "4b942df7511a082c4984fc5dfcd6a96d05f10949c35299111f0a0a18893eb09a", "bytes": 147635, "unchanged": true}
+    ]
+  },
+
+  "git_work": {
+    "branch": "s75/S75-T28-r5",
+    "repository": "trevorotts1/openclaw-onboarding",
+    "base": "origin/main 9023e6b0e04cddb2c01a779c4bc0baef166d0a07",
+    "commits": [
+      "de63c28f8ce096a378564888de049ef739ca282c - incremental repair receipt (base resolution, defect list D1..D7), pushed within minutes of the lease start",
+      "6dd545a0677d7f95992e8946bce6f35bae1bd4b1 - compatibility map v5 with computed measurement records M1..M7, build_round5.py, check_round5_claims.py, receipt copy",
+      "the commit carrying this final receipt text follows immediately and is the branch head; its SHA cannot be written inside the file it carries"
+    ],
+    "head_after_for_the_round_5_work_product": "6dd545a0677d7f95992e8946bce6f35bae1bd4b1",
+    "pushed": true,
+    "pushed_refs": "s75/S75-T28-r5 -> origin/s75/S75-T28-r5 (new branch, then fast-forward de63c28f8..6dd545a06)",
+    "push_attempted_within_first_ten_minutes": true,
+    "not_done": "no merge, no push to main, no force-push, no tag, no other unit's branch touched, no backup created"
+  },
+
+  "anything_i_mutated": {
+    "files_written_outside_this_unit_lease": 0,
+    "project_package_writes": [
+      "evidence/S75-T28.repair.round5.json (this file)",
+      "evidence/S75-T28.compatibility-map.round5.json (new; rounds 1-4 untouched)"
+    ],
+    "git_branch_writes": [
+      "evidence/s75/S75-T28/S75-T28.repair.round5.json (receipt copy)",
+      "evidence/s75/S75-T28/S75-T28.compatibility-map.round5.json (map copy)",
+      "evidence/s75/S75-T28/check_round5_claims.py (the discriminating check)",
+      "evidence/s75/S75-T28/build_round5.py (the builder that computed the measurement records)"
+    ],
+    "scratch": "/Volumes/mac mini m4/Downloads/scratchpads/s75-t28-r5/ (builder, checker, worktree wt/)",
+    "files_deleted": [],
+    "files_modified": [],
+    "product_code_edited": false
+  },
+
+  "still_failing": [
+    "Nothing inside this unit's round-5 scope is failing: check_round5_claims.py returns 39 checks, 0 failed, exit 0 at the round-5 head.",
+    "S75-A28 remains UNVERIFIED by design. No verdict is claimed by an author; the acceptance row stays UNVERIFIED until an independent checker that did not write this work reviews the round-5 artefact and the branch head.",
+    "The round-4 contradiction about repository reads (V-29) is not resolvable from artefacts and is recorded UNDETERMINED rather than closed.",
+    "Eleven groups of corpus counts remain UNSOURCED IN ROUND 5: round 5 did not open the old-run corpus, so the counts carried from rounds 1-4 are labelled, not verified."
+  ],
+
+  "could_not_determine": [
+    "Which of the two round-4 documents is correct about repository reads: the repair report ('No repository was read at all in round 4') or the artefact's commands_run_this_round. Artefact-only evidence cannot attribute shell commands to an author.",
+    "Whether the eleven corpus count groups (394 card-answers files, 306 script-approval.json total and its 299/1/2/2/2 split, 380 synthetic card-answers.json, song/image/byte counts, the decision_history block) are accurate. Not re-counted; labelled UNSOURCED IN ROUND 5.",
+    "Whether the round-3 verdict's factory.py / card_answers.py line-level re-proofs are correct. Not re-run; their line numbers are labelled UNSOURCED IN ROUND 5.",
+    "Whether the C3 typographic-quote evidence line is byte-identical after JSON round-trip at the encoding level. Parsed-value deep-equality is measured 29 of 29; raw byte identity of the JSON encoding is not claimed.",
+    "Whether anything outside this package records the same three handoff strings or the two required decisions. Not searched; outside the unit's own files."
+  ],
+
+  "not_searched": [
+    "forks of trevorotts1/openclaw-onboarding, deleted remote refs, pull-request refs and tags (the T28-ref absence is claimed only for the live heads list of the three origins named in base_resolution.git_search.sources_searched)",
+    "the old-run corpus on disk (card-answers.json, script-approval.json, receipts, songs, images, provider cost logs) - no corpus count was re-measured",
+    "repository file contents: factory.py, card_answers.py, intake_session.py, constraints.py were never opened this round",
+    "package-root documents (SPEC.md, DECISIONS.md, MIGRATION-AND-COMPATIBILITY.md, other units' evidence files) for the handoff strings or the required decisions",
+    "any file belonging to another unit, and every file under evidence/ that is not one of this unit's own"
+  ],
+
+  "environment_notes": [
+    "Root volume: the brief reported about 125 MiB free and two ENOSPC kills earlier in the workflow; at 01:5xZ df -h showed 97 GiB available on / and 2.3 TiB free on /Volumes/mac mini m4. Nothing was deleted to make room, per instruction.",
+    "Scratch and the git worktree live under /Volumes/mac mini m4/Downloads/scratchpads/s75-t28-r5/, outside both repositories, per the scratchpads rule.",
+    "The watchdog reported stale workflows and WATCHDOG_UNHEALTHY during this run; it was read but not acted on beyond this unit's own work. No worker was terminated or duplicated.",
+    "Task #1 in the task store ('Verify T15 candidate at 57a2e636 against S75-A15') belongs to another unit's lane and was left untouched.",
+    "A previous instance of this same round-5 lease wrote an earlier version of this receipt at 01:44:05Z and was cut off by a session restart; every claim in this version was re-derived from disk by this instance rather than trusted from that file."
+  ],
+
+  "does_not_establish": [
+    "That S75-T28 or S75-A28 is accepted. NO VERDICT IS CLAIMED.",
+    "That any corpus count or code line number carried from rounds 1-4 is accurate; they are labelled UNSOURCED IN ROUND 5.",
+    "That the round-3 verdict's factory.py / card_answers.py re-proofs are correct; not re-run.",
+    "Any merge, push to main, install or live-test authority."
+  ],
+
+  "most_important_sentence": "Round 5 stops asserting and computes: the round-4 head fails the same check that the round-5 head passes, and the round-5 map deletes no field the round-4 map restored."
+}
