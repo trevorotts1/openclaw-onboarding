@@ -183,8 +183,13 @@ for j in jobs:
     if j.get("name") != name:
         continue
     for s in strings(j):
-        m = re.search(r'--sweep-base(?:\s+|=)(\S*)', s)
-        if m and stale(m.group(1).strip('"\'')):
+        # Quoted alternative first: a --sweep-base path containing SPACES must
+        # be captured whole. The old `(\S*)` truncated at the first space, so
+        # a stale spaced path read as healthy and the SK6001/2 repair silently
+        # no-op'd (false OK — the two SK6002 suite failures under a
+        # space-containing TMPDIR).
+        m = re.search(r'--sweep-base(?:\s+|=)(?:"([^"]*)"|\'([^\']*)\'|(\S*))', s)
+        if m and stale(next((g for g in m.groups() if g is not None), "").strip('"\'')):
             print(j.get("id") or j.get("jobId") or "")
             sys.exit(0)
 PYEOF
@@ -199,11 +204,15 @@ case "$_cp_rc" in
   0)
     _bad_id="$(_broken_job_id)"
     if [[ -n "$_bad_id" ]]; then
-      if openclaw cron edit "$_bad_id" --command "$CRON_COMMAND" --no-deliver >/dev/null 2>&1; then
+      # DONE only when the repaired job VERIFIEDLY reads back silent — the
+      # "delivery silent" claim is checked, not assumed from the edit's rc
+      # (a CLI that drops --no-deliver would otherwise get a false DONE).
+      if openclaw cron edit "$_bad_id" --command "$CRON_COMMAND" --no-deliver >/dev/null 2>&1 \
+         && _cron_state "$CRON_NAME" && _cron_delivery_silent; then
         _log "DONE '$CRON_NAME' cron repaired in place (job $_bad_id): --sweep-base now $EVIDENCE_BASE, delivery silent"
         exit 0
       fi
-      _log "FAIL could not repair '$CRON_NAME' (job $_bad_id; openclaw cron edit rc!=0). Non-fatal, re-run to retry."
+      _log "FAIL could not repair '$CRON_NAME' (job $_bad_id; openclaw cron edit rc!=0, or delivery still announces — this CLI may be ignoring --no-deliver). Non-fatal, re-run to retry."
       exit 3
     fi
     if _cron_ensure_silent "$CRON_NAME"; then
@@ -217,11 +226,11 @@ case "$_cp_rc" in
     : # absent — fall through and register
     ;;
   3)
-    _log "OK  '$CRON_NAME' cron present but DISABLED (deliberate tombstone) — leaving it disabled, NOT resurrecting"
+    _log "OK  '$CRON_NAME' cron present but DISABLED (tombstone: deliberately disabled or auto-disabled after failures) — leaving it disabled, NOT resurrecting"
     exit 0
     ;;
   *)
-    _log "FAIL could not read 'openclaw cron list --all --json' — presence of '$CRON_NAME' unknown, NOT registering (would risk a duplicate). Non-fatal — re-run to backfill."
+    _log "FAIL could not determine a single '$CRON_NAME' job from 'openclaw cron list --all --json' (listing unreadable, or duplicate names an operator must dedupe) — NOT registering (would risk a duplicate). Non-fatal — re-run to backfill."
     exit 3
     ;;
 esac
@@ -239,8 +248,16 @@ esac
 if openclaw cron add --name "$CRON_NAME" --cron "$CRON_SCHEDULE" --tz "$CRON_TZ" \
      --command "$CRON_COMMAND" --no-deliver >/dev/null 2>&1 \
    && _cron_state "$CRON_NAME"; then
-  _log "DONE '$CRON_NAME' cron registered ($CRON_SCHEDULE $CRON_TZ)"
-  exit 0
+  # PROVE the --no-deliver above took before calling it DONE: a CLI that
+  # accepts and silently ignores the flag would otherwise get a green
+  # install while the fresh job announces into client chat (finding 29's
+  # exact harm).
+  if _cron_ensure_silent "$CRON_NAME"; then
+    _log "DONE '$CRON_NAME' cron registered ($CRON_SCHEDULE $CRON_TZ)"
+    exit 0
+  fi
+  _log "FAIL '$CRON_NAME' was registered but its delivery announces into client chat (job '${OC_CRON_JOB_ID:-?}') and the in-place repair failed — this CLI may be ignoring --no-deliver. Non-fatal — fix: openclaw cron edit ${OC_CRON_JOB_ID:-<id>} --no-deliver"
+  exit 3
 fi
 
 _log "FAIL could not register '$CRON_NAME' (openclaw cron add rc!=0, or --command/--no-deliver unsupported on this CLI build). Non-fatal — re-run to backfill."

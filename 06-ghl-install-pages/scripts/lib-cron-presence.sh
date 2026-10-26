@@ -26,9 +26,16 @@
 # CONTRACT — `_cron_state NAME` exit codes
 # ----------------------------------------
 #   0  present and ENABLED   -> OC_CRON_JOB_ID, OC_CRON_DELIVERY_MODE set
-#   3  present but DISABLED  -> OC_CRON_JOB_ID set (deliberate tombstone)
+#   3  present but DISABLED  -> OC_CRON_JOB_ID set (tombstone: deliberately
+#                               disabled OR auto-disabled after consecutive
+#                               failures — the live CLI reads both as
+#                               `enabled: false`, verified 2026-10-25)
 #   1  absent                -> neither set
-#   2  UNKNOWN               -> list failed or unparsable; NEVER treat as absent
+#   2  UNKNOWN               -> list failed, unparsable, or the name matches
+#                               MULTIPLE jobs (pre-fix duplicates — a
+#                               tombstone can hide an enabled twin, so the
+#                               state is ambiguous; an operator must dedupe).
+#                               NEVER treat as absent.
 #
 # Callers run under `set -u`; every global read here is defaulted.
 
@@ -57,9 +64,13 @@ else:
     jobs = None
 if not isinstance(jobs, list):
     sys.exit(2)
-for job in jobs:
-    if not isinstance(job, dict) or job.get("name") != name:
-        continue
+matches = [job for job in jobs if isinstance(job, dict) and job.get("name") == name]
+if len(matches) > 1:
+    # Duplicate names exist on boxes the pre-fix installers already fed.
+    # First-match-wins would let a tombstone mask an enabled twin that still
+    # announces — refuse to guess (UNKNOWN), touch nothing.
+    sys.exit(2)
+for job in matches:
     print(job.get("id") or job.get("jobId") or "")
     delivery = job.get("delivery")
     mode = delivery.get("mode") if isinstance(delivery, dict) else None

@@ -25,6 +25,13 @@ on PATH: the stub hides disabled jobs from a bare `cron list`, shows them under
 installers (they see "absent", add a duplicate, and never validate delivery)
 and pass only when the fix is real. No live CLI, no cron store, no network.
 
+The QC layer also pins the NEGATIVE paths, because a maintenance installer
+that reports success it did not verify is the bug class under repair:
+unreadable/garbage listings never register, a failed add is never DONE, a
+`--no-deliver` the CLI silently drops is repaired (or FAILed) instead of
+blessed, duplicate names stop the installer, and an auto-disabled job
+(`enabled:false` + `state.autoDisabled`, the live shape) is a tombstone.
+
 Run:
     python3 -m pytest tests/test_skill6_cron_installers_full_visibility.py -v
 """
@@ -85,6 +92,9 @@ class TestSourceContract:
         assert "cron list --json" not in src, (
             f"{INSTALLERS[label][0]} still queries the default `cron list --json` "
             "listing, which hides disabled jobs (finding 30)")
+        assert "--enable" not in src, (
+            f"{INSTALLERS[label][0]} can re-enable a job — a tombstone is never "
+            "resurrected by an installer (finding 30)")
 
     @pytest.mark.parametrize("label", _LABELS)
     def test_every_cron_add_passes_no_deliver(self, label):
@@ -100,7 +110,12 @@ class TestSourceContract:
     def test_shared_helper_queries_all_and_reads_enabled(self):
         lib = open(os.path.join(_SCRIPTS, "lib-cron-presence.sh")).read()
         assert "cron list --all --json" in lib
-        assert "enabled" in lib
+        assert 'job.get("enabled") is False' in lib, (
+            "helper no longer detects the disabled (tombstone) shape the live "
+            "CLI emits (enabled:false, also the auto-disabled shape)")
+        assert "sys.exit(2)" in lib, (
+            "helper lost its UNKNOWN return path (D10: a failed/unparsable or "
+            "ambiguous listing must never read as absent)")
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +125,10 @@ class TestSourceContract:
 class TestInstallerAgainstFakeCli:
     def _stub(self, tmp_path):
         """Fake openclaw: `cron list` without --all hides disabled jobs (live
-        CLI behaviour); with --all shows everything. Records every call."""
+        CLI behaviour); with --all shows everything. Records every call.
+        OC_FAKE_MODE injects failure: list-fails, list-garbage, add-fails,
+        ignore-add-flag (add drops --no-deliver), ignore-both-flags (add AND
+        edit drop it)."""
         bin_dir = tmp_path / "fakebin"
         bin_dir.mkdir()
         state = tmp_path / "cron-state.json"
@@ -118,9 +136,10 @@ class TestInstallerAgainstFakeCli:
         script = bin_dir / "openclaw"
         script.write_text(
             "#!/usr/bin/env python3\n"
-            "import json, sys\n"
+            "import json, os, sys\n"
             f"STATE = {str(state)!r}\n"
             f"LOG = {str(log)!r}\n"
+            "MODE = os.environ.get('OC_FAKE_MODE', '')\n"
             "args = sys.argv[1:]\n"
             "with open(LOG, 'a') as fh:\n"
             "    fh.write(' '.join(args) + '\\n')\n"
@@ -129,17 +148,27 @@ class TestInstallerAgainstFakeCli:
             "def save(d):\n"
             "    json.dump(d, open(STATE, 'w'))\n"
             "if args[:2] == ['cron', 'list']:\n"
+            "    if MODE == 'list-fails':\n"
+            "        sys.stderr.write('gateway not reachable\\n')\n"
+            "        sys.exit(1)\n"
+            "    if MODE == 'list-garbage':\n"
+            "        print('Gateway is starting, please retry shortly...')\n"
+            "        sys.exit(0)\n"
             "    jobs = load().get('jobs', [])\n"
             "    if '--all' not in args:\n"
             "        jobs = [j for j in jobs if j.get('enabled', True) is not False]\n"
             "    print(json.dumps({'jobs': jobs}))\n"
             "    sys.exit(0)\n"
             "if args[:2] == ['cron', 'add']:\n"
+            "    if MODE == 'add-fails':\n"
+            "        sys.exit(1)\n"
             "    name = args[args.index('--name') + 1] if '--name' in args else ''\n"
             "    d = load()\n"
+            "    silent = ('--no-deliver' in args\n"
+            "              and MODE not in ('ignore-add-flag', 'ignore-both-flags'))\n"
             "    d.setdefault('jobs', []).append({\n"
             "        'id': 'job-new', 'name': name, 'enabled': True,\n"
-            "        'delivery': {'mode': 'none' if '--no-deliver' in args else 'announce'},\n"
+            "        'delivery': {'mode': 'none' if silent else 'announce'},\n"
             "    })\n"
             "    save(d)\n"
             "    sys.exit(0)\n"
@@ -147,7 +176,7 @@ class TestInstallerAgainstFakeCli:
             "    d = load()\n"
             "    for j in d.get('jobs', []):\n"
             "        if j.get('id') == args[2] or j.get('name') == args[2]:\n"
-            "            if '--no-deliver' in args:\n"
+            "            if '--no-deliver' in args and MODE != 'ignore-both-flags':\n"
             "                j['delivery'] = {'mode': 'none'}\n"
             "            if '--enable' in args:\n"
             "                j['enabled'] = True\n"
@@ -163,13 +192,16 @@ class TestInstallerAgainstFakeCli:
     def _seed(self, state, job):
         state.write_text(json.dumps({"jobs": [job] if job else []}))
 
-    def _run(self, tmp_path, label, bin_dir):
-        home = tmp_path / "home"
+    def _run(self, tmp_path, label, bin_dir, mode="", evidence_base=None):
+        # Spaced HOME on purpose: the SK6001/2 staleness scan must survive
+        # paths containing spaces (the mandated TMPDIR has them).
+        home = tmp_path / "home dir"
         home.mkdir(exist_ok=True)
         env = dict(os.environ)
         env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
         env["HOME"] = str(home)
-        env["SKILL6_EVIDENCE_BASE"] = str(tmp_path / "evidence-base")
+        env["OC_FAKE_MODE"] = mode
+        env["SKILL6_EVIDENCE_BASE"] = str(evidence_base or (tmp_path / "evidence-base"))
         env["SKILL6_ROUTING_DRIFT_CHECK_PROJECT_DIR"] = str(tmp_path / "drift-project")
         return subprocess.run(["bash", _installer_path(label)],
                               env=env, capture_output=True, text=True)
@@ -201,6 +233,26 @@ class TestInstallerAgainstFakeCli:
             "installer re-enabled a deliberately disabled schedule")
 
     @pytest.mark.parametrize("label", _LABELS)
+    def test_auto_disabled_job_is_a_tombstone(self, tmp_path, label):
+        """The live shape a job gets when the CLI auto-disables it after
+        consecutive failures (verified on the operator box 2026-10-25:
+        `enabled: false` plus a `state.autoDisabled` record). Same rule as a
+        deliberate tombstone — never resurrected by an installer."""
+        state, bin_dir, log = self._stub(tmp_path)
+        name = _entry_name(label)
+        self._seed(state, {"id": "job-auto", "name": name, "enabled": False,
+                           "state": {"autoDisabled": {"reason": "consecutive-failures",
+                                                     "atMs": 1789272004180}},
+                           "delivery": {"mode": "none"}})
+
+        result = self._run(tmp_path, label, bin_dir)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert not self._calls(log, "cron add"), "resurrected an auto-disabled job"
+        assert not self._calls(log, "cron edit"), "edited an auto-disabled job"
+        assert "DISABLED" in result.stdout
+
+    @pytest.mark.parametrize("label", _LABELS)
     def test_absent_job_registers_silently(self, tmp_path, label):
         state, bin_dir, log = self._stub(tmp_path)
         self._seed(state, None)
@@ -214,6 +266,8 @@ class TestInstallerAgainstFakeCli:
             f"{INSTALLERS[label][0]} registered a job that can announce into "
             f"client chat (finding 29): {adds[0]}")
         assert _entry_name(label) in adds[0]
+        assert json.load(open(state))["jobs"][0]["delivery"]["mode"] == "none", (
+            "the registered job reads back announcing")
 
     @pytest.mark.parametrize("label", _LABELS)
     def test_existing_announce_delivery_is_repaired_in_place(self, tmp_path, label):
@@ -247,6 +301,150 @@ class TestInstallerAgainstFakeCli:
         assert result.returncode == 0, result.stdout + result.stderr
         assert not self._calls(log, "cron add"), "installer stacked a duplicate"
         assert not self._calls(log, "cron edit"), "installer edited a healthy job"
+
+    # -- negative paths: no false success, ever ------------------------------
+
+    @pytest.mark.parametrize("label", _LABELS)
+    @pytest.mark.parametrize("mode", ["list-fails", "list-garbage"])
+    def test_unreadable_listing_never_registers(self, tmp_path, label, mode):
+        """D10 contract: a failed or non-JSON `cron list` is UNKNOWN, never
+        "absent" — registering on it stacks duplicates."""
+        state, bin_dir, log = self._stub(tmp_path)
+        self._seed(state, None)
+
+        result = self._run(tmp_path, label, bin_dir, mode=mode)
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert not self._calls(log, "cron add"), (
+            f"{INSTALLERS[label][0]} registered on an unreadable listing ({mode})")
+        assert "FAIL" in result.stdout
+
+    @pytest.mark.parametrize("label", _LABELS)
+    def test_add_failure_is_reported_not_done(self, tmp_path, label):
+        state, bin_dir, log = self._stub(tmp_path)
+        self._seed(state, None)
+
+        result = self._run(tmp_path, label, bin_dir, mode="add-fails")
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert len(self._calls(log, "cron add")) == 1
+        assert "FAIL" in result.stdout
+        assert "DONE" not in result.stdout, "DONE logged after a failed add"
+        assert json.load(open(state))["jobs"] == []
+
+    @pytest.mark.parametrize("label", _LABELS)
+    def test_add_that_ignores_no_deliver_is_repaired_before_done(self, tmp_path, label):
+        """A CLI that accepts `--no-deliver` and silently drops it (the
+        silent-no-op class) must not get a green install: the fresh job has
+        to read back silent, repaired in place if not."""
+        state, bin_dir, log = self._stub(tmp_path)
+        self._seed(state, None)
+
+        result = self._run(tmp_path, label, bin_dir, mode="ignore-add-flag")
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        edits = self._calls(log, "cron edit")
+        assert any("--no-deliver" in e for e in edits), (
+            f"announcing fresh job never repaired; calls: {edits}")
+        assert json.load(open(state))["jobs"][0]["delivery"]["mode"] == "none"
+
+    @pytest.mark.parametrize("label", _LABELS)
+    def test_unfixable_announcing_job_is_never_reported_done(self, tmp_path, label):
+        """When neither add nor edit honours `--no-deliver`, the installer
+        must FAIL (3), never DONE — the job would announce into client chat."""
+        state, bin_dir, log = self._stub(tmp_path)
+        self._seed(state, None)
+
+        result = self._run(tmp_path, label, bin_dir, mode="ignore-both-flags")
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "FAIL" in result.stdout
+        assert "DONE" not in result.stdout, (
+            "DONE logged while the registered job still announces")
+        assert json.load(open(state))["jobs"][0]["delivery"]["mode"] == "announce", (
+            "test premise broken: stub should still be announcing")
+
+    @pytest.mark.parametrize("label", _LABELS)
+    def test_duplicate_names_stop_installer_without_touching_anything(
+            self, tmp_path, label):
+        """Pre-fix reinstallers stacked duplicates. With two same-named jobs
+        (a tombstone and an enabled announcer) first-match-wins would report
+        OK while the twin announces — the installer must refuse to guess."""
+        state, bin_dir, log = self._stub(tmp_path)
+        name = _entry_name(label)
+        state.write_text(json.dumps({"jobs": [
+            {"id": "job-a", "name": name, "enabled": False,
+             "delivery": {"mode": "none"}},
+            {"id": "job-b", "name": name, "enabled": True,
+             "delivery": {"mode": "announce"}},
+        ]}))
+
+        result = self._run(tmp_path, label, bin_dir)
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "FAIL" in result.stdout
+        assert not self._calls(log, "cron add"), "added on ambiguous (duplicate) names"
+        assert not self._calls(log, "cron edit"), "edited with ambiguous (duplicate) names"
+
+    # -- archive installer: the SK6001/2 in-place repair path ----------------
+
+    def test_archive_broken_job_repair_is_verified_before_done(self, tmp_path):
+        """The repair path used to claim "delivery silent" from the edit's rc
+        alone. With a CLI that drops --no-deliver on edit too, the repair must
+        FAIL instead of blessing an announcing job."""
+        state, bin_dir, log = self._stub(tmp_path)
+        self._seed(state, {"id": "job-broken", "name": _entry_name("github-archive"),
+                           "enabled": True, "delivery": {"mode": "announce"},
+                           "payload": {"kind": "command", "argv": [
+                               "sh", "-lc",
+                               "python3 reconcile.py --sweep-base --idempotent"]}})
+
+        result = self._run(tmp_path, "github-archive", bin_dir,
+                           mode="ignore-both-flags")
+
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "FAIL" in result.stdout
+        assert "DONE" not in result.stdout, (
+            "DONE logged while the repaired job still announces")
+        assert self._calls(log, "cron edit"), "the broken job was never repaired at all"
+        assert json.load(open(state))["jobs"][0]["delivery"]["mode"] == "announce"
+
+    def test_archive_broken_job_repair_reads_back_silent(self, tmp_path):
+        state, bin_dir, log = self._stub(tmp_path)
+        self._seed(state, {"id": "job-broken", "name": _entry_name("github-archive"),
+                           "enabled": True, "delivery": {"mode": "announce"},
+                           "payload": {"kind": "command", "argv": [
+                               "sh", "-lc",
+                               "python3 reconcile.py --sweep-base --idempotent"]}})
+
+        result = self._run(tmp_path, "github-archive", bin_dir)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert not self._calls(log, "cron add"), "installer stacked a duplicate"
+        assert json.load(open(state))["jobs"][0]["delivery"]["mode"] == "none"
+
+    def test_archive_sweep_base_path_with_spaces_is_still_repaired(self, tmp_path):
+        """The staleness scan used `\\S*` after --sweep-base, which truncates
+        a quoted path at its first space and silently skips the repair
+        (false OK) — the two SK6002 suite failures under the space-containing
+        TMPDIR. A stale spaced --sweep-base must still be detected."""
+        state, bin_dir, log = self._stub(tmp_path)
+        home = tmp_path / "home dir"
+        want = home / ".openclaw" / "clawd" / "skill6-fix"
+        self._seed(state, {"id": "job-sp", "name": _entry_name("github-archive"),
+                           "enabled": True, "delivery": {"mode": "none"},
+                           "payload": {"command":
+                               f'python3 x.py --sweep-base "{home}/clawd/skill6-fix" '
+                               "--retry"}})
+
+        result = self._run(tmp_path, "github-archive", bin_dir, evidence_base=want)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        edits = self._calls(log, "cron edit job-sp")
+        assert edits, (
+            "stale --sweep-base with a spaced path was never detected/repaired")
+        assert str(want) in edits[0], f"repair did not use the persistent path: {edits}"
+        assert not self._calls(log, "cron add"), "installer stacked a duplicate"
 
 
 if __name__ == "__main__":
