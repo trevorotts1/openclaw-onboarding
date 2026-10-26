@@ -1,0 +1,156 @@
+{
+  "schema": "s75/unit-receipt.v1",
+  "unit": "S75-T17",
+  "unit_title_as_given": "Repeated migration is idempotent",
+  "acceptance_row": "S75-A17",
+  "mode": "verify-only",
+  "author_role": "VERIFY-ONLY AUTHOR -- evidence record",
+  "role_statement": "This file records measurements taken against the already-landed unit. It is NOT a verdict; no verdict was written by this author. Independent verification remains with a different agent.",
+  "written_at": "2026-10-26T12:12:31Z",
+  "written_at_local": "2026-10-26T08:12:31-0400",
+  "acceptance_row_text": "NOT READ: the literal row text for S75-A17 is not present in this repository. Named sources checked on origin/main (13f86c3153703703072462dcc0d807f856ae553b): `git grep -rln \"S75-A17\" origin/main -- .` returned rc=1 with zero matching paths; no path named ACCEPTANCE-MATRIX.md, SPEC/INDEX.md or a 75-drama SPEC/INDEX file is tracked on origin/main. The unit title above is quoted from the computed task text, not from a row. This absence is reported, not asserted about any file outside this repository.",
+  "already_landed": {
+    "verdict": "yes",
+    "evidence": [
+      "Both owned files exist on origin/main and are byte-identical to the branch tip: migration_plan.py blob d4300d27e1206fff5c4a2d1fcbd915e473bdc432, test_migration_plan_s75_t17.py blob 4a1e38ceb7059548b92d8aaaf71ca820f36cdfdd, compared with `git rev-parse origin/main:<path>` and `git rev-parse origin/s75/S75-T17-r2:<path>` -> identical for both paths.",
+      "The two unit commits are reachable from origin/main: `git merge-base --is-ancestor ca1271542 origin/main` rc 0 and `git merge-base --is-ancestor 7512670a6 origin/main` rc 0.",
+      "`git rev-list --count origin/main..origin/s75/S75-T17-r1` -> 0, so nothing on the unit's original branch is missing from main.",
+      "`git log --oneline -3 origin/main -- 75-drama-song-ad-factory/scripts/core/character_library/migration_plan.py` lists 7512670a6 (D2) and ca1271542 (initial), newest first."
+    ]
+  },
+  "base": {
+    "sha": "13f86c3153703703072462dcc0d807f856ae553b",
+    "ref": "origin/main",
+    "note": "The integration tree the acceptance-relevant checks were run against, in a detached worktree at /Users/blackceomacmini/skill75-repair/lanes/S75-T17-verify. The unit delta itself starts at ecfe474cde4e62e7a4ab814818263bd1420c9607 (the tip of s75/S75-T16-r1, the declared input dependency)."
+  },
+  "head": {
+    "sha": "7512670a672430f328212be0a78c1a6556501629",
+    "ref": "origin/s75/S75-T17-r2",
+    "note": "Measured: `git rev-parse s75/S75-T17-r2` -> 7512670a672430f328212be0a78c1a6556501629 and `git log -1` names 'S75-T17 D2: carry revision and approvals across a re-mint'. This commit is an ancestor of origin/main (merge-base check rc 0). The receipt commit that carries this file rides on top of it and changes no owned code."
+  },
+  "unit_commits": [
+    {
+      "sha": "ca1271542a32ef76e0ce4e193a6af4187183540c",
+      "subject": "S75-T17: reversible character-library migration plan from real local records",
+      "stat": "2 files changed, 992 insertions(+), 0 deletions"
+    },
+    {
+      "sha": "7512670a672430f328212be0a78c1a6556501629",
+      "subject": "S75-T17 D2: carry revision and approvals across a re-mint",
+      "stat": "2 files changed, 88 insertions(+), 2 deletions(-)"
+    }
+  ],
+  "files_changed": [
+    {
+      "path": "75-drama-song-ad-factory/scripts/core/character_library/migration_plan.py",
+      "additions": 716,
+      "deletions": 0,
+      "blob_on_main": "d4300d27e1206fff5c4a2d1fcbd915e473bdc432"
+    },
+    {
+      "path": "75-drama-song-ad-factory/scripts/core/character_library/test_migration_plan_s75_t17.py",
+      "additions": 362,
+      "deletions": 0,
+      "blob_on_main": "4a1e38ceb7059548b92d8aaaf71ca820f36cdfdd"
+    }
+  ],
+  "files_changed_measured_by": "`git diff --numstat ecfe474cde4e62e7a4ab814818263bd1420c9607 7512670a672430f328212be0a78c1a6556501629 -- <both paths>` -> '716 0' and '362 0'. Owned scope was not exceeded: the union of both unit commits touches exactly these two paths (`git show --stat` on ca1271542 and on 7512670a6).",
+  "dependencies": {
+    "declared": "S75-T16 output was the stating input dependency; the unit delta's base is ecfe474cde4e62e7a4ab814818263bd1420c9607, which is exactly the tip of refs/heads/s75/S75-T16-r1 (`git ls-remote origin refs/heads/s75/S75-T16-r1` -> ecfe474cde4e62e7a4ab814818263bd1420c9607).",
+    "status": "SATISFIED",
+    "blockers": []
+  },
+  "tests_run": {
+    "interpreter": "python3 -I (isolated), 3.14.7",
+    "location": "/Users/blackceomacmini/skill75-repair/lanes/S75-T17-verify (detached at origin/main 13f86c3153703703072462dcc0d807f856ae553b)",
+    "owned_test_file": {
+      "command": "cd 75-drama-song-ad-factory/scripts/core/character_library && python3 -I test_migration_plan_s75_t17.py",
+      "rc": 0,
+      "summary": "Ran 12 tests in 2.038s -- OK"
+    },
+    "owned_acceptance_check": {
+      "command": "python3 -I test_migration_plan_s75_t17.py MigrationPlan.test_second_apply_maps_nothing_new_and_renumbers_nothing",
+      "rc": 0,
+      "summary": "Ran 1 test in 0.121s -- OK",
+      "what_it_asserts": "A second build_plan on unchanged records yields the identical plan_digest; a second apply returns status NOOP with applied False and maps nothing new; the list positions are not renumbered."
+    },
+    "owned_test_methods": [
+      "test_discovers_actual_save_list_and_reuse_records",
+      "test_provenance_is_content_and_identity_not_a_bare_id",
+      "test_dry_run_writes_nothing",
+      "test_apply_requires_explicit_confirmation",
+      "test_apply_reverse_round_trip_is_byte_identical",
+      "test_references_and_history_survive_migration",
+      "test_second_apply_maps_nothing_new_and_renumbers_nothing",
+      "test_identity_conflict_blocks_the_whole_migration",
+      "test_missing_reference_image_blocks_and_writes_nothing",
+      "test_stale_plan_is_refused",
+      "test_remint_carries_revision_and_rebinds_every_approval",
+      "test_remint_without_receipts_invents_no_approval"
+    ],
+    "surrounding_suite_character_library": [
+      {"file": "character_library/test_character_library_i6.py", "rc": 0, "summary": "Ran 3 tests -- OK"},
+      {"file": "character_library/test_migration_plan_s75_t17.py", "rc": 0, "summary": "Ran 12 tests -- OK"},
+      {"file": "character_library/test_notion_discovery.py", "rc": 0, "summary": "Ran 11 tests -- OK"},
+      {"file": "character_library/test_notion_store_s75_t15.py", "rc": 0, "summary": "Ran 48 tests -- OK"},
+      {"file": "character_library/test_saved_character_question.py", "rc": 0, "summary": "Ran 6 tests -- OK"},
+      {"file": "character_library/test_sync_protocol_s75_t16.py", "rc": 0, "summary": "Ran 37 tests -- OK"}
+    ],
+    "surrounding_suite_choice_card_intake_card": {
+      "files_run": 25,
+      "failed_files": 0,
+      "note": "Every test_*.py under 75-drama-song-ad-factory/scripts/core/choice_card/intake_card run individually with `python3 -I <file>` from its own directory; all rc=0. Aggregate: 31 test files across the two directories, 0 failures.",
+      "files": [
+        "test_agnes_explanation.py",
+        "test_ai_models.py",
+        "test_channel_send_studio.py",
+        "test_channel_send_u11.py",
+        "test_delivery_outbox_w03.py",
+        "test_duration_contract_owner.py",
+        "test_explicit_chain_contract.py",
+        "test_fit_card_u4.py",
+        "test_help_and_reuse.py",
+        "test_intake_card_h9.py",
+        "test_intake_session.py",
+        "test_intake_step_i7.py",
+        "test_intro_message.py",
+        "test_length_question_flc.py",
+        "test_one_spend_question.py",
+        "test_opening_flow_default_s75x.py",
+        "test_optional_extras_u10x.py",
+        "test_person_question_u9.py",
+        "test_purpose_agnes.py",
+        "test_run_bound_card_contract.py",
+        "test_stop_card_contract_u4.py",
+        "test_story_brief_dsr105.py",
+        "test_studio_json_u1.py",
+        "test_style_questions.py",
+        "test_visual_identity_help_s75t24.py"
+      ]
+    },
+    "lane_branch_run": {
+      "command": "cd 75-drama-song-ad-factory/scripts/core/character_library && python3 -I test_migration_plan_s75_t17.py (in the lane at s75/S75-T17-r2 tip 7512670a6)",
+      "rc": 0,
+      "summary": "Ran 12 tests in 1.781s -- OK",
+      "caveat": "The lane tree is the unit branch's own base and predates other units merged later, so it does not contain every surrounding-suite file; the surrounding-suite numbers above were measured on origin/main, not in the lane. No claim is made from the lane tree about other units."
+    }
+  },
+  "claims": [
+    "The unit deliverable is already present on origin/main at the exact blobs measured, and the acceptance-relevant idempotency test passes there.",
+    "Both owned files are in owned scope only; no path outside the two named files was modified by either unit commit.",
+    "The declared S75-T16 input dependency is the literal base commit of the unit delta.",
+    "Repeated migration is idempotent by measurement: second apply returns NOOP, maps nothing new, and does not renumber the list record.",
+    "No rebuild was performed, because the work was proved landed and green before any edit."
+  ],
+  "not_claimed": [
+    "No verdict, score, or acceptance decision. A different agent verifies.",
+    "Nothing is claimed about the literal wording of acceptance row S75-A17, which is not present in this repository.",
+    "Nothing is claimed about files outside the two owned paths, or about behaviour on Windows, Python versions other than the local 3.14.7 used here.",
+    "Nothing is claimed about other units' suites beyond the rc=0 results recorded for the 31 files listed.",
+    "Not claimed that origin/main's full repository test surface was run; only the character_library directory and the choice_card/intake_card directory were run."
+  ],
+  "rebuild": {
+    "performed": false,
+    "reason": "The unit was proved landed and green on origin/main before any edit, so the rebuild path was not taken."
+  }
+}
