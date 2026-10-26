@@ -1,6 +1,29 @@
 /**
- * The one canonical durable job/event producer for the Council runtime
- * (WER-011 dependency-ready slice, unit W01-U003).
+ * Receipted operation producer for the Council runtime (WER-011
+ * dependency-ready slice, unit W01-U003).
+ *
+ * TWO producers cover this slice, and they own different things. Both
+ * are exported from src/queue/index.ts:
+ *
+ * - `DurableOperationProducer` (src/queue/producer.ts) owns the
+ *   REQUEST-KEYED admission path: council_request_keys as the
+ *   idempotency registry, plus the leased lifecycle
+ *   (claim / release / dispatch intent / response observed / accepted
+ *   result) behind a lease fence, projected onto the canonical
+ *   OperationReceipt contract. Use it when the caller supplies its own
+ *   idempotency key and drives the full worker lifecycle.
+ * - `OperationProducer` (this module) owns the
+ *   OperationAdmissionReceipt: the receipt committed INSIDE the job
+ *   payload at admission, its admission-fingerprint conflict law, its
+ *   non-resetting attempt_ordinal and lease_generation, the
+ *   explicit-null mutable commit path with receipt-level fencing, and
+ *   reconciliation of a QUEUED session that has no durable job. Use it
+ *   when the caller addresses an operation by the deterministic
+ *   operation identity (session, attempt, phase_job_key, input_sha256)
+ *   and needs the receipt itself to be the durable business record.
+ *
+ * Neither producer replaces the other; there is no "only" or "primary"
+ * producer here.
  *
  * What this adds over DurableJobRunner.enqueueOperation alone:
  * enqueueOperation commits the job row and its dispatch descriptor, but
@@ -44,9 +67,13 @@
  *   (commitMutable checks job lease_epoch AND session lease_epoch),
  *   so a stale generation cannot commit over a newer claim.
  *
- * State labels: every persisted state is an EXISTING canonical enum.
- * RECEIPT_STATE maps onto CWE-006 JobState; dispatch sublabels map
- * onto contracts OPERATION_STATUSES. No parallel state machine.
+ * State labels: every persisted `state` is an EXISTING canonical enum.
+ * RECEIPT_STATE_TO_JOB_STATE maps the semantic label onto CWE-006
+ * JobState; dispatch sublabels map onto contracts OPERATION_STATUSES.
+ * No parallel state machine. The receipt ALSO persists the semantic
+ * label itself (`state_label`), because two labels share one JobState
+ * ('potentially_dispatched' and 'response_observed' both map to
+ * 'leased') and would otherwise be indistinguishable once written.
  */
 
 import {
@@ -106,6 +133,10 @@ export type ReceiptStateLabel =
 
 export const RECEIPT_STATE_TO_JOB_STATE: Record<ReceiptStateLabel, string> = {
   never_dispatched: 'queued',
+  // Both of these map onto 'leased': JobState is canonical and has no
+  // sub-state for "claimed" versus "response observed". The receipt's
+  // `state_label` field carries the distinction; this map only says
+  // which JobState the label is allowed to sit on.
   potentially_dispatched: 'leased',
   response_observed: 'leased',
   accepted: 'succeeded',
@@ -165,6 +196,15 @@ export interface OperationAdmissionReceipt {
   provider_request_id: string | null;
   /** Maps onto JobState (see RECEIPT_STATE_TO_JOB_STATE). */
   state: string;
+  /**
+   * The semantic dispatch label this receipt was last committed at.
+   * Distinct from `state` on purpose: 'potentially_dispatched' and
+   * 'response_observed' both map to JobState 'leased', so this field is
+   * the only place the two stay distinguishable after the write.
+   * Absent on receipts admitted before the field existed; every reader
+   * derives the label from the durable rows in that case.
+   */
+  state_label?: ReceiptStateLabel;
   /** Integer-unit reservation estimate; charged at dispatch. */
   reserved_units: number;
   cost_knowledge: CostKnowledge;
@@ -242,6 +282,41 @@ function withHandle<T>(
   fn: (handle: SqliteDatabaseHandle) => T,
 ): T {
   return db.write(fn);
+}
+
+/**
+ * Derive the semantic label from the durable rows alone. Exact for the
+ * terminal job states and for an unclaimed 'queued' row; a claimed row
+ * cannot be split into 'potentially_dispatched' versus
+ * 'response_observed' from council_jobs plus the attempt ledger unless
+ * an attempt row exists, which is why stateLabel() prefers the
+ * persisted receipt label for those two.
+ */
+function labelFromJobRow(
+  jobState: string,
+  attemptStatus: string | null,
+): ReceiptStateLabel | null {
+  switch (jobState) {
+    case 'queued':
+      return 'never_dispatched';
+    case 'leased':
+    case 'running':
+      if (attemptStatus === 'reserved') return 'response_observed';
+      if (attemptStatus === 'dispatched') return 'response_observed';
+      return 'potentially_dispatched';
+    case 'succeeded':
+      return 'accepted';
+    case 'dead_letter':
+      return 'known_failed';
+    case 'failed':
+      return attemptStatus === 'provider_completion_unknown'
+        ? 'outcome_unknown'
+        : 'known_failed';
+    case 'cancelled':
+      return 'cancelled_fenced';
+    default:
+      return null;
+  }
 }
 
 // --------------------------------------------------------------- producer
@@ -437,6 +512,24 @@ export class OperationProducer {
     envelope: AuthorizationEnvelope,
     request: AdmitOperationRequest,
   ): AdmitOperationResult {
+    return this.admitWithPolicy(envelope, request, 'reject');
+  }
+
+  /**
+   * The admission body. `queuedWithoutJob` selects the law for a QUEUED
+   * session that has no operation job: 'reject' is normal admission and
+   * refuses that historical break, because the session is not a
+   * re-admission target; 'readmit' is used only by
+   * reconcileQueuedWithoutJob, which has already proved the absence
+   * inside its own transaction and exists to close it. An outer
+   * transaction is joined, never nested (sqlite.ts tx law), so the
+   * readmit path commits as one unit.
+   */
+  private admitWithPolicy(
+    envelope: AuthorizationEnvelope,
+    request: AdmitOperationRequest,
+    queuedWithoutJob: 'reject' | 'readmit',
+  ): AdmitOperationResult {
     assertEnvelopePurpose(envelope, 'write', 'Operation admission');
     const fingerprint = this.admissionFingerprint(request);
     const now = this.nowIso();
@@ -470,13 +563,10 @@ export class OperationProducer {
         );
         stateVersion = next.state_version;
       } else if (record.state === 'QUEUED') {
-        // QUEUED is valid ONLY with its committed job: a QUEUED
-        // session row without the operation job this admission is
-        // about to write is the historical broken state, and this
-        // path refuses it as invalid admission rather than passing it
-        // through. Reconciliation of historical queued-without-job
-        // rows is reconcileQueuedWithoutJob below, through this
-        // owning service.
+        // QUEUED is valid ONLY with its committed job -- except on the
+        // explicit readmit path, where the absence has already been
+        // proved inside this transaction and this call is the repair
+        // itself. Reject-only admission never passes the break through.
         const anyJob = handle
           .prepare(
             `SELECT id FROM council_jobs
@@ -484,7 +574,7 @@ export class OperationProducer {
                 AND kind = 'operation'`,
           )
           .get(envelope.tenant_id, envelope.company_id, request.session_id);
-        if (!anyJob) {
+        if (!anyJob && queuedWithoutJob === 'reject') {
           throw new JobRunnerError(
             'JOB_INVALID_INPUT',
             `Session ${request.session_id} is QUEUED with no durable operation job: this is an invalid admission target, not a re-admission. Reconcile it through reconcileQueuedWithoutJob.`,
@@ -613,6 +703,7 @@ export class OperationProducer {
         lease_expires_at: null,
         provider_request_id: null,
         state: 'queued',
+        state_label: 'never_dispatched',
         reserved_units: request.descriptor.estimate_minor,
         cost_knowledge: 'estimated',
         observed_usage: null,
@@ -764,13 +855,31 @@ export class OperationProducer {
       const now = this.nowIso();
       const next: OperationAdmissionReceipt = {
         ...receipt,
-        lease_owner: mutation.lease_owner ?? receipt.lease_owner,
-        lease_expires_at: mutation.lease_expires_at ?? receipt.lease_expires_at,
-        provider_request_id: mutation.provider_request_id ?? receipt.provider_request_id,
+        // Nullable fields: omitted means "unchanged", an explicit null
+        // means "clear". `??` cannot tell those apart, so every nullable
+        // field tests for undefined explicitly -- otherwise a lease
+        // release (lease_owner back to null) is unexpressible.
+        lease_owner:
+          mutation.lease_owner !== undefined ? mutation.lease_owner : receipt.lease_owner,
+        lease_expires_at:
+          mutation.lease_expires_at !== undefined
+            ? mutation.lease_expires_at
+            : receipt.lease_expires_at,
+        provider_request_id:
+          mutation.provider_request_id !== undefined
+            ? mutation.provider_request_id
+            : receipt.provider_request_id,
         state: mutation.state ? RECEIPT_STATE_TO_JOB_STATE[mutation.state] : receipt.state,
+        state_label: mutation.state ?? receipt.state_label,
         cost_knowledge: mutation.cost_knowledge ?? receipt.cost_knowledge,
-        observed_usage: mutation.observed_usage ?? receipt.observed_usage,
-        accepted_result_hash: mutation.accepted_result_hash ?? receipt.accepted_result_hash,
+        observed_usage:
+          mutation.observed_usage !== undefined
+            ? mutation.observed_usage
+            : receipt.observed_usage,
+        accepted_result_hash:
+          mutation.accepted_result_hash !== undefined
+            ? mutation.accepted_result_hash
+            : receipt.accepted_result_hash,
         retry_disposition: mutation.retry_disposition ?? receipt.retry_disposition,
         updated_at: now,
       };
@@ -795,11 +904,20 @@ export class OperationProducer {
    * Deterministic reconciliation for historical queued-without-job
    * rows: a session left QUEUED (or later) with no operation job row
    * for the identity the caller expected. The owning service resolves
-   * it truthfully: the session is transitioned out of the broken
-   * queueing state to FAILED with a session_blocked journal event, or
-   * the missing job is admitted now (when the caller still holds the
-   * full request). Queued-without-job is never silently passed
-   * through; each decision is journaled.
+   * it truthfully, and the decision is journaled:
+   *
+   * - 'fail_session': the session is transitioned out of the broken
+   *   queueing state to FAILED.
+   * - 'readmit': the missing operation is admitted now, in this same
+   *   transaction, when the caller still holds the full request. The
+   *   session stays QUEUED because the repair closes the gap rather
+   *   than abandoning the queued work. The request must be bound to
+   *   `identity.session_id`; a request for any other session is
+   *   refused.
+   *
+   * Queued-without-job is never silently passed through, and a
+   * QUEUED session that already has its job is reported as
+   * action: 'none'.
    */
   reconcileQueuedWithoutJob(
     envelope: AuthorizationEnvelope,
@@ -824,10 +942,29 @@ export class OperationProducer {
           };
         }
         if (resolution.action === 'readmit') {
-          // Readmission closes the gap durably: the transition stays,
-          // the job and receipt are committed now. The recursion runs
-          // inside this outer transaction (nested participation).
-          const readmitted = this.admitOperation(envelope, resolution.request);
+          if (resolution.request.session_id !== identity.session_id) {
+            throw new JobRunnerError(
+              'JOB_INVALID_INPUT',
+              `Readmission was asked to repair session ${identity.session_id} but its request is bound to ${resolution.request.session_id}; refusing to admit work for a different session.`,
+              {
+                detail: {
+                  session_id: identity.session_id,
+                  request_session_id: resolution.request.session_id,
+                  session_mismatch: true,
+                },
+              },
+            );
+          }
+          // Readmission closes the gap durably: the session stays
+          // QUEUED (that is the state being repaired), the job, the
+          // receipt, the operation_reserved event, and the outbox
+          // intent commit now. The policy is what makes this call
+          // succeed where plain admission correctly refuses.
+          const readmitted = this.admitWithPolicy(
+            envelope,
+            resolution.request,
+            'readmit',
+          );
           return {
             reconciled: true as const,
             detail: {
@@ -835,6 +972,7 @@ export class OperationProducer {
               jobs_present: false,
               action: 'readmit',
               operation_id: readmitted.receipt.operation_id,
+              created: readmitted.created,
             },
           };
         }
@@ -873,9 +1011,10 @@ export class OperationProducer {
   }
 
   /**
-   * State label for a receipt: derived from the durable job row and
-   * attempt ledger rows, mapped onto the canonical labels. This is a
-   * read; it never mutates and never invents a state.
+   * State label for a receipt: the persisted `state_label` for the two
+   * labels the durable rows cannot separate, otherwise derived from the
+   * job row and attempt ledger rows. This is a read; it never mutates
+   * and never invents a state.
    */
   stateLabel(
     envelope: AuthorizationEnvelope,
@@ -895,11 +1034,11 @@ export class OperationProducer {
     const row = this.db.read((handle) =>
       handle
         .prepare(
-          `SELECT state, terminal_reason FROM council_jobs
+          `SELECT state, terminal_reason, payload_json FROM council_jobs
             WHERE tenant_id = ? AND company_id = ? AND kind = 'operation' AND idempotency_key = ?`,
         )
         .get(envelope.tenant_id, envelope.company_id, operationId),
-    ) as { state: string; terminal_reason: string | null } | undefined;
+    ) as { state: string; terminal_reason: string | null; payload_json: string } | undefined;
     if (!row) return null;
     const attempt = this.db.read((handle) =>
       handle
@@ -909,27 +1048,24 @@ export class OperationProducer {
         )
         .get(envelope.tenant_id, envelope.company_id, operationId),
     ) as { status: string } | undefined;
-    switch (row.state) {
-      case 'queued':
-        return 'never_dispatched';
-      case 'leased':
-      case 'running':
-        if (attempt?.status === 'reserved') return 'response_observed';
-        if (attempt?.status === 'dispatched') return 'response_observed';
-        return 'potentially_dispatched';
-      case 'succeeded':
-        return 'accepted';
-      case 'dead_letter':
-        return 'known_failed';
-      case 'failed':
-        return attempt?.status === 'provider_completion_unknown'
-          ? 'outcome_unknown'
-          : 'known_failed';
-      case 'cancelled':
-        return 'cancelled_fenced';
-      default:
-        return null;
+    const derived = labelFromJobRow(row.state, attempt?.status ?? null);
+    // A terminal job row is the newest truth; it always wins over a
+    // receipt label written before the job finished.
+    if (row.state !== 'queued' && row.state !== 'leased' && row.state !== 'running') {
+      return derived;
     }
+    // 'potentially_dispatched' and 'response_observed' both land on
+    // JobState 'leased', so the persisted receipt label is the only
+    // durable evidence of which one was committed. Everything else
+    // keeps deriving from the rows.
+    // ponytail: only those two labels are read back from the receipt.
+    // Widen to every label if a writer outside this producer ever
+    // persists receipts this reader does not also derive.
+    const persisted = this.receiptFromPayload(row.payload_json)?.state_label ?? null;
+    if (persisted === 'potentially_dispatched' || persisted === 'response_observed') {
+      return persisted;
+    }
+    return derived;
   }
 }
 
