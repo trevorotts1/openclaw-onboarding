@@ -3129,3 +3129,27 @@ jobs:
           HOME="$(mktemp -d)" python3 -m pytest -q \
             75-drama-song-ad-factory/scripts
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
+
+      # T-14 (R-13, C-14, C-F07): the bonus access capability suite is executed
+      # HERE, by explicit path. The module and its suite shipped with no CI call
+      # site at all, so a green local run proved nothing about CI — and CI being
+      # green concealed it, because CI runs the checks that exist, not the ones a
+      # new module needed. stdlib unittest only: no install step is required.
+      - name: T-14 bonus access capability suite
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+          out="$(python3 -m unittest discover -s shared-utils/bonus/tests \
+            -p 'test_access_capability.py' -v 2>&1)" || rc=$?
+          printf '%s\n' "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "✗ T-14 bonus access capability suite exited $rc"
+            exit 1
+          fi
+          n="$(printf '%s\n' "$out" | sed -nE 's/^Ran ([0-9]+) tests?.*/\1/p')"
+          if [ "${n:-0}" -lt 1 ]; then
+            echo "✗ T-14 suite ran no tests — the path or pattern no longer selects it"
+            exit 1
+          fi
+          echo "✓ T-14 bonus access capability suite green ($n tests)"
