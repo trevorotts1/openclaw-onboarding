@@ -75,7 +75,7 @@ DEFAULT_PROTECTED_PATHS = ("input.lyrics",)
 #: of a key as well as on these literals (``is_client_metadata_key``): a
 #: display subject (artist / client / recognition / display / reference / song)
 #: together with a display qualifier (reference(s) / name(s) / metadata /
-#: value / note(s) / text) names client metadata however it is spelled, at any
+#: value(s) / text(s) / notes) names client metadata however it is spelled, at any
 #: depth.  That is why ``{"display_value": ...}`` cannot ride out under a key
 #: nobody has invented yet either: the block keys are inside the block.
 CLIENT_METADATA_KEYS = frozenset({
@@ -92,9 +92,13 @@ _DISPLAY_SUBJECT = frozenset({
     "artist", "artists", "client", "clients", "recognition",
     "display", "reference", "references", "ref", "refs", "song", "songs",
 })
+#: The PLURAL forms are the ones that name a collection, so they are carried
+#: exactly like the singular container words; ``note`` singular is a scalar
+#: field ("displayNote"), not a container, and refusing it would be an
+#: over-block with no name behind it.
 _DISPLAY_QUALIFIER = frozenset({
     "reference", "references", "ref", "refs", "name", "names",
-    "metadata", "value", "note", "notes", "text",
+    "metadata", "value", "values", "notes", "text", "texts",
 })
 
 #: A field that may not become empty: an empty style field is not a payload.
@@ -316,7 +320,9 @@ _MATCHER_CACHE = {}
 _LETTER = r"[^\W\d_]"
 _NOT_LETTER = r"(?:[^\w\s]|[\d_])"
 _JOIN_PIECE = r"%s*(?:%s%s*)?" % (_NOT_LETTER, _LETTER, _NOT_LETTER)
-_JOIN = r"(?:[^\s]*?|(?:%s\s+)*%s)" % (_JOIN_PIECE, _JOIN_PIECE)
+#: A hyphen is a WORD SEPARATOR, not join material: ``bad-boy-bunny`` is three
+#: words (prose), so the glued alternative may carry anything but a hyphen.
+_JOIN = r"(?:[^-\s]*?|(?:%s\s+)*%s)" % (_JOIN_PIECE, _JOIN_PIECE)
 
 
 def _alias_pattern(form):
@@ -351,9 +357,19 @@ def _dot(path):
 
 
 def _key_tokens(key):
-    """Comparable tokens of an object key: camelCase and snake_case alike."""
-    return set(normalize(
-        re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(key))).split())
+    """Comparable tokens of an object key: camelCase and snake_case alike.
+
+    The namespace is CLOSED, not approximated: a lower/digit-to-capital edge
+    splits (``artistNames``), an ACRONYM-to-word edge splits
+    (``ARTISTReferences``, ``ARTISTNames``) and a letter/digit edge splits
+    (``artistNames2``, ``artist_names2``, ``displayMetadata2``), so a digit
+    glued onto a container name or an all-caps prefix cannot carry the key past
+    the shape rule as one opaque token.
+    """
+    text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(key))
+    text = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", text)
+    text = re.sub(r"(?<=[^\W\d_])(?=\d)|(?<=\d)(?=[^\W\d_])", " ", text)
+    return set(normalize(text).split())
 
 
 def is_client_metadata_key(key):
@@ -367,7 +383,13 @@ def is_client_metadata_key(key):
     if str(key) in CLIENT_METADATA_KEYS:
         return True
     tokens = _key_tokens(key)
-    return bool(tokens & _DISPLAY_SUBJECT) and bool(tokens & _DISPLAY_QUALIFIER)
+    subjects = tokens & _DISPLAY_SUBJECT
+    qualifiers = tokens & _DISPLAY_QUALIFIER
+    # The two halves must be TWO tokens: ``reference`` is both a subject and a
+    # qualifier word, so a key like ``referenceCount`` would otherwise satisfy
+    # itself and be refused as a container it is not.
+    return any(subject != qualifier
+               for subject in subjects for qualifier in qualifiers)
 
 
 def _walk_text(value, path=()):

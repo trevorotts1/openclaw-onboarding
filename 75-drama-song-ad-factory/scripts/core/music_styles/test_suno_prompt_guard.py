@@ -22,6 +22,7 @@ if CORE not in sys.path:
 
 from music_styles import prompt_compiler as PC          # noqa: E402
 from music_styles import suno_prompt_guard as G          # noqa: E402
+from suno_recipe import suno_recipe as R                 # noqa: E402
 
 SKILL_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
@@ -611,6 +612,62 @@ class DisplayMetadataBoundary(unittest.TestCase):
             self.assertIn("DISPLAY_METADATA_NOT_SERIALIZABLE",
                           [b["reason"] for b in receipt["blocked"]], key)
 
+    def test_digit_glued_and_allcaps_prefix_spellings_are_refused(self):
+        # S75-T41 r9 defect D-1: the namespace is CLOSED.  A digit glued to the
+        # container name and an all-caps prefix are the same container, so each
+        # of these escapes everything the shape rule knew at r8.
+        escapes = ("artistNames2", "artistReferences2", "displayMetadata2",
+                   "artist_names2", "ARTISTReferences", "ARTISTNames",
+                   "DISPLAYMetadata2", "CLIENTNames2")
+        for key in escapes:
+            payload = envelope(self.catalog, "soul-ballad")
+            payload["input"][key] = {"artists": ["Whitney Houston"]}
+            receipt = G.guard(payload, self.catalog)
+            self.assertEqual(receipt["decision"], "BLOCKED", key)
+            self.assertIsNone(receipt["payload"], key)
+            self.assertIn("CLIENT_METADATA_SERIALIZED",
+                          [b["reason"] for b in receipt["blocked"]], key)
+
+    def test_plural_value_and_text_qualifiers_are_refused(self):
+        # S75-T41 r9 defect D-2: the qualifier set carried value and text but
+        # not values or texts, so a display subject with a plural qualifier
+        # slipped the shape rule.
+        escapes = ("recognition_values", "display_values", "artist_texts",
+                   "recognition_texts", "client_values", "song_texts")
+        for key in escapes:
+            payload = envelope(self.catalog, "soul-ballad")
+            payload["input"][key] = ["witney"]
+            receipt = G.guard(payload, self.catalog)
+            self.assertEqual(receipt["decision"], "BLOCKED", key)
+            self.assertIn("CLIENT_METADATA_SERIALIZED",
+                          [b["reason"] for b in receipt["blocked"]], key)
+
+    def test_a_scalar_note_or_count_is_not_refused_as_display_metadata(self):
+        # S75-T41 r9 defect D-3: the r8 shape rule refused keys that are not
+        # containers at all.  A note and a count are scalars, and ONE token can
+        # never be both halves of a container name.
+        for key in ("displayNote", "referenceCount", "reference_count"):
+            payload = envelope(self.catalog, "soul-ballad")
+            payload["input"][key] = 3
+            receipt = G.guard(payload, self.catalog)
+            self.assertNotIn("CLIENT_METADATA_SERIALIZED",
+                             [b["reason"] for b in receipt["blocked"]], key)
+            self.assertEqual(receipt["decision"], "PASS", key)
+
+    def test_the_envelope_refuses_an_input_key_it_never_named(self):
+        # S75-T41 r9 defect D-5: check_envelope allowlists the input keys, so a
+        # spelling the shape rule never learned cannot legally ride out.
+        clean = envelope(self.catalog, "soul-ballad")
+        self.assertEqual(R.check_envelope(clean), [])
+        for key in ("artistReferences2", "artistNames2", "displayMetadata2",
+                    "ARTISTReferences", "recognition_values"):
+            leaky = copy.deepcopy(clean)
+            leaky["input"][key] = "x"
+            errs = R.check_envelope(leaky)
+            self.assertTrue(
+                any(e.startswith("UNKNOWN_INPUT_KEY") and key in e
+                    for e in errs), (key, errs))
+
 class SquashedSpellings(unittest.TestCase):
     """S75-T41 defect 1: a squashed / hyphenated / punctuation-stripped
     spelling of a catalog reference is the SAME reference, in BOTH directions
@@ -779,6 +836,16 @@ class JoinBoundaryRegression(unittest.TestCase):
             self.assertEqual(sent[-1]["input"]["lyrics"], sheet, sheet)
             self.assertNotIn("display_value", wire)
         self.assertEqual(len(sent), len(PROSE_SHEETS))
+
+    def test_hyphenated_prose_never_collides_on_an_aliass_words(self):
+        # S75-T41 r9 defect D-4: a hyphen is a WORD SEPARATOR, so a hyphenated
+        # compound of an alias's words is prose, never a reference.
+        sheet = "the bad-boy-bunny hops"
+        self.assertEqual(G.find_matches(sheet, self.aliases), [])
+        payload = envelope(self.catalog, "soul-ballad", lyrics=sheet)
+        receipt = G.guard(payload, self.catalog)
+        self.assertEqual(receipt["decision"], "PASS")
+        self.assertEqual(receipt["payload"]["input"]["lyrics"], sheet)
 
     def test_the_ten_named_carriers_never_reach_any_wire_position(self):
         # the ten carriers the round-6 verdict named, at all four wire
