@@ -57,6 +57,11 @@ from durable_store import (
     STATE_QUARANTINED,
 )
 
+# T-26 clause (d): the public/private answer duty is a CHANNEL PERMISSION, not a
+# label. Every send passes this gate, so this is the only place the duty can
+# actually refuse something.
+from answer_duty import duty_from_log_text, outbound_channel_allowed  # noqa: E402
+
 GATE_VERDICTS = ("ALLOW", "WAIT_UNTIL", "SUPPRESSED", "QUARANTINED",
                  "RECONCILE_UNKNOWN")
 
@@ -107,6 +112,29 @@ class DispatchOutcome:
     @property
     def sent(self) -> bool:
         return self.status == ST_SENT
+
+
+def answer_duty_evaluator() -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    """Refuse an ANSWER on a channel the turn's `- duty:` forbids.
+
+    A dispatch that carries no answer log (a scheduled placement, an original
+    gift) is not answering a turn, so duty does not apply and nothing changes
+    for it. A dispatch that DOES carry one is judged on the duty its last turn
+    stamps; an absent or unrecognised duty refuses every channel.
+    """
+    def evaluator(ctx: Dict[str, Any]) -> Dict[str, Any]:
+        log = ctx.get("answer_duty_log")
+        if log is None:
+            return {"verdict": "ALLOW", "evidence": {"duty": "not_applicable"}}
+        duty = duty_from_log_text(log)
+        channel = ctx.get("channel")
+        if not outbound_channel_allowed(duty, channel):
+            return {"verdict": "SUPPRESSED",
+                    "evidence": {"reason": "duty_channel_refused",
+                                 "duty": duty, "channel": channel}}
+        return {"verdict": "ALLOW",
+                "evidence": {"duty": duty, "channel": channel}}
+    return evaluator
 
 
 def evaluate_gate(evaluator: Callable[[Dict[str, Any]], Any],

@@ -853,6 +853,19 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-playbook-engine.sh
           echo "✓ Skill 38 playbook_engine.py (U-16) unit tests are green"
 
+      - name: Skill 38 post-delivery discovery unit tests (T-27)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # post_delivery_discovery.py (tools/) is T-27: adaptive post-gift needs
+          # discovery, grounded answers with their source, and one real
+          # resource/community/offer/calendar recommendation, invoked from the
+          # delivery-verified path of direct_fulfillment.py (record_delivery_proof).
+          # Run its unit suite BY EXPLICIT PATH so a contract regression fails the
+          # build instead of drifting. BASH wrapper around python3 -m unittest.
+          python3 -m unittest discover -s 38-conversational-ai-system/tools/tests -p 'test_post_delivery_discovery.py' -v
+          echo "✓ Skill 38 post_delivery_discovery.py (T-27) unit tests are green"
+
       - name: T-17 shared reminder slots + reserved final action (state machine suite)
         shell: bash
         run: |
@@ -3164,6 +3177,41 @@ jobs:
             75-drama-song-ad-factory/scripts
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
 
+      - name: Skill 38 acquisition brief binding unit tests (T-06)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The fifth T-06 acceptance clause: approval, capacity, claims and one
+          # accountable owner bind the brief, and a tampered owner is refused on
+          # the read path. The suite drives the synthetic client fixture end to
+          # end (facts -> interview -> four bindings -> plannable) and proves the
+          # inverse refusals, so it runs by explicit file path.
+          python3 38-conversational-ai-system/tools/tests/test_acquisition_brief_binding.py
+          echo "✓ Skill 38 acquisition brief binding suite green (test_acquisition_brief_binding.py)"
+      # T-26 clause (d) had a suite and no runner: `tools/tests/test_answer_duty.py`
+      # existed but no workflow ran it, so a duty gate that returned True for every
+      # channel could ship green. The path is EXPLICIT, not a discover, so moving or
+      # deleting the file is a red build instead of a silently empty run.
+      - name: Skill 38 answer-duty suite (T-26 clause (d)) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I 38-conversational-ai-system/tools/tests/test_answer_duty.py
+          echo "✓ answer_duty suite passes (public/private duty + fail-closed)"
+
+      # T-26 clause (d) — the comment-reader suite (acceptance rows A1/A2/A3) had
+      # a suite and no runner: `35-social-media-planner/scripts/test_comment_reader.py`
+      # existed but no workflow executed it, so a reader that fabricated a comment
+      # feed, handed off the page's own comments, or dropped a long-lived thread
+      # could ship green. The path is EXPLICIT, not a discover, so moving or
+      # deleting the file is a red build instead of a silently empty run.
+      - name: Skill 35 comment-reader suite (T-26 clause (d)) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I 35-social-media-planner/scripts/test_comment_reader.py
+          echo "✓ comment_reader suite passes (supported surface, own-author exclusion, ledgered skip)"
+
       # T-22 (Skill 35 social-planner) — the two suites this unit ships are wired
       # here BY EXPLICIT NAME, the same pattern as the Skill 38 contract fixture
       # above (`t="38-.../hook-mapping-contract.test.sh"` resolved from the repo
@@ -3217,6 +3265,87 @@ jobs:
           set -uo pipefail
           bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh
           echo "✓ T-24 pb-contracts suite green (qc-pb-contracts.sh)"
+      # T-14 (R-13, C-14, C-F07): the bonus access capability suite is executed
+      # HERE, by explicit path. The module and its suite shipped with no CI call
+      # site at all, so a green local run proved nothing about CI — and CI being
+      # green concealed it, because CI runs the checks that exist, not the ones a
+      # new module needed. stdlib unittest only: no install step is required.
+      - name: T-14 bonus access capability suite
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+          out="$(python3 -m unittest discover -s shared-utils/bonus/tests \
+            -p 'test_access_capability.py' -v 2>&1)" || rc=$?
+          printf '%s\n' "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "✗ T-14 bonus access capability suite exited $rc"
+            exit 1
+          fi
+          n="$(printf '%s\n' "$out" | sed -nE 's/^Ran ([0-9]+) tests?.*/\1/p')"
+          if [ "${n:-0}" -lt 1 ]; then
+            echo "✗ T-14 suite ran no tests — the path or pattern no longer selects it"
+            exit 1
+          fi
+          echo "✓ T-14 bonus access capability suite green ($n tests)"
+      # T-21 Instagram route adapter: the supported comment and direct routes
+      # (separate account/filter/event/eligibility, ignored opener no drip, no
+      # inferred FB parity). Without this step the suite never runs in CI.
+      - name: T-21 Instagram route adapter suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 shared-utils/routes/instagram/test_route_adapter.py
+          echo "✓ T-21 Instagram route adapter suite green"
+      # T-28 booking and service follow-through (R-18/R-20, C-28). No workflow
+      # named this suite, so the adapter (shared-utils/booking/) and its 76
+      # contract tests could regress with every gate still green. Runs by
+      # EXPLICIT PATH — stdlib unittest, no install, no network, no browser.
+      - name: T-28 booking follow-through suite (explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I -m unittest discover -s shared-utils/booking/tests
+          python3 -I shared-utils/booking/followthrough.py
+          python3 -I 38-conversational-ai-system/tools/booking_service.py
+          echo "✓ T-28 booking follow-through suite passes (shared-utils/booking/tests)"
+
+      - name: T-39 compatibility safeguards + load_ledger call-site wiring (explicit names)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # T-39 (DATA-CONTRACTS 10): compat_guard.py is the compatibility/
+          # migration/CAS/forward-repair unit, and pb_contracts.load_ledger is its
+          # production call site. Two suites, both named explicitly so a green
+          # local run is what gates the PR:
+          #   test_compat_guard.py         - the refusals (stale writer, generation
+          #                                  regression, newer-than-known, corrupt
+          #                                  record, protected state), each paired
+          #                                  with a control.
+          #   test_compat_guard_wiring.py  - the CALL SITE. A module nobody calls is
+          #                                  the defect T-39 closes, so this file
+          #                                  spies on the guard call load_ledger makes
+          #                                  and asserts that a newer ledger's
+          #                                  UsageError is CAUSED by
+          #                                  NewerThanKnownError. Delete the call and
+          #                                  it goes red.
+          # A MISSING suite is a red, not a skip: deleting either file must fail
+          # the build instead of silently disarming the gate.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          s="38-conversational-ai-system/tools/tests/test_compat_guard.py"
+          w="38-conversational-ai-system/tools/tests/test_compat_guard_wiring.py"
+          for t in "$s" "$w"; do
+            if [ ! -f "$t" ]; then
+              echo "✗ T-39 suite is absent from this checkout: $t. A MISSING suite is a red, not a skip."
+              exit 1
+            fi
+            echo "resolved $root/$t"
+            ls -l "$t"
+          done
+          python3 "$s"
+          python3 "$w"
+          echo "✓ T-39 compatibility safeguards refuse newer builds, generation regression and protected-state rollback; the compat_guard call site in pb_contracts.load_ledger is wired"
 
       # T-13 direct original fulfillment (R-10/R-12, C-13, C-F04, C-F07, C-F09).
       # No step named this suite, so the T-13 module and its 16 offline contract
