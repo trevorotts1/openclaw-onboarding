@@ -382,16 +382,29 @@ def impact(nodes, changed_ids):
         "unaffected": sorted(set(by_id) - stale),
         "preserved_paid_assets": preserved_paid,
         "safe_to_regenerate": safe_to_regenerate,
+        "paid_in_graph": sorted(
+            artifact_id for artifact_id, node in by_id.items()
+            if node["paid"]),
         "cause": cause,
         "deleted": [],               # retain stale work as historical evidence
     }
 
 
 def no_paid_regeneration(result):
-    """True when a change plan queues no paid asset for regeneration."""
+    """True when a change plan queues no paid asset for regeneration.
+
+    Checks against the plan's complete paid inventory (``paid_in_graph``),
+    not just what the plan preserved: a plan that queues a paid id while
+    recording no preserved entry must not read as clean. A plan without a
+    paid inventory is unverifiable, so the guard fails closed (False).
+    """
+    inventory = result.get("paid_in_graph")
+    if not isinstance(inventory, list):
+        return False
     paid_ids = {entry["artifact_id"]
                 for entry in result.get("preserved_paid_assets", [])}
-    return not (paid_ids & set(result.get("safe_to_regenerate", [])))
+    return not (paid_ids | set(inventory)) & set(
+        result.get("safe_to_regenerate", []))
 
 
 # -- self-check --------------------------------------------------------------
