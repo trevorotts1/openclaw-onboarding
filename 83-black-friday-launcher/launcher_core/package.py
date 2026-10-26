@@ -57,6 +57,18 @@ RECEIPT_SCHEMA_REF = "receipt.schema.json"
 RECEIPT_SCHEMA_VERSION = "1.1"
 RECEIPT_TYPE = "launcher.package.v1"
 
+# What a package claims to deliver. A full Black Friday launch must carry the shared
+# U-CONTRACT plan: the seasonal calendar and every planned email, text and automation.
+# Without a plan the package is pages only and says so, in the manifest and the receipt.
+DELIVERY_SCOPE_FULL = "full_launch"
+DELIVERY_SCOPE_PAGE_ONLY = "page_only"
+DELIVERY_LABELS = {
+    DELIVERY_SCOPE_FULL: "full Black Friday launch (calendar, emails, texts and automations "
+                         "delivered)",
+    DELIVERY_SCOPE_PAGE_ONLY: "page-only (no shared launch plan: the Black Friday calendar, "
+                              "emails, texts and automations are not part of this package)",
+}
+
 # Proof classes are separate facts, never one ladder collapsed into a status:
 # authored bytes, a draft installation, a test record, a live observation.
 PROOF_BY_STATUS = {
@@ -448,6 +460,28 @@ def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
     return rows
 
 
+def _resolve_delivery_scope(requested: Optional[str],
+                            plan: Optional[Dict[str, Any]]) -> str:
+    """Full-launch delivery always requires the shared plan. Unrequested scope follows the
+    plan, so a plan-free package is never silently called a full launch."""
+    if requested is None:
+        return DELIVERY_SCOPE_FULL if plan is not None else DELIVERY_SCOPE_PAGE_ONLY
+    if requested not in DELIVERY_LABELS:
+        raise PackageError("AF-LAUNCH-SCOPE-UNKNOWN",
+                           f"unknown delivery scope {requested!r}; use "
+                           f"{DELIVERY_SCOPE_FULL!r} or {DELIVERY_SCOPE_PAGE_ONLY!r}")
+    if requested == DELIVERY_SCOPE_FULL and plan is None:
+        raise PackageError(
+            "AF-LAUNCH-PLAN-REQUIRED",
+            "full-launch delivery requires the shared launch plan (calendar and every planned "
+            "unit); pass delivery_scope='page_only' (cli: --page-only) for a page-only package")
+    if requested == DELIVERY_SCOPE_PAGE_ONLY and plan is not None:
+        raise PackageError(
+            "AF-LAUNCH-SCOPE-CONFLICT",
+            "a page-only package cannot carry a launch plan; assemble a full launch instead")
+    return requested
+
+
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              pieces: Dict[str, Any], source_root: Optional[Path] = None,
              council: Optional[Dict[str, Any]] = None,
@@ -457,7 +491,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              design_approvals: Optional[Dict[str, Any]] = None,
              landing_pages: Optional[List[str]] = None,
              launch_plan: Optional[Dict[str, Any]] = None,
-             deliveries: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+             deliveries: Optional[Dict[str, Any]] = None,
+             delivery_scope: Optional[str] = None) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
@@ -486,10 +521,18 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     "request": {...}} with artifact bytes already staged inside run_dir. A bare
     state claim with no lane receipt is planning evidence, never delivery proof:
     the unit stays PLANNED and assembly refuses.
+
+    delivery_scope names what is delivered. ``full_launch`` requires the shared
+    plan: without it the seasonal calendar and the planned-unit checks would be
+    skipped and a page-only package would pass as a Black Friday launch. With no
+    plan the only honest scope is ``page_only``, which is recorded in the manifest
+    and the receipt. When the caller names no scope it follows the plan, so a
+    plan-free package is labelled page-only rather than silently accepted.
     """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     source_root = Path(source_root).resolve() if source_root else run_dir.resolve()
+    scope = _resolve_delivery_scope(delivery_scope, launch_plan)
     evidence = receipt_evidence(run_dir)
     if evidence["state"] in ("malformed", "unavailable"):
         raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
@@ -600,6 +643,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "revision": intake["revision"],
         "approved_plan_hash": intake["approval"]["hash"],
         "journey_mode": intake["journey_mode"],
+        "delivery_scope": scope,
+        "delivery_label": DELIVERY_LABELS[scope],
         "intake": {"path": "intake.json", "sha256": _sha256_file(intake_path)},
         "route_graph": {"path": "route-graph.json", "sha256": _sha256_file(route_path)},
         "pieces": ordered,
@@ -654,6 +699,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "revision": intake["revision"],
         "approved_plan_hash": intake["approval"]["hash"],
         "assembled_at": manifest["assembled_at"],
+        "delivery_scope": scope,
+        "delivery_label": DELIVERY_LABELS[scope],
         "manifest": {"path": "package-manifest.json", "sha256": _sha256_file(manifest_path)},
         "units": _unit_receipts(ordered, intake, launch_plan, pieces, plan_ref, run_dir,
                                 lane_deliveries=deliveries),
