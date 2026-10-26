@@ -48,15 +48,19 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     report = _read_json(report_path) if report_path.is_file() else {}
     plan = _read_json(args.launch_plan) if args.launch_plan else None
     deliveries = _read_json(args.deliveries) if args.deliveries else None
+    scope = package.DELIVERY_SCOPE_PAGE_ONLY if args.page_only else package.DELIVERY_SCOPE_FULL
     out = package.assemble(Path(args.out), normalized, graph, pieces,
                            source_root=Path(args.pieces).parent, council=advice,
                            require_designs=not args.allow_no_designs,
                            to_confirm=report.get("to_confirm"),
                            landing_pages=report.get("landing_pages"),
-                           launch_plan=plan, deliveries=deliveries)
+                           launch_plan=plan, deliveries=deliveries,
+                           delivery_scope=scope)
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
            "council": advice["status"], "designs_required": not args.allow_no_designs,
            "to_confirm": out["manifest"]["to_confirm"],
+           "delivery_scope": out["manifest"]["delivery_scope"],
+           "delivery_label": out["manifest"]["delivery_label"],
            "launch_plan_completeness":
                (out["manifest"].get("launch_plan") or {}).get("completeness")})
     return 0
@@ -184,9 +188,14 @@ def build_parser() -> argparse.ArgumentParser:
                         "in the manifest, never the default for a delivery")
     a.add_argument("--launch-plan",
                    help="the shared launch plan (U-CONTRACT); its Black Friday calendar and every "
-                        "planned email, text, automation and requested AI must be delivered")
+                        "planned email, text, automation and requested AI must be delivered. "
+                        "Required unless --page-only")
     a.add_argument("--deliveries",
                    help="JSON object of unit id -> delivery result ({'state': 'complete'})")
+    a.add_argument("--page-only", action="store_true",
+                   help="assemble pages alone and label the package page-only: no shared launch "
+                        "plan, so no Black Friday calendar and no planned email, text or automation "
+                        "is delivered or checked. Never the default")
     a.set_defaults(fn=cmd_assemble)
 
     pl = sub.add_parser("plan", help="validate a shared launch plan's calendar and completeness")

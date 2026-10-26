@@ -13,6 +13,8 @@ HERE = Path(__file__).resolve().parent
 
 MODULES = [
     "test_scripts.py",
+    # Finding 43: VERSION, skill-version.txt and SKILL.md must carry one version.
+    "test_version_lockstep.py",
     "test_stage_executor.py",
     "test_brand_colors.py",
     "test_stage_executor_prompt_contract.py",

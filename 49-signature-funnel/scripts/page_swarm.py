@@ -63,7 +63,15 @@ def _swarm_runner(skill71_root: Path = SKILL71_ROOT):
     scripts = str(Path(skill71_root) / "scripts")
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
-    import swarm_runner  # noqa: E402
+    try:
+        import swarm_runner  # noqa: E402
+    except ImportError as exc:
+        # A lone-directory Skill 49 install has no Skill 71 sibling. Name the
+        # install instead of leaking a bare ModuleNotFoundError.
+        raise SwarmError(
+            "Skill 71's runner is not installed: expected "
+            f"{scripts}/swarm_runner.py (71-blackceo-signature-page/scripts) "
+            f"beside Skill 49 ({exc})") from exc
     return swarm_runner
 
 

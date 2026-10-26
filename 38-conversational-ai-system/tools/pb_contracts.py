@@ -629,16 +629,73 @@ def check_document(kind, doc):
 # --------------------------------------------------------------------------
 
 
-def idempotency_key(doc):
+LEDGER_VERSION = 2
+
+# What makes two public placements the SAME placement. A new approved cycle, a
+# new account binding or a new content revision is a DIFFERENT placement and must
+# stay dispatchable; the same one retried must collapse. ``approval_revision`` is
+# deliberately absent: re-approving unchanged content is freshness (enforced by
+# the gate), not a new placement, so it must not mint a second post.
+PLACEMENT_IDENTITY_FIELDS = (
+    "campaign_cycle_id",
+    "placement_id",
+    "account_id",
+    "account_binding_revision",
+    "content_revision",
+)
+
+
+def _legacy_idempotency_key(doc):
     return "%s::%s" % (doc["tenant_id"], doc["logical_intent_key"])
+
+
+def idempotency_key(doc):
+    """Identity of the logical intent. Two dispatches sharing it are one action.
+
+    A public placement is identified by its placement identity, not by a free-text
+    key the caller happens to reuse: two placements in different cycles, or bound
+    to a different account or content revision, never share an identity. The
+    caller's ``logical_intent_key`` is still part of the key, so two different
+    intents on ONE placement (a scheduled post and its reveal) stay distinct.
+    """
+    if doc.get("scope") != "public_placement":
+        return _legacy_idempotency_key(doc)
+    parts = [doc["tenant_id"]]
+    parts.extend(doc[field] for field in PLACEMENT_IDENTITY_FIELDS)
+    parts.append(doc["logical_intent_key"])
+    return "::".join(parts)
+
+
+def _migrate_v1(ledger):
+    """One migration: version 1 keys were tenant::logical_intent_key.
+
+    A version 1 entry never recorded which placement it belonged to, so its key
+    cannot be recomputed without guessing. Rewriting it would silently un-collapse
+    an in-flight action and could send it twice. The entries move to
+    ``legacy_actions`` untouched and are still consulted by dispatch, so a retry
+    against a version 1 ledger keeps deduping.
+    """
+    return {
+        "version": LEDGER_VERSION,
+        "actions": {},
+        "legacy_actions": ledger["actions"],
+    }
 
 
 def load_ledger(path):
     if not os.path.exists(path):
-        return {"version": 1, "actions": {}}
+        return {"version": LEDGER_VERSION, "actions": {}, "legacy_actions": {}}
     ledger = load_json(path)
-    if ledger.get("version") != 1 or not isinstance(ledger.get("actions"), dict):
-        raise UsageError("ledger %s is not version 1 with an actions map" % path)
+    version = ledger.get("version")
+    if not isinstance(ledger.get("actions"), dict):
+        raise UsageError("ledger %s has no actions map" % path)
+    if version == 1:
+        return _migrate_v1(ledger)
+    if version != LEDGER_VERSION:
+        raise UsageError(
+            "ledger %s is version %r; this build reads version 1 or %d"
+            % (path, version, LEDGER_VERSION))
+    ledger.setdefault("legacy_actions", {})
     return ledger
 
 
@@ -864,7 +921,18 @@ def cmd_dispatch(args):
     gate_checked = parse_ts(gate["checked_at"], "gate.checked_at")
     key = idempotency_key(action)
     ledger = load_ledger(args.ledger)
-    existing = ledger["actions"].get(key)
+    # A version 1 entry predates placement identity. It is still the same action,
+    # so a retry must find it and collapse; it is written back where it lives.
+    bucket = ledger["actions"]
+    existing = bucket.get(key)
+    # Every scope, not only public placements: for a person_directed action the
+    # old key is still the live key, so a fallback guarded on scope would look up
+    # nothing and release a second send of an action already recorded as sent.
+    if existing is None:
+        legacy = ledger.get("legacy_actions") or {}
+        legacy_key = _legacy_idempotency_key(action)
+        if legacy_key in legacy:
+            bucket, key, existing = legacy, legacy_key, legacy[legacy_key]
 
     def refuse(decision, reason, ok=False):
         return emit(
@@ -1014,7 +1082,7 @@ def cmd_dispatch(args):
     entry["attempts"].append(attempt)
     entry["status"] = "dispatching"
     entry["updated_at"] = args.now or now_utc()
-    ledger["actions"][key] = entry
+    bucket[key] = entry
     save_ledger(args.ledger, ledger)
 
     return emit(
@@ -1103,6 +1171,8 @@ def cmd_receipt(args):
         raise UsageError("status must be one of %s" % RECEIPT_STATUSES)
     ledger = load_ledger(args.ledger)
     entry = ledger["actions"].get(args.key)
+    if entry is None:
+        entry = (ledger.get("legacy_actions") or {}).get(args.key)
     if entry is None:
         raise UsageError("no ledger entry for key %r" % args.key)
     stamp = args.now or now_utc()

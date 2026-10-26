@@ -1,5 +1,66 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.64: the live convene path runs the mode selector, and the mode docs match the code (REPAIR-1064, REPAIR-1066)
+
+In plain English: a convene that names no mode now sizes the sitting from the question itself, a named mode is never overruled, and the response and audit line say which happened and why. The mode-selection reference no longer describes a scoring scheme or a wired path the code does not have.
+
+- Driver wiring (`unit/W77S-repair-autoselect-live-1064`, 2eeb9eb33): `runtime/src/service/driver.ts` resolves every sitting through the one selector (`runtime/src/flow/mode-select.ts`). An explicit client mode wins verbatim across all seven `SESSION_MODES`; with none, the question's complexity picks light, medium or heavy; a question with no text keeps the old medium default and says so in its reason instead of inventing a score. The built-in sample keeps its fixture mode.
+- The 202 response now carries `mode_selection` — `mode`, `source` (`client` or `auto`) and `reason` — and the audit line records the same `mode`, `mode_source` and `mode_reason`, so a sitting's size can be explained after the fact.
+- New live test (`runtime/tests/mode-autoselect-live.test.ts`) proves the wiring through the driver, not the selector alone; `runtime/tests/modes-service.test.ts` covers the response field.
+- Docs repaired (`unit/W77S-repair-docs-truth-1064`, 1821eb3ad, 82e672143, 64e244fa8, 88b3fde19): `references/mode-selection.md` now states the shipped stakes/breadth/ambiguity classifier instead of the invented six-signal 0-100 score; stake matching is documented as negation-aware (`no`, `not`, `without`, `zero`, `never` within four words of the same clause) and inflection-tolerant (`+s`/`+es`/`+ed`/`+ing`, plus `e`- and `y`-stems); all seven modes are mapped, including the four legacy names, the `(council size <size>)` reason suffix and the quick seat rule; the worked heavy example is re-measured (score 28, breadth 10, not 26 / breadth 8); and empty input names both truths — `selectMode('')` returns light by score while the shipped driver default is medium. The page no longer calls `convene-flow.ts` the wired path, and trim/lowercase normalization is attributed to `selectMode` alone (`resolveModeSelection` passes an explicit value through verbatim).
+- `references/provider-parallelism.md` is corrected to the `MODE_SEATS` wave width of nine with the three-bound `min()` rule from `runtime/src/providers/parallel.ts`.
+- Checks at the batch head before this release commit (no-spend): `npm ci` rc 0; `npm test` 869 tests, 864 pass, 0 fail, 5 skipped (clean base-tree run — two earlier runs on the same code each carried one unrelated flaky name, a Chrome-backed render and a transport-timeout test, and both pass in isolation, so the suite is not deterministic under full-suite load); `npm run typecheck` rc 0; `npm run build` rc 0.
+
+## v1.0.63: the selector honours every session mode, and the council docs state the real concurrency rule (REPAIR-1063)
+
+In plain English: naming any of the seven session modes now selects that mode instead of falling through to a guess, the question classifier reads plurals and tenses, and "we have no legal risk" no longer counts as high stakes. The docs now name the real roster rules and say that the lower of the provider ceiling and the mode's wave width is what runs.
+
+- Selector repair (`unit/W77S-repair-selector-1063`, f12e645a2): `runtime/src/flow/mode-select.ts` maps all seven canonical `SESSION_MODES` to a council size — `full` heavy, `selected` medium, `quick` and `consult` light, `light`/`medium`/`heavy` unchanged — typed as a complete `Record<SessionMode, CouncilMode>` so a new mode without a mapping is a compile error, and a runtime test iterates the enum.
+- Stake matching survives inflection (`lawsuit`/`lawsuits`, `sue`/`suing`/`sued`, `merger`/`mergers`, `loan`/`loans`) and is negation-aware: a stake term preceded within four words and the same clause by `no`, `not`, `without`, `zero` or `never` is not counted, so "we have no legal risk" stays low-stakes while the same sentence without the negators still selects heavy (the test carries that control).
+- The seat test no longer compares a literal to itself. `mode-select.test.ts` asserts every council size seats `SEAT_IDS.length` from `MODE_ROUND_POLICY` and that the roster has no duplicate seat, so a smaller panel or a shrunken roster turns the suite red.
+- Docs repair (`unit/W77S-repair-docs-1063`, 55d439eaa): the roster sentence in `INSTRUCTIONS.md` is corrected against the runtime's own rules — light, medium and heavy refuse a shorter `--seat-ids` list, and smaller panels belong to the four older modes (`runtime/src/intake/panel.ts`: selected 2 to 8, quick four, consult one, full nine).
+- `INSTRUCTIONS.md`, `references/model-routing.md` and `references/protocol.md` now state one concurrency rule: a provider only sets a ceiling (only Ollama has one — the $20 plan 3 at a time, the $100 plan 10; OpenRouter, Agnes 3.0 Flash and DeepSeek Direct add none) and the mode sets the wave width (light 3, medium and heavy the whole nine). The lower of the two runs, so an uncapped provider never widens a light sitting past 3.
+- Checks on this branch (no-spend): `npm test` 863 tests with the same pre-existing failing names as the base capture and zero new ones (persona-root three; the fourth known name, the chrome-backed session-close render, passed this run); the two flow files 19/19; `tsc --noEmit` clean; runtime build clean.
+- Packaging: `manifest.json` and `council-of-wise-elders.skill` rebuilt once over both unit heads; `skill-version.txt`, `version` and the `SKILL.md` frontmatter all read 1.0.63.
+
+## v1.0.62: automatic mode selection, queue and supervisor repairs, provider parallelism (AUTO-MODE-1062 + REPAIR-1063)
+
+In plain English: the council now picks light, medium or heavy from the question itself when the client does not name a mode. Every mode still seats all nine elders; the mode only changes the rounds and how many advisors work at once. Three repairs land with it: the queue producer can readmit a job and clears nullable receipt fields, the hybrid supervisor stops misreporting a finished run, and the provider limits read a client's Ollama plan however it is written.
+
+- Auto mode (AUTO-MODE-1062): `selectMode(question, explicitMode)` in `runtime/src/flow/mode-select.ts` is the single selector. An explicit client mode wins verbatim (source `client`); otherwise the question's complexity decides deterministically (source `auto`) from fixed weights, caps and thresholds: score 0-4 light, 5-13 medium, 14+ heavy. No randomness, no clock, no model call.
+- The convene flow resolves the mode through that one selector before deliberation; the chosen mode, its source and its reason travel on the session record and the convene result. The import is the real module path `./mode-select.js`; the guessed `contracts/mode-select.js` path never shipped.
+- What a mode does is unchanged and is not reinterpreted by the selector: light 2 rounds at most 3 in parallel (waves of 3), cap 50; medium up to 4 rounds, cap 50; heavy up to 10 rounds, cap 100; consensus still 7 of 9 seats.
+- Docsweep (FIX-MODES-DOCS follow-up): `INSTRUCTIONS.md`, `references/protocol.md` and `references/model-routing.md` now state one policy — every mode seats nine; light is rounds and concurrency only. The chamber "How it works" caption no longer says a light question uses three advisors. No `light = 3 seats` wording remains in the live docs.
+- New references: `references/mode-selection.md` (how auto mode decides) and `references/provider-parallelism.md` (3 / 10 / unlimited caps by route).
+- Queue producer repair (REPAIR-1063): readmit works, nullable receipt fields are cleared, and dispatch labels are distinguished. The hybrid supervisor repair stops the misreporting path. Tests cover both.
+- Provider parallel limits (PROVIDER-PARALLEL-1063): one slug normalisation (`ollama`, `ollama-*`, `agnes`, `deepseek-direct`, everything else uncapped) and a price-tier plan parse, so `'20'`, `20`, `'$20/mo'` and `'100+'` all resolve. An unknown or between-tier plan still refuses with `OLLAMA_PLAN_REQUIRED` rather than guessing. The mode's wave width bounds the panel on every route.
+- Config default corrected: `config/defaults.json` light is 9 seats and 18 planned requests.
+
+## v1.0.61: every mode seats the whole council; the mode only changes the rounds and the parallelism (FIX-MODES-DOCS)
+
+In plain English: light mode was described as "3 seats". That was wrong. Light mode still uses all nine elders — it just runs them in waves of three and gives them two rounds. Every mode seats the entire council. The mode controls how many rounds they run and how many provider calls may be in flight at once, and nothing else. All nine seats appear in a light session.
+
+- All three modes seat the full nine-advisor roster. No mode, and no flag, reduces the roster. A light session shows all nine seats.
+- Light: exactly 2 rounds, at most 3 provider calls in parallel (waves of 3), provider-request cap 50.
+- Medium: up to 4 rounds, provider-request cap 50.
+- Heavy: up to 10 rounds, provider-request cap 100.
+- Consensus early stop is unchanged at 7 of 9 seats.
+- `SKILL.md` rewritten to match: the sizing line in step 2 now announces all nine advisors with the round and parallelism counts, step 4b no longer selects three seats for a light question, and step 5 states both the cap and the light concurrency limit.
+- This supersedes the light-mode wording in the v1.0.56 entry below, which described light as 3 best-fit advisors.
+- Runtime (FIX-MODES-RUNTIME) landed in the same batch: every council size now seats the full nine-seat roster from one shared constant (`MODE_SEATS` in `runtime/src/contracts/modes.ts`), so no mode has its own seat list any more.
+- Mode now controls two things and nothing else. Light: 2 rounds, at most 3 provider calls in flight (waves of three), 50-request cap. Medium: up to 4 rounds, 50-request cap. Heavy: up to 10 rounds, 100-request cap. The consensus stop rule still needs 7 of the 9 seats to agree.
+- Removing the three-seat light panel removed its consequences with it: the schema requirement, the intake panel rule, the "three best-fit seats" selector and the relevance-weight trimming that existed only to keep a three-seat verdict publishable.
+- The chamber caption and the CLI help no longer describe light as three advisors.
+- Tests: the mode suite now proves light seats all nine over two rounds and dispatches three at a time, medium and heavy seat the same roster, and a light session missing a seat still stops visibly instead of shrinking the council.
+
+## v1.0.60: the hybrid supervisor and the queue operation producer land together (HYBRID-1060)
+
+In plain English: this release adds the two halves of the hybrid council, landed as one batch. The supervisor decides which seats answer and in what order under the version 2 policy; the producer turns that decision into the queued work the runtime actually runs. Nothing about the existing council changes: both pieces are new files, and every earlier behaviour is untouched.
+
+- The hybrid supervisor ships under `scripts/supervisor/hybrid/` with its own `package.json`, `supervisor.mjs`, a test file, and the version 2 supervisor policy document (`wise-elders.hybrid-supervisor-policy/v2`). Its own suite passes 18 of 18.
+- The queue operation producer ships as `runtime/src/queue/operation-producer.ts` with its test file, turning a council decision into an operation the queue can run. Its own suite passes 6 of 6.
+- Packaging: `manifest.json` and the `.skill` archive are rebuilt once over both unit heads, and the version markers (`skill-version.txt`, `version`, and the `SKILL.md` frontmatter) all read 1.0.60.
+
 ## v1.0.59: the packaged copy is proven against the release, never against its own claims (TREEGATE-REPAIR)
 
 In plain English: 1.0.58 started accepting a packaged copy of the council as "the same release" as the copy being updated. The review that followed found the check was asking the packaged copy to vouch for itself: anything it wrote about itself was believed. A copy that shared no files with the release at all could be accepted by filling in its own paperwork. This release makes the release do the vouching.

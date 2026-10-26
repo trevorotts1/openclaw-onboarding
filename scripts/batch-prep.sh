@@ -7,7 +7,10 @@
 #      not 23-ai-workforce-blueprint) whose content differs from the base but
 #      whose skill-version.txt does not -> patch-bump skill-version.txt, keep
 #      the SKILL.md frontmatter `version:` equal to it (skill-frontmatter-version
-#      guard) and keep the trailing newline (skill-version-newline guard).
+#      guard), keep the trailing newline (skill-version-newline guard), and move
+#      every other in-tree stamp that still holds the old value (VERSION,
+#      skill.json, registration.json, launcher_core/constants.py) so the skill's
+#      own lockstep gate cannot see a split release.
 #   2. Library lockstep: register-library-additions.py, hash-content-manifest.py
 #      and hash-universal-sops-manifest.py are re-run ONLY when their --check
 #      fails (the stampers rewrite timestamps, so unconditional runs are not
@@ -61,6 +64,44 @@ if m:
         open(p, 'w', newline='').write(head2 + t[fm_end:])
 PY
   fi
+  # Every other version record the skill's own gate compares must move too, or
+  # the release ships split: 71's test_version_lockstep reads VERSION, 83's
+  # test_version_cli_parity reads skill.json, registration.json and
+  # launcher_core/constants.py. Only rewrite a record that still holds the
+  # pre-bump value, so this stays idempotent and never touches unrelated text.
+  python3 - "$s" "$old" "$new" <<'PY'
+import re, sys
+from pathlib import Path
+
+root, old, new = Path(sys.argv[1]), sys.argv[2].lstrip('vV'), sys.argv[3].lstrip('vV')
+changed = []
+
+p = root / 'VERSION'
+if p.is_file():
+    t = p.read_text(encoding='utf-8')
+    if t.strip().lstrip('vV') == old:
+        p.write_text(new + ('\n' if t.endswith('\n') else ''), encoding='utf-8')
+        changed.append(p)
+
+for name, pattern in (
+    ('skill.json', r'("version"\s*:\s*")' + re.escape(old) + r'(")'),
+    ('registration.json', r'("version"\s*:\s*")' + re.escape(old) + r'(")'),
+    ('launcher_core/constants.py', r'(SKILL_VERSION\s*=\s*["\'])' + re.escape(old) + r'(["\'])'),
+):
+    p = root / name
+    if not p.is_file():
+        continue
+    with open(p, encoding='utf-8', newline='') as fh:
+        t = fh.read()
+    t2, n = re.subn(pattern, lambda m: m.group(1) + new + m.group(2), t, count=1)
+    if n:
+        with open(p, 'w', encoding='utf-8', newline='') as fh:
+            fh.write(t2)
+        changed.append(p)
+
+for p in changed:
+    print("batch-prep: %s %s -> %s" % (p, old, new))
+PY
   echo "batch-prep: $s skill-version $old -> $new"
   bumped=$((bumped + 1))
 done
