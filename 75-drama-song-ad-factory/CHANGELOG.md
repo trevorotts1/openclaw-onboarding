@@ -4,6 +4,30 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.115 - 2026-10-26 - G3 re-bump: S75-T21, S75-T34, S75-T39 batch
+
+- **G3 re-bump only.** Main advanced its own `skill-version.txt` to v2.9.114, the
+  same value this branch had already taken, so after the branch was brought up to
+  date with main the bump no longer appeared in the diff against the merge base
+  and the G3 guard ("skill content change requires skill-version.txt bump") failed.
+  This patch raises the version to one level above main so the bump is visible to
+  G3. No skill code changed in this commit.
+
+## v2.9.114 - 2026-10-26 - S75-T21, S75-T34, S75-T39 batch
+
+- **S75-T21 — music styles: Pop Rock, Reggaeton and Country Rap recipes.** Three
+  style recipes land on the current main (r2), with a deterministic recipe test
+  file and the attempt-1 artefact amended with the resolved head. `suno_recipe`
+  carries the recipe parameters through to the Suno createTask contract.
+- **S75-T34 — supervisor policy adapter.** Detect, stop, isolate, reconcile and
+  activate across a bounded policy surface, with 100+ deterministic cases.
+- **S75-T39 — one hygiene facet per repository event, never a global sweep.**
+  Facet dispatch routes a single event to a single facet, with its own
+  deterministic test file.
+- The same diff also carries **S75-T16** — the character-library sync protocol
+  (ids, bounded retry, revisions, conflicts, offline snapshots) and its 31
+  deterministic cases.
+
 ## v2.9.110 - 2026-10-24 - governed production admission
 
 Production entrypoints and paid dispatch require authoritative intake, the
