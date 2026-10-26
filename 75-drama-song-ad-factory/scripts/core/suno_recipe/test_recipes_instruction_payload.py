@@ -7,9 +7,11 @@ on every music_styles id seam but never reached instruction consumption:
 read only the three D18 ids), and ``style_text``/``music_block`` refused them
 with PROMPT_TEMPLATE_UNREADABLE (no ``references/prompt-templates/music/<id>.json``).
 
-This test proves the end-to-end route for the one style whose per-style template
-data now exists. It is deliberately narrow: the other three still lack their
-template file, and this file must not pretend otherwise.
+This test proves the end-to-end route for all four S75-T22 recipes: the
+S75-T22 class repair adds the three missing per-style template files
+(``musical-theater.json``, ``contemporary-gospel.json``,
+``urban-gospel.json``) beside the r3 file, so every recipe of the row
+reaches ``build_request``.
 
     python3 scripts/core/suno_recipe/test_recipes_instruction_payload.py
     python3 -m pytest scripts/core/suno_recipe/test_recipes_instruction_payload.py
@@ -27,6 +29,9 @@ if CORE not in sys.path:
 import suno_recipe as R          # noqa: E402
 
 STYLE = "cinematic-orchestral-song"
+#: S75-T22 class repair: the other three recipes of the row, each with its
+#: own references/prompt-templates/music/<id>.json now.
+OTHER_STYLES = ("musical-theater", "contemporary-gospel", "urban-gospel")
 CLIENT = "I am not small. I never was. One seed of truth made me strong."
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 HOOK_PLAN = {"true_at_beat": "the_world"}
@@ -71,6 +76,24 @@ class RegisteredStyleInstructionPayload(unittest.TestCase):
         with self.assertRaises(R.RecipeError) as ctx:
             R.prepare("brand-new-style", sheet(), CLIENT, 58)
         self.assertEqual(ctx.exception.code, "UNKNOWN_STYLE")
+
+    def test_all_four_row_styles_build_the_provider_request(self):
+        """S75-T22 class repair: the row's four, not only the first fixed."""
+        for sid in (STYLE,) + OTHER_STYLES:
+            req = R.build_request(sid, sheet(), CLIENT, "T", 58,
+                                  hook_plan=HOOK_PLAN)
+            self.assertEqual(R.check_envelope(req), [], sid)
+            inp = req["input"]
+            self.assertTrue(inp["style"], sid)
+            self.assertLessEqual(len(inp["style"]), 1000, sid)
+            self.assertTrue(inp["lyrics"], sid)
+            self.assertIn("band keeps playing", inp["style"].lower(), sid)
+            self.assertIn("The lead SPEAKS", inp["style"], sid)
+            # The client-only references never reach outbound text.
+            for alias in ("Adele", "Idina Menzel", "Cynthia Erivo",
+                          "Kirk Franklin"):
+                text_all = (inp["style"] + " " + inp["negative_tags"]).lower()
+                self.assertNotIn(alias.lower(), text_all, sid)
 
 
 if __name__ == "__main__":
