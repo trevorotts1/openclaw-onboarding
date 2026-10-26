@@ -139,8 +139,8 @@ def _look_links():
 
 def _musics():
     from music_styles import music_styles as MS
-    return _menu(list(_MUSIC_SENTENCE), {k: MS.STYLES[k]["label"] for k in _MUSIC_SENTENCE},
-                 _MUSIC_SENTENCE)
+    labels = {k: MS.style(k)["label"] for k in _MUSIC_SENTENCE}
+    return _menu(list(_MUSIC_SENTENCE), labels, _MUSIC_SENTENCE)
 
 
 def _usd(x):

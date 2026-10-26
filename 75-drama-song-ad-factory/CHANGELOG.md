@@ -4,6 +4,15 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.116 - 2026-10-26 - G3 re-bump: S75-T11, S75-T16, S75-T17, S75-T26, S75-T36 batch
+
+- **G3 re-bump only.** Main advanced its own `skill-version.txt` to v2.9.115,
+  the same value this branch had already taken, so after the branch was brought up
+  to date with main the bump no longer appeared in the diff against the merge base
+  and the G3 guard ("skill content change requires skill-version.txt bump") failed.
+  This patch raises the version to one level above main (v2.9.116) so the bump is
+  visible to G3. No skill code changed in this commit.
+
 ## v2.9.115 - 2026-10-26 - G3 re-bump: S75-T21, S75-T34, S75-T39 batch
 
 - **G3 re-bump only.** Main advanced its own `skill-version.txt` to v2.9.114, the
