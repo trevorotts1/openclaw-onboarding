@@ -506,7 +506,21 @@
    "ai.blackceo.pb-eng-loop-pbb220.plist"
   ],
   "state_db": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
-  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist"
+  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
+  "corpus_status": {
+   "observed_at": "2026-10-26T16:16Z",
+   "observer": "T-05 QC+FIX lane PBB-780, existence check of the exact cited path strings (positive control: the two cited /Volumes paths that do exist return TRUE on the same instrument)",
+   "cited_paths": 20,
+   "missing_paths": 18,
+   "surviving_paths": 2,
+   "missing_examples": [
+    "scratch/pb-skill38-20261024/T-05/PROOF.md (generations 1 and 2 of the production label)",
+    "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof (the whole corpus directory)",
+    "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
+    "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist"
+   ],
+   "consequence": "The PBB-220 proof corpus cited above no longer exists on this host; those citations are historical authoring evidence, not live proof. The acceptance rows were re-earned at unit head 3ea3c0f19dd04373871d8cf973a01a5c4a02f756 by an isolated launchd proof run (lane PBB-696, 2026-10-26T02:47Z) and re-run by lane PBB-780 on 2026-10-26; both receipts live outside this repository."
+  }
  },
  "unknowns": [
   {
