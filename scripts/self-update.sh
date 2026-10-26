@@ -434,16 +434,30 @@ if [ -f "$_bul_self_dir/box-update-lock.sh" ]; then
     exit "$EX_REFUSE"
   fi
 else
-  if ( set -o noclobber; printf 'pid=%s run_id=%s role=self-update utc=%s\n' "$$" "$RUN_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$BUL_LEASE" ) 2>/dev/null; then
+  # Same record shape as box-update-lock.sh, so a helper-present writer and this
+  # box-only copy see each other: liveness is decided by the RECORD (pid + start
+  # identity), never by the file's mere existence. A LIVE owner means REFUSE.
+  _bul_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//'; }
+  _bul_rec() {
+    printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=self-update\ninstall_path=%s\nutc=%s\n' \
+      "$$" "$(_bul_start $$)" "$RUN_ID" "${OPENCLAW_ROOT:-$HOME/.openclaw}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  }
+  _bul_live() {
+    _bp="$(sed -n 's/^pid=\([0-9]*\).*/\1/p' "$BUL_LEASE" 2>/dev/null | head -1)"
+    _bs="$(sed -n 's/^start=//p' "$BUL_LEASE" 2>/dev/null | head -1)"
+    [ -n "$_bp" ] || return 1
+    kill -0 "$_bp" 2>/dev/null || return 1
+    if [ -n "$_bs" ]; then [ "$(_bul_start "$_bp")" = "$_bs" ] || return 1; fi
+    return 0
+  }
+  if ( set -o noclobber; _bul_rec > "$BUL_LEASE" ) 2>/dev/null; then
     _bul_inline=1
+  elif _bul_live; then
+    echo "self-update.sh: REFUSED — shared installation lease held by live pid $_bp — no retry, no second writer" >&2
+    exit "$EX_REFUSE"
   else
-    _bul_pid="$(sed -n 's/^pid=\([0-9]*\).*/\1/p' "$BUL_LEASE" 2>/dev/null | head -1)"
-    if [ -n "$_bul_pid" ] && kill -0 "$_bul_pid" 2>/dev/null; then
-      echo "self-update.sh: REFUSED — shared installation lease held by live pid $_bul_pid — no retry, no second writer" >&2
-      exit "$EX_REFUSE"
-    fi
     rm -f "$BUL_LEASE" 2>/dev/null
-    if ( set -o noclobber; printf 'pid=%s run_id=%s role=self-update utc=%s\n' "$$" "$RUN_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$BUL_LEASE" ) 2>/dev/null; then
+    if ( set -o noclobber; _bul_rec > "$BUL_LEASE" ) 2>/dev/null; then
       _bul_inline=1
     else
       echo "self-update.sh: REFUSED — cannot take shared installation lease $BUL_LEASE" >&2
