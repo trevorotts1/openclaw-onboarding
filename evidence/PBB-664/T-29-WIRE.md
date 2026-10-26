@@ -320,17 +320,21 @@ reminders 54 cases). No full-repo suite was run.
 |---|---|---|
 | measured against | `c994359d6329b6f958c217ee455b40cfb8a0543c` | `origin/main` after `git fetch origin main` |
 | base at branch creation | `3d7135664326eeb7857252afcad5506c1381c3d5` | the T-25 merge; still an ancestor of the reported head (`git merge-base --is-ancestor` rc 0) |
-| reported head | `ef7a70d2166cf2ff31d4d9805ee7c8fbf5ee75d1` | wire commit `2d06167b1` + freshness merge |
+| wiring commit | `2d06167b1c2161586241a2109571c9f6f5d85e62` | call site + exactly one CI step |
+| freshness fold | `ef7a70d2166cf2ff31d4d9805ee7c8fbf5ee75d1` | `merge: fold origin/main (c994359d6) into the T-29 wire branch (PBB-664)` |
+| branch tip | `pb/PBB-664/t-29` (report commits on top of `ef7a70d21`) | read with `git rev-parse origin/pb/PBB-664/t-29` |
 
-True ahead/behind against **current** `origin/main` at report time:
+True ahead/behind against **current** `origin/main`:
 
 ```
 git rev-list --left-right --count origin/main...HEAD
-0	2
+0	3
 ```
 
-behind **0**, ahead **2** (the wiring commit and the fold merge). The 40 commits that
-landed on main between `3d7135664` and `c994359d6` do not touch either changed file
+behind **0**, ahead **3** (wiring commit, fold merge, and the evidence commits).
+The count was `0 2` at the moment the wiring was measured (`ef7a70d21`); the third
+commit is this report and touches no production file. The 40 commits that landed on
+main between `3d7135664` and `c994359d6` do not touch either changed file
 (`git diff --stat 3d7135664..origin/main -- shared-utils/reminders/reminder_state_machine.py
 .github/workflows/qc-static.yml` → empty).
 
