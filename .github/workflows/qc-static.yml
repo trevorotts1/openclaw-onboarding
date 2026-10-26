@@ -3205,3 +3205,30 @@ jobs:
           set -uo pipefail
           bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh
           echo "✓ T-24 pb-contracts suite green (qc-pb-contracts.sh)"
+
+      # T-13 direct original fulfillment (R-10/R-12, C-13, C-F04, C-F07, C-F09).
+      # No step named this suite, so the T-13 module and its 16 offline contract
+      # tests could regress with every gate still green. Wired BY EXPLICIT PATH,
+      # the same explicit-name pattern as the T-22 and T-15 steps: the only
+      # test_*.py discovery loop in this workflow is scoped to
+      # 75-drama-song-ad-factory/scripts/core and cannot reach
+      # 38-conversational-ai-system/tools/tests. The path is DRY-LISTed before
+      # execution and an absent checkout SKIPs LOUDLY rather than passing.
+      # stdlib unittest only: no install, no network, no browser.
+      - name: T-13 direct original fulfillment suite (explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_direct_fulfillment.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-13 direct fulfillment suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 -I "$t"
+          python3 -I 38-conversational-ai-system/tools/direct_fulfillment.py
+          echo "✓ T-13 direct original fulfillment suite ran and passed"
