@@ -1,0 +1,71 @@
+{
+  "style_id": "folk-storytelling",
+  "label": "Folk Storytelling",
+  "description": "intimate, detail-rich storytelling over simple acoustic instruments.",
+  "catalog_revision": "2026-10-24",
+  "recipe_revision": "1.0.0",
+  "deliveries": ["spoken", "sung"],
+  "client_references": {
+    "artists": ["Tracy Chapman", "Bob Dylan"],
+    "explanation": "Spare acoustic narrative where concrete detail and a changing refrain carry the story."
+  },
+  "production_traits": {
+    "musical_identity": "spare folk storytelling over a picked acoustic guitar, intimate unvarnished vocal and a short refrain whose meaning changes as the story turns",
+    "instrumentation": [
+      "spare picked acoustic guitar as the whole foundation",
+      "optional upright bass entering late",
+      "light shaker or brushed frame drum",
+      "small harmonica or mandolin answer between verses"
+    ],
+    "avoided_instrumentation": [
+      "polished stadium-pop drop",
+      "trap hi-hat rolls",
+      "dense group vocal stack",
+      "synthesizer pad bed"
+    ],
+    "rhythm": "narrative fingerpicking, unhurried 4/4 or a deliberate 6/8 only where the approved line rhythm supports it",
+    "tempo": {
+      "min_bpm": 68,
+      "max_bpm": 100,
+      "meter": "4/4 or 6/8",
+      "note": "tempo serves the spoken phrase and the detail in the line, never the reverse"
+    },
+    "vocal_delivery": "direct, unvarnished lead with plain diction; character-specific language carries the weight, dry upfront vocal",
+    "energy_map": {
+      "consequence": "picked guitar alone under the spoken consequence",
+      "obstacle": "concrete visible detail accumulates, accompaniment stays minimal",
+      "choice": "silence or reduced accompaniment marks the emotional turn",
+      "change": "modest bass or one voice of harmony enters on the actual change",
+      "hook": "the short refrain returns with changed meaning after the choice",
+      "cta": "refrain closes on the single CTA with the guitar exposed"
+    },
+    "hook_guidance": "short recurring refrain whose meaning changes as choices accumulate; no forced big chorus every few lines",
+    "spoken_sung_split": "spoken passages are deliberate narration, story verses are sung, the refrain is clearly tagged; no rap passages",
+    "delivery_constraints": "no imitation of a particular singer's rasp, accent or phrasing; preserve the client's own language, accent and diction",
+    "word_fit": "longer lines still need complete breaths; choose specific detail over explanatory paragraphs; extra duration earns more consequential beats, not adjective lists",
+    "mood_policy": "story_selected",
+    "story_energy": "quiet and cumulative; intensity comes from specifics and consequence, not from arrangement size",
+    "duration_guidance": {
+      "60": "one scene, one turn and the changed refrain inside the CTA",
+      "90": "two concrete details, one causal turn, refrain returns changed",
+      "120": "three-beat story with a spoken bridge and one instrumental answer",
+      "180": "add a second location and an object that pays off in the refrain",
+      "300": "four consequential beats, one harmonica or mandolin answer, refrain meaning shifts twice",
+      "600": "long-form narrative with earned developments and a final refrain that resolves the CTA; no repeated filler"
+    },
+    "examples": [
+      "Describe the flour on a returned apron and the unopened letter; the final refrain changes when the letter is read."
+    ]
+  },
+  "section_hint": "[Verse] narrated detail, [Refrain] meaning changes, [Verse] consequence, [Refrain] resolved",
+  "negative_constraints": [
+    "no stadium-pop production lift",
+    "no trap percussion",
+    "no dense stacked vocals",
+    "no performer imitation or invented accent"
+  ],
+  "test_ids": [
+    "test_folk_storytelling_compiles_sparse_narrative_traits",
+    "test_folk_refrain_guidance_changes_meaning"
+  ]
+}
