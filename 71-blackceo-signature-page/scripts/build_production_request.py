@@ -37,10 +37,12 @@ place of --manuscript.
 Usage:
   build_production_request.py --copy-version upsell --page-role upsell_1 --copy-json copy-upsell_1.json \
       --bundle bundle-upsell_1.json --stage visual-mockup --out <run_dir>/production-request.json
-  build_production_request.py [--page-role checkout] --copy-version standard|long-form|product-selection|thank-you \
+  build_production_request.py [--page-role checkout] --copy-version standard|long-form \
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
       --out <run_dir>/production-request.json [--page-kind sales|opt_in] [--slots slots.json] \\
       [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT]
+  build_production_request.py --copy-version product-selection|thank-you [--page-role that role] \
+      --manuscript ... --stage ... --out ...   (omitted --page-role stamps the form's own role)
 
   slots.json:  {"<canonical section id>": [{"slot_id", "aspect_ratio", "art_direction"}]}
   prose.json:  {"notes": str, "traits": str, "rules_md": str, "rules_json": str}
@@ -306,9 +308,12 @@ def section_fragments(stage, section, index, sections, spec, table, kind=None):
     forbidden = {exe.canon_section_id(x) for x in (spec.get("cta_map", {}).get("forbidden_in_sections") or [])}
     closing = page_kinds.closing_label(kind, section, sections, index, n)  # SPF030
     if len(many) > 1:
-        place = ("one inside each package card in card order" if
-                 spec_section.get("cta", {}).get("standalone") == "per_card" else
-                 "each utility action its own button, filled first then outlined")
+        if section.get("cta_layout") == "utility":
+            note = str(section.get("cta_note") or "").strip().rstrip(".")
+            place = (note[0].lower() + note[1:] if note else
+                     "each utility action its own button, the first filled and the rest outlined")
+        else:
+            place = "one inside each package card in card order"
         out.append(f"BUTTON: this section carries exactly {len(many)} buttons, {place}, "
                    "labelled " + ", ".join(f'"{x}"' for x in many) +
                    "; no other button, link row or sticky bar.")
@@ -483,15 +488,28 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None) 
     role_page = bool(spec.get("page_role"))
     entries = {e["id"]: e for e in spec["sections"]}
     kids = page_role.child_names(spec)
+    # A page type whose spec forbids offer buttons carries utility actions only (support,
+    # access, manage purchase): its `rules.offer_buttons` says so.
+    rules = spec.get("rules") if isinstance(spec.get("rules"), dict) else {}
+    utility_page = rules.get("offer_buttons") == "forbidden"
     out = []
     for sid in sequence:
         copy, buttons = section_copy([u for u in units if u.section == sid])
         spec_section = entries.get(sid, {})
-        per_card = spec_section.get("cta", {}).get("standalone") == "per_card"
-        # A page type whose spec forbids offer buttons carries utility actions only (support,
-        # access, manage purchase): its spec decides multiplicity, and the labels are kept.
-        rules = spec.get("rules") if isinstance(spec.get("rules"), dict) else {}
-        utility = rules.get("offer_buttons") == "forbidden"
+        # The spec's own multiplicity, from its `cta.standalone` declaration: "forbidden" allows
+        # no button at all, "per_card" one button per package card (the spec's `min` is the
+        # floor), and "optional" on a utility page carries its utility actions side by side.
+        # Everything else is landing's one button.
+        cta_rule = spec_section.get("cta") if isinstance(spec_section.get("cta"), dict) else {}
+        standalone = cta_rule.get("standalone")
+        per_card = standalone == "per_card"
+        utility = standalone == "optional" and utility_page
+        if buttons and standalone == "forbidden":
+            raise BuildError(f"section {sid}: {len(buttons)} CTA buttons {buttons}; the "
+                             f"{spec_label(spec)} forbids a button in this section")
+        if per_card and cta_rule.get("min") and len(buttons) < int(cta_rule["min"]):
+            raise BuildError(f"section {sid}: the {spec_label(spec)} needs at least {cta_rule['min']} "
+                             f"package buttons, one per card; the manuscript carries {len(buttons)}")
         if len(buttons) > 1 and not (per_card or utility):
             raise BuildError(f"section {sid}: {len(buttons)} CTA buttons {buttons}; "
                              "one button per section")
@@ -504,6 +522,14 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None) 
                  "slots": slots.get(sid) or (spec_slots(spec_section, style_id) if role_page else [])}
         if per_card or len(buttons) > 1:  # one per package card, or the page type's own utility actions
             entry["cta_labels"] = buttons
+            if utility:
+                # Keep the treatment: the spec's own note says which action is filled and which
+                # are outlined (section 5) or that each access card carries its own (section 3).
+                # Never the landing/product-selection package-card rule, and never a guess.
+                entry["cta_layout"] = "utility"
+                note = str(cta_rule.get("note") or "").strip()
+                if note:
+                    entry["cta_note"] = note
         # a non-landing form's spec pins each section's composition role, ground and behaviour note
         for key, field in (("composition_role", "composition_role"), ("ground", "ground")):
             if spec_section.get(field):
@@ -676,6 +702,13 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         role_form = copy_forms.form_for_role(page_role)  # the one registry: it reads plural page_roles too
         spec = role_spec.load(page_role)
         if spec:
+            # the executor's own rule for a role spec (check_section_count): that role is built
+            # from a landing form's style reference, never from a page type's own form
+            if version and version not in role_spec.FORMS:
+                raise BuildError(
+                    f"--copy-version {version!r} does not fit page role {page_role!r}: that role "
+                    f"is drawn from the {', '.join(role_spec.FORMS)} form (a page type is never "
+                    "forced into another's sections)")
             version = version or spec["form"]
         else:
             if role_form and version and version != role_form:
@@ -717,6 +750,13 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
                 "form; pass --page-role with the role this page runs as (the runner verifies it "
                 "against the bundle)")
         built_role = page_role
+    elif built_role and page_role not in (built_role, "landing"):
+        # "landing" is the documented default (the form's own role is stamped); any other role
+        # must be the form's, never silently overridden by the spec
+        raise BuildError(
+            f"page role {page_role!r} does not serve the {spec['copy_version']} form: that form "
+            f"is the {built_role} page's own (a page type is never forced into another's "
+            "sections)")
     prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
