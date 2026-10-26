@@ -506,6 +506,13 @@ CONTROL_NAMES = [
     "Manny Persons", "Erik Narratorsson", "Mara Bell", "Dr. Amina Osei",
     "Siobhan O'Keefe", "Officer Dan Whitfield", "The Reverend Thomas Hale",
     "A. J. Marchetti", "Renata Cruz-Whitfield", "Ms. Elena Vasquez",
+    # S75-T06 (D-18 option repair).  These four were measured COMPLETE at head and
+    # refused INCOMPLETE_CAST at base: the base tree's curated lexicon lacks the two
+    # entries ('le', 'l\u00ea') that head's real_content_names.txt.gz carries -- the
+    # same entries round 11 shipped at 18280f93c16c (both spellings, both restored by
+    # DATA, nothing re-reads spelling as evidence).  Pinned here through the
+    # production gate so the cast definitions travel with the tree under test.
+    "Le Woman", "Le Manager", "Le Driver", "L\u00ea Woman",
 ]
 
 #: Role descriptions in every casing a dressing can reach. A role description
