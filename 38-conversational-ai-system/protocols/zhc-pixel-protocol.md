@@ -89,8 +89,10 @@ same jq-safe pattern as `15-configure-hooks-mappings.sh`):
 - `deliver: false` (the agent acts via GHL / widget, never echoes the signal back)
 - `messageTemplate`: instructs the agent to evaluate the trigger rules in §4, drop
   bot-like traffic with ZERO model spend, and only engage when a rule fires.
-- A model is set on the mapping (cheap real-time tier — most signals are dropped before
-  any reasoning).
+- A `model` override on the mapping is OPTIONAL (PBB-017 — absent means the agent's
+  own configured model runs the mapping; when present it must be non-blank). Most
+  signals are dropped before any reasoning, so the cheap real-time tier is a
+  recommendation, not a required mapping key.
 
 The hook does NOT reply to the browser with content; it returns `200 {ok:true}` and the
 agent does its work out-of-band (GHL tag/field write, widget directive, email schedule).
