@@ -1,10 +1,20 @@
 /**
- * WER-011 producer tests (unit W01-U003): the canonical durable
- * job/event producer (src/queue/producer.ts) over CWE-006's scoped
- * store, composed like the CWE-027 runner tests: deterministic fake
- * clock, in-file id source, real schema, no live provider calls, no
- * worker acknowledgment, no dispatch, no replay. Those are DEFERRED to
- * the runner units and are never claimed here.
+ * WER-011 receipted-producer tests (unit W01-U003) for
+ * src/queue/operation-producer.ts (OperationProducer, the
+ * OperationAdmissionReceipt producer) over CWE-006's scoped store,
+ * composed like the CWE-027 runner tests: deterministic fake clock,
+ * in-file id source, real schema, no live provider calls, no worker
+ * acknowledgment, no dispatch, no replay. Those are DEFERRED to the
+ * runner units and are never claimed here.
+ *
+ * The sibling producer (src/queue/producer.ts, DurableOperationProducer)
+ * is NOT tested here; it keeps its own producer.test.ts. The final test
+ * in this file only proves that the queue barrel exports both.
+ *
+ * Wiring note: `npm test` runs tests/*.test.ts and
+ * tests/scenarios/*.test.ts, so this file (under src/queue) is NOT in
+ * that glob. Run it directly:
+ *   node --import tsx --test src/queue/operation-producer.test.ts
  *
  * Required coverage:
  * - duplicate admission under one idempotency key creates exactly
@@ -13,9 +23,15 @@
  *   write;
  * - a losing concurrent duplicate returns the committed matching
  *   receipt;
- * - queued-without-job is rejected as invalid admission;
+ * - queued-without-job is rejected as invalid admission, and the
+ *   reconcile readmit branch resolves it into a live operation;
  * - attempt_ordinal survives restart;
- * - a stale lease_generation cannot commit.
+ * - a stale lease_generation cannot commit;
+ * - an explicit null clears a nullable receipt field while an omitted
+ *   one stays unchanged;
+ * - potentially_dispatched and response_observed persist and read back
+ *   distinctly;
+ * - the queue barrel exports both producers.
  */
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -24,6 +40,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   canonicalHash,
+  canonicalStringify,
   type RunCeilings,
   type ScopeFields,
   type SeatId,
@@ -491,4 +508,314 @@ test('a stale lease_generation cannot commit', () => {
     provider_request_id: 'prov-req-3',
   });
   assert.equal(forged.committed, false);
+});
+
+// --------------------------------------------- reconciliation (readmit)
+
+/** DRAFT -> READY -> QUEUED with no operation job: the historical break. */
+function queuedWithoutJobSession(
+  ctx: Composition,
+  sessionId: string,
+): { session: StoredSession; envelope: AuthorizationEnvelope } {
+  const s = scope();
+  const session = storedSession(sessionId, s);
+  const envelope = ownerEnvelope(s);
+  ctx.repositories.createSession(envelope, session);
+  let version = 0;
+  for (const to of ['READY', 'QUEUED'] as const) {
+    ctx.repositories.transitionState(envelope, session.spec.session_id, to, version);
+    version += 1;
+  }
+  return { session, envelope };
+}
+
+function operationRows(
+  ctx: Composition,
+  envelope: AuthorizationEnvelope,
+  sessionId: string,
+): { id: string; state: string; payload_json: string }[] {
+  return ctx.db.read((handle) =>
+    handle
+      .prepare(
+        `SELECT id, state, payload_json FROM council_jobs
+          WHERE tenant_id = ? AND company_id = ? AND session_id = ? AND kind = 'operation'
+          ORDER BY id`,
+      )
+      .all(envelope.tenant_id, envelope.company_id, sessionId),
+  ) as { id: string; state: string; payload_json: string }[];
+}
+
+function countRows(ctx: Composition, sql: string, ...params: unknown[]): number {
+  const row = ctx.db.read((handle) => handle.prepare(sql).get(...params)) as { n: number };
+  return row.n;
+}
+
+test('readmit resolves a queued-without-job session into one live operation', () => {
+  const setup = setupReadySession('readmit');
+  const { session: broken, envelope } = queuedWithoutJobSession(setup.ctx, 'sess-readmit');
+  const p = producer(setup.ctx);
+  const req = request(setup, { session_id: broken.spec.session_id });
+
+  // The break is real before the repair.
+  assert.equal(operationRows(setup.ctx, envelope, broken.spec.session_id).length, 0);
+
+  const out = p.reconcileQueuedWithoutJob(
+    envelope,
+    { session_id: broken.spec.session_id },
+    { action: 'readmit', request: req },
+  );
+  assert.equal(out.reconciled, true);
+  assert.equal(out.detail.action, 'readmit');
+  assert.equal(out.detail.jobs_present, false);
+  assert.equal(out.detail.created, true);
+
+  // The repair closes the gap rather than abandoning the queued work.
+  const after = setup.ctx.repositories.getSession(envelope, broken.spec.session_id);
+  assert.ok(after);
+  assert.equal(after.state.state, 'QUEUED');
+  assert.equal(after.state.state_version, 2);
+
+  // Exactly one durable operation job, queued, with its receipt.
+  const rows = operationRows(setup.ctx, envelope, broken.spec.session_id);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].state, 'queued');
+  const receipt = p.getReceipt(envelope, {
+    session_id: req.session_id,
+    attempt: 1,
+    phase_job_key: req.phase_job_key,
+    input_sha256: req.input_sha256,
+  });
+  assert.ok(receipt);
+  assert.equal(out.detail.operation_id, receipt.operation_id);
+  assert.equal(receipt.state, 'queued');
+  assert.equal(receipt.state_label, 'never_dispatched');
+  assert.equal(receipt.attempt_ordinal, 1);
+
+  // The journal event and outbox intent committed in the same unit.
+  assert.equal(
+    countRows(
+      setup.ctx,
+      `SELECT COUNT(*) AS n FROM council_events
+        WHERE tenant_id = ? AND company_id = ? AND session_id = ? AND type = 'operation_reserved'`,
+      envelope.tenant_id,
+      envelope.company_id,
+      broken.spec.session_id,
+    ),
+    1,
+  );
+  assert.equal(
+    countRows(
+      setup.ctx,
+      `SELECT COUNT(*) AS n FROM council_projection_outbox
+        WHERE tenant_id = ? AND company_id = ? AND session_id = ? AND topic = 'operation.admitted'`,
+      envelope.tenant_id,
+      envelope.company_id,
+      broken.spec.session_id,
+    ),
+    1,
+  );
+
+  // Idempotent: a second reconciliation finds the job and writes nothing.
+  const again = p.reconcileQueuedWithoutJob(
+    envelope,
+    { session_id: broken.spec.session_id },
+    { action: 'readmit', request: req },
+  );
+  assert.equal(again.detail.action, 'none');
+  assert.equal(again.detail.jobs_present, true);
+  assert.equal(operationRows(setup.ctx, envelope, broken.spec.session_id).length, 1);
+});
+
+test('readmit refuses a request bound to a different session', () => {
+  const setup = setupReadySession('readmit-mismatch');
+  const { session: broken, envelope } = queuedWithoutJobSession(
+    setup.ctx,
+    'sess-readmit-mismatch',
+  );
+  const p = producer(setup.ctx);
+  assert.throws(
+    () =>
+      p.reconcileQueuedWithoutJob(
+        envelope,
+        { session_id: broken.spec.session_id },
+        { action: 'readmit', request: request(setup) },
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof JobRunnerError);
+      assert.equal(error.code, 'JOB_INVALID_INPUT');
+      assert.equal((error.detail as { session_mismatch?: boolean }).session_mismatch, true);
+      return true;
+    },
+  );
+  // Nothing was written for the target session, and it stays repairable.
+  assert.equal(operationRows(setup.ctx, envelope, broken.spec.session_id).length, 0);
+  const after = setup.ctx.repositories.getSession(envelope, broken.spec.session_id);
+  assert.ok(after);
+  assert.equal(after.state.state, 'QUEUED');
+});
+
+// ------------------------------------------ mutable commits: nulls/labels
+
+test('an explicit null clears a nullable receipt field and an omitted one stays unchanged', () => {
+  const setup = setupReadySession('null-clear');
+  const p = producer(setup.ctx);
+  const req = request(setup);
+  const first = p.admitOperation(setup.envelope, req);
+  assert.ok(first.created);
+  const identity = {
+    session_id: req.session_id,
+    attempt: 1,
+    phase_job_key: req.phase_job_key,
+    input_sha256: req.input_sha256,
+  };
+  const gen = first.receipt.lease_generation;
+  const hash = canonicalHash({ result: 'w01u003' });
+
+  const owned = p.commitMutable(setup.envelope, identity, {
+    expected_lease_generation: gen,
+    lease_owner: 'worker-1',
+    lease_expires_at: '2026-10-14T12:01:00.000Z',
+    provider_request_id: 'prov-1',
+    observed_usage: { input_units: 5, output_units: 7 },
+    accepted_result_hash: hash,
+  });
+  assert.equal(owned.committed, true);
+
+  // Omitted keys leave the committed values alone.
+  const partial = p.commitMutable(setup.envelope, identity, {
+    expected_lease_generation: gen,
+    retry_disposition: 'safe_to_retry',
+  });
+  assert.equal(partial.committed, true);
+  assert.equal(partial.receipt?.lease_owner, 'worker-1');
+  assert.equal(partial.receipt?.lease_expires_at, '2026-10-14T12:01:00.000Z');
+  assert.equal(partial.receipt?.provider_request_id, 'prov-1');
+  assert.deepEqual(partial.receipt?.observed_usage, { input_units: 5, output_units: 7 });
+  assert.equal(partial.receipt?.accepted_result_hash, hash);
+  assert.equal(partial.receipt?.retry_disposition, 'safe_to_retry');
+
+  // Explicit nulls clear every nullable field (the lease-release case).
+  const cleared = p.commitMutable(setup.envelope, identity, {
+    expected_lease_generation: gen,
+    lease_owner: null,
+    lease_expires_at: null,
+    provider_request_id: null,
+    observed_usage: null,
+    accepted_result_hash: null,
+  });
+  assert.equal(cleared.committed, true);
+  assert.equal(cleared.receipt?.lease_owner, null);
+  assert.equal(cleared.receipt?.lease_expires_at, null);
+  assert.equal(cleared.receipt?.provider_request_id, null);
+  assert.equal(cleared.receipt?.observed_usage, null);
+  assert.equal(cleared.receipt?.accepted_result_hash, null);
+
+  // The clears are durable, not just the returned object.
+  const reread = p.getReceipt(setup.envelope, identity);
+  assert.ok(reread);
+  assert.equal(reread.lease_owner, null);
+  assert.equal(reread.lease_expires_at, null);
+  assert.equal(reread.provider_request_id, null);
+  assert.equal(reread.observed_usage, null);
+  assert.equal(reread.accepted_result_hash, null);
+});
+
+test('potentially_dispatched and response_observed persist and read back distinctly', () => {
+  const setup = setupReadySession('labels');
+  const p = producer(setup.ctx);
+  const req = request(setup);
+  const first = p.admitOperation(setup.envelope, req);
+  assert.ok(first.created);
+  const identity = {
+    session_id: req.session_id,
+    attempt: 1,
+    phase_job_key: req.phase_job_key,
+    input_sha256: req.input_sha256,
+  };
+  const gen = first.receipt.lease_generation;
+
+  // Admission starts never_dispatched, in the receipt and from the reader.
+  assert.equal(first.receipt.state, 'queued');
+  assert.equal(first.receipt.state_label, 'never_dispatched');
+  assert.equal(p.stateLabel(setup.envelope, identity), 'never_dispatched');
+
+  const potential = p.commitMutable(setup.envelope, identity, {
+    expected_lease_generation: gen,
+    state: 'potentially_dispatched',
+  });
+  assert.equal(potential.committed, true);
+  assert.equal(potential.receipt?.state, 'leased'); // canonical JobState
+  assert.equal(potential.receipt?.state_label, 'potentially_dispatched');
+  assert.equal(p.stateLabel(setup.envelope, identity), 'potentially_dispatched');
+
+  const observed = p.commitMutable(setup.envelope, identity, {
+    expected_lease_generation: gen,
+    state: 'response_observed',
+  });
+  assert.equal(observed.committed, true);
+  assert.equal(observed.receipt?.state, 'leased'); // same JobState, distinct label
+  assert.equal(observed.receipt?.state_label, 'response_observed');
+  assert.equal(p.stateLabel(setup.envelope, identity), 'response_observed');
+
+  // Durable: a fresh read of the committed receipt reports the label.
+  const reread = p.getReceipt(setup.envelope, identity);
+  assert.ok(reread);
+  assert.equal(reread.state_label, 'response_observed');
+
+  // A legacy receipt (no state_label, admitted before the field
+  // existed) falls back to the durable rows, exactly as before.
+  setup.ctx.db.write((handle) => {
+    const row = handle
+      .prepare(
+        `SELECT payload_json FROM council_jobs
+          WHERE tenant_id = ? AND company_id = ? AND idempotency_key = ?`,
+      )
+      .get(
+        setup.envelope.tenant_id,
+        setup.envelope.company_id,
+        reread.operation_id,
+      ) as { payload_json: string };
+    const payload = JSON.parse(row.payload_json) as {
+      receipt: Record<string, unknown>;
+    };
+    delete payload.receipt.state_label;
+    handle
+      .prepare(
+        `UPDATE council_jobs SET payload_json = ?
+          WHERE tenant_id = ? AND company_id = ? AND idempotency_key = ?`,
+      )
+      .run(
+        canonicalStringify(payload),
+        setup.envelope.tenant_id,
+        setup.envelope.company_id,
+        reread.operation_id,
+      );
+  });
+  assert.equal(p.stateLabel(setup.envelope, identity), 'never_dispatched');
+
+  // A terminal job row stays the newest truth for the reader.
+  setup.ctx.db.write((handle) => {
+    handle
+      .prepare(
+        `UPDATE council_jobs SET state = 'succeeded', updated_at = ?
+          WHERE tenant_id = ? AND company_id = ? AND idempotency_key = ?`,
+      )
+      .run(
+        nowIso,
+        setup.envelope.tenant_id,
+        setup.envelope.company_id,
+        reread.operation_id,
+      );
+  });
+  assert.equal(p.stateLabel(setup.envelope, identity), 'accepted');
+});
+
+// --------------------------------------------------------- barrel wiring
+
+test('the queue barrel exports both producers', async () => {
+  const barrel = await import('../queue/index.js');
+  assert.equal(typeof barrel.OperationProducer, 'function');
+  assert.equal(typeof barrel.DurableOperationProducer, 'function');
+  assert.notEqual(barrel.OperationProducer, barrel.DurableOperationProducer);
+  assert.equal(typeof barrel.RECEIPT_STATE_TO_JOB_STATE, 'object');
 });
