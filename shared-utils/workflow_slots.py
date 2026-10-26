@@ -32,7 +32,7 @@ from pathlib import Path
 
 # Default chain per role. NOT a permitted set: any route the caller names is
 # accepted (A47), so a route outside this map can never be blocked.
-ROUTES = {"builder": "opus-chain", "reviewer": "sonnet-chain", "merge_operator": "haiku-chain"}
+ROUTES = {"builder": "deepseek-chain", "reviewer": "sonnet-chain", "merge_operator": "haiku-chain"}
 # The harness writes agent-<agent_id>.meta.json (model= the route the agent
 # ACTUALLY ran on) under these roots, at:
 #   <root>/<slug>/<session>/subagents/workflows/<session_ref-prefix>/agent-<agent_id>.meta.json

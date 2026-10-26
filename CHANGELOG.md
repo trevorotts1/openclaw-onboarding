@@ -1,3 +1,11 @@
+## [Unreleased]  -  2026-10-26  -  Skill 75 batch merge: 13 units from wave-2 and wave-3 consolidated into one branch
+
+- Lands the 13 accepted S75 units on one branch, `batch/s75-all-13`, instead of two separately-refreshing wave branches, because each wave refresh restarted the 18-22 minute gate suite while `main` moved and neither wave could land.
+- Units, each proven an ancestor of the branch tip: S75-T11 `71d8c1cf4`, S75-T16 `8d7487b2a`, S75-T17 `7512670a6`, S75-T26 `af6ff2af2`, S75-T36 `5fc1d31c3`, S75-T07 `e320b7d5f`, S75-T09 `cc2f9852d`, S75-T12 `5087ad89b`, S75-T15 `f944f0aee`, S75-T22 `a00c36c14`, S75-T28 `7c311bc76`, S75-T33 `67ed13601`, S75-T41 `58eddfb88`.
+- In plain English: thirteen pieces of Skill 75 that had already passed review but could not get merged are now in one package, with the review trail for each one intact and no history rewritten.
+- Skill 75 `skill-version.txt` and `SKILL.md` frontmatter both read `v2.9.116`, one patch above `main`'s `v2.9.115`, so G3 (skill content changed without a version change) is satisfied.
+- Risk level: LOW — merges of already-reviewed unit branches only; no hand edits inside unit code.
+
 ## [Unreleased]  -  2026-10-25  -  PBB-325 / T-05 repair 2: the engineering loop reads PB_* configuration at use time, and malformed stop/payload input is refused
 
 - Repair of verifier PBB-279's FAIL on `e7f5d98a` (T-05). `CONTROL/eng_loop.py` no longer captures `PB_STATE_DIR` / `PB_LABEL` / `PB_PLIST` / `PB_TMP` / `PB_CACHE` at import: the owner-handler child and the launchd job read the runtime environment, so an isolated proof no longer writes the production store. Three guards that could not fire now refuse: a `--run-id` flag with no value, an out-of-range `--generation`, and a malformed `--payload` / `--body`.

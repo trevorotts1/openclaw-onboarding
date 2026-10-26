@@ -474,6 +474,22 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   session, the box-wide lock, the lease, the TTL, the pool ceiling, the
   circuit-breaker, and a guaranteed `trap _bm_teardown EXIT`; the hourly host
   reaper `scripts/agent-browser-reaper.sh` is the backstop for a hard crash.
+  THAT BACKSTOP ONLY EXISTS IF THE CRON IS ENABLED, not merely registered:
+  verify with `bash scripts/check-agent-browser-reaper-schedule.sh`, which
+  reads the job's `enabled` state (falling back to the computed
+  `status: disabled`) out of the same feature-detected
+  `openclaw cron list --json` query and distinguishes REGISTERED from
+  ENABLED. Exit `0` = registered AND enabled;
+  `1` = absent; `2` = UNKNOWN (presence or enabled-state unreadable); `3` =
+  REGISTERED BUT DISABLED — a loud failure, because a registered
+  `enabled=false` reaper never runs and presence alone is the false-done
+  pattern this check exists to catch. Live status 2026-10-25:
+  `agent-browser-reaper` was `enabled=false`, i.e. exit 3. The check never
+  mutates the registry — re-enabling is a box mutation and requires explicit
+  operator authorization. A silently-vacuous backstop is worse than none:
+  the gateway's own `trap _bm_teardown EXIT` is the primary teardown, and the
+  reaper covers only a hard crash, so treat exit 3 as a real coverage gap
+  rather than a PASS.
 - GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.
   Seed the session logged-in via the Firebase
   refresh token (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) BEFORE
@@ -747,6 +763,25 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > `python3 tools/ghl_github_reconcile.py --sweep-base <dir> --retry`
 > (exit 0 = every run's code is confirmed in GitHub; exit 1 = attention
 > needed on at least one run).
+>
+> **ZERO CANDIDATES IS NOT A CLEAN SWEEP (finding 50, 2026-10-25).** Exit 0
+> with `total_runs: 0` proves only that the sweep DISCOVERED nothing to
+> check — never that any deployed page's code was confirmed in GitHub.
+> Discovery is `cc_board.list_evidence_runs`: immediate `<base>/v2-*`
+> subdirectories that carry `routing/intake-receipt.json`. A box whose runs
+> predate that naming, or whose receipts live elsewhere, yields an empty set
+> and a green log. Proven on the operator box: the base resolved correctly to
+> `$HOME/clawd/skill6-fix` and was NOT empty (9 entries, incl. `v1-operator`,
+> `v1-T2-20260622T160654Z`, `v1-t3-20260622-120754`,
+> `v1-t4-20260622T161729Z`, `v3-createfix`, `acceptance-73-20261022`), yet
+> `total_runs` was 0 because none of the three `v2-*` directories carried
+> `routing/intake-receipt.json`. The base was RIGHT; the predicate
+> under-discovered. So assert a non-zero candidate count whenever runs are
+> expected, BEFORE trusting a green sweep (run from the skill root):
+> `python3 -c 'import sys; sys.path.insert(0,"tools"); import cc_board as c; b=c.resolve_evidence_base(); r=c.list_evidence_runs(b); print("%s -> %d candidate run(s)" % (b, len(r))); sys.exit(0 if r else 1)'`
+> (exit 1 = zero candidates: the sweep's `all_clean` is vacuous, not proof).
+> If the base is non-empty while candidates are zero, the DISCOVERY
+> PREDICATE is wrong for that box — not the deployed pages.
 >
 > **Install the cron via the tested installer — never a hand-typed command
 > (U24 rebuild, 2026-07-18).** This repo already has a documented incident of
