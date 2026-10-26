@@ -115,8 +115,10 @@
       "cwd": "skill root",
       "source": "package/onboarding_adapter.py",
       "verified_command": "python3 package/onboarding_adapter.py check",
-      "verified_rc": 0,
-      "notes": "Read-only: no write path, no network, no provider call. 'check' exits 0 only when every required clause is PASS."
+      "verified_rc": 1,
+      "re_verified_at": "2026-10-26",
+      "re_verified_head_sha": "55befb1cfd5a8cada19c2f85cce00549f70e88a3",
+      "notes": "Read-only: no write path, no network, no provider call. 'check' exits 0 only when every required clause is PASS. rc 1 re-verified at head 55befb1cf (2026-10-26): the round-2 entrypoint_reachability clause reports the four capability modules unreachable from factory.py, and the owner decision on the row word 'exposes' (D-17: option A import-path vs option B reachable-at-runtime) is open, so the check fails as written. At unit base 8d583dfd6 the same command exits 0 with this fixture then carrying six clauses; the base rc 0 was recorded here until 2026-10-26 as 0, stale after round 2 added the reachability clause (defect CLAIM-1)."
     },
     {
       "id": "package_entrypoints",
