@@ -8,7 +8,7 @@
   "round": 10,
   "attempt": "r10-candidate",
   "lane": "S75-T04-r10-lane",
-  "lane_path": "/Users/blackceomacmini/skill75-repair/lanes/S75-T04-r10-lane",
+  "lane_path": "<operator-home>/skill75-repair/lanes/S75-T04-r10-lane",
   "written_at": "2026-10-26T13:37:33Z",
   "role": "CANDIDATE BUILDER (path B rebuild). Built the branch and the tests; wrote no verdict and did not author rounds 1-9.",
 
@@ -33,7 +33,7 @@
     "subject": "Merge pull request #2596 from trevorotts1/s75/T08-r7",
     "committed": "2026-10-26T08:48:20-04:00",
     "resolved_from_origin": true,
-    "how": "git fetch origin --prune; git worktree add /Users/blackceomacmini/skill75-repair/lanes/S75-T04-r10-lane -b s75/S75-T04-r10 origin/main; git rev-parse --short HEAD => 5a54ddd7f"
+    "how": "git fetch origin --prune; git worktree add <operator-home>/skill75-repair/lanes/S75-T04-r10-lane -b s75/S75-T04-r10 origin/main; git rev-parse --short HEAD => 5a54ddd7f"
   },
 
   "source_package": {
@@ -88,7 +88,7 @@
 
   "tests_run": [
     {
-      "cmd": "cd /Users/blackceomacmini/skill75-repair/lanes/S75-T04-r10-lane/75-drama-song-ad-factory/scripts/core/research_engine && python3 -I -m pytest -q",
+      "cmd": "cd <operator-home>/skill75-repair/lanes/S75-T04-r10-lane/75-drama-song-ad-factory/scripts/core/research_engine && python3 -I -m pytest -q",
       "exit": 0,
       "result": "87 passed, 1 skipped in 0.31s",
       "note": "the whole research_engine suite: all four test files in that directory"
@@ -130,7 +130,7 @@
   "not_claimed": [
     "No acceptance. S75-A04 stays with the owner (Trevor). No verdict file is written by this lane and the builder cannot clear its own work.",
     "No D-19 decision. This receipt is the path-B candidate; A versus B is the owner's call.",
-    "No ledger write. /Users/blackceomacmini/loop-control/s75/ledger.json was not read for mutation and not written.",
+    "No ledger write. <operator-home>/loop-control/s75/ledger.json was not read for mutation and not written.",
     "No merge and no push to main or master. The branch is the only carrier.",
     "No review of PR #2601 and no interaction with ungraded r6; r6's history was not read as authority and was not merged.",
     "No claim that r9's grading transfers. This branch reproduces r9's bytes, which is a statement about content, not a statement that the r9 verdict applies to a rebuilt branch.",
