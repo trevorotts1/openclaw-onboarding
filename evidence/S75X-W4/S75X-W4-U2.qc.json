@@ -1,0 +1,84 @@
+{
+  "schema": "s75x-unit-qc/1",
+  "workflow_id": "S75X-W4",
+  "unit_id": "S75X-W4-U2",
+  "role": "qc-fixer",
+  "verdict": "PASS",
+  "qc_status": "clean",
+  "judged_at": "2026-10-26",
+  "owned_output": "75-drama-song-ad-factory/scripts/core/music_director/",
+  "fixes_applied": [],
+  "why_no_fix": "Builder verdict re-verified element by element in an independent lane; no verdict error and no defect in the unit's owned output. Nothing in the unit was changed.",
+  "independent_rerun": {
+    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U2-qc",
+    "lane_branch": "s75x/verdicts-S75X-W4-u2qc",
+    "lane_head_before_qc_commit": "d2409b13b1b86479c135d9c046e62df64ab931e6",
+    "base_of_rerun": "origin/s75x/verdicts-S75X-W4 (d2409b13b), which carries the U2 verdict commit 36e6ad388 and the unit code in ca0a5b3de91ea5d440b8de1377ae8a3f369dfacf (already an ancestor of origin/main 96559ab1b via cohort PR #2604)",
+    "checks": {
+      "unit_acceptance_test": {"file": "scripts/core/music_director/test_blueprint_inputs_s75xw4u2.py", "cmd": "python3 -I", "rc": 0, "ok_lines": 34, "fail_lines": 0, "tail": "ALL PASS", "matches_builder": true},
+      "existing_music_director_test": {"file": "scripts/core/music_director/test_prompt_limits_u6.py", "cmd": "python3 -I", "rc": 0, "ok_lines": 25, "fail_lines": 0, "tail": "ALL PASS", "matches_builder": true},
+      "regression_set": {
+        "scope": "every test *.py under 75-drama-song-ad-factory whose source references music_director, run with python3 -I from scripts/core",
+        "enumerated_files": 19, "rc0": 19, "ok_lines_verbatim": 326, "fail_lines": 0,
+        "matches_builder": "19/19/326/0 identical",
+        "ok_line_distribution": "test_song_contract.py 77, test_suno_templates_u15d.py 69, test_words_fit_g9.py 43, test_blueprint_inputs_s75xw4u2.py 34, test_style_plan_u2.py 32, test_fit_card_u4.py 27, test_prompt_limits_u6.py 25, test_rnbflow_fit_v2972.py 19"
+      },
+      "independent_probe": {
+        "file": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/S75X-W4-U2-qc/probe_qc.py",
+        "note": "QC-owned probe; imports music_director only, never the unit test. Expectations derived at runtime from method_plan/fixtures/blueprint-90s.json (cue start_s values, direction strings, hook lyric); sheet text is QC's own. Zero network, zero spend.",
+        "probes": 32, "failed": 0, "rc": 0
+      }
+    }
+  },
+  "acceptance_elements_reverified": [
+    {"element": "Music requests are generated from blueprint beats", "result": "PASS", "qc_evidence": "probe P1-P8 (input contract, instrumental flag, delivered length 90 -> 88 s at soul-ballad, seams on the fixture's own ERM_DROP 22 s / HERO_SHIFT 38 s, clauses quoting the cue direction strings) and P28-P32 (createTask envelope, duration 88.0, both directions in the final style, _hook_plan at true_at_beat 'the_turn', _pace_plan internal-only). P7 re-times HERO_SHIFT to 40 s and the return seam follows the blueprint to 40 s, so the seams are blueprint-driven, not constants."},
+    {"element": "The four required turns are distinguishable", "result": "PASS", "qc_evidence": "probe P9-P14: exactly BLUEPRINT_TURNS in story order at 0.0 / 22.0 / 38.0 / 60.0 s, four strictly increasing positions; spoken hook source=script; first singing = ERM_DROP first_sung; Hero Shift distinct moment with all three directions; earned hook 60.0 >= breakthrough 58.0."},
+    {"element": "No chorus precedes the earned point", "result": "PASS", "qc_evidence": "probe P17 injected CHORUS_QC cue at 48 s refused CHORUS_BEFORE_EARNED; P18 SOLUTION_HOOK moved to 57 s refused HOOK_UNEARNED; P19 sung PAIN_BUILD refused SINGING_BEFORE_ERM; P20 ERM not first_sung refused ERM_NOT_FIRST_SUNG; P16 control: untouched fixture still builds."},
+    {"element": "Instrumental support before the first singing is permitted", "result": "PASS", "qc_evidence": "probe P15 instrumental_support_s == 22.0 == ERM_DROP.start_s - BASELINE.start_s, instrumental flag false; P16 the clean fixture builds with the support window present (never a refusal path)."},
+    {"element": "Preserved distinction: spoken attention hook, first singing at the ERM Drop, distinct Hero Shift, later earned hook; no dead exposition opening", "result": "PASS", "qc_evidence": "probe P21/P22 HERO_SHIFT_NOT_DISTINCT (collapse onto the ERM moment; repeated ERM emotional direction), P23 BLUEPRINT_CUES_MISSING, P24 OPENING_NOT_ATTENTION_HOOK (sung opening), P25 OPENING_DEAD_EXPOSITION (opener cap+1 words; recipe opener_max is 3 words at 88 s), P26 HOOK_FORCED_INTO_OPENING, P27 clean opener 3 words under cap."},
+    {"element": "Existing music_director tests pass", "result": "PASS", "qc_evidence": "regression 19/19 rc=0, 326 verbatim 'ok:' lines, 0 'FAIL' lines; unit test 34 ok; test_prompt_limits_u6.py 25 ok. Nine zero-ok-line files were adjudicated instead of waved through (see observations)."}
+  ],
+  "observations": [
+    {
+      "id": "OBS-1",
+      "what": "music_qc/test_method_pace.py runs zero checks when executed as a script: it defines 17 functions (15 test_*) with 54 asserts but has no __main__ runner, so both the builder run and the regression run 'passed' it silently (rc=0, 0 bytes output).",
+      "qc_action": "Executed its 15 test_ functions directly: 15 ok, 0 failed. Substance passes; the file is only missing a script runner.",
+      "disposition": "NOT this unit's defect and NOT fixed here: git log shows the file predates the cohort (last touched in batch merge #2130 / AGN-24H-O2), it lives outside the unit's owned output (music_director/), and adding a runner would touch another scope. Recorded so the silent-pass mode is never mistaken for a proven run."
+    },
+    {
+      "id": "OBS-2",
+      "what": "Builder verdict's not_verified note says both music_qc files 'print prose'; in fact test_method_pace.py prints nothing at all (OBS-1). music_qc/test_wwfix_u1.py prints 'PASS (5 UNDETERMINED -- NOT a release pass)' about WW-11/WW-08/WW-20/WW-25/WW-28 items belonging to other units.",
+      "qc_action": "Confirmed rc=0 and the printed line verbatim; left the other units' items alone as out of scope.",
+      "disposition": "Note accuracy nit only; does not affect the PASS verdict."
+    },
+    {
+      "id": "OBS-3",
+      "what": "The other eight zero-ok-line regression files end in real pass markers ('OK' unittest-style, 'ALL PASS', 'all target-engine checks pass'); the counting instrument discriminates (326 ok lines across the eight printing files, identical distribution to the builder's run).",
+      "disposition": "No action."
+    }
+  ],
+  "negative_claim_reverified": {
+    "claim": "No production caller of build_blueprint_request / blueprint_request_inputs.",
+    "qc_scan": "Python walk of 10,446 .py/.md/.json files under the repo root of the QC lane (trevorotts1/openclaw-onboarding at d2409b13b): build_blueprint_request in 3 files (music_director/__init__.py definition, its unit test, the builder verdict json); blueprint_request_inputs in 4 files (same three plus 75-drama-song-ad-factory/SKILL.md).",
+    "result": "CONFIRMED. Not scanned: file kinds outside .py/.md/.json (e.g. .sh, .txt), and paths outside the repo root."
+  },
+  "builder_receipts_verified": [
+    "diff base 201d0a938922abb8611c4d89c5fb43c46cf0cca8 -> ca0a5b3de91ea5d440b8de1377ae8a3f369dfacf is exactly the claimed pure additions: __init__.py +287, test_blueprint_inputs_s75xw4u2.py +292 (new), 0 existing tests modified",
+    "unit code commit ca0a5b3de91ea5d440b8de1377ae8a3f369dfacf is an ancestor of origin/main 96559ab1b (cohort PR #2604) and of origin/s75x/verdicts-S75X-W4",
+    "verdict json evidence/S75X-W4/S75X-W4-U2.verdict.json committed in 36e6ad3886e61d8bde1cbbeadac7c5d3d2605f87 and present on origin/s75x/verdicts-S75X-W4",
+    "test counts 34 ok / 25 ok and regression 19/19/326/0 reproduced verbatim in the QC lane"
+  ],
+  "not_verified": [
+    "Only the shipped fixture method_plan/fixtures/blueprint-90s.json was exercised (90 -> 88 s, soul-ballad); other blueprints, run lengths and style ids remain unproven.",
+    "No real provider createTask call (zero network, zero spend by design); envelope verified structurally only.",
+    "Pipeline wiring of build_blueprint_request remains absent by design of this unit's acceptance (see negative_claim_reverified) and was not added."
+  ],
+  "environment": {
+    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U2-qc",
+    "repo": "trevorotts1/openclaw-onboarding",
+    "python": "python3 -I (isolated) for every check",
+    "scratch": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/S75X-W4-U2-qc (probe_qc.py, probe_qc.out, run_regress.py, regress.json, regress.out)",
+    "network_calls": 0, "spend": 0
+  },
+  "verdict_branch": "s75x/verdicts-S75X-W4"
+}
