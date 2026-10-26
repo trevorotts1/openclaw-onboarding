@@ -17,6 +17,20 @@ Usage:
   bonus_access_decision.py plan --original-ready|--original-blocked --reason TEXT
   bonus_access_decision.py member-state --credential-state STATE --resource-authorized|--resource-denied
 
+  bonus_access_decision.py access-authorize --member ID --identity S --grant S --credential S --sms S --resource S [--reason DIM=TEXT]
+  bonus_access_decision.py access-bind --state F --member ID --channel sms|email --handle H
+  bonus_access_decision.py access-fail --state F --member ID --dimension D --reason TEXT --channel sms|email --handle H
+  bonus_access_decision.py access-defer --state F --member ID --email H
+  bonus_access_decision.py access-resume --state F --channel sms|email --handle H --via sms_return|email
+
+The access-* commands are the production call site for the T-15 adapter
+(shared-utils/bonus/access_adapter.py): five separate authorizations, failed-step
+resume, return access and email-later kept on the same member. The adapter's
+ledger is in memory by design, so these commands own durability in the --state
+JSON file and replay it through the adapter's public API on every invocation.
+No vendor operation lives there either: T-14's decision is BLOCKED for every
+automated route and the supported path is assisted.
+
 Exit codes:
   0  success
   1  capability or usage error
@@ -36,6 +50,7 @@ if _SHARED not in sys.path:
     sys.path.insert(0, _SHARED)
 
 from bonus import access_capability as ac  # noqa: E402
+from bonus import access_adapter as aa  # noqa: E402
 
 
 def _emit(data) -> int:
@@ -70,6 +85,71 @@ def main(argv=None) -> int:
     resource.add_argument("--resource-authorized", action="store_true")
     resource.add_argument("--resource-denied", dest="resource_authorized", action="store_false")
 
+    # -- T-15 access adapter plumbing ---------------------------------
+    def _ledger_load(path):
+        ledger = aa.AccessLedger()
+        doc = {"bindings": [], "failures": [], "deferred": []}
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                loaded = json.load(fh)
+            for key in doc:
+                doc[key] = list(loaded.get(key, []))
+            for row in doc["bindings"]:
+                ledger.bind(member_id=row["member_id"], channel=row["channel"],
+                            handle=row["handle"])
+            for row in doc["failures"]:
+                ledger.record_failed_step(member_id=row["member_id"],
+                                          dimension=row["dimension"],
+                                          reason=row["reason"],
+                                          channel=row["channel"],
+                                          handle=row["handle"])
+            for row in doc["deferred"]:
+                ledger.defer_to_email(member_id=row["member_id"], handle=row["handle"])
+        return ledger, doc
+
+    def _ledger_save(path, doc):
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+
+    access_auth = sub.add_parser("access-authorize",
+                                 help="T-15: five separate authorizations for one member")
+    access_auth.add_argument("--member", required=True)
+    for _dim in aa.DIMENSIONS:
+        access_auth.add_argument(f"--{_dim}", required=True,
+                                 choices=[aa.AUTHORIZED, aa.DENIED, aa.UNVERIFIED])
+    access_auth.add_argument("--reason", action="append", default=[], metavar="DIM=TEXT",
+                             help="per-dimension reason, repeatable; never borrowed across dimensions")
+
+    access_bind = sub.add_parser("access-bind",
+                                 help="T-15: bind one channel handle to one member")
+    access_bind.add_argument("--state", required=True, help="caller-owned JSON state file")
+    access_bind.add_argument("--member", required=True)
+    access_bind.add_argument("--channel", required=True, choices=list(aa.CHANNELS))
+    access_bind.add_argument("--handle", required=True)
+
+    access_fail = sub.add_parser("access-fail",
+                                 help="T-15: record the failed step for a bound member")
+    access_fail.add_argument("--state", required=True)
+    access_fail.add_argument("--member", required=True)
+    access_fail.add_argument("--dimension", required=True, choices=list(aa.DIMENSIONS))
+    access_fail.add_argument("--reason", required=True)
+    access_fail.add_argument("--channel", required=True, choices=list(aa.CHANNELS))
+    access_fail.add_argument("--handle", required=True)
+
+    access_defer = sub.add_parser("access-defer",
+                                  help="T-15: email-later for the SAME member")
+    access_defer.add_argument("--state", required=True)
+    access_defer.add_argument("--member", required=True)
+    access_defer.add_argument("--email", required=True)
+
+    access_resume = sub.add_parser("access-resume",
+                                   help="T-15: return access, resuming the failed step")
+    access_resume.add_argument("--state", required=True)
+    access_resume.add_argument("--channel", required=True, choices=list(aa.CHANNELS))
+    access_resume.add_argument("--handle", required=True)
+    access_resume.add_argument("--via", required=True, choices=list(aa.RETURN_VIAS))
+
     args = parser.parse_args(argv)
 
     try:
@@ -102,7 +182,46 @@ def main(argv=None) -> int:
                 credential_state=args.credential_state,
                 resource_authorized=args.resource_authorized,
             ))
-    except ac.BonusCapabilityError as exc:
+        if args.command == "access-authorize":
+            reasons = {}
+            for item in args.reason:
+                dim, sep, text = item.partition("=")
+                if not sep:
+                    raise aa.AccessAdapterError("--reason takes DIM=TEXT")
+                reasons[dim] = text
+            answer = aa.authorize(
+                member_id=args.member,
+                states={d: getattr(args, d) for d in aa.DIMENSIONS},
+                reasons=reasons or None,
+            )
+            return _emit(answer.as_dict())
+        if args.command in ("access-bind", "access-fail", "access-defer", "access-resume"):
+            ledger, doc = _ledger_load(args.state)
+            if args.command == "access-bind":
+                out = ledger.bind(member_id=args.member, channel=args.channel,
+                                  handle=args.handle)
+                doc["bindings"].append({"member_id": args.member,
+                                        "channel": args.channel,
+                                        "handle": args.handle})
+            elif args.command == "access-fail":
+                out = ledger.record_failed_step(member_id=args.member,
+                                                dimension=args.dimension,
+                                                reason=args.reason,
+                                                channel=args.channel,
+                                                handle=args.handle)
+                doc["failures"].append({"member_id": args.member,
+                                        "dimension": args.dimension,
+                                        "reason": args.reason,
+                                        "channel": args.channel,
+                                        "handle": args.handle})
+            elif args.command == "access-defer":
+                out = ledger.defer_to_email(member_id=args.member, handle=args.email)
+                doc["deferred"].append({"member_id": args.member, "handle": args.email})
+            else:
+                out = ledger.resume(channel=args.channel, handle=args.handle, via=args.via)
+            _ledger_save(args.state, doc)
+            return _emit(out)
+    except (ac.BonusCapabilityError, aa.AccessAdapterError) as exc:
         print(json.dumps({"error": str(exc), "error_type": type(exc).__name__}, indent=2))
         return 1
 
