@@ -486,6 +486,71 @@ def test_cell_instruments_discriminate():
     """A control that cannot go red is worthless; prove the predicates can."""
     assert C.selfcheck() is True
 
+# --- the two style18 breakages the arbiter carried as an open limit --------
+# S75-T32-ARBITER.md, "Stated limits": the falsifiability instrument detected
+# ten of twelve planted breakages; the two it missed were style18 —
+# "choice_rows() renders 17 of 18 rows" and "validate_catalog() hard-wired to
+# 18". These checks close that gap, each with the breakage planted.
+
+def _catalog_module(tag):
+    """A fresh import of this repository's catalog, never the shared instance."""
+    return C._load_module(os.path.join(ONB_ROOT, C.CATALOG_REL),
+                          "s75_t32_style18_%s" % tag)
+
+
+def test_validate_catalog_derives_its_count_and_refuses_a_short_catalog():
+    """A validator hard-wired to 18 accepts a catalog that lost a record."""
+    real = _catalog_module("derive")
+    ids = tuple(real.style_ids())
+    # Known-good: the shipped validator accepts all eighteen.
+    assert real.validate_catalog() == len(ids) == 18
+    # The breakage: one record gone. A derived validator must refuse it.
+    real.CATALOG.pop(ids[-1])
+    refused = False
+    try:
+        real.validate_catalog()
+    except real.CatalogError as exc:
+        refused = exc.code == "BAD_CATALOG"
+    assert refused, "validate_catalog accepted a catalog missing %r" % (ids[-1],)
+    # The exact arbiter breakage: the same function replaced by a literal 18
+    # cannot refuse, so the assertion above is what catches it.
+    hard_wired = _catalog_module("hardwired")
+    hard_wired.CATALOG.pop(ids[-1])
+    hard_wired.validate_catalog = lambda: 18
+    assert hard_wired.validate_catalog() == 18, (
+        "the planted hard-wired validator should return its literal")
+
+
+def test_style18_choice_rows_cover_the_eighteenth_row():
+    """Counting eighteen dicts is not rendering eighteen rows."""
+    module = _catalog_module("rows")
+    ids = tuple(module.style_ids())
+    rows = module.choice_rows()
+    assert len(rows) == 18, len(rows)
+    assert C._choice_rows_well_formed(ids, rows) is True
+    last = rows[17]
+    assert last["style_id"] == ids[17], (last["style_id"], ids[17])
+    assert last["label"].strip(), "the eighteenth row has no label"
+    assert last["description"].strip(), "the eighteenth row has no description"
+    # The breakage: the eighteenth row renders empty. A length-only check
+    # stays green; the row predicate must red.
+    module.CATALOG[ids[17]]["description"] = ""
+    broken = module.choice_rows()
+    assert len(broken) == 18, "the planted breakage changed the row count"
+    assert C._choice_rows_well_formed(ids, broken) is False, (
+        "the eighteenth row rendered empty and was accepted")
+
+
+def test_style18_predicate_reds_each_named_breakage_alone():
+    """Each breakage, planted by itself, reds an otherwise-green carrier."""
+    ids = tuple("s%02d" % i for i in range(18))
+    green = C._style18_checks(ids, 18, 18, 18, 18, True, True)
+    assert C._result(green) is True
+    short_validate = C._style18_checks(ids, 18, 18, 17, 18, True, True)
+    assert C._result(short_validate) is False, "a validate count one short passed"
+    broken_row = C._style18_checks(ids, 18, 18, 18, 18, False, True)
+    assert C._result(broken_row) is False, "a broken choice row passed"
+
 
 # --- the revision pin (repair round 3) ------------------------------------
 # Round 3 measured six of nine N999 cells from a working tree sitting 55 commits

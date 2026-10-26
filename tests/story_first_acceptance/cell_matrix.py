@@ -547,8 +547,31 @@ def _gate_known_good(ctx, records):
 # 6: style18
 # --------------------------------------------------------------------------
 
+def _choice_rows_well_formed(ids, rows):
+    """Every id has exactly one COMPLETE row: id, label and description.
+
+    A count alone cannot see the arbiter's breakage ("choice_rows() renders
+    17 of 18 rows"): eighteen dicts can be returned while one carries no
+    label or no description. This predicate reads the content.
+    """
+    if len(rows) != len(ids):
+        return False
+    for sid, row in zip(ids, rows):
+        if row.get("style_id") != sid:
+            return False
+        if not (row.get("label") or "").strip():
+            return False
+        if not (row.get("description") or "").strip():
+            return False
+    return True
+
+
 def _style18_checks(ids, unique_count, max_styles, validate_count,
-                    choice_count, resolved):
+                    choice_count, choice_rows_ok, resolved):
+    #: Derived, never a literal 18: the declared maximum and both catalog
+    #: counts must account for exactly the ids this carrier names. The first
+    #: check separately pins that number to the row's eighteen.
+    expected = len(ids)
     return [
         {"contract": "music_styles.catalog.STYLE_IDS",
          "statement": "the catalog holds exactly eighteen ids",
@@ -557,14 +580,14 @@ def _style18_checks(ids, unique_count, max_styles, validate_count,
          "statement": "the eighteen ids are unique",
          "result": unique_count == 18},
         {"contract": "music_styles.catalog.MAX_STYLES",
-         "statement": "the declared maximum is eighteen",
-         "result": max_styles == 18},
+         "statement": "the declared maximum accounts for every id",
+         "result": max_styles == expected},
         {"contract": "music_styles.catalog.validate_catalog",
-         "statement": "validate_catalog accepts all eighteen records",
-         "result": validate_count == 18},
+         "statement": "validate_catalog accounts for every id",
+         "result": validate_count == expected},
         {"contract": "music_styles.catalog.choice_rows",
-         "statement": "all eighteen render as client choice rows",
-         "result": choice_count == 18},
+         "statement": "all eighteen render as complete client choice rows",
+         "result": choice_count == expected and choice_rows_ok is True},
         {"contract": "music_styles.catalog.style",
          "statement": "every id resolves back to itself",
          "result": resolved is True},
@@ -592,9 +615,11 @@ def probe_style18(target, before):
     module = _load_module(path, "s75_t32_catalog_%s" % target.flavor)
     ids = tuple(module.style_ids())
     rows = module.choice_rows()
+    rows_ok = _choice_rows_well_formed(ids, rows)
     resolved = all(module.style(sid)["style_id"] == sid for sid in ids)
     checks = _style18_checks(ids, len(set(ids)), module.MAX_STYLES,
-                             module.validate_catalog(), len(rows), resolved)
+                             module.validate_catalog(), len(rows), rows_ok,
+                             resolved)
     observations = [
         "%d style ids: %s" % (len(ids), ", ".join(ids)),
         "validate_catalog() -> %d" % module.validate_catalog(),
@@ -607,10 +632,28 @@ def probe_style18(target, before):
                "observed": module.style("soul-ballad")["style_id"],
                "pass": module.style("soul-ballad")["style_id"] == "soul-ballad"}
     degraded = _style18_checks(tuple(ids)[:-1], 17, module.MAX_STYLES,
-                               module.validate_catalog(), len(rows), resolved)
-    negative = {"unmet_condition": "a seventeen-id carrier, checked by the same "
-                                   "predicate",
-                "observed": _result(degraded), "control_red": not _result(degraded)}
+                               module.validate_catalog(), len(rows), rows_ok,
+                               resolved)
+    #: The arbiter's two undetected breakages, planted at the predicate: a
+    #: validate count that does not account for the eighteenth id, and choice
+    #: rows that render seventeen of eighteen. Both must go red.
+    degraded_validate = _style18_checks(ids, len(set(ids)), module.MAX_STYLES,
+                                        len(ids) - 1, len(rows), rows_ok,
+                                        resolved)
+    short_rows = tuple(rows)[:-1]
+    degraded_rows = _style18_checks(ids, len(set(ids)), module.MAX_STYLES,
+                                    len(ids), len(short_rows),
+                                    _choice_rows_well_formed(ids, short_rows),
+                                    resolved)
+    negative = {"unmet_condition": "a seventeen-id carrier, a validate count "
+                                   "one short, and the eighteenth choice row "
+                                   "missing: three breakages the same predicate "
+                                   "must refuse",
+                "observed": [_result(degraded), _result(degraded_validate),
+                             _result(degraded_rows)],
+                "control_red": not (_result(degraded)
+                                    or _result(degraded_validate)
+                                    or _result(degraded_rows))}
     ok = _result(checks) and control["pass"] and negative["control_red"]
     return _cell(target, "style18", OBSERVED_PASS if ok else OBSERVED_FAIL,
                  instrument, checks, observations, control, negative,
@@ -826,11 +869,19 @@ def selfcheck():
                  % ", ".join('"style-%02d"' % i for i in range(17)))
     module = _load_module(broken, "s75_t32_selfcheck_catalog")
     red = _style18_checks(tuple(module.STYLE_IDS), len(set(module.STYLE_IDS)),
-                          module.MAX_STYLES, module.MAX_STYLES, 0, False)
+                          module.MAX_STYLES, module.MAX_STYLES, 0, False, False)
     assert not _result(red), "a seventeen-id carrier passed the style18 predicate"
     green = _style18_checks(tuple("s%02d" % i for i in range(18)), 18, 18, 18, 18,
-                            True)
+                            True, True)
     assert _result(green), "an eighteen-id carrier failed the style18 predicate"
+    #: The arbiter's residual gap: each of the two breakages, planted alone,
+    #: must red an otherwise-green eighteen-id carrier.
+    short_validate = _style18_checks(
+        tuple("s%02d" % i for i in range(18)), 18, 18, 17, 18, True, True)
+    assert not _result(short_validate), "a validate count one short passed"
+    broken_row = _style18_checks(
+        tuple("s%02d" % i for i in range(18)), 18, 18, 18, 18, False, True)
+    assert not _result(broken_row), "a broken choice row passed"
     text = "slow, heartfelt singing; builds to a big emotional chorus."
     assert _bytes(text) == _bytes(text)
     assert _bytes(text[:1].swapcase() + text[1:]) != _bytes(text)
