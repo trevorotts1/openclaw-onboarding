@@ -24,6 +24,14 @@ concurrency only, never how many seats are used.
 - **Heavy.** All 9 seats, 3 to 10 rounds, 100 provider requests. Rounds 1
   and 2 always run; the stop rule is evaluated from round 3 onward.
 
+Concurrency is the lower of two limits: the provider's own ceiling (only
+Ollama has one, the $20 plan 3 at a time and the $100 plan 10; every
+other route adds none) and the mode's wave width (light 3, medium and
+heavy the whole nine). A provider with no ceiling therefore never makes a
+light sitting unlimited: light runs 3 at a time on OpenRouter and Agnes
+too (`runtime/src/providers/parallel.ts`,
+`runtime/src/contracts/modes.ts`).
+
 Client overrides always win: "quick answer" means light, "full council"
 means heavy. Medium is used when no size is named.
 
