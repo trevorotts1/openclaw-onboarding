@@ -1,0 +1,21 @@
+{
+  "style_id": "alternative-rnb",
+  "label": "Alternative R&B",
+  "deliveries": [
+    "spoken",
+    "sung"
+  ],
+  "style_parts": [
+    "alternative R&B: intimate, spacious R&B with inventive textures and a flexible pocket, spacious R&B harmony, restrained bass line, dry or unusual percussion, selected atmospheric guitar, keyboard or synth textures, deliberate negative space, 68-112 bpm, 4/4 with a syncopated flexible pocket when the words support it, expressive close lead with purposeful rests and original melodic shapes, optional layered harmony that keeps words easy to hear, dry close upfront vocal.",
+    "{gender} lead, sung melody with purposeful rests and original melodic shapes, clear diction.",
+    "The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes.",
+    "Only the short intro and the final outro are spoken; the full band keeps playing continuously under them."
+  ],
+  "ending_clause_added_by_ending_qc": ", natural resolved ending, final chord rings out and fades",
+  "negative_tags": "rap, rapping, choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
+  "rap_allowed": false,
+  "skeleton_rule": "Intro (spoken opener) -> Vocalise (optional, a short wordless lead-in, never a forced opening) -> Verse -> Pre-Chorus -> Hook (the payoff: at or after the build-up, at the story beat where its words become true) -> verses and pre-choruses between hooks -> Product passage on beat 8 -> remaining hooks evenly -> last hook near 90% -> Outro (spoken CTA) -> [End].",
+  "villain_pain_lyric_guidance": "VILLAIN IN THE LYRICS (Suno): name the villain in the verses, carry a pain line with real stakes and consequences, then turn to the rise in the hook. First person, present tense, concrete nouns -- the listener must feel the pain and the problem in the depth of their soul before the rise lands.",
+  "villain_pain_lyric_guidance_source": "product_style_bible/bible.py VILLAIN_LYRIC_GUIDANCE (U16 onb 8467e0354d3116eec980928cab7abaab8cef51ed, 999 c4787e2c13e71e3f7877d232aa7c80271f477adc)",
+  "cue_overrides": {}
+}

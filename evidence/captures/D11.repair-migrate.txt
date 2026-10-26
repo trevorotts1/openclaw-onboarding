@@ -1,0 +1,8 @@
+# search: D11.repair-migrate
+# command: git grep -nF migrate_mapping_body( 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py
+# scope: repair-inbound-hooks.py
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 2  verdict: present
+# --- stdout ---
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py:73:def migrate_mapping_body(cfg_path, mapping):
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py:130:            res = migrate_mapping_body(cfg_path, m)

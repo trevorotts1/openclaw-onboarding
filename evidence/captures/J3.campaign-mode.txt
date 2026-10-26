@@ -1,0 +1,8 @@
+# search: J3.campaign-mode
+# command: git grep -nF campaign 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 57-social-media-in-a-box/modes.md
+# scope: 57-social-media-in-a-box/modes.md
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 2  verdict: present
+# --- stdout ---
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:57-social-media-in-a-box/modes.md:55:| `campaign` | P0,P2-BRIEF,P3–P8 | M2: one-off / off-template push (flash sale, launch takeover) with its own asset list + schedule + planner row. Off-**template**, never off-**spine**. |
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:57-social-media-in-a-box/modes.md:77:I5 one-off campaigns · I6 client-supplied copy · I7 seasonal/reactive · I8 per-platform voice ·
