@@ -1,0 +1,49 @@
+{
+  "schema_version": "blackceo.evidence.unit-attempt/v1",
+  "unit": "S75-T02",
+  "acceptance_row": "S75-A02",
+  "role": "candidate-builder",
+  "branch": "s75/S75-T02-r1",
+  "base_ref": "origin/main",
+  "base_sha": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+  "base_proof": "git fetch origin main; git worktree add ... origin/main produced HEAD 5a54ddd7f (Merge pull request #2596).",
+  "head_sha": "74ac3926038d81083cab15c4994bcd0214ac583c",
+  "head_note": "head_sha is the code commit; this receipt is committed as the next commit on the same branch because a receipt cannot contain its own commit sha.",
+  "written_at": "2026-10-26",
+  "decision_context": "D-8 open: the unit shape was never fixed by the owner. This receipt states the exact shape implemented so the owner can accept or redirect cheaply.",
+  "shape_statement": "LITERAL READING IMPLEMENTED: a new stdlib-only write gate (scripts/lib/job_uuid_gate.py) plus its owned test battery (tests/unit/job-uuid-gate.test.py). It refuses a gated write when the expected recurring job UUID is wrong, missing, ambiguous, or not provably recurring, with no fallback of any kind (no first-match, no case folding, no whitespace trimming, no default job, no writing before refusal), and it emits a prebuilder receipt whose actual_recurring_job_id is derived exclusively from the observed scheduler listing, never from the expected value. NOT the shape implemented: wiring the gate into a live orchestrator caller, and NOT an authority-root-only evidence artefact (those artefacts are absent from disk now: find /Users/blackceomacmini -name 'prebuilder*' returned nothing).",
+  "files_changed": [
+    "scripts/lib/job_uuid_gate.py",
+    "tests/unit/job-uuid-gate.test.py",
+    "evidence/units/S75-T02/attempt-candidate-1.json"
+  ],
+  "tests_run": {
+    "command": "python3 -I tests/unit/job-uuid-gate.test.py",
+    "result": "Ran 10 tests in 0.006s -- OK",
+    "verbatim": "test_ambiguous_observation_refuses ok; test_empty_observation_refuses ok; test_missing_expected_uuid_refuses ok; test_no_case_or_whitespace_normalisation ok; test_proven_write_lands ok; test_receipt_records_actual_job_id_and_prompt_digest ok; test_receipt_refuses_unproven_uuid_and_writes_no_file ok; test_refusal_preserves_existing_bytes ok; test_unknown_recurrence_refuses ok; test_wrong_uuid_refuses_and_writes_nothing ok",
+    "counts": {"ran": 10, "failures": 0, "errors": 0, "skipped": 0},
+    "compile": "python3 -I -m py_compile scripts/lib/job_uuid_gate.py tests/unit/job-uuid-gate.test.py -> COMPILE_OK",
+    "surrounding_suite": "scripts/lib imports under python3 -I: batch_state IMPORT_OK, cleanup_transaction IMPORT_OK, rescue_admission IMPORT_OK, swarm_controls IMPORT_OK, job_uuid_gate IMPORT_OK (5/5). No existing test references scripts/lib/cleanup_transaction.py, so no owned-or-adjacent test was displaced."
+  },
+  "claims": [
+    "A write whose expected job UUID does not exactly match a single observed recurring job is refused before any filesystem mutation; no file, no parent directory, no temp file is created.",
+    "A refusal preserves pre-existing bytes at the target path (proved by test_refusal_preserves_existing_bytes).",
+    "Missing or non-string expected UUID, empty observation, ambiguous duplicate ids, and unstated/false recurrence each refuse with a distinct reason code.",
+    "Case-folded, whitespace-padded, and truncated variants of the correct UUID are refused (no normalisation fallback).",
+    "The prebuilder receipt is emitted only from a proven observation, and its actual_recurring_job_id equals the observed job id, not the expected one; it carries prompt_body_sha256 and prompt_body_bytes.",
+    "An unproven receipt attempt writes no receipt file."
+  ],
+  "not_claimed": [
+    "No unit acceptance: S75-T02 stays with the owner (Trevor); loop-control/s75/ledger.json was not written and TODO.md/RESUME.md were not edited.",
+    "No live scheduler call and no cron job created, modified, or proved against a real scheduler listing; the gate takes an observed-jobs listing as a parameter.",
+    "Not wired into a production caller: no existing write path was modified, so the invariant is library-level plus tests only.",
+    "No claim about the authority-root T02 artefacts (state/prebuilder-loop-prompt.txt, storage-profile, supported-controls): they are absent on disk now, so they were not re-verified.",
+    "No claim about the storage-volume UUID half beyond what scripts/lib/cleanup_transaction.py already implements (S16 gate, untouched).",
+    "No cross-restart liveness claim; no nextRun claim."
+  ],
+  "checks": {
+    "worktree": "git -C /Users/blackceomacmini/openclaw-onboarding worktree add /Users/blackceomacmini/skill75-repair/lanes/S75-T02-ahead-lane -b s75/S75-T02-r1 origin/main",
+    "branch_pre_existing": "git ls-remote origin refs/heads/s75/S75-T02-r1 returned empty before creation, so no competing branch was created.",
+    "main_untouched": true
+  }
+}
