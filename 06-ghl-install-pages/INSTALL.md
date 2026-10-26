@@ -388,6 +388,28 @@ The agent does NOT hand-roll a helper table. The legacy Playwright-era helper li
 3. **Recovery = the gateway contract itself.** The circuit-breaker PARKS a flaky build and reports loudly (via Rescue Rangers); the hourly reaper `scripts/agent-browser-reaper.sh` (13 * * * *) is the backstop for a hard crash; the guaranteed teardown trap closes the session. A failed action is surfaced, never papered over.
 
 
+## Step 7b: Register the Maintenance Crons (aggregate installer)
+
+`update-skills.sh` runs the skill's maintenance installers through the ONE
+aggregate entry point, so all four jobs land together:
+
+```bash
+bash scripts/install-skill6-maintenance-crons.sh --idempotent
+```
+
+It runs the GitHub-archive reconcile, page-inventory lifecycle,
+routing-drift-check and selector-drift-probe installers explicitly (the old
+first-match glob ran only the first), never forwards `--idempotent` as a
+positional evidence directory, and then reports REGISTERED / ABSENT / UNKNOWN
+per job from `openclaw cron list --all --json`. Exit 0 = every intended job
+registered; exit 3 = a job absent or unreadable (re-run backfills); exit 2 = a
+shipped schedule entry is missing (repo defect, not repairable by re-run).
+Disabled jobs are tombstones: reported, never re-enabled automatically.
+`--check-only` reports registration without installing. The hourly
+agent-browser-reaper backstop is verified separately with
+`bash scripts/check-agent-browser-reaper-schedule.sh` (3 = registered but
+disabled - loud failure).
+
 ## Step 8: Update Core .md Files
 
 Follow TYP rules — only add summaries and file path references. The stamp text is FIXED: copy the blocks from `CORE_UPDATES.md` **EXACTLY** — an edited doctrine sentinel fails the doctrine checks. These three sentinels MUST appear verbatim in AGENTS.md + TOOLS.md:

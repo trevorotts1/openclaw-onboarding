@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 1.3.11 - 2026-10-26 - oct-25 fix batch: l01-l08 install, preflight, handoff and intake hardening
+
+- `scripts/install_local.py` (l01): the installer no longer truncates a registry that resolves back to the same file it is writing, refuses symlinked registry leaves, honours dry-run failures, and applies the terminal-evidence rule to the executor exit. Tests: `tests/test_scripts.py`.
+- `scripts/preflight_installed.py` (l02): preflight requires positive proof - only demonstrated client-data refusals may pass, composed-prompt proof is required, the asset gate is layout-aware, and `scripts/check-skill71-parity.py` verifies the real installed runtime.
+- `scripts/build_production_request.py`, `scripts/page_role.py`, `scripts/run_page_role_stages.py`, `scripts/run_page_type.py`, `scripts/stage_executor.py` (l03): one page role and one section-sequence rule across builder, executor and runner; completion is honest and utility CTA treatment is enforced.
+- `scripts/validate_handoff.py` (l04): the page handoff is derived from the page kind; an undeclared handoff route fails closed and the form-route message no longer drifts. `references/page-kinds.json` and `references/stage-contract.json` extended.
+- `scripts/write_intake.py`, `scripts/launch_context.py` (l05): both copy selectors are derived with a recovery owner for refusals; refusal registers are split and one copy selection is enforced.
+- intake engine (l06, shared `shared-utils/client_intake/`): page-only profile, one colour policy, page-kind choices, the page ask list enforced at the engine boundary (findings 18, 19, 23, 46), and the payment flag derived from the bank's own billing text.
+- `signature_launch/experience/render_question.py` (l07): style examples render before the A/B/C question with QC-hardened disclosure.
+- docs and stamps (l08): honest entry path and accessibility criterion in INSTALL.md / START-HERE.md, real three-stamp lockstep (VERSION, skill-version.txt, SKILL.md) proven non-vacuously.
+
 ## 1.3.4 - 2026-10-20 - batch: a zero-image generation run is FAILED, never success (SPF002)
 
 - `scripts/shared_page_service.py`: `--pipeline-command` is no longer optional for a generation run. `--validation-only` is the labelled admit-and-stage mode (prints `MODE=validation-only: no artifacts generated`); a generation run without `--pipeline-command` FAILS with exit 2. Before this change a run that generated nothing returned 0 and read exactly like a generated run.
