@@ -3129,3 +3129,14 @@ jobs:
           HOME="$(mktemp -d)" python3 -m pytest -q \
             75-drama-song-ad-factory/scripts
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
+
+      # T-26 clause (d) had a suite and no runner: `tools/tests/test_answer_duty.py`
+      # existed but no workflow ran it, so a duty gate that returned True for every
+      # channel could ship green. The path is EXPLICIT, not a discover, so moving or
+      # deleting the file is a red build instead of a silently empty run.
+      - name: Skill 38 answer-duty suite (T-26 clause (d)) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I 38-conversational-ai-system/tools/tests/test_answer_duty.py
+          echo "✓ answer_duty suite passes (public/private duty + fail-closed)"
