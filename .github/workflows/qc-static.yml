@@ -3129,3 +3129,16 @@ jobs:
           HOME="$(mktemp -d)" python3 -m pytest -q \
             75-drama-song-ad-factory/scripts
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
+
+      # T-28 booking and service follow-through (R-18/R-20, C-28). No workflow
+      # named this suite, so the adapter (shared-utils/booking/) and its 76
+      # contract tests could regress with every gate still green. Runs by
+      # EXPLICIT PATH — stdlib unittest, no install, no network, no browser.
+      - name: T-28 booking follow-through suite (explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I -m unittest discover -s shared-utils/booking/tests
+          python3 -I shared-utils/booking/followthrough.py
+          python3 -I 38-conversational-ai-system/tools/booking_service.py
+          echo "✓ T-28 booking follow-through suite passes (shared-utils/booking/tests)"
