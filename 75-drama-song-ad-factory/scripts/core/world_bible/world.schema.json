@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "world_bible/world.schema.json",
+  "title": "episode-world",
+  "description": "Early episode world (S75-T08). Authored before script and music; holds locations, light, palette, texture, era, sound and a never-list. Reusable character identity lives elsewhere and is referenced by ID only.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "kind",
+    "artifact_id",
+    "run_id",
+    "revision",
+    "premise",
+    "fiction_classification",
+    "era",
+    "locations",
+    "light",
+    "palette",
+    "texture",
+    "sound",
+    "never_list",
+    "cast_refs",
+    "continuity",
+    "content_digest",
+    "seal"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "kind": {
+      "const": "episode_world"
+    },
+    "artifact_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "previous_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "change_reason": {
+      "type": "string"
+    },
+    "content_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 over the authored body: every key except content_digest and seal. It is never trusted -- validate() recomputes it and refuses a record edited after it was sealed (WORLD_CONTENT_DIGEST_MISMATCH). Provenance notes never sit inside the digested body: seal.binding_id_source is one, which is why identical world content digests identically whatever recompute note is carried."
+    },
+    "provenance": {
+      "type": "object",
+      "description": "What the dispatch that authored this record actually did. Two claims in it are DERIVED, never asserted: provenance.execution is stamped from the transport kind that minted the handle (live -> 'live', no_spend -> 'no_spend_fixture'), and provenance.attempt.binding_id is recomputed from the admitted role binding (the digest ai_models.bind_roles computes), so a hand-written model-bindings.json can never have its chosen id echoed here."
+    },
+    "seal": {
+      "type": "object",
+      "description": "The dispatch seal: the handle the call returned, the receipt the transport minted at call time, and the seal digest binding both to content_digest. It proves a dispatch that happened in the run that sealed this record; a fixture file or a hand-written bindings file cannot produce one. seal.binding_id_source (optional) is a PROVENANCE NOTE carried deliberately OUTSIDE the digested body: it records that provenance.attempt.binding_id was recomputed from the admitted binding, and keeping it here is what leaves an honest record byte-identical to its parent.",
+      "required": [
+        "dispatch_handle",
+        "receipt",
+        "seal_digest"
+      ],
+      "properties": {
+        "dispatch_handle": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "receipt": {
+          "type": "object",
+          "required": [
+            "transport_id",
+            "nonce",
+            "receipt_digest"
+          ]
+        },
+        "seal_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object"
+    },
+    "premise": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fiction_classification": {
+      "enum": [
+        "proposed_fiction",
+        "sourced"
+      ]
+    },
+    "era": {
+      "type": "object",
+      "required": [
+        "period",
+        "time_of_day",
+        "time_jumps",
+        "span_minutes"
+      ],
+      "properties": {
+        "period": {
+          "type": "string",
+          "minLength": 1
+        },
+        "time_of_day": {
+          "type": "string",
+          "minLength": 1
+        },
+        "season_weather": {
+          "type": "string"
+        },
+        "time_jumps": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "span_minutes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "locations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "location_id",
+          "name",
+          "function",
+          "interior",
+          "layout",
+          "reality"
+        ],
+        "properties": {
+          "location_id": {
+            "type": "string",
+            "pattern": "^loc_[A-Za-z0-9][A-Za-z0-9_.-]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "function": {
+            "type": "string",
+            "minLength": 1
+          },
+          "interior": {
+            "type": "boolean"
+          },
+          "access": {
+            "type": "string"
+          },
+          "entrances": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "geography": {
+            "type": "string"
+          },
+          "layout": {
+            "type": "object",
+            "required": [
+              "features"
+            ],
+            "properties": {
+              "features": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "reality": {
+            "enum": [
+              "fiction",
+              "real"
+            ]
+          },
+          "claim_source": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "light": {
+      "type": "object",
+      "required": [
+        "doctrine",
+        "sources"
+      ],
+      "properties": {
+        "doctrine": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "source",
+              "direction"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "direction": {
+                "type": "string",
+                "minLength": 1
+              },
+              "motivated_change": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "palette": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "texture": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "sound": {
+      "type": "object",
+      "required": [
+        "ambience"
+      ],
+      "properties": {
+        "ambience": {
+          "type": "string",
+          "minLength": 1
+        },
+        "off_screen": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "silence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "never_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "cast_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "character_id",
+          "identity_revision"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "character_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "identity_revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "continuity": {
+      "type": "object",
+      "required": [
+        "must_persist"
+      ],
+      "properties": {
+        "must_persist": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "may_change": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exceptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "scene_id",
+          "location_id",
+          "action",
+          "uses",
+          "minutes_from_start"
+        ],
+        "properties": {
+          "scene_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "location_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "minutes_from_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transition": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

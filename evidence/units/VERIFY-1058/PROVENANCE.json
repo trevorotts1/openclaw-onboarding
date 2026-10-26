@@ -1,0 +1,20 @@
+{
+  "unit": "VERIFY-1058",
+  "ledger_source_sha256": "39aa554fe4f45d41f95aca31275dd3ab07060e492e848553764d1375a0682e8e",
+  "redacted_sha256": "ba1e2829c5349c8d442c40cd600180609f35a786fe56e23421cd49116f662dbb",
+  "redactions": [
+    {
+      "from": "<absolute operator home path>",
+      "to": "<operator-home>",
+      "count": 4,
+      "from_sha256": "a659cfd81683b854f73a154bf005456a7a2d6d7bab5322f3671233afa1c723ee"
+    },
+    {
+      "from": "<absolute mounted volume path>",
+      "to": "<portable-drive>",
+      "count": 5,
+      "from_sha256": "0820c2e129fbaa44fc6733b5680045ef6cf2e4f187eb6b9c259d2e1b676d6f51"
+    }
+  ],
+  "copied_at": "2026-10-26T19:33:18Z"
+}

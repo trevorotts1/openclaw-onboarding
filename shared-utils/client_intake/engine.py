@@ -14,7 +14,8 @@ atomically, so any harness can stop and resume from the file. stdlib only; palet
 logo files only.
 
 CLI:  engine.py FILE next | record ID VALUE | help ID [--logo F --site URL --palette N --mood "..."] |
-      check | finalize | report | show      (FILE is created on first use; --mode launch|legacy|bf)
+      check | finalize | report | show      (FILE is created on first use;
+      --mode launch|legacy|bf|page, --page-kind sales|opt_in for a page run)
 """
 from __future__ import annotations
 
@@ -98,8 +99,10 @@ def question(qid, bank=None):
 
 
 # ---------------------------------------------------------------- the answers file
-def new_doc(mode="launch", harness=None, run_id=None):
+def new_doc(mode="launch", harness=None, run_id=None, page_kind=None):
     doc = {"schema": "client-intake-answers/v1", "meta": {"mode": mode, "phase": "pre_build"}, "answers": {}, "to_confirm": []}
+    if mode == "page" and page_kind:
+        doc["meta"]["page_kind"] = page_kind
     if harness:
         doc["harness"] = harness
     if run_id:
@@ -109,7 +112,11 @@ def new_doc(mode="launch", harness=None, run_id=None):
 
 def load(path, mode="launch"):
     p = Path(path)
-    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else new_doc(mode)
+    if not p.is_file():
+        return new_doc(mode)
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    derive_payment_plans(doc)  # a flag saved by an older run is still derived, never asked
+    return doc
 
 
 def save(doc, path):
@@ -219,9 +226,64 @@ def roles(doc):
            "text": r["text"] or ph.readable_text_for((r["background"] or ["#FFFFFF"])[0])}
     if r["secondary"]:
         out["secondary"] = r["secondary"]
-    sts = [get(doc, f"brand_{k}")["status"] for k in ROLE_ORDER if get(doc, f"brand_{k}")]
-    status = "default_to_confirm" if "default_to_confirm" in sts else "provided"
-    return {"roles": out, "status": status, "warnings": ph.check_palette(out)}
+    # a derived piece (the contrast-rule text colour) is documented like derived fonts,
+    # never a proposal: it must not relabel the client's accepted palette
+    sts = [ent["status"] for ent in (get(doc, f"brand_{k}") for k in ROLE_ORDER)
+           if ent and ent.get("source") != "contrast rule"]
+    status = ("default_to_confirm" if "default_to_confirm" in sts
+              else "suggested" if "suggested" in sts else "provided")
+    return {"roles": out, "status": status, "confirmed": status == "provided", "warnings": ph.check_palette(out)}
+
+
+# ---------------------------------------------------------------- profiles and derived fields
+def profile(doc, bank=None):
+    """The ask list the doc's mode declares, or None. Mode page is Skill 71's page-only
+    profile: its questions are the ask list, and nothing outside it is ever put to the client."""
+    b = bank if isinstance(bank, dict) else load_bank()
+    profiles = b.get("profiles") or {}
+    if not profiles and b is not load_bank():  # a partial bank still obeys the canonical ask list
+        profiles = load_bank().get("profiles") or {}
+    return profiles.get((doc.get("meta") or {}).get("mode"))
+
+
+_BILLING_PAYMENT_PLANS = {"one_time": False, "recurring": True, "installment": True}
+# the bank's own answer text, which apply_default records verbatim
+_BILLING_TEXT = {"all at once": "one_time", "monthly": "recurring", "in parts or trial first": "installment"}
+
+
+def _billing_key(value):
+    """one_time / recurring / installment from the stored key or the bank's answer text.
+    Anything else - including a malformed hand-edited value - maps to None, never a crash."""
+    if not isinstance(value, str):
+        return None
+    return value if value in _BILLING_PAYMENT_PLANS else _BILLING_TEXT.get(_norm(value))
+
+
+def derive_payment_plans(doc):
+    """The payment-plan flag comes from the billing answer. It is derived, never asked,
+    and it inherits the billing answer's own state: a defaulted billing answer may not
+    produce a confirmed payment-plan flag."""
+    if (doc.get("meta") or {}).get("mode") == "legacy":
+        return get(doc, "payment_plans")
+    have = get(doc, "payment_plans")
+    if have is not None and have["status"] != "unknown" and have.get("source") != "derived-billing":
+        return have  # an answer recorded outside the derivation wins
+    b = get(doc, "billing")
+    key = _billing_key(b["value"]) if b is not None else None
+    if b is None or b["status"] == "unknown" or key is None:
+        return have
+    return _set(doc, "payment_plans", _BILLING_PAYMENT_PLANS[key], b["status"], "derived-billing",
+                f"Derived from your billing answer ({b['value']}); this is never asked.")
+
+
+def page_kind(doc):
+    return (doc.get("meta") or {}).get("page_kind")
+
+
+def is_opt_in(doc):
+    """The recorded page kind governs the length rule - including when --page-kind was
+    stamped on a doc whose mode is not page. Enforcement never depends on two flags."""
+    return page_kind(doc) == "opt_in"
 
 
 # ---------------------------------------------------------------- conditions
@@ -259,7 +321,11 @@ def cond_met(doc, cond):
 
 def applicable(doc, bank=None):
     autofill_roles(doc)
-    return [q for q in (bank or load_bank())["questions"] if cond_met(doc, q["condition"])]
+    derive_payment_plans(doc)
+    prof = profile(doc, bank)
+    allowed = set(prof["questions"]) if prof else None
+    return [q for q in (bank or load_bank())["questions"]
+            if cond_met(doc, q["condition"]) and (allowed is None or q["id"] in allowed)]
 
 
 def topics(doc, bank=None):
@@ -300,11 +366,15 @@ def hydrate(doc, q):
         q["choices"] = (pool + (["None"] if role == "accent" else []))[:3]
     if q["id"] == "design_style" and isinstance(q.get("help"), dict) and isinstance(q["help"].get("examples"), list):
         q["help"]["examples"] = q["help"]["examples"] + _style_links()
+    if q["id"] == "copy_profile" and is_opt_in(doc):
+        q["choices"] = [c for c in q["choices"] if _norm(c) != "standard"]  # opt-in is long-form only
     return q
 
 
 def _style_links():
-    """The design-style visual examples, wherever this distribution installs Skill 71."""
+    """The design-style visual examples, wherever this distribution installs Skill 71.
+    One line per style, never silently dropped: a style with no example image says so, so
+    the client is not told a picture exists when it does not."""
     names = ("71-blackceo-signature-page", "blackceo-signature-page")  # repo tree vs skills tree
     bases = [p / n for p in Path(__file__).resolve().parents for n in names]
     home = Path.home()
@@ -315,10 +385,26 @@ def _style_links():
         f = base / "references" / "design-styles.json"
         if f.is_file():
             try:
-                return [f"{s['id']} {s['name']} example: {s['example']['url']}" for s in json.loads(f.read_text())["styles"] if s["example"].get("url")]
-            except (OSError, ValueError, KeyError):
+                styles = json.loads(f.read_text())["styles"]
+            except (OSError, ValueError, KeyError, TypeError):
                 return []
+            return _style_lines(styles)
     return []
+
+
+def _style_lines(styles):
+    """One honest line per style. A malformed entry is skipped, never crashes the ask
+    (a nameless entry has nothing to disclose); a missing or non-string URL is "none"."""
+    out = []
+    for s in styles if isinstance(styles, list) else []:
+        if not isinstance(s, dict):
+            continue
+        ex = s.get("example")
+        url = ex.get("url") if isinstance(ex, dict) else None
+        name = f"{s.get('id', '?')} {s.get('name', '')}".strip()
+        out.append(f"{name} example: {url}" if isinstance(url, str) and url
+                   else f"{name} example: none available yet - this style has no example image")
+    return out
 
 
 def _askable(doc, q):
@@ -538,16 +624,23 @@ def _normalize(doc, q, raw):
             return _need("I only recommend from products you have told me about. Tell me what you could offer and I will shape it for you to review.")
         return str(text), "provided", None
     if qid == "image_provider":
-        n = {"My connected service": "connected", "Recommend one": "kie", "No images needed": "none"}.get(pick or "")
-        n = n or (low if low in ("kie", "agnes", "none", "connected") else None)
-        return ((n, "suggested" if pick == "Recommend one" else "provided", None) if n else _need("Which image service: your connected one, one I recommend, or none?"))
+        n = {"My connected service": "connected", "Recommend one": "kie"}.get(pick or "")
+        n = n or (low if low in ("kie", "agnes", "connected") else None)
+        if not n:  # every page needs its canonical renders; "none" is not an answer
+            return _need("Which image service should make your pictures: your connected one, or one I recommend? Every page needs its generated pictures, so there is no none.")
+        return n, ("suggested" if pick == "Recommend one" else "provided"), None
     if qid == "image_cap":
-        if low in ("no pictures", "none", "0"):
-            return 0, "provided", None
         m = re.search(r"\d+", low)
-        return (int(m.group(0)), "provided", None) if m else _need("A number please, like 12.")
+        if not m or int(m.group(0)) <= 0:  # "no pictures" and 0 are the removed no-images path
+            return _need("Every page needs its canonical set of generated pictures, so the number must be at least 1. A number like 12 is fine.")
+        return int(m.group(0)), "provided", None
     if qid == "copy_profile":
-        return (("long_form" if "long" in low else "standard"), "provided", None) if (pick or "standard" in low or "long" in low) else _need("Standard or long-form?")
+        if not (pick or "standard" in low or "long" in low):
+            return _need("Standard or long-form?")
+        value = "long_form" if "long" in low else "standard"
+        if value == "standard" and is_opt_in(doc):
+            return _need("An opt-in landing page is long-form only. Say long-form, or change the page kind to a sales page.")
+        return value, "provided", None
     if qid == "location":
         return ("existing" if "existing" in low or low.startswith("yes") else "new" if "new" in low else None, "provided", None) if (low.startswith("yes") or "new" in low or "existing" in low) else _need("Your existing account or a new one?")
     if qid == "entitlement":
@@ -612,6 +705,7 @@ def record(doc, qid, value, *, source="client", status=None, note=None):
     if st == "unknown":
         e["unknown_count"] = e.get("unknown_count", 0) + 1
     autofill_roles(doc)
+    derive_payment_plans(doc)  # billing answered: the payment-plan flag follows, never asked
     _sync_to_confirm(doc)
     return {"ok": True, "id": qid, "entry": e, "warnings": (roles(doc) or {}).get("warnings", []) if qid.startswith("brand_") else []}
 
@@ -705,6 +799,8 @@ def apply_default(doc, qid):
         v = {"mode": "wordmark", "text": val(doc, "business_name")}
     elif qid == "fonts":
         v = {"mode": "derive", "suggested": ph.fonts_suggestions()[0]}
+    elif qid == "copy_profile" and is_opt_in(doc):
+        v = "long_form"  # an opt-in landing page has one valid length; the default cannot weaken it
     elif qid == "brand_primary" or v in ("first_color", "next_color"):
         pool = _colors(doc) if qid == "brand_primary" else _remaining(doc)
         v = (pool or [None])[0]
@@ -810,6 +906,11 @@ def check(doc, bank=None):
             (blocking if q["never_default"] else unanswered).append(row)
         elif q["never_default"] and e["status"] in ("suggested", "default_to_confirm"):
             blocking.append({"id": q["id"], "question": q["text"], "why": "This is a suggestion until you approve it."})
+    if is_opt_in(doc):
+        e = get(doc, "copy_profile")
+        if e is not None and e["status"] != "unknown" and e["value"] == "standard":
+            blocking.append({"id": "copy_profile", "question": question("copy_profile")["text"],
+                             "why": "An opt-in landing page is long-form only; record long-form, or change the page kind to a sales page."})
     _sync_to_confirm(doc)
     r = roles(doc)
     return {"ready": not blocking and not unanswered, "blocking": blocking, "unanswered": unanswered,
@@ -1059,6 +1160,7 @@ def launch_answers(doc):
     suggestion can never be read as an approval."""
     if doc.get("meta", {}).get("mode") == "legacy":
         return {}
+    derive_payment_plans(doc)  # the flag is read from billing, never from a question
     out = {}
 
     def put(qid, key, value):
@@ -1176,6 +1278,12 @@ def main(argv=None):
     doc = load(path, _flag(a, "--mode") or "launch")
     if _flag(a, "--mode"):
         doc["meta"]["mode"] = _flag(a, "--mode")
+    pk = _flag(a, "--page-kind")
+    if pk:
+        if pk not in ("sales", "opt_in"):
+            print("--page-kind must be sales or opt_in", file=sys.stderr)
+            return 2
+        doc["meta"]["page_kind"] = pk
     if _flag(a, "--harness"):
         doc["harness"] = _flag(a, "--harness")
     if cmd == "next":

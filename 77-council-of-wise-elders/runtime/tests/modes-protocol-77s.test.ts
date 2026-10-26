@@ -547,8 +547,7 @@ function harness(
   return { service, owner, worker, snapshot, transport, grantFor };
 }
 
-const LIGHT_PANEL: readonly SeatId[] = SEAT_IDS.slice(0, 3);
-
+const LIGHT_PANEL: readonly SeatId[] = SEAT_IDS;
 async function runMode(
   h: Harness,
   mode: SessionSpec['mode'],
@@ -575,21 +574,54 @@ function advisorRounds(cards: ReadonlyArray<{ card_kind: string; round: number }
 
 // ---------------------------------------------------------------- tests
 
-test('W77S: light runs exactly two rounds, six requests, no ratification pass', async () => {
+test('W77S: light runs exactly two rounds over the full roster, eighteen requests, no ratification pass', async () => {
   const transport = new ScriptedTransport({ script: 'consensus' });
   const h = harness('light', transport);
   const { result, cards, state } = await runMode(h, 'light', LIGHT_PANEL, 'sess-w77s-light');
 
   assert.equal(result.status, 'completed');
   if (result.status !== 'completed' || result.verdict.result_kind !== 'scored') return;
-  assert.equal(transport.requests.length, 6);
-  assert.equal(transport.requestsForRound(1).length, 3);
-  assert.equal(transport.requestsForRound(2).length, 3);
+  // Every mode seats all nine; light differs in rounds and wave width only.
+  assert.equal(transport.requests.length, 18);
+  assert.equal(transport.requestsForRound(1).length, 9);
+  assert.equal(transport.requestsForRound(2).length, 9);
   assert.deepEqual(advisorRounds(cards), [1, 2]);
+  assert.equal(cards.filter((c) => c.card_kind === 'advisor').length, 18);
   assert.equal(cards.filter((c) => c.card_kind === 'ratification').length, 0);
   assert.equal(result.verdict.ratification_status, 'not_required');
   assert.equal(state, 'COMPLETED');
-  assert.equal(result.budget.consumed.provider_requests, 6);
+  assert.equal(result.budget.consumed.provider_requests, 18);
+});
+
+test('W77S: a light session missing one seat stops instead of shrinking the council', async () => {
+  const scripted = new ScriptedTransport({ script: 'consensus' });
+  const missingSeat = SEAT_IDS[4];
+  const primary: ModelTransport = {
+    generate: async (request) => {
+      if (request.seat_id === missingSeat) {
+        throw new TransportDispatchError('upstream refused the seat', { retryable: false });
+      }
+      return scripted.generate(request);
+    },
+  };
+  const h = harness('light-missing', scripted, { resolveTransport: () => primary });
+  h.service.repositories.createSession(
+    h.owner,
+    storedSession('light', SEAT_IDS, 'sess-w77s-light-missing'),
+  );
+  const grantId = h.grantFor('sess-w77s-light-missing');
+  const result = await h.service.runSession(h.worker, 'sess-w77s-light-missing', {
+    grant_id: grantId,
+    route_snapshot: h.snapshot,
+  });
+
+  // The old policy would have carried on with a smaller council; the
+  // rule is the same as every other mode: all nine or a visible stop.
+  assert.equal(result.status, 'incomplete');
+  if (result.status !== 'incomplete') return;
+  assert.match(result.detail, /light mode keeps its whole panel/);
+  assert.deepEqual(result.missing.map((m) => m.seat_id), [missingSeat]);
+  assert.equal(h.service.repositories.getSession(h.worker, 'sess-w77s-light-missing')?.state.state, 'BLOCKED');
 });
 
 test('W77S: medium stops after round 1 on consensus and composes from that round', async () => {

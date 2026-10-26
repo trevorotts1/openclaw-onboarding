@@ -125,8 +125,14 @@ def write_piece_artifacts(out_dir: Path, plan: Dict[str, Any],
 
 def build_and_check(name: str, payload: Dict[str, Any],
                     expected_roles: List[str],
-                    council_runner=stub_council) -> Dict[str, Any]:
-    """Validate, compile, plan, assemble and check one worked example."""
+                    council_runner=stub_council,
+                    expected_blockers: List[str] = ()) -> Dict[str, Any]:
+    """Validate, compile, plan, assemble and check one worked example.
+
+    ``expected_blockers`` names the gate prefixes this shape must be blocked
+    on (L25-BF-41: folded_levels has no Skill 79 mode, so its delivery is
+    withheld). A shape that must pass names none.
+    """
     normalized = intake.validate(payload)
     advice = council.planning_step(normalized, runner=council_runner)
     check(f"{name} Council step is recorded and never blocks",
@@ -167,7 +173,16 @@ def build_and_check(name: str, payload: Dict[str, Any],
     out_record = package.assemble(run_dir, normalized, graph, pieces,
                                   council=advice)
     fails = checks.check_package(Path(out_record["manifest_path"]), run_dir)
-    check(f"{name} package completeness checks pass", fails == [], repr(fails))
+    if expected_blockers:
+        check(f"{name} package is blocked exactly on the unresolved checkout mode",
+              [f.split(":")[0] for f in fails] == list(expected_blockers),
+              repr(fails))
+        check(f"{name} manifest records the withheld delivery",
+              out_record["manifest"]["checkout"]["delivery_blocked"] is True
+              and out_record["manifest"]["checkout"]["delivery_blockers"],
+              repr(out_record["manifest"]["checkout"]["delivery_blocked"]))
+    else:
+        check(f"{name} package completeness checks pass", fails == [], repr(fails))
     check(f"{name} package is self-contained",
           all((run_dir / art["path"]).is_file()
               for p in out_record["manifest"]["pieces"] for art in p["artifacts"]))
@@ -177,8 +192,7 @@ def build_and_check(name: str, payload: Dict[str, Any],
     check(f"{name} checkout mapping is bound to the S79 contract",
           out_record["manifest"]["checkout"]["contract"].endswith(
               "checkout.schema.json")
-          and out_record["manifest"]["checkout"]["validator"]["state"]
-          in ("bound", "unavailable"))
+          and out_record["manifest"]["checkout"]["validator"]["state"] == "bound")
     print(f"      {name} run dir: {run_dir}")
     return out_record
 
@@ -225,7 +239,8 @@ def run_seven_figure_preneur() -> None:
 
     record = build_and_check(
         "seven-figure-preneur", payload,
-        ["landing", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"])
+        ["landing", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"],
+        expected_blockers=["AF-LAUNCH-CHECKOUT-MODE"])
     graph = route.compile_route(normalized, route.launch_record(normalized))
     roles = [n["role"] for n in graph["nodes"]]
     check("folded_levels inserts NO product_selection page",

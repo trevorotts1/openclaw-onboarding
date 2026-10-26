@@ -224,7 +224,7 @@ class AnyRouteTests(unittest.TestCase):
         self.assertIn('requested=deepseek-chain served=opus-chain', snapshot['route_alarm'])
 
     def test_no_route_defaults_to_role_chain(self):
-        for role, default in (('builder', 'opus-chain'), ('reviewer', 'sonnet-chain'), ('merge_operator', 'haiku-chain')):
+        for role, default in (('builder', 'deepseek-chain'), ('reviewer', 'sonnet-chain'), ('merge_operator', 'haiku-chain')):
             bound = self.bind('a-' + role, role=role, route=None, served=default)
             self.assertEqual(bound['route'], default)
             self.assertEqual(bound['served_route'], default)
