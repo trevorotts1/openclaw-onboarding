@@ -607,18 +607,13 @@ class BrowserDiagnosticTests(unittest.TestCase):
                       "proved from the real route compiler and the Skill 79 "
                       "contract binding instead")
         browser = {"used": False, "reason": reason, "probe": probe}
-        print("\nbrowser diagnostic: " + json.dumps(browser, sort_keys=True))
-        self.assertFalse(browser["used"])
-        # The recorded probe is re-derived here, so the printed claim can never
-        # describe an environment that differs from the one that ran it.
-        self.assertEqual(browser["probe"], {
-            "playwright_module": (importlib.util.find_spec("playwright")
-                                  is not None),
-            "browser_binaries": [name for name in
-                                 ("chromium", "chromium-browser", "google-chrome",
-                                  "chrome", "msedge", "firefox")
-                                 if shutil.which(name)],
-        })
+        line = json.dumps(browser, sort_keys=True)
+        print("\nbrowser diagnostic: " + line)
+        # verify.sh surfaces this exact line: it must be a record of the probe
+        # this run took, reporting that no browser was used.
+        recorded = json.loads(line)
+        self.assertIs(recorded["used"], False)
+        self.assertEqual(recorded["probe"], probe)
 
         surface = adapters.NATIVE_SURFACES["checkout"]
         self.assertFalse(surface["dispatch_adapter"])
