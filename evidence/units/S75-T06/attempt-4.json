@@ -5,9 +5,19 @@
   "role": "repair-author",
   "branch": "s75/S75-T06-r11",
   "base_sha": "b731551e38f8868b283a0d067af9a5ecfa9b279a",
-  "head_sha": "PENDING_AT_WRITE_TIME",
+  "head_sha": "18280f93c16cc38007d85d8193ad66cf770b05ec",
   "written_at_utc": "2026-10-25T17:24:55Z",
-  "note": "head_sha is the literal placeholder written before the repair commit existed. It is replaced with the resolved 40-hex in a follow-up commit after the push, per this round's artefact contract.",
+  "note": "The literal placeholder PENDING_AT_WRITE_TIME was written before the repair commit existed. Per this round's artefact contract it was to be replaced with the resolved 40-hex in a follow-up commit after the push. That follow-up never landed in round 11: git log --all -- evidence/units/S75-T06/ returned one commit only (18280f93c), and it still carried the placeholder. Repaired here: head_sha now records the resolved 40-hex of the round-11 repair commit, and the follow-up commit carrying this correction is the commit the promise named. head_sha is the candidate code commit, not this bookkeeping commit.",
+  "independent_checker": {
+    "checker": "qc-conform-S75-T06",
+    "checker_id": "qc-conform-S75-T06",
+    "checker_model": "opus-chain",
+    "checker_role": "independent QC reviewer (authored nothing in this unit)",
+    "receipt": "S75-T06.2e5eff3e3006f0ef5a876596bed2086e190f4061.json",
+    "receipt_recorded_at": "2026-10-25T20:05:32-04:00",
+    "receipt_verdict": "FAIL",
+    "note": "The conformance reviewer whose receipt graded this unit. Recorded here because the acceptance row's evidence column requires a named independent checker and the repair-author role is not one. The reviewer's verdict on the row was FAIL, for the evidence-column defects this correction repairs (D1); the code-behaviour clauses it probed independently passed. The reviewer authored nothing in this unit."
+  },
   "defect_repaired": {
     "summary": "Round 10 closed the orthography channel by refusing 34 real people in both display_name and character_id. Restored by DATA only: one curated entry per person in real_content_names.txt.gz, in the accented spelling and the unaccented spelling. No limb of the name rule reads spelling as evidence again.",
     "the_34": [
@@ -54,10 +64,19 @@
     "head": {"passed": 68, "failed": 0, "total": 68, "def_test": 68},
     "removed_renamed_skipped_xfailed": 0
   },
+  "channel_widening_adjudication": {
+    "defect": "D2-generic-descriptor-channel-widened-at-head, from the FAIL receipt S75-T06.2e5eff3e3006f0ef5a876596bed2086e190f4061.json (reviewed_at 2026-10-26T01:57:49Z, candidate head 18280f93c16cc38007d85d8193ad66cf770b05ec); the earlier FAIL receipt (reviewed_at 2026-10-25T20:05:32-04:00) measured the same family as D2.",
+    "measured": "curated-prefix x role-head channel: 120/288 accepted at base, 168/288 at head, +48 = 'Le' and 'Le-with-circumflex' x 12 role heads x 2 positions. 'Le Woman', 'Le Manager', 'Le Driver', 'Le-with-circumflex Woman' reach state COMPLETE at head and are refused INCOMPLETE_CAST at base. Round-11 verdict of record measured the same family ('Le <role noun>' 82/90 at head vs 0/90 at base) and classified it 'residual, not a row failure on the measured text'.",
+    "why_no_production_code_change": "The row's own committed control pins the identical shape: CONTROL_NAMES and REAL_NAMES_RESTORED in test_cast_writer_s75_t06.py require '<curated name> <descriptor word as surname>' accepted ('Dana Woman', 'Theresa Manager', 'Wanda Manager'), and the round-11 verdict records the same channel already open at base for 'Nguyen', 'Pham', 'Dana' and 'Mary' (82/90 accepted at base). Any shape rule that refuses 'Le Woman' refuses 'Dana Woman' (pinned must-accept); removing 'le' / 'Le-with-circumflex' from NAME_LEXICON refuses the real people those entries restore (pinned must-accept, REAL_NAMES_RESTORED). The only remaining cure is a given-name/surname vocabulary, which this module deliberately does not carry ('a vocabulary, deliberately not added here').",
+    "decision_status": "Owner decision pending. Round-11 verdict of record post_pass_observations: 'the next round should decide whether a surname-position token may be decisive when the following token is a role noun.' The FAIL receipts record the row text alone does not settle it ('the row and its own control disagree').",
+    "pinned_not_hidden": "Declared residual, NOT pinned at this head. The four shapes sit in KNOWN_STILL_ACCEPTED_DESCRIPTORS only in 7a5429ef0, which also edits test_cast_writer_s75_t06.py; this land is evidence-only by scope, so that test edit was not applied. At product head 18280f93c KNOWN_STILL_ACCEPTED_DESCRIPTORS is ['Senorita Gomez', 'Fräulein Schmidt'] and no committed test asserts the Le / Lê shapes either way, so the suite would not fail if their verdict changed. The residual is declared here; the pin is unapplied."
+  },
   "files_changed": [
     "75-drama-song-ad-factory/scripts/core/real_content_names.txt.gz",
     "75-drama-song-ad-factory/scripts/core/real_content.py",
     "75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py"
   ],
-  "lexicon": {"before": 1328, "added": 49, "after": 1377}
+  "lexicon": {"before": 1328, "added": 49, "after": 1377},
+  "dependencies": ["openclaw-onboarding:75-drama-song-ad-factory/scripts/core/character_bible/cast_writer.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/real_content.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/real_content_names.txt.gz", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/story_first_contracts.py"],
+  "dependencies_source": "Import graph of the head's own changed files, read from git show at 89f1d616227eff8b09f4c01bcb585bec12f14325 and graded head 18280f93c16cc38007d85d8193ad66cf770b05ec: cast_writer.py imports story_first_contracts and real_content; real_content.py imports only stdlib (gzip, os, re, unicodedata) and opens real_content_names.txt.gz; test_cast_writer_s75_t06.py imports cast_writer and reads cast_writer.py/real_content.py. Verdict of record S75-T06.verdict.round11.json changed_files_vs_base names the same four files. Ledger S75-T06 needs=[] and owned_paths=[] ('not recorded') established none. No external/service dependency: dispatch is injected (attempt-4 'dispatch_contract': 'dispatch(prompt: dict) -> dict; injected only, no provider transport in the module')."
 }
