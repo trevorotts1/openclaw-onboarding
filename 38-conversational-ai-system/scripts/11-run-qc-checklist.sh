@@ -351,9 +351,15 @@ fi
 
 # -------- Backend-ready gate: the agent is ready to RECEIVE --------
 # The install is not "complete" until the backend can RECEIVE inbound: a live
-# hooks.mappings entry for HOOK_NAME with deliver:false and a working model, AND
-# /healthz returns 200. Testing only happens after BOTH the doc AND this pass.
-section "Backend ready to receive (hooks.mappings live + deliver:false + model + /healthz 200)"
+# hooks.mappings entry for HOOK_NAME with deliver:false, AND /healthz returns
+# 200. Testing only happens after BOTH the doc AND this pass.
+# PBB-017 DECISION: `model` is OPTIONAL on a hooks.mappings entry — agentId is
+# sufficient and the run falls back to the agent's own configured model. Only a
+# PRESENT-but-BLANK override is refused (OpenClaw's normalizeAgentPayload
+# rejects it). Before this repair the predicate demanded a non-empty `model`,
+# so it failed the writer's own correct fresh-install mapping with `no-model`
+# while qc-backend-ready.sh and 24-self-test-hook.sh both passed it.
+section "Backend ready to receive (hooks.mappings live + deliver:false + /healthz 200)"
 OC_CONFIG=""
 for cfg in "${OPENCLAW_CONFIG:-}" "${HOME}/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json" "/root/.openclaw/openclaw.json"; do
   [ -n "$cfg" ] && [ -f "$cfg" ] && { OC_CONFIG="$cfg"; break; }
@@ -385,21 +391,23 @@ if chosen is None and maps:
 if chosen is None:
     print("ERR:no-live-hooks-mapping"); sys.exit(0)
 deliver = chosen.get("deliver", None)
-model = (chosen.get("model") or "").strip()
 problems = []
 if deliver is not False:
     problems.append("deliver-not-false")
-if not model:
-    problems.append("no-model")
+# PBB-017: an ABSENT `model` is valid (the agent-configured model runs the
+# mapping). Only a present-but-blank override is refused — the same rule
+# lib-hook-mapping-contract.sh applies to every gate.
+if "model" in chosen and not str(chosen.get("model") or "").strip():
+    problems.append("blank-model-override")
 if problems:
     print("ERR:" + ",".join(problems)); sys.exit(0)
 print("OK")
 PY_BACKEND_EOF
 )"
   case "$BACKEND_OUT" in
-    OK) report_pass "hooks.mappings is live with deliver:false and a model set ($OC_CONFIG)" ;;
+    OK) report_pass "hooks.mappings is live with deliver:false and no blank model override ($OC_CONFIG)" ;;
     ERR:no-live-hooks-mapping) report_fail "no live hooks.mappings agent entry — the backend cannot RECEIVE inbound (run scripts/15-configure-hooks-mappings.sh)" ;;
-    ERR:*) report_fail "hooks.mappings is not receive-ready: ${BACKEND_OUT#ERR:} (need deliver:false + a working model)" ;;
+    ERR:*) report_fail "hooks.mappings is not receive-ready: ${BACKEND_OUT#ERR:} (need deliver:false; a model override is optional and must not be blank)" ;;
     *) report_fail "could not evaluate hooks.mappings readiness from $OC_CONFIG" ;;
   esac
 else
@@ -427,7 +435,8 @@ else
 fi
 
 # -------- Backend ready to RECEIVE (live gate; SKIPs with no install) --------
-# hooks.mappings live + deliver:false + a working model + healthz 200. On a box
+# hooks.mappings live + deliver:false (a `model` override is OPTIONAL — PBB-017;
+# the agent's own configured model runs the mapping) + healthz 200. On a box
 # with no install this exits 3 (SKIP).
 section "Backend ready to RECEIVE (qc-backend-ready.sh)"
 QC_BACKEND="$SCRIPT_DIR/qc-backend-ready.sh"
@@ -436,9 +445,9 @@ if [ -f "$QC_BACKEND" ]; then
   BACKEND_RC=0
   bash "$QC_BACKEND" >/dev/null 2>&1 || BACKEND_RC=$?
   case "$BACKEND_RC" in
-    0) report_pass "backend ready to receive: hooks.mappings live + deliver:false + a working model + healthz 200 (testing may proceed once the client doc gate also passes)" ;;
+    0) report_pass "backend ready to receive: hooks.mappings live + deliver:false + no blank model override + healthz 200 (testing may proceed once the client doc gate also passes)" ;;
     3) echo "  [SKIP] no openclaw.json on this box — cannot verify backend readiness here" ;;
-    *) report_fail "qc-backend-ready.sh: backend NOT ready to receive (hooks.mappings / deliver:false / model / healthz) — do NOT test, do NOT hand off; run it directly for detail" ;;
+    *) report_fail "qc-backend-ready.sh: backend NOT ready to receive (hooks.mappings / deliver:false / blank model override / healthz) — do NOT test, do NOT hand off; run it directly for detail" ;;
   esac
 else
   report_fail "qc-backend-ready.sh not found (looked in scripts/)"
