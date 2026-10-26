@@ -132,16 +132,21 @@ def fixture_runner(body, requests):
     return runner
 
 
-def fixture_dispatch(body, run_dir=None, attempt_id="attempt_fixture_001", requests=None):
-    """One no-spend dispatch through the supported model layer, on its own run dir."""
+def fixture_dispatch(body, run_dir=None, attempt_id="attempt_fixture_001", requests=None, ww=WW):
+    """One no-spend dispatch through the supported model layer, on its own run dir.
+
+    ``ww`` is the world_writer module the dispatch runs through. Most callers
+    want this module's own binding; the pickle attack needs the module object
+    pickle resolves by name (see attack_pickle_handle).
+    """
     run_dir = run_dir or tempfile.mkdtemp(prefix="world_fixture_")
     if AM.load_bindings(run_dir) is None:
         bound = AM.bind_roles(run_dir, BUILD_MODEL, CHECK_MODEL,
                               runtime="claude-nine", now=FIXTURE_NOW)
         assert bound.get("ok"), bound
     requests = [] if requests is None else requests
-    record = WW.dispatch_author(run_dir=run_dir, attempt_id=attempt_id, inputs=FIXTURE_INPUTS,
-                                runner=WW.no_spend_transport(fixture_runner(body, requests)),
+    record = ww.dispatch_author(run_dir=run_dir, attempt_id=attempt_id, inputs=FIXTURE_INPUTS,
+                                runner=ww.no_spend_transport(fixture_runner(body, requests)),
                                 now=FIXTURE_NOW)
     return record, requests, run_dir
 
@@ -1004,10 +1009,10 @@ def dispatch_around(handle):
     return dispatch
 
 
-def genuine_dispatch():
+def genuine_dispatch(ww=WW):
     """One real dispatch: the thing every attack wants WITHOUT paying for it."""
     body = fixture_body()
-    dispatch, _, run_dir = fixture_dispatch(body)
+    dispatch, _, run_dir = fixture_dispatch(body, ww=ww)
     return body, dispatch, run_dir
 
 
@@ -1168,7 +1173,18 @@ def attack_deepcopy_handle():
 
 
 def attack_pickle_handle():
-    _, dispatch, _ = genuine_dispatch()
+    # pickle resolves a class by NAME: module of the minted handle's class must be
+    # sys.modules["world_bible.world_writer"] for dumps to accept the object. In the
+    # one-process full-tree pytest run, scripts/conftest.py drops the skill-tree
+    # modules from sys.modules between collections and pytest then re-imports the
+    # world_bible package __init__ at item setup, so sys.modules can hold a SECOND
+    # world_writer module object while this test module still binds the first.
+    # Mint the handle through the module object pickle will resolve -- the canonical
+    # sys.modules entry, or this module's binding when no second copy exists -- so the
+    # round trip exercises the deployed identity, and the unpickled clone (a fresh
+    # object, no registry entry in ANY scope) must still be refused.
+    canonical = sys.modules.get("world_bible.world_writer") or WW
+    body, dispatch, _ = genuine_dispatch(ww=canonical)
     clone = pickle.loads(pickle.dumps(dispatch["_handle"]))
     outcome = seal_outcome(dispatch_around(clone))
     if outcome.startswith("ACCEPTED"):
