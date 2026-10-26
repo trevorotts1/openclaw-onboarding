@@ -853,6 +853,19 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-playbook-engine.sh
           echo "✓ Skill 38 playbook_engine.py (U-16) unit tests are green"
 
+      - name: Skill 38 post-delivery discovery unit tests (T-27)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # post_delivery_discovery.py (tools/) is T-27: adaptive post-gift needs
+          # discovery, grounded answers with their source, and one real
+          # resource/community/offer/calendar recommendation, invoked from the
+          # delivery-verified path of direct_fulfillment.py (record_delivery_proof).
+          # Run its unit suite BY EXPLICIT PATH so a contract regression fails the
+          # build instead of drifting. BASH wrapper around python3 -m unittest.
+          python3 -m unittest discover -s 38-conversational-ai-system/tools/tests -p 'test_post_delivery_discovery.py' -v
+          echo "✓ Skill 38 post_delivery_discovery.py (T-27) unit tests are green"
+
       - name: Skill 38 Per-phase tool gating (U-1)
         shell: bash
         run: |
