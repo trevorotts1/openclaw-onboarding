@@ -1,0 +1,13 @@
+{
+  "name": "@blackceo/wise-elders-supervisor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Hybrid Council of Wise Elders persistent engineering supervisor bootstrap (WER-001): deterministic health observer, pure fixed-cadence sweep planner, leader/fencing state model, supervisor state machine. No LLM calls. Native-adapter binding is a later unit (UNKNOWN here).",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

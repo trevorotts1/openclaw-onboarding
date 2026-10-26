@@ -95,12 +95,25 @@ that is recorded in the checkout mapping as an open contract gap, not guessed.
 
 ---
 
-## Still open
+## Still open — owner decisions
+
+Neither seam carries a value anywhere in this build: `launcher_core/constants.py:SEAMS` names both, and no
+code path invents a target or teaching content. Each is an owner decision, not a builder gap.
 
 ### A. `distribution_run_target`
 
-**Decision:** installed into the customer's own OpenClaw/999 environment, or run
-inside BlackCEO's environment.
+**Owner decision (open).** Installed into the customer's own OpenClaw/999 environment, or run inside
+BlackCEO's environment. Only the owner can pick.
+
+**Blocks:** the distribution step — installing the build into a named environment — and any claim that a
+run happened in a named environment. `assemble` builds the local package either way; that is listed under
+**Does not block** below.
+`registration.json:distribution` stays `status: open_decision` with `chosen_target: null` until the owner
+names one; no code may fill it in.
+
+**Does not block:** the build, `assemble`, `check`, the shipped tests, or enablement in 999 —
+`registration.json:enablement.enabled_in_999` is already true and `launcher_core/dependencies.py` derives
+`enabled_in_999` from that record plus the dependency check, never from this seam.
 
 **Code seam:** `registration.json:distribution` (`status: open_decision`,
 `chosen_target: null`) and `SKILL.md` entry. The Launcher is enabled in 999 regardless of this decision
@@ -112,8 +125,16 @@ fails closed instead of guessing a path.
 
 ### B. `cross_sales_teaching_source`
 
-**Decision:** which cross-sale teaching content ships. The inclusion itself is
-settled: the relationship surface is present.
+**Owner decision (open).** Which cross-sale teaching content ships. The inclusion itself is settled: the
+relationship surface is present. The owner supplies the material.
+
+**Blocks:** any delivered teaching content. `checks.py` refuses a package whose
+`cross_sales.teaching.state` is anything but `"pending"` (`AF-LAUNCH-CROSS-SALES`), so a run cannot claim
+teaching copy it does not have.
+
+**Does not block:** building and delivering the `thank_you` page. The offer relationships
+(`complements` / `included_in` / `requires`) are recorded and surfaced there with the teaching state
+`pending`.
 
 **Code seam:** `launcher_core/route.py:launch_record` records the offer
 relationships (`complements` / `included_in` / `requires`) and marks

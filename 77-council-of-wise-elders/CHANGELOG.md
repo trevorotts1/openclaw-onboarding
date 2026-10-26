@@ -1,5 +1,43 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.62: automatic mode selection, queue and supervisor repairs, provider parallelism (AUTO-MODE-1062 + REPAIR-1063)
+
+In plain English: the council now picks light, medium or heavy from the question itself when the client does not name a mode. Every mode still seats all nine elders; the mode only changes the rounds and how many advisors work at once. Three repairs land with it: the queue producer can readmit a job and clears nullable receipt fields, the hybrid supervisor stops misreporting a finished run, and the provider limits read a client's Ollama plan however it is written.
+
+- Auto mode (AUTO-MODE-1062): `selectMode(question, explicitMode)` in `runtime/src/flow/mode-select.ts` is the single selector. An explicit client mode wins verbatim (source `client`); otherwise the question's complexity decides deterministically (source `auto`) from fixed weights, caps and thresholds: score 0-4 light, 5-13 medium, 14+ heavy. No randomness, no clock, no model call.
+- The convene flow resolves the mode through that one selector before deliberation; the chosen mode, its source and its reason travel on the session record and the convene result. The import is the real module path `./mode-select.js`; the guessed `contracts/mode-select.js` path never shipped.
+- What a mode does is unchanged and is not reinterpreted by the selector: light 2 rounds at most 3 in parallel (waves of 3), cap 50; medium up to 4 rounds, cap 50; heavy up to 10 rounds, cap 100; consensus still 7 of 9 seats.
+- Docsweep (FIX-MODES-DOCS follow-up): `INSTRUCTIONS.md`, `references/protocol.md` and `references/model-routing.md` now state one policy — every mode seats nine; light is rounds and concurrency only. The chamber "How it works" caption no longer says a light question uses three advisors. No `light = 3 seats` wording remains in the live docs.
+- New references: `references/mode-selection.md` (how auto mode decides) and `references/provider-parallelism.md` (3 / 10 / unlimited caps by route).
+- Queue producer repair (REPAIR-1063): readmit works, nullable receipt fields are cleared, and dispatch labels are distinguished. The hybrid supervisor repair stops the misreporting path. Tests cover both.
+- Provider parallel limits (PROVIDER-PARALLEL-1063): one slug normalisation (`ollama`, `ollama-*`, `agnes`, `deepseek-direct`, everything else uncapped) and a price-tier plan parse, so `'20'`, `20`, `'$20/mo'` and `'100+'` all resolve. An unknown or between-tier plan still refuses with `OLLAMA_PLAN_REQUIRED` rather than guessing. The mode's wave width bounds the panel on every route.
+- Config default corrected: `config/defaults.json` light is 9 seats and 18 planned requests.
+
+## v1.0.61: every mode seats the whole council; the mode only changes the rounds and the parallelism (FIX-MODES-DOCS)
+
+In plain English: light mode was described as "3 seats". That was wrong. Light mode still uses all nine elders — it just runs them in waves of three and gives them two rounds. Every mode seats the entire council. The mode controls how many rounds they run and how many provider calls may be in flight at once, and nothing else. All nine seats appear in a light session.
+
+- All three modes seat the full nine-advisor roster. No mode, and no flag, reduces the roster. A light session shows all nine seats.
+- Light: exactly 2 rounds, at most 3 provider calls in parallel (waves of 3), provider-request cap 50.
+- Medium: up to 4 rounds, provider-request cap 50.
+- Heavy: up to 10 rounds, provider-request cap 100.
+- Consensus early stop is unchanged at 7 of 9 seats.
+- `SKILL.md` rewritten to match: the sizing line in step 2 now announces all nine advisors with the round and parallelism counts, step 4b no longer selects three seats for a light question, and step 5 states both the cap and the light concurrency limit.
+- This supersedes the light-mode wording in the v1.0.56 entry below, which described light as 3 best-fit advisors.
+- Runtime (FIX-MODES-RUNTIME) landed in the same batch: every council size now seats the full nine-seat roster from one shared constant (`MODE_SEATS` in `runtime/src/contracts/modes.ts`), so no mode has its own seat list any more.
+- Mode now controls two things and nothing else. Light: 2 rounds, at most 3 provider calls in flight (waves of three), 50-request cap. Medium: up to 4 rounds, 50-request cap. Heavy: up to 10 rounds, 100-request cap. The consensus stop rule still needs 7 of the 9 seats to agree.
+- Removing the three-seat light panel removed its consequences with it: the schema requirement, the intake panel rule, the "three best-fit seats" selector and the relevance-weight trimming that existed only to keep a three-seat verdict publishable.
+- The chamber caption and the CLI help no longer describe light as three advisors.
+- Tests: the mode suite now proves light seats all nine over two rounds and dispatches three at a time, medium and heavy seat the same roster, and a light session missing a seat still stops visibly instead of shrinking the council.
+
+## v1.0.60: the hybrid supervisor and the queue operation producer land together (HYBRID-1060)
+
+In plain English: this release adds the two halves of the hybrid council, landed as one batch. The supervisor decides which seats answer and in what order under the version 2 policy; the producer turns that decision into the queued work the runtime actually runs. Nothing about the existing council changes: both pieces are new files, and every earlier behaviour is untouched.
+
+- The hybrid supervisor ships under `scripts/supervisor/hybrid/` with its own `package.json`, `supervisor.mjs`, a test file, and the version 2 supervisor policy document (`wise-elders.hybrid-supervisor-policy/v2`). Its own suite passes 18 of 18.
+- The queue operation producer ships as `runtime/src/queue/operation-producer.ts` with its test file, turning a council decision into an operation the queue can run. Its own suite passes 6 of 6.
+- Packaging: `manifest.json` and the `.skill` archive are rebuilt once over both unit heads, and the version markers (`skill-version.txt`, `version`, and the `SKILL.md` frontmatter) all read 1.0.60.
+
 ## v1.0.59: the packaged copy is proven against the release, never against its own claims (TREEGATE-REPAIR)
 
 In plain English: 1.0.58 started accepting a packaged copy of the council as "the same release" as the copy being updated. The review that followed found the check was asking the packaged copy to vouch for itself: anything it wrote about itself was believed. A copy that shared no files with the release at all could be accepted by filling in its own paperwork. This release makes the release do the vouching.

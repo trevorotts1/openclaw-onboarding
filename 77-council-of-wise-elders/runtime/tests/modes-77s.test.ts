@@ -14,6 +14,8 @@ import {
   CONSENSUS_MIN_SEATS,
   MAX_ADVISOR_ROUND,
   MODE_ROUND_POLICY,
+  MODE_SEATS,
+  SEAT_IDS,
   SESSION_MODES,
   allowedTransitions,
   canTransition,
@@ -23,8 +25,6 @@ import {
   type SessionState,
 } from '../src/contracts/index.js';
 import { validSessionSpec } from '../src/contracts/fixtures/examples.js';
-import { recommendLightPanel } from '../src/intake/index.js';
-import type { IntakeDraft } from '../src/intake/types.js';
 import {
   isOllamaProvider,
   parallelLimitFor,
@@ -46,30 +46,42 @@ test('W77S: council sizes are light, medium and heavy', () => {
 });
 
 test('W77S: round policy matches the design for every size', () => {
+  // Every council size seats the full roster; mode owns rounds and
+  // concurrency only (Trevor, 2026-10-25).
+  assert.equal(MODE_SEATS, SEAT_IDS.length);
   assert.deepEqual(MODE_ROUND_POLICY.light, {
-    seats: 3,
+    seats: SEAT_IDS.length,
     min_rounds: 2,
     max_rounds: 2,
     stop_from_round: null,
     max_provider_requests: 50,
+    max_concurrent_calls: 3,
   });
   assert.deepEqual(MODE_ROUND_POLICY.medium, {
-    seats: 9,
+    seats: SEAT_IDS.length,
     min_rounds: 1,
     max_rounds: 4,
     stop_from_round: 1,
     max_provider_requests: 50,
+    max_concurrent_calls: SEAT_IDS.length,
   });
   assert.deepEqual(MODE_ROUND_POLICY.heavy, {
-    seats: 9,
+    seats: SEAT_IDS.length,
     min_rounds: 3,
     max_rounds: 10,
     stop_from_round: 3,
     max_provider_requests: 100,
+    max_concurrent_calls: SEAT_IDS.length,
   });
   assert.equal(CONSENSUS_MIN_SEATS, 7);
   assert.equal(CONSENSUS_LEAD, 1.5);
   assert.equal(MAX_ADVISOR_ROUND, 10);
+});
+
+test('W77S: every council size seats the same full roster', () => {
+  const seats = COUNCIL_SIZES.map((mode) => MODE_ROUND_POLICY[mode].seats);
+  assert.deepEqual(seats, [SEAT_IDS.length, SEAT_IDS.length, SEAT_IDS.length]);
+  assert.deepEqual(new Set(seats), new Set([9]));
 });
 
 // -------------------------------------------------------- schema rules
@@ -82,9 +94,9 @@ function specWith(mode: string, seatCount: number): unknown {
   };
 }
 
-test('W77S: light mode requires exactly three seats', () => {
-  assert.equal(validateSessionSpec(specWith('light', 3)).ok, true);
-  for (const count of [2, 4, 9]) {
+test('W77S: light mode requires all nine seats, like every council size', () => {
+  assert.equal(validateSessionSpec(specWith('light', 9)).ok, true);
+  for (const count of [2, 3, 4, 8]) {
     const result = validateSessionSpec(specWith('light', count));
     assert.equal(result.ok, false, `light accepted ${count} seats`);
   }
@@ -181,30 +193,6 @@ test('W77S: the four old modes keep their paths', () => {
   assert.deepEqual(forward('consult', 'PREPARING'), ['CONSULTING']);
 });
 
-// ------------------------------------------------------ light panel
-
-function draftWithFlags(flags: Record<string, boolean>): IntakeDraft {
-  return { answers: { decision: { flags } } } as unknown as IntakeDraft;
-}
-
-test('W77S: recommendLightPanel picks three best-fit seats in flag order', () => {
-  const panel = recommendLightPanel(
-    draftWithFlags({
-      involves_money_commitment: true,
-      involves_offer_or_pricing: true,
-      involves_stakeholder_trust: true,
-    }),
-  );
-  assert.equal(panel.length, 3);
-  assert.deepEqual(panel, ['tiffany-aliche', 'russell-brunson', 'brene-brown']);
-});
-
-test('W77S: recommendLightPanel fills from the roster when no flag fires', () => {
-  const panel = recommendLightPanel(draftWithFlags({}));
-  assert.equal(panel.length, 3);
-  assert.equal(new Set(panel).size, 3);
-});
-
 // --------------------------------------------------- parallel limits
 
 test('W77S: ollama plans cap how many seats run at once', () => {
@@ -236,6 +224,32 @@ test('W77S: every other provider runs the whole panel at once', () => {
       parallelLimitFor({ providerSlug, ollamaPlan: null, panelSize: 9 }),
       { ok: true, limit: 9 },
       providerSlug,
+    );
+  }
+});
+
+test('W77S: light dispatches three at a time even when the route could run nine', () => {
+  // Light seats all nine but runs them in waves of three.
+  assert.deepEqual(
+    parallelLimitFor({
+      providerSlug: 'openrouter-configured',
+      ollamaPlan: null,
+      panelSize: 9,
+      waveWidth: MODE_ROUND_POLICY.light.max_concurrent_calls,
+    }),
+    { ok: true, limit: 3 },
+  );
+  // Medium/heavy add no cap of their own: the whole roster goes at once.
+  for (const mode of ['medium', 'heavy'] as const) {
+    assert.deepEqual(
+      parallelLimitFor({
+        providerSlug: 'openrouter-configured',
+        ollamaPlan: null,
+        panelSize: 9,
+        waveWidth: MODE_ROUND_POLICY[mode].max_concurrent_calls,
+      }),
+      { ok: true, limit: 9 },
+      mode,
     );
   }
 });
