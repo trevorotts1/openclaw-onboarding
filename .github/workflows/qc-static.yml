@@ -3140,3 +3140,16 @@ jobs:
           set -uo pipefail
           python3 -I 38-conversational-ai-system/tools/tests/test_answer_duty.py
           echo "✓ answer_duty suite passes (public/private duty + fail-closed)"
+
+      # T-26 clause (d) — the comment-reader suite (acceptance rows A1/A2/A3) had
+      # a suite and no runner: `35-social-media-planner/scripts/test_comment_reader.py`
+      # existed but no workflow executed it, so a reader that fabricated a comment
+      # feed, handed off the page's own comments, or dropped a long-lived thread
+      # could ship green. The path is EXPLICIT, not a discover, so moving or
+      # deleting the file is a red build instead of a silently empty run.
+      - name: Skill 35 comment-reader suite (T-26 clause (d)) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I 35-social-media-planner/scripts/test_comment_reader.py
+          echo "✓ comment_reader suite passes (supported surface, own-author exclusion, ledgered skip)"
