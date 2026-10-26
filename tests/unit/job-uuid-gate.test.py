@@ -72,6 +72,22 @@ class GateTest(unittest.TestCase):
             self.assertEqual(ctx.exception.reason, g.JOB_NOT_RECURRING)
             self.assertFalse(self.target().exists())
 
+    def test_explicit_false_beats_nonempty_schedule(self):
+        # Exact shape the verifier named: the record DENIES recurrence while
+        # still carrying a live-looking cron string. Must refuse, not land.
+        job = {'id': JOB, 'recurring': False, 'schedule': '*/5 * * * *'}
+        self.assertFalse(g._recurring(job))
+        with self.assertRaises(g.WriteRefused) as ctx:
+            g.guarded_write(self.target(), 'x', expected_job_id=JOB,
+                            observed_jobs=[job])
+        self.assertEqual(ctx.exception.reason, g.JOB_NOT_RECURRING)
+        self.assertFalse(self.target().exists())
+        receipt = self.dir / 'receipt.json'
+        with self.assertRaises(g.WriteRefused):
+            g.write_prebuilder_receipt(receipt, expected_job_id=JOB,
+                                       observed_jobs=[job])
+        self.assertFalse(receipt.exists())
+
     def test_ambiguous_observation_refuses(self):
         with self.assertRaises(g.WriteRefused) as ctx:
             g.guarded_write(self.target(), 'x', expected_job_id=JOB,

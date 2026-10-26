@@ -31,9 +31,16 @@ class WriteRefused(Exception):
 
 
 def _recurring(job):
-    """True only when the listing SAYS recurring. Unknown is not recurring."""
+    """True only when the listing SAYS recurring. Unknown is not recurring.
+
+    An explicit ``recurring: False`` wins over any schedule string: the
+    record denies recurrence, so a leftover/non-empty schedule is not
+    evidence of it.
+    """
     if job.get('recurring') is True:
         return True
+    if job.get('recurring') is False:
+        return False
     schedule = job.get('schedule')
     return isinstance(schedule, str) and bool(schedule.strip())
 
