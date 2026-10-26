@@ -884,10 +884,19 @@ class AcquisitionBrief:
         *,
         provenance: str = PROVENANCE_CLIENT_STATED,
         source: Optional[str] = None,
-    ) -> Fact:
-        """Answer the pending (or named) question and persist immediately."""
+    ) -> Any:
+        """Answer the pending (or named) question and persist immediately.
+
+        A binding question (``binding.owner``, ``binding.approval``,
+        ``binding.capacity``, ``binding.claims``) is answered through the bind
+        API it names, never recorded as a fact: the answer is a structured
+        record and ``bind_owner`` / ``bind_approval`` / ``bind_capacity`` /
+        ``bind_claims`` already refuse a wrong one.
+        """
         if self._state["interview"].get("session_id") is None:
             self.start_interview()
+        if isinstance(fact_id, str) and fact_id.startswith("binding."):
+            return self._answer_binding(fact_id, value)
         before = self.get(fact_id)
         fact = self.record_fact(
             fact_id, value, provenance=provenance, source=source, save=False
@@ -1353,6 +1362,44 @@ class AcquisitionBrief:
         if save:
             self.save()
         return dict(record)
+
+    def _answer_binding(self, fact_id: str, value: Any) -> Any:
+        """Record one answered binding question, through the bind API it names.
+
+        The interview asks these questions (``next_binding_questions``) exactly
+        like fact questions, so the answer path must be able to take them. A
+        value that is not an object of named fields is refused here; every
+        field is validated by the bind call itself, so nothing is invented.
+        """
+        key = fact_id[len("binding."):]
+        if key not in BINDING_KEYS:
+            raise UnknownFactError(
+                "%r is not a fact in the acquisition brief" % (fact_id,)
+            )
+        if not isinstance(value, dict):
+            raise BindingError("a binding answer must be an object of named fields")
+        if key == BINDING_OWNER:
+            return self.bind_owner(
+                value.get("owner_id"),
+                value.get("name"),
+                email=value.get("email"),
+                role=value.get("role", "owner"),
+                tenant_id=value.get("tenant_id"),
+            )
+        if key == BINDING_APPROVAL:
+            return self.bind_approval(
+                value.get("approved_by"),
+                scope=value.get("scope"),
+                approved_at=value.get("approved_at"),
+            )
+        if key == BINDING_CAPACITY:
+            return self.bind_capacity(
+                value.get("declared_by"),
+                monthly_new_customers=value.get("monthly_new_customers"),
+                fulfilment_lead_days=value.get("fulfilment_lead_days"),
+                notes=value.get("notes"),
+            )
+        return self.bind_claims(value.get("approved_by"), value.get("claims"))
 
     def _binding_question(self, key: str) -> Question:
         text, priority = BINDING_QUESTIONS[key]
