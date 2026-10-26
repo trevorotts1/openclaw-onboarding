@@ -25,15 +25,26 @@ OTHER = "chr-fixture-nadia"
 
 
 class Transport:
-    """A local stand-in for the authorized connection's call()."""
+    """A local stand-in for the authorized connection's call().
+
+    A read-only "reconcile" consult is a different operation from a delivery:
+    it is recorded in its own ledger and, by default, reports that the
+    operation has NOT landed, so a retry still proceeds.
+    """
 
     def __init__(self, replies=None, failures=0, reply_factory=None):
         self.calls = []
+        self.reconcile_calls = []
         self.failures_left = failures
         self.replies = list(replies or [])
         self.reply_factory = reply_factory
 
     def __call__(self, action, payload):
+        if action == "reconcile":
+            self.reconcile_calls.append({"payload": dict(payload)})
+            if self.reply_factory is not None:
+                return self.reply_factory(action, payload, len(self.reconcile_calls))
+            return {"operation_id": payload["operation_id"], "applied": False}
         self.calls.append({"action": action, "payload": dict(payload)})
         if self.failures_left:
             self.failures_left -= 1
@@ -409,6 +420,85 @@ class OfflineSnapshots(Base):
         self.state().stamp(CHAR, 1)
         with self.assertRaises(SP.SyncError):
             SP.SyncState(self.path, "a-different-client")
+
+
+class TimeoutReconcile(Base):
+    """Row clause: timeout reconciles before retry."""
+
+    def test_a_timed_out_attempt_reconciles_before_the_retry(self):
+        events = []
+        sends = []
+
+        def transport(action, payload):
+            if action == "reconcile":
+                events.append("reconcile")
+                return {"operation_id": payload["operation_id"], "applied": False}
+            events.append("send")
+            sends.append(1)
+            if len(sends) < 3:
+                raise TimeoutError("timed out")
+            return {"revision": 12}
+
+        engine = self.engine(transport, policy=SP.RetryPolicy(
+            max_attempts=3, base_delay=1.0))
+        result = engine.apply(self.operation())
+        self.assertEqual(result["status"], "APPLIED")
+        self.assertEqual(result["attempts"], 3)
+        # A reconcile step sits between a timed-out attempt and the retry.
+        self.assertEqual(events, ["send", "reconcile", "send", "reconcile",
+                                  "send"])
+        self.assertEqual(self.slept, [1.0, 2.0])
+
+    def test_a_reconcile_that_confirms_application_ends_the_retry(self):
+        op_id = SP.operation_id("push_identity", CHAR, 1, {"name": "Marcus"})
+
+        def transport(action, payload):
+            if action == "reconcile":
+                return {"operation_id": op_id, "applied": True, "revision": 9}
+            raise TimeoutError("timed out")
+
+        engine = self.engine(transport, policy=SP.RetryPolicy(max_attempts=3))
+        result = engine.apply(self.operation())
+        self.assertEqual(result["status"], "APPLIED")
+        self.assertTrue(result["reconciled"])
+        self.assertEqual(result["attempts"], 1)
+        self.assertEqual(result["revision"], 9)
+        recorded = list(self.state().operations().values())[0]
+        self.assertEqual(recorded["status"], "APPLIED")
+        self.assertEqual(recorded["revision"], 9)
+        self.assertEqual(self.state().last_seen(CHAR), 9)
+
+    def test_a_reconcile_that_denies_application_leaves_the_retry_alone(self):
+        # An explicit "not applied" answer is NOT a confirmation: the
+        # bounded retry re-sends, unaided by the consult.
+        calls_box = {"n": 0}
+
+        def transport(action, payload):
+            calls_box["n"] += 1
+            if action == "reconcile":
+                return {"operation_id": payload["operation_id"],
+                        "applied": calls_box["n"] > 2}
+            if calls_box["n"] > 2:
+                return {"revision": 3}
+            raise TimeoutError("timed out")
+
+        engine = self.engine(transport, policy=SP.RetryPolicy(
+            max_attempts=2, base_delay=0.5))
+        result = engine.apply(self.operation())
+        self.assertFalse(result["reconciled"])
+        self.assertEqual(result["attempts"], 2)
+
+    def test_a_failing_consult_is_unknown_and_the_retry_still_bounded(self):
+        def transport(action, payload):
+            if action == "reconcile":
+                raise TimeoutError("consult also timed out")
+            raise TimeoutError("timed out")
+
+        engine = self.engine(transport, policy=SP.RetryPolicy(max_attempts=3))
+        with self.assertRaises(SP.RetryExhausted) as caught:
+            engine.apply(self.operation())
+        self.assertEqual(caught.exception.attempts, 3)
+        self.assertEqual(len(caught.exception.delays), 2)
 
 
 class NoNetworkOrSecrets(unittest.TestCase):
