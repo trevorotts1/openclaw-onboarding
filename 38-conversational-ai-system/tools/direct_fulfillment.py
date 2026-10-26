@@ -42,10 +42,12 @@ Assert-based self-check:  python3 -I direct_fulfillment.py
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -106,6 +108,78 @@ D_FAILED = "failed"
 BASES = ("requested_in_conversation", "owner_approved")
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+# ── Instagram route gate (T-21) ─────────────────────────────────────────────
+# An Instagram destination is not a generic send. pb_contracts.DM_CHANNELS
+# names IG_DM as a first-class channel, so a delivery to an Instagram channel
+# must pass the T-21 adapter's separate account/filter/event/eligibility rules
+# (and its ignored-opener bound) before the common gate may dispatch. The
+# adapter is loaded by path exactly as it loads its own upstream modules: one
+# copy, never restated here.
+IG_CHANNELS = frozenset({"IG_DM", "IG_PUBLIC"})
+
+_IG_ROUTE_MODULE: Any = None
+
+
+def _load_instagram_routes() -> Any:
+    """The T-21 Instagram route adapter, or None when not on this tree."""
+    global _IG_ROUTE_MODULE
+    if _IG_ROUTE_MODULE is not None:
+        return _IG_ROUTE_MODULE
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = (parent / "shared-utils" / "routes" / "instagram"
+                     / "route_adapter.py")
+        if not candidate.is_file():
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "ig_route_adapter", candidate)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        # Register before exec so the adapter's own dataclasses resolve their
+        # module during class creation (same reason its _upstream does this).
+        sys.modules["ig_route_adapter"] = module
+        spec.loader.exec_module(module)
+        _IG_ROUTE_MODULE = module
+        return module
+    return None
+
+
+def instagram_route_evaluator(basis: "DeliveryBasis",
+                              route: Optional[Dict[str, Any]] = None
+                              ) -> Callable[[Dict[str, Any]], Any]:
+    """The T-21 gate for one Instagram delivery; fail closed without it.
+
+    ``route`` carries the caller's real Instagram context (account,
+    route_store, capability, event, purpose, thread_key, own_actor_ids). When
+    it is missing the delivery is refused rather than sent on the generic gate
+    alone: a Facebook Page id never resolves an Instagram account, and a
+    comment alone is never an inbound-DM window.
+    """
+    ctx = dict(route or {})
+    module = _load_instagram_routes()
+    account = ctx.get("account")
+    route_store = ctx.get("route_store")
+    if module is None or account is None or route_store is None:
+        def refused(_ctx: Dict[str, Any]) -> Dict[str, Any]:
+            return {"verdict": "SUPPRESSED",
+                    "evidence": {"reason": "ig_route_unavailable",
+                                 "channel": basis.channel}}
+        return refused
+    return module.make_gate_evaluator(
+        account=account,
+        route_store=route_store,
+        purpose=ctx.get("purpose"),
+        channel=basis.channel,
+        thread_key=ctx.get("thread_key"),
+        event=ctx.get("event"),
+        filter_=ctx.get("filter_"),
+        capability=ctx.get("capability"),
+        consent_evaluator=ctx.get("consent_evaluator"),
+        inbox=ctx.get("inbox"),
+        own_actor_ids=ctx.get("own_actor_ids", ()),
+    )
 
 
 class FulfillmentError(ValueError):
@@ -466,6 +540,7 @@ def fulfill(store: DurableStore, ledger: FulfillmentLedger,
             consent_evaluator: Optional[Callable[[Dict[str, Any]], Any]] = None,
             answer_duty_log: Optional[str] = None,
             answer_channel: Optional[str] = None,
+            instagram_route: Optional[Dict[str, Any]] = None,
             now: Optional[float] = None) -> FulfillmentOutcome:
     """Send the original item once. Safe to call again: never double-sends.
 
@@ -532,6 +607,10 @@ def fulfill(store: DurableStore, ledger: FulfillmentLedger,
     evaluator = _compose(
         _compose(_basis_evaluator(ledger, basis), answer_duty_evaluator()),
         consent_evaluator)
+    if basis.channel in IG_CHANNELS:
+        # T-21: an Instagram delivery passes the route adapter's own gate too.
+        evaluator = _compose(evaluator,
+                             instagram_route_evaluator(basis, instagram_route))
     payload = {"item": item.identity(), "content_uri": item.content_uri,
                "destination": destination.as_record()}
 
