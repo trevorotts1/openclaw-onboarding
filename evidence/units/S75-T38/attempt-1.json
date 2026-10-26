@@ -11,7 +11,7 @@
  "role": "BUILDER",
  "status": "COMPLETE",
  "mode": "build",
- "repository": "/Users/blackceomacmini/blackceo-command-center",
+ "repository": "blackceo-command-center",
  "base": "c716c0164d487713370d8d5bcb4dd092de700d35",
  "base_source": "origin/main of https://github.com/trevorotts1/blackceo-command-center.git, after git fetch origin --prune",
  "head": "b772bcf7d4890fed6dfb58adf4cc591feab5a689",
@@ -24,35 +24,35 @@
  "tests_run": [
   {
    "command": "python3 -I scripts/check-tool-registry-references.py",
-   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "cwd": "<OPERATOR_HOME>/skill75-repair/lanes/S75-T38-cc-lane",
    "exit_code": 0,
    "result": "PASS",
    "summary": "real-repo scan passes; no dangling reference"
   },
   {
    "command": "python3 -I scripts/check-tool-registry-references.py --self-test",
-   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "cwd": "<OPERATOR_HOME>/skill75-repair/lanes/S75-T38-cc-lane",
    "exit_code": 0,
    "result": "PASS",
    "summary": "5 directions PASS: clean tree, dangling reference, negated claim, not-only claim, real repo"
   },
   {
    "command": "python3 -I scripts/check-agent-identity-guardrail.py --self-test",
-   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "cwd": "<OPERATOR_HOME>/skill75-repair/lanes/S75-T38-cc-lane",
    "exit_code": 0,
    "result": "PASS",
    "summary": "surrounding guard suite: 5 directions PASS"
   },
   {
    "command": "python3 -I scripts/check-persona-dispatch-order.py",
-   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "cwd": "<OPERATOR_HOME>/skill75-repair/lanes/S75-T38-cc-lane",
    "exit_code": 0,
    "result": "PASS",
    "summary": "surrounding guard script exits 0"
   },
   {
    "command": "python3 -I -m py_compile scripts/*.py",
-   "cwd": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-cc-lane",
+   "cwd": "<OPERATOR_HOME>/skill75-repair/lanes/S75-T38-cc-lane",
    "exit_code": 0,
    "result": "PASS",
    "summary": "all CC python scripts compile"
@@ -81,7 +81,7 @@
   "The 'current head' captured is origin/main c716c0164d487713370d8d5bcb4dd092de700d35 as of 2026-10-26; it is not asserted to remain the head later."
  ],
  "evidence": {
-  "incorporation_proof": "/Users/blackceomacmini/skill75-repair/lanes/S75-T38-build-lane/evidence/units/S75-T38/incorporation-proof.json",
+  "incorporation_proof": "evidence/units/S75-T38/incorporation-proof.json",
   "push_proof_command": "git ls-remote origin refs/heads/s75/S75-T38-cc-r1"
  },
  "residuals": [
