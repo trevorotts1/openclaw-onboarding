@@ -1,0 +1,209 @@
+{
+  "schema": "blackceo.s75.evidence-digest-manifest/v1",
+  "unit": "S75-T01",
+  "acceptance_id": "S75-A01",
+  "branch": "s75x/t01-evidence",
+  "purpose": "Mergeable evidence branch: the unit deliverable that lives only under the S75 authority root, plus its append-only verdict chain.",
+  "arbiter_receipt": "<PATH>/scratchpad/s75-t01-arbiter/arbiter-receipt.json",
+  "receipt_of_record": {
+    "verdict_file": "evidence/S75-T01.verdict.readonly.3.json",
+    "verdict": "PASS",
+    "sha256_original": "ec68409218bf9ca010da7c72205b0832400be55398b439375cd4a7a82d01ebbc"
+  },
+  "verdict_chain_policy": "append-only: all four verdicts kept, none edited, superseded or deleted",
+  "substitution_policy": {
+    "token_label": "OPERATOR_HOME_PATH",
+    "replacement": "<PATH>",
+    "scope": "file CONTENTS only; nothing else in any artifact was altered",
+    "verification": "both sha256 (original, committed) are recorded per file so the merge writer can recompute the commit-side digest and can re-derive the original by reversing the counted substitution"
+  },
+  "files": [
+    {
+      "path": "evidence/source-reconciliation.json",
+      "role": "unit-artifact",
+      "source_path": "evidence/source-reconciliation.json",
+      "original": {
+        "bytes": 75754,
+        "sha256": "e45d2f30cb5ec150a735c42fe0a0fb83e20df42e146117cdf8330c9852a27d4f"
+      },
+      "committed": {
+        "bytes": 75114,
+        "sha256": "a995e30b1a527cff341e72070679cfefe3f335bfa8aa71322a5762ad8644dc35"
+      },
+      "substitution": {
+        "applied": 40,
+        "token_label": "OPERATOR_HOME_PATH",
+        "replacement": "<PATH>",
+        "reason": "CRITICAL-1 QC static invariant bans the operator home path in tracked files"
+      },
+      "json_parses_after_substitution": true
+    },
+    {
+      "path": "evidence/emergency-owner-handoff.json",
+      "role": "unit-artifact",
+      "source_path": "evidence/emergency-owner-handoff.json",
+      "original": {
+        "bytes": 3270,
+        "sha256": "9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e"
+      },
+      "committed": {
+        "bytes": 3270,
+        "sha256": "9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e"
+      },
+      "substitution": {
+        "applied": 0,
+        "token_label": "OPERATOR_HOME_PATH",
+        "replacement": "<PATH>",
+        "reason": "CRITICAL-1 QC static invariant bans the operator home path in tracked files"
+      },
+      "json_parses_after_substitution": true
+    },
+    {
+      "path": "evidence/units/S75-T01/attempt-1.json",
+      "role": "unit-artifact",
+      "source_path": "evidence/units/S75-T01/attempt-1.json",
+      "original": {
+        "bytes": 3095,
+        "sha256": "6f4602b53f6fc84e64d019a0afb9ea272380826bc15deac8567434a4a83233aa"
+      },
+      "committed": {
+        "bytes": 3015,
+        "sha256": "288f414cbad9ff4afb4daef10907287210d5a24bfd617919e812af4cc53b82e4"
+      },
+      "substitution": {
+        "applied": 5,
+        "token_label": "OPERATOR_HOME_PATH",
+        "replacement": "<PATH>",
+        "reason": "CRITICAL-1 QC static invariant bans the operator home path in tracked files"
+      },
+      "json_parses_after_substitution": true,
+      "verdict": "attempt-1"
+    },
+    {
+      "path": "evidence/units/S75-T01/attest-1.json",
+      "role": "unit-artifact",
+      "source_path": "evidence/units/S75-T01/attest-1.json",
+      "original": {
+        "bytes": 9945,
+        "sha256": "4f66b7805d551c1590f4f379acb8b1df00660ed439301912568221f310ac153a"
+      },
+      "committed": {
+        "bytes": 9865,
+        "sha256": "f1d25971ec1bf598896fc5c369cd326cb436b803274da7a7404040ca53ba2fdc"
+      },
+      "substitution": {
+        "applied": 5,
+        "token_label": "OPERATOR_HOME_PATH",
+        "replacement": "<PATH>",
+        "reason": "CRITICAL-1 QC static invariant bans the operator home path in tracked files"
+      },
+      "json_parses_after_substitution": true,
+      "verdict": "attest-1"
+    },
+    {
+      "path": "evidence/S75-T01.verdict.json",
+      "role": "verdict",
+      "source_path": "evidence/S75-T01.verdict.json",
+      "original": {
+        "bytes": 4933,
+        "sha256": "a69611b6ff59f0cd07a4395caecd9c40e27fd89fe1b6e0c6c83e6af7a43a98a7"
+      },
+      "committed": {
+        "bytes": 4837,
+        "sha256": "785d28f882fc52490c01be29c77b17a6a8c579eca6e49505b7f55998ffcc929a"
+      },
+      "substitution": {
+        "applied": 6,
+        "token_label": "OPERATOR_HOME_PATH",
+        "replacement": "<PATH>",
+        "reason": "CRITICAL-1 QC static invariant bans the operator home path in tracked files"
+      },
+      "json_parses_after_substitution": true,
+      "verdict": "PASS"
+    },
+    {
+      "path": "evidence/S75-T01.verdict.readonly.1.json",
+      "role": "verdict",
+      "source_path": "evidence/S75-T01.verdict.readonly.1.json",
+      "original": {
+        "bytes": 8316,
+        "sha256": "68905e0498e950ff8850e44bda1600619b710a97c3cf519646be524cb2096c40"
+      },
+      "committed": {
+        "bytes": 8284,
+        "sha256": "488bc4634d57b3cdf91dc91815b077af456eec7fe4b6798a44ff6b94fa400554"
+      },
+      "substitution": {
+        "applied": 2,
+        "token_label": "OPERATOR_HOME_PATH",
+        "replacement": "<PATH>",
+        "reason": "CRITICAL-1 QC static invariant bans the operator home path in tracked files"
+      },
+      "json_parses_after_substitution": true,
+      "verdict": "FAIL"
+    },
+    {
+      "path": "evidence/S75-T01.verdict.t01repair.2.json",
+      "role": "verdict",
+      "source_path": "evidence/S75-T01.verdict.t01repair.2.json",
+      "original": {
+        "bytes": 10002,
+        "sha256": "1d4cca318b456df5b5586bd1aedc2b0c308177b98c7bc54ef1de9950ef8d7249"
+      },
+      "committed": {
+        "bytes": 9842,
+        "sha256": "dd0e3940e7a068705441dccd87fb0071d096cf040e0a16d43b982e2de1adda7b"
+      },
+      "substitution": {
+        "applied": 10,
+        "token_label": "OPERATOR_HOME_PATH",
+        "replacement": "<PATH>",
+        "reason": "CRITICAL-1 QC static invariant bans the operator home path in tracked files"
+      },
+      "json_parses_after_substitution": true,
+      "verdict": "FAIL"
+    },
+    {
+      "path": "evidence/S75-T01.verdict.readonly.3.json",
+      "role": "verdict",
+      "source_path": "evidence/S75-T01.verdict.readonly.3.json",
+      "original": {
+        "bytes": 14690,
+        "sha256": "ec68409218bf9ca010da7c72205b0832400be55398b439375cd4a7a82d01ebbc"
+      },
+      "committed": {
+        "bytes": 14450,
+        "sha256": "e189aa94d2eed264bca4bb6c7a7f17c2291681eb8bc9e2836cc8eddf7320500a"
+      },
+      "substitution": {
+        "applied": 15,
+        "token_label": "OPERATOR_HOME_PATH",
+        "replacement": "<PATH>",
+        "reason": "CRITICAL-1 QC static invariant bans the operator home path in tracked files"
+      },
+      "json_parses_after_substitution": true,
+      "verdict": "PASS"
+    },
+    {
+      "path": "evidence/S75-T01-reconciliation.json",
+      "role": "provenance-gen-0",
+      "source_path": "evidence/S75-T01-reconciliation.json",
+      "original": {
+        "bytes": 18717,
+        "sha256": "95b56db995b1e43dcbaf0586a0a804c461c62292f53432c32c1fc8996aaa718a"
+      },
+      "committed": {
+        "bytes": 17821,
+        "sha256": "2afd643320c1582fad0eca4d5c9d7972c95caf57250cc1d81ce3ab7c777ab3e5"
+      },
+      "substitution": {
+        "applied": 56,
+        "token_label": "OPERATOR_HOME_PATH",
+        "replacement": "<PATH>",
+        "reason": "CRITICAL-1 QC static invariant bans the operator home path in tracked files"
+      },
+      "json_parses_after_substitution": true
+    }
+  ],
+  "row_determination": "NOT MADE HERE. Acceptance belongs to the owner; this branch carries evidence only and writes no ledger."
+}

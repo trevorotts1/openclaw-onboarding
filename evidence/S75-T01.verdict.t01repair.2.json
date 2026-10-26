@@ -1,0 +1,63 @@
+{
+  "unit_id": "S75-T01",
+  "acceptance_id": "S75-A01",
+  "verdict": "FAIL",
+  "verifier_distinct": true,
+  "verifier_note": "Independent verifier. Did not write this repair; wrote nothing but this verdict file. Prior FAIL at evidence/S75-T01.verdict.readonly.1.json untouched (mtime Oct 24 16:29:36, mode 644, content re-read: verdict FAIL / S75-A01 / S75-T01).",
+  "criteria_checked": [
+    {
+      "criterion": "evidence/source-reconciliation.json, evidence/emergency-owner-handoff.json, evidence/units/S75-T01/attempt-1.json exist at the EXACT ledger paths",
+      "result": "PASS",
+      "evidence": "test -f on each exact path: source-reconciliation.json 69370 bytes, emergency-owner-handoff.json 3270 bytes, evidence/units/S75-T01/attempt-1.json 1768 bytes, all mtime Oct 24 16:36:27 2026. Instrument control run on the same transport: evidence/file-manifest.json and evidence/S75-T01.verdict.readonly.1.json both return EXISTS (control non-empty), and a deliberately bogus path evidence/definitely-not-here-zzz.json returns absent, so the check discriminates both ways. Receipt hashes re-computed by me and match attempt-1.json exactly: e44a768b8200018ac24b48437a3ed3f98a21fe1b28d5db2773491fb780a3b611 (source-reconciliation.json), 9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e (emergency-owner-handoff.json)."
+    },
+    {
+      "criterion": "Flavor heads re-verified independently match what the census claims",
+      "result": "FAIL",
+      "evidence": "Live git rev-parse origin/main run by me: ONB <PATH>/openclaw-onboarding = f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b (matches census); N999 <PATH>/.openclaw/persist-home/999-setup = 6e9d69def27dd4adfffbe7a03ccf0e47d871f03b (matches census); CC <PATH>/blackceo-command-center = 7816a3c560ff2c50126e38b139ad644c472b99ac, but the census records CC origin/main_head = a3b43318944132f0847f33f395dcb0ea38ba30a7 with head_reverified=true and head_unchanged_since_prior_census=true, and attempt-1.json asserts the CC head was 're-verified live with git at write time' returning a3b43318. This is NOT post-write drift: git reflog show --date=iso origin/main in the CC clone shows origin/main fast-forwarded to 7816a3c560 at 2026-10-24 16:32:20 -0400, i.e. BEFORE the census file mtime 16:36:27 -0400 and before attempt-1.json's own generated_at 2026-10-24T21:05:00+00:00 (= 17:05 -0400). a3b43318 was the live head only until 13:21:11 -0400. So the CC head claim was already stale at every plausible write time while being marked re-verified. Secondary: attempt-1.json generated_at (17:05 -0400) postdates the file mtime (16:36:27 -0400), an internal timestamp inconsistency."
+    },
+    {
+      "criterion": "Census lists per-branch changed files (file leases) and dirty shared-checkout state, with the spend_ledger.py edit attributed or marked UNATTRIBUTED",
+      "result": "PASS",
+      "evidence": "source-reconciliation.json carries active_s75_branches.branches: 99 entries, each with ref, head, merged_into_origin_main and changed_files_vs_origin_main plus changed_file_count (file leases per branch). file_leases names 5 held files and exactly one active-branch conflict (batch/s75-b5-prep @ dd3881cff1c917e604385f03fe85ebf0a32cbd9d -> intake_preflight/factory.py). My own live scan of every unmerged s75 ref (git diff --name-only f0a9c80...<ref>, 49 active scanned; control: the same diff on batch/s75-b5-prep returns factory.py, count 1) reproduces exactly 1 held-file-touching branch, matching the census. dirty_state lists all 3 shared-checkout entries (M ai_models.json, M scripts/core/spend_ledger.py, ?? evidence/S75X-W5/S75X-W5-U1.verdict.json), each owner=UNATTRIBUTED, and names the lease_effect. Live git status --porcelain=v1 --untracked-files=all on ONB returns exactly those 3 entries. The spend_ledger.py edit is explicitly marked UNATTRIBUTED, not claimed by any unit."
+    },
+    {
+      "criterion": "Handoff states plainly which factory/approval files are held and invents no owner",
+      "result": "PASS",
+      "evidence": "emergency-owner-handoff.json lists 5 held files (factory.py, lyric_writer.py, character_approval.py, registry.json, method_plan.py; repo ONB + N999), each held=true with current_lease='NONE (no branch, receipt or commit attributes an active lease)', and gate state NOT_HANDED_OFF. holding_party.owner = UNKNOWN with reason naming exactly what was searched and not_guessed=true; receiving_owner.person = UNKNOWN (role only, cited to DEPENDENCIES-AND-OWNERSHIP.md:25). does_not_establish disclaims write/merge/push authority and any claim the handoff exists somewhere unsearched. No invented owner anywhere in the artifact."
+    },
+    {
+      "criterion": "No product code and no branch modified by this repair",
+      "result": "PASS",
+      "evidence": "The repair wrote only evidence artifacts outside the repos (authority root under Downloads). ONB dirty entries all predate the repair: scripts/core/spend_ledger.py mtime Oct 24 14:15, intake_card/ai_models.json Oct 24 10:50, untracked S75X-W5-U1.verdict.json Oct 23 15:32 — versus repair write 16:36. No s75/S75-T01 branch or worktree exists (git worktree list shows worktrees/S75-T03..T41 and other lanes only). git log --all --grep=T01 returns only unrelated historical commits (CWE-024, ledger-reconciler snapshots). ONB HEAD dd2240c54 on fix/h3-and-2min is another lane's work, untouched. N999 and CC status show only pre-existing untracked files (.orig backups, 999.git/, W13 reconciliation), none dated to this repair."
+    },
+    {
+      "criterion": "Nothing claims the emergency fix was adopted or duplicated when it was not",
+      "result": "PASS",
+      "evidence": "Keyword scan of all three repair artifacts for adopt/merged/pushed/landed/duplicat: the only 'adopt' is 'canonical_targets.CC = UNVERIFIED_T01_CONDITIONAL; observed, not ledger-adopted'; the SFR-005 entry records the receipt says 'never merged, never pushed' and keeps the landing lineage as unexplained rather than claiming adoption. carried_forward_substance records factory_and_character_approval_held_and_untouched=false and no_unit_mutated_shared_state=false, carrying both contradictions forward rather than dropping them; attempt-1.json lists the same two contradictions_carried_not_dropped. does_not_establish explicitly denies merge/push/write authority and denies any S75X acceptance beyond W5-U1. No adoption, no duplication claim."
+    }
+  ],
+  "commands_run": [
+    "test -f evidence/source-reconciliation.json; test -f evidence/emergency-owner-handoff.json; test -f evidence/units/S75-T01/attempt-1.json (control: evidence/file-manifest.json + evidence/S75-T01.verdict.readonly.1.json expected present; evidence/definitely-not-here-zzz.json expected absent)",
+    "shasum -a 256 evidence/source-reconciliation.json evidence/emergency-owner-handoff.json (compared to attempt-1.json produces[] hashes)",
+    "git -C <PATH>/openclaw-onboarding rev-parse origin/main -> f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b",
+    "git -C <PATH>/.openclaw/persist-home/999-setup rev-parse origin/main -> 6e9d69def27dd4adfffbe7a03ccf0e47d871f03b",
+    "git -C <PATH>/blackceo-command-center rev-parse origin/main -> 7816a3c560ff2c50126e38b139ad644c472b99ac (census claims a3b43318944132f0847f33f395dcb0ea38ba30a7)",
+    "git -C <PATH>/blackceo-command-center reflog show --date=iso origin/main -> 7816a3c560 @ 2026-10-24 16:32:20 -0400 fetch, a3b4331894 @ 2026-10-24 13:21:11 -0400",
+    "git -C <PATH>/openclaw-onboarding status --porcelain=v1 --untracked-files=all -> 3 entries matching census dirty_state exactly",
+    "git -C <PATH>/openclaw-onboarding for-each-ref | grep -ci s75 -> 100 (census 99; one ref added after census, e.g. fix/s75-restore-minimax-h3 worktree lane)",
+    "per-ref loop: git merge-base --is-ancestor <ref> f0a9c80 + git diff --name-only f0a9c80...<ref> | grep held files -> 49 active scanned, 1 hit (batch/s75-b5-prep -> intake_preflight/factory.py); control grep of that same diff returns factory.py count 1",
+    "git -C <PATH>/openclaw-onboarding worktree list; git log --oneline -5; git log --all --grep=T01 -> no S75-T01 branch, worktree or commit",
+    "stat -f '%N %Sm' on the 3 dirty ONB files -> all predate 16:36 repair write"
+  ],
+  "reasons": [
+    "STRONGEST: the CC flavor head is wrong in the census and the receipt while both claim it was re-verified live. Live origin/main is 7816a3c560ff2c50126e38b139ad644c472b99ac; the census records a3b43318944132f0847f33f395dcb0ea38ba30a7 with head_reverified=true. The CC reflog proves origin/main fast-forwarded to 7816a3c560 at 16:32:20 -0400, before the census mtime 16:36:27 -0400 and before attempt-1.json generated_at 17:05 -0400, so the claim was already stale at write time, not drift afterwards. A 're-verified' flag on an unverified value is exactly the class of false-done the prior FAIL was written to stop.",
+    "Minor, non-blocking: attempt-1.json generated_at (2026-10-24T21:05:00+00:00 = 17:05 -0400) postdates the file mtime (16:36:27 -0400); generation timestamps are internally inconsistent.",
+    "All other conjuncts pass and the repair fixed every gap the prior FAIL named: both owned outputs exist at the exact paths with matching receipt hashes, the contract receipt exists, the census now records per-branch changed-file leases and the dirty shared-checkout state with spend_ledger.py explicitly UNATTRIBUTED, the handoff names the five held files and refuses to invent an owner, no product code or branch was touched, and nothing claims adoption or duplication of the emergency fix."
+  ],
+  "append_only": {
+    "prior_verdict_preserved": "evidence/S75-T01.verdict.readonly.1.json",
+    "prior_verdict_state": "FAIL (unchanged, re-read, not overwritten)",
+    "this_file": "evidence/S75-T01.verdict.t01repair.2.json"
+  },
+  "generated_at": "2026-10-24T21:30:00+00:00"
+}
