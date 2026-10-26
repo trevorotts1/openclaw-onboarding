@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## 1.3.11 - 2026-10-26 - oct-25 fix batch: l01-l08 install, preflight, handoff and intake hardening
+## 1.3.12 - 2026-10-26 - oct-25 fix batch: l01-l08 install, preflight, handoff and intake hardening
 
 - `scripts/install_local.py` (l01): the installer no longer truncates a registry that resolves back to the same file it is writing, refuses symlinked registry leaves, honours dry-run failures, and applies the terminal-evidence rule to the executor exit. Tests: `tests/test_scripts.py`.
 - `scripts/preflight_installed.py` (l02): preflight requires positive proof - only demonstrated client-data refusals may pass, composed-prompt proof is required, the asset gate is layout-aware, and `scripts/check-skill71-parity.py` verifies the real installed runtime.

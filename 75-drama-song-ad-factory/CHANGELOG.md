@@ -4,7 +4,7 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
-## v2.9.118 - 2026-10-26 - kie-prompt gate: declare script_writer's raw-retention cap as a rule-12 gate (oct-25 fix batch)
+## v2.9.119 - 2026-10-26 - kie-prompt gate: declare script_writer's raw-retention cap as a rule-12 gate (oct-25 fix batch)
 
 - The fast guard `kie-prompt-enforcer-guard` failed on main because its discovery walk read `RAW_KEEP_CHARS = 20000` in `scripts/core/script_writer.py` as an undeclared prompt band. The constant is the raw authored RESPONSE retention cap kept for diagnosis, not a prompt length; it is now declared in `shared-utils/kie_prompt_gates.json` (gate_modules plus allowed_numeric `RAW_KEEP_CHARS`, with the reason recorded) and routed through the shared enforcer: `_raw_keep_chars()` confirms the declared 20,000 via `kie_prompt_enforcer.budget()`, falling back to the declared value when shared-utils is absent. `parse_response` slices with that value, so retention and the emitted prompt stay byte-identical (verified over 0 to 150,000 characters, including multi-byte).
 - Regression test `scripts/core/test_script_writer_raw_keep_gate.py` fails on the pre-fix tree (no declaration, no `_raw_keep_chars`) and passes after.
