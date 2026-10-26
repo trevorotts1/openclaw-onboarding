@@ -199,16 +199,29 @@ def authorize(
 
     `states` must name exactly the five dimensions. A missing dimension is
     refused rather than defaulted, because a default is an authorization
-    nobody granted. Reasons are per dimension and are never borrowed.
+    nobody granted. So is the same dimension named twice under two spellings
+    (`identity` and `IDENTITY`): whichever survived would be decided by dict
+    insertion order, which is an authorization nobody granted either. Reasons
+    are per dimension and are never borrowed.
     """
     member = _text(member_id, "member_id")
     if not isinstance(states, Mapping):
         raise AccessAdapterError(
             f"states must be a mapping, got {type(states).__name__}"
         )
-    given = {_text(k, "states key").lower() for k in states}
-    missing = [d for d in DIMENSIONS if d not in given]
-    extra = sorted(given - set(DIMENSIONS))
+    normalized: Dict[str, object] = {}
+    duplicates: List[str] = []
+    for key, value in states.items():
+        name = _text(key, "states key").lower()
+        if name in normalized and name not in duplicates:
+            duplicates.append(name)
+        normalized[name] = value
+    if duplicates:
+        raise AccessAdapterError(
+            f"states names the same dimension twice {sorted(duplicates)}"
+        )
+    missing = [d for d in DIMENSIONS if d not in normalized]
+    extra = sorted(set(normalized) - set(DIMENSIONS))
     if missing:
         raise AccessAdapterError(f"states is missing dimensions {missing}")
     if extra:
@@ -223,7 +236,6 @@ def authorize(
         for key, value in reasons.items():
             reason_map[_text(key, "reasons key").lower()] = _text(value, "reason")
 
-    normalized = {str(k).strip().lower(): v for k, v in states.items()}
     verdicts = tuple(
         DimensionVerdict(
             dimension=dimension,

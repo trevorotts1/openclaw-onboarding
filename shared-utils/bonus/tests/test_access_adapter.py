@@ -136,6 +136,19 @@ class TestInputsAreRefusedNotDefaulted(unittest.TestCase):
             a.authorize(member_id="m-1", states=_states(entitlement=a.AUTHORIZED))
         self.assertIn("unknown", str(caught.exception))
 
+    def test_the_same_dimension_named_twice_is_refused(self):
+        # Two spellings of one dimension would be decided by dict insertion
+        # order, and whichever survived would be an authorization nobody
+        # granted -- the same hazard the missing-dimension refusal covers.
+        cases = (
+            dict(_states(), IDENTITY=a.DENIED, identity=a.AUTHORIZED),
+            dict(_states(), **{" identity ": a.DENIED}),
+        )
+        for states in cases:
+            with self.assertRaises(a.AccessAdapterError) as caught:
+                a.authorize(member_id="m-1", states=states)
+            self.assertIn("twice", str(caught.exception))
+
     def test_an_unknown_state_is_refused(self):
         with self.assertRaises(a.AccessAdapterError):
             a.authorize(member_id="m-1", states=_states(grant="maybe"))
