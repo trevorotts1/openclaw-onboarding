@@ -15,6 +15,17 @@ Commands
               [--max-gate-age-seconds N]
   receipt     --ledger L --key K --status S [--provider-object-id X]
               [--evidence-id E] [--now T]
+  fulfill     --outbox F --fulfillment-ledger F --journal F --item F --basis F
+              [--worker-id ID]
+  fulfill-basis   --fulfillment-ledger F --basis F
+  fulfill-access  --fulfillment-ledger F --item F --evidence E --accessible|--inaccessible
+  fulfill-resume  (same paths) [--retry]
+  fulfill-proof   (same paths) --proof F
+  fulfill-continue (same paths)
+
+The fulfill-* commands drive the T-13 direct original fulfillment module
+(tools/direct_fulfillment.py) over the caller's append-only journal. They hand
+it files and print its outcome, so this CLI still calls no provider itself.
 
 Exit codes: 0 = accepted/dispatched/collapsed, 1 = contract violation or
 refusal, 2 = usage/IO error. Every command prints one JSON object.
@@ -1200,6 +1211,134 @@ def cmd_receipt(args):
 
 
 # --------------------------------------------------------------------------
+# T-13 direct original fulfillment (R-10, R-12; C-13, C-F04, C-F07, C-F09)
+# --------------------------------------------------------------------------
+#
+# The direct original gift is the same outbound-action lifecycle this file
+# already fronts (dispatch -> attempt -> receipt) with one immutable promised
+# item behind it. The module (tools/direct_fulfillment.py) owns every guarantee
+# -- immutable identity, at-most-once, truthful receipt, crash resume -- so
+# these commands only hand it the caller's files and print its outcome.
+
+FULFILLMENT_OK = {"sent", "already_satisfied", "resumed", "nothing_to_do"}
+
+
+def _fulfillment_module():
+    """Load the T-13 module that sits beside this file.
+
+    Imported at call time on purpose: a pb_contracts caller that never fulfills
+    should not pay for the T-12 store package, and a checkout without the module
+    refuses the command instead of failing the whole contract CLI.
+    """
+    tools_dir = Path(__file__).resolve().parent
+    if str(tools_dir) not in sys.path:
+        sys.path.insert(0, str(tools_dir))
+    import direct_fulfillment  # late import on purpose, see docstring
+    return direct_fulfillment
+
+
+def _outcome_record(outcome):
+    return {
+        "status": outcome.status,
+        "reason": outcome.reason,
+        "action_id": outcome.action_id,
+        "state": outcome.state,
+        "item_id": outcome.item_id,
+        "version": outcome.version,
+        "destination": outcome.destination,
+        "transport_receipt": outcome.transport_receipt,
+        "delivery_status": outcome.delivery_status,
+        "continuation_allowed": outcome.continuation_allowed,
+        "continuation_reason": outcome.continuation_reason,
+    }
+
+
+def _run_fulfillment(args, run):
+    """Open the durable store, ledger and journal transport, run, close."""
+    df = _fulfillment_module()
+    store = df.DurableStore(args.outbox)
+    ledger = df.FulfillmentLedger(args.fulfillment_ledger)
+    transport = df.JournalTransport(args.journal)
+    try:
+        item = df.PromisedItem(**load_json(args.item))
+        basis = df.DeliveryBasis(**load_json(args.basis))
+        outcome = run(df, store, ledger, transport, item, basis)
+    except df.FulfillmentError as exc:
+        return emit({"ok": False, "command": args.command, "reason": str(exc),
+                     "errors": [str(exc)]})
+    finally:
+        ledger.close()
+        store.close()
+    payload = {"ok": outcome.status in FULFILLMENT_OK, "command": args.command}
+    payload.update(_outcome_record(outcome))
+    return emit(payload)
+
+
+def cmd_fulfill(args):
+    return _run_fulfillment(
+        args,
+        lambda df, store, ledger, transport, item, basis:
+        df.fulfill(store, ledger, transport, item, basis, worker_id=args.worker_id),
+    )
+
+
+def cmd_fulfill_resume(args):
+    return _run_fulfillment(
+        args,
+        lambda df, store, ledger, transport, item, basis:
+        df.resume(store, ledger, transport, item, basis,
+                  worker_id=args.worker_id, retry=args.retry),
+    )
+
+
+def cmd_fulfill_proof(args):
+    return _run_fulfillment(
+        args,
+        lambda df, store, ledger, transport, item, basis:
+        df.record_delivery_proof(store, item, basis, load_json(args.proof)),
+    )
+
+
+def cmd_fulfill_continue(args):
+    return _run_fulfillment(
+        args,
+        lambda df, store, ledger, transport, item, basis:
+        df.can_continue(store, ledger, item, basis),
+    )
+
+
+def cmd_fulfill_basis(args):
+    """Record the durable delivery basis once; a repeat is a no-op."""
+    df = _fulfillment_module()
+    ledger = df.FulfillmentLedger(args.fulfillment_ledger)
+    try:
+        basis = df.DeliveryBasis(**load_json(args.basis))
+        row = ledger.record_basis(basis)
+    except df.FulfillmentError as exc:
+        return emit({"ok": False, "command": args.command, "errors": [str(exc)]})
+    finally:
+        ledger.close()
+    return emit({"ok": True, "command": "fulfill-basis", "basis": row})
+
+
+def cmd_fulfill_access(args):
+    """Record observed intended-reader accessibility; never inferred."""
+    df = _fulfillment_module()
+    ledger = df.FulfillmentLedger(args.fulfillment_ledger)
+    try:
+        item = df.PromisedItem(**load_json(args.item))
+        basis = df.DeliveryBasis(**load_json(args.basis))
+        row = ledger.record_reader_access(
+            basis.tenant_id, item.item_id, item.version,
+            accessible=args.accessible, evidence=args.evidence)
+    except df.FulfillmentError as exc:
+        return emit({"ok": False, "command": args.command, "errors": [str(exc)]})
+    finally:
+        ledger.close()
+    return emit({"ok": True, "command": "fulfill-access", "reader_access": row})
+
+
+# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
@@ -1237,6 +1376,60 @@ def build_parser():
     receipt.add_argument("--evidence-id", default=None)
     receipt.add_argument("--now")
     receipt.set_defaults(func=cmd_receipt)
+
+    def fulfillment_paths(parser):
+        parser.add_argument("--outbox", required=True, help="T-12 durable store (sqlite)")
+        parser.add_argument("--fulfillment-ledger", required=True,
+                            help="T-13 fulfillment ledger (sqlite)")
+        parser.add_argument("--journal", required=True,
+                            help="append-only transport journal (jsonl)")
+        parser.add_argument("--item", required=True, help="promised item JSON")
+        parser.add_argument("--basis", required=True, help="delivery basis JSON")
+
+    fulfill = sub.add_parser("fulfill", help="send the original promised item once")
+    fulfillment_paths(fulfill)
+    fulfill.add_argument("--worker-id", default="fulfillment-worker")
+    fulfill.set_defaults(func=cmd_fulfill)
+
+    fulfill_basis = sub.add_parser("fulfill-basis",
+                                   help="record the durable delivery basis once")
+    fulfill_basis.add_argument("--fulfillment-ledger", required=True,
+                               help="T-13 fulfillment ledger (sqlite)")
+    fulfill_basis.add_argument("--basis", required=True, help="delivery basis JSON")
+    fulfill_basis.set_defaults(func=cmd_fulfill_basis)
+
+    fulfill_access = sub.add_parser("fulfill-access",
+                                    help="record observed intended-reader accessibility")
+    fulfill_access.add_argument("--fulfillment-ledger", required=True,
+                                help="T-13 fulfillment ledger (sqlite)")
+    fulfill_access.add_argument("--item", required=True, help="promised item JSON")
+    fulfill_access.add_argument("--basis", required=True, help="delivery basis JSON")
+    fulfill_access.add_argument("--evidence", required=True,
+                                help="who observed the reader reach the item, and how")
+    access = fulfill_access.add_mutually_exclusive_group(required=True)
+    access.add_argument("--accessible", dest="accessible", action="store_true")
+    access.add_argument("--inaccessible", dest="accessible", action="store_false")
+    fulfill_access.set_defaults(func=cmd_fulfill_access)
+
+    fulfill_resume = sub.add_parser("fulfill-resume",
+                                    help="reconcile a possibly-sent item without a second send")
+    fulfillment_paths(fulfill_resume)
+    fulfill_resume.add_argument("--worker-id", default="fulfillment-worker")
+    fulfill_resume.add_argument("--retry", action="store_true",
+                                help="retry under the same action identity after reconciliation "
+                                     "proves the effect does not exist")
+    fulfill_resume.set_defaults(func=cmd_fulfill_resume)
+
+    fulfill_proof = sub.add_parser("fulfill-proof",
+                                   help="promote accepted -> delivered from a real receipt")
+    fulfillment_paths(fulfill_proof)
+    fulfill_proof.add_argument("--proof", required=True, help="delivery proof JSON")
+    fulfill_proof.set_defaults(func=cmd_fulfill_proof)
+
+    fulfill_continue = sub.add_parser("fulfill-continue",
+                                      help="may optional collection continue for this item?")
+    fulfillment_paths(fulfill_continue)
+    fulfill_continue.set_defaults(func=cmd_fulfill_continue)
 
     return parser
 
