@@ -46,6 +46,7 @@ import {
   type SessionSpec,
   type SessionVisibility,
 } from '../contracts/index.js';
+import { selectMode } from '../flow/mode-select.js';
 import {
   isOllamaProvider,
   parallelLimitFor,
@@ -110,6 +111,18 @@ export interface ConveneRoundsPolicy {
   stop_from_round: number | null;
 }
 
+/**
+ * Why and how the sitting's mode was chosen (W77S AUTO-MODE-1062). The
+ * client sees this with the session: `mode` is the mode the run uses,
+ * `source` says who picked it — the client explicitly, or the automatic
+ * classification of the question — and `reason` says why.
+ */
+export interface ModeSelection {
+  mode: SessionMode;
+  source: 'client' | 'auto';
+  reason: string;
+}
+
 export interface ConveneAccepted {
   session_id: string;
   state: string;
@@ -122,6 +135,8 @@ export interface ConveneAccepted {
   events_path: string;
   /** Real session mode (light/medium/heavy or one of the four older modes). */
   mode: SessionMode;
+  /** The mode, its source (client|auto) and the reason it was chosen. */
+  mode_selection: ModeSelection;
   /** Panel seats the run actually uses. */
   seats: number;
   /** null for the four older modes, whose round shape is fixed. */
@@ -259,6 +274,33 @@ function errorCode(error: unknown): string {
   return typeof code === 'string' ? code : 'RUN_FAILED';
 }
 
+/**
+ * Resolve the sitting's mode through the ONE selector (flow/mode-select.ts).
+ *
+ * An explicit client mode always wins verbatim — all seven SESSION_MODES,
+ * including the four older ones, whose round shape stays fixed. With no
+ * explicit mode the question's complexity decides (light / medium / heavy).
+ * A question with no text at all cannot be classified, so the old default
+ * holds: medium, with a reason that says so rather than inventing a score.
+ */
+export function resolveModeSelection(
+  explicit: SessionMode | undefined,
+  question: string,
+): ModeSelection {
+  if (explicit !== undefined) {
+    return { mode: explicit, source: 'client', reason: `client selected ${explicit}` };
+  }
+  const text = typeof question === 'string' ? question.trim() : '';
+  if (text === '') {
+    return {
+      mode: 'medium',
+      source: 'auto',
+      reason: 'no question text to classify; defaulted to medium',
+    };
+  }
+  return selectMode(text);
+}
+
 export function createCouncilDriver(deps: CouncilDriverDeps): {
   convene(input: ConveneInput): Promise<ConveneAccepted>;
   inFlight(): number;
@@ -360,7 +402,7 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
     input: ConveneInput,
     sessionId: string,
     resolved: ResolvedSessionRoute,
-  ): StoredSession {
+  ): { session: StoredSession; selection: ModeSelection } {
     const now = deps.clock.nowUtc();
     const sample = input.sample === true;
     if (sample === (input.brief !== undefined)) {
@@ -400,10 +442,22 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       session_id: sessionId,
       revision: 1,
     };
-    // A client convene that names no council size gets medium (design
-    // default). The built-in sample keeps the mode its fixture carries:
-    // it is a harmless demo, not a client decision to size.
-    const mode: SessionMode = input.mode ?? (sample ? baseSpec.mode : 'medium');
+    // The sitting's mode. An explicit client mode wins verbatim; with none
+    // the question decides (W77S auto-mode), and the response plus the audit
+    // line say which happened and why. The built-in sample keeps the mode its
+    // fixture carries when the client names none: it is a harmless demo, not
+    // a client decision to size.
+    const selection: ModeSelection =
+      input.mode !== undefined
+        ? resolveModeSelection(input.mode, '')
+        : sample
+          ? {
+              mode: baseSpec.mode,
+              source: 'auto',
+              reason: `built-in sample keeps its fixture mode ${baseSpec.mode}`,
+            }
+          : resolveModeSelection(undefined, brief.question);
+    const mode: SessionMode = selection.mode;
     // Every council size seats the full roster (Trevor decision
     // 2026-10-25): mode changes rounds and concurrency, never the panel.
     // A named panel still wins, so an explicit seat list is honoured.
@@ -446,25 +500,28 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       throw invalid('The session settings failed validation.', { issues: specCheck.issues });
     }
     return {
-      spec,
-      brief,
-      scope: { ...deps.scope },
-      state: {
-        schema_version: 'wise-elders.session-state/v1',
-        session_id: sessionId,
-        mode: spec.mode,
-        state: 'DRAFT',
-        state_version: 0,
-        brief_revision: 1,
-        resume_phase: null,
-        cancel_generation: 0,
-        revocation_generation: 0,
-        attempt: 1,
-        lease_epoch: 0,
-        archived: false,
-        updated_at: now,
+      session: {
+        spec,
+        brief,
+        scope: { ...deps.scope },
+        state: {
+          schema_version: 'wise-elders.session-state/v1',
+          session_id: sessionId,
+          mode: spec.mode,
+          state: 'DRAFT',
+          state_version: 0,
+          brief_revision: 1,
+          resume_phase: null,
+          cancel_generation: 0,
+          revocation_generation: 0,
+          attempt: 1,
+          lease_epoch: 0,
+          archived: false,
+          updated_at: now,
+        },
+        sample,
       },
-      sample,
+      selection,
     };
   }
 
@@ -505,7 +562,7 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
     }
     const resolved = await route(input.route ?? {});
     const sessionId = `sess-${deps.ids.newId()}`;
-    const session = buildSession(input, sessionId, resolved);
+    const { session, selection } = buildSession(input, sessionId, resolved);
     const mode = session.spec.mode;
     const councilMode = isCouncilSize(mode);
 
@@ -591,6 +648,9 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
         harness: resolved.harness,
         grant_id: grant.grant_id,
         fallback_grant_id: fallbackGrantId ?? null,
+        mode: selection.mode,
+        mode_source: selection.source,
+        mode_reason: selection.reason,
         requested_by: input.requested_by,
         approval_basis: APPROVAL_BASIS,
       })}\n`,
@@ -633,6 +693,7 @@ export function createCouncilDriver(deps: CouncilDriverDeps): {
       session_path: `/council/${sessionId}`,
       events_path: `/api/council/sessions/${sessionId}/events`,
       mode,
+      mode_selection: selection,
       seats: session.spec.seat_ids.length,
       rounds: councilMode ? roundsPolicyOf(mode as CouncilSize) : null,
       request_cap: ceilings.max_provider_requests,
