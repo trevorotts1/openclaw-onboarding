@@ -38,7 +38,7 @@
   "profiles": {
     "page": {
       "skills": [71],
-      "description": "The page-only interview for one BlackCEO Signature page, and the page run's exact ask list: ask these questions and nothing else. It asks the offer, audience, proof, story, brand, image and length questions a page needs (including the one offer-shape question that decides price versus packages), and never the funnel length, page set, bump, upsell or downsell extras, account setup, launch-automation or plan-approval work that belongs to Skill 49.",
+      "description": "The page-only interview for one BlackCEO Signature page, and the page run's exact ask list: ask these questions and nothing else. It asks the offer, audience, proof, story, brand, image and length questions a page needs (including the one offer-shape question that decides price versus packages), and never the funnel length, page set, bump, upsell or downsell extras, account setup, launch-automation or plan-approval work that belongs to Skill 49. Record the page kind (sales or opt_in) before length: an opt-in landing page is long-form only and the engine refuses standard for it. Every page needs its canonical renders, so there is no no-images answer.",
       "reuse": "Confirmed answers are never re-asked: a page run opens the client's existing answers file with --mode page, every launch answer already confirmed is reused, and only the open questions of this profile are asked - the shared bank's full queue is never walked on a page run. A never_default answer stays open; it is never inferred from the earlier run.",
       "questions": [
         "interview_mode",

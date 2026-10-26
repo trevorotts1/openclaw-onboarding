@@ -46,7 +46,18 @@ class TestBank(unittest.TestCase):
         self.assertFalse(set(ids) - set(self.by_id), "profile names unknown questions")
         self.assertFalse(FUNNEL_ONLY & set(ids), "page profile still asks funnel work")
         self.assertFalse(PAGE_NEEDS - set(ids), "page profile is missing a page question")
-        self.assertNotIn("never the funnel-shape", profile["description"], "the profile may not disown a question it lists")
+        # the offer-shape question is the one funnel word the profile deliberately keeps
+        self.assertIn("funnel_shape", ids)
+        self.assertIn("long-form only", profile["description"].lower())
+        self.assertIn("no-images", profile["description"].lower())
+
+    def test_page_mode_offers_only_the_profile(self):
+        offered = {q["id"] for q in e.applicable(e.new_doc("page"))}
+        self.assertFalse(offered - set(self.bank["profiles"]["page"]["questions"]),
+                         f"page mode offers work outside the ask list: {sorted(offered - set(self.bank['profiles']['page']['questions']))}")
+        for qid in ("business_outcome", "difficulty", "launch_calendar", "channels",
+                    "conversation_ai", "access_delivery", "sender_name", "reply_to_email", "a2p_ready"):
+            self.assertNotIn(qid, offered, f"page mode still offers launch work: {qid}")
 
     def test_every_unconditional_profile_question_is_offered_in_page_mode(self):
         offered = {q["id"] for q in e.applicable(e.new_doc("page"))}
@@ -100,10 +111,31 @@ class TestBank(unittest.TestCase):
         self.assertIn("payment_plans", self.bank["system_fields"])
         self.assertIn("billing", self.bank["system_fields"]["payment_plans"])
         doc = e.new_doc("launch")
-        self.assertNotIn("payment_plans", [q["id"] for q in e.applicable(doc)])
         e.record(doc, "billing", "Monthly")
-        self.assertNotIn("payment_plans", [q["id"] for q in e.applicable(doc)],
-                         "billing answered must derive the flag, never reopen the question")
+        asked = []
+        for _ in range(40):
+            q = e.next_question(doc)
+            if q is None or q["id"] in asked:
+                break
+            asked.append(q["id"])
+            e.record(doc, q["id"], "x")
+        self.assertNotIn("payment_plans", asked, "billing answered must derive the flag, never reopen the question")
+        la = e.launch_answers(doc)
+        self.assertEqual(la["launch.payment_plans"]["value"], True)
+        self.assertEqual(la["launch.payment_plans"]["state"], "provided")
+        self.assertEqual(la["launch.payment_plans"]["provenance"]["answer_source"], "derived-billing")
+        self.assertEqual(la["launch.payment_plans"]["provenance"]["question_id"], "payment_plans")
+        self.assertEqual(e.topics(doc)["payment_plans"]["state"], "answered")
+        paid = e.new_doc("launch")
+        e.record(paid, "billing", "All at once")
+        self.assertIs(e.launch_answers(paid)["launch.payment_plans"]["value"], False)
+        # a defaulted billing answer may not produce a confirmed flag
+        sugg = e.new_doc("launch")
+        e._set(sugg, "billing", "installment", "default_to_confirm", "safe-default", None)
+        e.derive_payment_plans(sugg)
+        la = e.launch_answers(sugg)
+        self.assertEqual(la["launch.payment_plans"]["value"], True)
+        self.assertEqual(la["launch.payment_plans"]["state"], "recommended_unapproved")
 
     def test_the_access_link_follows_the_delivery_choice(self):
         q = self.by_id["access_url"]
@@ -121,6 +153,56 @@ class TestBank(unittest.TestCase):
         self.assertNotIn("No pictures", self.by_id["image_cap"]["choices"])
         self.assertIn("one image per copy section", self.by_id["image_cap"]["help"]["explain"])
 
+    def test_the_engine_refuses_a_no_images_answer_too(self):
+        doc = e.new_doc("page")
+        for answer in ("No pictures", "none", "0"):
+            r = e.record(doc, "image_cap", answer)
+            self.assertFalse(r["ok"], f"image_cap accepted {answer!r}: {r}")
+        for answer in ("No images needed", "none"):
+            r = e.record(doc, "image_provider", answer)
+            self.assertFalse(r["ok"], f"image_provider accepted {answer!r}: {r}")
+        self.assertTrue(e.record(doc, "image_cap", "36")["ok"])
+        self.assertTrue(e.record(doc, "image_provider", "My connected service")["ok"])
+
+    def test_an_opt_in_page_refuses_standard_length(self):
+        opt = e.new_doc("page", page_kind="opt_in")
+        r = e.record(opt, "copy_profile", "Standard")
+        self.assertFalse(r["ok"], r)
+        r = e.record(opt, "copy_profile", "Long-form")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(e.val(opt, "copy_profile"), "long_form")
+        defaulted = e.new_doc("page", page_kind="opt_in")
+        e.apply_default(defaulted, "copy_profile")
+        self.assertEqual(e.val(defaulted, "copy_profile"), "long_form",
+                         "the default may not weaken the long-form rule")
+        sales = e.new_doc("page", page_kind="sales")
+        self.assertTrue(e.record(sales, "copy_profile", "Standard")["ok"])
+        # a standard answer saved before the page kind was known blocks rather than ships
+        saved = e.new_doc("page")
+        e.record(saved, "copy_profile", "Standard")
+        saved["meta"]["page_kind"] = "opt_in"
+        self.assertIn("copy_profile", [b["id"] for b in e.check(saved)["blocking"]])
+
+    def test_a_suggested_palette_is_never_reported_as_confirmed(self):
+        doc = e.new_doc("page")
+        e._set(doc, "brand_colors", ["#111111"], "suggested", "palette-help:option-1", None)
+        e._set(doc, "brand_primary", "#111111", "suggested", "palette-help:option-1", None)
+        r = e.roles(doc)
+        self.assertEqual(r["status"], "suggested")
+        self.assertFalse(r["confirmed"])
+        defaulted = e.new_doc("page")
+        e.apply_default(defaulted, "brand_colors")
+        r = e.roles(defaulted)
+        self.assertEqual(r["status"], "default_to_confirm")
+        self.assertFalse(r["confirmed"])
+        e._set(defaulted, "brand_colors", ["#111111"], "provided", "client", None)
+        for role, value in (("primary", "#111111"), ("secondary", "#222222"), ("accent", ["#333333"]),
+                            ("background", ["#FFFFFF"]), ("text", "#000000")):
+            e._set(defaulted, f"brand_{role}", value, "provided", "client", None)
+        r = e.roles(defaulted)
+        self.assertEqual(r["status"], "provided")
+        self.assertTrue(r["confirmed"])
+
     def test_opt_in_length_rule_is_named_with_the_length_choice(self):
         q = self.by_id["copy_profile"]
         blob = " ".join([q["text"], q["why"], q["help"]["explain"]] + list(q["choice_explanations"].values()))
@@ -134,6 +216,8 @@ class TestDocuments(unittest.TestCase):
     def setUp(self):
         self.skill = SKILL_MD.read_text(encoding="utf-8")
         self.brand = BRAND_INTAKE.read_text(encoding="utf-8")
+        self.bank = e.load_bank()
+        self.by_id = {q["id"]: q for q in self.bank["questions"]}
 
     def test_colour_default_is_permitted_and_labelled_a_proposal(self):
         # the absolute ban is gone from SKILL.md ...
@@ -145,15 +229,19 @@ class TestDocuments(unittest.TestCase):
         # ... and both name the one restriction that survives: it cannot ship
         self.assertIn("may not ship", self.skill)
         self.assertIn("may not ship", self.brand)
+        self.assertIn("palette_status", self.brand)
+        self.assertIn("`confirmed`", self.brand, "the doc must name the intake's own confirmed flag")
 
     def test_the_page_profile_and_long_form_rule_are_documented(self):
         self.assertIn("--mode page", self.skill)
+        self.assertIn("--page-kind sales|opt_in", self.skill)
         self.assertIn("profiles.page", self.skill)
         self.assertIn("Long-Form only", self.skill)
         self.assertIn("ask list", self.skill, "the profile must be named as the ask list")
-        self.assertNotIn("never asks the funnel-shape", self.skill,
-                         "the profile lists funnel_shape; the skill may not say the opposite")
-        self.assertNotIn("proof source", self.skill, "proof is not a never_default question")
+        profile = self.bank["profiles"]["page"]["questions"]
+        self.assertIn("funnel_shape", profile, "the offer-shape question is part of the page interview")
+        self.assertIn("proof", profile)
+        self.assertFalse(self.by_id["proof"]["never_default"], "proof is not a never_default question")
 
 
 if __name__ == "__main__":

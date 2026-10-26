@@ -14,7 +14,7 @@ Skill 71 never guesses a brand. The questions below come from the shared bank
 `palette_status` is `provided` (the client gave or chose it), `suggested` (we proposed it, no yes yet),
 `default_to_confirm` (neutral palette applied), or `missing` (the template). An unconfirmed default is
 permitted and is always labelled a proposal: `suggested` and `default_to_confirm` are proposals for the
-client to confirm, never an accepted palette. A proposal may carry the internal design work, yet it may not ship: publish needs `provided`. `brand_colors.py check` passes for the first three and prints `TO CONFIRM` for
+client to confirm, never an accepted palette. A proposal may carry the internal design work, yet it may not ship: publish needs `provided`. The shared intake reports it as `palette_status`, with `confirmed` true only for `provided`. `brand_colors.py check` passes for the first three and prints `TO CONFIRM` for
 the last two; it fails only when no palette exists. The legacy slots `palette.gold`, `navy` and `cream` stay
 filled (primary, text, first background) so nothing downstream changes.
 
