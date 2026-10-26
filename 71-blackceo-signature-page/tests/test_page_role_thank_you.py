@@ -507,8 +507,9 @@ class PipelineTests(RunCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup"):
             self.assertIn(f"PREFLIGHT_BLOCKS {stage}", proc.stdout)
-        self.assertIn("next: stage_executor.py", proc.stdout)  # the board and final-mockups come after approval
-        self.assertNotIn("final-mockups ", proc.stdout.split("next:")[0])
+        first = next(l for l in proc.stdout.splitlines() if l.startswith("NEXT 1"))
+        self.assertIn("stage_executor.py", first)  # the board and final-mockups come after approval
+        self.assertNotIn("final-mockups ", proc.stdout.split("NEXT ")[0])
         proc = subprocess.run(base + ["--stages", "mobile-tablet"], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         slices = sorted(p.name for p in (self.run / "mobile-tablet").glob("section-*.png"))
