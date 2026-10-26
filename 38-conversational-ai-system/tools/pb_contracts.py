@@ -727,6 +727,13 @@ def emit(payload):
 def cmd_validate(args):
     doc = load_json(args.file)
     errs = check_document(args.kind, doc)
+    # T-23: an approval manifest is also run through the lifecycle module that
+    # owns its terms (shared-utils/manifest/monthly_manifest.py: terms_errors) —
+    # every bound term present and informative, schedule inside the joined
+    # campaign window. Vetting here is what keeps a thin manifest away from the
+    # dispatch guard, which binds approved fields but never authors them.
+    if not errs and args.kind == "approval":
+        errs = list(_monthly_manifest_terms_errors(doc))
     result = {"ok": not errs, "command": "validate", "kind": args.kind, "file": args.file, "errors": errs}
 
     if not errs and args.kind == "outbound" and args.manifest:
@@ -1099,6 +1106,25 @@ def cmd_dispatch(args):
             "errors": [],
         }
     )
+
+
+def _monthly_manifest_terms_errors(manifest):
+    """The T-23 approval-terms check, owned by shared-utils/manifest.
+
+    monthly_manifest imports this layer at its own import time (it reads
+    PLACEMENT_BOUND_FIELDS instead of copying the list), so the import is
+    resolved here, at call time: a module-level import would close a cycle for
+    every pb_contracts caller that never sees a manifest. A checkout without
+    the module refuses the manifest rather than validating past the check.
+    """
+    module_dir = SKILL_ROOT.parent / "shared-utils" / "manifest"
+    if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
+    try:
+        import monthly_manifest  # late import on purpose, see docstring
+    except ImportError as exc:
+        return ["$.: approval terms check unavailable (%s)" % exc]
+    return monthly_manifest.terms_errors(manifest)
 
 
 def approval_errors(action, manifest_path):
