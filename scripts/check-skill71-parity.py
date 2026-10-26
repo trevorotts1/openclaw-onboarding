@@ -17,7 +17,8 @@ repo-integration/skill71-sync-allowlist.json:
   generated    recomputed from the onboarding sources; any payload
                difference beyond the generation stamp fails
   tracked      repo-level files compared across the two repo roots
-               (the vendored enforcer, the frontmatter guard)
+               (the vendored enforcer, the frontmatter guard, and the
+               shared registry/design dependencies the skill reads)
   GHL pack     per-file classes from repo-integration/
                ghl-pack-manifest.json (neutral byte-parity, adapter
                version-tracked, excluded must be absent in 999)
@@ -38,12 +39,21 @@ import fnmatch
 import hashlib
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 SKILL_ONB = "71-blackceo-signature-page"
 SKILL_999 = ".claude/skills/blackceo-signature-page"
 ALLOWLIST_REL = "repo-integration/skill71-sync-allowlist.json"
 PACK_MANIFEST_REL = "repo-integration/ghl-pack-manifest.json"
+
+# Shared dependencies the skill reads across the tree boundary. Every one of
+# them must be tracked so the two editions cannot drift apart unnoticed.
+SHARED_TRACKED = (
+    "shared-utils/signature_launch/domain/prompt-policy-registry.json",
+    "shared-utils/signature_launch/design/design.css",
+    "shared-utils/signature_launch/design/tokens/tokens.py",
+)
 
 
 def sha(data: bytes) -> str:
@@ -108,12 +118,151 @@ def policy_payload(gate_source: str) -> dict:
     }
 
 
+def shipped_allowlist():
+    """The allowlist in whichever of the two layouts this script lives in."""
+    repo = Path(__file__).resolve().parents[1]
+    for rel in (SKILL_ONB, SKILL_999):
+        path = repo / rel / ALLOWLIST_REL
+        if path.is_file():
+            return path
+    return None
+
+
+def check_tracked_files(onb_root: Path, nine_root: Path, allow: dict):
+    """Compare the repo-level files both trees carry — and prove 999 reaches them.
+
+    The 999 skill resolves cross-tree assets BESIDE its own directory
+    (`.claude/skills/shared-utils/...`), which that repo provides as a link to
+    its root `shared-utils/`. Comparing repo-root copies alone would pass while
+    the installed skill resolved nothing, so an entry marked
+    `resolves_via_sibling` also requires that sibling path to resolve to the
+    very copy compared here.
+
+    A copy that resolves back to the onboarding file proves nothing either: a
+    shared registry the 999 tree points at rather than carries certifies
+    itself. That is a failure, never a pass.
+    """
+    failures, notes = [], []
+    onb_res = onb_root.resolve()
+    for entry in allow.get("tracked_repo_files", []):
+        rel = entry["path"]
+        a, b = onb_root / rel, nine_root / rel
+        if not a.is_file():
+            failures.append(f"tracked file missing in onboarding: {rel}")
+            continue
+        if not b.is_file():
+            failures.append(f"tracked file missing in 999: {rel}")
+            continue
+        a_res, b_res = a.resolve(), b.resolve()
+        if b_res == a_res or onb_res in b_res.parents:
+            failures.append(
+                f"tracked file self-certifies (999 resolves to the onboarding "
+                f"file): {rel} -> {b_res}")
+            continue
+        if a.read_bytes() != b.read_bytes():
+            failures.append(f"tracked file drift: {rel}")
+            continue
+        if entry.get("resolves_via_sibling"):
+            sibling = (nine_root / SKILL_999).parent / rel
+            if not sibling.is_file():
+                failures.append(
+                    f"tracked file unreachable from the 999 skill (sibling link "
+                    f"missing): {rel} -> {sibling}")
+            elif not sibling.samefile(b):
+                # Present is not resolved: a sibling link that lands anywhere
+                # but the compared 999 copy -- the onboarding file above all --
+                # lets the skill read bytes parity never judged.
+                failures.append(
+                    f"tracked file sibling link does not reach the compared 999 "
+                    f"copy (self-certifying or drifted): {rel} -> "
+                    f"{sibling.resolve()}")
+            else:
+                notes.append(f"shared sibling resolves to the compared copy: {rel}")
+    return failures, notes
+
+
+def self_check() -> int:
+    bad = []
+    path = shipped_allowlist()
+    if path is None:
+        print("  [FAIL] shipped allowlist not found under either skill layout")
+        print("SELF-CHECK FAIL")
+        return 1
+    allow = json.loads(path.read_text(encoding="utf-8"))
+    entries = {e["path"]: e for e in allow.get("tracked_repo_files", [])}
+    for rel in SHARED_TRACKED:
+        entry = entries.get(rel)
+        if entry is None:
+            bad.append(f"shared dependency not tracked for parity: {rel}")
+        elif not entry.get("resolves_via_sibling"):
+            bad.append(f"shared dependency does not require sibling resolution: {rel}")
+    subset = {"tracked_repo_files": [entries[r] for r in SHARED_TRACKED if r in entries]}
+
+    def fixture(tmp: Path, nine_bytes=b"same", certifying=False, sibling=True,
+                sibling_to_onb=False):
+        onb, nine = tmp / "onb", tmp / "nine"
+        for rel in SHARED_TRACKED:
+            (onb / rel).parent.mkdir(parents=True, exist_ok=True)
+            (onb / rel).write_bytes(b"same")
+        for rel in SHARED_TRACKED:
+            (nine / rel).parent.mkdir(parents=True, exist_ok=True)
+            if certifying:
+                (nine / rel).symlink_to(onb / rel)
+            else:
+                (nine / rel).write_bytes(nine_bytes)
+        skills = (nine / SKILL_999).parent
+        skills.mkdir(parents=True, exist_ok=True)
+        if sibling_to_onb:
+            (skills / "shared-utils").symlink_to(onb / "shared-utils")
+        elif sibling:
+            (skills / "shared-utils").symlink_to(Path("../../shared-utils"))
+        return onb, nine
+
+    cases = (
+        (dict(), False, "matching copies through the sibling link"),
+        (dict(nine_bytes=b"drift"), True, "byte drift"),
+        (dict(certifying=True), True, "self-certifying link to the onboarding file"),
+        (dict(sibling=False), True, "missing sibling link"),
+        (dict(sibling_to_onb=True), True,
+         "sibling link pointing at the onboarding tree"),
+    )
+    for kwargs, want_fail, label in cases:
+        with tempfile.TemporaryDirectory() as td:
+            onb, nine = fixture(Path(td), **kwargs)
+            fails, _notes = check_tracked_files(onb, nine, subset)
+        if bool(fails) != want_fail:
+            bad.append(f"tracked {label}: want failure={want_fail}, got {fails}")
+    with tempfile.TemporaryDirectory() as td:
+        onb, nine = fixture(Path(td))
+        (nine / SHARED_TRACKED[0]).unlink()
+        fails, _notes = check_tracked_files(onb, nine, subset)
+    if not any("missing in 999" in f for f in fails):
+        bad.append(f"tracked file absent in 999 went unreported: {fails}")
+
+    for line in bad:
+        print(f"  [FAIL] {line}")
+    if bad:
+        print("SELF-CHECK FAIL")
+        return 1
+    total = len(SHARED_TRACKED) + len(cases) + 1
+    print(f"SELF-CHECK PASS — {total} parity cases "
+          f"({len(SHARED_TRACKED)} shared dependencies tracked, {len(cases)} "
+          f"tracked-file comparisons, 1 absence)")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Skill 71 cross-repo parity checker (Item 27).")
-    ap.add_argument("--onb-root", type=Path, required=True)
-    ap.add_argument("--nine-root", type=Path, required=True)
+    ap.add_argument("--onb-root", type=Path, default=None)
+    ap.add_argument("--nine-root", type=Path, default=None)
     ap.add_argument("--json", type=Path, default=None, help="write the report as JSON")
+    ap.add_argument("--self-check", action="store_true",
+                    help="test the tracked-file comparison and exit")
     args = ap.parse_args(argv)
+    if args.self_check:
+        return self_check()
+    if args.onb_root is None or args.nine_root is None:
+        ap.error("--onb-root and --nine-root are required")
 
     onb_skill = args.onb_root / SKILL_ONB
     nine_skill = args.nine_root / SKILL_999
@@ -203,16 +352,11 @@ def main(argv=None):
         except ValueError as exc:
             failures.append(f"generated file unreadable: {gen_rel} ({exc})")
 
-    # Tracked repo-level files.
-    for entry in allow.get("tracked_repo_files", []):
-        rel = entry["path"]
-        a, b = args.onb_root / rel, args.nine_root / rel
-        if not a.is_file():
-            failures.append(f"tracked file missing in onboarding: {rel}")
-        elif not b.is_file():
-            failures.append(f"tracked file missing in 999: {rel}")
-        elif a.read_bytes() != b.read_bytes():
-            failures.append(f"tracked file drift: {rel}")
+    # Tracked repo-level files, including the shared registry and design
+    # dependencies the skill reads across the tree boundary.
+    tracked_failures, tracked_notes = check_tracked_files(args.onb_root, args.nine_root, allow)
+    failures += tracked_failures
+    notes += tracked_notes
 
     # GHL pack, per its manifest.
     pack_path = onb_skill / PACK_MANIFEST_REL
