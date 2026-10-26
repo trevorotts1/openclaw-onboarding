@@ -1,7 +1,7 @@
 {
   "schema": "client-intake-question-bank/v1",
-  "version": "1.1.0",
-  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented.",
+  "version": "1.2.0",
+  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented. Mode page is Skill 71's page-only profile (profiles.page): one page, not a funnel, and it opens the client's existing answers file so every confirmed launch answer is reused instead of asked again. The profile's question list is the ask list for a page run. A signature page always needs its canonical renders, so the image questions no longer offer a no-pictures option. The payment-plan flag is derived from billing and is never asked; see system_fields.payment_plans.",
   "help_label": "I'm not sure, help me",
   "introduction": "Let's build a launch that fits your business. I'll help you clarify what you're selling, who it helps, and how to present it. Then we'll turn your approved plan into the supported launch pages and follow-up materials. We'll take one question at a time. You can ask for an example, ask me to recommend an answer, or ask me to use what you've already shared. You'll review the plan before we build.",
   "question_estimate_template": "about {n} short questions, depending on what we already know",
@@ -32,8 +32,47 @@
   "modes": [
     "launch",
     "legacy",
-    "bf"
+    "bf",
+    "page"
   ],
+  "profiles": {
+    "page": {
+      "skills": [71],
+      "description": "The page-only interview for one BlackCEO Signature page, and the page run's exact ask list: ask these questions and nothing else. It asks the offer, audience, proof, story, brand, image and length questions a page needs (including the one offer-shape question that decides price versus packages), and never the funnel length, page set, bump, upsell or downsell extras, account setup, launch-automation or plan-approval work that belongs to Skill 49. Record the page kind (sales or opt_in) before length: an opt-in landing page is long-form only and the engine refuses standard for it. Every page needs its canonical renders, so there is no no-images answer.",
+      "reuse": "Confirmed answers are never re-asked: a page run opens the client's existing answers file with --mode page, every launch answer already confirmed is reused, and only the open questions of this profile are asked - the shared bank's full queue is never walked on a page run. A never_default answer stays open; it is never inferred from the earlier run.",
+      "questions": [
+        "interview_mode",
+        "business_name",
+        "offer_name",
+        "offer_description",
+        "audience",
+        "offer_transformation",
+        "pains",
+        "deliverables",
+        "proof",
+        "voice",
+        "founder_story",
+        "funnel_shape",
+        "price",
+        "packages",
+        "billing",
+        "brand_colors",
+        "brand_primary",
+        "brand_secondary",
+        "brand_accent",
+        "brand_background",
+        "logo",
+        "fonts",
+        "photos_founder",
+        "photos_permission",
+        "design_style",
+        "image_provider",
+        "image_cap",
+        "paid_render_approval",
+        "copy_profile"
+      ]
+    }
+  },
   "system_fields": {
     "schema_version": "set by the launch record writer",
     "tenant_id": "from verified account access",
@@ -56,7 +95,8 @@
     "approval": "plan_approval question",
     "brand": "brand_colors, fonts, logo and photos questions",
     "entitlement_attestation": "entitlement question",
-    "page-version": "derived from copy_profile and page_set"
+    "page-version": "derived from copy_profile and page_set",
+    "payment_plans": "derived from billing (offers.main.billing_type: one_time = false, recurring or installment = true); never asked, because billing already answers it"
   },
   "questions": [
     {
@@ -256,7 +296,7 @@
     {
       "id": "audience",
       "group": "offer",
-      "text": "Who is this for? Name 3 to 6 kinds of people, and for each one, what do they want?",
+      "text": "Who is this for? Name at least one kind of person and what they want. More than one is welcome when they want different things.",
       "why": "The page speaks to these people directly.",
       "answer_type": "free_text",
       "choices": [],
@@ -413,20 +453,20 @@
     {
       "id": "founder_story",
       "group": "offer",
-      "text": "Tell me your story in three short parts: one low moment from your own struggle, the moment you decided things would change, and who you built this for.",
-      "why": "The personal letter on the page is your real story.",
+      "text": "Share any founder context you want the page to use: how you got here, who you built this for, and what you want them to know about you. Skip anything private. This one is optional: leaving it blank is a complete answer.",
+      "why": "The personal letter on the page can carry your real context, and only the parts you choose to share.",
       "answer_type": "free_text",
       "choices": [],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "A scene, not a summary. Where were you standing, what did you feel?",
+        "explain": "Professional background, credentials, or the reason you started all count. Nothing sensitive is required. A blank answer leaves the letter written from what you already told me.",
         "examples": []
       },
       "default": null,
       "never_default": true,
-      "required": "always",
-      "condition": "mode == legacy",
+      "required": "optional",
+      "condition": "mode != launch",
       "targets": [
         "founder_story"
       ],
@@ -706,7 +746,7 @@
       },
       "never_default": false,
       "required": "always",
-      "condition": "always",
+      "condition": "mode != page",
       "targets": [
         "bump"
       ],
@@ -746,7 +786,7 @@
       },
       "never_default": false,
       "required": "always",
-      "condition": "always",
+      "condition": "mode != page",
       "targets": [
         "upsell_1"
       ],
@@ -905,7 +945,7 @@
       },
       "never_default": false,
       "required": "always",
-      "condition": "always",
+      "condition": "mode != page",
       "targets": [
         "page_set"
       ],
@@ -1323,17 +1363,16 @@
       "id": "image_provider",
       "group": "images",
       "text": "Which image service should make your pictures?",
-      "why": "I only name a service after checking it works for you.",
+      "why": "I only name a service after checking it works for you. Every page needs its generated pictures; there is no no-images option.",
       "answer_type": "choice",
       "choices": [
         "My connected service",
-        "Recommend one",
-        "No images needed"
+        "Recommend one"
       ],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "This is the service that draws the pictures. If you are not sure, I use the one already connected to your account.",
+        "explain": "This is the service that draws the generated photography each page section is built around. If you are not sure, I use the one already connected to your account. Logos and photos you send are placed as files and never generated, and paid pictures still need your separate OK.",
         "examples": []
       },
       "default": {
@@ -1356,8 +1395,7 @@
       ],
       "choice_explanations": {
         "My connected service": "The image service already connected to your account.",
-        "Recommend one": "I recommend one only after checking what is actually available.",
-        "No images needed": "The pages are built without generated pictures."
+        "Recommend one": "I recommend one only after checking what is actually available."
       }
     },
     {
@@ -1369,12 +1407,12 @@
       "choices": [
         "12",
         "24",
-        "No pictures"
+        "36"
       ],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Each page needs a handful of pictures. 12 covers a small funnel, 24 a full one.",
+        "explain": "Every image stage renders one image per copy section, per platform, so each page needs its full canonical set and cannot be built with none. 12 covers a single page, 24 a small funnel, 36 a full one. These are generated photography costs; logos and photos you send are placed as files for free, and paid pictures still need your separate OK.",
         "examples": []
       },
       "default": {
@@ -1393,9 +1431,9 @@
         "71:image-cap"
       ],
       "choice_explanations": {
-        "12": "A tight set - the essential pictures.",
-        "24": "A fuller set across the pages.",
-        "No pictures": "No generated pictures this launch."
+        "12": "A tight set - one page's canonical sections.",
+        "24": "A fuller set across a small funnel.",
+        "36": "A full set across a large funnel."
       }
     },
     {
@@ -1435,8 +1473,8 @@
     {
       "id": "copy_profile",
       "group": "design",
-      "text": "Should the main page be the standard length, or the long, detailed version?",
-      "why": "Length is your choice.",
+      "text": "Should the main page be the standard length, or the long, detailed version? An opt-in landing page is long-form only; standard is for a sales page.",
+      "why": "Length is your choice on a sales page. An opt-in landing page has one valid length: long-form only.",
       "answer_type": "choice",
       "choices": [
         "Standard",
@@ -1446,13 +1484,13 @@
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Standard is shorter and quicker to read. Long-form tells more of the story and suits bigger prices.",
+        "explain": "Standard is shorter and quicker to read. Long-form tells more of the story and suits bigger prices. If this page is the opt-in landing page, it is long-form only - the build refuses standard for it.",
         "examples": []
       },
       "default": {
         "value": "standard",
         "flag": "to confirm",
-        "reason": "Standard length until you choose."
+        "reason": "Standard length for a sales page until you choose; an opt-in landing page is long-form only."
       },
       "never_default": false,
       "required": "always",
@@ -1655,7 +1693,7 @@
       "default": null,
       "never_default": true,
       "required": "optional",
-      "condition": "mode != legacy",
+      "condition": "access_delivery == yes",
       "targets": [
         "access_url",
         "delivery_bindings"
@@ -1669,7 +1707,7 @@
       "id": "payment_plans",
       "group": "launch",
       "text": "Will this offer be paid in full, or do you offer payment plans?",
-      "why": "Payment plans turn on the failed-payment recovery automation; without them it is never built.",
+      "why": "Payment plans turn on the failed-payment recovery automation; without them it is never built. The flag comes from the billing answer, so this is only read, never asked.",
       "answer_type": "choice",
       "choices": [
         "Paid in full",
@@ -1684,7 +1722,7 @@
       "default": null,
       "never_default": true,
       "required": "always",
-      "condition": "mode != legacy",
+      "condition": "payment_plans answered",
       "targets": [
         "payment_plans"
       ],
