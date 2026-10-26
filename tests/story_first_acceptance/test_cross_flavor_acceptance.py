@@ -552,6 +552,90 @@ def test_style18_predicate_reds_each_named_breakage_alone():
     assert C._result(broken_row) is False, "a broken choice row passed"
 
 
+def test_validate_catalog_refuses_a_max_styles_that_disagrees():
+    """MAX_STYLES 17 against 18 names is a short catalog wearing a smaller label."""
+    module = _catalog_module("maxstyles")
+    assert module.validate_catalog() == len(module.STYLE_IDS) == 18
+    module.MAX_STYLES = 17
+    refused = False
+    try:
+        module.validate_catalog()
+    except module.CatalogError as exc:
+        refused = exc.code == "BAD_CATALOG" and "MAX_STYLES declares 17" in str(exc)
+    assert refused, "validate_catalog accepted MAX_STYLES 17 against 18 names"
+
+
+def test_validate_catalog_refuses_catalog_keys_out_of_order():
+    """Same records, different key order, is drift the count check cannot see."""
+    module = _catalog_module("keyorder")
+    keys = list(module.CATALOG)
+    assert tuple(keys) == tuple(module.STYLE_IDS)
+    moved = keys[-1]
+    reordered = {moved: module.CATALOG[moved]}
+    reordered.update({k: v for k, v in module.CATALOG.items() if k != moved})
+    module.CATALOG = reordered
+    refused = False
+    try:
+        module.validate_catalog()
+    except module.CatalogError as exc:
+        refused = exc.code == "BAD_CATALOG" and "keys differ" in str(exc)
+    assert refused, "validate_catalog accepted catalog keys out of STYLE_IDS order"
+
+
+# --- the demonstration script --------------------------------------------
+# demonstrate_checks.py is the runnable form of "every cell can be shown red".
+# It was written against a run_cells(broken=True) API that no longer exists, so
+# it died with a TypeError while the suite stayed green. These two checks keep
+# it alive and keep it able to fail.
+
+import demonstrate_checks as D  # noqa: E402
+
+
+def _run_demonstration(argv):
+    """Call the demonstration script and return (rc, captured stdout)."""
+    out = []
+    sink = type("Sink", (), {"write": lambda self, text: out.append(text),
+                             "flush": lambda self: None})()
+    original = sys.stdout
+    sys.stdout = sink
+    try:
+        rc = D.main(argv)
+    finally:
+        sys.stdout = original
+    return rc, "".join(out)
+
+
+def test_demonstration_shows_both_sides_of_every_cell():
+    rc, text = _run_demonstration(["--json"])
+    assert rc == 0, text[-800:]
+    payload = json.loads(text)
+    assert payload["all_demonstrated"] is True, text[-800:]
+    assert len(payload["rows"]) == 14, len(payload["rows"])
+    assert {r["flavor"] for r in payload["rows"]} == {"onboarding", "999"}
+    assert {r["behavior"] for r in payload["rows"]} == set(C.BEHAVIORS)
+
+
+def test_demonstration_refuses_a_cell_that_never_went_red():
+    """A cell whose control stayed green is not a demonstrated check."""
+    real = C.run_cells
+
+    def blind(target):
+        cells = real(target)
+        cells[0]["negative_control"] = dict(cells[0]["negative_control"],
+                                           control_red=False)
+        return cells
+
+    C.run_cells = blind
+    try:
+        rc, text = _run_demonstration(["--json", "--flavors", "onboarding"])
+    finally:
+        C.run_cells = real
+    assert rc == 1, text[-800:]
+    payload = json.loads(text)
+    assert payload["all_demonstrated"] is False
+    assert payload["rows"][0]["failable"] is False
+
+
 # --- the revision pin (repair round 3) ------------------------------------
 # Round 3 measured six of nine N999 cells from a working tree sitting 55 commits
 # behind its own origin/main. These checks are the ones that make a silent stale

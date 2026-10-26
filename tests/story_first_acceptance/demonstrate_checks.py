@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
-"""Show every S75-A32 check PASSING and FAILING, for both flavor facets.
+"""Show every narrowed S75-A32 cell PASSING and FAILING, for each flavor facet.
 
-This is the demonstration, not the test suite. For each of the nine behaviours
-in each of the two flavors it prints the observation that passes and the
-observation that fails, and exits non-zero if any check has only one of them.
-A check with no red side is a line in a list; this script refuses to call it a
-check.
+This is the demonstration, not the test suite. For each of the seven narrowed
+behaviours in each requested flavor it prints the observation that passes and
+the observation that fails. A cell with no red side is a line in a list; this
+script refuses to call it a check.
 
-The FAIL side is taken from where the cell keeps it:
-  * the seven contract/style/byte cells carry a negative control -- the same
-    code path driven with its condition deliberately unmet;
-  * the two dependency cells carry both sides of their declared protocol, a
-    conforming provider (pass) and a broken one (fail), because their production
-    modules are still unmerged and are owned by S75-T17 and S75-T28.
+The FAIL side is where the cell keeps it: every executed cell carries a
+negative control -- the same code path driven with its condition deliberately
+unmet -- and ``control_red`` is the observation that the control actually went
+red. Cells that could not execute (a flavor whose package anchor is not
+provisioned) are reported UNAVAILABLE and never counted as demonstrated.
 
 Usage:
-    python3 demonstrate_checks.py [--json]
+    python3 demonstrate_checks.py [--json] [--flavors onboarding[,999]]
+                                  [--repo-root PATH]
 
-Exit: 0 every one of the eighteen cells demonstrated both sides;
-      1 a check exists with no demonstrated failure.
+Exit: 0 every requested cell executed and demonstrated both sides;
+      1 a cell exists with no demonstrated failure side, or a flavor ran
+        nothing it could demonstrate.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -34,63 +35,65 @@ import cell_matrix as C  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(HERE))
 FLAVORS = ("onboarding", "999")
-DEPENDENCY = ("Notion migration", "paid compatibility")
 
-def _rows():
+
+def _rows(repo_root, flavors):
     out = []
-    for flavor in FLAVORS:
-        target = C.facet_target(flavor, REPO_ROOT)
-        reference = C.run_cells(target)
-        broken = C.run_cells(target, broken=True)
-        broken_by = {c["behavior"]: c for c in broken}
-        for cell in reference:
-            behavior = cell["behavior"]
+    for flavor in flavors:
+        target = C.facet_target(flavor, repo_root)
+        cells = C.run_cells(target)
+        for cell in cells:
             passed = sum(1 for c in cell["checks"] if c["result"])
+            control = cell["negative_control"] or {}
             row = {
                 "flavor": flavor,
-                "behavior": behavior,
+                "behavior": cell["behavior"],
                 "pass_status": cell["status"],
                 "checks_passed": passed,
                 "checks_total": len(cell["checks"]),
-            }
-            if behavior in DEPENDENCY:
-                exercise = cell["exercise"]
-                row["fail_status"] = broken_by[behavior]["status"]
-                row["pass_evidence"] = (
-                    "conforming provider: %d/%d protocol checks pass "
-                    "(root_source=%s, production carrier absent, owed by %s)"
-                    % (sum(1 for c in exercise["checks"] if c["result"]),
-                       len(exercise["checks"]), target.root_source,
-                       cell["not_applicable"]["owed_by"]))
-                row["fail_evidence"] = (
-                    "broken provider: %d/%d protocol checks fail -> %s"
-                    % (sum(1 for c in broken_by[behavior]["checks"] if not c["result"]),
-                       len(broken_by[behavior]["checks"]),
-                       broken_by[behavior]["status"]))
-                row["failable"] = (
-                    exercise["reference_ok"] is True
-                    and exercise["broken_ok"] is False
-                    and broken_by[behavior]["status"] == "OBSERVED_FAIL")
-            else:
-                control = cell["negative_control"]
-                row["fail_status"] = "%s (negative control)" % cell["status"]
-                row["pass_evidence"] = (
+                "root_source": target.root_source,
+                "fail_status": "negative control",
+                "pass_evidence": (
                     "%d/%d checks pass on the production code at %s"
-                    % (passed, len(cell["checks"]), target.root_source))
-                row["fail_evidence"] = (
-                    "unmet condition: %s -> facet_ok_on_unmet=%s, control_red=%s"
+                    % (passed, len(cell["checks"]), target.root_source)),
+                "fail_evidence": (
+                    "unmet condition: %s -> observed=%s, control_red=%s"
                     % (control.get("unmet_condition"), control.get("observed"),
-                       control.get("control_red")))
-                row["failable"] = control.get("control_red") is True
+                       control.get("control_red"))),
+                "failable": (
+                    cell["executed"] is True
+                    and cell["status"] == C.OBSERVED_PASS
+                    and cell["known_good_control"]["pass"] is True
+                    and bool(cell["checks"])
+                    and all(c["result"] for c in cell["checks"])
+                    and control.get("control_red") is True),
+            }
+            if not cell["executed"] or not cell["checks"]:
+                row["fail_status"] = "UNAVAILABLE"
             out.append(row)
     return out
 
+
 def main(argv=None):
-    as_json = "--json" in (argv if argv is not None else sys.argv[1:])
-    rows = _rows()
-    if as_json:
-        json.dump({"rows": rows,
-                   "all_demonstrated": all(r["failable"] for r in rows)},
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--flavors", default=",".join(FLAVORS))
+    parser.add_argument("--repo-root", default=REPO_ROOT)
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+
+    flavors = tuple(f.strip() for f in args.flavors.split(",") if f.strip())
+    unknown = [f for f in flavors if f not in FLAVORS]
+    if unknown:
+        parser.error("unknown flavor(s) %r; choose from %r" % (unknown, FLAVORS))
+
+    rows = _rows(args.repo_root, flavors)
+    demonstrated = [r for r in rows if r["failable"]]
+    all_demonstrated = (
+        bool(rows) and len(demonstrated) == len(rows)
+        and set(flavors) <= {r["flavor"] for r in rows})
+
+    if args.json:
+        json.dump({"rows": rows, "all_demonstrated": all_demonstrated},
                   sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
     else:
@@ -102,8 +105,9 @@ def main(argv=None):
                 "yes" if row["failable"] else "NO", row["fail_evidence"]))
         print()
         print("%d cells, %d with a demonstrated failure side"
-              % (len(rows), sum(1 for r in rows if r["failable"])))
-    return 0 if all(r["failable"] for r in rows) else 1
+              % (len(rows), len(demonstrated)))
+    return 0 if all_demonstrated else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())
