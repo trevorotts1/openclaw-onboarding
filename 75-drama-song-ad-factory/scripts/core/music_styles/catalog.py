@@ -393,7 +393,8 @@ _ADDED = {
              "EDM drop", "forced screaming", "imitation of a singer"),
             (100, 142), "4/4",
             "forward melodic vocal with controlled edge and clear words; "
-            "verses leave headroom; choruses widen guitars and harmonies",
+            "verses leave headroom; choruses widen guitars with a backing "
+            "vocal lift",
             "restrained guitar and pulse under the spoken consequence; "
             "tighter groove under the obstacle; a short stop or stripped bar "
             "marks the choice; full guitars open after visible action",

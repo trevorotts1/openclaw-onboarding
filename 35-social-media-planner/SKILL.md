@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: 3.8.2
+version: 3.9.9
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -120,7 +120,7 @@ QC: Grammar, Fact-Check, Visual.
    | YouTube | `[from secrets/.env: YOUTUBE_KEY]` |
    | GHL Blog | `https://services.leadconnectorhq.com/blogs?locationId=[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]` |
 
-   **Account-type capability (T-22):** before choosing a path, resolve the channel and account type against `config/profile-capabilities.json`. Personal profiles are announced as **assisted**: the system prepares the exact placement (text, asset, keyword, CTA, timing) and the operator performs one manual step. Only an explicit operator confirmation creates a receipt; an assisted placement reports `awaiting-operator` or `operator-confirmed`, never `published-by-system`. An unattended personal-profile request is refused with the limitation stated plainly and the assisted route offered. See `PROFILE-CAPABILITIES.md` and `shared-utils/personal_profile_capability.py`.
+   **Account-type capability (T-22):** before choosing a path, resolve the channel and account type against `config/profile-capabilities.json`. Personal profiles are announced as **assisted**: the system prepares the exact placement (text, asset, keyword, CTA, timing) and the operator performs one manual step. Only an explicit operator confirmation creates a receipt; an assisted placement reports `awaiting-operator` or `operator-confirmed`, never `published-by-system`. An unattended personal-profile request is refused with the limitation stated plainly and the assisted route offered. Unattended coverage is **unproved** — this skill monitors no public channel or account, so no unattended publication is reported; `unattended_coverage()` states the proof required and the owner who must decide it. See `PROFILE-CAPABILITIES.md` and `shared-utils/personal_profile_capability.py`.
 
 2. Upload media first (GHL Media Library CDN), embed links.
 3. Post comments as a separate call 1-2 minutes after each parent post.
