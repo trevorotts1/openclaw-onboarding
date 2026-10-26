@@ -1,0 +1,112 @@
+{
+  "unit": "S75-T32",
+  "acceptance_row": "S75-A32",
+  "attempt": "candidate-1",
+  "mode": "candidate-build",
+  "decision_locked": true,
+  "arbiter": {
+    "record": "/Users/blackceomacmini/loop-control/s75/qc/S75-T32-ARBITER.md",
+    "outcome": "REJECT_AND_NARROW",
+    "restriction": "built exactly the narrowed shape; acceptance stays with the owner"
+  },
+  "base": {
+    "ref": "origin/main",
+    "commit": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+    "note": "merge-base of origin/main and this branch; origin/main at build time was 5a54ddd7f8171ea7e3608cc1d508b06e82077d9e"
+  },
+  "head": {
+    "commit": "83f878f3c8235456d0b0a906d881f17215948671",
+    "branch": "s75/S75-T32-r4",
+    "filing_note": "83f878f3c is the head every measurement below ran at. The commit that files this receipt is its child and changes only this file."
+  },
+  "shape_statement": "Narrowed per the arbiter. Each facet exercises the SEVEN behaviours this unit can measure -- missing foundation, cast bypass, scene richness, identity setting changes, approval ordering, style18, original byte preservation -- and each facet binds to a named repository root with PROVENANCE (remote, revision, digest), refusing its release claim when identity is unproven. 'Notion migration' and 'paid compatibility' are out of this row (S75-A17/S75-T17 and S75-A28/S75-T28) and are named in cell_matrix.EXCLUDED_BEHAVIORS rather than silently dropped.",
+  "files_changed": [
+    "tests/story_first_acceptance/acceptance_fixtures.py",
+    "tests/story_first_acceptance/cell_matrix.py",
+    "tests/story_first_acceptance/facet_runner.py",
+    "tests/story_first_acceptance/provenance.py",
+    "tests/story_first_acceptance/provenance_pins.json",
+    "tests/story_first_acceptance/receipt.py",
+    "tests/story_first_acceptance/receipt.schema.json",
+    "tests/story_first_acceptance/run_acceptance.py",
+    "tests/story_first_acceptance/test_cross_flavor_acceptance.py"
+  ],
+  "delta_scope": "test-only: every changed path is under tests/story_first_acceptance/. Zero product code changed, zero deletions outside owned paths, zero secrets.",
+  "tests_run": [
+    {
+      "command": "python3 -I -m pytest -q tests/story_first_acceptance",
+      "result": "30 passed in 7.48s",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 -I tests/story_first_acceptance/test_cross_flavor_acceptance.py",
+      "result": "30 passed, 0 failed, 30 total",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 -I tests/story_first_acceptance/cell_matrix.py --selfcheck",
+      "result": "cell_matrix selfcheck ok: 7 behaviours, instruments discriminate, planted='s75t32-unproven-uipyy11n' refused, repo='trevorotts1/openclaw-onboarding' proven",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 -I tests/story_first_acceptance/facet_runner.py --skill-root 75-drama-song-ad-factory --flavor onboarding --facet all",
+      "result": "exit 0; status PASS; 7 cells, cells_pass 7, cells_fail 0; cells_with_proven_release 7, refused 0; identity_proven true; remote trevorotts1/openclaw-onboarding; revision c448e9aecd9e (pre-commit run); digest 06e9e2885ff67b72",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 -I tests/story_first_acceptance/run_acceptance.py --flavors onboarding,999 (after push)",
+      "result": "onboarding PASS: facets 10 green / 0 red, controls 10 red / 0 green, cells 7 executed (7 pass / 0 fail / 0 not-applicable), gate ORIGIN_REVISION; 999 UNAVAILABLE: gate REFUSED, pinned root not provisioned and pin declares no tree digest",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 -I -m pytest -q 75-drama-song-ad-factory/tests (surrounding suite)",
+      "result": "2 failed, 222 passed in 4.87s",
+      "exit_code": 1,
+      "control": "same command at base c448e9aec in a detached worktree /tmp/t32-base-c448: 2 failed, 222 passed in 5.47s. Both failures are pre-existing and unrelated: test_model_choice.py::test_no_model_pin_in_skill_docs and test_no_blur_fill/test_pipeline_refusal.py::ScanRefusesCoreFill::test_shipped_core_carries_no_fill."
+    }
+  ],
+  "dependencies": {
+    "python": "3.14.7",
+    "network": "none",
+    "model_calls": "none",
+    "spend": "none",
+    "cross_unit": {
+      "S75-T17": "owns Notion migration, now S75-A17; not exercised here",
+      "S75-T28": "owns paid compatibility, now S75-A28; not exercised here",
+      "S75-T30": "owns the 999 package assembly and the eighteen-style catalog delivery"
+    }
+  },
+  "independent_checker": {
+    "status": "PENDING",
+    "checker": null
+  },
+  "gates": {
+    "repository_required_gates": "NOT_APPLICABLE_TO_THIS_BRANCH_SCOPE",
+    "reason": "ruleset 20330619 main-required-checks scopes refs/heads/main; this candidate lives on s75/S75-T32-r4. Branch-scope applicability is unmeasured (arbiter residual unknown 3). No gate was claimed."
+  },
+  "claims": [
+    "The row is narrowed to seven behaviours. cell_matrix.BEHAVIORS has seven entries; Notion migration and paid compatibility are in EXCLUDED_BEHAVIORS with moved_to_row S75-A17 / S75-A28 and the owing units.",
+    "The two dependency cells and their self-written providers are deleted: 315 lines removed from cell_matrix.py including probe_notion, probe_paid, _migration_provider, _compatibility_provider and the _exercise helpers. Round 4's 'protocol against a provider the check module writes for itself' has no code path left.",
+    "Identity is proven, not labelled. provenance.resolve reads remote (git remote.origin.url), revision (git rev-parse HEAD) and digest (git ls-tree -r <rev> -- <skill root>) from the root; os.path.isdir decides nothing. The old cell_matrix.py:216 isdir relabel is gone.",
+    "The release oracle is independent of the claim. repository_release carries identity_proven, proven_repository, label_matches_provenance and release_refused; own_repository_released requires identity_proven AND proven_repository == declared repository AND the existing foreign-module/path facts. A label cannot outrank the evidence.",
+    "SPOOF RE-TESTED: a planted directory holding skill bytes at .claude/skills/drama-song-ad-factory produced identity_proven false, own_repository_released false, and a refusal on all 7 cells ('not inside a git worktree and no ancestor directory names a 40-hex revision'). Round 4's p8_spoof is now refused, not green.",
+    "A root from the wrong repository is refused: provenance.resolve(<onboarding root>, 'trevorotts1/999-setup') returns identity_proven false with 'origin is trevorotts1/openclaw-onboarding, not the declared trevorotts1/999-setup'.",
+    "The seam path refuses an unproven anchor instead of relabelling it: a 999 anchor that exists but is not 999 is marked root_source 'unproven-anchor' and its release claim is refused (test_a_provisioned_anchor_without_provenance_is_refused_not_relabelled).",
+    "The receipt layer refuses a release claim without provenance: receipt._cell_defects requires repository_release.identity_proven is true before own_repository_released, so round 4's planted-directory release cannot be filed (test_a_planted_directory_cannot_mint_a_release_claim).",
+    "The hard-coded shared-core assertion is gone. test_each_facet_records_its_own_package_binding now asserts what each facet PROVES: onboarding identity_proven true with remote/revision/digest read from git; 999 unprovisioned is bound to the onboarding bytes it proves and cannot claim 999-setup.",
+    "A pinned extracted tree is attributable only by its bytes: a revision-named tree with no pinned digest is REFUSED ('the pin declares no tree digest, so this tree's bytes cannot be attributed'); with the digest pinned it is PINNED_REVISION. The 999 pin in provenance_pins.json carries revision 33ef8ec5b17e171b646926ccb4ec77ee5e865d49 and digest null.",
+    "The named instrument now measures clause 2: facet_runner returns PASS only when every cell released (releases.all_cells_released), and run_acceptance refuses a root whose provenance is unproven before it runs any cell.",
+    "Onboarding, measured at head 83f878f3c after push: execution PASS, 10 facets green / 0 red, 10 negative controls red / 0 green, 7 cells executed, 7 OBSERVED_PASS, 0 OBSERVED_FAIL, 0 NOT_APPLICABLE, 7 of 7 cells with a proven release, gate ORIGIN_REVISION, repository identity remote trevorotts1/openclaw-onboarding.",
+    "acceptance_fixtures.load_package no longer poisons sys.modules: a failed load leaves no half-built story_first_contracts and removes the sys.path entry it added. Found while proving the spoof case (before the fix, probing an absent root broke every later facet)."
+  ],
+  "not_claimed": [
+    "Acceptance. This is candidate build-ahead on a decision-locked unit. No unit is marked accepted, ledger.json and TODO.md/RESUME.md are untouched, and independent_checker is PENDING.",
+    "The 999 facet's seven cells are UNMEASURED. Its pinned root tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49 is not provisioned, and the pin declares no tree digest, so a tree placed there is refused rather than accepted on its directory name. run_acceptance records 999 as UNAVAILABLE, never as a pass.",
+    "TWO STYLE18 BREAKAGES STILL GO UNDETECTED (arbiter residual unknown 2): choice_rows() rendering 17 of 18 rows, and validate_catalog() hard-wired to 18. This candidate did not close the style18 cell's own falsifiability gap.",
+    "Ruleset 20330619 (main-required-checks, 8 contexts) branch scope is unmeasured. No repository gate is claimed for s75/S75-T32-r4.",
+    "_known_skill_roots() still carries a ~/999-setup entry (arbiter residual unknown 4); effect on module-snapshot drift detection stays unmeasured and unchanged.",
+    "Receipt self-reference: this file names head 83f878f3c but is committed as its child, so it cannot carry its own commit hash.",
+    "Fourteen narrowed cells exist (7 x 2); only seven executed in this checkout. The seven unexecuted are the 999 facet's, for the provisioning reason above.",
+    "The two surrounding-suite failures are not fixed and are not attributable to this delta: both reproduce identically at base c448e9aec."
+  ]
+}
