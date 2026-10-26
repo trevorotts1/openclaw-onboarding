@@ -310,8 +310,11 @@ def section_fragments(stage, section, index, sections, spec, table, kind=None):
     if len(many) > 1:
         if section.get("cta_layout") == "utility":
             note = str(section.get("cta_note") or "").strip().rstrip(".")
-            place = (note[0].lower() + note[1:] if note else
-                     "each utility action its own button, the first filled and the rest outlined")
+            if not note:  # the spec states the treatment; a guessed one is a defect
+                raise BuildError(f"section {section.get('section_id')}: the utility actions carry "
+                                 "no declared treatment (cta_note); rebuild the request from the "
+                                 "spec, never a guessed treatment")
+            place = note[0].lower() + note[1:]
         else:
             place = "one inside each package card in card order"
         out.append(f"BUTTON: this section carries exactly {len(many)} buttons, {place}, "
@@ -526,10 +529,13 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None) 
                 # Keep the treatment: the spec's own note says which action is filled and which
                 # are outlined (section 5) or that each access card carries its own (section 3).
                 # Never the landing/product-selection package-card rule, and never a guess.
-                entry["cta_layout"] = "utility"
                 note = str(cta_rule.get("note") or "").strip()
-                if note:
-                    entry["cta_note"] = note
+                if not note:
+                    raise BuildError(f"section {sid}: the {spec_label(spec)} carries its utility "
+                                     "actions side by side but its cta block declares no note; the "
+                                     "treatment must come from the spec, never a guess")
+                entry["cta_layout"] = "utility"
+                entry["cta_note"] = note
         # a non-landing form's spec pins each section's composition role, ground and behaviour note
         for key, field in (("composition_role", "composition_role"), ("ground", "ground")):
             if spec_section.get(field):

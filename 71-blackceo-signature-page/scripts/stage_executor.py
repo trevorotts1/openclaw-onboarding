@@ -521,8 +521,11 @@ def copy_contract(section: dict, closing: str = "") -> str:
         # the spec's own `cta.note` states (the first action filled, the rest outlined).
         if section.get("cta_layout") == "utility":
             note = str(section.get("cta_note") or "").strip().rstrip(".")
-            treatment = (note[0].lower() + note[1:] + "; " if note else
-                         "the first filled in the primary colour and the rest outlined; ")
+            if not note:  # the spec states the treatment; a guessed one is a defect
+                raise ExecutorError(
+                    f"section {label}: the utility actions carry no declared treatment "
+                    "(cta_note); rebuild the request from the spec, never a guessed treatment")
+            treatment = note[0].lower() + note[1:] + "; "
             lead = ("CTA LABELS — utility actions on this page, each its own button, "
                     + treatment + "each printed exactly: ")
         else:

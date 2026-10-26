@@ -15,6 +15,7 @@ import json
 import shlex
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -47,6 +48,7 @@ def load(name):
 exe = load("stage_executor")
 builder = load("build_production_request")
 runner = load("run_page_type")
+role_runner = load("run_page_role_stages")
 forms = load("copy_forms")
 page_role = load("page_role")
 wspec = load("wireframe_spec")
@@ -276,6 +278,54 @@ class UtilityButtonTests(RunCase):
         self.assertIn("section 2", str(ctx.exception))
         self.assertIn("forbids a button", str(ctx.exception))
 
+    def test_the_utility_treatment_is_never_guessed(self):
+        # finding 15 keeps the spec's own treatment (cta.note); no note means a refusal by name,
+        # never invented wording in the builder, the copy contract or the wireframe block
+        spec = json.loads(json.dumps(read(exe.SPEC_DIR / "thank-you-v1.json")))
+        del spec["sections"][4]["cta"]["note"]
+        text = (FIXTURES / "thank-you-path-b.md").read_text(encoding="utf-8")
+        text = text.replace("**[CTA BUTTON: Contact support]**",
+                            "**[CTA BUTTON: Contact support]**\n\n"
+                            "**[CTA BUTTON: Manage my purchase]**")
+        with self.assertRaises(builder.BuildError) as ctx:
+            builder.sections_from_manuscript(text, spec, {})
+        self.assertIn("declares no note", str(ctx.exception))
+        # a hand-built request that drops the note is refused by both consumers, never guessed
+        request = builder.build("desktop-wireframe", "thank-you", text, {}, {}, [], STUB, "",
+                                self.run, "thank_you")
+        section = next(s for s in request["sections"] if s["section_id"] == "5")
+        section.pop("cta_note", None)
+        with self.assertRaises(exe.ExecutorError) as ctx:
+            exe.copy_contract(section)
+        self.assertIn("never a guessed treatment", str(ctx.exception))
+        with self.assertRaises(wspec.SpecError) as ctx:
+            wspec.prompt_block("desktop-wireframe", section, 5, 5, 1440, request)
+        self.assertIn("never a guess", str(ctx.exception))
+
+    def test_the_utility_treatment_is_never_guessed(self):
+        # finding 15 keeps the spec's own treatment (cta.note); no note means a refusal by name,
+        # never invented wording in the builder, the copy contract or the wireframe block
+        spec = json.loads(json.dumps(read(exe.SPEC_DIR / "thank-you-v1.json")))
+        del spec["sections"][4]["cta"]["note"]
+        text = (FIXTURES / "thank-you-path-b.md").read_text(encoding="utf-8")
+        text = text.replace("**[CTA BUTTON: Contact support]**",
+                            "**[CTA BUTTON: Contact support]**\n\n"
+                            "**[CTA BUTTON: Manage my purchase]**")
+        with self.assertRaises(builder.BuildError) as ctx:
+            builder.sections_from_manuscript(text, spec, {})
+        self.assertIn("declares no note", str(ctx.exception))
+        # a hand-built request that drops the note is refused by both consumers, never guessed
+        request = builder.build("desktop-wireframe", "thank-you", text, {}, {}, [], STUB, "",
+                                self.run, "thank_you")
+        section = next(s for s in request["sections"] if s["section_id"] == "5")
+        section.pop("cta_note", None)
+        with self.assertRaises(exe.ExecutorError) as ctx:
+            exe.copy_contract(section)
+        self.assertIn("never a guessed treatment", str(ctx.exception))
+        with self.assertRaises(wspec.SpecError) as ctx:
+            wspec.prompt_block("desktop-wireframe", section, 5, 5, 1440, request)
+        self.assertIn("never a guess", str(ctx.exception))
+
 
 @needs_skill80
 class RunnerOutputTests(unittest.TestCase):
@@ -363,10 +413,121 @@ class RunnerOutputTests(unittest.TestCase):
             self.assertIn(["--copy-version", "upsell"], pairs)
             self.assertIn(["--stage", stage], pairs)
         for argv, stage in zip(runs, runner.STAGES):
-            self.assertEqual(argv[1], str(self.run.resolve()))
+            # symlink-safe (macOS /var -> /private/var): resolve BOTH sides, keep exact-value assertion
+            self.assertEqual(Path(argv[1]).resolve(), self.run.resolve())
             self.assertIn(["--stages", stage], [argv[i:i + 2] for i in range(len(argv) - 1)])
             self.assertIn(["--request", f"production-request-{stage}.json"],
                           [argv[i:i + 2] for i in range(len(argv) - 1)])
+
+
+class RoleStagesRunnerOutputTests(unittest.TestCase):
+    """Finding 21 in the page-role runner too: a preflight is a preview, and every printed
+    next command is one copy-pasteable command in the page-type runner's own shape."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.run = Path(self.tmp.name) / "run dir"  # a space in the path: the printed command must survive it
+        (self.run / "copy").mkdir(parents=True)
+        (self.run / "copy" / "internal-manuscript.md").write_text(
+            (FIXTURES / "thank-you-path-b.md").read_text(encoding="utf-8"), encoding="utf-8")
+        (self.run / "intake.json").write_text(json.dumps({"copy_version": "thank-you"}))
+        self.original_run = role_runner.subprocess.run
+        self.addCleanup(setattr, role_runner.subprocess, "run", self.original_run)
+        role_runner.subprocess.run = lambda argv: types.SimpleNamespace(returncode=0)  # no subprocess
+        # and no provider: only the printed advice is checked
+
+    def output(self, *extra):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(role_runner.main([str(self.run), *extra]), 0)
+        return out.getvalue()
+
+    def test_preflight_prints_preview_and_two_separate_runnable_commands(self):
+        text = self.output("--preflight")
+        self.assertIn("PREVIEW", text)
+        self.assertNotIn("DONE", text)
+        self.assertNotIn("design-board, final-mockups", text)
+        lines = {l.split(",", 1)[0]: l for l in text.splitlines() if l.startswith("NEXT ")}
+        self.assertEqual(set(lines), {"NEXT 1", "NEXT 2"})
+        # every command must paste and run as printed: shell-split back to one argv per command
+        board = shlex.split(lines["NEXT 1"].rsplit(": ", 1)[1])
+        self.assertEqual(board, [sys.executable, str(SCRIPTS / "stage_executor.py"),
+                                 str(self.run.resolve()), "--stages", "design-board",
+                                 "--request", "production-request.json"])
+        build, execute = (shlex.split(part) for part in lines["NEXT 2"].rsplit(": ", 1)[1].split(" && "))
+        self.assertEqual(build[:2], [sys.executable, str(SCRIPTS / "build_production_request.py")])
+        self.assertIn(["--stage", "final-mockups"], [build[i:i + 2] for i in range(len(build) - 1)])
+        self.assertIn(["--out", str(self.run.resolve() / "production-request-final-mockups.json")],
+                      [build[i:i + 2] for i in range(len(build) - 1)])
+        self.assertEqual(execute, [sys.executable, str(SCRIPTS / "stage_executor.py"),
+                                   str(self.run.resolve()), "--stages", "final-mockups",
+                                   "--request", "production-request-final-mockups.json"])
+
+    def test_a_stub_run_is_a_preview_and_a_real_run_reports_the_provider(self):
+        # finding 21: DONE was printed for stub output too, which is placeholder PNGs
+        text = self.output()
+        self.assertIn("PREVIEW", text)
+        self.assertIn("placeholder", text)
+        self.assertNotIn("DONE", text)
+        text = self.output("--provider", "kie")
+        self.assertIn("stages done with the kie provider", text)
+        self.assertNotIn("PREVIEW", text)
+
+
+class RoleStagesRunnerOutputTests(unittest.TestCase):
+    """Finding 21 in the page-role runner too: a preflight is a preview, and every printed
+    next command is one copy-pasteable command in the page-type runner's own shape."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.run = Path(self.tmp.name) / "run dir"  # a space in the path: the printed command must survive it
+        (self.run / "copy").mkdir(parents=True)
+        (self.run / "copy" / "internal-manuscript.md").write_text(
+            (FIXTURES / "thank-you-path-b.md").read_text(encoding="utf-8"), encoding="utf-8")
+        (self.run / "intake.json").write_text(json.dumps({"copy_version": "thank-you"}))
+        self.original_run = role_runner.subprocess.run
+        self.addCleanup(setattr, role_runner.subprocess, "run", self.original_run)
+        role_runner.subprocess.run = lambda argv: types.SimpleNamespace(returncode=0)  # no subprocess
+        # and no provider: only the printed advice is checked
+
+    def output(self, *extra):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(role_runner.main([str(self.run), *extra]), 0)
+        return out.getvalue()
+
+    def test_preflight_prints_preview_and_two_separate_runnable_commands(self):
+        text = self.output("--preflight")
+        self.assertIn("PREVIEW", text)
+        self.assertNotIn("DONE", text)
+        self.assertNotIn("design-board, final-mockups", text)
+        lines = {l.split(",", 1)[0]: l for l in text.splitlines() if l.startswith("NEXT ")}
+        self.assertEqual(set(lines), {"NEXT 1", "NEXT 2"})
+        # every command must paste and run as printed: shell-split back to one argv per command
+        board = shlex.split(lines["NEXT 1"].rsplit(": ", 1)[1])
+        self.assertEqual(board, [sys.executable, str(SCRIPTS / "stage_executor.py"),
+                                 str(self.run.resolve()), "--stages", "design-board",
+                                 "--request", "production-request.json"])
+        build, execute = (shlex.split(part) for part in lines["NEXT 2"].rsplit(": ", 1)[1].split(" && "))
+        self.assertEqual(build[:2], [sys.executable, str(SCRIPTS / "build_production_request.py")])
+        self.assertIn(["--stage", "final-mockups"], [build[i:i + 2] for i in range(len(build) - 1)])
+        self.assertIn(["--out", str(self.run.resolve() / "production-request-final-mockups.json")],
+                      [build[i:i + 2] for i in range(len(build) - 1)])
+        self.assertEqual(execute, [sys.executable, str(SCRIPTS / "stage_executor.py"),
+                                   str(self.run.resolve()), "--stages", "final-mockups",
+                                   "--request", "production-request-final-mockups.json"])
+
+    def test_a_stub_run_is_a_preview_and_a_real_run_reports_the_provider(self):
+        # finding 21: DONE was printed for stub output too, which is placeholder PNGs
+        text = self.output()
+        self.assertIn("PREVIEW", text)
+        self.assertIn("placeholder", text)
+        self.assertNotIn("DONE", text)
+        text = self.output("--provider", "kie")
+        self.assertIn("stages done with the kie provider", text)
+        self.assertNotIn("PREVIEW", text)
 
 
 if __name__ == "__main__":
