@@ -86,6 +86,13 @@ from reconciliation import (  # noqa: E402
     resolve_unknown,
     sweep_inflight,
 )
+# The post-gift step (T-27). This module owns "the gift is delivered", so the
+# delivery-verified path in record_delivery_proof is where useful help is made.
+from post_delivery_discovery import (  # noqa: E402
+    Catalog,
+    Discovery,
+    KnowledgeBase,
+)
 
 # FulfillmentOutcome.status values.
 F_SENT = "sent"                          # provider admission for this call
@@ -438,6 +445,8 @@ class FulfillmentOutcome:
     delivery_status: str = D_NOT_SENT
     continuation_allowed: bool = False
     continuation_reason: str = ""
+    # T-27 post-gift help, computed on the delivery-verified path.
+    post_gift_help: Optional[Dict[str, Any]] = None
 
 
 def _intent_key(basis: DeliveryBasis) -> str:
@@ -708,10 +717,63 @@ def resume(store: DurableStore, ledger: FulfillmentLedger,
         continuation_reason="outcome unresolved; no retry is possible")
 
 
+def post_gift_help(catalog: Optional[Catalog] = None,
+                   knowledge: Optional[KnowledgeBase] = None,
+                   known_needs: Optional[Dict[str, Any]] = None,
+                   refused_needs: tuple = (),
+                   questions_asked: tuple = ()) -> Dict[str, Any]:
+    """Useful help after the gift (T-27): grounded answers and real recommendations.
+
+    The production call site is the delivery-verified path of
+    record_delivery_proof below: a verified delivery is when help is owed.
+    Answers come only from the stored knowledge base and carry their source;
+    an unmatched topic is `unknown`, never invented text. Each recommendation
+    names a real catalogue item of kind resource/community/offer/calendar that
+    matches a KNOWN need. Discovery stays adaptive: the pending questions are a
+    function of the catalogue and what is already known, never a fixed three,
+    and one known need is enough to recommend, so nothing is gated on a
+    questionnaire being finished. Capture state is not consulted: phone-only,
+    email-only and declined people get identical help.
+    """
+    discovery = Discovery(catalog if catalog is not None else Catalog(),
+                          knowledge)
+    for field_name, value in (known_needs or {}).items():
+        discovery.learn(field_name, value)
+    for field_name in refused_needs:
+        discovery.refuse(field_name)
+
+    recs = discovery.recommend(limit=4)
+    by_kind = {}
+    for rec in recs.get("recommendations", []):
+        by_kind.setdefault(rec["kind"], rec)
+    pending = discovery.questions()
+    return {
+        "answers": {topic: discovery.answer(topic) for topic in questions_asked},
+        "recommendation": recs,
+        "recommendations_by_kind": by_kind,
+        "kinds_reached": sorted(by_kind),
+        "next_question": pending[0] if pending else None,
+        "questions_remaining": len(pending),
+        "known_needs": discovery.known(),
+    }
+
+
 def record_delivery_proof(store: DurableStore, item: PromisedItem,
                           basis: DeliveryBasis, proof: Dict[str, Any], *,
-                          now: Optional[float] = None) -> FulfillmentOutcome:
-    """Promote accepted -> delivered from an ACTUAL receipt. Never inferred."""
+                          now: Optional[float] = None,
+                          help_catalog: Optional[Catalog] = None,
+                          help_knowledge: Optional[KnowledgeBase] = None,
+                          known_needs: Optional[Dict[str, Any]] = None,
+                          refused_needs: tuple = (),
+                          questions_asked: tuple = ()) -> FulfillmentOutcome:
+    """Promote accepted -> delivered from an ACTUAL receipt. Never inferred.
+
+    A verified delivery is also when useful help is owed (R-17), so this
+    production entry point computes post-gift help on that path and returns it
+    with the outcome. A caller that holds the client's catalogue passes it as
+    help_catalog; with none supplied the truthful result is a no-match, never
+    an invented recommendation.
+    """
     item.validated()
     basis.validated()
     if not isinstance(proof, dict):
@@ -744,11 +806,15 @@ def record_delivery_proof(store: DurableStore, item: PromisedItem,
         raise FulfillmentError(
             f"illegal_transition: delivery proof from {state!r} (nothing was accepted)")
     after = store.record_completion(action_id, proof, now=now)
+    # The gift is delivered: useful help runs now (T-27). One call site, on the
+    # verified-delivery path - the only place the person is owed help.
+    help_now = post_gift_help(help_catalog, help_knowledge, known_needs,
+                              refused_needs, questions_asked)
     return FulfillmentOutcome(
         F_ALREADY_SATISFIED, reason="delivery_verified", action_id=action_id,
         state=after["state"], item_id=item.item_id, version=item.version,
         destination=destination.as_record(), transport_receipt=dict(proof),
-        delivery_status=D_DELIVERED)
+        delivery_status=D_DELIVERED, post_gift_help=help_now)
 
 
 # ── assert-based self-check (stdlib only) ──────────────────────────────────
@@ -800,8 +866,40 @@ def _selfcheck() -> int:
     ok(cont.delivery_status == D_ACCEPTED, "label stays accepted without a receipt")
 
     proof = {**out.transport_receipt}
-    done = record_delivery_proof(store, item, basis, proof)
+    # T-27 wiring proof: the delivery-verified path produces post-gift help.
+    # A real item of each of the four kinds is recommendable here, an answer
+    # carries its source, and no questionnaire gates any of it.
+    catalog = Catalog()
+    catalog.add("res-1", "resource", "Starter guide",
+                "https://client-site.com/starter-guide", ["goal"])
+    catalog.add("com-1", "community", "Members circle",
+                "https://client-site.com/community", ["experience_level"])
+    catalog.add("off-1", "offer", "Paid deep-dive",
+                "https://client-site.com/deep-dive", ["budget"])
+    catalog.add("cal-1", "calendar", "Live Q and A",
+                "https://client-site.com/qa", ["timezone"])
+    kb = KnowledgeBase()
+    kb.add("what is included", "The guide plus the worksheet.",
+           "https://client-site.com/faq")
+    done = record_delivery_proof(
+        store, item, basis, proof, help_catalog=catalog, help_knowledge=kb,
+        known_needs={"goal": "grow", "experience_level": "beginner",
+                     "budget": "paid", "timezone": "America/New_York"},
+        questions_asked=("what is included",))
     ok(done.delivery_status == D_DELIVERED, "real receipt means delivered")
+    help_now = done.post_gift_help
+    ok(help_now["kinds_reached"] == ["calendar", "community", "offer", "resource"],
+       "post-gift help returns a real item of each of the four kinds")
+    ok(help_now["answers"]["what is included"]["source"]
+       == "https://client-site.com/faq", "a post-gift answer carries its source")
+    ok(help_now["recommendation"]["status"] == "ok",
+       "post-gift recommendation is a real match, not a guess")
+    ok(help_now["next_question"] is None or help_now["questions_remaining"] >= 1,
+       "discovery continues adaptively after the gift")
+    open_help = post_gift_help()
+    ok(open_help["recommendation"]["status"] == "no_match"
+       and open_help["answers"] == {},
+       "no catalogue and no known need: no_match, never an invented item")
 
     store.close()
     ledger.close()
