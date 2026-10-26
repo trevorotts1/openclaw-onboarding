@@ -72,20 +72,20 @@ def test_operator_box_defaults_to_the_operator():
 
 def test_operator_box_prefers_configured_value():
     with tempfile.TemporaryDirectory() as td:
-        plant(td, "onboarding-identity.json", {"ownerName": "LeAnne"})
+        plant(td, "onboarding-identity.json", {"ownerName": "Sample Operator"})
         b = E.resolve_emergency_owner(td, env=operator())
         check("A27-B4 operator box with a configured owner uses it",
-              b["name"] == "LeAnne" and b["defaulted"] is False, b)
+              b["name"] == "Sample Operator" and b["defaulted"] is False, b)
         check("A27-B5 the binding names where the value came from",
               b["source"].startswith("onboarding-identity.json:"), b)
 
 
 def test_client_binds_to_its_own_configured_operator():
     with tempfile.TemporaryDirectory() as td:
-        plant(td, "onboarding-identity.json", {"ownerName": "Sheila Reynolds"})
+        plant(td, "onboarding-identity.json", {"ownerName": "Sample Client"})
         b = E.resolve_emergency_owner(td, env={})
         check("A27-B6 client install binds to its own configured operator",
-              b["name"] == "Sheila Reynolds" and b["install_kind"] == "client", b)
+              b["name"] == "Sample Client" and b["install_kind"] == "client", b)
         check("A27-B7 the full configured name is kept, not a first token",
               " " in b["name"], b["name"])
 
