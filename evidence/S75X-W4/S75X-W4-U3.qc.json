@@ -1,0 +1,96 @@
+{
+  "unit_id": "S75X-W4-U3",
+  "role": "qc-fixer",
+  "program": "s75",
+  "workflow_id": "S75X-W4",
+  "date": "2026-10-26",
+  "status": "fixed",
+  "qc_verdict": "PASS — builder verdict upheld (7/7 acceptance elements re-proven), one comment-drift defect fixed",
+  "branch": "s75x/verdicts-S75X-W4",
+  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U3-qc",
+  "lane_head_before_fix": "d2409b13b1b86479c135d9c046e62df64ab931e6",
+  "builder_claimed_head": "953004bfc84ba82357452e4f114183530f925b0f",
+  "verdict_reviewed": "evidence/S75X-W4/S75X-W4-U3.verdict.json (PASS, 7/7 acceptance elements, 24 checks)",
+  "verification_base": "origin/main 96559ab1b531570534316d856006867606afd4e2 (PR #2604), unit commits ca0a5b3de + 9bb22b288",
+  "instrument": "python3 -I throughout; unittest files via python3 -I -m unittest discover where -P strips the script dir; identical instrument on both sides of every comparison",
+
+  "acceptance_rerun": [
+    {"name": "policy constants (direct)", "result": "PASS",
+     "values": "TARGET_SHARE=(0.25,0.3) MAX_SHARE=0.35 OPENING_WINDOW_S=12.0 TOTAL_PER_REF_S=(15.0,18.0) CLIPS_PER_REF=(3,5) budget60 total_min=15.0 total_max=18.0 hard_max=21.0 clips=3-5",
+     "note": "matches builder receipts verbatim; TOTAL_PER_REF_S derived from TARGET_SHARE x REF_LENGTH_S, CLIPS_PER_REF derived by _clip_bounds(60.0)"},
+    {"name": "old 30-40 s plan refused", "result": "PASS",
+     "values": "check_clips([5]*7,60.0) pass=False code=LIPSYNC_PLAN_OUT_OF_RULE reasons=['7 clips; need 3-5', '35.0 s of lip-sync; the 35% maximum at 60.0 s is 21.0 s']"},
+    {"name": "new in-band plan accepted", "result": "PASS",
+     "values": "check_clips([5,5,5],60.0,first_clip_start_s=1.0) pass=True code=LIPSYNC_CLIPS_OK total_s=15.0 clips=3"},
+    {"name": "duration conflict surfaced", "result": "PASS",
+     "values": "duration_conflicts(30.0)==['12.0 s floor (3 clips x 4 s) exceeds the 35% maximum of 10.5 s at 30.0 s long']; duration_conflicts(60.0)==[]"},
+    {"name": "spend caps and price/cap guards", "result": "PASS",
+     "values": "LIPSYNC_PRICE_UNKNOWN raised (no rate, zero rate); LIPSYNC_CAP_UNKNOWN raised (no cap, negative cap); LIPSYNC_OVER_CAP raised (24.0 s x $0.03/s x 1 shape x 2 attempts vs $1.00); pass case cost_usd=1.44 left_after_usd=3.56 (inputs: 12.0 s, $0.03/s, 2 shapes, MAX_TRIES=2, remaining $5.00)"},
+    {"name": "two-try paid guard", "result": "PASS",
+     "values": "check_try_limit(['lip-ad-ss3','lip-ad-ss3-b','q/lip-ad-ss3_retry'],'ss3') raises LIPSYNC_TRY_LIMIT; 1 job leaves 1 try"},
+    {"name": "free route not default", "result": "PASS",
+     "values": "check_clips default route='lipsync'; route='no_lipsync' passes only with zero clips (LIPSYNC_FREE_ROUTE) and refuses paid clips (LIPSYNC_PLAN_OUT_OF_RULE)"}
+  ],
+  "acceptance_rerun_total": 14,
+  "acceptance_rerun_pass": 14,
+
+  "consumer_sites_verified": {
+    "shot_planner/face_speaks.py:66-67,182-193": "TARGET_MIN/MAX_S and HARD_MAX_S derive from _LC.TOTAL_PER_REF_S/_LC.MAX_SHARE; target_band_s() calls _LC.budget",
+    "final_assembler/lipsync_coverage.py:57": "MIN_LINES=_LC.MIN_CLIPS_FLOOR, SCALE_SHARE=_LC.TOTAL_PER_REF_S[0]/_LC.REF_LENGTH_S (0.25) — comment fixed, see fixes",
+    "catalog_calculator/agnes_price.py:100-118": "quotes floor(hard_max_s) whole seconds, surfaces LIPSYNC_DURATION_CONFLICT/unavailable",
+    "extensions/price_extension.py:6-8,141-153": "25-30% target, 35% HARD MAXIMUM from lipsync_clips; _lip_sync_duration_guard refuses above MAX_SHARE*length",
+    "references/price-menu.md:248-249": "cap math text is the new check_budget policy; old 30-40 s text absent",
+    "QC.md:275-277": "25-30% share text present, names the supersession of the 2026-10-08 order",
+    "installed adapter": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/lipsync_clips.py byte-identical to skill copy (blob 08e38340), constants at :45-47 match"
+  },
+
+  "tests": {
+    "files_run": 16,
+    "files_rc0": 15,
+    "unittest_methods_ok": 64,
+    "assertion_style_ok_lines": 94,
+    "detail": "Ran 7 OK test_agnes_price; Ran 11 OK test_lipsync_cuts_f3; Ran 46 OK test_lipsync_evidence; ok lines: test_lipsync_clips 8, test_lipsync_cap 3, test_lipsync_coverage_e6 41, test_lipsync_atomic_e5 10, test_lipsync_placement_h1 1, test_face_speaks_h4 30, test_lipsync_preflight 1 (= 94 across the 12 policy files); test_image_plan_i3 and test_lipsync_closeup report ALL CHECKS PASS; adjacent test_opening_scene_w4 25 ok, test_final_reliability_v2973 33 ok, test_blueprint_inputs_s75xw4u2 34 ok",
+    "post_fix_recheck": "test_lipsync_coverage_e6 41 ok, test_lipsync_atomic_e5 10 ok, test_lipsync_placement_h1 1 ok — unchanged after the comment fix",
+    "never_weakened": true
+  },
+
+  "lane_artifact_adjudication": {
+    "file": "scripts/core/catalog_calculator/test_card_render.py",
+    "failed_check": "no-operator-path-in-candidates",
+    "check_body": "all(\"Downloads\" not in p for p in base_bridge.candidate_paths())",
+    "lane_result": "1 of the file's checks fails: all 10 candidate_paths() derive from the lane root /Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U3-qc/... which contains the literal string 'Downloads'; first-candidate-is-shipped and bridge-finds-shipped both PASS in the lane",
+    "blob_identity": "test_card_render.py blob 734ae28c84555295bcff58f3396177468dee582e and base_bridge.py blob fcdb24ab5083c6e2e64d818e6d2f027573c14bac identical between QC lane and /Users/blackceomacmini/openclaw-onboarding (git hash-object both sides)",
+    "control": "same test, same instrument (python3 -I) in /Users/blackceomacmini/openclaw-onboarding/75-drama-song-ad-factory (outside Downloads): rc=0, PASS no-operator-path-in-candidates, ALL CHECKS PASS",
+    "verdict": "lane-path artifact, not a code defect — the pass/fail split lands exactly on the path boundary the check tests; builder adjudication CONFIRMED; no test weakened"
+  },
+
+  "findings": [
+    {"id": "F1", "severity": "cosmetic", "status": "fixed",
+     "where": "75-drama-song-ad-factory/scripts/core/final_assembler/lipsync_coverage.py:57",
+     "what": "stale comment '# 0.5: 30 s per 60 s' documented the superseded 2026-10-08 policy value while the code derives SCALE_SHARE=0.25 (15 s per 60 s) from lipsync_clips.TOTAL_PER_REF_S; left by pre-unit commit 6a605cfa5",
+     "why_it_matters": "the unit's purpose is that the old constants never regain control; a comment asserting the old value on the derived constant is the drift the verdict claims removed (A4: 'removed, not re-documented')"},
+    {"id": "F2", "severity": "none", "status": "no_change_needed",
+     "where": "SKILL.md:1268, scripts/core/lip_sync/lip_gate/image_gate.py:253, CHANGELOG.md:2643, test names",
+     "what": "remaining '30-40' strings are face-size guidance, changelog history, or test names quoting the old plan being refused — not policy drift",
+     "why_it_matters": "left untouched (maximum restraint)"}
+  ],
+
+  "fixes": [
+    {"file": "75-drama-song-ad-factory/scripts/core/final_assembler/lipsync_coverage.py",
+     "change": "comment only: '# 0.5: 30 s per 60 s' -> '# 0.25: 15 s per 60 s'",
+     "behavior_change": "none",
+     "tests_after": "e6 41 ok, e5 10 ok, h1 1 ok unchanged"}
+  ],
+
+  "receipts": "Verbatim (QC lane, python3 -I): TARGET_SHARE=(0.25,0.3) MAX_SHARE=0.35 OPENING_WINDOW_S=12.0 TOTAL_PER_REF_S=(15.0,18.0) CLIPS_PER_REF=(3,5) budget60 total_min=15.0 total_max=18.0 hard_max=21.0 clips=3-5. check_clips([5]*7,60.0) pass=False code=LIPSYNC_PLAN_OUT_OF_RULE reasons=['7 clips; need 3-5', '35.0 s of lip-sync; the 35% maximum at 60.0 s is 21.0 s']. check_clips([5,5,5],60.0,first_clip_start_s=1.0) pass=True LIPSYNC_CLIPS_OK. duration_conflicts(30.0)=['12.0 s floor (3 clips x 4 s) exceeds the 35% maximum of 10.5 s at 30.0 s long']; duration_conflicts(60.0)=[]. LIPSYNC_OVER_CAP, LIPSYNC_PRICE_UNKNOWN, LIPSYNC_CAP_UNKNOWN raised; pass cost_usd=1.44 left_after_usd=3.56; check_try_limit raised LIPSYNC_TRY_LIMIT at 2 jobs; route='lipsync' is the default. Adapter 999-setup copy blob 08e38340 identical to skill copy.",
+
+  "builder_report_audit": "Every quantified builder claim reproduced independently: 7/7 acceptance elements, 24-check verdict, 64 unittest methods + 94 ok lines, 15/16 rc=0, blobs 734ae28c/fcdb24ab, adapter identity, receipt strings verbatim. One claim narrowed: test_card_render lane artifact confirmed by control run (builder asserted it; QC proved it like-with-like). One defect the builder missed: comment drift F1, fixed.",
+
+  "blockers": "none",
+  "not_verified": [
+    "Full 303-file suite not run — scope stays the lip-sync policy surface + owned_output + adjacent unit tests, matching the builder scope",
+    "No paid KIE dispatch, no network, no spend",
+    "999-setup adapter compared byte-for-byte but not executed",
+    "Zero production call sites of check_budget/check_try_limit/check_clips noted by the builder not re-audited beyond the named consumer sites"
+  ]
+}
