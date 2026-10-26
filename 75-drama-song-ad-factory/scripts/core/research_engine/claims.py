@@ -639,6 +639,156 @@ def _is_name_word(index, raw, prep, in_subject):
         or (prep is not None and prep not in TRANSFER_PREPS))
 
 
+# ---------------------------------------------------------------------------
+# THE COMPARISON CLASS.
+#
+# A sentence that OBSERVES may compare what it observes against a class, and it
+# picks that class out by describing its members: 'Sleep coaches ... report more
+# enquiries than those who buy placement ads.' The words that pick the class out
+# describe the class being compared against, not this run — the sentence asserts
+# nothing of placement ads except that a cohort buys them, and the quantity it
+# actually measures ('more enquiries') is the run's own. Refusing the class's
+# description is the over-refusal that made a genuine sourced competitor
+# observation pass only when the owner record was doctored to carry the
+# vocabulary under test.
+#
+# Narrow on purpose, in three ways, so this cannot become a general amnesty for
+# unrecorded words:
+#   * the comparative must compare a MEASURED QUANTITY, and the predicate that
+#     quantity hangs off must OBSERVE. A sentence that asserts an effect
+#     ('Backlinks improve sleep quality more than ...') buys no exemption by
+#     adding 'than ...';
+#   * the class must be picked out by a RELATIVE CLAUSE. A bare comparative
+#     ('more problems than backlinks channels') names no class and is read as
+#     content exactly as before;
+#   * the clause ends at the next clause boundary ('and', 'but', 'or', ... or a
+#     clause-separating punctuation mark), so what follows it is asserted
+#     content again. The tokeniser drops punctuation, so the boundary is read
+#     from the sentence's own characters: a comma splice is a clause boundary,
+#     not an extension of the class.
+# 'Sleep coaches who buy mattress deals report more enquiries.' stays refused:
+# its relative clause is not in a comparative complement at all. The words below
+# are English comparison and clause machinery — the same class as the binders
+# and prepositions already in this module — never domain vocabulary, so no
+# choice of stuffed noun moves the line.
+COMPARATIVES = frozenset("than versus vs unlike".split())
+RELATIVE_PRONOUNS = frozenset("who whom whose which that where".split())
+COMPARATIVE_QUANTIFIERS = frozenset(
+    "more fewer less greater higher lower better worse longer shorter "
+    "faster slower bigger smaller older newer further".split())
+CLAUSE_ENDERS = frozenset(
+    "and but nor or yet so because although though while whereas unless "
+    "whether if since until after before during".split())
+
+# Clause-separating punctuation, read from the sentence itself because the
+# tokeniser the topic rule runs on is word-only. A mark that separates clauses
+# separates them here too — no list of marks to outgrow: any character in the
+# gap between two words that is neither a letter or digit nor whitespace nor a
+# word-internal apostrophe or hyphen ends the exempt span before the following
+# word. Ending the span EARLY only returns words to asserted content, which is
+# the refusing side of this rule.
+#
+# A hyphen or an apostrophe is the one mark that does BOTH kinds of work, and
+# which kind it is doing is read from the mark's own place in the gap, never
+# from the word it sits in:
+#   * a SPACED hyphen ("ads - backlinks", and the doubled, tab- and
+#     NBSP-flanked shapes of it) is a separator;
+#   * an ATTACHED hyphen ("ads-backlinks", "12-week") joins a compound
+#     adjective, so the span crosses the compound and ends after it — the run
+#     behind the compound is content again;
+#   * a LEADING apostrophe ("ads ' backlinks", "ads 'backlinks") is a
+#     separator: nothing hangs off the word before it;
+#   * a TRAILING apostrophe ("coaches' own", "O'Brien's", "don't") is a
+#     possessive or a contraction, so the span crosses it.
+WORD_JOINERS = "'’-"
+APOSTROPHES = frozenset("'’")
+HYPHENS = frozenset("-")
+
+def _gap_action(gap):
+    """What the marks in the gap between two words are doing: 'join' (one word
+    runs into the next), 'cap' (a compound adjective: the words join and the
+    class's description ends with the compound), 'stop' (the mark separates
+    clauses) or None (whitespace alone)."""
+    marks = [c for c in gap if not c.isspace()]
+    if not marks:
+        return None
+    spaced = any(c.isspace() for c in gap)
+    if all(c in APOSTROPHES for c in marks):
+        # hanging off the word before it = that word's possessive; standing
+        # alone in the gap = a separator.
+        return "join" if (not spaced or not gap[:1].isspace()) else "stop"
+    if all(c in HYPHENS for c in marks):
+        return "stop" if spaced else "cap"
+    return "stop"
+
+def _clause_punct_stops(sentence):
+    """(stops, caps) read from the sentence's own characters. Index k in
+    `stops` means a clause boundary sits before words[k]; index k in `caps`
+    means the span ends before words[k] because words[k - 2:k] is a compound
+    adjective joined by an attached hyphen. Words are the same tokens
+    _word_pairs produces."""
+    s = _clean(sentence)
+    stops, compounds, seen, last = set(), [], 0, 0
+    for m in RAW_WORD_RE.finditer(s):
+        gap = s[last:m.start()]
+        if seen:
+            act = _gap_action(gap)
+            if act == "stop":
+                stops.add(seen)
+            elif act == "cap":
+                compounds.append(seen - 1)
+        seen += 1
+        last = m.end()
+    # a run of joined compounds ('state-of-the-art') is ONE compound: the span
+    # ends after the run, not in the middle of it.
+    joined = set(compounds)
+    caps = {p + 2 for p in compounds if p + 1 not in joined}
+    return frozenset(stops), frozenset(caps)
+
+
+def _comparison_classes(words, preds, stops=(), caps=()):
+    """Index ranges that pick out a comparison class. See THE COMPARISON CLASS.
+    The range starts at the relative pronoun, so the class head itself ('those')
+    stays content and the sentence still has to say what it measured.
+
+    `stops` are word indices where clause-separating punctuation sits; they end
+    the exempt span exactly as a CLAUSE_ENDERS word does, so a comma splice
+    cannot carry the class's amnesty past the comma. `caps` are the word
+    indices just past a hyphen-joined compound adjective: the compound itself
+    is class description, the run behind it is content again.
+
+    The governor is the predicate the measured quantity hangs off, which is not
+    always the nearest one: in 'studies report more enquiries for coaches who
+    list pages than for those who buy ads' the quantity belongs to 'report',
+    not to 'list'."""
+    out = []
+    for m, word in enumerate(words):
+        if word not in COMPARATIVES:
+            continue
+        gov = None
+        for p in sorted((p for p in preds if p < m), reverse=True):
+            if any(w in COMPARATIVE_QUANTIFIERS for w in words[p + 1:m]):
+                gov = p
+                break
+        if gov is None or words[gov] in EFFECT_FORMS:
+            continue
+        i = m + 1
+        while i < len(words) and words[i] not in RELATIVE_PRONOUNS:
+            if (words[i] in CLAUSE_ENDERS or words[i] in COMPARATIVES
+                    or i in stops):
+                break
+            i += 1
+        if i >= len(words) or words[i] not in RELATIVE_PRONOUNS:
+            continue
+        j = i + 1
+        while (j < len(words) and words[j] not in CLAUSE_ENDERS
+               and j not in stops and j not in caps):
+            j += 1
+        if i < j:
+            out.append((i, j))
+    return out
+
+
 def _check_topic(claim, ref, text, facts, source, errors):
     """Every sentence stays on the run's own subject. Three structural tests,
     and the sentence must pass all of them. None of them asks whether a word is
@@ -665,6 +815,12 @@ def _check_topic(claim, ref, text, facts, source, errors):
     3. THE TERM RUN. What it asserts with no word binding it is a run of terms
        however it is punctuated.
 
+    None of the three reads the words that pick out a COMPARISON CLASS: a
+    cohort a measured quantity is compared against is described, not asserted
+    ('report more enquiries than those who buy placement ads'), so none of its
+    description is content of this run. See THE COMPARISON CLASS above for the
+    three conditions that keep that carve-out narrow.
+
     And one shape is refused on a single unrecorded word whatever the counting
     says: a subject made of the run's own recorded owner-fact words doing one
     of the transfer and sale verbs (sell, offer, list, price, ...) to content
@@ -682,12 +838,20 @@ def _check_topic(claim, ref, text, facts, source, errors):
         sells = bool(cut) and any(h in words[cut - 1] for h in COMMERCIAL_HINTS)
         subject = _content_stems(words[:cut])
         own_subject = bool(subject) and all(s in fact_stems for s in subject)
+        # the comparison class: how the run's own material is compared, not
+        # what it asserts. See THE COMPARISON CLASS.
+        exempt = set()
+        stops, caps = _clause_punct_stops(sentence)
+        for start, stop in _comparison_classes(words, preds, stops, caps):
+            exempt.update(range(start, stop))
 
-        # the content of one noun phrase, naming material left out.
+        # the content of one noun phrase, naming material and comparison-class
+        # material left out.
         def content_of(np, in_subject):
             _start, run, prep = np
             return [low for _i, low, raw in run
-                    if not _is_name_word(_i, raw, prep, in_subject)
+                    if _i not in exempt
+                    and not _is_name_word(_i, raw, prep, in_subject)
                     and _is_content(low)]
 
         label, bad = None, []
@@ -700,7 +864,7 @@ def _check_topic(claim, ref, text, facts, source, errors):
         #    read — while 'Backlinks help tired nurses to sleep.' asserts
         #    'help' of the backlinks, and the run has never heard of backlinks.
         for i in preds:
-            if words[i] not in EFFECT_FORMS:
+            if i in exempt or words[i] not in EFFECT_FORMS:
                 continue
             following = [p for p in preds if p > i]
             stop = following[0] if following else len(words)
@@ -728,7 +892,7 @@ def _check_topic(claim, ref, text, facts, source, errors):
         #    'a backlinks service' is exactly that.
         if not bad:
             for np in nps:
-                if np[0] <= cut:
+                if np[0] <= cut or np[0] in exempt:
                     continue
                 kept = content_of(np, False)
                 if not kept or _stem(kept[-1]) not in grounded:
@@ -743,9 +907,10 @@ def _check_topic(claim, ref, text, facts, source, errors):
         # 3. THE TERM RUN. What it asserts with no word binding it is a run of
         #    terms however it is punctuated.
         if not bad:
-            for label, span in (("what it asserts", words[cut:]),
-                                ("the sentence", words)):
-                stems = _content_stems(span)
+            for label, lo in (("what it asserts", cut), ("the sentence", 0)):
+                span = words[lo:]
+                stems = _content_stems([w for k, w in enumerate(span)
+                                        if lo + k not in exempt])
                 off = sorted({s for s in stems if s not in grounded})
                 if not off:
                     continue

@@ -522,6 +522,198 @@ def test_an_attributive_describes_its_head_it_does_not_name_a_thing():
                           facts=FACTS))
 
 
+# Round seven. Round six fixed sv1 and left sv2: a cited, sourced competitor
+# observation whose COMPARISON CLASS carries vocabulary the owner never
+# recorded passed only while the owner record was doctored to say ', most of
+# whom found us through backlinks and placement ads they buy'. The repair is a
+# comparison-class carve-out in claims._check_topic — a cohort a measured
+# quantity is compared against is DESCRIBED, not asserted — so the fixture's
+# accept_similar_vocabulary passes on an owner record that never says the words
+# under test. This control runs the shape against that clean record and says
+# so, so the pass cannot be quietly re-bought with the data.
+
+COMPARED_AGAINST = [
+    "Sleep coaches who publish referral pages report more enquiries than "
+    "those who buy placement ads.",
+    "Sleep coaches who publish referral pages report more enquiries than "
+    "those who buy backlinks.",
+    "Sleep studies report more enquiries for coaches who list referral pages "
+    "than for those who buy placement ads.",
+]
+
+# the same vocabulary OUTSIDE a comparison class. A carve-out that also let
+# these through would have traded the over-refusal for the stuffing family
+# round six just closed, so each one is proved still refused here.
+NOT_COMPARED_AGAINST = [
+    "Sleep coaches report more enquiries than backlinks channels.",
+    "Sleep coaches who buy mattress deals report more enquiries.",
+    "Sleep coaches report more enquiries than those who buy placement ads "
+    "and sleep coaches sell mattress deals.",
+]
+
+def test_a_competitor_observation_passes_on_an_owner_record_that_never_named_the_channel():
+    """The clean owner record is the whole point of this control. AUDIENCE is
+    the pre-round-five wording; if anyone re-buys the fixture's pass by writing
+    the channel into the owner record, the assertions below fail loudly instead
+    of this test passing on doctored data."""
+    assert "backlinks" not in AUDIENCE and "placement ads" not in AUDIENCE, (
+        "control went vacuous: the owner record now carries the channel")
+    unrecorded = {"backlinks", "ads", "mattress", "deals"}
+    owned = set()
+    for text in FACTS.values():
+        owned.update(C._stem(w) for w in C._content_tokens(text))
+    research = {C._stem(w) for w in C.RESEARCH_WORDS}
+    assert not ({C._stem(w) for w in unrecorded} & owned), (
+        "control went vacuous: the channel is now in the owner facts")
+    assert not ({C._stem(w) for w in unrecorded} & research), (
+        "control went vacuous: the channel is now in the research vocabulary")
+    for i, text in enumerate(COMPARED_AGAINST):
+        _accepted(_bundle([_claim("cp%d" % i, text, about=SLEEP)], facts=FACTS))
+    for i, text in enumerate(NOT_COMPARED_AGAINST):
+        _refused(_bundle([_claim("nc%d" % i, text, about=SLEEP)], facts=FACTS))
+
+
+# Round eight. Round seven's carve-out ended only at a conjunction, and the
+# token stream it reads carries no punctuation at all, so a comma or semicolon
+# did not end it: the exempt span ran past the mark to the end of the sentence
+# and the term-run and effect tests skipped whatever was stuffed behind it. The
+# boundary is now read from the sentence's own characters
+# (claims._clause_punct_stops), so a comma splice is a clause boundary. Each
+# string below is the row fixture's own keyword run, or an unsupported sale
+# claim, joined to a clean comparison class by a different mark.
+STUFFING = ("buy backlinks, crypto signals, weight loss tea, katy perry diet, "
+            "seo package")
+CLASS = "Sleep coaches report more enquiries than those who buy placement ads"
+
+JOINED = [
+    "%s, %s." % (CLASS, STUFFING),
+    "%s; %s." % (CLASS, STUFFING),
+    "%s, our program sells mattress deals." % CLASS,
+    "%s; our program sells mattress deals." % CLASS,
+    "%s: our program sells mattress deals." % CLASS,
+    "%s — our program sells mattress deals." % CLASS,
+    "%s (%s)." % (CLASS, STUFFING),
+]
+
+def test_the_comparison_class_ends_at_a_clause_boundary_not_the_sentence():
+    """The exempt span is the class's description, not everything after it. A
+    comma, semicolon, colon, dash or bracket ends it exactly as 'and' does, so
+    the run stuffed behind the mark is asserted content again. The class on the
+    left of the mark still has to pass: the carve-out itself is not removed."""
+    for i, text in enumerate(JOINED):
+        _refused(_bundle([_claim("cb%d" % i, text, about=SLEEP)], facts=FACTS))
+    _accepted(_bundle([_claim("cbok", CLASS + ".", about=SLEEP)], facts=FACTS))
+
+def test_stage_refuses_the_stuffed_tail_a_clause_boundary_does_not_hide(tmp_path):
+    """The refusal above must exist in the shipped stage, not only here: a test
+    that passes while research.run_stage writes the artifact is not a fix."""
+    brief = dict(FACTS)
+    brief.update({"sub_avatar": {"avatar": "nurse", "emotional_wound": "awake",
+                                 "desired_transformation": "rested"},
+                  "sources": [SRC],
+                  "claims": [{"id": "c1", "text": JOINED[0],
+                              "provenance": "public-fact", "source": "src-1",
+                              "sections": SEC,
+                              "about": {"fact": "offer", "anchor": "sleep"}}]})
+    env, code = R.run_stage(brief, str(tmp_path), gather=False)
+    assert code == R.EXIT["rejected"] == 4, env
+    assert not (tmp_path / "research").exists(), "no artifact on refusal"
+
+# Round nine. Round eight's boundary read a hyphen or an apostrophe as a word
+# joiner UNCONDITIONALLY, so the class's exempt span ran past the mark and the
+# whole keyword run behind it was class description. A hyphen and an apostrophe
+# do both kinds of work, and which kind is read from the mark's own place in the
+# gap between two words: a spaced mark separates, an attached hyphen joins a
+# compound and the span ends after that compound, a leading apostrophe
+# separates, a trailing apostrophe is a possessive or a contraction. The
+# strings below are the row fixture's own keyword run and its sale claim,
+# joined to a clean comparison class by each of those marks.
+JOINED_MARKS = [
+    "%s - %s." % (CLASS, STUFFING),
+    "%s -- %s." % (CLASS, STUFFING),
+    "%s\t-\t%s." % (CLASS, STUFFING),
+    "%s - %s." % (CLASS, STUFFING),
+    "%s-%s." % (CLASS, STUFFING),
+    "%s ' %s." % (CLASS, STUFFING),
+    "%s ’ %s." % (CLASS, STUFFING),
+    "%s ’ %s." % (CLASS, "our program sells mattress deals"),
+    "%s ' %s." % (CLASS, "our program sells mattress deals"),
+    "%s - %s." % (CLASS, "our program sells mattress deals"),
+    "%s -%s." % (CLASS, "our program sells mattress deals"),
+    "%s - we sell mattress deals." % CLASS,
+]
+
+# the marks doing WORD work, which nothing above may have broken. Each is a
+# hyphen or an apostrophe inside a real word, not a clause boundary.
+WORD_INTERNAL = [
+    "A 12-week sleep coaching program for shift workers helps nurses sleep "
+    "after work.",
+    "The 12-week sleep coaching program reports more enquiries for shift "
+    "workers.",
+    "Sleep coaches who publish referral pages report more enquiries than "
+    "those who buy placement ads, a 20-minute call away for nurses on "
+    "rotating night shifts.",
+    "The coaches’ own referral pages report sleep data for nurses.",
+    "The coaches' own referral pages report sleep data for nurses.",
+    "It’s a self-reported sleep program for shift workers.",
+    "O’Brien reports sleep data for nurses on rotating night shifts.",
+    "N’Golo reports sleep data for nurses on rotating night shifts.",
+    "D’Angelo reports sleep data for nurses on rotating night shifts.",
+    "This is an evidence-based sleep program for shift workers.",
+    "Night-shift nurses report sleep problems after work.",
+    "The follow-up call with nurses is a free 20 minute call.",
+    "Self-reported sleep data for nurses on rotating night shifts grew "
+    "since 2021.",
+    "Sleep coaches report more enquiries than those who buy placement ads, "
+    "evidence-based sleep care for nurses.",
+    "Sleep coaches report more enquiries than those who buy placement ads, "
+    "coaches’ referral pages for nurses.",
+    "Sleep coaches report more enquiries than those who buy placement ads, "
+    "O’Brien sleep data for nurses.",
+    "Sleep coaches report more enquiries than those who buy evidence-based "
+    "placement ads.",
+]
+
+def test_a_hyphen_or_apostrophe_that_separates_ends_the_class_description():
+    """Round eight let the exempt span run past a hyphen or an apostrophe, so
+    the keyword run behind the mark was read as class description. A mark that
+    separates clauses ends the description, however it is spaced: the run
+    behind it is asserted content again and the class on the left of the mark
+    still has to pass."""
+    for i, text in enumerate(JOINED_MARKS):
+        _refused(_bundle([_claim("jm%d" % i, text, about=SLEEP)], facts=FACTS))
+    _accepted(_bundle([_claim("jmok", CLASS + ".", about=SLEEP)], facts=FACTS))
+
+def test_the_hyphen_and_apostrophe_that_join_words_still_join_them():
+    """The other half of the same rule. A hyphen inside a compound adjective
+    and an apostrophe inside a possessive or a contraction are word work, not
+    clause work: '12-week', 'evidence-based', 'coaches’', 'O’Brien',
+    'don’t' are read as words and the sentence passes exactly as it did
+    before the boundary was read from the characters."""
+    for i, text in enumerate(WORD_INTERNAL):
+        # the anchor has to sit in the sentence the claim actually makes
+        about = NURSE if "nurses" in text and "sleep" not in text else SLEEP
+        _accepted(_bundle([_claim("wi%d" % i, text, about=about)], facts=FACTS))
+
+def test_stage_refuses_the_run_an_attached_hyphen_hides(tmp_path):
+    """The refusal above must exist in the shipped stage, not only here: a test
+    that passes while research.run_stage writes the artifact is not a fix."""
+    for i, text in enumerate(JOINED_MARKS):
+        brief = dict(FACTS)
+        brief.update({"sub_avatar": {"avatar": "nurse",
+                                     "emotional_wound": "awake",
+                                     "desired_transformation": "rested"},
+                      "sources": [SRC],
+                      "claims": [{"id": "c1", "text": text,
+                                  "provenance": "public-fact",
+                                  "source": "src-1", "sections": SEC,
+                                  "about": SLEEP}]})
+        out = str(tmp_path / ("j%d" % i))
+        env, code = R.run_stage(brief, out, gather=False)
+        assert code == R.EXIT["rejected"] == 4, (text, env)
+        assert not (os.path.exists(out) and os.listdir(out)), (
+            "no artifact on refusal: %s" % text)
+
 def main():
     """Script-style run: same checks, plain output."""
     import inspect
