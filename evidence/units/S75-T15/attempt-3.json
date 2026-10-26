@@ -1,0 +1,133 @@
+{
+  "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+  "schema_note": "attempt-1.json, attempt-1.preserved-6ade761e.json, attempt-1.preserved-84e9c0a3.json and attempt-2.json are byte-unchanged; index 3 was free, so this is index 3. This file describes the round-8 candidate on branch s75/S75-T15-r8. It records an attempt and its measurements; it approves nothing. It is NOT a verdict and no verdict was written by this author. Amended once, records-only, by the T15-D1/D2/D3/D4 repair (see amendment_provenance and d1_d2_d3_d4_repair).",
+  "unit_id": "S75-T15",
+  "acceptance_id": "S75-A15",
+  "attempt_file": "evidence/units/S75-T15/attempt-3.json",
+  "attempt": 3,
+  "generation_basis": "the row names evidence/units/S75-T15/attempt-<verified-generation>.json. This directory held attempt-1.json, two preserved copies of attempt-1 and attempt-2.json and no attempt-3; the next free index is 3 and nothing was overwritten.",
+  "round": 8,
+  "lane": "r8",
+  "written_at": "2026-10-25T14:09:49.421375-04:00",
+  "written_at_mode": "AMENDED AFTER VERIFICATION, THEN AMENDED AGAIN RECORDS-ONLY ON 2026-10-26 by the T15-D1/D2/D3/D4 repair lane. The round-8 code author did not perform either amendment and is not claimed to have. See amendment_provenance and amendment_provenance_prior.",
+  "role": "REPAIR AUTHOR -- evidence record",
+  "role_statement": "This is the round-8 repair author's own evidence record for the delta it produced. It is NOT a verification receipt and it does not judge that delta. The role INDEPENDENT VERIFIER is explicitly NOT claimed: this author wrote the code under test, so it cannot be the checker for it. Round 8 was specified entirely by S75-T15.verdict.round7.json, whose the_decisive_finding, residual_reasoning, fix_required_before_reacceptance and comment_truthfulness are the specification this delta answers.",
+  "acceptance_row_quoted_verbatim": "| S75-A15 / S75-T15 | Text identities save before images; later attachment does not duplicate identity; client libraries do not bleed together; draft is never promoted to approved implicitly. | `evidence/units/S75-T15/attempt-<verified-generation>.json`; exact candidate/base/dependencies and independent checker; repository required gates when applicable. | UNVERIFIED |",
+  "acceptance_row_source": "ACCEPTANCE-MATRIX.md line 23 (read this session; the row is unchanged and still marked UNVERIFIED -- this file does not change it)",
+  "candidate": {
+    "branch": "s75/S75-T15-r8",
+    "head_sha": "825077dd9dfee07ba940381880337e7e9ca12569",
+    "head_sha_note": "MEASURED, not a placeholder: git ls-remote origin refs/heads/s75/S75-T15-r8 -> 825077dd9dfee07ba940381880337e7e9ca12569, and git cat-file -t 825077dd9dfee07ba940381880337e7e9ca12569 -> commit. Resolved by the records-only repair on 2026-10-26, not copied from any verdict.",
+    "repository": "https://github.com/trevorotts1/openclaw-onboarding.git",
+    "written_at": "2026-10-25T14:09:49.421375-04:00",
+    "files_changed": [
+      {
+        "path": "75-drama-song-ad-factory/scripts/core/character_bible/identity.py",
+        "additions": 19,
+        "deletions": 10
+      },
+      {
+        "path": "75-drama-song-ad-factory/scripts/core/character_library/notion_store.py",
+        "additions": 160,
+        "deletions": 149
+      },
+      {
+        "path": "75-drama-song-ad-factory/scripts/core/character_library/test_notion_store_s75_t15.py",
+        "additions": 166,
+        "deletions": 3
+      }
+    ],
+    "files_changed_measured_by": "re-run this session: git diff --numstat 9add5de8eb985f65d595ac251ad32a85559af8d1 825077dd9dfee07ba940381880337e7e9ca12569 -> rc 0, exactly the three lines recorded above (19/10, 160/149, 166/3). Measured against base 9add5de8eb985f65d595ac251ad32a85559af8d1 at head 825077dd9dfee07ba940381880337e7e9ca12569; it does not include the records-only evidence commit that carries this file.",
+    "files_changed_total": 3,
+    "round_8_spec": "S75-T15.verdict.round7.json (verdict FAIL, head 9add5de8eb985f65d595ac251ad32a85559af8d1, base 2f6b762f4204cce4025b3cadd786213ecb7e9186)"
+  },
+  "base": {
+    "sha": "9add5de8eb985f65d595ac251ad32a85559af8d1",
+    "is_round7_head": true,
+    "resolved_from_origin": true,
+    "note": "resolved from origin by this author; re-measured by the records-only repair: git ls-remote origin refs/heads/s75/S75-T15-r7 -> 9add5de8eb985f65d595ac251ad32a85559af8d1, git cat-file -t -> commit, and git merge-base --is-ancestor 9add5de8eb985f65d595ac251ad32a85559af8d1 825077dd9dfee07ba940381880337e7e9ca12569 -> rc 0."
+  },
+  "dependencies": {
+    "acceptance_row_element": "dependencies, as named by S75-A15: 'exact candidate/base/dependencies and independent checker'",
+    "status": "RECORDED",
+    "third_party_dependencies_added": [],
+    "third_party_dependencies_required": [],
+    "imports_added_or_removed_by_the_base_to_head_delta": [],
+    "delta_dependency_measurement": "git diff 9add5de8eb985f65d595ac251ad32a85559af8d1 825077dd9dfee07ba940381880337e7e9ca12569 piped through a filter for post-marker lines beginning 'import ' or 'from ': no added and no removed import line. The delta introduces no new dependency; it removes none.",
+    "runtime_dependencies_at_head": {
+      "75-drama-song-ad-factory/scripts/core/character_library/notion_store.py": [
+        "stdlib: json, os, subprocess, sys, threading",
+        "in-repo module: character_bible.identity",
+        "in-repo module: character_library.cache",
+        "in-repo module: character_library.notion_adapter"
+      ],
+      "75-drama-song-ad-factory/scripts/core/character_bible/identity.py": [
+        "stdlib: hashlib, hmac, json, os, secrets, sys",
+        "in-repo module: character_library.notion_store"
+      ],
+      "75-drama-song-ad-factory/scripts/core/character_library/test_notion_store_s75_t15.py": [
+        "stdlib: gc, hashlib, hmac, json, os, shutil, subprocess, sys, tempfile, unittest",
+        "in-repo modules: character_bible.identity, character_library.cache, character_library.notion_adapter, character_library.notion_store"
+      ]
+    },
+    "dependencies_source": "git show 825077dd9dfee07ba940381880337e7e9ca12569:<path>, import lines read this session from the graded head. No package install, no environment change and no config change is part of this delta."
+  },
+  "lease": {
+    "files": [
+      "75-drama-song-ad-factory/scripts/core/character_library/notion_store.py",
+      "75-drama-song-ad-factory/scripts/core/character_bible/identity.py",
+      "75-drama-song-ad-factory/scripts/core/character_library/test_notion_store_s75_t15.py"
+    ],
+    "nothing_outside_lease_touched": true,
+    "evidence_dir_written": "evidence/units/S75-T15/attempt-3.json ONLY",
+    "verdict_written": false,
+    "repo_evidence_dir_written": false
+  },
+  "status": "COMPLETE",
+  "amendment_provenance": "RECORDS-ONLY REPAIR, 2026-10-26. The 40-hex head recorded here was measured by the repair itself from origin: git ls-remote origin refs/heads/s75/S75-T15-r8 -> 825077dd9dfee07ba940381880337e7e9ca12569 and git cat-file -t -> commit. The base was measured the same way from refs/heads/s75/S75-T15-r7 -> 9add5de8eb985f65d595ac251ad32a85559af8d1, and git merge-base --is-ancestor 9add5de8eb9 825077dd9df -> rc 0. The round-8 code author did not perform this amendment and is not claimed to have; the completion of this record is attributed to the named repair lane, not to the author and not to the verifier. This amendment changes the record only; it re-grades nothing and no product code was changed.",
+  "amendment_provenance_prior": "The head 825077dd9dfee07ba940381880337e7e9ca12569 was not produced by the author of this file. It was taken from the independent verifier's verdict at /Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/evidence/S75-T15.verdict.round8.json, whose head_tested field is that same 40-hex commit. The author of the code did not perform this amendment: the author was stopped by an operator pause after pushing and never returned. The code under test was graded by an agent that did not author it, and the head recorded here comes from that grader's verdict rather than from the author's own resolution. This amendment changes the record only; it re-grades nothing.",
+  "record_amended_by": "T15 records-only repair lane, branch s75/S75-T15-r8, 2026-10-26. Wrote no product code in this unit and graded nothing.",
+  "written_by": "round-8 REPAIR AUTHOR for S75-T15 (lane s75/S75-T15-r8); wrote the code under test and therefore cannot verify it; did not approve this delta",
+  "head_sha": "825077dd9dfee07ba940381880337e7e9ca12569",
+  "head_sha_source": "origin refs/heads/s75/S75-T15-r8, measured by git ls-remote and confirmed by git cat-file -t; equals candidate.head_sha",
+  "independent_checker": {
+    "role": "INDEPENDENT_VERIFIER",
+    "record": "evidence/S75-T15.verdict.round8.json",
+    "record_sha256": "ed8f672e37ca6b8f15dec477e4946978e18c476f2d38553765d73b82a04a39b0",
+    "head_tested": "825077dd9dfee07ba940381880337e7e9ca12569",
+    "base_tested": "9add5de8eb985f65d595ac251ad32a85559af8d1",
+    "probe_instruments_written_by_the_verifier": [
+      {
+        "name": "fd_enum.py",
+        "sha256": "85fc5f815bfd7a3e86c65dfe49c098201b5262b14af7872eeeb78e8bee27ddea"
+      },
+      {
+        "name": "probe_attack.py",
+        "sha256": "85f959e6aa792c5712e0164fc5deb098efc06d61a1ca4ec0060cca40d0be921e"
+      },
+      {
+        "name": "probe_nostore.py",
+        "sha256": "458929530ff53af52763a40e4217960c236a53aa714a4a3539b7eb3fdb006600"
+      },
+      {
+        "name": "probe_residual.py",
+        "sha256": "00485fd88b5207e309bcc60264fe336c5d98efe0c9c2dc2e72f4c1baa710ace6"
+      },
+      {
+        "name": "probe_sweep.py",
+        "sha256": "0d04e833a49a43d02600f74116396d88078be981ff125c5e66189ec2342f242d"
+      }
+    ],
+    "checker_model": "not stated in the measurement record used here; the superseded receipt stated 'opus-chain' and that receipt is explicitly NOT the source of this block. Undetermined rather than inferred."
+  },
+  "independent_checker_source": "MEASUREMENT RECORD OTHER THAN THE RECEIPT (T15-D4). Source is the independent verifier's own records: evidence/S75-T15.verdict.round8.json, sha256 ed8f672e37ca6b8f15dec477e4946978e18c476f2d38553765d73b82a04a39b0, which carries role 'INDEPENDENT_VERIFIER', verifier_is_not_the_author 'TRUE', head_tested 825077dd9dfee07ba940381880337e7e9ca12569 and base_tested 9add5de8eb985f65d595ac251ad32a85559af8d1; plus that record's own probe files under /Volumes/mac mini m4/Downloads/git trees and automations/verifier-scratchpads/s75-t15-r8-verify/probes/ (five files, sha256 recorded above). The receipt qc/S75-T15.6ee6f1c7816ed5be75b78ff80c952f28bca88a7d.json is NOT cited as the source of this checker claim.",
+  "repository_gate": {"workflow": ".github/workflows/qc-static.yml", "triggers": ["push to branches [main]", "pull_request to branches [main] (origin/main L17-L21)"], "applies_to_unit_paths": true, "matching_steps": [{"name": "Skill 75 empty-home test suite (manual 02 B6)", "line_origin_main": 3054, "scope": "bash 75-drama-song-ad-factory/scripts/qc-operator-path-leak.sh (L3065) + find 75-drama-song-ad-factory/scripts/core -type f -name 'test_*.py' (L3084)"}, {"name": "Skill 75 pytest collection + run (no hidden failures)", "line_origin_main": 3122, "scope": "python3 -m pytest -q 75-drama-song-ad-factory/scripts --collect-only (L3128) and python3 -m pytest -q 75-drama-song-ad-factory/scripts (L3130)"}], "basis_paths": ["75-drama-song-ad-factory/scripts/core/character_library/notion_store.py", "75-drama-song-ad-factory/scripts/core/character_bible/identity.py", "75-drama-song-ad-factory/scripts/core/character_library/test_notion_store_s75_t15.py"], "basis_kind": "lease, candidate.files_changed, receipt.module_under_test"},
+  "repository_gate_source": ".github/workflows/qc-static.yml at origin/main (76700ba3648f58472ca9c2111dce717a1cf2c5b7) -> the steps quoted in matching_steps; paths from lease, candidate.files_changed, receipt.module_under_test",
+  "d1_d2_d3_d4_repair": {
+    "T15-D1": "CLOSED: top-level dependencies block added above, with the acceptance-row element quoted, third-party list empty, delta import measurement empty, and per-file runtime dependencies measured from the head tree.",
+    "T15-D2": "CLOSED: candidate.files_changed filled with the three lease paths and the re-measured numstat delta (19/10, 160/149, 166/3), plus the measurement command and its rc.",
+    "T15-D3": "CLOSED AS A RECORD DEFECT: candidate.head_sha_note no longer calls the head a placeholder and amendment_provenance now attributes the completion to the named records-only repair lane, states that the code author did not perform it, and records the origin measurements the head rests on. The historical text is preserved verbatim in amendment_provenance_prior. Authorship of the earlier amendment cannot be changed after the fact and is not claimed.",
+    "T15-D4": "CLOSED: independent_checker_source now names the verifier's verdict record and its five probe files with sha256 values; the receipt is explicitly excluded as a source. checker_model is left undetermined rather than taken from the receipt.",
+    "T15-D5": "LEFT OPEN DELIBERATELY: the ledger (ledger.json) records no attempt, no head and no change author for S75-T15; that file was not edited by this repair and the control-plane fix remains outstanding."
+  }
+}
