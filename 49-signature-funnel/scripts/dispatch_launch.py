@@ -62,11 +62,14 @@ no-op the consumer can dedupe, never a duplicate build.
 
 EMISSION IS NOT EXECUTION. With no executor adapter configured this tool
 writes the requests plus a dispatch manifest marked emitted_not_executed
-and stops. A consumer adapter (S49-08, built with the owning skills' real
-entrypoints) executes a request and returns a page-result (schema 1.0);
-collect_launch_receipts.py aggregates those results into checkpoints.
-The --simulate-executor flag exists for tests only and stamps every
-result test_only with proof class L0.
+and stops. An approved launch request may carry the adapter configuration
+(launch-request.json "adapters"), which this tool then executes through —
+the canonical entry forwards the run dir, so the documented launch runs
+instead of only emitting. A consumer adapter (S49-08, built with the owning
+skills' real entrypoints) executes a request and returns a page-result
+(schema 1.0); collect_launch_receipts.py aggregates those results into
+checkpoints. The --simulate-executor flag exists for tests only and stamps
+every result test_only with proof class L0.
 
 Deterministic, stdlib only. Exit 0 ok, 2 violation, 3 usage/fail-closed.
 """
@@ -505,7 +508,30 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path,
     import subprocess
     import collect_launch_receipts as receipts
 
-    adapters = config.get("adapters") or {}
+    adapters = config.get("adapters")
+    if adapters is None:
+        adapters = {}
+    if not isinstance(adapters, dict):
+        raise DispatchError(
+            "adapters must be an object mapping a page role (or extra-page "
+            "key) -> {command: [...], timeout_s}")
+    # Shape first, then vocabulary: a command is a list of strings (a bare
+    # string would be iterated character by character into a garbage argv),
+    # and a malformed entry is a DispatchError, never a traceback mid-dispatch.
+    for key, spec in adapters.items():
+        if not isinstance(spec, dict):
+            raise DispatchError(f"adapter {key} must be an object with a "
+                                "command list")
+        cmd = spec.get("command")
+        if not isinstance(cmd, list) or not cmd \
+                or not all(isinstance(part, str) and part for part in cmd):
+            raise DispatchError(f"adapter {key} command must be a non-empty "
+                                f"list of strings, got {cmd!r}")
+        if spec.get("timeout_s") is not None:
+            try:
+                float(spec["timeout_s"])
+            except (TypeError, ValueError):
+                raise DispatchError(f"adapter {key} timeout_s must be a number")
     # An adapter key is a page_role, or an extra design page that rides on a
     # role's request (page_types.json role_instance, today downsell_2).
     allowed = set(PAGE_ROLES) | {k for k, p in pset.page_types()["pages"].items()
@@ -577,6 +603,24 @@ def _simulated_executor(author: str):
                 "blockers": [], "native_bindings_ref": None,
                 "test_only": True}
     return run
+
+
+def _require_skill71_runner() -> None:
+    """Execution preflight: name the sibling an EXECUTION needs before any page runs.
+
+    The worker profile and the KIE limiter both live in Skill 71's
+    scripts/swarm_runner.py. Emission-only dispatch never imports it (default
+    one worker), so a lone-directory Skill 49 install can still emit; an
+    execution that resolves a profile or a limiter says which install is
+    missing instead of dying on a bare ModuleNotFoundError."""
+    runner = Path(swarm.SKILL71_ROOT) / "scripts" / "swarm_runner.py"
+    if runner.is_file():
+        return
+    raise DispatchError(
+        "execution needs Skill 71's runner installed beside Skill 49: expected "
+        f"{runner}. Install 71-blackceo-signature-page beside this skill, or "
+        "run emission-only (no adapters) or --parallel 1 with the stub image "
+        "provider.")
 
 
 def _load(path: str) -> Any:
@@ -860,26 +904,46 @@ def main(argv: List[str]) -> int:
         approval = _load(args.approval)
         scoped = _load(args.scoped_approvals) if args.scoped_approvals \
             else cfg.get("scoped_approvals", [])
-        executor = None
+        # Finding 9: the approved adapter configuration rides in the launch
+        # request (launch-request.json), so the guarded entry's single
+        # --run-dir forwarding EXECUTES instead of only emitting.
+        adapters_cfg = None
         if args.adapters:
+            adapters_cfg = _load(args.adapters)
+        elif cfg.get("adapters") is not None:
+            if not isinstance(cfg["adapters"], dict):
+                raise DispatchError(
+                    "launch-request.json adapters must be an object mapping "
+                    "page_role -> {command, timeout_s}")
+            adapters_cfg = {"adapters": cfg["adapters"]}
+        executor = None
+        if adapters_cfg is not None:
             if not args.out:
-                print("FAIL: --adapters requires --out (or --run-dir) as the "
+                print("FAIL: adapters require --out (or --run-dir) as the "
                       "work dir for request/result files")
                 return EXIT_FAILCLOSED
             executor = executor_from_config(
-                _load(args.adapters), Path(args.out),
+                adapters_cfg, Path(args.out),
                 args.landing_pages.split(",") if args.landing_pages
                 else pset.recommended_landing_pages(launch))
         elif args.simulate_executor:
             executor = _simulated_executor("dispatch-cli-simulated")
         inputs = pset.load_image_inputs(args.image_inputs) \
             if args.image_inputs else None
-        workers = swarm.default_workers() if args.parallel == "auto" \
-            else int(args.parallel)
+        # Finding 12: resolve the runner profile only when executing; a
+        # lone-directory emission-only launch defaults to one worker and never
+        # imports Skill 71. A missing sibling is named by the preflight.
+        needs_runner = executor is not None and (
+            args.parallel == "auto"
+            or (inputs is not None and inputs["image_provider"] == "kie"))
+        if needs_runner:
+            _require_skill71_runner()
+        workers = (swarm.default_workers() if executor else 1) \
+            if args.parallel == "auto" else int(args.parallel)
         if workers < 1:
             raise DispatchError("--parallel must be auto or a number >= 1")
-        limiter = swarm.kie_limiter() if inputs and \
-            inputs["image_provider"] == "kie" else None
+        limiter = swarm.kie_limiter() \
+            if executor and inputs and inputs["image_provider"] == "kie" else None
         m = dispatch(launch, approval, client_identity_ref=args.client,
                      worker_identity_ref=args.worker,
                      copy_profile=args.copy_profile,
