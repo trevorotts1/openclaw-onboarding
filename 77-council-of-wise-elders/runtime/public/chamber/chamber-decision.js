@@ -61,9 +61,9 @@
 
   // The format caption never hard-codes one round count: light, medium and
   // heavy each say their own, and the empty state names the range.
-  var EMPTY_SUB = 'Light, medium or heavy: three advisors and two rounds, up to nine advisors and ten rounds. One verdict.';
+  var EMPTY_SUB = 'Light, medium or heavy: nine advisors, two to ten rounds. One verdict.';
   var MODE_SUB = {
-    light: 'Light council: three advisors, two rounds, one verdict.',
+    light: 'Light council: nine advisors, two rounds, three at a time, one verdict.',
     medium: 'Medium council: nine advisors, up to four rounds, one verdict.',
     heavy: 'Heavy council: nine advisors, up to ten rounds, one verdict.'
   };
