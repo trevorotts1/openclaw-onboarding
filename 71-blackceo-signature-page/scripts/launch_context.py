@@ -285,12 +285,18 @@ def _registry_policy_ids(skill_root):
         resolved = path.resolve()
     except OSError as exc:
         raise LaunchContextError(
-            f"prompt-policy registry of record unresolvable at {path}: {exc}")
+            "the page-request's approved-copy citation cannot be checked, so the "
+            "import stopped before writing anything. "
+            f"NEXT (operator, role: publishing check): restore the policy registry "
+            f"of record at {path} ({exc}) and rerun.")
     if resolved == skill_resolved or skill_resolved in resolved.parents:
         raise LaunchContextError(
-            f"prompt-policy registry of record resolves inside the skill "
-            f"({path} -> {resolved}); a registry the skill ships cannot "
-            f"certify the skill's own citations")
+            "the page-request's approved-copy citation cannot be checked, so the "
+            "import stopped before writing anything. "
+            "NEXT (operator, role: publishing check): the policy registry of "
+            f"record ({path}) resolves inside this skill ({resolved}); restore the "
+            "shared registry and rerun, because a registry the skill ships cannot "
+            "certify the skill's own citations")
     try:
         registry = json.loads(path.read_text(encoding="utf-8"))
         return {entry["policy_id"] for entry in registry["entries"]
@@ -300,10 +306,12 @@ def _registry_policy_ids(skill_root):
     except (OSError, ValueError, KeyError, TypeError) as exc:
         searched = "; ".join(str(c) for c in candidates)
         raise LaunchContextError(
-            f"prompt-policy registry of record unreadable at {path}: "
-            f"{exc}; searched: {searched}; a 1.1 request's prompt_policy_id "
-            f"is a citation minted by that registry only, and the import "
-            f"cannot verify the citation without it")
+            "the page-request's approved-copy citation cannot be checked, so the "
+            "import stopped before writing anything. "
+            "NEXT (operator, role: publishing check): repair the policy registry "
+            f"of record at {path} ({exc}) and rerun; searched: {searched}. A 1.1 "
+            "request's prompt_policy_id is a citation minted by that registry "
+            "only, and the import cannot verify the citation without it")
 
 
 def _load_document(path, label):
@@ -535,9 +543,12 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
         if not (shared
                 and request["assigned_skill"] in SHARED_SERVICE_SKILLS):
             raise LaunchContextError(
-                f"page-request: assigned_skill is "
-                f"{request['assigned_skill']!r}; this import serves "
-                f"Skill {SKILL_NUMBER} only")
+                "this page belongs to a different skill, so it cannot be imported "
+                "here. Nothing was written. "
+                f"NEXT (operator, role: launch dispatch): the page-request's "
+                f"assigned_skill is {request['assigned_skill']!r}; this import "
+                f"serves Skill {SKILL_NUMBER} only. Send the request to the skill "
+                "that owns it and run that skill's intake")
     # The prompt-policy pair rule (adoption map section 1.1; the same
     # rule the landed PP-T2 switch enforces in
     # dispatch_launch.validate_request): the 1.1 label exists to carry
@@ -556,10 +567,13 @@ def prepare_import(skill_root, run_dir, request_path, launch_path=None,
         policy_id = request["prompt_policy_id"]
         if policy_id not in _registry_policy_ids(skill_root):
             raise LaunchContextError(
-                f"page-request: prompt_policy_id {policy_id!r} is not "
-                f"an active policy id in the prompt-policy registry "
-                f"of record ({PROMPT_POLICY_REGISTRY_REF}); the "
-                f"citation must name a policy the registry minted")
+                "the page-request's approved-copy citation is not a policy the "
+                "approved-copy registry minted, so the import stopped before "
+                "writing anything. "
+                f"NEXT (operator, role: publishing check): correct prompt_policy_id "
+                f"({policy_id!r}) to an active policy id in the policy registry of "
+                f"record ({PROMPT_POLICY_REGISTRY_REF}), or issue the citation "
+                "first, then rerun")
     ref = request["route_graph_ref"]
     if Path(ref).is_absolute() or ".." in Path(ref).parts:
         raise LaunchContextError(
