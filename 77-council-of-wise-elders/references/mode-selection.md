@@ -88,7 +88,7 @@ small integers; the maximum possible total is 37.
 |---|---|---|---|
 | stakes | each distinct high-impact term present | +4 | 16 |
 | breadth | each distinct domain group present | +2 | 8 |
-| breadth | each `?`, `!`, `;`, or `.` followed by a space or the end of the question | +1 | 4 |
+| breadth | each `?`, `!`, or `;`, plus each `.` followed by a space or the end of the question | +1 | 4 |
 | ambiguity | each distinct hedge or choice marker present | +1 | 3 |
 | ambiguity | each distinct list connector present | +1 | 2 |
 | ambiguity | question longer than 60 words, or longer than 150 words | +2, or +4 when over 150 (the +4 replaces the +2) | 4 |
