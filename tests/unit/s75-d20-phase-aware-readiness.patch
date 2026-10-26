@@ -1,0 +1,59 @@
+--- a/swarmctl.py
++++ b/swarmctl.py
+@@ -516,7 +516,16 @@
+     never a unit awaiting a first build. repair_ready is a REPAIR phase or a recorded FAIL.
+     A retired owner — one a COMPLETE census no longer shows — never blocks a QC candidate: it
+     is cleared here and reported through `notes`, never removed silently.
++
++    D-20: the phase decides before any receipt lineage does. A unit inside a batch (IN_BATCH,
++    or WITH_BATCH when a ledger spells it that way) belongs to its batch and is reported under
++    batch_due, never offered as fresh build/qc/repair/merge work; a LANDED unit is terminal.
++    Without this gate a historical FAIL receipt on an already-batched unit put it back into
++    repair_ready, so ready_units kept naming work that was already batched and any tick that
++    obeyed readiness dispatched duplicate lanes.
+     """
++    batched = {"IN_BATCH", "WITH_BATCH"}
++    not_ready = batched | LANDED
+     build_ready = [str(u.get("id")) for u in units
+                    if u.get("phase") == "READY" and not u.get("owner")]
+     failed = {str(r.get("lineage_root") or r.get("unit")) for r in qc_receipts(c)
+@@ -525,6 +534,8 @@
+     for u in units:
+         uid = str(u.get("id"))
+         owner = u.get("owner")
++        if str(u.get("phase") or "") in not_ready:
++            continue
+         if u.get("phase") == "REPAIR" or uid in failed:
+             if not owner:
+                 repair_ready.append(uid)
+@@ -541,20 +552,26 @@
+         qc_ready.append(uid)
+     if merge_ids is None:
+         merge_ids = [str(u.get("id")) for u in units
+-                     if u.get("phase") in ("ACCEPTED", "IN_BATCH") and qc_pass(c, u)
++                     if u.get("phase") == "ACCEPTED" and qc_pass(c, u)
+                      and parse_ts(u.get("accepted_at")) and not u.get("defect_packet")
+                      and not u.get("repair_pending") and not u.get("merge_uncertain")]
+-    merge_due = [str(x) for x in merge_ids]
++    # D-20: a batched or landed unit is never ready work — batch_due is the landing queue, not
++    # a dispatch list.
++    merge_due = [str(x) for x in merge_ids if str(x) not in not_ready]
++    batch_due = [str(u.get("id")) for u in units
++                 if str(u.get("phase") or "") in batched and qc_pass(c, u)
++                 and parse_ts(u.get("accepted_at")) and not u.get("defect_packet")
++                 and not u.get("repair_pending") and not u.get("merge_uncertain")]
+     frontier, seen = [], set()
+     for uid in build_ready + qc_ready + repair_ready + merge_due:
+         if uid not in seen:
+             seen.add(uid)
+             frontier.append(uid)
+     return {"build_ready": build_ready, "qc_ready": qc_ready, "repair_ready": repair_ready,
+-            "merge_due": merge_due, "ready_units": frontier,
++            "merge_due": merge_due, "batch_due": batch_due, "ready_units": frontier,
+             "build_ready_n": len(build_ready), "qc_ready_n": len(qc_ready),
+             "repair_ready_n": len(repair_ready), "merge_due_n": len(merge_due),
+-            "ready_units_n": len(frontier)}
++            "batch_due_n": len(batch_due), "ready_units_n": len(frontier)}
+ 
+ 
+ def locked_entries(c):
