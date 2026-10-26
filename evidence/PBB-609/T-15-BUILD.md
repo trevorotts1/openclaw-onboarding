@@ -285,14 +285,19 @@ needed, that would itself be a signal to stop; none is needed because nothing sh
 Commit on `pb/PBB-609/t-15-build` contains this report only (`evidence/PBB-609/T-15-BUILD.md`). No other unit,
 ledger, census, decision file, version marker, CHANGELOG, test, or workflow was touched. No merge, no PR, no force.
 
-- readback 1 — `git ls-remote --heads origin pb/PBB-609/t-15-build` → [filled below by the lane's own output]
-- readback 2 — remote branch tip read a second time, independent command → [filled below]
-- negative control, known-absent path on that sha: `git cat-file -e <sha>:shared-utils/bonus/access_adapter.py` →
-  expected rc 128, path absent.
-- control, known-present path on the same sha: `git cat-file -e <sha>:evidence/PBB-609/T-15-BUILD.md` → expected
-  rc 0.
-
-Exact outputs are appended by the lane after the push and are also returned in the structured receipt.
+- readback 1 — `git ls-remote --heads origin pb/PBB-609/t-15-build` →
+  `3ed78a59ac4629d3833fe476a8fbd06e4f225e04	refs/heads/pb/PBB-609/t-15-build`
+- readback 2 (independent instrument) — `gh api repos/<owner>/<repo>/git/ref/heads/pb/PBB-609/t-15-build
+  --jq .object.sha` → `3ed78a59ac4629d3833fe476a8fbd06e4f225e04`
+- local `git rev-parse HEAD` in the lane worktree → `3ed78a59ac4629d3833fe476a8fbd06e4f225e04` (agrees)
+- negative control, wrong sha: `git cat-file -e 0000000000000000000000000000000000000000:README.md` →
+  `fatal: path 'README.md' exists on disk, but not in '000…000'`, **rc 128**
+- negative control, known-absent path on the real head:
+  `git cat-file -e 3ed78a59a:shared-utils/bonus/access_adapter.py` →
+  `fatal: path 'shared-utils/bonus/access_adapter.py' does not exist in '3ed78a59a…'`, **rc 128**
+- positive control, known-present paths on the same head: `git cat-file -e 3ed78a59a:README.md` → rc 0;
+  `git cat-file -e 3ed78a59a:evidence/PBB-609/T-15-BUILD.md` → rc 0
+- commit shape: `1 file changed, 305 insertions(+)` — nothing else in the tree changed.
 
 ---
 
