@@ -1,0 +1,63 @@
+{
+  "unit": "S75-T06",
+  "row": "S75-A06",
+  "round": 11,
+  "role": "repair-author",
+  "branch": "s75/S75-T06-r11",
+  "base_sha": "b731551e38f8868b283a0d067af9a5ecfa9b279a",
+  "head_sha": "PENDING_AT_WRITE_TIME",
+  "written_at_utc": "2026-10-25T17:24:55Z",
+  "note": "head_sha is the literal placeholder written before the repair commit existed. It is replaced with the resolved 40-hex in a follow-up commit after the push, per this round's artefact contract.",
+  "defect_repaired": {
+    "summary": "Round 10 closed the orthography channel by refusing 34 real people in both display_name and character_id. Restored by DATA only: one curated entry per person in real_content_names.txt.gz, in the accented spelling and the unaccented spelling. No limb of the name rule reads spelling as evidence again.",
+    "the_34": [
+      "Amélie", "André", "Björk", "Chloé", "Céline",
+      "François", "José", "Jürgen", "Léa", "Lê",
+      "María", "Müller", "Nguyễn", "Noémie", "Núñez",
+      "Pelé", "Phạm", "Renée", "Élodie",
+      "Ólafsdóttir", "Škoda",
+      "D'Angelo", "DeNiro", "DeShawn", "DeVito", "DiCaprio", "LaToya",
+      "LeBron", "McAllister", "McGregor", "N'Golo", "O'Brien", "O'Neil",
+      "VanDyke"
+    ],
+    "the_34_grid": {"base": "0/68 accepted", "head": "68/68 accepted",
+                    "positions": ["display_name", "character_id"],
+                    "gate": "cast_writer.profile_defects + author_cast state == COMPLETE"}
+  },
+  "measurements": {
+    "the_34": {"base": "0/68", "head": "68/68"},
+    "coinages_plain": {"base": "0/600", "head": "0/600"},
+    "coinages_camel": {"base": "0/600", "head": "0/600"},
+    "coinages_accented": {"base": "0/600", "head": "0/600"},
+    "coinages_every_interior_capital": {"base": "0/2980", "head": "0/2980"},
+    "invented_13_plain": {"base": "0/26", "head": "0/26"},
+    "invented_13_camel": {"base": "0/26", "head": "0/26"},
+    "invented_13_every_interior_capital": {"base": "0/144", "head": "0/144"},
+    "brands": {"base": "0/42", "head": "0/42"},
+    "coinage_plus_short_curated_name": {"base": "0/32", "head": "0/32"},
+    "asymmetry": {"base": "0/32", "head": "0/32"},
+    "accented_real_names": {"base": "0/42", "head": "42/42"},
+    "unaccented_spellings": {"base": "0/42", "head": "42/42"},
+    "brand_list_in_suite": {"base": "0/40", "head": "0/40"}
+  },
+  "controls": {
+    "base": {"real_name_passes": "4/4 rows", "invented_coinage_refuses": "2/2 rows", "brand_refuses": "2/2 rows"},
+    "head": {"real_name_passes": "4/4 rows", "invented_coinage_refuses": "2/2 rows", "brand_refuses": "2/2 rows"}
+  },
+  "contract_defect_repaired": {
+    "BRANDS_NOT_PEOPLE_before_removal": ["O'Brien", "LaRue", "VanDerBerg", "LaCroix"],
+    "BRANDS_NOT_PEOPLE_after_list": ["GoFundMe", "MacBook", "GitHub", "GitLab", "LinkedIn", "YouTube", "WhatsApp", "PayPal", "FedEx", "HarperCollins", "DreamWorks", "BellWeather", "Airbnb", "Bitcoin", "Instacart", "Netflix", "Spotify", "TikTok", "iPhone", "eBay"],
+    "KNOWN_STILL_REFUSED_NAMES": {"before": ["Art Bell", "Drew Fox", "Pearl Green", "Madonna", "Sade", "Art Stanford", "Pearl Stanford", "Summer Stanford"], "after": "unchanged", "set_difference": "empty"}
+  },
+  "tests": {
+    "base": {"passed": 68, "failed": 0, "total": 68, "def_test": 68},
+    "head": {"passed": 68, "failed": 0, "total": 68, "def_test": 68},
+    "removed_renamed_skipped_xfailed": 0
+  },
+  "files_changed": [
+    "75-drama-song-ad-factory/scripts/core/real_content_names.txt.gz",
+    "75-drama-song-ad-factory/scripts/core/real_content.py",
+    "75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py"
+  ],
+  "lexicon": {"before": 1328, "added": 49, "after": 1377}
+}
