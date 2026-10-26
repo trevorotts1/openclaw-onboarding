@@ -303,6 +303,60 @@ class MigrationPlan(unittest.TestCase):
         self.assertFalse(os.path.exists(plan["migration_dir"]))
         self.assertEqual(self._plan()["counts"]["mapped"], 3)
 
+    # --- clause: no lost revisions, no lost approvals -------------------
+    def _stamp_receipts(self, name, revision, bindings, draft_state):
+        """Put revision/approval/draft_state on a real saved record, as an owner would."""
+        path = os.path.join(self.client, "character-library", CL.slugify(name),
+                            "character.json")
+        with open(path, encoding="utf-8") as handle:
+            record = json.load(handle)
+        record.update({"revision": revision, "approval_bindings": bindings,
+                       "draft_state": draft_state})
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(record, handle, indent=2, sort_keys=True)
+        return path
+
+    def test_remint_carries_revision_and_rebinds_every_approval(self):
+        bindings = [{"approval_id": "ap-1", "character_id": "slug:maya-lee",
+                     "character_slug": "maya-lee", "approved_by": "owner",
+                     "approved_at": "2026-10-01T00:00:00Z",
+                     "receipt_digest": "sha256:abc"}]
+        self._stamp_receipts("Maya Lee", 4, bindings, "APPROVED")
+        plan = self._plan()
+        maya = self._mapped(plan)["Maya Lee"]
+        self.assertEqual(MIG.apply(plan, confirm=True)["status"], "APPLIED")
+        path = os.path.join(plan["migration_dir"], "identities",
+                            maya["new_id"] + ".json")
+        with open(path, encoding="utf-8") as handle:
+            identity = json.load(handle)
+        self.assertEqual(identity["revision"], 4)
+        self.assertEqual(identity["draft_state"], "APPROVED")
+        self.assertEqual(len(identity["approval_bindings"]), 1)
+        receipt = identity["approval_bindings"][0]
+        # the receipt now names the minted identity ...
+        self.assertEqual(receipt["character_id"], maya["new_id"])
+        self.assertEqual(receipt["character_slug"], maya["new_id"])
+        # ... and every other field it carried survives untouched
+        for key in ("approval_id", "approved_by", "approved_at", "receipt_digest"):
+            self.assertEqual(receipt[key], bindings[0][key])
+        self.assertTrue(MIG.verify(self.client)["ok"])
+        # a replay re-mints nothing and loses nothing
+        self.assertEqual(MIG.apply(self._plan(), confirm=True)["status"], "NOOP")
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle), identity)
+
+    def test_remint_without_receipts_invents_no_approval(self):
+        plan = self._plan()
+        dre = self._mapped(plan)["Dre"]
+        MIG.apply(plan, confirm=True)
+        with open(os.path.join(plan["migration_dir"], "identities",
+                               dre["new_id"] + ".json"), encoding="utf-8") as handle:
+            identity = json.load(handle)
+        self.assertEqual(identity["approval_bindings"], [])
+        self.assertEqual(identity["revision"], 1)
+        self.assertEqual(identity["draft_state"], "DRAFT_INCOMPLETE")
+
+
 
 if __name__ == "__main__":
     unittest.main()

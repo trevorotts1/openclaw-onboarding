@@ -434,10 +434,42 @@ def plan_digest(plan):
              "legacy_id_problems", "reuse", "history", "list_record")}
     return _digest(body)
 
+#: Keys inside one approval receipt that name the character it approves.
+_BINDING_ID_KEYS = ("character_id", "character_slug", "identity_id", "old_id", "new_id")
+
+
+def _rebind_approvals(bindings, new_id):
+    """Point every approval receipt at the minted ch- id; carry the rest verbatim."""
+    rebound = []
+    for binding in bindings if type(bindings) is list else ():
+        if type(binding) is not dict:
+            rebound.append(binding)
+            continue
+        receipt = dict(binding)
+        for key in _BINDING_ID_KEYS:
+            if key in receipt:
+                receipt[key] = new_id
+        rebound.append(receipt)
+    return rebound
+
+
 def _identity_body(record, client_dir):
     body = dict(record)
-    body["record_path"] = _rel(os.path.join(client_dir, _store.LIBRARY_DIRNAME,
-                                            record["old_slug"]), client_dir)
+    folder = os.path.join(client_dir, _store.LIBRARY_DIRNAME, record["old_slug"])
+    body["record_path"] = _rel(folder, client_dir)
+    # A re-mint mints an ID, not a history. character_bible.identity requires a
+    # positive revision, a draft state and an approval list, so whatever the saved
+    # record already holds rides onto the new identity unchanged and each receipt
+    # is re-bound to the new ch- id. Nothing is invented: a record that carries no
+    # receipt yields an empty list, and a first mint is revision 1.
+    source = _read_json(os.path.join(folder, "character.json")) or {}
+    revision = source.get("revision")
+    body["revision"] = (revision if type(revision) is int
+                        and not isinstance(revision, bool) and revision > 0 else 1)
+    draft_state = source.get("draft_state")
+    body["draft_state"] = (_text(draft_state) or "DRAFT_INCOMPLETE")
+    body["approval_bindings"] = _rebind_approvals(
+        source.get("approval_bindings"), record["new_id"])
     return body
 
 def _id_map_document(plan):
