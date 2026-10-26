@@ -298,54 +298,71 @@ def _role_chain(tokens, truncated=False):
     window while it was still climbing a frame, so the governing key is outside
     what the read could see. That is UNRESOLVED, never "no key" -- see
     `_role_state`.
+
+    ITERATIVE on purpose (PBB-863). The walk climbs one frame per iteration by
+    moving the `end` cursor left over the SAME token list, so the depth of the
+    document costs heap, not interpreter stack. 1200 nested frames used to
+    exhaust the stack inside this function and take the whole scan down with
+    RecursionError. The depth of the text is unbounded, so a raised recursion
+    limit would only move the failure; and every fail-closed answer -- the
+    `resolved` flag, the empty chain, the key order -- is unchanged.
     """
-    if not tokens:
-        return [], not truncated
-    i = len(tokens)
-    key, _ = _seam(tokens, i)
-    if key is not None:
-        rest_at = i
-        while rest_at > 0 and tokens[rest_at - 1][0] == "SEP":
-            rest_at -= 1
-        key_at = rest_at - 1
-        opener = _innermost_open_before(tokens, key_at)
-        if opener is None:
-            return [key[1]], True
-        rest, resolved = _role_chain(tokens[:opener], truncated)
-        return [key[1]] + rest, resolved
-    # No key across the seam. A member separator (a comma) binds nothing, but
-    # it does not end the expression either: the element still answers to the
-    # key that binds the list it sits in. So the walk climbs the frame instead
-    # of stopping -- `{"api": [1, "<token>"]}` answers to `api`, while a bare
-    # `["a.md", "<token>"]` at the top of the text still answers to nothing.
-    run_at = i
-    while run_at > 0 and tokens[run_at - 1][0] == "SEP":
-        run_at -= 1
-    member_run = "".join(tok[1] for tok in tokens[run_at:i])
-    if "," in member_run and run_at > 0:
-        opener = _innermost_open_before(tokens, run_at)
-        if opener is not None:
-            return _role_chain(tokens[:opener], truncated)
-    # The expression is a bracketed group, or it is glued to whatever precedes
-    # it (a name, a prefix) and carries no key of its own.
-    while i > 0 and tokens[i - 1][0] == "SEP":
-        i -= 1
-    if i == 0:
-        return [], not truncated
-    kind, val, _, _ = tokens[i - 1]
-    if kind == "CLOSE":
-        opener = _match_opener(tokens, i - 1)
-        if opener is None:
-            return [], True
-        inner_key = _bracket_key(tokens, opener, i - 1)
-        rest, resolved = _role_chain(tokens[:opener], truncated)
-        return ([inner_key] if inner_key else []) + rest, resolved
-    if kind == "OPEN":
-        if val == "(" and i > 1 and tokens[i - 2][0] == "ID":
-            # a call name is not a key
-            return _role_chain(tokens[:i - 2], truncated)
-        return _role_chain(tokens[:i - 1], truncated)
-    return [], True  # glued: `POST/...`, `v1/...` -- a prefix, not a key
+    keys = []
+    end = len(tokens)
+    while True:
+        if end == 0:
+            return keys, not truncated
+        i = end
+        key, _ = _seam(tokens, i)
+        if key is not None:
+            rest_at = i
+            while rest_at > 0 and tokens[rest_at - 1][0] == "SEP":
+                rest_at -= 1
+            key_at = rest_at - 1
+            opener = _innermost_open_before(tokens, key_at)
+            keys.append(key[1])
+            if opener is None:
+                return keys, True
+            end = opener
+            continue
+        # No key across the seam. A member separator (a comma) binds nothing, but
+        # it does not end the expression either: the element still answers to the
+        # key that binds the list it sits in. So the walk climbs the frame instead
+        # of stopping -- `{"api": [1, "<token>"]}` answers to `api`, while a bare
+        # `["a.md", "<token>"]` at the top of the text still answers to nothing.
+        run_at = i
+        while run_at > 0 and tokens[run_at - 1][0] == "SEP":
+            run_at -= 1
+        member_run = "".join(tok[1] for tok in tokens[run_at:i])
+        if "," in member_run and run_at > 0:
+            opener = _innermost_open_before(tokens, run_at)
+            if opener is not None:
+                end = opener
+                continue
+        # The expression is a bracketed group, or it is glued to whatever precedes
+        # it (a name, a prefix) and carries no key of its own.
+        while i > 0 and tokens[i - 1][0] == "SEP":
+            i -= 1
+        if i == 0:
+            return keys, not truncated
+        kind, val, _, _ = tokens[i - 1]
+        if kind == "CLOSE":
+            opener = _match_opener(tokens, i - 1)
+            if opener is None:
+                return keys, True
+            inner_key = _bracket_key(tokens, opener, i - 1)
+            if inner_key:
+                keys.append(inner_key)
+            end = opener
+            continue
+        if kind == "OPEN":
+            if val == "(" and i > 1 and tokens[i - 2][0] == "ID":
+                # a call name is not a key
+                end = i - 2
+            else:
+                end = i - 1
+            continue
+        return keys, True  # glued: `POST/...`, `v1/...` -- a prefix, not a key
 
 
 BOUND = "bound"
