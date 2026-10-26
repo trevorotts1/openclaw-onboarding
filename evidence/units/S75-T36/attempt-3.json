@@ -1,0 +1,234 @@
+{
+  "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+  "schema_note": "This file records one REPAIR attempt and its measurements. It approves nothing and it is NOT a verdict: the repairer wrote the code under test and cannot clear it. Only an independent verifier may write a verdict.",
+  "unit_id": "S75-T36",
+  "acceptance_id": "S75-A36",
+  "attempt": 3,
+  "round": 3,
+  "lane": "r3",
+  "written_at": "2026-10-25",
+  "written_at_mode": "PLACEHOLDER FIRST, AMENDED AFTER PUSH - head_sha was written as PENDING_AT_WRITE_TIME before pushing, then amended to the sha proved by git ls-remote.",
+  "role": "REPAIRER -- evidence record for the ONE bounded defect the arbiter named",
+  "role_statement": "Round 3 does not redo the unit. It closes exactly one bounded defect: BYPASS-B2's unconditional ancestor_of_main stamp. The lying-transport case was ruled a documented S75-T12/T16 seam and was left strictly alone.",
+  "status": "COMPLETE",
+
+  "arbiter_outcome_read": "ACCEPT_WITH_STATED_LIMITS",
+  "arbiter_record": "/Users/blackceomacmini/loop-control/s75/qc/S75-T36-ARBITER.md",
+  "round2_verdict_read": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/evidence/S75-T36.verdict.round2.json",
+
+  "stated_limit_quoted_verbatim": {
+    "source": "S75-T36-ARBITER.md section 5, Stated limits",
+    "quote": "Not guaranteed: that an ACKNOWLEDGED record reflects a transport the store itself supplied or pinned — a caller that attaches its own lying transport to a proof, or a proof minted on any branch of the right repository (which is stamped `ancestor_of_main` although only that branch was tested), is still acknowledged."
+  },
+
+  "bypass_b2_quoted_verbatim": {
+    "source": "S75-T36.verdict.round2.json, new_bypass_search.findings[BYPASS-B2]",
+    "id": "BYPASS-B2",
+    "severity": "blocking",
+    "title": "A landing on a side branch is acknowledged and stamped ancestor_of_main",
+    "command_result": "ACKNOWLEDGED, ack.ancestor_of_main = 'proven'",
+    "detail": "No forgery required. A genuine proof minted on a genuine transport bound to Target('openclaw-onboarding', branch='side') is accepted by ack() of a queue for that repository, and the written ack block asserts 'ancestor_of_main': 'proven' while ack.proof.target.branch is literally 'side'. The store records an ancestry claim about main that nothing ever tested.",
+    "anchor": "CONTROL/queue_ack.py ack() line 248 compares only valid.target.repository to self.repository -- repository string only, never branch or remote. Line 305 then writes ancestor_of_main unconditionally. QueueStore.__init__ takes a repository and no branch, so nothing in the module ever constrains the branch.",
+    "fix_direction_quoted": "Bind the store to (repository, branch) and compare the proof's full Target, not just the repository string; or drop the ancestor_of_main claim and record the branch actually proven."
+  },
+
+  "arbiter_scope_ruling_quoted_verbatim": {
+    "source": "S75-T36-ARBITER.md section 3, Exception",
+    "quote": "Exception, and it is a real deliverable defect but bounded: BYPASS-B2's stamp. `queue_ack.py:305` writes `\"ancestor_of_main\": f\"proven ...\"` unconditionally, so a genuine proof minted on `Target('openclaw-onboarding', branch='side')` gets an ancestry claim about main that nothing tested. That overstatement is produced by the module itself, not by a lying caller. It is a one-line bounded fix (bind the store to (repository, branch) and compare the full Target, or record the branch actually proven), and it does not remove any of the row's four clauses from the deliverable."
+  },
+
+  "out_of_scope_by_arbiter_ruling": {
+    "bypass": "BYPASS-B1 (caller attaches its own lying transport)",
+    "arbiter_quote": "So BYPASS-B1 is a documented trust-boundary placement, not a defect of the row's deliverable: the row's correlation of candidate/base/checks against the target is enforced, against whichever authority the wiring supplies.",
+    "action_taken": "none. No transport pinning, no store-owned transport, no change to incorporation_proof.py. B1 still reports FAIL under the round-2 verifier's own probe file, exactly as the arbiter left it.",
+    "disagreement": "none -- I agree with the arbiter's placement of the transport seam in S75-T12/T16."
+  },
+
+  "candidate": {
+    "branch": "s75/S75-T36-r3",
+    "head_sha": "da26b441a6ad30b20f01e3406918142d2d700c12",
+    "head_sha_note": "resolved after the push and written into this file as an amendment; the push proof below names the same sha",
+    "cut_from": "b9481a286e3e1a68443660f464c39c920845c039"
+  },
+
+  "base": {
+    "sha": "b9481a286e3e1a68443660f464c39c920845c039",
+    "subject": "S75-T36 r2: re-prove the landing at the ack seam; correlate base and checks",
+    "resolved_from_origin": true,
+    "how": "git ls-remote origin 'refs/heads/s75/S75-T36*' -> b9481a286e3e1a68443660f464c39c920845c039 refs/heads/s75/S75-T36-r2",
+    "ancestry": "branch s75/S75-T36-r3 was cut with git checkout -b s75/S75-T36-r3 b9481a286e3e1a68443660f464c39c920845c039"
+  },
+
+  "dependencies": {
+    "contract": "exact candidate/base/dependencies as the S75-A36 evidence cell asks",
+    "manifests_in_repo": "none: openclaw-onboarding tracks no requirements.txt, pyproject.toml, poetry.lock, Pipfile, setup.py or package.json at da26b441a6ad30b20f01e3406918142d2d700c12 (checked by basename across `git ls-tree -r --name-only da26b44`)",
+    "items": [
+      {
+        "name": "CONTROL/incorporation_proof.py",
+        "kind": "intra-repo sibling module imported by CONTROL/queue_ack.py",
+        "revision": "git blob 4ca472e43abae5facf04ae6c8953a9258113fddd",
+        "revision_source": "git rev-parse da26b44:CONTROL/incorporation_proof.py",
+        "pinned_at_base_too": "same blob 4ca472e43abae5facf04ae6c8953a9258113fddd at base b9481a286e3e1a68443660f464c39c920845c039; `git diff --stat b9481a2 da26b44 -- CONTROL/incorporation_proof.py` is empty, so the delta relies on it unchanged"
+      },
+      {
+        "name": "python3 standard library",
+        "kind": "runtime, stdlib only",
+        "revision": "UNPINNED - no interpreter version is recorded anywhere in the repository; both modules declare stdlib-only imports (incorporation_proof.py: __future__, hashlib, json, re; queue_ack.py: __future__, json, os) so no third-party revision exists to pin",
+        "revision_source": "module docstrings state 'Stdlib only.'; import lines read from the files at da26b44"
+      }
+    ],
+    "declares_none": false,
+    "could_not_determine": ["a pinned python3 interpreter revision: the repository records none, so it is recorded as unpinned rather than invented"]
+  },
+
+  "predecessor": {
+    "unit": "S75-T36",
+    "branch": "s75/S75-T36-r2",
+    "head_sha": "b9481a286e3e1a68443660f464c39c920845c039",
+    "verdict": "FAIL (arbiter: ACCEPT_WITH_STATED_LIMITS)"
+  },
+
+  "diff": {
+    "base_sha": "b9481a286e3e1a68443660f464c39c920845c039",
+    "command": "git diff --stat",
+    "stat": "CONTROL/queue_ack.py 32 insertions / 13 deletions; CONTROL/tests/test_queue_ack_s75_t36.py +58; 2 files changed, 90 insertions(+), 13 deletions(-), plus 1 new test file",
+    "files_edited": ["CONTROL/queue_ack.py", "CONTROL/tests/test_queue_ack_s75_t36.py"],
+    "files_added": ["CONTROL/tests/s75_t36_r3_side_branch_demo.py"],
+    "files_removed": [],
+    "untouched_owned_paths": "no file owned by S75-T12/T15/T16/T22/T30/T32/T34/T39 was opened or edited; incorporation_proof.py is byte-identical to base",
+    "scope_statement": "queue_ack.py and its tests only"
+  },
+
+  "defect_fixed": {
+    "id": "BYPASS-B2",
+    "what_changed_in_one_line": "QueueStore is now bound to a full IP.Target (repository, remote, branch), a proof for any other target is refused wrong-target, and the ack block records proven_target while asserting ancestor_of_main only when origin/main was the branch actually proven.",
+    "three_edits": [
+      {
+        "where": "CONTROL/queue_ack.py, QueueStore.__init__",
+        "before": "def __init__(self, path, repository): ... self.repository = repository.strip()",
+        "after": "def __init__(self, path, repository, branch=\"main\", remote=\"origin\"): self.target = IP.Target(repository, remote=remote, branch=branch); self.repository = self.target.repository",
+        "effect": "the store declares which target it receives landings for, so a branch or remote it never tested cannot arrive as evidence about it"
+      },
+      {
+        "where": "CONTROL/queue_ack.py, QueueStore.ack, the target gate",
+        "before": "if valid.target.repository != self.repository: raise AckRefused(\"wrong-target\", ...)",
+        "after": "if valid.target != self.target: raise AckRefused(\"wrong-target\", f\"proof is for {repository!r} on {remote}/{branch}; this queue is ...\")",
+        "effect": "full-Target comparison; a main-bound queue refuses a landing proven on a side branch, with the store byte-untouched"
+      },
+      {
+        "where": "CONTROL/queue_ack.py, QueueStore.ack, the ack block",
+        "before": "\"ancestor_of_main\": f\"proven {observed_at or fresh.observed_at or ''}\".strip()   # unconditional",
+        "after": "\"proven_target\": fresh.target.as_dict()  ... plus: if (fresh.target.remote, fresh.target.branch) == (\"origin\", \"main\"): entry[\"ack\"][\"ancestor_of_main\"] = f\"proven ...\"",
+        "effect": "the branch actually proven is always recorded, and the main ancestry claim is written only when that branch really was origin/main -- a claim that cannot be true is never written"
+      }
+    ],
+    "why_both_halves": "The arbiter offered 'bind the store to (repository, branch) and compare the full Target' OR 'record the branch actually proven'. Both are implemented because they answer different halves: binding stops a side-branch landing from being acknowledged into a main queue at all, recording keeps the acknowledged block truthful for a queue that IS bound to a non-main branch, where no main claim can be made. The round-2 verifier's own B2 probe demanded outright refusal, which the binding satisfies."
+  },
+
+  "measurements": {
+    "tests_before": {
+      "command": "cd <base>/CONTROL && python3 -I tests/test_incorporation_proof_s75_t36.py; python3 -I tests/test_queue_ack_s75_t36.py; python3 -I tests/test_eng_loop_guards.py",
+      "result": "Ran 21 tests OK; Ran 21 tests OK; Ran 8 tests OK",
+      "total": 50,
+      "skip": 0,
+      "xfail": 0,
+      "demo": "python3 -I tests/s75_t36_r2_repair_demo.py -> checks=26 pass=26 fail=0"
+    },
+    "tests_after": {
+      "command": "cd <head>/CONTROL && python3 -I tests/test_incorporation_proof_s75_t36.py; python3 -I tests/test_queue_ack_s75_t36.py; python3 -I tests/test_eng_loop_guards.py",
+      "result": "Ran 21 tests OK; Ran 25 tests OK; Ran 8 tests OK",
+      "total": 54,
+      "skip": 0,
+      "xfail": 0,
+      "demo": "python3 -I tests/s75_t36_r2_repair_demo.py -> checks=26 pass=26 fail=0 (r2 demo unmodified, still green)"
+    },
+    "no_test_removed_renamed_or_skipped": {
+      "command": "python3 -I -c \"compare set(re.findall(r'^\\s+def (test_\\w+)', base file)) with head file\"",
+      "removed": [],
+      "renamed": [],
+      "added": [
+        "test_a_side_branch_landing_is_refused_by_a_main_bound_queue",
+        "test_a_queue_bound_to_a_side_branch_records_it_and_claims_no_main",
+        "test_a_main_landing_still_carries_main_ancestry_and_its_target",
+        "test_a_proof_on_another_remote_is_refused_not_claimed_as_main"
+      ],
+      "kept": "21 of 21 original queue-ack tests present under their original names",
+      "skip_xfail_scan": "@unittest.skip = 0, expectedFailure = 0 in all three test files on both sides"
+    }
+  },
+
+  "side_branch_before_and_after": {
+    "instrument": "CONTROL/tests/s75_t36_r3_side_branch_demo.py (in-branch) -- genuine proof minted on Target('openclaw-onboarding', remote='origin', branch='side'), nothing forged",
+    "before_command": "python3 -I CONTROL/tests/s75_t36_r3_side_branch_demo.py --control <base>/CONTROL --expect old",
+    "before_result": "exit 0, checks=3 pass=3 fail=0 -- main queue ack = ACKNOWLEDGED; ack.ancestor_of_main = 'proven'; ack.proven_target = None; store bytes changed = True",
+    "before_meaning": "BYPASS-B2 reproduced at base: a side-branch landing is acknowledged and the module asserts an ancestry claim about main that nothing tested.",
+    "after_command": "python3 -I CONTROL/tests/s75_t36_r3_side_branch_demo.py --expect new",
+    "after_result": "exit 0, checks=5 pass=5 fail=0 -- main-bound queue: outcome=None reason='wrong-target' detail=\"proof is for 'openclaw-onboarding' on origin/side; this queue is 'openclaw-onboarding' on origin/main\"; store bytes unchanged=True. side-bound queue: ACKNOWLEDGED, ancestor_of_main=None, proven_target={'repository':'openclaw-onboarding','remote':'origin','branch':'side'}. main landing on a main queue: ancestor_of_main='proven 2026-10-25T23:00:00Z', proven_target branch='main'.",
+    "after_meaning": "The main-bound queue refuses the side-branch landing and writes nothing; where an acknowledgement IS made, the branch really proven is recorded and no untested main claim is written.",
+    "instrument_control": "Two-way on the same instrument, not just the target: base --expect new exits 1 (2 checks FAIL: 'no ancestry claim about main', 'the branch really proven is recorded'); head --expect old exits 1 (FAIL 'block asserts ancestor_of_main for a side branch' and 'no branch is recorded'). The instrument answers both ways, so neither verdict is a broken harness."
+  },
+
+  "regression_replay": {
+    "round1_probe_suite_replayed_verbatim": {
+      "command": "python3 -I <unmodified copy of the round-1 verifier's probe_s75t36.py> <head>/CONTROL",
+      "result": "32 PASS, 0 FAIL",
+      "stop_point": "aborts at probe D's second ack, line 381, AckRefused('no-transport') -- the SAME documented stop point round 2 reported; the four probes after it were covered by the round-2 verifier's own suite",
+      "verdict": "identical to the round-2 head result (32/32); no regression"
+    },
+    "round2_probe_suite_replayed": {
+      "command": "python3 -I /Volumes/mac mini m4/Downloads/git trees and automations/s75/tmp/s75t36r2verify/probes/probe_s75t36_round2.py <head>/CONTROL",
+      "result": "checks=33 pass=31 fail=2",
+      "delta_vs_round2_head": "round 2 head was 30 pass / 3 fail (B1, B2, B3). At r3 head: 31 pass / 2 fail.",
+      "B2": "[PASS] B2/side-branch-landing-cannot-be-acked-as-main: refused AckRefused reason=wrong-target  <-- the named defect, closed under the verifier's own probe",
+      "B1": "[FAIL] by design, outside this round's scope per the arbiter's section 3 ruling (documented transport seam, S75-T12/T16)",
+      "B3": "[FAIL] by design, arbiter residual 6 (seed() write path); not the defect named for this round and not edited",
+      "verdict": "no regression: every probe that passed at round-2 head still passes, and B2 flipped to PASS"
+    },
+    "round2_author_demo_replayed": {
+      "command": "python3 -I CONTROL/tests/s75_t36_r2_repair_demo.py",
+      "result": "checks=26 pass=26 fail=0, exit 0",
+      "note": "unchanged at head; the r3 change did not disturb it"
+    }
+  },
+
+  "residuals": [
+    "BYPASS-B1 (a caller attaching its own lying transport) is deliberately untouched: the arbiter ruled it a documented S75-T12/T16 wiring seam, and I agree. The round-2 B1 probe still reports FAIL, which is the arbiter's stated limit, not a regression.",
+    "BYPASS-B3 (seed() installs a caller-supplied non-PENDING ack block) is untouched: arbiter residual 6, outside the one bounded defect this round was given.",
+    "incorporation_proof.py:261 same_landing() still omits base and checks -- arbiter residual 5, latent for a direct caller only; not edited.",
+    "The store document does not itself carry the bound branch; the binding lives on the QueueStore object and the branch actually proven is recorded per acknowledgement in proven_target. A reader of the JSON alone sees the truth of each ack, not the queue's declared target.",
+    "Which branch the merge-writer is REQUIRED to land on is still not declared by the row (arbiter residual 2). The module now defaults the queue to origin/main and lets the caller declare otherwise; it does not guess.",
+    "Repository-wide test count still not run (arbiter residual 4); only CONTROL/tests/ was exercised, as in rounds 1 and 2."
+  ],
+
+  "could_not_determine": [
+    "Whether any real integration driver constructs QueueStore with a non-main branch or a non-origin remote. No such caller exists at this head; the parameters exist so a caller can declare the truth rather than have a claim invented for it.",
+    "Whether the project's batch-merge queue accepts the s75.queue-ack/v1 store shape -- unchanged from rounds 1 and 2, no consumer exists at this head."
+  ],
+
+  "written_by": "REPAIRER for S75-T36 round 3 (wrote the code under test; cannot clear it)",
+  "amendment_provenance": {
+    "amended_at": "2026-10-25",
+    "what_changed": "head_sha resolved from git ls-remote origin after the push and status moved to COMPLETE"
+  },
+
+  "push_proof": {
+    "command": "git ls-remote origin refs/heads/s75/S75-T36-r3",
+    "output": "da26b441a6ad30b20f01e3406918142d2d700c12\trefs/heads/s75/S75-T36-r3",
+    "resolved_from_origin": true,
+    "identity_check": "fresh clone of origin s75/S75-T36-r3 -> git rev-parse HEAD = da26b441a6ad30b20f01e3406918142d2d700c12; git diff --stat HEAD <tested head> -> empty (pushed tree is the tested tree)",
+    "base_ancestry_check": "git merge-base --is-ancestor b9481a286e3e1a68443660f464c39c920845c039 HEAD -> exit 0",
+    "no_merge_to_main": true,
+    "no_pull_request": true
+  },
+  "head_sha": "da26b441a6ad30b20f01e3406918142d2d700c12",
+  "head_sha_source": "evidence/units/S75-T36/attempt-3.json -> candidate.head_sha",
+  "independent_checker": {
+    "checker": "ac9c89d1d20a62f2c",
+    "checker_model": "opus-chain",
+    "checker_role": "workflow verifier agent, phase Verify, label 'S75-T36 r3 re-verify - opus-chain' (workflow journal wf_a77c52ec-838/journal.jsonl line 4)",
+    "how_independent": "the receipt's checker identity is a Verify-phase verifier agent, named separately from written_by ('REPAIRER for S75-T36 round 3 (wrote the code under test; cannot clear it)'); the round-3 repairer does not appear as its own checker",
+    "receipt": "qc/S75-T36.d55ba10d6c29c1e60378f78a72b298c7d97ffb1b.json",
+    "receipt_verdict": "PASS, row_fully_met true at head da26b441a6ad30b20f01e3406918142d2d700c12"
+  },
+  "independent_checker_source": "qc/S75-T36.d55ba10d6c29c1e60378f78a72b298c7d97ffb1b.json -> checker ('ac9c89d1d20a62f2c'), model ('opus-chain'), provenance_source (checker <- workflow journal wf_a77c52ec-838/journal.jsonl line 4, label 'S75-T36 r3 re-verify - opus-chain', phase 'Verify'), verdict ('PASS')"
+}
