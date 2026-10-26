@@ -1,0 +1,13 @@
+{
+  "schema": "blackceo.intake-resume-fixture/v1",
+  "note": "Fictional fixture for S75-T23 focused evidence. No client data.",
+  "questions": ["offer", "audience", "music"],
+  "replies_before_resume": [
+    "The Quiet Kitchen",
+    "adults 40 to 60 caring for a parent"
+  ],
+  "answered_before_resume": ["offer", "audience"],
+  "next_question_id": "music",
+  "replies_after_resume": ["help me choose"],
+  "not_reasked": ["offer", "audience"]
+}

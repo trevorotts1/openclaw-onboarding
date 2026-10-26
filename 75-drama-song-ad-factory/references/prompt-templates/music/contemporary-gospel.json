@@ -1,0 +1,21 @@
+{
+  "style_id": "contemporary-gospel",
+  "label": "Contemporary Gospel",
+  "deliveries": [
+    "spoken",
+    "sung"
+  ],
+  "style_parts": [
+    "contemporary gospel: faith-centered singing with piano and warm organ building from testimony to an uplifting chorus, piano, warm organ, live-feeling bass and drum section, tasteful strings, expressive choir supporting the lead, 68-100 bpm, deliberate 4/4 or 6/8 gospel feel, clear-conviction lead; choir answers and harmony build the testimony; words stay easy to hear, dry close upfront vocal.",
+    "{gender} lead, sung melody with long held open vowels, clear diction.",
+    "The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes.",
+    "Only the short intro and the final outro are spoken; the full band keeps playing continuously under them."
+  ],
+  "ending_clause_added_by_ending_qc": ", natural resolved ending, final chord rings out and fades",
+  "negative_tags": "rap, rapping, generic inspirational pop, choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
+  "rap_allowed": false,
+  "skeleton_rule": "Intro (spoken opener) -> Vocalise (optional, a short wordless lead-in, never a forced opening) -> Verse -> Pre-Chorus -> Hook (the payoff: at or after the build-up, at the story beat where its words become true) -> verses and pre-choruses between hooks -> Product passage on beat 8 -> remaining hooks evenly -> last hook near 90% -> Outro (spoken CTA) -> [End].",
+  "villain_pain_lyric_guidance": "VILLAIN IN THE LYRICS (Suno): name the villain in the verses, carry a pain line with real stakes and consequences, then turn to the rise in the hook. First person, present tense, concrete nouns -- the listener must feel the pain and the problem in the depth of their soul before the rise lands.",
+  "villain_pain_lyric_guidance_source": "product_style_bible/bible.py VILLAIN_LYRIC_GUIDANCE (U16 onb 8467e0354d3116eec980928cab7abaab8cef51ed, 999 c4787e2c13e71e3f7877d232aa7c80271f477adc)",
+  "cue_overrides": {}
+}

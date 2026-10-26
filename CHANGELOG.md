@@ -1,9 +1,35 @@
+## [Unreleased]  -  2026-10-26  -  Skill 75 batch merge: 13 units from wave-2 and wave-3 consolidated into one branch
+
+- Lands the 13 accepted S75 units on one branch, `batch/s75-all-13`, instead of two separately-refreshing wave branches, because each wave refresh restarted the 18-22 minute gate suite while `main` moved and neither wave could land.
+- Units, each proven an ancestor of the branch tip: S75-T11 `71d8c1cf4`, S75-T16 `8d7487b2a`, S75-T17 `7512670a6`, S75-T26 `af6ff2af2`, S75-T36 `5fc1d31c3`, S75-T07 `e320b7d5f`, S75-T09 `cc2f9852d`, S75-T12 `5087ad89b`, S75-T15 `f944f0aee`, S75-T22 `a00c36c14`, S75-T28 `7c311bc76`, S75-T33 `67ed13601`, S75-T41 `58eddfb88`.
+- In plain English: thirteen pieces of Skill 75 that had already passed review but could not get merged are now in one package, with the review trail for each one intact and no history rewritten.
+- Skill 75 `skill-version.txt` and `SKILL.md` frontmatter both read `v2.9.116`, one patch above `main`'s `v2.9.115`, so G3 (skill content changed without a version change) is satisfied.
+- Risk level: LOW — merges of already-reviewed unit branches only; no hand edits inside unit code.
+
+## [Unreleased]  -  2026-10-25  -  PBB-325 / T-05 repair 2: the engineering loop reads PB_* configuration at use time, and malformed stop/payload input is refused
+
+- Repair of verifier PBB-279's FAIL on `e7f5d98a` (T-05). `CONTROL/eng_loop.py` no longer captures `PB_STATE_DIR` / `PB_LABEL` / `PB_PLIST` / `PB_TMP` / `PB_CACHE` at import: the owner-handler child and the launchd job read the runtime environment, so an isolated proof no longer writes the production store. Three guards that could not fire now refuse: a `--run-id` flag with no value, an out-of-range `--generation`, and a malformed `--payload` / `--body`.
+- In plain English: running the loop's own self-test against an isolated store now actually stays isolated, and bad input gets a refusal with a reason instead of a Python traceback.
+- Adds `CONTROL/tests/test_eng_loop_guards.py` (8 tests; 4 failures and 1 error on the reviewed bytes, 8 OK after). Skill 38 version `v2.0.97`.
+- Risk level: MEDIUM — runtime behaviour changes only for the malformed and boundary inputs named, and every inverse control is pinned in the new tests.
+## [v27.1.67]  -  2026-10-24  -  Cleanup (PBB-131 T-46): typed disposal decisions for scratch, merged, dirty and shared-consumer resources, with immediate eligible removal, preserved content and proven absence
+
+- In plain English: a new `shared-utils/cleanup/` module decides what may be deleted and then deletes it straight away, but only when it can prove the resource is owned, outside-only, on the expected drive, free of live consumers and already preserved. Anything it cannot determine comes back as UNKNOWN with a reason, never as success, and nothing is ever force-deleted.
+- Repair after QC (c-t-46): a record the module cannot read now types as UNKNOWN_MALFORMED_ITEM instead of raising, an unstatable approved root types as UNKNOWN_VOLUME_IDENTITY, a preserved-root directory on its own is no longer preservation proof (a caller copy needs the resource's own preservation receipts, and `preserve_content` outranks it), a malformed ownership receipt is not ownership, and one bad record can no longer abort a batch and strand a committed deletion without its receipt and absence proof.
+- Repair after QC (qc5-t-46): the receipt target is proven writable before the first removal, so a receipt that cannot be written now blocks every deletion as BLOCKED_RECEIPT_DESTINATION, and a write that still fails after removal comes back typed with the real deletions recorded inline instead of raising. A missing `clean_state` or `consumers` key is UNKNOWN instead of a clean default and deletes nothing. One contained-or-equal test now serves both the receipt location (a receipt directly in the approved root is accepted) and caller copies (a copy equal to or containing the resource is not preservation).
+- Repair after QC (PBB-257): a preserved copy can no longer be steered outside the preserved root, because an identity is folded into one safe path segment and the destination is proven contained before and after the copy (an identity carrying `..` is BLOCKED_UNSAFE_IDENTITY, a blank one is UNKNOWN_MISSING_IDENTITY). The symlink-component guard now finds its boundary by resolution instead of a lexical comparison, so it fires when the approved root and the resource are written in different forms. The no-force guard refuses force in every spelling (short `-f`, clusters like `-af`, and `--force` with or without a value). A caller copy is now proof only when the content is proven byte-for-byte against the resource at an exact external path — a preserved directory merely existing is never proof — and every deletion record carries that exact external path and its digest. A batch container that cannot be read types as UNKNOWN_MALFORMED_ITEM instead of raising, and the repo version markers are rolled to v27.1.67 in this commit so the documented version and the shipped version agree.
+
 ## [Unreleased]  -  2026-10-24  -  PBB-070 / T-47: cross-repository compatibility manifest and deployment evidence
 
 - Adds `implementation/pbb-070/compatibility-manifest.json` and `implementation/pbb-070/DEPLOYMENT-EVIDENCE.md`. The manifest binds openclaw-onboarding `bccc4050f`, 999-setup `1d1545fc8`, and blackceo-command-center `ef6b9364e` (pinned tag v7.6.112) by exact commit, names the interfaces that were checked, and marks every interface that is not proven.
 - In plain English: a human can now see which three code checkouts were checked against each other, how each commit was read, and where the pairing still has a hole.
 - Nothing is deployed. Two gaps are recorded, not papered over: the Skill 71 `/api/skill-runs/ingest` receiver is absent at the Command Center pin (present only on unpinned main), and the 999-setup vendored skill trees lag canonical main.
 - Risk level: LOW (documentation only; no runtime, installer, or skill-behavior change).
+
+## [v27.1.66]  -  2026-10-24  -  S75 batch 3: land accepted-but-unmerged T10 and T24
+
+- Merges pull request #2549 (`batch/s75-b3`, merged 2026-10-24T22:32:03Z), which lands two Skill 75 units that were accepted and independently attested but never merged: S75-T10 `SCRIPT-WRITER-OWNER` and S75-T24 `VISUAL-UX-OWNER`. Both merged `--no-ff` with no hand edits.
+- In plain English: two Skill 75 pieces that had already passed review were found sitting unmerged and were put into the package.
 
 ## [v27.1.65]  -  2026-10-23  -  Skill 75: enforce approved lip-sync clips and audio provenance through final delivery
 

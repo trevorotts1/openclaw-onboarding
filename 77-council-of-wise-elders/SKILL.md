@@ -1,5 +1,5 @@
 ---
-version: 1.0.54
+version: 1.0.64
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -12,7 +12,12 @@ description: Convene a source-grounded Council of Wise Elders for business or
 # Council of Wise Elders (Skill 77)
 
 Nine fixed advisory seats review a consequential decision from distinct,
-source-grounded perspectives. The council produces one recommendation with
+source-grounded perspectives. Every mode seats the full nine-advisor
+council; the mode changes how many rounds the elders run and how many may
+work at once, never how many seats are used: light (exactly 2 rounds, at
+most 3 provider calls in parallel, in waves of 3), medium (up to 4 rounds)
+and heavy (up to 10 rounds). A light session still shows all nine seats.
+The council produces one recommendation with
 its conditions, the strongest objection, and the next useful step. A council
 result is advice. It is never, by itself, permission to act.
 
@@ -151,7 +156,7 @@ Recognize these explicit phrases through the existing intent router:
 - "Ask the Tiffany Aliche seat" (any named seat works the same way)
 - "Review this plan with the council"
 
-Do not intercept every ordinary "should I" conversation and spend on a full
+Do not intercept every ordinary "should I" conversation and run a full
 council. Recognize existing-session controls before creating new work:
 "Stop that council" resolves the existing session and never creates a task
 titled Stop that council. "What did they decide?" reads the verdict.
@@ -173,7 +178,20 @@ counsel artifact.
    duplicate session.
 2. Identify whether this is a new decision, a follow-up, a rerun, a pause,
    a cancel, a resume, or an ordinary explanation. Resolve existing-session
-   controls first.
+   controls first. For a new decision, size the question with exactly these
+   four checks and nothing else:
+   - Can it be undone? A reversible step is a light question.
+   - Are other people affected? More people means more rounds.
+   - Does it lock the client in? A lock-in is never a light question.
+   - Do values pull against each other? Competing values need the debate.
+   There is no money, cost or spending check, and none is ever applied.
+   Then announce the size in ONE line and carry on: "Light question: all
+   nine advisors, 2 rounds, 3 at a time. Say 'full council' for the full
+   debate." (or "Medium question: 9 advisors, up to 4 rounds." / "Heavy
+   question: 9 advisors, up to 10 rounds."). Every size seats all nine
+   advisors; the size changes the rounds and the parallelism only. A
+   client override always wins: "quick answer" means
+   light, "full council" means heavy.
 3. Retrieve permitted context before asking for facts: the brief the
    elders read is assembled FIRST by the one shared permitted-context
    builder (`runtime/src/brief/permitted-brief.ts`), through the door's
@@ -186,16 +204,50 @@ counsel artifact.
    the context does not state as an explicit unknown, and never runs
    past its 2000-word cap. Ask only the next material missing question.
    Preserve unknowns and show the prepared brief.
-4. Ask the client which model the council should use. Run
-   `blackceo-council routes` and list the options it returns, then offer
-   the default for the harness you are running in, and say which it is:
-   the claude-nine configured default on claude-nine, Sonnet on Claude
-   Code, or the latest DeepSeek Flash on DeepSeek (the exact id is
-   resolved from the provider's model list at the moment of the run, so
-   it is never an older pinned Flash). Never pick a model silently. If
-   the client names a route or model, pass it with `--route` and
-   `--model`. If the client says to use the default, pass nothing and the
-   detected harness decides (`--harness` overrides detection).
+4. Resolve the model route from the CALLING agent first, then the
+   runtime. The routes `blackceo-council routes` returns are the council
+   runtime's own configured providers on this box — they are NOT the
+   calling agent's models, and they must never be presented as if they
+   were (never list claude-nine, Claude Code, or DeepSeek options to an
+   OpenClaw client whose agent runs on a different provider).
+   Offer the council's providers in this fixed order:
+   - OpenRouter first, and recommended: it runs every advisor at once, with
+     no parallel limit, so the sitting is the fastest.
+   - The client's own Ollama, if they prefer it. When their plan is not
+     already known, ask once: the $20 a month plan runs at most three
+     advisors at a time; the $100 a month plan runs up to ten. When Ollama
+     fails and the client has named an OpenRouter fallback model
+     (`--fallback-model ID`), the failed seats re-run on OpenRouter; with
+     no fallback model the sitting blocks on the failed seats instead.
+   - Agnes 3.0 Flash, when the client selects it: no parallel limit.
+
+   The DEFAULT is one rule, and it is the same rule in INSTRUCTIONS.md:
+   if one of those routes is the calling agent's own provider family, that
+   route is the default (it runs the client's own provider); otherwise
+   OpenRouter is the default, which is also what you recommend. OpenRouter
+   being "first and recommended" never overrides the caller's own provider.
+   a. Read the calling agent's configured provider and model from its own
+      environment: in OpenClaw, `openclaw agents list` (the agent's
+      `Model:` line, `<provider>/<model>`); on claude-nine or Claude Code,
+      the harness's configured default. Never guess it.
+   b. Run `blackceo-council routes` (or `models --json`). If a route
+      matches the caller's provider family, that route is the default and
+      you say plainly: "your agent's provider is <provider>, and the council
+      runs it through <route>". If no route matches the caller's provider
+      family, the default is OpenRouter (the recommended one) and step c
+      asks the client to choose from the routes that exist.
+   c. If NO route matches the caller's provider, say exactly this and
+      stop: "The council runtime on this box is configured with: <the
+      routes it returned>. None of those is your agent's model
+      (<provider>/<model>), so I cannot run the council on it. Choose one
+      of those routes for the council, or configure <provider> for the
+      council runtime." Ask that one question with those names only.
+   d. Never pick a model silently. If exactly one usable route exists and
+      the client already said to use the default, use it and say which.
+   e. If the client names a route or model, pass it with `--route` and
+      `--model`. If the client says "my default" and a matching route
+      exists, pass nothing and let the detected harness decide
+      (`--harness` overrides detection).
 4a. When the question depends on current facts (prices, laws, markets,
    news, a competitor, anything that changes), research the web before
    convening. Use your own web tools, keep each finding as a short claim
@@ -207,10 +259,16 @@ counsel artifact.
    never present a web fact as something the elder taught. Never
    fabricate a finding, a URL or a date: if the research finds nothing,
    convene without fresh facts and say so.
-4b. Convene with `blackceo-council convene --brief FILE` (or `--sample`
-   for the harmless built-in sample decision). Convening is the
-   approval: the client chose the model and pays for it, so there is no
-   grant to resolve and no approval step to run or wait for. Do not
+4b. Convene with
+   `blackceo-council convene --brief FILE --mode light|medium|heavy` (or
+   `--sample` for the harmless built-in sample decision). Convening with no
+   `--mode` runs medium; that default is deliberate, so name the mode you
+   announced. Every mode seats all nine advisors; light simply runs them in
+   waves of 3, so no mode and no flag reduces the roster. On the
+   client's own Ollama pass `--ollama-plan 20` or `--ollama-plan 100`, and
+   `--fallback-model ID` to name the OpenRouter model used when Ollama
+   fails. Convening is the approval: the client chose the model, so there
+   is no grant to resolve and no approval step to run or wait for. Do not
    improvise a parallel council. The command prints the session id, the
    route, the exact model label, whether the model was the client's
    choice or the harness default, and the session and live events links.
@@ -228,9 +286,13 @@ counsel artifact.
    no setup or approval step. If convening is refused for any other
    reason, read the refusal to the client in plain words and never
    simulate a session.
-5. Use the exact approved roster and the requested mode. Keep openings
+5. Use the exact approved roster and the mode you announced. Keep openings
    isolated, challenges evidence-based, ratification bounded, and all
-   source claims honest. A session never exceeds 50 provider requests.
+   source claims honest. Every mode seats all nine advisors, so a light
+   session shows all nine seats. The provider-request cap is light 50,
+   medium 50, heavy 100 per session; light also runs at most 3 provider
+   calls at a time, in waves of 3; the four older modes keep 50. Nothing
+   else is capped.
 6. Present one recommendation, the strongest objection, critical
    conditions, and the next useful step. Link to the durable validated
    result. When fresh facts were used, keep "From the elder's books" and

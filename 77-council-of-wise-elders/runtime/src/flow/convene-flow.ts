@@ -16,6 +16,15 @@
  *      and called by export name) and the delivery carries the artifact
  *      link in the reply beside the chamber link.
  *
+ * W77S auto-mode: before deliberation, the sitting's mode (light /
+ * medium / heavy) is resolved through the ONE selector,
+ * `selectMode(question, explicitMode)`. An explicit client mode always
+ * wins verbatim; with no client mode the question's complexity decides.
+ * The chosen mode, its source (`client` / `auto`) and the reason travel
+ * with the sitting on the returned session record and the convene
+ * result. What a mode DOES (rounds, concurrency, request caps) is
+ * contracts/modes.ts and is not reinterpreted here.
+ *
  * Doors: the OpenClaw door runs the OpenClaw adapter; the
  * claude-nine / Claude Code (999) door runs its adapter. `doorForEnv`
  * selects by harness marker, and every adapter feeds the SAME
@@ -27,6 +36,8 @@ import {
   type DoorKind,
   type PermittedContextBrief,
 } from '../brief/permitted-brief.js';
+import { isCouncilSize, type CouncilSize } from '../contracts/modes.js';
+import { selectMode } from './mode-select.js';
 import {
   SessionCloseService,
   SOFT_CLOSE_QUESTION,
@@ -70,6 +81,20 @@ export function doorForEnv(env: NodeJS.ProcessEnv): DoorKind {
   return 'openclaw';
 }
 
+/** Who chose the sitting's mode: the client explicitly, or the system. */
+export type ModeSource = 'client' | 'auto';
+
+/**
+ * The resolved mode and WHY — shown to the client with the sitting. The
+ * shape is the selector's own return: `selectMode` decides it, this flow
+ * only carries it.
+ */
+export interface ModeSelection {
+  mode: CouncilSize;
+  source: ModeSource;
+  reason: string;
+}
+
 /** The deliberation leg: runs the session on the prepared brief. */
 export interface DeliberationResult {
   sessionId: string;
@@ -85,18 +110,40 @@ export interface DeliberationResult {
   chamberUrl: string | null;
 }
 
+/**
+ * The settled session record as this flow hands it back: the store's own
+ * row plus the mode provenance for the sitting. SessionSpec has no
+ * council-size seat yet (its `mode` is the older four-mode enum), so the
+ * provenance rides here rather than in a field the store cannot validate.
+ */
+export type ConveneSessionRecord = DeliberationResult['session'] & {
+  mode_selection: ModeSelection;
+};
+
 export interface ConveneFlowInput {
   door: DoorKind;
   /** The client's context root for the door (their memory files). */
   contextRoot: string;
   decision: string;
   options?: readonly string[];
+  /**
+   * The client's explicit mode — a `--mode` flag or a `mode` field on the
+   * request. It ALWAYS wins, verbatim: the system never second-guesses a
+   * mode the client asked for. Omitted or null means the system picks
+   * from the question's complexity. One of `light`, `medium`, `heavy`.
+   */
+  mode?: string | null;
 }
 
 export interface ConveneFlowDeps {
-  /** Step 2-3: deliberation, then verdict. */
+  /**
+   * Step 2-3: deliberation, then verdict. `mode` is the resolved sitting
+   * mode: the deliberation leg reads its rounds and concurrency from the
+   * mode policy (contracts/modes.ts) — this flow does not.
+   */
   deliberate(input: {
     permittedBrief: PermittedContextBrief;
+    mode: ModeSelection;
   }): Promise<DeliberationResult>;
   /** The store-backed close port (W74-A storeSessionClosePort in production). */
   closePort: SessionClosePort;
@@ -110,6 +157,10 @@ export interface ConveneFlowResult {
   permittedBrief: PermittedContextBrief;
   sessionId: string;
   chamberUrl: string | null;
+  /** The resolved mode, its source and the reason — the convene output says why. */
+  modeSelection: ModeSelection;
+  /** The settled session record, carrying the same mode provenance. */
+  session: ConveneSessionRecord;
   /** The sitting controls (step 4): session-close manages the sitting. */
   sitting: {
     status(nowIso: string): CloseAction;
@@ -124,6 +175,24 @@ export interface ConveneFlowResult {
     reason: CloseReason,
     nowIso: string,
   ): Promise<{ delivery: { reply_link: string | null; chamber_url: string | null } | null } & FinalizeResult>;
+}
+
+/**
+ * Resolve the sitting's mode through the ONE selector. The client's
+ * explicit mode wins verbatim; with none, the question's complexity
+ * decides. An explicit value that is not a council size is a client
+ * error, refused by name — never silently replaced by an auto pick,
+ * because that would override the client's choice.
+ */
+function resolveMode(input: ConveneFlowInput): ModeSelection {
+  const explicit = input.mode ?? null;
+  if (explicit !== null && !isCouncilSize(explicit)) {
+    throw new Error(
+      `INVALID_MODE: ${JSON.stringify(explicit)} is not a council size; ` +
+        'expected one of light, medium, heavy.',
+    );
+  }
+  return selectMode(input.decision, explicit ?? undefined);
 }
 
 /**
@@ -145,8 +214,12 @@ export async function conveneFlow(
     ...(input.options === undefined ? {} : { options: input.options }),
   });
 
+  // Mode next, still before deliberation: it decides the rounds the
+  // sitting runs. Pure question-text work — it reads no client context.
+  const modeSelection = resolveMode(input);
+
   // 2-3. deliberation, then verdict.
-  const settled = await deps.deliberate({ permittedBrief });
+  const settled = await deps.deliberate({ permittedBrief, mode: modeSelection });
 
   // 4-5. session-close manages the sitting; finalize renders the
   // artifact through the W74-B entry point (`renderArtifact`, called by
@@ -183,6 +256,8 @@ export async function conveneFlow(
     permittedBrief,
     sessionId: settled.sessionId,
     chamberUrl: settled.chamberUrl,
+    modeSelection,
+    session: { ...settled.session, mode_selection: modeSelection },
     sitting: {
       status: (nowIso) => close.status(settled.sessionId, nowIso),
       tick: (nowIso) => close.tick(settled.sessionId, nowIso),
