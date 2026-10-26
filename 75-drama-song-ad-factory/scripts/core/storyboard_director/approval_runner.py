@@ -227,6 +227,38 @@ def _load(run_dir):
     return shots or [], contracts, stills
 
 
+def _method_contracts(run_dir, contracts):
+    """method_plan.storyboard_input feeds the storyboard review: the blueprint
+    answers the 14.3 contract questions beside every shot card, and they are
+    merged into the review's contract view.
+
+    Fill-only: a question the run's own contracts.json already answers keeps
+    its answer, and nothing here touches shots, contracts.json or the
+    approval record. No blueprint, no method_plan box: the review sees the
+    run's contracts unchanged."""
+    blueprint = _read(_p(run_dir, "creative", "blueprint.json"))
+    if not blueprint:
+        return contracts
+    method = _read(_p(run_dir, "control", "method.json")) or {}
+    try:
+        import method_plan.method_plan as MP   # noqa: PLC0415  the owner module
+        cards = MP.storyboard_input(blueprint, method).get("cards") or []
+    except Exception:                          # noqa: BLE001 - review stands alone
+        return contracts
+    merged = {sid: dict(c or {}) for sid, c in (contracts or {}).items()}
+    for card in cards:
+        sid = card.get("shot_id") if isinstance(card, dict) else None
+        if not sid:
+            continue
+        cur = merged.get(sid) or {}
+        for key, val in (card.get("contract") or {}).items():
+            if val and not cur.get(key):
+                cur[key] = val
+        if cur:
+            merged[sid] = cur
+    return merged
+
+
 def _ordered(shots):
     return sorted(shots or [], key=lambda s: (s["song_start"], s["song_end"]))
 
@@ -311,7 +343,8 @@ def _approve(run_dir, shots, contracts, stills, choice, st=None, reply=None):
     review = None
     try:
         import storyboard_director.storyboard_director as SD
-        review = SD.adversarial_review(approved, contracts)
+        review = SD.adversarial_review(approved,
+                                       _method_contracts(run_dir, contracts))
     except Exception:   # noqa: BLE001 - review is its own stage; gate.json just omits it
         pass
     _write(_p(run_dir, "storyboard", "gate.json"), {"shots": approved, "review": review})
