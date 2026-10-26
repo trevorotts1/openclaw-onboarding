@@ -504,10 +504,21 @@ _bm_start_ttl() {
 # `pid` file is still inside the lock dir, so a bare `rmdir` fails and leaves the
 # stale directory behind — remove the owned pid first, then rmdir.
 _bm_release_lock() {
+  # ONLY ever drop a lock WE hold. _bm_teardown can fire twice (an INT/TERM trap
+  # fire followed by the EXIT fire): after the first release a successor may own
+  # the lock, and removing ITS pid / `rm -rf`-ing ITS dir would silently drop a
+  # live successor's box lock — the same successor race as finding 26, one level
+  # down. The pid file is removed only when it is OURS (or absent), so a
+  # successor's recorded pid always survives even in the same lock dir.
+  [ "$_BM_LOCK_HELD" = "1" ] || return 0
   flock -u 9 2>/dev/null || true
   if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
-    rm -f "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
-    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
+    local _bm_lock_pid=""
+    _bm_lock_pid="$(cat "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true)"
+    if [ -z "$_bm_lock_pid" ] || [ "$_bm_lock_pid" = "$$" ]; then
+      rm -f "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
+      rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
+    fi
   fi
   _BM_LOCK_HELD=0
 }
@@ -528,6 +539,8 @@ _bm_teardown() {
     rm -f "$(_bm_auth_stamp_file "$_BM_SESSION")" 2>/dev/null || true
   fi
   _bm_release_lock   # LAST: close + clear happened while we still owned the lock
+  _BM_SESSION=""     # idempotent: a second trap fire must not close/re-clear a
+                     # session a SUCCESSOR now owns (finding 26, double-fire path)
 }
 
 # ── B1 VERSION-GATE — refuse to launch a browser build through an old/headed guard

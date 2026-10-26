@@ -475,7 +475,13 @@ selftest() {
       # finding 49: the SELECTED profile must reach EVERY browser command, not
       # only `status` — otherwise a caller's OCB_PROFILE is silently bypassed
       # and actions land on the default profile. Asserted end-to-end with a
-      # NON-default profile so a hard-coded "openclaw" cannot pass this.
+      # NON-default profile so a hard-coded "openclaw" cannot pass this. The
+      # verb's real exit code is captured too (a dead command that merely echoes
+      # its argv on stderr must NOT count as proof), and the flag must be
+      # IMMEDIATELY followed by the selected value (the stub echoes one argv per
+      # line, so substring-anywhere would accept `--browser-profile openclaw ...
+      # ghl-selected`).
+      _st_needle="$(printf '\n%s\n%s' '--browser-profile' 'ghl-selected')"
       for _st_v in status start open snapshot click type frame-snapshot stop; do
         case "$_st_v" in
           open)           _st_args="https://example.test/ghl" ;;
@@ -487,19 +493,17 @@ selftest() {
         # shellcheck disable=SC2086
         _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
           OCB_PROFILE=ghl-selected "$_st_self" "$_st_v" $_st_args 2>&1)"
+        _st_rc=$?
         _st_prof_ok=1
+        [ "$_st_rc" = "0" ] || _st_prof_ok=0
         case "$_st_out" in
-          *"--browser-profile"*) : ;;
-          *) _st_prof_ok=0 ;;
-        esac
-        case "$_st_out" in
-          *"ghl-selected"*) : ;;
+          *"$_st_needle"*) : ;;
           *) _st_prof_ok=0 ;;
         esac
         if [ "$_st_prof_ok" = "1" ]; then
           _st_pass "verb $_st_v passes the selected OCB_PROFILE (finding 49)"
         else
-          _st_fail "verb $_st_v did NOT pass the selected OCB_PROFILE (finding 49)"
+          _st_fail "verb $_st_v did NOT pass the selected OCB_PROFILE (finding 49, rc=$_st_rc)"
         fi
       done
     else
