@@ -394,6 +394,22 @@ def _receipt(home, path, operator):
             "detail": ""}
 
 
+def _trevor_on_client(receipt, operator, name):
+    """Refuse a client install that names the operator default (API-2 guard).
+
+    Mirrors resolve_emergency_owner(): a client install never binds to Trevor,
+    no matter which config source named it. Returns True when it refused.
+    """
+    if not operator and name.casefold() == OPERATOR_DEFAULT.casefold():
+        receipt.update(reason_code=EMERGENCY_OWNER_TREVOR_ON_CLIENT,
+                       blocked=True,
+                       detail="client install names the operator-box owner "
+                              "(%s); refusing to hand a client install the "
+                              "operator's name" % OPERATOR_DEFAULT)
+        return True
+    return False
+
+
 def resolve(install_home=None, config_path=None):
     """Resolve this install's emergency owner. Returns a receipt dict:
 
@@ -416,6 +432,8 @@ def resolve(install_home=None, config_path=None):
         receipt.update(outcome="ok", owner=pinned, source="install_pin",
                        reason_code=CODE_FROM_CONFIG,
                        detail="%s pinned for this install" % ENV_PIN)
+        if _trevor_on_client(receipt, operator, pinned):
+            receipt.update(outcome="refused", owner=None)
         return receipt
 
     doc, problem = _read_config(path)
@@ -435,6 +453,8 @@ def resolve(install_home=None, config_path=None):
         receipt.update(outcome="ok", owner=name, source="install_config",
                        reason_code=CODE_FROM_CONFIG,
                        detail="%s recorded in this install's config" % CONFIG_KEY)
+        if _trevor_on_client(receipt, operator, name):
+            receipt.update(outcome="refused", owner=None)
         return receipt
 
     if isinstance(doc.get(IDENTITY_KEY), str):
@@ -444,6 +464,8 @@ def resolve(install_home=None, config_path=None):
                            reason_code=CODE_FROM_CONFIG,
                            detail="installer-collected %s in this install's "
                                   "config" % IDENTITY_KEY)
+            if _trevor_on_client(receipt, operator, name):
+                receipt.update(outcome="refused", owner=None)
             return receipt
 
     name, _source = _openclaw_name(home)
@@ -452,6 +474,8 @@ def resolve(install_home=None, config_path=None):
                        reason_code=CODE_FROM_CONFIG,
                        detail="%s recorded in this install's %s"
                               % (IDENTITY_KEY, CONFIG_FILE))
+        if _trevor_on_client(receipt, operator, name):
+            receipt.update(outcome="refused", owner=None)
         return receipt
 
     if operator:

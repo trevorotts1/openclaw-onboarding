@@ -162,6 +162,48 @@ def checks():
         env = json.loads(out.getvalue())
         check("an exact --config path resolves its own recorded owner",
               code == 0 and env["data"]["owner"] == "Exact Config Eve", out.getvalue())
+
+        # 12. a client install that names the operator default refuses on every
+        # source (S75-T13 rebase fix: resolve() and resolve_emergency_owner()
+        # must agree; a client install never binds to Trevor).
+        for label, kwargs in (
+                ("ownerName", {"config": {"ownerName": "Trevor"}}),
+                ("onCallOperator", {"config": {"onCallOperator": " Trevor "}}),
+                ("openclaw.json", None)):
+            if label == "openclaw.json":
+                root = home()
+                with open(os.path.join(root, "openclaw.json"), "w") as f:
+                    json.dump({"owner": {"name": "TREVOR"}}, f)
+            else:
+                root = home(**kwargs)
+            r = EO.resolve(root)
+            check("client install naming Trevor via %s refuses" % label,
+                  r["outcome"] == "refused" and r["owner"] is None
+                  and r["blocked"] is True
+                  and r["reason_code"] == EO.EMERGENCY_OWNER_TREVOR_ON_CLIENT,
+                  repr(r))
+            try:
+                EO.resolve_emergency_owner(root)
+                check("resolve_emergency_owner agrees on %s" % label,
+                      False, "bound a client install to the operator default")
+            except EO.EmergencyOwnerError as e:
+                check("resolve_emergency_owner agrees on %s" % label,
+                      e.code == EO.EMERGENCY_OWNER_TREVOR_ON_CLIENT, e.code)
+        os.environ[EO.ENV_PIN] = "Trevor"
+        try:
+            root = home()
+            r = EO.resolve(root)
+            check("client install pinned to Trevor via env refuses",
+                  r["outcome"] == "refused" and r["owner"] is None
+                  and r["blocked"] is True
+                  and r["reason_code"] == EO.EMERGENCY_OWNER_TREVOR_ON_CLIENT,
+                  repr(r))
+        finally:
+            del os.environ[EO.ENV_PIN]
+        r = EO.resolve(home(marker=True, config={"onCallOperator": "Trevor"}))
+        check("operator box naming Trevor still binds",
+              r["outcome"] == "ok" and r["owner"] == "Trevor"
+              and r["source"] == "install_config", repr(r))
     finally:
         if saved_env is not None:
             os.environ[EO.OPERATOR_ENV] = saved_env
