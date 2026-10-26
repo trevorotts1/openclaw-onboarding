@@ -1,5 +1,17 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.63: the selector honours every session mode, and the council docs state the real concurrency rule (REPAIR-1063)
+
+In plain English: naming any of the seven session modes now selects that mode instead of falling through to a guess, the question classifier reads plurals and tenses, and "we have no legal risk" no longer counts as high stakes. The docs now name the real roster rules and say that the lower of the provider ceiling and the mode's wave width is what runs.
+
+- Selector repair (`unit/W77S-repair-selector-1063`, f12e645a2): `runtime/src/flow/mode-select.ts` maps all seven canonical `SESSION_MODES` to a council size — `full` heavy, `selected` medium, `quick` and `consult` light, `light`/`medium`/`heavy` unchanged — typed as a complete `Record<SessionMode, CouncilMode>` so a new mode without a mapping is a compile error, and a runtime test iterates the enum.
+- Stake matching survives inflection (`lawsuit`/`lawsuits`, `sue`/`suing`/`sued`, `merger`/`mergers`, `loan`/`loans`) and is negation-aware: a stake term preceded within four words and the same clause by `no`, `not`, `without`, `zero` or `never` is not counted, so "we have no legal risk" stays low-stakes while the same sentence without the negators still selects heavy (the test carries that control).
+- The seat test no longer compares a literal to itself. `mode-select.test.ts` asserts every council size seats `SEAT_IDS.length` from `MODE_ROUND_POLICY` and that the roster has no duplicate seat, so a smaller panel or a shrunken roster turns the suite red.
+- Docs repair (`unit/W77S-repair-docs-1063`, 55d439eaa): the roster sentence in `INSTRUCTIONS.md` is corrected against the runtime's own rules — light, medium and heavy refuse a shorter `--seat-ids` list, and smaller panels belong to the four older modes (`runtime/src/intake/panel.ts`: selected 2 to 8, quick four, consult one, full nine).
+- `INSTRUCTIONS.md`, `references/model-routing.md` and `references/protocol.md` now state one concurrency rule: a provider only sets a ceiling (only Ollama has one — the $20 plan 3 at a time, the $100 plan 10; OpenRouter, Agnes 3.0 Flash and DeepSeek Direct add none) and the mode sets the wave width (light 3, medium and heavy the whole nine). The lower of the two runs, so an uncapped provider never widens a light sitting past 3.
+- Checks on this branch (no-spend): `npm test` 863 tests with the same pre-existing failing names as the base capture and zero new ones (persona-root three; the fourth known name, the chrome-backed session-close render, passed this run); the two flow files 19/19; `tsc --noEmit` clean; runtime build clean.
+- Packaging: `manifest.json` and `council-of-wise-elders.skill` rebuilt once over both unit heads; `skill-version.txt`, `version` and the `SKILL.md` frontmatter all read 1.0.63.
+
 ## v1.0.62: automatic mode selection, queue and supervisor repairs, provider parallelism (AUTO-MODE-1062 + REPAIR-1063)
 
 In plain English: the council now picks light, medium or heavy from the question itself when the client does not name a mode. Every mode still seats all nine elders; the mode only changes the rounds and how many advisors work at once. Three repairs land with it: the queue producer can readmit a job and clears nullable receipt fields, the hybrid supervisor stops misreporting a finished run, and the provider limits read a client's Ollama plan however it is written.
