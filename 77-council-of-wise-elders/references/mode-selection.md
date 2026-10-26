@@ -84,12 +84,22 @@ council size it deliberates at:
 
 Layer notes, all measured:
 
-- Both entry points trim and lowercase canonical values: `FULL` and
-  `  quick  ` are honoured.
-- A value outside `SESSION_MODES` is not a mode. `selectMode` falls through
-  to the automatic classification (`bogus` → source `auto`, score 1,
-  light). The driver's `explicit` parameter is typed `SessionMode`, so an
-  out-of-enum value is a type error at the boundary, not a runtime fallback.
+- `selectMode` alone trims and lowercases the explicit value, so `FULL`,
+  `FuLl` and `  quick  ` are honoured (measured: `FULL` → heavy, source
+  `client`; `  quick  ` → light, source `client`).
+- The driver's `resolveModeSelection` passes an explicit value through
+  verbatim (measured: `FULL` → mode `FULL`, reason `client selected FULL`;
+  `  quick  ` → mode `  quick  `). Its `explicit` parameter is typed
+  `SessionMode`, so an out-of-enum value is a type error at the boundary,
+  and a value that reaches a session anyway fails `sessionSpecSchema` at
+  path `mode` (`invalid_value`: `Invalid option: expected one of
+  "full"|"selected"|"quick"|"consult"|"light"|"medium"|"heavy"`) — it is
+  not a runtime fallback.
+- A value outside `SESSION_MODES` is not a mode for `selectMode`: it falls
+  through to the automatic classification, whose score belongs to the
+  question and not to the explicit value (measured with explicit `bogus`:
+  question `bogus` → source `auto`, score 0, light; question `?` → source
+  `auto`, score 1, light; empty question → source `auto`, score 0, light).
 - `convene-flow.ts` is stricter than both: an explicit value that is not a
   council size is refused with `INVALID_MODE: "<value>" is not a council
   size; expected one of light, medium, heavy.` That refusal lives only in
