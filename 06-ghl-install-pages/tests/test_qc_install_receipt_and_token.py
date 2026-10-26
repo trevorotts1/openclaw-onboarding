@@ -12,18 +12,15 @@
 
 Each test builds an isolated copy of the skill (with a stub lib-shared.sh so
 every path resolves inside the temp box) and runs the REAL QC script, then reads
-the verdict of the two named assertions. No network, no real credentials.
+the verdict of the named assertions. No network, no real credentials.
 """
 import json
 import os
-import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
-QC = SKILL_DIR / "qc-ghl-install-pages.sh"
 
 GOOD_PROBE = """#!/usr/bin/env python3
 import json, os, sys
@@ -39,6 +36,16 @@ BROKEN_PROBE = """#!/usr/bin/env python3
 import sys
 sys.exit(1)
 """
+
+# Exit 0 but writes NO receipt — the `[ -f "$CAP_JSON" ]` half of the gate
+# (the real probe swallows its own write errors and still exits 0).
+NO_WRITE_PROBE = """#!/usr/bin/env python3
+import sys
+sys.exit(0)
+"""
+
+# Writes a perfectly valid receipt, then fails the invocation.
+FAIL_AFTER_WRITE_PROBE = GOOD_PROBE.replace("sys.exit(0)", "sys.exit(1)")
 
 
 def _make_box(tmp_path: Path, probe_body: str):
@@ -130,3 +137,50 @@ def test_mounted_token_file_satisfies_the_auth_gate(tmp_path):
         "a mounted GHL_REFRESH_TOKEN_FILE was rejected although the runtime "
         "resolver accepts it\n" + stdout[-3000:]
     )
+
+
+def test_receipt_from_a_failed_probe_is_never_consumed(tmp_path):
+    """Findings 31: consumption happens only after THIS invocation succeeded —
+    a valid receipt written by a probe that then failed is not a valid receipt."""
+    box, dest = _make_box(tmp_path, FAIL_AFTER_WRITE_PROBE)
+
+    proc = _run(box, dest)
+    stdout = proc.stdout
+
+    assert _verdict(stdout, "capability probe ran") == "FAIL", (
+        "a probe that exited nonzero must not be reported as a pass/warn\n"
+        + stdout[-3000:]
+    )
+    assert _verdict(stdout, "capability probe selected a browser lane") == "FAIL", (
+        "the failed invocation's receipt was consumed\n" + stdout[-3000:]
+    )
+    assert proc.returncode != 0, "QC exited 0 after a failed probe"
+
+
+def test_probe_that_writes_no_receipt_fails(tmp_path):
+    """Findings 31: exit 0 alone is not a receipt — the run must have written
+    working/skill6-capability.json itself."""
+    box, dest = _make_box(tmp_path, NO_WRITE_PROBE)
+
+    proc = _run(box, dest)
+
+    assert _verdict(proc.stdout, "capability probe ran") == "FAIL", (
+        "a probe that wrote no receipt must fail\n" + proc.stdout[-3000:]
+    )
+    assert proc.returncode != 0, "QC exited 0 with no receipt written"
+
+
+def test_no_token_anywhere_fails_the_auth_gate(tmp_path):
+    """Findings 32 negative: with no *_FILE target, no alias env var and no
+    canonical store, the resolver-backed gate must FAIL (fail-closed, never
+    warn-only or silently green)."""
+    box, dest = _make_box(tmp_path, GOOD_PROBE)
+
+    proc = _run(box, dest)  # no GHL_REFRESH_TOKEN_FILE; aliases stripped; temp HOME
+    stdout = proc.stdout
+
+    assert _verdict(stdout, "Firebase refresh token") == "FAIL", (
+        "the auth gate did not fail closed with no resolvable token\n"
+        + stdout[-3000:]
+    )
+    assert proc.returncode != 0, "QC exited 0 with no resolvable token"

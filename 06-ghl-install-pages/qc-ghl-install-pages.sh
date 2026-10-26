@@ -48,20 +48,27 @@ assert "Skill 06 folder present" "[ -d \"$SK\" ]"
 # itself is hard-asserted below).
 #
 # FRESHNESS (findings 31): a receipt is only valid for the run that wrote it.
-# Delete any capability file left by an earlier run, then require THIS
-# invocation to exit 0 AND write the receipt before any assertion below
-# consumes it — a stale success must never green a currently broken probe.
+# The capability file left by an earlier run is deleted INSIDE the gate — a
+# failed delete FAILS the gate (never a silent `|| true` swallow) — and the
+# gate passes only when THIS invocation exits 0 AND writes the receipt.
+# PROBE_OK is set only then, and every assertion below consumes the receipt
+# ONLY when PROBE_OK=1: a stale success must never green a currently broken
+# probe, and a receipt written by an invocation that FAILED is never consumed.
 CAP_PROBE="$SK/tools/capability_probe.py"
 CAP_JSON="$SK/working/skill6-capability.json"
 assert "capability probe module present (adaptive lane probe)" "[ -f \"$CAP_PROBE\" ]"
-rm -f "$CAP_JSON" 2>/dev/null || true
-assert "capability probe ran in this invocation and wrote working/skill6-capability.json" \
-  "python3 \"$CAP_PROBE\" --out \"$CAP_JSON\" >/dev/null 2>&1 && [ -f \"$CAP_JSON\" ]"
+PROBE_OK=0
+if rm -f "$CAP_JSON" 2>/dev/null \
+   && python3 "$CAP_PROBE" --out "$CAP_JSON" >/dev/null 2>&1 \
+   && [ -f "$CAP_JSON" ]; then
+  PROBE_OK=1
+fi
+assert "capability probe ran in this invocation and wrote working/skill6-capability.json" "[ \"$PROBE_OK\" = 1 ]"
 assert "capability probe selected a browser lane (selectedLane set; never CUA last resort)" \
-  "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));lane=d.get(\"selectedLane\");assert lane is not None and lane != \"cua_last_resort\", lane'"
+  "[ \"$PROBE_OK\" = 1 ] && python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));lane=d.get(\"selectedLane\");assert lane is not None and lane != \"cua_last_resort\", lane'"
 assert "capability probe reports no hard blockers (no-browser-lane)" \
-  "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));assert not d.get(\"blockers\"), d.get(\"blockers\")'"
-if [ -f "$CAP_JSON" ]; then
+  "[ \"$PROBE_OK\" = 1 ] && python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));assert not d.get(\"blockers\"), d.get(\"blockers\")'"
+if [ "$PROBE_OK" = 1 ]; then
   assert "capability probe iframeDrag.available is a boolean (schema contract)" \
     "python3 -c 'import json;d=json.load(open(\"$CAP_JSON\"));assert isinstance(d.get(\"iframeDrag\",{}).get(\"available\"),bool)'"
   warn_only "cross-origin tile/drag hybrid available (else: cross-origin tile/drag degraded — Playwright required)" \
