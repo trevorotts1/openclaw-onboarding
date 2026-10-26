@@ -24,9 +24,20 @@ A launch run dir holds `launch.json` (the approved launch record),
 `approval.json` (the plan-approval record), and `launch-request.json`
 (`mode`, client/worker identity refs, copy profile, write target, any
 scoped approvals). The legacy path refuses a launch-mode run dir rather
-than running it through the old pipeline. The entry script is not a
-pinned enforcement file; no pinned file changed for launch mode, so the
-hash-pin still verifies the untouched legacy core.
+than running it through the old pipeline.
+
+The entry script is not itself a pinned enforcement file, but the launch
+chain it calls is. `PINNED_FILES` in `signature-funnel-entry.sh` holds the
+dispatch, route, page and Agnes modules beside the legacy provers and
+structure: `scripts/dispatch_launch.py`,
+`scripts/compile_launch_route.py`, `scripts/page_set.py`,
+`scripts/page_swarm.py`, `scripts/validate_launch_plan.py`,
+`scripts/agnes_dispatch.py`, `scripts/agnes_gates.py`,
+`scripts/agnes_orchestrator.py` and `scripts/agnes_response.py`. The
+hash-pin therefore covers the files that choose launch routes, pages and
+dispatch as well as the legacy core, and moving any of them requires
+`bash signature-funnel-entry.sh --write-pin` to mint the new
+`scripts/SF-PROVER-PIN.sha256`.
 
 ## Launch-mode toolchain (`scripts/`)
 

@@ -82,6 +82,14 @@ if [[ ! -f "$ENTRY_FILE" ]]; then
   exit 2
 fi
 
+# Shared idempotency + silent-delivery helpers (full-visibility presence
+# check, disabled-job tombstones, delivery validation). Sourced after the
+# entry-file check so a tampered/relocated tree still reports its own defect.
+CRON_LIB="$ROOT/scripts/lib-cron-presence.sh"
+[[ -f "$CRON_LIB" ]] || { _log "FAIL shared cron helper missing: $CRON_LIB (repo defect)"; exit 2; }
+# shellcheck source=./lib-cron-presence.sh
+source "$CRON_LIB"
+
 command -v python3 >/dev/null 2>&1 || { _log "FAIL python3 not available to parse the schedule entry"; exit 2; }
 
 # Parse the entry file (name/schedule/tz/command) via python3 — no jq
@@ -138,38 +146,14 @@ if ! command -v openclaw >/dev/null 2>&1; then
   exit 3
 fi
 
-# Idempotency: exact-name match against `openclaw cron list --json`
-# (jq -> python3, never text-table grep — same truncation-safety discipline
-# as scripts/ensure-pipeline-crons.sh::_cron_present).
-_cron_present() {
-  local raw
-  raw=$(openclaw cron list --json 2>/dev/null) || return 2
-  [[ -n "$raw" ]] || return 2
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$raw" | jq -e --arg n "$CRON_NAME" \
-      '(if type=="array" then . else .jobs // [] end) | map(select(.name == $n)) | length > 0' \
-      >/dev/null 2>&1
-    case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
-  fi
-  OC_CRON_RAW="$raw" python3 - "$CRON_NAME" <<'PYEOF' 2>/dev/null
-import json, os, sys
-name = sys.argv[1]
-try:
-    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
-except Exception:
-    sys.exit(2)
-jobs = data if isinstance(data, list) else data.get("jobs", [])
-sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
-PYEOF
-}
-
 # SK6001/SK6002 repair: print the id of an existing job that needs fixing:
 # its --sweep-base is missing or flag-shaped (the "--idempotent" defect), or it
 # points at a non-persistent $HOME path while the resolved folder lives under
 # $HOME/.openclaw (Contabo) or /data (Hostinger). Shape-agnostic: scans every string in the job
-# object. Prints nothing for a healthy job.
+# object. Prints nothing for a healthy job. Queries --all so a disabled job is
+# still visible to the scan (findings 29/30).
 _broken_job_id() {
-  OC_CRON_RAW="$(openclaw cron list --json 2>/dev/null)" python3 - "$CRON_NAME" "${HOME:-}" "$EVIDENCE_BASE" "${SKILL6_DATA_ROOT:-/data}" <<'PYEOF' 2>/dev/null
+  OC_CRON_RAW="$(openclaw cron list --all --json 2>/dev/null)" python3 - "$CRON_NAME" "${HOME:-}" "$EVIDENCE_BASE" "${SKILL6_DATA_ROOT:-/data}" <<'PYEOF' 2>/dev/null
 import json, os, re, sys
 name, home, want, droot = sys.argv[1], sys.argv[2].rstrip("/"), sys.argv[3], sys.argv[4].rstrip("/")
 try:
@@ -199,32 +183,57 @@ for j in jobs:
     if j.get("name") != name:
         continue
     for s in strings(j):
-        m = re.search(r'--sweep-base(?:\s+|=)(\S*)', s)
-        if m and stale(m.group(1).strip('"\'')):
+        # Quoted alternative first: a --sweep-base path containing SPACES must
+        # be captured whole. The old `(\S*)` truncated at the first space, so
+        # a stale spaced path read as healthy and the SK6001/2 repair silently
+        # no-op'd (false OK — the two SK6002 suite failures under a
+        # space-containing TMPDIR).
+        m = re.search(r'--sweep-base(?:\s+|=)(?:"([^"]*)"|\'([^\']*)\'|(\S*))', s)
+        if m and stale(next((g for g in m.groups() if g is not None), "").strip('"\'')):
             print(j.get("id") or j.get("jobId") or "")
             sys.exit(0)
 PYEOF
 }
 
-# D10: a failed/unparseable `cron list` is UNKNOWN, not "absent" — adding on it creates duplicates.
-_cron_present && _cp_rc=0 || _cp_rc=$?
-if [[ "$_cp_rc" -eq 2 ]]; then
-  _log "FAIL could not read 'openclaw cron list --json' — presence of '$CRON_NAME' unknown, NOT registering (would risk a duplicate). Non-fatal — re-run to backfill."
-  exit 3
-fi
-if [[ "$_cp_rc" -eq 0 ]]; then
-  _bad_id="$(_broken_job_id)"
-  if [[ -z "$_bad_id" ]]; then
-    _log "OK  '$CRON_NAME' cron already present, nothing to do"
+# D10: a failed/unparseable `cron list --all --json` is UNKNOWN, not
+# "absent" — adding on it creates duplicates. A DISABLED match is a
+# TOMBSTONE: report it, never resurrect it. An ENABLED match is validated for
+# delivery mode (finding 29) and repaired in place only where broken.
+_cron_state "$CRON_NAME"; _cp_rc=$?
+case "$_cp_rc" in
+  0)
+    _bad_id="$(_broken_job_id)"
+    if [[ -n "$_bad_id" ]]; then
+      # DONE only when the repaired job VERIFIEDLY reads back silent — the
+      # "delivery silent" claim is checked, not assumed from the edit's rc
+      # (a CLI that drops --no-deliver would otherwise get a false DONE).
+      if openclaw cron edit "$_bad_id" --command "$CRON_COMMAND" --no-deliver >/dev/null 2>&1 \
+         && _cron_state "$CRON_NAME" && _cron_delivery_silent; then
+        _log "DONE '$CRON_NAME' cron repaired in place (job $_bad_id): --sweep-base now $EVIDENCE_BASE, delivery silent"
+        exit 0
+      fi
+      _log "FAIL could not repair '$CRON_NAME' (job $_bad_id; openclaw cron edit rc!=0, or delivery still announces — this CLI may be ignoring --no-deliver). Non-fatal, re-run to retry."
+      exit 3
+    fi
+    if _cron_ensure_silent "$CRON_NAME"; then
+      _log "OK  '$CRON_NAME' cron already present (delivery silent), nothing to do"
+      exit 0
+    fi
+    _log "FAIL '$CRON_NAME' cron already present but its delivery announces into client chat (job '${OC_CRON_JOB_ID:-?}') and the in-place repair failed. Non-fatal — fix: openclaw cron edit ${OC_CRON_JOB_ID:-<id>} --no-deliver"
+    exit 3
+    ;;
+  1)
+    : # absent — fall through and register
+    ;;
+  3)
+    _log "OK  '$CRON_NAME' cron present but DISABLED (tombstone: deliberately disabled or auto-disabled after failures) — leaving it disabled, NOT resurrecting"
     exit 0
-  fi
-  if openclaw cron edit "$_bad_id" --command "$CRON_COMMAND" >/dev/null 2>&1; then
-    _log "DONE '$CRON_NAME' cron repaired in place (job $_bad_id): --sweep-base now $EVIDENCE_BASE"
-    exit 0
-  fi
-  _log "FAIL could not repair '$CRON_NAME' (job $_bad_id; openclaw cron edit rc!=0). Non-fatal, re-run to retry."
-  exit 3
-fi
+    ;;
+  *)
+    _log "FAIL could not determine a single '$CRON_NAME' job from 'openclaw cron list --all --json' (listing unreadable, or duplicate names an operator must dedupe) — NOT registering (would risk a duplicate). Non-fatal — re-run to backfill."
+    exit 3
+    ;;
+esac
 
 # --no-deliver: a maintenance-window sweep is an operator-internal tick, not
 # a client-facing announcement — without this flag `openclaw cron add`
@@ -238,9 +247,17 @@ fi
 # of bug was first caught and named in.
 if openclaw cron add --name "$CRON_NAME" --cron "$CRON_SCHEDULE" --tz "$CRON_TZ" \
      --command "$CRON_COMMAND" --no-deliver >/dev/null 2>&1 \
-   && _cron_present; then
-  _log "DONE '$CRON_NAME' cron registered ($CRON_SCHEDULE $CRON_TZ)"
-  exit 0
+   && _cron_state "$CRON_NAME"; then
+  # PROVE the --no-deliver above took before calling it DONE: a CLI that
+  # accepts and silently ignores the flag would otherwise get a green
+  # install while the fresh job announces into client chat (finding 29's
+  # exact harm).
+  if _cron_ensure_silent "$CRON_NAME"; then
+    _log "DONE '$CRON_NAME' cron registered ($CRON_SCHEDULE $CRON_TZ)"
+    exit 0
+  fi
+  _log "FAIL '$CRON_NAME' was registered but its delivery announces into client chat (job '${OC_CRON_JOB_ID:-?}') and the in-place repair failed — this CLI may be ignoring --no-deliver. Non-fatal — fix: openclaw cron edit ${OC_CRON_JOB_ID:-<id>} --no-deliver"
+  exit 3
 fi
 
 _log "FAIL could not register '$CRON_NAME' (openclaw cron add rc!=0, or --command/--no-deliver unsupported on this CLI build). Non-fatal — re-run to backfill."

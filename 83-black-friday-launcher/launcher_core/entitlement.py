@@ -45,6 +45,18 @@ ATTESTATION_KEYS = ("basis", "evidence_ref", "attested_by",
                     "purchase_reference", "amount_minor", "currency")
 REQUIRED_ATTESTATION_KEYS = ("basis", "evidence_ref", "attested_by")
 
+# What every result says about its own evidence. The caller supplies the strings;
+# nothing here reads a purchase, order or billing record from any system. Recorded
+# on the result, which the package manifest carries, so an operator cannot read a
+# qualified gate as proof of purchase.
+EVIDENCE_KIND = "caller_attested_string"
+ATTESTATION_BOUNDARY = (
+    "Not proof of purchase: this gate verifies caller-supplied attestation strings "
+    "against the declaration the skill carries. It reads no payment, order or "
+    "billing system. A purchase basis proves only that the caller declared a "
+    "purchase reference (and, when given, an amount and currency)."
+)
+
 
 class EntitlementError(Exception):
     """An entitlement that cannot be attested. Carries a stable autofail code."""
@@ -200,6 +212,9 @@ def attest(attestation: Any) -> Dict[str, Any]:
         "amount_minor": amount,
         "currency": currency,
         "billing": "none",
+        "evidence_kind": EVIDENCE_KIND,
+        "proves_purchase": False,
+        "attestation_boundary": ATTESTATION_BOUNDARY,
         "declaration": declaration_record(),
     }
 

@@ -65,6 +65,17 @@ export function validatePanel(
         fail('Consult mode requires exactly one seat.');
       }
       break;
+    case 'light':
+      if (seatIds.length !== SEAT_IDS.length) {
+        fail('Light mode keeps all nine seats.');
+      }
+      break;
+    case 'medium':
+    case 'heavy':
+      if (seatIds.length !== SEAT_IDS.length) {
+        fail(`${mode === 'medium' ? 'Medium' : 'Heavy'} mode keeps all nine seats.`);
+      }
+      break;
   }
 }
 
@@ -235,3 +246,4 @@ export function recommendQuickPanel(draft: IntakeDraft): SeatId[] {
   for (const seat of SEAT_IDS) push(seat);
   return chosen;
 }
+
