@@ -336,6 +336,33 @@ jobs:
           bash "$t"
           echo "✓ Skill 38 self-test and qc-backend-ready agree on every fixture"
 
+      - name: Skill 38 checklist readiness predicate pinned to the PBB-017 model rule
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The defect this locks (T-09 / B-24): the readiness predicate inside
+          # scripts/11-run-qc-checklist.sh demanded a non-empty `model` on a
+          # hooks.mappings entry, so a CORRECT fresh install — the writer never
+          # emits `model` — failed its own completion gate with `ERR:no-model`.
+          # PBB-017 decided `model` is OPTIONAL on a mapping (agentId is
+          # sufficient; the agent's own configured model runs it) and only a
+          # PRESENT-but-BLANK override is refused as `blank-model-override`.
+          # The fixture below extracts that predicate from the SHIPPED script
+          # (never a copy), so re-introducing `no-model` fails here instead of
+          # passing a correct install through a false failure. Pure bash +
+          # python3 + jq, no network, quoted TMP paths. STEP HARDNESS: an absent
+          # fixture SKIPs loudly with a reason (never a silent pass, never a
+          # spurious red from `bash <missing>`'s exit 127).
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tests/qc-checklist-backend-predicate.test.sh"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=Skill 38 checklist readiness predicate SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          bash "$t"
+          echo "✓ Skill 38 checklist readiness predicate matches the PBB-017 model rule on every case"
+
       - name: Skill 38 F52 JSONL data contract (v1.5.0)
         shell: bash
         run: |
