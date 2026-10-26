@@ -1,0 +1,132 @@
+{
+  "schema": "s75.unit-verdict/v1",
+  "unit": "S75-T39",
+  "acceptance_row": "S75-A39",
+  "round": 1,
+  "role": "independent_verifier",
+  "verdict": "PASS",
+  "row_fully_met": true,
+  "head_tested": "5b8f5749b511e9e5db702e099f4b77c1b093395e",
+  "landed_candidate": "2bc48ff43ff8d16d69f8495aeb00f3aca95e06a2",
+  "base_tested": "ecfe474cde4e62e7a4ab814818263bd1420c9607",
+  "repository": "/Users/blackceomacmini/openclaw-onboarding",
+  "verify_lane": "/Users/blackceomacmini/skill75-repair/lanes/S75-T39-verify-lane",
+  "independence": "Verifier did not write the unit. All checks below were re-run by the verifier from scratch in a fresh detached worktree at origin/s75/S75-T39-r1; the builder's claims were re-checked, never copied. The verifier-authored probe and mutant battery are the independent checker named in the row's evidence column.",
+  "row_text": "S75-A39 / S75-T39 | No global cleanup wave: each repo event starts its facet; class-specific ownership/consumer/approval proofs precede removal and compact receipts remain outside disposable paths. | `evidence/units/S75-T39/attempt-<verified-generation>.json`; exact candidate/base/dependencies and independent checker; repository required gates when applicable. | UNVERIFIED |",
+  "row_text_source": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/ACCEPTANCE-MATRIX.md line 47, read verbatim by the verifier",
+  "provenance": {
+    "origin_remote": "https://github.com/trevorotts1/openclaw-onboarding.git",
+    "fetch_before_checks": true,
+    "origin_main_tip_at_verify_time": "e27c5cfb972c52d7011c46c3142a99b6ad97b4bc",
+    "origin_main_tip_note": "main moved past 13f86c315 (the tip the builder verified against) between the builder's run and this verify run; the three owned files remain byte-identical on the NEW main tip as well (checked with git diff --stat 2bc48ff43 origin/main -- 75-drama-song-ad-factory/scripts/core/hygiene/, empty)",
+    "branch_tip": "5b8f5749b511e9e5db702e099f4b77c1b093395e",
+    "branch_tip_subject": "S75-T39: verify-only receipt for landed hygiene facet dispatch",
+    "ancestry_chain": "git merge-base --is-ancestor ecfe474 2bc48ff4 -> rc 0; git merge-base --is-ancestor 2bc48ff4 5b8f574 -> rc 0; git merge-base --is-ancestor 2bc48ff4 origin/main -> rc 0 (candidate landed in main); git rev-list --count ecfe474..2bc48ff4 -> 1",
+    "scope": "git show --name-status 2bc48ff43 lists exactly 3 files, all A: 75-drama-song-ad-factory/scripts/core/hygiene/__init__.py, facet_dispatch.py, test_facet_dispatch_s75_t39.py (536 insertions)",
+    "branch_delta_vs_main": "git diff --stat origin/main...s75/S75-T39-r1 -> 1 file changed, 86 insertions: evidence/units/S75-T39/attempt-1.json only (verify-only attempt, no source change)",
+    "receipt_on_origin_branch": "git cat-file -e origin/s75/S75-T39-r1:evidence/units/S75-T39/attempt-1.json -> present (rc 0)",
+    "owned_file_digests_recomputed_by_verifier": {
+      "__init__.py": "863d044e2cb2bfc0434b81f5152a0377fdd9c23748a02373bdcafa076aa391bf",
+      "facet_dispatch.py": "dccd9c7b0a073875b30316d2ffd3293c5da31eea1eaefb50450650a0272f4ac8",
+      "test_facet_dispatch_s75_t39.py": "b8e7858cdc35b2859e97a3718eb881656a0e7a1dac9d3cfaf5bb8550064fe92d"
+    },
+    "digests_match_prior_round1_verdict": true,
+    "isolation": "git grep facet_dispatch and core.hygiene outside 75-drama-song-ad-factory/scripts/core/hygiene/ -> zero hits (both greps empty). Leaf module; no importers, so it cannot influence any other module's test outcome."
+  },
+  "checks_run": [
+    {
+      "cmd": "cd 75-drama-song-ad-factory/scripts/core/hygiene && python3 -I test_facet_dispatch_s75_t39.py",
+      "exit": 0,
+      "result": "Ran 24 tests in 0.017s - OK (24/24)",
+      "verdict": "PASS",
+      "role": "owned test file, run by verifier in verify lane"
+    },
+    {
+      "cmd": "cd 75-drama-song-ad-factory/scripts/core && python3 -I -m unittest discover -s . -p 'test_*.py' -t .   (verify lane at 5b8f5749b)",
+      "exit": 1,
+      "result": "Ran 1412 tests in 145.869s - FAILED (failures=11, errors=12)",
+      "verdict": "RED_PRE_EXISTING",
+      "role": "whole-tree discovery at head"
+    },
+    {
+      "cmd": "cd /tmp/t39-verify-base/75-drama-song-ad-factory/scripts/core && python3 -I -m unittest discover -s . -p 'test_*.py' -t .   (verifier's own detached worktree at base ecfe474)",
+      "exit": 1,
+      "result": "Ran 1181 tests in 108.276s - FAILED (failures=11, errors=12)",
+      "verdict": "RED_PRE_EXISTING",
+      "role": "verifier's independent base control"
+    },
+    {
+      "cmd": "red-name set comparison of the two discover runs (verifier's own extractor over FAIL:/ERROR: lines)",
+      "result": "main red count 23, base red count 23, main-base empty, base-main empty, sets identical; zero red names contain hygiene or facet",
+      "verdict": "PASS",
+      "role": "proves the whole-tree red is pre-existing and T39-independent"
+    },
+    {
+      "cmd": "standalone runs of the 6 red modules on the verify lane: delivery_checklist/test_video_model_delivery_f16.py, kie_dispatch/test_production_process_gate.py, load_governor/test_load_governor.py, singing_detector/test_singing_detector.py, singing_detector/test_receipt_evidence_g5.py, singing_detector/test_singing_detector_amend_g2.py",
+      "exit": 0,
+      "result": "all six exit 0: delivery_checklist Ran 9 tests OK; kie_dispatch Ran 20 tests OK; load_governor and the three singing_detector scripts are not unittest-based and exit 0 silently",
+      "verdict": "PASS",
+      "role": "localises the whole-tree red to discovery-order/fixture interference, not module defects"
+    },
+    {
+      "cmd": "python3 -I /tmp/t39-verify-probe/probe_s75_t39_independent.py   (verifier-authored, 57 checks; NOT the builder's tests)",
+      "exit": 0,
+      "result": "total=57 pass=57 fail=0",
+      "verdict": "PASS",
+      "role": "independent checker for the row's four clauses: 15 sweep/multi-repo shapes (exact exception class per shape), repos-key and list/tuple/set repo refusals, assert_single_facet cross-repo and sweep-action refusals, ONB-action sibling-leak check, 4-alias single-facet checks, distinct/duplicate/cross-repo dispatch identity checks, alias and event_id validation, class-specific proof enforcement (missing/named, wrong-class set, blank/None/int proofs), protected classes, unknown class, no-roots, path traversal, prefix sibling, symlink escape, class-scoped receipt output, receipt-outside-disposable with rmtree survival, store-inside/equal disposable refusals, 4096-byte cap (over refused), unserialisable payload, missing repo/event_id, deterministic per-(repo,event_id) receipt_path"
+    },
+    {
+      "cmd": "mutation battery: 6 single-line mutants of facet_dispatch.py (M1 repos-key guard dropped, M2 assert_single_facet neutered, M3 sweep-token check dropped, M4 proof gate neutered, M5 protected-class gate dropped, M8 receipt size cap dropped), probe re-run against each",
+      "result": "all 6 caught, rc=1 each: M1 2 checks red, M2 1 red, M3 6 red, M4 7 red, M5 2 red, M8 1 red",
+      "verdict": "PASS",
+      "role": "proves the probe is discriminating: every guard that claims to catch a bad state reports a problem when that state is simulated. Note: with the probe's first draft (any-refusal matching) M3 survived, because dropping the sweep-token check still falls through to the unknown-alias refusal; the probe was tightened to assert exact exception classes per shape and M3 is now caught. That is a probe-quality fix, not a code change."
+    },
+    {
+      "cmd": "GITHUB_WORKSPACE=<verify lane> bash scripts/ci/fast-guards.d/rescue-rangers-rr015-gates.sh",
+      "exit": 0,
+      "result": "RESULT: 12 passed, 0 failed",
+      "verdict": "PASS",
+      "role": "repository required gate. The builder reported this not-run ('cd: null directory'); the script needs GITHUB_WORKSPACE supplied by the CI environment. With it set the gate is runnable and green. It covers rescue_admission/EWS/RR-battery files, not T39 code, so it is a tip-health gate, not a T39 gate."
+    }
+  ],
+  "clause_by_clause_judgement": {
+    "c1_no_global_cleanup_wave": {
+      "judgement": "MET",
+      "evidence": "Verifier probe: 15 multi-repo/sweep strings all refused with the exact class the module claims (comma/pipe/space joins and *, ' * ', ALL, EVERY, GLOBAL, ANY -> GlobalSweepRefused; + ; / & newline tab -> EventRefused unknown-alias, still refused, nothing dispatched). 'repos' key (list or string form) and list/tuple/set repo all raise GlobalSweepRefused. assert_single_facet refuses an action set spanning ONB+N999 and any sweep-token action. An ONB dispatch's action JSON contains no N999/CC/CONTROL name (leak check empty). dispatch_event accepts exactly one (repo, event_id) pair and never enumerates repositories. Mutants M1/M2/M3 each turned the probe red on exactly these checks."
+    },
+    "c2_each_repo_event_starts_its_facet": {
+      "judgement": "MET",
+      "evidence": "Verifier probe: each of the 4 aliases dispatched with a single event yields exactly one QUEUED non-duplicate action scoped to its own repo; distinct event_ids yield distinct action_ids; identical (repo, event_id, kind) re-delivery returns duplicate=true with the same action_id; the same event_id under N999 is NOT swallowed as a duplicate of the ONB one (duplicate=false, different action_id); lowercase, Cyrillic-lookalike and unknown aliases refused; empty event_id refused. Design note (matches prior round-1 observation, not a clause failure): the dedupe key is (repo, event_id, kind), so one event_id delivered under two kinds produces two facets."
+    },
+    "c3_class_specific_proofs_precede_removal": {
+      "judgement": "MET",
+      "evidence": "Verifier probe: REQUIRED_PROOFS differ per class and each is enforced (DELIVERED_BRANCH owes incorporation, TEMP_OUTPUT owes approval, TEMP_OUTPUT's proof set does not clear a DELIVERED_BRANCH - ProofMissing naming incorporation). Blank, empty, None and int-typed proofs refused. Protected classes (REQUIRED_RECEIPT, REQUIRED_DOCUMENT) raise ProtectedResource regardless of a complete proof set. Unknown class, missing roots, missing resource_id refused before anything is touched. Path escapes refused: '..' traversal, prefix sibling 'disposable-evil', and a symlink inside the disposable root pointing outside it (realpath resolution). An authorized removal returns a class-scoped proof receipt with disposition REMOVED; the module refuses before any mutation. Mutants M4/M5 caught."
+    },
+    "c4_compact_receipts_outside_disposable_paths": {
+      "judgement": "MET",
+      "evidence": "Verifier probe: a receipt lands under the store root and outside the disposable root and survives shutil.rmtree of the removed subtree (re-read back with resource_id and disposition intact). Store inside a disposable root and store equal to a disposable root are both refused. Oversized receipt (5000-byte payload) over the 4096-byte cap refused. Unserialisable payloads and missing/None/empty repo or event_id refused. receipt_path is deterministic per (repo, event_id) and differs across repos. Mutant M8 caught. The unit's own receipts also satisfy the clause literally: attempt-1.json and this verdict live under evidence/units/ in the lane worktree, not in any disposable path."
+    },
+    "evidence_column": {
+      "judgement": "MET",
+      "evidence": "evidence/units/S75-T39/attempt-1.json present in the lane worktree and on origin/s75/S75-T39-r1 (git cat-file -e rc 0), carrying exact candidate (2bc48ff43), base (ecfe474cd, cited from the ledger) and dependencies (empty, with the zero-importer proof). Independent checker: this verdict's verifier-authored 57-check probe plus the 6-mutant discriminating battery. Repository required gates: fast-guard rescue-rangers-rr015-gates.sh run with GITHUB_WORKSPACE set, 12 passed 0 failed. The verdict record itself is evidence/units/S75-T39/verdict-round1.json in the same lane."
+    }
+  },
+  "findings": [
+    "Non-blocking taxonomy note: exotic multi-repo joiners (+ ; / & newline tab) are refused as EventRefused (unknown alias) rather than GlobalSweepRefused. The refusal guarantee of c1 holds either way; only the exception subclass differs from the comma/pipe/space path.",
+    "Whole-tree discover is red at head (11 failures, 12 errors) - NOT a green surrounding suite. Proven pre-existing: identical 23-name red set at base ecfe474 with no T39 code in the tree, empty set difference both ways, and every red module green standalone. Zero red names mention hygiene or facet.",
+    "The builder reported the fast-guard not-run ('cd: null directory'); the verifier resolved it - the script needs GITHUB_WORKSPACE and is green (12 passed, 0 failed) when supplied.",
+    "origin/main advanced from 13f86c315 to e27c5cfb97 between the builder's run and this verify run. The three owned files are byte-identical on the new tip too, and the branch's only delta vs main is this evidence pair, so the unit is unaffected; the branch tip does not contain the newer main commits (normal for branch-only work).",
+    "No live caller of dispatch_event exists in the repository (zero importers). The module is landed and tested but not wired into any runtime path - carried residual, matches the builder's not_claimed."
+  ],
+  "not_verified": [
+    "The prior round-1 verifier's 77-check probe and its full mutation battery were not re-run: /Users/blackceomacmini/loop-control/s75/t39verify no longer exists. The verifier substituted a fresh 57-check probe and a 6-mutant battery; coverage overlaps the four clauses but is not identical to the lost instrument.",
+    "Runtime integration of dispatch_event (no callers exist to exercise; static zero-importer grep is the strongest available proof).",
+    "Whole-tree suite was run at branch tip 5b8f5749b (main@13f86c315 + receipt) and at base ecfe474cd only; it was not re-run at candidate 2bc48ff43 in isolation (irrelevant: the three owned files are byte-identical across 2bc48ff43, branch tip and current origin/main, and the receipt commit touches no source).",
+    "Single interpreter only (python3.14.7 on Darwin 25.3.0); no other Python versions or platforms.",
+    "Other units' state, the loop-control ledger, and loop-control state files were not read for judgement and not written (single-writer rule). No prior lane, worktree, branch or receipt was deleted or modified."
+  ],
+  "temp_cleanup": "verifier's base worktree /tmp/t39-verify-base, probe /tmp/t39-verify-probe, mutants /tmp/t39-mutants, and run logs /tmp/t39-verify-*-discover.txt are verifier-created scratch; the base worktree registration is removed after this run",
+  "authored_at": "2026-10-26",
+  "verifier_lane": "/Users/blackceomacmini/skill75-repair/lanes/S75-T39-verify-lane",
+  "branch": "s75/S75-T39-r1"
+}
