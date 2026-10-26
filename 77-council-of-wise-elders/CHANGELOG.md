@@ -1,5 +1,18 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.62: automatic mode selection, queue and supervisor repairs, provider parallelism (AUTO-MODE-1062 + REPAIR-1063)
+
+In plain English: the council now picks light, medium or heavy from the question itself when the client does not name a mode. Every mode still seats all nine elders; the mode only changes the rounds and how many advisors work at once. Three repairs land with it: the queue producer can readmit a job and clears nullable receipt fields, the hybrid supervisor stops misreporting a finished run, and the provider limits read a client's Ollama plan however it is written.
+
+- Auto mode (AUTO-MODE-1062): `selectMode(question, explicitMode)` in `runtime/src/flow/mode-select.ts` is the single selector. An explicit client mode wins verbatim (source `client`); otherwise the question's complexity decides deterministically (source `auto`) from fixed weights, caps and thresholds: score 0-4 light, 5-13 medium, 14+ heavy. No randomness, no clock, no model call.
+- The convene flow resolves the mode through that one selector before deliberation; the chosen mode, its source and its reason travel on the session record and the convene result. The import is the real module path `./mode-select.js`; the guessed `contracts/mode-select.js` path never shipped.
+- What a mode does is unchanged and is not reinterpreted by the selector: light 2 rounds at most 3 in parallel (waves of 3), cap 50; medium up to 4 rounds, cap 50; heavy up to 10 rounds, cap 100; consensus still 7 of 9 seats.
+- Docsweep (FIX-MODES-DOCS follow-up): `INSTRUCTIONS.md`, `references/protocol.md` and `references/model-routing.md` now state one policy — every mode seats nine; light is rounds and concurrency only. The chamber "How it works" caption no longer says a light question uses three advisors. No `light = 3 seats` wording remains in the live docs.
+- New references: `references/mode-selection.md` (how auto mode decides) and `references/provider-parallelism.md` (3 / 10 / unlimited caps by route).
+- Queue producer repair (REPAIR-1063): readmit works, nullable receipt fields are cleared, and dispatch labels are distinguished. The hybrid supervisor repair stops the misreporting path. Tests cover both.
+- Provider parallel limits (PROVIDER-PARALLEL-1063): one slug normalisation (`ollama`, `ollama-*`, `agnes`, `deepseek-direct`, everything else uncapped) and a price-tier plan parse, so `'20'`, `20`, `'$20/mo'` and `'100+'` all resolve. An unknown or between-tier plan still refuses with `OLLAMA_PLAN_REQUIRED` rather than guessing. The mode's wave width bounds the panel on every route.
+- Config default corrected: `config/defaults.json` light is 9 seats and 18 planned requests.
+
 ## v1.0.61: every mode seats the whole council; the mode only changes the rounds and the parallelism (FIX-MODES-DOCS)
 
 In plain English: light mode was described as "3 seats". That was wrong. Light mode still uses all nine elders — it just runs them in waves of three and gives them two rounds. Every mode seats the entire council. The mode controls how many rounds they run and how many provider calls may be in flight at once, and nothing else. All nine seats appear in a light session.
