@@ -1,0 +1,221 @@
+{
+  "unit": "S75-T32",
+  "acceptance_row": "S75-A32",
+  "attempt": "candidate-3",
+  "mode": "independent-check",
+  "role": "QC_AND_FIXER lane, route opus-chain. Independent of the author of the code under test.",
+  "written_at": "2026-10-26T16:27:10Z",
+  "written_at_mode": "UTC clock at write time; the same agent started at 2026-10-26T12:10:38-0400",
+  "written_by": "s75-t32-qc-opus-chain (workflow QC-and-fixer lane)",
+  "unit_owner_note": "Row acceptance stays with the owner (Trevor). Nothing here accepts the unit, marks it merged, or writes the control plane.",
+  "arbiter_record": {
+    "path": "<PATH>/loop-control/s75/qc/S75-T32-ARBITER.md",
+    "sha256_present": false,
+    "size_bytes": 18252,
+    "outcome": "REJECT_AND_NARROW",
+    "narrowed_clause_2_quoted_verbatim": "\"each facet releases its own repository\" must be narrowed to \"each facet binds to a named repository root with provenance - remote, revision and digest - and refuses the release claim when identity is unproven\"",
+    "evidence_artifact_named_by_row": "evidence/units/S75-T32/attempt-<verified-generation>.json; exact candidate/base/dependencies and independent checker; repository required gates when applicable."
+  },
+  "predecessor": {
+    "attempt-candidate-1.json": {
+      "declared_head": "83f878f3c8235456d0b0a906d881f17215948671",
+      "independent_checker": "PENDING"
+    },
+    "attempt-candidate-2.json": {
+      "declared_head": "682757c9197d9905aecf25b737ff4afcf26e12ff",
+      "independent_checker": "PENDING"
+    },
+    "verified": "neither declared head is reachable from this branch: 'git merge-base --is-ancestor <sha> origin/s75/S75-T32-r7' returned non-zero for both (NOT_IN_R7). The prior records are time-scoped to the pre-rebase branch and are NOT rewritten by this attempt."
+  },
+  "candidate": {
+    "branch": "s75/S75-T32-r7",
+    "commit": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+    "repository": "trevorotts1/openclaw-onboarding",
+    "head_verified_at_execution": true,
+    "worktree_clean_excluding_receipts": true,
+    "filing_note": "fe25719cc is the head every measurement below ran at. The commit that files this receipt is its child and changes only evidence files."
+  },
+  "base": {
+    "ref": "origin/main",
+    "commit": "0c93f458770c222defde6154503ac4d969048dd3",
+    "note": "correct merge-base of origin/main and branch s75/S75-T32-r7 AFTER the rebase: 'git merge-base origin/main origin/s75/S75-T32-r7' = 0c93f458770c222defde6154503ac4d969048dd3. attempt-candidate-2.json's base 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 was the merge-base before the rebase and is still an ancestor of this head ('git merge-base --is-ancestor 9488ccbc... origin/s75/S75-T32-r7' exit 0); its statement is time-scoped and is left unedited."
+  },
+  "rebase_lineage": {
+    "pre_rebase_branch": "s75/S75-T32-r4",
+    "pre_rebase_tip": "05ddd5018e596931a9bce100718b88bc8b83fa50",
+    "pre_rebase_tip_unchanged": true,
+    "commits_replayed": 13,
+    "patches_identical": 13,
+    "proof": "for each pre-rebase commit and its rebased counterpart, 'git show <c> --format= | git patch-id --stable' produced the SAME id (13 of 13 PATCH_SAME). No commit was rebuilt, reordered or squashed.",
+    "mapping": {
+      "a3d596394": "eee140c41",
+      "81c6d51b9": "cd4867b55",
+      "b94f31020": "71d8288ff",
+      "fbd4059b2": "896c5e152",
+      "287cfd7a6": "0f3c14a8d",
+      "8fd41c814": "732044714",
+      "e2d5b600b": "6d27b9b7e",
+      "c448e9aec": "fe5fbb0f0",
+      "83f878f3c": "70ef08450",
+      "f106c1d59": "73237b080",
+      "682757c91": "09528eaee",
+      "c9c044426": "44b7f4819",
+      "05ddd5018": "3313824f8"
+    },
+    "extra_commit": "fe25719cc redact operator home path in S75-T32 evidence records (evidence-only, 4 files, 80 insertions / 80 deletions)"
+  },
+  "defects_found_and_fixed": [
+    {
+      "id": "T32-QC-D1",
+      "severity": "blocking",
+      "finding": "the committed acceptance receipts were refused by the branch's OWN validator. At the branch head, receipt.validate() on evidence/acceptance/onboarding.json and evidence/acceptance/999.json raised ReceiptError: 'cells must list exactly 7 cells (7 narrowed behaviours x 2 flavours is 14 across both receipts)'. Both committed files were the round-1 vintage 18-cell (9 per flavour) receipts, generated at 2026-10-25T13:13:48Z at candidate fbd4059b23771f290bb72052549e2693dd3f0a46 and never regenerated after the row was narrowed in r5.",
+      "how_found": "python3 -I with sys.path to tests/story_first_acceptance; import receipt; receipt.validate(json.load(open(...)))",
+      "fix": "regenerated both receipts with the branch's own instrument at the branch head, from a worktree outside the operator home (/tmp/s75t32-qc-r7) so the recorded skill_root is guard-clean without hand redaction.",
+      "artifacts": {
+        "evidence/acceptance/onboarding.json": {
+          "sha256": "0b3fba765d2a5e86a8e7f5f5fdd2713b6d081217ea3cf4088ca0b5527745058f",
+          "execution": "PASS",
+          "acceptance": "PASS",
+          "cells": 7,
+          "checker_distinct_from_author": true
+        },
+        "evidence/acceptance/999.json": {
+          "sha256": "38b1245f87bf4e5283f2bad99a1432347c261adf035e84c3200a480677d2ace5",
+          "execution": "UNAVAILABLE",
+          "acceptance": "UNAVAILABLE",
+          "cells": 0
+        }
+      },
+      "post_fix": "both files validate: receipt.validate -> VALID for both."
+    },
+    {
+      "id": "T32-QC-D2",
+      "severity": "blocking",
+      "finding": "no evidence artifact was bound to the branch head. The furthest-generation receipt named 682757c91, and both prior attempt receipts named pre-rebase commits that are not ancestors of fe25719cc; the head commit 3313824f8 (which changed the demonstration instrument and added 4 tests) carried no receipt at all.",
+      "fix": "this receipt records the verified generation at fe25719cc, with the rebase lineage mapping so each prior measurement remains traceable.",
+      "artifacts": {
+        "evidence/units/S75-T32/attempt-candidate-3.json": "this file"
+      }
+    }
+  ],
+  "measurements": [
+    {
+      "name": "branch position",
+      "command": "git rev-list --left-right --count origin/main...origin/s75/S75-T32-r7",
+      "output": "0\t14",
+      "meaning": "0 behind, 14 ahead of origin/main 0c93f458",
+      "exit_code": 0
+    },
+    {
+      "name": "pre-rebase branch was unmergeable",
+      "command": "git rev-list --left-right --count origin/main...origin/s75/S75-T32-r4",
+      "output": "465\t13",
+      "meaning": "465 behind before the rebase; the rebase is the mergeability fix",
+      "exit_code": 0
+    },
+    {
+      "name": "acceptance suite",
+      "command": "python3 -m pytest -q  (cwd tests/story_first_acceptance)",
+      "output": "37 passed in 12.23s",
+      "exit_code": 0,
+      "note": "run twice: 8.68s before the receipt replacement, 12.23s after"
+    },
+    {
+      "name": "catalog guard suites",
+      "command": "python3 -m pytest -q test_catalog_s75t18.py test_recipes_s75_t19.py  (cwd 75-drama-song-ad-factory/scripts/core/music_styles)",
+      "output": "17 passed in 0.06s",
+      "exit_code": 0
+    },
+    {
+      "name": "S75-T18 owner suite",
+      "command": "python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_catalog_s75t18.py",
+      "output": "ALL PASS (389 checks)",
+      "exit_code": 0
+    },
+    {
+      "name": "instrument selfcheck",
+      "command": "python3 -I tests/story_first_acceptance/cell_matrix.py --selfcheck",
+      "output": "cell_matrix selfcheck ok: 7 behaviours, instruments discriminate, planted='s75t32-unproven-jxhwo37u' refused, repo='trevorotts1/openclaw-onboarding' proven",
+      "exit_code": 0
+    },
+    {
+      "name": "demonstration of every cell's failure side",
+      "command": "python3 demonstrate_checks.py --flavors onboarding  (cwd tests/story_first_acceptance)",
+      "output": "7 cells, 7 with a demonstrated failure side  (all rows OBSERVED_PASS, control_red=True; style18 shows observed=[False, False, False] for the three named breakages)",
+      "exit_code": 0
+    },
+    {
+      "name": "onboarding facet, independent run at the head",
+      "command": "python3 -I tests/story_first_acceptance/run_acceptance.py --flavors onboarding --repo-root . --onb-skill-root ./75-drama-song-ad-factory --candidate fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 --author <author> --checker <checker>  (cwd /tmp/s75t32-qc-r7)",
+      "output": "onboarding REVISION GATE ORIGIN_REVISION revision=fe25719cc... ; onboarding PASS facets 10 green / 0 red, controls 10 red / 0 green; cells 7 executed (7 pass / 0 fail / 0 not-applicable)",
+      "exit_code": 0
+    },
+    {
+      "name": "provenance of the onboarding root (narrowed clause 2)",
+      "output": "repository_identity.identity_proven = true; remote = trevorotts1/openclaw-onboarding; remote_url = https://github.com/trevorotts1/openclaw-onboarding.git; revision = fe25719cc7617f362e5b46e9a7cb8dc19fc3e886; revision_source = git worktree HEAD; digest = 82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881 over 'git ls-tree -r fe25719cc... -- 75-drama-song-ad-factory'; refusals = []",
+      "meaning": "all three facts the narrowed clause names are read from the root itself, not minted from the flavour name"
+    },
+    {
+      "name": "999 facet at the head",
+      "command": "python3 -I tests/story_first_acceptance/run_acceptance.py --flavors 999 --repo-root . --candidate fe25719cc...  (cwd /tmp/s75t32-qc-r7)",
+      "output": "999 REVISION GATE REFUSED - no directory at None, so no repository identity can be read; no candidate skill root resolved; 999 UNAVAILABLE facets 0 green / 0 red; cells 0 executed",
+      "exit_code": 0,
+      "meaning": "the unprovisioned pin is still the reason the second facet cannot execute; UNAVAILABLE is reported and never converted to a pass"
+    },
+    {
+      "name": "CRITICAL-1 guard, branch head",
+      "command": "bash scripts/qc-assert-no-client-names.sh --repo-root .",
+      "output": "exit 1; blocking hits only in 19 files this unit does not own; zero hits under evidence/acceptance or tests/story_first_acceptance",
+      "exit_code": 1,
+      "control": "all 19 flagged files are byte-identical between origin/main and this branch ('git rev-parse origin/main:<path>' == 'git rev-parse origin/s75/S75-T32-r7:<path>' for every one), so the exit 1 is pre-existing on main and this branch adds no hit"
+    },
+    {
+      "name": "redaction integrity (builder's change, re-verified)",
+      "command": "per-file occurrence count of the banned operator path at the branch head",
+      "output": "evidence/acceptance/999.json 0; evidence/acceptance/onboarding.json 0; evidence/units/S75-T32/attempt-candidate-1.json 0; evidence/units/S75-T32/attempt-candidate-2.json 0",
+      "meaning": "no banned path remains in this unit's committed evidence; replaced receipts also carry 0"
+    }
+  ],
+  "clause_status_at_this_head": {
+    "clause_1_seven_behaviours_per_facet": "MET for the onboarding facet (7 cells executed, 7 pass, each with a known-good control and a demonstrated failure side). UNMEASURED for the 999 facet (pin unprovisioned; 0 cells).",
+    "clause_2_provenance_remote_revision_digest_and_refusal": "MET for the onboarding facet (identity_proven true with remote, revision and digest; the instrument refuses identity when any cannot be read, and the round-5 gate experiments a-e record refusal on dirty/unpinned/foreign roots). UNMEASURED for the 999 facet.",
+    "row_level": "NOT fully met at this head: one of the two facets cannot execute. The row can only be met as narrowed and only with the 999 pin provisioned, or by the owner's D-11 narrowed-shape decision."
+  },
+  "dependencies": {
+    "python": "3.14.7",
+    "network": "none used by the measurements (git reads are local)",
+    "model_calls": "none",
+    "spend": "none",
+    "third_party": "none",
+    "cross_unit": {
+      "S75-T17": "owns Notion migration, now S75-A17; not exercised here",
+      "S75-T28": "owns paid compatibility, now S75-A28; not exercised here",
+      "S75-T18": "owns the eighteen-style catalog; this unit's validator change is the arbiter-mandated repair and its own suite passes (389 checks)",
+      "S75-T30": "owns the 999 package assembly and the eighteen-style catalog delivery"
+    }
+  },
+  "gates": {
+    "repository_required_gates": "NOT_APPLICABLE_TO_THIS_BRANCH_SCOPE",
+    "reason": "ruleset 20330619 'main-required-checks' scopes refs/heads/main. No PR was opened for this branch, so no required context was requested and none is claimed. 0 of 8 required contexts were observed on the head.",
+    "claim": "no gate was claimed green"
+  },
+  "independent_checker": {
+    "checker": "s75-t32-qc-opus-chain",
+    "checker_model": "opus-chain",
+    "checker_role": "workflow QC-and-fixer lane; verified independently of the builder and of the authors of the code under test",
+    "how_independence_holds": "the code under test (catalog.py validator, cell_matrix.py instrument, test_cross_flavor_acceptance.py) was authored in rounds r1-r6 by other lanes; the builder's only commits in this branch after them were the rebase replay and the evidence redaction fe25719cc. This checker's own writes are limited to the two regenerated evidence/acceptance receipts and this file.",
+    "receipt": "evidence/acceptance/onboarding.json (acceptance.verdict PASS, checker_distinct_from_author true) and evidence/acceptance/999.json (acceptance.verdict UNAVAILABLE)",
+    "not_the_author_of_the_code": true
+  },
+  "could_not_determine": [
+    "The 999 facet's seven narrowed cells: the pin at tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49 is not provisioned in-tree, so no candidate root resolves and 0 cells execute. Whether they would pass at that revision is unmeasured.",
+    "Whether the batch integrator branch accepts an r7-shaped ref: no merge was attempted in this lane (scope forbids it).",
+    "Whether any of the 8 required CI contexts reports on this branch: no PR was opened, so none was requested.",
+    "Whether the owner's D-11 narrowed-shape decision admits the narrowed row as the acceptance bar."
+  ],
+  "not_claimed": [
+    "Row acceptance, unit acceptance, a merge, a push to main, or any control-plane write.",
+    "A two-facet PASS: one facet is UNAVAILABLE.",
+    "That the repo-wide CRITICAL-1 guard passes: it exits 1 on 19 pre-existing files outside this unit."
+  ]
+}

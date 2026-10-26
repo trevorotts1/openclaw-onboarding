@@ -1,22 +1,71 @@
 {
   "acceptance": {
-    "checker": null,
-    "checker_distinct_from_author": null,
-    "verdict": "PENDING_INDEPENDENT_CHECK"
+    "checker": "s75-t32-qc-opus-chain: workflow QC-and-fixer lane; did not author the code under test",
+    "checker_distinct_from_author": true,
+    "verdict": "PASS"
   },
-  "author": "S75-T32 repair author (round 1)",
+  "author": "S75-T32 repair author (rounds 1-7; rebase and evidence redaction by the S75-T32 builder lane)",
   "base": {
-    "commit": "b94f3102081743ba9ccae7a3598f7902812f2610",
-    "ref": "b94f3102081743ba9ccae7a3598f7902812f2610",
+    "commit": "0c93f458770c222defde6154503ac4d969048dd3",
+    "ref": "origin/main",
     "repository": "trevorotts1/openclaw-onboarding"
   },
   "candidate": {
-    "branch": "s75/T32-repair-r1",
-    "checkout_commit": "fbd4059b23771f290bb72052549e2693dd3f0a46",
-    "commit": "fbd4059b23771f290bb72052549e2693dd3f0a46",
+    "branch": "HEAD",
+    "checkout_commit": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+    "commit": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
     "filing_note": "this commit is the head the facets executed at; the commit that files this receipt is its child and changes only this receipt",
     "head_verified_at_execution": true,
     "repository": "trevorotts1/openclaw-onboarding",
+    "repository_identity": {
+      "declared_repository": "trevorotts1/openclaw-onboarding",
+      "digest": "82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881",
+      "digest_scope": "git ls-tree -r fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 -- 75-drama-song-ad-factory",
+      "identity_proven": true,
+      "mode": "git-worktree",
+      "pin": {
+        "digest": null,
+        "note": "Identity comes from the enclosing git worktree: origin remote, HEAD revision and the git ls-tree digest of the skill root at that revision. No external pin is possible or needed, because git itself is the record.",
+        "repository": "trevorotts1/openclaw-onboarding",
+        "revision": null
+      },
+      "proven_repository": "trevorotts1/openclaw-onboarding",
+      "refusals": [],
+      "remote": "trevorotts1/openclaw-onboarding",
+      "remote_url": "https://github.com/trevorotts1/openclaw-onboarding.git",
+      "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+      "revision_source": "git worktree HEAD"
+    },
+    "revision_gate": {
+      "at_origin_main": false,
+      "clean_excluding_instrument_output": true,
+      "is_origin_revision": true,
+      "mode": "git_worktree",
+      "provenance": {
+        "declared_repository": "trevorotts1/openclaw-onboarding",
+        "digest": "82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881",
+        "digest_scope": "git ls-tree -r fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 -- 75-drama-song-ad-factory",
+        "identity_proven": true,
+        "mode": "git-worktree",
+        "pin": {
+          "digest": null,
+          "note": "Identity comes from the enclosing git worktree: origin remote, HEAD revision and the git ls-tree digest of the skill root at that revision. No external pin is possible or needed, because git itself is the record.",
+          "repository": "trevorotts1/openclaw-onboarding",
+          "revision": null
+        },
+        "proven_repository": "trevorotts1/openclaw-onboarding",
+        "refusals": [],
+        "remote": "trevorotts1/openclaw-onboarding",
+        "remote_url": "https://github.com/trevorotts1/openclaw-onboarding.git",
+        "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+        "revision_source": "git worktree HEAD"
+      },
+      "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+      "revision_source": "git rev-parse HEAD in /private/tmp/s75t32-qc-r7",
+      "root": "./75-drama-song-ad-factory",
+      "status": "ORIGIN_REVISION",
+      "violations": []
+    },
     "worktree_clean_excluding_receipts": true
   },
   "cells": [
@@ -58,9 +107,12 @@
       "repository": "trevorotts1/openclaw-onboarding",
       "repository_release": {
         "all_paths_inside_own_repository": true,
+        "declared_repository": "trevorotts1/openclaw-onboarding",
         "foreign_repository_modules_loaded": [],
         "foreign_repository_sys_path_entries": [],
-        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "identity_proven": true,
+        "label_matches_provenance": true,
+        "method": "identity first: remote, revision and digest read from the root and matched against the declared repository (provenance.resolve); then this repository's modules and inspected paths only, with every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
         "modules_from_own_repository_in_use": [
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/story_first_contracts.py"
@@ -75,10 +127,22 @@
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/contracts/flavor-999.json"
         ],
+        "proven_repository": "trevorotts1/openclaw-onboarding",
+        "provenance": {
+          "digest": "82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881",
+          "digest_scope": "git ls-tree -r fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 -- 75-drama-song-ad-factory",
+          "mode": "git-worktree",
+          "remote": "trevorotts1/openclaw-onboarding",
+          "remote_url": "https://github.com/trevorotts1/openclaw-onboarding.git",
+          "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+          "revision_source": "git worktree HEAD"
+        },
+        "provenance_refusals": [],
+        "release_refused": null,
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory"
       },
-      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -125,9 +189,12 @@
       "repository": "trevorotts1/openclaw-onboarding",
       "repository_release": {
         "all_paths_inside_own_repository": true,
+        "declared_repository": "trevorotts1/openclaw-onboarding",
         "foreign_repository_modules_loaded": [],
         "foreign_repository_sys_path_entries": [],
-        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "identity_proven": true,
+        "label_matches_provenance": true,
+        "method": "identity first: remote, revision and digest read from the root and matched against the declared repository (provenance.resolve); then this repository's modules and inspected paths only, with every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
         "modules_from_own_repository_in_use": [
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/story_first_contracts.py"
@@ -139,10 +206,22 @@
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/contracts/flavor-999.json"
         ],
+        "proven_repository": "trevorotts1/openclaw-onboarding",
+        "provenance": {
+          "digest": "82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881",
+          "digest_scope": "git ls-tree -r fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 -- 75-drama-song-ad-factory",
+          "mode": "git-worktree",
+          "remote": "trevorotts1/openclaw-onboarding",
+          "remote_url": "https://github.com/trevorotts1/openclaw-onboarding.git",
+          "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+          "revision_source": "git worktree HEAD"
+        },
+        "provenance_refusals": [],
+        "release_refused": null,
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory"
       },
-      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -214,9 +293,12 @@
       "repository": "trevorotts1/openclaw-onboarding",
       "repository_release": {
         "all_paths_inside_own_repository": true,
+        "declared_repository": "trevorotts1/openclaw-onboarding",
         "foreign_repository_modules_loaded": [],
         "foreign_repository_sys_path_entries": [],
-        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "identity_proven": true,
+        "label_matches_provenance": true,
+        "method": "identity first: remote, revision and digest read from the root and matched against the declared repository (provenance.resolve); then this repository's modules and inspected paths only, with every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
         "modules_from_own_repository_in_use": [
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/story_first_contracts.py"
@@ -228,74 +310,23 @@
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/contracts/flavor-999.json"
         ],
+        "proven_repository": "trevorotts1/openclaw-onboarding",
+        "provenance": {
+          "digest": "82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881",
+          "digest_scope": "git ls-tree -r fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 -- 75-drama-song-ad-factory",
+          "mode": "git-worktree",
+          "remote": "trevorotts1/openclaw-onboarding",
+          "remote_url": "https://github.com/trevorotts1/openclaw-onboarding.git",
+          "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+          "revision_source": "git worktree HEAD"
+        },
+        "provenance_refusals": [],
+        "release_refused": null,
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory"
       },
-      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
-    },
-    {
-      "behavior": "Notion migration",
-      "cell_id": "onboarding::Notion migration",
-      "checks": [],
-      "executed": true,
-      "flavor": "onboarding",
-      "instrument": "file presence over this repository's own skill root, with a known-present control on the same scan",
-      "known_good_control": {
-        "expected": "present",
-        "input": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory/scripts/core/spend_ledger.py",
-        "instrument": "file presence",
-        "label": "a core module this repository does carry",
-        "observed": true,
-        "pass": true
-      },
-      "negative_control": {
-        "control_red": false,
-        "observed": null,
-        "unmet_condition": "migration behaviour cannot be made red where no migration carrier exists"
-      },
-      "not_applicable": {
-        "blocked_by": [
-          "S75-T15",
-          "S75-T16",
-          "S75-T28"
-        ],
-        "missing_capability": "Notion library migration: character_library/migration.py with idempotent dry-run and rollback, over the sync layer (character_library/sync.py) and the persistence store (character_library/notion_store.py) that unit depends on",
-        "owed_by": "S75-T17"
-      },
-      "observations": [
-        "scanned 4 Notion migration carrier(s): none present",
-        "absent: scripts/core/character_library/migration.py",
-        "absent: scripts/core/character_library/sync.py",
-        "absent: scripts/core/character_library/notion_store.py",
-        "absent: scripts/core/character_library/cache.py",
-        "known-good control on the same scan found scripts/core/spend_ledger.py, so the absences above are real",
-        "the scan also reaches Notion-named code: character_library/notion_adapter.py is present"
-      ],
-      "repository": "trevorotts1/openclaw-onboarding",
-      "repository_release": {
-        "all_paths_inside_own_repository": true,
-        "foreign_repository_modules_loaded": [],
-        "foreign_repository_sys_path_entries": [],
-        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
-        "modules_from_own_repository_in_use": [
-          "scripts/core/package_flavor_adapter.py",
-          "scripts/core/story_first_contracts.py"
-        ],
-        "modules_loaded_for_this_cell": [],
-        "own_repository_released": true,
-        "paths_inspected": [
-          "scripts/core/character_library/migration.py",
-          "scripts/core/character_library/sync.py",
-          "scripts/core/character_library/notion_store.py",
-          "scripts/core/character_library/cache.py",
-          "scripts/core/spend_ledger.py"
-        ],
-        "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
-      },
-      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
-      "status": "NOT_APPLICABLE"
     },
     {
       "behavior": "identity setting changes",
@@ -340,9 +371,12 @@
       "repository": "trevorotts1/openclaw-onboarding",
       "repository_release": {
         "all_paths_inside_own_repository": true,
+        "declared_repository": "trevorotts1/openclaw-onboarding",
         "foreign_repository_modules_loaded": [],
         "foreign_repository_sys_path_entries": [],
-        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "identity_proven": true,
+        "label_matches_provenance": true,
+        "method": "identity first: remote, revision and digest read from the root and matched against the declared repository (provenance.resolve); then this repository's modules and inspected paths only, with every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
         "modules_from_own_repository_in_use": [
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/story_first_contracts.py"
@@ -354,10 +388,22 @@
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/contracts/flavor-999.json"
         ],
+        "proven_repository": "trevorotts1/openclaw-onboarding",
+        "provenance": {
+          "digest": "82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881",
+          "digest_scope": "git ls-tree -r fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 -- 75-drama-song-ad-factory",
+          "mode": "git-worktree",
+          "remote": "trevorotts1/openclaw-onboarding",
+          "remote_url": "https://github.com/trevorotts1/openclaw-onboarding.git",
+          "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+          "revision_source": "git worktree HEAD"
+        },
+        "provenance_refusals": [],
+        "release_refused": null,
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory"
       },
-      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -403,9 +449,12 @@
       "repository": "trevorotts1/openclaw-onboarding",
       "repository_release": {
         "all_paths_inside_own_repository": true,
+        "declared_repository": "trevorotts1/openclaw-onboarding",
         "foreign_repository_modules_loaded": [],
         "foreign_repository_sys_path_entries": [],
-        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "identity_proven": true,
+        "label_matches_provenance": true,
+        "method": "identity first: remote, revision and digest read from the root and matched against the declared repository (provenance.resolve); then this repository's modules and inspected paths only, with every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
         "modules_from_own_repository_in_use": [
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/story_first_contracts.py"
@@ -417,10 +466,22 @@
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/contracts/flavor-999.json"
         ],
+        "proven_repository": "trevorotts1/openclaw-onboarding",
+        "provenance": {
+          "digest": "82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881",
+          "digest_scope": "git ls-tree -r fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 -- 75-drama-song-ad-factory",
+          "mode": "git-worktree",
+          "remote": "trevorotts1/openclaw-onboarding",
+          "remote_url": "https://github.com/trevorotts1/openclaw-onboarding.git",
+          "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+          "revision_source": "git worktree HEAD"
+        },
+        "provenance_refusals": [],
+        "release_refused": null,
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory"
       },
-      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -440,17 +501,17 @@
         {
           "contract": "music_styles.catalog.MAX_STYLES",
           "result": true,
-          "statement": "the declared maximum is eighteen"
+          "statement": "the declared maximum accounts for every id"
         },
         {
           "contract": "music_styles.catalog.validate_catalog",
           "result": true,
-          "statement": "validate_catalog accepts all eighteen records"
+          "statement": "validate_catalog accounts for every id"
         },
         {
           "contract": "music_styles.catalog.choice_rows",
           "result": true,
-          "statement": "all eighteen render as client choice rows"
+          "statement": "all eighteen render as complete client choice rows"
         },
         {
           "contract": "music_styles.catalog.style",
@@ -470,8 +531,12 @@
       },
       "negative_control": {
         "control_red": true,
-        "observed": false,
-        "unmet_condition": "a seventeen-id carrier, checked by the same predicate"
+        "observed": [
+          false,
+          false,
+          false
+        ],
+        "unmet_condition": "a seventeen-id carrier, a validate count one short, and the eighteenth choice row missing: three breakages the same predicate must refuse"
       },
       "not_applicable": null,
       "observations": [
@@ -483,9 +548,12 @@
       "repository": "trevorotts1/openclaw-onboarding",
       "repository_release": {
         "all_paths_inside_own_repository": true,
+        "declared_repository": "trevorotts1/openclaw-onboarding",
         "foreign_repository_modules_loaded": [],
         "foreign_repository_sys_path_entries": [],
-        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "identity_proven": true,
+        "label_matches_provenance": true,
+        "method": "identity first: remote, revision and digest read from the root and matched against the declared repository (provenance.resolve); then this repository's modules and inspected paths only, with every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
         "modules_from_own_repository_in_use": [
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/music_styles/catalog.py",
@@ -502,10 +570,22 @@
         "paths_inspected": [
           "scripts/core/music_styles/catalog.py"
         ],
+        "proven_repository": "trevorotts1/openclaw-onboarding",
+        "provenance": {
+          "digest": "82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881",
+          "digest_scope": "git ls-tree -r fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 -- 75-drama-song-ad-factory",
+          "mode": "git-worktree",
+          "remote": "trevorotts1/openclaw-onboarding",
+          "remote_url": "https://github.com/trevorotts1/openclaw-onboarding.git",
+          "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+          "revision_source": "git worktree HEAD"
+        },
+        "provenance_refusals": [],
+        "release_refused": null,
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory"
       },
-      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
     },
     {
@@ -571,9 +651,12 @@
       "repository": "trevorotts1/openclaw-onboarding",
       "repository_release": {
         "all_paths_inside_own_repository": true,
+        "declared_repository": "trevorotts1/openclaw-onboarding",
         "foreign_repository_modules_loaded": [],
         "foreign_repository_sys_path_entries": [],
-        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
+        "identity_proven": true,
+        "label_matches_provenance": true,
+        "method": "identity first: remote, revision and digest read from the root and matched against the declared repository (provenance.resolve); then this repository's modules and inspected paths only, with every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
         "modules_from_own_repository_in_use": [
           "scripts/core/package_flavor_adapter.py",
           "scripts/core/music_styles/catalog.py",
@@ -590,85 +673,30 @@
           "scripts/core/choice_card/intake_card/intake_card.py",
           "scripts/core/music_styles/catalog.py"
         ],
+        "proven_repository": "trevorotts1/openclaw-onboarding",
+        "provenance": {
+          "digest": "82170df71365bb7d22d44464d76d08a108d8e4c30a728c8e542238efd983c881",
+          "digest_scope": "git ls-tree -r fe25719cc7617f362e5b46e9a7cb8dc19fc3e886 -- 75-drama-song-ad-factory",
+          "mode": "git-worktree",
+          "remote": "trevorotts1/openclaw-onboarding",
+          "remote_url": "https://github.com/trevorotts1/openclaw-onboarding.git",
+          "revision": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+          "revision_source": "git worktree HEAD"
+        },
+        "provenance_refusals": [],
+        "release_refused": null,
         "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
+        "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory"
       },
-      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+      "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory",
       "status": "OBSERVED_PASS"
-    },
-    {
-      "behavior": "paid compatibility",
-      "cell_id": "onboarding::paid compatibility",
-      "checks": [],
-      "executed": true,
-      "flavor": "onboarding",
-      "instrument": "file presence over this repository's own skill root, plus a token scan of the shared contract modules",
-      "known_good_control": {
-        "expected": "present",
-        "input": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory/scripts/core/spend_ledger.py",
-        "instrument": "file presence",
-        "label": "a core module this repository does carry",
-        "observed": true,
-        "pass": true
-      },
-      "negative_control": {
-        "control_red": false,
-        "observed": null,
-        "unmet_condition": "paid-output preservation cannot be made red where no compatibility carrier exists"
-      },
-      "not_applicable": {
-        "blocked_by": [
-          "S75-T01",
-          "S75-T03"
-        ],
-        "missing_capability": "paid-asset / raw-answer / legacy-approval preservation: compatibility.py, contracts/legacy-compatibility-map.json and tests/fixtures/paid_artifact_preservation.json",
-        "owed_by": "S75-T28"
-      },
-      "observations": [
-        "scanned 3 paid-compatibility carrier(s): none present",
-        "absent: scripts/core/compatibility.py",
-        "absent: scripts/core/contracts/legacy-compatibility-map.json",
-        "absent: scripts/core/tests/fixtures/paid_artifact_preservation.json",
-        "token scan of the shared contract modules: {\"scripts/core/contracts/flavor-999.json\": 0, \"scripts/core/package_flavor_adapter.py\": 0, \"scripts/core/story_first_contracts.py\": 0}",
-        "known-good control on the same scan found scripts/core/spend_ledger.py"
-      ],
-      "repository": "trevorotts1/openclaw-onboarding",
-      "repository_release": {
-        "all_paths_inside_own_repository": true,
-        "foreign_repository_modules_loaded": [],
-        "foreign_repository_sys_path_entries": [],
-        "method": "this repository's modules and inspected paths only; every sys.modules __file__ and sys.path entry checked against every known drama-song-ad-factory skill root",
-        "modules_from_own_repository_in_use": [
-          "scripts/core/package_flavor_adapter.py",
-          "scripts/core/music_styles/catalog.py",
-          "scripts/core/music_styles/catalog.py",
-          "scripts/core/spoken_share/__init__.py",
-          "scripts/core/spoken_share/spoken_share.py",
-          "scripts/core/story_first_contracts.py"
-        ],
-        "modules_loaded_for_this_cell": [],
-        "own_repository_released": true,
-        "paths_inspected": [
-          "scripts/core/compatibility.py",
-          "scripts/core/contracts/legacy-compatibility-map.json",
-          "scripts/core/tests/fixtures/paid_artifact_preservation.json",
-          "scripts/core/spend_ledger.py",
-          "scripts/core/story_first_contracts.py",
-          "scripts/core/package_flavor_adapter.py",
-          "scripts/core/contracts/flavor-999.json"
-        ],
-        "repository": "trevorotts1/openclaw-onboarding",
-        "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory"
-      },
-      "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
-      "status": "NOT_APPLICABLE"
     }
   ],
   "checks": {
     "cells_fail": 0,
-    "cells_not_applicable": 2,
+    "cells_not_applicable": 0,
     "cells_pass": 7,
-    "cells_total": 9,
+    "cells_total": 7,
     "controls_green": 0,
     "controls_red": 10,
     "facets_green": 10,
@@ -685,7 +713,7 @@
       "scripts/core/story_first_contracts.py": "56796e0c43142431cadb6d285b95025d93411e2a42262f99f043e306499f5e50"
     },
     "seam": "package_flavor_adapter.resolve",
-    "skill_root": "<PATH>/.claude-nine/scratchpad/s75t32-repair-r1/wt/75-drama-song-ad-factory",
+    "skill_root": "/private/tmp/s75t32-qc-r7/75-drama-song-ad-factory",
     "stage_count": 11
   },
   "coverage": {
@@ -1035,8 +1063,12 @@
       "facet": "cell:style18",
       "negative_control": {
         "control_red": true,
-        "facet_ok_on_unmet": false,
-        "unmet_condition": "a seventeen-id carrier, checked by the same predicate"
+        "facet_ok_on_unmet": [
+          false,
+          false,
+          false
+        ],
+        "unmet_condition": "a seventeen-id carrier, a validate count one short, and the eighteenth choice row missing: three breakages the same predicate must refuse"
       },
       "ok": true,
       "reason": "18 style ids: soul-ballad, rnb-flow, soul-rise, acoustic-pop, folk-storytelling, country-pop, melodic-rap, trap-rap, pop-rap, pop-rock, reggaeton, cinematic-orchestral-song, musical-theater, contemporary-gospel, urban-gospel, alternative-rnb, afro-soul, country-rap; validate_catalog() -> 18"
@@ -1057,10 +1089,10 @@
     "verdict": "PASS"
   },
   "flavor": "onboarding",
-  "generated_at": "2026-10-25T13:13:48Z",
+  "generated_at": "2026-10-26T16:23:07Z",
   "harness": {
-    "branch": "s75/T32-repair-r1",
-    "commit": "fbd4059b23771f290bb72052549e2693dd3f0a46",
+    "branch": "HEAD",
+    "commit": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
     "repository": "trevorotts1/openclaw-onboarding"
   },
   "literal_binding": {
@@ -1073,16 +1105,6 @@
     "seam": "package_flavor_adapter.resolve"
   },
   "not_executed": [
-    {
-      "class": "NOT_MODELLED_BY_CONTRACTS",
-      "facet": "cell:Notion migration",
-      "reason": "capability not present in this repository: Notion library migration: character_library/migration.py with idempotent dry-run and rollback, over the sync layer (character_library/sync.py) and the persistence store (character_library/notion_store.py) that unit depends on; owed by S75-T17"
-    },
-    {
-      "class": "NOT_MODELLED_BY_CONTRACTS",
-      "facet": "cell:paid compatibility",
-      "reason": "capability not present in this repository: paid-asset / raw-answer / legacy-approval preservation: compatibility.py, contracts/legacy-compatibility-map.json and tests/fixtures/paid_artifact_preservation.json; owed by S75-T28"
-    },
     {
       "class": "NOT_MODELLED_BY_CONTRACTS",
       "facet": "18 style end-to-end render/dispatch paths",
