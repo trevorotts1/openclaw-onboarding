@@ -34,13 +34,33 @@ def _request():
     return {"attempt": 1, "idempotency_key": "regression-raw-keep", "binding": {"requested": "fixture"}}
 
 def _parsed(raw):
-    authored = {"script": {"filler": "x" * 25000 if len(raw) > 20000 else "short"}}
     response = {"response_id": "regression-1", "raw_text": raw}
     return W.parse_response(_request(), response)["dispatch"]
 
 def test_the_retention_cap_is_the_declared_20000():
     assert W.RAW_KEEP_CHARS == 20000, W.RAW_KEEP_CHARS
     assert W._raw_keep_chars() == 20000, W._raw_keep_chars()
+
+def test_the_cap_is_routed_through_the_enforcer_not_just_returned():
+    # A dead loader would still return 20000, so prove the enforcer is engaged and the value
+    # comes from its budget arithmetic (shared-utils is a test precondition: _decl() reads it).
+    assert W._ENFORCER is not None, "shared-utils/kie_prompt_enforcer.py not resolved in this checkout"
+    assert W._raw_keep_chars() == W._ENFORCER.budget(W.RAW_KEEP_CHARS)["max"]
+
+def test_the_declared_number_stands_when_the_enforcer_is_absent_or_fails():
+    # Byte-identity guarantee: the retention cap never moves when shared-utils is absent or broken.
+    saved = W._ENFORCER
+    try:
+        W._ENFORCER = None
+        assert W._raw_keep_chars() == 20000
+        class _Broken:
+            @staticmethod
+            def budget(_max):
+                raise RuntimeError("enforcer broken")
+        W._ENFORCER = _Broken
+        assert W._raw_keep_chars() == 20000
+    finally:
+        W._ENFORCER = saved
 
 def test_the_module_is_declared_as_a_gate_with_its_allowed_numeric():
     decl = _decl()
