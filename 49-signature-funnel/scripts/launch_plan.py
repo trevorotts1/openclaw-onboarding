@@ -56,9 +56,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
+from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -162,6 +164,40 @@ def _norm(value: Any) -> str:
     if value is None:
         return ""
     return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
+_HOST_RE = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)*")
+
+
+def is_web_url(value: Any) -> bool:
+    """A destination a buyer can safely open: http(s) with a real hostname.
+
+    Anything else — `javascript:`, `data:`, `mailto:`, a bare word — is not a
+    resolved destination, so it is refused instead of being emailed or texted
+    to a buyer as if it were a page.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return False
+    # The stored destination is this exact string (minus edge padding), so what
+    # the validator parsed must be what a buyer's mail client opens: no inner
+    # whitespace or control bytes (urlsplit silently drops \n\t\r and would
+    # validate a different host than the one shipped) and no backslash (browsers
+    # read it as '/', urlsplit does not: "https://a.com\@b.test/" parses as
+    # b.test but opens as a.com).
+    if any(ch.isspace() or not ch.isprintable() or ch == "\\" for ch in value.strip()):
+        return False
+    try:
+        parts = urlsplit(value.strip())
+        host = parts.hostname or ""
+    except ValueError:
+        return False
+    if parts.scheme.lower() not in ("http", "https") or not host:
+        return False
+    # ponytail: hostname-only (no IPv6 literal / IDN) — buyer destinations are
+    # DNS names; add ipaddress.ip_address() + idna when a literal appears.
+    if not _HOST_RE.fullmatch(host):
+        return False
+    return "." in host or host == "localhost"
 
 
 def _offers(launch: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -400,17 +436,17 @@ def _access_block(launch: Dict[str, Any], answers: Dict[str, Any],
     source: Optional[str] = None
     for key in ACCESS_KEYS:
         value = fact(answers, key)
-        if isinstance(value, str) and value.strip():
+        if is_web_url(value):
             destination, source = value.strip(), key
             break
     if not destination:
         value = fact(answers, "launch.thank_you_url")
-        if isinstance(value, str) and value.strip():
+        if is_web_url(value):
             destination = value.strip()
             source = "launch.thank_you_url"
 
     login = fact(answers, "launch.login_url")
-    login_url = login.strip() if isinstance(login, str) and login.strip() else None
+    login_url = login.strip() if is_web_url(login) else None
 
     if not destination and deliver_access:
         # A delivery that actually hands something over needs a usable approved
@@ -430,7 +466,8 @@ def _access_block(launch: Dict[str, Any], answers: Dict[str, Any],
         "deliver_access": deliver_access,
         "delivery_choice": delivery_choice if isinstance(
             delivery_choice, (str, bool)) else None,
-        "delivery": "access_link_email_and_text" if destination else "unresolved",
+        "delivery": "access_link_email_and_text"
+                    if destination and deliver_access else "unresolved",
     }
 
 
@@ -736,7 +773,7 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
 
     a2p_ready = bool(fact(answers, "launch.a2p_ready") or False)
     warnings: List[str] = []
-    if not access["resolved"]:
+    if access["deliver_access"] and not access["resolved"]:
         warnings.append("no access destination resolved: welcome/access actions have no "
                         "usable approved destination")
     if texts and not a2p_ready:
@@ -818,12 +855,21 @@ def check(plan: Dict[str, Any]) -> List[str]:
             if unit_id in present:
                 errors.append(f"{unit_id}: event unit planned for an ineligible event")
     access = plan.get("access") or {}
-    if access and not access.get("resolved"):
+    deliver_access = access.get("deliver_access", True) is not False
+    destination = access.get("destination")
+    destination_ok = not destination or is_web_url(destination)
+    if not destination_ok:
+        errors.append("access: destination is not an approved http(s) URL")
+    login_url = access.get("login_url")
+    if login_url and not is_web_url(login_url):
+        errors.append("access: login URL is not an approved http(s) URL")
+    if access and deliver_access and not access.get("resolved"):
         errors.append("access: welcome/access actions have no usable approved destination")
+    expected = destination if deliver_access and destination_ok else None
     for unit in plan.get("email_sequences", []) + plan.get("text_sets", []) \
             + plan.get("automations", []):
         if unit.get("id") in ("email_welcome_access", "text_access_link", "auto_post_sale") \
-                and access and unit.get("access_destination") != access.get("destination"):
+                and access and unit.get("access_destination") != expected:
             errors.append(f"{unit.get('id')}: access destination disagrees with the plan")
     return errors
 

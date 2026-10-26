@@ -1397,7 +1397,11 @@ def _load_request(path):
             "length_s": doc.get("length_s") or inp.get("duration"),
             "vocal_gender": inp.get("vocal_gender", doc.get("vocal_gender", "f")),
             "hook_plan": doc.get("hook_plan") or doc.get("_hook_plan"),
-            "pace_plan": doc.get("pace_plan") or doc.get("_pace_plan")}
+            "pace_plan": doc.get("pace_plan") or doc.get("_pace_plan"),
+            # S75-T41: the run's DISPLAY references (artists, aliases,
+            # reference songs).  They ride to the dispatch seam, which sweeps
+            # every outbound payload for them; never a provider field.
+            "client_references": doc.get("client_references")}
 
 
 def _hook_text(spec):
@@ -1639,7 +1643,10 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     gen = generate or _real_generate(run_dir, a.ledger, a.run_id)
     kw = dict(plan=plan, generate=gen, measure=measure, save=save,
               script_words=_sheet_lyric_words(spec), hook_text=hook_text,
-              envelope_run_dir=run_dir)
+              envelope_run_dir=run_dir,
+              # S75-T41: the run's display references, swept at the dispatch
+              # seam before anything reaches the provider.
+              alias_catalog=spec.get("client_references") or {})
     # WWFIXGAPS U1 (defect 3): the reported count is MEASURED from the run that
     # actually happened, never a literal -- and S75-W02-U3 reports the seven
     # lifecycle counts SEPARATELY. ``dispatched`` is the submitted count (the

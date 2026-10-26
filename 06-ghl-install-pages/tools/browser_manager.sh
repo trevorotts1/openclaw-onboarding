@@ -498,15 +498,36 @@ _bm_start_ttl() {
 }
 
 # ── GUARANTEED TEARDOWN ───────────────────────────────────────────────────────
+# _bm_release_lock — drop the box singleton lock WE hold. Call LAST, never first:
+# releasing before close/state-clear let a successor acquire the lock and then have
+# its canonical session closed by us (finding 26). On the mkdir branch the owned
+# `pid` file is still inside the lock dir, so a bare `rmdir` fails and leaves the
+# stale directory behind — remove the owned pid first, then rmdir.
+_bm_release_lock() {
+  # ONLY ever drop a lock WE hold. _bm_teardown can fire twice (an INT/TERM trap
+  # fire followed by the EXIT fire): after the first release a successor may own
+  # the lock, and removing ITS pid / `rm -rf`-ing ITS dir would silently drop a
+  # live successor's box lock — the same successor race as finding 26, one level
+  # down. The pid file is removed only when it is OURS (or absent), so a
+  # successor's recorded pid always survives even in the same lock dir.
+  [ "$_BM_LOCK_HELD" = "1" ] || return 0
+  flock -u 9 2>/dev/null || true
+  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
+    local _bm_lock_pid=""
+    _bm_lock_pid="$(cat "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true)"
+    if [ -z "$_bm_lock_pid" ] || [ "$_bm_lock_pid" = "$$" ]; then
+      rm -f "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
+      rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
+    fi
+  fi
+  _BM_LOCK_HELD=0
+}
+
 # Closes ONLY the canonical session (NEVER close --all — blast-radius safety,
 # Approach 3 tradeoff; close --all is reserved for the reaper / breaker trip).
 _BM_SESSION=""
 _bm_teardown() {
   [ -n "$_TTL_PID" ] && kill "$_TTL_PID" 2>/dev/null || true
-  flock -u 9 2>/dev/null || true
-  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
-    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || true
-  fi
   if [ -n "$_BM_SESSION" ]; then
     command "$AB_BIN" --headed false close --session "$_BM_SESSION" 2>/dev/null || true
     command "$AB_BIN" --headed false state clear "$_BM_SESSION" 2>/dev/null || true
@@ -517,7 +538,9 @@ _bm_teardown() {
     # of a session regardless; this is hygiene, not a correctness dependency.)
     rm -f "$(_bm_auth_stamp_file "$_BM_SESSION")" 2>/dev/null || true
   fi
-  _BM_LOCK_HELD=0
+  _bm_release_lock   # LAST: close + clear happened while we still owned the lock
+  _BM_SESSION=""     # idempotent: a second trap fire must not close/re-clear a
+                     # session a SUCCESSOR now owns (finding 26, double-fire path)
 }
 
 # ── B1 VERSION-GATE — refuse to launch a browser build through an old/headed guard
@@ -690,19 +713,14 @@ _bm_login_state() {
 _bm_release_lock_keep_session() {
   local session="$1"
   [ -n "$_TTL_PID" ] && kill "$_TTL_PID" 2>/dev/null || true
-  flock -u 9 2>/dev/null || true
-  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
-    # A bare `rmdir` FAILS on a non-empty directory — `ab.lock.d/pid` is still
-    # inside it. Remove the pid file first, then rmdir, with the SAME `rm -rf`
-    # fallback `_bm_lock_acquire`'s own stale-lock reclaim already uses. Without
-    # this, the directory survives, our own PID is still recorded+alive inside
-    # it, and the reacquire two lines below in _bm_self_heal_reseed spins the
-    # full AB_LOCK_WAIT waiting on a lock WE ourselves just "released" before
-    # REFUSING (exit 75) — self-deadlock, verified live in this fix's own test
-    # suite before this line was added.
-    rm -f "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
-    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
-  fi
+  # A bare `rmdir` FAILS on a non-empty directory — `ab.lock.d/pid` is still
+  # inside it. `_bm_release_lock` removes the owned pid first, then rmdir, with
+  # the SAME `rm -rf` fallback `_bm_lock_acquire`'s own stale-lock reclaim uses.
+  # Without this, the directory survives, our own PID is still recorded+alive
+  # inside it, and the reacquire in _bm_self_heal_reseed spins the full
+  # AB_LOCK_WAIT waiting on a lock WE ourselves just "released" before REFUSING
+  # (exit 75) — self-deadlock, verified live in this fix's own test suite.
+  _bm_release_lock
   rm -f "$LOCKDIR/leases/${session}.lease" 2>/dev/null || true
   _BM_LOCK_HELD=0
 }

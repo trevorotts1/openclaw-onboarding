@@ -223,6 +223,13 @@ def order_form_mapping(intake: Dict[str, Any], graph: Dict[str, Any]) -> Dict[st
         "route_node": "checkout" if "checkout" in route_roles else None,
         "checkout_mode": mode,
         "checkout_mode_state": "resolved" if mode else "contract_gap",
+        # An unresolved mode is a withheld delivery, not a recorded pass.
+        # checks.checkout_mode_violations enforces it; recording it here means a
+        # consumer of the mapping sees the block without re-deriving it.
+        "delivery_blocked": not mode,
+        "delivery_blockers": ([] if mode else [
+            f"AF-LAUNCH-CHECKOUT-MODE: journey_mode {journey!r} has no Skill 79 "
+            f"checkout_mode; delivery is blocked until the contract names one"]),
         "main_offers": [{"offer_id": o["offer_id"],
                          "price": _price_choice(o, intake)} for o in mains],
         "supplied": supplied,

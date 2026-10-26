@@ -8,9 +8,12 @@ the binding rules the shipped runtime follows.
 The council has three sizes, chosen by the four sizing checks in SKILL.md
 step 2 (can it be undone, are other people affected, does it lock the
 client in, do values pull against each other). No size depends on money,
-and no money check exists anywhere in the sizing.
+and no money check exists anywhere in the sizing. Every mode seats the
+full nine-advisor council; the mode changes the rounds and the
+concurrency only, never how many seats are used.
 
-- **Light.** 3 best-fit seats, exactly 2 rounds, 50 provider requests.
+- **Light.** All 9 seats, exactly 2 rounds, at most 3 provider calls in
+  parallel (waves of 3), 50 provider requests.
   Round 1 openings and round 2 challenge always both run; light never
   stops early and never runs a separate ratification pass. The verdict is
   composed from the round-2 advisor cards and recorded as
@@ -20,6 +23,14 @@ and no money check exists anywhere in the sizing.
   after round 1 only when the stop rule holds.
 - **Heavy.** All 9 seats, 3 to 10 rounds, 100 provider requests. Rounds 1
   and 2 always run; the stop rule is evaluated from round 3 onward.
+
+Concurrency is the lower of two limits: the provider's own ceiling (only
+Ollama has one, the $20 plan 3 at a time and the $100 plan 10; every
+other route adds none) and the mode's wave width (light 3, medium and
+heavy the whole nine). A provider with no ceiling therefore never makes a
+light sitting unlimited: light runs 3 at a time on OpenRouter and Agnes
+too (`runtime/src/providers/parallel.ts`,
+`runtime/src/contracts/modes.ts`).
 
 Client overrides always win: "quick answer" means light, "full council"
 means heavy. Medium is used when no size is named.
@@ -121,8 +132,8 @@ the verdict are composed deterministically from the frozen brief and the
 advisor cards. The planned counts are therefore exactly the seat
 requests:
 
-- **Light.** 3 seats x 2 rounds = 6 planned, inside a cap of 50. Light
-  runs no ratification and no later round.
+- **Light.** All 9 seats x 2 rounds = 18 planned, run 3 at a time in waves
+  of 3, inside a cap of 50. Light runs no ratification and no later round.
 - **Medium.** Up to 4 rounds x 9 seats = 36 planned, inside a cap of 50.
 - **Heavy.** Up to 10 rounds x 9 seats = 90 planned, inside a cap of
   100. A heavy sitting that reaches the cap stops there and reports it

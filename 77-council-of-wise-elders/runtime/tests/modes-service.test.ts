@@ -2,8 +2,8 @@
  * W77S-MODES lane D: the convening service and CLI for the council sizes.
  *
  * Proves, against fakes and no live route:
- *  - convene defaults to medium, light picks three best-fit seats, and a
- *    named panel wins;
+ *  - convene with no mode classifies the question (AUTO-MODE-1062), every
+ *    council size seats the full roster, and a named panel wins;
  *  - the driver fills any panel seat missing from the brief's weights;
  *  - the Ollama plan is asked once, remembered in <dataDir>/provider-plan.json,
  *    and an unknown plan is the typed OLLAMA_PLAN_REQUIRED refusal;
@@ -209,48 +209,63 @@ function rig(
 
 // ------------------------------------------------------------ mode defaults
 
-test('W77S-D: a convene with no mode defaults to medium', async () => {
+test('W77S-D: a convene with no mode is classified from the question, not defaulted', async () => {
   const r = rig();
   const result = await r.convene({ brief: brief(), route: {} });
-  assert.equal(result.mode, 'medium');
+  // AUTO-MODE-1062: the question decides; the client is told who chose and why.
+  assert.equal(result.mode, result.mode_selection.mode);
+  assert.equal(result.mode_selection.source, 'auto');
+  assert.ok(result.mode_selection.reason.trim().length > 0);
+  assert.equal(result.mode, 'light', 'the fixture brief is a simple question');
   assert.equal(result.seats, 9);
-  assert.deepEqual(result.rounds, { min_rounds: 1, max_rounds: 4, stop_from_round: 1 });
+  assert.deepEqual(result.rounds, { min_rounds: 2, max_rounds: 2, stop_from_round: null });
   assert.equal(result.request_cap, 50);
-  assert.equal(r.accepted[0]?.spec.mode, 'medium');
+  assert.equal(r.accepted[0]?.spec.mode, 'light');
   // The nine-seat panel is the roster, unchanged.
   assert.deepEqual(r.accepted[0]?.spec.seat_ids, [...SEAT_IDS]);
 });
 
-test('W77S-D: light with no seat_ids takes three best-fit seats from the brief', async () => {
+test('W77S-D: light seats the full roster, 2 rounds and 3 at a time (Trevor, 2026-10-25)', async () => {
   const r = rig();
   const result = await r.convene({ brief: brief(), mode: 'light', route: {} });
   assert.equal(result.mode, 'light');
-  assert.equal(result.seats, 3);
+  // All council members are used in every mode; light differs in rounds
+  // and wave width only.
+  assert.equal(result.seats, SEAT_IDS.length);
   assert.deepEqual(result.rounds, { min_rounds: 2, max_rounds: 2, stop_from_round: null });
-  // Weight 3 / critical-domain seats in flag order: money, pricing, trust.
-  assert.deepEqual(r.accepted[0]?.spec.seat_ids, ['tiffany-aliche', 'russell-brunson', 'brene-brown']);
+  assert.deepEqual(r.accepted[0]?.spec.seat_ids, [...SEAT_IDS]);
+  // Light dispatches three at a time even on a route with no parallel limit.
+  assert.equal(result.parallel_limit, 3);
+  assert.equal(r.runs[0]?.options.parallel_limit, 3);
+  assert.equal(result.request_cap, 50);
 });
 
-test('W77S-D: light fills from the roster when the brief flags no seat', async () => {
-  const r = rig();
-  const quiet = brief();
-  quiet.critical_domains = [];
-  for (const seat of Object.keys(quiet.relevance_weights)) {
-    (quiet.relevance_weights as Record<string, number>)[seat] = 1;
+test('W77S-D: medium and heavy seat the same nine-seat roster as light', async () => {
+  for (const mode of ['light', 'medium', 'heavy'] as const) {
+    const r = rig();
+    await r.convene({ brief: brief(), mode, route: {} });
+    assert.deepEqual(r.accepted[0]?.spec.seat_ids, [...SEAT_IDS], mode);
   }
-  await r.convene({ brief: quiet, mode: 'light', route: {} });
-  assert.deepEqual(r.accepted[0]?.spec.seat_ids, ['simon-sinek', 'td-jakes', 'oprah-winfrey']);
 });
 
-test('W77S-D: light with named seat_ids uses exactly those seats', async () => {
+test('W77S-D: a light panel of nine named seats is honoured', async () => {
   const r = rig();
-  await r.convene({
-    brief: brief(),
-    mode: 'light',
-    seat_ids: ['oprah-winfrey', 'les-brown', 'dennis-kimbro'],
-    route: {},
-  });
-  assert.deepEqual(r.accepted[0]?.spec.seat_ids, ['oprah-winfrey', 'les-brown', 'dennis-kimbro']);
+  const named = [...SEAT_IDS].reverse();
+  await r.convene({ brief: brief(), mode: 'light', seat_ids: named, route: {} });
+  assert.deepEqual(r.accepted[0]?.spec.seat_ids, named);
+});
+
+test('W77S-D: a light panel with one seat missing is refused, never shrunk', async () => {
+  const r = rig();
+  await assert.rejects(
+    r.convene({ brief: brief(), mode: 'light', seat_ids: SEAT_IDS.slice(0, 3), route: {} }),
+    (error: unknown) => {
+      assert.ok(error instanceof DriverRefusal);
+      assert.equal(error.code, 'CONVENE_INPUT_INVALID');
+      return true;
+    },
+  );
+  assert.equal(r.accepted.length, 0);
 });
 
 test('W77S-D: the driver fills a panel seat missing from the brief weights with 1', async () => {
@@ -326,11 +341,13 @@ test('W77S-D: an invalid ollama_plan value is refused as invalid input', async (
   assert.equal(r.accepted.length, 0);
 });
 
-test('W77S-D: ollama_plan 100 runs ten at a time, never more than the panel', async () => {
+test('W77S-D: ollama_plan 100 runs ten at a time, and light still holds its wave of three', async () => {
   const r = rig({ primaryProvider: 'ollama' });
   const medium = await r.convene({ brief: brief(), mode: 'medium', ollama_plan: '100', route: {} });
   assert.equal(medium.parallel_limit, 9);
   const light = await r.convene({ brief: brief(), mode: 'light', ollama_plan: '100', route: {} });
+  // Nine seats, but light's wave width of 3 is the tighter cap.
+  assert.equal(light.seats, 9);
   assert.equal(light.parallel_limit, 3);
 });
 
@@ -526,7 +543,7 @@ const ACCEPTED = {
   session_path: '/council/sess-1',
   events_path: '/api/council/sessions/sess-1/events',
   mode: 'light',
-  seats: 3,
+  seats: 9,
   rounds: { min_rounds: 2, max_rounds: 2, stop_from_round: null },
   request_cap: 50,
   parallel_limit: 3,
@@ -633,7 +650,7 @@ test('W77S-D: convene prints mode, seats, rounds, cap, parallel limit and the fa
   });
   const out = c.out();
   assert.match(out, /mode: light/);
-  assert.match(out, /seats: 3/);
+  assert.match(out, /seats: 9/);
   assert.match(out, /rounds: 2/);
   assert.match(out, /request cap: 50 provider requests/);
   assert.match(out, /parallel limit: 3 at a time/);

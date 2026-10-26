@@ -1,0 +1,31 @@
+{
+  "unit": "INSTALL-1059",
+  "captured_at": "2026-10-25T21:41:11-04:00",
+  "what_this_is": "the recorded COUNCIL_WIRE result for release 1.0.59 (canonical aggregate 3b0de855) plus a live health check of the Council endpoint taken at assembly time. The wire event is a past runtime observation and is copied, not replayed.",
+  "lane_journal": {
+    "path": "<operator-home>/.claude-nine/projects/-<operator-home>/5c25f8e9-ece5-4f1d-9d02-0703b0e712cb/subagents/workflows/wf_181790b8-714/journal.jsonl",
+    "sha256": "1002a7f7072caa4cf72d0857c0e2185a779be7c37b87d369be722f5ed216e3f2",
+    "entry_type": "result",
+    "result_verbatim": {
+      "lane": "INSTALL-1059-r2",
+      "status": "PASS",
+      "summary": "Attempt 1 was dead (pgrep update-skills empty; WindowServer control rc=0). Its wire.sh had really FAILED rc=1 \u2014 COUNCIL_WIRE: NOT_READY TREE_GATE \u2014 because the resolver-selected ~/.agents copy was stale 1.0.51 while .openclaw shipped 1.0.59; roll then died mid-mediapipe. Writes made: rebuilt .agents/.claude/.codex as 1.0.59 distributions from the release's own .skill archive (all 4 Brunson diffs equal the release contract), re-ran the roll (exit 0, sentinel .wired-v27.1.67 written, mediapipe 1.1.1 now installed), removed my temp git worktree. COUNCIL_WIRE: ADOPTED_EXISTING (Council already on 8787, release rel-be73100fd8ba built). Re-proof: SELECTED-TREE: OK + SAME RELEASE (canonical aggregate 3b0de855, 788 files + 336 built files), exit 0.",
+      "head": "1.0.59 wired; gate exit 0",
+      "tests": "selected-tree-gate.mjs exit 0 (SAME RELEASE); roll exit 0; healthz 200; blackceo-council --help shows --mode; four copies v1.0.59 + sentence; sentinel present",
+      "findings": [
+        "Root cause was not the dead parent: attempt 1's wire.sh failed on TREE_GATE because COUNCIL_AGENT_SKILL_DIR pointed at a stale 1.0.51 ~/.agents copy (/tmp/openclaw-update-20261025-160109.log lines 2972-2981)",
+        "999-setup scripts/vendor-council-bundle.mjs is stale for release 1.0.59: its STRIP_FILES omits advisors/russell-brunson/profile.json, so its output is refused by the gate ('does not carry the distribution the release records'). Fix belongs in the 999-setup repo; not changed here.",
+        "The three adapter copies were assembled from the release's own council-of-wise-elders.skill archive with the reconciliation record derived from manifest.distribution; every digest is re-verified by the gate against the release contract",
+        "Attempt 1 also left mediapipe uninstalled (died mid pip install); this run completed it (1.1.1)",
+        "Roll output COUNCIL_WIRE was ADOPTED_EXISTING because an unmanaged Council already answers on 8787; nothing restarted by hand"
+      ]
+    }
+  },
+  "live_healthz": {
+    "url": "http://127.0.0.1:8787/healthz",
+    "curl_rc": 0,
+    "http_code": 200,
+    "body_verbatim": "{\"ok\":true,\"state\":\"running\",\"draining\":false,\"api_version\":\"v1\",\"origin\":\"http://127.0.0.1:8787\"}",
+    "measured_at": "2026-10-25T21:41:11-04:00"
+  }
+}
