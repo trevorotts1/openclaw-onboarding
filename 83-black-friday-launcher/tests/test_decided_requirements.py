@@ -10,6 +10,8 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -489,6 +491,46 @@ class PackageRecordTests(unittest.TestCase):
         self.assertEqual(len(fails), 1, fails)
         self.assertTrue(fails[0].startswith("AF-LAUNCH-CHECKOUT-VALIDATOR"), fails)
         self.assertIn("unavailable", fails[0])
+
+    def test_the_cli_fails_closed_when_the_validator_cannot_load(self):
+        # L25-BF-40 in the form the verifier reproduced it: the command, not
+        # the helper. A bound manifest checked by an interpreter that cannot
+        # import jsonschema must exit non-zero and name the violation; before
+        # this fix it exited 0 and printed "PASS package complete". jsonschema
+        # is shadowed by an importable stub that raises, so the fault is the
+        # same on every machine, and the unshadowed run is the control that
+        # proves the shadow — not a broken CLI — is why the check fails.
+        run_dir, manifest_path = self.clean_package()
+        shadow = tempfile.TemporaryDirectory()
+        self.addCleanup(shadow.cleanup)
+        stub = Path(shadow.name) / "jsonschema"
+        stub.mkdir()
+        (stub / "__init__.py").write_text(
+            'raise ImportError("jsonschema is absent (simulated, L25-BF-40)")\n',
+            encoding="utf-8")
+        command = [sys.executable, "-m", "launcher_core.cli", "check",
+                   "--manifest", str(manifest_path), "--root", str(run_dir)]
+
+        def run(extra_path):
+            env = dict(os.environ)
+            parts = [extra_path] if extra_path else []
+            if env.get("PYTHONPATH"):
+                parts.append(env["PYTHONPATH"])
+            if parts:
+                env["PYTHONPATH"] = os.pathsep.join(parts)
+            else:
+                env.pop("PYTHONPATH", None)
+            return subprocess.run(command, cwd=str(SKILL_ROOT), env=env,
+                                  capture_output=True, text=True)
+
+        control = run(None)
+        self.assertEqual(control.returncode, 0, control.stdout + control.stderr)
+        self.assertIn("PASS package complete", control.stdout)
+        shadowed = run(shadow.name)
+        output = shadowed.stdout + shadowed.stderr
+        self.assertNotEqual(shadowed.returncode, 0, output)
+        self.assertIn("AF-LAUNCH-CHECKOUT-VALIDATOR", output)
+        self.assertNotIn("PASS package complete", shadowed.stdout)
 
     def test_the_folded_level_package_is_blocked_only_on_the_unresolved_mode(self):
         # folded_levels has no mode in the Skill 79 contract (L25-BF-41): the
