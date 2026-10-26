@@ -1,5 +1,14 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.65: the persona-root probes stop false-failing when the checkout path contains a space (HARNESS-FIX-1076)
+
+In plain English: three tests spawned a helper script using the URL's raw `pathname`, which keeps `%20` where a directory name has a space, so a checkout under a folder with a space in its name reported "Cannot find module" and went red for a reason that had nothing to do with the product. The probes now resolve the path with `fileURLToPath`, so the same tree passes under any folder name.
+
+- Test repair (`fix/persona-root-space-paths-1076`, 10490a68d): all three `new URL('../../scripts/inventory-live-personas.mjs', import.meta.url).pathname` call sites in `runtime/tests/persona-root.test.ts` now use `fileURLToPath(new URL(...))`; one `node:url` import added. One file, +4/-3.
+- Proof (`reports/harness-fix-1076.json`, verdict PASS): space-free leg 11 tests / 11 pass; the same file copied under `.../harness space 1076/...` 11 / 11 pass; the unpatched file at the same space path fails 8 pass / 3 fail with `Cannot find module '...harness%20space%201076/...'`, so the patch — not the copy layout — is what moves the result.
+- Full suite at the fix head (no-spend): `npm test` 869 tests, 864 pass, 0 fail, 5 skipped; `npm run typecheck` rc 0; `npm run build` rc 0.
+- Release commit only carries the version ceremony for that test change (`skill-version.txt`, `version`, `SKILL.md` frontmatter, this entry). No runtime source, contract, prompt, roster or provider-order content changed.
+
 ## v1.0.64: the live convene path runs the mode selector, and the mode docs match the code (REPAIR-1064, REPAIR-1066)
 
 In plain English: a convene that names no mode now sizes the sitting from the question itself, a named mode is never overruled, and the response and audit line say which happened and why. The mode-selection reference no longer describes a scoring scheme or a wired path the code does not have.
