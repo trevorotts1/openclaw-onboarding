@@ -1,0 +1,192 @@
+{
+  "schema": "blackceo.s75.onboarding-entrypoints/v1",
+  "unit": "S75-T29",
+  "acceptance_id": "S75-A29",
+  "skill_root_anchor": "75-drama-song-ad-factory",
+  "purpose": "The supported entrypoints of the ONB drama-song-ad-factory package, with the exit status each one actually produced when run. onboarding_adapter.py reads control.required_commands from here and refuses to pass if the live wrapper no longer offers them.",
+  "verified_at": "2026-10-25",
+  "verification_environment": {
+    "repository": "https://github.com/trevorotts1/openclaw-onboarding.git",
+    "base_sha": "3c798db6659c576cc40e3ce8c81d2ede7acf3e0c",
+    "interpreter": "python3 (CPython 3.14)",
+    "cwd": "skill root (75-drama-song-ad-factory)",
+    "network": "none used",
+    "paid_generation": "none used"
+  },
+
+  "clause_order": [
+    "artifact_order",
+    "cast_world_script_gates",
+    "notion",
+    "styles_18",
+    "flavor_parity",
+    "emergency_fixes_read_only",
+    "entrypoint_reachability"
+  ],
+
+  "control": {
+    "entrypoint_root": "scripts/core/intake_preflight/factory.py",
+    "entrypoint_root_reason": "scripts/openclaw_adapter.py is a relay: it runs this file as [sys.executable, entrypoint, *argv] and returns its exit code, so this file's import closure is what the entrypoint process can reach. 'Exposed' means reachable from here, not importable by the checker.",
+    "reachability_positive_controls": [
+      "music_styles.music_styles",
+      "character_library.character_library"
+    ],
+    "reachability_positive_controls_reason": "both are known to be reached from factory.py (music_styles.music_styles via music_styles/suno_recipe.py, character_library.character_library via factory.py:3136). The walk must find them or the walk is broken and the receipt reports PROBE_INVALID instead of claiming anything is unreachable.",
+    "required_commands": [
+      "intake",
+      "preflight",
+      "next",
+      "event",
+      "storyboard",
+      "music",
+      "script-reply",
+      "final-recap",
+      "production-go",
+      "card",
+      "character"
+    ],
+    "expected_exit_map": {"ok": 0, "waiting": 2, "parked": 3, "rejected": 4, "error": 1},
+    "exit_map_source": "scripts/core/intake_preflight/__init__.py",
+    "envelope_schema_version": "blackceo.intake-preflight/envelope/v1",
+    "envelope_schema_source": "scripts/openclaw_adapter.py docstring and a real relayed envelope"
+  },
+
+  "entrypoints": [
+    {
+      "id": "runtime_wrapper",
+      "role": "runtime entrypoint the docs and the box actually run",
+      "argv": ["python3", "scripts/openclaw_adapter.py", "<command> [args]"],
+      "cwd": "skill root",
+      "relays_to": "scripts/core/intake_preflight/factory.py",
+      "relays": "argument array, no shell; stdout, stderr and exit code unchanged",
+      "source": "scripts/openclaw_adapter.py module docstring",
+      "verified_command": "python3 scripts/openclaw_adapter.py --help",
+      "verified_rc": 0,
+      "verified_output_head": "usage: factory.py [-h]",
+      "notes": "Runs without an isolated interpreter; it re-executes the entrypoint with sys.executable."
+    },
+    {
+      "id": "runtime_wrapper_preflight",
+      "role": "side-effect-free readiness check through the wrapper",
+      "argv": ["python3", "scripts/openclaw_adapter.py", "preflight", "--root", "<dir>"],
+      "cwd": "skill root",
+      "source": "scripts/core/intake_preflight/factory.py 'preflight' subcommand",
+      "verified_command": "python3 scripts/openclaw_adapter.py preflight --root <empty temp dir>",
+      "verified_rc": 2,
+      "verified_envelope": {"outcome": "waiting", "schema_version": "blackceo.intake-preflight/envelope/v1"},
+      "notes": "rc 2 is EXIT['waiting'], so the observed exit status agrees with the declared map. An empty root is expected to be waiting, not ok."
+    },
+    {
+      "id": "control_cli_direct",
+      "role": "the shared control CLI named in SKILL.md",
+      "argv": ["python3", "scripts/core/intake_preflight/factory.py", "<command> [args]"],
+      "cwd": "skill root",
+      "source": "SKILL.md section 'The control entrypoint'",
+      "verified_command": "python3 scripts/core/intake_preflight/factory.py --help",
+      "verified_rc": 0,
+      "verified_output_head": "usage: factory.py [-h]",
+      "notes": "Works because Python puts the script's own directory on sys.path, which is where the sibling 'intake' and 'preflight' modules live. It fails under python3 -I, which drops that directory; see not_advertised."
+    },
+    {
+      "id": "install",
+      "role": "first-time install of the numbered skill folder onto a box",
+      "argv": ["bash", "install.sh"],
+      "cwd": "repository root",
+      "source": "INSTALL.md Step 1 and install.sh",
+      "copies": "install.sh:3994 cp -r \"$ITEM\" \"$SKILLS_DIR/$SKILL_NAME/\" copies the whole skill folder, so package/ and tests/fixtures/ ship",
+      "verified_rc": null,
+      "verification_state": "NOT_EXECUTED",
+      "why_not_executed": "install.sh mutates a live box (creates the OpenClaw tree and copies 76 skill folders). This unit is forbidden to mutate a box or to touch a client. The copy statement is cited from the script, not run."
+    },
+    {
+      "id": "update",
+      "role": "additive update of an installed box",
+      "argv": ["bash", "update-skills.sh"],
+      "cwd": "repository root",
+      "source": "INSTALL.md Step 2",
+      "verified_rc": null,
+      "verification_state": "NOT_EXECUTED",
+      "why_not_executed": "Same reason as install: it mutates an installed box."
+    },
+    {
+      "id": "package_report",
+      "role": "this unit's package check: proves each A29 clause against the live tree",
+      "argv": ["python3", "package/onboarding_adapter.py", "report"],
+      "cwd": "skill root",
+      "source": "package/onboarding_adapter.py",
+      "verified_command": "python3 package/onboarding_adapter.py check",
+      "verified_rc": 1,
+      "re_verified_at": "2026-10-26",
+      "re_verified_head_sha": "55befb1cfd5a8cada19c2f85cce00549f70e88a3",
+      "notes": "Read-only: no write path, no network, no provider call. 'check' exits 0 only when every required clause is PASS. rc 1 re-verified at head 55befb1cf (2026-10-26): the round-2 entrypoint_reachability clause reports the four capability modules unreachable from factory.py, and the owner decision on the row word 'exposes' (D-17: option A import-path vs option B reachable-at-runtime) is open, so the check fails as written. At unit base 8d583dfd6 the same command exits 0 with this fixture then carrying six clauses; the base rc 0 was recorded here until 2026-10-26 as 0, stale after round 2 added the reachability clause (defect CLAIM-1)."
+    },
+    {
+      "id": "package_entrypoints",
+      "role": "print this fixture's entrypoint rows",
+      "argv": ["python3", "package/onboarding_adapter.py", "entrypoints"],
+      "cwd": "skill root",
+      "source": "package/onboarding_adapter.py",
+      "verified_command": "python3 package/onboarding_adapter.py entrypoints",
+      "verified_rc": 0
+    }
+  ],
+
+  "not_advertised": [
+    {
+      "form": "python3 -I scripts/core/intake_preflight/factory.py <command>",
+      "observed_rc": 1,
+      "observed_error": "ModuleNotFoundError: No module named 'intake'",
+      "why": "python3 -I drops the script's directory from sys.path, so the sibling 'intake' module cannot be found. This is a property of isolated mode, not a defect in factory.py, and the plain form works (rc 0). Advertise the wrapper for anything that needs an isolated interpreter."
+    },
+    {
+      "form": "python3 -I package/onboarding_adapter.py check",
+      "observed_rc": 1,
+      "observed_error": "provider import fails: the module import itself is unaffected, but the accepted provider modules import their own siblings, which -I also hides",
+      "why": "Run the package adapter without -I, the same way the repository's own suites are run."
+    }
+  ],
+
+  "controls_proving_each_capability": [
+    {
+      "clause": "artifact_order",
+      "command": "python3 scripts/core/test_package_flavor_adapter.py",
+      "rc": 0,
+      "tail": "5 passed, 0 failed, 5 total",
+      "proves": "the flavor seam resolves both flavors against one shared core; the adapter's own probe additionally compares STAGE_ORDER with the declared order and refuses an out-of-order stage"
+    },
+    {
+      "clause": "cast_world_script_gates",
+      "command": "python3 scripts/core/character_bible/test_identity_s75_t05.py",
+      "rc": 0,
+      "tail": "Ran 26 tests ... OK",
+      "proves": "cast library, crowd group, anonymous-speaker and episode-setting gates accept and refuse their fixtures"
+    },
+    {
+      "clause": "notion",
+      "command": "python3 scripts/core/character_library/test_notion_discovery.py",
+      "rc": 0,
+      "tail": "Ran 11 tests ... OK",
+      "proves": "synthetic-connection discovery, new/existing/mixed selection, duplicate titles and dead connections, with no live Notion call"
+    },
+    {
+      "clause": "styles_18",
+      "command": "python3 scripts/core/music_styles/test_catalog_s75t18.py",
+      "rc": 0,
+      "tail": "ALL PASS (389 checks)",
+      "proves": "the eighteen-style catalogue, its ids and its per-style traits"
+    },
+    {
+      "clause": "styles_18",
+      "command": "python3 scripts/core/music_styles/test_delivery_map.py",
+      "rc": 0,
+      "tail": "ALL PASS (51 checks)",
+      "proves": "the delivery map on every default style prompt survives, so the catalogue did not regress the spoken/sung contract"
+    }
+  ],
+
+  "unverified": [
+    "install.sh and update-skills.sh were read, not executed; no box was mutated and no install receipt exists for this unit.",
+    "S75-T07 content-groundedness hardening is not in this base tree, so no check here can prove it; the adapter binds it when present and reports it absent.",
+    "registry.json is Skill 75's fifth held file and has no path in this tree; only the four held files that exist are digested."
+  ]
+}
