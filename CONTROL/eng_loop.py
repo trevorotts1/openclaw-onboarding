@@ -41,11 +41,25 @@ import fcntl
 CONTROL = os.path.dirname(os.path.abspath(__file__))
 HANDLER = os.path.join(CONTROL, "owner_handler.py")
 
-# T-38: the engineering temp/cache contract is the shared runtime adapter, not a
-# second hand-rolled copy of it. `shared-utils/` is the package root that carries
-# `runtime/`; the same sys.path form the runtime suite uses.
+# T-38: the engineering temp/cache contract, the runtime adapters and the
+# restart ledger are the shared runtime package, not a second hand-rolled copy
+# of any of them. `shared-utils/` is the package root that carries `runtime/`;
+# the same sys.path form the runtime suite uses.
 sys.path.insert(0, os.path.join(os.path.dirname(CONTROL), "shared-utils"))
-from runtime.external import assert_external, temp_env  # noqa: E402
+from runtime.external import (  # noqa: E402
+    LAYOUT, ChildProbe, Destination, DestinationHandle, MissingMount, MountIdentity,
+    PathRejected, PropagationError, ReboundDestination, StorageError, UnsupportedTool,
+    assert_external, open_destination, probe_child, resolve_destinations, temp_env,
+    tool_output_options, verify_mount)
+from runtime.host import (  # noqa: E402
+    BROWSER_ABSENT, BROWSER_AVAILABLE, BROWSER_NOT_ASSUMED,
+    RUNTIME_DOCKER, RUNTIME_MAC, RUNTIME_VPS, SUPPORTED_RUNTIMES,
+    BindingRefused, BindIdentity, Capabilities, DockerAdapter, HostFacts, MacAdapter,
+    PersistencePlan, UnsupportedHost, VpsAdapter, adapter_for, browser_capability,
+    classify_runtime, detect_host, verify_persistence)
+from runtime.persistence import (  # noqa: E402
+    DURABLE_STATE, ENGINEERING_PROCESS, ENGINEERING_TEMP, HostRebound, RestartLedger,
+    TeardownRefused, TeardownReport, teardown)
 
 UID = os.getuid()
 DOMAIN = "gui/%d" % UID
@@ -94,6 +108,121 @@ def external_env():
         if os.environ.get(k):
             env[k] = os.environ[k]
     return env
+
+
+# T-38 acceptance, wired where the launcher really needs it. The adapter the
+# classified runtime names is the adapter that must answer; a disagreement is a
+# named refusal, never a guess across runtimes.
+ADAPTERS_BY_RUNTIME = {"mac": MacAdapter, "vps": VpsAdapter, "docker": DockerAdapter}
+
+
+def external_root():
+    """Root of the contracted per-run layout (runtime.external LAYOUT).
+
+    Derived from PB_TMP, never declared a second time: the temp the workers
+    inherit must sit at <root>/<LAYOUT["temp"]>/<run-id> (STORAGE.md). A PB_TMP
+    outside that shape is a named refusal (PathRejected); there is no second
+    contract and no internal fallback."""
+    tmp = os.path.normpath(os.environ.get("PB_TMP") or DEFAULT_TMP)
+    root = os.path.dirname(os.path.dirname(os.path.dirname(tmp)))
+    if os.path.join(root, LAYOUT["temp"], os.path.basename(tmp)) != tmp:
+        raise PathRejected(
+            "layout_mismatch: %r is not <root>/%s/<run-id>" % (tmp, LAYOUT["temp"]))
+    return root
+
+
+def _mount_root(path):
+    """The mount point that carries `path`: the host bind the adapter verifies."""
+    p = os.path.realpath(path)
+    while not os.path.ismount(p) and os.path.dirname(p) != p:
+        p = os.path.dirname(p)
+    return p
+
+
+def runtime_admission():
+    """T-38 acceptance, re-derived in the launcher before anything registers.
+
+    Every clause of the unit's acceptance is measured here on this host: the
+    supported Mac/VPS/Docker adapters (classify_runtime -> adapter_for, cross-
+    checked against the named classes, the host bind verified through the
+    adapter), restart persistence (the run state begun on the retained ledger
+    destination), and engineering temp/output/cache propagation proven with a
+    real child — with no assumed browser and no internal fallback. Returns the
+    admission receipt; any refusal is the contract's own named error."""
+    root = external_root()
+    rid = os.path.basename(os.path.normpath(os.environ.get("PB_TMP") or DEFAULT_TMP))
+    facts: HostFacts = detect_host()
+    runtime_name = classify_runtime(facts)
+    if runtime_name not in SUPPORTED_RUNTIMES:
+        raise UnsupportedHost(
+            "unsupported_runtime: %r not in %s" % (runtime_name, SUPPORTED_RUNTIMES))
+    adapter = adapter_for(facts, BindIdentity(root=_mount_root(root)))
+    if ADAPTERS_BY_RUNTIME.get(runtime_name) is not type(adapter):
+        raise UnsupportedHost(
+            "adapter_mismatch: classify_runtime=%r adapter_for=%s"
+            % (runtime_name, type(adapter).__name__))
+    bind_identity: MountIdentity = adapter.verify_bind()
+    layout_identity: MountIdentity = verify_mount(root, require_mount=False)
+    caps: Capabilities = browser_capability(None)
+    if caps.requires_browser or caps.browser not in (BROWSER_NOT_ASSUMED,
+                                                     BROWSER_AVAILABLE,
+                                                     BROWSER_ABSENT):
+        raise UnsupportedHost("browser_contract: %r" % (caps,))
+    dests = resolve_destinations(root, rid, create=True,
+                                 require_mount=False, bind_proven=False)
+    probe: ChildProbe = probe_child(dests["temp"].path, bind_proven=False, root=root)
+    tools = dict((name, tool_output_options(name, dests, bind_proven=False, root=root))
+                 for name in ("pip", "npm"))
+    ledger_dest: Destination = dests["ledger"]
+    ledger = RestartLedger(ledger_dest, run_id=rid, runtime=runtime_name,
+                           host_fingerprint="%s-%s-%d" % (facts.system, facts.arch,
+                                                          layout_identity.device))
+    state = ledger.begin(worker_id="eng-loop-%d" % os.getuid())
+    body = {
+        "runtime": runtime_name,
+        "supported_runtimes": list(SUPPORTED_RUNTIMES),
+        "host": {"system": facts.system, "arch": facts.arch,
+                 "container_markers": list(facts.container_markers),
+                 "evidence": list(facts.evidence)},
+        "adapter": type(adapter).__name__,
+        "bind": {"root": bind_identity.path, "device": bind_identity.device,
+                 "media_uuid": bind_identity.media_uuid,
+                 "limitations": list(bind_identity.limitations)},
+        "layout_root": {"root": root, "device": layout_identity.device,
+                        "media_uuid": layout_identity.media_uuid,
+                        "limitations": list(layout_identity.limitations)},
+        "capabilities": {"browser": caps.browser,
+                         "browser_evidence": caps.browser_evidence,
+                         "requires_browser": caps.requires_browser},
+        "destinations": dict((role, d.path) for role, d in dests.items()),
+        "child_probe": probe.as_dict(),
+        "tool_options": tools,
+        "restart": {"run_id": rid, "runtime": runtime_name,
+                    "run_state_path": os.path.join(ledger_dest.path, "run-state.json"),
+                    "state": {"status": state.get("status"),
+                              "restarts": state.get("restarts")}},
+    }
+    # The propagation receipt itself is published through the no-follow handle,
+    # before anything registers: no-replacement, pre-write device/inode recheck.
+    handle: DestinationHandle = open_destination(ledger_dest.path, expected=ledger_dest,
+                                                 root=root, bind_proven=False)
+    try:
+        handle.replace("admission.json",
+                       json.dumps(body, sort_keys=True).encode("utf-8"))
+    finally:
+        handle.close()
+    return body
+
+
+def registration_persistence(readback_output):
+    """T-38: this loop's restart persistence is claimed only from a real launchd
+    read-back (verify_persistence), never from the declaration."""
+    plan = PersistencePlan(
+        kind="launchd", identity=LABEL,
+        declared="launchd user agent is this loop's persistence; verified only "
+                 "from the read-back, never from this sentence",
+        readback_command=("launchctl", "print", NATIVE_ID))
+    return verify_persistence(plan, readback_output)
 
 
 def _json_arg(raw):
@@ -1208,6 +1337,19 @@ def cmd_init(args):
         print(json.dumps({"result": "refused", "reason": "registration_in_progress"}))
         return 3
     result = {"run_id": run_id, "generation": generation, "label": LABEL, "native_id": NATIVE_ID}
+    # T-38: admission before anything registers. Every claim of the runtime
+    # contract is re-derived here; a refusal is named and nothing registers.
+    try:
+        admission = runtime_admission()
+    except (UnsupportedHost, BindingRefused, PathRejected, StorageError,
+            MissingMount, PropagationError, UnsupportedTool,
+            ReboundDestination, HostRebound) as exc:
+        print(json.dumps({"result": "refused", "reason": type(exc).__name__,
+                          "detail": str(exc)}, sort_keys=True))
+        return 3
+    result["runtime_admission"] = admission
+    meta_set(db, "run_state_path", admission["restart"]["run_state_path"])
+    db.commit()
     present = job_present()
     stale_definition = False
     if os.path.exists(PLIST) and not args.adopt:
@@ -1228,7 +1370,9 @@ def cmd_init(args):
         result["previous_run_id"] = old_run
     if job_present() and not args.register and not args.adopt:
         readback = job_readback()
-        result.update({"registration": "already_registered", "readback": readback["output"][:1200]})
+        result.update({"registration": "already_registered", "readback": readback["output"][:1200],
+                       "persistence": registration_persistence(
+                           readback["output"] if readback["rc"] == 0 else None).as_dict()})
         print(json.dumps(result, sort_keys=True))
         return 0
     if not args.register:
@@ -1252,6 +1396,9 @@ def cmd_init(args):
     rb = job_readback()
     result["readback"] = {"rc": rb["rc"], "output": rb["output"][:1600]}
     result["registered"] = rb["rc"] == 0
+    # T-38: restart persistence is claimed only from the read-back above.
+    result["persistence"] = registration_persistence(
+        rb["output"] if rb["rc"] == 0 else None).as_dict()
     reg_id = "rcpt-registration-%s-%s" % (time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()), uuid.uuid4().hex[:6])
     receipt(db, "ENG-LOOP", "registration", result, receipt_id=reg_id)
     meta_set(db, "registration_receipt_id", reg_id)
@@ -1500,9 +1647,35 @@ def cmd_dispatch_stop(args):
     if a["state"] not in ("dispatched", "acknowledged"):
         print(json.dumps({"result": "not_stoppable_from_state", "state": a["state"]}))
         return 0
-    bo = subprocess.run(["launchctl", "bootout", NATIVE_ID], capture_output=True, text=True)
+    # T-38: teardown may dispose the engineering process only. The run state is
+    # durable and is preserved by name (TeardownReport); a resource carrying an
+    # unknown effect would be preserved too, never stopped on a guess.
+    holder = {}
+
+    def _bootout(resource):
+        p = subprocess.run(["launchctl", "bootout", resource["id"]],
+                           capture_output=True, text=True)
+        holder["bootout"] = p
+        return p
+
+    resources = [{"id": NATIVE_ID, "kind": ENGINEERING_PROCESS}]
+    state_path = meta_get(db, "run_state_path")
+    if state_path:
+        resources.append({"id": state_path, "kind": DURABLE_STATE})
+    try:
+        report: TeardownReport = teardown(resources, stop=_bootout)
+    except TeardownRefused as exc:
+        print(json.dumps({"result": "refused", "reason": "teardown_refused",
+                          "detail": str(exc)}, sort_keys=True))
+        return 3
+    bo = holder.get("bootout")
+    if bo is None:
+        print(json.dumps({"result": "refused", "reason": "process_not_stopped",
+                          "teardown": report.as_dict()}, sort_keys=True))
+        return 3
     ack_body = {"host": "launchd", "command": "launchctl bootout %s" % NATIVE_ID,
                 "rc": bo.returncode, "output": (bo.stdout + bo.stderr).strip()[:800],
+                "teardown": report.as_dict(),
                 "meaning": "host accepted the stop request; NOT completion"}
     ack_id = a["ack_receipt_id"]
     if ack_id is None:
@@ -1675,7 +1848,11 @@ def cmd_selftest(args):
             else:
                 os.environ[key] = was
         import shutil
-        shutil.rmtree(sandbox, ignore_errors=True)
+        # T-38: the sandbox is engineering temp and is disposed through the
+        # shared teardown contract, which can never touch anything durable.
+        teardown([{"id": sandbox, "kind": ENGINEERING_TEMP}],
+                 stop=lambda resource: shutil.rmtree(resource["id"],
+                                                     ignore_errors=True))
 
 
 def main(argv):
