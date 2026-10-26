@@ -112,8 +112,21 @@ def external_env():
 
 # T-38 acceptance, wired where the launcher really needs it. The adapter the
 # classified runtime names is the adapter that must answer; a disagreement is a
-# named refusal, never a guess across runtimes.
-ADAPTERS_BY_RUNTIME = {"mac": MacAdapter, "vps": VpsAdapter, "docker": DockerAdapter}
+# named refusal, never a guess across runtimes. Keyed by the package's own
+# RUNTIME_* constants (PBB-822): a literal here could drift from
+# classify_runtime, and three imports with no reference are declarations, not
+# call sites.
+#
+# Deferred by name, never claimed as call sites (row step5a, PBB-822):
+#   CapacityError        raised only when a caller declares `required_bytes`;
+#                        this launcher declares no engineering disk floor yet.
+#   ReuseUnavailable     raised only by RestartLedger.reconcile_restart, the
+#                        durable-store sweep this loop does not run.
+# Wire CapacityError with the declared disk-budget lane, and ReuseUnavailable
+# when this loop adopts the restart sweep.
+ADAPTERS_BY_RUNTIME = {RUNTIME_MAC: MacAdapter,
+                       RUNTIME_VPS: VpsAdapter,
+                       RUNTIME_DOCKER: DockerAdapter}
 
 
 def external_root():
