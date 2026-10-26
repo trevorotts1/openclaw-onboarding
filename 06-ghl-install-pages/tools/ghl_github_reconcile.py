@@ -35,7 +35,10 @@ CLI
 
 Exit code (evidence-root / sweep-base modes): 0 if every vercel_deploy page
 has a verified archive (after retry, if requested); 1 if one or more remain
-missing/failed/flagged.
+missing/failed/flagged. ``--sweep-base`` adds 2: the base EXISTS but discovery
+found ZERO evidence runs — an empty set proves nothing was archived, so it is
+never reported clean. A base dir that does not exist at all is "nothing to
+sweep" and still exits 0 (discriminating these was finding 50).
 
 Exit code (--verify-local-repo mode, B-U10 acceptance (b) — the offline
 byte-match proof): 0 if the compared file byte-matches; 1 on any mismatch or
@@ -176,6 +179,15 @@ class SweepReport:
     runs: list = field(default_factory=list)   # [{"run": <run_id>, "report": <ReconcileReport.as_dict()>}]
     log_path: str = ""
 
+    def empty_sweep(self) -> bool:
+        """The base EXISTS but discovery yielded ZERO evidence runs.
+
+        This is NOT the documented "nothing to sweep" case (that is
+        ``applicable=False``, no base dir at all): an empty discovered set
+        proves nothing was archived, so it must be loud, never clean.
+        """
+        return self.applicable and not self.runs
+
     def all_clean(self) -> bool:
         # "not applicable" (no evidence base exists yet on this box — e.g. it
         # has never run a Skill-6 build) is NOT an attention-needed condition;
@@ -185,6 +197,10 @@ class SweepReport:
         # sweep. See TestSweepBase.test_missing_base_dir_is_not_an_alarm.
         if not self.applicable:
             return True
+        # Finding 50: an applicable base with zero discovered runs used to fall
+        # through to all() over an empty list and report CLEAN over nothing.
+        if not self.runs:
+            return False
         return all(r["report"]["all_clean"] for r in self.runs)
 
     def as_dict(self) -> dict:
@@ -193,6 +209,7 @@ class SweepReport:
             "applicable": self.applicable,
             "total_runs": self.total_runs,
             "runs": self.runs,
+            "empty_sweep": self.empty_sweep(),
             "all_clean": self.all_clean(),
             "log_path": self.log_path,
         }
@@ -200,15 +217,23 @@ class SweepReport:
 
 def sweep_base(base_dir: str, *, retry: bool = True,
                 requester=None, env: dict | None = None,
-                write_log: bool = True, clock=None) -> SweepReport:
+                write_log: bool = True, clock=None,
+                empty_is_not_applicable: bool = False) -> SweepReport:
     """Run ``reconcile()`` over EVERY Skill-6 evidence run under ``base_dir``
     and (by default) write ONE dated JSON log recording the pass — the
     on-disk proof a scheduled maintenance-window cron actually fired, every
     time it fires (never overwritten; one new timestamped file per sweep).
 
-    Never raises. An unresolvable/absent/empty ``base_dir`` (a bare checkout,
-    a fresh box with no builds yet) is ``applicable=False`` — nothing to
-    sweep, not an error.
+    Never raises. An unresolvable/absent ``base_dir`` (a bare checkout, a
+    fresh box with no builds yet) is ``applicable=False`` — nothing to sweep,
+    not an error.
+
+    ``empty_is_not_applicable``: the CLI creates a missing base dir (SK6002) so
+    the nightly job survives a recreated box. When the dir did not exist before
+    this sweep, an empty discovery set still means "nothing to sweep" for a box
+    that never built here — the documented 2026-07-18 non-alarm case — not the
+    finding-50 empty-sweep failure. Without that flag, an existing base that
+    yields zero runs stays ``applicable=True`` and ``all_clean()`` is False.
     """
     report = SweepReport(base_dir=base_dir)
     if not base_dir or not os.path.isdir(base_dir):
@@ -219,6 +244,9 @@ def sweep_base(base_dir: str, *, retry: bool = True,
         run_report = reconcile(run_dir, retry=retry, requester=requester, env=env)
         report.runs.append({"run": os.path.basename(run_dir), "report": run_report.as_dict()})
     report.total_runs = len(report.runs)
+
+    if empty_is_not_applicable and not report.runs:
+        report.applicable = False
 
     if write_log:
         _now = clock or (lambda: time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
@@ -338,12 +366,15 @@ def main(argv: Optional[list] = None) -> int:
 
     if args.sweep_base:
         # SK6002: a recreated Docker box can lose the folder; the nightly job
-        # must not depend on it existing. Best effort, never fatal.
+        # must not depend on it existing. Best effort, never fatal. Whether it
+        # existed BEFORE this pass decides applicable-vs-empty (finding 50).
+        base_existed = os.path.isdir(args.sweep_base)
         try:
             os.makedirs(args.sweep_base, exist_ok=True)
         except OSError:
             pass
-        sweep = sweep_base(args.sweep_base, retry=args.retry, write_log=not args.no_log)
+        sweep = sweep_base(args.sweep_base, retry=args.retry, write_log=not args.no_log,
+                           empty_is_not_applicable=not base_existed)
         d = sweep.as_dict()
         if args.json:
             print(json.dumps(d, indent=2))
@@ -355,6 +386,11 @@ def main(argv: Optional[list] = None) -> int:
                       f"(deploys={r['report']['total_deploys']})")
             print(f"Log written: {d['log_path'] or '(none — --no-log)'}")
             print("RESULT:", "CLEAN" if d["all_clean"] else "ATTENTION NEEDED")
+        if sweep.empty_sweep():
+            print(f"EMPTY SWEEP: base dir {d['base_dir']} exists but discovery found "
+                  f"{d['total_runs']} evidence runs — nothing was archived, so this is "
+                  f"NOT a clean result.", file=sys.stderr)
+            return 2
         return 0 if sweep.all_clean() else 1
 
     report = reconcile(args.evidence_root, retry=args.retry)

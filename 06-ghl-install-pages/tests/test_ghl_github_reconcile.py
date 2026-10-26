@@ -261,12 +261,60 @@ class TestSweepBase:
         assert rc == 0
         assert json.loads(capsys.readouterr().out)["applicable"] is False
 
-    def test_empty_base_dir_no_runs_is_clean(self, tmp_path):
+    def test_empty_existing_base_is_not_clean(self, tmp_path):
+        """Finding 50 — the base EXISTS but discovery yields zero runs.
+
+        An empty discovered set proves nothing was archived, so it must never
+        read as clean. Before this fix ``all_clean()`` returned True here
+        because ``all([])`` is True. The genuine documented non-alarm case (no
+        evidence base directory at all) is covered by
+        ``test_missing_base_dir_is_not_an_alarm`` above and keeps its
+        clean/exit-0 behaviour."""
         base = str(tmp_path)
         report = rec.sweep_base(base, write_log=False)
         assert report.applicable is True
         assert report.total_runs == 0
-        assert report.all_clean() is True
+        assert report.empty_sweep() is True
+        assert report.all_clean() is False
+
+    def test_empty_existing_base_log_records_the_empty_sweep(self, tmp_path):
+        """The dated log is the on-disk proof a sweep ran — it must carry the
+        empty-set verdict too, not a false CLEAN."""
+        base = str(tmp_path)
+        report = rec.sweep_base(base, clock=lambda: "20261025T090000Z")
+        assert report.log_path
+        with open(report.log_path) as fh:
+            logged = json.load(fh)
+        assert logged["applicable"] is True
+        assert logged["total_runs"] == 0
+        assert logged["empty_sweep"] is True
+        assert logged["all_clean"] is False
+
+    def test_cli_sweep_base_empty_existing_base_exits_two_and_names_base(self, tmp_path, capsys):
+        """Loud, distinct, non-zero: exit 2 (not 0 'clean', not 1 'attention
+        needed') and a message naming the base and the zero count."""
+        base = str(tmp_path)
+        rc = rec.main(["--sweep-base", base, "--json", "--no-log"])
+        assert rc == 2
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["empty_sweep"] is True
+        assert data["all_clean"] is False
+        assert data["total_runs"] == 0
+        assert base in captured.err
+        assert "0 evidence runs" in captured.err
+
+    def test_cli_sweep_base_fresh_missing_base_still_exits_zero(self, tmp_path, capsys):
+        """The 2026-07-18 false-alarm fix stands: a base the CLI had to create
+        for a box that never built here is 'nothing to sweep', not an empty
+        sweep."""
+        base = str(tmp_path / "never-built")
+        rc = rec.main(["--sweep-base", base, "--json", "--no-log"])
+        assert rc == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["applicable"] is False
+        assert data["empty_sweep"] is False
+        assert data["all_clean"] is True
 
     def test_sweeps_every_run_and_aggregates(self, tmp_path):
         base = str(tmp_path)
