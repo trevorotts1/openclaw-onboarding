@@ -135,6 +135,14 @@
     "status": "NOT_WRITTEN_BY_THIS_AGENT",
     "reason": "the task forbids the author from writing a verdict; a different agent verifies and is the only party that may record a checker identity, checker model and verdict"
   },
+  "origin_main_advanced_during_build": {
+    "base_at_branch_cut": "13f86c3153703703072462dcc0d807f856ae553b",
+    "origin_main_at_verification": "e27c5cfb972c52d7011c46c3142a99b6ad97b4bc",
+    "advanced_by": "PR #2599 batch/auto-merge-l03 (71-blackceo-signature-page 1.3.11 and its lane fixes), unrelated to S75",
+    "carries_t40_work": "no -- git ls-tree -r origin/main | grep -c 'evidence/units/S75-T40' = 0; this unit had not landed when the branch was built",
+    "why_the_branch_is_not_behind_in_content": "git diff --name-only 13f86c315..HEAD lists exactly the 4 files under evidence/units/S75-T40/, so the unit's delta is confined to its owned scope; the only reason `git diff origin/main..HEAD` also shows 71-* rows is that main gained those commits after the cut. This branch was deliberately not rebased (no force-push, nothing else moves); the merge train rebases.",
+    "verifier_note": "re-run the two commands in tests_run rather than trusting this stamp; the ledger is live and single-writer"
+  },
   "push_proof": {
     "command": "git ls-remote origin refs/heads/s75/S75-T40-r1",
     "output": "e6d58b412ca9ae2e6b7ee1b272e0dac7978553a8\trefs/heads/s75/S75-T40-r1",
