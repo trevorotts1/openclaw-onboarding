@@ -50,15 +50,24 @@ and dispatch are the proven live legs.
    this fixed order. Run `blackceo-council routes` and list what it
    returns: those are the council runtime's own configured providers on
    this box, never the calling agent's models.
-   - OpenRouter first, and recommended: it runs every advisor at once with
-     no parallel limit, so the sitting is the fastest.
+   - OpenRouter first, and recommended: it adds no parallel ceiling of its
+     own, so the sitting runs at the mode's wave width, and it never asks
+     a plan question.
    - The client's own Ollama, if they prefer it. When their plan is not
      already known, ask once: the $20 a month plan runs at most three
-     advisors at a time, the $100 a month plan runs up to ten. When Ollama
-     fails and the client has named an OpenRouter fallback model
+     advisors at a time, the $100 a month plan runs up to ten. Ollama is
+     the only provider with a ceiling of its own. When Ollama fails and
+     the client has named an OpenRouter fallback model
      (`--fallback-model ID`), the failed seats re-run on OpenRouter; with
      no fallback model the sitting blocks on the failed seats instead.
-   - Agnes 3.0 Flash, when the client selects it: no parallel limit.
+   - Agnes 3.0 Flash, when the client selects it: no parallel ceiling of
+     its own, so the same mode wave width applies.
+   A provider only sets a ceiling, the mode sets the wave width, and the
+   lower of the two is what runs: light runs 3 seats at a time on every
+   route; medium and heavy run the whole nine where the provider has no
+   ceiling, and an Ollama $20 plan still holds them to 3 (its $100 ceiling
+   of 10 exceeds the nine seats, so it changes nothing). An uncapped
+   provider never widens a light sitting past 3.
    The default follows the same rule as SKILL.md: read the calling agent's
    own configured provider (in OpenClaw, `openclaw agents list`; on
    claude-nine or Claude Code, the harness default) and, if one of those
@@ -76,11 +85,17 @@ and dispatch are the proven live legs.
    `blackceo-council convene --brief FILE --mode light|medium|heavy` (or
    `--sample` for the built-in sample decision). Convening with no `--mode`
    runs medium; that default is deliberate, so name the mode you
-   announced. Every mode seats all nine advisors; light simply runs them
-   in waves of 3, so no mode and no flag reduces the roster. Pass
-   `--seat-ids id,id,...` only to name that panel explicitly. On the
-   client's own Ollama pass `--ollama-plan 20` or `--ollama-plan 100`, and
-   `--fallback-model ID` to name the OpenRouter model used when Ollama fails. Convening is
+   announced. Every mode seats all nine advisors: the mode changes the
+   rounds and the concurrency, never the panel. `--seat-ids` does not
+   shrink that roster: for light, medium and heavy a shorter list is
+   refused with `light mode requires all nine seats` (or the matching
+   medium/heavy message), so pass `--seat-ids id,id,...` only to name the
+   panel explicitly. Smaller panels belong to the four older modes, whose
+   own panel rules are in `runtime/src/intake/panel.ts` (selected 2 to 8,
+   quick four, consult one). On the client's own Ollama
+   pass `--ollama-plan 20` or `--ollama-plan 100`, and
+   `--fallback-model ID` to name the OpenRouter model used when Ollama
+   fails. Convening is
    the approval: no grant, no approval prompt. Report the session id, the
    exact model
    label, whether it was the client's choice or the harness default, and
