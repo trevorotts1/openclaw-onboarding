@@ -1,3 +1,11 @@
+## [v2.1.26] - 2026-10-26 - version bump above main-carried v2.1.25 (PBB-833R COMBINE7)
+
+Main now carries v2.1.25, so this combine re-bumps one patch above it
+to satisfy `G3 — skill content change requires skill-version.txt bump`.
+Markers only; no code change.
+
+- skill-version.txt, SKILL.md frontmatter and this CHANGELOG agree on v2.1.26.
+
 ## [v2.1.25] - 2026-10-24 - build-only, never a responder (PBB-115 T-19 / C-19)
 
 Adds the missing half of the D-15 ownership conflict: this skill built native GHL workflows that could answer, while Skill 38 declares it owns every inbound conversation. The rule is now stated where the build happens.
