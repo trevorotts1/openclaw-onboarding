@@ -5,9 +5,19 @@
   "role": "repair-author",
   "branch": "s75/S75-T06-r11",
   "base_sha": "b731551e38f8868b283a0d067af9a5ecfa9b279a",
-  "head_sha": "PENDING_AT_WRITE_TIME",
+  "head_sha": "18280f93c16cc38007d85d8193ad66cf770b05ec",
   "written_at_utc": "2026-10-25T17:24:55Z",
-  "note": "head_sha is the literal placeholder written before the repair commit existed. It is replaced with the resolved 40-hex in a follow-up commit after the push, per this round's artefact contract.",
+  "note": "The literal placeholder PENDING_AT_WRITE_TIME was written before the repair commit existed. Per this round's artefact contract it was to be replaced with the resolved 40-hex in a follow-up commit after the push. That follow-up never landed in round 11: git log --all -- evidence/units/S75-T06/ returned one commit only (18280f93c), and it still carried the placeholder. Repaired here: head_sha now records the resolved 40-hex of the round-11 repair commit, and the follow-up commit carrying this correction is the commit the promise named. head_sha is the candidate code commit, not this bookkeeping commit.",
+  "independent_checker": {
+    "checker": "qc-conform-S75-T06",
+    "checker_id": "qc-conform-S75-T06",
+    "checker_model": "opus-chain",
+    "checker_role": "independent QC reviewer (authored nothing in this unit)",
+    "receipt": "/Users/blackceomacmini/loop-control/s75/qc/S75-T06.2e5eff3e3006f0ef5a876596bed2086e190f4061.json",
+    "receipt_recorded_at": "2026-10-25T20:05:32-04:00",
+    "receipt_verdict": "FAIL",
+    "note": "The conformance reviewer whose receipt graded this unit. Recorded here because the acceptance row's evidence column requires a named independent checker and the repair-author role is not one. The reviewer's verdict on the row was FAIL, for the evidence-column defects this correction repairs (D1); the code-behaviour clauses it probed independently passed. The reviewer authored nothing in this unit."
+  },
   "defect_repaired": {
     "summary": "Round 10 closed the orthography channel by refusing 34 real people in both display_name and character_id. Restored by DATA only: one curated entry per person in real_content_names.txt.gz, in the accented spelling and the unaccented spelling. No limb of the name rule reads spelling as evidence again.",
     "the_34": [
