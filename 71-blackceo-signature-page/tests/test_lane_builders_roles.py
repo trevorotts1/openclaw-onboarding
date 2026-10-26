@@ -413,7 +413,8 @@ class RunnerOutputTests(unittest.TestCase):
             self.assertIn(["--copy-version", "upsell"], pairs)
             self.assertIn(["--stage", stage], pairs)
         for argv, stage in zip(runs, runner.STAGES):
-            self.assertEqual(argv[1], str(self.run.resolve()))
+            # symlink-safe (macOS /var -> /private/var): resolve BOTH sides, keep exact-value assertion
+            self.assertEqual(Path(argv[1]).resolve(), self.run.resolve())
             self.assertIn(["--stages", stage], [argv[i:i + 2] for i in range(len(argv) - 1)])
             self.assertIn(["--request", f"production-request-{stage}.json"],
                           [argv[i:i + 2] for i in range(len(argv) - 1)])
