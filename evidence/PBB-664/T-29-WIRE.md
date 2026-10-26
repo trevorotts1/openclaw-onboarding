@@ -328,15 +328,19 @@ True ahead/behind against **current** `origin/main`:
 
 ```
 git rev-list --left-right --count origin/main...HEAD
-0	3
+0	<this branch's own commits>
 ```
 
-behind **0**, ahead **3** (wiring commit, fold merge, and the evidence commits).
-The count was `0 2` at the moment the wiring was measured (`ef7a70d21`); the third
-commit is this report and touches no production file. The 40 commits that landed on
-main between `3d7135664` and `c994359d6` do not touch either changed file
-(`git diff --stat 3d7135664..origin/main -- shared-utils/reminders/reminder_state_machine.py
-.github/workflows/qc-static.yml` → empty).
+**behind 0.** The left-hand count is 0 and stays 0: the branch contains every commit on
+`origin/main` up to `c994359d6`. The right-hand count is this branch's own commits
+(wiring commit + fold merge + evidence commits) and is read live with the command above
+rather than quoted as a fixed number, because each evidence commit changes it. At the
+moment the wiring itself was measured (`ef7a70d21`) it was `0 2`.
+
+The 40 commits that landed on main between `3d7135664` and `c994359d6` do not touch
+either changed file (`git diff --stat 3d7135664..origin/main --
+shared-utils/reminders/reminder_state_machine.py .github/workflows/qc-static.yml` →
+empty), so the fold was conflict-free and the wiring is unchanged by it.
 
 Ancestry was checked directly, not inferred: T-29's three commits are ancestors of
 `origin/main` (§1). Nothing in this report assumes which units are on main.
