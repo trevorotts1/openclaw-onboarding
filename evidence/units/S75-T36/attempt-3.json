@@ -13,7 +13,7 @@
   "status": "COMPLETE",
 
   "arbiter_outcome_read": "ACCEPT_WITH_STATED_LIMITS",
-  "arbiter_record": "/Users/blackceomacmini/loop-control/s75/qc/S75-T36-ARBITER.md",
+  "arbiter_record": "<operator-home>/loop-control/s75/qc/S75-T36-ARBITER.md",
   "round2_verdict_read": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/evidence/S75-T36.verdict.round2.json",
 
   "stated_limit_quoted_verbatim": {

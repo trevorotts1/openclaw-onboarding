@@ -47,7 +47,7 @@
     "Zero regression on the ten round-6 closed vectors (R6-R01..R6-R10), re-measured at base and at head.",
     "Clause 2 untouched and its fixture unedited: LEGACY -> ok=True compatibility_limited=True regenerate=False scene_count=2 unresolved=19 with input unmutated; the same record under origin=NEW must refuse LEGACY_NOT_NEW_AUTHORING.",
     "Add one regression test to test_script_validation.py that asserts the refusal of all five run-together spellings in all five containers and would fail if any were admitted again.",
-    "Work in an isolated clone under scratch; never checkout, stash, reset, clean or commit in /Users/blackceomacmini/openclaw-onboarding; push only branch s75/S75-T11-r7; no main, no merge, no pull request.",
+    "Work in an isolated clone under scratch; never checkout, stash, reset, clean or commit in <operator-home>/openclaw-onboarding; push only branch s75/S75-T11-r7; no main, no merge, no pull request.",
     "Prove the push from origin: git ls-remote naming the branch at the pushed head, the push output, the sole parent of the head equal to the base, and merge-base --is-ancestor rc values reported separately (0 ancestor, 1 not ancestor, 128 unusable)."
   ]
 }
