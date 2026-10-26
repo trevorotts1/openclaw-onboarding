@@ -1068,6 +1068,20 @@ class BookkeepingTests(unittest.TestCase):
         return [tuple(int(p) for p in m.split("."))
                 for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
 
+    def owned_versions(self):
+        # The entries this change owns: strictly above main's newest. After a
+        # faithful merge of main the head of the file is main's own history, so
+        # a fixed positional window names main's numbers, not this branch's.
+        # ponytail: scoping to > main_top makes the "already on main" arm
+        # structurally implied; the bite that remains is distinctness among the
+        # owned numbers, and shipping at/below main stays caught by
+        # test_the_shipped_version_is_strictly_above_main_s.
+        versions = self.changelog_versions()
+        if not self.git_ok:
+            return versions[:4]
+        main_top = max(self.main_changelog_versions())
+        return [v for v in versions if v > main_top]
+
     def test_the_shipped_version_is_strictly_above_main_s(self):
         if not self.git_ok:
             self.skipTest("no origin/main in this checkout to compare against")
@@ -1080,7 +1094,7 @@ class BookkeepingTests(unittest.TestCase):
         if not self.git_ok:
             self.skipTest("no origin/main in this checkout to compare against")
         shipped = {self.local_marker().lstrip("v")}
-        shipped.update("%d.%d.%d" % v for v in self.changelog_versions()[:4])
+        shipped.update("%d.%d.%d" % v for v in self.owned_versions())
         for version in sorted(shipped):
             with self.subTest(version=version):
                 # `git grep` exits 1 on "no match", which is the answer we want
@@ -1123,12 +1137,12 @@ class BookkeepingTests(unittest.TestCase):
     def test_no_version_names_two_different_changes(self):
         # D2 in its own words: "the same number now names three different
         # changes". main's own file repeats one number per entry for a single
-        # task, so the rule is pinned against what this change owns: the four
-        # T-19 blocks are four distinct numbers and none of them may already
-        # name an entry on main.
-        t19 = self.changelog_versions()[:4]
-        self.assertEqual(len(set(t19)), 4,
-                         "the four T-19 entries must not share a version: %s" % t19)
+        # task, so the rule is pinned against what this change owns: the T-19
+        # blocks this branch adds are distinct numbers and none of them may
+        # already name an entry on main.
+        t19 = self.owned_versions()
+        self.assertEqual(len(set(t19)), len(t19),
+                         "the T-19 entries must not share a version: %s" % t19)
         if not self.git_ok:
             self.skipTest("no origin/main in this checkout to compare against")
         main_headers = set(self.main_changelog_versions())
