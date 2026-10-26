@@ -1,0 +1,2729 @@
+{
+ "schema": "blackceo.s75.t28-compatibility-map/v5",
+ "unit": "S75-T28",
+ "round": 5,
+ "acceptance_ids": [
+  "S75-A28"
+ ],
+ "title": "Preserve emergency fixes, paid outputs and raw client answers",
+ "workflow_id": "WF08-migration",
+ "logical_owner": "COMPATIBILITY-OWNER",
+ "generated_at": "2026-10-25T02:20:00Z",
+ "mode": "READ_ONLY_INVENTORY_AND_MAP",
+ "product_files_edited": false,
+ "branch_or_worktree_mutated": false,
+ "reason_for_round_3": "Round 2 was independently judged FAIL. It was not factually wrong on the substance: its three corrections, its five new findings and its eight preserved findings all survived the independent check. It failed because it declared itself the map of record while dropping the round-1 findings it existed to carry forward, and because two evidence sub-claims inside correction 1 were inaccurate. Round 3 fixes exactly that and nothing else: it restores the dropped round-1 sections as real sections with their content, corrects the two sub-claims, and carries every surviving finding forward unweakened.",
+ "supersedes": {
+  "relationship": "Round 5 CORRECTS seven false or stale self-descriptions in round 4 (V-18, V-24, V-25, V-26, V-27/V-28, V-29, V-30) and changes the evidence class: every round-5 self-description is a computed measurement record, not authored prose. No round-1 material is removed or reworded; the regression set R1..R10 proves the round-4 restorations survive.",
+  "round_1": {
+   "path": "evidence/S75-T28.compatibility-map.json",
+   "sha256": "e9ab7ac031706ceeec6c460959eea9a0bb4267106ef398f2b74370565eaeee19",
+   "bytes": 53195,
+   "status": "PINNED HISTORY - not modified by round 4"
+  },
+  "round_2": {
+   "path": "evidence/S75-T28.compatibility-map.round2.json",
+   "sha256": "459d4bf79f8ddf1ee2802eefc16a8376616bb447e4025c4f8db5bb257ff97d46",
+   "bytes": 55775,
+   "status": "PINNED HISTORY - not modified by round 4"
+  },
+  "round_3": {
+   "path": "evidence/S75-T28.compatibility-map.round3.json",
+   "sha256": "bd7b39a728fcd3848d4e963f95879f17dda82335a81031555f8cf8d9a14c75c5",
+   "bytes": 100968,
+   "status": "PINNED HISTORY - not modified by round 4. Its two false sentences are recorded in completeness_claim_audit and are not repeated here as true."
+  },
+  "branch_taken": "A",
+  "why_branch_A": "Branch A restores the round-1 material itself rather than describing its absence. C3's required decision is a per-ad waiver scoping rule ('scoped per artifact and never fleet-wide'); a map of record that only points at another file leaves a reader able to widen an accepted per-ad waiver to the whole fleet, which is exactly what the rule forbids. Restoring the rule in this file removes that failure mode instead of annotating it."
+ },
+ "carry_forward_table": [
+  {
+   "round_1_section": "schema/unit/acceptance_ids/title/workflow_id/logical_owner/mode/flags",
+   "disposition": "CARRIED",
+   "now_appears_at": "top of this round-4 artifact",
+   "note": "round 4 extends schema to v4 and sets round: 4. unit, acceptance_ids, title, workflow_id, logical_owner, mode, product_files_edited and branch_or_worktree_mutated are identical to round 1 in this file (9 fields checked). generated_at is per-round by design and differs (round 1 stamps 2026-10-24T22:45:24Z; this file stamps its own). Round 3's phrase 'every other metadata field is identical' is true for the nine listed fields; see completeness_claim_audit.CA-03.",
+   "fields_compared": 9,
+   "fields_compared_source": "evidence/S75-T28.compatibility-map.json top-level keys schema, unit, acceptance_ids, title, workflow_id, logical_owner, mode, product_files_edited, branch_or_worktree_mutated compared against the same keys in this file"
+  },
+  {
+   "round_1_section": "acceptance_criterion_verbatim",
+   "disposition": "CARRIED",
+   "now_appears_at": "acceptance_criterion_verbatim",
+   "note": "verbatim."
+  },
+  {
+   "round_1_section": "exact_deliverable_verbatim",
+   "disposition": "CARRIED",
+   "now_appears_at": "exact_deliverable_verbatim",
+   "note": "verbatim."
+  },
+  {
+   "round_1_section": "hard_boundaries_observed",
+   "disposition": "CARRIED (note corrected in round 4)",
+   "now_appears_at": "hard_boundaries_observed",
+   "note": "round 2's four-boundary form, byte-identical in round 4. It is not a literal superset of round 1's three: 2 of round 1's 3 strings are byte-identical here and the third (the no-repository-write boundary) is rephrased, plus a fourth boundary is added. Round 3's word 'superset' is true in intent, false as a byte claim. See completeness_claim_audit.CA-04.",
+   "round_1_items": 3,
+   "round_1_items_source": "evidence/S75-T28.compatibility-map.json:hard_boundaries_observed list length (3)",
+   "items_now": 4,
+   "items_now_source": "hard_boundaries_observed list length in this file (4)"
+  },
+  {
+   "round_1_section": "precursors_consumed (S75-T01, S75-T03)",
+   "disposition": "RESTORED IN FULL",
+   "now_appears_at": "precursors_consumed",
+   "note": "Dropped by round 2 entirely. Both blocks restored verbatim from round 1, including the T01 second-census branch_census and the T03 mandated_order and proven_refusals lists."
+  },
+  {
+   "round_1_section": "current_target_heads_observed",
+   "disposition": "CARRIED and UPDATED",
+   "now_appears_at": "current_target_heads_observed",
+   "note": "ONB unchanged at aa3d43d7f. N999 head moved 6e9d69def -> 6e4d3b419 (NEW-5); round 1's value remains the correct record of the head at round-1 read time."
+  },
+  {
+   "round_1_section": "eleven_units_on_origin_main",
+   "disposition": "CARRIED and RE-EXPANDED",
+   "now_appears_at": "eleven_units_on_origin_main",
+   "note": "Round 2 carried only the 11 head shas. Round 3 restores round 1's per-unit changed_files lists alongside round 2's re-proved ancestry result."
+  },
+  {
+   "round_1_section": "emergency_behaviour_map (13 rows)",
+   "disposition": "RESTORED IN FULL",
+   "now_appears_at": "emergency_behaviour_map",
+   "note": "Dropped by round 2 except for file-preservation spot checks (SFR-001/002/004b) and a leaf-load check (SFR-003). All 13 rows restored with their behaviour text; the round-2 re-proofs are attached to the same rows rather than replacing them."
+  },
+  {
+   "round_1_section": "emergency_owner_handoff",
+   "disposition": "CARRIED as CORRECTED (note corrected in round 4)",
+   "now_appears_at": "emergency_owner_handoff_CORRECTED",
+   "note": "Two sub-claims are superseded and recorded as S1, S2 and S3: the held-file inventory (registry.json is a phantom) and who_owns_the_live_legacy_writer. Of the five fields round 3 said were 'carried unchanged', only state (NOT_HANDED_OFF) is byte-identical to round 1. holding_party and receiving_owner are byte-identical in text value but moved in position (round 1 nests them under what_the_handoff_established); scope is reworded ('five named' -> 'four real'); lease_exception is unchanged in value. Three further round-1 strings that round 3 dropped with no S entry - the doctrine clause, the preservation answer and the residual sentence naming batch/s75-b5-prep at dd3881cff - ARE PRESENT in this file at emergency_owner_handoff_CORRECTED.round_1_material_restored_verbatim (doctrine_full, does_merged_work_preserve_it_answer, does_merged_work_preserve_it_residual), each deep-equal to round 1; see measurement M1. Round 4's note asserted the opposite of this and is corrected here. See completeness_claim_audit.CA-08 and could_not_close.CL-02.",
+   "state_byte_identical": true,
+   "state_byte_identical_source": "evidence/S75-T28.compatibility-map.json:emergency_owner_handoff.state == emergency_owner_handoff_CORRECTED.state in this file (both 'NOT_HANDED_OFF')",
+   "note_correction": {
+    "corrects": "the round-4 sentence 'Three further round-1 strings are absent from this file and are NOT covered by any S entry'",
+    "measurement": "M1",
+    "measured": true
+   }
+  },
+  {
+   "round_1_section": "old_run_inventory (7 distinct run roots)",
+   "disposition": "RESTORED IN FULL",
+   "now_appears_at": "old_run_inventory",
+   "note": "Dropped by round 2 as a block; only scattered counts survived inside asset_classes_CARRIED_AND_RECHECKED. All 7 roots restored with roles, sizes, extensions, campaigns and run_families."
+  },
+  {
+   "round_1_section": "asset_classes (7 classes)",
+   "disposition": "CARRIED and RECHECKED",
+   "now_appears_at": "asset_classes_CARRIED_AND_RECHECKED",
+   "note": "Three sub-claims superseded (null count, script-approval count, spend-db risk) plus one path precision fix (spaulding cast/urls.json). All seven classes present."
+  },
+  {
+   "round_1_section": "old_run_fields_found (8 dialect/shape records)",
+   "disposition": "CARRIED (wording corrected in round 4)",
+   "now_appears_at": "old_run_fields_found_CARRIED",
+   "note": "carried from round 2; two shape strings reworded for accuracy (card_answers_dialect_A_current.shape gained 'or v2 envelope with the same rows'; card_answers_dialect_B_legacy.shape dropped the parenthetical to 'length 180'). No substantive field is lost: the other 6 of 8 records are byte-identical to round 1. The word 'verbatim' used by round 3 was false as written; see completeness_claim_audit.CA-02.",
+   "records_total": 8,
+   "records_total_source": "evidence/S75-T28.compatibility-map.json -> old_run_fields_found key count (8)",
+   "records_byte_identical_to_round_1": 6,
+   "records_byte_identical_to_round_1_source": "field-by-field deep comparison of evidence/S75-T28.compatibility-map.json:old_run_fields_found against old_run_fields_found_CARRIED in this file, run 2026-10-24; the 2 differing values are card_answers_dialect_A_current.shape and card_answers_dialect_B_legacy.shape"
+  },
+  {
+   "round_1_section": "conflicts_with_merged_units (C1..C9)",
+   "disposition": "CARRIED and RESTORED IN FULL (round 4, BRANCH A)",
+   "now_appears_at": "conflicts_with_merged_units_CARRIED",
+   "note": "All nine conflict records are present in this file, and the fields round 3 dropped are now restored here alongside the round-2/3 status string: each conflict's round-1 conflict statement, its complete round-1 evidence array (29 evidence lines in total across C1..C9), its impact / impact_on_emergency_behaviour, C4's precision_limit, and required_decision_for_T29_T30 where round 1 records one (7 of the 9: C1, C2, C3, C4, C5, C8, C9; C6 and C7 carry none in round 1 either). With those fields present, the sentence 'no conflict removed or weakened' is true as written. It was NOT true in the round-3 file, where 0 of 29 evidence lines, 0 of 7 required_decision strings and 0 of 9 conflict statements were present; see completeness_claim_audit.CA-01.",
+   "evidence_line_count": 29,
+   "evidence_line_count_source": "evidence/S75-T28.compatibility-map.json -> conflicts_with_merged_units[*].evidence lengths: C1 7, C2 2, C3 3, C4 2, C5 3, C6 3, C7 3, C8 3, C9 3 (sum 29)",
+   "required_decision_count": 7,
+   "required_decision_count_source": "evidence/S75-T28.compatibility-map.json -> conflicts_with_merged_units: keys required_decision_for_T29_T30 present on C1, C2, C3, C4, C5, C8, C9 and absent on C6, C7"
+  },
+  {
+   "round_1_section": "not_found_named_sources (3 items)",
+   "disposition": "RESTORED IN FULL",
+   "now_appears_at": "not_found_named_sources",
+   "note": "Round 2 kept item 2 only inside C8 and dropped item 3 entirely. All 3 items restored verbatim, item 3 in full with its sources_searched and not_checked."
+  },
+  {
+   "round_1_section": "cannot_verify (8 items)",
+   "disposition": "SUPERSEDED (note corrected in round 4)",
+   "now_appears_at": "what_remains_unverified",
+   "note": "all 8 round-1 items are represented in what_remains_unverified and 2 more are added (migrate() intent; the four held files' content equality), giving 10. They are represented as re-summarised lines, NOT as round-1 text: 8 of 8 differ in wording from the round-1 strings. Round 3's phrase 'present' is true as a topic mapping, false as a byte comparison. See completeness_claim_audit.CA-05.",
+   "round_1_items": 8,
+   "round_1_items_source": "evidence/S75-T28.compatibility-map.json:cannot_verify list length (8)",
+   "items_now": 10,
+   "items_now_source": "what_remains_unverified list length in this file (10)"
+  },
+  {
+   "round_1_section": "described_changes_not_applied (4 items)",
+   "disposition": "CARRIED (note qualified in round 4)",
+   "now_appears_at": "described_changes_not_applied_CARRIED",
+   "note": "all four items present, all four carry applied:false. Not verbatim: 3 of the 4 change strings are shortened relative to round 1 (measured items [1, 2, 4]); 1 of the 4 change strings are byte-identical to round 1 (measured items [3]). 4 of the 4 risk strings are shortened relative to round 1 (measured items [1, 2, 3, 4]). No decision is lost; item 1's specificity is (it no longer names revision-2026-10-22 or the absent 1.3 GB zip). See measurement M2 and completeness_claim_audit.CA-06.",
+   "items_total": 4,
+   "items_total_source": "evidence/S75-T28.compatibility-map.json:described_changes_not_applied list length (4); described_changes_not_applied_CARRIED in this file (4)",
+   "note_correction": {
+    "corrects": "the round-4 sentence '4 of 4 change strings and 4 of 4 risk strings are shortened relative to round 1'",
+    "measurement": "M2",
+    "measured": {
+     "change_shortened": 3,
+     "risk_shortened": 4
+    }
+   }
+  },
+  {
+   "round_1_section": "commands_run",
+   "disposition": "SUPERSEDED",
+   "now_appears_at": "commands_run_this_round",
+   "note": "Round 1's command list is the historical record of round 1 and stays in the round-1 file. Each round records its own; this file's list is round 5's own at commands_run_this_round. The round-4 file's note said 'Round 3 records its own', which is stale round-3 wording inside a round-4 artefact; see measurement M5."
+  },
+  {
+   "round_1_section": "anything_i_mutated",
+   "disposition": "PER-ROUND",
+   "now_appears_at": "anything_i_mutated",
+   "note": "Each round states its own; round 1's statement is unchanged in the round-1 file. The round-4 file's anything_i_mutated was byte-identical to round 3's and named the round-3 map path, which is false for round 4; see measurement M5."
+  },
+  {
+   "round_1_section": "does_not_establish (6 items)",
+   "disposition": "CARRIED (note corrected in round 4)",
+   "now_appears_at": "does_not_establish",
+   "note": "6 of 6 items present, and byte-identical to ROUND 2, not to round 1: 3 of the 6 strings are shortened relative to round 1 (measured items [1, 2, 4]). The round-1 text dropped by each shortened item is recorded per item in measurement M3. Round 3's phrase 'the same six' is true as a count and as a round-2 comparison, false as a round-1 byte comparison. See measurement M3 and completeness_claim_audit.CA-07.",
+   "items_total": 6,
+   "items_total_source": "does_not_establish list length in this file (6); evidence/S75-T28.compatibility-map.json:does_not_establish list length (6); evidence/S75-T28.compatibility-map.round2.json:does_not_establish list length (6)",
+   "note_correction": {
+    "corrects": "the round-4 sentence '2 of the 6 strings are shortened relative to round 1'",
+    "measurement": "M3",
+    "measured": {
+     "shortened_vs_round_1": 3
+    }
+   }
+  },
+  {
+   "round_1_section": "planning_estimate_minutes",
+   "disposition": "CARRIED",
+   "now_appears_at": "planning_estimate_minutes",
+   "note": "null in all rounds."
+  }
+ ],
+ "superseded_claims_in_round_1": [
+  {
+   "id": "S1",
+   "round_1_claim": "emergency_owner_handoff.what_the_handoff_established.held_files - five held paths including registry.json presented as a real held file on 'ONB + N999'.",
+   "superseded_by": "CORRECTION-3 and emergency_owner_handoff_CORRECTED.held_file_inventory_corrected",
+   "why": "registry.json is a phantom: no file at any skill-relative path in either repository or on disk. The real inventory is FOUR names, not five. The handoff artifact's own text still lists five names and is not altered."
+  },
+  {
+   "id": "S2",
+   "round_1_claim": "emergency_owner_handoff.does_merged_work_preserve_it.proof - the glob-form zero-paths diff over '*factory.py' '*lyric_writer.py' '*character_approval.py' '*registry.json' '*method_plan.py' offered as preservation proof for all five.",
+   "superseded_by": "CONFIRMED_PRESERVED.held_file_zero_paths (scope_note) and CORRECTION-3.proof_note",
+   "why": "That glob result is VACUOUS for '*registry.json' - zero because the path never existed. The non-vacuous proof is the exact-path diff over the four real names, which is empty (rc 0), backed by identical blob SHAs across dccd68117 and origin/main."
+  },
+  {
+   "id": "S3",
+   "round_1_claim": "emergency_owner_handoff.does_merged_work_preserve_it.who_owns_the_live_legacy_writer - 'factory.py still writes card-answers.json ... the legacy raw-answer write contract is still owned by the emergency owner and must not be rewritten by T29/T30.'",
+   "superseded_by": "CORRECTION-1 and emergency_owner_handoff_CORRECTED.who_owns_the_live_legacy_writer_CORRECTED",
+   "why": "factory.py performs ZERO writes of card-answers.json. The writer is scripts/core/script_approval/card_answers.py, which is not one of the held names and carries no lease. What T29/T30 must protect is the v2 envelope and the three write points in card_answers.py, stated explicitly rather than inherited from the hold."
+  },
+  {
+   "id": "S4",
+   "round_1_claim": "asset_classes.raw_answers.retention_risk - 'jen 60s run: 14 rows, 6 with value:null'.",
+   "superseded_by": "CORRECTION-2",
+   "why": "7 of 14 rows carry value:null (length, music, look, model, storyboard, song, script); round 1's own sentence enumerated seven while stating six. The data-fidelity substance is unchanged and is carried."
+  },
+  {
+   "id": "S5",
+   "round_1_claim": "asset_classes.approved_artifacts.counts_observed.script_approval_json_total_on_disk - '40+ (39 synthetic under the package scratch; 2 real under jen-eoe-emeralds-20261013 and 2 under wantedwoman-book-test)'.",
+   "superseded_by": "NEW-2",
+   "why": "The count is 306 files on disk (299 package-scratch synthetic, 1 owner-test, 2 repair-lane, 2 real Jennifer Allen runs, 2 real wantedwoman-book-test paths). Round 1's figure is an undercount."
+  },
+  {
+   "id": "S6",
+   "round_1_claim": "asset_classes.provider_ids.retention_risk - 'the SPEND DB THAT LINKS THEM TO MONEY IS EMPTY OR MISSING in three real runs ... what was paid, for which task cannot be reconstructed from the local copies alone'.",
+   "superseded_by": "NEW-1 and asset_classes_CARRIED_AND_RECHECKED.provider_ids.retention_risk_corrected",
+   "why": "Wrong for two of the three. The run-root spend.sqlite3 survives for eoe-emeralds-20261016-60s (454656 bytes, jobs 509, receipts 508, sum(actual_cost) 2406) and eoe-emeralds-20261013 (200704 bytes, jobs 198, receipts 197, sum(actual_cost) 1795). The correct risk is 'two of four real runs retain the money-to-task link'."
+  },
+  {
+   "id": "S7",
+   "round_1_claim": "asset_classes.images - 'spaulding cast/urls.json' cited without a resolved path.",
+   "superseded_by": "asset_classes_CARRIED_AND_RECHECKED.images.corrected_path",
+   "why": "The 11-entry file is at /Users/blackceomacmini/drama-song-factory-build/qualification/spaulding-gigy-one-check-chanel-150/cast/urls.json; the delivered corpus has no urls.json at all. The single locally saved image is .../cast/images/whisperer-man-front-before-recast.png at 5127248 bytes; the v2 run's cast/urls.json holds 10 entries. The SEVERE retention risk is unchanged."
+  },
+  {
+   "id": "S8",
+   "round_1_claim": "current_target_heads_observed.N999.origin_main = 6e9d69def27dd4adfffbe7a03ccf0e47d871f03b at 2026-10-24 16:28:47.",
+   "superseded_by": "NEW-5 and current_target_heads_observed.N999",
+   "why": "As a current reading only. N999 origin/main moved to 6e4d3b41912f395a8c9b53e3cc0437ed9da3c121 (2026-10-24 18:45:05). Round 1's value remains the correct record of the head at round-1 read time and is preserved as such."
+  },
+  {
+   "id": "S9",
+   "round_1_claim": "cannot_verify (8 items).",
+   "superseded_by": "what_remains_unverified",
+   "why": "Checked item by item: all 8 round-1 items appear in what_remains_unverified (remote head currency; CC half of SFR-005; visible lip-sync share; client-box bytes; 380 synthetic answers; unmerged branch count; machine-readable waiver; byte identity of medium/low conflict paths), plus 2 new items. Nothing was dropped."
+  },
+  {
+   "id": "S10",
+   "round_1_claim": "conflicts_with_merged_units C1 - four style/recipe registries.",
+   "superseded_by": "NEW-4 (refinement, not overturn)",
+   "why": "A fifth style-id carrier exists at music/constraints.py:55-62 and is a LIVE default reached by bind_matrix at line 300. C1's four-registry count stands: constraints.py is an id list, not a recipe registry. No C1 conclusion weakened."
+  },
+  {
+   "id": "S11",
+   "round_1_claim": "asset_classes.decision_history.where - 'evidence/S75-LOOP-TICKS.jsonl (142 lines)' and current_target_heads / counts that are time-dependent.",
+   "superseded_by": "NEW-5 and asset_classes_CARRIED_AND_RECHECKED.decision_history.counts_observed.loop_ticks_lines_at_read_time",
+   "why": "As counts only. The file is an append-only live log (142 at round 1, 172 at round 2, 186 at the round-3 read). The entry naming the file stands."
+  },
+  {
+   "id": "S12",
+   "round_1_claim": "emergency_behaviour_map SFR-003 line attributions (_CORE 88-90, _load_canonical_durations 91-97, CANONICAL_DURATION_S 99, OFFERED_LENGTHS_S 100).",
+   "superseded_by": "CONFIRMED_PRESERVED.SFR-003_duration_registry_leaf_load (re-attached to the SFR-003 row in this round)",
+   "why": "Round 2's independently re-proved readings are authoritative (_CORE 87, sys.path insert 88-89, _load_canonical_durations 91, leaf path 93, CANONICAL_DURATION_S 100, OFFERED_LENGTHS_S 101). The behaviour text of SFR-003 is unchanged."
+  },
+  {
+   "id": "S13",
+   "round_1_claim": "asset_classes.raw_answers.preservation_behaviour_already_on_main - 'intake_session.py lines 448-457'.",
+   "superseded_by": "two_card_answers_dialects.legacy_preservation_behaviour (448-456)",
+   "why": "Precision only: unverified_preserved at 453-455, unreadable_preserved at 456, original file not rewritten. The behaviour is identical."
+  },
+  {
+   "id": "S14",
+   "round_1_claim": "commands_run (round 1's command list).",
+   "superseded_by": "commands_run_this_round",
+   "why": "Historical record of round 1; it stays in the round-1 file unchanged. Each round records the commands it actually ran."
+  }
+ ],
+ "acceptance_criterion_verbatim": "Existing paid assets remain readable and untouched; only affected descendants invalidate; absent approval becomes explicit missing evidence and never invented approval or regeneration.",
+ "exact_deliverable_verbatim": "Map current accepted emergency behavior and old runs; retain raw answers, client-selected routes, approved artifacts, songs/images/provider IDs and decision history.",
+ "hard_boundaries_observed": [
+  "No client data, paid asset, run record or evidence file was modified, migrated, rewritten or deleted.",
+  "No secret value is reproduced here. Credential-bearing surfaces are named only as credential-bearing.",
+  "No repository was written to. Both clones were read with git show / cat-file / ls-tree / grep / diff / merge-base / rev-parse / for-each-ref against existing refs. No fetch, checkout, branch, commit, merge or push was run.",
+  "No product code was edited. No held file was touched. No backup was created."
+ ],
+ "precursors_consumed": {
+  "S75-T01": {
+   "attested_artifact": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/evidence/S75-T01-reconciliation.json",
+   "sha256": "95b56db995b1e43dcbaf0586a0a804c461c62292f53432c32c1fc8996aaa718a",
+   "bytes": 18717,
+   "verdict": "PASS",
+   "verdict_file": "evidence/S75-T01.verdict.json",
+   "verdict_digest_match": "sha256 matches the digest quoted inside S75-T01.verdict.json",
+   "second_census_same_unit": {
+    "path": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/evidence/source-reconciliation.json",
+    "generated_at": "2026-10-24T20:50:17Z",
+    "note": "Wider T01 derivation at ONB origin/main f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b; NOT the attested head. Used only for its branch/lease census, which is labelled as of that head.",
+    "branch_census": {
+     "refs_matching_s75": 99,
+     "unmerged_active": 47,
+     "merged_into_origin_main": 52,
+     "at_head": "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b"
+    }
+   }
+  },
+  "S75-T03": {
+   "build_artifact": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/evidence/S75-T03-build.json",
+   "sha256": "557f4e5c1055733a6cc49bacaea5b5a5623bec841c5fa1d6f12382a6ee4125dd",
+   "bytes": 1814,
+   "candidate_head": "b7cfa96c877c931c3833e651cc21735c7f99edb0",
+   "verdict": "PASS",
+   "verdict_file": "evidence/S75-T03.verdict.json",
+   "merge_commit_on_main": "29819886a7ffce52abb988bf58eb1e42c85d7b51",
+   "delivered_files": [
+    "75-drama-song-ad-factory/scripts/core/story_first_contracts.py",
+    "75-drama-song-ad-factory/scripts/core/test_story_first_contracts.py"
+   ],
+   "also_on_main_from_t03_lineage": "75-drama-song-ad-factory/scripts/core/package_flavor_adapter.py (commit 29819886a subject: 'feat(75): package-flavor adapter with single seam over shared core (S75-T03)')",
+   "mandated_order": [
+    "research_premise",
+    "cast_and_world",
+    "story_plan",
+    "script_lyrics",
+    "package_approval",
+    "music",
+    "timed_storyboard",
+    "keyframes",
+    "storyboard_approval",
+    "video",
+    "assembly"
+   ],
+   "proven_refusals": [
+    "music before whole-package approval",
+    "stale or mismatched package approval digest",
+    "script before complete cast manifest",
+    "empty cast manifest treated as missing input",
+    "one-line placeholder scene",
+    "scene referencing an undefined location"
+   ]
+  }
+ },
+ "emergency_behaviour_map": [
+  {
+   "id": "SFR-001",
+   "behaviour": "Keepalive registrar contract + prompt duties",
+   "repo": "ONB",
+   "files": [
+    "75-drama-song-ad-factory/timer-artifacts/install-keepalive-cron.sh",
+    "75-drama-song-ad-factory/timer-artifacts/keepalive-cron-prompt.txt"
+   ],
+   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W00-U5/RECEIPT.md",
+   "state_after_merged_units": "PRESERVED (file untouched by all 11 units; git diff 569eee7a..aa3d43d7f -- these paths returned no entries)",
+   "round_2_file_preservation_recheck": "CONFIRMED_PRESERVED.emergency_preservation_spot_checks (git diff 569eee7a..aa3d43d7f over install-keepalive-cron.sh + keepalive-cron-prompt.txt = empty, rc 0)",
+   "behaviour_text_source": "round 1, carried verbatim by round 3; round 2 carried only the file-preservation check"
+  },
+  {
+   "id": "SFR-002",
+   "behaviour": "batch.py passes integer cents to spend_ledger.init_run",
+   "repo": "ONB",
+   "files": [
+    "75-drama-song-ad-factory/scripts/core/batch_mode/batch.py"
+   ],
+   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W02-U2/RECEIPT.md",
+   "state_after_merged_units": "PRESERVED (untouched by all 11 units)",
+   "round_2_file_preservation_recheck": "CONFIRMED_PRESERVED.emergency_preservation_spot_checks (same diff over batch_mode/batch.py = empty, rc 0)",
+   "behaviour_text_source": "round 1, carried verbatim by round 3; round 2 carried only the file-preservation check"
+  },
+  {
+   "id": "SFR-003",
+   "behaviour": "duration_registry leaf loaded BY FILE PATH; scattered duration tuple removed so one canonical table owns 60/90/120/180/300/600",
+   "repo": "ONB",
+   "files": [
+    "75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py"
+   ],
+   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U3.md",
+   "state_after_merged_units": "PRESERVED BUT TOUCHED. S75-T20 changed this file (+231/-10 between 569eee7a and aa3d43d7f). The leaf-load block is still present on origin/main: _CORE resolved at line 88-90, _load_canonical_durations() defined at 91-97, CANONICAL_DURATION_S assigned at 99, OFFERED_LENGTHS_S = CANONICAL_DURATION_S at 100. The 10 deleted lines are STYLES accessor refactors, not the registry block (verified by listing every '-' line in the diff).",
+   "risk": "Highest-risk overlap of the eleven units with an accepted emergency fix. Correct today; any future edit to this file must re-prove the leaf-load block.",
+   "round_2_recheck": {
+    "block": "CONFIRMED_PRESERVED.SFR-003_duration_registry_leaf_load",
+    "verified_symbols_on_origin_main": {
+     "_CORE": 87,
+     "_CORE_sys_path_insert": "88-89",
+     "_load_canonical_durations": 91,
+     "leaf_path": "93 (os.path.join(_CORE, 'suno_recipe', 'duration_registry.py'))",
+     "CANONICAL_DURATION_S": 100,
+     "OFFERED_LENGTHS_S": 101
+    },
+    "leaf_file": "75-drama-song-ad-factory/scripts/core/suno_recipe/duration_registry.py PRESENT; CANONICAL_DURATION_S = (60, 90, 120, 180, 300, 600) at line 27",
+    "diffstat": "git diff --stat 569eee7a..aa3d43d7f -- music_styles.py => 1 file changed, 231 insertions(+), 10 deletions(-); all ten deleted lines are STYLES accessor refactors",
+    "line_attribution_note": "Round 1 read the same block as _CORE 88-90 / _load_canonical_durations 91-97 / CANONICAL_DURATION_S 99 / OFFERED_LENGTHS_S 100. Round 2's readings above are the independently re-proved ones and are authoritative; the behaviour text is unchanged."
+   }
+  },
+  {
+   "id": "SFR-003b",
+   "behaviour": "Trust sorted hook timing; reject only overlap corruption",
+   "repo": "ONB",
+   "files": [
+    "75-drama-song-ad-factory/scripts/core/sung_hook/hook_placement.py"
+   ],
+   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U5.md",
+   "state_after_merged_units": "PRESERVED (untouched by all 11 units)"
+  },
+  {
+   "id": "SFR-004",
+   "behaviour": "faster-whisper module name derived from a constant (F17 scan)",
+   "repo": "ONB",
+   "files": [
+    "75-drama-song-ad-factory/scripts/core/intake_preflight/preflight.py"
+   ],
+   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U1.md",
+   "state_after_merged_units": "PRESERVED (untouched by all 11 units)"
+  },
+  {
+   "id": "SFR-004b",
+   "behaviour": "run-timer.sh union of seams plus capability gate and wake propagation",
+   "repo": "ONB",
+   "files": [
+    "75-drama-song-ad-factory/timer-artifacts/run-timer.sh"
+   ],
+   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U3-CONFLICT.md",
+   "state_after_merged_units": "PRESERVED (untouched by all 11 units)",
+   "round_2_file_preservation_recheck": "CONFIRMED_PRESERVED.emergency_preservation_spot_checks (same diff over timer-artifacts/run-timer.sh = empty, rc 0)",
+   "behaviour_text_source": "round 1, carried verbatim by round 3; round 2 carried only the file-preservation check"
+  },
+  {
+   "id": "SFR-005",
+   "behaviour": "Replay-safe reopen ordinal in the CC media campaign adapter",
+   "repo": "CC",
+   "files": [
+    "adapters/drama-song-factory/media_campaign_adapter.py",
+    "adapters/drama-song-factory/test_media_campaign_adapter.py"
+   ],
+   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-CC-W08-U1/RECEIPT.md",
+   "state_after_merged_units": "OUTSIDE this map's repositories; not re-verified here (see cannot_verify)",
+   "round_3_note": "ONB/CC side restored here as a behaviour row. The CC half is still NOT re-verified: trevorotts1/blackceo-command-center has not been read in rounds 1, 2 or 3 (what_remains_unverified item 2). The ONB-side carrier of the same behaviour is scripts/core/spend_ledger.py PROVIDER_LOOKUP_REQUIRED, recorded separately as S75-999-provider-lookup."
+  },
+  {
+   "id": "S75X-W5-U1 item_1",
+   "behaviour": "script_approval port into 999 (approval_events.py, card_answers.py, script_approval.py, stage.py)",
+   "repo": "N999",
+   "files": [
+    ".claude/skills/drama-song-ad-factory/scripts/core/script_approval/{approval_events.py,card_answers.py,script_approval.py,stage.py}"
+   ],
+   "state_after_merged_units": "PRESENT on N999 origin/main 6e9d69def. Measured: script_approval.py 515 lines, card_answers.py 169 lines. T01 recorded these as ADVANCED beyond the verdict hashes (642 vs 559 and 515 vs 440 line counts for approval_events/script_approval at its read); the lines present now are consistent with that later work."
+  },
+  {
+   "id": "S75X-W5-U1 item_2",
+   "behaviour": "Suno recipe syllable band: preferred 4-12, hard_max none",
+   "repo": "N999",
+   "files": [
+    ".claude/skills/drama-song-ad-factory/scripts/core/suno_recipe/suno_recipe.py"
+   ],
+   "state_after_merged_units": "PRESENT on N999 origin/main: DEFAULT_CONSTRAINT_POLICY at line 142, sung_line preferred_min_syllables 4 / preferred_max_syllables 12 / hard_max_syllables None at lines 145-146."
+  },
+  {
+   "id": "S75X-W5-U1 item_3",
+   "behaviour": "D10 rendered-opening gate and wordless-lead classification",
+   "repo": "N999",
+   "files": [
+    ".claude/skills/drama-song-ad-factory/scripts/core/story_coverage/story_coverage.py"
+   ],
+   "state_after_merged_units": "PRESENT on N999 origin/main: classify_wordless_lead at 1150, rendered_opening_gate at 1180, opening_hooks_gate at 1506."
+  },
+  {
+   "id": "S75-999-provider-lookup",
+   "behaviour": "PROVIDER_LOOKUP_REQUIRED instead of a silent provider fallback",
+   "repo": "N999 and ONB",
+   "files": [
+    "scripts/core/spend_ledger.py"
+   ],
+   "state_after_merged_units": "PRESENT on N999 origin/main (spend_ledger.py line 457). ONB spend_ledger.py is in the diff set checked against the eleven units and was untouched (no entry in the 569eee7a..aa3d43d7f diff).",
+   "round_3_note": "Carried verbatim. This row and SFR-005 are separate behaviours: this one is the provider-lookup refusal on N999 and ONB; SFR-005 is the replay-safe reopen ordinal in the CC media campaign adapter."
+  },
+  {
+   "id": "DEC-10 fixed production decisions",
+   "behaviour": "Six durations 60/90/120/180/300/600; MiniMax H3 and exact client-selected routes; first 12 seconds articulated/spoken; visible lip-sync target 25-30% with 35% cap; spoken duration is a separate metric",
+   "where_live": "ONB scripts/core/choice_card/intake_card/intake_card.py (six duration rows built from MS.CANONICAL_DURATION_S at lines 200-216; _model_question MiniMax H3); scripts/core/lipsync_clips.py TARGET_SHARE=(0.25,0.30), MAX_SHARE=0.35 at lines 45-46; scripts/core/music/constraints.py (T25) re-declares the same three constants at lines 47-49.",
+   "state_after_merged_units": "PRESERVED in value; DUPLICATED in implementation (see conflicts C2)"
+  },
+  {
+   "id": "PER-AD WAIVER (accepted emergency behaviour in the corpus, not in code)",
+   "behaviour": "A client/owner waiver may be recorded for one ad and must not be widened to the fleet or silently erased",
+   "where_live": "Downloads/Drama Song Ads/spaulding-gigy-one-check-chanel/v150-20261008/RECEIPT-v1.md ('WAIVER (Trevor: \"GO WITH OPTION A\")' — spoken-share and sung-of-voice 5/10 band waived for this ad only). Code support exists only in scripts/core/delivery_checklist/delivery_checklist.py (METHOD_WAIVED line 1644, METHOD_WAIVED_ANSWERS 1646, _method_waived 1678).",
+   "state_after_merged_units": "NOT MODELLED by the newer hard gates. S75-T25's music/constraints.py contains no waiver/override/exempt token (grep over origin/main's file returned nothing)."
+  }
+ ],
+ "old_run_inventory": {
+  "distinct_run_roots_observed": [
+   {
+    "root": "/Users/blackceomacmini/Downloads/Drama Song Ads",
+    "role": "Delivered client paid corpus (videos, songs, receipts)",
+    "size": "9.6G",
+    "extensions": {
+     "mp4": 134,
+     "mp3": 36,
+     "wav": 11,
+     "png": 2939,
+     "jpg": 2,
+     "json": 30
+    },
+    "campaigns": [
+     "bsw-power-in-the-climb (6 ads)",
+     "bsw-walking-by-faith-and-sight",
+     "spaulding-gigy-one-check-chanel",
+     "stopstale-kiesett-ep01",
+     "wuhs-leanne-soft-life",
+     "hybrid-one-check-chanel",
+     "creative-fidelity-h3",
+     "_env-tests"
+    ],
+    "index": "/Users/blackceomacmini/Downloads/Drama Song Ads/INDEX.md (written 2026-10-09)"
+   },
+   {
+    "root": "/Users/blackceomacmini/drama-song-factory-build/qualification",
+    "role": "Build/qualification runs with machine-readable run metadata",
+    "size": "2.0G",
+    "extensions": {
+     "mp3": 476,
+     "wav": 79,
+     "mp4": 83,
+     "png": 1411,
+     "jpg": 311
+    },
+    "run_families": [
+     "bsw-power-in-the-climb",
+     "creative-fidelity-campaign (+h3, h3-F, h3-spoken, h3-spoken-c5)",
+     "hybrid-one-check-chanel",
+     "long-form-media",
+     "long-form-qc",
+     "short-run",
+     "short-run-receipts",
+     "spaulding-gigy-one-check-chanel-150",
+     "-150-v2",
+     "-v3b-version3",
+     "stephanie-brown-book-fix",
+     "stopstale-kiesett-ep01",
+     "wantedwoman-book-test",
+     "wuhs-leanne-soft-life"
+    ]
+   },
+   {
+    "root": "/Users/blackceomacmini/scratch/jen-drama-diag/tx/Documents/drama-song-runs",
+    "role": "Diagnostic copy of a real client's run store (home layout -Users-jennjack preserved)",
+    "runs": [
+     "eoe-emeralds-20261013",
+     "eoe-emeralds-20261016-60s"
+    ]
+   },
+   {
+    "root": "/Users/blackceomacmini/scratch/laya-drama-diag/x/drama-song-runs",
+    "role": "Diagnostic copy of a real client's run store",
+    "runs": [
+     "voyage-to-virtue"
+    ]
+   },
+   {
+    "root": "/Users/blackceomacmini/.drama-studio",
+    "role": "Studio order/run ledger for the drama-studio entry point",
+    "option3_runs": [
+     "run-20261013T213752Z",
+     "run-20261013T214554Z",
+     "run-20261013T232427Z",
+     "run-20261013T232634Z"
+    ],
+    "orders_db_rows": {
+     "orders": 3,
+     "messages": 0,
+     "leases": 0,
+     "records": 0,
+     "notices": 0,
+     "meta": 1
+    },
+    "order_ids_in_state": [
+     "r_123",
+     "r_ebdb99e2",
+     "r_28cd5454",
+     "r_32ae9427",
+     "r_886571c3"
+    ]
+   },
+   {
+    "root": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/s75-intake-20261024",
+    "role": "SYNTHETIC build/QC fixtures created during this package's own intake work — NOT client runs",
+    "card_answers_count": 380,
+    "cohort_breakdown": {
+     "tmp": 278,
+     "qc": 59,
+     "dispatch-tests": 38,
+     "factory-old-confirmed-next": 2,
+     "cover-package-cohort": 1,
+     "upgrade-compat-proof": 1,
+     "s75x-owner-test-20261024 (sibling)": 1
+    }
+   },
+   {
+    "root": "/Users/blackceomacmini/clawd/handoff/receipts",
+    "role": "SYNTHETIC wire-test receipts plus one package test run",
+    "synthetic_card_answers": [
+     "sa-wire-zdhy2gqk",
+     "sa-wire-wrzmfefs",
+     "sa-wire-vou1l977",
+     "sa-wire-fnpp944n",
+     "sa-wire-9u6y0oja",
+     "sa-wire-dei9sx1r",
+     "sa-wire-t_mcudoa",
+     "sa-wire-6xkf4sch",
+     "sa-wire-lwezqnp5"
+    ],
+    "non_synthetic_note": "blackceomacmini-PKG-11-U1-run uses an OLDER answer dialect (see field_dialects)"
+   }
+  ],
+  "card_answers_total": 394,
+  "card_answers_split": {
+   "under_/Users": 14,
+   "under_/Volumes": 380
+  }
+ },
+ "not_found_named_sources": [
+  {
+   "claim": "No file on disk carries the emergency handoff task id 01a16e50-177f-7476-8bf1-dbd252a75030 as an artifact of the handoff itself.",
+   "sources_searched": [
+    "grep -rl '01a16e50-177f-7476-8bf1-dbd252a75030' '/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024' -> 14 files, ALL package documents or derived evidence (BATCH-MERGE.md, DECISIONS.md, DEPENDENCIES-AND-OWNERSHIP.md, DISCOVERIES.md, evidence/emergency-owner-handoff.json, evidence/S75-T01-reconciliation.json, evidence/source-reconciliation.json, MIGRATION-AND-COMPATIBILITY.md, README.md, SPEC.md, state/prebuilder-loop-prompt.txt, SWARM-MANAGEMENT.md, task-ledger.json, TERMINAL-KICKOFF.md). No handoff receipt, no owner name, no per-file sign-off.",
+    "grep -rl '01a16e50-177f-7476-8bf1-dbd252a75030' /Users/blackceomacmini/skill75-repair /Users/blackceomacmini/drama-song-factory-build -> 0 files"
+   ],
+   "not_checked": "Client boxes, Contabo/VPS hosts, and remote branches outside the three local clones. This is a named-source result, not proof the handoff never happened."
+  },
+  {
+   "claim": "The 1.3 GB BSW bundle that INDEX.md calls a referenced top-level file does not exist at that location.",
+   "sources_searched": [
+    "ls '/Users/blackceomacmini/Downloads/Drama Song Ads/'*.zip -> 'no matches found'",
+    "find /Users/blackceomacmini/Downloads -maxdepth 3 -name 'BSW-Authors*' (and '*BSW*AUTHORS*') -> no results"
+   ],
+   "not_checked": "Deeper than maxdepth 3 under Downloads, and the portable volume."
+  },
+  {
+   "claim": "There is no canonical songs/ or images/ directory for the product; assets are per-run and per-campaign only.",
+   "sources_searched": [
+    "find /Users/blackceomacmini -maxdepth 4 -type d \\( -iname '*drama*song*' -o -iname '*DSF*' -o -iname '*Studio*' \\)",
+    "directory walks of all run roots listed in old_run_inventory"
+   ],
+   "not_checked": "Whole-filesystem search below maxdepth 4."
+  }
+ ],
+ "current_target_heads_observed": {
+  "ONB": {
+   "repository": "trevorotts1/openclaw-onboarding",
+   "clone_read": "/Users/blackceomacmini/openclaw-onboarding",
+   "skill_root": "75-drama-song-ad-factory",
+   "origin_main": "aa3d43d7f6ed07ad22405d9eb2a551f013e95707",
+   "origin_main_committed": "2026-10-24 18:32:02 -0400",
+   "origin_main_subject": "Merge pull request #2549 from trevorotts1/batch/s75-b3",
+   "unchanged_since_round_1": true,
+   "observed_without_fetch": true,
+   "baseline_commit_used_for_zero_paths_proof": {
+    "sha": "dccd6811719e4212a8efa36674ffe00f1d243c53",
+    "committed": "2026-10-24 15:52:25 -0400",
+    "subject": "Merge pull request #2539 from trevorotts1/batch/auto-merge (merge train: #2535)",
+    "is_ancestor_of_origin_main": true
+   },
+   "diff_baseline_used_for_emergency_spot_checks": {
+    "sha": "569eee7a79397d34275b0bb0da22a6349bd47f2d",
+    "committed": "2026-10-24 16:09:34 -0400",
+    "subject": "Merge T-39 atomic CAS and generation-safe migration (PBB-078); allocate Skill 38 v2.0.31 (#2542)"
+   }
+  },
+  "N999": {
+   "repository": "trevorotts1/999-setup",
+   "clone_read": "/Users/blackceomacmini/.openclaw/persist-home/999-setup",
+   "skill_root": ".claude/skills/drama-song-ad-factory",
+   "origin_main": "6e4d3b41912f395a8c9b53e3cc0437ed9da3c121",
+   "origin_main_committed": "2026-10-24 18:45:05 -0400",
+   "origin_main_subject": "Merge pull request #322 from trevorotts1/batch/s75-story-first",
+   "moved_since_round_1": true,
+   "round_1_recorded": "6e9d69def27dd4adfffbe7a03ccf0e47d871f03b at 2026-10-24 16:28:47 -0400",
+   "observed_without_fetch": true
+  }
+ },
+ "eleven_units_on_origin_main": {
+  "count": 11,
+  "ancestry_test": "git merge-base --is-ancestor <unit-head> origin/main, run against aa3d43d7f6ed07ad22405d9eb2a551f013e95707",
+  "ancestry_result": "11 of 11 ANCESTOR of origin/main aa3d43d7f (git merge-base --is-ancestor per head, 0 not-ancestor)",
+  "units": [
+   {
+    "unit": "S75-T03",
+    "head": "b7cfa96c877c931c3833e651cc21735c7f99edb0",
+    "changed_files": [
+     "scripts/core/story_first_contracts.py",
+     "scripts/core/test_story_first_contracts.py"
+    ]
+   },
+   {
+    "unit": "S75-T05",
+    "head": "87e87fef7b3d04ff0a7bfd7a44fd8a2ab2bca6d2",
+    "changed_files": [
+     "scripts/core/character_bible/identity.py",
+     "scripts/core/character_bible/test_identity_s75_t05.py"
+    ]
+   },
+   {
+    "unit": "S75-T10",
+    "head": "dea0486ceac888dd2b86cfacb4c5def864130d04",
+    "changed_files": [
+     "scripts/core/fixtures/rich_script.json",
+     "scripts/core/script_writer.py",
+     "scripts/core/test_script_writer.py"
+    ]
+   },
+   {
+    "unit": "S75-T14",
+    "head": "3fabcc5eb11e84a70264171739c8bd69528424d9",
+    "changed_files": [
+     "scripts/core/character_library/notion_adapter.py",
+     "scripts/core/character_library/test_notion_discovery.py",
+     "tests/fixtures/notion_discovery.json"
+    ]
+   },
+   {
+    "unit": "S75-T18",
+    "head": "afb07e76e76f18845401d0fbab13555d8cbb0da2",
+    "changed_files": [
+     "scripts/core/music_styles/catalog.py",
+     "scripts/core/music_styles/test_catalog_s75t18.py"
+    ]
+   },
+   {
+    "unit": "S75-T19",
+    "head": "110640126a46e1350537806a8bfb71c093e002aa",
+    "changed_files": [
+     "scripts/core/music_styles/recipes.py",
+     "scripts/core/music_styles/recipes/acoustic-pop.json",
+     "scripts/core/music_styles/recipes/afro-soul.json",
+     "scripts/core/music_styles/recipes/alternative-rnb.json",
+     "scripts/core/music_styles/recipes/country-pop.json",
+     "scripts/core/music_styles/recipes/folk-storytelling.json",
+     "scripts/core/music_styles/test_recipes_s75_t19.py"
+    ]
+   },
+   {
+    "unit": "S75-T20",
+    "head": "4d6fb18e31af727fc6e4ce61a08b5571aebf1df6",
+    "changed_files": [
+     "scripts/core/music_styles/__init__.py",
+     "scripts/core/music_styles/music_styles.py",
+     "scripts/core/music_styles/test_rap_recipes_t20.py"
+    ]
+   },
+   {
+    "unit": "S75-T22",
+    "head": "f896077f98734acf8c5c2fa3ab3ad8a02db8158c",
+    "changed_files": [
+     "scripts/core/music_styles/recipes_s75_t22.py",
+     "scripts/core/music_styles/test_recipes_s75_t22.py"
+    ]
+   },
+   {
+    "unit": "S75-T23",
+    "head": "a729df217a81b00e4effcd52eefa6cb93fc5fbd3",
+    "changed_files": [
+     "scripts/core/choice_card/intake_card/answer_reuse.py",
+     "scripts/core/choice_card/intake_card/intake_card.py",
+     "scripts/core/choice_card/intake_card/intake_session.py",
+     "scripts/core/choice_card/intake_card/style_help.py",
+     "scripts/core/choice_card/intake_card/test_help_and_reuse.py",
+     "tests/fixtures/intake_resume.json"
+    ]
+   },
+   {
+    "unit": "S75-T24",
+    "head": "fe8f047982b4da299f53d34497850448ff0",
+    "changed_files": [
+     "scripts/core/choice_card/intake_card/intake_card.py",
+     "scripts/core/choice_card/intake_card/style_samples_provenance.json",
+     "scripts/core/choice_card/intake_card/test_intake_card_h9.py",
+     "scripts/core/choice_card/intake_card/test_visual_identity_help_s75t24.py"
+    ]
+   },
+   {
+    "unit": "S75-T25",
+    "head": "5635e47fd5831136588c0a12e33795704c18c429",
+    "changed_files": [
+     "scripts/core/music/__init__.py",
+     "scripts/core/music/constraints.py",
+     "scripts/core/music/word_fit.py",
+     "tests/fixtures/duration_and_lipsync.json",
+     "tests/test_music_constraints_t25.py"
+    ]
+   }
+  ],
+  "heads_reconfirmed_round_2": [
+   "b7cfa96c877c931c3833e651cc21735c7f99edb0",
+   "87e87fef7b3d04ff0a7bfd7a44fd8a2ab2bca6d2",
+   "dea0486ceac888dd2b86cfacb4c5def864130d04",
+   "3fabcc5eb11e84a70264171739c8bd69528424d9",
+   "afb07e76e76f18845401d0fbab13555d8cbb0da2",
+   "110640126a46e1350537806a8bfb71c093e002aa",
+   "4d6fb18e31af727fc6e4ce61a08b5571aebf1df6",
+   "f896077f98734acf8c5c2fa3ab3ad8a02db8158c",
+   "a729df217a81b00e4effcd52eefa6cb93fc5fbd3",
+   "fe8f047982b4da299f53d34497850448ff0",
+   "5635e47fd5831136588c0a12e33795704c18c429"
+  ]
+ },
+ "CORRECTIONS": [
+  {
+   "id": "CORRECTION-1",
+   "topic": "factory.py card-answers attribution",
+   "round_1_claim": "factory.py still writes card-answers.json (origin/main factory.py lines 1469, 2898, 3093). Because factory.py is held, the legacy raw-answer write contract is still owned by the emergency owner and must not be rewritten by T29/T30.",
+   "verifier_claim_tested": "The three line numbers are real occurrences but none is a write: 1469 read loop inside _card_answers(), 2898 _CARD_PROGRESS resume markers, 3093 argparse help. The real writer is scripts/core/script_approval/card_answers.py.",
+   "my_verification": {
+    "result": "VERIFIER CORRECT. Round-1 attribution is WRONG.",
+    "literal_enumeration_in_factory_py": {
+     "file_read_from": "origin/main:75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py (3199 lines)",
+     "lines_containing_literal_card_answers_json": [
+      1469,
+      1484,
+      2898,
+      3093
+     ],
+     "total_literal_occurrences": 6,
+     "per_line_occurrences": {
+      "1469": 2,
+      "1484": 1,
+      "2898": 2,
+      "3093": 1
+     },
+     "classification": [
+      {
+       "line": 1469,
+       "occurrences": 2,
+       "class": "READ",
+       "detail": "for rel in (\"card-answers.json\", \"control/card-answers.json\") inside _card_answers(); each rel is passed to _read_json_any (open in read mode at 1460)"
+      },
+      {
+       "line": 1484,
+       "occurrences": 1,
+       "class": "DOCSTRING PROSE",
+       "detail": "inside the _method_record_from_answers docstring; no I/O on this line"
+      },
+      {
+       "line": 2898,
+       "occurrences": 2,
+       "class": "RESUME MARKER",
+       "detail": "entries in _CARD_PROGRESS; consumed only by (run / rel).exists() at 2922 in _run_is_new"
+      },
+      {
+       "line": 3093,
+       "occurrences": 1,
+       "class": "ARGPARSE HELP TEXT",
+       "detail": "the help= string of the card subcommand argument"
+      }
+     ],
+     "write_occurrences": 0,
+     "wider_stem_mentions_are_not_writes": "The card-answers stem also appears at 1466 (def _card_answers), 1495 and 2945 (calls to _card_answers). None of those touches a file for writing.",
+     "factory_py_write_inventory": "CORRECTED IN ROUND 3. factory.py has exactly one atomic write helper, _write_json (def 1447-1455). Its _write_json call sites write control/fork-decisions (1428-1440), control/method.json (1525 and 1570) and music/req.json (1662). Two further write surfaces are NOT _write_json call sites and were mis-stated or missing in round 2: control/studio-versions.json is written at factory.py:370-372 via Path.write_text (omitted entirely from round 2's inventory), and the continuation queue is written at factory.py:2272-2273 by raw open(qpath,'w') followed by json.dump (round 2 wrongly listed this as a _write_json call site at 2273). No write surface of any kind in factory.py writes card-answers.json."
+    },
+    "true_writers": [
+     {
+      "module": "75-drama-song-ad-factory/scripts/core/script_approval/card_answers.py",
+      "repo": "ONB origin/main and N999 origin/main (same 169-line module, both present)",
+      "constant": "ANSWERS = \"card-answers.json\" at line 26",
+      "write_functions": [
+       {
+        "name": "write",
+        "lines": "61-74",
+        "write": "tmp file + json.dump at 71-73, os.replace at 73",
+        "called_by": [
+         "choice_card/intake_card/intake_card.py:1044 (ONB) / :1028 (N999)",
+         "choice_card/intake_card/intake_session.py:361 (both)"
+        ]
+       },
+       {
+        "name": "repair_decision",
+        "lines": "139-154",
+        "write": "tmp file + json.dump at 151-153",
+        "called_by": [
+         "script_approval/stage.py:150 (both)"
+        ]
+       },
+       {
+        "name": "migrate",
+        "lines": "157-169",
+        "write": "tmp file + json.dump at 166-168",
+        "called_by": [
+         "no production caller on origin/main; only script_approval/test_approval_events.py:103"
+        ]
+       }
+      ],
+      "docstring_line_1": "Write $RUN/card-answers.json when the client confirms the intake card recap.",
+      "shape_written": "v2 envelope {schema_version: 2, answers: [...]}"
+     }
+    ],
+    "readers_named_for_completeness": [
+     "intake_preflight/factory.py:1466-1475 (_card_answers, v2 envelope or v1 list)",
+     "delivery_package/run_inputs.py:174",
+     "ready_post_kit/ready_post_kit.py:227",
+     "script_approval/stage.py:142 (card_answers.load)",
+     "production_process.py:149, 258"
+    ],
+    "no_other_production_writer_found": "git grep -n 'card-answers' over origin/main returned 53 matches in 25 files; every write primitive found is inside card_answers.py. No studio_bridge, factory or other module writes the file.",
+    "factory_py_write_surfaces": [
+     {
+      "mechanism": "_write_json (1447-1455)",
+      "target": "control/fork-decisions",
+      "lines": "1428-1440",
+      "round_2_status": "correct"
+     },
+     {
+      "mechanism": "_write_json (1447-1455)",
+      "target": "control/method.json",
+      "lines": "1525",
+      "round_2_status": "correct"
+     },
+     {
+      "mechanism": "_write_json (1447-1455)",
+      "target": "control/method.json",
+      "lines": "1570",
+      "round_2_status": "correct"
+     },
+     {
+      "mechanism": "_write_json (1447-1455)",
+      "target": "music/req.json",
+      "lines": "1662",
+      "round_2_status": "correct"
+     },
+     {
+      "mechanism": "Path.write_text",
+      "target": "control/studio-versions.json",
+      "lines": "370-372",
+      "round_2_status": "MISSING from round 2's inventory; restored here"
+     },
+     {
+      "mechanism": "raw open(qpath,'w') + json.dump",
+      "target": "continuation queue",
+      "lines": "2272-2273",
+      "round_2_status": "MIS-ATTRIBUTED in round 2 to _write_json at 2273; corrected here"
+     }
+    ],
+    "load_bearing_conclusion_unchanged": "factory.py performs ZERO writes of card-answers.json. Six literal occurrences of the filename across four lines: 1469 x2 (READ loop in _card_answers(), each rel passed to _read_json_any, open read-mode at 1460), 1484 x1 (DOCSTRING PROSE of _method_record_from_answers), 2898 x2 (entries in the _CARD_PROGRESS tuple, consumed only by (run / rel).exists() at 2922 in _run_is_new), 3093 x1 (argparse help string of the card subcommand). This conclusion is unchanged by the write-inventory correction."
+   },
+   "corrected_statement": "factory.py does NOT write card-answers.json. It reads it (factory.py:1469) and treats it as a resume marker (factory.py:2898). The file is written only by scripts/core/script_approval/card_answers.py via write() (61-74), repair_decision() (139-154) and migrate() (157-169). No production path calls migrate().",
+   "downstream_consequence_corrected": "The emergency hold on factory.py does NOT protect the card-answers write contract. card_answers.py is not one of the five held names and carries no lease, so it is unprotected by the handoff. The round-1 instruction that T29/T30 'must not rewrite' the writer because the emergency owner holds it was reasoning from a false owner. What T29/T30 must actually avoid is silently changing the v2 envelope or its write points in card_answers.py; that protection has to be stated explicitly, not inherited from the hold.",
+   "exposure_check": {
+    "changed_by_any_of_the_11_merged_units": false,
+    "changed_by_T12_r5_branch": false,
+    "working_tree_dirty_for_card_answers_py": false,
+    "working_tree_dirty_scope_note": "CORRECTED IN ROUND 3. Round 2's bare working_tree_dirty=false is true only for card_answers.py itself, which is clean in the ONB worktree.",
+    "onb_worktree_dirty_overall": true,
+    "onb_worktree_dirty_detail": "The ONB clone's worktree is dirty overall: 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/ai_models.json and 75-drama-song-ad-factory/scripts/core/spend_ledger.py are modified and 75-drama-song-ad-factory/evidence/ is untracked. Nothing links those to this round and nothing here can date them. The scope of the clean claim is card_answers.py only.",
+    "note": "S75-T12-r5 (9709222b4) touches script_approval/approval_events.py in the same directory but not card_answers.py."
+   }
+  },
+  {
+   "id": "CORRECTION-2",
+   "topic": "null-value count in real card answers",
+   "round_1_claim": "In real runs, value is null for length, music, look, model, storyboard, song and script (jen 60s run: 14 rows, 6 with value:null).",
+   "verifier_claim_tested": "14 rows, SEVEN carry value null: length, music, look, model, storyboard, song, script. Round 1's own sentence enumerates seven while stating six.",
+   "my_verification": {
+    "result": "VERIFIER CORRECT. The count is 7 of 14 and round 1 was internally inconsistent.",
+    "file_counted": "/Users/blackceomacmini/scratch/jen-drama-diag/tx/Documents/drama-song-runs/eoe-emeralds-20261016-60s/card-answers.json",
+    "file_bytes": 2154,
+    "file_mtime": "2026-10-16 12:32",
+    "shape": "v1 bare list of 14 rows",
+    "total_rows": 14,
+    "null_value_rows": 7,
+    "null_ids": [
+     "length",
+     "music",
+     "look",
+     "model",
+     "storyboard",
+     "song",
+     "script"
+    ],
+    "non_null_ids": [
+     "offer",
+     "link",
+     "audience",
+     "character",
+     "photos",
+     "models",
+     "spend"
+    ],
+    "text_populated_rows": 14,
+    "method": "python3 -I read of the JSON; r.get('value') is None"
+   },
+   "corrected_statement": "7 of 14 answer rows in the Jennifer Allen eoe-emeralds-20261016-60s run carry value:null (length, music, look, model, storyboard, song, script). All 14 carry non-empty text.",
+   "substance_preserved": "The data-fidelity substance stands and is unchanged: for those seven rows the client's answer survives only in the free-text label. A consumer that reads value alone silently loses the answer. The only durable structured form is the free-text label."
+  },
+  {
+   "id": "CORRECTION-3",
+   "topic": "held-file inventory contains a phantom",
+   "round_1_claim": "Five files are held (factory.py, lyric_writer.py, character_bible/character_approval.py, registry.json, method_plan.py) and the zero-paths diff proof covers all five including registry.json.",
+   "verifier_claim_tested": "No registry.json exists under the drama-song-ad-factory skill root anywhere readable; the only registry.json files in ONB belong to other skills. The preservation proof for that name is vacuous.",
+   "my_verification": {
+    "result": "VERIFIER CORRECT. registry.json is a phantom.",
+    "held_names_in_handoff_artifact": [
+     "factory.py",
+     "lyric_writer.py",
+     "character_approval.py",
+     "registry.json",
+     "method_plan.py"
+    ],
+    "ONB_origin_main_aa3d43d7f": {
+     "factory.py": "PRESENT 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py",
+     "lyric_writer.py": "PRESENT 75-drama-song-ad-factory/scripts/core/lyric_writer/lyric_writer.py",
+     "character_approval.py": "PRESENT 75-drama-song-ad-factory/scripts/core/character_bible/character_approval.py",
+     "method_plan.py": "PRESENT 75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py",
+     "registry.json": "ABSENT under the skill root"
+    },
+    "ONB_at_dccd68117": {
+     "factory.py": "PRESENT",
+     "lyric_writer.py": "PRESENT",
+     "character_approval.py": "PRESENT",
+     "method_plan.py": "PRESENT",
+     "registry.json": "ABSENT under the skill root"
+    },
+    "N999_origin_main_6e4d3b419": {
+     "factory.py": "PRESENT .claude/skills/drama-song-ad-factory/scripts/core/intake_preflight/factory.py",
+     "lyric_writer.py": "PRESENT .claude/skills/drama-song-ad-factory/scripts/core/lyric_writer/lyric_writer.py",
+     "method_plan.py": "PRESENT .claude/skills/drama-song-ad-factory/scripts/core/method_plan/method_plan.py",
+     "character_approval.py": "ABSENT (already recorded by round 1 as conflict C6)",
+     "registry.json": "ABSENT under the skill root"
+    },
+    "on_disk_worktree": {
+     "branch": "fix/h3-and-2min",
+     "factory.py": "PRESENT",
+     "lyric_writer.py": "PRESENT",
+     "character_approval.py": "PRESENT",
+     "method_plan.py": "PRESENT",
+     "registry.json": "ABSENT under the skill root"
+    },
+    "registry_json_files_that_do_exist": {
+     "ONB_origin_main": [
+      "06-ghl-install-pages/funnel-engines/registry.json",
+      "72-motion-video-plus/tests/fixtures/approvals/registry.json"
+     ],
+     "N999_origin_main": [
+      ".claude/skills/ghl-install-pages/funnel-engines/registry.json"
+     ],
+     "note": "Both belong to other skills and are not the held name."
+    }
+   },
+   "corrected_statement": "Four held files are real and present on ONB origin/main: factory.py, lyric_writer.py, character_bible/character_approval.py, method_plan/method_plan.py. On N999 only three exist (character_approval.py is absent there). registry.json does not exist at any skill-relative path in either repository or on disk, so the zero-paths result for that name is VACUOUS: zero because the path never existed, not because a held file was preserved.",
+   "proof_note": "The four real files were re-proved separately this round (see CONFIRMED_PRESERVED.held_file_zero_paths), so the corrected inventory still has a live, non-vacuous preservation result."
+  }
+ ],
+ "CONFIRMED_PRESERVED": {
+  "provenance": "Confirmed by the same verifier that failed round 1; independently re-proved here with this round's own commands. Nothing in this block was weakened.",
+  "C1_four_registries_present": {
+   "claim": "All four registries are present on ONB origin/main at 75-drama-song-ad-factory/scripts/core/music_styles/.",
+   "verified": true,
+   "files": [
+    "75-drama-song-ad-factory/scripts/core/music_styles/catalog.py PRESENT",
+    "75-drama-song-ad-factory/scripts/core/music_styles/recipes.py PRESENT",
+    "75-drama-song-ad-factory/scripts/core/music_styles/recipes_s75_t22.py PRESENT",
+    "75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py PRESENT"
+   ]
+  },
+  "C1_import_graph": {
+   "claim": "Only test modules import catalog.py, recipes.py and recipes_s75_t22.py. The live path imports music_styles only.",
+   "verified": true,
+   "catalog_importers": [
+    "scripts/core/music_styles/test_catalog_s75t18.py:37 (import catalog as C)"
+   ],
+   "recipes_importers": [
+    "scripts/core/music_styles/test_recipes_s75_t19.py:36 (from music_styles import recipes as R)"
+   ],
+   "recipes_s75_t22_importers": [
+    "scripts/core/music_styles/test_recipes_s75_t22.py:30 (import recipes_s75_t22 as R)"
+   ],
+   "live_consumers_of_music_styles": [
+    "catalog_calculator/card_render.py",
+    "choice_card/intake_card/intake_card.py",
+    "choice_card/intake_card/style_help.py",
+    "intake_book/book.py",
+    "intake_preflight/intake.py",
+    "length_formula/length_formula.py",
+    "song_contract/song_contract.py",
+    "style_defaults/defaults.py",
+    "sung_hook/hook_placement.py",
+    "suno_recipe/suno_recipe.py",
+    "words_fit/words_fit.py",
+    "audio_c3/no_echo/no_echo.py",
+    "scripts/proof_run/run_proof.py"
+   ],
+   "note": "recipes.py and recipes_s75_t22.py import music_styles, never catalog."
+  },
+  "C1_client_visible_form": {
+   "claim": "The live card offers THREE music styles while eighteen exist in the registries.",
+   "verified": true,
+   "intake_card_py": {
+    "_MUSIC_SENTENCE": {
+     "lines": "109-113",
+     "keys": [
+      "soul-ballad",
+      "rnb-flow",
+      "soul-rise"
+     ],
+     "count": 3
+    },
+    "_musics": {
+     "lines": "140-143",
+     "behaviour": "builds the menu from list(_MUSIC_SENTENCE) and MS.STYLES[k]['label']"
+    },
+    "live_styles_dict": "music_styles.py STYLES assigned at line 160 with 3 keys, same three ids"
+   },
+   "catalog_py": {
+    "STYLE_IDS": {
+     "line": 73,
+     "count": 18,
+     "ids": [
+      "soul-ballad",
+      "rnb-flow",
+      "soul-rise",
+      "acoustic-pop",
+      "folk-storytelling",
+      "country-pop",
+      "melodic-rap",
+      "trap-rap",
+      "pop-rap",
+      "pop-rock",
+      "reggaeton",
+      "cinematic-orchestral-song",
+      "musical-theater",
+      "contemporary-gospel",
+      "urban-gospel",
+      "alternative-rnb",
+      "afro-soul",
+      "country-rap"
+     ]
+    },
+    "_ADDED": {
+     "line": 184,
+     "count": 15
+    },
+    "_ORIGINAL_RECIPES": {
+     "line": 714,
+     "count": 3
+    }
+   },
+   "recipe_module_coverage": {
+    "recipes.py RECIPE_IDS": [
+     "acoustic-pop",
+     "folk-storytelling",
+     "country-pop",
+     "alternative-rnb",
+     "afro-soul"
+    ],
+    "recipes_s75_t22.py RECIPES": [
+     "cinematic-orchestral-song",
+     "musical-theater",
+     "contemporary-gospel",
+     "urban-gospel"
+    ]
+   },
+   "refinement_found_this_round": "A FIFTH style-id enumeration exists in scripts/core/music/constraints.py:55-62 as a local STYLE_IDS 18-tuple, commented as a contract default 'until the T18-T22 catalog lands'. It is an id list, not a recipe registry, but it is a fifth copy of the id set that can drift. This refines C1; it does not change the count of four recipe registries.",
+   "consequence": "A client opening the card today can choose 3 styles. 15 approved styles exist only as data in catalog.py, and the choice the client can actually make cannot reach them."
+  },
+  "held_file_zero_paths": {
+   "claim": "No merged unit changed any held file.",
+   "verified": true,
+   "exact_command": "cd /Users/blackceomacmini/openclaw-onboarding && git diff --name-only dccd6811719e4212a8efa36674ffe00f1d243c53 origin/main -- 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py 75-drama-song-ad-factory/scripts/core/lyric_writer/lyric_writer.py 75-drama-song-ad-factory/scripts/core/character_bible/character_approval.py 75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py",
+   "exit_code": 0,
+   "output": "empty (zero paths)",
+   "glob_form_command": "git diff --name-only dccd6811719e4212a8efa36674ffe00f1d243c53 origin/main -- '*factory.py' '*lyric_writer.py' '*character_approval.py' '*method_plan.py' '*registry.json'",
+   "glob_form_output": "empty (zero paths)",
+   "scope_note": "The glob form includes '*registry.json' and is therefore the SAME vacuous result correction 3 describes. The non-vacuous result is the exact-path form above over the four real files.",
+   "per_unit_check": "git diff --name-only <head>^ <head> for each of the 11 unit heads, grepped for the five held basenames, returned held-file-hits=0 for all 11."
+  },
+  "SFR-003_duration_registry_leaf_load": {
+   "claim": "The duration_registry leaf load survives S75-T20's +231/-10 and all ten deleted lines are STYLES accessor refactors.",
+   "verified": true,
+   "diffstat": "git diff --stat 569eee7a79397d34275b0bb0da22a6349bd47f2d aa3d43d7f6ed07ad22405d9eb2a551f013e95707 -- 75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py => 1 file changed, 231 insertions(+), 10 deletions(-)",
+   "symbols_on_origin_main": {
+    "_CORE": 87,
+    "_CORE_sys_path_insert": "88-89",
+    "_load_canonical_durations": 91,
+    "leaf_path": "93 (os.path.join(_CORE, 'suno_recipe', 'duration_registry.py'))",
+    "CANONICAL_DURATION_S": 100,
+    "OFFERED_LENGTHS_S": 101
+   },
+   "leaf_file": "75-drama-song-ad-factory/scripts/core/suno_recipe/duration_registry.py PRESENT; CANONICAL_DURATION_S = (60, 90, 120, 180, 300, 600) at line 27",
+   "ten_deleted_lines_all_STYLES_accessors": true,
+   "deleted_lines": [
+    "return _map_sentence(set(STYLES[_style_key(style_id)][\"deliveries\"]))",
+    "if key in STYLES:",
+    "for sid, rec in STYLES.items():",
+    "\"not one of the three D18 styles: %r\" % style)",
+    "\"\"\"Full record for one style. Raises MusicStyleError on an unknown id.\"\"\"",
+    "return dict(STYLES[_style_key(style_id)])",
+    "\"\"\"Suno style-field text for one style (id or label accepted).",
+    "text = STYLES[sid][\"suno_style_prompt\"]",
+    "deliveries = set(STYLES[sid][\"deliveries\"])",
+    "\"label\": STYLES[sid][\"label\"],"
+   ],
+   "classification_note": "Nine deleted lines read STYLES; the tenth is the docstring of the accessor they replace. None touches the leaf load, _CORE, CANONICAL_DURATION_S or OFFERED_LENGTHS_S."
+  },
+  "handoff_NOT_HANDED_OFF": {
+   "claim": "The handoff state is NOT_HANDED_OFF.",
+   "verified": true,
+   "artifact": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/evidence/emergency-owner-handoff.json",
+   "sha256": "9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e",
+   "state": "NOT_HANDED_OFF",
+   "receipt_search": "grep -rl '01a16e50-177f-7476-8bf1-dbd252a75030' over the package root => 16 files, all package documents or derived evidence; none is a handoff receipt, owner sign-off or per-file handoff. Searched package root only; client boxes and remote branches were not checked."
+  },
+  "two_card_answers_dialects": {
+   "claim": "Two dialects exist.",
+   "verified": true,
+   "dialect_A_current": {
+    "shape": "v1 bare list or v2 envelope of {id, n, text, value}; value may be null",
+    "example_file": "jen eoe-emeralds-20261016-60s/card-answers.json",
+    "rows": 14,
+    "writer": "script_approval/card_answers.py write() as v2 {schema_version: 2, answers: [...]}"
+   },
+   "dialect_B_legacy": {
+    "shape": "bare list of {id, text, n} where n carries the numeric answer",
+    "example_file": "/Users/blackceomacmini/clawd/handoff/receipts/blackceomacmini-PKG-11-U1-run/card-answers.json",
+    "bytes": 241,
+    "rows": 4,
+    "ids": [
+     "length",
+     "shape",
+     "storyboard_approval",
+     "script_approval"
+    ],
+    "length_row": {
+     "id": "length",
+     "text": "3 minutes",
+     "n": 180
+    }
+   },
+   "legacy_preservation_behaviour": "intake_session.py:448-456: on first use of a run dir it reads the legacy card-answers.json and stores state['legacy_answers'] = {status: 'unverified_preserved', path, data, reason: 'Prior answers need explicit raw client provenance; no numeric menu mapping was imported.'} (or status 'unreadable_preserved' on OSError/ValueError at 455-456). The original file is not rewritten."
+  },
+  "emergency_preservation_spot_checks": {
+   "claim": "SFR-001, SFR-002 and SFR-004b are untouched by the merged units.",
+   "verified": true,
+   "command": "git diff --name-only 569eee7a79397d34275b0bb0da22a6349bd47f2d aa3d43d7f6ed07ad22405d9eb2a551f013e95707 -- 75-drama-song-ad-factory/timer-artifacts/install-keepalive-cron.sh 75-drama-song-ad-factory/timer-artifacts/keepalive-cron-prompt.txt 75-drama-song-ad-factory/scripts/core/batch_mode/batch.py 75-drama-song-ad-factory/timer-artifacts/run-timer.sh",
+   "exit_code": 0,
+   "output": "empty (zero paths)",
+   "files_present_at_origin_main": [
+    "install-keepalive-cron.sh",
+    "keepalive-cron-prompt.txt",
+    "batch_mode/batch.py",
+    "run-timer.sh"
+   ]
+  },
+  "no_retroactive_label_drift": {
+   "claim": "Soul Ballad, R&B Flow and Soul Rise labels are byte-identical before and after T20.",
+   "verified": true,
+   "at_569eee7a": {
+    "\"Soul Ballad\"": 163,
+    "\"R&B Flow\"": 178,
+    "\"Soul Rise\"": 196
+   },
+   "at_aa3d43d7f": {
+    "\"Soul Ballad\"": 163,
+    "\"R&B Flow\"": 178,
+    "\"Soul Rise\"": 196
+   },
+   "method": "git show <ref>:music_styles.py | grep -n for each literal"
+  },
+  "eleven_units_are_ancestors": {
+   "count": 11,
+   "result": "11 of 11 ANCESTOR of origin/main aa3d43d7f (git merge-base --is-ancestor per head, 0 not-ancestor)",
+   "heads": [
+    "b7cfa96c877c931c3833e651cc21735c7f99edb0",
+    "87e87fef7b3d04ff0a7bfd7a44fd8a2ab2bca6d2",
+    "dea0486ceac888dd2b86cfacb4c5def864130d04",
+    "3fabcc5eb11e84a70264171739c8bd69528424d9",
+    "afb07e76e76f18845401d0fbab13555d8cbb0da2",
+    "110640126a46e1350537806a8bfb71c093e002aa",
+    "4d6fb18e31af727fc6e4ce61a08b5571aebf1df6",
+    "f896077f98734acf8c5c2fa3ab3ad8a02db8158c",
+    "a729df217a81b00e4effcd52eefa6cb93fc5fbd3",
+    "fe8f047982b4da299f53d34497850448ff0",
+    "5635e47fd5831136588c0a12e33795704c18c429"
+   ]
+  },
+  "grouping_basis": "The phrase 'eight preserved findings' is a GROUPED count, not the number of keys in this object. CONFIRMED_PRESERVED holds 11 keys: 1 metadata key named 'provenance' plus 10 finding blocks. The 10 finding blocks are C1_four_registries_present, C1_import_graph, C1_client_visible_form, held_file_zero_paths, SFR-003_duration_registry_leaf_load, handoff_NOT_HANDED_OFF, two_card_answers_dialects, emergency_preservation_spot_checks, no_retroactive_label_drift, eleven_units_are_ancestors. The three C1 blocks are counted as ONE finding because they are the three sub-claims of the single round-1 conflict C1, so 10 - 2 = 8. A reader counting keys sees 11, a reader counting finding blocks sees 10, and the 'eight preserved findings' figure is the grouped figure. No finding was lost in the grouping.",
+  "grouping_basis_source": "keys read from CONFIRMED_PRESERVED in this file excluding the three grouping keys this file carries (grouping_basis, grouping_basis_source, grouping_numbers): 11 keys, and that key set is identical to the 11 keys of evidence/S75-T28.compatibility-map.round2.json:CONFIRMED_PRESERVED (measured by sorted key-name equality). The plain key count of this file is 14 and is NOT the source of the 11; see measurement M4.",
+  "grouping_numbers": {
+   "keys_total": 11,
+   "keys_total_source": "count of CONFIRMED_PRESERVED key names in this file EXCLUDING grouping_basis, grouping_basis_source and grouping_numbers = 11; equals the CONFIRMED_PRESERVED key count of evidence/S75-T28.compatibility-map.round2.json",
+   "provenance_keys": 1,
+   "provenance_keys_source": "key name 'provenance' present in CONFIRMED_PRESERVED in this file (1 key)",
+   "finding_blocks": 10,
+   "finding_blocks_source": "11 keys minus the 1 provenance key = 10",
+   "c1_blocks_grouped_as_one": 3,
+   "c1_blocks_grouped_as_one_source": "key names in CONFIRMED_PRESERVED in this file beginning 'C1_': C1_four_registries_present, C1_import_graph, C1_client_visible_form",
+   "grouped_finding_count": 8,
+   "grouped_finding_count_source": "10 finding blocks minus the 2 extra C1 blocks collapsed into one = 8",
+   "measurement": "M4"
+  }
+ },
+ "NEW_FINDINGS_BEYOND_THE_THREE_CORRECTIONS": [
+  {
+   "id": "NEW-1",
+   "severity": "HIGH",
+   "class": "round-1 factual error, not tested by the verifier",
+   "finding": "Round 1 said the spend database that links provider task ids to money is empty or missing in three real runs and that 'what was paid, for which task' cannot be reconstructed from the local copies alone. That is wrong for two of the three.",
+   "evidence": [
+    "jen eoe-emeralds-20261016-60s: control/spend.sqlite3 is 0 bytes (round 1 correct), BUT the run-root spend.sqlite3 is 454656 bytes with tables runs, jobs (509 rows), receipts (508 rows), events, results. jobs carries estimated_cost, actual_cost and remote_task_id; sum(actual_cost)=2406 minor units. Example rows link remote_task_id a9406d57c64ef8ae088ddef4325476b2 to song/warm-live-band at actual_cost 12.",
+    "jen eoe-emeralds-20261013: control/spend.sqlite3 is missing (round 1 correct), BUT the run-root spend.sqlite3 is 200704 bytes with 198 jobs and 197 receipts; sum(actual_cost)=1795.",
+    "wantedwoman-book-test: run/spend.sqlite3 is 0 bytes (round 1 correct).",
+    "laya voyage-to-virtue: no spend.sqlite3 at either path (round 1 correct)."
+   ],
+   "corrected_statement": "The money-to-task link survives at the RUN-ROOT spend.sqlite3 for the Jennifer Allen eoe-emeralds-20261016-60s run (509 jobs, 508 receipts, actual_cost total 2406) and the eoe-emeralds-20261013 run (198 jobs, 197 receipts, actual_cost total 1795). It does not survive for wantedwoman-book-test (0 bytes) or Laya's voyage-to-virtue (absent). The correct risk is 'two of four real runs retain the money-to-task link', not 'the link is lost in three of three'."
+  },
+  {
+   "id": "NEW-2",
+   "severity": "MEDIUM",
+   "class": "round-1 undercount",
+   "finding": "Round 1 recorded '40+ (39 synthetic under the package scratch; 2 real under jen-eoe-emeralds-20261013 and 2 under wantedwoman-book-test)' script-approval.json files.",
+   "evidence": "find /Users/blackceomacmini '/Volumes/mac mini m4/Downloads' -type f -name 'script-approval.json' | wc -l => 306. Breakdown: 299 under /Volumes/mac mini m4/Downloads/git trees and automations/scratch (synthetic package scratch), 1 under /Volumes/mac mini m4/Downloads/s75x-owner-test-20261024, 2 under /Users/blackceomacmini/skill75-repair/lanes, 2 under /Users/blackceomacmini/scratch/jen-drama-diag (both real: eoe-emeralds-20261013/creative and eoe-emeralds-20261016-60s/creative), 2 under /Users/blackceomacmini/drama-song-factory-build/qualification/wantedwoman-book-test/run/creative (one in run/creative and one in run/creative/pre-restart3).",
+   "corrected_statement": "306 script-approval.json files on disk: 302 synthetic or repair-lane copies, 4 real client-run approvals (2 Jennifer Allen runs, 2 wantedwoman-book-test paths)."
+  },
+  {
+   "id": "NEW-3",
+   "severity": "MEDIUM",
+   "class": "verifier transcription error (the transcription is not authority)",
+   "finding": "The verdict transcription says the live T12 round-5 referent repair 'is leased to script_approval/approval_bindings.py in the same directory'. No such file exists. The real path on the T12 branches is scripts/core/approval_bindings.py, one directory up; it is absent from origin/main.",
+   "evidence": [
+    "git cat-file -e origin/main:75-drama-song-ad-factory/scripts/core/script_approval/approval_bindings.py => 'does not exist in origin/main'",
+    "git ls-tree -r --name-only origin/main | grep approval_bindings => no match (rc 1)",
+    "Present only on s75/S75-T12 and s75/S75-T12-r5 (head 9709222b4bf2b3d5b301a99802b16e7c310124a4), at 75-drama-song-ad-factory/scripts/core/approval_bindings.py and scripts/core/test_approval_bindings.py",
+    "git diff --name-only <merge-base b7cfa96c> s75/S75-T12-r5 => approval_bindings.py, script_approval/approval_events.py, script_approval/test_approval_events.py, test_approval_bindings.py, tests/fixtures/artifact_binding_changes.json. card_answers.py is NOT in that list."
+   ],
+   "corrected_statement": "The live T12-r5 repair works on approval_events.py in the script_approval directory and adds scripts/core/approval_bindings.py. It does not modify card_answers.py. The proximity exposure to the client-data writer is real but one path was misstated in the transcription."
+  },
+  {
+   "id": "NEW-4",
+   "severity": "LOW",
+   "class": "refinement of confirmed C1",
+   "finding": "A fifth 18-id style enumeration exists at scripts/core/music/constraints.py:55-62 (local STYLE_IDS), commented '#: ponytail: contract default until the T18-T22 catalog lands; pass an explicit catalog to bind_matrix and this tuple stops being read.' It is a LIVE default, not dead code: bind_matrix (constraints.py:292) does styles = list(style_ids or STYLE_IDS) at line 300, and bind_matrix is re-exported from scripts/core/music/__init__.py. Today constraints.STYLE_IDS is identical in content AND order to catalog.STYLE_IDS, and catalog itself raises ImportError on order drift at import. The drift risk is therefore functional, not cosmetic: five places carry the style id set (catalog.STYLE_IDS plus its _ADDED/_ORIGINAL_RECIPES keys, music_styles.STYLES, recipes.RECIPE_IDS, recipes_s75_t22.RECIPES, and constraints.STYLE_IDS). constraints.py is an id list, not a recipe registry, so C1's four-registry count stands unchanged.",
+   "evidence": [
+    "git show origin/main:.../music/constraints.py | sed -n '40,70p' => STYLE_IDS 18-tuple at 55-62 with the ponytail comment at 53-54",
+    "constraints.py:292 def bind_matrix; line 300 styles = list(style_ids or STYLE_IDS); re-exported from scripts/core/music/__init__.py",
+    "constraints.py holds no style recipes, descriptions or client labels - only the id tuple, DELIVERIES, ROUTE_LABELS and the lipsync math; catalog.py/recipes.py/recipes_s75_t22.py/music_styles.py hold the recipe, description and label data"
+   ]
+  },
+  {
+   "id": "NEW-5",
+   "severity": "LOW",
+   "class": "moving observation",
+   "finding": "Two round-1 numbers are time-dependent and have moved. evidence/S75-LOOP-TICKS.jsonl is 172 lines now (round 1: 142) because it is an append-only live log. N999 origin/main moved from 6e9d69def to 6e4d3b41912f395a8c9b53e3cc0437ed9da3c121 (2026-10-24 18:45:05 -0400) since round 1 read it. ONB origin/main is unchanged at aa3d43d7f."
+  }
+ ],
+ "emergency_owner_handoff_CORRECTED": {
+  "task_id": "01a16e50-177f-7476-8bf1-dbd252a75030",
+  "doctrine": "DEC-19 and DEPENDENCIES-AND-OWNERSHIP.md:59 require an exact file-by-file handoff before S75-T13 may edit factory/approval wiring.",
+  "artifact": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/evidence/emergency-owner-handoff.json",
+  "artifact_sha256": "9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e",
+  "state": "NOT_HANDED_OFF",
+  "held_file_inventory_corrected": [
+   {
+    "name": "factory.py",
+    "path_onn_origin_main": "75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py",
+    "exists_onn": true,
+    "exists_n999": true,
+    "exists_disk": true,
+    "held": true,
+    "protection_status": "REAL — protected by the hold"
+   },
+   {
+    "name": "lyric_writer.py",
+    "path_onn_origin_main": "75-drama-song-ad-factory/scripts/core/lyric_writer/lyric_writer.py",
+    "exists_onn": true,
+    "exists_n999": true,
+    "exists_disk": true,
+    "held": true,
+    "protection_status": "REAL — protected by the hold"
+   },
+   {
+    "name": "character_approval.py",
+    "path_onn_origin_main": "75-drama-song-ad-factory/scripts/core/character_bible/character_approval.py",
+    "exists_onn": true,
+    "exists_n999": false,
+    "exists_disk": true,
+    "held": true,
+    "protection_status": "REAL on ONB; the 'ONB + N999' wording in the handoff describes a path that only exists in ONB (round-1 conflict C6 stands)"
+   },
+   {
+    "name": "method_plan.py",
+    "path_onn_origin_main": "75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py",
+    "exists_onn": true,
+    "exists_n999": true,
+    "exists_disk": true,
+    "held": true,
+    "protection_status": "REAL — protected by the hold"
+   },
+   {
+    "name": "registry.json",
+    "path_onn_origin_main": null,
+    "exists_onn": false,
+    "exists_n999": false,
+    "exists_disk": false,
+    "held": true,
+    "protection_status": "PHANTOM — no file at any skill-relative path in either repo or on disk. Zero-paths proof for this name is VACUOUS."
+   }
+  ],
+  "true_held_set": "four real files plus one phantom name in the handoff record",
+  "holding_party": "UNKNOWN — no artifact on disk names a human or unit owner",
+  "receiving_owner": "S75-T13 / FACTORY-GATE-OWNER (role known, person UNKNOWN)",
+  "scope": "Hold is limited to the four real held factory/approval files; non-overlapping cast/Notion/world work may proceed",
+  "lease_exception": {
+   "branch": "batch/s75-b5-prep",
+   "head": "dd3881cff1c917e604385f03fe85ebf0a32cbd9d",
+   "path": "75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py"
+  },
+  "who_owns_the_live_legacy_writer_CORRECTED": {
+   "answer": "scripts/core/script_approval/card_answers.py owns every write of card-answers.json: write() 61-74, repair_decision() 139-154, migrate() 157-169.",
+   "how_this_file_is_protected": "It is NOT protected by the emergency handoff. It is not one of the four real held names and no lease names it. It was untouched by all 11 merged units and is clean in the working tree, but that is history, not protection.",
+   "consequence_for_T29_T30": "T29/T30 must treat card_answers.py as a client-data contract file in their own right. The v2 envelope {schema_version: 2, answers: [...]} and the three write points are the compatibility surface. Editing factory.py cannot break the writer; editing card_answers.py can break every real run."
+  },
+  "round_1_material_restored_verbatim": {
+   "_note": "Round-1 text restored verbatim by round 4 under BRANCH A because round 3 dropped it and listed no superseded claim for it. It is RESTORED AS RECORD, not re-asserted as true. Where superseded_claims_in_round_1 S1, S2 or S3 or CORRECTION-3 falsify a statement below, the falsification stands and this block is the historical round-1 record of what was said.",
+   "doctrine_full": "DEC-19 and DEPENDENCIES-AND-OWNERSHIP.md:59 require an exact file-by-file handoff before S75-T13 may edit factory/approval wiring; the emergency task's accepted fixes must be adopted and never duplicated.",
+   "doctrine_full_note": "round 3 truncated this to its first clause; the clause 'the emergency task's accepted fixes must be adopted and never duplicated' is restored here.",
+   "what_the_handoff_established_held_files": [
+    {
+     "path": "factory.py",
+     "repo": "ONB + N999",
+     "held": true,
+     "current_lease": "NONE",
+     "changed_by_active_branch": true
+    },
+    {
+     "path": "lyric_writer.py",
+     "repo": "ONB + N999",
+     "held": true,
+     "current_lease": "NONE",
+     "changed_by_active_branch": false
+    },
+    {
+     "path": "character_bible/character_approval.py",
+     "repo": "ONB + N999",
+     "held": true,
+     "current_lease": "NONE",
+     "changed_by_active_branch": false
+    },
+    {
+     "path": "registry.json",
+     "repo": "ONB + N999",
+     "held": true,
+     "current_lease": "NONE",
+     "changed_by_active_branch": false
+    },
+    {
+     "path": "method_plan.py",
+     "repo": "ONB + N999",
+     "held": true,
+     "current_lease": "NONE",
+     "changed_by_active_branch": false
+    }
+   ],
+   "what_the_handoff_established_held_files_note": "round 1's five-entry held-file list, including the registry.json entry that S1 and CORRECTION-3 establish is a phantom and the current_lease / changed_by_active_branch fields round 3 dropped. Superseded as an inventory; kept as record.",
+   "scope_round_1": "Hold is limited to the five named factory/approval files; non-overlapping cast/Notion/world work may proceed",
+   "scope_round_1_note": "round 1 says 'the five named factory/approval files'; the CORRECTED scope above says 'the four real held factory/approval files'. Both are recorded; the CORRECTED value is the current one.",
+   "does_merged_work_preserve_it_answer": "YES — the hold is intact and unexercised by the eleven merged units.",
+   "does_merged_work_preserve_it_answer_note": "round 1's preservation answer. S2 and CORRECTION-3 falsify the part of its proof that rests on the glob-form zero-paths diff (vacuous for '*registry.json'); the conclusion for the four real files survives. Restored as record.",
+   "does_merged_work_preserve_it_proof": "git diff --name-only dccd6811719e4212a8efa36674ffe00f1d243c53 origin/main -- '*factory.py' '*lyric_writer.py' '*character_approval.py' '*registry.json' '*method_plan.py' returned ZERO paths (exit 0, empty output). No unit's own changed-file list names any of the five held files.",
+   "does_merged_work_preserve_it_residual": "The hold itself is still NOT_HANDED_OFF, so T13 remains blocked; batch/s75-b5-prep still exists as a LOCAL branch at dd3881cff (git show-ref --heads) and is not on any remote ref observed here.",
+   "does_merged_work_preserve_it_residual_note": "round 1's residual sentence naming batch/s75-b5-prep at dd3881cff. Absent from round 3 entirely and covered by no superseded claim. Restored as record."
+  }
+ },
+ "asset_classes_CARRIED_AND_RECHECKED": {
+  "raw_answers": {
+   "exists": true,
+   "where": [
+    "<run>/card-answers.json",
+    "<run>/control/card-answers.json (factory reads this alternate path at factory.py:1469)",
+    "<run>/control/card-receipt.json",
+    "<run>/control/run-state.json card_receipt block"
+   ],
+   "counts_observed": {
+    "files_named_card-answers.json": 394,
+    "split": {
+     "under_/Users": 14,
+     "under_/Volumes": 380
+    },
+    "real_client_runs_with_answers": 4
+   },
+   "retention_risk_corrected": "MANY ANSWERS LIVE ONLY IN text: 7 of the 14 rows in the Jennifer Allen eoe-emeralds-20261016-60s run carry value:null (length, music, look, model, storyboard, song, script) and all 14 carry non-empty text. A consumer that reads value alone silently loses those seven answers.",
+   "preservation_behaviour_already_on_main": "intake_session.py:448-456 preserves the legacy file as legacy_answers.status=unverified_preserved and never rewrites it.",
+   "would_create_if_absent": "n/a — exists"
+  },
+  "client_selected_routes": {
+   "exists": true,
+   "where": [
+    "<run>/card-answers.json id=models -> value {build, check, route}",
+    "<run>/control/card-receipt.json answers.video_model / video_style / audio_style / length",
+    "<run>/song-choices/state.json provenance",
+    "<run>/control/card-receipt.json length_changed_at / target"
+   ],
+   "exact_values_observed_carried": [
+    {
+     "run": "eoe-emeralds-20261016-60s",
+     "models": {
+      "build": "opus-chain",
+      "check": "sonnet-chain",
+      "route": "router-alias"
+     },
+     "length": "60 seconds",
+     "audio_style": "Soul Ballad",
+     "video_style": "Lifelike 3D",
+     "video_model": "MiniMax H3",
+     "spend": "$25.00"
+    },
+    {
+     "run": "eoe-emeralds-20261013",
+     "audio_style": "Soul Rise",
+     "length": "3 minutes + 60s and 90s clips",
+     "video_model": "MiniMax H3",
+     "video_style": "Lifelike 3D",
+     "length_changed_at": "2026-10-13T23:43:32Z"
+    },
+    {
+     "run": "voyage-to-virtue",
+     "audio_style": "Soul Ballad",
+     "length": "60 seconds",
+     "video_model": "MiniMax H3",
+     "video_style": "Lifelike 3D"
+    },
+    {
+     "run": "wantedwoman-book-test",
+     "models": {
+      "build": "openrouter/deepseek/deepseek-v4-flash",
+      "check": "sonnet-chain",
+      "route": "openrouter"
+     },
+     "length": "90 seconds",
+     "audio_style": "R&B Flow",
+     "video_style": "Sketch to Life (Hybrid)",
+     "video_model": "MiniMax H3",
+     "spend": "10.00"
+    }
+   ],
+   "retention_risk": "Routes are stored as free-text menu labels plus an optional dict. There is no top-level route schema field; T25's ROUTE_LABELS maps only 'MiniMax H3' and 'MiniMax H3 768P' (constraints.py:64-67). Any historical label outside that map resolves as itself and cannot be proven allowlisted.",
+   "would_create_if_absent": "n/a — exists"
+  },
+  "approved_artifacts": {
+   "exists": true,
+   "where": [
+    "<run>/creative/script-approval.json",
+    "<run>/control/card-receipt.json storyboard_approval boolean",
+    "Delivered receipts: RECEIPT.md, RECEIPT-v1/v2/v3.md, RECEIPT-song.md, RECEIPT-song-part.md, RECEIPT-book-images.md, CHARACTER-RECEIPT.md"
+   ],
+   "counts_observed": {
+    "receipt_markdown_files_in_delivered_corpus": 20,
+    "script_approval_json_total_on_disk": 306,
+    "script_approval_corrected_breakdown": {
+     "synthetic_package_scratch": 299,
+     "synthetic_owner_test": 1,
+     "repair_lanes": 2,
+     "real_jen_runs": 2,
+     "real_wantedwoman": 2
+    }
+   },
+   "example": {
+    "path": "/Users/blackceomacmini/scratch/jen-drama-diag/tx/Documents/drama-song-runs/eoe-emeralds-20261016-60s/creative/script-approval.json",
+    "status": "approved",
+    "approved_at": "2026-10-16T21:33:39Z",
+    "approved_by": "Jennifer Allen (Telegram 8606145708)",
+    "binding": "lyrics_sha 8c7a8d12e5240a6e1bb6bfc3747bedc3c7a2f77c4096031ccb645ca8adde1357"
+   },
+   "retention_risk": "Approval is bound by a lyrics digest in only one run shape. Storyboard approval is a bare boolean with no artifact digest, so it cannot satisfy 'approval binds artifacts, not preferences' without re-review. Receipts are free-form Markdown with no machine fields.",
+   "would_create_if_absent": "n/a — exists"
+  },
+  "songs": {
+   "exists": true,
+   "where": [
+    "<run>/music/takes/<variant>/",
+    "<run>/music/takes-*/ archives",
+    "<run>/song-choices/state.json offered[n]",
+    "Delivered: Downloads/Drama Song Ads/**/*.mp3|.wav"
+   ],
+   "counts_observed": {
+    "delivered_corpus": {
+     "mp3": 36,
+     "wav": 11
+    },
+    "qualification_corpus": {
+     "mp3": 476,
+     "wav": 79
+    }
+   },
+   "retention_risk": "Take bytes are referenced by CLIENT-BOX-ABSOLUTE paths (/Users/jennjack/...). Those paths do not exist on this machine, so the local copy is metadata-only unless the client box still holds the audio.",
+   "would_create_if_absent": "n/a — exists"
+  },
+  "images": {
+   "exists": true,
+   "where": [
+    "<run>/cast/images/",
+    "<run>/cast/urls.json",
+    "<run>/assets/, <run>/storyboard/stills/",
+    "Delivered: png/jpg inside campaign folders"
+   ],
+   "counts_observed": {
+    "delivered_corpus_png": 2939,
+    "delivered_corpus_jpg": 2,
+    "qualification_png": 1411,
+    "qualification_jpg": 311,
+    "spaulding_cast_urls_entries": 11,
+    "spaulding_locally_saved_png": 1
+   },
+   "corrected_path": "The 11-entry file round 1 called 'spaulding cast/urls.json' is at /Users/blackceomacmini/drama-song-factory-build/qualification/spaulding-gigy-one-check-chanel-150/cast/urls.json (the delivered corpus has no urls.json at all). The single locally saved image is .../spaulding-gigy-one-check-chanel-150/cast/images/whisperer-man-front-before-recast.png at 5127248 bytes. The v2 run's cast/urls.json holds 10 entries.",
+   "retention_risk": "SEVERE for character images. The 11 entries point at tempfile.redpandaai.co URLs and includes 3 '-t2' recasts; only 1 PNG is saved locally. If the temp bucket expires, approved faces are gone and cannot be re-derived, which the doctrine forbids regenerating.",
+   "would_create_if_absent": "n/a — exists"
+  },
+  "provider_ids": {
+   "exists": true,
+   "where": [
+    "<run>/music/takes/<variant>/dispatch-envelope.json -> evidence.task_id, saved_paths, actual_cost, credits_consumed",
+    "<run>/song-choices/state.json offered[n].take",
+    "<run>/cast/urls.json URL path segment '<task_id>_0.png'",
+    "<run>/storyboard/req-S0x.json, lanes/*/urls.json, h3urls.json",
+    "<run>/control/spend.sqlite3 and <run>/spend.sqlite3"
+   ],
+   "example": {
+    "file": ".../music/takes/intimate-piano/dispatch-envelope.json",
+    "task_id": "5d2ea8271ae6ecd147701e70c1d54f9d",
+    "actual_cost": 12,
+    "credits_consumed": 12.0,
+    "adapter_mode": "active"
+   },
+   "retention_risk_corrected": "Provider ids survive in JSON. The spend database that links them to money survives at the RUN ROOT for two of the four real runs: eoe-emeralds-20261016-60s spend.sqlite3 = 454656 bytes (jobs 509, receipts 508, sum(actual_cost)=2406, remote_task_id populated) and eoe-emeralds-20261013 spend.sqlite3 = 200704 bytes (jobs 198, receipts 197, sum(actual_cost)=1795). It does NOT survive for wantedwoman-book-test (run/spend.sqlite3 0 bytes) or voyage-to-virtue (absent). control/spend.sqlite3 is 0 bytes in jen 60s and missing elsewhere, so a consumer that reads only control/ would wrongly conclude the money link is gone.",
+   "would_create_if_absent": "n/a — exists"
+  },
+  "decision_history": {
+   "exists": true,
+   "where": [
+    "<run>/control/state.sqlite3 events/stages/meta",
+    "<run>/control/card-receipt.json note / at / length_changed_at",
+    "<run>/creative/*.bak-* and music/*.bak-*",
+    "Package level: DECISIONS.md DEC-01..DEC-26, task-ledger.json, evidence/ledger-state-20261024.v8/v9/v10/v11/v12.json, evidence/S75-LOOP-TICKS.jsonl",
+    "Delivered per-ad RECEIPT.md narrative"
+   ],
+   "counts_observed": {
+    "jen_eoe_20261016_60s": {
+     "events": 15,
+     "stages": 12,
+     "meta": 2,
+     "event_kinds": {
+      "transition": 10,
+      "claim": 4,
+      "init": 1
+     }
+    },
+    "jen_eoe_20261013": {
+     "events": 26,
+     "stages": 12,
+     "meta": 1,
+     "event_kinds": {
+      "transition": 20,
+      "claim": 5,
+      "init": 1
+     }
+    },
+    "laya_voyage_to_virtue": {
+     "events": 7,
+     "stages": 12,
+     "meta": 1,
+     "event_kinds": {
+      "transition": 4,
+      "claim": 2,
+      "init": 1
+     }
+    },
+    "loop_ticks_lines_at_read_time": 172
+   },
+   "retention_risk": "Per-run decision history is split across three stores (state.sqlite3, card-receipt.json, RECEIPT.md) and duplicated into prose. The package-level register has six versioned snapshots with no stated authority order, so 'which DECISIONS.md revision governed a run' is not recorded in the run.",
+   "would_create_if_absent": "n/a — exists"
+  }
+ },
+ "old_run_fields_found_CARRIED": {
+  "card_answers_dialect_A_current": {
+   "shape": "list of {n:int, value:any|null, text:str, id:str} or v2 envelope with the same rows",
+   "seen_in": "jen eoe-emeralds-20261013 and -20261016-60s, laya voyage-to-virtue, wantedwoman-book-test"
+  },
+  "card_answers_dialect_B_legacy": {
+   "shape": "list of {id:str, text:str, n:int} where n carries the numeric answer (length 180)",
+   "seen_in": "/Users/blackceomacmini/clawd/handoff/receipts/blackceomacmini-PKG-11-U1-run/card-answers.json",
+   "extra_ids": [
+    "shape",
+    "storyboard_approval",
+    "script_approval"
+   ]
+  },
+  "intake_session_state": {
+   "shape": "{schema, created_at, purpose_flow, answer_records{qid:{raw_answer, parsed{text,value}, definition_digest, question_digest, position, at_utc}}, events[], done, editing_question_id, confirmation, requested_runtime, base_definition_digest, legacy_answers?, superseded_questions?, pending}",
+   "seen_in": "origin/main scripts/core/choice_card/intake_card/intake_session.py"
+  },
+  "card_receipt": {
+   "fields": [
+    "answers{}",
+    "who",
+    "at",
+    "storyboard_approval",
+    "note",
+    "target",
+    "length_changed_at"
+   ],
+   "seen_in": "all four real runs"
+  },
+  "song_choices_state": {
+   "fields": [
+    "offered{n:{variant,file,take,duration_s,qc}}",
+    "provenance{at,channel,who,note,unknown}",
+    "required"
+   ],
+   "seen_in": "jen 60s (3 offered), laya (empty), wantedwoman (empty)"
+  },
+  "script_approval": {
+   "fields": [
+    "lyrics_sha",
+    "required",
+    "status",
+    "approved_at",
+    "approved_by",
+    "note"
+   ],
+   "seen_in": "jen 60s, wantedwoman"
+  },
+  "dispatch_envelope": {
+   "fields": [
+    "evidence{task_id, saved_paths[], actual_cost, credits_consumed, adapter_mode, accepted_submit_at, terminal_at, retries, warnings[], prompt_caps[]}",
+    "variant_id"
+   ],
+   "seen_in": "jen 60s music takes"
+  },
+  "music_qc_receipt": {
+   "fields": [
+    "receipt{gates{}, required_gates[], blocked[], failed[], flagged[], missing[], malformed[], verdict}",
+    "saved{stem}",
+    "variant_id"
+   ],
+   "seen_in": "jen 60s music takes"
+  }
+ },
+ "conflicts_with_merged_units_CARRIED": [
+  {
+   "id": "C1",
+   "severity": "HIGH",
+   "class": "duplicate source of truth",
+   "conflict": "Four independent style/recipe registries now exist on ONB origin/main, and the LIVE card path consumes none of the new ones.",
+   "evidence": [
+    "S75-T18 catalog.py defines STYLE_IDS (18 including reggaeton, pop-rock, country-rap) and its own _ADDED recipes for all 15 additions.",
+    "S75-T19 recipes.py loads 5 JSON recipes (acoustic-pop, afro-soul, alternative-rnb, country-pop, folk-storytelling) and imports nothing from catalog.py.",
+    "S75-T20 music_styles.py holds RECIPES for melodic-rap, trap-rap, pop-rap (STYLES keys at lines 230/271/313).",
+    "S75-T22 recipes_s75_t22.py holds 4 recipes (cinematic-orchestral-song, musical-theater, contemporary-gospel, urban-gospel) and imports nothing from catalog.py.",
+    "git grep for 'recipes_s75_t22|catalog|from music_styles import' over origin/main scripts shows live consumers (intake_card.py, style_help.py, length_formula.py, card_render.py, book.py, intake.py, no_echo.py) import music_styles.music_styles only. No non-test module imports catalog.py, recipes.py or recipes_s75_t22.py.",
+    "intake_card.py _MUSIC_SENTENCE (lines 109-113) lists only soul-ballad, rnb-flow, soul-rise, and _musics() builds the menu from that dict — so the LIVE card offers 3 styles, not 18.",
+    "reggaeton, pop-rock and country-rap have recipes ONLY in catalog.py (git grep on origin/main music_styles/)."
+   ],
+   "impact_on_emergency_behaviour": "None of the three approved original descriptions is altered (verified: catalog.py reads the originals by reference; T18's own evidence records original description hashes and an empty music_styles.py diff). The conflict is authority, not content.",
+   "required_decision_for_T29_T30": "Name one authoritative catalog per style before wiring a menu; do not wire two.",
+   "status": "CONFIRMED and REFINED (see CONFIRMED_PRESERVED.C1_* and NEW-4). Live card offers 3 styles; 18 ids exist across the registries and a fifth id list sits in music/constraints.py:55-62, where it is a LIVE default reached by bind_matrix at constraints.py:300 - so the drift risk across five style-id carriers is functional. Required decision for T29/T30: name one authoritative catalog per style before wiring a menu.",
+   "status_source": "status string written by round 2 and carried by round 3; it is a round-2/round-3 addition and is not round-1 text",
+   "impact_on_emergency_behaviour_source": "round 3 text; byte-identical to round 1's impact_on_emergency_behaviour (verified field-by-field in round 4)"
+  },
+  {
+   "id": "C2",
+   "severity": "MEDIUM",
+   "class": "duplicate implementation, same values",
+   "conflict": "The visible lip-sync target/cap is implemented twice with independent constants.",
+   "evidence": [
+    "Existing: scripts/core/lipsync_clips.py TARGET_SHARE=(0.25, 0.30) line 45, MAX_SHARE=0.35 line 46; enforced by catalog_calculator/extensions/price_extension.py _lip_sync_duration_guard (OVER_CAP, line 141/154) and covered by extensions/test_lipsync_cap.py.",
+    "New (S75-T25): scripts/core/music/constraints.py LIPSYNC_TARGET_MIN=0.25, LIPSYNC_TARGET_MAX=0.30, LIPSYNC_HARD_CAP=0.35 (lines 47-49) with its own assert_lipsync()."
+   ],
+   "impact": "Values agree today (no numeric divergence found). Two owners can drift; the price guard and the QC gate could disagree later.",
+   "required_decision_for_T29_T30": "Make one module re-export the other rather than re-declaring.",
+   "status": "CARRIED. lipsync_clips.py TARGET_SHARE=(0.25,0.30) line 45 / MAX_SHARE=0.35 line 46 versus music/constraints.py LIPSYNC_TARGET_MIN/MAX/HARD_CAP at lines 47-49 (verified present, values agree). Required decision: one module re-exports the other.",
+   "status_source": "status string written by round 2 and carried by round 3; it is a round-2/round-3 addition and is not round-1 text"
+  },
+  {
+   "id": "C3",
+   "severity": "HIGH",
+   "class": "new hard gate with no waiver path",
+   "conflict": "S75-T25's constraints module introduces fail-closed lip-sync/route assertions while the accepted corpus contains an owner-authorized per-ad WAIVER that the new gate cannot represent.",
+   "evidence": [
+    "scripts/core/music/constraints.py contains no waiv/override/exempt token (grep returned nothing).",
+    "scripts/core/delivery_checklist/delivery_checklist.py DOES model waivers: METHOD_WAIVED = 'checked, client waived approval' (1644), METHOD_WAIVED_ANSWERS (1646), _method_waived (1678).",
+    "Accepted artifact: Downloads/Drama Song Ads/spaulding-gigy-one-check-chanel/v150-20261008/RECEIPT-v1.md records 'WAIVER (Trevor: \"GO WITH OPTION A\")' for the spoken-share and sung-of-voice bands, scoped to that ad."
+   ],
+   "impact": "If T25's gate is wired as the delivery authority, a previously accepted, paid, delivered ad is rejected — a retroactive invalidation the doctrine forbids.",
+   "required_decision_for_T29_T30": "Carry the recorded-waiver concept into any new gate, scoped per artifact and never fleet-wide.",
+   "status": "CARRIED. constraints.py contains no waiv/override/exempt token; delivery_checklist.py models waivers (METHOD_WAIVED 1644, METHOD_WAIVED_ANSWERS 1646, _method_waived 1678); the accepted Spaulding receipt records a per-ad WAIVER.",
+   "status_source": "status string written by round 2 and carried by round 3; it is a round-2/round-3 addition and is not round-1 text"
+  },
+  {
+   "id": "C4",
+   "severity": "HIGH",
+   "class": "possible retroactive invalidation of a paid artifact",
+   "conflict": "The accepted Spaulding delivery reports lip-sync coverage far above the 35% hard cap now encoded by S75-T25.",
+   "evidence": [
+    "RECEIPT-v1.md: 'LIP-SYNC: Kling kling/ai-avatar-standard only ... 16 segments L01-L16, 77.5 s of audio (51.7 percent of runtime)' on a 150.000 s ad.",
+    "T25 hard cap 0.35; 77.5/150 = 0.517."
+   ],
+   "impact": "Any wiring that re-validates old paid deliverables against T25 would fail them on the reported figure.",
+   "precision_limit": "The receipt reports 77.5 s of LIP-SYNC AUDIO. T25 measures the union of VISIBLE articulating intervals over final picture runtime. These are different numerators. Recomputation of the visible share was not performed (no media decoded), so this is a FLAG, not a verdict.",
+   "required_decision_for_T29_T30": "Old paid artifacts stay bound to the contract under which they were approved; T25 applies to new or changed generation only.",
+   "status": "CARRIED as a FLAG, not a verdict. RECEIPT-v1.md reports 77.5 s of lip-sync audio on a 150.000 s ad (51.7%); T25 hard cap 0.35. The numerators differ (lip-sync AUDIO vs union of VISIBLE articulating intervals); no media was decoded this round either. Required decision: old paid artifacts stay bound to the contract under which they were approved.",
+   "status_source": "status string written by round 2 and carried by round 3; it is a round-2/round-3 addition and is not round-1 text"
+  },
+  {
+   "id": "C5",
+   "severity": "MEDIUM",
+   "class": "new prerequisite gate blocks legacy continuation",
+   "conflict": "S75-T10's script_writer refuses to dispatch without a complete foundation and a dispatch seam (NO_DISPATCH), while every real old run carries hand-authored creative artifacts.",
+   "evidence": [
+    "T10 build evidence: 'The writer refuses before any dispatch when the foundation, cast, identities, world, beats or scene plan is missing, stale or schema-defective' and 'write() requires a callable dispatch seam (NO_DISPATCH)'.",
+    "Old runs carry creative/story.json, creative/script.json, creative/lyrics.json (wantedwoman creative-alt3; jen eoe runs) and the Spaulding run keeps lyrics-before-coworker-recast.txt / LYRICS-SHEET-before-coworker-recast.md.",
+    "No old run observed here contains a cast manifest, world, or scene plan in the new contract shape."
+   ],
+   "impact": "Correct for NEW output per the old-run matrix. It becomes a regression only if T29/T30 route CONTINUATION through the new writer.",
+   "required_decision_for_T29_T30": "Continuation reuses existing approvals; the new writer gate applies only when new words are authored.",
+   "status": "CARRIED. T10's script_writer refuses without a complete foundation and a dispatch seam (NO_DISPATCH); every real old run carries hand-authored creative artifacts and no cast manifest/world/scene plan in the new contract shape. Required decision: continuation reuses existing approvals; the new writer gate applies only when new words are authored.",
+   "status_source": "status string written by round 2 and carried by round 3; it is a round-2/round-3 addition and is not round-1 text"
+  },
+  {
+   "id": "C6",
+   "severity": "MEDIUM",
+   "class": "hard-coded package difference vs the emergency hold",
+   "conflict": "package_flavor_adapter declares N999's character_approval_module = None, while the emergency hold names character_bible/character_approval.py as held on BOTH flavors.",
+   "evidence": [
+    "package_flavor_adapter.py _PROFILES: ONB character_approval_module = 'scripts/core/character_bible/character_approval.py', N999 = None.",
+    "Verified on disk: N999 origin/main has NO .claude/skills/drama-song-ad-factory/scripts/core/character_bible/character_approval.py (git cat-file -e returned non-zero).",
+    "emergency-owner-handoff.json lists the same path as held for 'ONB + N999'."
+   ],
+   "impact": "The adapter's statement matches disk today; the hold's 'ONB + N999' wording describes a path that only exists in ONB. Not a live contradiction, but T30 must not treat the N999 absence as licence to drop ONB behaviour (MIGRATION.md:127).",
+   "status": "CARRIED and re-proved. package_flavor_adapter declares N999 character_approval_module = None; N999 origin/main has no scripts/core/character_bible/character_approval.py; the hold names it for 'ONB + N999'. Consistent with the corrected held inventory.",
+   "status_source": "status string written by round 2 and carried by round 3; it is a round-2/round-3 addition and is not round-1 text"
+  },
+  {
+   "id": "C7",
+   "severity": "MEDIUM",
+   "class": "package divergence",
+   "conflict": "N999 origin/main carries NONE of the eleven units' files, and its intake card lacks T23's help hook.",
+   "evidence": [
+    "N999 origin/main 6e9d69def: story_first_contracts.py, package_flavor_adapter.py, music_styles/catalog.py, music/constraints.py, script_writer.py all ABSENT under .claude/skills/drama-song-ad-factory/scripts/core/.",
+    "git grep -c 'help me choose' on N999 intake_card.py returned exit 1 (no match); the file exists (git cat-file -e exit 0). ONB has the line at intake_card.py:891.",
+    "The package scratch's S75-BATCH3.merge-proof.addendum.json already recorded that the 999 delivery reported the four-line hook NOT applied there."
+   ],
+   "impact": "T30 is a genuine port, not a copy of merged ONB state. Parities must be shown per feature.",
+   "status": "CARRIED. N999 origin/main carries none of the eleven units' files and its intake card lacks T23's help hook. T30 is a genuine port.",
+   "status_source": "status string written by round 2 and carried by round 3; it is a round-2/round-3 addition and is not round-1 text"
+  },
+  {
+   "id": "C8",
+   "severity": "LOW",
+   "class": "documentation vs disk",
+   "conflict": "The delivery INDEX.md does not describe what is actually in the delivered folder.",
+   "evidence": [
+    "INDEX.md line 21 states a top-level 'BSW-Authors-Final-Videos-and-Songs-20261008.zip (1.3 GB bundle, referenced)'. No .zip exists at that level: ls '*.zip' -> 'no matches found'; find<Downloads maxdepth 3> for BSW-Authors -> no results.",
+    "INDEX.md (written 2026-10-09) does not mention bsw-walking-by-faith-and-sight/ch-perfect-daughter/revision-2026-10-22, which exists and contains 3005 files across phase-c/phase-d/phase-v2/phase-v3/audio/finals/prompts/book-assets.",
+    "INDEX.md lists 21 media tables; 30 JSON files now exist in the corpus, most inside revision-2026-10-22."
+   ],
+   "impact": "Anyone trusting the index will miss the newest paid work and will look for a bundle that is not there.",
+   "required_decision_for_T29_T30": "Describe, do not delete. A regenerated index is a described change (see described_changes_not_applied).",
+   "status": "CARRIED. Delivered INDEX.md still describes a 1.3 GB zip that is not present and omits revision-2026-10-22; 30 JSON files exist in the corpus.",
+   "status_source": "status string written by round 2 and carried by round 3; it is a round-2/round-3 addition and is not round-1 text"
+  },
+  {
+   "id": "C9",
+   "severity": "LOW",
+   "class": "new mandatory order vs legacy run shapes",
+   "conflict": "story_first_contracts mandates music AFTER package_approval and refuses 'music before whole-package approval'; the real old runs have no package-approval artifact at all.",
+   "evidence": [
+    "T03 build: mandated_order[5] = 'music', preceded by 'package_approval'; explicit refusal 'music before whole-package approval'.",
+    "All four real runs: song style chosen at the card (music preference) with no package-approval record; jan jen 20261013 receipt shows length changed AFTER the receipt (length_changed_at), and no approval digest exists anywhere in the run.",
+    "story_first_contracts.py is import-only / stdlib-only and is consumed only by package_flavor_adapter.py (itself consumed only by its test) and script_writer.py — so it is not yet enforced in any live path."
+   ],
+   "impact": "No live override today. If wired as a preflight, every legacy run becomes uncontinuable and the matrix's 'preserve the preference, present the existing review at the correct point' behaviour is lost unless implemented.",
+   "required_decision_for_T29_T30": "Wire as a gate for new generation only and add the documented legacy path.",
+   "status": "CARRIED. story_first_contracts mandates music after package_approval; real old runs have no package-approval artifact. Module is import-only and not enforced in a live path.",
+   "status_source": "status string written by round 2 and carried by round 3; it is a round-2/round-3 addition and is not round-1 text"
+  }
+ ],
+ "described_changes_not_applied_CARRIED": [
+  {
+   "change": "Regenerate Downloads/Drama Song Ads/INDEX.md from disk.",
+   "risk": "LOW. Document only; must not delete or move previously listed files.",
+   "applied": false
+  },
+  {
+   "change": "Copy the 11 spaulding cast images from tempfile.redpandaai.co into cast/images/ before the temp bucket expires.",
+   "risk": "MEDIUM. Preserves paid identity assets; adds files into a run folder; needs explicit authorization.",
+   "applied": false
+  },
+  {
+   "change": "Make scripts/core/music/constraints.py import lipsync_clips.TARGET_SHARE/MAX_SHARE instead of re-declaring 0.25/0.30/0.35.",
+   "risk": "LOW. Values identical today.",
+   "applied": false
+  },
+  {
+   "change": "Name one authoritative style catalog and have the others re-export it.",
+   "risk": "MEDIUM. Changes runtime import behaviour in the file set carrying SFR-003; needs a focused regression over the leaf load.",
+   "applied": false
+  }
+ ],
+ "what_remains_unverified": [
+  "Whether remote origin/main of either repository is still aa3d43d7f (ONB) or 6e4d3b419 (N999) now. No fetch was run; both are reads of the local clone's existing ref.",
+  "CC half of SFR-005. trevorotts1/blackceo-command-center was not read in this pass.",
+  "The visible articulating lip-sync share of the accepted Spaulding 150 s delivery. No media was decoded; C4 stays a flag.",
+  "Whether the client-box audio/image bytes referenced by /Users/jennjack/... still exist.",
+  "Whether any of the 380 synthetic card-answers.json files under the package scratch contains a copy of real client answers. Counted and cohort-labelled, not read one by one.",
+  "The count of unmerged S75 branches today.",
+  "Whether the per-ad waiver in RECEIPT-v1.md was also recorded in a machine-readable field.",
+  "Whether migrate() is intended to be called by any future path; no production caller exists on origin/main today.",
+  "Exact byte identity of medium and low severity conflict paths was not hashed; ancestry and content-presence were used instead.",
+  "The four held files' CONTENT equality beyond the zero-path diff between dccd68117 and origin/main was not separately hashed."
+ ],
+ "round_1_integrity_proof": {
+  "round_1_path": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/evidence/S75-T28.compatibility-map.json",
+  "sha256_before_round_3_work": "e9ab7ac031706ceeec6c460959eea9a0bb4267106ef398f2b74370565eaeee19",
+  "bytes_before_round_3_work": 53195,
+  "sha256_measured_at_artifact_build": "e9ab7ac031706ceeec6c460959eea9a0bb4267106ef398f2b74370565eaeee19",
+  "bytes_measured_at_artifact_build": 53195,
+  "sha256_reverified_by_shell_after_this_artifact_was_written": "e9ab7ac031706ceeec6c460959eea9a0bb4267106ef398f2b74370565eaeee19",
+  "bytes_reverified_by_shell_after_this_artifact_was_written": 53195,
+  "unchanged": true,
+  "round_2_sha256_unchanged": true,
+  "method": "shasum -a 256 and wc -c on the round-1 file, taken before and after writing this artifact; no write, move or delete touched the round-1 or round-2 file at any point. The build-time measurement was taken while assembling this document and the shell re-verification was taken after it was on disk; both returned the same digest and byte count."
+ },
+ "commands_run_this_round": [
+  "shasum -a 256 over evidence/S75-T28.compatibility-map.json, .round2.json, .round3.json and .round4.json before any fix work (python3 -I hashlib.sha256) => round 4 = 4b942df7511a082c4984fc5dfcd6a96d05f10949c35299111f0a0a18893eb09a, 147635 bytes, matching the value the round-4 repair report pinned",
+  "read of evidence/S75-T28.verdict.round4.json and evidence/S75-T28.repair.round4.json in full (the defect list for this round)",
+  "grep -n 'S75-A28' ACCEPTANCE-MATRIX.md => line 36, the acceptance row quoted verbatim in the repair receipt",
+  "git -C /Users/blackceomacmini/openclaw-onboarding ls-remote --heads origin (1944 ref lines) then grep -c for T28 => 0; the same grep -c for T08 => 3, T09 => 2, T12 => 3, T21 => 1 as the known-good control on the same instrument",
+  "git fetch origin main; git rev-parse origin/main => 9023e6b0e04cddb2c01a779c4bc0baef166d0a07; git worktree add -b s75/S75-T28-r5 <worktree> 9023e6b0e04cddb2c01a779c4bc0baef166d0a07",
+  "git cat-file -e origin/main:<path> for this unit's three proposed_owned_outputs => 3 of 3 ABSENT; git ls-tree over 75-drama-song-ad-factory/scripts/core and /contracts and /tests/fixtures",
+  "python3 -I build_round5.py => computed the measurement records M1..M7 and the regression set R1..R10 and wrote this file; the seven targeted edits above are its only content changes",
+  "python3 -I check_round5_claims.py --target evidence/S75-T28.compatibility-map.round4.json => FAIL (the discriminating test at the round-4 head)",
+  "python3 -I check_round5_claims.py --target evidence/S75-T28.compatibility-map.round5.json => PASS",
+  "NOT RUN IN THIS ROUND: git show origin/main:75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py and git status --short in the ONB clone. Those entries appear in the round-3 and round-4 command lists; the round-4 list is round 3's own list and is not this round's record. See measurement M6."
+ ],
+ "anything_i_mutated": "Files written by ROUND 5: evidence/S75-T28.compatibility-map.round5.json (this file) and evidence/S75-T28.repair.round5.json. Also committed on branch s75/S75-T28-r5 of github.com/trevorotts1/openclaw-onboarding: evidence/s75/S75-T28/check_round5_claims.py and the round-5 repair receipt copy. No product file was edited. Rounds 1-3 (evidence/S75-T28.compatibility-map.json, .round2.json, .round3.json) and the round-4 pair were not written, moved or deleted; their sha256 and byte counts are re-measured after the round-5 writes and recorded in round_5_pinned_hashes. No client run, paid asset or receipt outside this unit was written. No backup was created. The round-4 file carried round 3's own mutation statement instead of its own; that stale statement is quoted as a superseded claim at round_5_corrections.SC-5 and is not repeated here as an assertion. See measurement M5.",
+ "does_not_establish": [
+  "That S75-T28 is accepted. This is the producer map only; S75-A28 remains UNVERIFIED until an independent checker reviews this exact artifact.",
+  "That the described changes should be applied.",
+  "That any old run may be regenerated, migrated or deleted.",
+  "That the emergency owner has released the held files. The hold is still NOT_HANDED_OFF.",
+  "That the 18-style catalog is live. It is data on main with no live consumer.",
+  "Any merge, push, install or live-test authority."
+ ],
+ "planning_estimate_minutes": null,
+ "reason_for_round_4": "Round 3's substantive restorations are TRUE and were independently verified by the round-3 verdict: 13/13 emergency_behaviour_map rows restored with behaviour text equal to round 1; 7/7 old_run_inventory roots deep-equal; 3/3 not_found_named_sources deep-equal with sources_searched and not_checked intact; precursors_consumed deep-equal; all 3 round-2 sub-claims corrected and re-proved against factory.py at ONB origin/main aa3d43d7f; 16/16 surviving findings carried; no blanket supersedes claim. Round 4 exists because round 3 wrote FALSE COMPLETENESS SENTENCES over two carry_forward_table rows. That is a defect of assertion, not of restoration. GAP 1: the row for conflicts_with_merged_units (C1..C9) said 'All nine conflicts present. C1 refined by NEW-4; no conflict removed or weakened.', while the round-3 artefact carried none of the 29 round-1 evidence lines, none of the 7 round-1 required_decision_for_T29_T30 strings, and none of the 9 round-1 conflict statements. GAP 2: the row for old_run_fields_found said 'verbatim.', while two of its eight shape strings differ from round 1. Round 4 repairs the sentences and, on BRANCH A, restores the missing fields rather than only describing the loss.",
+ "completeness_claim_audit": [
+  {
+   "id": "CA-01",
+   "claim": "carry_forward_table row 'conflicts_with_merged_units (C1..C9)': 'All nine conflicts present. C1 refined by NEW-4; no conflict removed or weakened.' (round-3 wording)",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table[12].note",
+   "verdict_against_round_1": "FALSE as written in round 3",
+   "basis": "Two tests. (1) STRUCTURAL: deep equality of each conflict record's fields against evidence/S75-T28.compatibility-map.json:conflicts_with_merged_units - 0 of 29 evidence lines, 0 of 7 required_decision_for_T29_T30 strings and 0 of 9 conflict statements present as values in the round-3 block. (2) RAW-TEXT SUBSTRING over the whole round-3 file: 0 of 29 evidence lines present. Control on the instrument: the same raw-text matcher finds 28 of the 29 evidence lines inside the round-1 file's own raw text (the 29th, C3's RECEIPT-v1.md line, contains typographic quotation marks that JSON stores as \\u201c/\\u201d escapes, so it never appears as a literal substring of its own file either) - which is why the structural test is the authoritative one and the raw-text count is reported alongside, never instead.",
+   "action_taken": "BRANCH A: the 9 conflict records in this file now carry the round-1 conflict statement, the full round-1 evidence array, impact / impact_on_emergency_behaviour, C4's precision_limit and required_decision_for_T29_T30 where round 1 records one, alongside the round-2/3 status string. The row note now states what is present and where.",
+   "verdict_in_this_file": "TRUE as now written: all 9 conflict records, 29 of 29 evidence lines (deep-equal to round 1, verified field-by-field), 7 of 7 required_decision strings and 9 of 9 conflict statements are present as values at conflicts_with_merged_units_CARRIED. As raw-text substrings of this file 28 of 29 evidence lines match, the same 28 that match inside round 1's own text."
+  },
+  {
+   "id": "CA-02",
+   "claim": "carry_forward_table row 'old_run_fields_found (8 dialect/shape records)': 'verbatim.' (round-3 wording)",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table[11].note",
+   "verdict_against_round_1": "FALSE as written",
+   "basis": "Field-by-field comparison: 6 of 8 records are byte-identical; card_answers_dialect_A_current.shape gained 'or v2 envelope with the same rows' and card_answers_dialect_B_legacy.shape dropped the parenthetical to 'length 180'.",
+   "action_taken": "Row note rewritten to 'carried from round 2; two shape strings reworded for accuracy ...', with the two shapes named.",
+   "verdict_in_this_file": "TRUE as now written."
+  },
+  {
+   "id": "CA-03",
+   "claim": "carry_forward_table row 1: 'round 3 extends schema to v3 and sets round: 3; every other metadata field is identical.' (round-3 wording)",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table[0].note",
+   "verdict_against_round_1": "TRUE for the nine fields the row names (schema and round excluded by its own wording); INCOMPLETE, because generated_at is a top-level metadata field and is not identical and is not excepted.",
+   "basis": "Compared schema, unit, acceptance_ids, title, workflow_id, logical_owner, mode, product_files_edited, branch_or_worktree_mutated between the round-1 file and this file: 9 of 9 identical. generated_at differs (round 1 2026-10-24T22:45:24Z vs this file's own stamp).",
+   "action_taken": "Row note rewritten to name the 9 compared fields and to except generated_at explicitly as per-round by design.",
+   "verdict_in_this_file": "TRUE as now written."
+  },
+  {
+   "id": "CA-04",
+   "claim": "carry_forward_table row 'hard_boundaries_observed': 'round 2's four-boundary form, which is a superset of round 1's three.'",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table[3].note",
+   "verdict_against_round_1": "TRUE as a set of boundary claims, FALSE as a byte-level superset",
+   "basis": "Round 1 has 3 strings, this file has 4. 2 of round 1's 3 are byte-identical here. The third is rephrased (round 1: 'Neither clone was fetched, checked out, committed or pushed; all repository reads used git show / git cat-file / git rev-parse / git merge-base / git grep ...'; here: 'Both clones were read with git show / cat-file / ls-tree / grep / diff / merge-base / rev-parse / for-each-ref ... No fetch, checkout, branch, commit, merge or push was run.'). A fourth boundary is added.",
+   "action_taken": "Row note rewritten to say 'byte-identical in round 4' and to describe the rephrasing rather than claim a superset.",
+   "verdict_in_this_file": "TRUE as now written."
+  },
+  {
+   "id": "CA-05",
+   "claim": "carry_forward_table row 'cannot_verify (8 items)': 'Verified item by item: all 8 round-1 items are present in what_remains_unverified, plus 2 new ...'",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table[14].note",
+   "verdict_against_round_1": "TRUE as a topic mapping, FALSE as a text comparison",
+   "basis": "All 8 round-1 topics appear in what_remains_unverified, and 2 more are present (10 total). 8 of 8 strings are re-summarised and differ in wording from the round-1 strings, so 'present' does not mean the round-1 text is carried.",
+   "action_taken": "Row note rewritten to say 'represented as re-summarised lines, NOT as round-1 text'.",
+   "verdict_in_this_file": "TRUE as now written."
+  },
+  {
+   "id": "CA-06",
+   "claim": "carry_forward_table row 'described_changes_not_applied (4 items)': 'all four, all applied:false.'",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table[15].note",
+   "verdict_against_round_1": "TRUE for the count and the applied:false flag; the row does not claim verbatim and is not false. MEASURED (round 5, M2): 3 of 4 change strings and 4 of 4 risk strings are shortened relative to round 1; 1 of 4 change strings are byte-identical to round 1.",
+   "basis": "MEASURED (round 5, M2): pairwise comparison of the 4 items against round 1: 3 of 4 change strings are shortened (measured items [1, 2, 4]) and 1 of 4 are byte-identical (measured items [3]); 4 of 4 risk strings are shortened (measured items [1, 2, 3, 4]). Item 1 loses the names 'revision-2026-10-22' and the absent 1.3 GB zip.",
+   "action_taken": "Row 15 note rewritten with the measured figures and the shortened item numbers; the round-4 figure of four of four change strings is superseded at round_5_corrections.SC-2.",
+   "verdict_in_this_file": "TRUE as now written.",
+   "round_5_correction": {
+    "corrects": "the round-4 figure '4 of 4 change strings ... shortened'",
+    "measurement": "M2",
+    "measured": {
+     "change_shortened": 3,
+     "change_byte_identical": 1,
+     "risk_shortened": 4
+    }
+   }
+  },
+  {
+   "id": "CA-07",
+   "claim": "carry_forward_table row 'does_not_establish (6 items)': 'verbatim from round 2, which is the same six.'",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table[18].note",
+   "verdict_against_round_1": "TRUE versus round 2 (the whole 6-item list is byte-identical to round 2), FALSE versus round 1. MEASURED (round 5, M3): 3 of 6 strings are shortened relative to round 1 (measured items [1, 2, 4]), 3 of 6 are byte-identical.",
+   "basis": "this file's does_not_establish is byte-identical to evidence/S75-T28.compatibility-map.round2.json:does_not_establish (6 items), MEASURED True. Against the round-1 file: 3 of 6 strings are shortened (measured items [1, 2, 4]), 3 of 6 are byte-identical. The shortened strings drop 'an independent opus-chain checker', 'Each is a recommendation with its risk, nothing more.' and 'five' from 'the five held files'.",
+   "action_taken": "Row 18 note rewritten with the measured shortened count and item numbers; the round-4 figure is superseded at round_5_corrections.SC-3.",
+   "verdict_in_this_file": "TRUE as now written.",
+   "round_5_correction": {
+    "corrects": "the round-4 figure '2 of the 6 strings are shortened relative to round 1'",
+    "measurement": "M3",
+    "measured": {
+     "shortened_vs_round_1": 3,
+     "byte_identical_vs_round_1": 3
+    }
+   }
+  },
+  {
+   "id": "CA-08",
+   "claim": "carry_forward_table row 'emergency_owner_handoff': 'State NOT_HANDED_OFF, holding_party, receiving_owner, scope and lease_exception carried unchanged.'",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table[8].note",
+   "verdict_against_round_1": "FALSE as written",
+   "basis": "state is byte-identical. holding_party and receiving_owner carry identical text values but are re-parented (round 1 nests both under what_the_handoff_established). scope is reworded ('the five named factory/approval files' -> 'the four real held factory/approval files'). lease_exception is identical in value. Additionally 5 round-1 content items were absent from the round-3 handoff block and covered by no superseded_claims_in_round_1 entry: the doctrine clause 'the emergency task's accepted fixes must be adopted and never duplicated'; the preservation answer 'the hold is intact and unexercised by the eleven merged units'; the residual sentence naming batch/s75-b5-prep at dd3881cff; the five-entry held_files array with its current_lease and changed_by_active_branch fields; and round 1's scope string.",
+   "action_taken": "Row note rewritten to state which of the five fields is byte-identical and to name the losses. BRANCH A: all 5 lost items are restored verbatim into emergency_owner_handoff_CORRECTED.round_1_material_restored_verbatim, labelled as record rather than re-asserted, so the round-1 text survives in the map of record while S1, S2, S3 and CORRECTION-3 keep standing against the parts they falsify.",
+   "verdict_in_this_file": "TRUE as now written, and the lost round-1 material is restored rather than only described."
+  },
+  {
+   "id": "CA-09",
+   "claim": "'eight preserved findings' (stated twice in the round-3 file: in reason_for_round_3 and in supersedes.round_2)",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> reason_for_round_3 and supersedes.round_2",
+   "verdict_against_round_1": "TRUE as a grouped count, but the basis was not stated in the artefact",
+   "basis": "CONFIRMED_PRESERVED holds 11 keys = 1 provenance key + 10 finding blocks; 3 of the blocks are the three sub-claims of conflict C1, so 10 - 2 = 8. The round-3 file asserted the figure and never stated the 10-block basis, so a reader counting keys would see 11 and could conclude two findings were lost.",
+   "action_taken": "Grouping basis and its arithmetic written into CONFIRMED_PRESERVED.grouping_basis and CONFIRMED_PRESERVED.grouping_numbers in this file, each number with its source location.",
+   "verdict_in_this_file": "TRUE as now written, with the basis stated."
+  },
+  {
+   "id": "CA-10",
+   "claim": "carry_forward_table rows for precursors_consumed, emergency_behaviour_map (13 rows), old_run_inventory (7 roots), not_found_named_sources (3 items), eleven_units_on_origin_main, asset_classes, acceptance_criterion_verbatim, exact_deliverable_verbatim, planning_estimate_minutes",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table rows 4, 6, 7, 9, 10, 1, 2, 19",
+   "verdict_against_round_1": "TRUE, re-verified by the round-4 author",
+   "basis": "precursors_consumed: deep-equal to round 1. emergency_behaviour_map: 13 of 13 rows present and byte-equal to round 1 on the 6 round-1 fields (id, behaviour, repo, files, receipt, state_after_merged_units); round 3 adds 2 fields per row (round_2_file_preservation_recheck, behaviour_text_source). old_run_inventory: deep-equal to round 1 including 7 distinct run roots. not_found_named_sources: deep-equal to round 1 including sources_searched and not_checked. eleven_units_on_origin_main.units: deep-equal to round 1's per-unit changed_files lists; count 11 and '11 of 11 ANCESTOR' match. acceptance_criterion_verbatim and exact_deliverable_verbatim: byte-identical to round 1. planning_estimate_minutes: null in round 1 and null here.",
+   "action_taken": "None. These rows are carried into this file from round 3 unchanged.",
+   "verdict_in_this_file": "TRUE, carried unchanged."
+  },
+  {
+   "id": "CA-11",
+   "claim": "current_target_heads_observed row: 'ONB unchanged at aa3d43d7f. N999 head moved 6e9d69def -> 6e4d3b419 (NEW-5); round 1's value remains the correct record of the head at round-1 read time.'",
+   "claim_location": "evidence/S75-T28.compatibility-map.round3.json -> carry_forward_table[5].note",
+   "verdict_against_round_1": "TRUE",
+   "basis": "round-1 current_target_heads_observed.N999.origin_main = 6e9d69def27dd4adfffbe7a03ccf0e47d871f03b and .ONB.origin_main = aa3d43d7f6ed07ad22405d9eb2a551f013e95707; this file records ONB aa3d43d7f6ed07ad22405d9eb2a551f013e95707 and N999 6e4d3b41912f395a8c9b53e3cc0437ed9da3c121, and keeps round 1's N999 value as the round-1-time record. The movement is corroborated by superseded_claims_in_round_1 S8 in this file.",
+   "action_taken": "None. Carried unchanged.",
+   "verdict_in_this_file": "TRUE, carried unchanged."
+  },
+  {
+   "id": "CA-12",
+   "claim": "'13/13 emergency_behaviour_map rows restored with behaviour text byte-identical to round 1', '7/7 old_run_inventory roots deep-equal', '3/3 not_found_named_sources', 'precursors_consumed intact', 'all 3 round-2 sub-claims corrected and re-proved', '16/16 surviving findings carried' (round-3 verdict summary)",
+   "claim_location": "evidence/S75-T28.verdict.round3.json -> emergency_behaviour_map_restoration, old_run_inventory, not_found_named_sources, precursors_consumed, sub_claims_tested_against_source, surviving_findings_preserved",
+   "verdict_against_round_1": "TRUE for the parts the round-4 author re-checked against the round-1 file; the sub-claim re-proofs against factory.py at ONB origin/main aa3d43d7f were NOT re-run by the round-4 author and are reported here as the round-3 verdict's finding, not as round-4 measurement",
+   "basis": "Round-4 re-check: 13/13 rows byte-equal on the 6 round-1 fields (see CA-10). 7/7 roots deep-equal (see CA-10). 3/3 not_found_named_sources deep-equal (see CA-10). precursors_consumed deep-equal (see CA-10). 16/16 surviving findings present in this file: 3 CORRECTIONS + 5 NEW_FINDINGS + 8 grouped preserved findings, and CONFIRMED_PRESERVED in this file is byte-identical to the round-2 block. The factory.py line-level re-proofs were not re-executed in round 4 and are explicitly not claimed as round-4 measurement.",
+   "action_taken": "Claim reported with its boundary. No round-4 number is derived from the un-rerun part.",
+   "verdict_in_this_file": "TRUE as reported, with the un-rerun part named."
+  }
+ ],
+ "round_4_control": {
+  "purpose": "A known-good control: a check that cannot find something that IS there proves nothing about what is missing.",
+  "claim_asserted_CARRIED": "acceptance_criterion_verbatim and exact_deliverable_verbatim are byte-identical to round 1 in this file (carry_forward_table rows 1 and 2)",
+  "method": "read the two strings from evidence/S75-T28.compatibility-map.json and substring-match them against the text of evidence/S75-T28.compatibility-map.round4.json",
+  "control_result": "PASS: both strings are present at acceptance_criterion_verbatim and exact_deliverable_verbatim in this file (2 of 2 found). The same instrument, run as a raw-text substring matcher over the round-3 file, reported 0 of 29 for the round-3 conflicts evidence lines and 28 of 29 for the same lines inside round 1's own text, so it discriminates present from absent and its blind spot (one line with typographic quotes) is named rather than hidden.",
+  "negative_control": "the same matcher against evidence/S75-T28.compatibility-map.round3.json for the C3 required_decision_for_T29_T30 string returned absent, which is the expected negative",
+  "second_control": {
+   "claim_asserted_CARRIED": "C3's required_decision_for_T29_T30, restored in this file under BRANCH A",
+   "round_1_text": "Carry the recorded-waiver concept into any new gate, scoped per artifact and never fleet-wide.",
+   "location_in_this_file": "conflicts_with_merged_units_CARRIED[2].required_decision_for_T29_T30 (the record whose id is C3)",
+   "result": "PASS: the string is present at that location and is deep-equal to evidence/S75-T28.compatibility-map.json:conflicts_with_merged_units[2].required_decision_for_T29_T30",
+   "negative_control": "the same string is absent from the round-3 file text (0 occurrences of 'never fleet-wide')"
+  }
+ },
+ "numbers_and_their_sources": {
+  "rule": "Every number written by round 5 names the file and field path that produces it and is re-derived by check_round5_claims.py. A number carried from an earlier round that round 5 did not re-measure is labelled UNSOURCED IN ROUND 5 with the reason. A number whose cited source does not produce it is not allowed to stand: see M4.",
+  "table": [
+   {
+    "number": 29,
+    "meaning": "round-1 conflict evidence lines across C1..C9",
+    "source": "evidence/S75-T28.compatibility-map.json -> conflicts_with_merged_units[*].evidence lengths 7+2+3+2+3+3+3+3+3 (sum 29); present as values at conflicts_with_merged_units_CARRIED[*].evidence in this file by deep equality"
+   },
+   {
+    "number": 7,
+    "meaning": "conflicts carrying required_decision_for_T29_T30 in round 1",
+    "source": "evidence/S75-T28.compatibility-map.json -> conflicts_with_merged_units key presence on C1, C2, C3, C4, C5, C8, C9"
+   },
+   {
+    "number": 2,
+    "meaning": "conflicts with NO required_decision in round 1 (C6, C7)",
+    "source": "evidence/S75-T28.compatibility-map.json -> conflicts_with_merged_units.C6 and .C7 keys"
+   },
+   {
+    "number": 9,
+    "meaning": "conflict records in this file",
+    "source": "conflicts_with_merged_units_CARRIED list length in this file"
+   },
+   {
+    "number": 9,
+    "meaning": "round-1 conflict statements absent from the round-3 file",
+    "source": "substring test of conflicts_with_merged_units[*].conflict against the text of evidence/S75-T28.compatibility-map.round3.json"
+   },
+   {
+    "number": 8,
+    "meaning": "dialect/shape records in old_run_fields_found",
+    "source": "evidence/S75-T28.compatibility-map.json -> old_run_fields_found key count"
+   },
+   {
+    "number": 6,
+    "meaning": "of those 8 byte-identical to round 1",
+    "source": "field-by-field deep comparison of old_run_fields_found against old_run_fields_found_CARRIED in this file"
+   },
+   {
+    "number": 11,
+    "meaning": "keys in CONFIRMED_PRESERVED",
+    "source": "count of CONFIRMED_PRESERVED key names in this file excluding grouping_basis, grouping_basis_source and grouping_numbers = 11; identical key set to evidence/S75-T28.compatibility-map.round2.json:CONFIRMED_PRESERVED. The plain key count of this file is 14 (see measurement M4).",
+    "superseded_source_round_4": "CONFIRMED_PRESERVED key count in this file"
+   },
+   {
+    "number": 10,
+    "meaning": "finding blocks in CONFIRMED_PRESERVED",
+    "source": "11 keys excluding the three grouping keys, minus the 1 provenance key = 10 (see measurement M4)",
+    "superseded_source_round_4": "CONFIRMED_PRESERVED key count minus the provenance key in this file"
+   },
+   {
+    "number": 3,
+    "meaning": "C1 sub-claim blocks collapsed into one finding",
+    "source": "key names C1_four_registries_present, C1_import_graph, C1_client_visible_form in this file"
+   },
+   {
+    "number": 8,
+    "meaning": "grouped preserved findings",
+    "source": "10 finding blocks minus the 2 collapsed C1 blocks"
+   },
+   {
+    "number": 20,
+    "meaning": "rows in carry_forward_table",
+    "source": "carry_forward_table list length in this file"
+   },
+   {
+    "number": 29,
+    "meaning": "round-1 top-level keys",
+    "source": "evidence/S75-T28.compatibility-map.json top-level key count"
+   },
+   {
+    "number": 13,
+    "meaning": "emergency_behaviour_map rows",
+    "source": "emergency_behaviour_map list length in this file and in the round-1 file"
+   },
+   {
+    "number": 7,
+    "meaning": "distinct old run roots",
+    "source": "old_run_inventory.distinct_run_roots_observed list length in this file and in the round-1 file"
+   },
+   {
+    "number": 3,
+    "meaning": "not_found_named_sources items",
+    "source": "not_found_named_sources list length in this file and in the round-1 file"
+   },
+   {
+    "number": 8,
+    "meaning": "round-1 cannot_verify items",
+    "source": "evidence/S75-T28.compatibility-map.json -> cannot_verify list length"
+   },
+   {
+    "number": 10,
+    "meaning": "what_remains_unverified items in this file",
+    "source": "what_remains_unverified list length in this file"
+   },
+   {
+    "number": 4,
+    "meaning": "described_changes_not_applied items",
+    "source": "evidence/S75-T28.compatibility-map.json -> described_changes_not_applied list length (4); described_changes_not_applied_CARRIED in this file (4)"
+   },
+   {
+    "number": 6,
+    "meaning": "does_not_establish items",
+    "source": "does_not_establish list length in this file (6); round-1 file (6); round-2 file (6)"
+   },
+   {
+    "number": 3,
+    "meaning": "round-1 handoff strings lost and covered by no S entry",
+    "source": "substring test of the 3 named strings against the round-3 file text and against superseded_claims_in_round_1 entries S1..S14",
+    "note_round_5": "counted against the ROUND-3 file, which is where they were missing. In rounds 4 and 5 all three are present and deep-equal to round 1; see measurement M1. The number is a round-3 fact, not a round-5 one."
+   },
+   {
+    "number": 11,
+    "meaning": "unit heads in eleven_units_on_origin_main",
+    "source": "eleven_units_on_origin_main.count in this file (11) and units list length (11)"
+   }
+  ],
+  "unsourced": [
+   {
+    "number": "the round-3 verdict's factory.py line-level re-proof locations (lines 1469, 2898, 3093 of the old claim and the corrected card_answers.py write points at 61-74, 139-154, 157-169)",
+    "status": "UNSOURCED IN ROUND 4",
+    "why": "the round-4 author did not re-open the repositories or re-run git show against factory.py / card_answers.py; those line numbers are reproduced from the round-3 artefact text and are recorded here as reproduction, not as round-4 measurement",
+    "where_the_text_lives": "emergency_owner_handoff_CORRECTED.who_owns_the_live_legacy_writer_CORRECTED in this file (carried from round 3) and evidence/S75-T28.compatibility-map.json -> emergency_owner_handoff.does_merged_work_preserve_it.who_owns_the_live_legacy_writer"
+   },
+   {
+    "number": "the 306 script-approval.json total and its cohort split",
+    "status": "UNSOURCED IN ROUND 4",
+    "why": "not re-counted by the round-4 author; carried as round-3/round-2 text",
+    "where_the_text_lives": "asset_classes_CARRIED_AND_RECHECKED.approved_artifacts in this file"
+   },
+   {
+    "number": "the 380 synthetic card-answers.json count",
+    "status": "UNSOURCED IN ROUND 4",
+    "why": "not re-counted by the round-4 author; carried as round-1/round-3 text",
+    "where_the_text_lives": "what_remains_unverified item in this file and evidence/S75-T28.compatibility-map.json -> cannot_verify"
+   },
+   {
+    "number": "every corpus count inside asset_classes_CARRIED_AND_RECHECKED and decision_history (394 card-answers files, 4 real client runs, 7 of 14 rows value:null, 20 receipt markdown files, 36/11 and 476/79 song files, 2939/2/1411/311/11/1 image counts, 5127248 bytes, 10 and 11 entries, 3 recasts, 454656/200704/0 bytes, the 15/12/2/10/4/1/26/12/20/5/7/12/172 decision-history block)",
+    "status": "UNSOURCED IN ROUND 5",
+    "why": "round 5 did not open the old-run corpus. These counts are carried text from rounds 1-4 and are labelled here so that no reader treats them as round-5 measurement. The round-4 verdict's numbers_restated_without_source_or_label block names eleven such groups; this entry covers all of them in one place.",
+    "where_the_text_lives": "asset_classes_CARRIED_AND_RECHECKED in this file, carried unchanged"
+   },
+   {
+    "number": "code line locations intake_session.py:448-456, constraints.py:64-67, factory.py:370/371/372, factory.py:2272-2273, factory.py:1469/2898/3093, card_answers.py:61-74/139-154/157-169",
+    "status": "UNSOURCED IN ROUND 5",
+    "why": "round 5 read no repository file content. The branch-map and origin-ref reads recorded in commands_run_this_round did not open factory.py or card_answers.py.",
+    "where_the_text_lives": "emergency_owner_handoff_CORRECTED.who_owns_the_live_legacy_writer_CORRECTED and commands_run_this_round history in rounds 3 and 4"
+   },
+   {
+    "number": "'16/16 surviving findings carried' and '306 script-approval.json total' with its 299/1/2/2/2 cohort split and '380 synthetic card-answers.json'",
+    "status": "UNSOURCED IN ROUND 5",
+    "why": "carried from rounds 2-3, not re-counted here, never used to support a round-5 completeness claim.",
+    "where_the_text_lives": "reason_for_round_3 / reason_for_round_4 and asset_classes_CARRIED_AND_RECHECKED.approved_artifacts in this file"
+   }
+  ]
+ },
+ "hard_boundaries_observed_round_4": [
+  "Only two files were written by round 4: evidence/S75-T28.compatibility-map.round4.json and evidence/S75-T28.repair.round4.json. Nothing else was created, modified or deleted.",
+  "evidence/S75-T28.compatibility-map.json, evidence/S75-T28.compatibility-map.round2.json and evidence/S75-T28.compatibility-map.round3.json were re-hashed by shell after the round-4 writes and all three match their pinned sha256 and byte sizes.",
+  "No product code, repository file, git branch, commit, merge, push or checkout was touched. No repository was read in round 4; all comparisons are artefact-to-artefact reads of the four evidence JSON files.",
+  "No secret value is reproduced here."
+ ],
+ "does_not_establish_round_4": [
+  "That S75-T28 is accepted. This is still the producer map; S75-A28 remains UNVERIFIED until an independent checker reviews this exact artifact.",
+  "That the round-3 verdict's factory.py / card_answers.py line-level re-proofs are correct. Round 4 did not re-run them; it reports them and marks their line numbers UNSOURCED in round 4.",
+  "That the 3 strings recorded in could_not_close.CL-02 exist anywhere else in the project. Round 4 searched only the round-3 artefact text and the superseded_claims_in_round_1 list.",
+  "That any described change should be applied. Each remains a recommendation with its risk, nothing more.",
+  "Any merge, push, install or live-test authority."
+ ],
+ "reason_for_round_5": "Round 4 was judged FAIL not on its content - both named gaps were verified closed - but on its self-description: five assertions inside the round-4 artefact were falsified by direct reads and the two round-4 documents contradict each other about repository reads. Round 5 therefore stops asserting and computes. See measurement records M1..M7.",
+ "round_5_corrections": {
+  "purpose": "each entry quotes the round-4 sentence it supersedes and names the measurement that falsified it. Quoted text here is supersession record, not an assertion of this file.",
+  "SC-1": {
+   "defect": "D1 / V-18",
+   "round_4_claim_quoted": "Three further round-1 strings are absent from this file and are NOT covered by any S entry",
+   "measurement": "M1"
+  },
+  "SC-2": {
+   "defect": "D2 / V-24",
+   "round_4_claim_quoted": "4 of 4 change strings and 4 of 4 risk strings are shortened relative to round 1",
+   "measurement": "M2"
+  },
+  "SC-3": {
+   "defect": "D3 / V-25",
+   "round_4_claim_quoted": "2 of the 6 strings are shortened relative to round 1",
+   "measurement": "M3"
+  },
+  "SC-4": {
+   "defect": "D4 / V-26",
+   "round_4_claim_quoted": "keys_total_source: CONFIRMED_PRESERVED key count in this file (the count is 14, not 11)",
+   "measurement": "M4"
+  },
+  "SC-5": {
+   "defect": "D5 / V-27, V-28",
+   "round_4_claim_quoted": "One new file only: this round-3 map at evidence/S75-T28.compatibility-map.round3.json ... (and row 16: Round 3 records its own.)",
+   "measurement": "M5"
+  },
+  "SC-6": {
+   "defect": "D6 / V-29",
+   "round_4_claim_quoted": "commands_run_this_round, byte-identical to the round-3 list, presenting git show / git status reads as round-4 commands while the round-4 report says no repository was read at all in round 4",
+   "measurement": "M6"
+  },
+  "SC-7": {
+   "defect": "D7 / V-30",
+   "round_4_claim_quoted": "numbers restated with neither a file+location source nor an UNSOURCED label (11 groups named by the round-4 verdict)",
+   "measurement": "M7"
+  }
+ },
+ "round_5_edit_surface": {
+  "purpose": "over-correction and no-drive-by proof: the exact set of round-4 paths this round touched",
+  "changed_paths": [
+   ".CONFIRMED_PRESERVED.grouping_basis_source",
+   ".CONFIRMED_PRESERVED.grouping_numbers.c1_blocks_grouped_as_one_source",
+   ".CONFIRMED_PRESERVED.grouping_numbers.finding_blocks_source",
+   ".CONFIRMED_PRESERVED.grouping_numbers.grouped_finding_count_source",
+   ".CONFIRMED_PRESERVED.grouping_numbers.keys_total_source",
+   ".CONFIRMED_PRESERVED.grouping_numbers.provenance_keys_source",
+   ".anything_i_mutated",
+   ".carry_forward_table[15].note",
+   ".carry_forward_table[16].note",
+   ".carry_forward_table[17].note",
+   ".carry_forward_table[18].note",
+   ".carry_forward_table[8].note",
+   ".commands_run_this_round (list length 7 -> 10)",
+   ".commands_run_this_round[0]",
+   ".commands_run_this_round[1]",
+   ".commands_run_this_round[2]",
+   ".commands_run_this_round[3]",
+   ".commands_run_this_round[4]",
+   ".commands_run_this_round[5]",
+   ".commands_run_this_round[6]",
+   ".completeness_claim_audit[5].action_taken",
+   ".completeness_claim_audit[5].basis",
+   ".completeness_claim_audit[5].verdict_against_round_1",
+   ".completeness_claim_audit[6].action_taken",
+   ".completeness_claim_audit[6].basis",
+   ".completeness_claim_audit[6].verdict_against_round_1",
+   ".generated_at",
+   ".numbers_and_their_sources.rule",
+   ".numbers_and_their_sources.table[7].source",
+   ".numbers_and_their_sources.table[8].source",
+   ".numbers_and_their_sources.unsourced (list length 3 -> 6)",
+   ".round",
+   ".schema",
+   ".supersedes.relationship"
+  ],
+  "added_paths": [
+   ".CONFIRMED_PRESERVED.grouping_numbers.measurement",
+   ".carry_forward_table[15].note_correction",
+   ".carry_forward_table[18].note_correction",
+   ".carry_forward_table[8].note_correction",
+   ".completeness_claim_audit[5].round_5_correction",
+   ".completeness_claim_audit[6].round_5_correction",
+   ".does_not_establish_round_5",
+   ".numbers_and_their_sources.table[20].note_round_5",
+   ".numbers_and_their_sources.table[7].superseded_source_round_4",
+   ".numbers_and_their_sources.table[8].superseded_source_round_4",
+   ".reason_for_round_5",
+   ".round_5_corrections",
+   ".round_5_measurements",
+   ".round_5_pinned_hashes",
+   ".round_5_regression_set"
+  ],
+  "removed_paths": [],
+  "removed_paths_count": 0,
+  "all_changes_inside_the_seven_targeted_edits": true,
+  "rule": "removed_paths must be empty: round 5 corrects sentences and sources, it never deletes a restored field."
+ },
+ "round_5_measurements": [
+  {
+   "id": "M1",
+   "defect": "D1 / V-18",
+   "question": "Are the three round-1 handoff strings absent from the round-4 artefact, as its row-8 note claims?",
+   "method": "parsed-value equality (==) of each round-1 string against its round-4 location, plus a raw substring test of each string against the round-4 file text",
+   "field_paths_compared": [
+    "S75-T28.compatibility-map.json:emergency_owner_handoff.doctrine",
+    "S75-T28.compatibility-map.json:emergency_owner_handoff.does_merged_work_preserve_it.answer",
+    "S75-T28.compatibility-map.json:emergency_owner_handoff.does_merged_work_preserve_it.residual",
+    "S75-T28.compatibility-map.round4.json:emergency_owner_handoff_CORRECTED.round_1_material_restored_verbatim.{doctrine_full,does_merged_work_preserve_it_answer,does_merged_work_preserve_it_residual}"
+   ],
+   "expected": "row-8 note claims absent from file",
+   "observed": "all three values deep-equal to round 1: {\"doctrine_full\": true, \"does_merged_work_preserve_it_answer\": true, \"does_merged_work_preserve_it_residual\": true}",
+   "measured": true,
+   "note": "The note is false and the round-4 repair report CL-02 agrees with this measurement, so the two round-4 documents contradict each other. Which document was right about authorship is NOT determinable from artefacts; the presence question is determinable and is TRUE.",
+   "raw_substring_in_round4_file": {
+    "doctrine_full": true,
+    "does_merged_work_preserve_it_answer": true,
+    "does_merged_work_preserve_it_residual": true
+   },
+   "raw_substring_in_round1_file": {
+    "doctrine_full": true,
+    "does_merged_work_preserve_it_answer": true,
+    "does_merged_work_preserve_it_residual": true
+   }
+  },
+  {
+   "id": "M2",
+   "defect": "D2 / V-24",
+   "question": "How many of the 4 change strings and 4 risk strings in described_changes_not_applied are shortened relative to round 1?",
+   "method": "pairwise parsed-value comparison, item i of round 1 against item i of described_changes_not_applied_CARRIED; shortened = both values are strings and the round-5 value has strictly fewer characters than the round-1 value (the per-item record also says whether it is a strict substring or a rewording)",
+   "field_paths_compared": [
+    "S75-T28.compatibility-map.json:described_changes_not_applied[*].{change,risk}",
+    "S75-T28.compatibility-map.round4.json:described_changes_not_applied_CARRIED[*].{change,risk}"
+   ],
+   "expected": "round-4 row-15 note claims 4 of 4 change and 4 of 4 risk shortened",
+   "observed": {
+    "change_shortened": 3,
+    "change_byte_identical": 1,
+    "risk_shortened": 4,
+    "risk_byte_identical": 0,
+    "per_item": [
+     {
+      "item_index": 1,
+      "field": "change",
+      "state": "shortened relative to round 1 (reworded, not a substring)",
+      "round_1_len": 130,
+      "round_4_len": 55
+     },
+     {
+      "item_index": 1,
+      "field": "risk",
+      "state": "shortened relative to round 1 (reworded, not a substring)",
+      "round_1_len": 170,
+      "round_4_len": 68
+     },
+     {
+      "item_index": 2,
+      "field": "change",
+      "state": "shortened relative to round 1 (reworded, not a substring)",
+      "round_1_len": 120,
+      "round_4_len": 111
+     },
+     {
+      "item_index": 2,
+      "field": "risk",
+      "state": "shortened relative to round 1 (reworded, not a substring)",
+      "round_1_len": 214,
+      "round_4_len": 99
+     },
+     {
+      "item_index": 3,
+      "field": "change",
+      "state": "byte-identical to round 1",
+      "round_1_len": 122,
+      "round_4_len": 122
+     },
+     {
+      "item_index": 3,
+      "field": "risk",
+      "state": "shortened relative to round 1 (reworded, not a substring)",
+      "round_1_len": 84,
+      "round_4_len": 28
+     },
+     {
+      "item_index": 4,
+      "field": "change",
+      "state": "shortened relative to round 1 (reworded, not a substring)",
+      "round_1_len": 143,
+      "round_4_len": 70
+     },
+     {
+      "item_index": 4,
+      "field": "risk",
+      "state": "shortened relative to round 1 (reworded, not a substring)",
+      "round_1_len": 181,
+      "round_4_len": 121
+     }
+    ]
+   },
+   "measured": true,
+   "note": "measured truth: 3 of 4 change strings shortened and 1 of 4 byte-identical; 4 of 4 risk strings shortened. The 4-of-4 risk figure is TRUE; the 4-of-4 change figure is FALSE."
+  },
+  {
+   "id": "M3",
+   "defect": "D3 / V-25",
+   "question": "How many of the 6 does_not_establish strings are shortened relative to round 1?",
+   "method": "pairwise parsed-value comparison round 1 vs this file; shortened = both values are strings and this file's value has strictly fewer characters than the round-1 value (the per-item record also says whether it is a strict substring or a rewording)",
+   "field_paths_compared": [
+    "S75-T28.compatibility-map.json:does_not_establish[*]",
+    "S75-T28.compatibility-map.round4.json:does_not_establish[*]"
+   ],
+   "expected": "round-4 row-18 note claims 2 of 6 shortened",
+   "observed": {
+    "shortened_vs_round_1": 3,
+    "byte_identical_vs_round_1": 3,
+    "whole_list_byte_identical_to_round_2": true,
+    "per_item": [
+     {
+      "index": 1,
+      "state": "shortened relative to round 1 (reworded, not a substring)"
+     },
+     {
+      "index": 2,
+      "state": "shortened relative to round 1 (strict substring)"
+     },
+     {
+      "index": 3,
+      "state": "byte-identical to round 1"
+     },
+     {
+      "index": 4,
+      "state": "shortened relative to round 1 (reworded, not a substring)"
+     },
+     {
+      "index": 5,
+      "state": "byte-identical to round 1"
+     },
+     {
+      "index": 6,
+      "state": "byte-identical to round 1"
+     }
+    ]
+   },
+   "measured": true,
+   "note": "measured truth: 3 of 6 shortened relative to round 1, 3 of 6 byte-identical; the whole list IS byte-identical to round 2 (measured True)."
+  },
+  {
+   "id": "M4",
+   "defect": "D4 / V-26",
+   "question": "Does each cited source of CONFIRMED_PRESERVED.grouping_numbers actually produce the number it is cited for?",
+   "method": "re-derive each number from the named field path and compare to the stated number; the cited source is counted exactly as its text says",
+   "field_paths_compared": [
+    "S75-T28.compatibility-map.round4.json:CONFIRMED_PRESERVED (key names)",
+    "S75-T28.compatibility-map.round2.json:CONFIRMED_PRESERVED (key names)",
+    "S75-T28.compatibility-map.round4.json:CONFIRMED_PRESERVED.grouping_numbers"
+   ],
+   "expected": "keys_total_source 'CONFIRMED_PRESERVED key count in this file' must yield keys_total 11",
+   "observed": {
+    "key_count_in_round4_file_including_grouping_keys": 14,
+    "grouping_keys_added_in_round_4": [
+     "grouping_basis",
+     "grouping_basis_source",
+     "grouping_numbers"
+    ],
+    "key_count_excluding_grouping_keys": 11,
+    "round_2_key_count": 11,
+    "round_2_keys_equal_round_4_keys_excluding_grouping": true,
+    "provenance_keys_measured": 1,
+    "finding_blocks_measured": 10,
+    "c1_blocks_measured": 3,
+    "grouped_finding_count_measured": 8,
+    "round_4_stated": {
+     "keys_total": 11,
+     "finding_blocks": 10,
+     "grouped_finding_count": 8
+    }
+   },
+   "measured": true,
+   "note": "round 4's 11/10/8 arithmetic is recoverable but its SOURCES do not produce it: the plain key count is 14 because round 4 itself added three grouping keys, and 'key count minus the provenance key' yields 13. Round 5 re-derives 11 = key count excluding the three grouping keys (equal to round 2's CONFIRMED_PRESERVED key set, deep-equal on key names), 10 = 11 - 1 provenance key, 8 = 10 - 2 collapsed C1 blocks."
+  },
+  {
+   "id": "M5",
+   "defect": "D5 / V-27, V-28",
+   "question": "Does the round-4 artefact describe its own round, its own command list and its own mutations?",
+   "method": "string equality of anything_i_mutated against the round-3 artefact's value; substring test of the round-3 map path inside the round-4 value; substring test of 'Round 3 records its own' inside the round-4 row-16 note",
+   "field_paths_compared": [
+    "S75-T28.compatibility-map.round4.json:anything_i_mutated",
+    "S75-T28.compatibility-map.round3.json:anything_i_mutated",
+    "S75-T28.compatibility-map.round4.json:carry_forward_table[16].note"
+   ],
+   "expected": "a round-4 file states round 4's own mutations and commands",
+   "observed": {
+    "anything_i_mutated_byte_identical_to_round_3": true,
+    "round_4_value_names_round_3_map_path": true,
+    "row_16_note_says_round_3_records_its_own": true
+   },
+   "measured": true,
+   "note": "All three measured TRUE, which means the round-4 file is stale round-3 self-description: its mutation statement is round 3's, and its own report's anything_i_mutated.files_written lists two round-4 files instead. Round 5 writes its own."
+  },
+  {
+   "id": "M6",
+   "defect": "D6 / V-29",
+   "question": "Is the round-4 commands_run_this_round list round 4's own commands, and which round-4 document is right about repository reads?",
+   "method": "list equality against the round-3 artefact's list; entry-wise substring test for repository reads (git show, git status)",
+   "field_paths_compared": [
+    "S75-T28.compatibility-map.round4.json:commands_run_this_round",
+    "S75-T28.compatibility-map.round3.json:commands_run_this_round"
+   ],
+   "expected": "a per-round command list names that round's own commands",
+   "observed": {
+    "byte_identical_to_round_3_list": true,
+    "entries_naming_a_repository_read": [
+     "cd /Users/blackceomacmini/openclaw-onboarding && git show origin/main:75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py | sed -n '365,375p' => p = Path(run_dir)/'control'/'studio-versions.json' at 370, mkdir at 371, p.write_text(json.dumps(v, indent=2, sort_keys=True)) at 372",
+     "git show origin/main:.../factory.py | sed -n '2265,2280p' => continuation queue written by with open(qpath,'w',encoding='utf-8') as f: json.dump(queue, f, indent=2) at 2272-2273, NOT by _write_json",
+     "git status --short in the ONB clone => ' M .../choice_card/intake_card/ai_models.json', ' M .../scripts/core/spend_ledger.py', '?? .../evidence/'; git status --short over script_approval/card_answers.py => empty (clean), which is the only scope in which a clean working-tree claim is true"
+    ],
+    "last_entry_describes_a_round_3_merge": false
+   },
+   "measured": true,
+   "note": "The list is round 3's. WHICH round-4 document is correct about repository reads - the artefact's list or the report's 'No repository was read at all in round 4' - is UNDETERMINED from artefacts alone; artefact evidence cannot attribute shell commands to an author. Round 5 records its own command list and labels every repository read it actually ran."
+  },
+  {
+   "id": "M7",
+   "defect": "D7 / V-30",
+   "question": "Does every number in this round-5 artefact name a file+location source that produces it, or carry an explicit UNSOURCED label?",
+   "method": "enumerate every number-bearing field added by round 5 and require a *_source field whose named path yields the number, or an explicit UNSOURCED status; the round-4 unsourced list is reproduced as the defect inventory, not as measurement",
+   "field_paths_compared": [
+    "evidence/S75-T28.verdict.round4.json:numbers_restated_without_source_or_label",
+    "evidence/S75-T28.verdict.round4.json:claims_audited[V-30]"
+   ],
+   "expected": "zero numbers restated without a producing source or an UNSOURCED label",
+   "observed": {
+    "round_4_unsourced_or_unproducible_items": 11,
+    "round_4_unsourced_inventory": [
+     "asset_classes_CARRIED_AND_RECHECKED.raw_answers.counts_observed: 394 and real_client_runs_with_answers 4",
+     "asset_classes_CARRIED_AND_RECHECKED.raw_answers.retention_risk_corrected: '7 of the 14 rows ... value:null'",
+     "asset_classes_CARRIED_AND_RECHECKED.approved_artifacts.counts_observed.receipt_markdown_files_in_delivered_corpus: 20",
+     "asset_classes_CARRIED_AND_RECHECKED.songs.counts_observed: 36/11 and 476/79",
+     "asset_classes_CARRIED_AND_RECHECKED.images.counts_observed: 2939, 2, 1411, 311, 11, 1",
+     "asset_classes_CARRIED_AND_RECHECKED.images.corrected_path / retention_risk: 5127248 bytes, 10 entries, 11 entries, 3 recasts, 1 PNG",
+     "asset_classes_CARRIED_AND_RECHECKED.provider_ids: 454656, 200704, 0 bytes, actual_cost 12 / credits 12.0",
+     "asset_classes_CARRIED_AND_RECHECKED.decision_history.counts_observed block: 15, 12, 2, 10, 4, 1, 26, 12, 20, 5, 7, 12, 172",
+     "code line locations with no source and no UNSOURCED label: intake_session.py:448-456, constraints.py:64-67, factory.py:370/371/372 and 2272-2273",
+     "reason_for_round_4: '16/16 surviving findings carried'",
+     "CONFIRMED_PRESERVED grouping numbers whose cited source does not produce them (see M4)"
+    ],
+    "round_5_numbers_all_sourced_or_labelled": "computed by check_round5_claims.py over this file's numbers_and_their_sources table"
+   },
+   "measured": true,
+   "note": "Round 5 does NOT restate any of these corpus counts as its own measurement. Where round 5 keeps a number carried from an earlier round it is labelled UNSOURCED IN ROUND 5 with the reason, exactly as round 4 did for three of them and failed to do for eleven."
+  }
+ ],
+ "round_5_regression_set": {
+  "purpose": "over-correction check: the seven edits must not delete or weaken anything round 4 restored",
+  "records": [
+   {
+    "id": "R1",
+    "what": "29 round-1 conflict evidence lines",
+    "measured_intact": true,
+    "detail": "round1 lines 29, carried lines 29, deep-equal True"
+   },
+   {
+    "id": "R2",
+    "what": "7 required_decision_for_T29_T30 strings",
+    "measured_intact": true,
+    "detail": "round1 7, carried 7, deep-equal True"
+   },
+   {
+    "id": "R3",
+    "what": "9 conflict statements",
+    "measured_intact": true,
+    "detail": "deep-equal True over 9 records"
+   },
+   {
+    "id": "R4",
+    "what": "precursors_consumed block",
+    "measured_intact": true,
+    "detail": "whole block deep-equal True"
+   },
+   {
+    "id": "R5",
+    "what": "old_run_inventory block",
+    "measured_intact": true,
+    "detail": "whole block deep-equal True"
+   },
+   {
+    "id": "R6",
+    "what": "emergency_behaviour_map: all 13 rows with every round-1 field deep-equal (round-4 annotation keys named and allowed)",
+    "measured_intact": true,
+    "detail": "rows 13, round-1 fields deep-equal on all rows, round-4-only keys observed: ['behaviour_text_source', 'round_2_file_preservation_recheck', 'round_2_recheck', 'round_3_note']"
+   },
+   {
+    "id": "R7",
+    "what": "not_found_named_sources 3 items",
+    "measured_intact": true,
+    "detail": "deep-equal True"
+   },
+   {
+    "id": "R8",
+    "what": "acceptance_criterion_verbatim and exact_deliverable_verbatim",
+    "measured_intact": true,
+    "detail": "both byte-identical to round 1"
+   },
+   {
+    "id": "R9",
+    "what": "the three round-1 handoff strings restored in round 4",
+    "measured_intact": true,
+    "detail": "{\"doctrine_full\": true, \"does_merged_work_preserve_it_answer\": true, \"does_merged_work_preserve_it_residual\": true}"
+   },
+   {
+    "id": "R10",
+    "what": "old_run_fields_found: 8 records, 6 of 8 byte-identical, exactly the 2 shape keys reworded in round 4 (GAP 2) and no record added or removed",
+    "measured_intact": true,
+    "detail": "byte-identical 6 of 8 ['card_receipt', 'dispatch_envelope', 'intake_session_state', 'music_qc_receipt', 'script_approval', 'song_choices_state']; differing keys ['card_answers_dialect_A_current', 'card_answers_dialect_B_legacy']"
+   }
+  ],
+  "all_intact": true
+ },
+ "round_5_pinned_hashes": {
+  "method": "python3 -I hashlib.sha256 over the raw bytes of each pinned file, measured by this build after the round-5 artefact write and re-measured again by check_round5_claims.py",
+  "results": [
+   {
+    "file": "evidence/S75-T28.compatibility-map.json",
+    "sha256": "e9ab7ac031706ceeec6c460959eea9a0bb4267106ef398f2b74370565eaeee19",
+    "bytes": 53195,
+    "pinned_sha256": "e9ab7ac031706ceeec6c460959eea9a0bb4267106ef398f2b74370565eaeee19",
+    "pinned_bytes": 53195
+   },
+   {
+    "file": "evidence/S75-T28.compatibility-map.round2.json",
+    "sha256": "459d4bf79f8ddf1ee2802eefc16a8376616bb447e4025c4f8db5bb257ff97d46",
+    "bytes": 55775,
+    "pinned_sha256": "459d4bf79f8ddf1ee2802eefc16a8376616bb447e4025c4f8db5bb257ff97d46",
+    "pinned_bytes": 55775
+   },
+   {
+    "file": "evidence/S75-T28.compatibility-map.round3.json",
+    "sha256": "bd7b39a728fcd3848d4e963f95879f17dda82335a81031555f8cf8d9a14c75c5",
+    "bytes": 100968,
+    "pinned_sha256": "bd7b39a728fcd3848d4e963f95879f17dda82335a81031555f8cf8d9a14c75c5",
+    "pinned_bytes": 100968
+   },
+   {
+    "file": "evidence/S75-T28.compatibility-map.round4.json",
+    "sha256": "4b942df7511a082c4984fc5dfcd6a96d05f10949c35299111f0a0a18893eb09a",
+    "bytes": 147635,
+    "pinned_sha256": "4b942df7511a082c4984fc5dfcd6a96d05f10949c35299111f0a0a18893eb09a",
+    "pinned_bytes": 147635
+   }
+  ]
+ },
+ "does_not_establish_round_5": [
+  "That S75-T28 or S75-A28 is accepted. No verdict is claimed here.",
+  "Which round-4 document is correct about repository reads (M6). UNDETERMINED from artefacts.",
+  "That any corpus count carried from earlier rounds is accurate; they are labelled UNSOURCED IN ROUND 5.",
+  "That the round-3 verdict's factory.py / card_answers.py re-proofs are correct; not re-run."
+ ]
+}
