@@ -3556,3 +3556,24 @@ jobs:
           ls -l "$t"
           python3 -I "$t"
           echo "✓ T-53 GHL Conversations sender suite ran and passed"
+
+      - name: T-29 human handoff lifecycle suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # shared-utils/handoff/handoff.py is the T-29 module: the owned human
+          # handoff (context, acceptance, due/backup, and the fence that keeps the
+          # bot paused until an explicit release). Its suite runs by explicit
+          # path here, so deleting or hollowing the lifecycle is a red build. The
+          # module is reached from production through the reminder send gate
+          # (shared-utils/reminders/reminder_state_machine.py, _gate_evaluator);
+          # a MISSING suite is a red, not a skip.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="shared-utils/handoff/tests/test_handoff.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ T-29 handoff lifecycle suite is absent from this checkout: $t missing. A MISSING suite is a red, not a skip."
+            exit 1
+          fi
+          python3 -I "$t"
+          echo "✓ T-29 human handoff lifecycle suite (50 cases) is green"
