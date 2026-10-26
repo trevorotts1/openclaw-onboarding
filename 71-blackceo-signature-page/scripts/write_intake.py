@@ -47,11 +47,11 @@ the record and never printed). Refusals are written, at intake:
   falls back to the browser sign-in, or drop the automation scope. The page
   job may proceed; the workflows may not pretend to exist.
 
-The credential, page-kind and page-length refusals print two registers: a
-plain summary line (REFUSED:) that an operator may relay to a client
-unchanged, and a NEXT line naming the exact recovery action and the role
-responsible for it. Registry names, provisioning topology and tier backstops
-appear in neither.
+The credential, page-kind, page-length and launch-context refusals print
+two registers on two separate lines: a plain summary line (REFUSED:) that an
+operator may relay to a client unchanged, and a NEXT line naming the exact
+recovery action and the role responsible for it. Registry names,
+provisioning topology and tier backstops appear in neither.
 
 Credential presence defaults to the process environment; the --*-present /
 --*-absent flags override it (for provisioning records written before the
@@ -144,15 +144,27 @@ CREDENTIALS = (
 )
 
 
+def print_refusal(text):
+    """A refusal in two registers (finding 24), printed on two lines: the
+    summary before the NEXT marker is the plain blocker an operator may
+    relay to a client unchanged; the NEXT line names the exact recovery
+    action and the role responsible for it, for the operator. Registry
+    names, provisioning topology and tier backstops belong in neither
+    line. A text with no NEXT marker prints as one summary line."""
+    head, sep, tail = str(text).partition("NEXT (operator")
+    print(f"REFUSED: {head.strip()}")
+    if sep:
+        print(f"NEXT (operator{tail}")
+    return 2
+
+
 def refuse(summary, recovery, role):
     """A refusal in two registers (finding 24): `summary` is the plain
     blocker an operator may relay to a client unchanged; the NEXT line is
     the exact recovery action and the role responsible for it, for the
     operator. Registry names, provisioning topology and tier backstops
     belong in neither line."""
-    print(f"REFUSED: {summary}")
-    print(f"NEXT (operator, role: {role}): {recovery}")
-    return 2
+    return print_refusal(f"{summary} NEXT (operator, role: {role}): {recovery}")
 
 
 def image_pixel_dimensions(path):
@@ -463,8 +475,9 @@ def read_answers(path):
         if normalized not in page_kinds.kind_ids():
             raise ValueError(
                 f"--answers-file {path} records page_kind {kind!r}, which is not "
-                f"one of {', '.join(page_kinds.kind_ids())}; record the client's "
-                "answer as sales or opt_in and rerun")
+                f"one of {', '.join(page_kinds.kind_ids())}. "
+                "NEXT (operator, role: intake): record the client's answer as "
+                "sales or opt_in in the answers file, then rerun")
         defaults["page_kind"] = normalized
     profile = value("copy_profile")
     if profile in ("standard", "long_form"):
@@ -482,14 +495,18 @@ def read_answers(path):
 def main(argv=None):
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument("--answers-file", type=Path, default=None)
+    # captured only to know what the command line itself names: one copy
+    # selection on the command line fills both selectors and always wins
+    # over the answers file's copy_profile (finding 17)
+    pre.add_argument("--page-version", default=None)
+    pre.add_argument("--copy-version", default=None)
     pre_args, _ = pre.parse_known_args(argv)
     answers_doc, from_answers = None, {}
     if pre_args.answers_file is not None:
         try:
             answers_doc, from_answers = read_answers(pre_args.answers_file)
         except ValueError as exc:
-            print(f"REFUSED: {exc}")
-            return 2
+            return print_refusal(str(exc))
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("run_dir", type=Path)
     p.add_argument("--answers-file", type=Path, default=None,
@@ -583,9 +600,16 @@ def main(argv=None):
     if a.image_cap < 0 or not a.run_dir.is_dir():
         print("FAIL: run_dir must exist and image_cap must be >= 0")
         return 2
-    # One copy selection, two selectors (finding 17): whichever selector is
-    # given fills the other, so no run records a page_version with a null
-    # copy_version for the copy stage to trip on.
+    # One copy selection, two selectors (finding 17): whatever the command
+    # line names is THE selection and fills the other selector, a flag on
+    # the command line always wins over the answers file's copy_profile,
+    # and two selectors that disagree are refused below - never recorded as
+    # one run carrying two different copy selections.
+    cli_page, cli_copy = pre_args.page_version, pre_args.copy_version
+    if cli_page is not None and cli_copy is None:
+        a.copy_version = cli_page
+    elif cli_copy is not None and cli_page is None:
+        a.page_version = cli_copy
     if a.page_version is None and a.copy_version is not None:
         a.page_version = a.copy_version
     if a.copy_version is None and a.page_version is not None:
@@ -597,12 +621,6 @@ def main(argv=None):
             "or supply an answers file whose copy_profile answer records the "
             "client's choice.",
             "intake")
-    forms = page_role.role_specs()
-    if (forms.get(a.page_version) or forms.get(a.copy_version)) and a.copy_version not in (None, a.page_version):
-        print(f"REFUSED: --page-version \"{a.page_version}\" and --copy-version \"{a.copy_version}\" "
-              "disagree; a page type's own form is both its page_version and its copy_version, and a "
-              "page type is never forced into another page type's canonical sections.")
-        return 2
 
     # Launch-context import (S71-02): validate everything in memory before
     # anything is written; a refusal here leaves the run untouched.
@@ -623,18 +641,39 @@ def main(argv=None):
                 launch_path=a.launch_record, graph_path=a.route_graph,
                 consent_path=a.consent_statements, brand_file=a.brand_file)
         except launch_context.LaunchContextError as exc:
-            print(f"REFUSED: launch context import: {exc}")
-            return 2
+            # two registers, two lines (finding 24): the summary line stays
+            # client-safe; the NEXT line carries the recovery and internals
+            return print_refusal(f"launch context import: {exc}")
         mapped_copy = launch_prepared[0].get("copy_version")
         if (a.copy_version is not None and mapped_copy is not None
                 and a.copy_version != mapped_copy):
-            print(f"REFUSED: --copy-version \"{a.copy_version}\" conflicts "
-                  f"with the launch context's approved copy_profile "
-                  f"\"{mapped_copy}\"; the approved launch context governs, "
-                  f"so drop the conflicting flag.")
-            return 2
+            return refuse(
+                "the copy selection recorded for this run is not the one the "
+                "approved launch plan names, so intake stopped before writing "
+                "anything.",
+                f"rerun with the approved copy_profile {mapped_copy}: drop the "
+                "conflicting --copy-version/--page-version flag (or correct the "
+                "answers file's copy_profile answer), then rerun intake.",
+                "launch dispatch")
+    if a.page_version != a.copy_version:
+        return refuse(
+            f"the two copy selections given disagree: --page-version \"{a.page_version}\" "
+            f"and --copy-version \"{a.copy_version}\"; one run records exactly one "
+            "copy selection, so intake stopped before writing anything.",
+            "rerun with one selection for both selectors. A page type's own form "
+            "is both its page_version and its copy_version, and a page type is "
+            "never forced into another page type's canonical sections.",
+            "intake")
 
-    if a.page_kind:
+    # SPF030: only a landing-role page is a sales or an opt-in page; every
+    # other page type has no kind. So the kind is checked against the length
+    # only where it will be recorded - an answers file's kind must not block
+    # a page type's own run (finding 17 collects the kind before the length).
+    own_form = page_role.role_specs().get(a.copy_version or a.page_version)
+    page_type = (own_form or {}).get("page_role") or (
+        (launch_prepared[0].get("launch") or {}).get("page_role") if launch_prepared else None)
+    kind_is_recorded = not (page_type and page_type != page_role.LANDING_ROLE)
+    if a.page_kind and kind_is_recorded:
         effective_copy = a.copy_version or (
             launch_prepared[0].get("copy_version") if launch_prepared else None) or a.page_version
         try:
@@ -662,14 +701,14 @@ def main(argv=None):
               "copy_version": a.copy_version}
     # a page type's own form records its role, so every stage (section count, wireframe prompt,
     # design board, gate) reads one declaration instead of guessing a landing page
-    own_form = page_role.role_specs().get(a.copy_version or a.page_version)
     if own_form:
         intake["page_role"] = own_form["page_role"]
         intake["copy_version"] = own_form["copy_version"]  # a page type's page_version is its copy_version
-    page_type = (own_form or {}).get("page_role") or (
-        (launch_prepared[0].get("launch") or {}).get("page_role") if launch_prepared else None)
-    if page_type and page_type != page_role.LANDING_ROLE:
-        pass  # SPF030: only a landing-role page is a sales or an opt-in page; every other page type has no kind
+    if not kind_is_recorded:
+        if a.page_kind:
+            print(f"NOTE page_kind: {a.page_kind} is a landing-page kind; this run "
+                  f"builds the {page_type} page, which has no kind (SPF030), so the "
+                  "kind was not recorded.")
     elif a.page_kind:
         intake["page_kind"] = a.page_kind
     else:

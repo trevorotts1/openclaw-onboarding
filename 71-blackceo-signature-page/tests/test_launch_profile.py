@@ -377,6 +377,37 @@ class TestRefusals(LaunchImportCase):
         self.assert_refused(self.run_intake("--launch-context", str(rp)),
                             "assigned_skill is 63", "NEXT (operator, role:")
 
+    def two_registers(self, proc):
+        """The refusal's two lines: the client-safe REFUSED summary and the
+        operator NEXT line on its own line right after it, never fused."""
+        lines = proc.stdout.splitlines()
+        refusals = [i for i, l in enumerate(lines) if l.startswith("REFUSED:")]
+        self.assertEqual(len(refusals), 1, proc.stdout)
+        summary = lines[refusals[0]]
+        self.assertNotIn("NEXT", summary, proc.stdout)
+        self.assertTrue(lines[refusals[0] + 1].startswith("NEXT (operator"), proc.stdout)
+        return summary, lines[refusals[0] + 1]
+
+    def test_registry_and_citation_refusals_keep_the_registers_on_two_lines(self):
+        # Finding 24: the summary line carries no policy id, no flag name and
+        # no path - it is relayable to a client unchanged; the NEXT line
+        # carries the recovery, the role and the internals, on its own line.
+        rp = self.request_variant("r-reg.json", schema_version="1.1",
+                                  prompt_policy_id="no-such-policy")
+        proc = self.run_intake("--launch-context", str(rp))
+        self.assert_refused(proc, "NEXT (operator, role:")
+        summary, nxt = self.two_registers(proc)
+        self.assertNotIn("no-such-policy", summary)
+        self.assertNotIn("prompt_policy_id", summary)
+        self.assertNotIn("registry of record", summary)
+        self.assertIn("no-such-policy", nxt)
+        rp = self.request_variant("r-skill2.json", assigned_skill=63)
+        proc = self.run_intake("--launch-context", str(rp))
+        self.assert_refused(proc, "assigned_skill is 63", "NEXT (operator, role:")
+        summary, nxt = self.two_registers(proc)
+        self.assertNotIn("assigned_skill", summary)
+        self.assertIn("assigned_skill is 63", nxt)
+
     def test_launch_identity_mismatch(self):
         lp = self.write("launch-bad.json",
                         dump(launch_doc(self.ghash, launch_id="other-launch")))
