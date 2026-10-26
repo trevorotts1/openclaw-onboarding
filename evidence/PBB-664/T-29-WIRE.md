@@ -320,7 +320,7 @@ reminders 54 cases). No full-repo suite was run.
 | | sha | note |
 |---|---|---|
 | measured against | `c994359d6329b6f958c217ee455b40cfb8a0543c` | `origin/main` after `git fetch origin main` |
-| base at branch creation | `3d7135664326eeb7857252afcad5506c1381c3d5` | the T-25 merge; still an ancestor of the reported head (`git merge-base --is-ancestor` rc 0) |
+| base at branch creation | `3d7135664326eeb7857252afcad5506c1381c3d5` | the **PR #2588** merge of T-25, recorded as **INC-05** (§9.1); still an ancestor of the reported head (`git merge-base --is-ancestor` rc 0) |
 | wiring commit | `2d06167b1c2161586241a2109571c9f6f5d85e62` | call site + exactly one CI step |
 | freshness fold | `ef7a70d2166cf2ff31d4d9805ee7c8fbf5ee75d1` | `merge: fold origin/main (c994359d6) into the T-29 wire branch (PBB-664)` |
 | branch tip | `pb/PBB-664/t-29` (report commits on top of `ef7a70d21`) | read with `git rev-parse origin/pb/PBB-664/t-29` |
@@ -348,3 +348,19 @@ Ancestry was checked directly, not inferred: T-29's three commits are ancestors 
 
 No merge to main, no force-push, no ledger/census/DECISIONS edit, no other unit's file
 touched.
+
+### 9.1 Base provenance — PR #2588 / INC-05
+
+Base `3d7135664326eeb7857252afcad5506c1381c3d5` is not a neutral starting point. It **is**
+the merge commit produced by **PR #2588** (`Merge pull request #2588 from
+trevorotts1/batch/pb-w37-t06t28`), which landed **T-25** while T-25 was marked **NOT READY**.
+
+That merge is recorded as incident **INC-05**. Whether to revert it or accept it is
+**Trevor's call**; it is not resolved here and this document takes no position on it.
+
+T-29 was built on that base, so the T-29 diff sits on top of that merge. The wiring and
+its tests are unaffected by the question: they are measured against the files themselves
+(§2–§8), not against which units are on `main`.
+
+This note states the record only. It claims no qualification of T-25, and no disposition
+of INC-05.
