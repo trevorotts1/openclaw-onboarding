@@ -215,19 +215,20 @@ into the shell, so the step adds no command-injection surface.
 Held constant across both measurements: the known-wired control reads **1**
 (`.github/workflows/qc-static.yml:80`), the known-absent control reads **0**.
 
-| measurement | before | after |
-|---|---|---|
-| real production references to `shared-utils/handoff/handoff.py` | **0** | **1** — `shared-utils/reminders/reminder_state_machine.py:102` (import) |
-| of which import-execution sites | 0 | 1 |
-| of which CI exec sites | 0 | 0 |
-| test-only imports | 1 | 1 (unchanged) |
-| collision tokens (excluded from refs) | 609 | 610 (the +1 is my own step naming `test_handoff.py`; correctly classified as a collision, not a reference) |
-| collision files | 185 | 186 |
-| whole-word prose mentions | 3665 | 3672 |
-| workflow files naming the suite | **0** | **1** (`qc-static.yml`) |
-| parsed job | `qc-static` / name `QC static invariants` | same |
-| steps in that job | **145** | **146** |
-| new step index | — | **146** (last) |
+| measurement | before | after (pre-fold `3d7135664`) | after (current `c994359d6`) |
+|---|---|---|---|
+| real production references to `shared-utils/handoff/handoff.py` | **0** | **1** — `shared-utils/reminders/reminder_state_machine.py:102` (import) | **1** (unchanged by the fold) |
+| of which import-execution sites | 0 | 1 | 1 |
+| of which CI exec sites | 0 | 0 | 0 |
+| test-only imports | 1 | 1 (unchanged) | 1 (unchanged) |
+| collision tokens (excluded from refs) | 609 | 610 (the +1 is my own step naming `test_handoff.py`; correctly classified as a collision, not a reference) | 656 (the extra +46 arrive with the 40 `origin/main` commits; none is a reference to this module) |
+| collision files | 185 | 186 | 187 |
+| collision tokens in production paths | 475 | 476 | 522 |
+| whole-word prose mentions | 3665 | 3672 | not re-measured after the fold |
+| workflow files naming the suite | **0** | **1** (`qc-static.yml`) | **1** |
+| parsed job | `qc-static` / name `QC static invariants` | same | same |
+| steps in that job | **145** | **146** | **146** |
+| new step index | — | **146** (last) | **146** (last) |
 
 Exact after-run:
 
