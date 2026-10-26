@@ -1124,6 +1124,26 @@ class BookkeepingTests(unittest.TestCase):
         return [tuple(int(p) for p in m.split("."))
                 for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
 
+    def owned_changelog_versions(self):
+        """The CHANGELOG headings this change adds (owner decision #237).
+
+        The window used to be ``changelog_versions()[:4]`` -- the file's top
+        four headings. After any faithful merge of ``origin/main`` those are
+        main's own numbers, and the tests then asserted that main's numbers are
+        absent from main. This reads the headings the change itself adds since
+        the merge base, so a number this change adds that main already uses
+        still appears and the duplicate rule still bites.
+        """
+        if not self.git_ok:
+            return self.changelog_versions()
+        out = self.git("diff", "--unified=0", "origin/main...HEAD", "--",
+                       "38-conversational-ai-system/CHANGELOG.md").stdout
+        added = "\n".join(line[1:] for line in out.splitlines()
+                          if line.startswith("+")
+                          and not line.startswith("+++"))
+        return [tuple(int(p) for p in m.split("."))
+                for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", added, re.M)]
+
     def test_the_shipped_version_is_strictly_above_main_s(self):
         if not self.git_ok:
             self.skipTest("the pinned main is not in this checkout")
@@ -1134,18 +1154,15 @@ class BookkeepingTests(unittest.TestCase):
 
     def test_no_version_this_branch_ships_appears_on_main(self):
         if not self.git_ok:
-            self.skipTest("the pinned main is not in this checkout")
+            self.skipTest("no origin/main in this checkout to compare against")
+        main_headers = {"%d.%d.%d" % v for v in self.main_changelog_versions()}
         shipped = {self.local_marker().lstrip("v")}
-        shipped.update("%d.%d.%d" % v for v in self.owned_changelog_versions()[:4])
+        shipped.update("%d.%d.%d" % v for v in self.owned_changelog_versions())
         for version in sorted(shipped):
             with self.subTest(version=version):
-                # `git grep` exits 1 on "no match", which is the answer we want
-                # here, so it is read without check=True and judged on stdout.
-                found = subprocess.run(
-                    ["git", "-C", str(REPO_ROOT), "grep", "-n", "--fixed-strings",
-                     version, "origin/main"],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                self.assertEqual(found.stdout.strip(), "",
+                # Compare headings, not a whole-file fixed-string scan: a
+                # version named only in prose is not a published entry.
+                self.assertNotIn(version, main_headers,
                                  "%s is already on origin/main" % version)
 
     def main_changelog_versions(self):
@@ -1154,32 +1171,24 @@ class BookkeepingTests(unittest.TestCase):
         return [tuple(int(p) for p in m.split("."))
                 for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
 
-    def owned_changelog_versions(self):
-        """The entries this branch added above the pinned main's history.
-
-        The window used to be the file's top four, which is main's own entries
-        on any branch that prepends fewer than four -- so a clean one-entry bump
-        was judged on numbers main already published. Strip the shared suffix
-        and what is left is this change's own entries, newest first.
-        """
-        versions = self.changelog_versions()
-        main_versions = self.main_changelog_versions()
-        mine = len(versions)
-        theirs = len(main_versions)
-        while (mine > 0 and theirs > 0
-               and versions[mine - 1] == main_versions[theirs - 1]):
-            mine -= 1
-            theirs -= 1
-        return versions[:mine]
-
     def test_the_changelog_is_strictly_monotonic_where_this_change_speaks(self):
-        # Newest-first, and the entries this change adds sit strictly above
-        # main's newest. Below that the file is main's own legacy history -- it
-        # already carries one deliberate reversal (1.0.0 then a v2.0.0 generation
-        # roll) -- and rewriting it is not this task's.
-        versions = self.changelog_versions()
-        self.assertGreaterEqual(len(versions), 4)
-        owned = self.owned_changelog_versions()[:4]
+        # Newest-first, and the entries this change adds must each be distinct
+        # and above main's newest. Below main's newest the file is main's own
+        # legacy history -- it already carries one deliberate reversal (1.0.0
+        # then a v2.0.0 generation roll) -- and rewriting it is not this task's.
+        versions = self.owned_changelog_versions()
+        self.assertTrue(versions,
+                        "this change adds no CHANGELOG entry of its own to check")
+        for earlier, later in zip(versions, versions[1:]):
+            self.assertGreater(earlier, later,
+                               "the entries this change adds must be newest-first "
+                               "and distinct: %s" % (versions,))
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        main_top = max(self.main_changelog_versions())
+        self.assertGreater(versions[0], main_top,
+                           "the newest entry must sit above main's newest")
+        owned = [v for v in versions if v >= main_top]
         for earlier, later in zip(owned, owned[1:]):
             self.assertGreater(earlier, later,
                                "the entries this change adds must be newest-first "
@@ -1194,20 +1203,20 @@ class BookkeepingTests(unittest.TestCase):
 
     def test_no_version_names_two_different_changes(self):
         # D2 in its own words: "the same number now names three different
-        # changes". main's own file repeats one number per entry for a single
-        # task, so the rule is pinned against what this change owns: the entries
-        # this branch adds are distinct numbers and none of them may already
-        # name an entry on main.
-        t19 = self.owned_changelog_versions()[:4]
-        self.assertEqual(len(set(t19)), len(t19),
-                         "the entries this change adds must not share a version: "
-                         "%s" % t19)
+        # changes". The rule is pinned against what this change adds: every
+        # number it adds is distinct and none may already name an entry on
+        # main.
+        owned = self.owned_changelog_versions()
+        self.assertEqual(len(set(owned)), len(owned),
+                         "the entries this change adds must not share a "
+                         "version: %s" % (owned,))
         if not self.git_ok:
             self.skipTest("the pinned main is not in this checkout")
         main_headers = set(self.main_changelog_versions())
-        for version in t19:
+        for version in owned:
             self.assertNotIn(version, main_headers,
-                             "%s already names an entry on origin/main" % (version,))
+                             "%s already names an entry on origin/main"
+                             % (version,))
 
 
 if __name__ == "__main__":
