@@ -180,6 +180,44 @@ class EntitlementGateTests(unittest.TestCase):
         for forbidden in ("stripe", "requests", "urllib", "subprocess", "charge("):
             self.assertNotIn(forbidden, source)
 
+    def test_the_gate_labels_its_evidence_a_caller_attestation_not_purchase_proof(self):
+        """The gate reads no payment system; the operator must be told so.
+
+        Every qualifying basis, not just purchase: the label rides every result.
+        """
+        for basis in ("purchase", "brand_management_membership",
+                      "zhc_with_brand_management"):
+            result = intake.validate(base_intake(basis=basis))["entitlement"]
+            self.assertEqual(result["evidence_kind"], "caller_attested_string", basis)
+            self.assertIs(result["proves_purchase"], False, basis)
+            boundary = result["attestation_boundary"].lower()
+            self.assertIn("not proof of purchase", boundary, basis)
+            self.assertIn("declared", boundary, basis)
+
+
+class DocumentationTests(unittest.TestCase):
+    """DISPATCH.md and DECISIONS-PENDING.md must match the code they describe."""
+
+    def test_dispatch_no_longer_claims_skill_md_lacks_implemented_commands(self):
+        cli = (SKILL_ROOT / "launcher_core" / "cli.py").read_text(encoding="utf-8")
+        for command in ("dispatch", "questions"):
+            self.assertIn(f'sub.add_parser("{command}"', cli)
+        dispatch = " ".join(
+            (SKILL_ROOT / "DISPATCH.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("no `dispatch` or `questions` command", dispatch)
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        for invocation in ("cli dispatch", "cli questions"):
+            self.assertIn(invocation, skill)
+
+    def test_each_open_seam_is_an_owner_decision_with_its_blocking_effect(self):
+        decisions = (SKILL_ROOT / "DECISIONS-PENDING.md").read_text(encoding="utf-8")
+        open_seams = decisions.split("## Still open", 1)[1]
+        for seam in SEAM_IDS:
+            self.assertIn(seam, open_seams)
+        self.assertEqual(open_seams.count("**Owner decision (open).**"), len(SEAM_IDS))
+        self.assertEqual(open_seams.count("**Blocks:**"), len(SEAM_IDS))
+        self.assertEqual(open_seams.count("**Does not block:**"), len(SEAM_IDS))
+
 
 class CouncilPlanningTests(unittest.TestCase):
     def setUp(self):
@@ -458,6 +496,16 @@ class PackageRecordTests(unittest.TestCase):
         self.assertTrue(manifest["offer_facts"])
         self.assertEqual(manifest["cross_sales"]["teaching"]["state"], "pending")
         self.assertIn("council-advice.json", self.out["receipt"]["council"]["advice_path"])
+
+    def test_the_manifest_carries_the_attestation_boundary_the_buyer_reads(self):
+        """The label must survive assembly, the surface a buyer actually reads."""
+        entitlement = self.out["manifest"]["entitlement"]
+        self.assertEqual(entitlement["evidence_kind"], "caller_attested_string")
+        self.assertIs(entitlement["proves_purchase"], False)
+        self.assertIn("Not proof of purchase", entitlement["attestation_boundary"])
+        on_disk = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["entitlement"]["attestation_boundary"],
+                         entitlement["attestation_boundary"])
 
     def test_clean_package_passes_every_check(self):
         self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
