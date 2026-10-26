@@ -161,9 +161,18 @@ for sid in MS.style_ids():
     check("2b %s prompt carries exactly one map sentence" % sid,
           prompt.count("The lead ") == 1,
           repr(prompt.count("The lead ")))
-    check("2c %s prompt still starts from the D18 style text" % sid,
-          prompt.startswith(MS.STYLES[sid]["suno_style_prompt"].rstrip(".,")),
-          prompt[:60])
+    if sid in MS.STYLES:
+        check("2c %s prompt still starts from the D18 style text" % sid,
+              prompt.startswith(
+                  MS.STYLES[sid]["suno_style_prompt"].rstrip(".,")),
+              prompt[:60])
+    else:
+        # S75-CATALOG: every non-D18 style's prompt starts from its own
+        # record (a compiled recipe field or a registered catalog entry).
+        check("2c %s prompt starts from its own record" % sid,
+              prompt.startswith(MS.style(sid)["suno_style_prompt"]
+                                .rstrip(".,")),
+              prompt[:60])
 
 check("2d R&B Flow also names RAPS (its sheet carries rap blocks)",
       "RAPS the lines tagged Rap" in MS.style_prompt("rnb-flow"),

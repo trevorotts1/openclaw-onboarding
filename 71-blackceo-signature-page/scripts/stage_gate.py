@@ -267,7 +267,9 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt, as_argv=False):
     if as_argv:
         return substitute_argv(cmd, substitutions), []
     for k, v in substitutions.items():
-        cmd = cmd.replace(k, v)
+        # quote per the S44-05 rule above; an empty value stays empty so it
+        # cannot surface as a spurious empty argv entry after shlex.split
+        cmd = cmd.replace(k, shlex.quote(v) if v else v)
     return cmd, []
 
 
