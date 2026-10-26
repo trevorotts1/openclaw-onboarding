@@ -354,6 +354,154 @@ describe('sweep runner', () => {
     assert.equal(viaClock.outcome, 'TIMEOUT');
     assert.equal(viaClock.runtimeMs, 121 * S);
   });
+
+  // Regression (repair:supervisor-hang-1063 defect 1): the budget timer only
+  // flipped a flag, so work that never settled wedged the sweep and its lease.
+  it('terminates a work fn that never settles and frees the lease', { timeout: 3000 }, async () => {
+    const leaseStore = createLeaseStore();
+    const startedAtMs = Date.now();
+    const hung = await runSweep({
+      kind: SWEEP_KIND.SCHEDULED,
+      ownerToken: 'runner-hung',
+      leaseStore,
+      sweepMaxRuntimeMs: 50,
+      work: () => new Promise(() => {}), // never settles, never cooperates
+    });
+    const elapsedMs = Date.now() - startedAtMs;
+
+    assert.equal(hung.outcome, 'TIMEOUT');
+    assert.ok(hung.error instanceof SweepTimeoutError);
+    assert.equal(leaseStore.owner(), null, 'lease released after a hung sweep');
+    assert.ok(elapsedMs < 2500, `runSweep returned promptly (${elapsedMs}ms), not wedged`);
+
+    // The consequence that mattered: a later sweep is not refused with lease_held.
+    const later = await runSweep({
+      kind: SWEEP_KIND.EXTRA,
+      ownerToken: 'runner-hung',
+      leaseStore,
+      scheduler: null,
+      nowMsFn: () => 0,
+      work: async () => 'after-timeout',
+    });
+    assert.equal(later.outcome, 'SUCCESS');
+    assert.equal(later.workResult, 'after-timeout');
+  });
+
+  // Regression (defect 1, late-result half): a result arriving after the breach
+  // must never be accepted or recorded.
+  it('discards a work result that arrives after the runtime breach', { timeout: 3000 }, async () => {
+    const leaseStore = createLeaseStore();
+    let releaseWork;
+    const result = await runSweep({
+      kind: SWEEP_KIND.SCHEDULED,
+      ownerToken: 'runner-late',
+      leaseStore,
+      sweepMaxRuntimeMs: 40,
+      work: () => new Promise((resolve) => { releaseWork = resolve; }),
+    });
+
+    assert.equal(result.outcome, 'TIMEOUT');
+    assert.equal('workResult' in result, false, 'no late work result recorded');
+
+    releaseWork('late-value');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(result.outcome, 'TIMEOUT', 'late settlement cannot change the recorded outcome');
+    assert.equal('workResult' in result, false, 'late value still not accepted');
+    assert.equal(leaseStore.owner(), null);
+  });
+
+  // Regression (defect 2): a breached sweep that then threw was recorded FAILED,
+  // losing the runtime-budget breach.
+  it('classifies a breached sweep that then throws as TIMEOUT, not FAILED', async () => {
+    const fakeScheduler = {
+      setTimeout(fn) {
+        this.fn = fn;
+        return 1;
+      },
+      clearTimeout() {},
+    };
+    const viaTimer = await runSweep({
+      kind: SWEEP_KIND.SCHEDULED,
+      ownerToken: 'runner-tt',
+      leaseStore: createLeaseStore(),
+      nowMsFn: () => 0,
+      scheduler: fakeScheduler,
+      sweepMaxRuntimeMs: 120 * S,
+      work: async () => {
+        fakeScheduler.fn(); // 120s elapsed
+        throw new Error('blew up after the deadline');
+      },
+    });
+    assert.equal(viaTimer.outcome, 'TIMEOUT');
+    assert.ok(viaTimer.error instanceof SweepTimeoutError);
+    assert.equal(viaTimer.error.cause.message, 'blew up after the deadline', 'original error kept as cause');
+
+    // Clock path: work throws after fake time has already overrun the budget.
+    let tick = 0;
+    const viaClock = await runSweep({
+      kind: SWEEP_KIND.SCHEDULED,
+      ownerToken: 'runner-tt-clock',
+      leaseStore: createLeaseStore(),
+      nowMsFn: () => (tick++ === 0 ? 0 : 121 * S),
+      scheduler: null,
+      sweepMaxRuntimeMs: 120 * S,
+      work: async () => {
+        throw new Error('late failure');
+      },
+    });
+    assert.equal(viaClock.outcome, 'TIMEOUT');
+    assert.ok(viaClock.error instanceof SweepTimeoutError);
+
+    // Control: a throw well inside the budget is still FAILED.
+    const inBudget = await runSweep({
+      kind: SWEEP_KIND.SCHEDULED,
+      ownerToken: 'runner-tt-control',
+      leaseStore: createLeaseStore(),
+      nowMsFn: () => 0,
+      scheduler: null,
+      work: async () => {
+        throw new Error('simple failure');
+      },
+    });
+    assert.equal(inBudget.outcome, 'FAILED');
+    assert.equal(inBudget.error.message, 'simple failure');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Recorded sweep outcomes are a closed set (repair:supervisor-hang-1063 defect 3)
+// ---------------------------------------------------------------------------
+
+describe('applySweepResult outcome validation', () => {
+  const base = { kind: SWEEP_KIND.SCHEDULED, startedAtMs: 0, finishedAtMs: S };
+
+  it('rejects any outcome outside SUCCESS/FAILED/TIMEOUT', () => {
+    const schedule = makeSweepSchedule({ anchorMs: 0 });
+    for (const badOutcome of ['success', 'SUCCESS ', '', 'REFUSED', undefined, null]) {
+      assert.throws(
+        () => applySweepResult(schedule, { ...base, outcome: badOutcome }),
+        TypeError,
+        `outcome ${String(badOutcome)} must be rejected`,
+      );
+    }
+    assert.equal(schedule.runs.length, 0, 'nothing recorded on rejection');
+  });
+
+  it('accepts exactly the three legal outcomes, successful only for SUCCESS', () => {
+    let schedule = makeSweepSchedule({ anchorMs: 0 });
+    schedule = applySweepResult(schedule, { ...base, outcome: 'SUCCESS' });
+    schedule = applySweepResult(schedule, { ...base, kind: SWEEP_KIND.EXTRA, outcome: 'FAILED' });
+    schedule = applySweepResult(schedule, { ...base, kind: SWEEP_KIND.EXTRA, outcome: 'TIMEOUT' });
+
+    assert.deepEqual(
+      schedule.runs.map((run) => [run.outcome, run.successful]),
+      [
+        ['SUCCESS', true],
+        ['FAILED', false],
+        ['TIMEOUT', false],
+      ],
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
