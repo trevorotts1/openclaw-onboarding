@@ -603,6 +603,21 @@ def suno_style_ids():
     return tuple(_MS.style_ids())
 
 
+def recipe_style_ids():
+    """Every id the recipe ACCEPTS: the D18 menu plus registered extra styles.
+
+    S75-T22 repair r3: ``music_styles.register_styles`` adopts an offered style
+    outside the three D18 records, and every id-based route (style_prompt,
+    spoken_target, section_hint, style) already resolves a registered id. The
+    recipe gates below must accept the same ids or a style can dispatch on the
+    catalogue seam and still be refused with UNKNOWN_STYLE. A registered style
+    is not thereby buildable: ``style_text`` still needs its own
+    ``references/prompt-templates/music/<id>.json`` (that data gap is a
+    separate, class-wide one).
+    """
+    return tuple(_MS.style_ids()) + tuple(_MS.extra_style_ids())
+
+
 def is_no_voice_tag(tag):
     """True for a section that has NO voice: a tag only, never a lyric line."""
     head = str(tag).lower()
@@ -1283,7 +1298,7 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
     """
     if is_exempt(style_id):
         return {"exempt": True}
-    if style_id not in suno_style_ids():
+    if style_id not in recipe_style_ids():
         raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
                           "exempt; add it to music_styles" % (style_id,))
     warnings = []
@@ -1522,7 +1537,7 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
         return
     if is_exempt(style_id):
         return
-    if style_id not in suno_style_ids():
+    if style_id not in recipe_style_ids():
         raise RecipeError("UNKNOWN_STYLE", repr(style_id))
     # FU-RNBFLOW-SONG: the style's own contract (real sung lyrics, rap tagged
     # as rap on the beat, plain spoken outro). No length -> "UNMEASURED:
