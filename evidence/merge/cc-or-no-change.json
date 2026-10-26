@@ -1,0 +1,19 @@
+{
+ "schema": "s75/cc-change-or-no-change.v1",
+ "unit_id": "S75-T38",
+ "acceptance_id": "S75-A38",
+ "outcome": "CC_CHANGE_PRESENT",
+ "no_change": false,
+ "change": {
+  "repository": "blackceo-command-center",
+  "branch": "s75/S75-T38-cc-r1",
+  "head": "b772bcf7d4890fed6dfb58adf4cc591feab5a689",
+  "base": "c716c0164d487713370d8d5bcb4dd092de700d35",
+  "files_changed": [
+   "scripts/check-tool-registry-references.py"
+  ]
+ },
+ "incorporation_proof": "evidence/units/S75-T38/incorporation-proof.json",
+ "receipt": "evidence/units/S75-T38/attempt-1.json",
+ "note": "This file records that a real CC change was made; the 'no-change' alternative does not apply. It is not a verdict."
+}
