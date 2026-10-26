@@ -1,0 +1,137 @@
+{
+  "unit": "S75-T32",
+  "acceptance_row": "S75-A32",
+  "attempt": "candidate-2",
+  "mode": "candidate-repair",
+  "decision_locked": true,
+  "repair_mandate": {
+    "source": "/Users/blackceomacmini/loop-control/s75/qc/S75-T32-ARBITER.md",
+    "section": "STATED LIMITS (item 4 of RESIDUAL UNKNOWNS)",
+    "verbatim": "two style18 breakages go undetected (`choice_rows()` rendering 17 of 18 rows, `validate_catalog()` hard-wired to 18)",
+    "scope": "close exactly those two; nothing else changed, no existing check weakened"
+  },
+  "base": {
+    "ref": "origin/main",
+    "commit": "9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865",
+    "note": "merge-base of origin/main and this branch; origin/main at build time was 5a54ddd7f8171ea7e3608cc1d508b06e82077d9e"
+  },
+  "previous_head": "f106c1d59013b8f6668c184870fc957f026ec0b1",
+  "head": {
+    "commit": "682757c9197d9905aecf25b737ff4afcf26e12ff",
+    "branch": "s75/S75-T32-r4",
+    "filing_note": "682757c91 is the head the measurements below ran at. The commit that files this receipt is its child and changes only this file."
+  },
+  "files_changed": [
+    "75-drama-song-ad-factory/scripts/core/music_styles/catalog.py",
+    "tests/story_first_acceptance/cell_matrix.py",
+    "tests/story_first_acceptance/test_cross_flavor_acceptance.py"
+  ],
+  "delta_scope": "Two files under this unit's owned tests directory; one production file whose validator the mandate explicitly names. No deletions outside the edited hunks, no secrets, no dependency or provider change.",
+  "changes": [
+    {
+      "defect": "validate_catalog() hard-wired to 18",
+      "path": "75-drama-song-ad-factory/scripts/core/music_styles/catalog.py",
+      "change": "validate_catalog now derives expected = len(STYLE_IDS), refuses a MAX_STYLES that disagrees with it, refuses a CATALOG whose length differs from the derived count, and refuses keys out of STYLE_IDS order. A validator that returns a literal 18 can no longer pass an inconsistent catalog.",
+      "falsifiable_by": "test_validate_catalog_derives_its_count_and_refuses_a_short_catalog"
+    },
+    {
+      "defect": "choice_rows() renders 17 of 18 rows",
+      "path": "tests/story_first_acceptance/cell_matrix.py",
+      "change": "_choice_rows_well_formed requires one row per id with a matching style_id, a non-empty label and a non-empty description; the style18 cell's choice check now requires that predicate, not just a count. A count alone stayed green on eighteen dicts with one empty row.",
+      "falsifiable_by": "test_style18_choice_rows_cover_the_eighteenth_row and test_style18_predicate_reds_each_named_breakage_alone"
+    },
+    {
+      "defect": "instrument blind to both breakages",
+      "path": "tests/story_first_acceptance/cell_matrix.py",
+      "change": "The style18 predicate derives its expected count from the ids it observed instead of comparing to a literal 18, and probe_style18 now plants THREE negative controls that must all go red: a seventeen-id carrier (pre-existing), a validate count one short, and the eighteenth choice row missing. selfcheck asserts both new breakages red an otherwise-green carrier.",
+      "falsifiable_by": "test_style18_predicate_reds_each_named_breakage_alone"
+    }
+  ],
+  "tests_run": [
+    {
+      "command": "python3 -I -m pytest -q tests/story_first_acceptance",
+      "result": "33 passed in 7.10s",
+      "exit_code": 0,
+      "note": "the 30 pre-existing acceptance tests plus 3 new cases"
+    },
+    {
+      "command": "python3 -I tests/story_first_acceptance/test_cross_flavor_acceptance.py",
+      "result": "33 passed, 0 failed, 33 total",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 -I -m pytest -q tests/story_first_acceptance/test_cross_flavor_acceptance.py -k \"validate_catalog_derives or choice_rows_cover or reds_each_named\"",
+      "result": "3 passed, 30 deselected in 0.03s",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_catalog_s75t18.py",
+      "result": "ALL PASS (389 checks)",
+      "exit_code": 0,
+      "note": "the catalog owner's own suite, unchanged by this unit, still green against the derived validator"
+    },
+    {
+      "command": "python3 -I tests/story_first_acceptance/cell_matrix.py --selfcheck",
+      "result": "cell_matrix selfcheck ok: 7 behaviours, instruments discriminate, planted='s75t32-unproven-ehnr7rmw' refused, repo='trevorotts1/openclaw-onboarding' proven",
+      "exit_code": 0
+    },
+    {
+      "command": "python3 -I -m pytest -q 75-drama-song-ad-factory/tests (surrounding suite)",
+      "result": "2 failed, 222 passed in 3.54s",
+      "exit_code": 1,
+      "control": "same command at clean HEAD f106c1d59 in a detached worktree /tmp/s75t32-basecheck: 2 failed, 222 passed in 4.30s. Identical pre-existing failures, unrelated to this delta: test_model_choice.py::ModelChoice::test_no_model_pin_in_skill_docs and test_no_blur_fill/test_pipeline_refusal.py::ScanRefusesCoreFill::test_shipped_core_carries_no_fill."
+    }
+  ],
+  "breakage_proofs": [
+    {
+      "name": "planted 18th-row breakage, end-to-end through the style18 cell",
+      "command": "a full skill copy at /tmp with choice_rows appending an empty description on row 18, probed with cell_matrix.probe_style18",
+      "result": "OBSERVED_FAIL | choice check: [True, True, True, True, False, True]",
+      "note": "The row count stays 18 and the old count-only check would have stayed green; the content predicate is the only check that reds."
+    },
+    {
+      "name": "validator discriminator",
+      "command": "load this repository's catalog, remove the eighteenth record, call validate_catalog(); then load again, remove the same record and replace validate_catalog with lambda: 18",
+      "result": "REAL: refused BAD_CATALOG | HARD-WIRED returns 18 (does not refuse)",
+      "note": "This is the pair the new test asserts, so the arbiter's exact breakage now fails the suite."
+    }
+  ],
+  "existing_checks_weakened": "none",
+  "weakening_audit": [
+    "The style18 cell still requires exactly eighteen ids and eighteen unique ids (first two checks unchanged).",
+    "The declared maximum, validate count and choice count are compared to the observed id count, which the first check pins to eighteen; a seventeen-id carrier still reds and is still planted.",
+    "The original seventeen-id negative control is retained unchanged; two more controls are added.",
+    "tests/story_first_acceptance/test_cross_flavor_acceptance.py kept all 30 prior tests, unmodified; 3 were added.",
+    "The catalog owner's 389-check suite is unchanged and passes."
+  ],
+  "dependencies": {
+    "python": "3.14.7",
+    "network": "none",
+    "model_calls": "none",
+    "spend": "none",
+    "cross_unit": {
+      "S75-T17": "owns Notion migration, now S75-A17; not exercised here",
+      "S75-T28": "owns paid compatibility, now S75-A28; not exercised here",
+      "S75-T18": "owns the eighteen-style catalog; this delta edits its validator only as the repair mandate names, and its own suite stays green",
+      "S75-T30": "owns the 999 package assembly and the eighteen-style catalog delivery"
+    }
+  },
+  "independent_checker": {
+    "status": "PENDING",
+    "checker": null
+  },
+  "gates": {
+    "repository_required_gates": "NOT_APPLICABLE_TO_THIS_BRANCH_SCOPE",
+    "reason": "ruleset 20330619 main-required-checks scopes refs/heads/main; this candidate lives on s75/S75-T32-r4. Branch-scope applicability is unmeasured (arbiter residual unknown 3). No gate was claimed."
+  },
+  "claims": [
+    "The two style18 breakages the arbiter carried as open limits are now detectable, each proven by a planted breakage that reds the same instrument that passes the shipped catalog.",
+    "validate_catalog derives its expected count from STYLE_IDS and explicitly refuses an inconsistent count; the hard-wired-18 variant is shown not to refuse the same inconsistent catalog.",
+    "choice_rows coverage now includes the eighteenth row's content, and the eighteenth row broken in isolation reds the style18 cell end-to-end.",
+    "No existing check was weakened: the eighteen-id and uniqueness checks remain, the seventeen-id control remains, and all 30 prior acceptance tests pass unchanged."
+  ],
+  "not_claimed": [
+    "Row acceptance. Acceptance stays with the owner (Trevor). This is candidate repair evidence only.",
+    "The 999 facet's cells, the release-provenance question, and the two excluded dependency behaviours are untouched by this attempt."
+  ]
+}
