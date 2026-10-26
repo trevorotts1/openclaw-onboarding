@@ -17,7 +17,7 @@
 
   "candidate": {
     "candidate_head_sha": "2e274ae782b3604f83687344552e752c8b27fd11",
-    "candidate_head_source": "git rev-parse s75/S75-T28-r5 in /Users/blackceomacmini/openclaw-onboarding; equals the head named by the round-5 verdict (head_tested 2e274ae782b3604f83687344552e752c8b27fd11)",
+    "candidate_head_source": "git rev-parse s75/S75-T28-r5 in <operator-home>/openclaw-onboarding; equals the head named by the round-5 verdict (head_tested 2e274ae782b3604f83687344552e752c8b27fd11)",
     "branch_commits_measured": [
       "de63c28f8ce096a378564888de049ef739ca282c S75-T28 round 5: incremental repair receipt (base resolution, defect list D1..D7)",
       "6dd545a0677d7f95992e8946bce6f35bae1bd4b1 S75-T28 round 5: compatibility map v5 with computed measurement records M1..M7",
@@ -73,11 +73,11 @@
       "how_used": "imported and executed for the digest-binding measurement on a real paid run"
     },
     {
-      "text": "the delivered paid corpus at /Users/blackceomacmini/Downloads/Drama Song Ads (the corpus the compatibility map inventories as 'Delivered client paid corpus')",
+      "text": "the delivered paid corpus at <operator-home>/Downloads/Drama Song Ads (the corpus the compatibility map inventories as 'Delivered client paid corpus')",
       "how_used": "read to EOF and hashed before and after; never written"
     },
     {
-      "text": "one real paid run, /Users/blackceomacmini/drama-song-factory-build/qualification/wantedwoman-book-test/run (844 files, real card-answers.json and real creative/script-approval.json bound to lyrics_sha d00e65a283592731ed095463b066ce9a591a205f9cab159a28acea528835267e)",
+      "text": "one real paid run, <operator-home>/drama-song-factory-build/qualification/wantedwoman-book-test/run (844 files, real card-answers.json and real creative/script-approval.json bound to lyrics_sha d00e65a283592731ed095463b066ce9a591a205f9cab159a28acea528835267e)",
       "how_used": "read-only source of real approval bytes, real lyrics text and real raw answers; hashed before and after; copied into the verifier scratchpad for fixtures"
     },
     {
@@ -93,13 +93,13 @@
 
   "independent_checker": {
     "name": "t28_independent_checker.py",
-    "path": "/Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/t28_independent_checker.py",
+    "path": "<operator-home>/.claude-nine/scratchpad/s75-t28-r6/t28_independent_checker.py",
     "sha256": "4ae8b62914a857639e347835a163dde71586fdf3017ea4ce9e30a34723c9624d",
     "bytes": 23900,
     "authorship": "written by this independent verifier for round 6. No author code is imported or called except the product modules listed under dependencies, which are the code under measurement. The author's own checker (check_round5_claims.py, extracted in round 5) was NOT run and carries no weight here.",
     "what_it_does": "Enumerates the delivered paid corpus, reads every file to EOF and hashes it; executes the product's paid-asset-facing procedures (approval registration and invalidation, approval loading, the production script-approval gate, legacy raw-answer preservation) in a scratch fixture; then re-reads and re-hashes the corpus and the real paid run and compares before/after. It also builds constructed changes on the product's real derivation graph and on a real approval record.",
-    "invocation": "python3 -I t28_independent_checker.py --subject /Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/subject --corpus '/Users/blackceomacmini/Downloads/Drama Song Ads' --real-run /Users/blackceomacmini/drama-song-factory-build/qualification/wantedwoman-book-test/run --fixture /Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/fixture --out /Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/checker-results.json",
-    "results_file": "/Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/checker-results.json",
+    "invocation": "python3 -I t28_independent_checker.py --subject <operator-home>/.claude-nine/scratchpad/s75-t28-r6/subject --corpus '<operator-home>/Downloads/Drama Song Ads' --real-run <operator-home>/drama-song-factory-build/qualification/wantedwoman-book-test/run --fixture <operator-home>/.claude-nine/scratchpad/s75-t28-r6/fixture --out <operator-home>/.claude-nine/scratchpad/s75-t28-r6/checker-results.json",
+    "results_file": "<operator-home>/.claude-nine/scratchpad/s75-t28-r6/checker-results.json",
     "results_sha256": "cc7a554949dee5f92877716fda844750536dab7ce3c289562a09c089f6eda42b",
     "final_run_stdout": "{\"out\": \".../checker-results.json\", \"c1_byte_identical\": true, \"known_good_control\": true, \"instrument_control\": true, \"gate_control\": {\"pass\": true, \"absent_refused\": true, \"corrupt_refused\": true, \"modern_bound_admitted\": true}}",
     "exit_code": 0
@@ -108,7 +108,7 @@
   "clause_1_existing_paid_assets_remain_readable_and_untouched": {
     "met": true,
     "paid_assets_identified": {
-      "root": "/Users/blackceomacmini/Downloads/Drama Song Ads",
+      "root": "<operator-home>/Downloads/Drama Song Ads",
       "paid_media_files": 3122,
       "paid_media_bytes": 10032434293,
       "per_extension": {
@@ -139,7 +139,7 @@
       "reads of the delivered paid corpus itself (the unit's declared mode is READ_ONLY_INVENTORY_AND_MAP)"
     ],
     "real_paid_run_also_untouched": {
-      "run": "/Users/blackceomacmini/drama-song-factory-build/qualification/wantedwoman-book-test/run",
+      "run": "<operator-home>/drama-song-factory-build/qualification/wantedwoman-book-test/run",
       "files_before": 844,
       "files_after": 844,
       "byte_identical": true
@@ -160,7 +160,7 @@
     "invalidation_set_is_neither_everything_nor_nothing": "measured: 1 of 5, 2 of 5 and 3 of 5 for three different single-kind changes, and 0 of 5 for a re-registration of unchanged content. The root case is 5 of 5 by construction of the graph and is labelled as such.",
     "unaffected_descendants_proved": "for each constructed change the checker re-queries active_approval(kind, original_sha) for every kind and records which kinds still hold their approval at their original digest; those are the unaffected descendants, and their approval events remain state 'active' with no invalidated_by",
     "real_paid_run_anchor": {
-      "record": "/Users/blackceomacmini/drama-song-factory-build/qualification/wantedwoman-book-test/run/creative/script-approval.json",
+      "record": "<operator-home>/drama-song-factory-build/qualification/wantedwoman-book-test/run/creative/script-approval.json",
       "record_sha256": "99309e949b583e88a7d8391156efc6cb19c41fa53e8bab0b3c3c320c14c015e7",
       "record_content": {"lyrics_sha": "d00e65a283592731ed095463b066ce9a591a205f9cab159a28acea528835267e", "required": true, "status": "approved"},
       "real_lyrics_text": "read by the product's own reader script_approval.stage._doc(run)[3]; 1955 characters; sha256 d00e65a283592731ed095463b066ce9a591a205f9cab159a28acea528835267e - which EQUALS the digest the real approval record binds",
@@ -233,7 +233,7 @@
     "instrument_control": "a one-byte mutation of a fixture file must be detected as a change: sha256 before 6d791f406faaa70baaa57783cc31f9e38a0916865b554c5105b700fef43670c5, after 5a52b182442abfb41e8ea6b3c1689b5f3db5d3770495a74267a4b5b648a72340, detected true. PASS.",
     "gate_positive_control": "the same production gate that refuses absent and corrupt approvals admits a revision-bound approval (PRODUCTION_SCRIPT_APPROVED), so a run that refuses everything cannot pass this checker.",
     "my_own_instrument_failed_once_and_i_correct_it_in_the_record": "The first run of this checker reported known_good_control=false and threw AttributeError inside the real-run anchor. Both were MY instrument, not the target: (a) the control asserted PRESENT for all six kinds while approving only five - story was registered but never approved, so 'story: false' was correct product behaviour; (b) the anchor passed the parsed lyrics JSON OBJECT to check_script_approval, which takes the lyrics TEXT string (script_approval.py:71 does (lyrics or '').strip()). Fixed by approving all six kinds in the control and by reading the lyrics text through the product's own reader stage._doc(run)[3]. The first run's outputs were discarded, not reported as findings.",
-    "control_command_and_output": "python3 -I /Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/t28_independent_checker.py --subject /Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/subject --corpus '/Users/blackceomacmini/Downloads/Drama Song Ads' --real-run /Users/blackceomacmini/drama-song-factory-build/qualification/wantedwoman-book-test/run --fixture /Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/fixture --out /Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/checker-results.json ; EXIT=0 ; {\"out\": \".../checker-results.json\", \"c1_byte_identical\": true, \"known_good_control\": true, \"instrument_control\": true, \"gate_control\": {\"what\": \"the SAME gate with the real run's real approval record must NOT answer the missing-approval refusal, and with a revision-bound approval it must ADMIT\", \"pass\": true, \"absent_refused\": true, \"corrupt_refused\": true, \"modern_bound_admitted\": true}}"
+    "control_command_and_output": "python3 -I <operator-home>/.claude-nine/scratchpad/s75-t28-r6/t28_independent_checker.py --subject <operator-home>/.claude-nine/scratchpad/s75-t28-r6/subject --corpus '<operator-home>/Downloads/Drama Song Ads' --real-run <operator-home>/drama-song-factory-build/qualification/wantedwoman-book-test/run --fixture <operator-home>/.claude-nine/scratchpad/s75-t28-r6/fixture --out <operator-home>/.claude-nine/scratchpad/s75-t28-r6/checker-results.json ; EXIT=0 ; {\"out\": \".../checker-results.json\", \"c1_byte_identical\": true, \"known_good_control\": true, \"instrument_control\": true, \"gate_control\": {\"what\": \"the SAME gate with the real run's real approval record must NOT answer the missing-approval refusal, and with a revision-bound approval it must ADMIT\", \"pass\": true, \"absent_refused\": true, \"corrupt_refused\": true, \"modern_bound_admitted\": true}}"
   },
 
   "eleven_unsourced_count_groups_from_round_5": {
@@ -247,8 +247,8 @@
       "9. 3 recasts => measured exactly: 3 keys carrying '-t2' in the 11-entry urls.json (desk-neighbor-front-t2, manager-front-t2, coworker-front-t2)"
     ],
     "partially_sourced": [
-      "1. 394 card-answers.json (14 under /Users + 380 under /Volumes) => measured today 13 across the reachable roots (1 real: wantedwoman-book-test/run/card-answers.json; 12 under /Users/blackceomacmini/clawd/handoff/receipts = 1 package run blackceomacmini-PKG-11-U1-run, 9 sa-wire-* synthetic, 2 w1r_* that postdate the map). The 380-count root named by the map, /Volumes/mac mini m4/Downloads/git trees and automations/scratch/s75-intake-20261024, is ABSENT today (measured), so the 394 total cannot be reproduced. The /Users 14 is now 13.",
-      "2. 4 real client runs with answers => 1 of 4 reachable (wantedwoman-book-test). The map's three other named roots - /Users/blackceomacmini/scratch/jen-drama-diag/tx/Documents/drama-song-runs, /Users/blackceomacmini/scratch/laya-drama-diag/x/drama-song-runs and any /Users/jennjack copy - are all absent today: a bounded find for '*eoe-emeralds*' under /Users/blackceomacmini/scratch and /Users/blackceomacmini/Downloads and for any directory named 'drama-song-runs' under /Users/blackceomacmini (maxdepth 6, Library excluded) returned nothing, rc 0.",
+      "1. 394 card-answers.json (14 under /Users + 380 under /Volumes) => measured today 13 across the reachable roots (1 real: wantedwoman-book-test/run/card-answers.json; 12 under <operator-home>/clawd/handoff/receipts = 1 package run blackceomacmini-PKG-11-U1-run, 9 sa-wire-* synthetic, 2 w1r_* that postdate the map). The 380-count root named by the map, /Volumes/mac mini m4/Downloads/git trees and automations/scratch/s75-intake-20261024, is ABSENT today (measured), so the 394 total cannot be reproduced. The /Users 14 is now 13.",
+      "2. 4 real client runs with answers => 1 of 4 reachable (wantedwoman-book-test). The map's three other named roots - <operator-home>/scratch/jen-drama-diag/tx/Documents/drama-song-runs, <operator-home>/scratch/laya-drama-diag/x/drama-song-runs and any /Users/jennjack copy - are all absent today: a bounded find for '*eoe-emeralds*' under <operator-home>/scratch and <operator-home>/Downloads and for any directory named 'drama-song-runs' under <operator-home> (maxdepth 6, Library excluded) returned nothing, rc 0.",
       "3. 7 of 14 rows value:null in the jen eoe-emeralds-20261016-60s card-answers => the jen run store is gone, so the 'of 14' denominator cannot be re-derived. The SAME seven ids carry value:null with non-empty text in the surviving real run (wantedwoman: 9 rows, 7 value:null - length, music, look, model, storyboard, song, script), so the retention risk the number documents is confirmed on live data.",
       "10. spend.sqlite3 454656 / 200704 / 0 bytes => the 0 is confirmed live (wantedwoman-book-test/run/spend.sqlite3 = 0 bytes); the two jen sizes cannot be re-measured because those run stores are gone."
     ],
@@ -274,11 +274,11 @@
   ],
 
   "not_searched": [
-    "other machines, other clones and forks of trevorotts1/openclaw-onboarding for a T28 attempt file or for the missing run stores; only this package and the local clone /Users/blackceomacmini/openclaw-onboarding were enumerated",
+    "other machines, other clones and forks of trevorotts1/openclaw-onboarding for a T28 attempt file or for the missing run stores; only this package and the local clone <operator-home>/openclaw-onboarding were enumerated",
     "deleted remote refs, pull-request refs and tags of the repository",
     "the 999-setup and blackceo-command-center repositories",
     "the 380 synthetic card-answers.json files individually (their root is absent)",
-    "/Users/blackceomacmini/Library and the whole of /Users beyond the named roots; a bounded find at maxdepth 6 was used instead of an unbounded one",
+    "<operator-home>/Library and the whole of /Users beyond the named roots; a bounded find at maxdepth 6 was used instead of an unbounded one",
     "the qualifications corpus beyond the extension counts and the spaulding cast/urls.json and cast/images files named above (11476 json files there were not opened one by one)"
   ],
 
@@ -291,8 +291,8 @@
 
   "environment_notes": [
     "All measurements ran on the operator Mac Mini. No network call, no credential read, no secret printed, no paid generation.",
-    "The subject code was extracted with git archive from the recorded base into /Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/subject and imported from there; python3 -I was used for every probe; no interpreter was run from inside any downloaded or untrusted directory.",
-    "Fixture writes were confined to /Users/blackceomacmini/.claude-nine/scratchpad/s75-t28-r6/fixture and the checker results file. The real paid run and the delivered corpus were read-only for me and are proved byte-identical by the before/after hashes above.",
+    "The subject code was extracted with git archive from the recorded base into <operator-home>/.claude-nine/scratchpad/s75-t28-r6/subject and imported from there; python3 -I was used for every probe; no interpreter was run from inside any downloaded or untrusted directory.",
+    "Fixture writes were confined to <operator-home>/.claude-nine/scratchpad/s75-t28-r6/fixture and the checker results file. The real paid run and the delivered corpus were read-only for me and are proved byte-identical by the before/after hashes above.",
     "The local clone's origin/main moved twice during this work (9c69a5d7 in round 5, 006fc426 now). All ancestry statements name the ref they were measured against.",
     "A file named .s75t08_r6_writeprobe.txt (5 bytes) exists at the package root and is not mine; other lanes are writing into this package concurrently."
   ],

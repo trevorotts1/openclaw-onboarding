@@ -243,7 +243,7 @@
    "id": "S7",
    "round_1_claim": "asset_classes.images - 'spaulding cast/urls.json' cited without a resolved path.",
    "superseded_by": "asset_classes_CARRIED_AND_RECHECKED.images.corrected_path",
-   "why": "The 11-entry file is at /Users/blackceomacmini/drama-song-factory-build/qualification/spaulding-gigy-one-check-chanel-150/cast/urls.json; the delivered corpus has no urls.json at all. The single locally saved image is .../cast/images/whisperer-man-front-before-recast.png at 5127248 bytes; the v2 run's cast/urls.json holds 10 entries. The SEVERE retention risk is unchanged."
+   "why": "The 11-entry file is at <operator-home>/drama-song-factory-build/qualification/spaulding-gigy-one-check-chanel-150/cast/urls.json; the delivered corpus has no urls.json at all. The single locally saved image is .../cast/images/whisperer-man-front-before-recast.png at 5127248 bytes; the v2 run's cast/urls.json holds 10 entries. The SEVERE retention risk is unchanged."
   },
   {
    "id": "S8",
@@ -361,7 +361,7 @@
     "75-drama-song-ad-factory/timer-artifacts/install-keepalive-cron.sh",
     "75-drama-song-ad-factory/timer-artifacts/keepalive-cron-prompt.txt"
    ],
-   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W00-U5/RECEIPT.md",
+   "receipt": "<operator-home>/skill75-repair/evidence/S75-REPAIR-W00-U5/RECEIPT.md",
    "state_after_merged_units": "PRESERVED (file untouched by all 11 units; git diff 569eee7a..aa3d43d7f -- these paths returned no entries)",
    "round_2_file_preservation_recheck": "CONFIRMED_PRESERVED.emergency_preservation_spot_checks (git diff 569eee7a..aa3d43d7f over install-keepalive-cron.sh + keepalive-cron-prompt.txt = empty, rc 0)",
    "behaviour_text_source": "round 1, carried verbatim by round 3; round 2 carried only the file-preservation check"
@@ -373,7 +373,7 @@
    "files": [
     "75-drama-song-ad-factory/scripts/core/batch_mode/batch.py"
    ],
-   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W02-U2/RECEIPT.md",
+   "receipt": "<operator-home>/skill75-repair/evidence/S75-REPAIR-W02-U2/RECEIPT.md",
    "state_after_merged_units": "PRESERVED (untouched by all 11 units)",
    "round_2_file_preservation_recheck": "CONFIRMED_PRESERVED.emergency_preservation_spot_checks (same diff over batch_mode/batch.py = empty, rc 0)",
    "behaviour_text_source": "round 1, carried verbatim by round 3; round 2 carried only the file-preservation check"
@@ -385,7 +385,7 @@
    "files": [
     "75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py"
    ],
-   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U3.md",
+   "receipt": "<operator-home>/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U3.md",
    "state_after_merged_units": "PRESERVED BUT TOUCHED. S75-T20 changed this file (+231/-10 between 569eee7a and aa3d43d7f). The leaf-load block is still present on origin/main: _CORE resolved at line 88-90, _load_canonical_durations() defined at 91-97, CANONICAL_DURATION_S assigned at 99, OFFERED_LENGTHS_S = CANONICAL_DURATION_S at 100. The 10 deleted lines are STYLES accessor refactors, not the registry block (verified by listing every '-' line in the diff).",
    "risk": "Highest-risk overlap of the eleven units with an accepted emergency fix. Correct today; any future edit to this file must re-prove the leaf-load block.",
    "round_2_recheck": {
@@ -410,7 +410,7 @@
    "files": [
     "75-drama-song-ad-factory/scripts/core/sung_hook/hook_placement.py"
    ],
-   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U5.md",
+   "receipt": "<operator-home>/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U5.md",
    "state_after_merged_units": "PRESERVED (untouched by all 11 units)"
   },
   {
@@ -420,7 +420,7 @@
    "files": [
     "75-drama-song-ad-factory/scripts/core/intake_preflight/preflight.py"
    ],
-   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U1.md",
+   "receipt": "<operator-home>/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U1.md",
    "state_after_merged_units": "PRESERVED (untouched by all 11 units)"
   },
   {
@@ -430,7 +430,7 @@
    "files": [
     "75-drama-song-ad-factory/timer-artifacts/run-timer.sh"
    ],
-   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U3-CONFLICT.md",
+   "receipt": "<operator-home>/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U3-CONFLICT.md",
    "state_after_merged_units": "PRESERVED (untouched by all 11 units)",
    "round_2_file_preservation_recheck": "CONFIRMED_PRESERVED.emergency_preservation_spot_checks (same diff over timer-artifacts/run-timer.sh = empty, rc 0)",
    "behaviour_text_source": "round 1, carried verbatim by round 3; round 2 carried only the file-preservation check"
@@ -443,7 +443,7 @@
     "adapters/drama-song-factory/media_campaign_adapter.py",
     "adapters/drama-song-factory/test_media_campaign_adapter.py"
    ],
-   "receipt": "/Users/blackceomacmini/skill75-repair/evidence/S75-REPAIR-CC-W08-U1/RECEIPT.md",
+   "receipt": "<operator-home>/skill75-repair/evidence/S75-REPAIR-CC-W08-U1/RECEIPT.md",
    "state_after_merged_units": "OUTSIDE this map's repositories; not re-verified here (see cannot_verify)",
    "round_3_note": "ONB/CC side restored here as a behaviour row. The CC half is still NOT re-verified: trevorotts1/blackceo-command-center has not been read in rounds 1, 2 or 3 (what_remains_unverified item 2). The ONB-side carrier of the same behaviour is scripts/core/spend_ledger.py PROVIDER_LOOKUP_REQUIRED, recorded separately as S75-999-provider-lookup."
   },
@@ -500,7 +500,7 @@
  "old_run_inventory": {
   "distinct_run_roots_observed": [
    {
-    "root": "/Users/blackceomacmini/Downloads/Drama Song Ads",
+    "root": "<operator-home>/Downloads/Drama Song Ads",
     "role": "Delivered client paid corpus (videos, songs, receipts)",
     "size": "9.6G",
     "extensions": {
@@ -521,10 +521,10 @@
      "creative-fidelity-h3",
      "_env-tests"
     ],
-    "index": "/Users/blackceomacmini/Downloads/Drama Song Ads/INDEX.md (written 2026-10-09)"
+    "index": "<operator-home>/Downloads/Drama Song Ads/INDEX.md (written 2026-10-09)"
    },
    {
-    "root": "/Users/blackceomacmini/drama-song-factory-build/qualification",
+    "root": "<operator-home>/drama-song-factory-build/qualification",
     "role": "Build/qualification runs with machine-readable run metadata",
     "size": "2.0G",
     "extensions": {
@@ -552,7 +552,7 @@
     ]
    },
    {
-    "root": "/Users/blackceomacmini/scratch/jen-drama-diag/tx/Documents/drama-song-runs",
+    "root": "<operator-home>/scratch/jen-drama-diag/tx/Documents/drama-song-runs",
     "role": "Diagnostic copy of a real client's run store (home layout -Users-jennjack preserved)",
     "runs": [
      "eoe-emeralds-20261013",
@@ -560,14 +560,14 @@
     ]
    },
    {
-    "root": "/Users/blackceomacmini/scratch/laya-drama-diag/x/drama-song-runs",
+    "root": "<operator-home>/scratch/laya-drama-diag/x/drama-song-runs",
     "role": "Diagnostic copy of a real client's run store",
     "runs": [
      "voyage-to-virtue"
     ]
    },
    {
-    "root": "/Users/blackceomacmini/.drama-studio",
+    "root": "<operator-home>/.drama-studio",
     "role": "Studio order/run ledger for the drama-studio entry point",
     "option3_runs": [
      "run-20261013T213752Z",
@@ -606,7 +606,7 @@
     }
    },
    {
-    "root": "/Users/blackceomacmini/clawd/handoff/receipts",
+    "root": "<operator-home>/clawd/handoff/receipts",
     "role": "SYNTHETIC wire-test receipts plus one package test run",
     "synthetic_card_answers": [
      "sa-wire-zdhy2gqk",
@@ -633,22 +633,22 @@
    "claim": "No file on disk carries the emergency handoff task id 01a16e50-177f-7476-8bf1-dbd252a75030 as an artifact of the handoff itself.",
    "sources_searched": [
     "grep -rl '01a16e50-177f-7476-8bf1-dbd252a75030' '/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024' -> 14 files, ALL package documents or derived evidence (BATCH-MERGE.md, DECISIONS.md, DEPENDENCIES-AND-OWNERSHIP.md, DISCOVERIES.md, evidence/emergency-owner-handoff.json, evidence/S75-T01-reconciliation.json, evidence/source-reconciliation.json, MIGRATION-AND-COMPATIBILITY.md, README.md, SPEC.md, state/prebuilder-loop-prompt.txt, SWARM-MANAGEMENT.md, task-ledger.json, TERMINAL-KICKOFF.md). No handoff receipt, no owner name, no per-file sign-off.",
-    "grep -rl '01a16e50-177f-7476-8bf1-dbd252a75030' /Users/blackceomacmini/skill75-repair /Users/blackceomacmini/drama-song-factory-build -> 0 files"
+    "grep -rl '01a16e50-177f-7476-8bf1-dbd252a75030' <operator-home>/skill75-repair <operator-home>/drama-song-factory-build -> 0 files"
    ],
    "not_checked": "Client boxes, Contabo/VPS hosts, and remote branches outside the three local clones. This is a named-source result, not proof the handoff never happened."
   },
   {
    "claim": "The 1.3 GB BSW bundle that INDEX.md calls a referenced top-level file does not exist at that location.",
    "sources_searched": [
-    "ls '/Users/blackceomacmini/Downloads/Drama Song Ads/'*.zip -> 'no matches found'",
-    "find /Users/blackceomacmini/Downloads -maxdepth 3 -name 'BSW-Authors*' (and '*BSW*AUTHORS*') -> no results"
+    "ls '<operator-home>/Downloads/Drama Song Ads/'*.zip -> 'no matches found'",
+    "find <operator-home>/Downloads -maxdepth 3 -name 'BSW-Authors*' (and '*BSW*AUTHORS*') -> no results"
    ],
    "not_checked": "Deeper than maxdepth 3 under Downloads, and the portable volume."
   },
   {
    "claim": "There is no canonical songs/ or images/ directory for the product; assets are per-run and per-campaign only.",
    "sources_searched": [
-    "find /Users/blackceomacmini -maxdepth 4 -type d \\( -iname '*drama*song*' -o -iname '*DSF*' -o -iname '*Studio*' \\)",
+    "find <operator-home> -maxdepth 4 -type d \\( -iname '*drama*song*' -o -iname '*DSF*' -o -iname '*Studio*' \\)",
     "directory walks of all run roots listed in old_run_inventory"
    ],
    "not_checked": "Whole-filesystem search below maxdepth 4."
@@ -657,7 +657,7 @@
  "current_target_heads_observed": {
   "ONB": {
    "repository": "trevorotts1/openclaw-onboarding",
-   "clone_read": "/Users/blackceomacmini/openclaw-onboarding",
+   "clone_read": "<operator-home>/openclaw-onboarding",
    "skill_root": "75-drama-song-ad-factory",
    "origin_main": "aa3d43d7f6ed07ad22405d9eb2a551f013e95707",
    "origin_main_committed": "2026-10-24 18:32:02 -0400",
@@ -678,7 +678,7 @@
   },
   "N999": {
    "repository": "trevorotts1/999-setup",
-   "clone_read": "/Users/blackceomacmini/.openclaw/persist-home/999-setup",
+   "clone_read": "<operator-home>/.openclaw/persist-home/999-setup",
    "skill_root": ".claude/skills/drama-song-ad-factory",
    "origin_main": "6e4d3b41912f395a8c9b53e3cc0437ed9da3c121",
    "origin_main_committed": "2026-10-24 18:45:05 -0400",
@@ -969,7 +969,7 @@
    "verifier_claim_tested": "14 rows, SEVEN carry value null: length, music, look, model, storyboard, song, script. Round 1's own sentence enumerates seven while stating six.",
    "my_verification": {
     "result": "VERIFIER CORRECT. The count is 7 of 14 and round 1 was internally inconsistent.",
-    "file_counted": "/Users/blackceomacmini/scratch/jen-drama-diag/tx/Documents/drama-song-runs/eoe-emeralds-20261016-60s/card-answers.json",
+    "file_counted": "<operator-home>/scratch/jen-drama-diag/tx/Documents/drama-song-runs/eoe-emeralds-20261016-60s/card-answers.json",
     "file_bytes": 2154,
     "file_mtime": "2026-10-16 12:32",
     "shape": "v1 bare list of 14 rows",
@@ -1172,7 +1172,7 @@
   "held_file_zero_paths": {
    "claim": "No merged unit changed any held file.",
    "verified": true,
-   "exact_command": "cd /Users/blackceomacmini/openclaw-onboarding && git diff --name-only dccd6811719e4212a8efa36674ffe00f1d243c53 origin/main -- 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py 75-drama-song-ad-factory/scripts/core/lyric_writer/lyric_writer.py 75-drama-song-ad-factory/scripts/core/character_bible/character_approval.py 75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py",
+   "exact_command": "cd <operator-home>/openclaw-onboarding && git diff --name-only dccd6811719e4212a8efa36674ffe00f1d243c53 origin/main -- 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py 75-drama-song-ad-factory/scripts/core/lyric_writer/lyric_writer.py 75-drama-song-ad-factory/scripts/core/character_bible/character_approval.py 75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py",
    "exit_code": 0,
    "output": "empty (zero paths)",
    "glob_form_command": "git diff --name-only dccd6811719e4212a8efa36674ffe00f1d243c53 origin/main -- '*factory.py' '*lyric_writer.py' '*character_approval.py' '*method_plan.py' '*registry.json'",
@@ -1227,7 +1227,7 @@
    },
    "dialect_B_legacy": {
     "shape": "bare list of {id, text, n} where n carries the numeric answer",
-    "example_file": "/Users/blackceomacmini/clawd/handoff/receipts/blackceomacmini-PKG-11-U1-run/card-answers.json",
+    "example_file": "<operator-home>/clawd/handoff/receipts/blackceomacmini-PKG-11-U1-run/card-answers.json",
     "bytes": 241,
     "rows": 4,
     "ids": [
@@ -1324,7 +1324,7 @@
    "severity": "MEDIUM",
    "class": "round-1 undercount",
    "finding": "Round 1 recorded '40+ (39 synthetic under the package scratch; 2 real under jen-eoe-emeralds-20261013 and 2 under wantedwoman-book-test)' script-approval.json files.",
-   "evidence": "find /Users/blackceomacmini '/Volumes/mac mini m4/Downloads' -type f -name 'script-approval.json' | wc -l => 306. Breakdown: 299 under /Volumes/mac mini m4/Downloads/git trees and automations/scratch (synthetic package scratch), 1 under /Volumes/mac mini m4/Downloads/s75x-owner-test-20261024, 2 under /Users/blackceomacmini/skill75-repair/lanes, 2 under /Users/blackceomacmini/scratch/jen-drama-diag (both real: eoe-emeralds-20261013/creative and eoe-emeralds-20261016-60s/creative), 2 under /Users/blackceomacmini/drama-song-factory-build/qualification/wantedwoman-book-test/run/creative (one in run/creative and one in run/creative/pre-restart3).",
+   "evidence": "find <operator-home> '/Volumes/mac mini m4/Downloads' -type f -name 'script-approval.json' | wc -l => 306. Breakdown: 299 under /Volumes/mac mini m4/Downloads/git trees and automations/scratch (synthetic package scratch), 1 under /Volumes/mac mini m4/Downloads/s75x-owner-test-20261024, 2 under <operator-home>/skill75-repair/lanes, 2 under <operator-home>/scratch/jen-drama-diag (both real: eoe-emeralds-20261013/creative and eoe-emeralds-20261016-60s/creative), 2 under <operator-home>/drama-song-factory-build/qualification/wantedwoman-book-test/run/creative (one in run/creative and one in run/creative/pre-restart3).",
    "corrected_statement": "306 script-approval.json files on disk: 302 synthetic or repair-lane copies, 4 real client-run approvals (2 Jennifer Allen runs, 2 wantedwoman-book-test paths)."
   },
   {
@@ -1570,7 +1570,7 @@
     }
    },
    "example": {
-    "path": "/Users/blackceomacmini/scratch/jen-drama-diag/tx/Documents/drama-song-runs/eoe-emeralds-20261016-60s/creative/script-approval.json",
+    "path": "<operator-home>/scratch/jen-drama-diag/tx/Documents/drama-song-runs/eoe-emeralds-20261016-60s/creative/script-approval.json",
     "status": "approved",
     "approved_at": "2026-10-16T21:33:39Z",
     "approved_by": "Jennifer Allen (Telegram 8606145708)",
@@ -1616,7 +1616,7 @@
     "spaulding_cast_urls_entries": 11,
     "spaulding_locally_saved_png": 1
    },
-   "corrected_path": "The 11-entry file round 1 called 'spaulding cast/urls.json' is at /Users/blackceomacmini/drama-song-factory-build/qualification/spaulding-gigy-one-check-chanel-150/cast/urls.json (the delivered corpus has no urls.json at all). The single locally saved image is .../spaulding-gigy-one-check-chanel-150/cast/images/whisperer-man-front-before-recast.png at 5127248 bytes. The v2 run's cast/urls.json holds 10 entries.",
+   "corrected_path": "The 11-entry file round 1 called 'spaulding cast/urls.json' is at <operator-home>/drama-song-factory-build/qualification/spaulding-gigy-one-check-chanel-150/cast/urls.json (the delivered corpus has no urls.json at all). The single locally saved image is .../spaulding-gigy-one-check-chanel-150/cast/images/whisperer-man-front-before-recast.png at 5127248 bytes. The v2 run's cast/urls.json holds 10 entries.",
    "retention_risk": "SEVERE for character images. The 11 entries point at tempfile.redpandaai.co URLs and includes 3 '-t2' recasts; only 1 PNG is saved locally. If the temp bucket expires, approved faces are gone and cannot be re-derived, which the doctrine forbids regenerating.",
    "would_create_if_absent": "n/a — exists"
   },
@@ -1692,7 +1692,7 @@
   },
   "card_answers_dialect_B_legacy": {
    "shape": "list of {id:str, text:str, n:int} where n carries the numeric answer (length 180)",
-   "seen_in": "/Users/blackceomacmini/clawd/handoff/receipts/blackceomacmini-PKG-11-U1-run/card-answers.json",
+   "seen_in": "<operator-home>/clawd/handoff/receipts/blackceomacmini-PKG-11-U1-run/card-answers.json",
    "extra_ids": [
     "shape",
     "storyboard_approval",
@@ -1939,7 +1939,7 @@
   "shasum -a 256 over evidence/S75-T28.compatibility-map.json, .round2.json, .round3.json and .round4.json before any fix work (python3 -I hashlib.sha256) => round 4 = 4b942df7511a082c4984fc5dfcd6a96d05f10949c35299111f0a0a18893eb09a, 147635 bytes, matching the value the round-4 repair report pinned",
   "read of evidence/S75-T28.verdict.round4.json and evidence/S75-T28.repair.round4.json in full (the defect list for this round)",
   "grep -n 'S75-A28' ACCEPTANCE-MATRIX.md => line 36, the acceptance row quoted verbatim in the repair receipt",
-  "git -C /Users/blackceomacmini/openclaw-onboarding ls-remote --heads origin (1944 ref lines) then grep -c for T28 => 0; the same grep -c for T08 => 3, T09 => 2, T12 => 3, T21 => 1 as the known-good control on the same instrument",
+  "git -C <operator-home>/openclaw-onboarding ls-remote --heads origin (1944 ref lines) then grep -c for T28 => 0; the same grep -c for T08 => 3, T09 => 2, T12 => 3, T21 => 1 as the known-good control on the same instrument",
   "git fetch origin main; git rev-parse origin/main => 9023e6b0e04cddb2c01a779c4bc0baef166d0a07; git worktree add -b s75/S75-T28-r5 <worktree> 9023e6b0e04cddb2c01a779c4bc0baef166d0a07",
   "git cat-file -e origin/main:<path> for this unit's three proposed_owned_outputs => 3 of 3 ABSENT; git ls-tree over 75-drama-song-ad-factory/scripts/core and /contracts and /tests/fixtures",
   "python3 -I build_round5.py => computed the measurement records M1..M7 and the regression set R1..R10 and wrote this file; the seven targeted edits above are its only content changes",
@@ -2581,7 +2581,7 @@
    "observed": {
     "byte_identical_to_round_3_list": true,
     "entries_naming_a_repository_read": [
-     "cd /Users/blackceomacmini/openclaw-onboarding && git show origin/main:75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py | sed -n '365,375p' => p = Path(run_dir)/'control'/'studio-versions.json' at 370, mkdir at 371, p.write_text(json.dumps(v, indent=2, sort_keys=True)) at 372",
+     "cd <operator-home>/openclaw-onboarding && git show origin/main:75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py | sed -n '365,375p' => p = Path(run_dir)/'control'/'studio-versions.json' at 370, mkdir at 371, p.write_text(json.dumps(v, indent=2, sort_keys=True)) at 372",
      "git show origin/main:.../factory.py | sed -n '2265,2280p' => continuation queue written by with open(qpath,'w',encoding='utf-8') as f: json.dump(queue, f, indent=2) at 2272-2273, NOT by _write_json",
      "git status --short in the ONB clone => ' M .../choice_card/intake_card/ai_models.json', ' M .../scripts/core/spend_ledger.py', '?? .../evidence/'; git status --short over script_approval/card_answers.py => empty (clean), which is the only scope in which a clean working-tree claim is true"
     ],

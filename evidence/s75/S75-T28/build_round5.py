@@ -426,7 +426,7 @@ out["commands_run_this_round"] = [
     "shasum -a 256 over evidence/S75-T28.compatibility-map.json, .round2.json, .round3.json and .round4.json before any fix work (python3 -I hashlib.sha256) => round 4 = 4b942df7511a082c4984fc5dfcd6a96d05f10949c35299111f0a0a18893eb09a, 147635 bytes, matching the value the round-4 repair report pinned",
     "read of evidence/S75-T28.verdict.round4.json and evidence/S75-T28.repair.round4.json in full (the defect list for this round)",
     "grep -n 'S75-A28' ACCEPTANCE-MATRIX.md => line 36, the acceptance row quoted verbatim in the repair receipt",
-    "git -C /Users/blackceomacmini/openclaw-onboarding ls-remote --heads origin (1944 ref lines) then grep -c for T28 => 0; the same grep -c for T08 => 3, T09 => 2, T12 => 3, T21 => 1 as the known-good control on the same instrument",
+    "git -C <operator-home>/openclaw-onboarding ls-remote --heads origin (1944 ref lines) then grep -c for T28 => 0; the same grep -c for T08 => 3, T09 => 2, T12 => 3, T21 => 1 as the known-good control on the same instrument",
     "git fetch origin main; git rev-parse origin/main => 9023e6b0e04cddb2c01a779c4bc0baef166d0a07; git worktree add -b s75/S75-T28-r5 <worktree> 9023e6b0e04cddb2c01a779c4bc0baef166d0a07",
     "git cat-file -e origin/main:<path> for this unit's three proposed_owned_outputs => 3 of 3 ABSENT; git ls-tree over 75-drama-song-ad-factory/scripts/core and /contracts and /tests/fixtures",
     "python3 -I build_round5.py => computed the measurement records M1..M7 and the regression set R1..R10 and wrote this file; the seven targeted edits above are its only content changes",
