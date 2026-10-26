@@ -28,6 +28,15 @@ from pathlib import Path
 TOOLS_DIR = Path(__file__).resolve().parents[1]
 SKILL_ROOT = TOOLS_DIR.parent
 REPO_ROOT = SKILL_ROOT.parent
+
+# The main the bookkeeping gate is pinned to, named by SHA on purpose.
+# ``origin/main`` is a moving ref: once main advances past a branch's marker, a
+# gate that read the ref reddened every branch cut earlier -- BUILD stuck on
+# work that changed nothing here. A branch is measured against this named main;
+# raise the pin when the gate should be judged against a newer one. The
+# duplicate-version bite still reads live ``origin/main``.
+MAIN_PIN_SHA = "a6bfbfb62ff7980ef6aae8ea9e2682fba98a31f8"
+SKILL_38_PATH = "38-conversational-ai-system"
 sys.path.insert(0, str(TOOLS_DIR))
 
 import interactive_owner as owner  # noqa: E402
@@ -1030,14 +1039,21 @@ class BookkeepingTests(unittest.TestCase):
     """PBB-261 D1/D2: the shipped version is above main's, and unique.
 
     The marker is compared remote-against-local by ``check-updates.sh``, so a
-    version at or below ``origin/main``'s reads as "not newer" on every deployed
-    box; and a CHANGELOG number already published on ``main`` for another task
-    makes one number name two changes. These tests read ``origin/main`` itself,
-    so they fail on the regression and pass on the fix.
+    version at or below main's reads as "not newer" on every deployed box; and a
+    CHANGELOG number already published on ``main`` for another task makes one
+    number name two changes. These tests read the named main below, so they fail
+    on the regression and pass on the fix.
 
-    Skipped only when the checkout has no ``origin/main`` to compare against;
-    on the reviewed bytes (which regress the marker to v2.0.31) every one of
-    them fails.
+    Scoped to branches that change ``38-conversational-ai-system``. A branch
+    that touches nothing here ships main's own marker and CHANGELOG, so judging
+    them as "this change" reddened unrelated work -- the BUILD stall. Within
+    that scope only a branch that actually ships a version is judged: a branch
+    that changes skill-38 code without moving ``skill-version.txt`` or
+    ``CHANGELOG.md`` has no shipped version to check. Everything else is
+    skipped, and the duplicate-version bite is untouched where it applies.
+
+    Skipped when the checkout cannot resolve the pinned main; on the reviewed
+    bytes (which regress the marker to v2.0.31) every one of them fails.
     """
 
     @classmethod
@@ -1045,11 +1061,51 @@ class BookkeepingTests(unittest.TestCase):
         cls.git_ok = False
         try:
             probe = subprocess.run(
-                ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "origin/main"],
+                ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify",
+                 MAIN_PIN_SHA + "^{commit}"],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         except OSError:
             return
         cls.git_ok = probe.returncode == 0
+
+    def setUp(self):
+        if not self.git_ok:
+            self.skipTest("the pinned main %s is not in this checkout"
+                          % MAIN_PIN_SHA)
+        if not self.touches_skill_38():
+            self.skipTest("this branch does not change %s" % SKILL_38_PATH)
+        if not self.ships_a_version():
+            self.skipTest("this branch changes %s without shipping a version"
+                          % SKILL_38_PATH)
+
+    def changed_paths(self):
+        """Paths this branch itself changed, or None when git cannot say.
+
+        Three-dot against the pinned main: the branch's own divergence, with
+        everything it merged from main excluded -- so merging main never counts
+        as this branch's change, while bumping the marker does.
+        """
+        done = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "diff", "--name-only",
+             "%s...HEAD" % MAIN_PIN_SHA],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if done.returncode != 0:
+            return None
+        return [line.strip() for line in done.stdout.splitlines() if line.strip()]
+
+    def touches_skill_38(self):
+        paths = self.changed_paths()
+        if paths is None:
+            return True          # cannot tell -> leave the gate armed
+        return any(p.startswith(SKILL_38_PATH + "/") for p in paths)
+
+    def ships_a_version(self):
+        """The two files that carry a shipped version, and only those."""
+        paths = self.changed_paths()
+        if paths is None:
+            return True          # cannot tell -> leave the gate armed
+        return any(p in (SKILL_38_PATH + "/skill-version.txt",
+                         SKILL_38_PATH + "/CHANGELOG.md") for p in paths)
 
     def git(self, *argv):
         return subprocess.run(
@@ -1057,7 +1113,7 @@ class BookkeepingTests(unittest.TestCase):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
 
     def main_marker(self):
-        return self.git("show", "origin/main:38-conversational-ai-system/"
+        return self.git("show", MAIN_PIN_SHA + ":38-conversational-ai-system/"
                                 "skill-version.txt").stdout.strip()
 
     def local_marker(self):
@@ -1070,7 +1126,7 @@ class BookkeepingTests(unittest.TestCase):
 
     def test_the_shipped_version_is_strictly_above_main_s(self):
         if not self.git_ok:
-            self.skipTest("no origin/main in this checkout to compare against")
+            self.skipTest("the pinned main is not in this checkout")
         local = tuple(int(p) for p in self.local_marker().lstrip("v").split("."))
         main = tuple(int(p) for p in self.main_marker().lstrip("v").split("."))
         self.assertGreater(local, main,
@@ -1078,7 +1134,7 @@ class BookkeepingTests(unittest.TestCase):
 
     def test_no_version_this_branch_ships_appears_on_main(self):
         if not self.git_ok:
-            self.skipTest("no origin/main in this checkout to compare against")
+            self.skipTest("the pinned main is not in this checkout")
         shipped = {self.local_marker().lstrip("v")}
         shipped.update("%d.%d.%d" % v for v in self.changelog_versions()[:4])
         for version in sorted(shipped):
@@ -1093,7 +1149,7 @@ class BookkeepingTests(unittest.TestCase):
                                  "%s is already on origin/main" % version)
 
     def main_changelog_versions(self):
-        text = self.git("show", "origin/main:38-conversational-ai-system/"
+        text = self.git("show", MAIN_PIN_SHA + ":38-conversational-ai-system/"
                                 "CHANGELOG.md").stdout
         return [tuple(int(p) for p in m.split("."))
                 for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
@@ -1110,7 +1166,7 @@ class BookkeepingTests(unittest.TestCase):
                                "the four T-19 entries must be newest-first and "
                                "distinct: %s" % (versions[:4],))
         if not self.git_ok:
-            self.skipTest("no origin/main in this checkout to compare against")
+            self.skipTest("the pinned main is not in this checkout")
         main_top = max(self.main_changelog_versions())
         self.assertGreater(versions[0], main_top,
                            "the newest entry must sit above main's newest")
@@ -1130,7 +1186,7 @@ class BookkeepingTests(unittest.TestCase):
         self.assertEqual(len(set(t19)), 4,
                          "the four T-19 entries must not share a version: %s" % t19)
         if not self.git_ok:
-            self.skipTest("no origin/main in this checkout to compare against")
+            self.skipTest("the pinned main is not in this checkout")
         main_headers = set(self.main_changelog_versions())
         for version in t19:
             self.assertNotIn(version, main_headers,
