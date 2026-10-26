@@ -76,7 +76,8 @@ and dispatch are the proven live legs.
    `blackceo-council convene --brief FILE --mode light|medium|heavy` (or
    `--sample` for the built-in sample decision). Convening with no `--mode`
    runs medium; that default is deliberate, so name the mode you
-   announced. Every size seats all nine advisors; pass
+   announced. Every mode seats all nine advisors; light simply runs them
+   in waves of 3, so no mode and no flag reduces the roster. Pass
    `--seat-ids id,id,...` only to name that panel explicitly. On the
    client's own Ollama pass `--ollama-plan 20` or `--ollama-plan 100`, and
    `--fallback-model ID` to name the OpenRouter model used when Ollama fails. Convening is
@@ -128,12 +129,15 @@ brief shape serve both.
 
 ## Modes
 
-Three council sizes, sized from the question and never from money:
+Three council sizes, sized from the question and never from money. Every
+mode seats the full nine-advisor council; the mode changes the rounds and
+the concurrency only, never how many seats are used:
 
-- **Light.** 3 best-fit seats, exactly 2 rounds, cap 50 provider requests.
-  No separate vote pass: the verdict is composed from the round-2 advisor
-  cards and recorded as `ratification: not_required`. A light question may
-  never stop early, and it never skips a round.
+- **Light.** All 9 seats, exactly 2 rounds, at most 3 provider calls in
+  parallel (waves of 3), cap 50 provider requests. No separate vote pass:
+  the verdict is composed from the round-2 advisor cards and recorded as
+  `ratification: not_required`. A light question may never stop early, and
+  it never skips a round.
 - **Medium.** All 9 seats, 1 to 4 rounds, cap 50 provider requests. After
   every completed round the chair checks the stop rule in
   references/protocol.md and stops when the panel has converged.
