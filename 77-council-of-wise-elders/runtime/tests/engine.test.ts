@@ -322,7 +322,7 @@ test('engine: resume refuses a council size instead of walking the older-modes p
     ...clone(sample.spec),
     session_id: sessionId,
     mode: 'light',
-    seat_ids: sample.spec.seat_ids.slice(0, 3),
+    seat_ids: [...sample.spec.seat_ids],
   };
   const brief: DecisionBrief = { ...clone(sample.brief), session_id: sessionId };
   spec.brief_sha256 = canonicalHash(brief);

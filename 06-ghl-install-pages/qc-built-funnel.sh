@@ -18,6 +18,12 @@
 #   1  = FAB-QC score < 8.5 OR a hard miss (build is NOT done)
 #   2  = evidence root not found / scorer unavailable
 #
+# Environment:
+#   QC_FUNNEL_LEGACY_EVIDENCE=1  opt-out for PRE-SEO-era evidence: a MISSING seoMeta
+#                                is then a WARN instead of a hard miss. Current builds
+#                                leave it unset (a missing/blank §2 SEO panel is a
+#                                HARD FAIL per SOP §2.07).
+#
 # The shared scorer is shared-utils/fab_qc.py; the rubric is
 # universal-sops/funnel-automation-build-quality-rubric.md.
 set -u
@@ -57,18 +63,28 @@ echo "evidence: $EVIDENCE"
 
 # ── §2/§3 transcript end-state pre-gate (SEO panel + founder author + media
 # folder discipline). Scores the build-recipe coverage the shared FAB scorer does
-# not: a saved seoMeta that is PRESENT-BUT-INVALID is a hard build miss (HALT);
-# missing seoMeta/media-folder receipts WARN (older evidence may predate them).
+# not: a saved seoMeta that is PRESENT-BUT-INVALID is a hard build miss (HALT), and
+# a MISSING seoMeta is a hard miss for a current build (the §2 panel is REQUIRED).
+# Fail-closed on the gate itself too: unreadable evidence JSON and a pre-gate that
+# cannot run (ghl_builder import failure) are hard misses, and the Python exit
+# status is propagated — an unproved gate is never a pass. Missing media-folder
+# receipts still WARN when no images were promised. QC_FUNNEL_LEGACY_EVIDENCE=1 is
+# the explicit, documented opt-out that keeps pre-SEO-era evidence at WARN.
+LEGACY_EVIDENCE="${QC_FUNNEL_LEGACY_EVIDENCE:-0}"
 SEO_MEDIA_FAIL=0
 _seo_out="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/seo-pregate.$$.out")"
-EVIDENCE="$EVIDENCE" TOOLS="$SKILL_DIR/tools" python3 - > "$_seo_out" 2>&1 <<'PY'
+EVIDENCE="$EVIDENCE" TOOLS="$SKILL_DIR/tools" LEGACY="$LEGACY_EVIDENCE" \
+  python3 - > "$_seo_out" 2>&1 <<'PY'
 import json, os, sys, glob
 sys.path.insert(0, os.environ["TOOLS"])
 root = os.environ["EVIDENCE"]
+legacy = os.environ.get("LEGACY") == "1"
 try:
     import ghl_builder as b
-except Exception as exc:                       # tooling missing → can't pre-gate
-    print(f"WARN ghl_builder import failed ({exc}); skipping SEO pre-gate"); sys.exit(0)
+except Exception as exc:                 # tooling broken → the gate cannot run at all
+    print(f"FAIL ghl_builder import failed ({exc}) — SEO pre-gate cannot run; "
+          "an unproved gate is not a pass")
+    sys.exit(3)
 
 def _walk(o):
     if isinstance(o, dict):
@@ -82,18 +98,21 @@ def _walk(o):
 
 seo_seen = 0
 seo_bad = []
+unreadable = []
 media_seen = 0
 for fp in glob.glob(os.path.join(root, "**", "*.json"), recursive=True):
     try:
         with open(fp) as f:
             raw = f.read()
-    except Exception:
+    except Exception as exc:
+        unreadable.append((os.path.relpath(fp, root), f"read error: {exc}"))
         continue
     if '"folderId"' in raw or '"name_prefix"' in raw or "ensure_funnel_media_folders" in raw:
         media_seen += 1
     try:
         data = json.loads(raw)
-    except Exception:
+    except Exception as exc:
+        unreadable.append((os.path.relpath(fp, root), f"invalid JSON: {exc}"))
         continue
     for meta in _walk(data):
         seo_seen += 1
@@ -101,13 +120,27 @@ for fp in glob.glob(os.path.join(root, "**", "*.json"), recursive=True):
         if not res.get("ok"):
             seo_bad.append((os.path.relpath(fp, root), res.get("reasons")))
 
+if unreadable:
+    for rel, why in unreadable[:5]:
+        print(f"FAIL unreadable evidence {rel}: {why}")
+    if len(unreadable) > 5:
+        print(f"FAIL unreadable evidence: {len(unreadable) - 5} more file(s) not shown")
+    sys.exit(2)                                # unreadable evidence → hard miss
 if seo_bad:
     for rel, reasons in seo_bad:
         print(f"FAIL seoMeta invalid in {rel}: {reasons}")
     sys.exit(2)                                # hard miss → caller fails the build
-print(f"PASS {seo_seen} seoMeta object(s) populated (author=founder, length/keyword/canonical/lang gates ok)"
-      if seo_seen else
-      "WARN no seoMeta found in evidence — §2 SEO panel end-state not demonstrated")
+if seo_seen:
+    print(f"PASS {seo_seen} seoMeta object(s) populated (author=founder, "
+          "length/keyword/canonical/lang gates ok)")
+elif legacy:
+    print("WARN no seoMeta found in evidence — §2 SEO panel end-state not "
+          "demonstrated (QC_FUNNEL_LEGACY_EVIDENCE=1, pre-SEO-era evidence)")
+else:
+    print("FAIL no seoMeta found in evidence — §2 SEO panel end-state not "
+          "demonstrated; a current build REQUIRES a populated seoMeta "
+          "(QC_FUNNEL_LEGACY_EVIDENCE=1 is only for pre-SEO-era evidence)")
+    sys.exit(2)                                # required metadata unproved → hard miss
 
 # ── §3/§4 image-delivery gate (FIX-XC-03c + FIX-IMG-09 iii) ──────────────────
 # A SUCCESS images/manifest.json (>=1 record with a real https cdn_url) means the
@@ -163,10 +196,17 @@ else:
           "WARN no media-folder receipt / image manifest found in evidence — "
           "§3 folder discipline not demonstrated (no images promised)")
 PY
+SEO_RC=$?
 SEO_PREGATE="$(cat "$_seo_out")"
 rm -f "$_seo_out" 2>/dev/null || true
 echo "$SEO_PREGATE"
 case "$SEO_PREGATE" in *FAIL*) SEO_MEDIA_FAIL=1 ;; esac
+if [ "$SEO_RC" -ne 0 ]; then
+  # An exception, an import failure or a python3 that never ran leaves no FAIL line —
+  # the status is the signal. The pre-gate not running is a hard miss, not a skip.
+  SEO_MEDIA_FAIL=1
+  echo "✗ SEO/media pre-gate exited $SEO_RC — hard miss (an unproved gate is not a pass)" >&2
+fi
 
 python3 "$SCORER" --evidence "$EVIDENCE" --kind funnel --gate $JSON
 rc=$?

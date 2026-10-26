@@ -133,6 +133,26 @@ def request_spec(request):
     return spec
 
 
+def allowed_sequences(spec) -> list:
+    """Every canonical section sequence a spec accepts: its own, plus each optional-children
+    expansion (5 -> 5A,5B,5C). ONE resolver, read by both the request builder and the
+    executor, so neither accepts a manuscript the other refuses."""
+    base = list(spec["sequence"])
+    out = [base]
+    for parent, child in ((spec.get("containment") or {}).get("child_sections") or {}).items():
+        if parent in base and child.get("ids"):
+            i = base.index(parent)
+            out.append(base[:i] + list(child["ids"]) + base[i + 1:])
+    return out
+
+
+def child_names(spec) -> dict:
+    """{child section id: name} for every optional child section (5A, 5B, 5C), from the spec's
+    containment block: a child has no entry of its own in `sections`."""
+    return {cid: name for block in (((spec.get("containment") or {}).get("child_sections")) or {}).values()
+            for cid, name in (block.get("names") or {}).items()}
+
+
 def section_spec(spec, section_id):
     """The spec's section entry for a request section id ("S02", "2" and "02" are the same)."""
     want = str(section_id or "").strip().upper().lstrip("S").lstrip("0")

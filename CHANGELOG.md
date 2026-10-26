@@ -1,3 +1,10 @@
+## [Unreleased]  -  2026-10-26  -  Skill 75 batch merge: 13 units from wave-2 and wave-3 consolidated into one branch
+
+- Lands the 13 accepted S75 units on one branch, `batch/s75-all-13`, instead of two separately-refreshing wave branches, because each wave refresh restarted the 18-22 minute gate suite while `main` moved and neither wave could land.
+- Units, each proven an ancestor of the branch tip: S75-T11 `71d8c1cf4`, S75-T16 `8d7487b2a`, S75-T17 `7512670a6`, S75-T26 `af6ff2af2`, S75-T36 `5fc1d31c3`, S75-T07 `e320b7d5f`, S75-T09 `cc2f9852d`, S75-T12 `5087ad89b`, S75-T15 `f944f0aee`, S75-T22 `a00c36c14`, S75-T28 `7c311bc76`, S75-T33 `67ed13601`, S75-T41 `58eddfb88`.
+- In plain English: thirteen pieces of Skill 75 that had already passed review but could not get merged are now in one package, with the review trail for each one intact and no history rewritten.
+- Skill 75 `skill-version.txt` and `SKILL.md` frontmatter both read `v2.9.116`, one patch above `main`'s `v2.9.115`, so G3 (skill content changed without a version change) is satisfied.
+- Risk level: LOW — merges of already-reviewed unit branches only; no hand edits inside unit code.
 ## [Unreleased]  -  2026-10-25  -  PBB-357 / T-04 repair round 2: record and proof repaired, verified external storage binding, child temp propagation and measured global capacity
 
 - Bumps Skill 38 to v2.0.151 with its own changelog entry, and re-lands `evidence/storage-and-resource-receipt.json` byte-identical (blob `e8cfbbad1f54d20233c60996bc155504d817885b`).
