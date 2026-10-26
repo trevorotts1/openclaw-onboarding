@@ -284,6 +284,14 @@ DEFAULT_CALLBACK_URL = "https://example.invalid/cb"
 #: The directions the createTask envelope must carry inside ``input``.
 REQUIRED_MUSIC_DIRECTIONS = ("custom_mode", "instrumental", "title", "lyrics",
                              "style", "negative_tags", "duration")
+#: EVERY key ``input`` may lawfully carry: the required directions, the lyrics
+#: alternative, the model value, the brief fields and the KIE param block.
+#: Allowed by LIST, so a key nobody named -- a display-metadata spelling the
+#: guard's shape rule never learned -- cannot legally ride out of the envelope.
+ENVELOPE_INPUT_KEYS = frozenset(REQUIRED_MUSIC_DIRECTIONS) | frozenset({
+    "model", "prompt", "vocal_gender", "style_weight", "weirdness_constraint",
+    "variety",
+})
 #: Keys that only ever existed on the retired FLAT contract: seeing one at the
 #: top level of an envelope proves a legacy payload, not a createTask one.
 LEGACY_FLAT_KEYS = ("lyrics", "custom_mode", "instrumental", "style",
@@ -601,6 +609,21 @@ def is_exempt(style_id):
 def suno_style_ids():
     """Every style that must use the recipe (the music_styles menu)."""
     return tuple(_MS.style_ids())
+
+
+def recipe_style_ids():
+    """Every id the recipe ACCEPTS: the D18 menu plus registered extra styles.
+
+    S75-T22 repair r3: ``music_styles.register_styles`` adopts an offered style
+    outside the three D18 records, and every id-based route (style_prompt,
+    spoken_target, section_hint, style) already resolves a registered id. The
+    recipe gates below must accept the same ids or a style can dispatch on the
+    catalogue seam and still be refused with UNKNOWN_STYLE. A registered style
+    is not thereby buildable: ``style_text`` still needs its own
+    ``references/prompt-templates/music/<id>.json`` (that data gap is a
+    separate, class-wide one).
+    """
+    return tuple(_MS.style_ids()) + tuple(_MS.extra_style_ids())
 
 
 def is_no_voice_tag(tag):
@@ -1308,7 +1331,7 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
     """
     if is_exempt(style_id):
         return {"exempt": True}
-    if style_id not in suno_style_ids():
+    if style_id not in recipe_style_ids():
         raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
                           "exempt; add it to music_styles" % (style_id,))
     warnings = []
@@ -1416,6 +1439,14 @@ def check_envelope(req):
     elif not lyrics and not prompt:
         errs.append("MISSING_DIRECTION: no lyrics source at all; input.lyrics "
                     "must carry the one approved sheet")
+    # -- every input key is one this contract names -------------------------
+    unknown = sorted(str(k) for k in inp if k not in ENVELOPE_INPUT_KEYS)
+    if unknown:
+        errs.append("UNKNOWN_INPUT_KEY: input carries %s outside the accepted "
+                    "createTask directions (%s); an unrecognised key is refused "
+                    "rather than sent"
+                    % (", ".join(unknown),
+                       ", ".join(sorted(ENVELOPE_INPUT_KEYS))))
     # -- required directions ------------------------------------------------
     missing = [f for f in REQUIRED_MUSIC_DIRECTIONS if f not in inp]
     if missing:
@@ -1547,7 +1578,7 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
         return
     if is_exempt(style_id):
         return
-    if style_id not in suno_style_ids():
+    if style_id not in recipe_style_ids():
         raise RecipeError("UNKNOWN_STYLE", repr(style_id))
     # FU-RNBFLOW-SONG: the style's own contract (real sung lyrics, rap tagged
     # as rap on the beat, plain spoken outro). No length -> "UNMEASURED:

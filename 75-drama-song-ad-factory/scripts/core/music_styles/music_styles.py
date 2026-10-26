@@ -249,7 +249,8 @@ RECIPES = {
                 "dense triplet hi-hat rolls", "wall of distorted guitars"),
             "vocal_delivery": (
                 "clear rhythmic rap moving into a pitched melodic hook; "
-                "emotional cracks carried by dynamics, not a copied voice"),
+                "emotional cracks carried by dynamics, not a copied voice, "
+                "dry upfront vocal"),
             "energy_map": (
                 "sparse under the spoken consequence, beat thins at the "
                 "costly admission, harmonic width after the character "
@@ -291,7 +292,8 @@ RECIPES = {
                 "unbroken maximal triplet density", "generic four-on-the-floor"),
             "vocal_delivery": (
                 "rhythmic, confident and intelligible lead; short emphatic "
-                "phrases and purposeful rests, not automatic triplet density"),
+                "phrases and purposeful rests, not automatic triplet "
+                "density, dry upfront vocal"),
             "energy_map": (
                 "bass and percussion articulate escalating pressure after "
                 "the spoken opening; bass drops out briefly for the "
@@ -333,7 +335,7 @@ RECIPES = {
             "vocal_delivery": (
                 "rhythmic, easy-to-follow rap with fewer crowded "
                 "subdivisions than trap, then a clearly sung or deliberately "
-                "chant-like hook"),
+                "chant-like hook, dry upfront vocal"),
             "energy_map": (
                 "serious spoken consequence even under an energetic sound; "
                 "action-focused rap builds pressure, the pre-hook clears "
@@ -363,11 +365,66 @@ def recipe_ids():
     return tuple(RECIPES)
 
 
+# ---- S75-T22 r3 / S75-CATALOG: registered extra styles -------------------
+#: Offered styles whose records live in their own modules (the T22 recipes,
+#: the T19 recipes and the T18 catalog) are adopted here through
+#: ``register_styles`` once at package import. They are NOT merged into
+#: ``STYLES`` / ``SECTION_HINTS``: those two tables stay the three D18
+#: records, byte- and shape-identical. The overlay is consulted only for an
+#: id that is none of the three, so every id-based route -- style_prompt,
+#: spoken_target, section_hint, style, default_delivery_map -- resolves a
+#: registered style.
+EXTRA_STYLES = {}
+EXTRA_SECTION_HINTS = {}
+
+
+def _norm_label(label):
+    """A label or id in the form the label index compares."""
+    return str(label).strip().lower()
+
+
+def register_styles(records, section_hints=None):
+    """Adopt extra offered records without touching the D18 tables.
+
+    Refuses an id or label that would shadow an existing record (one of the
+    three originals or an already-registered extra), so a registration can
+    never displace the owner's records. Returns the ids now registered, in
+    registration order.
+    """
+    if not isinstance(records, dict):
+        raise MusicStyleError("BAD_STYLE_RECORDS",
+                              "records must be a dict, got %r"
+                              % (type(records).__name__,))
+    registered_labels = {_norm_label(r["label"]) for r in STYLES.values()}
+    registered_labels |= {_norm_label(r["label"])
+                          for r in EXTRA_STYLES.values()}
+    for sid, rec in records.items():
+        key = str(sid).strip().lower()
+        if key in STYLES or key in RECIPES or key in EXTRA_STYLES or \
+                _norm_label(rec.get("label", "")) in registered_labels:
+            raise MusicStyleError(
+                "STYLE_SHADOWS_EXISTING",
+                "%r would shadow an existing style; existing records are "
+                "never replaced" % (sid,))
+        EXTRA_STYLES[key] = dict(rec)
+        registered_labels.add(_norm_label(rec.get("label", "")))
+    for sid, hint in (section_hints or {}).items():
+        EXTRA_SECTION_HINTS[str(sid).strip().lower()] = hint
+    return tuple(EXTRA_STYLES)
+
+
+def extra_style_ids():
+    """Ids registered through ``register_styles``, in registration order."""
+    return tuple(EXTRA_STYLES)
+
+
 def _record(style_id):
     """One style or recipe record by id (STYLES wins on a shared id)."""
     sid = _style_key(style_id)
     if sid in STYLES:
         return STYLES[sid]
+    if sid in EXTRA_STYLES:
+        return EXTRA_STYLES[sid]
     return RECIPES[sid]
 
 
@@ -552,8 +609,11 @@ SECTION_HINTS = {
 
 
 def style_ids():
-    """The three offered style ids, in the order the card lists them."""
-    return tuple(STYLES)
+    """The full offered menu of record: the three D18 styles, the S75-T20
+    rap recipes, and every S75-CATALOG/S75-T22-registered extra style, in
+    registration order after the frozen originals."""
+    return tuple(STYLES) + tuple(RECIPES) + tuple(EXTRA_STYLES)
+    # the three offered style ids, in the order the card lists them
 
 
 def _style_key(style):
@@ -565,14 +625,14 @@ def _style_key(style):
                               "style must be a non-empty string, got %r"
                               % (style,))
     key = style.strip().lower()
-    if key in STYLES or key in RECIPES:
+    if key in STYLES or key in RECIPES or key in EXTRA_STYLES:
         return key
-    for sid, rec in list(STYLES.items()) + list(RECIPES.items()):
-        if key == rec["label"].lower():
+    for sid, rec in list(STYLES.items()) + list(RECIPES.items()) \
+            + list(EXTRA_STYLES.items()):
+        if key == _norm_label(rec["label"]):
             return sid
     raise MusicStyleError("UNKNOWN_STYLE",
-                          "not one of the three D18 styles or the S75-T20 "
-                          "rap recipes: %r" % style)
+                          "not one of the eighteen catalog styles: %r" % style)
 
 
 def _length_key(length):
@@ -601,11 +661,11 @@ def _length_key(length):
 
 
 def style(style_id):
-    """Full record for one style or rap recipe. Raises on an unknown id."""
+    """Full record for one style or recipe. Raises on an unknown id."""
     sid = _style_key(style_id)
     if sid in RECIPES:
         return style_prompt_record(sid)
-    return dict(STYLES[sid])
+    return dict(_record(sid))
 
 
 def style_prompt_record(style_id):
@@ -650,7 +710,7 @@ def style_prompt(style_id, sung=None, sheet_text=None):
     if sid in RECIPES:
         text = _compile_traits(RECIPES[sid]["production_traits"])
     else:
-        text = STYLES[sid]["suno_style_prompt"]
+        text = _record(sid)["suno_style_prompt"]
     deliveries = sheet_deliveries(sheet_text) if sheet_text else set()
     if not deliveries:
         deliveries = set(_record(sid)["deliveries"])
@@ -664,7 +724,10 @@ def style_prompt(style_id, sung=None, sheet_text=None):
 
 def section_hint(style_id):
     """Advisory Suno section-tag string for one style."""
-    return SECTION_HINTS[_style_key(style_id)]
+    sid = _style_key(style_id)
+    if sid in SECTION_HINTS:
+        return SECTION_HINTS[sid]
+    return EXTRA_SECTION_HINTS[sid]        # registered extra
 
 
 def d15_range(length):
