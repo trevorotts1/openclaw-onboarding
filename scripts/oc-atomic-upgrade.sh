@@ -1247,7 +1247,26 @@ main() {
   done
   case "$MODE" in
     detect)  do_detect;  exit $? ;;
-    upgrade) do_upgrade; exit $? ;;
+    upgrade)
+      # Shared installation lease (one box, one update owner): --detect takes
+      # none, --upgrade takes it BEFORE do_upgrade and releases on any exit.
+      # A LIVE holder means REFUSED — no retry, no second writer.
+      _bul_self_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+      if [ -f "$_bul_self_dir/box-update-lock.sh" ]; then
+        # shellcheck source=/dev/null
+        . "$_bul_self_dir/box-update-lock.sh"
+        box_update_lock_acquire "${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}" "${RUN_ID:-oc-atomic-$$}" "oc-atomic-upgrade" "${OC_ROOT_DIR:-$HOME/.openclaw}"
+        _bulrc=$?
+        if [ "$_bulrc" != 0 ]; then
+          _err "shared installation lease held by a live updater — no retry, no second writer"
+          exit 2
+        fi
+        trap 'command -v box_update_lock_release >/dev/null 2>&1 && box_update_lock_release' EXIT
+      else
+        _err "box-update-lock.sh helper not found beside oc-atomic-upgrade.sh — lease cannot be taken"
+        exit 2
+      fi
+      do_upgrade; exit $? ;;
     *) _err "one of --detect or --upgrade is required"; exit 2 ;;
   esac
 }
