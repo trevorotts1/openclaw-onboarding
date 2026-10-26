@@ -37,7 +37,7 @@ import {
   type PermittedContextBrief,
 } from '../brief/permitted-brief.js';
 import { isCouncilSize, type CouncilSize } from '../contracts/modes.js';
-import { selectMode } from '../contracts/mode-select.js';
+import { selectMode } from './mode-select.js';
 import {
   SessionCloseService,
   SOFT_CLOSE_QUESTION,
