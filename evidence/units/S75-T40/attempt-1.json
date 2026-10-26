@@ -137,7 +137,9 @@
   },
   "push_proof": {
     "command": "git ls-remote origin refs/heads/s75/S75-T40-r1",
-    "output": "PENDING_AT_WRITE_TIME -- resolved and amended after the first push; see the amendment commit",
+    "output": "e6d58b412ca9ae2e6b7ee1b272e0dac7978553a8\trefs/heads/s75/S75-T40-r1",
+    "tested_head_reachable": "git merge-base --is-ancestor 5fd69aca95b4e041bd4f62f99d43b2abc0ba1791 origin/s75/S75-T40-r1 -> exit 0",
+    "amendment": "this proof was written after the first push and amended into the receipt commit; the amended tip is a child of e6d58b4 and changes only this receipt file, so the tree it certifies is still head 5fd69ac",
     "no_merge_to_main": true,
     "no_pull_request": true
   }
