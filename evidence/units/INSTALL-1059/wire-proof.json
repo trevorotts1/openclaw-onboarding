@@ -3,7 +3,7 @@
   "captured_at": "2026-10-25T21:41:11-04:00",
   "what_this_is": "the recorded COUNCIL_WIRE result for release 1.0.59 (canonical aggregate 3b0de855) plus a live health check of the Council endpoint taken at assembly time. The wire event is a past runtime observation and is copied, not replayed.",
   "lane_journal": {
-    "path": "<operator-home>/.claude-nine/projects/-Users-blackceomacmini/5c25f8e9-ece5-4f1d-9d02-0703b0e712cb/subagents/workflows/wf_181790b8-714/journal.jsonl",
+    "path": "<operator-home>/.claude-nine/projects/-<operator-home>/5c25f8e9-ece5-4f1d-9d02-0703b0e712cb/subagents/workflows/wf_181790b8-714/journal.jsonl",
     "sha256": "1002a7f7072caa4cf72d0857c0e2185a779be7c37b87d369be722f5ed216e3f2",
     "entry_type": "result",
     "result_verbatim": {

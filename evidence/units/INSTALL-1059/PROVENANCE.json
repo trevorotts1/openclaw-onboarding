@@ -1,7 +1,7 @@
 {
   "unit": "INSTALL-1059",
   "ledger_source_sha256": "90f21b2a2bcfec4bedd8bfebb6e90bbc10af7d88712e775c916070669154e03c",
-  "redacted_sha256": "21899fd5c90a0d136055a58e9bb1c60806c4532d8fd99e6d176bd2865c53e6f3",
+  "redacted_sha256": "da1b889fe7dcd70b8de653b2deba025eafcb08d8d564a22448f1a008ad7115a3",
   "redactions": [
     {
       "from": "<absolute operator home path>",
@@ -14,6 +14,12 @@
       "to": "<portable-drive>",
       "count": 0,
       "from_sha256": "0820c2e129fbaa44fc6733b5680045ef6cf2e4f187eb6b9c259d2e1b676d6f51"
+    },
+    {
+      "from": "<dash-encoded operator home path>",
+      "to": "-<operator-home>",
+      "count": 1,
+      "from_sha256": "856185961f7d8debf6fb52b3727edc78ecd4149bec8df75e9851f04340868eb7"
     }
   ],
   "copied_at": "2026-10-26T19:33:18Z"
