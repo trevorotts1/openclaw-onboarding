@@ -210,6 +210,40 @@ def test_status_mapping(tmp_path):
     assert "status" in out
 
 
+# finding 49: OCB_PROFILE used to reach `status` ONLY — open/click/type/
+# snapshot/start/stop silently acted on the default profile. Every verb must
+# carry the SELECTED profile, proved end-to-end through the argv stub with a
+# non-default value (so a hard-coded "openclaw" cannot pass).
+
+_PROFILE_VERB_ARGS = {
+    "status": [],
+    "start": [],
+    "open": ["https://app.convertandflow.com/"],
+    "snapshot": [],
+    "click": ["f1e12"],
+    "type": ["f1e12", "hello world"],
+    "frame-snapshot": ['iframe[src*="form-builder-v2"]'],
+    "stop": [],
+}
+
+
+@pytest.mark.parametrize("verb", ALL_VERBS)
+def test_selected_profile_passed_on_every_verb(tmp_path, verb):
+    env = _stub_env(tmp_path)
+    env["OCB_PROFILE"] = "ghl-selected"
+    proc = _run_adapter([verb] + _PROFILE_VERB_ARGS[verb], env)
+    assert proc.returncode == 0, f"{verb}: exit {proc.returncode}\n{proc.stderr}"
+    out = (proc.stdout + proc.stderr).splitlines()
+    assert "--browser-profile" in out, (
+        f"verb {verb} must pass --browser-profile; argv was {out}"
+    )
+    idx = out.index("--browser-profile")
+    assert out[idx + 1] == "ghl-selected", (
+        f"verb {verb} must pass the SELECTED profile 'ghl-selected', not the "
+        f"default; argv was {out}"
+    )
+
+
 def test_start_mapping(tmp_path):
     proc = _run_adapter(["start"], _stub_env(tmp_path))
     assert proc.returncode == 0
