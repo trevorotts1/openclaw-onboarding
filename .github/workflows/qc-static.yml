@@ -3502,6 +3502,28 @@ jobs:
           python3 -I 38-conversational-ai-system/tools/direct_fulfillment.py
           echo "✓ T-13 direct original fulfillment suite ran and passed"
 
+      # T-25 (PBB-698) — direct_fulfillment.py had ZERO production importers; the
+      # only reference was its own unittest module. This step names that suite BY
+      # EXPLICIT PATH (not left to a discovery loop that cannot reach tools/tests)
+      # and executes it; the production call site is tools/interactive_owner.py
+      # (record-basis / fulfill), which the step above's sibling suite covers.
+      - name: T-25 direct fulfillment suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_direct_fulfillment.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-25 direct fulfillment suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 "$t"
+          echo "✓ T-25 direct fulfillment suite ran and passed"
+
       - name: T-53 pb_send chokepoint suite (duplicate admit / suppressed / human fence) — explicit path
         shell: bash
         run: |
