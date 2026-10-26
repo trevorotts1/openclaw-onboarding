@@ -75,6 +75,7 @@ from outbound_gate import (  # noqa: E402
     ST_SEND_ERROR,
     ST_SENT,
     ST_UNKNOWN,
+    answer_duty_evaluator,
     dispatch,
 )
 from reconciliation import (  # noqa: E402
@@ -463,8 +464,16 @@ def fulfill(store: DurableStore, ledger: FulfillmentLedger,
             transport: Callable[[Dict[str, Any]], Dict[str, Any]],
             item: PromisedItem, basis: DeliveryBasis, *, worker_id: str,
             consent_evaluator: Optional[Callable[[Dict[str, Any]], Any]] = None,
+            answer_duty_log: Optional[str] = None,
+            answer_channel: Optional[str] = None,
             now: Optional[float] = None) -> FulfillmentOutcome:
-    """Send the original item once. Safe to call again: never double-sends."""
+    """Send the original item once. Safe to call again: never double-sends.
+
+    When the send answers a turn, pass the turn's conversational log as
+    ``answer_duty_log`` and the channel it will answer on: the T-26 clause (d)
+    duty gate then refuses a channel the log's last ``- duty:`` forbids. An
+    original-gift send answers nothing, so the gate stands down for it.
+    """
     item.validated()
     basis.validated()
     if item.item_id != basis.item_id or item.version != basis.version:
@@ -517,14 +526,21 @@ def fulfill(store: DurableStore, ledger: FulfillmentLedger,
 
     store.queue(action_id, now=now)
 
-    evaluator = _compose(_basis_evaluator(ledger, basis), consent_evaluator)
+    # Basis, then the T-26 clause (d) answer duty, then consent: every gate must
+    # pass. The duty gate only bites when the caller says this send answers a
+    # turn (answer_duty_log supplied).
+    evaluator = _compose(
+        _compose(_basis_evaluator(ledger, basis), answer_duty_evaluator()),
+        consent_evaluator)
     payload = {"item": item.identity(), "content_uri": item.content_uri,
                "destination": destination.as_record()}
 
     def sender(ctx: Dict[str, Any]) -> Dict[str, Any]:
         return transport({**ctx, **payload})
 
-    out = dispatch(store, evaluator, sender, action_id, worker_id, now=now)
+    out = dispatch(store, evaluator, sender, action_id, worker_id, now=now,
+                   context={"answer_duty_log": answer_duty_log,
+                            "channel": answer_channel})
 
     if out.status == ST_SENT:
         return outcome(

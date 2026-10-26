@@ -340,7 +340,11 @@ def leg4_comment_handoff(evidence_root: str) -> dict:
         "text": "just commented for the link, thanks!",
         "created_at": "2026-07-15T00:00:00Z",
     }]
-    summary = comment_reader.run(events, master_files_dir, dry_run=False)
+    # T-26: the reader refuses to run without the page's own ids (it cannot
+    # tell a page comment from a prospect's), so the driver supplies the one
+    # account identity this offline fixture stands for.
+    summary = comment_reader.run(events, master_files_dir, dry_run=False,
+                                 own_author_ids=["fixture-page-own"])
     handed = summary["handed_off"]
     base_ok = len(handed) == 1 and len(summary["skipped"]) == 0
     fenced_ok = False

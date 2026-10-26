@@ -6,6 +6,7 @@ The T-25 module's own test file had no call site anywhere in `.github/`, so its 
 - **Measured, not assumed.** The workflow parses after the edit — `yaml.safe_load` gives 1 job and 141 steps, and the new step name is present. Before the edit, a whole-`.github/` fixed-string census found zero occurrences of `test_publication_receipts`, `shared-utils/receipts` or `publication_receipts`, so the zero-call-site finding is measured rather than inferred.
 - **What this does NOT change.** The module's public functions still have no production caller outside `shared-utils/receipts/` and its own test — the same is true of every accepted peer module in that layer (`unit_status_core`, `social_bootstrap`, `discovery_aliases`, `winner_harvest`, `workflow_slots`, `tamper_guard`), so it is the layer's norm rather than a defect this task introduces. Wiring the module into a `qc-*.sh` runner remains outside this task's file ownership and is left for the T-25 follow-on.
 
+
 ## [2.0.177] - 2026-10-25 - chore(t-25): land T-25 on live main and re-cut the T-25 release numbers above the measured maximum (PBB-496, T-25 merge and renumber)
 
 Release bookkeeping for the merge that brings the T-25 candidate onto live `origin/main` and re-cuts its release numbers. This entry replaces an earlier one that claimed a ladder measurement it did not take: that entry asserted `2003` remote refs, a numeric max of `(2,0,123)` and that `2.0.125`..`2.0.128` were "free across all 2003 refs in both roles". Every one of those figures was stale or false when written, and each is re-derived below from a measurement taken in this run. A number already claimed by another ref names two changes with one number, which is the defect class this entry exists to close. No product file and no test file changes in this commit; only this entry and `skill-version.txt`, as CONTRIBUTING.md (Release Ceremony Batching) requires.
@@ -16,6 +17,7 @@ Release bookkeeping for the merge that brings the T-25 candidate onto live `orig
 - **The renumber.** `2.0.128` is already claimed twice over: **6** refs carry it in the unit marker role and **10** carry it as a unit heading, including `refs/remotes/origin/main` itself. The three earlier T-25 entries sat at `2.0.125`/`2.0.126`/`2.0.127`. All four are re-cut together to `2.0.174` < `2.0.175` < `2.0.176` < `2.0.177`, a block strictly above the measured maximum `2.0.149` and free in both roles across all 2040 refs. The gap above `2.0.149` is deliberate margin: several sibling branches are landing release numbers in the same window and a `+1` block races them. Each entry's own prose citing its own number was renumbered with it.
 - **Absence on `origin/main`, all three token forms, controls in the identical invocation shape.** A fixed-string census of every one of **13797** blobs of `b011d2cc2` finds **no** occurrence of `2.0.174`, `2.0.175`, `2.0.176` or `2.0.177` in bare, bracketed `[x.y.z]` or `v`-prefixed form — 12 tokens, all absent. The known-absent control `zzq_nonexistent_token_qq` is absent, and the known-present controls `[2.0.34]`, `v2.0.95` and `2.0.133` are all present, so the 12 absences are answers and not a dead instrument. Brackets stay mandatory for a heading claim — a bare `2.0.34` false-matches the presentations tree's `v22.0.34`, which is reproduced in the same run.
 - **Provisional.** `2.0.177` is a merge-time allocation, not a permanent reservation. One merge-time writer renumbers every landing candidate in sequence, so if another candidate lands first this number is cut again before merge.
+
 
 ## [2.0.176] - 2026-10-24 - fix(receipts): a parent id is compared by identity, and malformed plan input is a ReceiptError (PBB-119 T-25 repair 3, PBB-273)
 
@@ -29,6 +31,7 @@ Repair round for the independent QC verdict `qc4-t-25`, which FAILED candidate `
 - **Proof — suites, re-measured in this run.** `python3 -I shared-utils/receipts/test_publication_receipts.py` **38 tests OK**; `scripts/qc-pb-contracts.sh` **42 tests OK**; `scripts/qc-playbook-engine.sh` **44 tests OK `RESULT: PASS`**; `tools/tests/test_durable_processing.py` + `test_tenant_identity.py` + `test_collection_lock.py` + `test_pb_contracts.py` **116 passed, 1 skipped**. (An earlier revision of this entry read "117 tests OK" for that last suite; re-measuring shows 116 passed and 1 skipped, and the claim is corrected here.)
 - **Carried forward, not gating.** N5 (this file's `2.0.174` entry reads "its comments in the approved content order", broader than the code, which ranks `REVEAL_COMMENT` before `BONUS_COMMENT`) and N6 (`true_receipt` returns the first valid receipt in `PERSISTED_RECEIPT_KINDS` order, so a valid dispatch receipt wins over a valid ack naming a different object) are both recorded rather than changed: N5 is a wording fix to an entry this task does not own, and N6 is the documented "strongest publication evidence first" order with no clause break. C-F10 and C-F17 remain UNPROVEN package-wide, as the QC recorded.
 
+
 ## [2.0.175] - 2026-10-24 - fix(receipts): a decorated local id is still a local id, and an in-flight attempt is never resumed (PBB-119 T-25 repair)
 
 Two defects from the independent QC defect packet against candidate `d7ec43e34`, each pinned by a test that fails before the fix and passes after. Scope unchanged: `shared-utils/receipts/` only, plus this entry and `skill-version.txt` as CONTRIBUTING.md lines 76 and 116-117 require in the same commit. No live actions, no network code, no new storage, no new send path.
@@ -38,6 +41,7 @@ Two defects from the independent QC defect packet against candidate `d7ec43e34`,
 - **Proof — before/after, re-measured in this run.** The current 38-test file run against the module at `d7ec43e34` reports `Ran 38 tests ... FAILED (failures=6, errors=2)`, and both new proofs are among the reds: `test_a_decorated_local_id_echo_is_not_a_provider_receipt` and `test_an_in_flight_attempt_is_never_resumed`. Against this tree the same file reports `Ran 38 tests ... OK`, so the fixes move nothing else.
 - **Proof — suites, re-measured in this run.** `python3 -I shared-utils/receipts/test_publication_receipts.py` **38 tests OK**; `scripts/qc-pb-contracts.sh` 42 tests OK; `scripts/qc-playbook-engine.sh` 44 tests OK `RESULT: PASS`; the four `tools/tests` files above **116 passed, 1 skipped** (corrected from an earlier "117 tests OK").
 - **Not changed, recorded rather than hidden.** The two QC "nuance" notes and the `float()` timestamp coercion are unchanged, because each is either not a gate or is pinned behaviour of a clause the QC marked PROVEN: the reveal/bonus comment rank is the taught sequence from SPEC.md line 15, and `numeric-string timestamps accepted` is an inverse control in clause 7 that tightening would break. The `C-F10` and `C-F17` focused traces remain UNPROVEN package-wide — every `C-F01`..`F-20` row in ACCEPTANCE-MATRIX.md is UNVERIFIED — and no trace artifact for them is inside this task's file ownership.
+
 
 ## [2.0.174] - 2026-10-24 - feat(publication): true post/comment receipts, approved order and partial resume (PBB-119 T-25)
 
@@ -49,6 +53,7 @@ New shared module `shared-utils/receipts/publication_receipts.py` with its pinne
 - **No one-minute rule.** `reveal_timing_errors` refuses only a comment that precedes its post. There is no minimum gap anywhere in the module. Marked `ponytail:` beside the code, naming the ceiling (clock skew across two provider hosts) and the upgrade path (normalise to epoch at the adapter). Wiring the module into a `qc-*.sh` runner is outside this task's file ownership and is left for the T-25 follow-on.
 - **Proof — suites, re-measured in this run.** `python3 -I shared-utils/receipts/test_publication_receipts.py` **38 tests OK** (the suite grew to 38 across the two repair rounds above). Upstream regression unchanged: `scripts/qc-pb-contracts.sh` 42 tests OK, `scripts/qc-playbook-engine.sh` 44 tests OK `RESULT: PASS`, and `tools/tests/test_durable_processing.py` + `test_tenant_identity.py` + `test_collection_lock.py` + `test_pb_contracts.py` **116 passed, 1 skipped** (corrected from an earlier "117 tests OK"). No existing assertion was weakened.
 - **Ceiling named.** `reveal_timing_errors` takes numeric provider timestamps; a provider that reports local wall-clock strings must normalise at the adapter. Marked `ponytail:` beside the code.
+
 
 ## [2.0.150] - 2026-10-25 - fix(reminders): a provider admission never claims the final landed, a narrow refusal covers only the final it names, and a declined collection has its own stop (T-17 repair 2 + repair 4, PBB-272 / PBB-404)
 
@@ -69,6 +74,7 @@ Repair round for the qc2-t-17 FAIL verdict on `639557222` (defects D1, D2, D3). 
 - **Repair 4 - two shipped claims were corrected rather than left standing.** The count claim is fixed above. The before/after proof also cited `scratch/pb-skill38-20261024/lanes/PBB-272-repair/probe_d123.py`, a scratch path that is not in this repo and no longer exists on disk, so it proved nothing to anyone reading the changelog; it is replaced by a reproduction anyone can run from this repo alone (git archive the reviewed commit, swap the one module, run the suite), with the numbers re-measured rather than copied. The ACK control is likewise cited in-repo as a named test instead of as "the probe's" control.
 
 
+
 ## [2.0.143] - 2026-10-25 - fix(pb-contracts): a new approved cycle, account binding or content revision is a new placement, not a duplicate (T-24, PBB-459)
 
 `pb_contracts.py dispatch` identified a logical intent as `tenant_id::logical_intent_key`, a string the caller supplies. Every other placement field — the campaign cycle, the account, the account-binding revision, the content revision — sat outside the identity. The consequence was measured on live `origin/main` (`7477816dc`), not reasoned about: a **newly approved campaign cycle for the same placement collapsed as `DUPLICATE_LOGICAL_INTENT` and was never dispatched**. The retry leg was already correct and had to stay correct.
@@ -81,6 +87,44 @@ Repair round for the qc2-t-17 FAIL verdict on `639557222` (defects D1, D2, D3). 
 - **Suites, twice each, real rc, against a detached `origin/main` baseline at `b011d2cc2` (the main this branch merged).** Contract suite `test_pb_contracts.py`: candidate `Ran 46 tests … OK` rc 0 twice; baseline `Ran 42 tests … OK` rc 0 twice. `scripts/qc-pb-contracts.sh`: rc 0 twice on both trees (46 / 42 tests). Skill-38 tools discovery: candidate `Ran 410 tests` **4 failures** rc 1 twice; baseline `Ran 406 tests` **7 failures** rc 1 twice. The candidate's four are a **strict subset** of the baseline's seven — nothing new, and three cleared (`2.0.130` leg, monotonicity, shipped-above-main). An earlier cut of this entry said the two failing-name sets were byte-identical; that was measured against a pre-merge base and is corrected here to what the detached baseline shows. Every red is `test_interactive_owner.BookkeepingTests`, red on `origin/main` itself: `test_no_version_names_two_different_changes` and `test_no_version_this_branch_ships_appears_on_main` for `2.0.131`, `2.0.132`, `2.0.133` (that test greps the top four CHANGELOG numbers as bare strings, and main itself carries three of them). That window is owner decision #237 and is reported as numbers only, not scored here. Repo-root `tests/unit`: `Ran 1302 tests` **5 failures, 1 skipped** rc 1 twice, and the same five names on both trees (`test_execution_policy…test_managed_block_carries_four_categories`, `test_jev28_managed_instructions…test_canonical_policy_keeps_four_way_s5_4_distinction`, `test_owner_sends_hold…test_passing_gate_fires_control`, `test_skill23_build_nondestructive…test_existing_agent_is_not_repointed_to_a_new_sparse_tree`, `…test_no_duplicate_for_department_registered_under_another_key`) — its own baseline, nothing added. All eight `35-social-media-planner/scripts` suites rc 0 on both trees, twice. `bash scripts/bump-version.sh --check` rc 0 on both trees, twice.
 - **Mutation control.** With `idempotency_key()` reverted to the pre-fix `tenant_id::logical_intent_key`, the suite returned `rc 1` and exactly **1** failure — `test_a_new_approved_cycle_is_a_new_placement_not_a_duplicate` — with every retry and control case still passing. Restored from a copy, `sha256` of `pb_contracts.py` identical before and after (`2ff379022c3c889beeb8ead35a748186da8b210ec7a27d2603ee098fec6894e9`). A test that fails nothing when the fix is removed would have been decoration. The repair round (PBB-484) re-ran the matrix as 7 mutations against the suite: the `public_placement` guard put back, and `placement_id`, `account_id`, `account_binding_revision`, `content_revision`, `campaign_cycle_id` dropped from the identity one at a time — every one `rc 1`, each killed by the test naming that field, with `pb_contracts.py` restored byte-identical after every mutation.
 - **Bookkeeping.** Version allocated `v2.0.143` — **PROVISIONAL**, strictly above `origin/main`'s marker `v2.0.133` and held by this branch alone, enumerated NUMERICALLY as `major*1000000+minor*1000+patch` over `git for-each-ref --format='%(objectname) %(refname)' refs/remotes/origin` — a **bare prefix, no `/*` glob**: 2040 refs, 1984 distinct commits, 2040 readable versions, 0 unreadable, 0 unparsable, with the known-present control `origin/main` reading `v2.0.133` (numeric `2000133`) in the same run and exactly one ref holding `2.0.143` (this branch). The highest claim on `origin` is **`v2.0.149` on `pb/PBB-449/t-21-update`**, above this one, so the number stays PROVISIONAL and the single serial renumber writer at merge owns the final number. Absence on `origin/main` measured over every blob of that tree (13797 blobs, 12755 read back) in all three token forms, each with its own result: `'[2.0.143]'` **absent, 0 matches**, `'v2.0.143'` **absent, 0 matches**, bare `'2.0.143'` **absent, 0 matches**; present-token controls in the same run `'[2.0.133]'` present (2 matches) and `'v2.0.133'` present (3 matches), known-absent control `'[9.9.999]'` absent. Brackets mandatory: a bare number false-matches a neighbouring version as a substring.
+
+## [2.0.134] - 2026-10-25 - feat(t26-duty): the owner reads the answer duty its handoffs carry (T-26 clause (d), PBB-479)
+
+T-26's clause (d) is "distinct public/private duty". Skill 35 stamps
+`- duty: public_answer` on every synthetic comment handoff, and Skill 38 is the
+declared OWNER of the reply — but nothing here read the field. Measured against
+the first build: zero occurrences of `duty` under this skill, so the stamp was
+write-only and a public-answer turn could still have been answered with a private
+send. This adds the reader and the gate that make the two duties different
+permissions rather than two names.
+
+- **New `tools/answer_duty.py`.** `duty_from_log_text()` returns the duty of the
+  LAST `- duty:` line in a conversational log (append-only, so the last turn is
+  the current one) and `outbound_channel_allowed(duty, channel)` maps it to the
+  channels that may answer: `public_answer` permits only a public-comment answer
+  and REFUSES `dm` and `sms`; `private_answer` (opened by a real GHL
+  Conversations inbound event, never by a comment) permits `dm` and not the
+  public thread. An absent, unrecognised or misspelt duty permits nothing —
+  fail closed, never permissive. A trailing annotation still parses, so logs
+  written by the earlier build stay readable.
+- **Tests** `tools/tests/test_answer_duty.py` (new, 7 tests + 4 subtests): the
+  read path, the annotation tolerance, "last turn wins", the public permission
+  as a positive and a negative, the private permission as the inverse, and the
+  fail-closed cases. Mutation controls: making the gate return `True` turns 6 of
+  them red plus the cross-skill contract test in skill 35; anchoring the regex to
+  end-of-line turns the annotation case red; reordering the channel table stays
+  green. `python3 -I tools/answer_duty.py` self-check: `OK 11 PASS`.
+- **The writer→owner contract is pinned from the writer's side.** Skill 35's
+  `test_the_stamped_duty_is_the_one_the_owner_enforces` drives this module on a
+  log skill 35 actually wrote, so changing the written duty VALUE turns it red.
+- **Bookkeeping.** Version `v2.0.134`, allocated at landing time: `origin/main`
+  had advanced to `v2.0.133` before this branch merged it in, so the first
+  allocation (`v2.0.106`, taken when main was `v2.0.105`) was renumbered here,
+  not asserted. Absence on `origin/main` was measured with both token forms,
+  bracketed and `v`-prefixed, each returning rc 1, against the known-present
+  control `[2.0.133]` returning rc 0 in this file. Required by the G3 gate
+  because a file under this skill's tree changed.
+
 ## [2.0.133] - 2026-10-25 - fix(cleanup): an absence proof is a measurement, and a claim of absence for a path still present never dispatches (T-46 repair 4, PBB-455)
 
 PBB-434's review of `ec3933772` returned FAIL for one reason: a hollow pin on a load-bearing acceptance clause. Its mutation pass over the pins that commit adds ran green at baseline (59 tests OK), killed seven of eight mutations, and left **M2 "absence proof always absent" SURVIVING at rc 0, 59 tests OK**. The suite asserted only the absent polarity (`{'lexists': False, 'absent': True}`), never the present one, so a proof that always claims absence was indistinguishable from a real one. The acceptance clause says "immediate eligible dispatch with preserved content, exact external path and actual absence proof", so a pin that cannot tell those apart is hollow on the clause itself.
