@@ -1,5 +1,5 @@
 ---
-version: 1.0.60
+version: 1.0.61
 name: council-of-wise-elders
 description: Convene a source-grounded Council of Wise Elders for business or
   personal decisions, test alternatives, explain disagreements, produce one
@@ -12,9 +12,12 @@ description: Convene a source-grounded Council of Wise Elders for business or
 # Council of Wise Elders (Skill 77)
 
 Nine fixed advisory seats review a consequential decision from distinct,
-source-grounded perspectives. The council runs in three sizes: light (3
-seats, exactly 2 rounds), medium (all 9 seats, 1 to 4 rounds) and heavy
-(all 9 seats, 3 to 10 rounds). The council produces one recommendation with
+source-grounded perspectives. Every mode seats the full nine-advisor
+council; the mode changes how many rounds the elders run and how many may
+work at once, never how many seats are used: light (exactly 2 rounds, at
+most 3 provider calls in parallel, in waves of 3), medium (up to 4 rounds)
+and heavy (up to 10 rounds). A light session still shows all nine seats.
+The council produces one recommendation with
 its conditions, the strongest objection, and the next useful step. A council
 result is advice. It is never, by itself, permission to act.
 
@@ -182,10 +185,12 @@ counsel artifact.
    - Does it lock the client in? A lock-in is never a light question.
    - Do values pull against each other? Competing values need the debate.
    There is no money, cost or spending check, and none is ever applied.
-   Then announce the size in ONE line and carry on: "Light question: 3
-   advisors, 2 rounds. Say 'full council' for all nine." (or "Medium
-   question: 9 advisors, up to 4 rounds." / "Heavy question: 9 advisors,
-   up to 10 rounds."). A client override always wins: "quick answer" means
+   Then announce the size in ONE line and carry on: "Light question: all
+   nine advisors, 2 rounds, 3 at a time. Say 'full council' for the full
+   debate." (or "Medium question: 9 advisors, up to 4 rounds." / "Heavy
+   question: 9 advisors, up to 10 rounds."). Every size seats all nine
+   advisors; the size changes the rounds and the parallelism only. A
+   client override always wins: "quick answer" means
    light, "full council" means heavy.
 3. Retrieve permitted context before asking for facts: the brief the
    elders read is assembled FIRST by the one shared permitted-context
@@ -258,9 +263,8 @@ counsel artifact.
    `blackceo-council convene --brief FILE --mode light|medium|heavy` (or
    `--sample` for the harmless built-in sample decision). Convening with no
    `--mode` runs medium; that default is deliberate, so name the mode you
-   announced. For a light
-   question pass the three chosen seats with `--seat-ids id,id,id`; when it
-   is omitted the driver picks the three best-fit seats itself. On the
+   announced. Every mode seats all nine advisors; light simply runs them in
+   waves of 3, so no mode and no flag reduces the roster. On the
    client's own Ollama pass `--ollama-plan 20` or `--ollama-plan 100`, and
    `--fallback-model ID` to name the OpenRouter model used when Ollama
    fails. Convening is the approval: the client chose the model, so there
@@ -284,9 +288,11 @@ counsel artifact.
    simulate a session.
 5. Use the exact approved roster and the mode you announced. Keep openings
    isolated, challenges evidence-based, ratification bounded, and all
-   source claims honest. The provider-request cap is light 50, medium 50,
-   heavy 100 per session; the four older modes keep 50. Nothing else is
-   capped.
+   source claims honest. Every mode seats all nine advisors, so a light
+   session shows all nine seats. The provider-request cap is light 50,
+   medium 50, heavy 100 per session; light also runs at most 3 provider
+   calls at a time, in waves of 3; the four older modes keep 50. Nothing
+   else is capped.
 6. Present one recommendation, the strongest objection, critical
    conditions, and the next useful step. Link to the durable validated
    result. When fresh facts were used, keep "From the elder's books" and
