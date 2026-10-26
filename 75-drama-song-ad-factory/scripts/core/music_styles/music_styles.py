@@ -609,11 +609,14 @@ SECTION_HINTS = {
 
 
 def style_ids():
-    """The full offered menu of record: the three D18 styles, the S75-T20
-    rap recipes, and every S75-CATALOG/S75-T22-registered extra style, in
-    registration order after the frozen originals."""
-    return tuple(STYLES) + tuple(RECIPES) + tuple(EXTRA_STYLES)
-    # the three offered style ids, in the order the card lists them
+    """The three offered style ids, in the order the card lists them.
+
+    S75-CATALOG's eighteen-style catalog of record lives one level up: the
+    ``music_styles`` package exports ``style_ids()`` as the full menu
+    (D18 three + rap recipes + registered extras). This leaf keeps the D18
+    card contract its own tests pin.
+    """
+    return tuple(STYLES)
 
 
 def _style_key(style):

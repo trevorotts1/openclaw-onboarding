@@ -58,10 +58,15 @@ from .music_styles import (
     spoken_target,
     spoken_targets,
     style,
-    style_ids,
     style_prompt,
     style_prompt_record,
 )
+
+def style_ids():
+    """The full offered menu of record: the D18 three, the S75-T20 rap
+    recipes, then the S75-CATALOG/S75-T22 registered extras, in that order."""
+    from .music_styles import EXTRA_STYLES, RECIPES, STYLES
+    return tuple(STYLES) + tuple(RECIPES) + tuple(EXTRA_STYLES)
 
 #: S75-CATALOG (classes T20 r2 / T22 r3 / T23 conformance): every catalog
 #: addition is a registered offered style. The 15 additions come from the

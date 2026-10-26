@@ -110,44 +110,6 @@ _MUSIC_SENTENCE = {
     "soul-ballad": "slow, heartfelt singing; builds to a big emotional chorus.",
     "rnb-flow": "rhythmic rap verses, then a smooth sung hook you remember.",
     "soul-rise": "starts slow and sad, then lifts into an upbeat, hopeful groove.",
-    #: S75-CATALOG: the fifteen approved additions, byte-exact from
-    #: MUSIC-AND-VIDEO-UX.md section 2 (also carried by catalog.CATALOG).
-    "acoustic-pop":
-        "warm acoustic guitar, clear storytelling, and a catchy sung chorus.",
-    "folk-storytelling":
-        "intimate, detail-rich storytelling over simple acoustic instruments.",
-    "country-pop":
-        "plainspoken country storytelling with a polished, memorable pop chorus.",
-    "melodic-rap":
-        "emotional rap that moves between rhythmic lines and a tuneful hook.",
-    "trap-rap":
-        "punchy rap over deep bass and crisp rolling hi-hats, with a strong hook.",
-    "pop-rap":
-        "upbeat, easy-to-follow rap with a bright, catchy pop hook.",
-    "pop-rock":
-        "driving guitars and drums with a big, singable chorus.",
-    "reggaeton":
-        "a rolling dembow groove, rhythmic vocals, and a danceable chorus.",
-    "cinematic-orchestral-song":
-        ("a dramatic song with sweeping strings and a powerful film-style "
-         "chorus; the words stay clear."),
-    "musical-theater":
-        "character-driven singing and dialogue that build into a dramatic stage-style payoff.",
-    "contemporary-gospel":
-        ("faith-centered singing with piano, organ and a powerful choir "
-         "building to an uplifting chorus."),
-    "urban-gospel":
-        ("faith-centered singing over R&B and hip-hop grooves with choir "
-         "responses and a gospel hook."),
-    "alternative-rnb":
-        ("intimate, spacious R&B with inventive textures, flexible grooves, "
-         "and an expressive vocal."),
-    "afro-soul":
-        ("soulful vocals over warm, organic instruments and interlocking "
-         "African-influenced rhythms."),
-    "country-rap":
-        ("country storytelling over rock power and hip-hop rhythm, with "
-         "gritty singing, rap verses and a big chorus."),
 }
 
 

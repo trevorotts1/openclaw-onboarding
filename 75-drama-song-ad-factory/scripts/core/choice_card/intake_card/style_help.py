@@ -52,11 +52,7 @@ def style_ids(catalog=None):
     """Catalog order, never a second list."""
     if catalog is not None:
         return tuple(catalog)
-    try:
-        from music_styles import music_styles as MS
-        return tuple(MS.style_ids())
-    except (ImportError, AttributeError):
-        return tuple(_catalog())
+    return tuple(_catalog())
 
 
 def _card_sentence(style_id):

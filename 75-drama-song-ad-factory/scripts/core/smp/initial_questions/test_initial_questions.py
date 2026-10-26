@@ -313,7 +313,7 @@ class VocabDriftTests(unittest.TestCase):
     def test_menus_match_sibling_vocabularies(self):
         try:
             from choice_card.looks import LOOK_LABELS, LOOK_ORDER
-            from music_styles import music_styles as MS
+            import music_styles as MS          # the 18-style catalog of record
             from voice_velvet_echo.velvet_voiceover import voice_options
         except ImportError as exc:
             self.skipTest("sibling vocab not in this tree (%s)" % exc)
