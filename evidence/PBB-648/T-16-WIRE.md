@@ -1,7 +1,9 @@
 # T-16 WIRE — mobile-first capture and the ONE logical SMS email ask
 
 Unit **T-16** · lane **PBB-648** · branch `pb/PBB-648/t-16-wire`
-Base `origin/main` = `3d7135664326eeb7857252afcad5506c1381c3d5` · head `fef417b35c93ed3d4db2531cdf66c6e26534a5c8`
+Base `origin/main` = `3d7135664326eeb7857252afcad5506c1381c3d5` · wiring head `fef417b35c93ed3d4db2531cdf66c6e26534a5c8`
+· report head `e74b43ee2d43a88a2d77bba224e4a73775adfec3` (the final branch head is one commit further; the
+`control/qc/T-16.<head>.json` receipt names the exact sha).
 Verdict: **WIRED** — evidence only. This is **not** an approval; it needs an independent QC lane (see §7).
 
 ---
@@ -148,11 +150,14 @@ Nothing above is self-approved. Every PASS is a command + a printed result; ever
 
 ## 6. Staleness — true counts
 
-Measured with `git rev-list --left-right --count origin/main...HEAD` in this worktree:
+Measured with `git rev-list --left-right --count origin/main...HEAD` in this worktree, `origin/main`
+re-fetched immediately before the measurement:
 
-- `origin/main` = **`3d7135664326eeb7857252afcad5506c1381c3d5`**
-- branch head = **`fef417b35c93ed3d4db2531cdf66c6e26534a5c8`**
-- **ahead 2, behind 0** (`0 2`)
+- `origin/main` = **`3d7135664326eeb7857252afcad5506c1381c3d5`** (unchanged before and after the push;
+  `git ls-remote --heads origin main` agrees)
+- **behind 0**; ahead **3** at `e74b43ee2d43a88a2d77bba224e4a73775adfec3` (wiring `244656d38`, merge
+  `fef417b35`, report `e74b43ee2`). This report-file edit then commits as one further commit, so the
+  final branch head is ahead **4** / behind **0** against `3d7135664`.
 - origin/main advanced from `de85ac2f0` to `3d7135664` while this lane worked (T-25 batch merge). It
   was folded in as a **real merge commit** `fef417b35`; `qc-static.yml` and the host file merged with
   **no conflicts** and no resolutions to record. Post-merge suites were re-run (§7).
