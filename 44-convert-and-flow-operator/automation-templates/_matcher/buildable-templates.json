@@ -1,0 +1,86 @@
+{
+  "generated_at": "2026-10-27T14:33:09.070948Z",
+  "count": 16,
+  "templates": [
+    {
+      "key": "launch-a/launch-a-prelaunch-window",
+      "path": "launch-a/prelaunch-window.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-a/launch-a-reminder-15m",
+      "path": "launch-a/07-reminder-15m.json",
+      "kind": "single_message"
+    },
+    {
+      "key": "launch-a/launch-a-reminder-1d",
+      "path": "launch-a/04-reminder-1d.json",
+      "kind": "single_message"
+    },
+    {
+      "key": "launch-a/launch-a-reminder-1h",
+      "path": "launch-a/06-reminder-1h.json",
+      "kind": "single_message"
+    },
+    {
+      "key": "launch-a/launch-a-reminder-1wk",
+      "path": "launch-a/02-reminder-1wk.json",
+      "kind": "single_message"
+    },
+    {
+      "key": "launch-a/launch-a-reminder-3d",
+      "path": "launch-a/03-reminder-3d.json",
+      "kind": "single_message"
+    },
+    {
+      "key": "launch-a/launch-a-reminder-confirm",
+      "path": "launch-a/01-confirm.json",
+      "kind": "single_message"
+    },
+    {
+      "key": "launch-a/launch-a-reminder-live",
+      "path": "launch-a/08-reminder-live.json",
+      "kind": "single_message"
+    },
+    {
+      "key": "launch-a/launch-a-reminder-morning",
+      "path": "launch-a/05-reminder-morning.json",
+      "kind": "single_message"
+    },
+    {
+      "key": "launch-a/launch-a-replay-and-no-show",
+      "path": "launch-a/09-replay-and-no-show.json",
+      "kind": "single_message"
+    },
+    {
+      "key": "launch-a/launch-optin-register-login",
+      "path": "launch-a/optin-register-login.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-ai/customer-replied-conversation-ai",
+      "path": "launch-ai/customer-replied-conversation-ai.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-b/launch-post-sale-purchase",
+      "path": "launch-b/post-sale-purchase.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-b/upsell-downsell-branch",
+      "path": "launch-b/upsell-downsell-branch.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-c/failed-payment-recovery",
+      "path": "launch-c/failed-payment-recovery.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-c/launch-win-back-closed-no-purchase",
+      "path": "launch-c/win-back-closed-no-purchase.json",
+      "kind": "sequence_stack"
+    }
+  ]
+}

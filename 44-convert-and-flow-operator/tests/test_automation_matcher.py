@@ -159,9 +159,11 @@ def test_committed_index_is_portable():
 
 def test_index_round_trips(catalog):
     cat = am.Catalog.from_index(_INDEX_PATH)
-    # 28 library templates + 23 launch-* family templates = 51 indexed (the
-    # drift guard counts all 51 on disk; Catalog.load stays 28 by design).
-    assert len(cat.templates) == 51
+    # 28 editorial + 21 launch-* templates = 49 indexed. The launch-* dirs hold
+    # two non-template data files (launch-c/automation-build.schema.json and
+    # launch-text/text-sets.json), excluded here exactly as apply_template_schema.py
+    # and test_template_graphs.py exclude them.
+    assert len(cat.templates) == 49
     sp = cat.templates[0]["sourcePath"]
     assert os.path.isabs(sp) and os.path.isfile(sp)
 
