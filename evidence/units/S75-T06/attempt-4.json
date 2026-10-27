@@ -7,6 +7,15 @@
   "base_sha": "b731551e38f8868b283a0d067af9a5ecfa9b279a",
   "head_sha": "18280f93c16cc38007d85d8193ad66cf770b05ec",
   "written_at_utc": "2026-10-25T17:24:55Z",
+  "head_sha_resolved_at_utc": "2026-10-25T17:29:00Z",
+  "head_sha_resolution": {
+    "remote": "origin (trevorotts1/openclaw-onboarding)",
+    "ref": "refs/heads/s75/S75-T06-r11",
+    "ls_remote_sha": "18280f93c16cc38007d85d8193ad66cf770b05ec",
+    "local_head_at_resolution": "18280f93c16cc38007d85d8193ad66cf770b05ec",
+    "proved": true,
+    "resolution_note": "Recorded, not inferred: ls_remote_sha and local_head_at_resolution are the same 40-hex, both read at head_sha_resolved_at_utc. The remote read and the local read agree, so the push is proved against the one ref named here and nothing is claimed about any other ref. Kept beside head_sha so the resolution carries its own evidence instead of resting on the prose note below; it approves nothing."
+  },
   "note": "The literal placeholder PENDING_AT_WRITE_TIME was written before the repair commit existed. Per this round's artefact contract it was to be replaced with the resolved 40-hex in a follow-up commit after the push. That follow-up never landed in round 11: git log --all -- evidence/units/S75-T06/ returned one commit only (18280f93c), and it still carried the placeholder. Repaired here: head_sha now records the resolved 40-hex of the round-11 repair commit, and the follow-up commit carrying this correction is the commit the promise named. head_sha is the candidate code commit, not this bookkeeping commit.",
   "independent_checker": {
     "checker": "qc-conform-S75-T06",
