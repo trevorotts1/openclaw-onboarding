@@ -87,5 +87,18 @@
   ],
   "lexicon": {"before": 1328, "added": 49, "after": 1377},
   "dependencies": ["openclaw-onboarding:75-drama-song-ad-factory/scripts/core/character_bible/cast_writer.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/real_content.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/real_content_names.txt.gz", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/story_first_contracts.py"],
-  "dependencies_source": "Import graph of the head's own changed files, read from git show at 89f1d616227eff8b09f4c01bcb585bec12f14325 and graded head 18280f93c16cc38007d85d8193ad66cf770b05ec: cast_writer.py imports story_first_contracts and real_content; real_content.py imports only stdlib (gzip, os, re, unicodedata) and opens real_content_names.txt.gz; test_cast_writer_s75_t06.py imports cast_writer and reads cast_writer.py/real_content.py. Verdict of record S75-T06.verdict.round11.json changed_files_vs_base names the same four files. Ledger S75-T06 needs=[] and owned_paths=[] ('not recorded') established none. No external/service dependency: dispatch is injected (attempt-4 'dispatch_contract': 'dispatch(prompt: dict) -> dict; injected only, no provider transport in the module')."
+  "dependencies_source": "Import graph of the head's own changed files, read from git show at 89f1d616227eff8b09f4c01bcb585bec12f14325 and graded head 18280f93c16cc38007d85d8193ad66cf770b05ec: cast_writer.py imports story_first_contracts and real_content; real_content.py imports only stdlib (gzip, os, re, unicodedata) and opens real_content_names.txt.gz; test_cast_writer_s75_t06.py imports cast_writer and reads cast_writer.py/real_content.py. Verdict of record S75-T06.verdict.round11.json changed_files_vs_base names the same four files. Ledger S75-T06 needs=[] and owned_paths=[] ('not recorded') established none. No external/service dependency: dispatch is injected (attempt-4 'dispatch_contract': 'dispatch(prompt: dict) -> dict; injected only, no provider transport in the module').",
+  "prior_attempts": {
+    "expected_by_contract": "attempt-1..attempt-3 present in evidence/units/S75-T06/",
+    "actually_found": [],
+    "sources_listed": [
+      "git clone of origin at base b731551e3: evidence/units/ does not exist",
+      "shared working tree <PATH>/openclaw-onboarding: evidence/units/ does not exist (evidence/ has only unit-agnostic log files and S75X-W*/D02/W* dirs)",
+      "all 40+ remote branches of origin: no branch contains any path under evidence/units/",
+      "repo-wide search for a directory named S75-T06 on disk: only <PATH>/scratchpads/S75-T06-r8 (a checkout, no evidence dir)",
+      "repo-wide search for attempt-*.json under any S75 path: only evidence/units/S75-T11/attempt-2.json in an unrelated lane"
+    ],
+    "sources_note": "A miss is stated against the source it was searched in, never as one bare negative, so a reader can re-run any single line above. Operator home paths are redacted to <PATH> as they are elsewhere in this file.",
+    "digests_unchanged": "not applicable: attempt-1, attempt-2 and attempt-3 are absent in every source above, so there are no bytes to change. Nothing was overwritten. Index 4 was used to match the orchestrator's stated prior state; index 1 was the next genuinely free index by listing."
+  }
 }
