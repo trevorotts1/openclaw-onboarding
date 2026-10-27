@@ -1695,6 +1695,11 @@ def _pace_into_music(run_dir, method):
     already exists and are always returned for whoever builds it. No blueprint
     means no seam is ever invented (the rule pace_order itself keeps), so the
     request is left alone.
+
+    S75X-W2-U2 QC: the music command (song_choices._load_request) reads the
+    order ONLY as ``pace_plan`` and the hook plan ONLY as ``hook_plan``, so the
+    blueprint order and hook seed are also filled under those two keys --
+    fill-only: a pace_plan / hook_plan the request already carries is kept.
     """
     blueprint = _read_json(Path(run_dir) / "creative" / "blueprint.json")
     mp = _core_mod("method_plan")
@@ -1719,6 +1724,11 @@ def _pace_into_music(run_dir, method):
             merged["true_at_beat"] = out["true_at_beat"]
         if out["turns"]:
             merged["turns"] = out["turns"]
+        if not (merged.get("pace_plan") or merged.get("_pace_plan")):
+            merged["pace_plan"] = order
+        seed = mi.get("hook_plan_seed")
+        if seed and not (merged.get("hook_plan") or merged.get("_hook_plan")):
+            merged["hook_plan"] = seed
         try:
             _write_json(req, merged)
             out["written_into_request"] = True

@@ -49,13 +49,25 @@ def test_storyboard_review_input_from_blueprint():
         os.makedirs(os.path.join(run, "creative"))
         with open(os.path.join(run, "creative", "blueprint.json"), "w") as f:
             json.dump(_bp(), f)
-        filled = AR._method_contracts(run, {})
+        by_id = [{"shot_id": "SB-07", "song_start": 60.0, "song_end": 62.0}]
+        filled = AR._method_contracts(run, {}, by_id)
         assert filled.get("SB-07", {}).get("necessity"), filled
-        kept = AR._method_contracts(run, {"SB-07": {"necessity": "operator kept"}})
+        kept = AR._method_contracts(run, {"SB-07": {"necessity": "operator kept"}}, by_id)
         assert kept["SB-07"]["necessity"] == "operator kept"
         assert kept["SB-07"].get("treatment") == filled["SB-07"].get("treatment")
+        # REAL shot ids never reuse blueprint beat ids: each shot takes the
+        # beat whose window holds its song_start, and no orphan beat id is added.
+        beats = _bp()["story_beats"]
+        shots = [{"shot_id": "s%d" % (i + 1), "song_start": float(b["start_s"]) + 0.5,
+                  "song_end": float(b["start_s"]) + 2.0} for i, b in enumerate(beats)]
+        real = AR._method_contracts(run, {}, shots)
+        assert sorted(real) == sorted(s["shot_id"] for s in shots), sorted(real)
+        for s, b in zip(shots, beats):
+            assert real[s["shot_id"]]["necessity"] == b["why_it_belongs"], s
+        # no shots: nothing is invented
+        assert AR._method_contracts(run, {}) == {}
         # no blueprint on disk: the review sees the run's contracts unchanged
-        assert AR._method_contracts("/nonexistent-run", {"a": {"x": 1}}) == {"a": {"x": 1}}
+        assert AR._method_contracts("/nonexistent-run", {"a": {"x": 1}}, shots) == {"a": {"x": 1}}
 
 
 def test_factory_wires_seeds_turns_and_receipt():
@@ -77,6 +89,26 @@ def test_factory_wires_seeds_turns_and_receipt():
         on_disk = json.load(open(os.path.join(run, "storyboard",
                                               "shot-seeds.json")))
         assert seeds["written"] and len(on_disk["seeds"]) == seeds["seeds"]
+        # the music command reads the order as pace_plan and the hook seed as
+        # hook_plan (song_choices._load_request) -- both reach it, gate-clean
+        from song_choices import song_choices as SC
+        from music_qc import pace_change as PC
+        with open(os.path.join(run, "music", "req.json"), "w") as f:
+            json.dump({"style_id": "rnb-flow",
+                       "sheet_text": "[Verse | spoken]\nline one"}, f)
+        F._pace_into_music(run, METHOD)
+        spec = SC._load_request(os.path.join(run, "music", "req.json"))
+        mi = MP.music_request_input(_bp(), METHOD)
+        assert spec["pace_plan"] == mi["pace_order"]
+        assert spec["hook_plan"] == mi["hook_plan_seed"]
+        assert PC.check_pace_plan(spec["pace_plan"]) == []
+        # fill-only: an approved pace_plan / hook_plan on the request is kept
+        with open(os.path.join(run, "music", "req.json"), "w") as f:
+            json.dump({"pace_plan": {"k": 1}, "hook_plan": {"true_at_beat": "k"}}, f)
+        F._pace_into_music(run, METHOD)
+        kept = json.load(open(os.path.join(run, "music", "req.json")))
+        assert kept["pace_plan"] == {"k": 1}
+        assert kept["hook_plan"] == {"true_at_beat": "k"}
         block = F._method_plan_block(run, METHOD)
         assert block["production_map"]["turns"]
         assert block["storyboard_input"]["cards"]
