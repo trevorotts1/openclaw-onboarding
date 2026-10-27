@@ -222,6 +222,11 @@ elif playbooks_checked == 0 and not legacy and not failures:
 else:
     DISCOVERY = "OK"
 
+# An absent playbooks dir is "nothing to check", not a fault: a bare CI checkout
+# has no operator master-files dir, and main exits 0 there. A BROKEN discovery
+# (WF_FAULT) still fails closed below.
+NOTHING_TO_CHECK = DISCOVERY == "UNINITIALISED" and not WF_FAULT
+
 resolved_wf = str(Path(WF_DIR).resolve()) if WF_DIR else ""
 migration_command = "bash scripts/33-migrate-legacy-playbooks.sh %s --write" % (resolved_wf or "<ABSOLUTE_WORKFLOWS_DIR>")
 verdict = "FAIL" if failures else ("UNINITIALISED" if DISCOVERY == "UNINITIALISED" else ("NEEDS-MIGRATION" if legacy else "PASS"))
@@ -265,11 +270,19 @@ else:
             print("discovery cause: directory %s contains no candidate playbooks" % wf)
         else:
             print("discovery cause: absent directory %s" % (WF_DIR or "<unset>"))
-        print("RESULT: UNINITIALISED - 0 playbooks examined; nothing was verified on this box; this is NOT a PASS.")
+        if NOTHING_TO_CHECK:
+            print("RESULT: NOTHING-TO-CHECK - no conversation-workflows dir is configured on this box; 0 playbooks examined, so nothing was verified here. This is not a pass, and deliberately NOT a failure: a bare CI checkout has no master-files dir to check. Pass --dir to verify a real directory.")
+        else:
+            print("RESULT: UNINITIALISED - 0 playbooks examined; nothing was verified on this box; this is NOT a PASS.")
     elif legacy:
         print("RESULT: NEEDS-MIGRATION - %d legacy playbook(s) need migration; nothing else failed. They are not PASS." % len(legacy))
     else:
         print("RESULT: PASS - tool gating wired and every checked phase is in-vocabulary with escalate intact.")
 
-sys.exit(1 if failures else (2 if DISCOVERY == "UNINITIALISED" else 0))
+# An absent playbooks dir is "nothing to check", not a fault: CI runs these gates
+# on a bare checkout with no operator master-files dir, and main exits 0 there.
+# A BROKEN discovery (WF_FAULT: explicit --dir missing, unreadable pointer or dir)
+# still fails closed, because that is a real fault rather than an empty box.
+NOTHING_TO_CHECK = DISCOVERY == "UNINITIALISED" and not WF_FAULT
+sys.exit(1 if failures else (0 if NOTHING_TO_CHECK else (2 if DISCOVERY == "UNINITIALISED" else 0)))
 PYEOF
