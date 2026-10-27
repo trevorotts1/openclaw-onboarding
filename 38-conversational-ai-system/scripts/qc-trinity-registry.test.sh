@@ -318,6 +318,175 @@ else
   printf '%s\n' "$out" | sed 's/^/        /'
 fi
 
+# SLUG_SCOPED: --slug restricts validation to the requested slug(s); a
+# complete requested slug must not inherit a neighbour's problems.
+MIXED="$TMP/mixed/conversation-workflows"
+mkdir -p "$MIXED"
+cat > "$MIXED/registry.md" <<'EOF'
+# Conversation Workflows - Registry
+
+## Active workflows
+
+- keep-me: Requested slug that is complete
+- broken-other: Registered but nobody wrote the files
+EOF
+
+declared_playbook "Keep me" "$MIXED/keep-me.md"
+printf '# keep-me prompt\n' > "$MIXED/keep-me--build-with-ai-prompt.md"
+write_contract "$MIXED/keep-me.md"
+
+out="$(bash "$VALIDATOR" --dir "$MIXED" --slug keep-me 2>&1)"
+status=$?
+if [ "$status" -eq 0 ] && printf '%s' "$out" | grep -q '\[OK\]   keep-me'; then
+  ok "SLUG_SCOPED: complete requested slug exits 0"
+else
+  bad "SLUG_SCOPED: expected exit 0 for keep-me, got $status"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+if printf '%s' "$out" | grep -q 'broken-other'; then
+  bad "SLUG_SCOPED: filtered run leaked unrequested slug broken-other"
+else
+  ok "SLUG_SCOPED: filtered run ignores other workflows' problems"
+fi
+
+# The same fixture unfiltered must still fail on the broken neighbour, so the
+# pass above is scoping, not blindness.
+out="$(bash "$VALIDATOR" --dir "$MIXED" 2>&1)"
+status=$?
+if [ "$status" -eq 1 ] && printf '%s' "$out" | grep -q 'broken-other'; then
+  ok "SLUG_SCOPED: unfiltered run still fails on the broken neighbour"
+else
+  bad "SLUG_SCOPED: unfiltered run expected exit 1 naming broken-other, got $status"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+# Repeated --slug accumulates rather than overwriting.
+out="$(bash "$VALIDATOR" --dir "$MIXED" --slug keep-me --slug broken-other 2>&1)"
+status=$?
+if [ "$status" -eq 1 ] && printf '%s' "$out" | grep -q 'broken-other'; then
+  ok "SLUG_SCOPED: repeated --slug accumulates requested slugs"
+else
+  bad "SLUG_SCOPED: repeated --slug expected exit 1 naming broken-other, got $status"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+# --slug with no value is a usage error, not a validation result.
+out="$(bash "$VALIDATOR" --dir "$C" --slug 2>&1)"
+status=$?
+if [ "$status" -eq 2 ] && printf '%s' "$out" | grep -q 'Missing value for --slug'; then
+  ok "SLUG_NO_VALUE: dangling --slug exits 2"
+else
+  bad "SLUG_NO_VALUE: expected exit 2 and Missing value message, got $status"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+# The JSON branch of the missing-slug diagnostic.
+out="$(bash "$VALIDATOR" --dir "$C" --slug ghost-workflow --json 2>&1)"
+status=$?
+verdict="$(printf '%s' "$out" | python3 -c "import json,sys; print(json.load(sys.stdin)['verdict'])" 2>/dev/null)"
+missing="$(printf '%s' "$out" | python3 -c "import json,sys; print(','.join(json.load(sys.stdin)['missing_slugs']))" 2>/dev/null)"
+if [ "$status" -eq 4 ] && [ "$verdict" = "SLUG_NOT_REGISTERED" ] && [ "$missing" = "ghost-workflow" ]; then
+  ok "SLUG_MISSING JSON: exit 4, verdict SLUG_NOT_REGISTERED, names the slug"
+else
+  bad "SLUG_MISSING JSON: expected exit 4/SLUG_NOT_REGISTERED/ghost-workflow, got $status/$verdict/$missing"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+# HASH: a contract generated from the playbook passes; replacing the playbook
+# with a DIFFERENT but still parseable structure must fail on the hash compare
+# itself, not on a parse exception.
+HASHFX="$TMP/hash/conversation-workflows"
+mkdir -p "$HASHFX"
+cat > "$HASHFX/registry.md" <<'EOF'
+# Conversation Workflows - Registry
+
+## Active workflows
+
+- hash-check: Workflow whose contract tracks playbook structure
+EOF
+
+declared_playbook "Hash check" "$HASHFX/hash-check.md"
+printf '# hash-check prompt\n' > "$HASHFX/hash-check--build-with-ai-prompt.md"
+write_contract "$HASHFX/hash-check.md"
+
+out="$(bash "$VALIDATOR" --dir "$HASHFX" --slug hash-check 2>&1)"
+status=$?
+if [ "$status" -eq 0 ]; then
+  ok "HASH_MATCH: contract whose hash matches the playbook passes"
+else
+  bad "HASH_MATCH: expected exit 0, got $status"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+cat > "$HASHFX/hash-check.md" <<'EOF'
+# Hash check
+
+declares
+tools-used: update_tags
+exits-used: talk-to-human
+pipeline: sales-pipeline
+stage-map: qualified: STAGE_QUALIFIED
+
+## Phase 1 - Opening differently
+Say hello.
+
+## Exit rules
+
+exit-when-tag: talk-to-human, action: handoff
+EOF
+
+out="$(bash "$VALIDATOR" --dir "$HASHFX" --slug hash-check 2>&1)"
+status=$?
+if [ "$status" -eq 1 ] \
+  && printf '%s' "$out" | grep -q 'playbook_structure_hash does not match' \
+  && printf '%s' "$out" | grep -q 'hash-check'; then
+  ok "HASH_MISMATCH: differing-but-parseable playbook fails naming the slug"
+else
+  bad "HASH_MISMATCH: expected exit 1 with mismatch message naming hash-check, got $status"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+# Malformed contract payloads must not pass the fourth leg.
+BADFX="$TMP/bad-contract/conversation-workflows"
+mkdir -p "$BADFX"
+cp "$C/registry.md" "$BADFX/registry.md"
+cp "$C/pricing-inquiry.md" "$BADFX/pricing-inquiry.md"
+cp "$C/pricing-inquiry--build-with-ai-prompt.md" "$BADFX/pricing-inquiry--build-with-ai-prompt.md"
+
+printf '{not json\n' > "$BADFX/pricing-inquiry--build-contract.json"
+out="$(bash "$VALIDATOR" --dir "$BADFX" --slug pricing-inquiry 2>&1)"
+status=$?
+if [ "$status" -eq 1 ] && printf '%s' "$out" | grep -q 'build contract is unreadable JSON'; then
+  ok "CONTRACT_UNREADABLE: malformed JSON fails"
+else
+  bad "CONTRACT_UNREADABLE: expected exit 1 and unreadable-JSON message, got $status"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+printf '{"playbook_id": "pricing-inquiry"}\n' > "$BADFX/pricing-inquiry--build-contract.json"
+out="$(bash "$VALIDATOR" --dir "$BADFX" --slug pricing-inquiry 2>&1)"
+status=$?
+if [ "$status" -eq 1 ] && printf '%s' "$out" | grep -q 'missing playbook_structure_hash'; then
+  ok "CONTRACT_NO_HASH: contract without playbook_structure_hash fails"
+else
+  bad "CONTRACT_NO_HASH: expected exit 1 and missing-hash message, got $status"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+# Engine unavailable is a hard fail, never a silent pass on leg 4.
+NOENG="$TMP/no-engine"
+mkdir -p "$NOENG/scripts"
+cp "$VALIDATOR" "$NOENG/scripts/qc-trinity-registry.sh"
+out="$(cd "$NOENG" && bash scripts/qc-trinity-registry.sh --dir "$C" --slug pricing-inquiry 2>&1)"
+status=$?
+if [ "$status" -eq 1 ] && printf '%s' "$out" | grep -q 'cannot be verified'; then
+  ok "ENGINE_UNAVAILABLE: missing playbook_engine fails leg 4"
+else
+  bad "ENGINE_UNAVAILABLE: expected exit 1 and cannot-be-verified message, got $status"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
 echo ""
 echo "qc-trinity-registry tests: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
