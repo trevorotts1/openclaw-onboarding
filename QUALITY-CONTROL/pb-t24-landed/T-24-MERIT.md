@@ -9,7 +9,7 @@ Everything below was run by me, at the real head, with exit codes captured.
 ## 1. Both failures reproduced
 
 The live receipt is
-`<PATH>/Purple-Billboard-Client-System-Build/qc/T-24.25576e460a964b37d39523d50ed21e2e287c130c.json`.
+`<PATH>/loop-control/Purple-Billboard-Client-System-Build/qc/T-24.25576e460a964b37d39523d50ed21e2e287c130c.json`.
 
 The two records carrying a non-zero `exit_code` are:
 
