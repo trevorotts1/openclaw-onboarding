@@ -50,7 +50,7 @@
       "note": "identical 23-test red set exists at base ecfe474 with no T39 code present (see tests_run entry 3); every red module is green when run standalone (entry 4); zero red test names mention hygiene or facet"
     },
     {
-      "cmd": "cd /tmp/t39-base-probe/75-drama-song-ad-factory/scripts/core && python3 -I -m unittest discover -s . -p 'test_*.py' -t .   # detached worktree at ecfe474 (pre-T39)",
+      "cmd": "cd <TMP>/t39-base-probe/75-drama-song-ad-factory/scripts/core && python3 -I -m unittest discover -s . -p 'test_*.py' -t .   # detached worktree at ecfe474 (pre-T39)",
       "exit": 1,
       "status": "RED_PRE_EXISTING",
       "result": "Ran 1181 tests in 101.780s - FAILED (failures=11, errors=12); red test-name set is byte-identical to the main run (23 names, set difference empty both ways)",

@@ -13,7 +13,7 @@
   "verify_lane": "<PATH>/skill75-repair/lanes/S75-T39-verify-lane",
   "independence": "Verifier did not write the unit. All checks below were re-run by the verifier from scratch in a fresh detached worktree at origin/s75/S75-T39-r1; the builder's claims were re-checked, never copied. The verifier-authored probe and mutant battery are the independent checker named in the row's evidence column.",
   "row_text": "S75-A39 / S75-T39 | No global cleanup wave: each repo event starts its facet; class-specific ownership/consumer/approval proofs precede removal and compact receipts remain outside disposable paths. | `evidence/units/S75-T39/attempt-<verified-generation>.json`; exact candidate/base/dependencies and independent checker; repository required gates when applicable. | UNVERIFIED |",
-  "row_text_source": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/ACCEPTANCE-MATRIX.md line 47, read verbatim by the verifier",
+  "row_text_source": "<PATH>/Downloads/S75_Story_First_Full_Cast_Build_20261024/ACCEPTANCE-MATRIX.md line 47, read verbatim by the verifier",
   "provenance": {
     "origin_remote": "https://github.com/trevorotts1/openclaw-onboarding.git",
     "fetch_before_checks": true,
@@ -49,7 +49,7 @@
       "role": "whole-tree discovery at head"
     },
     {
-      "cmd": "cd /tmp/t39-verify-base/75-drama-song-ad-factory/scripts/core && python3 -I -m unittest discover -s . -p 'test_*.py' -t .   (verifier's own detached worktree at base ecfe474)",
+      "cmd": "cd <TMP>/t39-verify-base/75-drama-song-ad-factory/scripts/core && python3 -I -m unittest discover -s . -p 'test_*.py' -t .   (verifier's own detached worktree at base ecfe474)",
       "exit": 1,
       "result": "Ran 1181 tests in 108.276s - FAILED (failures=11, errors=12)",
       "verdict": "RED_PRE_EXISTING",
@@ -69,7 +69,7 @@
       "role": "localises the whole-tree red to discovery-order/fixture interference, not module defects"
     },
     {
-      "cmd": "python3 -I /tmp/t39-verify-probe/probe_s75_t39_independent.py   (verifier-authored, 57 checks; NOT the builder's tests)",
+      "cmd": "python3 -I <TMP>/t39-verify-probe/probe_s75_t39_independent.py   (verifier-authored, 57 checks; NOT the builder's tests)",
       "exit": 0,
       "result": "total=57 pass=57 fail=0",
       "verdict": "PASS",
@@ -125,7 +125,7 @@
     "Single interpreter only (python3.14.7 on Darwin 25.3.0); no other Python versions or platforms.",
     "Other units' state, the loop-control ledger, and loop-control state files were not read for judgement and not written (single-writer rule). No prior lane, worktree, branch or receipt was deleted or modified."
   ],
-  "temp_cleanup": "verifier's base worktree /tmp/t39-verify-base, probe /tmp/t39-verify-probe, mutants /tmp/t39-mutants, and run logs /tmp/t39-verify-*-discover.txt are verifier-created scratch; the base worktree registration is removed after this run",
+  "temp_cleanup": "verifier's base worktree <TMP>/t39-verify-base, probe <TMP>/t39-verify-probe, mutants <TMP>/t39-mutants, and run logs <TMP>/t39-verify-*-discover.txt are verifier-created scratch; the base worktree registration is removed after this run",
   "authored_at": "2026-10-26",
   "verifier_lane": "<PATH>/skill75-repair/lanes/S75-T39-verify-lane",
   "branch": "s75/S75-T39-r1"
