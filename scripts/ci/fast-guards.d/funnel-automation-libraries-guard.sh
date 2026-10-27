@@ -41,6 +41,7 @@ python3 -m pytest 06-ghl-install-pages/tests/test_funnel_matcher.py \
 python3 tests/unit/fab-qc.test.py
 python3 tests/unit/fab-artifact.test.py
 python3 tests/unit/persona-crosswalk.test.py
+python3 tests/unit/funnel-automation-library-drift-guard.test.py
 )
 ( # step: Page-QC v2 (U25) + comms-conformance (U117) suites + mutation-proof guards
 set -e
