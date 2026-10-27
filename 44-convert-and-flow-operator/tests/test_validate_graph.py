@@ -23,7 +23,7 @@ def run_graph(name):
     ("orphan_node.json", 1, "FAIL", "ORPHAN"),
     ("unwired_branch.json", 1, "FAIL", "UNWIRED_BRANCH"),
     ("dangling_next.json", 1, "FAIL", "DANGLING"),
-    ("unparseable.json", 2, "UNVERIFIED", None),
+    ("unparseable.badjson", 2, "UNVERIFIED", None),
     ("cross_branch.json", 1, "FAIL", "CROSS_BRANCH"),
     ("unterminated.json", 1, "FAIL", "UNTERMINATED"),
     ("cycle_illegal.json", 1, "FAIL", "CYCLE"),
@@ -35,7 +35,7 @@ def test_graph(fixture, code, verdict, kind):
     report = json.loads(result.stdout)
     assert result.returncode == code
     assert report["verdict"] == verdict
-    if fixture in ("linear_ok.json", "unparseable.json", "loop_legal.json"):
+    if fixture in ("linear_ok.json", "unparseable.badjson", "loop_legal.json"):
         assert report["failures"] == []
     if kind:
         failures = [f for f in report["failures"] if f["kind"] == kind]
@@ -58,7 +58,7 @@ def test_graph(fixture, code, verdict, kind):
 
 
 def test_unverified_is_never_pass():
-    report = json.loads(run_graph("unparseable.json").stdout)
+    report = json.loads(run_graph("unparseable.badjson").stdout)
     assert report["verdict"] != "PASS"
 
 
