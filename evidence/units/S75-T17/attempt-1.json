@@ -21,7 +21,7 @@
   "base": {
     "sha": "13f86c3153703703072462dcc0d807f856ae553b",
     "ref": "origin/main",
-    "note": "The integration tree the acceptance-relevant checks were run against, in a detached worktree at /Users/blackceomacmini/skill75-repair/lanes/S75-T17-verify. The unit delta itself starts at ecfe474cde4e62e7a4ab814818263bd1420c9607 (the tip of s75/S75-T16-r1, the declared input dependency)."
+    "note": "The integration tree the acceptance-relevant checks were run against, in a detached worktree at <PATH>/skill75-repair/lanes/S75-T17-verify. The unit delta itself starts at ecfe474cde4e62e7a4ab814818263bd1420c9607 (the tip of s75/S75-T16-r1, the declared input dependency)."
   },
   "head": {
     "sha": "7512670a672430f328212be0a78c1a6556501629",
@@ -62,7 +62,7 @@
   },
   "tests_run": {
     "interpreter": "python3 -I (isolated), 3.14.7",
-    "location": "/Users/blackceomacmini/skill75-repair/lanes/S75-T17-verify (detached at origin/main 13f86c3153703703072462dcc0d807f856ae553b)",
+    "location": "<PATH>/skill75-repair/lanes/S75-T17-verify (detached at origin/main 13f86c3153703703072462dcc0d807f856ae553b)",
     "owned_test_file": {
       "command": "cd 75-drama-song-ad-factory/scripts/core/character_library && python3 -I test_migration_plan_s75_t17.py",
       "rc": 0,
