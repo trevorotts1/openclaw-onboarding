@@ -26,6 +26,13 @@ GOOD = (FIXTURES / "good-playbook.md").read_text(encoding="utf-8")
 BROKEN = (FIXTURES / "broken-playbook.md").read_text(encoding="utf-8")
 LOG = (FIXTURES / "sample-log.md").read_text(encoding="utf-8")
 
+# GOOD plus a tags-used block: one applies entry and one reads entry.
+GOOD_TAGS = GOOD.replace(
+    "fields-used: contact.email, ZHC_budget_range\n",
+    "fields-used: contact.email, ZHC_budget_range\n"
+    "tags-used: ZHC-appointment-booked (applies), webinar-registered (reads)\n",
+)
+
 
 class TestParse(unittest.TestCase):
     def setUp(self):
@@ -708,6 +715,83 @@ class TestConversationLintRegressions(unittest.TestCase):
             engine.parse_playbook(self.fixture(kpis=kpis))
         )
         self.assertFalse(any("conversational KPI" in d for d in defects))
+
+
+class TestTagsUsed(unittest.TestCase):
+    """tags-used grammar, hashing and build-contract output."""
+
+    def test_compliant_block_parses_with_modes(self):
+        parsed = engine.parse_playbook(GOOD_TAGS)
+        self.assertEqual(
+            parsed["declares"]["tags-used"],
+            ["ZHC-appointment-booked (applies)", "webinar-registered (reads)"],
+        )
+        self.assertEqual(
+            engine.parse_tag_entry(parsed["declares"]["tags-used"][0]),
+            ("ZHC-appointment-booked", "applies"),
+        )
+
+    def test_compliant_block_has_no_tags_defect(self):
+        defects = engine.validate_playbook(engine.parse_playbook(GOOD_TAGS))
+        self.assertFalse(
+            [d for d in defects if "tags-used" in d],
+            defects,
+        )
+
+    def test_entry_without_mode_is_a_defect_naming_it(self):
+        text = GOOD_TAGS.replace("webinar-registered (reads)", "webinar-registered")
+        defects = engine.validate_playbook(engine.parse_playbook(text))
+        matching = [d for d in defects if "tags-used entry" in d]
+        self.assertEqual(len(matching), 1, defects)
+        self.assertIn("webinar-registered", matching[0])
+        self.assertIn("(applies|reads)", matching[0])
+
+    def test_mode_is_a_structural_hash_input(self):
+        applies = GOOD_TAGS
+        reads = GOOD_TAGS.replace(
+            "ZHC-appointment-booked (applies)", "ZHC-appointment-booked (reads)"
+        )
+        self.assertNotEqual(
+            engine.structure_hash(engine.parse_playbook(applies)),
+            engine.structure_hash(engine.parse_playbook(reads)),
+        )
+
+    def test_hash_is_order_insensitive_for_tag_entries(self):
+        swapped = GOOD_TAGS.replace(
+            "tags-used: ZHC-appointment-booked (applies), webinar-registered (reads)",
+            "tags-used: webinar-registered (reads), ZHC-appointment-booked (applies)",
+        )
+        self.assertEqual(
+            engine.structure_hash(engine.parse_playbook(GOOD_TAGS)),
+            engine.structure_hash(engine.parse_playbook(swapped)),
+        )
+
+    def test_contract_carries_modes_and_acceptance_checks(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD_TAGS), "good-tags", "good-tags.md"
+        )
+        self.assertEqual(
+            contract["tags"]["applies"], ["ZHC-appointment-booked"]
+        )
+        self.assertEqual(contract["tags"]["reads"], ["webinar-registered"])
+        self.assertIn("tags_exist", contract["acceptance"]["must_pass"])
+        self.assertIn(
+            "applies_tags_present_as_nodes", contract["acceptance"]["must_pass"]
+        )
+
+    def test_reads_only_contract_does_not_demand_applied_nodes(self):
+        text = GOOD_TAGS.replace(
+            "ZHC-appointment-booked (applies), webinar-registered (reads)",
+            "webinar-registered (reads)",
+        )
+        contract = engine.write_build_contract(
+            engine.parse_playbook(text), "reads-only", "reads-only.md"
+        )
+        self.assertEqual(contract["tags"]["applies"], [])
+        self.assertIn("tags_exist", contract["acceptance"]["must_pass"])
+        self.assertNotIn(
+            "applies_tags_present_as_nodes", contract["acceptance"]["must_pass"]
+        )
 
 
 if __name__ == "__main__":

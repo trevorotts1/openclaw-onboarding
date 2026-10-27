@@ -373,9 +373,10 @@ if wf and wf.is_dir() and not WF_FAULT:
             declares_applied_tags = True
             if known_tag_ids is None:
                 failures.append(
-                    "REQUIRES_OPERATOR: %s: declares tags-used (applies) but the caf tags export is missing. Export it to %s (or %s). Produce it with 44-convert-and-flow-operator/tools/export_deps.py (caf tags export)."
+                    "REQUIRES_OPERATOR: %s: declares tags-used (applies) but the caf tags export is missing; cannot verify %s. Export it to %s (or %s). Produce it with 44-convert-and-flow-operator/tools/export_deps.py (caf tags export)."
                     % (
                         f.name,
+                        ", ".join(sorted(applies_tags)),
                         os.path.join(MFD_FROM_WF, ".caf-tags-export.json"),
                         os.path.join(WF_DIR, ".caf-tags-export.json"),
                     )
