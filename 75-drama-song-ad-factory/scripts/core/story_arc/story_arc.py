@@ -188,7 +188,7 @@ def validate_story(story, purpose=None):
     # never instead of it. A record that declares no presentation is judged
     # exactly as before.
     if declares_presentation(story):
-        for _e in check_presentation_order(story)["errors"]:
+        for _e in check_presentation_order(story, purp)["errors"]:
             if _e not in errors:
                 errors.append(_e)
 
@@ -1094,11 +1094,13 @@ _VIEW_BEAT_KEYS = ("beat", "story_beat_id", "beat_id")
 def declares_presentation(story):
     """True when the record declares how the beats are presented (a
     ``presentation`` block or a ``presentation_order`` list). A record with
-    neither is judged by the canonical contract alone."""
+    neither is judged by the canonical contract alone. A declaration of the
+    wrong shape still counts, so ``check_presentation_order`` refuses it rather
+    than the record silently passing as canonical."""
     if not isinstance(story, dict):
         return False
-    return (isinstance(story.get("presentation"), dict)
-            or isinstance(story.get("presentation_order"), list))
+    return (story.get("presentation") is not None
+            or story.get("presentation_order") is not None)
 
 def _view_ids(view):
     """Ordered beat ids from a view: bare ids, or rows carrying a beat key.
@@ -1119,8 +1121,11 @@ def _presentation_block(story):
     """The declared presentation. ``presentation_order`` is also accepted flat on
     the record; the three VIEWS are read only from inside ``presentation``,
     because a top-level ``script`` or ``shots`` means something else here and
-    must never be mistaken for one."""
-    blk = dict(story.get("presentation")) if isinstance(story.get("presentation"), dict) else {}
+    must never be mistaken for one. A bare-list ``presentation`` is its order,
+    as ``build_manifest`` reads it."""
+    pres = story.get("presentation")
+    blk = (dict(pres) if isinstance(pres, dict)
+           else {"order": pres} if pres is not None else {})
     if "presentation_order" in story and "order" not in blk:
         blk["order"] = story["presentation_order"]
     return blk
@@ -1150,7 +1155,7 @@ def _manifest_order(presentation):
             "presentation.order must carry the twelve canonical beats, once each")
     return ids
 
-def check_presentation_order(story):
+def check_presentation_order(story, purpose=None):
     """Reconcile a declared presentation order with the canonical contract.
 
     Runs only on a record that declares presentation content. It NEVER relaxes
@@ -1166,6 +1171,11 @@ def check_presentation_order(story):
       the twelve and is not the opening itself;
     * every canonical beat must state its five parts (``action``, ``change``,
       ``understood``, ``question``, ``carrier``).
+    * the presentation, the views and the five-part rows use the record's OWN
+      beat ids: a ``lesson`` purpose keeps ``lesson_intro`` at beat 8 exactly as
+      ``validate_story`` accepts it, and a beat presented under another id than
+      the one the record's ``beats`` carries is refused ``presentation-relabelled``;
+    * a flat ``presentation_order`` beside a ``presentation`` must agree with it.
 
     Never raises. Returns the order, the three reconciled views, the opening /
     rewind and each beat's statement."""
@@ -1190,12 +1200,25 @@ def check_presentation_order(story):
         out.update(outcome="rejected", reason_code="presentation-invalid", errors=errors)
         return out
 
+    # A lesson names beat 8 ``lesson_intro`` (validate_story's lesson rule):
+    # judged as product_intro, but the id itself is never renamed.
+    lesson = str(purpose or "").strip().lower() == "lesson"
+    def canon(b):
+        return BEATS[PRODUCT_REVEAL_MIN - 1] if lesson and b == LESSON_INTRO else b
+    rec = [b.strip() for b in (story.get("beats") if isinstance(story.get("beats"), list) else [])
+           if isinstance(b, str) and b.strip()]
+    own = {canon(b): b for b in rec}        # canonical beat -> the id this record uses
+
     known = set(BEATS)
-    unknown = sorted({b for b in order if b not in known})
+    unknown = sorted({b for b in order if canon(b) not in known})
     if unknown:
         errors.append({"error": "presentation-unknown", "detail": unknown})
+    relabelled = [b for b in order if own.get(canon(b), b) != b]
+    if relabelled:
+        errors.append({"error": "presentation-relabelled",
+                       "detail": "%s not among the record's own beat ids" % relabelled})
     seen, dups = set(), []
-    for b in order:
+    for b in map(canon, order):
         if b in seen and b not in dups:
             dups.append(b)
         seen.add(b)
@@ -1204,6 +1227,11 @@ def check_presentation_order(story):
     missing = [b for b in BEATS if b not in seen]
     if missing:
         errors.append({"error": "presentation-missing", "detail": missing})
+    if story.get("presentation") is not None and "presentation_order" in story \
+            and _view_ids(story["presentation_order"]) != order:
+        errors.append({"error": "presentation-view-mismatch",
+                       "detail": "presentation_order %r does not match presentation.order %s"
+                                 % (story["presentation_order"], order)})
 
     views = {}
     for view in PRESENTATION_VIEWS:
@@ -1229,7 +1257,7 @@ def check_presentation_order(story):
     rewind_to = str(blk.get("rewind_to") or "").strip()
     if consequence_first:
         rewind_to = rewind_to or DEFAULT_REWIND_TO
-        if rewind_to not in known:
+        if canon(rewind_to) not in known:
             errors.append({"error": "presentation-opening-invalid",
                            "detail": "rewind_to %r is not one of the twelve canonical beats"
                                      % rewind_to})
@@ -1251,7 +1279,7 @@ def check_presentation_order(story):
         if bid:
             by_beat[bid] = r
     statements, incomplete = {}, {}
-    for beat in BEATS:
+    for beat in (own.get(b, b) for b in BEATS):
         row = by_beat.get(beat) or {}
         statements[beat] = {f: (None if _blank(row.get(f)) else row.get(f))
                             for f in BEAT_STATEMENT_FIELDS}
