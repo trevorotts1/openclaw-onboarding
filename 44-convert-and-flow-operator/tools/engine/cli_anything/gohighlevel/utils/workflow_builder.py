@@ -617,14 +617,15 @@ DEPENDENCY_ENDPOINTS = {
 }
 
 
-def precheck_dependencies(
-    client, location_id: str, wf_def: dict, *, create_if_missing: bool = False
-) -> dict:
+def precheck_dependencies(client, location_id: str, wf_def: dict) -> dict:
     """GET-verify explicitly declared dependencies; never write or raise.
 
     Only a positive existence read authorises a build. A failed or
     unrecognisable GET is unverified, never treated as present, and always
-    refuses the build. create_if_missing bypasses missing dependencies only.
+    refuses the build. There is deliberately no bypass flag: a bypass the plan
+    JSON could set is not an approval, it is the gated thing unlocking itself.
+    ponytail: no create-missing rail yet; if one is added it must take an
+    operator flag threaded from the CLI, never a key inside the plan.
     """
     present, missing, unverified = [], [], []
 
@@ -666,7 +667,7 @@ def precheck_dependencies(
         "present": present,
         "missing": missing,
         "unverified": unverified,
-        "refused": list(unverified) + ([] if create_if_missing else list(missing)),
+        "refused": list(unverified) + list(missing),
     }
 
 
@@ -1413,14 +1414,9 @@ class CampaignBuilder:
         self.stats.setdefault("route", {})[operation] = route.as_evidence()
         return route
 
-    def precheck(
-        self, location_id: str, wf_def: dict, *, create_if_missing: bool = False
-    ) -> dict:
+    def precheck(self, location_id: str, wf_def: dict) -> dict:
         """Declared-dependency pre-check for one workflow definition."""
-        result = precheck_dependencies(
-            self.client, location_id, wf_def,
-            create_if_missing=create_if_missing,
-        )
+        result = precheck_dependencies(self.client, location_id, wf_def)
         self.stats.setdefault("precheck", {})[wf_def.get("name")] = result
         return result
 
@@ -1770,12 +1766,10 @@ class CampaignBuilder:
                 dep_state = self.precheck(self.loc, wf_def)
                 missing = dep_state.get("missing") or []
                 unverified = dep_state.get("unverified") or []
-                refuse_now = list(unverified) + [
-                    item for item in missing if not wf_def.get("create_if_missing")
-                ]
+                refuse_now = list(unverified) + list(missing)
                 if refuse_now:
                     sections = []
-                    if missing and not wf_def.get("create_if_missing"):
+                    if missing:
                         sections.append(
                             "missing in GHL: "
                             + ", ".join(
@@ -1792,9 +1786,8 @@ class CampaignBuilder:
                     return (key, None, False, False, None,
                             f"{wf_name}: dependency pre-check failed - "
                             + "; ".join(sections)
-                            + (". Create missing dependencies first (or set "
-                               "create_if_missing with approval);"
-                               if missing and not wf_def.get("create_if_missing") else "")
+                            + (". Create the missing dependencies in GHL first;"
+                               if missing else "")
                             + " no workflow create was issued.")
 
             templates, unlinked = link_steps(wf_def.get("templates", []))

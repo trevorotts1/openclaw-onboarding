@@ -1378,9 +1378,10 @@ def workflows_precheck(ctx, plan_file):
     "calendars": [...], "pipelines": [...]} plus the trigger "tag". Nothing is
     inferred from step attributes, and nothing is created.
 
-    Exit 1 when any declared dependency is missing and the workflow did not set
-    "create_if_missing": true; unverified reads are reported but never counted
-    as present.
+    Exit 1 when any declared dependency is missing or its read could not be
+    verified. There is no bypass key: the plan is the thing being gated, so a
+    flag inside it cannot authorise its own build. Unverified reads are never
+    counted as present.
     """
     _require_experimental(ctx)
     try:

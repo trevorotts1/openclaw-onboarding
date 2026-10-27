@@ -144,6 +144,49 @@ def test_missing_declared_tag_refuses_before_create(monkeypatch, tmp_path):
     ), "missing declared dependency must prevent trigger creation"
 
 
+def test_plan_cannot_grant_itself_a_missing_dep_bypass(monkeypatch, tmp_path):
+    """The plan is the thing being gated, so a key inside it is not approval.
+
+    `create_if_missing` used to be read straight off the workflow definition,
+    so an author could ship a plan that unlocked its own dependency gate. The
+    bypass is gone; the key must now be inert.
+    """
+    _configure_env(monkeypatch, tmp_path)
+    client = FakeClient()
+    client.tags_response = [{"id": "T1", "name": "other"}]
+
+    plan = _plan({"tags": ["ZHC-missing"]})
+    plan["w1"]["create_if_missing"] = True
+
+    stats = wb.CampaignBuilder(client).build(plan, "caf-build")
+
+    assert any(
+        "dependency pre-check failed" in error and "ZHC-missing" in error
+        for error in stats["errors"]
+    ), "a plan-supplied create_if_missing must not authorise a write"
+    assert not any(
+        method == "POST" and path == "/workflow/LOC1"
+        and isinstance(body, dict) and "parentId" in body
+        for method, path, body in client.calls
+    ), "self-granted bypass must still prevent workflow creation"
+    assert not any(
+        method == "PUT" and isinstance(body, dict) and "workflowData" in body
+        for method, _, body in client.calls
+    ), "self-granted bypass must still prevent step-save writes"
+
+
+def test_no_bypass_parameter_remains_on_the_precheck():
+    """A bypass flag on the function is the same fail-open wearing a hat."""
+    import inspect
+
+    assert "create_if_missing" not in inspect.signature(
+        wb.precheck_dependencies
+    ).parameters, "precheck_dependencies must carry no bypass parameter"
+    assert "create_if_missing" not in inspect.signature(
+        wb.CampaignBuilder.precheck
+    ).parameters, "CampaignBuilder.precheck must carry no bypass parameter"
+
+
 def test_unverified_read_refuses(monkeypatch, tmp_path):
     _configure_env(monkeypatch, tmp_path)
     client = FakeClient()
