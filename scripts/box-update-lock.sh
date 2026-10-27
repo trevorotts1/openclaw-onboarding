@@ -386,8 +386,9 @@ box_update_lock_release() {
 }
 
 box_update_lock_owner_is_live() {
-  # Read-only probe for callers that must WAIT rather than acquire.
-  BUL_LOCK_PATH="${1:-$BUL_LOCK_PATH}"
+  # Read-only probe for callers that must WAIT rather than acquire (the
+  # agent-pull host steps and the watch need this instead of `[ -e lock ]`).
+  BUL_LOCK_PATH="${1:-${BUL_LOCK_PATH:-/tmp/openclaw-update.lock}}"
   if [ -d "$BUL_LOCK_PATH" ]; then
     [ -n "$(_bul_dir_holder_pid "$BUL_LOCK_PATH")" ]
     return $?

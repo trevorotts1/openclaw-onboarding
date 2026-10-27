@@ -296,6 +296,25 @@ rc=$?
 [ "$rc" = 127 ] && ok "NEGATIVE CONTROL: exec {FD}> aborts with rc 127 on /bin/bash 3.2 (MAC-8 premise holds)" \
   || bad "expected rc 127 from exec {FD}> on 3.2, got rc=$rc"
 
+# 17b. The read-only probe other lanes call (agent-pull host steps, the watch)
+#      must answer by owner liveness, not by the file existing.
+L="$T/probe-live.lock"
+printf 'pid=%s\nstart=%s\nrun_id=h\n' "$SLEEPER" "$S" >"$L"
+( . "$LOCK_SH"; box_update_lock_owner_is_live "$L" )
+rc=$?
+[ "$rc" = 0 ] && ok "the live-owner probe reports a live lease (rc=0)" || bad "probe missed a live owner (rc=$rc)"
+L="$T/probe-dead.lock"
+printf 'pid=999999\nstart=gone\nrun_id=h\n' >"$L"
+( . "$LOCK_SH"; box_update_lock_owner_is_live "$L" )
+rc=$?
+[ "$rc" = 1 ] && ok "the live-owner probe reports a DEAD lease as not live (rc=1)" \
+  || bad "probe called a dead lease live (rc=$rc)"
+rm -f "$L"
+( . "$LOCK_SH"; box_update_lock_owner_is_live "$L" )
+rc=$?
+[ "$rc" = 1 ] && ok "the live-owner probe on an ABSENT lease is not live (rc=1)" \
+  || bad "probe called an absent lease live (rc=$rc)"
+
 # 18. The helper behaves under `set -euo pipefail`, which is how callers run it.
 L="$T/strict.lock"
 ( set -euo pipefail
