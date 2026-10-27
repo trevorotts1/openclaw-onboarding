@@ -18,8 +18,14 @@ GATES = (
     "scripts/qc-playbook-declares.sh",
     "scripts/qc-playbook-doc.sh",
 )
+# Pinned so the control fixture cannot drift unnoticed. Repinned when the
+# fixture was sanitised: it had been copied from a live client playbook and
+# carried a real location id, page id, owner name and local path, which this
+# fleet-wide repo may not contain (qc-no-personal-data.sh was failing on it).
+# The structural property the tests need — a legacy playbook with no
+# `### Phase N` — is unchanged.
 EXPECTED_SHA256 = (
-    "1b1d9689790644bc3544f70359e81e8691402df1fce70e675b93b9550bac13cd"
+    "09d1fc09dff2b7d18b96379ee34be3eb1117c258c6c8231812e6c471e7afeab6"
 )
 MIGRATION_SUMMARY = "legacy playbooks NEEDS-MIGRATION: 1"
 MIGRATION_RESULT = (
