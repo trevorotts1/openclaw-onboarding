@@ -8,7 +8,7 @@
   "status": "clean",
   "repo": "trevorotts1/openclaw-onboarding",
   "branch": "s75x/verdicts-S75X-W4",
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U1-qc",
+  "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U1-qc",
   "base_sha": "96559ab1b531570534316d856006867606afd4e2",
   "commit_checked": "d2409b13b1b86479c135d9c046e62df64ab931e6",
   "unit_commit": "ca0a5b3de91ea5d440b8de1377ae8a3f369dfacf",
@@ -47,8 +47,8 @@
     "summary": "17/17 builder acceptance probe re-run against QC lane root; 12/12 QC-owned independent probe; both rc=0",
     "probe.py": {"checks": 17, "pass": 17, "fail": 0, "rc": 0, "note": "A1-A8 carry/refusal/drift, B1-B8 ambiguity and prompt-spec reach, C1 ungated control"},
     "probe2.py": {"checks": 12, "pass": 12, "fail": 0, "rc": 0, "note": "QC-owned: second cue pair (smile+funeral -> relief or denial), declared-ambiguity positive path (source=declared, 'no triumph' negative reaches spec['negatives_extra'], context reaches spec['continuity']), OPENING_CONFLICT on pre-filled conflicting contract, contract-side and shot-side drift caught OPENING_LOST, package re-export surface, scene-opening/0 identity"},
-    "probe_scripts": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/w4u1-qc/",
-    "probe_target_root": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U1-qc"
+    "probe_scripts": "<PATH>/git trees and automations/s75/scratch/w4u1-qc/",
+    "probe_target_root": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U1-qc"
   },
   "mutation_controls": {
     "refusal_removed": "QC-owned replica in scratch/w4u1-qc/m-refusal: deleting the OPENING_AMBIGUOUS refusal in build_opening_scene turns exactly 3 checks red, exit=1 — 'award-night tears with no context refuse OPENING_AMBIGUOUS', 'the refusal names the opposite reading', 'declared ambiguity without context refuses OPENING_AMBIGUOUS' (matches builder's named three)",

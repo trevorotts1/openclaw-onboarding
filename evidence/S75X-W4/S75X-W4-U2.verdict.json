@@ -117,10 +117,10 @@
     "music_qc/test_method_pace.py and music_qc/test_wwfix_u1.py emit no 'ok:' lines (they print prose); they exit 0 but their internal assertion counts were not enumerated."
   ],
   "environment": {
-    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U2-build",
+    "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U2-build",
     "repo": "trevorotts1/openclaw-onboarding",
     "python": "python3 -I (isolated)",
-    "scratch": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/S75X-W4-U2"
+    "scratch": "<PATH>/git trees and automations/s75/scratch/S75X-W4-U2"
   },
   "verdict_branch": "s75x/verdicts-S75X-W4"
 }

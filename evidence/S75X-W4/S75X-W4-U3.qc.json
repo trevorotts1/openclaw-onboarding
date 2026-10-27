@@ -7,7 +7,7 @@
   "status": "fixed",
   "qc_verdict": "PASS — builder verdict upheld (7/7 acceptance elements re-proven), one comment-drift defect fixed",
   "branch": "s75x/verdicts-S75X-W4",
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U3-qc",
+  "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U3-qc",
   "lane_head_before_fix": "d2409b13b1b86479c135d9c046e62df64ab931e6",
   "builder_claimed_head": "953004bfc84ba82357452e4f114183530f925b0f",
   "verdict_reviewed": "evidence/S75X-W4/S75X-W4-U3.verdict.json (PASS, 7/7 acceptance elements, 24 checks)",
@@ -58,7 +58,7 @@
     "file": "scripts/core/catalog_calculator/test_card_render.py",
     "failed_check": "no-operator-path-in-candidates",
     "check_body": "all(\"Downloads\" not in p for p in base_bridge.candidate_paths())",
-    "lane_result": "1 of the file's checks fails: all 10 candidate_paths() derive from the lane root /Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U3-qc/... which contains the literal string 'Downloads'; first-candidate-is-shipped and bridge-finds-shipped both PASS in the lane",
+    "lane_result": "1 of the file's checks fails: all 10 candidate_paths() derive from the lane root <PATH>/git trees and automations/s75/worktrees/S75X-W4-U3-qc/... which contains the literal string 'Downloads'; first-candidate-is-shipped and bridge-finds-shipped both PASS in the lane",
     "blob_identity": "test_card_render.py blob 734ae28c84555295bcff58f3396177468dee582e and base_bridge.py blob fcdb24ab5083c6e2e64d818e6d2f027573c14bac identical between QC lane and <PATH>/openclaw-onboarding (git hash-object both sides)",
     "control": "same test, same instrument (python3 -I) in <PATH>/openclaw-onboarding/75-drama-song-ad-factory (outside Downloads): rc=0, PASS no-operator-path-in-candidates, ALL CHECKS PASS",
     "verdict": "lane-path artifact, not a code defect — the pass/fail split lands exactly on the path boundary the check tests; builder adjudication CONFIRMED; no test weakened"

@@ -9,7 +9,7 @@
   "builder_model": "ds/deepseek-flash",
   "plan_of_record": "<PATH>/skill75-repair/SWARM-PLAN-V2.json",
   "canonical_repo": "<PATH>/openclaw-onboarding",
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U1-build",
+  "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U1-build",
   "owned_output": "75-drama-song-ad-factory/scripts/core/shot_planner/",
   "base_sha": "96559ab1b531570534316d856006867606afd4e2",
   "head_sha": "96559ab1b531570534316d856006867606afd4e2",

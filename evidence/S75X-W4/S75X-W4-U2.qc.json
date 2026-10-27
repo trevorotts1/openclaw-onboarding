@@ -10,7 +10,7 @@
   "fixes_applied": [],
   "why_no_fix": "Builder verdict re-verified element by element in an independent lane; no verdict error and no defect in the unit's owned output. Nothing in the unit was changed.",
   "independent_rerun": {
-    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U2-qc",
+    "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U2-qc",
     "lane_branch": "s75x/verdicts-S75X-W4-u2qc",
     "lane_head_before_qc_commit": "d2409b13b1b86479c135d9c046e62df64ab931e6",
     "base_of_rerun": "origin/s75x/verdicts-S75X-W4 (d2409b13b), which carries the U2 verdict commit 36e6ad388 and the unit code in ca0a5b3de91ea5d440b8de1377ae8a3f369dfacf (already an ancestor of origin/main 96559ab1b via cohort PR #2604)",
@@ -24,7 +24,7 @@
         "ok_line_distribution": "test_song_contract.py 77, test_suno_templates_u15d.py 69, test_words_fit_g9.py 43, test_blueprint_inputs_s75xw4u2.py 34, test_style_plan_u2.py 32, test_fit_card_u4.py 27, test_prompt_limits_u6.py 25, test_rnbflow_fit_v2972.py 19"
       },
       "independent_probe": {
-        "file": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/S75X-W4-U2-qc/probe_qc.py",
+        "file": "<PATH>/git trees and automations/s75/scratch/S75X-W4-U2-qc/probe_qc.py",
         "note": "QC-owned probe; imports music_director only, never the unit test. Expectations derived at runtime from method_plan/fixtures/blueprint-90s.json (cue start_s values, direction strings, hook lyric); sheet text is QC's own. Zero network, zero spend.",
         "probes": 32, "failed": 0, "rc": 0
       }
@@ -74,10 +74,10 @@
     "Pipeline wiring of build_blueprint_request remains absent by design of this unit's acceptance (see negative_claim_reverified) and was not added."
   ],
   "environment": {
-    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U2-qc",
+    "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U2-qc",
     "repo": "trevorotts1/openclaw-onboarding",
     "python": "python3 -I (isolated) for every check",
-    "scratch": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/S75X-W4-U2-qc (probe_qc.py, probe_qc.out, run_regress.py, regress.json, regress.out)",
+    "scratch": "<PATH>/git trees and automations/s75/scratch/S75X-W4-U2-qc (probe_qc.py, probe_qc.out, run_regress.py, regress.json, regress.out)",
     "network_calls": 0, "spend": 0
   },
   "verdict_branch": "s75x/verdicts-S75X-W4"

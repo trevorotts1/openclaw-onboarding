@@ -18,7 +18,7 @@
  },
  "branch": "s75x/verdicts-S75X-W4",
  "head": "96559ab1b531570534316d856006867606afd4e2",
- "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U3-build",
+ "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U3-build",
  "acceptance_source": "SWARM-PLAN-V2.json workflows[S75X-W4].units[S75X-W4-U3].acceptance",
  "acceptance_elements": [
   {
@@ -61,7 +61,7 @@
    "id": "A7",
    "element": "Existing tests pass",
    "result": "PASS",
-   "evidence": "12 of 12 lip-sync policy test files rc=0 (64 unittest methods + 94 assertion-style ok lines, see checks). The 13th file, catalog_calculator/test_card_render.py, fails ONE check (no-operator-path-in-candidates) only because this lane lives under '/Volumes/mac mini m4/Downloads/...'; the same test passes ALL CHECKS in the canonical checkout at <PATH>/openclaw-onboarding with byte-identical files (blob 734ae28c...), and all 10 base_bridge.candidate_paths() are derived from the lane directory. Failure classified lane-path artifact, not a unit defect."
+   "evidence": "12 of 12 lip-sync policy test files rc=0 (64 unittest methods + 94 assertion-style ok lines, see checks). The 13th file, catalog_calculator/test_card_render.py, fails ONE check (no-operator-path-in-candidates) only because this lane lives under '<PATH>/...'; the same test passes ALL CHECKS in the canonical checkout at <PATH>/openclaw-onboarding with byte-identical files (blob 734ae28c...), and all 10 base_bridge.candidate_paths() are derived from the lane directory. Failure classified lane-path artifact, not a unit defect."
   }
  ],
  "checks": [
