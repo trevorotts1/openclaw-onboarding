@@ -14,7 +14,9 @@ resolve lookup.
 
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -394,6 +396,108 @@ class TestExitRuleOrderIndependence(unittest.TestCase):
         self.assertIsNone(r["action"])
         self.assertIsNone(r["closing"])
         self.assertIsNone(r["target"])
+
+
+class TestBuildContract(unittest.TestCase):
+    def test_contract_hash_matches_structure_hash(self):
+        parsed = engine.parse_playbook(GOOD)
+        contract = engine.write_build_contract(
+            parsed, "good-playbook", "good-playbook.md"
+        )
+        self.assertEqual(
+            contract["playbook_structure_hash"],
+            engine.structure_hash(engine.parse_playbook(GOOD)),
+        )
+
+    def test_contract_keys_and_order(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD), "good-playbook", "good-playbook.md"
+        )
+        self.assertEqual(
+            list(contract.keys()),
+            [
+                "contract_version",
+                "playbook_id",
+                "playbook_path",
+                "playbook_structure_hash",
+                "generated_at",
+                "trigger",
+                "tags",
+                "fields",
+                "custom_values",
+                "calendars",
+                "pipeline",
+                "exit_rules",
+                "tools",
+                "channels",
+                "model_tier",
+                "workflow",
+                "acceptance",
+                "warnings",
+            ],
+        )
+
+    def test_contract_declares_mapping(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD), "good-playbook", "good-playbook.md"
+        )
+        self.assertEqual(contract["tags"]["applies"], [])
+        self.assertEqual(contract["tags"]["reads"], [])
+        self.assertEqual(
+            contract["calendars"],
+            [
+                {"key": "default", "id": "CAL_ID_A"},
+                {"key": "on-site estimate", "id": "CAL_ID_B"},
+            ],
+        )
+        self.assertEqual(contract["pipeline"]["id"], "sales-pipeline")
+        self.assertEqual(
+            [stage["name"] for stage in contract["pipeline"]["stages"]],
+            ["STAGE_QUALIFIED", "STAGE_BOOKED"],
+        )
+        self.assertEqual(
+            [field["name"] for field in contract["fields"]],
+            ["contact.email", "ZHC_budget_range"],
+        )
+
+    def test_contract_never_fabricates(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD), "good-playbook", "good-playbook.md"
+        )
+        self.assertEqual(contract["trigger"], {"kind": None, "tag": None})
+        self.assertEqual(contract["custom_values"], [])
+        self.assertEqual(contract["channels"], [])
+        self.assertEqual(contract["acceptance"], {"must_pass": []})
+        self.assertTrue(all(value is None for value in contract["workflow"].values()))
+        warnings = "\n".join(contract["warnings"])
+        for section in ("trigger", "custom_values", "channels", "workflow", "acceptance"):
+            self.assertIn(section, warnings)
+
+    def test_cli_writes_file(self):
+        parsed = engine.parse_playbook(GOOD)
+        expected_hash = engine.structure_hash(parsed)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "x.json"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(TOOLS_DIR / "playbook_engine.py"),
+                    "build-contract",
+                    str(FIXTURES / "good-playbook.md"),
+                    "--out",
+                    str(output),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output.is_file())
+            contract = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                contract["playbook_structure_hash"],
+                expected_hash,
+            )
 
 
 class TestFormattingLaws(unittest.TestCase):

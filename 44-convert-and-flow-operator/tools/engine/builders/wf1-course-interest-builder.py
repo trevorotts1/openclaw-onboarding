@@ -106,7 +106,7 @@ def build_workflow() -> dict:
     raw_steps.append(tag_step(f"Remove {START_TAG}", [START_TAG], remove=True))
     raw_steps.append(goal_step("Course Purchase", GOAL_TAGS))
 
-    steps = link_steps(raw_steps)
+    steps, _unlinked = link_steps(raw_steps)
     return {
         "wf1_course_interest": {
             "name": WORKFLOW_NAME,

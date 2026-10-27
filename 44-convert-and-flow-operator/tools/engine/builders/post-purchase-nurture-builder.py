@@ -159,7 +159,7 @@ def build_workflow() -> dict:
 
     raw_steps.append(tag_step(f"Apply {COMPLETION_TAG}", [COMPLETION_TAG]))
 
-    steps = link_steps(raw_steps)
+    steps, _unlinked = link_steps(raw_steps)
 
     return {
         "post_purchase_nurture": {

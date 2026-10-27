@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "single_message",
   "id": "launch-a-replay-and-no-show",
   "name": "Launch A — Replay and No-Show Branch",
   "aliases": [
@@ -86,5 +88,125 @@
       "Pre-event reminders — separate launch-a files",
       "Cart-close Emotion/Logic/Fear close sequence — separate launch-a files"
     ]
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Tag Added webinar-registered",
+        "ref": "Tag Added `webinar-registered`"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "wait",
+      "after": "trg",
+      "attributes": {
+        "until": "webinar_end_datetime + 2 hours",
+        "kind": "until",
+        "ref": "Wait until `webinar_end_datetime` + 2h"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "if_else",
+      "after": "n1",
+      "branches": {
+        "true": "n3",
+        "false": "n10"
+      },
+      "attributes": {
+        "condition": "webinar-purchased present",
+        "operator": "exists",
+        "ref": "If purchased"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "if_else",
+      "after": "n2",
+      "branches": {
+        "attended": "n4",
+        "no_show": "n5"
+      },
+      "attributes": {
+        "condition": "webinar-attended OR webinar-buy-link-clicked",
+        "fallback": "no-show when no attendance signal",
+        "ref": "If/Else `webinar-attended` OR `webinar-buy-link-clicked`"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "email",
+      "after": "n3",
+      "attributes": {
+        "message": "attended replay",
+        "ref": "Attended replay email"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "email",
+      "after": "n3",
+      "attributes": {
+        "message": "no-show replay",
+        "ref": "No-show replay email"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "if_else",
+      "after": "n4",
+      "branches": {
+        "true": "n7",
+        "false": "n9"
+      },
+      "attributes": {
+        "condition": "SMS consent present",
+        "ref": "If SMS consent"
+      }
+    },
+    {
+      "id": "n8",
+      "type": "if_else",
+      "after": "n5",
+      "branches": {
+        "true": "n7",
+        "false": "n9"
+      },
+      "attributes": {
+        "condition": "SMS consent present",
+        "ref": "If SMS consent"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "sms",
+      "after": "n6",
+      "attributes": {
+        "message": "branch-matched SMS",
+        "ref": "Branch-matched SMS"
+      }
+    },
+    {
+      "id": "n9",
+      "type": "wait",
+      "after": "n7",
+      "attributes": {
+        "until": "cart_close_datetime",
+        "kind": "until",
+        "ref": "Wait until `cart_close_datetime`"
+      }
+    },
+    {
+      "id": "n10",
+      "type": "workflow_goal",
+      "after": "n2",
+      "attributes": {
+        "goal": "buyer exits before replay",
+        "ref": "End"
+      }
+    }
+  ]
 }

@@ -5,7 +5,9 @@
       "id": "skill-05",
       "type": "skill",
       "label": "Skill 05 - GHL Setup",
-      "check": { "skill": "05-ghl-setup" },
+      "check": {
+        "skill": "05-ghl-setup"
+      },
       "severity": "required",
       "satisfy": "Install Skill 05 (GHL Setup) first. It is in the same onboarding package; re-run the installer or install Skill 05 on its own."
     },
@@ -13,7 +15,9 @@
       "id": "skill-10",
       "type": "skill",
       "label": "Skill 10 - GitHub Setup",
-      "check": { "skill": "10-github-setup" },
+      "check": {
+        "skill": "10-github-setup"
+      },
       "severity": "required",
       "satisfy": "Install Skill 10 (GitHub Setup) first. It is in the same onboarding package; re-run the installer or install Skill 10 on its own."
     },
@@ -21,7 +25,9 @@
       "id": "skill-29",
       "type": "skill",
       "label": "Skill 29 - GHL Convert and Flow",
-      "check": { "skill": "29-ghl-convert-and-flow" },
+      "check": {
+        "skill": "29-ghl-convert-and-flow"
+      },
       "severity": "required",
       "satisfy": "Install Skill 29 (GHL Convert and Flow) first; it is in the same onboarding package. Re-run the installer or install Skill 29 on its own, then re-check prerequisites."
     },
@@ -29,7 +35,9 @@
       "id": "skill-07",
       "type": "skill",
       "label": "Skill 07 - Kie Setup",
-      "check": { "skill": "07-kie-setup" },
+      "check": {
+        "skill": "07-kie-setup"
+      },
       "severity": "required",
       "satisfy": "Install Skill 07 (Kie Setup) first; it provides the Kie.ai account setup and KIE_API_KEY used by the U-11 workflow hero visual. Re-run the installer or install Skill 07 on its own. Without it the build ships the free Mermaid truth diagram only (hero visual skipped)."
     },
@@ -37,7 +45,9 @@
       "id": "skill-66",
       "type": "skill",
       "label": "Skill 66 - KIE Image",
-      "check": { "skill": "66-kie-image" },
+      "check": {
+        "skill": "66-kie-image"
+      },
       "severity": "optional",
       "satisfy": "Install Skill 66 (KIE Image), the image policy owner: it selects the model and dispatches the U-11 workflow hero visual. Recommended, not required; without it the build ships the free Mermaid truth diagram only (hero visual skipped)."
     },
@@ -45,7 +55,9 @@
       "id": "skill-46",
       "type": "skill",
       "label": "Skill 46 - Kie Callback Relay",
-      "check": { "skill": "46-kie-callback-relay" },
+      "check": {
+        "skill": "46-kie-callback-relay"
+      },
       "severity": "optional",
       "satisfy": "Install Skill 46 (Kie Callback Relay) to route async Kie image jobs via callback instead of polling for the U-11 hero visual. Recommended, not required; without it the generator polls with a 120s timeout."
     },
@@ -53,9 +65,21 @@
       "id": "cf-token",
       "type": "credential",
       "label": "Cloudflare API Token",
-      "check": { "envVar": "CLOUDFLARE_API_TOKEN" },
+      "check": {
+        "envVar": "CLOUDFLARE_API_TOKEN"
+      },
       "severity": "required",
       "satisfy": "Add CLOUDFLARE_API_TOKEN=<your token> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.CLOUDFLARE_API_TOKEN \"$CLOUDFLARE_API_TOKEN\". Create the token at dash.cloudflare.com > My Profile > API Tokens."
+    },
+    {
+      "id": "skill-44",
+      "type": "skill",
+      "label": "Skill 44 - Convert and Flow Operator",
+      "check": {
+        "skill": "44-convert-and-flow-operator"
+      },
+      "severity": "optional",
+      "satisfy": "Optional. Install Skill 44 (Convert and Flow Operator) plus a healthy GHL Firebase refresh token to use Option 1, the reliable build path: Skill 44 builds the GHL automation directly through the internal API (caf workflows build), consuming this skill's build contract (<slug>--build-contract.json) and stage map exactly as authored. Without Skill 44 or a valid token, the build falls back to Option 2: the human pastes this skill's Build-with-AI prompt into GHL Automations, Build using AI, and the 12-point post-build verification checklist is run by hand on that path. Both paths are supported; Option 1 is preferred because it eliminates the GHL 400 corrupted-order and silent Steps:0 false-pass. Install Skill 44 from the same onboarding package to enable Option 1."
     }
   ]
 }
