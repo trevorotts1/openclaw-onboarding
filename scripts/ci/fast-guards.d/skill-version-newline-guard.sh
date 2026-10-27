@@ -16,3 +16,8 @@ set -e
 chmod +x scripts/qc-assert-skill-version-newline.sh
 bash scripts/qc-assert-skill-version-newline.sh
 )
+( # step: A commit's message must name the Skill 38 version that commit contains (PBB-263 D1)
+set -e
+python3 -B scripts/qc-assert-commit-version-claim.py --self-test
+python3 -B scripts/qc-assert-commit-version-claim.py --ci
+)
