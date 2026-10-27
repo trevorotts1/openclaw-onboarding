@@ -646,6 +646,34 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-proactive-outreach.test.sh
           echo "✓ qc-proactive-outreach negative test passes (the gate fails on each broken invariant)"
 
+      - name: Skill 38 Purple follow-up ownership gate (review C4)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce review finding C4: a contact with a Purple collection sequence
+          # (`collection_sequence_id` present, open or closed) NEVER enters the legacy
+          # 10-touch Intelligent Follow-up cadence — the shared reminder machine owns
+          # follow-up (ONE initial invitation + three escalating reminders, ONE shared count,
+          # no reset, no catch-up burst). Proves the exclusion in the protocol, the
+          # AGENTS.md stanza writer (05-update-agents-md.sh) and the canonical rules
+          # reference (agents-runtime-rules.md), that the stale Pre-Feature-15 / Until v5.7
+          # notes and the leftover installer fragments are DELETED (with a positive control
+          # so a blind scan cannot certify an absence), and that the gate is wired into
+          # 11-run-qc-checklist.sh. BASH (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-followup-exclusion.sh
+          echo "✓ Skill 38 C4 follow-up exclusion holds (Purple sequence owns follow-up)"
+
+      - name: Skill 38 Purple follow-up ownership gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-followup-exclusion.sh actually FAILS when a C4 invariant is broken:
+          # removes the protocol exclusion section, neuters collection_sequence_id in the
+          # stanza writer, neuters the shared-reminder-machine owner, reintroduces each
+          # stale note, unwires the checklist, and blinds the positive control.
+          bash 38-conversational-ai-system/scripts/qc-followup-exclusion.test.sh
+          echo "✓ qc-followup-exclusion negative test passes (the gate fails on each broken invariant)"
+
       - name: Skill 38 A/B Testing of Reply Variants (F16) invariant gate
         shell: bash
         run: |

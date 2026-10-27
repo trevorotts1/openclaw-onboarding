@@ -106,6 +106,7 @@ SCRIPT_FILES=(
   "scripts/qc-notion-doc-standard.sh"
   "scripts/33-runtime-tool-gating-prover.sh"
   "scripts/qc-runtime-tool-gating.sh"
+  "scripts/qc-followup-exclusion.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -886,6 +887,19 @@ if [ -f "$QC_INTERACTIVE" ]; then
   fi
 else
   report_fail "qc-interactive-owner.sh not found (looked in scripts/)"
+fi
+
+section "Purple follow-up ownership — the legacy 10-touch cadence is excluded (qc-followup-exclusion.sh)"
+QC_FOLLOWUP="$SCRIPT_DIR/qc-followup-exclusion.sh"
+[ -f "$QC_FOLLOWUP" ] || QC_FOLLOWUP="$SKILL38_ROOT/scripts/qc-followup-exclusion.sh"
+if [ -f "$QC_FOLLOWUP" ]; then
+  if bash "$QC_FOLLOWUP" >/dev/null 2>&1; then
+    report_pass "C4 holds (a contact with a Purple collection_sequence_id, open or closed, never enters the 10-touch cadence; the shared reminder machine owns follow-up in the protocol, the AGENTS.md stanza writer and the canonical rules reference; the stale Pre-Feature-15 / Until v5.7 notes and installer fragments are gone)"
+  else
+    report_fail "qc-followup-exclusion.sh found a C4 violation - a Purple collection contact could re-enter the legacy 10-touch sequence, a stale note survived, or the gate is unwired; run it directly for detail"
+  fi
+else
+  report_fail "qc-followup-exclusion.sh not found (looked in scripts/)"
 fi
 
 # -------- Final summary --------
