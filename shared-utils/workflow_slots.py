@@ -34,10 +34,23 @@ from pathlib import Path
 # accepted (A47), so a route outside this map can never be blocked.
 ROUTES = {"builder": "deepseek-chain", "reviewer": "sonnet-chain", "merge_operator": "haiku-chain"}
 # The harness writes agent-<agent_id>.meta.json (model= the route the agent
-# ACTUALLY ran on) under these roots, at:
-#   <root>/<slug>/<session>/subagents/workflows/<session_ref-prefix>/agent-<agent_id>.meta.json
+# ACTUALLY ran on) under these roots. Two layouts, both observed on this box:
+#   <root>/<project-slug>/<session-uuid>/subagents/workflows/<wf-id>/agent-<agent_id>.meta.json
+#   <root>/<project-slug>/<session-uuid>/subagents/agent-<agent_id>.meta.json
+# The first is a workflow subagent, the second a session subagent. <wf-id> is the
+# "wf_..." directory name AND the prefix of that agent's session_ref before '#'
+# (session_ref is '<wf-id>#<agent_id>' or '<session-uuid>:<agent_id>'). It is NOT
+# this ledger's workflow_id column: those are two different namespaces, observed
+# side by side as wf_59f9ce0c-417 vs jev11-w49-a36-repair. Earlier revisions of
+# this comment called the directory "<session_ref-prefix>" and sketched the path
+# as <slug>/<session>/subagents/workflows/<session_ref-prefix>/; the directory
+# really is the harness workflow id and the session segment is a UUID.
+#
 # The ledger itself sees only the REQUESTED route, so binding is the one moment
-# both facts exist. Recursion is bounded because session_ref-prefix is known.
+# both facts exist. These records are EPHEMERAL: measured on 2026-10-25 the two
+# roots held 15,494 then 4,884 agent-*.meta.json files minutes apart as sessions
+# were reaped, and every one of 348 archived reservation rows had lost its record.
+# So the binding must be resolved and persisted at start(), never re-derived later.
 META_ROOTS = (Path.home() / ".claude/projects", Path.home() / ".claude-nine/projects")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS coordinator (id INTEGER PRIMARY KEY CHECK(id=1), identity TEXT NOT NULL);
@@ -61,24 +74,51 @@ def text(value, name):
     return value
 
 
-def _meta_index():
-    """agent_id -> meta.json path, for every harness-written binding record on this box."""
+def workflow_of(session_ref):
+    """The harness workflow id a session_ref binds under, or None for a session agent.
+
+    session_ref is '<wf-id>#<agent_id>' for a workflow subagent and
+    '<session-uuid>:<agent_id>' for a session subagent.
+    """
+    if not isinstance(session_ref, str):
+        return None
+    head, sep, _ = session_ref.partition("#")
+    return head if sep and head.startswith("wf_") else None
+
+
+def _meta_index(workflow_id=None):
+    """agent_id -> meta.json path, for every harness-written binding record in scope.
+
+    Scope is one harness workflow when workflow_id is given (records filed under
+    subagents/workflows/<workflow_id>/), else the session-scoped layout only
+    (records filed directly under subagents/). A record filed under a different
+    workflow is out of scope and is never borrowed, so a fabricated or mismatched
+    workflow id resolves to nothing rather than to somebody else's route.
+    ponytail: rglobs both roots on every call; cache it if binding ever runs
+    per-reservation inside a tight loop.
+    """
+    expected = ("subagents", "workflows", workflow_id) if workflow_id else ("subagents",)
+    depth = len(expected) + 1
     index = {}
     for root in META_ROOTS:
         if not root.is_dir():
             continue
         for path in root.rglob("agent-*.meta.json"):
+            if tuple(path.parts[-depth:-1]) != expected:
+                continue
             index[path.name[len("agent-"):-len(".meta.json")]] = path
     return index
 
 
-def served_route(agent_id):
+def served_route(agent_id, workflow_id=None):
     """The route the agent ACTUALLY ran on, read from the harness-written binding record.
 
-    Returns the model name, or None when no record on this box names that agent --
-    so a substitution can never be manufactured from an absent file.
+    workflow_id scopes the lookup to that one harness workflow; pass
+    workflow_of(session_ref). Returns the model name, or None when no in-scope
+    record names that agent -- so a substitution can never be manufactured from
+    an absent file, and never borrowed from another workflow's record.
     """
-    path = _meta_index().get(agent_id)
+    path = _meta_index(workflow_id).get(agent_id)
     if path is None:
         return None
     try:
@@ -86,6 +126,17 @@ def served_route(agent_id):
     except (OSError, ValueError):
         return None
     return model if isinstance(model, str) and model.strip() else None
+
+
+def route_binding(requested, served):
+    """Binding verdict for one reservation: requested route vs actually-run route.
+
+    A record we cannot see is UNVERIFIED, never a match -- the absence of a
+    witness is not evidence of agreement.
+    """
+    if served is None:
+        return "unverified_no_binding_record"
+    return "match" if served == requested else "substitution"
 
 
 def execute(database, command):
@@ -229,13 +280,10 @@ def transition(db, c):
         if action == "start":
             if row["state"] != "reserved":
                 raise ValueError("agent already started")
-            served = served_route(c["agent_id"])
-            if served is None:
-                binding = "unverified_no_binding_record"
-            elif served == row["route"]:
-                binding = "match"
-            else:
-                binding = "substitution"
+            # Bind now: the harness record is ephemeral, so this is the one moment
+            # the requested route and the actually-run route can be compared.
+            served = served_route(c["agent_id"], workflow_of(c["session_ref"]))
+            binding = route_binding(row["route"], served)
             db.execute("UPDATE slots SET state='live',started=?,session_ref=?,agent_id=?,served_route=?,route_binding=?,route_checked=? WHERE reservation_id=?",
                        (now, c["session_ref"], c["agent_id"], served, binding, now, c["reservation_id"]))
             if binding == "substitution":
