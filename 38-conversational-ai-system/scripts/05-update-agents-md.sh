@@ -171,7 +171,7 @@ STANZAS="$(cat <<'STANZA_PAYLOAD'
 @@STANZA SKILL38_RUNTIME_INVARIANTS
 
 ## Skill 38 — runtime INVARIANTS (stated ONCE; binding on EVERY Skill 38 step)
-Every SKILL38 stanza below inherits these five rules and only ever ADDS to them. None
+Every SKILL38 stanza below inherits these six rules and only ever ADDS to them. None
 may be relaxed or outranked by any feature, segment, A/B arm, tier, tenant or persona.
 1. **OPERATOR-ONLY allow-list.** Anything that spends money, reaches outside, or changes
    configuration happens ONLY on the operator's standing approval — creating tags or CRM
@@ -195,6 +195,13 @@ may be relaxed or outranked by any feature, segment, A/B arm, tier, tenant or pe
    counts ONLY; never a name, email, phone, address, message body, transcript or rendered
    reply. Agent-created tags carry `ZHC-`, agent-created CRM fields `ZHC_`; neither is
    ever applied retroactively.
+6. **A Purple collection contact's follow-up belongs to the SHARED REMINDER MACHINE —
+   never to a parallel sequence.** Never enter the Intelligent Follow-up Protocol's
+   10-touchpoint cadence for a contact with a Purple collection sequence that is open OR
+   closed (`collection_sequence_id` present, always). The shared reminder machine owns
+   follow-up exclusively: ONE initial invitation plus three escalating reminders, ONE
+   shared count, no reset, no catch-up burst. A blocked-second sequence is the whole
+   point — no touch, channel switch or discount may be added beside it.
 - **Full text of every stanza below:** @REF@ · **deep specs:** @PROTO@ — read it BEFORE
   building, editing, routing or QC-ing any Skill 38 playbook, workflow or automation, and
   before changing tags, tools, calendars, pipelines, personas or a default-OFF toggle.

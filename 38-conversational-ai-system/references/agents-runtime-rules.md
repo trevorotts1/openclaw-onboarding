@@ -24,7 +24,7 @@
 
 ## SHARED INVARIANTS — stated ONCE, binding on EVERY Skill 38 feature
 
-These five rules used to be restated inside almost every block. They are stated here
+These six rules used to be restated inside almost every block. They are stated here
 once and apply to every Skill 38 runtime step without exception. A per-feature section
 below only ever ADDS to them; nothing below ever relaxes one.
 
@@ -54,6 +54,14 @@ below only ever ADDS to them; nothing below ever relaxes one.
    NEVER a customer name, email, phone, address, message body, transcript or rendered
    reply. Agent-created tags carry the `ZHC-` prefix and agent-created CRM fields the
    `ZHC_` prefix; neither is ever applied retroactively.
+6. **A Purple collection contact's follow-up belongs to the SHARED REMINDER MACHINE —
+   never to a parallel sequence.** Never enter the Intelligent Follow-up Protocol's
+   10-touchpoint cadence for a contact with a Purple collection sequence that is open OR
+   closed (`collection_sequence_id` present, always). The shared reminder machine owns
+   follow-up exclusively: ONE initial invitation plus three escalating reminders, ONE
+   shared count, no reset, no catch-up burst. No touch, channel switch or discount may
+   be added beside it, and no second cadence may be scheduled. Full text:
+   `protocols/intelligent-followup-protocol.md` §"Purple collection sequence exclusion".
 
 ---
 
