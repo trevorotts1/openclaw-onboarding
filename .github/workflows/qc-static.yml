@@ -3164,6 +3164,17 @@ jobs:
             75-drama-song-ad-factory/scripts
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
 
+      - name: Skill 38 acquisition brief binding unit tests (T-06)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The fifth T-06 acceptance clause: approval, capacity, claims and one
+          # accountable owner bind the brief, and a tampered owner is refused on
+          # the read path. The suite drives the synthetic client fixture end to
+          # end (facts -> interview -> four bindings -> plannable) and proves the
+          # inverse refusals, so it runs by explicit file path.
+          python3 38-conversational-ai-system/tools/tests/test_acquisition_brief_binding.py
+          echo "✓ Skill 38 acquisition brief binding suite green (test_acquisition_brief_binding.py)"
       # T-22 (Skill 35 social-planner) — the two suites this unit ships are wired
       # here BY EXPLICIT NAME, the same pattern as the Skill 38 contract fixture
       # above (`t="38-.../hook-mapping-contract.test.sh"` resolved from the repo
