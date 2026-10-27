@@ -8,9 +8,10 @@
  "repo": "trevorotts1/openclaw-onboarding",
  "branch": "pb/PBB-1966/t-05-recarry",
  "branch_at_authoring": "pb/PBB-325/t-05-repair2",
- "branch_note": "Measured at unit head 5ae53d19f01128a4579cebc0b0106905f53cac57 with git ls-remote origin: refs/heads/pb/PBB-1966/t-05-recarry is the only remote ref at that commit. The branch field above is the ref this artifact is carried on now; branch_at_authoring is the ref named when it was first written.",
+ "branch_note": "Confirmed with git ls-remote origin: refs/heads/pb/PBB-1966/t-05-recarry is the branch that carries this artifact, and it was the only remote ref containing head 5ae53d19f01128a4579cebc0b0106905f53cac57 when the recarry landed there. The branch field above is the ref this artifact is carried on now; branch_at_authoring is the ref named when it was first written.",
  "this_change": {
-  "head": "5ae53d19f01128a4579cebc0b0106905f53cac57",
+  "measured_at_head": "5ae53d19f01128a4579cebc0b0106905f53cac57",
+  "measured_at_head_note": "Every value in this artifact was measured against 5ae53d19f01128a4579cebc0b0106905f53cac57. The correction commit that carries this block sits directly on top of it and changes no other file, so these measurements hold at the branch tip.",
   "origin_main_at_measurement": "8cb74925ad94c05ce9eb639e7554d02fcd780e20",
   "files_changed_vs_origin_main": 1,
   "changed_file": "evidence/engineering-loop-registration.json",
