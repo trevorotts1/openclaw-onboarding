@@ -3555,3 +3555,34 @@ jobs:
           ls -l "$t"
           python3 "$t"
           echo "✓ T-16 progressive capture + the one logical SMS email ask suite ran and passed"
+      - name: T-16 reminder host self-check (discriminates the wiring, rc-gated)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The capture suite above is green at base too, so it cannot detect a
+          # wiring removal. The host self-check carries the +6 T-16 assertions
+          # (capture_ask_planned/refused on the real send path: 27 at the head
+          # vs 21 at the base), so run it here rc-gated with a count floor:
+          # reverting reminder_state_machine.py to base drops the count below
+          # the floor and fails this step. No soft-skip: a missing file is red.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="shared-utils/reminders/reminder_state_machine.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ T-16 host self-check is absent: $t missing. A MISSING check is a red, not a skip."
+            exit 1
+          fi
+          log="$(mktemp)"
+          python3 -I "$t" --selfcheck > "$log" 2>&1 || { cat "$log"; echo "✗ T-16 host self-check failed"; exit 1; }
+          cat "$log"
+          python3 - "$log" <<'PY'
+          import re, sys
+          text = open(sys.argv[1]).read()
+          m = re.search(r"(\d+) assertions passed", text)
+          count = int(m.group(1)) if m else 0
+          if count < 27:
+              print("✗ T-16 wiring assertions missing: %d passed, need >= 27" % count)
+              sys.exit(1)
+          print("✓ T-16 reminder host self-check ran and passed (%d assertions)" % count)
+          PY
+          echo "✓ T-16 reminder host self-check ran and passed"
