@@ -207,3 +207,46 @@ def test_wf23_fails_when_branch_count_is_absent(tmp_path):
         "a report missing `branches` must fail closed; got %r" % (wf23,)
     )
     assert "branches" in wf23["observed"] + wf23["notes"]
+
+
+def _dispatch_validator(tmp_path, graph_report, deps_report):
+    """Stub that answers the `graph` and `deps` subcommands separately."""
+    stub = tmp_path / "dispatch_validator.py"
+    stub.write_text(
+        "import json, sys\n"
+        "GRAPH = json.loads(%r)\n"
+        "DEPS = json.loads(%r)\n"
+        "cmd = sys.argv[1] if len(sys.argv) > 1 else 'graph'\n"
+        "print(json.dumps(DEPS if cmd == 'deps' else GRAPH))\n" % (
+            json.dumps(graph_report), json.dumps(deps_report)
+        ),
+        encoding="utf-8",
+    )
+    return str(stub)
+
+
+def test_wf18_pass_label_cannot_clear_a_measured_missing_list(tmp_path):
+    """A deps report claiming PASS while listing a missing object is a
+    contradiction: the measured list governs, never the label."""
+    graph = {
+        "wf": "WF-23", "verdict": "PASS", "failures": [],
+        "nodes": 2, "edges": 1, "root": "n1", "orphans": 0, "branches": 0,
+        "unverified": [],
+    }
+    deps = {
+        "wf": "WF-18", "verdict": "PASS", "referenced": 1,
+        "missing": [{"kind": "tags", "name": "ZHC-lie"}],
+    }
+    export = _linear_export()
+    env = _setup(tmp_path, export)
+    env["QC_GRAPH_VALIDATOR"] = _dispatch_validator(tmp_path, graph, deps)
+    manifest = _manifest(tmp_path, {"tags": ["ZHC-lie"]})
+    result = subprocess.run(
+        ["bash", str(QC_SCRIPT), "WFTEST009", "--deps", manifest, "--json"],
+        env=env, capture_output=True, text=True, timeout=30, check=False,
+    )
+    wf18 = _items(result)["WF-18"]
+    assert wf18["status"] == "FAIL", (
+        "verdict=PASS with a non-empty missing list must FAIL; got %r" % (wf18,)
+    )
+    assert "ZHC-lie" in wf18["observed"] + wf18["notes"], wf18

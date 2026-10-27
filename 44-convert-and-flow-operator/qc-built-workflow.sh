@@ -345,7 +345,7 @@ ACTION_COUNT=$(echo "$EXPORT_OUT" | grep -oiE "\"type\"[[:space:]]*:[[:space:]]*
 ACTION_COUNT=$(echo "$ACTION_COUNT" | tr -d ' ')
 
 if [ "$ACTION_COUNT" -gt 0 ]; then
-  record_pass "WF-7" "${ACTION_COUNT}_action_nodes_present" ">=1 action nodes" "Action-node names from $WF7_NAME_SOURCE; link_steps ordering verified by engine (caf builds apply link_steps before save)"
+  record_pass "WF-7" "${ACTION_COUNT}_action_nodes_present" ">=1 action nodes" "Action-node names from $WF7_NAME_SOURCE. Node ordering and linkage are measured by WF-23/WF-15 from the saved graph, not asserted here."
 else
   record_fail "WF-7" "0_action_nodes_found" ">=1 action nodes" "No recognizable action nodes found in export (names from $WF7_NAME_SOURCE). Delivery chain may be empty."
 fi
@@ -639,8 +639,13 @@ missing=d.get('missing') or []
 print('%s %s %s' % (d.get('verdict','UNVERIFIED'), d.get('referenced',0), ','.join('%s:%s' % (m.get('kind'),m.get('name')) for m in missing) or 'none'))
 " 2>/dev/null || echo "UNVERIFIED 0 none")
   read -r DEPS_VERDICT DEPS_REFERENCED DEPS_MISSING <<< "$DEPS_FIELDS"
-  if [ "$DEPS_RC" -eq 0 ] && [ "$DEPS_VERDICT" = "PASS" ]; then
-    record_pass "WF-18" "$DEPS_REFERENCED referenced / 0 missing" "every referenced dependency present in the manifest" "Dependency manifest covers every referenced object ($DEPS_MISSING missing)."
+  # A verdict of PASS alongside a non-empty missing list is a contradiction:
+  # the measured value governs, never the label. Printing a literal "0 missing"
+  # here would hide exactly that case.
+  if [ "$DEPS_RC" -eq 0 ] && [ "$DEPS_VERDICT" = "PASS" ] && [ "$DEPS_MISSING" = "none" ]; then
+    record_pass "WF-18" "$DEPS_REFERENCED referenced / missing=$DEPS_MISSING" "every referenced dependency present in the manifest" "Dependency manifest covers every referenced object (measured missing=$DEPS_MISSING)."
+  elif [ "$DEPS_RC" -eq 0 ] && [ "$DEPS_VERDICT" = "PASS" ]; then
+    record_fail "WF-18" "verdict_present_but_missing=$DEPS_MISSING" "every referenced dependency present in the manifest" "Dependency report contradicts itself: verdict=PASS with missing=$DEPS_MISSING. The measured list governs; a PASS label cannot clear it."
   else
     record_fail "WF-18" "referenced=$DEPS_REFERENCED missing=$DEPS_MISSING" "every referenced dependency present in the manifest" "Dependency manifest gate FAILED (exit $DEPS_RC): $DEPS_MISSING. Create these objects in GHL (or record approval) before shipping."
   fi
