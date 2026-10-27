@@ -138,3 +138,72 @@ def test_declared_dependency_passes_manifest_gate(tmp_path):
         ["WFTEST009", "--deps", manifest, "--json"],
     )
     assert _items(result)["WF-18"]["status"] == "PASS"
+
+
+def _branching_export():
+    """Two if_else nodes, both arms wired, every arm reaching the goal.
+
+    This is the case that matters for rubric D4: the graph CONTAINS branches,
+    so D4 must not be scored N/A, while nothing is actually broken.
+    """
+    return {
+        "targetActionId": "n1",
+        "workflowData": {
+            "templates": [
+                {"id": "n1", "type": "if_else", "name": "First",
+                 "parentKey": None, "branches": {"true": "n2", "false": "n3"}},
+                {"id": "n2", "type": "if_else", "name": "Second",
+                 "parentKey": "n1", "branches": {"true": "n4", "false": "n5"}},
+                {"id": "n3", "type": "workflow_goal", "name": "Goal A",
+                 "parentKey": "n1"},
+                {"id": "n4", "type": "workflow_goal", "name": "Goal B",
+                 "parentKey": "n2"},
+                {"id": "n5", "type": "workflow_goal", "name": "Goal C",
+                 "parentKey": "n2"},
+            ]
+        },
+    }
+
+
+def test_wf23_reports_branch_count_separately_from_unwired(tmp_path):
+    """`branches=` counts branch nodes PRESENT; `unwired=` counts broken ones.
+
+    Deriving the rubric's D4 N/A rule from `unwired` would hand a free 10 to
+    this graph, because nothing here is unwired.
+    """
+    manifest = _manifest(tmp_path, {})
+    result = _run(
+        tmp_path, _branching_export(),
+        ["WFTEST009", "--deps", manifest, "--json"],
+    )
+    items = _items(result)
+    wf23 = items["WF-23"]
+    assert wf23["status"] == "PASS", wf23["observed"] + wf23["notes"]
+    observed = wf23["observed"]
+    assert "branches=2" in observed, observed
+    assert "unwired=0" in observed, observed
+
+
+def test_wf23_fails_when_branch_count_is_absent(tmp_path):
+    """A validator report without `branches` must FAIL, not default to zero."""
+    export = _branching_export()
+    env = _setup(tmp_path, export)
+    stub = tmp_path / "stub_validator.py"
+    stub.write_text(
+        "import json, sys\n"
+        "print(json.dumps({'wf': 'WF-23', 'verdict': 'PASS', 'failures': [],\n"
+        "                  'nodes': 4, 'edges': 4, 'root': 'n1', 'orphans': 0,\n"
+        "                  'unverified': []}))\n",
+        encoding="utf-8",
+    )
+    env["QC_GRAPH_VALIDATOR"] = str(stub)
+    manifest = _manifest(tmp_path, {})
+    result = subprocess.run(
+        ["bash", str(QC_SCRIPT), "WFTEST009", "--deps", manifest, "--json"],
+        env=env, capture_output=True, text=True, timeout=30, check=False,
+    )
+    wf23 = _items(result)["WF-23"]
+    assert wf23["status"] == "FAIL", (
+        "a report missing `branches` must fail closed; got %r" % (wf23,)
+    )
+    assert "branches" in wf23["observed"] + wf23["notes"]

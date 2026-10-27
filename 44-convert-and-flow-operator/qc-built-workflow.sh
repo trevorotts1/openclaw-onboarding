@@ -500,13 +500,13 @@ except Exception:
     emit_fail()
 if not isinstance(d,dict) or ("failures" in d and not isinstance(d["failures"],list)):
     emit_fail()
-required=("verdict","nodes","edges","root","failures","orphans","unverified")
+required=("verdict","nodes","edges","root","failures","orphans","branches","unverified")
 missing=[]
 for k in required:
     v=d.get(k)
     ok=(k in d)
     if k=="verdict": ok=ok and isinstance(v,str)
-    elif k in ("nodes","edges","orphans"): ok=ok and isinstance(v,int) and not isinstance(v,bool) and v>=0
+    elif k in ("nodes","edges","orphans","branches"): ok=ok and isinstance(v,int) and not isinstance(v,bool) and v>=0
     elif k=="root": ok=ok and (v is None or isinstance(v,str))
     elif k=="failures": ok=ok and isinstance(v,list)
     elif k=="unverified": ok=ok and isinstance(v,list)
@@ -521,6 +521,7 @@ verdict=d.get("verdict") if isinstance(d.get("verdict"),str) else "none"
 nodes=d.get("nodes") if isinstance(d.get("nodes"),int) and not isinstance(d.get("nodes"),bool) and d["nodes"]>=0 else "none"
 edges=d.get("edges") if isinstance(d.get("edges"),int) and not isinstance(d.get("edges"),bool) and d["edges"]>=0 else "none"
 orphans=d.get("orphans") if isinstance(d.get("orphans"),int) and not isinstance(d.get("orphans"),bool) and d["orphans"]>=0 else "none"
+branches=d.get("branches") if isinstance(d.get("branches"),int) and not isinstance(d.get("branches"),bool) and d["branches"]>=0 else "none"
 root=d.get("root")
 root=root.strip() if isinstance(root,str) else ""
 root=root or "none"
@@ -531,8 +532,8 @@ elif len(failures)>0 and verdict=="PASS": contradiction="pass_with_failures"
 elif len(failures)==0 and verdict=="FAIL": contradiction="fail_without_failure"
 elif len(failures)>0 and verdict=="UNVERIFIED": contradiction="unverified_with_failures"
 elif isinstance(orphans,int) and not isinstance(orphans,bool) and orphans>=0 and orphans!=count_kind("ORPHAN"): contradiction="orphans_mismatch"
-values={"parse":"ok","verdict":verdict,"nodes":nodes,"edges":edges,"root":root,"failures":len(failures),"orphans":orphans,"dangling":count_kind("DANGLING"),"unwired":count_kind("UNWIRED_BRANCH"),"cross":count_kind("CROSS_BRANCH"),"cycle":count_kind("CYCLE"),"unverified":unverified,"kinds":",".join(kinds) or "none","missing":",".join(missing) or "none","contradiction":contradiction}
-print(" ".join("%s=%s"%(k,values[k]) for k in ("parse","verdict","nodes","edges","root","failures","orphans","dangling","unwired","cross","cycle","unverified","kinds","missing","contradiction")))') || GRAPH_META_RC=$?
+values={"parse":"ok","verdict":verdict,"nodes":nodes,"edges":edges,"root":root,"failures":len(failures),"orphans":orphans,"branches":branches,"dangling":count_kind("DANGLING"),"unwired":count_kind("UNWIRED_BRANCH"),"cross":count_kind("CROSS_BRANCH"),"cycle":count_kind("CYCLE"),"unverified":unverified,"kinds":",".join(kinds) or "none","missing":",".join(missing) or "none","contradiction":contradiction}
+print(" ".join("%s=%s"%(k,values[k]) for k in ("parse","verdict","nodes","edges","root","failures","orphans","branches","dangling","unwired","cross","cycle","unverified","kinds","missing","contradiction")))') || GRAPH_META_RC=$?
 
 GRAPH_PARSE=""
 GRAPH_VERDICT=""
@@ -541,6 +542,7 @@ GRAPH_EDGES=""
 GRAPH_ROOT=""
 GRAPH_FAILURES=""
 GRAPH_ORPHANS=""
+GRAPH_BRANCHES=""
 GRAPH_DANGLING=""
 GRAPH_UNWIRED=""
 GRAPH_CROSS=""
@@ -558,6 +560,7 @@ for tok in $GRAPH_META; do
     root=*) GRAPH_ROOT="${tok#root=}" ;;
     failures=*) GRAPH_FAILURES="${tok#failures=}" ;;
     orphans=*) GRAPH_ORPHANS="${tok#orphans=}" ;;
+    branches=*) GRAPH_BRANCHES="${tok#branches=}" ;;
     dangling=*) GRAPH_DANGLING="${tok#dangling=}" ;;
     unwired=*) GRAPH_UNWIRED="${tok#unwired=}" ;;
     cross=*) GRAPH_CROSS="${tok#cross=}" ;;
@@ -569,7 +572,7 @@ for tok in $GRAPH_META; do
   esac
 done
 
-GRAPH_COUNTS="$GRAPH_NODES nodes / $GRAPH_EDGES edges / $GRAPH_ORPHANS orphans / $GRAPH_DANGLING dangling edges / $GRAPH_UNWIRED unwired branches / $GRAPH_CROSS cross-branch violations / $GRAPH_CYCLE cycles"
+GRAPH_COUNTS="nodes=$GRAPH_NODES / edges=$GRAPH_EDGES / branches=$GRAPH_BRANCHES / orphans=$GRAPH_ORPHANS / dangling=$GRAPH_DANGLING / unwired=$GRAPH_UNWIRED / cross=$GRAPH_CROSS / cycle=$GRAPH_CYCLE"
 
 if [ "$GRAPH_RC" -eq 99 ]; then
   record_fail "WF-23" "validator_missing" "tools/validate_graph.py present" "Claimed structural gate is absent (tools/validate_graph.py) — fail closed; a missing validator can never pass QC."

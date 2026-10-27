@@ -537,6 +537,13 @@ def graph(data, nodes, trigger):
         "edges": edge_count,
         "root": root,
         "orphans": sum(f["kind"] == "ORPHAN" for f in failures),
+        # How many branch nodes the graph CONTAINS, not how many are broken.
+        # The rubric grants D4 = N/A (=10) only on a count of zero, so deriving
+        # that from `unwired` would hand a free 10 to a well-wired branching
+        # workflow. These two numbers answer different questions.
+        "branches": sum(
+            1 for node in nodes if node.get("type") in BRANCH_TYPES
+        ),
         "unverified": unverified,
     }
 
@@ -857,6 +864,7 @@ def main():
             {
                 "wf": "WF-23", "verdict": "UNVERIFIED", "failures": [],
                 "nodes": 0, "edges": 0, "root": None, "orphans": 0,
+                "branches": 0,
                 "unverified": [{"reason": str(exc)}],
             }
         )

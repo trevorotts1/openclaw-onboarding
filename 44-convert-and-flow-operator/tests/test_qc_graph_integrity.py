@@ -162,8 +162,8 @@ def test_wf15_reports_real_orphan_count_and_fails(tmp_path):
     assert result.returncode == 1, result.stdout + result.stderr
     assert items["WF-15"]["status"] == "FAIL"
     evidence = _evidence(items["WF-15"])
-    assert "2 orphans" in evidence
-    assert "0 orphans" not in items["WF-15"]["observed"]
+    assert "orphans=2" in evidence
+    assert "orphans=0" not in items["WF-15"]["observed"]
 
 
 def test_wf15_fails_on_truncated_validator_json(tmp_path):
@@ -188,6 +188,9 @@ def test_wf15_fails_when_orphans_field_missing(tmp_path):
         "edges": 0,
         "root": "n1",
         "failures": [],
+        # Present so this test isolates the MISSING `orphans` case rather than
+        # tripping over two absent required fields at once.
+        "branches": 0,
         "unverified": [],
     }
     validator_env = _fake_validator(
@@ -220,6 +223,7 @@ def test_failures_plus_unverified_is_overall_fail(tmp_path):
             }
         ],
         "orphans": 1,
+        "branches": 1,
         "unverified": [
             {
                 "node_id": "b1",
@@ -237,7 +241,7 @@ def test_failures_plus_unverified_is_overall_fail(tmp_path):
 
     assert result.returncode == 1, result.stdout + result.stderr
     assert items["WF-15"]["status"] == "FAIL"
-    assert "1 orphans" in _evidence(items["WF-15"])
+    assert "orphans=1" in _evidence(items["WF-15"])
 
 
 def test_pure_unverified_is_never_success(tmp_path):
@@ -248,6 +252,7 @@ def test_pure_unverified_is_never_success(tmp_path):
         "root": "n1",
         "failures": [],
         "orphans": 0,
+        "branches": 1,
         "unverified": [
             {
                 "node_id": "b1",

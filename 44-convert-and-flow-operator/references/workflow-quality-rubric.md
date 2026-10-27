@@ -43,10 +43,12 @@ weighted_score = (D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*8) /
 A dimension that is genuinely **N/A** scores **10** (a clean N/A is not a defect). For D4,
 N/A is allowed ONLY when the saved workflow graph contains ZERO branch-type nodes:
 `if_else`, `workflow_split`, `goto`, or `transition`. WF-23 computes the branch-node count
-from the saved graph and prints it next to the D4 line; the build agent may NOT assert the
+from the saved graph and prints it in its WF-23 evidence line as the token `branches=<n>`
+(alongside `unwired=<n>`, which counts only branches MISSING targets — a different number,
+and never a substitute for this one); the build agent may NOT assert the
 count. If the count is >= 1, D4 may not be scored N/A: a D4=N/A claim with branch nodes
 present is automatically scored D4=1, not 10 (per D-8 of the review plan). If WF-23 is
-unavailable or the branch count is not printed, a D4 N/A claim is refused and D4 is scored
+unavailable or `branches=` is absent, a D4 N/A claim is refused and D4 is scored
 1 (fail closed). When N/A is allowed, the anchor note records "N/A — no branches present".
 
 ---
@@ -118,11 +120,13 @@ end-to-end), `link_steps()` (order/parentKey/next).
 - **10:** Every branch has both paths defined, correct field/operator/value, each path advances
   to a deliberate outcome.
 
-**N/A rule:** D4 is N/A (= 10) ONLY when WF-23 prints a branch-node count of 0 from the saved
-workflow graph. Count node types `if_else`, `workflow_split`, `goto`, and `transition`.
+**N/A rule:** D4 is N/A (= 10) ONLY when WF-23 prints `branches=0` from the saved
+workflow graph. That token counts node types `if_else`, `workflow_split`, `goto`, and
+`transition`. It is NOT `unwired=`: `unwired` counts branches that are missing targets, so a
+fully wired three-branch workflow prints `unwired=0` and still may not score D4 N/A.
 The count comes from WF-23, never the build agent's assertion. If the count is >= 1, a D4=N/A
 claim is refused and D4 is automatically scored 1, not 10 (per D-8 of the review plan). If
-WF-23 is unavailable or the count is not printed, a D4 N/A claim is refused and D4 is scored
+WF-23 is unavailable or `branches=` is absent, a D4 N/A claim is refused and D4 is scored
 1 (fail closed).
 
 ## D5 — Edge-case & failure handling (12%)
