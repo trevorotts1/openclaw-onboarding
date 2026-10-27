@@ -29,6 +29,12 @@ import sys
 
 LEAK_TOKENS = ("/Users/", "/private/tmp", "scratchpad", "blackceomacmini")
 
+# Pinned automation template count. Both the committed index length AND the count of
+# template files the guard finds on disk are checked against it, so deleting a template
+# file together with its index row (which the set comparison below cannot see) is still
+# drift. Bump this only in the same commit that adds/removes an automation template.
+EXPECTED_TEMPLATE_COUNT = 51
+
 
 def _load(path):
     with open(path, encoding="utf-8") as f:
@@ -96,8 +102,12 @@ def main(argv: list[str]) -> int:
             errors.append(f"automation templates on disk but NOT in index (orphans): {sorted(disk - idx)}")
         if idx - disk:
             errors.append(f"automation ids in index but NO file (phantoms): {sorted(idx - disk)}")
-        if len(disk) != 51:
-            errors.append(f"expected 51 automation templates on disk, found {len(disk)}")
+        if len(idx) != EXPECTED_TEMPLATE_COUNT:
+            errors.append(f"expected {EXPECTED_TEMPLATE_COUNT} automation index entries, "
+                          f"found {len(idx)} (count drift)")
+        if len(disk) != EXPECTED_TEMPLATE_COUNT:
+            errors.append(f"expected {EXPECTED_TEMPLATE_COUNT} automation templates on disk, "
+                          f"found {len(disk)} (count drift)")
 
     # (3) link-map integrity (v2 canonical): funnel ids + automation refs resolve
     funnel_ids = {k.split("/", 1)[1] for k in _disk_templates(funnel_root)}
@@ -156,7 +166,8 @@ def main(argv: list[str]) -> int:
         for e in errors:
             print(f"  ✗ {e}")
         return 1
-    print(f"OK — funnel(38) + automation(28) libraries, indexes, link map, and persona crosswalk "
+    print(f"OK — funnel(38) + automation({EXPECTED_TEMPLATE_COUNT}) libraries, indexes, link map, "
+          f"and persona crosswalk "
           f"are in sync ({len(lm_funnels)} funnels mapped, 0 broken refs, 0 phantoms, "
           f"0 unresolved persona refs, portable indexes).")
     return 0
