@@ -104,7 +104,7 @@ SNAPSHOT_DIR="$CAF_DATA/snapshots"
 BUILD_EVENTS_LEDGER="$CAF_DATA/build-events.jsonl"
 
 # ── Export the workflow ────────────────────────────────────────────────────────
-TMP=$(mktemp /tmp/qc-wf-export-XXXXXX.json)
+TMP=$(mktemp "${TMPDIR:-/tmp}/qc-wf-export.XXXXXX")
 trap 'rm -f "$TMP"' EXIT
 
 EXPORT_ERR=""

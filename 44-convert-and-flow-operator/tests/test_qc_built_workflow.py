@@ -754,3 +754,28 @@ class TestWF7ActionTypeDerivation:
             f"expected all {len(types)} builder types counted, got: "
             f"{wf7['observed']}"
         )
+
+
+def test_export_temp_template_is_portable(tmp_path, monkeypatch):
+    """The export temp file must use a mktemp template that both BSD and GNU accept.
+
+    BSD mktemp requires the Xs to be the LAST characters of the template. With a
+    suffix after them it creates that literal path instead of a unique one, so the
+    first export succeeds and every later one dies with 'File exists'. This test
+    runs the real template twice and requires two distinct files.
+    """
+    import re
+    script = (Path(__file__).resolve().parent.parent / "qc-built-workflow.sh").read_text()
+    m = re.search(r'mktemp\s+"([^"]+)"', script)
+    assert m, "no quoted mktemp template found in qc-built-workflow.sh"
+    template = m.group(1).replace("${TMPDIR:-/tmp}", str(tmp_path))
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+    first = subprocess.run(["mktemp", template], capture_output=True, text=True)
+    second = subprocess.run(["mktemp", template], capture_output=True, text=True)
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, (
+        "second mktemp call failed - the template is not portable: " + second.stderr
+    )
+    assert first.stdout.strip() != second.stdout.strip(), "mktemp returned the same path twice"
