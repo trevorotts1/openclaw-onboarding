@@ -489,8 +489,11 @@ class TimeoutReconcile(Base):
         self.assertEqual(result["attempts"], 2)
 
     def test_a_failing_consult_is_unknown_and_the_retry_still_bounded(self):
+        reconciles = []
+
         def transport(action, payload):
             if action == "reconcile":
+                reconciles.append(1)
                 raise TimeoutError("consult also timed out")
             raise TimeoutError("timed out")
 
@@ -499,6 +502,10 @@ class TimeoutReconcile(Base):
             engine.apply(self.operation())
         self.assertEqual(caught.exception.attempts, 3)
         self.assertEqual(len(caught.exception.delays), 2)
+        # Reconcile runs after EVERY failed attempt, the last one included:
+        # giving up is exactly when a landed-but-timed-out send must not be
+        # reported as failed without one final consult.
+        self.assertEqual(len(reconciles), 3)
 
 
 class NoNetworkOrSecrets(unittest.TestCase):
