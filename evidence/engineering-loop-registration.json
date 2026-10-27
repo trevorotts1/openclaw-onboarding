@@ -506,10 +506,10 @@
    "ai.blackceo.pb-eng-loop-pbb220.plist"
   ],
   "state_db": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
-  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
+  "plist": "<OPERATOR_PATH>/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
   "corpus_status": {
    "observed_at": "2026-10-26T16:16Z",
-   "observer": "T-05 QC+FIX lane PBB-780, existence check of the exact cited path strings (positive control: the two cited /Volumes paths that do exist return TRUE on the same instrument)",
+   "observer": "T-05 QC+FIX lane PBB-780, existence check of the exact cited path strings (positive control: the two cited operator paths that do exist return TRUE on the same instrument)",
    "cited_paths": 20,
    "missing_paths": 18,
    "surviving_paths": 2,
