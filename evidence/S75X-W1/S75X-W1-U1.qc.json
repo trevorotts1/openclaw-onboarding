@@ -10,9 +10,9 @@
   "code_changes_made": [],
   "fixes": [],
   "provenance": {
-    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W1-U1-qc",
+    "lane": "<PATH>/worktrees/S75X-W1-U1-qc",
     "lane_mode": "git worktree, detached HEAD at 24366d8f5c649cb01afa183c2d7bf39fd6420a20 (the unit head; the shared local branch s75x/verdicts-S75X-W1 stays where the S75X-W1-U2 lanes hold it, so the push refspec targets refs/heads/s75x/verdicts-S75X-W1 directly)",
-    "scratch": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/w1u1-qc/",
+    "scratch": "<PATH>/scratch/w1u1-qc/",
     "base_tested": "96559ab1b531570534316d856006867606afd4e2",
     "head_tested": "24366d8f5c649cb01afa183c2d7bf39fd6420a20",
     "code_identity_vs_base": "git diff 96559ab1b..24366d8f5 = exactly two evidence files (S75X-W1-U1.verdict.json, S75X-W1-U2.verdict.json), 0 non-evidence paths; the code under QC is origin/main@96559ab1b",
@@ -67,16 +67,16 @@
     }
   ],
   "checks": {
-    "C1_lane_discipline": "all lanes/worktrees/scratch under /Volumes/mac mini m4/Downloads/git trees and automations/s75; no writes outside",
+    "C1_lane_discipline": "all lanes/worktrees/scratch under <PATH>; no writes outside",
     "C2_branch_only": "no commit or push to main; work lands on s75x/verdicts-S75X-W1 via refspec from a detached lane HEAD",
-    "C3_ledger_untouched": "no access to /Users/blackceomacmini/loop-control/s75/ledger.json",
+    "C3_ledger_untouched": "no access to <PATH>/loop-control/s75/ledger.json",
     "C4_no_secrets": "no secret files read or printed",
     "C5_verdict_file_integrity": "builder verdict JSON re-read in lane: 14491 bytes, verdict PASS, checks C1-C12 present, acceptance_results 4/4 MET, findings F1+F2, blockers [], row_fully_met true, base_tested == head_tested == 96559ab1b",
     "C6_counts_verbatim": "all pytest and scan counts recorded exactly as printed",
     "C7_tests_unweakened": "lane tree clean vs 24366d8f5 after runs; 0 skip/xfail/pytest.mark in unit file; 25 test files confirmed",
     "C8_push_receipt": "builder push 4fe5687b0..24366d8f5 consistent with origin ref state observed (24366d8f5 confirmed as origin tip before U2-QC's 53e23f7a4 landed)"
   },
-  "tests": "python3 -I -m pytest (4 separate invocations from /Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W1-U1-qc/75-drama-song-ad-factory): intake_card/ 249 passed + 27 subtests, exit 0, 21.81s; choice_card/ 282 passed + 27 subtests (11 doc warnings), exit 0, 30.21s; test_factory_card_purpose_w3u2.py 1 passed, exit 0, 11.56s; test_opening_flow_default_s75x.py 15 passed, exit 0, 3.77s. Total 547 passed, 0 failed, 0 skipped, 0 xfail.",
+  "tests": "python3 -I -m pytest (4 separate invocations from <PATH>/worktrees/S75X-W1-U1-qc/75-drama-song-ad-factory): intake_card/ 249 passed + 27 subtests, exit 0, 21.81s; choice_card/ 282 passed + 27 subtests (11 doc warnings), exit 0, 30.21s; test_factory_card_purpose_w3u2.py 1 passed, exit 0, 11.56s; test_opening_flow_default_s75x.py 15 passed, exit 0, 3.77s. Total 547 passed, 0 failed, 0 skipped, 0 xfail.",
   "not_verified": [
     "The full 335-file skill suite was not run; adjacent surfaces (dispatch, media, delivery) untouched by this unit were not re-run.",
     "Adapter-repo parity (.claude/skills/drama-song-ad-factory twin, OpenClaw distribution) was not checked -- the unit's owned_output is the canonical tree only. This also bounds the F1 refinement: an out-of-tree adapter that calls intro.take() directly could still produce the divergent state.",

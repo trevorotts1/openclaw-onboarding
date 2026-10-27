@@ -9,8 +9,8 @@
   "base_tested": "96559ab1b531570534316d856006867606afd4e2",
   "head_tested": "96559ab1b531570534316d856006867606afd4e2",
   "provenance": {
-    "repo": "/Users/blackceomacmini/openclaw-onboarding",
-    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W1-U1-build",
+    "repo": "<PATH>/openclaw-onboarding",
+    "lane": "<PATH>/worktrees/S75X-W1-U1-build",
     "lane_branch": "s75x/verdicts-S75X-W1",
     "lane_local_branch": "s75x/verdicts-S75X-W1-u1",
     "origin_main": "96559ab1b531570534316d856006867606afd4e2",
@@ -26,7 +26,7 @@
     "unit_code_delta_at_new_head": "12 lines in intake_card.py: conversation() gains run_state_file and delegates the purpose_flow default to new_run_flow(run_dir, run_state_file) instead of the old 'history is True or (history is None and run_dir isdir)' test; plus the new 301-line test_opening_flow_default_s75x.py",
     "owned_output_declared": "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/",
     "writer_files_untouched": "this verdict wrote exactly one file, evidence/S75X-W1/S75X-W1-U1.verdict.json; no file under 75-drama-song-ad-factory/ was written or touched by this lane",
-    "scratch": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/w1u1 (probe run dirs, captured pytest output, check_u1.py)"
+    "scratch": "<PATH>/scratch/w1u1 (probe run dirs, captured pytest output, check_u1.py)"
   },
   "acceptance_results": [
     {

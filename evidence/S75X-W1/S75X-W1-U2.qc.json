@@ -7,7 +7,7 @@
  "workflow": "S75X-W1",
  "program": "s75",
  "provenance": {
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W1-U2-qc",
+  "lane": "<PATH>/worktrees/S75X-W1-U2-qc",
   "lane_branch": "s75x/verdicts-S75X-W1",
   "head_tested": "847e2dfaff4943cbdf93d515cf6b7044ba0089c1",
   "base_tested": "96559ab1b531570534316d856006867606afd4e2",
@@ -16,8 +16,8 @@
   "unit_content_delta": "f9efd754022af19bc2249ec95ab729a94ea1e6d0 (2026-10-23 15:49:45 -0400), 5 files +784/-13, verified ancestor of base",
   "builder_lane_state": "builder lane S75X-W1-U2-build no longer exists on disk (worktree removed after commit); QC lane created fresh with git worktree add from origin/s75x/verdicts-S75X-W1",
   "prior_qc_commit_on_branch": "53e23f7a430b8d393400552dd85a1e6b581c9f03 (earlier QC lane, status clean); preserved below under prior_qc_run and in git history",
-  "ledger": "/Users/blackceomacmini/loop-control/s75/ledger.json not opened, not written",
-  "scratch": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/s75x-w1-u2-qc2/ (verify.py, verify.out, nonmd-hits.txt, full-suite.out, full-suite-fails.txt, write_qc.py, cacheprobe/)"
+  "ledger": "<PATH>/loop-control/s75/ledger.json not opened, not written",
+  "scratch": "<PATH>/scratch/s75x-w1-u2-qc2/ (verify.py, verify.out, nonmd-hits.txt, full-suite.out, full-suite-fails.txt, write_qc.py, cacheprobe/)"
  },
  "artifacts_rehashed": {
   "75-drama-song-ad-factory/references/sensational-openings.md": "sha256 914ba03e59d27002627e4372d8fd2d75f0b8e88006ee5b74d68bfcc751245260, 198 lines, 10911 bytes - matches builder",
@@ -85,7 +85,7 @@
    "workflow": "S75X-W1",
    "program": "s75",
    "provenance": {
-    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W1-U2-qc",
+    "lane": "<PATH>/worktrees/S75X-W1-U2-qc",
     "lane_branch": "s75x/verdicts-S75X-W1",
     "head_tested": "4fe5687b0cceb366cb63e15e61425b589cf5b07b",
     "base_tested": "96559ab1b531570534316d856006867606afd4e2",
@@ -97,8 +97,8 @@
      "75-drama-song-ad-factory/references/opening-proposals.md": "sha256 04d24cd60fcb664b8e91d1f95d0097e580baaf9d044769834080215a01c3f5e3, 218 lines - matches builder receipt",
      "75-drama-song-ad-factory/references/stage-runbook.md": "sha256 1faf5c93165a15c8a01584b4a5247cab0c3980bb16dffd5d71567196da6025aa, 203 lines - matches builder receipt"
     },
-    "ledger": "/Users/blackceomacmini/loop-control/s75/ledger.json not written by builder or QC (stat only, never opened for write)",
-    "scratch": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/s75x-w1-u2-qc/ (verify.py, full-suite.out, full-suite2.out)"
+    "ledger": "<PATH>/loop-control/s75/ledger.json not written by builder or QC (stat only, never opened for write)",
+    "scratch": "<PATH>/scratch/s75x-w1-u2-qc/ (verify.py, full-suite.out, full-suite2.out)"
    },
    "acceptance_results": [
     {

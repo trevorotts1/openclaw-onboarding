@@ -9,7 +9,7 @@
   "base_tested": "96559ab1b531570534316d856006867606afd4e2",
   "head_tested": "96559ab1b531570534316d856006867606afd4e2",
   "provenance": {
-    "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W1-U2-build",
+    "lane": "<PATH>/worktrees/S75X-W1-U2-build",
     "lane_branch": "s75x/verdicts-S75X-W1",
     "origin_main": "96559ab1b531570534316d856006867606afd4e2",
     "origin_main_subject": "Merge pull request #2604 from trevorotts1/batch/s75x-frontier-land",
