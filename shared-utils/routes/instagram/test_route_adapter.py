@@ -1941,14 +1941,23 @@ class VersionBookkeepingTests(unittest.TestCase):
     The marker is compared remote-against-local by `check-updates.sh`, so a
     version at or below `origin/main`'s reads as "not newer" on every deployed
     box -- that is exactly the regression the PBB-364 review found (this
-    branch shipped `v2.0.38` while `main` was at `v2.0.95`). These read
-    `origin/main` itself and skip only when the checkout has no remote,
-    exactly as the repo's own `BookkeepingTests` does.
+    branch shipped `v2.0.38` while `main` was at `v2.0.95`).
+
+    PBB-912 GATE: these are BRANCH bookkeeping checks, not main checks. A
+    checkout that IS `origin/main` has no bump to make, and a branch that
+    never touches the version marker is not claiming one, so both skip
+    instead of failing forever. The check runs only when THIS branch differs
+    from its own merge-base with `origin/main` at
+    `38-conversational-ai-system/skill-version.txt`; the PBB-364 protection
+    is unchanged for every branch that does bump.
     """
+
+    MARKER_REL = "38-conversational-ai-system/skill-version.txt"
 
     @classmethod
     def setUpClass(cls):
         cls.git_ok = False
+        cls.gate = None
         try:
             probe = subprocess.run(
                 ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify",
@@ -1956,9 +1965,36 @@ class VersionBookkeepingTests(unittest.TestCase):
                 stderr=subprocess.PIPE, text=True)
         except OSError:
             return
-        cls.git_ok = probe.returncode == 0
+        if probe.returncode != 0:
+            return
+        cls.git_ok = True
+        cls.gate = cls.version_gate()
 
-    def git(self, *argv):
+    @classmethod
+    def version_gate(cls):
+        """None when this branch bumps the marker; else the skip reason."""
+        head = cls.git("rev-parse", "HEAD")
+        main = cls.git("rev-parse", "origin/main")
+        if head.returncode != 0 or main.returncode != 0:
+            return "cannot resolve HEAD and origin/main to compare against"
+        if head.stdout.strip() == main.stdout.strip():
+            return ("this checkout is origin/main itself; a main checkout has "
+                    "no branch version bump to check")
+        base = cls.git("merge-base", "HEAD", "origin/main")
+        if base.returncode != 0 or not base.stdout.strip():
+            return "no merge-base with origin/main to compare against"
+        changed = cls.git("diff", "--name-only", base.stdout.strip(), "HEAD",
+                          "--", cls.MARKER_REL)
+        if changed.returncode != 0:
+            return "cannot diff %s against origin/main" % cls.MARKER_REL
+        if not changed.stdout.strip():
+            return ("this branch does not change %s against its merge-base "
+                    "with origin/main; no version bump is claimed" %
+                    cls.MARKER_REL)
+        return None
+
+    @staticmethod
+    def git(*argv):
         return subprocess.run(["git", "-C", str(REPO_ROOT)] + list(argv),
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               text=True)
@@ -1975,6 +2011,8 @@ class VersionBookkeepingTests(unittest.TestCase):
     def test_the_shipped_version_is_strictly_above_main_s(self):
         if not self.git_ok:
             self.skipTest("no origin/main in this checkout to compare against")
+        if self.gate:
+            self.skipTest(self.gate)
         main = self.git("show",
                         "origin/main:38-conversational-ai-system/"
                         "skill-version.txt").stdout.strip()
@@ -1986,6 +2024,8 @@ class VersionBookkeepingTests(unittest.TestCase):
         # skill's v22.0.3x..v22.0.8x as a substring.
         if not self.git_ok:
             self.skipTest("no origin/main in this checkout to compare against")
+        if self.gate:
+            self.skipTest(self.gate)
         token = self.marker().lstrip("v")
         for form in ("[%s]" % token, "v%s" % token):
             with self.subTest(form=form):
