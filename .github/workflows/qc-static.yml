@@ -3394,6 +3394,28 @@ jobs:
           ls -l "$t"
           python3 -I "$t"
           echo "✓ T-15 bonus access adapter suite ran and passed"
+
+      # T-23 (shared-utils/manifest) — the joined-monthly-approval suite is
+      # wired here BY EXPLICIT NAME. No discovery loop in this workflow reaches
+      # `shared-utils/manifest/tests`, so naming the path is what makes it run
+      # at all. Path resolved from the repo root; absent checkout SKIPs LOUDLY
+      # rather than passing silently.
+      - name: T-23 joined monthly approval manifest suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="shared-utils/manifest/tests/test_monthly_manifest.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-23 monthly manifest suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 "$t"
+          echo "✓ T-23 joined monthly approval manifest suite ran and passed"
       # T-21 Instagram route adapter: the supported comment and direct routes
       # (separate account/filter/event/eligibility, ignored opener no drip, no
       # inferred FB parity). Without this step the suite never runs in CI.
