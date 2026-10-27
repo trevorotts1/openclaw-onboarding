@@ -1136,6 +1136,21 @@ class BookkeepingTests(unittest.TestCase):
         """
         if not self.git_ok:
             return self.changelog_versions()
+        probe = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "origin/main"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if probe.returncode != 0:
+            # No origin/main ref in this checkout: read the same window against
+            # the pinned main instead, which needs only that commit.
+            pinned = self.git("diff", "--unified=0", MAIN_PIN_SHA + "...HEAD",
+                              "--",
+                              "38-conversational-ai-system/CHANGELOG.md").stdout
+            added = "\n".join(line[1:] for line in pinned.splitlines()
+                              if line.startswith("+")
+                              and not line.startswith("+++"))
+            return [tuple(int(p) for p in m.split("."))
+                    for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?",
+                                        added, re.M)]
         out = self.git("diff", "--unified=0", "origin/main...HEAD", "--",
                        "38-conversational-ai-system/CHANGELOG.md").stdout
         added = "\n".join(line[1:] for line in out.splitlines()
