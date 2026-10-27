@@ -1,3 +1,7 @@
+## [2.0.201] - 2026-10-27 - chore(batch-20261027-0556): version stamp for T-55 (Skill 38 to v2.0.201)
+
+- **Batch 20261027-0556 version stamp, Skill 38 v2.0.199 -> v2.0.201.** T-55 (`pb/PBB-918-wave1/T-55` @ `20b91149`) is the only unit in this batch touching skill 38. No skill code changed in this commit; version stamp only.
+
 ## [2.0.199] - 2026-10-27 - chore(batch-20261027-0211): version stamp for T-08
 
 - **Batch 20261027-0211 version stamp, Skill 38 v2.0.198 -> v2.0.199.** T-08 (`pb/PBB-440/t-08-update` @ `bfca7724`) is the only unit in this batch touching skill 38. No skill code changed in this commit; version stamp only.
