@@ -168,6 +168,19 @@ def load_fixture(path):
 
 def run(fixture_path, verbose=False):
     data = load_fixture(fixture_path)
+    # Other units own other families in this same fixture on main (T-18 owns F-02 and
+    # F-05 and reports the rest SKIP). Scope this runner to the families it defines so
+    # a shared fixture never makes it report a false violation, and never let an
+    # empty scope look like a pass.
+    owned = [c for c in data["cases"] if TRACES.get(family_of(c.get("fixture_id"))) is not None]
+    unowned = [c for c in data["cases"] if TRACES.get(family_of(c.get("fixture_id"))) is None]
+    for c in unowned:
+        if verbose:
+            print(f"SKIP {c.get('fixture_id')}: family owned by another runner")
+    if not owned:
+        print("TRACE VIOLATION: no case belongs to a family this runner owns")
+        return 1
+    data = dict(data, cases=owned)
     seen = set()
     failures = []
     passed = 0
