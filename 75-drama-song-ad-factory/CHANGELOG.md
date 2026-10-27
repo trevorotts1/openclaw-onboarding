@@ -4,6 +4,10 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.128 - 2026-10-27 - chore(batch-20261027-2050): version stamp for S75-T02 and S75-T15
+
+- **Batch 20261027-2050 version stamp, skill 75 v2.9.127 -> v2.9.128.** S75-T02 (`s75/S75-T02-r1` @ `89a7ffc03`) and S75-T15 (`s75/S75-T15-r6` @ `a6400314f`) are the two units in this batch. T15 carried its own bump to v2.9.128 on its branch; those two stamp lines were resolved back to main's v2.9.127 at merge time so the batch carries exactly one stamp, applied here. No skill code changed in this commit; version stamp only.
+
 ## v2.9.126 - 2026-10-27 - chore(batch-20261027-0211): version stamp for S75-T04
 
 - **Batch 20261027-0211 version stamp, skill 75 v2.9.125 -> v2.9.126.** S75-T04 (`s75/S75-T04-r6-stage` @ `c027f419`) is the only unit in this batch touching skill 75. No skill code changed in this commit; version stamp only.
