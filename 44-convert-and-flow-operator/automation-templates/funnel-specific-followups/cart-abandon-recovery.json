@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "cart-abandon-recovery",
   "name": "Cart Abandon / Step-1-Not-Step-2 Recovery",
   "aliases": [
@@ -23,7 +25,10 @@
       "Sequence finishes (Message #3 sent)"
     ]
   },
-  "channels": ["Email", "SMS"],
+  "channels": [
+    "Email",
+    "SMS"
+  ],
   "sequence": [
     {
       "step": "Message #1",
@@ -87,12 +92,21 @@
       "12. Remove tag `order-step1-started`; add tag `cart-abandon-sequence-complete`"
     ],
     "goal_event": "Purchase / `order-completed` tag — wired as a workflow GOAL so the contact exits the instant they buy (prevents emailing a customer asking them to buy what they already bought).",
-    "wait_steps": ["20 min", "6 hr", "1 day", "1 day"],
+    "wait_steps": [
+      "20 min",
+      "6 hr",
+      "1 day",
+      "1 day"
+    ],
     "if_else_branches": [
       "After every wait: re-check `order-completed` -> exit on purchase",
       "Optional: branch SMS vs email-only on contact DND / phone-present"
     ],
-    "tags_used": ["order-step1-started", "order-completed", "cart-abandon-sequence-complete"],
+    "tags_used": [
+      "order-step1-started",
+      "order-completed",
+      "cart-abandon-sequence-complete"
+    ],
     "notes": "GHL Automations have no public API — caf builds the workflow shape (trigger + waits + if/else + email/SMS steps); the operator pastes finalized email/SMS bodies. Honor any countdown timer used on the order page so the urgency in Msg #3 stays true."
   },
   "source": {

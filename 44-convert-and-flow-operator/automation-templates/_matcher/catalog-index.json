@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-10-20T19:35:58Z",
   "root": "..",
-  "templateCount": 51,
+  "templateCount": 49,
   "groups": [
     "engagement-broadcast",
     "funnel-specific-followups",
@@ -3414,32 +3414,6 @@
       ]
     },
     {
-      "id": "automation-build.schema",
-      "name": "automation-build.schema",
-      "group": "launch-c",
-      "category": "launch-c",
-      "aliases": [],
-      "summary": "",
-      "channels": [],
-      "trigger": "",
-      "keywords": [],
-      "goals": [],
-      "signals": [],
-      "antiSignals": [],
-      "ghlBuild": {},
-      "sourcePath": "../launch-c/automation-build.schema.json",
-      "flexibility": {},
-      "headNouns": [
-        "build",
-        "schema"
-      ],
-      "searchText": "automation-build.schema launch-c",
-      "searchTokens": [
-        "launch",
-        "schema"
-      ]
-    },
-    {
       "id": "failed-payment-recovery",
       "name": "Failed Payment Recovery (payment plans only)",
       "group": "launch-c",
@@ -4177,33 +4151,6 @@
         "win",
         "window",
         "yes"
-      ]
-    },
-    {
-      "id": "text-sets",
-      "name": "text-sets",
-      "group": "launch-text",
-      "category": "launch-text",
-      "aliases": [],
-      "summary": "",
-      "channels": [],
-      "trigger": "",
-      "keywords": [],
-      "goals": [],
-      "signals": [],
-      "antiSignals": [],
-      "ghlBuild": {},
-      "sourcePath": "../launch-text/text-sets.json",
-      "flexibility": {},
-      "headNouns": [
-        "sets",
-        "text"
-      ],
-      "searchText": "text-sets launch-text",
-      "searchTokens": [
-        "launch",
-        "set",
-        "text"
       ]
     },
     {
