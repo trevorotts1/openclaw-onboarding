@@ -282,6 +282,21 @@ def bind_plan(shots, timing, contracts=None, chosen_length_s=None):
             "duration_seconds": t["duration_seconds"]}
 
 
+def shots_from_blueprint(blueprint, method=None):
+    """The shot plan's input records from the creative blueprint.
+
+    method_plan.shot_seeds returns one record per story beat in THIS module's
+    own SHOT_FIELDS names; the fields the blueprint cannot resolve stay named
+    in each seed's ``unresolved`` list and are added by the storyboard artist,
+    never invented here. Same import pattern as bind_plan's master_length."""
+    import os, sys
+    _c = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _c not in sys.path:
+        sys.path.insert(0, _c)
+    from method_plan import method_plan as _mp
+    return _mp.shot_seeds(blueprint, method)
+
+
 def _segment_seconds(seg):
     """Segment duration in seconds from a timeline/segment record.
 

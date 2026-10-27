@@ -1,0 +1,68 @@
+{
+ "unit_id": "S75X-W2-U1",
+ "workflow_id": "S75X-W2",
+ "role": "qc-fixer",
+ "verdict": "fixed",
+ "verdict_reason": "All four acceptance elements reproduce, but the presentation check had three defects that let a record pass or fail wrongly: a lesson record could not present its own beat-8 id and passed only by relabelling it to product_intro; a malformed presentation declaration (string, or a bare list) slipped past as an undeclared canonical record; a flat presentation_order disagreeing with presentation.order was silently ignored. All three fixed on the branch with four discriminating tests; no existing test removed or relaxed.",
+ "generated_utc": "2026-10-27T10:31:05Z",
+ "supersedes": "the prior QC verdict 'clean' at 7ce435824 (its findings F1 and F2 are the defects fixed here; its scratch evidence directory qc-u1-20261026 and the builder's u1-verify-20261026 are no longer on disk)",
+ "lane": "<PATH>/s75/worktrees/S75X-W2-U1-qc",
+ "baseline_lane": "<PATH>/s75/worktrees/S75X-W2-U1-qc-base",
+ "repository": "https://github.com/trevorotts1/openclaw-onboarding.git",
+ "branch": "s75x/verdicts-S75X-W2",
+ "branch_tip_before_qc": "63fde447396746c06a6b3f7603fd8fc88ebd4c9a",
+ "builder_verdict_commit": "246a9666d881725f1c7b3a08d99d982f5f4bdd66",
+ "unit_commit": "4097da39502b8f1dcaa4aad813da54a5a67be4ea",
+ "origin_main_at_qc": "1d1b8d2c8d85395f119c37f7c046597ea4b94199",
+ "ancestry": "unit commit is an ancestor of the branch tip and of origin/main (merge-base --is-ancestor exit 0); story_arc/ is byte-identical at 96559ab1b, the branch tip and origin/main 1d1b8d2c8 before this fix",
+ "acceptance": "A consequence-first story validates while causal order and all twelve beat IDs survive; reordering is explicit data, not relabelling; existing story_arc tests pass.",
+ "acceptance_elements": [
+  {"id": "A1", "statement": "A consequence-first story validates.", "result": "PASS", "checks": ["Q1", "Q8", "Q9", "Q10", "Q13"]},
+  {"id": "A2", "statement": "Causal order and all twelve beat IDs survive.", "result": "PASS", "checks": ["Q2", "Q3", "Q4", "Q5", "Q15", "selftest"]},
+  {"id": "A3", "statement": "Reordering is explicit data, not relabelling.", "result": "PASS after fix", "checks": ["Q6", "Q7", "Q11", "Q12", "Q14", "Q16"], "note": "Before the fix Q11-Q14 failed: relabelling lesson_intro to product_intro was the only way a lesson record could present consequence-first, and malformed or conflicting declarations were silently ignored."},
+  {"id": "A4", "statement": "Existing story_arc tests pass.", "result": "PASS", "checks": ["suite:story_arc"]}
+ ],
+ "findings": [
+  {"id": "F1", "severity": "defect", "fixed": true,
+   "text": "check_presentation_order ignored the lesson purpose: a lesson record (beats carry lesson_intro at beat 8, accepted by validate_story) declaring a presentation with its own ids was refused presentation-unknown + presentation-missing + beat-statement-missing; the same record passed only when the presentation and statement rows renamed lesson_intro to product_intro, i.e. relabelling was the way to pass. Verified live on pristine 63fde4473 (probe P2, P3b)."},
+  {"id": "F2", "severity": "defect", "fixed": true,
+   "text": "declares_presentation only recognised a dict presentation or a list presentation_order. A presentation given as a bare list (the shape build_manifest accepts) or a presentation_order given as a string was treated as undeclared: the record validated as canonical with no order, view or five-part statement check (probes P5, P6, outcome ok on pristine)."},
+  {"id": "F3", "severity": "defect", "fixed": true,
+   "text": "A flat presentation_order disagreeing with presentation.order was silently ignored (block wins, outcome ok on pristine, probe P7), so the record carried two contradictory orders."}
+ ],
+ "fixes": [
+  {"file": "75-drama-song-ad-factory/scripts/core/story_arc/story_arc.py", "numstat": "39+/11-",
+   "change": "validate_story passes its normalised purpose to check_presentation_order(story, purpose=None). A lesson's lesson_intro is judged as product_intro for unknown/duplicate/missing/rewind but kept as its own id; a beat presented under an id other than the one the record's beats carries is refused presentation-relabelled; five-part statements are looked up under the record's own ids. declares_presentation counts any non-None presentation or presentation_order so a wrong-shaped declaration is refused presentation-invalid instead of passing; a bare-list presentation is read as its order. A flat presentation_order beside a presentation block that disagrees is refused presentation-view-mismatch. The 11 deleted lines are replaced signature/condition lines; no validation branch removed."},
+  {"file": "75-drama-song-ad-factory/scripts/core/story_arc/test_presentation_order_u1.py", "numstat": "37+/0-",
+   "change": "Four tests appended: lesson consequence-first keeps its beat-8 id; presenting a beat under another id is refused presentation-relabelled; malformed declarations (string presentation, string presentation_order) are refused and a bare-list presentation is held to the statement rule; flat/block order conflict refused. No existing line touched."}
+ ],
+ "tests": {
+  "story_arc_suite": "python3 -I -m pytest -q story_arc/ -> 38 passed (was 34): test_method_anchors.py 10 passed, test_presentation_order_u1.py 22 passed, test_villain_doctrine_u16.py 6 passed",
+  "module_selftest": "python3 -I story_arc.py --selftest -> story_arc selftest: PASS (24 checks, 0 failures)",
+  "consumer_suites": "10 files that import story_arc or call build_manifest (intake_preflight test_factory_studio + test_factory_script_reply_provenance, script_approval test_script_wiring + test_stage_purpose + test_approval_events, method_plan test_method_plan + test_wiring_w2u2, length_formula test_story_arc_u13, music_qc test_wwfix_u1, face_emotion test_face_emotion_g6) -> 220 passed, 13 subtests passed, 0 failed",
+  "full_skill_suite_fixed": "python3 -I -m pytest -q 75-drama-song-ad-factory -> 31 failed, 3879 passed, 4 skipped, 183 subtests passed in 862.84s",
+  "full_skill_suite_baseline": "same command on pristine branch tip 63fde4473 -> 31 failed, 3875 passed, 4 skipped, 183 subtests passed in 912.97s",
+  "full_suite_delta": "failure sets identical (31 vs 31, symmetric difference empty); +4 passed = the four new tests. The 31 pre-existing failures are in package/test_999_adapter.py (7), shared-bridge/checks (16), final_assembler (3), catalog_calculator, master_length, shot_planner test_face_speaks_h4, tests/test_model_choice, tests/test_no_blur_fill (1 each); none imports story_arc and none is caused by this unit.",
+  "weakening_audit": "0 deletions in any test file by the unit commit or by this QC fix"
+ },
+ "checks": {
+  "independent_script": "<PATH>/s75/scratch/qc2-u1-20261027/acceptance.py",
+  "fixed_module": "u1 qc acceptance: PASS (17 checks, 0 failed) -> run-fixed.json",
+  "control_pristine": "same 17 checks on story_arc.py from 96559ab1b -> FAIL (17 checks, 4 failed: Q11, Q12, Q13, Q14) -> run-pristine.json; the new pytest tests on the pristine module -> 4 failed, 18 passed",
+  "control_mutant": "fixed module with canonical beat-order and view-mismatch enforcement neutralised -> FAIL (17 checks, 3 failed: Q4, Q5, Q9) -> run-mutant.json",
+  "control_note": "The instrument discriminates in both directions: it catches the pre-fix defects and it catches a weakened validator.",
+  "probe": "<PATH>/s75/scratch/qc2-u1-20261027/probe.py (probe-pristine.txt vs probe-fixed.txt)",
+  "full_suite_logs": "<PATH>/s75/scratch/qc2-u1-20261027/full-fixed.out, full-base.out, failed-fixed.txt, failed-base.txt"
+ },
+ "not_verified": [
+  "No end-to-end pipeline run (storyboard, shot planner, music, render); verification is unit, module, consumer and full-suite level.",
+  "S75X-W2-U2 not judged as a unit; its test_wiring_w2u2.py ran only as a story_arc consumer and passed.",
+  "The 31 pre-existing full-suite failures were not investigated or fixed: they are identical on the pristine baseline and outside this unit's owned output.",
+  "No live client box, no network call, no spend; repo-state verification only."
+ ],
+ "receipts": {
+  "push": "git push origin HEAD:refs/heads/s75x/verdicts-S75X-W2 from the QC lane; main never pushed",
+  "ledger": "<PATH>/loop-control/s75/ledger.json never written",
+  "writes": "story_arc.py, test_presentation_order_u1.py, this evidence file (branch only); scratch files under s75/scratch/qc2-u1-20261027; worktrees S75X-W2-U1-qc and S75X-W2-U1-qc-base"
+ }
+}
