@@ -1,0 +1,183 @@
+{
+  "unit": "S75X-W1-U1",
+  "workflow": "S75X-W1",
+  "program": "s75",
+  "role": "builder",
+  "verdict": "PASS",
+  "row_fully_met": true,
+  "verified_at": "2026-10-26. origin/main 96559ab1b (Merge PR #2604 batch/s75x-frontier-land) checked out in the lane worktree; every check below ran against that tree, not against a copy.",
+  "base_tested": "96559ab1b531570534316d856006867606afd4e2",
+  "head_tested": "96559ab1b531570534316d856006867606afd4e2",
+  "provenance": {
+    "repo": "<PATH>/openclaw-onboarding",
+    "lane": "<PATH>/worktrees/S75X-W1-U1-build",
+    "lane_branch": "s75x/verdicts-S75X-W1",
+    "lane_local_branch": "s75x/verdicts-S75X-W1-u1",
+    "origin_main": "96559ab1b531570534316d856006867606afd4e2",
+    "origin_main_subject": "Merge pull request #2604 from trevorotts1/batch/s75x-frontier-land",
+    "cohort_pr_2604_files": "8 files: CHANGELOG.md, QC.md, SKILL.md, catalog_calculator/agnes_price.py, catalog_calculator/test_agnes_price.py, choice_card/intake_card/intake_card.py, choice_card/intake_card/test_opening_flow_default_s75x.py, skill-version.txt (210 insertions, 31 deletions)",
+    "delta_commit": "cd73b140ec14d385523050c86ff96f6b246d1fef",
+    "delta_commit_subject": "S75X-W1-U1: one default for the opening-coaching flow",
+    "delta_commit_date": "2026-10-24",
+    "delta_commits_reaching_main": [
+      "f9efd754022af19bc2249ec95ab729a94ea1e6d0 S75X-W1-U1 + S75X-W1-U2: opening flow default and doctrine references (2026-10-23)",
+      "cd73b140ec14d385523050c86ff96f6b246d1fef S75X-W1-U1: one default for the opening-coaching flow (2026-10-24)"
+    ],
+    "unit_code_delta_at_new_head": "12 lines in intake_card.py: conversation() gains run_state_file and delegates the purpose_flow default to new_run_flow(run_dir, run_state_file) instead of the old 'history is True or (history is None and run_dir isdir)' test; plus the new 301-line test_opening_flow_default_s75x.py",
+    "owned_output_declared": "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/",
+    "writer_files_untouched": "this verdict wrote exactly one file, evidence/S75X-W1/S75X-W1-U1.verdict.json; no file under 75-drama-song-ad-factory/ was written or touched by this lane",
+    "scratch": "<PATH>/scratch/w1u1 (probe run dirs, captured pytest output, check_u1.py)"
+  },
+  "acceptance_results": [
+    {
+      "element": "A new run reaches the opening-coaching flow through the supported launcher",
+      "result": "MET",
+      "evidence": "Two documented entry points, both on a genuinely new run folder (empty run dir, no run state): (1) factory.py card --step --run-dir <fresh> -> rc 0, first line 'Question 1 of 15 - PURPOSE', body carries 'What is this video for?'; (2) the same run through intake_card.py --step prints the one-time intro on call 1 and 'Question 1 of 15 - PURPOSE' on call 2. The chat sequence (intro then purposeful question 1) therefore works through the launcher the client actually gets. Purpose card total 15 vs legacy card total 14, so the flow is distinguishable by the printed count alone.",
+      "counts": "fresh-run purpose card: 15 questions; legacy card: 14 questions; 2/2 entry points open on PURPOSE"
+    },
+    {
+      "element": "A resumed run is untouched",
+      "result": "MET",
+      "evidence": "Resumed run carrying saved work (control/state.sqlite3, card-answers.json, control/card-receipt.json) through the documented launcher: rc 0, first line 'Question 1 of 14 - OFFER', no PURPOSE anywhere in the output, control/method.json NOT created. All three pre-existing files are byte-identical before and after (sha256 compared per file). A purpose-flow run (control/method.json present) resumes on PURPOSE 15 and its method.json is unchanged. The two files the turn adds (control/intake-session.json, control/intake-session.json.lock) are written by choice_card/intake_card/intake_session.py, which PR #2604 does not touch - pre-existing durable-session behaviour, not part of this unit.",
+      "counts": "pre-existing files: 3/3 sha256 identical, 0 migrated, 0 rewritten; method.json created: 0",
+      "not_rewrites": "The unit test also replays the full legacy card on a resumed run and asserts the saved answers keep the legacy question ids with no 'purpose' row added (test_a_resumed_run_is_not_migrated_or_rewritten)."
+    },
+    {
+      "element": "No client-facing question uses method jargon",
+      "result": "MET",
+      "evidence": "Drove the purpose flow end to end for all 7 purpose/where paths (campaign, lesson, testimonial, campaign + where 1..4), scanning every client-facing string the card can emit: label, ask, why, reason, closing, preface, rec_mark, every recap line, both halves of every option, every rendered conversation message, and the rendered recap. Zero hits against METHOD_JARGON (MOS, ERM, ERM drop, beat sheet, screenwriting, inciting incident, story arc, master scene, turning point), matched whole-word and case-insensitive. Both directions controlled: 'the ERM drop' -> ['ERM', 'ERM drop'] (detector fires), 'terms and conditions' -> [] (whole-word guard holds, no false positive on 'terms').",
+      "counts": "1031 question strings + 127 rendered messages scanned, 0 jargon hits; detector positive control 2/2, negative control 1/1"
+    },
+    {
+      "element": "Existing intake tests pass",
+      "result": "MET",
+      "evidence": "scripts/core/choice_card/intake_card/ (25 test_*.py) -> 249 passed, 27 subtests passed, 0 failed, 0 skipped, 0 xfail, exit 0. Whole scripts/core/choice_card/ tree -> 282 passed, 27 subtests passed, exit 0. scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py (the launcher purpose contract) -> 1 passed, exit 0. The unit's own file -> 15 passed.",
+      "counts": "249 + 282 + 1 + 15 passed, 0 failed, 0 skipped",
+      "test_integrity": "0 occurrences of skip/xfail/pytest.mark in test_opening_flow_default_s75x.py; no test was weakened, edited or deselected by this verification."
+    }
+  ],
+  "checks": [
+    {
+      "id": "C1",
+      "check": "new run through the documented launcher",
+      "command": "cd 75-drama-song-ad-factory && python3 scripts/core/intake_preflight/factory.py card --step --run-dir <empty run dir>",
+      "result": "rc 0, 'Question 1 of 15 - PURPOSE'",
+      "counts": "total=15, first question id=purpose"
+    },
+    {
+      "id": "C2",
+      "check": "new chat run through the intake-card CLI (intro, then question 1)",
+      "command": "python3 -I -c 'intake_card.main([\"--step\",\"--run-dir\",run,\"--run-state-file\",run+\"/run-state.json\"])' x3",
+      "result": "call1 = intro text, call2 = call3 = 'Question 1 of 15 - PURPOSE'",
+      "counts": "3 calls, 3 sane outputs, 0 flow flips"
+    },
+    {
+      "id": "C3",
+      "check": "resumed run (saved work) through the documented launcher",
+      "command": "python3 scripts/core/intake_preflight/factory.py card --step --run-dir <run with state.sqlite3 + card-answers.json + card-receipt.json>",
+      "result": "rc 0, 'Question 1 of 14 - OFFER', no PURPOSE",
+      "counts": "total=14, method.json created=0"
+    },
+    {
+      "id": "C4",
+      "check": "resumed run byte preservation",
+      "command": "shasum -a 256 of every file in the run dir before and after the turn",
+      "result": "3/3 pre-existing files identical; 2 new session files added by intake_session.py",
+      "counts": "before=3 files, after=5 files, changed=0"
+    },
+    {
+      "id": "C5",
+      "check": "purpose-flow run resumes on the purpose flow",
+      "command": "python3 ... factory.py card --step --run-dir <run with control/method.json>",
+      "result": "'Question 1 of 15 - PURPOSE', method.json content unchanged",
+      "counts": "total=15, method.json parsed purpose=campaign"
+    },
+    {
+      "id": "C6",
+      "check": "jargon sweep across every purpose path",
+      "command": "python3 <scratch>/check_u1.py <skill root>  (drives IC.conversation + IC.render_recap, scans with IC.jargon_hits)",
+      "result": "E3_jargon_hits=0",
+      "counts": "messages=127, question strings=1031, hits=0"
+    },
+    {
+      "id": "C7",
+      "check": "jargon detector controls (on the instrument)",
+      "command": "same script",
+      "result": "E3_control_jargon_detects=true, E3_control_plain_passes=true",
+      "counts": "2/2 positive assertions, 1/1 negative"
+    },
+    {
+      "id": "C8",
+      "check": "existing intake tests",
+      "command": "cd 75-drama-song-ad-factory && python3 -I -m pytest -q scripts/core/choice_card/intake_card/",
+      "result": "249 passed, 27 subtests passed in 16.26s, exit 0",
+      "counts": "25 test files, 249 tests, 0 failed, 0 skipped"
+    },
+    {
+      "id": "C9",
+      "check": "whole choice_card suite",
+      "command": "cd 75-drama-song-ad-factory && python3 -I -m pytest -q scripts/core/choice_card/",
+      "result": "282 passed, 27 subtests passed in 15.33s, exit 0",
+      "counts": "282 tests, 0 failed"
+    },
+    {
+      "id": "C10",
+      "check": "launcher purpose contract still holds (adjacent unit W3-U2)",
+      "command": "cd 75-drama-song-ad-factory && python3 -I -m pytest -q scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py",
+      "result": "1 passed in 5.55s, exit 0",
+      "counts": "1 test, 0 failed"
+    },
+    {
+      "id": "C11",
+      "check": "unit test file itself",
+      "command": "cd 75-drama-song-ad-factory && python3 -I -m pytest -q scripts/core/choice_card/intake_card/test_opening_flow_default_s75x.py",
+      "result": "15 passed in 3.06s, exit 0",
+      "counts": "15 tests, 0 skipped, 0 xfail"
+    },
+    {
+      "id": "C12",
+      "check": "diff of the unit's own code change",
+      "command": "git -C <lane> diff 96559ab1b^1 96559ab1b -- .../intake_card.py",
+      "result": "12 changed lines: run_state_file parameter + purpose_flow = new_run_flow(run_dir, run_state_file)",
+      "counts": "1 decision replaced, 0 new files in the module"
+    }
+  ],
+  "tests": {
+    "command": "cd 75-drama-song-ad-factory && python3 -I -m pytest -q scripts/core/choice_card/intake_card/ scripts/core/choice_card/(separately: scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py)",
+    "result": "249 passed + 282 passed + 1 passed + 15 passed; 0 failed, 0 skipped, exit 0 on every run",
+    "scope_note": "The launcher purpose test and the intake_card package were run in separate pytest invocations on purpose: importing both modules in one collection pass re-enters intake_card/__init__ and raises a collection ImportError. That is a harness artifact of a combined invocation, not a test failure - each file passes on its own.",
+    "suite_size_context": "the skill holds 335 test_*.py files; only the intake, choice_card and launcher-purpose surfaces were executed for this unit"
+  },
+  "not_verified": [
+    "No test drives the whole card to control/method.json through factory.py for this unit. The method record write is asserted by the unit's own test through intake_card's CLI and by test_factory_card_purpose_w3u2.py through factory.py; the two are separate proofs, not one end-to-end launcher proof of the write.",
+    "The full 335-file skill suite was not run. Adjacent surfaces outside intake / choice_card / launcher-purpose (dispatch, media, delivery) were not re-run by this lane.",
+    "Distribution parity in the adapter repo (.claude/skills/drama-song-ad-factory) was not checked - the unit's owned_output is the canonical tree only.",
+    "Client-facing delivery (Telegram / openclaw send argv) was not exercised against a live channel; only the text and session-json launcher formats were driven.",
+    "The legend of 'one plain-language question at a time' was proved for the purpose flow by the unit's own test (msg.count('Question ') == 1 per message). This lane reproduced the flow and the counts, not a per-message count assertion of its own for every path."
+  ],
+  "observations": [
+    "The purpose default now lives in one helper (new_run_flow) that both the API and the intake-card CLI call, so the two cannot drift for new runs. Runs created after this release also record the chosen flow in intake-session.json, which freezes it across later calls.",
+    "Counting the card's own total is safe: 15 questions on the purpose card, 14 on the legacy card, and the printed number always matches _shaped(QUESTIONS, answers).",
+    "The resumed-run proof is byte-level: sha256 of all three pre-existing files is unchanged after a resume turn, and no control/method.json appears on a legacy run."
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "blocks_acceptance": false,
+      "title": "A pre-upgrade chat run that saw its intro but answered nothing is classified differently by the two shipped entry points",
+      "detail": "Run state {intro_shown: true} with no intake_purpose_flow and no saved answers is a state only pre-upgrade runs can hold (current code writes intake_purpose_flow with the intro). On that exact state factory.py card -> 'Question 1 of 15 - PURPOSE' (intake_preflight/factory.py _purpose_flow_for -> _run_is_new), while intake_card.py --step and IC.conversation -> 'Question 1 of 14 - OFFER' (intake_card.new_run_flow -> _intro_shown). Proven in isolated run dirs.",
+      "why_not_blocking": "No acceptance element breaks: no artifact exists on that run to migrate or rewrite, and a new run (no run state) reaches PURPOSE on both entry points. The effect is a different starting question on a legacy empty run, and the purpose card is the intended upgrade for a run that has answered nothing.",
+      "scope_note": "intake_preflight/factory.py is outside this unit's owned_output (choice_card/intake_card/). Recorded for the judge, not fixed here."
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "blocks_acceptance": false,
+      "title": "The 'API and launcher agree' test exercises one launcher, not both",
+      "detail": "test_the_api_and_the_launcher_agree_on_the_default drives intake_card.main, which is the direct CLI. It does not drive factory.py card, which SKILL.md lines 634 and 1152-1154 name as the intake launcher. Cross-entry-point agreement is therefore asserted for one pair and unproven for the pair that F1 separates.",
+      "why_not_blocking": "The test is honest about what it calls (IC.main) and passes; it is a coverage gap on a legacy-only state, not a weakened or false assertion."
+    }
+  ],
+  "blockers": []
+}
