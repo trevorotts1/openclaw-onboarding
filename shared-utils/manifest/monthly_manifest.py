@@ -38,7 +38,9 @@ never raised at the caller. stdlib only.
 """
 from __future__ import annotations
 
+import argparse
 import copy
+import json
 import os
 import re
 import sys
@@ -487,6 +489,116 @@ def reapprove(doc, placement_id, approver, at, expected_revision):
     return _checked(doc, new)
 
 
+def check_manifest(doc, placements=None, expected_revision=None, advance_from=None):
+    """Publishing gate: the manifest is APPROVED and every named placement is too.
+
+    This is the ONE call the publishing cycle makes before a Purple placement
+    goes out (review C3 step 7). It never re-implements the approval contract:
+    `validate` is the accepted schema check, `check_revision` is the accepted
+    version enforcement, and `terms_errors` is the accepted term/window check.
+
+    ``placements`` narrows the check to named placements (a per-placement
+    publish); omitted, EVERY placement in the manifest must be APPROVED.
+    ``advance_from`` proves the manifest's revision advanced past a known
+    previous revision. Returns a list of refusals; empty means publishable.
+    """
+    if not isinstance(doc, dict):
+        return ["$: an approval manifest must be a JSON object, got %s" % type(doc).__name__]
+    errs = validate(doc)
+    if errs:
+        return errs
+    errs.extend(terms_errors(doc))
+    status = doc.get("status")
+    if status not in SIGNED_STATUSES:
+        errs.append("$.status: %r is not an approved manifest" % (status,))
+    if expected_revision is not None and doc.get("revision") != expected_revision:
+        errs.append(
+            "$.revision: expected %r but the manifest is at %r"
+            % (expected_revision, doc.get("revision"))
+        )
+    if advance_from is not None:
+        errs.extend(check_revision(advance_from, doc.get("revision")))
+    wanted = list(placements or [])
+    if wanted:
+        for placement_id in wanted:
+            placement = _placement(doc, placement_id)
+            if placement is None:
+                errs.append("$.placements: %r is not in the manifest" % (placement_id,))
+                continue
+            state = placement.get("approval_status")
+            if state != "APPROVED":
+                errs.append(
+                    "$.placements[%s]: approval is %r; publication requires APPROVED"
+                    % (placement_id, state)
+                )
+    else:
+        for placement in _placements(doc):
+            state = placement.get("approval_status")
+            if state != "APPROVED":
+                errs.append(
+                    "$.placements[%s]: approval is %r; publication requires APPROVED"
+                    % (placement.get("placement_id"), state)
+                )
+    return errs
+
+
+def main(argv=None):
+    """`check` — the command-line publishing gate (review C3 step 7).
+
+    Exit codes: 0 publishable, 2 unreadable input or usage, 3 refused.
+    """
+    parser = argparse.ArgumentParser(
+        prog="monthly_manifest.py",
+        description="Joined monthly approval manifest",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    check = sub.add_parser("check", help="refuse unless the manifest is approved for publication")
+    check.add_argument("--manifest", required=True, help="path to the approval manifest JSON")
+    check.add_argument(
+        "--placement",
+        action="append",
+        default=[],
+        help="placement_id to check (repeatable); omitted checks every placement",
+    )
+    check.add_argument("--expected-revision", default=None, help="require this exact revision")
+    check.add_argument(
+        "--advance-from",
+        default=None,
+        help="require the manifest revision to advance past this previous revision",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        with open(args.manifest, "r", encoding="utf-8") as handle:
+            doc = json.load(handle)
+    except (OSError, ValueError) as exc:
+        print(json.dumps({"ok": False, "error": "unreadable manifest: %s" % exc}))
+        return 2
+
+    errs = check_manifest(
+        doc,
+        placements=args.placement,
+        expected_revision=args.expected_revision,
+        advance_from=args.advance_from,
+    )
+    if errs:
+        print(json.dumps({"ok": False, "manifest": args.manifest, "errors": errs}, indent=2))
+        return 3
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "manifest": args.manifest,
+                "revision": doc.get("revision"),
+                "placements": args.placement
+                or [p.get("placement_id") for p in _placements(doc)],
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
 def next_cycle(doc, campaign_cycle_id, starts_on, ends_on, revision, expected_revision):
     """Open the next 30-day cycle as a fresh DRAFT at a new approval revision."""
     errs = _document_errors(doc)
@@ -517,3 +629,7 @@ def next_cycle(doc, campaign_cycle_id, starts_on, ends_on, revision, expected_re
         placement["invalidated_at"] = None
         placement["invalidated_reason"] = None
     return _checked(doc, new)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
