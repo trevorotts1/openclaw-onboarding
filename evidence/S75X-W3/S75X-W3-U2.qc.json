@@ -1,0 +1,155 @@
+{
+  "schema": "blackceo.unit-qc/v1",
+  "program": "s75",
+  "workflow_id": "S75X-W3",
+  "unit_id": "S75X-W3-U2",
+  "role": "qc-fixer",
+  "status": "fixed",
+  "verdict": "PASS",
+  "verified_at_utc": "2026-10-26",
+  "repo": "trevorotts1/openclaw-onboarding",
+  "base_ref": "origin/main",
+  "base_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "branch": "s75x/verdicts-S75X-W3",
+  "lane": "<portable-drive>/Downloads/git trees and automations/s75/worktrees/S75X-W3-U2-qc",
+  "pre_fix_head": "f399e76de04d24f65fe141166bf28c1c29af7890",
+  "builder_verdict": "FAIL (E1c finding F1)",
+  "acceptance_verbatim": "A new run through each supported launcher produces the method record and enters the upgraded strategy; a resumed run is untouched; factory tests pass.",
+  "elements": [
+    {
+      "id": "E1a",
+      "text": "A new run through the Claude Code chat launcher produces control/method.json and enters the upgraded strategy",
+      "result": "PASS",
+      "evidence": "Independent QC battery run: test_factory_card_purpose_w3u2.py block [1] rc 0 (purpose card chosen, control/method.json written, purpose=campaign, gates A-F planned, next hands out the purpose block)."
+    },
+    {
+      "id": "E1b",
+      "text": "A new run through the Telegram launcher produces control/method.json",
+      "result": "PASS",
+      "evidence": "Independent QC battery run: block [2] rc 0 (--format telegram-json exit 0, one message built, control/method.json written)."
+    },
+    {
+      "id": "E1c",
+      "text": "A new run through the Studio launcher produces control/method.json",
+      "result": "PASS (after fix X1; FAIL reproduced pre-fix)",
+      "evidence": "Pre-fix reproduction (scratch/w3u2-qc/probe_f1.py, 3/3 attempts): studio_bridge._replay with 18 valid purpose replies -> code=1 REPLAY_FAILED, control/method.json absent, answered_count=0 -- builder F1 independently confirmed. Post-fix (scratch/w3u2-qc/probe_fix.py): fresh order through the fixed _replay -> code=0, control/method.json written, answered_count=17, events=18, done=True. Unit test block [3] now binds this success path (39 checks, 0 failures, PASS)."
+    },
+    {
+      "id": "E2",
+      "text": "A resumed run is untouched",
+      "result": "PASS",
+      "evidence": "Independent QC battery run: block [4] rc 0 (legacy card kept, no method.json invented, approved storyboard gate.json + approval.json byte-identical, run stayed on the legacy list)."
+    },
+    {
+      "id": "E3",
+      "text": "Factory tests pass",
+      "result": "PASS",
+      "evidence": "46 test files run with python3 -I in the QC lane, 0 failures, both pre-fix and post-fix: 21/21 in 75-drama-song-ad-factory/scripts/core/intake_preflight/ and 25/25 in scripts/core/choice_card/intake_card/. W3-U2 test verbatim post-fix: test_factory_card_purpose_w3u2: 39 checks, 0 failures, PASS (pre-fix count was 35; see test_change_note)."
+    }
+  ],
+  "checks": [
+    {
+      "id": "QC1",
+      "what": "python3 -I over every test file in scripts/core/intake_preflight/ and scripts/core/choice_card/intake_card/ (46 files), QC lane, pre-fix",
+      "count_passed": 46,
+      "count_failed": 0,
+      "count_total": 46,
+      "detail": "per-file exit codes all 0; builder's E3 count reproduced verbatim"
+    },
+    {
+      "id": "QC2",
+      "what": "Independent F1 reproduction (probe_f1.py): studio_bridge._replay bulk delivery of a completable 18-reply purpose list on a fresh run, 3 attempts",
+      "count_passed": 0,
+      "count_failed": 3,
+      "count_total": 3,
+      "detail": "3/3 attempts code=1 (EXIT error), emitted REPLAY_FAILED, control/method.json absent, answered_count=0, events=0. Builder F1 confirmed. Same probe's turn-delivery control (prime + one reply per call) finished all rc 0 with method.json written, answered_count=17, events=18 -- the fault is the launcher's call pattern, not the card."
+    },
+    {
+      "id": "QC3",
+      "what": "Discriminating control for the fix (probe_f1.py scenarios C/D/E): delivery-shape variants before the fix was applied",
+      "count_passed": 2,
+      "count_failed": 1,
+      "count_total": 3,
+      "detail": "Growing-prefix turn sequence completes (all rc 0, method.json written); a naive len-1 re-delivery after partial progress is refused with a stray event (rc 2) and a naive full-sequence replay after partial progress ends rc 2 with a poisoned history -- which is why the fix replays growing prefixes starting at the session's own journaled-turn count rather than re-answering."
+    },
+    {
+      "id": "QC4",
+      "what": "Post-fix verification (probe_fix.py): fresh order, refused reply, interrupted resume, shifted list -- all through the fixed studio_bridge._replay",
+      "count_passed": 4,
+      "count_failed": 0,
+      "count_total": 4,
+      "detail": "fresh: code=0, method.json True, answered_count=17, events=18, done=True. refused reply ('purple banana', parses to None on the pending question): code=1 REPLAY_FAILED, no method.json, answered_count=0. interrupted at 5 turns then _replay resumed: code=0, method.json True, answered_count=17, events=18 (no re-answers, no stray events). shifted list (reply order changed mid-history): code=1 REPLAY_FAILED at the session's own INTAKE_REPLAY_MISMATCH, answered_count stays 5, events stays 5 -- fail closed, zero corruption."
+    },
+    {
+      "id": "QC5",
+      "what": "python3 -I over all 46 test files, QC lane, post-fix",
+      "count_passed": 46,
+      "count_failed": 0,
+      "count_total": 46,
+      "detail": "per-file exit codes all 0; test_factory_card_purpose_w3u2.py verbatim tail: 'test_factory_card_purpose_w3u2: 39 checks, 0 failures' then 'PASS'"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "acceptance-blocking",
+      "element": "E1c",
+      "builder_claim": "studio_bridge._replay sends the whole reply list in one argv; intake_session refuses it (QUESTION_NOT_PRESENTED on a fresh session, ONE_REPLY_AT_A_TIME beyond one new reply); poll returns before the run line, so a new Studio order never writes control/method.json",
+      "qc_verdict": "CONFIRMED and FIXED (X1)",
+      "detail": "Code read confirms the builder's map: shared-bridge/studio_bridge.py _replay built one argv carrying every --reply in a single subprocess call; scripts/core/choice_card/intake_card/intake_session.py process() refuses replies on a fresh session (QUESTION_NOT_PRESENTED) and refuses more than one new reply per turn (ONE_REPLY_AT_A_TIME), with a deliberate one-new-answer-per-turn contract plus idempotent prefix replay (INTAKE_REPLAYED / INTAKE_REPLAY_MISMATCH); poll returns the error before printing the run line. Independent reproduction 3/3 (QC2). Attribution unchanged: pre-existing (the bulk call pattern predates this unit; the same failure reproduces against pre-fix factory.py per builder C3 and against this base).",
+      "resolution": "Fix X1 below. E1c now PASS (QC4/QC5)."
+    },
+    {
+      "id": "F2",
+      "severity": "observation",
+      "element": "E1c",
+      "builder_claim": "_question_mismatch counts replies with purpose_flow=True unconditionally (studio_bridge.py), so a legacy-shaped 15-reply order is cancelled (REPLAY_QUESTION_MISMATCH) instead of retried; attribution not established",
+      "qc_verdict": "CONFIRMED as pre-existing; attribution ESTABLISHED; NOT fixed (deliberate scope call)",
+      "detail": "git log over shared-bridge/studio_bridge.py shows the file last changed at 7009e49cb (W07-U3: optional Studio intake + durable claim/wake), which predates this unit's delta (4097da395..96559ab1b touched only scripts/core/intake_preflight/ and neighbors, never the bridge). The purpose_flow=True guard therefore predates the unit; its 'now cancelled' effect arises from the purpose card shipping (the shaped list the guard counts against grew), not from any W3-U2 code change. The guard's refusal-vs-cancel policy is shared-bridge design (SPEC B1, no owner in SWARM-PLAN-V2.json per the builder), so QC left it untouched rather than redesign policy semantics unowned by any unit. Recorded for the plan owner.",
+      "resolution": "No code change. Policy question for the shared-bridge owner: should a shape-mismatched in-flight order cancel or park for retry?"
+    },
+    {
+      "id": "F3",
+      "severity": "observation",
+      "element": "E1a/E1b",
+      "builder_claim": "purpose default is read from the run directory (factory.py _purpose_flow_for), so every launcher reaching factory.py card inherits it; this is what makes E2 hold",
+      "qc_verdict": "CONFIRMED (by design, not a defect)",
+      "detail": "Code read of factory.py _purpose_flow_for confirms the decision surface as described (explicit flag wins; else method.json / studio-order.json / saved PURPOSE answer / run with no progress files -> purpose card; run with recorded progress keeps its card). Blocks [1][2][4][5][6] cover it and all pass."
+    }
+  ],
+  "fixes": [
+    {
+      "id": "X1",
+      "finding": "F1",
+      "files": [
+        "75-drama-song-ad-factory/shared-bridge/studio_bridge.py",
+        "75-drama-song-ad-factory/scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py"
+      ],
+      "what": "studio_bridge._replay now drives the card one turn per answer instead of one bulk argv: a no-reply prime turn presents the question, then turn i carries replies[:i+1] (a growing replay prefix) so the session's own replay absorption reduces each turn to exactly one new answer; the sequence starts past the turns the session already journaled (_journaled_turns reads control/intake-session.json events), so a replay interrupted mid-order resumes without re-answering and a shifted list fails closed at the session's INTAKE_REPLAY_MISMATCH. Any refused turn keeps the old fail-closed behavior: REPLAY_FAILED emitted, EXIT error, no run line. New helper _journaled_turns fails closed (REPLAY_SESSION_UNREADABLE) rather than guessing an unknown history.",
+      "test_change_note": "test_factory_card_purpose_w3u2.py block [3] was realigned, not weakened: the old 5 checks asserted the bulk refusal path on a VALID reply list (code==error, no method record, answered_count==0), which is exactly the defect E1c forbids -- the test bound to the bug and could not prove the acceptance. The replacement is 9 checks: 5 on the success path (replay accepted, factory.py launcher, control/method.json written, every answer consumed by its own turn, no turn skipped) plus 4 fail-closed checks kept verbatim in strength on a genuinely refused reply ('purple banana', which IC._parse rejects on the pending question): named REPLAY_FAILED, EXIT error, no method record claimed without accepted replies, no answer silently consumed. Total test checks 35 -> 39; blocks [1][2][4][5][6] untouched; no check was removed without an equal-or-stronger replacement.",
+      "verification": "probe_fix.py 4/4 (QC4); 46/46 test files rc 0 (QC5); test_factory_card_purpose_w3u2: 39 checks, 0 failures, PASS. Discriminator: pre-fix _replay fails the new block [3] success path (probe_f1.py scenario A: code=1 REPLAY_FAILED on the same valid list), so the realigned test binds to the fix and is not vacuous."
+    }
+  ],
+  "not_verified": [
+    "No live end-to-end Studio order against a real studio API (no network, no machine key); the fix is proven at the _replay/poll boundary with the real factory.py and intake_session code.",
+    "No live Telegram send (--format telegram-json payload construction only).",
+    "No OpenClaw-runtime card turn executed; scripts/openclaw_adapter.py read, not run (same caveat as the builder).",
+    "Skill-level tests outside scripts/core/intake_preflight/ and scripts/core/choice_card/intake_card/ (75-drama-song-ad-factory/tests/, mini-app, packaging, install fixtures) were NOT run -- same scope as the builder's E3.",
+    "F2 cancel-vs-retry policy left unchanged and unadjudicated (scope call, see F2).",
+    "Builder's C3 discriminating control (test vs pre-fix factory.py) was not re-run; QC established binding differently (fix discriminator in X1)."
+  ],
+  "commands_run": [
+    "git worktree add -f '<qc-lane>' s75x/verdicts-S75X-W3 (from <operator>/openclaw-onboarding)",
+    "git fetch origin; verified origin/main 96559ab1b531570534316d856006867606afd4e2 and origin/s75x/verdicts-S75X-W3 f399e76de04d24f65fe141166bf28c1c29af7890",
+    "cd '<qc-lane>/75-drama-song-ad-factory' && for f in scripts/core/intake_preflight/test_*.py scripts/core/choice_card/intake_card/test_*.py; do python3 -I \"$f\"; done  (pre-fix, then post-fix)",
+    "python3 -I '<scratch>/w3u2-qc/probe_f1.py'  (independent F1 reproduction + delivery-shape controls)",
+    "python3 -I '<scratch>/w3u2-qc/probe_fix.py'  (post-fix verification, 4 scenarios through the fixed studio_bridge._replay)",
+    "python3 -I scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py  (verbatim: 39 checks, 0 failures, PASS)"
+  ],
+  "notes": [
+    "SWARM-PLAN-V2.json was NOT locatable in the searched trees (recursive find over <operator>/loop-control/s75 and <portable-drive>/Downloads/git trees and automations/s75, plus the QC lane repo root; not searched: the whole home directory and other loop-control subtrees). QC worked from acceptance_verbatim and the element list carried in the builder's verdict, which state the acceptance contract in full.",
+    "Builder line citations checked and still accurate at this base except drift: _question_mismatch's purpose_flow=True call is at shared-bridge/studio_bridge.py:1099 (builder cited :1090); _replay bulk argv was at :1138-1141 pre-fix. factory.py _purpose_flow_for at :2930 confirmed.",
+    "Writes in this QC: shared-bridge/studio_bridge.py (fix X1), scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py (block [3] realignment + docstring bullet), evidence/S75X-W3/S75X-W3-U2.qc.json (this file). Scratch probes live outside the repo at <portable-drive>/Downloads/git trees and automations/s75/scratch/w3u2-qc/ and are not committed.",
+    "No writes to main; no writes to <operator>/loop-control/s75/ledger.json; no secret access."
+  ]
+}
