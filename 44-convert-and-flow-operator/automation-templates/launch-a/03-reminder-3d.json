@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "single_message",
   "id": "launch-a-reminder-3d",
   "name": "Launch A — Reminder: 3 Days Before",
   "aliases": [
@@ -63,5 +65,60 @@
       "24h and same-day reminders",
       "Replay branch"
     ]
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Tag Added webinar-registered",
+        "ref": "Tag Added `webinar-registered`"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "wait",
+      "after": "trg",
+      "attributes": {
+        "until": "webinar_datetime - 3 days",
+        "kind": "until",
+        "ref": "Wait until `webinar_datetime` - 3 days"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "if_else",
+      "after": "n1",
+      "branches": {
+        "true": "n3",
+        "false": "n4"
+      },
+      "attributes": {
+        "condition": "not purchased AND webinar_datetime in future",
+        "ref": "If not purchased and future"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "email",
+      "after": "n2",
+      "attributes": {
+        "message": "three-day reminder",
+        "ref": "Send Email"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "workflow_goal",
+      "after": [
+        "n2",
+        "n3"
+      ],
+      "attributes": {
+        "goal": "reminder path complete",
+        "ref": "End",
+        "join": true
+      }
+    }
+  ]
 }
