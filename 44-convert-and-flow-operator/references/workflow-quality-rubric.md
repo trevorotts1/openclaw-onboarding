@@ -10,8 +10,8 @@ This rubric is a **graded 1–10 quality score** that sits **on top of** WF-1..W
 deliberate **SUPERSET OVERLAY**, NOT a replacement:
 
 - Every dimension below **cites an EXISTING WF-1..WF-21 item (or `link_steps()`)** as its
-  evidence source. The rubric reads the SAME artifacts WF-1..WF-21 reads; it adds no new
-  infrastructure and **cannot contradict** the current QC.
+  evidence source, with WF-23 supplying the machine branch-count evidence for D4. The rubric
+  reads the SAME artifacts WF-1..WF-21 reads; it adds no new infrastructure and **cannot contradict** the current QC.
 - WF-1..WF-21 remains the **hard pass/fail gate**. The rubric is the **quality grade on top**.
 - The rubric **reads outputs only** — it does NOT alter `workflow_builder.py`,
   `safety_gate.py`, `VERIFIED_ACTIONS`, or `link_steps()`. This guarantees it is non-breaking.
@@ -40,23 +40,29 @@ rubric **never runs instead of** WF-1..WF-21.
 weighted_score = (D1*20 + D2*15 + D3*15 + D4*12 + D5*12 + D6*10 + D7*8 + D8*8) / 100
 ```
 
-A dimension that is genuinely **N/A** (e.g. D4 branching on a workflow with no branches) scores
-**10** (a clean N/A is not a defect) and its anchor note records "N/A — no branches present".
+A dimension that is genuinely **N/A** scores **10** (a clean N/A is not a defect). For D4,
+N/A is allowed ONLY when the saved workflow graph contains ZERO branch-type nodes:
+`if_else`, `workflow_split`, `goto`, or `transition`. WF-23 computes the branch-node count
+from the saved graph and prints it next to the D4 line; the build agent may NOT assert the
+count. If the count is >= 1, D4 may not be scored N/A: a D4=N/A claim with branch nodes
+present is automatically scored D4=1, not 10 (per D-8 of the review plan). If WF-23 is
+unavailable or the branch count is not printed, a D4 N/A claim is refused and D4 is scored
+1 (fail closed). When N/A is allowed, the anchor note records "N/A — no branches present".
 
 ---
 
 ## Dimension table (weights + evidence sources)
 
-| #  | Dimension                              | Weight | Evidence source (existing)                       |
-|----|----------------------------------------|--------|--------------------------------------------------|
-| D1 | Goal-fit to stated intent              | 20%    | PLAN Step A1/A2 vs `caf workflows export`        |
-| D2 | Trigger correctness                    | 15%    | WF-3, WF-4                                       |
-| D3 | Action/step completeness & ordering    | 15%    | WF-7, WF-15, `link_steps()`                      |
-| D4 | Branching & conditional logic          | 12%    | WF-8, WF-16                                      |
-| D5 | Edge-case & failure handling           | 12%    | WF-9 (timeouts), WF-16, WF-17                    |
-| D6 | Deliverability integrity               | 10%    | WF-12 (SMS from-#), WF-13, WF-2/10/11 deps       |
-| D7 | Idempotency / re-entry safety          | 8%     | WF-6, WF-16 Stop-on-Response                     |
-| D8 | Naming, labeling & testability         | 8%     | WF-1, WF-5, WF-18/21 snapshot, WF-20             |
+| #  | Dimension                              | Weight | Evidence source                       |
+|----|----------------------------------------|--------|---------------------------------------|
+| D1 | Goal-fit to stated intent              | 20%    | PLAN Step A1/A2 vs `caf workflows export` |
+| D2 | Trigger correctness                    | 15%    | WF-3, WF-4                            |
+| D3 | Action/step completeness & ordering    | 15%    | WF-7, WF-15, `link_steps()`           |
+| D4 | Branching & conditional logic          | 12%    | WF-23 (machine branch count), WF-8, WF-16 |
+| D5 | Edge-case & failure handling           | 12%    | WF-9 (timeouts), WF-16, WF-17         |
+| D6 | Deliverability integrity               | 10%    | WF-12 (SMS from-#), WF-13, WF-2/10/11 deps |
+| D7 | Idempotency / re-entry safety          | 8%     | WF-6, WF-16 Stop-on-Response          |
+| D8 | Naming, labeling & testability         | 8%     | WF-1, WF-5, WF-18/21 snapshot, WF-20  |
 
 Weights sum to 100%.
 
@@ -104,14 +110,20 @@ end-to-end), `link_steps()` (order/parentKey/next).
   "corrupted order"); delivery chain wired trigger→steps→exit with no orphans (WF-15 CONFIRMED).
 
 ## D4 — Branching & conditional logic (12%)
-**Evidence source:** WF-8 (If/Else conditions), WF-16 (advanced settings affecting branch
-behavior).
+**Evidence source:** WF-23 (machine, saved-graph branch-node count), WF-8 and WF-16 (human).
 
 - **1:** If/Else references a field/operator that doesn't exist, OR only one branch configured
   (other path dead-ends).
 - **5:** Branches configured but one path is a stub, OR AND/OR logic ambiguous vs the plan.
 - **10:** Every branch has both paths defined, correct field/operator/value, each path advances
-  to a deliberate outcome. **N/A clean (= 10) if the workflow has no branches.**
+  to a deliberate outcome.
+
+**N/A rule:** D4 is N/A (= 10) ONLY when WF-23 prints a branch-node count of 0 from the saved
+workflow graph. Count node types `if_else`, `workflow_split`, `goto`, and `transition`.
+The count comes from WF-23, never the build agent's assertion. If the count is >= 1, a D4=N/A
+claim is refused and D4 is automatically scored 1, not 10 (per D-8 of the review plan). If
+WF-23 is unavailable or the count is not printed, a D4 N/A claim is refused and D4 is scored
+1 (fail closed).
 
 ## D5 — Edge-case & failure handling (12%)
 **Evidence source:** WF-9 (Wait timeouts), WF-16 (business-hours/time-window), WF-17 (edge cases
@@ -166,16 +178,19 @@ WF-2/WF-10/WF-11 (tag/field/value dependencies GET-verified), WF-18 (deps pre-ex
 ## Worked example
 
 A purely-mechanical (no-branch) re-engagement workflow that hit every A2 value, correct trigger
-matched to a DRAFT decision, ordered chain, no branches (N/A=10), all edge cases decided, SMS
-From-number present, re-entry=ONCE with Stop-on-Response, ZHC-named with a snapshot:
+matched to a DRAFT decision, ordered chain, all edge cases decided, SMS From-number present,
+re-entry=ONCE with Stop-on-Response, ZHC-named with a snapshot. WF-23 must print branch count 0
+for N/A to be allowed (D4=10(NA)):
 
 ```
-D1=10, D2=10, D3=10, D4=10(N/A), D5=10, D6=10, D7=10, D8=10
+D1=10, D2=10, D3=10, D4=10(NA), D5=10, D6=10, D7=10, D8=10
 weighted = (10*20+10*15+10*15+10*12+10*12+10*10+10*8+10*8)/100 = 10.0  → SHIP
 ```
 
 A workflow that hit the outcome but silently added an SMS the client never asked for (D1=5) and
-left one edge case undecided (D5=5):
+left one edge case undecided (D5=5). This workflow is branch-free, so WF-23 must print branch
+count 0 for D4=10 to remain valid. If WF-23 reported any `if_else`, `workflow_split`, `goto`, or
+`transition` node, D4 N/A would be refused and D4 would score 1:
 
 ```
 D1=5, D2=10, D3=10, D4=10, D5=5, D6=10, D7=10, D8=10

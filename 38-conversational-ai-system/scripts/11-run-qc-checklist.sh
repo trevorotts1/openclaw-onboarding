@@ -30,6 +30,8 @@ PASS=0
 FAIL=0
 report_pass() { echo "  [PASS] $*"; PASS=$((PASS+1)); }
 report_fail() { echo "  [FAIL] $*"; FAIL=$((FAIL+1)); }
+NA=0
+report_na() { echo "  [NA] $*"; NA=$((NA+1)); }
 section()     { echo ""; echo "=== $* ==="; }
 
 # -------- Resolve skill 38 root --------
@@ -246,7 +248,15 @@ if [ -f "$QC_TRINITY" ]; then
   bash "$QC_TRINITY" >/dev/null 2>&1 || TRINITY_RC=$?
   case "$TRINITY_RC" in
     0) report_pass "every registered workflow has its playbook + Build-with-AI prompt" ;;
-    3) echo "  [SKIP] no conversation-workflows folder yet (nothing to check)" ;;
+    3)
+      TRINITY_JSON="$(bash "$QC_TRINITY" --json 2>/dev/null || true)"
+      TRINITY_VERDICT="$(printf '%s\n' "$TRINITY_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("verdict", ""))' 2>/dev/null || true)"
+      case "$TRINITY_VERDICT" in
+        NO_FOLDER) echo "  [SKIP] no conversation-workflows folder yet (nothing to check)" ;;
+        EMPTY_REGISTRY) report_fail "conversation-workflows folder has zero registered playbooks; the Trinity cannot be proven vacuously" ;;
+        *) report_fail "qc-trinity-registry.sh returned rc 3 but its JSON verdict was missing or unreadable; run it directly for detail" ;;
+      esac
+      ;;
     *) report_fail "qc-trinity-registry.sh found incomplete trinity row(s) — run it directly for detail" ;;
   esac
 else
@@ -290,7 +300,32 @@ if [ -f "$QC_PBDOC" ]; then
   bash "$QC_PBDOC" >/dev/null 2>&1 || PBDOC_RC=$?
   case "$PBDOC_RC" in
     0) report_pass "every registered conversation playbook has a recorded human-facing doc (Notion → Google Docs → text) in the client's account" ;;
-    2) echo "  [SKIP] no conversation playbooks registered yet (nothing to check) — gate fires once the first playbook is built" ;;
+    2)
+      PBDOC_POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+      PBDOC_DIR=""
+      if [ -f "$PBDOC_POINTER" ]; then
+        PBDOC_MASTER_DIR="$(cat "$PBDOC_POINTER" 2>/dev/null || true)"
+        if [ -n "$PBDOC_MASTER_DIR" ]; then
+          PBDOC_DIR="${PBDOC_MASTER_DIR%/}/conversation-workflows"
+        fi
+      fi
+      PBDOC_COUNT=0
+      if [ -n "$PBDOC_DIR" ] && [ -d "$PBDOC_DIR" ]; then
+        for PBDOC_FILE in "$PBDOC_DIR"/*.md; do
+          [ -f "$PBDOC_FILE" ] || continue
+          PBDOC_NAME="${PBDOC_FILE##*/}"
+          case "$PBDOC_NAME" in
+            registry.md|*--build-with-ai-prompt.md|*--workflow-ai-prompt.md|*--verification-checklist.md|*--ghl-side.md) continue ;;
+          esac
+          PBDOC_COUNT=$((PBDOC_COUNT + 1))
+        done
+      fi
+      if [ "$PBDOC_COUNT" -eq 0 ]; then
+        echo "  [SKIP] no conversation playbooks registered yet (nothing to check) — gate fires once the first playbook is built"
+      else
+        report_fail "qc-playbook-doc.sh returned NO_PLAYBOOKS while $PBDOC_COUNT playbook file(s) ARE on disk; gate is blind, not that there is nothing to check"
+      fi
+      ;;
     3) echo "  [SKIP] no conversation-workflows folder yet (run 09-install-conversation-workflows.sh)" ;;
     *) report_fail "qc-playbook-doc.sh found a registered playbook with NO recorded human-facing doc (the Notion→Docs→text deliverable was skipped) — run it directly for detail" ;;
   esac
@@ -827,6 +862,46 @@ else
   report_fail "qc-playbook-declares.sh not found (looked in scripts/)"
 fi
 
+section "Conversational playbook craft (qc-playbook-craft.sh)"
+QC_CRAFT="$SCRIPT_DIR/qc-playbook-craft.sh"
+[ -f "$QC_CRAFT" ] || QC_CRAFT="$SKILL38_ROOT/scripts/qc-playbook-craft.sh"
+if [ -f "$QC_CRAFT" ]; then
+  CRAFT_RC=0
+  bash "$QC_CRAFT" >/dev/null 2>&1 || CRAFT_RC=$?
+  case "$CRAFT_RC" in
+    0) report_pass "all six craft contracts hold: objection library, turn discipline, ambiguity and multi-intent, stall recovery, golden transcript, conversational KPIs" ;;
+    2) echo "  [SKIP] no conversation-workflows folder yet" ;;
+    3)
+      CRAFT_WF_DIR=""
+      CRAFT_POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+      if [ -f "$CRAFT_POINTER" ]; then
+        CRAFT_MASTER_DIR="$(cat "$CRAFT_POINTER" 2>/dev/null || true)"
+        [ -n "$CRAFT_MASTER_DIR" ] && CRAFT_WF_DIR="${CRAFT_MASTER_DIR%/}/conversation-workflows"
+      fi
+      CRAFT_COUNT=0
+      if [ -n "$CRAFT_WF_DIR" ] && [ -d "$CRAFT_WF_DIR" ]; then
+        for CRAFT_FILE in "$CRAFT_WF_DIR"/*.md; do
+          [ -f "$CRAFT_FILE" ] || continue
+          CRAFT_NAME="${CRAFT_FILE##*/}"
+          case "$CRAFT_NAME" in
+            registry.md|*--build-with-ai-prompt.md|*--workflow-ai-prompt.md|*--verification-checklist.md|*--ghl-side.md) continue ;;
+          esac
+          CRAFT_COUNT=$((CRAFT_COUNT + 1))
+        done
+      fi
+      if [ "$CRAFT_COUNT" -eq 0 ]; then
+        echo "  [SKIP] no conversation playbook files yet (nothing to check)"
+      else
+        report_fail "qc-playbook-craft.sh returned NO_PLAYBOOKS while playbook file(s) exist on disk (blind gate, not an empty folder)"
+      fi
+      ;;
+    4) report_fail "qc-playbook-craft.sh cannot judge (playbook_engine.py or python3 unavailable)" ;;
+    *) report_fail "qc-playbook-craft.sh found a conversational craft defect (objection library, turn discipline, ambiguity, stall recovery, golden transcript, KPIs) - run it directly for detail" ;;
+  esac
+else
+  report_fail "qc-playbook-craft.sh not found (looked in scripts/)"
+fi
+
 section "Opportunity/pipeline stage sync (qc-opportunity-sync.sh)"
 QC_OPPSYNC="$SCRIPT_DIR/qc-opportunity-sync.sh"
 [ -f "$QC_OPPSYNC" ] || QC_OPPSYNC="$SKILL38_ROOT/scripts/qc-opportunity-sync.sh"
@@ -879,10 +954,52 @@ else
   report_fail "qc-interactive-owner.sh not found (looked in scripts/)"
 fi
 
+section "Launch Conversation-AI completion gate (launch/qc-launch-conversation-ai.sh)"
+LAUNCH_GATE="$SKILL38_ROOT/launch/qc-launch-conversation-ai.sh"
+[ -f "$LAUNCH_GATE" ] || LAUNCH_GATE="$SCRIPT_DIR/../launch/qc-launch-conversation-ai.sh"
+BUNDLE_DIR="${SKILL38_LAUNCH_BUNDLE_DIR:-${MASTER_FILES_DIR:+$MASTER_FILES_DIR/launch/conversation-ai}}"
+RECORD_FILE="${SKILL38_LAUNCH_RECORD:-${MASTER_FILES_DIR:+$MASTER_FILES_DIR/launch/launch-plan.json}}"
+if [ ! -f "$LAUNCH_GATE" ]; then
+  report_fail "launch Conversation-AI completion gate missing; expected $LAUNCH_GATE"
+else
+  BUNDLE_COUNT=0
+  if [ -n "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR" ]; then
+    for BUNDLE_FILE in "$BUNDLE_DIR"/*.json; do
+      [ -f "$BUNDLE_FILE" ] || continue
+      BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
+    done
+  fi
+  if [ "$BUNDLE_COUNT" -gt 0 ]; then
+    LAUNCH_RC=0
+    bash "$LAUNCH_GATE" --dir "$BUNDLE_DIR" >/dev/null 2>&1 || LAUNCH_RC=$?
+    case "$LAUNCH_RC" in
+      0) report_pass "launch Conversation-AI completion gate passed for $BUNDLE_COUNT bundle(s)" ;;
+      1) report_fail "launch Conversation-AI completion gate found invalid completion evidence; run it directly for detail" ;;
+      2) report_fail "launch Conversation-AI completion gate could not judge due to usage or IO error; this is never a pass" ;;
+      *) report_fail "launch Conversation-AI completion gate exited unexpectedly with code $LAUNCH_RC; run it directly for detail" ;;
+    esac
+  elif { [ -n "$RECORD_FILE" ] && [ -r "$RECORD_FILE" ] && grep -qF "Conversation AI: not requested" "$RECORD_FILE"; } || { [ -n "$RECORD_FILE" ] && [ -r "$RECORD_FILE" ] && python3 - "$RECORD_FILE" <<'PY_LAUNCH_RECORD_EOF'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        data = json.load(f)
+    raise SystemExit(0 if isinstance(data.get("conversation_ai"), dict) and data["conversation_ai"].get("requested") is False else 1)
+except Exception:
+    raise SystemExit(1)
+PY_LAUNCH_RECORD_EOF
+  }; then
+    report_na "Conversation AI: not requested for this launch, so no completion bundle is expected (recorded in $RECORD_FILE)"
+  else
+    report_na "No launch completion bundle found. Paths tried: gate=$LAUNCH_GATE, BUNDLE_DIR=$BUNDLE_DIR, RECORD_FILE=$RECORD_FILE. No not-requested record found. This is NOT proof of completion and NOT a pass."
+  fi
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"
 echo "  FAIL: $FAIL"
+echo "  NA:   $NA"
 if [ "$FAIL" -eq 0 ]; then
   echo ""
   echo "  RESULT: PASS — all mechanical QC items green. Proceed to human-judgment items in protocols/pre-handoff-qc-protocol.md."

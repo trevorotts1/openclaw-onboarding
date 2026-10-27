@@ -963,7 +963,7 @@ def workflows_create_step(ctx, step_type, name, out_file, subject, body, from_na
         steps.append(step)
 
         # Auto-link all steps
-        linked = wb.link_steps(steps)
+        linked, _unlinked = wb.link_steps(steps)
         with open(out_file, "w") as f:
             json.dump(linked, f, indent=2)
 
@@ -995,7 +995,7 @@ def workflows_create_n8n(ctx, name, webhook_url, tag, folder):
         if tag:
             steps.insert(0, wb.tag_step(f"Tag: {tag}", [tag]))
 
-        linked = wb.link_steps(steps)
+        linked, _unlinked = wb.link_steps(steps)
         campaign = {
             "n8n_bridge": {
                 "name": name,
@@ -1300,6 +1300,58 @@ def workflows_build(ctx, plan_file, folder):
             builder = CampaignBuilder(client, v4=v4)
             stats = builder.build(campaign, folder_name)
         _emit_build_result(ctx, builder, stats)
+    except Exception as e:
+        _handle_error(e)
+
+
+@workflows.command("precheck")
+@click.option("--from-plan", "plan_file", required=True, type=click.Path(exists=True),
+              help="JSON plan file whose declared dependencies must exist in GHL")
+@click.pass_context
+def workflows_precheck(ctx, plan_file):
+    """GET-verify every declared dependency BEFORE any workflow write (D-4).
+
+    Declared dependencies live on each workflow object as
+    "dependencies": {"tags": [...], "custom_fields": [...], "custom_values": [...],
+    "calendars": [...], "pipelines": [...]} plus the trigger "tag". Nothing is
+    inferred from step attributes, and nothing is created.
+
+    Exit 1 when any declared dependency is missing and the workflow did not set
+    "create_if_missing": true; unverified reads are reported but never counted
+    as present.
+    """
+    _require_experimental(ctx)
+    try:
+        from cli_anything.gohighlevel.utils.workflow_builder import CampaignBuilder
+        with open(plan_file) as f:
+            campaign = json.load(f)
+        campaign.pop("folder", None)
+        client = _get_internal_client(ctx)
+        location_id = _loc(ctx)
+        builder = CampaignBuilder(client)
+        report = {"workflows": {}, "missing": [], "unverified": []}
+        for key, wf_def in campaign.items():
+            if not isinstance(wf_def, dict):
+                continue
+            state = builder.precheck(location_id, wf_def)
+            report["workflows"][key] = state
+            report["missing"].extend(state.get("missing") or [])
+            report["unverified"].extend(state.get("unverified") or [])
+        report["ok"] = not report["missing"]
+        if ctx.obj["json"]:
+            click.echo(json.dumps(report, indent=2, default=str), err=not report["ok"])
+        else:
+            click.echo(
+                "precheck: %d present, %d missing, %d unverified"
+                % (sum(len(w.get("present") or []) for w in report["workflows"].values()),
+                   len(report["missing"]), len(report["unverified"]))
+            )
+            for item in report["missing"]:
+                click.echo("  MISSING %s: %s" % (item["kind"], item["name"]), err=True)
+            for item in report["unverified"]:
+                click.echo("  UNVERIFIED %s: %s" % (item["kind"], item["name"]))
+        if not report["ok"]:
+            sys.exit(1)
     except Exception as e:
         _handle_error(e)
 

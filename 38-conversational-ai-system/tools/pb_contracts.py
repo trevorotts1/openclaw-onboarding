@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Shared Purple Billboard contract validator.
 
+This is the OUTBOUND / PUBLICATION contract layer: collection state, outbound
+envelopes, revisioned approval manifest, readiness evidence, control-action lifecycle, and reconciliation. It contains NO playbook schema; that contract lives in tools/playbook_engine.py, NOT here.
+
 Enforces the typed contract layer only: collection state, strict outbound
 envelopes, the revisioned approval manifest, shared readiness evidence and the
 control-action lifecycle. It never talks to a provider and never sends anything.

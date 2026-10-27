@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "launch-post-sale-purchase",
   "name": "Launch Post-Sale Purchase — Access + Welcome, Promo Stop, Next Follow-Up",
   "aliases": [
@@ -139,7 +141,11 @@
     ]
   },
   "quality": {
-    "checklist_lines": ["A1", "A2", "X1"],
+    "checklist_lines": [
+      "A1",
+      "A2",
+      "X1"
+    ],
     "wf_checks": "WF-1..21 and FAB-QC >= 8.5 apply to the built workflow",
     "assertions": [
       "Suppression runs before any welcome or follow-up step",

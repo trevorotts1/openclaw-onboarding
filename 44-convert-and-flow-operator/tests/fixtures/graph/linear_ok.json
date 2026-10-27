@@ -1,0 +1,9 @@
+{
+  "workflowData": {
+    "templates": [
+      {"id": "n1", "type": "tag", "name": "Add tag", "parentKey": null, "next": "n2"},
+      {"id": "n2", "type": "sms", "name": "Send SMS", "parentKey": "n1", "next": "n3"},
+      {"id": "n3", "type": "end", "name": "End", "parentKey": "n2"}
+    ]
+  }
+}
