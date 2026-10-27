@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-10-27T02:11:25.464942Z",
-  "count": 12,
+  "generated_at": "2026-10-27T06:10:42.255284Z",
+  "count": 16,
   "templates": [
     {
       "key": "launch-a/launch-a-prelaunch-window",
@@ -60,6 +60,26 @@
     {
       "key": "launch-ai/customer-replied-conversation-ai",
       "path": "launch-ai/customer-replied-conversation-ai.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-b/launch-post-sale-purchase",
+      "path": "launch-b/post-sale-purchase.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-b/upsell-downsell-branch",
+      "path": "launch-b/upsell-downsell-branch.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-c/failed-payment-recovery",
+      "path": "launch-c/failed-payment-recovery.json",
+      "kind": "sequence_stack"
+    },
+    {
+      "key": "launch-c/launch-win-back-closed-no-purchase",
+      "path": "launch-c/win-back-closed-no-purchase.json",
       "kind": "sequence_stack"
     }
   ]

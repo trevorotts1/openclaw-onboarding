@@ -1438,5 +1438,551 @@
         }
       }
     ]
+  },
+  "automation-templates/launch-b/post-sale-purchase.json": {
+    "kind": "sequence_stack",
+    "build_graph": [
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Order Submitted / Payment Received",
+          "ref": "Order Submitted / Payment Received"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "remove_contact_tag",
+        "after": "trg",
+        "attributes": {
+          "tags_removed": "every launch promotional tag on the buyer",
+          "ref": "1. Stop promotional sends first - Remove every launch promotional tag on the buyer"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "add_contact_tag",
+        "after": "n1",
+        "attributes": {
+          "tags": [
+            "launch buyer tag",
+            "variant tag (main / upsell-N / downsell-N)"
+          ],
+          "ref": "2. Mark buyer + variant - Add the launch buyer tag and the variant tag"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "email",
+        "after": "n2",
+        "attributes": {
+          "message": "Access + welcome email",
+          "timing": "Immediately",
+          "ref": "3. Access + welcome email"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "if_else",
+        "after": "n3",
+        "branches": {
+          "true": "n5",
+          "false": "n6"
+        },
+        "attributes": {
+          "condition": "email + text launch and A2P approved",
+          "ref": "4. Access + welcome text - Immediately (when email + text launch and A2P approved)"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "sms",
+        "after": "n4",
+        "attributes": {
+          "message": "Access + welcome text",
+          "ref": "4. Access + welcome text"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "add_to_workflow",
+        "after": [
+          "n4",
+          "n5"
+        ],
+        "attributes": {
+          "workflow": "next follow-up for the purchased variant",
+          "join": true,
+          "ref": "5. Start the next follow-up - Immediately after access is granted"
+        }
+      },
+      {
+        "id": "n7",
+        "type": "workflow_goal",
+        "after": "n6",
+        "attributes": {
+          "goal": "handler closed",
+          "ref": "6. Close the handler - End"
+        }
+      }
+    ]
+  },
+  "automation-templates/launch-b/upsell-downsell-branch.json": {
+    "kind": "sequence_stack",
+    "build_graph": [
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added `option-branch:<slot>:<offer_id>`",
+          "ref": "Tag Added = `option-branch:<slot>:<offer_id>`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "if_else",
+        "after": "trg",
+        "branches": {
+          "true": "n8",
+          "false": "n2"
+        },
+        "attributes": {
+          "condition": "tag `declined-<offer_id>` present",
+          "ref": "1. If/Else - `declined-<offer_id>` present? TRUE -> step 6; FALSE -> step 2"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "wait",
+        "after": "n1",
+        "attributes": {
+          "duration": "15 minutes",
+          "kind": "duration",
+          "ref": "2. Wait 15 minutes"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "if_else",
+        "after": "n2",
+        "branches": {
+          "true": "n4",
+          "false": "n8"
+        },
+        "attributes": {
+          "condition": "tag `purchased-<offer_id>` present",
+          "ref": "3. If/Else - `purchased-<offer_id>` present? TRUE -> step 4; FALSE -> step 6"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "add_contact_tag",
+        "after": "n3",
+        "attributes": {
+          "tag": "bought-<slot>",
+          "ref": "4. Add `bought-<slot>`"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "remove_contact_tag",
+        "after": "n4",
+        "attributes": {
+          "tags": [
+            "declined-<offer_id>",
+            "option-branch:<slot>:<offer_id>"
+          ],
+          "ref": "4. remove `declined-<offer_id>` and `option-branch:<slot>:<offer_id>`"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "add_to_workflow",
+        "after": "n5",
+        "attributes": {
+          "workflow": "Skill 50 `upsell_followup` sequence",
+          "ref": "5. Add to Skill 50 `upsell_followup` sequence; end"
+        }
+      },
+      {
+        "id": "n7",
+        "type": "workflow_goal",
+        "after": "n6",
+        "attributes": {
+          "goal": "bought branch complete",
+          "ref": "5. end"
+        }
+      },
+      {
+        "id": "n8",
+        "type": "add_contact_tag",
+        "after": [
+          "n1",
+          "n3"
+        ],
+        "attributes": {
+          "tag": "declined-<slot>",
+          "join": true,
+          "ref": "6. Add `declined-<slot>`"
+        }
+      },
+      {
+        "id": "n9",
+        "type": "remove_contact_tag",
+        "after": "n8",
+        "attributes": {
+          "tags": [
+            "option-branch:<slot>:<offer_id>"
+          ],
+          "ref": "6. remove `option-branch:<slot>:<offer_id>`"
+        }
+      },
+      {
+        "id": "n10",
+        "type": "add_to_workflow",
+        "after": "n9",
+        "attributes": {
+          "workflow": "Skill 50 `downsell_followup` sequence",
+          "ref": "7. Add to Skill 50 `downsell_followup` sequence; end"
+        }
+      },
+      {
+        "id": "n11",
+        "type": "workflow_goal",
+        "after": "n10",
+        "attributes": {
+          "goal": "declined branch complete",
+          "ref": "7. end"
+        }
+      }
+    ]
+  },
+  "automation-templates/launch-c/failed-payment-recovery.json": {
+    "kind": "sequence_stack",
+    "build_graph": [
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Payment Failed (subscription / recurring invoice)",
+          "ref": "Payment Failed (subscription / recurring invoice)"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "email",
+        "after": "trg",
+        "attributes": {
+          "message": "recovery email (step 1)",
+          "timing": "Immediately on the failed charge",
+          "ref": "1. Send Email - recovery email (step 1)"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "wait",
+        "after": "n1",
+        "attributes": {
+          "duration": "4 hours",
+          "kind": "duration",
+          "ref": "2. Wait - 4 hours"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "if_else",
+        "after": "n2",
+        "branches": {
+          "true": "n5",
+          "false": "n4"
+        },
+        "attributes": {
+          "condition": "a2p_ready is false",
+          "ref": "2. (SMS step is skipped when a2p_ready is false)"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "sms",
+        "after": "n3",
+        "attributes": {
+          "message": "recovery nudge (step 2)",
+          "ref": "3. Send SMS - recovery nudge (step 2)"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "wait",
+        "after": [
+          "n3",
+          "n4"
+        ],
+        "attributes": {
+          "duration": "2 days",
+          "kind": "duration",
+          "join": true,
+          "ref": "4. Wait - 2 days"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "if_else",
+        "after": "n5",
+        "branches": {
+          "true": "n13",
+          "false": "n7"
+        },
+        "attributes": {
+          "condition": "contact has tag `payment-recovered`",
+          "ref": "5. If/Else - contact has tag `payment-recovered`? TRUE -> workflow_goal: payment recovered (end). FALSE -> continue"
+        }
+      },
+      {
+        "id": "n7",
+        "type": "email",
+        "after": "n6",
+        "attributes": {
+          "message": "retry follow-up (step 3)",
+          "ref": "6. Send Email - retry follow-up (step 3)"
+        }
+      },
+      {
+        "id": "n8",
+        "type": "wait",
+        "after": "n7",
+        "attributes": {
+          "duration": "3 days",
+          "kind": "duration",
+          "ref": "7. Wait - 3 days"
+        }
+      },
+      {
+        "id": "n9",
+        "type": "if_else",
+        "after": "n8",
+        "branches": {
+          "true": "n13",
+          "false": "n10"
+        },
+        "attributes": {
+          "condition": "contact has tag `payment-recovered`",
+          "ref": "8. If/Else - contact has tag `payment-recovered`? TRUE -> end. FALSE -> continue"
+        }
+      },
+      {
+        "id": "n10",
+        "type": "email",
+        "after": "n9",
+        "attributes": {
+          "message": "final notice (step 4)",
+          "ref": "9. Send Email - final notice (step 4)"
+        }
+      },
+      {
+        "id": "n11",
+        "type": "add_contact_tag",
+        "after": "n10",
+        "attributes": {
+          "tag": "payment-recovery-exhausted",
+          "ref": "10. Add tag `payment-recovery-exhausted`"
+        }
+      },
+      {
+        "id": "n12",
+        "type": "remove_contact_tag",
+        "after": "n11",
+        "attributes": {
+          "tags": [
+            "payment-failed-active"
+          ],
+          "ref": "10. remove tag `payment-failed-active`"
+        }
+      },
+      {
+        "id": "n13",
+        "type": "workflow_goal",
+        "after": [
+          "n6",
+          "n9",
+          "n12"
+        ],
+        "attributes": {
+          "goal": "payment recovered or recovery exhausted",
+          "join": true,
+          "ref": "5./8. end - goal_event: successful payment -> `payment-recovered` tag"
+        }
+      }
+    ]
+  },
+  "automation-templates/launch-c/win-back-closed-no-purchase.json": {
+    "kind": "sequence_stack",
+    "build_graph": [
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Scheduled check - launch doors closed and still no purchase",
+          "ref": "Recurring / scheduled workflow that checks the launch segment against buyer state"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "if_else",
+        "after": "trg",
+        "branches": {
+          "true": "n14",
+          "false": "n2"
+        },
+        "attributes": {
+          "condition": "launch buyer",
+          "ref": "1. If/Else - launch buyer? TRUE -> workflow_goal end; FALSE -> continue"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "email",
+        "after": "n1",
+        "attributes": {
+          "message": "win-back 1 (step 1)",
+          "ref": "2. Send Email - win-back 1 (step 1)"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "wait",
+        "after": "n2",
+        "attributes": {
+          "duration": "3 days",
+          "kind": "duration",
+          "ref": "3. Wait - 3 days"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "if_else",
+        "after": "n3",
+        "branches": {
+          "true": "n14",
+          "false": "n5"
+        },
+        "attributes": {
+          "condition": "buyer or re-engaged",
+          "ref": "4. If/Else - buyer or re-engaged? TRUE -> end; FALSE -> continue"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "email",
+        "after": "n4",
+        "attributes": {
+          "message": "best-of + next offer (step 2)",
+          "ref": "5. Send Email - best-of + next offer (step 2)"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "wait",
+        "after": "n5",
+        "attributes": {
+          "duration": "3 days",
+          "kind": "duration",
+          "ref": "6. Wait - 3 days"
+        }
+      },
+      {
+        "id": "n7",
+        "type": "if_else",
+        "after": "n6",
+        "branches": {
+          "true": "n14",
+          "false": "n8"
+        },
+        "attributes": {
+          "condition": "buyer or re-engaged",
+          "ref": "7. If/Else - buyer or re-engaged? TRUE -> end; FALSE -> continue"
+        }
+      },
+      {
+        "id": "n8",
+        "type": "email",
+        "after": "n7",
+        "attributes": {
+          "message": "takeaway / sunset (step 3)",
+          "ref": "8. Send Email - takeaway / sunset (step 3)"
+        }
+      },
+      {
+        "id": "n9",
+        "type": "if_else",
+        "after": "n8",
+        "branches": {
+          "true": "n11",
+          "false": "n10"
+        },
+        "attributes": {
+          "condition": "a2p_ready is false",
+          "ref": "9. Send SMS - one-sentence nudge (step 3, skipped when a2p_ready is false)"
+        }
+      },
+      {
+        "id": "n10",
+        "type": "sms",
+        "after": "n9",
+        "attributes": {
+          "message": "one-sentence nudge (step 3)",
+          "ref": "9. Send SMS - one-sentence nudge (step 3)"
+        }
+      },
+      {
+        "id": "n11",
+        "type": "wait",
+        "after": [
+          "n9",
+          "n10"
+        ],
+        "attributes": {
+          "duration": "2 days",
+          "kind": "duration",
+          "join": true,
+          "ref": "10. Wait - 2 days"
+        }
+      },
+      {
+        "id": "n12",
+        "type": "add_contact_tag",
+        "after": "n11",
+        "attributes": {
+          "tag": "launch-winback-sunset",
+          "ref": "11. Add tag `launch-winback-sunset`"
+        }
+      },
+      {
+        "id": "n13",
+        "type": "remove_contact_tag",
+        "after": "n12",
+        "attributes": {
+          "tags": [
+            "launch-winback-active",
+            "the launch broadcast tag"
+          ],
+          "ref": "11. remove `launch-winback-active` and the launch broadcast tag"
+        }
+      },
+      {
+        "id": "n14",
+        "type": "workflow_goal",
+        "after": [
+          "n1",
+          "n4",
+          "n7",
+          "n13"
+        ],
+        "attributes": {
+          "goal": "buyer suppressed or win-back closed out",
+          "join": true,
+          "ref": "1./4./7. TRUE -> workflow_goal end"
+        }
+      }
+    ]
   }
 }

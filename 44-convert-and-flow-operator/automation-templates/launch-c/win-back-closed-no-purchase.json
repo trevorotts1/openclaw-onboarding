@@ -181,5 +181,173 @@
   "flexibility": {
     "principle": "Recommended default, never a requirement. An explicit client request wins over this template.",
     "note": "Only hard rules: draft_only, no sends before doors_close_at, and purchase always stops promotional sends."
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Scheduled check - launch doors closed and still no purchase",
+        "ref": "Recurring / scheduled workflow that checks the launch segment against buyer state"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "if_else",
+      "after": "trg",
+      "branches": {
+        "true": "n14",
+        "false": "n2"
+      },
+      "attributes": {
+        "condition": "launch buyer",
+        "ref": "1. If/Else - launch buyer? TRUE -> workflow_goal end; FALSE -> continue"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "email",
+      "after": "n1",
+      "attributes": {
+        "message": "win-back 1 (step 1)",
+        "ref": "2. Send Email - win-back 1 (step 1)"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "wait",
+      "after": "n2",
+      "attributes": {
+        "duration": "3 days",
+        "kind": "duration",
+        "ref": "3. Wait - 3 days"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "if_else",
+      "after": "n3",
+      "branches": {
+        "true": "n14",
+        "false": "n5"
+      },
+      "attributes": {
+        "condition": "buyer or re-engaged",
+        "ref": "4. If/Else - buyer or re-engaged? TRUE -> end; FALSE -> continue"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "email",
+      "after": "n4",
+      "attributes": {
+        "message": "best-of + next offer (step 2)",
+        "ref": "5. Send Email - best-of + next offer (step 2)"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "wait",
+      "after": "n5",
+      "attributes": {
+        "duration": "3 days",
+        "kind": "duration",
+        "ref": "6. Wait - 3 days"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "if_else",
+      "after": "n6",
+      "branches": {
+        "true": "n14",
+        "false": "n8"
+      },
+      "attributes": {
+        "condition": "buyer or re-engaged",
+        "ref": "7. If/Else - buyer or re-engaged? TRUE -> end; FALSE -> continue"
+      }
+    },
+    {
+      "id": "n8",
+      "type": "email",
+      "after": "n7",
+      "attributes": {
+        "message": "takeaway / sunset (step 3)",
+        "ref": "8. Send Email - takeaway / sunset (step 3)"
+      }
+    },
+    {
+      "id": "n9",
+      "type": "if_else",
+      "after": "n8",
+      "branches": {
+        "true": "n11",
+        "false": "n10"
+      },
+      "attributes": {
+        "condition": "a2p_ready is false",
+        "ref": "9. Send SMS - one-sentence nudge (step 3, skipped when a2p_ready is false)"
+      }
+    },
+    {
+      "id": "n10",
+      "type": "sms",
+      "after": "n9",
+      "attributes": {
+        "message": "one-sentence nudge (step 3)",
+        "ref": "9. Send SMS - one-sentence nudge (step 3)"
+      }
+    },
+    {
+      "id": "n11",
+      "type": "wait",
+      "after": [
+        "n9",
+        "n10"
+      ],
+      "attributes": {
+        "duration": "2 days",
+        "kind": "duration",
+        "join": true,
+        "ref": "10. Wait - 2 days"
+      }
+    },
+    {
+      "id": "n12",
+      "type": "add_contact_tag",
+      "after": "n11",
+      "attributes": {
+        "tag": "launch-winback-sunset",
+        "ref": "11. Add tag `launch-winback-sunset`"
+      }
+    },
+    {
+      "id": "n13",
+      "type": "remove_contact_tag",
+      "after": "n12",
+      "attributes": {
+        "tags": [
+          "launch-winback-active",
+          "the launch broadcast tag"
+        ],
+        "ref": "11. remove `launch-winback-active` and the launch broadcast tag"
+      }
+    },
+    {
+      "id": "n14",
+      "type": "workflow_goal",
+      "after": [
+        "n1",
+        "n4",
+        "n7",
+        "n13"
+      ],
+      "attributes": {
+        "goal": "buyer suppressed or win-back closed out",
+        "join": true,
+        "ref": "1./4./7. TRUE -> workflow_goal end"
+      }
+    }
+  ]
 }

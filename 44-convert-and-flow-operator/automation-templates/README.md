@@ -32,7 +32,7 @@ A template that the matcher may offer as buildable MUST carry a `build_graph` ar
 - Every value in `after` and `branches` must resolve to a node ID in the same graph. `after` must be a plain predecessor ID everywhere except on a declared join node, where `after` is an array of every immediate predecessor ID.
 - **Join rule:** when both arms of an `if_else` continue into shared work, both arms must feed ONE declared join node — a node carrying `"join": true` in its `attributes` — and the shared continuation hangs off the join, never off a single branch body. No node may have more than one predecessor and no node may be the branch target of more than one `if_else` unless it is a declared join.
 
-Today, 12 templates carry a graph. The generated list lives in `_matcher/buildable-templates.json`. The remaining 37 templates are prose-only and are **NOT buildable** until a graph is authored.
+Today, 16 templates carry a graph. The generated list lives in `_matcher/buildable-templates.json`. The remaining 33 templates are prose-only and are **NOT buildable**; `_schema/prose-only.json` records, per template, the specific fact its prose does not state, so a later conversion knows exactly what to ask for instead of inventing it.
 
 Validate templates with `_schema/apply_template_schema.py --check`. The validator exits non-zero when a template lacks `schema_version` or `kind`, or when a graph is malformed.
 

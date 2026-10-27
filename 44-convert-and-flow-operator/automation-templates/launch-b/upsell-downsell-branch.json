@@ -144,5 +144,132 @@
   "acceptance": {
     "A1": "Family `upsell_downsell` exists as a template with template = 'new' (spec calls it 'new, small'); failed_payment is not part of this family.",
     "A2": "Every action is draft_only; the bought/declined branch never sends a promotional launch email or text, and a verified purchase suppresses them."
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Tag Added `option-branch:<slot>:<offer_id>`",
+        "ref": "Tag Added = `option-branch:<slot>:<offer_id>`"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "if_else",
+      "after": "trg",
+      "branches": {
+        "true": "n8",
+        "false": "n2"
+      },
+      "attributes": {
+        "condition": "tag `declined-<offer_id>` present",
+        "ref": "1. If/Else - `declined-<offer_id>` present? TRUE -> step 6; FALSE -> step 2"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "wait",
+      "after": "n1",
+      "attributes": {
+        "duration": "15 minutes",
+        "kind": "duration",
+        "ref": "2. Wait 15 minutes"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "if_else",
+      "after": "n2",
+      "branches": {
+        "true": "n4",
+        "false": "n8"
+      },
+      "attributes": {
+        "condition": "tag `purchased-<offer_id>` present",
+        "ref": "3. If/Else - `purchased-<offer_id>` present? TRUE -> step 4; FALSE -> step 6"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "add_contact_tag",
+      "after": "n3",
+      "attributes": {
+        "tag": "bought-<slot>",
+        "ref": "4. Add `bought-<slot>`"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "remove_contact_tag",
+      "after": "n4",
+      "attributes": {
+        "tags": [
+          "declined-<offer_id>",
+          "option-branch:<slot>:<offer_id>"
+        ],
+        "ref": "4. remove `declined-<offer_id>` and `option-branch:<slot>:<offer_id>`"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "add_to_workflow",
+      "after": "n5",
+      "attributes": {
+        "workflow": "Skill 50 `upsell_followup` sequence",
+        "ref": "5. Add to Skill 50 `upsell_followup` sequence; end"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "workflow_goal",
+      "after": "n6",
+      "attributes": {
+        "goal": "bought branch complete",
+        "ref": "5. end"
+      }
+    },
+    {
+      "id": "n8",
+      "type": "add_contact_tag",
+      "after": [
+        "n1",
+        "n3"
+      ],
+      "attributes": {
+        "tag": "declined-<slot>",
+        "join": true,
+        "ref": "6. Add `declined-<slot>`"
+      }
+    },
+    {
+      "id": "n9",
+      "type": "remove_contact_tag",
+      "after": "n8",
+      "attributes": {
+        "tags": [
+          "option-branch:<slot>:<offer_id>"
+        ],
+        "ref": "6. remove `option-branch:<slot>:<offer_id>`"
+      }
+    },
+    {
+      "id": "n10",
+      "type": "add_to_workflow",
+      "after": "n9",
+      "attributes": {
+        "workflow": "Skill 50 `downsell_followup` sequence",
+        "ref": "7. Add to Skill 50 `downsell_followup` sequence; end"
+      }
+    },
+    {
+      "id": "n11",
+      "type": "workflow_goal",
+      "after": "n10",
+      "attributes": {
+        "goal": "declined branch complete",
+        "ref": "7. end"
+      }
+    }
+  ]
 }

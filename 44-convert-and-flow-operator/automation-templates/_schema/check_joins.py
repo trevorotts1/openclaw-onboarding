@@ -8,7 +8,18 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[1]
 ROOT = BASE.parent
-GROUPS = ("launch-a", "launch-ai")
+GROUPS = (
+    "launch-a",
+    "launch-ai",
+    "launch-b",
+    "launch-c",
+    "launch-text",
+    "engagement-broadcast",
+    "funnel-specific-followups",
+    "multichannel-automation",
+    "sales-close-sequences",
+    "welcome-indoctrination",
+)
 SIDECAR = BASE / "_schema" / "build-graphs.launch.json"
 
 

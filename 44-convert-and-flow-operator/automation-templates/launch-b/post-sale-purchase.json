@@ -155,5 +155,90 @@
       "Everything is draft_only; no live switch-on",
       "No client account touched during the build"
     ]
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Order Submitted / Payment Received",
+        "ref": "Order Submitted / Payment Received"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "remove_contact_tag",
+      "after": "trg",
+      "attributes": {
+        "tags_removed": "every launch promotional tag on the buyer",
+        "ref": "1. Stop promotional sends first - Remove every launch promotional tag on the buyer"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "add_contact_tag",
+      "after": "n1",
+      "attributes": {
+        "tags": [
+          "launch buyer tag",
+          "variant tag (main / upsell-N / downsell-N)"
+        ],
+        "ref": "2. Mark buyer + variant - Add the launch buyer tag and the variant tag"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "email",
+      "after": "n2",
+      "attributes": {
+        "message": "Access + welcome email",
+        "timing": "Immediately",
+        "ref": "3. Access + welcome email"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "if_else",
+      "after": "n3",
+      "branches": {
+        "true": "n5",
+        "false": "n6"
+      },
+      "attributes": {
+        "condition": "email + text launch and A2P approved",
+        "ref": "4. Access + welcome text - Immediately (when email + text launch and A2P approved)"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "sms",
+      "after": "n4",
+      "attributes": {
+        "message": "Access + welcome text",
+        "ref": "4. Access + welcome text"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "add_to_workflow",
+      "after": [
+        "n4",
+        "n5"
+      ],
+      "attributes": {
+        "workflow": "next follow-up for the purchased variant",
+        "join": true,
+        "ref": "5. Start the next follow-up - Immediately after access is granted"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "workflow_goal",
+      "after": "n6",
+      "attributes": {
+        "goal": "handler closed",
+        "ref": "6. Close the handler - End"
+      }
+    }
+  ]
 }

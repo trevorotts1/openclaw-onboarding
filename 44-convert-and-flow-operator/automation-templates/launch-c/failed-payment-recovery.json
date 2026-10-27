@@ -127,5 +127,159 @@
   "flexibility": {
     "principle": "Recommended default, never a requirement. An explicit client request wins over this template.",
     "note": "The gate is the one hard rule: no payment plans means this family is not built."
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Payment Failed (subscription / recurring invoice)",
+        "ref": "Payment Failed (subscription / recurring invoice)"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "email",
+      "after": "trg",
+      "attributes": {
+        "message": "recovery email (step 1)",
+        "timing": "Immediately on the failed charge",
+        "ref": "1. Send Email - recovery email (step 1)"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "wait",
+      "after": "n1",
+      "attributes": {
+        "duration": "4 hours",
+        "kind": "duration",
+        "ref": "2. Wait - 4 hours"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "if_else",
+      "after": "n2",
+      "branches": {
+        "true": "n5",
+        "false": "n4"
+      },
+      "attributes": {
+        "condition": "a2p_ready is false",
+        "ref": "2. (SMS step is skipped when a2p_ready is false)"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "sms",
+      "after": "n3",
+      "attributes": {
+        "message": "recovery nudge (step 2)",
+        "ref": "3. Send SMS - recovery nudge (step 2)"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "wait",
+      "after": [
+        "n3",
+        "n4"
+      ],
+      "attributes": {
+        "duration": "2 days",
+        "kind": "duration",
+        "join": true,
+        "ref": "4. Wait - 2 days"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "if_else",
+      "after": "n5",
+      "branches": {
+        "true": "n13",
+        "false": "n7"
+      },
+      "attributes": {
+        "condition": "contact has tag `payment-recovered`",
+        "ref": "5. If/Else - contact has tag `payment-recovered`? TRUE -> workflow_goal: payment recovered (end). FALSE -> continue"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "email",
+      "after": "n6",
+      "attributes": {
+        "message": "retry follow-up (step 3)",
+        "ref": "6. Send Email - retry follow-up (step 3)"
+      }
+    },
+    {
+      "id": "n8",
+      "type": "wait",
+      "after": "n7",
+      "attributes": {
+        "duration": "3 days",
+        "kind": "duration",
+        "ref": "7. Wait - 3 days"
+      }
+    },
+    {
+      "id": "n9",
+      "type": "if_else",
+      "after": "n8",
+      "branches": {
+        "true": "n13",
+        "false": "n10"
+      },
+      "attributes": {
+        "condition": "contact has tag `payment-recovered`",
+        "ref": "8. If/Else - contact has tag `payment-recovered`? TRUE -> end. FALSE -> continue"
+      }
+    },
+    {
+      "id": "n10",
+      "type": "email",
+      "after": "n9",
+      "attributes": {
+        "message": "final notice (step 4)",
+        "ref": "9. Send Email - final notice (step 4)"
+      }
+    },
+    {
+      "id": "n11",
+      "type": "add_contact_tag",
+      "after": "n10",
+      "attributes": {
+        "tag": "payment-recovery-exhausted",
+        "ref": "10. Add tag `payment-recovery-exhausted`"
+      }
+    },
+    {
+      "id": "n12",
+      "type": "remove_contact_tag",
+      "after": "n11",
+      "attributes": {
+        "tags": [
+          "payment-failed-active"
+        ],
+        "ref": "10. remove tag `payment-failed-active`"
+      }
+    },
+    {
+      "id": "n13",
+      "type": "workflow_goal",
+      "after": [
+        "n6",
+        "n9",
+        "n12"
+      ],
+      "attributes": {
+        "goal": "payment recovered or recovery exhausted",
+        "join": true,
+        "ref": "5./8. end - goal_event: successful payment -> `payment-recovered` tag"
+      }
+    }
+  ]
 }
