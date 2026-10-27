@@ -305,7 +305,10 @@ else:
 # An absent playbooks dir is "nothing to check", not a fault: a bare CI checkout
 # has no operator master-files dir, and main exits 0 there. A BROKEN discovery
 # (WF_FAULT) still fails closed below.
-NOTHING_TO_CHECK = DISCOVERY == "UNINITIALISED" and not WF_FAULT
+# Only "nothing is configured at all" counts as nothing to check. An explicit --dir or a
+# pointer file that yields 0 playbooks is a real state and must stay visible, so the
+# condition is on ORIGIN, not on the derived DISCOVERY.
+NOTHING_TO_CHECK = WF_ORIGIN == "none" and not WF_FAULT
 
 resolved_wf = str(Path(WF_DIR).resolve()) if WF_DIR else ""
 migration_command = "bash scripts/33-migrate-legacy-playbooks.sh %s --write" % (resolved_wf or "<ABSOLUTE_WORKFLOWS_DIR>")
@@ -363,6 +366,9 @@ else:
 # on a bare checkout with no operator master-files dir, and main exits 0 there.
 # A BROKEN discovery (WF_FAULT: explicit --dir missing, unreadable pointer or dir)
 # still fails closed, because that is a real fault rather than an empty box.
-NOTHING_TO_CHECK = DISCOVERY == "UNINITIALISED" and not WF_FAULT
+# Only "nothing is configured at all" counts as nothing to check. An explicit --dir or a
+# pointer file that yields 0 playbooks is a real state and must stay visible, so the
+# condition is on ORIGIN, not on the derived DISCOVERY.
+NOTHING_TO_CHECK = WF_ORIGIN == "none" and not WF_FAULT
 sys.exit(1 if failures else (0 if NOTHING_TO_CHECK else (2 if DISCOVERY == "UNINITIALISED" else 0)))
 PYEOF
