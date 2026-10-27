@@ -101,7 +101,9 @@ class ProofInvalidation(unittest.TestCase):
                                          True, True, True)
         self.assertTrue(shared_readiness.proof_valid(other, other))
         affected = issue()
-        issue(binding='host-b', prior=affected)  # event on SURFACE only
+        affected_now = issue(binding='host-b', prior=affected)  # event on SURFACE only
+        self.assertFalse(shared_readiness.proof_valid(affected, affected_now),
+                         'the AFFECTED surface proof must be invalidated')
         other_now = shared_readiness.project('other.surface', 'host-x', 'build-9',
                                              True, True, True, prior=other)
         self.assertTrue(shared_readiness.proof_valid(other, other_now),
