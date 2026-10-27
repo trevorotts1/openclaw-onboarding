@@ -5,11 +5,11 @@
   "room": "purple-billboard",
   "task": "T-36-WIRE guard repair for PBB-651",
   "lane_branch": "pb/PBB-1064/t-36-guardfix",
-  "worktree": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/worktrees/PBB-1064-t36",
+  "worktree": "<PATH>/Purple-Billboard-Client-System-Build/worktrees/PBB-1064-t36",
   "head": "c1bca572f4768b62429ecf53f193cc593ccb3bff",
   "head7": "c1bca57",
   "base": "1d1b8d2c8d85395f119c37f7c046597ea4b94199",
-  "base_note": "origin/main recorded after git fetch origin in /Users/blackceomacmini/openclaw-onboarding; unchanged for the duration of this lane",
+  "base_note": "origin/main recorded after git fetch origin in <PATH>/openclaw-onboarding; unchanged for the duration of this lane",
   "checker": "PBB-1064",
   "model": "opus-chain",
   "instrument": {
@@ -21,7 +21,7 @@
     "environment": "macOS Darwin 25.3.0, /bin/bash, TMPDIR on the portable run root, no /data/.openclaw/openclaw.json on the box"
   },
   "reported_failure": {
-    "source": "/Volumes/mac mini m4/Downloads/git trees and automations/batch-merge-room/scratchpads/bmr-precheck-T-36-WIRE/fg-head.log",
+    "source": "<PATH>/batch-merge-room/scratchpads/bmr-precheck-T-36-WIRE/fg-head.log",
     "lines": "fg-head.log:695 (assertion FAIL), fg-head.log:722 (ceo-tools-root-schema-guard: FAIL (27s))",
     "failing_assertion": "I1b: apply-routing-fix.sh did not log the PA-freeze skip — L2/L5",
     "reported_assertion_output": "[apply-routing-fix] L2: default agent (id=personal-assistant) is a PERSONAL-ASSISTANT/non-router — SKIPPING pptx skill-deny (a PA is not a router; gating it would freeze it). v13.2.2 PA-freeze guard.|[apply-routing-fix] L5: default agent (id=personal-assistant) is a PERSONAL-ASSISTANT/non-router — SKIPPING (a PA is not a router). v13.2.2 PA-freeze guard.",
@@ -43,7 +43,7 @@
     },
     "origin_main_control_1d1b8d2c": {
       "runs": 1,
-      "worktree": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/worktrees/PBB-1064-main-det (detached at 1d1b8d2c8)",
+      "worktree": "<PATH>/Purple-Billboard-Client-System-Build/worktrees/PBB-1064-main-det (detached at 1d1b8d2c8)",
       "exit_code": 0,
       "result": "PASS"
     },
@@ -55,7 +55,7 @@
       "battery_rc_reason": "the 15 unrelated failures listed in defects; ceo-tools-root-schema-guard is not one of them"
     },
     "replay_in_merge_room_own_tree_copy": {
-      "tree": "/Volumes/mac mini m4/Downloads/git trees and automations/batch-merge-room/scratchpads/bmr-precheck-T-36-WIRE/h",
+      "tree": "<PATH>/batch-merge-room/scratchpads/bmr-precheck-T-36-WIRE/h",
       "tree_git_status": "clean (rc 0, no porcelain lines)",
       "exit_code": 0,
       "assertion_I1b": "PASS",
@@ -72,7 +72,7 @@
       "conclusion": "the failing run and the passing runs read identical bytes"
     },
     "assertion_mechanism_probes": {
-      "script": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/PBB-1064-exp2.sh",
+      "script": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-exp2.sh",
       "captured_I1_OUT_bytes": 3869,
       "grep_rc_via_pipefail_variable_form": { "r1": 0, "r2": 0, "r3": 0 },
       "grep_rc_on_file": { "r1": 0, "r2": 0, "r3": 0 },
@@ -102,16 +102,16 @@
   "checks": [
     { "name": "control: git merge-base --is-ancestor deadbeef origin/main (must abort 128)", "rc": 128, "log": "inline: fatal: Not a valid object name deadbeef" },
     { "name": "git fetch origin; record origin/main", "rc": 0, "value": "1d1b8d2c8d85395f119c37f7c046597ea4b94199" },
-    { "name": "ceo-tools-root-schema-guard at head c1bca572f (standalone, run 1)", "rc": 0, "log": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/PBB-1064-guard-head.log" },
-    { "name": "ceo-tools-root-schema-guard at head c1bca572f (determinism repeats 2-4)", "rc": 0, "log": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/PBB-1064-det-1.log, -det-2.log, -det-3.log" },
-    { "name": "ceo-tools-root-schema-guard at origin/main 1d1b8d2c8", "rc": 0, "log": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/PBB-1064-guard-main.log" },
-    { "name": "full fast-guards battery at head (ceo guard PASS; 15 unrelated guards FAIL)", "rc": 1, "ceo_guard_rc": 0, "log": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/PBB-1064-fg-head.log" },
-    { "name": "ceo-tools-root-schema-guard replay in merge-room tree copy h/", "rc": 0, "log": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/PBB-1064-h-replay.log" },
+    { "name": "ceo-tools-root-schema-guard at head c1bca572f (standalone, run 1)", "rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-guard-head.log" },
+    { "name": "ceo-tools-root-schema-guard at head c1bca572f (determinism repeats 2-4)", "rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-det-1.log, -det-2.log, -det-3.log" },
+    { "name": "ceo-tools-root-schema-guard at origin/main 1d1b8d2c8", "rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-guard-main.log" },
+    { "name": "full fast-guards battery at head (ceo guard PASS; 15 unrelated guards FAIL)", "rc": 1, "ceo_guard_rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-fg-head.log" },
+    { "name": "ceo-tools-root-schema-guard replay in merge-room tree copy h/", "rc": 0, "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-h-replay.log" },
     { "name": "guard-input sha256 identity, room copy vs lane worktree (6/6 SAME)", "rc": 0 },
-    { "name": "T-36 gate: python3 38-conversational-ai-system/tools/tests/test_bootstrap_engine.py", "rc": 0, "detail": "Ran 35 tests in 1.054s — OK", "log": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/PBB-1064-t36-suite.log" },
+    { "name": "T-36 gate: python3 38-conversational-ai-system/tools/tests/test_bootstrap_engine.py", "rc": 0, "detail": "Ran 35 tests in 1.054s — OK", "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-t36-suite.log" },
     { "name": "T-36 gate: bash -n 38-conversational-ai-system/scripts/03-create-journey-templates.sh", "rc": 0 },
-    { "name": "T-36 gate: 38-conversational-ai-system/scripts/qc-config-schema-safety.sh", "rc": 0, "detail": "RESULT: PASS — no config-invalidating writes and no jq-1.7-invalid programs", "log": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/PBB-1064-schema-safety.log" },
-    { "name": "git merge-tree --write-tree origin/main HEAD", "rc": 0, "detail": "tree 53dfdf3a82e556d74637f486b00ff66f6260a190", "log": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/tmp/PBB-1064-mergetree.out" },
+    { "name": "T-36 gate: 38-conversational-ai-system/scripts/qc-config-schema-safety.sh", "rc": 0, "detail": "RESULT: PASS — no config-invalidating writes and no jq-1.7-invalid programs", "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-schema-safety.log" },
+    { "name": "git merge-tree --write-tree origin/main HEAD", "rc": 0, "detail": "tree 53dfdf3a82e556d74637f486b00ff66f6260a190", "log": "<PATH>/Purple-Billboard-Client-System-Build/tmp/PBB-1064-mergetree.out" },
     { "name": "git status --porcelain in the lane worktree before commit", "rc": 0, "detail": "clean" }
   ],
   "defects": [

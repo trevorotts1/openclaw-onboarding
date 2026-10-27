@@ -219,7 +219,7 @@ run** for T-36's suite (run twice: pre-wiring and post-merge).
 ## Reproduce
 
 ```bash
-RUN="/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build"
+RUN="<PATH>/Purple-Billboard-Client-System-Build"
 WT="$RUN/worktrees/PBB-651"
 python3 -I "$RUN/scratch/lanes/PBB-651/count_refs.py" "$WT" 'bootstrap_engine.py' \
   '38-conversational-ai-system/tools/bootstrap_engine.py'
