@@ -38,6 +38,8 @@ report_fail() { echo "  [FAIL] $*"; FAIL=$((FAIL+1)); }
 report_migrate() { echo "  [NEEDS-MIGRATION] $*"; MIGRATE=$((MIGRATE+1)); }
 NA=0
 report_na() { echo "  [NA] $*"; NA=$((NA+1)); }
+SKIP=0
+report_skip() { echo "  [SKIP] $*"; SKIP=$((SKIP+1)); }
 section()     { echo ""; echo "=== $* ==="; }
 
 QC_STATUS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/qc38-status.XXXXXX")" || QC_STATUS_DIR=""
@@ -65,8 +67,14 @@ try:
     directory = d.get("workflows_dir")
     if type(legacy) is not int or type(failures) is not int:
         raise ValueError("invalid counts")
-    if verdict not in {"PASS", "NEEDS-MIGRATION", "FAIL"}:
+    if verdict not in {"PASS", "NEEDS-MIGRATION", "FAIL", "UNINITIALISED"}:
         raise ValueError("invalid verdict")
+    # UNINITIALISED is written by the gates' NOTHING-TO-CHECK path: 0 playbooks
+    # examined on a bare box, so it is neither a pass nor a failure. Counts must
+    # agree with that; an UNINITIALISED verdict carrying failures or legacy
+    # playbooks is a contradictory file and stays rejected.
+    if verdict == "UNINITIALISED" and (failures or legacy):
+        raise ValueError("UNINITIALISED with non-zero counts")
     if not isinstance(files, list) or not all(isinstance(x, str) for x in files):
         raise ValueError("invalid legacy_files")
     if not isinstance(directory, str):
@@ -78,7 +86,7 @@ PY_QC_STATUS
 )" || return 1
   IFS=$'\t' read -r QC_ST_LEGACY QC_ST_FAILS QC_ST_VERDICT QC_ST_FILES QC_ST_DIR <<< "$line"
   [[ "$QC_ST_LEGACY" =~ ^[0-9]+$ && "$QC_ST_FAILS" =~ ^[0-9]+$ ]] || return 1
-  case "$QC_ST_VERDICT" in PASS|NEEDS-MIGRATION|FAIL) return 0 ;; esac
+  case "$QC_ST_VERDICT" in PASS|NEEDS-MIGRATION|FAIL|UNINITIALISED) return 0 ;; esac
   return 1
 }
 # <<< QC_READ_STATUS
@@ -98,6 +106,27 @@ qc_record_legacy() {
     QC_MIGRATION_DIR="$QC_ST_DIR"
   fi
 }
+
+# >>> QC_STATUS_DISPOSITION
+# One decision point for a status file that qc_read_status accepted. FAIL is red;
+# UNINITIALISED (the gates' NOTHING-TO-CHECK path, 0 playbooks examined) is a
+# labelled SKIP that neither passes nor fails the run; anything else unknown is
+# still red, so a new verdict can never slip through unhandled.
+qc_report_disposition() {
+  local gate="$1" pass_msg="$2"
+  case "${QC_ST_VERDICT:-}" in
+    PASS) report_pass "$pass_msg" ;;
+    NEEDS-MIGRATION)
+      qc_record_legacy
+      if [ "$QC_ST_LEGACY" -gt "$QC_LEGACY_MAX" ]; then QC_LEGACY_MAX="$QC_ST_LEGACY"; fi
+      report_migrate "$gate: $QC_ST_LEGACY legacy playbook(s); file list and exact migration command appear in QC SUMMARY"
+      ;;
+    FAIL) report_fail "$gate: $QC_ST_FAILS failure(s) — run $gate.sh directly for detail" ;;
+    UNINITIALISED) report_skip "$gate: nothing to verify on this box (verdict UNINITIALISED, 0 playbooks examined); this is not a pass and not a failure" ;;
+    *) report_fail "$gate: unhandled verdict '${QC_ST_VERDICT:-}' - an unknown verdict is never a pass" ;;
+  esac
+}
+# <<< QC_STATUS_DISPOSITION
 
 # -------- Resolve skill 38 root --------
 # Resolve DYNAMICALLY from this script's own location — this script lives at
@@ -392,15 +421,7 @@ if [ -f "$QC_PBDOC" ]; then
       if [ -z "$QC_STATUS_DIR" ] || ! qc_read_status "$QC_STATUS_DIR/qc-playbook-doc.json"; then
         report_fail "qc-playbook-doc exited $PBDOC_RC but wrote no readable status file - absent status is a failure, never a pass"
       else
-        case "$QC_ST_VERDICT" in
-          PASS) report_pass "every registered conversation playbook has a recorded human-facing doc (Notion → Google Docs → text) in the client's account" ;;
-          NEEDS-MIGRATION)
-            qc_record_legacy
-            if [ "$QC_ST_LEGACY" -gt "$QC_LEGACY_MAX" ]; then QC_LEGACY_MAX="$QC_ST_LEGACY"; fi
-            report_migrate "qc-playbook-doc: $QC_ST_LEGACY legacy playbook(s); file list and exact migration command appear in QC SUMMARY"
-            ;;
-          FAIL) report_fail "qc-playbook-doc: $QC_ST_FAILS failure(s) — run qc-playbook-doc.sh directly for detail" ;;
-        esac
+        qc_report_disposition "qc-playbook-doc" "every registered conversation playbook has a recorded human-facing doc (Notion → Google Docs → text) in the client's account"
       fi
       ;;
     2)
@@ -933,15 +954,7 @@ if [ -f "$QC_TOOLGATE" ]; then
       if [ -z "$QC_STATUS_DIR" ] || ! qc_read_status "$QC_STATUS_DIR/qc-tool-gating.json"; then
         report_fail "qc-tool-gating exited $TOOLGATE_RC but wrote no readable status file - absent status is a failure, never a pass"
       else
-        case "$QC_ST_VERDICT" in
-          PASS) report_pass "U-1 wiring holds (protocols/tool-gating-protocol.md + STEP_1_88_TOOL_GATING marker + MEMORY Rule 32 + tool-gate-events.jsonl seeded; every checked phase is in-vocabulary and escalate_to_human is never gated off)" ;;
-          NEEDS-MIGRATION)
-            qc_record_legacy
-            if [ "$QC_ST_LEGACY" -gt "$QC_LEGACY_MAX" ]; then QC_LEGACY_MAX="$QC_ST_LEGACY"; fi
-            report_migrate "qc-tool-gating: $QC_ST_LEGACY legacy playbook(s); file list and exact migration command appear in QC SUMMARY"
-            ;;
-          FAIL) report_fail "qc-tool-gating: $QC_ST_FAILS failure(s) — run qc-tool-gating.sh directly for detail" ;;
-        esac
+        qc_report_disposition "qc-tool-gating" "U-1 wiring holds (protocols/tool-gating-protocol.md + STEP_1_88_TOOL_GATING marker + MEMORY Rule 32 + tool-gate-events.jsonl seeded; every checked phase is in-vocabulary and escalate_to_human is never gated off)"
       fi
       ;;
     *) report_fail "qc-tool-gating.sh found a tool-gating violation or missing wiring - run it directly for detail" ;;
@@ -974,15 +987,7 @@ if [ -f "$QC_EXITS" ]; then
       if [ -z "$QC_STATUS_DIR" ] || ! qc_read_status "$QC_STATUS_DIR/qc-workflow-exits.json"; then
         report_fail "qc-workflow-exits exited $EXITS_RC but wrote no readable status file - absent status is a failure, never a pass"
       else
-        case "$QC_ST_VERDICT" in
-          PASS) report_pass "U-2 wiring holds (protocols/workflow-exit-rules-protocol.md + STEP_1_30_EXIT_RULES marker + MEMORY Rule 33 + workflow-exit-events.jsonl seeded; every exit rule has a valid action and a resolvable route target)" ;;
-          NEEDS-MIGRATION)
-            qc_record_legacy
-            if [ "$QC_ST_LEGACY" -gt "$QC_LEGACY_MAX" ]; then QC_LEGACY_MAX="$QC_ST_LEGACY"; fi
-            report_migrate "qc-workflow-exits: $QC_ST_LEGACY legacy playbook(s); file list and exact migration command appear in QC SUMMARY"
-            ;;
-          FAIL) report_fail "qc-workflow-exits: $QC_ST_FAILS failure(s) — run qc-workflow-exits.sh directly for detail" ;;
-        esac
+        qc_report_disposition "qc-workflow-exits" "U-2 wiring holds (protocols/workflow-exit-rules-protocol.md + STEP_1_30_EXIT_RULES marker + MEMORY Rule 33 + workflow-exit-events.jsonl seeded; every exit rule has a valid action and a resolvable route target)"
       fi
       ;;
     *) report_fail "qc-workflow-exits.sh found an exit-rule violation or missing wiring - run it directly for detail" ;;
@@ -1002,15 +1007,7 @@ if [ -f "$QC_DECLARES" ]; then
       if [ -z "$QC_STATUS_DIR" ] || ! qc_read_status "$QC_STATUS_DIR/qc-playbook-declares.json"; then
         report_fail "qc-playbook-declares exited $DECLARES_RC but wrote no readable status file - absent status is a failure, never a pass"
       else
-        case "$QC_ST_VERDICT" in
-          PASS) report_pass "U-9 + U-12 wiring holds (Section E declares block documented; every declared tools-used/exits-used/fields-used/calendars reference resolves; legacy playbooks WARN, dangling references FAIL)" ;;
-          NEEDS-MIGRATION)
-            qc_record_legacy
-            if [ "$QC_ST_LEGACY" -gt "$QC_LEGACY_MAX" ]; then QC_LEGACY_MAX="$QC_ST_LEGACY"; fi
-            report_migrate "qc-playbook-declares: $QC_ST_LEGACY legacy playbook(s); file list and exact migration command appear in QC SUMMARY"
-            ;;
-          FAIL) report_fail "qc-playbook-declares: $QC_ST_FAILS failure(s) — run qc-playbook-declares.sh directly for detail" ;;
-        esac
+        qc_report_disposition "qc-playbook-declares" "U-9 + U-12 wiring holds (Section E declares block documented; every declared tools-used/exits-used/fields-used/calendars reference resolves; legacy playbooks WARN, dangling references FAIL)"
       fi
       ;;
     *) report_fail "qc-playbook-declares.sh found a declares violation or missing wiring - run it directly for detail" ;;
@@ -1170,6 +1167,7 @@ section "QC SUMMARY"
 echo "  PASS: $PASS"
 echo "  FAIL: $FAIL"
 echo "  NA:   $NA"
+echo "  SKIP: $SKIP (nothing to verify on this box; not a pass, not a failure)"
 QC_MIGRATE_TOTAL=0
 if [ -n "$QC_LEGACY_SEEN" ]; then
   IFS=',' read -r -a _qc_count_files <<< "$QC_LEGACY_SEEN"

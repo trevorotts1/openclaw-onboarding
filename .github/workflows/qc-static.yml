@@ -1077,6 +1077,17 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-playbook-declares.test.sh
           echo "✓ qc-playbook-declares negative test passes (fails on dangling declares, warns on legacy)"
 
+      - name: Skill 38 checklist status reader — UNINITIALISED vs FAIL (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove 11-run-qc-checklist.sh tells three outcomes apart: a well-formed
+          # UNINITIALISED verdict (the gates' NOTHING-TO-CHECK path) is accepted and
+          # reported as SKIP; FAIL stays red; malformed/missing status stays red;
+          # PASS stays green. Extracts the real reader + disposition blocks.
+          bash 38-conversational-ai-system/scripts/qc-read-status-uninitialised.test.sh
+          echo "✓ UNINITIALISED skips, FAIL/malformed/missing stay red, PASS stays green"
+
       - name: Skill 38 Opportunity/pipeline stage sync (U-13)
         shell: bash
         run: |
