@@ -227,12 +227,13 @@ class RetryPolicy:
         Returns ``(value, log)`` where the log holds the attempt count and the
         delays actually slept, so a caller can show the backoff was bounded.
 
-        When ``reconcile`` is given it runs between a failed attempt and the
-        retry that follows it -- never before the first attempt, never after
-        the last. If it returns a value, that value is the outcome (the remote
-        side already settled the operation) and the retry is not sent; if it
-        raises or returns None the caller is unknown and the bounded retry
-        proceeds exactly as before.
+        When ``reconcile`` is given it runs after every failed attempt --
+        never before the first attempt, and also once after the final failure,
+        because a timeout there leaves the outcome just as unknown. If it
+        returns a value, that value is the outcome (the remote side already
+        settled the operation) and no further retry is sent; if it raises or
+        returns None the caller is unknown, the bounded retry proceeds, and at
+        the ceiling RetryExhausted is raised.
         """
         if not callable(call):
             raise SyncError("A retry needs something to call.")
