@@ -1,11 +1,10 @@
 # Skill 44 — Automation Template Library
 
-The **28 proven email / SMS / multichannel automation sequences** Skill 44 reuses BEFORE wiring a
-GoHighLevel workflow from scratch. This is the Skill-44 counterpart of the Skill-6 funnel template
-library (`06-ghl-install-pages/funnel-templates/`), and the two are paired by the funnel→automation
-link map in `_links/`.
+Skill 44 contains **49 template-shaped JSON files across two families**: 28 editorial sequence templates in the five legacy category directories, plus 21 launch-family build specs (`launch-a/` 11, `launch-ai/` 1, `launch-b/` 4, `launch-c/` 4, `launch-text/` 1). The `automation_template_count` field in `_links/funnel-to-automation.json` is **generated from disk** by `_links/_build_link_map.py` and must never be hand-edited.
 
-## Categories (28 templates)
+This is the Skill-44 counterpart of the Skill-6 funnel template library (`06-ghl-install-pages/funnel-templates/`), and the two are paired by the funnel→automation link map in `_links/`.
+
+## Editorial library (28 templates)
 
 | Category | Count | What lives here |
 |----------|------:|-----------------|
@@ -15,10 +14,27 @@ link map in `_links/`.
 | `funnel-specific-followups/` | 6 | Webinar reminder/replay, application/booking nurture, free-plus-shipping OTO recovery, membership |
 | `multichannel-automation/` | 5 | Post-opt-in multichannel stack, SMS/WhatsApp/DM, behavioral retargeting, branching |
 
+The 21 launch-family build specs are documented separately in `launch-a/`, `launch-ai/`, `launch-b/`, `launch-c/`, and `launch-text/`.
+
 > Note: `soap-opera-sequence` exists in BOTH `welcome-indoctrination/` and `sales-close-sequences/`
 > (different copy/intent). The matcher and link map resolve it by the **qualified `group/id` key** —
 > never by bare id — so the correct variant is always selected (regression-locked in
 > `tests/test_automation_matcher.py`).
+
+## Machine-readable template schema (schema_version 2.0.0)
+
+Every template carries `schema_version: "2.0.0"` and `kind: "single_message" | "sequence_stack"`.
+
+A template that the matcher may offer as buildable MUST carry a `build_graph` array of nodes shaped as `{"id","type","after"?,"branches"?,"attributes"}`:
+
+- `type` must be `trigger` or an engine `VERIFIED_ACTION`.
+- Exactly one `trigger` node must exist, and it must have no `after`.
+- Every value in `after` and `branches` must resolve to a node ID in the same graph. `after` must be a plain predecessor ID everywhere except on a declared join node, where `after` is an array of every immediate predecessor ID.
+- **Join rule:** when both arms of an `if_else` continue into shared work, both arms must feed ONE declared join node — a node carrying `"join": true` in its `attributes` — and the shared continuation hangs off the join, never off a single branch body. No node may have more than one predecessor and no node may be the branch target of more than one `if_else` unless it is a declared join.
+
+Today, 16 templates carry a graph. The generated list lives in `_matcher/buildable-templates.json`. The remaining 33 templates are prose-only and are **NOT buildable**; `_schema/prose-only.json` records, per template, the specific fact its prose does not state, so a later conversion knows exactly what to ask for instead of inventing it.
+
+Validate templates with `_schema/apply_template_schema.py --check`. The validator exits non-zero when a template lacks `schema_version` or `kind`, or when a graph is malformed.
 
 ## STEP 0.4 — Flexible Template Match (how it is used)
 

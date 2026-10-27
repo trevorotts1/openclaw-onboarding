@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "autowebinar-watch-segmented-followup",
   "name": "AutoWebinar (Evergreen) Watch-% Segmented Follow-Up",
   "aliases": [
@@ -27,7 +29,10 @@
       "Clicked offer link, no purchase"
     ]
   },
-  "channels": ["Email", "SMS"],
+  "channels": [
+    "Email",
+    "SMS"
+  ],
   "sequence": [
     {
       "phase": "A. Confirmation + show-up",
@@ -97,14 +102,28 @@
       "12. End; tag `autowebinar-sequence-complete`"
     ],
     "goal_event": "`autowebinar-purchased` -> exit selling steps, route to onboarding.",
-    "wait_steps": ["until 1h-before slot", "until start", "post-event ~2h", "1 day", "until per-registrant cart-close"],
+    "wait_steps": [
+      "until 1h-before slot",
+      "until start",
+      "post-event ~2h",
+      "1 day",
+      "until per-registrant cart-close"
+    ],
     "if_else_branches": [
       "watch-% segment (no-show / left-early / watched-no-buy / buyer)",
       "offer-link-clicked-no-purchase -> tighter nudge",
       "purchased -> Goal exit",
       "SMS vs email on DND"
     ],
-    "tags_used": ["autowebinar-registered", "aw-noshow", "aw-left-early", "aw-watched-pitch", "aw-offer-clicked", "autowebinar-purchased", "autowebinar-sequence-complete"],
+    "tags_used": [
+      "autowebinar-registered",
+      "aw-noshow",
+      "aw-left-early",
+      "aw-watched-pitch",
+      "aw-offer-clicked",
+      "autowebinar-purchased",
+      "autowebinar-sequence-complete"
+    ],
     "notes": "The ONLY structural difference from the live template is the trigger/timing source: watch-% webhook tags + a per-registrant evergreen countdown replace the global live date. Persuasion content is identical. Per-registrant deadline must truly expire to keep urgency honest."
   },
   "source": {
