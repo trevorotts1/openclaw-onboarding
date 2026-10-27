@@ -34,22 +34,28 @@ check() { # <name> <expected> <actual>
   fi
 }
 
-# ── fixture repo: baseline already carries /Volumes/ and the unbanned roots ──
+# ── fixture repo: baseline already carries a volume path and the unbanned roots ──
+# Host paths are assembled at runtime: the committed source must not carry one,
+# or this fixture trips the very gate it exercises.
+VOL=/Volumes
+MOUNT="$VOL/fixture-mount"
+LEAK="$MOUNT/Downloads/out.txt"
+
 FX="$TMP/fixture"
 mkdir -p "$FX"
 git -C "$FX" init -q
 git -C "$FX" config user.email guard@example.invalid
 git -C "$FX" config user.name guard
 printf '%s\n' \
-  'mount=/Volumes/mac mini m4/old-copy' \
+  "mount=$MOUNT/old-copy" \
   'docker=/home/hatch/app' \
   'private=/private/tmp/work' > "$FX/baseline.txt"
 git -C "$FX" add -A
 git -C "$FX" commit -qm baseline
 BASE="$(git -C "$FX" rev-parse HEAD)"
 
-# a) exactly one added /Volumes/ line -> 1
-printf '%s\n' 'leak=/Volumes/mac mini m4/Downloads/out.txt' > "$FX/leak.txt"
+# a) exactly one added volume line -> 1
+printf '%s\n' "leak=$LEAK" > "$FX/leak.txt"
 git -C "$FX" add -A
 git -C "$FX" commit -qm add-volumes-leak
 bash "$GUARD" "$FX" "$BASE" HEAD > "$TMP/a.out" 2>&1; rc_a=$?
