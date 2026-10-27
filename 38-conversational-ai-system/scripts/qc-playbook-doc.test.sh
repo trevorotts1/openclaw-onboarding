@@ -27,6 +27,16 @@ FAIL=0
 ok()  { PASS=$((PASS+1)); printf '  [PASS] %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  [FAIL] %s\n' "$1"; }
 
+# The legacy classifier calls a file LEGACY when it carries no `### Phase N`
+# heading, and legacy playbooks are exempt from the doc gate. A bare `# title`
+# fixture therefore made every assertion below a NEEDS-MIGRATION no-op that
+# could never fail — the gate went untested while the suite stayed red. Fixtures
+# that must exercise the doc gate have to be modern.
+modern_playbook() {
+  printf '# %s\n\n## Phase 1 - Opening\nSay hello.\n\n## Phase 2 - Close\nClose.\n' \
+    "$1" > "$2"
+}
+
 # Assert the validator's --json verdict for fixture dir $1 equals $2.
 assert_verdict() {
   local dir="$1" want="$2" label="$3"
@@ -90,8 +100,8 @@ cat > "$A/registry.md" <<'EOF'
 | appointment-booking | First playbook | "book","schedule" | No (uses existing inbound) | appointment-booking.md | n/a | n/a | https://www.notion.so/client/appointment-booking-abc123 |
 | pricing-inquiry | Lead asks pricing | "price","cost" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | n/a |
 EOF
-printf '# appointment booking playbook\n' > "$A/appointment-booking.md"
-printf '# pricing playbook\n'             > "$A/pricing-inquiry.md"
+modern_playbook "appointment booking playbook" "$A/appointment-booking.md"
+modern_playbook "pricing playbook" "$A/pricing-inquiry.md"
 
 assert_verdict     "$A" "FAIL" "table-form"
 assert_exit        "$A" "1"    "table-form"
@@ -114,8 +124,8 @@ cat > "$B/registry.md" <<'EOF'
 - appointment-booking: First playbook [doc: https://docs.google.com/document/d/xyz/edit]
 - win-back: Re-engage cold leads
 EOF
-printf '# appointment booking playbook\n' > "$B/appointment-booking.md"
-printf '# win-back playbook\n'            > "$B/win-back.md"
+modern_playbook "appointment booking playbook" "$B/appointment-booking.md"
+modern_playbook "win-back playbook" "$B/win-back.md"
 
 assert_verdict     "$B" "FAIL" "bullet-form"
 assert_exit        "$B" "1"    "bullet-form"
@@ -136,8 +146,8 @@ cat > "$C/registry.md" <<'EOF'
 | appointment-booking | First playbook | "book" | No (uses existing inbound) | appointment-booking.md | n/a | n/a | https://www.notion.so/client/appt-abc |
 | pricing-inquiry | Lead asks pricing | "price" | No (uses existing inbound) | pricing-inquiry.md | n/a | n/a | /Users/<user>/master-files/conversation-workflows/pricing-inquiry-doc.md |
 EOF
-printf '# appt\n'    > "$C/appointment-booking.md"
-printf '# pricing\n' > "$C/pricing-inquiry.md"
+modern_playbook "appt" "$C/appointment-booking.md"
+modern_playbook "pricing" "$C/pricing-inquiry.md"
 
 assert_verdict "$C" "PASS" "clean-table"
 assert_exit    "$C" "0"    "clean-table"
@@ -173,7 +183,7 @@ cat > "$E/registry.md" <<'EOF'
 
 <!-- nothing registered -->
 EOF
-printf '# orphan playbook\n' > "$E/rogue-slug.md"
+modern_playbook "orphan playbook" "$E/rogue-slug.md"
 
 assert_verdict     "$E" "FAIL" "orphan-on-disk"
 assert_exit        "$E" "1"    "orphan-on-disk"

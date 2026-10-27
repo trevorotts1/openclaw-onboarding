@@ -151,10 +151,33 @@ Win.
 Escalate.
 EOF
 
-[ "$(verdict_of "$L")" = "PASS" ] && ok "legacy fixture: verdict PASS (WARN only)" || bad "legacy fixture: expected PASS"
-[ "$(exit_of "$L")" = "0" ] && ok "legacy fixture: exit 0" || bad "legacy fixture: expected exit 0"
+# This fixture carries `### Phase 1`, so it is MODERN by the content rule, and
+# the standard (communications-playbook-standard.md item (k)) makes the declares
+# block mandatory for every playbook. The gate says so in its own message:
+# "legacy WARN is for playbooks with neither" phases nor a model-tier line.
+# The old PASS expectation here described a lenient policy the gate no longer
+# implements, so it asserted a verdict that could never occur.
+[ "$(verdict_of "$L")" = "FAIL" ] && ok "modern-without-declares: verdict FAIL" || bad "modern-without-declares: expected FAIL"
+[ "$(exit_of "$L")" = "1" ] && ok "modern-without-declares: exit 1" || bad "modern-without-declares: expected exit 1"
 LJSON="$(json_of "$L")"
-printf '%s' "$LJSON" | grep -q "no declares block" && ok "legacy fixture: warns on missing declares block" || bad "legacy fixture: did not warn"
+printf '%s' "$LJSON" | grep -q "no declares block" && ok "modern-without-declares: names the missing declares block" || bad "modern-without-declares: did not name it"
+
+# The true legacy path — neither phases nor a model-tier line — must be
+# NEEDS-MIGRATION with exit 0: it never PASSes, but it must not hard-fail an
+# install either. Previously untested in this suite.
+LL="$TMP/truelegacy/conversation-workflows"
+mkdir -p "$LL"
+cat > "$LL/old.md" <<'EOF'
+# Old Workflow
+
+## What the agent does
+Talk to the lead.
+
+## On success
+Win.
+EOF
+[ "$(verdict_of "$LL")" = "NEEDS-MIGRATION" ] && ok "true-legacy: verdict NEEDS-MIGRATION" || bad "true-legacy: expected NEEDS-MIGRATION"
+[ "$(exit_of "$LL")" = "0" ] && ok "true-legacy: exit 0 (does not hard-fail install)" || bad "true-legacy: expected exit 0"
 
 echo ""
 echo "qc-playbook-declares tests: $PASS passed, $FAIL failed"
