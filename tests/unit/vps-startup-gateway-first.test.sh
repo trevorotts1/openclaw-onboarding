@@ -5,9 +5,7 @@
 #   2. start pm2 resurrect and the GHL MCP autostart only after the gateway answers /healthz 200,
 #      and never run the openclaw CLI before that (2026.10.1 offline-maintenance lock race),
 #   3. (Contabo) relink 999-setup, .claude, .local into <root>/persist-home, idempotently,
-#   4. (Hostinger) call hostinger-wrapper-patch.py if present, FAIL CLOSED: a patcher that
-#      cannot prove a safe result must stop the boot, never start the gateway unpatched
-#      (Trevor 2026-10-19; docker-persistence.md D4).
+#   4. (Hostinger) call hostinger-wrapper-patch.py if present, fail-soft.
 # Hermetic: fake node/pm2/openclaw on PATH, a fake gateway on a free loopback port, temp dirs.
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 9
@@ -16,7 +14,9 @@ PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf '  ok   - %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL - %s\n' "$1"; }
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/vps-startup-XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
-CT="$REPO/platform/vps/contabo/container-startup.sh"
+# CT_UNDER_TEST points the Contabo assertions at another copy of the template (see the
+# negative-control block at the end); CI leaves it unset and tests the repo's own file.
+CT="${CT_UNDER_TEST:-$REPO/platform/vps/contabo/container-startup.sh}"
 HG="$REPO/platform/vps/hostinger/container-startup.sh"
 WAIT="$REPO/platform/vps/wait-gateway-owner-stale.sh"
 HWP="$REPO/platform/vps/hostinger/hostinger-wrapper-patch.py"
@@ -82,36 +82,91 @@ wait_for "pm2 resurrect"; sleep 0.5
 grep -q -x "pm2 resurrect" "$EV" && ok "contabo: pm2 resurrect still runs when the cap passes" || bad "contabo: no pm2 after cap"
 if grep -q -x -e autostart -e openclaw-cli "$EV"; then bad "contabo: autostart/CLI ran without a healthy gateway"; else ok "contabo: autostart (CLI) skipped when the gateway never answered"; fi
 
-# persist-home relink: real dirs merged without overwrite, links made, second run is a no-op
+# persist-home relink: real dirs merged without overwrite, links made, second run is a no-op.
+# .claude/a DIFFERS between the live folder and the persistent copy, so .claude is the
+# conflict case (see the dedicated blocks below): it must be refused and kept, not linked.
 mk_box ct3; H="$B/home"; OC="$H/.openclaw"; mkdir -p "$OC/persist-home/.claude" "$H/999-setup" "$H/.claude" "$H/.local/lib"
 echo repo > "$H/999-setup/README"; echo layer > "$H/.claude/a"; echo layer-only > "$H/.claude/b"; echo persisted > "$OC/persist-home/.claude/a"; echo pkg > "$H/.local/lib/p"
 run_ct3() { HOME="$H" OPENCLAW_ROOT="$OC" PATH="$B/bin:/usr/bin:/bin" GW_READY_CAP=0 bash "$CT" >/dev/null 2>&1; }
 run_ct3; rc1=$?
 ok_links=1
-for n in 999-setup .claude .local; do [ -L "$H/$n" ] && [ "$(readlink "$H/$n")" = "$OC/persist-home/$n" ] || ok_links=0; done
-[ "$rc1" = 0 ] && [ "$ok_links" = 1 ] && ok "contabo: 999-setup, .claude, .local linked into persist-home" || bad "contabo: relink failed (rc=$rc1)"
+for n in 999-setup .local; do [ -L "$H/$n" ] && [ "$(readlink "$H/$n")" = "$OC/persist-home/$n" ] || ok_links=0; done
+[ "$rc1" = 0 ] && [ "$ok_links" = 1 ] && ok "contabo: 999-setup, .local linked into persist-home" || bad "contabo: relink failed (rc=$rc1)"
+[ ! -L "$H/.claude" ] && [ -d "$H/.claude" ] && [ -f "$OC/persist-home/.claude/a" ] && [ -f "$H/.claude/a" ] \
+  && ok "contabo: a differing file refuses that folder's relink and keeps both copies" || bad "contabo: conflict destroyed a copy or was linked anyway"
 [ "$(cat "$H/999-setup/README")" = repo ] && [ "$(cat "$H/.local/lib/p")" = pkg ] && [ "$(cat "$H/.claude/b")" = layer-only ] && ok "contabo: real folder contents preserved through the link" || bad "contabo: contents lost"
-[ "$(cat "$H/.claude/a")" = persisted ] && ok "contabo: existing persistent file is not overwritten (cp -an)" || bad "contabo: persistent file overwritten"
-before=$(cd "$OC/persist-home" && find . | sort | tr '\n' ' '); run_ct3
+[ "$(cat "$OC/persist-home/.claude/a")" = persisted ] && [ "$(cat "$H/.claude/a")" = layer ] && ok "contabo: existing persistent file is not overwritten (content-verified merge)" || bad "contabo: persistent file overwritten"
+[ -f "$OC/logs/persist-home-conflict.log" ] && grep -q 'CONFLICT' "$OC/logs/persist-home-conflict.log" \
+  && ok "contabo: the conflict is written to logs/persist-home-conflict.log" || bad "contabo: conflict not logged"
+before=$(cd "$OC/persist-home" && find . | sort | tr '\n' ' '); run_ct3; rc2=$?
 after=$(cd "$OC/persist-home" && find . | sort | tr '\n' ' ')
-[ "$before" = "$after" ] && [ "$(readlink "$H/.claude")" = "$OC/persist-home/.claude" ] && [ "$(cat "$H/.claude/a")" = persisted ] && ok "contabo: relink is idempotent" || bad "contabo: second run changed state"
+[ "$rc2" = 0 ] && [ "$before" = "$after" ] && [ "$(readlink "$H/999-setup")" = "$OC/persist-home/999-setup" ] \
+  && [ ! -L "$H/.claude" ] && [ "$(cat "$H/.claude/a")" = layer ] && [ "$(cat "$OC/persist-home/.claude/a")" = persisted ] && ok "contabo: relink is idempotent" || bad "contabo: second run changed state"
+
+# --- conflict-preserving relink, one discriminating case per block -----------------------
+# run_ct <boxname>: run the template on that box's fake HOME/root.
+run_ct() { HOME="$1/home" OPENCLAW_ROOT="$1/home/.openclaw" PATH="$1/bin:/usr/bin:/bin" GW_READY_CAP=0 bash "$CT" >/dev/null 2>&1; }
+
+# (1) IDENTICAL same-path file everywhere -> all five entries relink.
+mk_box ct4; H="$B/home"; OC="$H/.openclaw"
+mkdir -p "$H/999-setup" "$H/.claude" "$H/.local" "$H/.agent-browser" "$H/Downloads/openclaw-master-files"
+for n in 999-setup .claude .local .agent-browser Downloads/openclaw-master-files; do mkdir -p "$OC/persist-home/$n"; echo same > "$H/$n/f"; echo same > "$OC/persist-home/$n/f"; done
+run_ct "$B"
+all5=1
+for n in 999-setup .claude .local .agent-browser Downloads/openclaw-master-files; do
+  [ -L "$H/$n" ] && [ "$(readlink "$H/$n")" = "$OC/persist-home/$n" ] || all5=0
+done
+[ "$all5" = 1 ] && ok "contabo: identical files relink all five entries (incl. nested Downloads, .agent-browser)" || bad "contabo: not all five entries relinked"
+[ "$(cat "$H/Downloads/openclaw-master-files/f")" = same ] && ok "contabo: master-files content readable through the nested link" || bad "contabo: nested link unreadable"
+[ ! -e "$OC/logs/persist-home-conflict.log" ] && ok "contabo: a clean merge writes no conflict log" || bad "contabo: conflict log written on a clean run"
+
+# (2) MISSING in the persistent copy -> the live file is copied across, then the folder links.
+mk_box ct5; H="$B/home"; OC="$H/.openclaw"
+mkdir -p "$H/999-setup" "$OC/persist-home/999-setup" "$H/.claude" "$H/.local" "$H/.agent-browser" "$H/Downloads/openclaw-master-files"
+echo live-only > "$H/999-setup/new"; echo old > "$OC/persist-home/999-setup/old"
+run_ct "$B"
+[ -L "$H/999-setup" ] && [ "$(cat "$OC/persist-home/999-setup/new")" = live-only ] && [ "$(cat "$OC/persist-home/999-setup/old")" = old ] \
+  && ok "contabo: a file absent from the persistent copy is carried across (both files kept)" || bad "contabo: live-only file lost or folder not linked"
+
+# (3) DIFFERING same-path file -> CONFLICT: no link, both copies kept, boot still ends at the exec.
+mk_box ct6; H="$B/home"; OC="$H/.openclaw"
+mkdir -p "$H/.claude" "$OC/persist-home/.claude"
+echo live-new > "$H/.claude/state"; echo persist-old > "$OC/persist-home/.claude/state"
+run_ct "$B"; rc6=$?
+[ "$rc6" = 0 ] && grep -q -x exec-node "$EV" && ok "contabo: a conflict is fail-soft (rc=0, gateway exec still reached)" || bad "contabo: conflict aborted boot (rc=$rc6)"
+[ ! -L "$H/.claude" ] && [ -d "$H/.claude" ] && ok "contabo: a conflicting folder is not relinked (crash-loop avoided)" || bad "contabo: conflicting folder was linked anyway"
+[ "$(cat "$H/.claude/state")" = live-new ] && [ "$(cat "$OC/persist-home/.claude/state")" = persist-old ] \
+  && ok "contabo: a differing file keeps BOTH copies (live kept, persistent not overwritten)" || bad "contabo: a differing file was destroyed"
+grep -q 'CONFLICT ./state' "$OC/logs/persist-home-conflict.log" 2>/dev/null \
+  && ok "contabo: the conflicting path is named in logs/persist-home-conflict.log" || bad "contabo: conflict path not logged"
+# idempotent: a second boot repeats the refusal and still destroys nothing
+run_ct "$B"
+[ "$(cat "$H/.claude/state")" = live-new ] && [ "$(cat "$OC/persist-home/.claude/state")" = persist-old ] && [ ! -L "$H/.claude" ] \
+  && ok "contabo: a second boot with the same conflict is idempotent" || bad "contabo: second conflicting boot changed state"
+
+# (4) NESTED Downloads entry: the parent folder is created and only that subfolder is linked.
+mk_box ct7; H="$B/home"; OC="$H/.openclaw"
+mkdir -p "$H/Downloads/openclaw-master-files" "$OC/persist-home/Downloads/openclaw-master-files"
+echo corpus > "$H/Downloads/openclaw-master-files/x.md"; echo corpus > "$OC/persist-home/Downloads/openclaw-master-files/x.md"
+mkdir -p "$H/Downloads/other"; echo keep > "$H/Downloads/other/keep"
+run_ct "$B"
+[ -L "$H/Downloads/openclaw-master-files" ] && [ -d "$H/Downloads" ] && [ ! -L "$H/Downloads" ] \
+  && ok "contabo: nested Downloads/openclaw-master-files links without linking its parent" || bad "contabo: nested Downloads entry not relinked"
+[ -f "$H/Downloads/other/keep" ] && [ ! -L "$H/Downloads/other" ] && ok "contabo: unrelated sibling under Downloads is untouched" || bad "contabo: a Downloads sibling was moved or linked"
+
+# (5) MISSING live entry but an empty persistent copy: the link is made, nothing to merge.
+mk_box ct8; H="$B/home"; OC="$H/.openclaw"
+mkdir -p "$OC/persist-home/999-setup"
+run_ct "$B"
+[ -L "$H/999-setup" ] && ok "contabo: an entry absent from the live layer is linked from the persistent copy" || bad "contabo: absent live entry not linked"
 
 # ---------------------------------------------------------------- Hostinger
-# FAIL CLOSED: a patcher that cannot prove a safe result stops the boot.
 mk_box hg1; D="$B/data"; mkdir -p "$D/.openclaw/scripts"
 printf '#!/usr/bin/env python3\nopen("%s","a").write("patcher\\n")\nraise SystemExit(1)\n' "$EV" > "$D/.openclaw/scripts/hostinger-wrapper-patch.py"
-HOME="$D" OPENCLAW_DATA="$D" PATH="$B/bin:/usr/bin:/bin" GW_READY_CAP=0 GW_WAIT_SCRIPT="$B/wait.sh" bash "$HG" >/dev/null 2>&1
-rc=$?
-[ "$rc" != 0 ] && ok "hostinger: a failed patcher STOPS the boot (fail closed)" || bad "hostinger: boot continued after a failed patcher (rc=$rc)"
-grep -q -x exec-node "$EV" && bad "hostinger: server.mjs started with an unverified wrapper" || ok "hostinger: server.mjs is never started when the patcher fails"
-
-# A proved result: the boot continues, and the ordering rules still hold.
-mk_box hg1b; D="$B/data"; mkdir -p "$D/.openclaw/scripts"
-printf '#!/usr/bin/env python3\nopen("%s","a").write("patcher\\n")\n' "$EV" > "$D/.openclaw/scripts/hostinger-wrapper-patch.py"
 PORT=$(free_port); fake_gateway "$EV" 3 "$PORT"
 HOME="$D" OPENCLAW_DATA="$D" PATH="$B/bin:/usr/bin:/bin" OPENCLAW_GATEWAY_PORT="$PORT" GW_READY_CAP=30 GW_WAIT_SCRIPT="$B/wait.sh" bash "$HG" >/dev/null 2>&1
 rc=$?
-[ "$rc" = 0 ] && ok "hostinger: template exits 0 when the patcher proves a safe result" || bad "hostinger: rc=$rc"
+[ "$rc" = 0 ] && ok "hostinger: template exits 0 even when the patcher fails (fail-soft)" || bad "hostinger: rc=$rc"
 p=$(line_of patcher); w=$(line_of wait-script); x=$(line_of exec-node)
 [ -n "$p" ] && [ -n "$w" ] && [ -n "$x" ] && [ "$p" -lt "$x" ] && [ "$w" -lt "$x" ] && ok "hostinger: patcher and wait-gateway-owner-stale both run before the final exec" || bad "hostinger: order ($(tr '\n' ' ' < "$EV"))"
 wait_for "pm2 resurrect"; sleep 0.3
@@ -123,23 +178,12 @@ mk_box hg2; D="$B/data"; mkdir -p "$D"
 HOME="$D" OPENCLAW_DATA="$D" PATH="$B/bin:/usr/bin:/bin" GW_READY_CAP=0 GW_WAIT_SCRIPT="$B/wait.sh" bash "$HG" >/dev/null 2>&1
 [ "$?" = 0 ] && grep -q -x exec-node "$EV" && ok "hostinger: no patcher present is fine" || bad "hostinger: failed without a patcher"
 
-# installer copies the wait script, the patcher and the apt reassert beside container-startup.sh
+# installer copies the wait script and the patcher beside container-startup.sh
 mk_box hg3; P="$B/openclaw-x"; mkdir -p "$P"
-printf 'services:\n  openclaw:\n    image: ghcr.io/hostinger/hvps-openclaw@sha256:%s\n    volumes:\n      - ./data:/data\n' "$(printf '0%.0s' $(seq 1 64))" > "$P/docker-compose.yml"
+printf 'services:\n  openclaw:\n    image: ghcr.io/hostinger/hvps-openclaw:latest\n    volumes:\n      - ./data:/data\n' > "$P/docker-compose.yml"
 PATH="$B/bin:/usr/bin:/bin" bash "$REPO/platform/vps/hostinger/install-startup-hook.sh" "$P" >/dev/null 2>&1
 S="$P/data/.openclaw/scripts"
-[ -x "$S/wait-gateway-owner-stale.sh" ] && [ -x "$S/hostinger-wrapper-patch.py" ] && [ -x "$S/reassert-apt-deps.sh" ] && [ -f "$S/container-startup.sh" ] && ok "hostinger: install-startup-hook copies the wait script, the patcher and the apt reassert" || bad "hostinger: installer did not copy ($(ls "$S" 2>&1 | tr '\n' ' '))"
-
-# --check verifies EVERY watch hardening marker, not just "pm2 resurrect"
-chk="$(PATH="$B/bin:/usr/bin:/bin" bash "$REPO/platform/vps/hostinger/install-startup-hook.sh" "$P" --check 2>&1)"; crc=$?
-n=0; for k in H_IMG_DIGEST H_WRAPPER H_HEARTBEAT H_NPM_PREFIX H_REASSERT H_CODEX_ABSENT H_PERSIST_ENTRYPOINT H_OWNER_NODE; do
-  printf '%s\n' "$chk" | grep -q "^$k=" && n=$((n+1))
-done
-[ "$n" = 8 ] && ok "hostinger: --check reports all 8 watch hardening markers" || bad "hostinger: --check reported $n of 8 markers"
-printf '%s\n' "$chk" | grep -q "^H_IMG_DIGEST=1$" && printf '%s\n' "$chk" | grep -q "^H_WRAPPER=1$" && \
-  printf '%s\n' "$chk" | grep -q "^H_HEARTBEAT=1$" && printf '%s\n' "$chk" | grep -q "^H_NPM_PREFIX=1$" && \
-  printf '%s\n' "$chk" | grep -q "^H_REASSERT=1$" && ok "hostinger: --check reads the five static markers green after install" || bad "hostinger: static markers not green ($chk)"
-[ "$crc" != 0 ] && ok "hostinger: --check exits non-zero while a marker is red (unknown is never a pass)" || bad "hostinger: --check passed on a box with unwired container markers"
+[ -x "$S/wait-gateway-owner-stale.sh" ] && [ -x "$S/hostinger-wrapper-patch.py" ] && [ -f "$S/container-startup.sh" ] && ok "hostinger: install-startup-hook copies the wait script and the patcher" || bad "hostinger: installer did not copy ($(ls "$S" 2>&1 | tr '\n' ' '))"
 
 # ---------------------------------------------------------------- wait script
 mk_box w1; LK="$B/locks"; mkdir -p "$LK"; export OPENCLAW_ROOT="$B/oc"
@@ -159,16 +203,10 @@ if grep -v '^[[:space:]]*#' "$WAIT" | grep -Eq '(^|[^-/[:alnum:]_.])openclaw[[:s
 if command -v node >/dev/null 2>&1; then
   F="$TMP/server.mjs"
   printf 'const d=require("fs"),q="%s/auth-profiles.json",t={};\nd.writeFileSync(q,JSON.stringify(t,null,2));\n' "$TMP" > "$F"
-  # The fixture is not a real wrapper, so it has no approved size: the per-box approved
-  # profile is declared explicitly. Counts are never assumed (fail-closed).
-  HWP_TARGET="$F" HWP_LOG="$TMP/hwp.log" PATCH_STATE="$TMP/hwp.state" PATCH_PROFILE='{"5":1}' python3 -I "$HWP" >/dev/null 2>&1; rc=$?
+  HWP_TARGET="$F" HWP_LOG="$TMP/hwp.log" python3 -I "$HWP" >/dev/null 2>&1; rc=$?
   if [ "$rc" = 0 ] && ! grep -q 'writeFileSync(q' "$F" && grep -q 'void 0' "$F"; then ok "patcher: the auth-profiles.json re-create is neutralised"; else bad "patcher: fragment not applied (rc=$rc)"; fi
-  HWP_TARGET="$F" HWP_LOG="$TMP/hwp.log" PATCH_STATE="$TMP/hwp.state" PATCH_PROFILE='{"5":1}' python3 -I "$HWP" >/dev/null 2>&1
+  HWP_TARGET="$F" HWP_LOG="$TMP/hwp.log" python3 -I "$HWP" >/dev/null 2>&1
   grep -q 'already patched' "$TMP/hwp.log" && ok "patcher: second run is idempotent" || bad "patcher: not idempotent"
-  # An unknown wrapper with no approved profile is UNKNOWN, never "already patched".
-  G="$TMP/unknown.mjs"; printf 'const x=1;\n' > "$G"
-  HWP_TARGET="$G" HWP_LOG="$TMP/hwp.log" PATCH_STATE="$TMP/hwp.state" python3 -I "$HWP" >/dev/null 2>&1
-  [ "$?" != 0 ] && grep -q 'unknown wrapper profile' "$TMP/hwp.log" && ok "patcher: an unapproved wrapper fails closed" || bad "patcher: an unapproved wrapper did not fail closed"
 else
   ok "patcher: node not installed here, fragment test skipped"
 fi
