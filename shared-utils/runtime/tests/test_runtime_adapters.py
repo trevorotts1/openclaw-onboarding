@@ -534,6 +534,18 @@ class ProofRequiredTests(ExternalTestCase):
 # ── host detection and adapter selection (C-38) ─────────────────────────────
 
 class HostTests(ExternalTestCase):
+    def fake_media_uuid(self, path):
+        """Deterministic media identity for the adapter tests.
+
+        The CI runner's temp volume has no observable media identity, so
+        these tests must not depend on the host's real probe: the probe is
+        the injected seam (`uuid_probe`), and the refusal of an unverified
+        mount stays covered by
+        `test_the_mac_adapter_claims_a_media_identity`, which passes an
+        identity-less probe and still expects `media_uuid_unverified`.
+        """
+        return "pbb-test-media-uuid"
+
     def test_the_real_host_is_detected_from_observed_facts(self):
         facts = ho.detect_host()
         self.assertIn(ho.classify_runtime(facts), ho.SUPPORTED_RUNTIMES)
@@ -560,14 +572,16 @@ class HostTests(ExternalTestCase):
 
     def test_the_mac_adapter_refuses_the_root_disk(self):
         facts = ho.detect_host(platform_name="Darwin")
-        adapter = ho.MacAdapter(facts, ho.BindIdentity(root=os.sep))
+        adapter = ho.MacAdapter(facts, ho.BindIdentity(root=os.sep),
+                                uuid_probe=self.fake_media_uuid)
         with self.assertRaises(ho.BindingRefused) as caught:
             adapter.verify_bind()
         self.assertIn("internal_disk_binding", str(caught.exception))
 
     def test_the_mac_adapter_accepts_the_external_mount(self):
         facts = ho.detect_host(platform_name="Darwin")
-        adapter = ho.MacAdapter(facts, ho.BindIdentity(root=external_mount_root()))
+        adapter = ho.MacAdapter(facts, ho.BindIdentity(root=external_mount_root()),
+                                uuid_probe=self.fake_media_uuid)
         identity = adapter.verify_bind()
         self.assertNotEqual(identity.device, os.stat("/").st_dev)
         receipt = adapter.receipt("run-mac")
