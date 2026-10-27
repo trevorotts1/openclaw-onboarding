@@ -124,6 +124,85 @@ cat > "$OPENCLAW_UPDATE_SCRIPT" << 'OCUPDATE_EOF'
 OC_LOG="$HOME/.openclaw/skills/.update-log"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Saturday OpenClaw update check starting" >> "$OC_LOG"
 
+# ---------------------------------------------------------------------------
+# SHARED INSTALLATION LEASE (mac.MAC-1 / mac.MAC-2)
+# ---------------------------------------------------------------------------
+# This unattended Saturday upgrade is an update WRITER: it holds the SAME lease
+# as update-skills.sh, self-update.sh, oc-atomic-upgrade.sh and the weekly
+# content update — one regular file, one owner record (pid, process start
+# identity, run id, role, install path, UTC). Liveness and staleness come from
+# the RECORD only: never from the file's existence, never from its age
+# (mac.MAC-13). A LIVE foreign owner means STAND DOWN — no wait loop, no retry,
+# no displacement, nothing changed on this box.
+# scripts/box-update-lock.sh is preferred when the box has it; the inline below
+# is the same contract for a box that predates it.
+OC_LEASE="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+_ocl_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//' || true; }
+_ocl_ppid()  { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ' || true; }
+_ocl_rpid()  { sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$OC_LEASE" 2>/dev/null | head -1 || true; }
+_ocl_rstart(){ sed -n 's/^start=//p' "$OC_LEASE" 2>/dev/null | head -1 || true; }
+_ocl_owner_live() {
+  [ -f "$OC_LEASE" ] || return 1
+  _ocl_p="$(_ocl_rpid)"; [ -n "$_ocl_p" ] || return 1
+  kill -0 "$_ocl_p" 2>/dev/null || return 1
+  _ocl_s="$(_ocl_rstart)"
+  [ -z "$_ocl_s" ] || [ "$_ocl_s" = "none" ] || [ "$(_ocl_start "$_ocl_p")" = "$_ocl_s" ] || return 1
+  return 0
+}
+_ocl_in_tree() {
+  _ocl_owner_live || return 1
+  _ocl_p="$(_ocl_rpid)"; _ocl_cur="$$"; _ocl_n=0
+  while [ -n "$_ocl_cur" ] && [ "$_ocl_cur" -gt 1 ] 2>/dev/null && [ "$_ocl_n" -lt 64 ]; do
+    [ "$_ocl_cur" = "$_ocl_p" ] && return 0
+    _ocl_cur="$(_ocl_ppid "$_ocl_cur")"; _ocl_n=$((_ocl_n + 1))
+  done
+  return 1
+}
+_ocl_release() {
+  [ -f "$OC_LEASE" ] || return 0
+  [ "$(_ocl_rpid)" = "$$" ] || return 0
+  _ocl_s="$(_ocl_rstart)"
+  if [ -z "$_ocl_s" ] || [ "$_ocl_s" = "none" ] || [ "$(_ocl_start "$$")" = "$_ocl_s" ]; then
+    rm -f "$OC_LEASE" 2>/dev/null || true
+  fi
+}
+_ocl_take() {
+  _ocl_h="$HOME/.openclaw/scripts/box-update-lock.sh"
+  if [ -f "$_ocl_h" ]; then
+    . "$_ocl_h"
+    if command -v box_update_lock_acquire >/dev/null 2>&1; then
+      box_update_lock_acquire "$OC_LEASE" "sat-cron-$$" "saturday-cron" "$HOME/.openclaw"
+      case "$?" in
+        0) trap 'box_update_lock_release' EXIT; return 0 ;;
+        3) return 3 ;;
+        *) return 1 ;;
+      esac
+    fi
+  fi
+  _ocl_in_tree && return 0
+  if [ -e "$OC_LEASE" ] && [ ! -f "$OC_LEASE" ]; then
+    _ocl_owner_live && return 3
+    rm -rf "$OC_LEASE" 2>/dev/null || return 1
+  fi
+  _ocl_owner_live && return 3
+  [ -e "$OC_LEASE" ] && { rm -f "$OC_LEASE" 2>/dev/null || return 1; }
+  ( set -o noclobber; : > "$OC_LEASE" ) 2>/dev/null || return 3
+  printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=%s\ninstall_path=%s\nutc=%s\n' \
+    "$$" "$(_ocl_start "$$")" "sat-cron-$$" "saturday-cron" "$HOME/.openclaw" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$OC_LEASE" 2>/dev/null || return 1
+  trap '_ocl_release' EXIT
+  return 0
+}
+_ocl_take
+_ocl_rc=$?
+if [ "$_ocl_rc" -eq 3 ]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] another updater owns this box (shared installation lease $OC_LEASE held by pid $(_ocl_rpid)) — STANDING DOWN, nothing changed" >> "$OC_LOG"
+  exit 0
+elif [ "$_ocl_rc" -ne 0 ]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] REFUSED: could not take the shared installation lease at $OC_LEASE — nothing changed" >> "$OC_LOG"
+  exit 1
+fi
+
 # Check if gateway is busy (agent is active)
 # Skip if a user session was active in the last 30 minutes
 # This prevents interrupting active work

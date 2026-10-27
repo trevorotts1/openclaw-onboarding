@@ -4537,63 +4537,214 @@ colocate_presentation_entry() {
 # crontab entry (with backup + owner notification) so both mechanisms
 # cannot stay silently active.
 # ----------------------------------------------------------
-UPDATE_LOCK_PATH="/tmp/openclaw-update.lock"
+UPDATE_LOCK_PATH="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
 UPDATE_LOCK_FD=""
 UPDATE_LOCK_PID_FILE=""
 
+# ── Shared installation lease (one box, ONE update owner) ────────────────────
+# mac.MAC-1 / consistency.C1: every writer that can stop, rewrite or migrate
+# this installation takes the SAME lease at the SAME path — this script,
+# scripts/self-update.sh, scripts/oc-atomic-upgrade.sh, the weekly content
+# update and the Saturday cron. The record carries pid + process start
+# identity + run id, so a lease is live only while that EXACT process is alive.
+# Liveness is decided by the RECORD: never by the file's mere existence, and
+# never by its age (mac.MAC-13). scripts/box-update-lock.sh is the helper; a
+# box that predates it takes the identical record shape inline, so a
+# helper-present writer and this copy still see each other.
+#
+# NESTED writers run INSIDE the holder's process tree (self-update →
+# weekly-full-update → fleet-refresh → update-skills → oc-atomic) and INHERIT
+# the lease: they neither rewrite the record nor release it. Refusing them is
+# the defect that closed PR #2612 — the box's own update chain refused itself.
+_ulock_impl=""
+_ulock_state=""          # "" | owned | inherited
+_ulock_fd=""
+
+# NOTE: every reader below ends `|| true` / `return 0` on purpose — this script
+# runs under `set -euo pipefail`, and a plain `_p="$(_ulock_rpid)"` would abort
+# the whole roll when the lease file is simply absent.
+_ulock_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//' || true; }
+_ulock_ppid()  { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ' || true; }
+_ulock_rpid() {
+  if [ -d "$UPDATE_LOCK_PATH" ]; then
+    head -1 "$UPDATE_LOCK_PATH/pid" 2>/dev/null || true
+  else
+    sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$UPDATE_LOCK_PATH" 2>/dev/null | head -1 || true
+    true
+  fi
+  return 0
+}
+_ulock_rstart() { sed -n 's/^start=//p' "$UPDATE_LOCK_PATH" 2>/dev/null | head -1 || true; return 0; }
+
+# 0 = the recorded owner is the same live process (pid alive AND start identity
+# matches, so a recycled pid is NOT an owner).
+_ulock_owner_live() {
+  local _p _s
+  if [ -d "$UPDATE_LOCK_PATH" ]; then
+    # Legacy mkdir lease (pre-helper boxes): pid only — that format never
+    # recorded a start identity. Never reclaimed by age.
+    _p="$(_ulock_rpid)"
+    [ -n "$_p" ] || return 1
+    kill -0 "$_p" 2>/dev/null || return 1
+    return 0
+  fi
+  [ -f "$UPDATE_LOCK_PATH" ] || return 1
+  _p="$(_ulock_rpid)"; [ -n "$_p" ] || return 1
+  kill -0 "$_p" 2>/dev/null || return 1
+  _s="$(_ulock_rstart)"
+  if [ -n "$_s" ]; then [ "$(_ulock_start "$_p")" = "$_s" ] || return 1; fi
+  return 0
+}
+
+# 0 = this process is the holder or one of its DESCENDANTS.
+# Only the shared RECORD (pid + start identity) can prove a process tree: a
+# legacy mkdir lease carries no start identity, so it is never inherited. It is
+# still honoured as a live foreign holder and still refused.
+_ulock_in_owner_tree() {
+  [ -d "$UPDATE_LOCK_PATH" ] && return 1
+  _ulock_owner_live || return 1
+  local _p _cur _n
+  _p="$(_ulock_rpid)"; _cur="$$"; _n=0
+  while [ -n "$_cur" ] && [ "$_cur" -gt 1 ] 2>/dev/null && [ "$_n" -lt 64 ]; do
+    [ "$_cur" = "$_p" ] && return 0
+    _cur="$(_ulock_ppid "$_cur")"
+    _n=$((_n + 1))
+  done
+  return 1
+}
+
+_ulock_write_own() {  # run_id role install_path
+  printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=%s\ninstall_path=%s\nutc=%s\n' \
+    "$$" "$(_ulock_start "$$")" "${1:-}" "${2:-}" "${3:-}" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$UPDATE_LOCK_PATH" 2>/dev/null
+}
+
+# Prefer the shared helper when the box has it (one implementation, one
+# contract); the inline path below is the same contract for boxes without it.
+_ulock_load_helper() {
+  local _h _d
+  _d="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+  for _h in "$_d/box-update-lock.sh" \
+            "${OPENCLAW_ROOT:-$HOME/.openclaw}/scripts/box-update-lock.sh" \
+            "${OPENCLAW_ROOT:-$HOME/.openclaw}/fleet-refresh/onboarding/scripts/box-update-lock.sh"; do
+    if [ -f "$_h" ]; then
+      # shellcheck source=/dev/null
+      . "$_h" || continue
+      declare -F box_update_lock_acquire >/dev/null 2>&1 && return 0
+    fi
+  done
+  return 1
+}
+
 # Acquire the global update lock; MUST be the first call in main().
-# Prefers flock(1) where available; on hosts without it (e.g. macOS)
-# falls back to an atomic O_EXCL lock file holding the owner PID, with
-# stale-lock recovery when the recorded PID is no longer running.
-# Returns 0 with the lock held; exits 1 if another live instance
-# holds it (distinct "LOCK HELD" message, never a double-execute).
+# Returns 0 with the lock held (owned or inherited); exits 1 on a live foreign
+# holder (distinct "LOCK HELD" message, never a double-execute) or a fatal path.
 acquire_update_lock() {
+  _ulock_impl="inline"
+  if _ulock_load_helper; then _ulock_impl="helper"; fi
+
+  # A nested writer already holds the lease through its ancestor.
+  if _ulock_in_owner_tree; then
+    _ulock_state="inherited"
+    # Export the helper's own identity keys as well: a DESCENDANT of ours may
+    # take the helper path, and the helper proves inheritance from these.
+    BFX_LOCK_RUN_ID="$(sed -n 's/^run_id=//p' "$UPDATE_LOCK_PATH" 2>/dev/null | head -1 || true)"
+    BFX_LOCK_OWNER_PID="$(_ulock_rpid)"
+    export BFX_LOCK_RUN_ID BFX_LOCK_OWNER_PID
+    echo "  [lock] inherited $UPDATE_LOCK_PATH from pid $(_ulock_rpid) (nested writer in the holder's process tree)"
+    return 0
+  fi
+
+  # A non-regular object at the lease path is a crashed run, never a lease.
+  if [ -e "$UPDATE_LOCK_PATH" ] && [ ! -f "$UPDATE_LOCK_PATH" ]; then
+    if _ulock_owner_live; then
+      echo "LOCK HELD: another update-skills.sh instance is already running (pid $(_ulock_rpid), lock: $UPDATE_LOCK_PATH)" >&2
+      exit 1
+    fi
+    rm -rf "$UPDATE_LOCK_PATH" 2>/dev/null || {
+      echo "FATAL: cannot create lock at $UPDATE_LOCK_PATH (cannot clear a crashed lease — path/permission error)" >&2; exit 1; }
+  fi
+
+  if [ "$_ulock_impl" = helper ]; then
+    box_update_lock_acquire "$UPDATE_LOCK_PATH" "${OC_LEASE_RUN_ID:-update-skills-$$}" \
+      "update-skills" "${OC_ROOT:-$HOME/.openclaw}"
+    case "$?" in
+      0) _ulock_state="owned"
+         echo "  [lock] acquired $UPDATE_LOCK_PATH (shared lease, run ${OC_LEASE_RUN_ID:-update-skills-$$})"
+         return 0 ;;
+      3) echo "LOCK HELD: another updater holds $UPDATE_LOCK_PATH — no retry, no second writer" >&2
+         exit 1 ;;
+      *) echo "FATAL: cannot acquire the shared lease at $UPDATE_LOCK_PATH" >&2; exit 1 ;;
+    esac
+  fi
+
+  # flock(1) is an extra guard, never the authority: the record is re-read
+  # under it, so an inline/hookless writer is still honoured.
   if command -v flock >/dev/null 2>&1; then
-    exec {UPDATE_LOCK_FD}>"$UPDATE_LOCK_PATH" || {
+    UPDATE_LOCK_FD=9
+    exec 9<>"$UPDATE_LOCK_PATH" 2>/dev/null || {
+      UPDATE_LOCK_FD=""
       echo "FATAL: cannot open lock file $UPDATE_LOCK_PATH" >&2
       exit 1
     }
-    if ! flock -n "$UPDATE_LOCK_FD"; then
+    if ! flock -n "$UPDATE_LOCK_FD" 2>/dev/null; then
+      flock -u "$UPDATE_LOCK_FD" 2>/dev/null || true
+      exec 9>&- 2>/dev/null || true
+      UPDATE_LOCK_FD=""
       echo "LOCK HELD: another update-skills.sh instance is already running (lock: $UPDATE_LOCK_PATH)" >&2
       exit 1
     fi
-    echo "  [lock] acquired $UPDATE_LOCK_PATH (flock)"
+    if _ulock_owner_live; then
+      flock -u "$UPDATE_LOCK_FD" 2>/dev/null || true
+      exec 9>&- 2>/dev/null || true
+      UPDATE_LOCK_FD=""
+      echo "LOCK HELD: another updater owns $UPDATE_LOCK_PATH (pid $(_ulock_rpid)) — no second writer" >&2
+      exit 1
+    fi
+    _ulock_write_own "${OC_LEASE_RUN_ID:-update-skills-$$}" "update-skills" "${OC_ROOT:-$HOME/.openclaw}" || {
+      echo "FATAL: cannot write the lease record at $UPDATE_LOCK_PATH" >&2; exit 1; }
+    _ulock_state="owned"
+    echo "  [lock] acquired $UPDATE_LOCK_PATH (flock + record, pid $$)"
     return 0
   fi
 
-  # Portable fallback: atomic mkdir (O_EXCL semantics) + PID liveness.
-  UPDATE_LOCK_PID_FILE="$UPDATE_LOCK_PATH/pid"
-  if mkdir "$UPDATE_LOCK_PATH" 2>/dev/null; then
-    echo "$$" > "$UPDATE_LOCK_PID_FILE"
-    echo "  [lock] acquired $UPDATE_LOCK_PATH (pid $$)"
-    return 0
-  fi
-  local holder
-  holder="$(cat "$UPDATE_LOCK_PID_FILE" 2>/dev/null || true)"
-  if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
-    echo "LOCK HELD: another update-skills.sh instance is already running (pid $holder, lock: $UPDATE_LOCK_PATH)" >&2
+  # Portable fallback: atomic exclusive create, same record shape.
+  if _ulock_owner_live; then
+    echo "LOCK HELD: another updater owns $UPDATE_LOCK_PATH (pid $(_ulock_rpid)) — no second writer" >&2
     exit 1
   fi
-  # Stale lock: recorded owner is dead — take over.
-  rm -rf "$UPDATE_LOCK_PATH" 2>/dev/null || true
-  if mkdir "$UPDATE_LOCK_PATH" 2>/dev/null; then
-    echo "$$" > "$UPDATE_LOCK_PID_FILE"
-    echo "  [lock] cleared stale lock (dead pid ${holder:-unknown}); acquired $UPDATE_LOCK_PATH (pid $$)"
+  if [ -e "$UPDATE_LOCK_PATH" ]; then
+    rm -f "$UPDATE_LOCK_PATH" 2>/dev/null || {
+      echo "FATAL: cannot create lock at $UPDATE_LOCK_PATH (cannot clear a dead owner's lease — path/permission error)" >&2; exit 1; }
+  fi
+  if ( set -o noclobber; : > "$UPDATE_LOCK_PATH" ) 2>/dev/null; then
+    _ulock_write_own "${OC_LEASE_RUN_ID:-update-skills-$$}" "update-skills" "${OC_ROOT:-$HOME/.openclaw}" || {
+      echo "FATAL: cannot write the lease record at $UPDATE_LOCK_PATH" >&2; exit 1; }
+    _ulock_state="owned"
+    echo "  [lock] acquired $UPDATE_LOCK_PATH (exclusive create, pid $$)"
     return 0
   fi
-  echo "FATAL: cannot create lock directory $UPDATE_LOCK_PATH (permissions or path error)" >&2
+  echo "LOCK HELD: another update-skills.sh instance won the race for $UPDATE_LOCK_PATH" >&2
   exit 1
 }
 
-# Release the update lock on exit (wired via trap in main).
+# Release the update lock on exit (wired via trap in main). Only the OWNER
+# releases: an inherited lease belongs to the ancestor.
 release_update_lock() {
+  if [ "$_ulock_state" = "owned" ]; then
+    if [ "$_ulock_impl" = "helper" ]; then
+      box_update_lock_release
+    elif _ulock_owner_live && [ "$(_ulock_rpid)" = "$$" ]; then
+      rm -rf "$UPDATE_LOCK_PATH" 2>/dev/null || true
+    fi
+  fi
   if [ -n "$UPDATE_LOCK_FD" ]; then
     flock -u "$UPDATE_LOCK_FD" 2>/dev/null || true
-    return 0
+    exec 9>&- 2>/dev/null || true
+    UPDATE_LOCK_FD=""
   fi
-  if [ -n "$UPDATE_LOCK_PID_FILE" ] && [ "$(cat "$UPDATE_LOCK_PID_FILE" 2>/dev/null || true)" = "$$" ]; then
-    rm -rf "$UPDATE_LOCK_PATH" 2>/dev/null || true
-  fi
+  _ulock_state=""
+  return 0
 }
 
 # main()'s EXIT trap. The box-state hook runs GUARDED, so nothing inside it
