@@ -8,7 +8,10 @@ guard was inert. What is proved here, behaviourally:
 
   * a NEW run through `factory.py card --step --run-dir` (Claude Code chat) is
     asked the purpose card and ends with control/method.json on disk;
-  * the same run through `--format telegram-json` (the Telegram launcher);
+  * the same run through `--format telegram-json` (the Telegram launcher),
+    `--format openclaw-json` (the OpenClaw send launcher INSTRUCTIONS.md names)
+    and `--format session-json` (the durable session launcher factory.py's own
+    resume line runs) -- every supported launch path, not one per family;
   * unreceipted bulk orders through `studio_bridge._replay` fail closed;
     a Studio marker does not authorize invented or unseen question answers;
   * a RESUMED run (stage work recorded, answers saved) keeps the card it
@@ -161,6 +164,32 @@ def main():
         check_true("the one message was built", isinstance(sent, dict) and "send" in sent)
         check_true("control/method.json written",
                    (run / "control" / "method.json").exists())
+
+        # -- 2b: the OpenClaw send launcher (INSTRUCTIONS.md's own Telegram
+        # argv names openclaw-json, not telegram-json): the same new run.
+        print("[2b] a NEW run through the OpenClaw send launcher")
+        run = make_run(Path(tmp) / "oc")
+        code, payload = drive(run, replies, fmt="openclaw-json")
+        check("exit 0", code, 0)
+        sent = json.loads(payload)
+        check_true("the one message was built", isinstance(sent, dict) and "send" in sent)
+        check_true("control/method.json written",
+                   (run / "control" / "method.json").exists())
+
+        # -- 2c: the durable session launcher -- the resume line factory.py
+        # itself hands the operator (`card --step --run-dir ... --format
+        # session-json`): a NEW run there must enter the strategy too.
+        print("[2c] a NEW run through the durable session launcher")
+        run = make_run(Path(tmp) / "sess")
+        code, payload = drive(run, replies, fmt="session-json")
+        check("exit 0", code, 0)
+        state = json.loads(payload)
+        check_true("the session recorded the lock-in", state.get("done") is True)
+        method_path = run / "control" / "method.json"
+        check_true("control/method.json written", method_path.exists())
+        check("purpose recorded",
+              json.loads(method_path.read_text(encoding="utf-8")).get("purpose"),
+              "campaign")
 
         # -- 3: the Studio launcher (what `studio_bridge.py poll` runs) -------
         print("[3] a NEW Studio order through studio_bridge._replay")

@@ -150,4 +150,53 @@ if [ -f "$PIN_GATE" ]; then
   esac
 fi
 
+# ── STAGE 3 — added-lines absolute-path guard (D-27) ────────────────────────
+# A push may not ADD a host-specific absolute path. The two banned roots are the
+# macOS external-volume root and the macOS user-home root; tools/gate-added-paths.sh
+# assembles both from parts, so that script never contains the text it scans for.
+# Do not write either root as a literal here either — this hook is scanned too.
+#
+# Judged over origin/main...HEAD: the range this push actually adds. If the
+# guard script is absent (a branch that predates it) the stage is skipped rather
+# than failed — a hook that blocks every push over a file that has not landed
+# yet is a hook people learn to bypass with --no-verify.
+#
+# Blocking rule (STAGE 3) — the guard's own verdict, fail-closed:
+#   * exit 1 (a banned path is added)  -> REFUSE the push.
+#   * exit 2 (the guard could not run) -> REFUSE the push.
+#   * exit 0 (clean)                   -> allow.
+# Exit 2 BLOCKS here, unlike stage 2. The reasoning differs because the
+# prerequisite differs: stage 2 needs a third-party vetting record a given box
+# may genuinely lack, while this guard is only local git plus bash. An exit 2
+# here is a real instrumentation fault, never "this box cannot check" — and a
+# gate that cannot run must not be allowed to report clean.
+PATH_GUARD="tools/gate-added-paths.sh"
+if [ -f "$PATH_GUARD" ] && git rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
+  PATH_OUT="$(bash "$PATH_GUARD" . origin/main HEAD 2>&1)"
+  PATH_RC=$?
+  echo "$PATH_OUT"
+  case "$PATH_RC" in
+    0)
+      echo "PRE-PUSH: added-paths guard PASSED (exit 0) — push allowed."
+      ;;
+    2)
+      echo ""
+      echo "PRE-PUSH BLOCKED: the added-paths guard could not run (exit 2,"
+      echo "INSTRUMENT_ERROR). Failing closed: a push the gate could not verify"
+      echo "must not proceed. Diagnostic output is above."
+      exit 1
+      ;;
+    *)
+      echo ""
+      echo "PRE-PUSH BLOCKED: this push ADDS a banned host-specific absolute path"
+      echo "(the macOS external-volume root or the macOS user-home root) in the"
+      echo "range origin/main...HEAD. The offending lines are listed above."
+      echo "Rewrite each as a repo-relative path — or, where the string must exist"
+      echo "on purpose (a scanner naming its own target), assemble it from"
+      echo "concatenated parts so the literal is never committed."
+      exit 1
+      ;;
+  esac
+fi
+
 exit 0
