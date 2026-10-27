@@ -37,11 +37,11 @@ from _email_sequences_parser import parse_sequence_file, to_ghl_html, goal_step
 
 from cli_anything.gohighlevel.utils.workflow_builder import (
     CampaignBuilder,
-    link_steps,
     tag_step,
     validate_campaign,
     wait_step,
 )
+from cli_anything.gohighlevel.utils.workflow_link_guard import link_steps_or_refuse
 from cli_anything.gohighlevel.utils.ghl_internal_client import (
     InternalGHLClient,
     TokenManager,
@@ -110,7 +110,7 @@ def _branch_templates(records: list, trigger_tag: str) -> list:
 
     raw_steps.append(tag_step(f"Remove {trigger_tag}", [trigger_tag], remove=True))
     raw_steps.append(goal_step("Purchase Complete", [GOAL_TAG]))
-    steps, _unlinked = link_steps(raw_steps)
+    steps = link_steps_or_refuse(raw_steps)
     return steps
 
 
