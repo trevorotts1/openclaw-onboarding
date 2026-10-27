@@ -830,3 +830,23 @@ class TestWF7ActionTypeDerivation:
             f"expected all {len(types)} builder types counted, got: "
             f"{wf7['observed']}"
         )
+
+
+def test_wf21_fails_on_an_empty_snapshot(stub_caf_env_with_snapshot):
+    """A zero-byte snapshot restores nothing, so its presence is not
+    reversibility. The old gate matched the filename and never measured size."""
+    env, tmp = stub_caf_env_with_snapshot
+    snap = (
+        tmp / "fakehome" / ".openclaw" / "tools" / "convert-and-flow-cli"
+        / "data" / "snapshots" / "WFTEST001" / "20260601T000000Z.json"
+    )
+    assert snap.is_file(), "fixture did not seed the snapshot this test empties"
+    snap.write_text("")
+
+    result = _run_qc(["WFTEST001", "--json"], env)
+    wf21 = json.loads(result.stdout)["items"]["WF-21"]
+    assert wf21["status"] == "FAIL", (
+        "an empty snapshot must FAIL rather than record reversibility; got %r"
+        % (wf21,)
+    )
+    assert "snapshot_empty" in wf21["observed"] + wf21["notes"], wf21

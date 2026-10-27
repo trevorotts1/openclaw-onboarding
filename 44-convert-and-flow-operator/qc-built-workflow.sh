@@ -614,8 +614,15 @@ if [ -d "$SNAPSHOT_DIR" ]; then
 fi
 
 if [ "$SNAPSHOT_FOUND" -eq 1 ]; then
-  SNAPSHOT_PATH=$(find "$SNAPSHOT_DIR" -name "*.json" 2>/dev/null | grep "$WORKFLOW_ID" | head -1 || echo "found")
-  record_pass "WF-21" "snapshot_exists_and_non_empty" "snapshot present under data/snapshots/" "Snapshot: $SNAPSHOT_PATH — build is reversible via caf workflows restore"
+  SNAPSHOT_PATH=$(find "$SNAPSHOT_DIR" -name "*.json" 2>/dev/null | grep "$WORKFLOW_ID" | head -1 || true)
+  # -s is the actual non-empty measurement. A zero-byte snapshot restores
+  # nothing, so its presence alone must never be recorded as reversibility.
+  if [ -n "$SNAPSHOT_PATH" ] && [ -s "$SNAPSHOT_PATH" ]; then
+    SNAPSHOT_BYTES=$(wc -c < "$SNAPSHOT_PATH" | tr -d ' ')
+    record_pass "WF-21" "snapshot_bytes=$SNAPSHOT_BYTES" "snapshot present under data/snapshots/ and non-empty" "Snapshot: $SNAPSHOT_PATH ($SNAPSHOT_BYTES bytes) — build is reversible via caf workflows restore"
+  else
+    record_fail "WF-21" "snapshot_empty path=${SNAPSHOT_PATH:-none}" "snapshot present and non-empty" "A snapshot file matched $WORKFLOW_ID but is empty or unreadable (${SNAPSHOT_PATH:-no path}); an empty snapshot restores nothing, so reversibility is unproven."
+  fi
 else
   record_na "WF-21" "fresh-build: no snapshot on disk — N/A for a first-time build. caf workflows restore is not applicable until a snapshot is captured."
 fi
