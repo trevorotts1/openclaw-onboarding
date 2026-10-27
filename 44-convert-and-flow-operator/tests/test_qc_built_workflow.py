@@ -74,10 +74,28 @@ def stub_caf_env(tmp_path):
   "id": "WFTEST001",
   "name": "ZHC-test-workflow",
   "status": "draft",
-  "triggers": [{"id": "T1", "type": "form_submitted"}],
-  "steps": [
-    {"id": "A1", "type": "EMAIL", "order": 0, "targetActionId": "exit"}
-  ],
+  "workflowData": {
+    "templates": [
+      {
+        "id": "n1",
+        "type": "sms",
+        "name": "Send",
+        "parentKey": null,
+        "next": "n2",
+        "attributes": {
+          "body": "Test message",
+          "fromNumber": "+15555550100"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "end",
+        "name": "Finish",
+        "parentKey": "n1"
+      }
+    ]
+  },
+  "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "n1"}],
   "allowMultiple": false,
   "active": false
 }
@@ -127,8 +145,28 @@ def stub_caf_env_with_snapshot(tmp_path):
   "id": "WFTEST001",
   "name": "ZHC-test-workflow",
   "status": "draft",
-  "triggers": [{"id": "T1", "type": "form_submitted"}],
-  "steps": [{"id": "A1", "type": "EMAIL", "order": 0, "targetActionId": "exit"}],
+  "workflowData": {
+    "templates": [
+      {
+        "id": "n1",
+        "type": "sms",
+        "name": "Send",
+        "parentKey": null,
+        "next": "n2",
+        "attributes": {
+          "body": "Test message",
+          "fromNumber": "+15555550100"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "end",
+        "name": "Finish",
+        "parentKey": "n1"
+      }
+    ]
+  },
+  "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "n1"}],
   "allowMultiple": false,
   "active": false
 }
@@ -603,11 +641,20 @@ class TestWF7ValidNodeRecognition:
         """The regression scenario itself: a build whose only action node is
         add_contact_tag must pass WF-7 WITHOUT any WAIT node (the old
         route-around is no longer necessary and is not a fix)."""
-        env, _ = _stub_caf_env_with_export(
-            tmp_path, _export_with_steps(
-                [{"id": "A1", "type": "add_contact_tag", "tag": "ZHC-wf7-test"}]
-            )
-        )
+        export = json.loads(_export_with_steps(
+            [{"id": "A1", "type": "add_contact_tag", "tag": "ZHC-wf7-test"}]
+        ))
+        export["workflowData"] = {
+            "templates": [
+                {"id": "A1", "type": "add_contact_tag", "parentKey": None,
+                 "next": "n2"},
+                {"id": "n2", "type": "end", "parentKey": "A1"},
+            ]
+        }
+        export["triggers"] = [
+            {"id": "T1", "type": "form_submitted", "targetActionId": "A1"}
+        ]
+        env, _ = _stub_caf_env_with_export(tmp_path, json.dumps(export))
         manifest = tmp_path / "deps.json"
         manifest.write_text('{"tags": ["ZHC-wf7-test"]}', encoding="utf-8")
         result = _run_qc(["WFTEST005", "--deps", str(manifest), "--json"], env)
@@ -734,9 +781,10 @@ class TestWF7ActionTypeDerivation:
             f"add_contact_tag is a VERIFIED_ACTIONS type and must PASS WF-7. "
             f"Got: {wf7}"
         )
-        assert result.returncode == 2, (
-            f"WF-7 itself passes, but the stub export carries no graph templates, "
-            f"so WF-23 is UNVERIFIED and overall must be exit 2 (never 0). "
+        assert result.returncode != 0, (
+            f"WF-7 itself passes, but the export carries no graph templates and no "
+            f"trigger link, so WF-23 is UNVERIFIED and WF-24 fails as "
+            f"trigger_evidence_absent; overall must never be 0. "
             f"Got {result.returncode}\nstdout={result.stdout}"
         )
 

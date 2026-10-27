@@ -9,6 +9,13 @@
 #
 # Legacy files need migration, never PASS, but do not hard-fail install QC.
 #
+# STATUS FILE: --status-file PATH writes compact JSON with exactly these keys:
+# gate, legacy_needs_migration, new_style_failures, verdict, legacy_files,
+# workflows_dir. new_style_failures > 0 means FAIL; otherwise legacy_needs_migration
+# > 0 means NEEDS-MIGRATION; otherwise PASS. Exit codes remain unchanged;
+# NEEDS-MIGRATION exits 0 for fleet updates. Callers MUST treat missing or
+# unparseable status files as failure, never PASS; completion depends on status.
+#
 # WHAT IT SCANS — the client's conversation-workflows/registry.md. Every
 # registered conversation playbook MUST carry a recorded human-facing doc:
 #   * TABLE form: the trailing "Doc (Notion/Docs/text)" column carries a real
@@ -39,11 +46,13 @@ PYTHON_BIN="$(command -v python3 2>/dev/null || true)"
 
 WF_DIR=""
 JSON_MODE=0
+STATUS_FILE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir) WF_DIR="$2"; shift 2 ;;
     --json) JSON_MODE=1; shift ;;
+    --status-file) STATUS_FILE="$2"; shift 2 ;;
     -h|--help) sed -n '1,70p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -85,7 +94,7 @@ if [ -n "$PYTHON_ERROR" ]; then
   exit 1
 fi
 
-export WF_DIR JSON_MODE ENGINE
+export WF_DIR JSON_MODE ENGINE STATUS_FILE
 
 "$PYTHON_BIN" - <<'PYEOF'
 import json
@@ -97,6 +106,7 @@ from pathlib import Path
 WF_DIR = Path(os.environ["WF_DIR"])
 JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
 ENGINE = Path(os.environ["ENGINE"])
+STATUS_FILE = os.environ.get("STATUS_FILE", "")
 
 sys.path.insert(0, str(ENGINE.parent))
 import playbook_engine as engine
@@ -205,6 +215,14 @@ if not reg.is_file():
             has_non_legacy = True
 
     all_legacy = bool(legacy) and not has_non_legacy
+    verdict = "NEEDS-MIGRATION" if all_legacy else "FAIL"
+    if STATUS_FILE:
+        status = {"gate":"qc-playbook-doc","legacy_needs_migration":len(legacy),"new_style_failures":0 if all_legacy else 1,"verdict":verdict,"legacy_files":sorted(legacy),"workflows_dir":str(WF_DIR.resolve())}
+        try:
+            with open(STATUS_FILE + ".doc", "w", encoding="utf-8") as f:
+                f.write(json.dumps(status, separators=(",",":")) + "\n")
+        except OSError:
+            pass
     if JSON_MODE:
         print(json.dumps({
             "dir": str(WF_DIR),
@@ -270,6 +288,12 @@ disk_slugs = set(disk_files)
 all_slugs = set(registry_rows.keys()) | disk_slugs
 
 if not all_slugs:
+    if STATUS_FILE:
+        try:
+            with open(STATUS_FILE + ".doc", "w", encoding="utf-8") as f:
+                f.write(json.dumps({"gate":"qc-playbook-doc","legacy_needs_migration":0,"new_style_failures":1,"verdict":"FAIL","legacy_files":[],"workflows_dir":str(WF_DIR.resolve())}, separators=(",",":")) + "\n")
+        except OSError:
+            pass
     if JSON_MODE:
         print(json.dumps({
             "dir": str(WF_DIR),
@@ -306,6 +330,13 @@ for slug in sorted(all_slugs):
 
 failures = [r for r in results if r["problems"]]
 verdict = "FAIL" if failures else ("NEEDS-MIGRATION" if legacy else "PASS")
+if STATUS_FILE:
+    status = {"gate":"qc-playbook-doc","legacy_needs_migration":len(legacy),"new_style_failures":len(failures),"verdict":verdict,"legacy_files":sorted(legacy),"workflows_dir":str(WF_DIR.resolve())}
+    try:
+        with open(STATUS_FILE + ".doc", "w", encoding="utf-8") as f:
+            f.write(json.dumps(status, separators=(",",":")) + "\n")
+    except OSError:
+        pass
 
 if JSON_MODE:
     print(json.dumps({
@@ -373,7 +404,7 @@ if [ "$META_RC" -ne 0 ] && [ -n "${PYTHON_ERROR:-}" ]; then
 fi
 
 if [ "$META_RC" -eq 0 ]; then
-  export WF_DIR ENGINE JSON_MODE PYTHON_BIN PYTHON_VERSION
+  export WF_DIR ENGINE JSON_MODE PYTHON_BIN PYTHON_VERSION STATUS_FILE
   "$PYTHON_BIN" - <<'PYEOF2'
 import json
 import os
@@ -384,6 +415,7 @@ from pathlib import Path
 ENGINE = Path(os.environ["ENGINE"])
 WF_DIR = os.environ.get("WF_DIR", "")
 JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
+STATUS_FILE = os.environ.get("STATUS_FILE", "")
 PYTHON_BIN = os.environ["PYTHON_BIN"]
 PYTHON_VERSION = os.environ["PYTHON_VERSION"]
 
@@ -456,6 +488,13 @@ except Exception as exc:
 resolved_wf = str(Path(WF_DIR).resolve()) if WF_DIR else "<ABSOLUTE_WORKFLOWS_DIR>"
 migration_command = "bash scripts/33-migrate-legacy-playbooks.sh %s --write" % resolved_wf
 verdict = "FAIL" if defects else ("NEEDS-MIGRATION" if legacy else "PASS")
+if STATUS_FILE:
+    status = {"gate":"qc-playbook-doc","legacy_needs_migration":len(legacy),"new_style_failures":len(defects),"verdict":verdict,"legacy_files":sorted(legacy),"workflows_dir":str(Path(WF_DIR).resolve()) if WF_DIR else ""}
+    try:
+        with open(STATUS_FILE + ".meta", "w", encoding="utf-8") as f:
+            f.write(json.dumps(status, separators=(",",":")) + "\n")
+    except OSError:
+        pass
 
 if JSON_MODE:
     print(json.dumps({
@@ -492,6 +531,44 @@ else:
 sys.exit(1 if defects else 0)
 PYEOF2
   META_RC=$?
+fi
+
+if [ -n "$STATUS_FILE" ]; then
+  STATUS_FILE="$STATUS_FILE" WF_DIR="$WF_DIR" python3 - <<'PYMERGE'
+import json, os
+from pathlib import Path
+base = os.environ["STATUS_FILE"]
+valid = {"PASS", "NEEDS-MIGRATION", "FAIL"}
+stages = []
+for suffix in (".doc", ".meta"):
+    try:
+        with open(base + suffix, encoding="utf-8") as f:
+            item = json.load(f)
+        if not isinstance(item, dict) or item.get("verdict") not in valid:
+            raise ValueError("invalid verdict")
+        if type(item.get("legacy_needs_migration")) is not int or type(item.get("new_style_failures")) is not int:
+            raise ValueError("invalid counts")
+        if not isinstance(item.get("legacy_files"), list):
+            raise ValueError("invalid legacy_files")
+        stages.append(item)
+    except Exception:
+        stages.append({"legacy_needs_migration":0,"new_style_failures":1,"verdict":"FAIL","legacy_files":[]})
+legacy = max((s["legacy_needs_migration"] for s in stages), default=0)
+fails = sum(s["new_style_failures"] for s in stages)
+verdict = "FAIL" if fails else ("NEEDS-MIGRATION" if legacy else "PASS")
+files = sorted({Path(n).name for s in stages for n in s["legacy_files"] if isinstance(n, str)})
+status = {"gate":"qc-playbook-doc","legacy_needs_migration":legacy,"new_style_failures":fails,"verdict":verdict,"legacy_files":files,"workflows_dir":str(Path(os.environ["WF_DIR"]).resolve()) if os.environ.get("WF_DIR") else ""}
+try:
+    with open(base, "w", encoding="utf-8") as f:
+        f.write(json.dumps(status, separators=(",",":")) + "\n")
+except OSError:
+    pass
+for suffix in (".doc", ".meta"):
+    try:
+        os.unlink(base + suffix)
+    except OSError:
+        pass
+PYMERGE
 fi
 
 if [ "$DOC_RC" -eq 0 ] && [ "$META_RC" -eq 0 ]; then

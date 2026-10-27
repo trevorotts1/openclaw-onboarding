@@ -29,7 +29,8 @@ A template that the matcher may offer as buildable MUST carry a `build_graph` ar
 
 - `type` must be `trigger` or an engine `VERIFIED_ACTION`.
 - Exactly one `trigger` node must exist, and it must have no `after`.
-- Every value in `after` and `branches` must resolve to a node ID in the same graph.
+- Every value in `after` and `branches` must resolve to a node ID in the same graph. `after` must be a plain predecessor ID everywhere except on a declared join node, where `after` is an array of every immediate predecessor ID.
+- **Join rule:** when both arms of an `if_else` continue into shared work, both arms must feed ONE declared join node — a node carrying `"join": true` in its `attributes` — and the shared continuation hangs off the join, never off a single branch body. No node may have more than one predecessor and no node may be the branch target of more than one `if_else` unless it is a declared join.
 
 Today, 12 templates carry a graph. The generated list lives in `_matcher/buildable-templates.json`. The remaining 37 templates are prose-only and are **NOT buildable** until a graph is authored.
 

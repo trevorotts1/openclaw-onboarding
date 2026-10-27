@@ -69,11 +69,13 @@ Escalate to operator.
 
 ## Objection Library
 
-- Objection one: acknowledge concern and ask a question.
-- Objection two: clarify the expected outcome.
-- Objection three: explain the relevant benefit.
-- Objection four: answer with verified facts.
-- Objection five: offer an appropriate next step.
+| Objection | Approved response | Never say |
+|---|---|---|
+| Objection one | Acknowledge concern and ask a question. | Never dismiss concern. |
+| Objection two | Clarify the expected outcome. | Never pressure customer. |
+| Objection three | Explain the relevant benefit. | Never invent benefits. |
+| Objection four | Answer with verified facts. | Never guess facts. |
+| Objection five | Offer an appropriate next step. | Never force a decision. |
 
 ## Conversational KPIs
 
@@ -88,6 +90,8 @@ Customer: I am worried about the cost.
 Agent: I can explain the options and answer questions.
 Customer: That would help.
 Agent: Which option fits your needs best?
+Customer: Tuesday works for me.
+Agent: You're booked for Tuesday at 10. I'll send the confirmation now.
 
 ## Never say
 
@@ -168,6 +172,8 @@ Customer: I am interested but unsure.
 Agent: What is your main concern?
 Customer: I am worried about the cost.
 Agent: I can explain the options and answer questions.
+Customer: Tuesday works for me.
+Agent: You're booked. I'll send the confirmation now.
 
 ## Never say
 
@@ -188,9 +194,9 @@ class TestTagsUsed(unittest.TestCase):
         self.assertEqual(engine.parse_tag_entry("garbage"), (None, None))
 
     def test_malformed_tag_entry_is_defect(self):
-        parsed = engine.parse_playbook(BASE.replace(
-            "webinar-registered (reads)", "garbage"
-        ))
+        parsed = engine.parse_playbook(
+            BASE.replace("webinar-registered (reads)", "garbage")
+        )
         self.assertTrue(any(
             "tags-used entry" in defect
             for defect in engine.validate_playbook(parsed)
@@ -199,8 +205,12 @@ class TestTagsUsed(unittest.TestCase):
 
 class TestStructureHash(unittest.TestCase):
     def test_escalation_changes_hash(self):
-        first = BASE.replace("Escalate to operator.", "Escalate to operator immediately.")
-        second = BASE.replace("Escalate to operator.", "Escalate to supervisor.")
+        first = BASE.replace(
+            "Escalate to operator.", "Escalate to operator immediately."
+        )
+        second = BASE.replace(
+            "Escalate to operator.", "Escalate to supervisor."
+        )
         self.assertNotEqual(
             engine.structure_hash(engine.parse_playbook(first)),
             engine.structure_hash(engine.parse_playbook(second)),
@@ -215,12 +225,15 @@ class TestStructureHash(unittest.TestCase):
         )
 
     def test_identical_playbooks_have_identical_hash(self):
-        first = engine.structure_hash(engine.parse_playbook(BASE))
-        second = engine.structure_hash(engine.parse_playbook(BASE))
-        self.assertEqual(first, second)
+        self.assertEqual(
+            engine.structure_hash(engine.parse_playbook(BASE)),
+            engine.structure_hash(engine.parse_playbook(BASE)),
+        )
 
     def test_fields_used_changes_hash(self):
-        changed = BASE.replace("fields-used: contact.email", "fields-used: contact.phone")
+        changed = BASE.replace(
+            "fields-used: contact.email", "fields-used: contact.phone"
+        )
         self.assertNotEqual(
             engine.structure_hash(engine.parse_playbook(BASE)),
             engine.structure_hash(engine.parse_playbook(changed)),
@@ -255,8 +268,7 @@ tools: update_tags
 
 class TestConversationLint(unittest.TestCase):
     def test_minimal_playbook_reports_objections_and_transcript(self):
-        parsed = engine.parse_playbook(MINIMAL)
-        defects = engine.conversation_lint(parsed)
+        defects = engine.conversation_lint(engine.parse_playbook(MINIMAL))
         self.assertTrue(any("objection library has 0 objection(s)" in d for d in defects))
         self.assertTrue(any("no golden transcript" in d for d in defects))
 
@@ -277,22 +289,19 @@ class TestConversationLint(unittest.TestCase):
         ))
 
     def test_example_phrasing_parsed(self):
-        parsed = engine.parse_playbook(BASE)
         self.assertEqual(
-            parsed["phases"][0]["examples"],
+            engine.parse_playbook(BASE)["phases"][0]["examples"],
             ["Agent: What brings you here?"],
         )
 
     def test_on_success_actions_parsed(self):
-        parsed = engine.parse_playbook(BASE)
         self.assertEqual(
-            parsed["on_success_actions"],
+            engine.parse_playbook(BASE)["on_success_actions"],
             ["Apply success tag.", "Confirm completion."],
         )
 
     def test_raw_text_retained(self):
-        parsed = engine.parse_playbook(BASE)
-        self.assertEqual(parsed["_raw_text"], BASE)
+        self.assertEqual(engine.parse_playbook(BASE)["_raw_text"], BASE)
 
     def test_objection_table_five_rows_counts_five(self):
         objections = [
@@ -302,8 +311,10 @@ class TestConversationLint(unittest.TestCase):
             "I already have a coach",
             "Just looking right now",
         ]
-        parsed = engine.parse_playbook(objection_fixture(objections))
-        self.assertEqual(engine.conversation_lint(parsed), [])
+        self.assertEqual(
+            engine.conversation_lint(engine.parse_playbook(objection_fixture(objections))),
+            [],
+        )
 
     def test_objection_table_four_rows_is_defect(self):
         objections = [
@@ -312,14 +323,15 @@ class TestConversationLint(unittest.TestCase):
             "Talk to my spouse or partner",
             "I already have a coach",
         ]
-        parsed = engine.parse_playbook(objection_fixture(objections))
-        defects = engine.conversation_lint(parsed)
+        defects = engine.conversation_lint(
+            engine.parse_playbook(objection_fixture(objections))
+        )
         self.assertTrue(any(
             "objection library has 4 objection(s)" in defect
             for defect in defects
         ))
 
-    def test_objection_bullets_counted(self):
+    def test_objection_bullets_do_not_count(self):
         fixture = objection_fixture([
             "Too expensive",
             "Need to think about it",
@@ -338,7 +350,8 @@ class TestConversationLint(unittest.TestCase):
         ])
         fixture = fixture[:start] + bullet_section + fixture[end:]
         defects = engine.conversation_lint(engine.parse_playbook(fixture))
-        self.assertFalse(any("objection library has" in defect for defect in defects))
+        self.assertIn("objection library has 0 objection(s), minimum is 5", defects)
+        self.assertFalse(any("no golden transcript" in defect for defect in defects))
 
 
 if __name__ == "__main__":

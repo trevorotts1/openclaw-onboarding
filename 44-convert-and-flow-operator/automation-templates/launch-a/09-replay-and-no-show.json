@@ -183,20 +183,29 @@
     {
       "id": "n7",
       "type": "sms",
-      "after": "n6",
+      "after": [
+        "n6",
+        "n8"
+      ],
       "attributes": {
         "message": "branch-matched SMS",
-        "ref": "Branch-matched SMS"
+        "ref": "Branch-matched SMS",
+        "join": true
       }
     },
     {
       "id": "n9",
       "type": "wait",
-      "after": "n7",
+      "after": [
+        "n6",
+        "n7",
+        "n8"
+      ],
       "attributes": {
         "until": "cart_close_datetime",
         "kind": "until",
-        "ref": "Wait until `cart_close_datetime`"
+        "ref": "Wait until `cart_close_datetime`",
+        "join": true
       }
     },
     {

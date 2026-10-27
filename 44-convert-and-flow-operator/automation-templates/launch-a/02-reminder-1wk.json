@@ -111,10 +111,14 @@
     {
       "id": "n4",
       "type": "workflow_goal",
-      "after": "n2",
+      "after": [
+        "n2",
+        "n3"
+      ],
       "attributes": {
         "goal": "reminder path complete",
-        "ref": "End"
+        "ref": "End",
+        "join": true
       }
     }
   ]

@@ -13,7 +13,6 @@ TWO_ORPHANS = ROOT / "tests/fixtures/graph/two_orphans.json"
 
 def _linear_export():
     return {
-        "targetActionId": "n1",
         "workflowData": {
             "templates": [
                 {
@@ -36,7 +35,23 @@ def _linear_export():
                 },
             ]
         },
+        "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "n1"}],
     }
+
+
+def _wf24_export(target="n1", decoy=None):
+    export = _linear_export()
+    export["triggers"] = [{"id": "T1", "type": "form_submitted"}]
+    if target is not None:
+        export["triggers"][0]["targetActionId"] = target
+    if decoy is not None:
+        export["workflowData"]["templates"][0]["attributes"]["targetActionId"] = decoy
+    return export
+
+
+def _wf24_result(tmp_path, export):
+    result = _run(tmp_path, export)
+    return result, _items(result)["WF-24"]
 
 
 def _setup(tmp_path, export):
@@ -255,3 +270,45 @@ def test_pure_unverified_is_never_success(tmp_path):
     assert result.returncode != 0, result.stdout + result.stderr
     assert items["WF-23"]["status"] == "REQUIRES_HUMAN_REVIEW"
     assert items["WF-15"]["status"] == "REQUIRES_HUMAN_REVIEW"
+
+
+def test_wf24_passes_when_trigger_targets_root(tmp_path):
+    result, wf24 = _wf24_result(tmp_path, _wf24_export(target="n1"))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert wf24["status"] == "PASS"
+
+
+def test_wf24_fails_when_trigger_targets_non_root(tmp_path):
+    result, wf24 = _wf24_result(tmp_path, _wf24_export(target="n2"))
+    evidence = _evidence(wf24)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert wf24["status"] == "FAIL"
+    assert "n2" in evidence and "n1" in evidence
+    assert "trigger_target_mismatch" in evidence
+
+
+def test_wf24_fails_when_trigger_has_no_target(tmp_path):
+    result, wf24 = _wf24_result(tmp_path, _wf24_export(target=None))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert wf24["status"] == "FAIL"
+    assert "trigger_evidence_absent" in _evidence(wf24)
+
+
+def test_wf24_ignores_decoy_target_outside_trigger(tmp_path):
+    # The decoy lives in a template, which WF-24 never scans. WF-23 (another
+    # lane's validator) still deep-scans and reports ROOT, so only WF-24 is
+    # asserted here; the exit code is not this test's contract.
+    result, wf24 = _wf24_result(
+        tmp_path, _wf24_export(target="n1", decoy="n9")
+    )
+    assert wf24["status"] == "PASS", result.stdout + result.stderr
+    assert wf24["observed"].endswith("targetActionId=n1 root=n1 trigger=$.triggers[0]")
+
+
+def test_wf24_missing_trigger_target_fails_despite_decoy(tmp_path):
+    result, wf24 = _wf24_result(
+        tmp_path, _wf24_export(target=None, decoy="n9")
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert wf24["status"] == "FAIL"
+    assert "trigger_evidence_absent" in _evidence(wf24)

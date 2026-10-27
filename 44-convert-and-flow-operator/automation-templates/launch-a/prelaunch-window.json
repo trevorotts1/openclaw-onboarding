@@ -437,10 +437,14 @@
     {
       "id": "n8",
       "type": "add_contact_tag",
-      "after": "n6",
+      "after": [
+        "n6",
+        "n7"
+      ],
       "attributes": {
         "tag": "indoc-1-sent",
-        "ref": "Add tag indoc-1-sent"
+        "ref": "Add tag indoc-1-sent",
+        "join": true
       }
     },
     {
@@ -509,10 +513,15 @@
     {
       "id": "n15",
       "type": "add_contact_tag",
-      "after": "n13",
+      "after": [
+        "n12",
+        "n13",
+        "n14"
+      ],
       "attributes": {
         "tag": "indoc-2-sent",
-        "ref": "Add tag indoc-2-sent"
+        "ref": "Add tag indoc-2-sent",
+        "join": true
       }
     },
     {
@@ -559,10 +568,14 @@
     {
       "id": "n20",
       "type": "add_contact_tag",
-      "after": "n18",
+      "after": [
+        "n18",
+        "n19"
+      ],
       "attributes": {
         "tag": "indoc-3-sent",
-        "ref": "Add tag indoc-3-sent"
+        "ref": "Add tag indoc-3-sent",
+        "join": true
       }
     },
     {
@@ -623,11 +636,16 @@
     {
       "id": "n26",
       "type": "wait",
-      "after": "n22",
+      "after": [
+        "n22",
+        "n24",
+        "n25"
+      ],
       "attributes": {
         "until": "{{precart_reminder_at}}",
         "kind": "until",
-        "ref": "{{precart_reminder_at}}"
+        "ref": "{{precart_reminder_at}}",
+        "join": true
       }
     },
     {
@@ -683,11 +701,15 @@
     {
       "id": "n32",
       "type": "wait",
-      "after": "n30",
+      "after": [
+        "n30",
+        "n31"
+      ],
       "attributes": {
         "until": "{{doors_open_at}}",
         "kind": "until",
-        "ref": "Wait Until {{doors_open_at}}"
+        "ref": "Wait Until {{doors_open_at}}",
+        "join": true
       }
     },
     {

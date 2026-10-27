@@ -622,8 +622,9 @@ def precheck_dependencies(
 ) -> dict:
     """GET-verify explicitly declared dependencies; never write or raise.
 
-    A missing declaration is never a failure. A failed or unrecognisable GET is
-    reported as unverified, never as missing.
+    Only a positive existence read authorises a build. A failed or
+    unrecognisable GET is unverified, never treated as present, and always
+    refuses the build. create_if_missing bypasses missing dependencies only.
     """
     present, missing, unverified = [], [], []
 
@@ -665,7 +666,7 @@ def precheck_dependencies(
         "present": present,
         "missing": missing,
         "unverified": unverified,
-        "refused": [] if create_if_missing else list(missing),
+        "refused": list(unverified) + ([] if create_if_missing else list(missing)),
     }
 
 
@@ -1768,12 +1769,33 @@ class CampaignBuilder:
             if any(declared_deps.values()):
                 dep_state = self.precheck(self.loc, wf_def)
                 missing = dep_state.get("missing") or []
-                if missing and not wf_def.get("create_if_missing"):
+                unverified = dep_state.get("unverified") or []
+                refuse_now = list(unverified) + [
+                    item for item in missing if not wf_def.get("create_if_missing")
+                ]
+                if refuse_now:
+                    sections = []
+                    if missing and not wf_def.get("create_if_missing"):
+                        sections.append(
+                            "missing in GHL: "
+                            + ", ".join(
+                                f"{item['kind']}:{item['name']}" for item in missing
+                            )
+                        )
+                    if unverified:
+                        sections.append(
+                            "could not be verified (read failed): "
+                            + ", ".join(
+                                f"{item['kind']}:{item['name']}" for item in unverified
+                            )
+                        )
                     return (key, None, False, False, None,
-                            f"{wf_name}: dependency pre-check failed - missing in GHL: "
-                            + ", ".join(f"{item['kind']}:{item['name']}" for item in missing)
-                            + ". Create them first (or set create_if_missing with approval); "
-                              "no workflow create was issued.")
+                            f"{wf_name}: dependency pre-check failed - "
+                            + "; ".join(sections)
+                            + (". Create missing dependencies first (or set "
+                               "create_if_missing with approval);"
+                               if missing and not wf_def.get("create_if_missing") else "")
+                            + " no workflow create was issued.")
 
             templates, unlinked = link_steps(wf_def.get("templates", []))
             if unlinked:

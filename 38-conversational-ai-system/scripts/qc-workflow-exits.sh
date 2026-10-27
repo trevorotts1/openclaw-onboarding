@@ -19,7 +19,14 @@
 # Canonical validation runs once per playbook before per-exit-rule checks.
 #
 # Exit codes: 0 = pass or migration needed; 1 = a violation or missing wiring;
-#             2 = cannot judge.
+#             2 = cannot judge. NEEDS-MIGRATION remains exit 0 for fleet updates.
+#
+# STATUS FILE: --status-file PATH writes compact JSON with exactly these keys:
+# gate, legacy_needs_migration, new_style_failures, verdict, legacy_files,
+# workflows_dir. new_style_failures > 0 means FAIL; otherwise legacy_needs_migration
+# > 0 means NEEDS-MIGRATION; otherwise PASS. Exit codes remain unchanged.
+# Callers MUST treat missing or unparseable status files as failure, never PASS;
+# completion depends on status, not exit code.
 #
 # Usage:
 #   bash scripts/qc-workflow-exits.sh                 # auto-locate workflows via pointer
@@ -34,10 +41,12 @@ ENGINE="$SKILL_ROOT/tools/playbook_engine.py"
 
 WF_DIR=""
 JSON_MODE=0
+STATUS_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir) WF_DIR="$2"; shift 2 ;;
     --json) JSON_MODE=1; shift ;;
+    --status-file) STATUS_FILE="$2"; shift 2 ;;
     -h|--help) sed -n '1,36p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -45,6 +54,16 @@ done
 
 if [ ! -f "$ENGINE" ] || ! command -v python3 >/dev/null 2>&1; then
   echo "qc-workflow-exits: canonical engine tools/playbook_engine.py or python3 not available."
+  if [ -n "$STATUS_FILE" ] && command -v python3 >/dev/null 2>&1; then
+    STATUS_FILE="$STATUS_FILE" python3 - <<'PYSTATUS'
+import json, os
+try:
+    with open(os.environ["STATUS_FILE"], "w", encoding="utf-8") as f:
+        f.write(json.dumps({"gate":"qc-workflow-exits","legacy_needs_migration":0,"new_style_failures":1,"verdict":"FAIL","legacy_files":[],"workflows_dir":""}, separators=(",",":")) + "\n")
+except OSError:
+    pass
+PYSTATUS
+  fi
   exit 2
 fi
 
@@ -60,7 +79,7 @@ if [ -z "${AGENTS_MD:-}" ]; then
   if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
 fi
 
-export SKILL_ROOT ENGINE WF_DIR JSON_MODE AGENTS_MD
+export SKILL_ROOT ENGINE WF_DIR JSON_MODE AGENTS_MD STATUS_FILE
 
 python3 - <<'PYEOF'
 import json
@@ -73,6 +92,7 @@ SKILL_ROOT = Path(os.environ["SKILL_ROOT"])
 ENGINE = Path(os.environ["ENGINE"])
 WF_DIR = os.environ.get("WF_DIR", "")
 JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
+STATUS_FILE = os.environ.get("STATUS_FILE", "")
 AGENTS_MD = os.environ.get("AGENTS_MD", "")
 
 sys.path.insert(0, str(ENGINE.parent))
@@ -174,6 +194,13 @@ if wf and wf.is_dir():
 resolved_wf = str(Path(WF_DIR).resolve()) if WF_DIR else "<ABSOLUTE_WORKFLOWS_DIR>"
 migration_command = "bash scripts/33-migrate-legacy-playbooks.sh %s --write" % resolved_wf
 verdict = "FAIL" if failures else ("NEEDS-MIGRATION" if legacy else "PASS")
+if STATUS_FILE:
+    status = {"gate":"qc-workflow-exits","legacy_needs_migration":len(legacy),"new_style_failures":len(failures),"verdict":verdict,"legacy_files":sorted(Path(n).name for n in legacy),"workflows_dir":str(Path(WF_DIR).resolve()) if WF_DIR else ""}
+    try:
+        with open(STATUS_FILE, "w", encoding="utf-8") as f:
+            f.write(json.dumps(status, separators=(",",":")) + "\n")
+    except OSError:
+        pass
 
 if JSON_MODE:
     print(json.dumps({

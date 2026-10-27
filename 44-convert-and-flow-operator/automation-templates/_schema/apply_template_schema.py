@@ -169,9 +169,22 @@ def validate_graph(path, graph):
     for node_id, node in by_id.items():
         if "after" in node:
             target = node["after"]
-            if not isinstance(target, str) or target not in by_id:
-                return f"node {node_id} references missing target {target!r}"
-            edges[target].append(node_id)
+            if isinstance(target, str):
+                targets = [target]
+            elif (
+                isinstance(target, list)
+                and target
+                and all(isinstance(item, str) for item in target)
+            ):
+                if node["attributes"].get("join") is not True:
+                    return f"node {node_id}: after array requires attributes.join true"
+                targets = target
+            else:
+                return f"node {node_id}: after must be a string or non-empty array of strings"
+            for predecessor in targets:
+                if predecessor not in by_id:
+                    return f"node {node_id} references missing target {predecessor!r}"
+                edges[predecessor].append(node_id)
         if "branches" in node:
             for target in node["branches"].values():
                 if not isinstance(target, str) or target not in by_id:

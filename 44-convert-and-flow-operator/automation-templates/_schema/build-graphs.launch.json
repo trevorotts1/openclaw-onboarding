@@ -2,190 +2,1441 @@
   "automation-templates/launch-a/01-confirm.json": {
     "kind": "single_message",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Form Submitted OR Tag Added webinar-registered","ref":"Form Submitted (registration page) OR Tag Added `webinar-registered`"}},
-      {"id":"n1","type":"update_contact_field","after":"trg","attributes":{"field":"webinar_datetime","source":"session field","ref":"Set `webinar_datetime` from the session field"}},
-      {"id":"n2","type":"email","after":"n1","attributes":{"message":"Set the Stage","timing":"Immediately","ref":"Send Email (Set the Stage)"}},
-      {"id":"n3","type":"if_else","after":"n2","branches":{"true":"n4","false":"n5"},"attributes":{"condition":"SMS consent present","ref":"If SMS consent"}},
-      {"id":"n4","type":"sms","after":"n3","attributes":{"message":"confirm + calendar","timing":"Immediately","ref":"Send SMS (confirm + calendar)"}},
-      {"id":"n5","type":"workflow_goal","after":"n3","attributes":{"goal":"confirmation chain complete","ref":"End"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Form Submitted OR Tag Added webinar-registered",
+          "ref": "Form Submitted (registration page) OR Tag Added `webinar-registered`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "update_contact_field",
+        "after": "trg",
+        "attributes": {
+          "field": "webinar_datetime",
+          "source": "session field",
+          "ref": "Set `webinar_datetime` from the session field"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "email",
+        "after": "n1",
+        "attributes": {
+          "message": "Set the Stage",
+          "timing": "Immediately",
+          "ref": "Send Email (Set the Stage)"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "if_else",
+        "after": "n2",
+        "branches": {
+          "true": "n4",
+          "false": "n5"
+        },
+        "attributes": {
+          "condition": "SMS consent present",
+          "ref": "If SMS consent"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "sms",
+        "after": "n3",
+        "attributes": {
+          "message": "confirm + calendar",
+          "timing": "Immediately",
+          "ref": "Send SMS (confirm + calendar)"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "workflow_goal",
+        "after": [
+          "n3",
+          "n4"
+        ],
+        "attributes": {
+          "goal": "confirmation chain complete",
+          "ref": "End",
+          "join": true
+        }
+      }
     ]
   },
   "automation-templates/launch-a/02-reminder-1wk.json": {
     "kind": "single_message",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Tag Added webinar-registered","ref":"Tag Added `webinar-registered`"}},
-      {"id":"n1","type":"wait","after":"trg","attributes":{"until":"webinar_datetime - 7 days","kind":"until","ref":"Wait until `webinar_datetime` - 7 days"}},
-      {"id":"n2","type":"if_else","after":"n1","branches":{"true":"n3","false":"n4"},"attributes":{"condition":"not purchased AND webinar_datetime in future","ref":"If not purchased and datetime in future"}},
-      {"id":"n3","type":"email","after":"n2","attributes":{"message":"one-week reminder","ref":"Send Email"}},
-      {"id":"n4","type":"workflow_goal","after":"n2","attributes":{"goal":"reminder path complete","ref":"End"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added webinar-registered",
+          "ref": "Tag Added `webinar-registered`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "wait",
+        "after": "trg",
+        "attributes": {
+          "until": "webinar_datetime - 7 days",
+          "kind": "until",
+          "ref": "Wait until `webinar_datetime` - 7 days"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "if_else",
+        "after": "n1",
+        "branches": {
+          "true": "n3",
+          "false": "n4"
+        },
+        "attributes": {
+          "condition": "not purchased AND webinar_datetime in future",
+          "ref": "If not purchased and datetime in future"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "email",
+        "after": "n2",
+        "attributes": {
+          "message": "one-week reminder",
+          "ref": "Send Email"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "workflow_goal",
+        "after": [
+          "n2",
+          "n3"
+        ],
+        "attributes": {
+          "goal": "reminder path complete",
+          "ref": "End",
+          "join": true
+        }
+      }
     ]
   },
   "automation-templates/launch-a/03-reminder-3d.json": {
     "kind": "single_message",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Tag Added webinar-registered","ref":"Tag Added `webinar-registered`"}},
-      {"id":"n1","type":"wait","after":"trg","attributes":{"until":"webinar_datetime - 3 days","kind":"until","ref":"Wait until `webinar_datetime` - 3 days"}},
-      {"id":"n2","type":"if_else","after":"n1","branches":{"true":"n3","false":"n4"},"attributes":{"condition":"not purchased AND webinar_datetime in future","ref":"If not purchased and future"}},
-      {"id":"n3","type":"email","after":"n2","attributes":{"message":"three-day reminder","ref":"Send Email"}},
-      {"id":"n4","type":"workflow_goal","after":"n2","attributes":{"goal":"reminder path complete","ref":"End"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added webinar-registered",
+          "ref": "Tag Added `webinar-registered`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "wait",
+        "after": "trg",
+        "attributes": {
+          "until": "webinar_datetime - 3 days",
+          "kind": "until",
+          "ref": "Wait until `webinar_datetime` - 3 days"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "if_else",
+        "after": "n1",
+        "branches": {
+          "true": "n3",
+          "false": "n4"
+        },
+        "attributes": {
+          "condition": "not purchased AND webinar_datetime in future",
+          "ref": "If not purchased and future"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "email",
+        "after": "n2",
+        "attributes": {
+          "message": "three-day reminder",
+          "ref": "Send Email"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "workflow_goal",
+        "after": [
+          "n2",
+          "n3"
+        ],
+        "attributes": {
+          "goal": "reminder path complete",
+          "ref": "End",
+          "join": true
+        }
+      }
     ]
   },
   "automation-templates/launch-a/04-reminder-1d.json": {
     "kind": "single_message",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Tag Added webinar-registered","ref":"Tag Added `webinar-registered`"}},
-      {"id":"n1","type":"wait","after":"trg","attributes":{"until":"webinar_datetime - 24 hours","kind":"until","ref":"Wait until `webinar_datetime` - 24h"}},
-      {"id":"n2","type":"if_else","after":"n1","branches":{"true":"n3","false":"n6"},"attributes":{"condition":"not purchased AND webinar_datetime in future","ref":"If not purchased and future"}},
-      {"id":"n3","type":"email","after":"n2","attributes":{"message":"24-hour reminder","ref":"Send Email"}},
-      {"id":"n4","type":"if_else","after":"n3","branches":{"true":"n5","false":"n6"},"attributes":{"condition":"SMS consent present","ref":"If SMS consent"}},
-      {"id":"n5","type":"sms","after":"n4","attributes":{"message":"24-hour confirmation text","ref":"Send SMS"}},
-      {"id":"n6","type":"workflow_goal","after":"n4","attributes":{"goal":"reminder path complete","ref":"End"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added webinar-registered",
+          "ref": "Tag Added `webinar-registered`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "wait",
+        "after": "trg",
+        "attributes": {
+          "until": "webinar_datetime - 24 hours",
+          "kind": "until",
+          "ref": "Wait until `webinar_datetime` - 24h"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "if_else",
+        "after": "n1",
+        "branches": {
+          "true": "n3",
+          "false": "n6"
+        },
+        "attributes": {
+          "condition": "not purchased AND webinar_datetime in future",
+          "ref": "If not purchased and future"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "email",
+        "after": "n2",
+        "attributes": {
+          "message": "24-hour reminder",
+          "ref": "Send Email"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "if_else",
+        "after": "n3",
+        "branches": {
+          "true": "n5",
+          "false": "n6"
+        },
+        "attributes": {
+          "condition": "SMS consent present",
+          "ref": "If SMS consent"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "sms",
+        "after": "n4",
+        "attributes": {
+          "message": "24-hour confirmation text",
+          "ref": "Send SMS"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "workflow_goal",
+        "after": [
+          "n2",
+          "n4",
+          "n5"
+        ],
+        "attributes": {
+          "goal": "reminder path complete",
+          "ref": "End",
+          "join": true
+        }
+      }
     ]
   },
   "automation-templates/launch-a/05-reminder-morning.json": {
     "kind": "single_message",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Tag Added webinar-registered","ref":"Tag Added `webinar-registered`"}},
-      {"id":"n1","type":"wait","after":"trg","attributes":{"until":"webinar_morning_send","kind":"until","default":"09:00 local event day; clamp to webinar_datetime - 2h","ref":"Wait until `webinar_morning_send`"}},
-      {"id":"n2","type":"if_else","after":"n1","branches":{"true":"n3","false":"n6"},"attributes":{"condition":"not purchased AND datetime in future","ref":"If not purchased and future"}},
-      {"id":"n3","type":"email","after":"n2","attributes":{"message":"morning reminder","ref":"Send Email"}},
-      {"id":"n4","type":"if_else","after":"n3","branches":{"true":"n5","false":"n6"},"attributes":{"condition":"SMS consent present","ref":"If SMS consent"}},
-      {"id":"n5","type":"sms","after":"n4","attributes":{"message":"morning reminder","ref":"Send SMS"}},
-      {"id":"n6","type":"workflow_goal","after":"n4","attributes":{"goal":"reminder path complete","ref":"End"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added webinar-registered",
+          "ref": "Tag Added `webinar-registered`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "wait",
+        "after": "trg",
+        "attributes": {
+          "until": "webinar_morning_send",
+          "kind": "until",
+          "default": "09:00 local event day; clamp to webinar_datetime - 2h",
+          "ref": "Wait until `webinar_morning_send`"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "if_else",
+        "after": "n1",
+        "branches": {
+          "true": "n3",
+          "false": "n6"
+        },
+        "attributes": {
+          "condition": "not purchased AND datetime in future",
+          "ref": "If not purchased and future"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "email",
+        "after": "n2",
+        "attributes": {
+          "message": "morning reminder",
+          "ref": "Send Email"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "if_else",
+        "after": "n3",
+        "branches": {
+          "true": "n5",
+          "false": "n6"
+        },
+        "attributes": {
+          "condition": "SMS consent present",
+          "ref": "If SMS consent"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "sms",
+        "after": "n4",
+        "attributes": {
+          "message": "morning reminder",
+          "ref": "Send SMS"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "workflow_goal",
+        "after": [
+          "n2",
+          "n4",
+          "n5"
+        ],
+        "attributes": {
+          "goal": "reminder path complete",
+          "ref": "End",
+          "join": true
+        }
+      }
     ]
   },
   "automation-templates/launch-a/06-reminder-1h.json": {
     "kind": "single_message",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Tag Added webinar-registered","ref":"Tag Added `webinar-registered`"}},
-      {"id":"n1","type":"wait","after":"trg","attributes":{"until":"webinar_datetime - 1 hour","kind":"until","ref":"Wait until `webinar_datetime` - 1h"}},
-      {"id":"n2","type":"if_else","after":"n1","branches":{"true":"n3","false":"n6"},"attributes":{"condition":"not purchased AND datetime in future","ref":"If not purchased and future"}},
-      {"id":"n3","type":"if_else","after":"n2","branches":{"true":"n4","false":"n5"},"attributes":{"condition":"SMS consent present","ref":"If SMS consent"}},
-      {"id":"n4","type":"sms","after":"n3","attributes":{"message":"one-hour reminder","ref":"Send SMS"}},
-      {"id":"n5","type":"email","after":"n3","attributes":{"message":"one-hour fallback","ref":"Send Email"}},
-      {"id":"n6","type":"workflow_goal","after":"n2","attributes":{"goal":"reminder path complete","ref":"End"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added webinar-registered",
+          "ref": "Tag Added `webinar-registered`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "wait",
+        "after": "trg",
+        "attributes": {
+          "until": "webinar_datetime - 1 hour",
+          "kind": "until",
+          "ref": "Wait until `webinar_datetime` - 1h"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "if_else",
+        "after": "n1",
+        "branches": {
+          "true": "n3",
+          "false": "n6"
+        },
+        "attributes": {
+          "condition": "not purchased AND datetime in future",
+          "ref": "If not purchased and future"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "if_else",
+        "after": "n2",
+        "branches": {
+          "true": "n4",
+          "false": "n5"
+        },
+        "attributes": {
+          "condition": "SMS consent present",
+          "ref": "If SMS consent"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "sms",
+        "after": "n3",
+        "attributes": {
+          "message": "one-hour reminder",
+          "ref": "Send SMS"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "email",
+        "after": "n3",
+        "attributes": {
+          "message": "one-hour fallback",
+          "ref": "Send Email"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "workflow_goal",
+        "after": [
+          "n2",
+          "n4",
+          "n5"
+        ],
+        "attributes": {
+          "goal": "reminder path complete",
+          "ref": "End",
+          "join": true
+        }
+      }
     ]
   },
   "automation-templates/launch-a/07-reminder-15m.json": {
     "kind": "single_message",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Tag Added webinar-registered","ref":"Tag Added `webinar-registered`"}},
-      {"id":"n1","type":"wait","after":"trg","attributes":{"until":"webinar_datetime - 15 minutes","kind":"until","ref":"Wait until `webinar_datetime` - 15 minutes"}},
-      {"id":"n2","type":"if_else","after":"n1","branches":{"true":"n3","false":"n4"},"attributes":{"condition":"not purchased AND future AND SMS consent","ref":"If not purchased, future, and SMS consent"}},
-      {"id":"n3","type":"sms","after":"n2","attributes":{"message":"15-minute reminder","ref":"Send SMS"}},
-      {"id":"n4","type":"workflow_goal","after":"n2","attributes":{"goal":"reminder path complete","ref":"End"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added webinar-registered",
+          "ref": "Tag Added `webinar-registered`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "wait",
+        "after": "trg",
+        "attributes": {
+          "until": "webinar_datetime - 15 minutes",
+          "kind": "until",
+          "ref": "Wait until `webinar_datetime` - 15 minutes"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "if_else",
+        "after": "n1",
+        "branches": {
+          "true": "n3",
+          "false": "n4"
+        },
+        "attributes": {
+          "condition": "not purchased AND future AND SMS consent",
+          "ref": "If not purchased, future, and SMS consent"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "sms",
+        "after": "n2",
+        "attributes": {
+          "message": "15-minute reminder",
+          "ref": "Send SMS"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "workflow_goal",
+        "after": [
+          "n2",
+          "n3"
+        ],
+        "attributes": {
+          "goal": "reminder path complete",
+          "ref": "End",
+          "join": true
+        }
+      }
     ]
   },
   "automation-templates/launch-a/08-reminder-live.json": {
     "kind": "single_message",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Tag Added webinar-registered","ref":"Tag Added `webinar-registered`"}},
-      {"id":"n1","type":"wait","after":"trg","attributes":{"until":"webinar_datetime","kind":"until","ref":"Wait until `webinar_datetime`"}},
-      {"id":"n2","type":"if_else","after":"n1","branches":{"true":"n3","false":"n6"},"attributes":{"condition":"not purchased AND now < webinar_end_datetime","ref":"If not purchased and now < `webinar_end_datetime`"}},
-      {"id":"n3","type":"if_else","after":"n2","branches":{"true":"n4","false":"n5"},"attributes":{"condition":"SMS consent present","ref":"If SMS consent"}},
-      {"id":"n4","type":"sms","after":"n3","attributes":{"message":"live now","ref":"Send SMS"}},
-      {"id":"n5","type":"email","after":"n3","attributes":{"message":"live now fallback","ref":"Send Email"}},
-      {"id":"n6","type":"workflow_goal","after":"n2","attributes":{"goal":"reminder path complete","ref":"End"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added webinar-registered",
+          "ref": "Tag Added `webinar-registered`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "wait",
+        "after": "trg",
+        "attributes": {
+          "until": "webinar_datetime",
+          "kind": "until",
+          "ref": "Wait until `webinar_datetime`"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "if_else",
+        "after": "n1",
+        "branches": {
+          "true": "n3",
+          "false": "n6"
+        },
+        "attributes": {
+          "condition": "not purchased AND now < webinar_end_datetime",
+          "ref": "If not purchased and now < `webinar_end_datetime`"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "if_else",
+        "after": "n2",
+        "branches": {
+          "true": "n4",
+          "false": "n5"
+        },
+        "attributes": {
+          "condition": "SMS consent present",
+          "ref": "If SMS consent"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "sms",
+        "after": "n3",
+        "attributes": {
+          "message": "live now",
+          "ref": "Send SMS"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "email",
+        "after": "n3",
+        "attributes": {
+          "message": "live now fallback",
+          "ref": "Send Email"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "workflow_goal",
+        "after": [
+          "n2",
+          "n4",
+          "n5"
+        ],
+        "attributes": {
+          "goal": "reminder path complete",
+          "ref": "End",
+          "join": true
+        }
+      }
     ]
   },
   "automation-templates/launch-a/09-replay-and-no-show.json": {
     "kind": "single_message",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Tag Added webinar-registered","ref":"Tag Added `webinar-registered`"}},
-      {"id":"n1","type":"wait","after":"trg","attributes":{"until":"webinar_end_datetime + 2 hours","kind":"until","ref":"Wait until `webinar_end_datetime` + 2h"}},
-      {"id":"n2","type":"if_else","after":"n1","branches":{"true":"n3","false":"n10"},"attributes":{"condition":"webinar-purchased present","operator":"exists","ref":"If purchased"}},
-      {"id":"n3","type":"if_else","after":"n2","branches":{"attended":"n4","no_show":"n5"},"attributes":{"condition":"webinar-attended OR webinar-buy-link-clicked","fallback":"no-show when no attendance signal","ref":"If/Else `webinar-attended` OR `webinar-buy-link-clicked`"}},
-      {"id":"n4","type":"email","after":"n3","attributes":{"message":"attended replay","ref":"Attended replay email"}},
-      {"id":"n5","type":"email","after":"n3","attributes":{"message":"no-show replay","ref":"No-show replay email"}},
-      {"id":"n6","type":"if_else","after":"n4","branches":{"true":"n7","false":"n9"},"attributes":{"condition":"SMS consent present","ref":"If SMS consent"}},
-      {"id":"n8","type":"if_else","after":"n5","branches":{"true":"n7","false":"n9"},"attributes":{"condition":"SMS consent present","ref":"If SMS consent"}},
-      {"id":"n7","type":"sms","after":"n6","attributes":{"message":"branch-matched SMS","ref":"Branch-matched SMS"}},
-      {"id":"n9","type":"wait","after":"n7","attributes":{"until":"cart_close_datetime","kind":"until","ref":"Wait until `cart_close_datetime`"}},
-      {"id":"n10","type":"workflow_goal","after":"n2","attributes":{"goal":"buyer exits before replay","ref":"End"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added webinar-registered",
+          "ref": "Tag Added `webinar-registered`"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "wait",
+        "after": "trg",
+        "attributes": {
+          "until": "webinar_end_datetime + 2 hours",
+          "kind": "until",
+          "ref": "Wait until `webinar_end_datetime` + 2h"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "if_else",
+        "after": "n1",
+        "branches": {
+          "true": "n3",
+          "false": "n10"
+        },
+        "attributes": {
+          "condition": "webinar-purchased present",
+          "operator": "exists",
+          "ref": "If purchased"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "if_else",
+        "after": "n2",
+        "branches": {
+          "attended": "n4",
+          "no_show": "n5"
+        },
+        "attributes": {
+          "condition": "webinar-attended OR webinar-buy-link-clicked",
+          "fallback": "no-show when no attendance signal",
+          "ref": "If/Else `webinar-attended` OR `webinar-buy-link-clicked`"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "email",
+        "after": "n3",
+        "attributes": {
+          "message": "attended replay",
+          "ref": "Attended replay email"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "email",
+        "after": "n3",
+        "attributes": {
+          "message": "no-show replay",
+          "ref": "No-show replay email"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "if_else",
+        "after": "n4",
+        "branches": {
+          "true": "n7",
+          "false": "n9"
+        },
+        "attributes": {
+          "condition": "SMS consent present",
+          "ref": "If SMS consent"
+        }
+      },
+      {
+        "id": "n8",
+        "type": "if_else",
+        "after": "n5",
+        "branches": {
+          "true": "n7",
+          "false": "n9"
+        },
+        "attributes": {
+          "condition": "SMS consent present",
+          "ref": "If SMS consent"
+        }
+      },
+      {
+        "id": "n7",
+        "type": "sms",
+        "after": [
+          "n6",
+          "n8"
+        ],
+        "attributes": {
+          "message": "branch-matched SMS",
+          "ref": "Branch-matched SMS",
+          "join": true
+        }
+      },
+      {
+        "id": "n9",
+        "type": "wait",
+        "after": [
+          "n6",
+          "n7",
+          "n8"
+        ],
+        "attributes": {
+          "until": "cart_close_datetime",
+          "kind": "until",
+          "ref": "Wait until `cart_close_datetime`",
+          "join": true
+        }
+      },
+      {
+        "id": "n10",
+        "type": "workflow_goal",
+        "after": "n2",
+        "attributes": {
+          "goal": "buyer exits before replay",
+          "ref": "End"
+        }
+      }
     ]
   },
   "automation-templates/launch-a/optin-register-login.json": {
     "kind": "sequence_stack",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Form Submitted / Funnel Step Submitted","variants":["form-optin","registration","access-login"],"ref":"The three `trigger.variants` are trigger configurations"}},
-      {"id":"n1","type":"add_contact_tag","after":"trg","attributes":{"tags":["variant entry tag","matching *-started guard"],"ref":"Add the variant tag plus the matching `*-started` guard"}},
-      {"id":"n2","type":"update_custom_value","after":"n1","attributes":{"field":"launch_optin_date","value":"now","ref":"Set `launch_optin_date` to now"}},
-      {"id":"n3","type":"if_else","after":"n2","branches":{"true":"n8","false":"n4"},"attributes":{"condition":"purchased-[offer-id] present","ref":"IF tag `purchased-[offer-id]` is present"}},
-      {"id":"n4","type":"email","after":"n3","attributes":{"message":"variant confirmation","timing":"immediate","ref":"Immediate confirmation"}},
-      {"id":"n5","type":"sms","after":"n4","attributes":{"condition":"email + text launch AND A2P approved","ref":"Confirmation text"}},
-      {"id":"n6","type":"email","after":"n5","attributes":{"condition":"registration or access-login variant","message":"access / log-in delivery","ref":"Access / log-in delivery"}},
-      {"id":"n7","type":"add_to_workflow","after":"n6","attributes":{"workflow":"variant-appropriate nurture","ref":"Enroll in exactly one variant-appropriate workflow"}},
-      {"id":"n8","type":"workflow_goal","after":"n3","attributes":{"goal":"purchase guard exits to post-sale workflow","ref":"exit to the post-sale purchase workflow"}},
-      {"id":"n9","type":"workflow_goal","after":"n7","attributes":{"goal":"entry handler complete","ref":"Close the entry handler"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Form Submitted / Funnel Step Submitted",
+          "variants": [
+            "form-optin",
+            "registration",
+            "access-login"
+          ],
+          "ref": "The three `trigger.variants` are trigger configurations"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "add_contact_tag",
+        "after": "trg",
+        "attributes": {
+          "tags": [
+            "variant entry tag",
+            "matching *-started guard"
+          ],
+          "ref": "Add the variant tag plus the matching `*-started` guard"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "update_custom_value",
+        "after": "n1",
+        "attributes": {
+          "field": "launch_optin_date",
+          "value": "now",
+          "ref": "Set `launch_optin_date` to now"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "if_else",
+        "after": "n2",
+        "branches": {
+          "true": "n8",
+          "false": "n4"
+        },
+        "attributes": {
+          "condition": "purchased-[offer-id] present",
+          "ref": "IF tag `purchased-[offer-id]` is present"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "email",
+        "after": "n3",
+        "attributes": {
+          "message": "variant confirmation",
+          "timing": "immediate",
+          "ref": "Immediate confirmation"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "sms",
+        "after": "n4",
+        "attributes": {
+          "condition": "email + text launch AND A2P approved",
+          "ref": "Confirmation text"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "email",
+        "after": "n5",
+        "attributes": {
+          "condition": "registration or access-login variant",
+          "message": "access / log-in delivery",
+          "ref": "Access / log-in delivery"
+        }
+      },
+      {
+        "id": "n7",
+        "type": "add_to_workflow",
+        "after": "n6",
+        "attributes": {
+          "workflow": "variant-appropriate nurture",
+          "ref": "Enroll in exactly one variant-appropriate workflow"
+        }
+      },
+      {
+        "id": "n8",
+        "type": "workflow_goal",
+        "after": "n3",
+        "attributes": {
+          "goal": "purchase guard exits to post-sale workflow",
+          "ref": "exit to the post-sale purchase workflow"
+        }
+      },
+      {
+        "id": "n9",
+        "type": "workflow_goal",
+        "after": "n7",
+        "attributes": {
+          "goal": "entry handler complete",
+          "ref": "Close the entry handler"
+        }
+      }
     ]
   },
   "automation-templates/launch-a/prelaunch-window.json": {
     "kind": "sequence_stack",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Tag Added pre-launch-list","ref":"Tag Added: pre-launch-list"}},
-      {"id":"n1","type":"add_contact_tag","after":"trg","attributes":{"tag":"indoc-started","ref":"Add tag indoc-started"}},
-      {"id":"n2","type":"if_else","after":"n1","branches":{"true":"n3","false":"n4"},"attributes":{"condition":"purchased-[offer-id] OR buyer-[offer] present","ref":"purchased-[offer-id] or buyer-[offer] present → end"}},
-      {"id":"n3","type":"workflow_goal","after":"n2","attributes":{"goal":"purchase guard exits","ref":"end"}},
-      {"id":"n4","type":"wait","after":"n2","attributes":{"until":"{{indoc_1_at}}","kind":"until","ref":"Arm the D-5 Wait Until"}},
-      {"id":"n5","type":"email","after":"n4","attributes":{"message":"INDOC-01 origin/backstory","ref":"Send email INDOC-01"}},
-      {"id":"n6","type":"if_else","after":"n5","branches":{"true":"n7","false":"n8"},"attributes":{"condition":"messenger-subscribed present","ref":"If messenger-subscribed"}},
-      {"id":"n7","type":"messenger","after":"n6","attributes":{"message":"INDOC-M01 mirror","ref":"Messenger INDOC-M01 mirror"}},
-      {"id":"n8","type":"add_contact_tag","after":"n6","attributes":{"tag":"indoc-1-sent","ref":"Add tag indoc-1-sent"}},
-      {"id":"n9","type":"wait","after":"n8","attributes":{"until":"{{indoc_2_at}}","kind":"until","ref":"{{indoc_2_at}}"}},
-      {"id":"n10","type":"email","after":"n9","attributes":{"message":"INDOC-02 obsession/expertise","ref":"Send email INDOC-02"}},
-      {"id":"n11","type":"if_else","after":"n10","branches":{"true":"n12","false":"n13"},"attributes":{"condition":"email not opened in 24h AND sms-subscribed present","ref":"If email not opened in 24h AND sms-subscribed"}},
-      {"id":"n12","type":"sms","after":"n11","attributes":{"message":"INDOC-S01 story-link nudge","ref":"SMS INDOC-S01 nudge with story link"}},
-      {"id":"n13","type":"if_else","after":"n11","branches":{"true":"n14","false":"n15"},"attributes":{"condition":"messenger-subscribed present","ref":"If messenger-subscribed"}},
-      {"id":"n14","type":"messenger","after":"n13","attributes":{"message":"INDOC-M02 mirror","ref":"Messenger INDOC-M02 mirror"}},
-      {"id":"n15","type":"add_contact_tag","after":"n13","attributes":{"tag":"indoc-2-sent","ref":"Add tag indoc-2-sent"}},
-      {"id":"n16","type":"wait","after":"n15","attributes":{"until":"{{indoc_3_at}}","kind":"until","ref":"{{indoc_3_at}}"}},
-      {"id":"n17","type":"email","after":"n16","attributes":{"message":"INDOC-03 teaching/method","ref":"Send email INDOC-03"}},
-      {"id":"n18","type":"if_else","after":"n17","branches":{"true":"n19","false":"n20"},"attributes":{"condition":"messenger-subscribed present","ref":"If messenger-subscribed"}},
-      {"id":"n19","type":"messenger","after":"n18","attributes":{"message":"INDOC-M03 mirror","ref":"Messenger INDOC-M03 mirror"}},
-      {"id":"n20","type":"add_contact_tag","after":"n18","attributes":{"tag":"indoc-3-sent","ref":"Add tag indoc-3-sent"}},
-      {"id":"n21","type":"wait","after":"n20","attributes":{"until":"{{indoc_4_at}}","kind":"until","optional":true,"ref":"{{indoc_4_at}}"}},
-      {"id":"n22","type":"if_else","after":"n21","branches":{"true":"n23","false":"n26"},"attributes":{"condition":"genuine values story approved","ref":"INDOC-04 only when a genuine values story is approved"}},
-      {"id":"n23","type":"email","after":"n22","attributes":{"message":"INDOC-04 values/mission","ref":"Send email INDOC-04"}},
-      {"id":"n24","type":"if_else","after":"n23","branches":{"true":"n25","false":"n26"},"attributes":{"condition":"messenger-subscribed present","ref":"If messenger-subscribed"}},
-      {"id":"n25","type":"messenger","after":"n24","attributes":{"message":"INDOC-M04 mirror","ref":"Messenger INDOC-M04 mirror"}},
-      {"id":"n26","type":"wait","after":"n22","attributes":{"until":"{{precart_reminder_at}}","kind":"until","ref":"{{precart_reminder_at}}"}},
-      {"id":"n27","type":"email","after":"n26","attributes":{"message":"PRE-CART last reminder","ref":"Send email PRE-CART last reminder"}},
-      {"id":"n28","type":"add_contact_tag","after":"n27","attributes":{"tag":"doors-soon","ref":"Add tag doors-soon"}},
-      {"id":"n29","type":"wait","after":"n28","attributes":{"until":"{{precart_sms_at}}","kind":"until","ref":"Wait Until {{precart_sms_at}}"}},
-      {"id":"n30","type":"if_else","after":"n29","branches":{"true":"n31","false":"n32"},"attributes":{"condition":"sms-subscribed present","ref":"If sms-subscribed"}},
-      {"id":"n31","type":"sms","after":"n30","attributes":{"message":"PRE-CART reminder","ref":"SMS PRE-CART reminder"}},
-      {"id":"n32","type":"wait","after":"n30","attributes":{"until":"{{doors_open_at}}","kind":"until","ref":"Wait Until {{doors_open_at}}"}},
-      {"id":"n33","type":"if_else","after":"n32","branches":{"true":"n34","false":"n35"},"attributes":{"condition":"purchased-[offer-id] present","ref":"purchased-[offer-id] present → end"}},
-      {"id":"n34","type":"workflow_goal","after":"n33","attributes":{"goal":"purchase guard exits at handoff","ref":"end"}},
-      {"id":"n35","type":"add_contact_tag","after":"n33","attributes":{"tag":"cart-open-ready","ref":"Add tag cart-open-ready"}},
-      {"id":"n36","type":"add_contact_tag","after":"n35","attributes":{"tag":"prelaunch-complete","ref":"Add tag prelaunch-complete"}},
-      {"id":"n37","type":"workflow_goal","after":"n36","attributes":{"goal":"handoff complete","ref":"End this workflow"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Tag Added pre-launch-list",
+          "ref": "Tag Added: pre-launch-list"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "add_contact_tag",
+        "after": "trg",
+        "attributes": {
+          "tag": "indoc-started",
+          "ref": "Add tag indoc-started"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "if_else",
+        "after": "n1",
+        "branches": {
+          "true": "n3",
+          "false": "n4"
+        },
+        "attributes": {
+          "condition": "purchased-[offer-id] OR buyer-[offer] present",
+          "ref": "purchased-[offer-id] or buyer-[offer] present → end"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "workflow_goal",
+        "after": "n2",
+        "attributes": {
+          "goal": "purchase guard exits",
+          "ref": "end"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "wait",
+        "after": "n2",
+        "attributes": {
+          "until": "{{indoc_1_at}}",
+          "kind": "until",
+          "ref": "Arm the D-5 Wait Until"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "email",
+        "after": "n4",
+        "attributes": {
+          "message": "INDOC-01 origin/backstory",
+          "ref": "Send email INDOC-01"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "if_else",
+        "after": "n5",
+        "branches": {
+          "true": "n7",
+          "false": "n8"
+        },
+        "attributes": {
+          "condition": "messenger-subscribed present",
+          "ref": "If messenger-subscribed"
+        }
+      },
+      {
+        "id": "n7",
+        "type": "messenger",
+        "after": "n6",
+        "attributes": {
+          "message": "INDOC-M01 mirror",
+          "ref": "Messenger INDOC-M01 mirror"
+        }
+      },
+      {
+        "id": "n8",
+        "type": "add_contact_tag",
+        "after": [
+          "n6",
+          "n7"
+        ],
+        "attributes": {
+          "tag": "indoc-1-sent",
+          "ref": "Add tag indoc-1-sent",
+          "join": true
+        }
+      },
+      {
+        "id": "n9",
+        "type": "wait",
+        "after": "n8",
+        "attributes": {
+          "until": "{{indoc_2_at}}",
+          "kind": "until",
+          "ref": "{{indoc_2_at}}"
+        }
+      },
+      {
+        "id": "n10",
+        "type": "email",
+        "after": "n9",
+        "attributes": {
+          "message": "INDOC-02 obsession/expertise",
+          "ref": "Send email INDOC-02"
+        }
+      },
+      {
+        "id": "n11",
+        "type": "if_else",
+        "after": "n10",
+        "branches": {
+          "true": "n12",
+          "false": "n13"
+        },
+        "attributes": {
+          "condition": "email not opened in 24h AND sms-subscribed present",
+          "ref": "If email not opened in 24h AND sms-subscribed"
+        }
+      },
+      {
+        "id": "n12",
+        "type": "sms",
+        "after": "n11",
+        "attributes": {
+          "message": "INDOC-S01 story-link nudge",
+          "ref": "SMS INDOC-S01 nudge with story link"
+        }
+      },
+      {
+        "id": "n13",
+        "type": "if_else",
+        "after": "n11",
+        "branches": {
+          "true": "n14",
+          "false": "n15"
+        },
+        "attributes": {
+          "condition": "messenger-subscribed present",
+          "ref": "If messenger-subscribed"
+        }
+      },
+      {
+        "id": "n14",
+        "type": "messenger",
+        "after": "n13",
+        "attributes": {
+          "message": "INDOC-M02 mirror",
+          "ref": "Messenger INDOC-M02 mirror"
+        }
+      },
+      {
+        "id": "n15",
+        "type": "add_contact_tag",
+        "after": [
+          "n12",
+          "n13",
+          "n14"
+        ],
+        "attributes": {
+          "tag": "indoc-2-sent",
+          "ref": "Add tag indoc-2-sent",
+          "join": true
+        }
+      },
+      {
+        "id": "n16",
+        "type": "wait",
+        "after": "n15",
+        "attributes": {
+          "until": "{{indoc_3_at}}",
+          "kind": "until",
+          "ref": "{{indoc_3_at}}"
+        }
+      },
+      {
+        "id": "n17",
+        "type": "email",
+        "after": "n16",
+        "attributes": {
+          "message": "INDOC-03 teaching/method",
+          "ref": "Send email INDOC-03"
+        }
+      },
+      {
+        "id": "n18",
+        "type": "if_else",
+        "after": "n17",
+        "branches": {
+          "true": "n19",
+          "false": "n20"
+        },
+        "attributes": {
+          "condition": "messenger-subscribed present",
+          "ref": "If messenger-subscribed"
+        }
+      },
+      {
+        "id": "n19",
+        "type": "messenger",
+        "after": "n18",
+        "attributes": {
+          "message": "INDOC-M03 mirror",
+          "ref": "Messenger INDOC-M03 mirror"
+        }
+      },
+      {
+        "id": "n20",
+        "type": "add_contact_tag",
+        "after": [
+          "n18",
+          "n19"
+        ],
+        "attributes": {
+          "tag": "indoc-3-sent",
+          "ref": "Add tag indoc-3-sent",
+          "join": true
+        }
+      },
+      {
+        "id": "n21",
+        "type": "wait",
+        "after": "n20",
+        "attributes": {
+          "until": "{{indoc_4_at}}",
+          "kind": "until",
+          "optional": true,
+          "ref": "{{indoc_4_at}}"
+        }
+      },
+      {
+        "id": "n22",
+        "type": "if_else",
+        "after": "n21",
+        "branches": {
+          "true": "n23",
+          "false": "n26"
+        },
+        "attributes": {
+          "condition": "genuine values story approved",
+          "ref": "INDOC-04 only when a genuine values story is approved"
+        }
+      },
+      {
+        "id": "n23",
+        "type": "email",
+        "after": "n22",
+        "attributes": {
+          "message": "INDOC-04 values/mission",
+          "ref": "Send email INDOC-04"
+        }
+      },
+      {
+        "id": "n24",
+        "type": "if_else",
+        "after": "n23",
+        "branches": {
+          "true": "n25",
+          "false": "n26"
+        },
+        "attributes": {
+          "condition": "messenger-subscribed present",
+          "ref": "If messenger-subscribed"
+        }
+      },
+      {
+        "id": "n25",
+        "type": "messenger",
+        "after": "n24",
+        "attributes": {
+          "message": "INDOC-M04 mirror",
+          "ref": "Messenger INDOC-M04 mirror"
+        }
+      },
+      {
+        "id": "n26",
+        "type": "wait",
+        "after": [
+          "n22",
+          "n24",
+          "n25"
+        ],
+        "attributes": {
+          "until": "{{precart_reminder_at}}",
+          "kind": "until",
+          "ref": "{{precart_reminder_at}}",
+          "join": true
+        }
+      },
+      {
+        "id": "n27",
+        "type": "email",
+        "after": "n26",
+        "attributes": {
+          "message": "PRE-CART last reminder",
+          "ref": "Send email PRE-CART last reminder"
+        }
+      },
+      {
+        "id": "n28",
+        "type": "add_contact_tag",
+        "after": "n27",
+        "attributes": {
+          "tag": "doors-soon",
+          "ref": "Add tag doors-soon"
+        }
+      },
+      {
+        "id": "n29",
+        "type": "wait",
+        "after": "n28",
+        "attributes": {
+          "until": "{{precart_sms_at}}",
+          "kind": "until",
+          "ref": "Wait Until {{precart_sms_at}}"
+        }
+      },
+      {
+        "id": "n30",
+        "type": "if_else",
+        "after": "n29",
+        "branches": {
+          "true": "n31",
+          "false": "n32"
+        },
+        "attributes": {
+          "condition": "sms-subscribed present",
+          "ref": "If sms-subscribed"
+        }
+      },
+      {
+        "id": "n31",
+        "type": "sms",
+        "after": "n30",
+        "attributes": {
+          "message": "PRE-CART reminder",
+          "ref": "SMS PRE-CART reminder"
+        }
+      },
+      {
+        "id": "n32",
+        "type": "wait",
+        "after": [
+          "n30",
+          "n31"
+        ],
+        "attributes": {
+          "until": "{{doors_open_at}}",
+          "kind": "until",
+          "ref": "Wait Until {{doors_open_at}}",
+          "join": true
+        }
+      },
+      {
+        "id": "n33",
+        "type": "if_else",
+        "after": "n32",
+        "branches": {
+          "true": "n34",
+          "false": "n35"
+        },
+        "attributes": {
+          "condition": "purchased-[offer-id] present",
+          "ref": "purchased-[offer-id] present → end"
+        }
+      },
+      {
+        "id": "n34",
+        "type": "workflow_goal",
+        "after": "n33",
+        "attributes": {
+          "goal": "purchase guard exits at handoff",
+          "ref": "end"
+        }
+      },
+      {
+        "id": "n35",
+        "type": "add_contact_tag",
+        "after": "n33",
+        "attributes": {
+          "tag": "cart-open-ready",
+          "ref": "Add tag cart-open-ready"
+        }
+      },
+      {
+        "id": "n36",
+        "type": "add_contact_tag",
+        "after": "n35",
+        "attributes": {
+          "tag": "prelaunch-complete",
+          "ref": "Add tag prelaunch-complete"
+        }
+      },
+      {
+        "id": "n37",
+        "type": "workflow_goal",
+        "after": "n36",
+        "attributes": {
+          "goal": "handoff complete",
+          "ref": "End this workflow"
+        }
+      }
     ]
   },
   "automation-templates/launch-ai/customer-replied-conversation-ai.json": {
     "kind": "sequence_stack",
     "build_graph": [
-      {"id":"trg","type":"trigger","attributes":{"event":"Customer Replied","channels":["SMS","Chat"],"ref":"Trigger: Customer Replied (SMS + Chat)"}},
-      {"id":"n1","type":"if_else","after":"trg","branches":{"true":"n2","false":"n3"},"attributes":{"condition":"launch-ai-optout tag present","ref":"`launch-ai-optout` present → Stop. No → continue"}},
-      {"id":"n2","type":"workflow_goal","after":"n1","attributes":{"goal":"opt-out exits without answering","ref":"Stop, never answer"}},
-      {"id":"n3","type":"conversation_ai","after":"n1","attributes":{"agent":"launch agent","playbook":"Skill 38 registered playbook","ref":"Action: Conversation AI"}},
-      {"id":"n4","type":"if_else","after":"n3","branches":{"booked":"n5","answered":"n10","timed_out":"n12"},"attributes":{"condition":"Conversation AI outcome","outcomes":["booked","answered","timed_out"],"ref":"Branch: outcome booked / answered / timed out"}},
-      {"id":"n5","type":"add_contact_tag","after":"n4","attributes":{"tag":"launch-ai-booked","ref":"Add tag `launch-ai-booked`"}},
-      {"id":"n6","type":"remove_from_workflow","after":"n5","attributes":{"target":"launch AI re-invite path","ref":"Remove from the launch AI re-invite path"}},
-      {"id":"n7","type":"create_opportunity","after":"n6","attributes":{"stage":"booked","condition":"if launch pipeline exists","ref":"Create/update opportunity at the booked stage"}},
-      {"id":"n8","type":"email","after":"n7","attributes":{"message":"approved booking confirmation","ref":"Send the approved confirmation message"}},
-      {"id":"n9","type":"internal_notification","after":"n8","attributes":{"recipient":"owner","detail":"contact name and booking time","ref":"Notify the owner"}},
-      {"id":"n10","type":"add_contact_tag","after":"n4","attributes":{"tag":"launch-ai-answered","ref":"Add tag `launch-ai-answered`"}},
-      {"id":"n11","type":"add_contact_tag","after":"n4","attributes":{"tag":"launch-ai-timed-out","ref":"Add tag `launch-ai-timed-out`"}},
-      {"id":"n12","type":"wait","after":"n11","attributes":{"duration":"1 day","kind":"duration","ref":"Wait 1 day (duration)"}},
-      {"id":"n13","type":"sms","after":"n12","attributes":{"message":"approved booking and/or checkout link nudge","ref":"SMS nudge with `{{booking_link}}` / `{{checkout_link}}`"}},
-      {"id":"n14","type":"wait","after":"n13","attributes":{"duration":"1 day","kind":"duration","ref":"Wait 1 day"}},
-      {"id":"n15","type":"add_contact_tag","after":"n14","attributes":{"tag":"launch-ai-dormant","ref":"tag `launch-ai-dormant`"}},
-      {"id":"n16","type":"conversation_ai","after":"n15","attributes":{"action":"update_bot_and_status","keyword":"CALL","vocabulary_status":"unverified type string","ref":"Update Conversation AI Bot and Status"}},
-      {"id":"n17","type":"add_contact_tag","after":"n16","attributes":{"tag":"launch-ai-replied","ref":"Action: Add Tag `launch-ai-replied`"}},
-      {"id":"n18","type":"workflow_goal","after":"n9","attributes":{"goal":"booked branch exits","ref":"Stop"}},
-      {"id":"n19","type":"workflow_goal","after":"n10","attributes":{"goal":"answered branch remains listening","ref":"Stop (promo sequence continues outside this workflow)"}},
-      {"id":"n20","type":"workflow_goal","after":"n17","attributes":{"goal":"keyword wake-up and re-entry guard complete","ref":"re-activates the bot and sets status active"}}
+      {
+        "id": "trg",
+        "type": "trigger",
+        "attributes": {
+          "event": "Customer Replied",
+          "channels": [
+            "SMS",
+            "Chat"
+          ],
+          "message_direction": "Inbound",
+          "ref": "Trigger: Customer Replied (SMS + Chat; Message Direction = Inbound)"
+        }
+      },
+      {
+        "id": "n1",
+        "type": "if_else",
+        "after": "trg",
+        "branches": {
+          "true": "n2",
+          "false": "n3"
+        },
+        "attributes": {
+          "condition": "ZHC-launch-ai-optout tag present",
+          "ref": "`ZHC-launch-ai-optout` present → Stop. No → continue"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "workflow_goal",
+        "after": "n1",
+        "attributes": {
+          "goal": "opt-out exits without answering",
+          "ref": "Stop, never answer"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "conversation_ai",
+        "after": "n1",
+        "attributes": {
+          "agent": "launch agent",
+          "playbook": "Skill 38 registered playbook",
+          "ref": "Action: Conversation AI"
+        }
+      },
+      {
+        "id": "n4",
+        "type": "if_else",
+        "after": "n3",
+        "branches": {
+          "booked": "n5",
+          "answered": "n10",
+          "timed_out": "n11"
+        },
+        "attributes": {
+          "condition": "Conversation AI outcome",
+          "outcomes": [
+            "booked",
+            "answered",
+            "timed_out"
+          ],
+          "ref": "Branch: outcome booked / answered / timed out"
+        }
+      },
+      {
+        "id": "n5",
+        "type": "add_contact_tag",
+        "after": "n4",
+        "attributes": {
+          "tag": "ZHC-launch-ai-booked",
+          "ref": "Add tag `ZHC-launch-ai-booked`"
+        }
+      },
+      {
+        "id": "n6",
+        "type": "remove_from_workflow",
+        "after": "n5",
+        "attributes": {
+          "target": "launch AI re-invite path",
+          "ref": "Remove from the launch AI re-invite path"
+        }
+      },
+      {
+        "id": "n7",
+        "type": "create_opportunity",
+        "after": "n6",
+        "attributes": {
+          "stage": "booked",
+          "condition": "if launch pipeline exists",
+          "ref": "Create/update opportunity at the booked stage"
+        }
+      },
+      {
+        "id": "n8",
+        "type": "email",
+        "after": "n7",
+        "attributes": {
+          "message": "approved booking confirmation",
+          "ref": "Send the approved confirmation message"
+        }
+      },
+      {
+        "id": "n9",
+        "type": "internal_notification",
+        "after": "n8",
+        "attributes": {
+          "recipient": "owner",
+          "detail": "contact name and booking time",
+          "ref": "Notify the owner"
+        }
+      },
+      {
+        "id": "n10",
+        "type": "add_contact_tag",
+        "after": "n4",
+        "attributes": {
+          "tag": "ZHC-launch-ai-answered",
+          "ref": "Add tag `ZHC-launch-ai-answered`"
+        }
+      },
+      {
+        "id": "n11",
+        "type": "add_contact_tag",
+        "after": "n4",
+        "attributes": {
+          "tag": "ZHC-launch-ai-timed-out",
+          "ref": "Add tag `ZHC-launch-ai-timed-out`"
+        }
+      },
+      {
+        "id": "n12",
+        "type": "wait",
+        "after": "n11",
+        "attributes": {
+          "duration": "1 day",
+          "kind": "duration",
+          "ref": "Wait 1 day (duration)"
+        }
+      },
+      {
+        "id": "n13",
+        "type": "sms",
+        "after": "n12",
+        "attributes": {
+          "message": "approved booking and/or checkout link nudge",
+          "ref": "SMS nudge with `{{booking_link}}` / `{{checkout_link}}`"
+        }
+      },
+      {
+        "id": "n14",
+        "type": "wait",
+        "after": "n13",
+        "attributes": {
+          "duration": "1 day",
+          "kind": "duration",
+          "ref": "Wait 1 day"
+        }
+      },
+      {
+        "id": "n15",
+        "type": "add_contact_tag",
+        "after": "n14",
+        "attributes": {
+          "tag": "ZHC-launch-ai-dormant",
+          "ref": "tag `ZHC-launch-ai-dormant`"
+        }
+      },
+      {
+        "id": "n16",
+        "type": "conversation_ai",
+        "after": "n15",
+        "attributes": {
+          "action": "update_bot_and_status",
+          "keyword": "CALL",
+          "vocabulary_status": "unverified type string",
+          "ref": "Update Conversation AI Bot and Status"
+        }
+      },
+      {
+        "id": "n17",
+        "type": "add_contact_tag",
+        "after": "n16",
+        "attributes": {
+          "tag": "ZHC-launch-ai-replied",
+          "ref": "Action: Add Tag `ZHC-launch-ai-replied`"
+        }
+      },
+      {
+        "id": "n18",
+        "type": "workflow_goal",
+        "after": "n9",
+        "attributes": {
+          "goal": "booked branch exits",
+          "ref": "Stop"
+        }
+      },
+      {
+        "id": "n19",
+        "type": "workflow_goal",
+        "after": "n10",
+        "attributes": {
+          "goal": "answered branch remains listening",
+          "ref": "Stop (promo sequence continues outside this workflow)"
+        }
+      },
+      {
+        "id": "n20",
+        "type": "workflow_goal",
+        "after": "n17",
+        "attributes": {
+          "goal": "keyword wake-up and re-entry guard complete",
+          "ref": "re-activates the bot and sets status active"
+        }
+      }
     ]
   }
 }

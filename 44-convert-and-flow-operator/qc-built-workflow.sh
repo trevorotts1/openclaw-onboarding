@@ -646,42 +646,132 @@ fi
 # ── WF-24: Trigger entrance link ──────────────────────────────────────────────
 # The trigger's targetActionId must equal the root node id. A trigger that is
 # not linked to the first node renders as a floating card above a graph it does
-# not enter; the graph hash cannot see it. Absent field => REQUIRES_HUMAN_REVIEW.
+# not enter; the graph hash cannot see it.
+# Read live post-build export (post-write readback); no second independent readback exists in this script.
 TRIGGER_LINK=$(printf '%s' "$EXPORT_OUT" | python3 -c "
-import json,sys
+import json, sys
+
+CONTAINERS = {'triggers', 'newtriggers', 'trigger', 'triggerdata',
+              'workflowtrigger', 'triggerdetails'}
+TARGETS = ('targetActionId', 'target_action_id')
+SKIP = {'templates', 'steps'}
+
 try:
-  d=json.load(sys.stdin)
+    data = json.load(sys.stdin)
 except Exception:
-  print('UNVERIFIED none none'); raise SystemExit
-target=root=None
-nodes=None
-for d1 in (d, d.get('data') if isinstance(d,dict) else None):
-  if not isinstance(d1, dict): continue
-  wd=d1.get('workflowData')
-  if isinstance(wd, dict) and isinstance(wd.get('templates'), list): nodes=wd['templates']
-  elif isinstance(d1.get('templates'), list): nodes=d1['templates']
-  if nodes: break
-for n in nodes or []:
-  if isinstance(n, dict) and n.get('parentKey') in (None, ''):
-    root=n.get('id'); break
-def walk(v):
-  global target
-  if isinstance(v, dict):
-    for k,item in v.items():
-      if k in ('targetActionId','target_action_id') and isinstance(item,str) and item: target=item
-      walk(item)
-  elif isinstance(v, list):
-    for item in v: walk(item)
-walk(d)
-print('%s %s %s' % ('LINKED' if target else 'ABSENT', target or 'none', root or 'none'))
-" 2>/dev/null || echo "UNVERIFIED none none")
-read -r TRIGGER_STATE TRIGGER_TARGET TRIGGER_ROOT <<< "$TRIGGER_LINK"
+    print('UNVERIFIED none none none trigger_evidence_unparseable')
+    sys.exit(0)
+
+def is_trigger(node):
+    if not isinstance(node, dict):
+        return False
+    return any('trigger' in str(node.get(k, '')).lower()
+               for k in ('type', 'role', 'kind', 'nodeType'))
+
+def wrappers(obj, path='$'):
+    if not isinstance(obj, dict):
+        return
+    yield path, obj
+    for key in ('data', 'workflow'):
+        child = obj.get(key)
+        if isinstance(child, dict):
+            yield from wrappers(child, path + '.' + key)
+
+template_sets = []
+for path, wrapper in wrappers(data):
+    wd = wrapper.get('workflowData')
+    if isinstance(wd, dict) and isinstance(wd.get('templates'), list):
+        template_sets.append((path + '.workflowData.templates', wd['templates']))
+    if isinstance(wrapper.get('templates'), list):
+        template_sets.append((path + '.templates', wrapper['templates']))
+
+if template_sets:
+    templates_path, nodes = template_sets[0]
+else:
+    templates_path, nodes = 'templates', []
+roots = [(i, node) for i, node in enumerate(nodes)
+         if isinstance(node, dict) and not is_trigger(node)
+         and node.get('parentKey') in (None, '')]
+root = roots[0][1].get('id') if len(roots) == 1 else None
+root = str(root).strip() if root is not None else None
+if not root:
+    root = None
+
+triggers = []
+def add_trigger(node, path):
+    if isinstance(node, dict):
+        triggers.append((path, node))
+
+def scan(obj, path='$'):
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            lower = key.lower()
+            child_path = path + '.' + key
+            if lower in SKIP:
+                continue
+            if lower in CONTAINERS:
+                if isinstance(value, list):
+                    for i, item in enumerate(value):
+                        if isinstance(item, dict):
+                            add_trigger(item, '%s[%d]' % (child_path, i))
+                        elif isinstance(item, list):
+                            scan(item, '%s[%d]' % (child_path, i))
+                elif isinstance(value, dict):
+                    if is_trigger(value) or any(k in value for k in TARGETS):
+                        add_trigger(value, child_path)
+                    else:
+                        scan(value, child_path)
+            elif isinstance(value, (dict, list)):
+                scan(value, child_path)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            scan(item, '%s[%d]' % (path, i))
+
+scan(data)
+for i, node in enumerate(nodes):
+    if is_trigger(node):
+        add_trigger(node, '%s[%d]' % (templates_path, i))
+
+if not triggers or root is None:
+    path = triggers[0][0] if triggers else 'none'
+    print('ABSENT none %s %s trigger_evidence_absent' % (root or 'none', path))
+    sys.exit(0)
+
+targets = [(path, str(node[key]).strip())
+           for path, node in triggers for key in TARGETS
+           if isinstance(node.get(key), str) and node[key].strip()]
+if not targets:
+    print('ABSENT none %s %s trigger_evidence_absent' %
+          (root or 'none', triggers[0][0]))
+    sys.exit(0)
+
+unique_targets = {target for _, target in targets}
+if len(unique_targets) > 1:
+    print('AMBIGUOUS none %s %s trigger_target_conflict' %
+          (root or 'none', ','.join(path for path, _ in targets)))
+elif len(targets) != 1 or len(triggers) != 1:
+    print('ABSENT %s %s %s trigger_evidence_absent' %
+          (targets[0][1], root or 'none', targets[0][0]))
+else:
+    path, target = targets[0]
+    state = 'LINKED' if target == root else 'MISMATCH'
+    reason = 'none' if state == 'LINKED' else 'trigger_target_mismatch'
+    print('%s %s %s %s %s' % (state, target, root, path, reason))
+" 2>/dev/null || echo "UNVERIFIED none none none trigger_evidence_unparseable")
+read -r TRIGGER_STATE TRIGGER_TARGET TRIGGER_ROOT TRIGGER_PATH TRIGGER_REASON <<< "$TRIGGER_LINK"
 if [ "$TRIGGER_STATE" = "LINKED" ] && [ "$TRIGGER_ROOT" != "none" ] && [ "$TRIGGER_TARGET" = "$TRIGGER_ROOT" ]; then
-  record_pass "WF-24" "targetActionId=$TRIGGER_TARGET root=$TRIGGER_ROOT" "trigger link equals root node id" "Trigger entrance linked to the root node."
-elif [ "$TRIGGER_STATE" = "ABSENT" ] || [ "$TRIGGER_ROOT" = "none" ]; then
-  record_human "WF-24" "The export does not expose the trigger's targetActionId; a QC agent must GET /workflow/<loc>/<wf>/trigger/<trigger-id> and confirm it equals the root node id ($TRIGGER_ROOT)."
+  record_pass "WF-24" "targetActionId=$TRIGGER_TARGET root=$TRIGGER_ROOT trigger=$TRIGGER_PATH" "trigger link equals root node id" "Trigger entrance linked to the root node."
 else
-  record_fail "WF-24" "targetActionId=$TRIGGER_TARGET root=$TRIGGER_ROOT" "trigger link equals root node id" "Trigger link does not point at the root node (or the readback is unparseable). The canvas shows a trigger that does not enter the graph."
+  case "$TRIGGER_STATE" in
+    MISMATCH) TRIGGER_REASON="trigger_target_mismatch" ;;
+    AMBIGUOUS) TRIGGER_REASON="trigger_target_conflict" ;;
+    UNVERIFIED) TRIGGER_REASON="trigger_evidence_unparseable" ;;
+    *) TRIGGER_REASON="trigger_evidence_absent" ;;
+  esac
+  [ -n "${TRIGGER_PATH:-}" ] || TRIGGER_PATH="none"
+  [ -n "${TRIGGER_TARGET:-}" ] || TRIGGER_TARGET="none"
+  [ -n "${TRIGGER_ROOT:-}" ] || TRIGGER_ROOT="none"
+  record_fail "WF-24" "targetActionId=$TRIGGER_TARGET root=$TRIGGER_ROOT trigger=$TRIGGER_PATH reason=$TRIGGER_REASON" "trigger link equals unique root node id" "WF-24 failed: reason=$TRIGGER_REASON root=$TRIGGER_ROOT trigger=$TRIGGER_PATH targetActionId=$TRIGGER_TARGET"
 fi
 
 # ── Human-review items (noted, not failed by script) ─────────────────────────

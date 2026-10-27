@@ -130,10 +130,14 @@
     {
       "id": "n5",
       "type": "workflow_goal",
-      "after": "n3",
+      "after": [
+        "n3",
+        "n4"
+      ],
       "attributes": {
         "goal": "confirmation chain complete",
-        "ref": "End"
+        "ref": "End",
+        "join": true
       }
     }
   ]

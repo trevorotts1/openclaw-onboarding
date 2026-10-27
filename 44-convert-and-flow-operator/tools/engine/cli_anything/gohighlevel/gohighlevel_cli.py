@@ -1399,7 +1399,9 @@ def workflows_precheck(ctx, plan_file):
             report["workflows"][key] = state
             report["missing"].extend(state.get("missing") or [])
             report["unverified"].extend(state.get("unverified") or [])
-        report["ok"] = not report["missing"]
+        # An unverified dependency read is not a green light: "could not
+        # determine" must never authorise a write, same as a missing one.
+        report["ok"] = not report["missing"] and not report["unverified"]
         if ctx.obj["json"]:
             click.echo(json.dumps(report, indent=2, default=str), err=not report["ok"])
         else:

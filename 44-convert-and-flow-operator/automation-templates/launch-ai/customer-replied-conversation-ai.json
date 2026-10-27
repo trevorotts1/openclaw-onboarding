@@ -281,7 +281,7 @@
       "branches": {
         "booked": "n5",
         "answered": "n10",
-        "timed_out": "n12"
+        "timed_out": "n11"
       },
       "attributes": {
         "condition": "Conversation AI outcome",

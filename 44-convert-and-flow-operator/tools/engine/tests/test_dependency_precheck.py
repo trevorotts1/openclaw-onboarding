@@ -46,6 +46,15 @@ class FakeClient:
         return {"id": "TAG1"}
 
 
+class RaisingTagsClient(FakeClient):
+    def request(self, method, path, body=None, workflow_name="", **_kw):
+        if method == "GET" and path == f"/workflow/{self.location_id}/tags":
+            self.calls.append((method, path, body))
+            self.call_count += 1
+            raise RuntimeError("tags GET failed")
+        return super().request(method, path, body, workflow_name, **_kw)
+
+
 def _plan(dependencies=None):
     workflow = {
         "name": "N",
@@ -70,6 +79,36 @@ def _configure_env(monkeypatch, tmp_path):
     monkeypatch.delenv("CAF_DRY_RUN", raising=False)
 
 
+def _assert_refused_without_writes(stats, client, dependency_name):
+    assert any(
+        "dependency pre-check failed" in error and dependency_name in error
+        and "no workflow create was issued." in error
+        for error in stats["errors"]
+    ), "unverified dependency must refuse with actionable reason"
+    assert stats["precheck"]["N"]["unverified"], (
+        "unverified dependency GET must record unverified declarations"
+    )
+    assert stats["precheck"]["N"]["missing"] == [], (
+        "unverified dependencies must not be classified as missing"
+    )
+    assert not any(
+        method == "POST" and path == "/workflow/LOC1"
+        and isinstance(body, dict) and "parentId" in body
+        for method, path, body in client.calls
+    ), "refusal must prevent workflow creation"
+    assert not any(
+        method == "PUT" and isinstance(body, dict) and "workflowData" in body
+        for method, _, body in client.calls
+    ), "refusal must prevent step-save writes"
+    assert not any(
+        method == "CREATE_TAG" for method, _, _ in client.calls
+    ), "refusal must prevent tag creation"
+    assert not any(
+        method == "POST" and path == "/workflow/LOC1/trigger"
+        for method, path, _ in client.calls
+    ), "refusal must prevent trigger creation"
+
+
 def test_missing_declared_tag_refuses_before_create(monkeypatch, tmp_path):
     _configure_env(monkeypatch, tmp_path)
     client = FakeClient()
@@ -81,8 +120,12 @@ def test_missing_declared_tag_refuses_before_create(monkeypatch, tmp_path):
 
     assert any(
         "dependency pre-check failed" in error and "ZHC-missing" in error
+        and "no workflow create was issued." in error
         for error in stats["errors"]
     ), "missing declared dependency must refuse with actionable reason"
+    assert stats["precheck"]["N"]["missing"], (
+        "missing declared dependency must be recorded"
+    )
     assert not any(
         method == "POST" and path == "/workflow/LOC1"
         and isinstance(body, dict) and "parentId" in body
@@ -92,9 +135,16 @@ def test_missing_declared_tag_refuses_before_create(monkeypatch, tmp_path):
         method == "PUT" and isinstance(body, dict) and "workflowData" in body
         for method, _, body in client.calls
     ), "missing declared dependency must prevent step-save writes"
+    assert not any(
+        method == "CREATE_TAG" for method, _, _ in client.calls
+    ), "missing declared dependency must prevent tag creation"
+    assert not any(
+        method == "POST" and path == "/workflow/LOC1/trigger"
+        for method, path, _ in client.calls
+    ), "missing declared dependency must prevent trigger creation"
 
 
-def test_unverified_read_does_not_refuse(monkeypatch, tmp_path):
+def test_unverified_read_refuses(monkeypatch, tmp_path):
     _configure_env(monkeypatch, tmp_path)
     client = FakeClient()
     client.tags_response = {"_error": True, "message": "404"}
@@ -103,17 +153,30 @@ def test_unverified_read_does_not_refuse(monkeypatch, tmp_path):
         _plan({"tags": ["ZHC-unknown"]}), "caf-build"
     )
 
-    assert not any(
-        "dependency pre-check" in error for error in stats["errors"]
-    ), "unverified dependency GET must not cause pre-check refusal"
-    assert stats["precheck"]["N"]["unverified"], (
-        "failed dependency GET must record unverified declarations"
+    _assert_refused_without_writes(stats, client, "ZHC-unknown")
+
+
+def test_unverified_transport_exception_refuses(monkeypatch, tmp_path):
+    _configure_env(monkeypatch, tmp_path)
+    client = RaisingTagsClient()
+
+    stats = wb.CampaignBuilder(client).build(
+        _plan({"tags": ["ZHC-unknown"]}), "caf-build"
     )
-    assert any(
-        method == "POST" and path == "/workflow/LOC1"
-        and isinstance(body, dict) and "parentId" in body
-        for method, path, body in client.calls
-    ), "unverified dependency GET must allow workflow creation"
+
+    _assert_refused_without_writes(stats, client, "ZHC-unknown")
+
+
+def test_unverified_none_response_refuses(monkeypatch, tmp_path):
+    _configure_env(monkeypatch, tmp_path)
+    client = FakeClient()
+    client.tags_response = None
+
+    stats = wb.CampaignBuilder(client).build(
+        _plan({"tags": ["ZHC-unknown"]}), "caf-build"
+    )
+
+    _assert_refused_without_writes(stats, client, "ZHC-unknown")
 
 
 def test_present_dependency_builds(monkeypatch, tmp_path):
@@ -128,6 +191,8 @@ def test_present_dependency_builds(monkeypatch, tmp_path):
     assert "ZHC-present" in [
         item["name"] for item in stats["precheck"]["N"]["present"]
     ], "existing declared dependency must be recorded as present"
+    assert stats["precheck"]["N"]["missing"] == []
+    assert stats["precheck"]["N"]["unverified"] == []
     assert not any(
         "dependency pre-check failed" in error for error in stats["errors"]
     ), "present declared dependency must not trigger refusal"

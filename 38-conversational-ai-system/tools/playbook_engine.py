@@ -154,6 +154,21 @@ def _non_placeholder_lines(lines):
     ]
 
 
+def _section_content_lines(lines, heading_lower):
+    """Return cleaned, meaningful section lines in document order, or None if absent."""
+    bounds = _section_bounds(lines, heading_lower)
+    if bounds is None:
+        return None
+    start, end = bounds
+    return [
+        cleaned
+        for line in lines[start + 1:end]
+        if (cleaned := _clean_content_line(line))
+        and not _is_placeholder(cleaned)
+        and cleaned not in ("<Action 1>", "<Action 2>")
+    ]
+
+
 def parse_tag_entry(entry):
     """Parse '<tag> (applies|reads)' or return (None, None)."""
     match = re.match(r"^(.+?)\s+\((applies|reads)\)$", entry, re.IGNORECASE)
@@ -227,6 +242,7 @@ def parse_playbook(text):
         phase = {
             "number": int(match.group(1)),
             "name": match.group(2).strip(),
+            "line": i + 1,
             "tools": None,
             "skip_if_field_filled": None,
             "max_attempts": None,
@@ -374,26 +390,18 @@ def conversation_lint(parsed, text=None):
             header_index = i
             break
 
-    def meaningful_table_row(line):
-        cells = line.strip().strip("|").split("|")
-        return any(
+    objections = 0
+    for i in table_indices:
+        if i in separator_indices or i == header_index:
+            continue
+        cells = objection_lines[i].strip().strip("|").split("|")
+        if len(cells) < 3:
+            continue
+        if all(
             not _is_placeholder(cell.strip().strip("`").strip())
-            for cell in cells
-        )
-
-    data_rows = [
-        objection_lines[i]
-        for i in table_indices
-        if i not in separator_indices
-        and i != header_index
-        and meaningful_table_row(objection_lines[i])
-    ]
-    bullets = [
-        line for line in objection_lines
-        if line.strip().startswith("- ")
-        and not _is_placeholder(line.strip()[2:].strip())
-    ]
-    objections = len(data_rows) + len(bullets)
+            for cell in cells[:3]
+        ):
+            objections += 1
 
     if objections < 5:
         defects.append(
@@ -410,16 +418,90 @@ def conversation_lint(parsed, text=None):
                 % (phase["number"], phase["name"] or "unnamed")
             )
 
-    if not _non_placeholder_lines(section_lines(lines, "conversational kpis")):
+    kpi_lines = section_lines(lines, "conversational kpis")
+
+    def is_separator_row(line):
+        return bool(re.match(
+            r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$",
+            line.strip(),
+        ))
+
+    meaningful_kpis = []
+    for index, line in enumerate(kpi_lines):
+        cleaned = _clean_content_line(line)
+        if _is_placeholder(cleaned):
+            continue
+        if is_separator_row(line):
+            continue
+        if index + 1 < len(kpi_lines) and is_separator_row(kpi_lines[index + 1]):
+            continue
+        meaningful_kpis.append(cleaned)
+
+    if not meaningful_kpis:
         defects.append(
             "no conversational KPI declared (expected a ## Conversational KPIs "
             "section with at least one measurable bar)"
         )
+    else:
+        number_word_re = re.compile(
+            r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|"
+            r"eleven|twelve|dozen|half|hundred|thousand|percent)\b",
+            re.IGNORECASE,
+        )
+        for cleaned in meaningful_kpis:
+            if not re.search(r"\d", cleaned) and not number_word_re.search(cleaned):
+                defects.append(
+                    "conversational KPI line has no numeric target: '%s'" % cleaned
+                )
 
-    if len(_non_placeholder_lines(section_lines(lines, "golden transcript"))) < 4:
+    golden_lines = section_lines(lines, "golden transcript")
+    good_start = next(
+        (i for i, line in enumerate(golden_lines)
+         if "good exchange" in line.lower()),
+        None,
+    )
+    if good_start is None:
+        golden_block = golden_lines
+    else:
+        bad_start = next(
+            (i for i in range(good_start + 1, len(golden_lines))
+             if "bad exchange" in golden_lines[i].lower()),
+            len(golden_lines),
+        )
+        golden_block = golden_lines[good_start + 1:bad_start]
+
+    turn_re = re.compile(
+        r"^\s*>?\s*(customer|agent|prospect|user|lead|assistant)\s*:",
+        re.IGNORECASE,
+    )
+    turns = [
+        match.group(1).lower()
+        for line in golden_block
+        if (match := turn_re.match(line))
+    ]
+
+    if len(turns) < 4:
         defects.append(
             "no golden transcript (expected a ## Golden transcript section "
             "with a worked good exchange and a bad anti-pattern)"
+        )
+    elif len(set(turns)) < 2 or any(
+        turns[i] == turns[i - 1] for i in range(1, len(turns))
+    ):
+        defects.append(
+            "golden transcript turns do not alternate speakers: %s"
+            % ", ".join(turns)
+        )
+
+    outcome_re = re.compile(
+        r"\b(outcome|booked|confirmation|confirmed|scheduled|resolved|"
+        r"completed|closed|next step)\b",
+        re.IGNORECASE,
+    )
+    if not any(outcome_re.search(line) for line in golden_lines):
+        defects.append(
+            "golden transcript has no stated outcome (expected a confirmation, "
+            "booking, resolution, or explicit next-step line)"
         )
 
     never_bounds = _section_bounds(lines, "never say")
@@ -469,12 +551,37 @@ def validate_playbook(parsed, crm_fields=None, registry_targets=None):
     defects = []
     numbers = [phase["number"] for phase in parsed["phases"]]
     if len(numbers) != len(set(numbers)):
-        defects.append(
-            "duplicate phase numbers: %s"
-            % sorted(n for n in set(numbers) if numbers.count(n) > 1)
-        )
+        duplicate_numbers = [
+            number for number in dict.fromkeys(numbers)
+            if numbers.count(number) > 1
+        ]
+        clauses = []
+        for number in duplicate_numbers:
+            occurrences = [
+                str(phase.get("line", "?"))
+                for phase in parsed["phases"]
+                if phase["number"] == number
+            ]
+            clauses.append("%s (lines %s)" % (number, ", ".join(occurrences)))
+        defects.append("duplicate phase numbers: %s" % "; ".join(clauses))
     if numbers != sorted(numbers):
-        defects.append("phases are out of order: %s" % numbers)
+        defects.append(
+            "phases are out of order: %s (expected %s)"
+            % (", ".join(map(str, numbers)), ", ".join(map(str, sorted(numbers))))
+        )
+
+    raw_lines = _strip_fence((parsed.get("_raw_text") or "").splitlines())
+    for line_number, line in enumerate(raw_lines, start=1):
+        if (
+            _is_heading(line)
+            and re.search(r"\bphase\b", line, re.IGNORECASE)
+            and not _PHASE_RE.match(line)
+        ):
+            defects.append(
+                "malformed phase header at line %d: '%s' "
+                "(expected '### Phase N - Name')"
+                % (line_number, line.strip())
+            )
 
     mt = parsed["header"]["model_tier"]
     if mt is not None and mt not in MODEL_TIERS:
@@ -576,8 +683,9 @@ class BuildContractRefused(Exception):
 
 def structure_hash(parsed):
     """Deterministic sha256 over versioned structural inputs."""
+    lines = _strip_fence((parsed.get("_raw_text") or "").splitlines())
     skeleton = {
-        "hash_version": 2,
+        "hash_version": 3,
         "model_tier": parsed["header"]["model_tier"] or DEFAULT_MODEL_TIER,
         "phases": [
             {
@@ -604,8 +712,8 @@ def structure_hash(parsed):
             "stage-map": sorted(parsed["declares"]["stage-map"]),
         },
         "win_action": parsed["win_action"],
-        "escalation": parsed.get("escalation"),
-        "on_success": sorted(parsed.get("on_success_actions") or []),
+        "escalation": _section_content_lines(lines, "on escalation"),
+        "on_success": parsed.get("on_success_actions") or [],
     }
     blob = json.dumps(skeleton, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
