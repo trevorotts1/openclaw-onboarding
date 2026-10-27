@@ -1023,11 +1023,11 @@ PLACEHOLDER_TEXT = ("...", "…", "tbd", "tk", "todo", "line here", "placeholder
 
 # Rich fields whose absence makes a legacy record compatibility-limited.
 _RICH_FIELDS = (
-    "dramatic_purpose", "time", "location_id", "world_revision", "cast_ids",
-    "immediate_want", "obstacle", "visible_action", "consequential_choice",
+    "dramatic_purpose", "causal_outcome", "time", "location_id", "world_revision",
+    "cast_ids", "immediate_want", "obstacle", "visible_action", "consequential_choice",
     "emotion_before", "emotion_after", "turn_trigger", "spoken_dialogue",
-    "sung_lyrics", "performance_order", "sound_music_cues",
-    "framing_movement_intent", "duration_seconds", "transition",
+    "sung_lyrics", "performance_order", "subtext_and_behavior", "sound_music_cues",
+    "framing_movement_intent", "duration_seconds", "timing_basis", "transition",
     "visible_lip_sync",
 )
 
