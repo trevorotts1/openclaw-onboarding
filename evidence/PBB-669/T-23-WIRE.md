@@ -1,7 +1,7 @@
 # T-23 WIRE — `monthly_manifest.py`
 
 Lane `PBB-669` (BUILD, role `deepseek-chain`). Repo `<operator-home>/openclaw-onboarding`.
-Worktree `/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/worktrees/PBB-669`.
+Worktree `<PATH>`.
 
 | | |
 |---|---|
