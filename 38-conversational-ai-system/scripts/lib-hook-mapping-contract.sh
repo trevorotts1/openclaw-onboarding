@@ -80,13 +80,14 @@
 # any of these — that is the hook that lets the agent draft-but-not-send.
 HOOK_MAPPING_SEND_DIRECTIVE_NEEDLES='MANDATORY
 SEND
-GHL Conversations API
+pb_send.py
+admit
+reply
 drafting
 NOT sending
 messageId
 SAME channel
-do NOT hardcode SMS
-conversations/search'
+do NOT hardcode SMS'
 
 # Mandatory conversation-memory elements (read-before / append-after). GHL inbound
 # hook sessions are SINGLE-TURN / stateless, so the per-contact log is the agent's
