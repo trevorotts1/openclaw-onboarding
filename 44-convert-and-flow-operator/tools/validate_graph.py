@@ -312,7 +312,12 @@ def graph(data, nodes, trigger):
     ids = [n.get("id") for n in nodes]
     existing = set(ids)
     edges = {}
-    failures = []
+    # Identity checks were implemented and tested but never called from here, so
+    # the gate that runs this function (WF-23) reported PASS on a graph with
+    # duplicate node ids, malformed branch targets, ambiguous roots and invalid
+    # parents — while its own PASS evidence claimed "integrity". A check the
+    # gate never runs is not a check.
+    failures = list(identity_failures(nodes))
     unverified = []
     roots = [n for n in nodes if n.get("parentKey") in (None, "")]
     root = roots[0].get("id") if len(roots) == 1 else None

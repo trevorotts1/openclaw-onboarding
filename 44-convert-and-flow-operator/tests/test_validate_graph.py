@@ -199,3 +199,34 @@ def test_identity_failures_clean_linear_graph():
         {"id": "b", "parentKey": "a", "next": "c"},
         {"id": "c", "parentKey": "b"},
     ]) == []
+
+
+def test_graph_command_actually_runs_the_identity_checks(tmp_path):
+    """The identity checks must be reachable from the gate that runs them.
+
+    `identity_failures()` was implemented and covered by seven passing tests,
+    but `graph()` — the function behind the `graph` subcommand and therefore
+    behind QC item WF-23 — never called it. A graph with duplicate node ids was
+    reported PASS with exit 0 while WF-23's evidence claimed "integrity".
+    Testing identity_failures() in isolation could not catch that, so this test
+    goes through the command.
+    """
+    export = tmp_path / "dup.json"
+    export.write_text(json.dumps({
+        "workflowData": {"templates": [
+            {"id": "n1", "type": "sms", "name": "A", "parentKey": None, "next": "n1"},
+            {"id": "n1", "type": "end", "name": "A again", "parentKey": "n1"},
+        ]}
+    }))
+    result = subprocess.run(
+        [sys.executable, str(VALIDATOR), "graph", "--export", str(export)],
+        capture_output=True, text=True,
+    )
+    report = json.loads(result.stdout)
+    kinds = {f["kind"] for f in report["failures"]}
+    assert result.returncode == 1, (
+        "duplicate node ids must fail the graph command; got exit %d %r"
+        % (result.returncode, report.get("verdict"))
+    )
+    assert report["verdict"] == "FAIL"
+    assert "DUPLICATE_ID" in kinds, kinds
