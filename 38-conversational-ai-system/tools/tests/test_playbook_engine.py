@@ -4,21 +4,18 @@
 Run: python3 -m unittest discover -s tools/tests  (from the skill root)
  or: python3 tools/tests/test_playbook_engine.py
 
-Covers one good playbook fixture and one deliberately broken fixture per
-grammar family: header (model-tier enum), phase tools vocabulary, the
-escalate-never-gated-off invariant, exit-rule grammar (route needs target,
-action enum), and the U-9 cross-validations (tools-used vs phases, exits-used
-vs exit rules). Also covers hash stability, mermaid emission, and the U-4
-resolve lookup.
+Covers parser, validation, structural hashing, mermaid emission, build
+contracts, phase-heading closure, exit-rule parsing, and conversation lint.
 """
 
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-# Make the tools/ directory importable regardless of the invoking cwd.
 TOOLS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TOOLS_DIR))
 
@@ -28,6 +25,13 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 GOOD = (FIXTURES / "good-playbook.md").read_text(encoding="utf-8")
 BROKEN = (FIXTURES / "broken-playbook.md").read_text(encoding="utf-8")
 LOG = (FIXTURES / "sample-log.md").read_text(encoding="utf-8")
+
+# GOOD plus a tags-used block: one applies entry and one reads entry.
+GOOD_TAGS = GOOD.replace(
+    "fields-used: contact.email, ZHC_budget_range\n",
+    "fields-used: contact.email, ZHC_budget_range\n"
+    "tags-used: ZHC-appointment-booked (applies), webinar-registered (reads)\n",
+)
 
 
 class TestParse(unittest.TestCase):
@@ -52,11 +56,23 @@ class TestParse(unittest.TestCase):
         p1 = self.p["phases"][0]
         self.assertEqual(p1["number"], 1)
         self.assertIn("Acknowledge", p1["name"])
-        self.assertEqual(p1["tools"], ["update_tags", "update_contact", "reference_documents"])
+        self.assertEqual(
+            p1["tools"],
+            ["update_tags", "update_contact", "reference_documents"],
+        )
         self.assertEqual(p1["skip_if_field_filled"], "contact.email")
         self.assertEqual(p1["max_attempts"], "2")
         self.assertEqual(p1["gate_if_not_met"], "budget qualified")
         self.assertIn("not the right fit", p1["gate_closing"])
+
+    def test_phase_source_line(self):
+        lines = [line for line in GOOD.splitlines()
+                 if not line.lstrip().startswith("```")]
+        for phase in self.p["phases"]:
+            self.assertEqual(
+                lines[phase["line"] - 1].split("Phase")[1].split("-")[0].strip(),
+                str(phase["number"]),
+            )
 
     def test_exit_rules(self):
         rules = self.p["exit_rules"]
@@ -79,24 +95,19 @@ class TestResolvePhaseTools(unittest.TestCase):
         self.assertIn("escalate_to_human", tools)
 
     def test_explicit_phase_always_grants_escalate(self):
-        p = engine.parse_playbook(GOOD)
-        phase1 = p["phases"][0]
+        phase1 = engine.parse_playbook(GOOD)["phases"][0]
         tools = engine.resolve_phase_tools(phase1)
-        # escalate_to_human is always granted even though the phase never lists it.
         self.assertIn("escalate_to_human", tools)
         self.assertIn("update_tags", tools)
 
     def test_global_reference_documents_always_on(self):
-        p = engine.parse_playbook(GOOD)
-        # Phase 4 lists reference_documents explicitly; it stays present.
-        phase4 = p["phases"][3]
+        phase4 = engine.parse_playbook(GOOD)["phases"][3]
         self.assertIn("reference_documents", engine.resolve_phase_tools(phase4))
 
 
 class TestValidateGood(unittest.TestCase):
     def test_good_is_clean(self):
-        p = engine.parse_playbook(GOOD)
-        defects = engine.validate_playbook(p)
+        defects = engine.validate_playbook(engine.parse_playbook(GOOD))
         self.assertEqual(defects, [], "good fixture should have zero defects: %s" % defects)
 
 
@@ -107,7 +118,7 @@ class TestValidateBroken(unittest.TestCase):
         self.blob = " || ".join(self.defects)
 
     def test_has_defects(self):
-        self.assertTrue(self.defects, "broken fixture must produce defects")
+        self.assertTrue(self.defects)
 
     def test_bad_model_tier(self):
         self.assertIn("hyperspeed-max", self.blob)
@@ -137,7 +148,6 @@ class TestValidateBroken(unittest.TestCase):
 
 class TestValidateCrossFile(unittest.TestCase):
     def test_route_target_absent_from_registry(self):
-        # A route to a target absent from the registry is a defect.
         pb = (
             "# WF\n\n"
             "## What the agent does\n\n"
@@ -148,38 +158,69 @@ class TestValidateCrossFile(unittest.TestCase):
             "exit-when-tag: switch-to-support, action: route, target: support-intake\n\n"
             "## On success\nWin.\n"
         )
-        p = engine.parse_playbook(pb)
-        defects = engine.validate_playbook(p, registry_targets={"pricing-inquiry"})
+        defects = engine.validate_playbook(
+            engine.parse_playbook(pb), registry_targets={"pricing-inquiry"}
+        )
         self.assertTrue(any("support-intake" in d for d in defects))
-        # Present in the registry => clean on that dimension.
-        defects_ok = engine.validate_playbook(p, registry_targets={"support-intake"})
+        defects_ok = engine.validate_playbook(
+            engine.parse_playbook(pb), registry_targets={"support-intake"}
+        )
         self.assertFalse(any("route target" in d for d in defects_ok))
 
 
 class TestHash(unittest.TestCase):
     def test_stable_across_copy_edits(self):
         h1 = engine.structure_hash(engine.parse_playbook(GOOD))
-        # A pure copy/tone edit (change prose only) must NOT change the hash.
-        copy_edit = GOOD.replace("Warm, concise, and helpful.", "Friendly and brief.")
-        copy_edit = copy_edit.replace("Greet warmly, confirm the interest,",
-                                      "Say hello, confirm interest,")
+        copy_edit = GOOD.replace(
+            "Warm, concise, and helpful.", "Friendly and brief."
+        ).replace(
+            "Greet warmly, confirm the interest,",
+            "Say hello, confirm interest,",
+        )
         h2 = engine.structure_hash(engine.parse_playbook(copy_edit))
         self.assertEqual(h1, h2, "copy edits must not change the structure hash")
 
     def test_changes_on_structural_edit(self):
-        h1 = engine.structure_hash(engine.parse_playbook(GOOD))
-        # Removing a tool from a phase is a structural change.
         structural = GOOD.replace(
             "tools: book_appointment, check_availability, update_tags, update_contact, reference_documents",
             "tools: check_availability, update_tags, update_contact, reference_documents",
         )
-        h2 = engine.structure_hash(engine.parse_playbook(structural))
-        self.assertNotEqual(h1, h2, "structural edits must change the hash")
+        self.assertNotEqual(
+            engine.structure_hash(engine.parse_playbook(GOOD)),
+            engine.structure_hash(engine.parse_playbook(structural)),
+        )
 
     def test_hash_is_hex_sha256(self):
         h = engine.structure_hash(engine.parse_playbook(GOOD))
         self.assertEqual(len(h), 64)
-        int(h, 16)  # raises if not hex
+        int(h, 16)
+
+    def test_escalation_second_line_changes_hash(self):
+        base = (
+            "# WF\n\n### Phase 1 - One\n\n"
+            "## On escalation\nEscalate to operator.\nRecord the case.\n"
+        )
+        changed = base.replace("Record the case.", "Notify supervisor.")
+        self.assertNotEqual(
+            engine.structure_hash(engine.parse_playbook(base)),
+            engine.structure_hash(engine.parse_playbook(changed)),
+        )
+
+    def test_on_success_order_changes_hash(self):
+        base = (
+            "# WF\n\n### Phase 1 - One\n\n"
+            "## On success\nTag contact.\nSend confirmation.\n"
+        )
+        reordered = base.replace(
+            "Tag contact.\nSend confirmation.",
+            "Send confirmation.\nTag contact.",
+        )
+        extra = base.replace(
+            "Send confirmation.", "Send confirmation.\nWrite audit log."
+        )
+        h = engine.structure_hash(engine.parse_playbook(base))
+        self.assertNotEqual(h, engine.structure_hash(engine.parse_playbook(reordered)))
+        self.assertNotEqual(h, engine.structure_hash(engine.parse_playbook(extra)))
 
 
 class TestMermaid(unittest.TestCase):
@@ -198,7 +239,6 @@ class TestMermaid(unittest.TestCase):
         self.assertIn("escalation", self.mmd)
 
     def test_no_triple_backtick(self):
-        # A .mmd artifact must never carry a markdown fence.
         self.assertNotIn("```", self.mmd)
 
 
@@ -208,7 +248,6 @@ class TestResolveFromLog(unittest.TestCase):
         self.assertEqual(res["active_workflow"], "good-playbook")
         self.assertEqual(res["active_phase"], 4)
         self.assertEqual(res["phase_attempts"], "1:2, 2:1, 3:0, 4:1")
-        # Phase 4 grants booking; escalate is always present.
         self.assertIn("book_appointment", res["enabled_tools"])
         self.assertIn("escalate_to_human", res["enabled_tools"])
 
@@ -225,7 +264,6 @@ class TestResolveFromLog(unittest.TestCase):
 
 class TestRegistryIds(unittest.TestCase):
     def test_parses_ids_and_skips_separators(self):
-        import tempfile
         reg = (
             "# Conversation Workflows Registry\n\n"
             "| ID | Name | OpenClaw playbook |\n"
@@ -233,24 +271,20 @@ class TestRegistryIds(unittest.TestCase):
             "| appointment-booking | Booking | appointment-booking.md |\n"
             "| support-intake | Support | support-intake.md |\n"
         )
-        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".md", delete=False, encoding="utf-8"
+        ) as fh:
             fh.write(reg)
             path = fh.name
-        ids = engine._load_registry_ids(path)
-        os.unlink(path)
-        # Real ids parse; the header row and the |---| separator row do not.
+        try:
+            ids = engine._load_registry_ids(path)
+        finally:
+            os.unlink(path)
         self.assertEqual(ids, {"appointment-booking", "support-intake"})
         self.assertNotIn("id", ids)
 
 
 class TestPhaseHeadingClosure(unittest.TestCase):
-    """P3-07 step 1: a rogue mid-phase level-3 (###) non-Phase heading must
-    CLOSE the phase block. Its key:value-looking lines must NOT leak into the
-    preceding phase's tools/max-attempts (the data the U-1 tool-gating gates
-    trust). Pre-fix, the closing check matched only '# '/'## ', so a bare
-    '### Notes' silently absorbed its lines into the phase above it.
-    """
-
     ROGUE = (
         "# WF\n\n"
         "## What the agent does\n\n"
@@ -271,91 +305,76 @@ class TestPhaseHeadingClosure(unittest.TestCase):
         self.ph1 = self.p["phases"][0]
 
     def test_rogue_heading_does_not_leak_tools(self):
-        # Phase 1 granted ONLY check_availability. The '### Notes' tools line
-        # must NOT bleed in.
         self.assertEqual(self.ph1["tools"], ["check_availability"])
         for leaked in ("book_appointment", "send_invoice", "everything"):
-            self.assertNotIn(leaked, self.ph1["tools"],
-                             "'%s' leaked from '### Notes' into Phase 1" % leaked)
+            self.assertNotIn(leaked, self.ph1["tools"])
 
     def test_rogue_heading_does_not_corrupt_max_attempts(self):
-        # Phase 1's max-attempts is 2; the rogue block's 'max-attempts: 99'
-        # must not overwrite it.
         self.assertEqual(self.ph1["max_attempts"], "2")
 
     def test_rogue_heading_not_in_resolved_tools(self):
-        # The tool-gating gate resolves the enabled set from the phase; the
-        # leaked tools must not become grantable.
         resolved = engine.resolve_phase_tools(self.ph1)
         self.assertIn("check_availability", resolved)
         self.assertNotIn("book_appointment", resolved)
         self.assertNotIn("everything", resolved)
 
     def test_phase_count_is_two(self):
-        # '### Notes' is NOT a phase; only Phase 1 and Phase 2 are phases.
         self.assertEqual(len(self.p["phases"]), 2)
         self.assertEqual(self.p["phases"][1]["number"], 2)
         self.assertEqual(self.p["phases"][1]["tools"], ["update_tags"])
 
     def test_h1_and_h2_headings_still_close(self):
-        # The fix must not regress '# '/'## ' closure: a '## ' section heading
-        # after Phase 1 still closes it.
         pb = (
             "### Phase 1 - Qualify\n"
             "tools: check_availability\n"
             "## Some section\n"
             "tools: book_appointment\n"
         )
-        p = engine.parse_playbook(pb)
-        self.assertEqual(p["phases"][0]["tools"], ["check_availability"])
+        self.assertEqual(
+            engine.parse_playbook(pb)["phases"][0]["tools"],
+            ["check_availability"],
+        )
 
     def test_h4_edge_heading_does_not_close(self):
-        # A deeper '#### edge' heading inside a phase must NOT close it (kv lines
-        # under it still belong to the phase) - the documented '#### edge'
-        # carve-out is preserved.
         pb = (
             "### Phase 1 - Qualify\n"
             "tools: check_availability\n"
             "#### Edge case: no availability\n"
             "max-attempts: 3\n"
         )
-        p = engine.parse_playbook(pb)
-        self.assertEqual(p["phases"][0]["tools"], ["check_availability"])
-        self.assertEqual(p["phases"][0]["max_attempts"], "3")
+        phase = engine.parse_playbook(pb)["phases"][0]
+        self.assertEqual(phase["tools"], ["check_availability"])
+        self.assertEqual(phase["max_attempts"], "3")
 
 
 class TestExitRuleOrderIndependence(unittest.TestCase):
-    """P3-07 step 2: closing: and target: may appear in EITHER order after the
-    action clause. Neither may swallow the other's value. Pre-fix, a reversed
-    'target: ..., closing: ...' let target greedily eat the trailing closing.
-    """
-
     def test_normal_order_closing_then_target(self):
-        r = engine._parse_exit_rule(
-            "switch, action: route, closing: Handing you over, target: support-intake")
-        self.assertEqual(r["tag"], "switch")
-        self.assertEqual(r["action"], "route")
-        self.assertEqual(r["closing"], "Handing you over")
-        self.assertEqual(r["target"], "support-intake")
+        rule = engine._parse_exit_rule(
+            "switch, action: route, closing: Handing you over, target: support-intake"
+        )
+        self.assertEqual(rule["tag"], "switch")
+        self.assertEqual(rule["action"], "route")
+        self.assertEqual(rule["closing"], "Handing you over")
+        self.assertEqual(rule["target"], "support-intake")
 
     def test_reversed_order_target_then_closing(self):
-        r = engine._parse_exit_rule(
-            "switch, action: route, target: support-intake, closing: Handing you over")
-        # target must be EXACTLY the id - it must not swallow the closing text.
-        self.assertEqual(r["target"], "support-intake")
-        self.assertEqual(r["closing"], "Handing you over")
-        self.assertEqual(r["action"], "route")
+        rule = engine._parse_exit_rule(
+            "switch, action: route, target: support-intake, closing: Handing you over"
+        )
+        self.assertEqual(rule["target"], "support-intake")
+        self.assertEqual(rule["closing"], "Handing you over")
+        self.assertEqual(rule["action"], "route")
 
     def test_both_orders_parse_identically(self):
-        a = engine._parse_exit_rule(
-            "x, action: route, closing: bye now, target: t-id")
-        b = engine._parse_exit_rule(
-            "x, action: route, target: t-id, closing: bye now")
-        self.assertEqual(a, b)
+        first = engine._parse_exit_rule(
+            "x, action: route, closing: bye now, target: t-id"
+        )
+        second = engine._parse_exit_rule(
+            "x, action: route, target: t-id, closing: bye now"
+        )
+        self.assertEqual(first, second)
 
     def test_reversed_route_validates_clean(self):
-        # A reversed-order route rule must not produce a spurious "route needs a
-        # target" defect (the target was being corrupted pre-fix).
         pb = (
             "### Phase 1 - Only\n"
             "tools: reference_documents\n"
@@ -364,18 +383,16 @@ class TestExitRuleOrderIndependence(unittest.TestCase):
             "exit-when-tag: switch, action: route, target: support-intake, closing: Bye\n\n"
             "## On success\nWin.\n"
         )
-        p = engine.parse_playbook(pb)
-        defects = engine.validate_playbook(p, registry_targets={"support-intake"})
-        self.assertFalse(any("route" in d and "target" in d for d in defects),
-                         "reversed-order route should validate clean: %s" % defects)
+        defects = engine.validate_playbook(
+            engine.parse_playbook(pb), registry_targets={"support-intake"}
+        )
+        self.assertFalse(any("route" in d and "target" in d for d in defects))
 
     def test_malformed_no_action_is_loud_not_silent(self):
-        # A tag with named clauses but NO action clause must leave action None,
-        # which validate_playbook flags loudly (never a silent bad action).
-        r = engine._parse_exit_rule("foo, target: bar")
-        self.assertEqual(r["tag"], "foo")
-        self.assertIsNone(r["action"])
-        self.assertEqual(r["target"], "bar")
+        rule = engine._parse_exit_rule("foo, target: bar")
+        self.assertEqual(rule["tag"], "foo")
+        self.assertIsNone(rule["action"])
+        self.assertEqual(rule["target"], "bar")
         pb = (
             "### Phase 1 - Only\n"
             "tools: reference_documents\n\n"
@@ -383,31 +400,398 @@ class TestExitRuleOrderIndependence(unittest.TestCase):
             "exit-when-tag: foo, target: bar\n\n"
             "## On success\nWin.\n"
         )
-        p = engine.parse_playbook(pb)
-        defects = engine.validate_playbook(p)
-        self.assertTrue(any("action" in d for d in defects),
-                        "a missing action must be a loud defect: %s" % defects)
+        defects = engine.validate_playbook(engine.parse_playbook(pb))
+        self.assertTrue(any("action" in d for d in defects))
 
     def test_tag_only_no_clauses(self):
-        r = engine._parse_exit_rule("just-a-tag")
-        self.assertEqual(r["tag"], "just-a-tag")
-        self.assertIsNone(r["action"])
-        self.assertIsNone(r["closing"])
-        self.assertIsNone(r["target"])
+        rule = engine._parse_exit_rule("just-a-tag")
+        self.assertEqual(rule["tag"], "just-a-tag")
+        self.assertIsNone(rule["action"])
+        self.assertIsNone(rule["closing"])
+        self.assertIsNone(rule["target"])
+
+
+class TestBuildContract(unittest.TestCase):
+    def test_contract_hash_matches_structure_hash(self):
+        parsed = engine.parse_playbook(GOOD)
+        contract = engine.write_build_contract(parsed, "good-playbook", "good-playbook.md")
+        self.assertEqual(
+            contract["playbook_structure_hash"],
+            engine.structure_hash(engine.parse_playbook(GOOD)),
+        )
+
+    def test_contract_keys_and_order(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD), "good-playbook", "good-playbook.md"
+        )
+        self.assertEqual(
+            list(contract.keys()),
+            [
+                "contract_version", "playbook_id", "playbook_path",
+                "playbook_structure_hash", "generated_at", "trigger", "tags",
+                "fields", "custom_values", "calendars", "pipeline", "exit_rules",
+                "tools", "channels", "model_tier", "workflow", "acceptance",
+                "warnings",
+            ],
+        )
+
+    def test_contract_declares_mapping(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD), "good-playbook", "good-playbook.md"
+        )
+        self.assertEqual(contract["tags"]["applies"], [])
+        self.assertEqual(contract["tags"]["reads"], [])
+        self.assertEqual(
+            contract["calendars"],
+            [
+                {"key": "default", "id": "CAL_ID_A"},
+                {"key": "on-site estimate", "id": "CAL_ID_B"},
+            ],
+        )
+        self.assertEqual(contract["pipeline"]["id"], "sales-pipeline")
+        self.assertEqual(
+            [stage["name"] for stage in contract["pipeline"]["stages"]],
+            ["STAGE_QUALIFIED", "STAGE_BOOKED"],
+        )
+        self.assertEqual(
+            [field["name"] for field in contract["fields"]],
+            ["contact.email", "ZHC_budget_range"],
+        )
+
+    def test_contract_never_fabricates(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD), "good-playbook", "good-playbook.md"
+        )
+        self.assertEqual(contract["trigger"], {"kind": None, "tag": None})
+        self.assertEqual(contract["custom_values"], [])
+        self.assertEqual(contract["channels"], [])
+        self.assertEqual(
+            contract["acceptance"]["must_pass"],
+            ["fields_exist", "calendars_exist", "pipeline_stages_exist"],
+        )
+        self.assertTrue(contract["acceptance"]["must_pass"])
+        self.assertTrue(all(value is None for value in contract["workflow"].values()))
+        warnings = "\n".join(contract["warnings"])
+        for section in ("trigger", "custom_values", "channels", "workflow"):
+            self.assertIn(section, warnings)
+
+    def test_cli_writes_file(self):
+        expected_hash = engine.structure_hash(engine.parse_playbook(GOOD))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "x.json"
+            result = subprocess.run(
+                [
+                    sys.executable, str(TOOLS_DIR / "playbook_engine.py"),
+                    "build-contract", str(FIXTURES / "good-playbook.md"),
+                    "--out", str(output),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output.is_file())
+            contract = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(contract["playbook_structure_hash"], expected_hash)
+
+    def test_contract_must_pass_is_never_empty(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD), "good-playbook", "good-playbook.md"
+        )
+        must_pass = contract["acceptance"]["must_pass"]
+        self.assertIsInstance(must_pass, list)
+        self.assertGreater(len(must_pass), 0)
+        self.assertNotIn("tags_exist", must_pass)
+
+    def test_refuses_vacuous_contract_cli(self):
+        pb_text = (
+            "# Empty playbook\n"
+            "Created: 2026-10-27\n\n"
+            "### Phase 1 - Say hello\n"
+            "Say hello.\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pb = Path(tmpdir) / "empty-playbook.md"
+            output = Path(tmpdir) / "contract.json"
+            pb.write_text(pb_text, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable, str(TOOLS_DIR / "playbook_engine.py"),
+                    "build-contract", str(pb), "--out", str(output),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("vacuous build contract", result.stderr)
+            self.assertFalse(output.exists())
+
+    def test_cli_emits_non_empty_must_pass(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "contract.json"
+            result = subprocess.run(
+                [
+                    sys.executable, str(TOOLS_DIR / "playbook_engine.py"),
+                    "build-contract", str(FIXTURES / "good-playbook.md"),
+                    "--out", str(output),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            contract = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                contract["acceptance"]["must_pass"],
+                ["fields_exist", "calendars_exist", "pipeline_stages_exist"],
+            )
 
 
 class TestFormattingLaws(unittest.TestCase):
-    """The engine and its fixtures must obey the operator formatting laws."""
-
     def test_no_em_dash_in_engine_source(self):
         src = (TOOLS_DIR / "playbook_engine.py").read_text(encoding="utf-8")
-        self.assertNotIn("\u2014", src, "no em dash allowed in engine source")
+        self.assertNotIn("\u2014", src)
 
     def test_parse_json_roundtrips(self):
-        p = engine.parse_playbook(GOOD)
-        # Every parse result must be JSON-serializable (the gates consume JSON).
-        s = json.dumps(p)
-        self.assertIsInstance(s, str)
+        self.assertIsInstance(json.dumps(engine.parse_playbook(GOOD)), str)
+
+
+class TestPhaseNumberRegressions(unittest.TestCase):
+    DUPLICATE = (
+        "# Workflow\n\n"
+        "### Phase 2 - First\n"
+        "tools: update_tags\n\n"
+        "### Phase 2 - Second\n"
+        "tools: update_tags\n"
+    )
+    OUT_OF_ORDER = (
+        "# Workflow\n\n"
+        "### Phase 3 - Third\n"
+        "tools: update_tags\n\n"
+        "### Phase 2 - Second\n"
+        "tools: update_tags\n"
+    )
+
+    def test_duplicate_phase_numbers_include_lines(self):
+        defects = engine.validate_playbook(engine.parse_playbook(self.DUPLICATE))
+        self.assertTrue(any(
+            "duplicate phase numbers: 2 (lines 3, 6)" in defect
+            for defect in defects
+        ))
+
+    def test_duplicate_phase_numbers_cli_exit_one(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "duplicate.md"
+            path.write_text(self.DUPLICATE, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable, str(TOOLS_DIR / "playbook_engine.py"),
+                    "validate", str(path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("lines 3, 6", result.stdout + result.stderr)
+
+    def test_out_of_order_sequence(self):
+        defects = engine.validate_playbook(engine.parse_playbook(self.OUT_OF_ORDER))
+        self.assertTrue(any(
+            "phases are out of order: 3, 2 (expected 2, 3)" in defect
+            for defect in defects
+        ))
+
+    def test_out_of_order_cli_exit_one(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "order.md"
+            path.write_text(self.OUT_OF_ORDER, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable, str(TOOLS_DIR / "playbook_engine.py"),
+                    "validate", str(path),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(
+                "phases are out of order: 3, 2 (expected 2, 3)",
+                result.stdout + result.stderr,
+            )
+
+    def test_malformed_phase_header(self):
+        fixture = "# Workflow\n\n### Phase - No Number\n"
+        defects = engine.validate_playbook(engine.parse_playbook(fixture))
+        self.assertTrue(any("malformed phase header at line" in defect for defect in defects))
+
+
+class TestConversationLintRegressions(unittest.TestCase):
+    def fixture(
+        self,
+        objections="- Objection\n",
+        kpis="- Booking target: 20%",
+        transcript=(
+            "Customer: Hello.\n"
+            "Agent: Hi.\n"
+            "Customer: Help?\n"
+            "Agent: Your next step is to book an appointment."
+        ),
+    ):
+        return (
+            "# Workflow\n\n"
+            "### Phase 1 - Qualify\n"
+            "example: Hello.\n\n"
+            "## Objection Library\n%s\n"
+            "## Conversational KPIs\n%s\n"
+            "## Golden Transcript\n%s\n"
+            "## Never say\n- prohibited phrase\n"
+        ) % (objections, kpis, transcript)
+
+    def test_five_objection_bullets_do_not_count(self):
+        bullets = "\n".join([
+            "- Too expensive", "- Not now", "- Too busy",
+            "- Maybe later", "- No thanks",
+        ])
+        defects = engine.conversation_lint(
+            engine.parse_playbook(self.fixture(objections=bullets))
+        )
+        self.assertIn("objection library has 0 objection(s), minimum is 5", defects)
+
+    def test_five_complete_objection_rows_count(self):
+        rows = (
+            "| Objection | Response | Never say |\n"
+            "|---|---|---|\n"
+            + "\n".join(
+                "| objection %d | response %d | prohibited %d |" % (i, i, i)
+                for i in range(5)
+            )
+        )
+        defects = engine.conversation_lint(
+            engine.parse_playbook(self.fixture(objections=rows))
+        )
+        self.assertFalse(any("objection library" in defect for defect in defects))
+
+    def test_alternating_transcript_requires_outcome(self):
+        transcript = (
+            "Customer: Hi.\nAgent: Hello.\n"
+            "Customer: Okay.\nAgent: Anything else?"
+        )
+        defects = engine.conversation_lint(
+            engine.parse_playbook(self.fixture(transcript=transcript))
+        )
+        self.assertTrue(any("golden transcript has no stated outcome" in d for d in defects))
+
+    def test_agent_only_transcript_does_not_alternate(self):
+        transcript = (
+            "Agent: Hi.\nAgent: Hello.\nAgent: Okay.\nAgent: Done."
+        )
+        defects = engine.conversation_lint(
+            engine.parse_playbook(self.fixture(transcript=transcript))
+        )
+        self.assertTrue(any(
+            "golden transcript turns do not alternate speakers" in d
+            for d in defects
+        ))
+
+    def test_prose_kpi_requires_numeric_target(self):
+        defects = engine.conversation_lint(
+            engine.parse_playbook(
+                self.fixture(kpis="- Be friendly and helpful at all times.")
+            )
+        )
+        self.assertTrue(any(
+            "conversational KPI line has no numeric target" in d
+            for d in defects
+        ))
+
+    def test_table_kpi_header_is_not_a_target(self):
+        kpis = (
+            "| KPI | Target |\n"
+            "|---|---|\n"
+            "| Booking rate | 20% |"
+        )
+        defects = engine.conversation_lint(
+            engine.parse_playbook(self.fixture(kpis=kpis))
+        )
+        self.assertFalse(any("conversational KPI" in d for d in defects))
+
+
+class TestTagsUsed(unittest.TestCase):
+    """tags-used grammar, hashing and build-contract output."""
+
+    def test_compliant_block_parses_with_modes(self):
+        parsed = engine.parse_playbook(GOOD_TAGS)
+        self.assertEqual(
+            parsed["declares"]["tags-used"],
+            ["ZHC-appointment-booked (applies)", "webinar-registered (reads)"],
+        )
+        self.assertEqual(
+            engine.parse_tag_entry(parsed["declares"]["tags-used"][0]),
+            ("ZHC-appointment-booked", "applies"),
+        )
+
+    def test_compliant_block_has_no_tags_defect(self):
+        defects = engine.validate_playbook(engine.parse_playbook(GOOD_TAGS))
+        self.assertFalse(
+            [d for d in defects if "tags-used" in d],
+            defects,
+        )
+
+    def test_entry_without_mode_is_a_defect_naming_it(self):
+        text = GOOD_TAGS.replace("webinar-registered (reads)", "webinar-registered")
+        defects = engine.validate_playbook(engine.parse_playbook(text))
+        matching = [d for d in defects if "tags-used entry" in d]
+        self.assertEqual(len(matching), 1, defects)
+        self.assertIn("webinar-registered", matching[0])
+        self.assertIn("(applies|reads)", matching[0])
+
+    def test_mode_is_a_structural_hash_input(self):
+        applies = GOOD_TAGS
+        reads = GOOD_TAGS.replace(
+            "ZHC-appointment-booked (applies)", "ZHC-appointment-booked (reads)"
+        )
+        self.assertNotEqual(
+            engine.structure_hash(engine.parse_playbook(applies)),
+            engine.structure_hash(engine.parse_playbook(reads)),
+        )
+
+    def test_hash_is_order_insensitive_for_tag_entries(self):
+        swapped = GOOD_TAGS.replace(
+            "tags-used: ZHC-appointment-booked (applies), webinar-registered (reads)",
+            "tags-used: webinar-registered (reads), ZHC-appointment-booked (applies)",
+        )
+        self.assertEqual(
+            engine.structure_hash(engine.parse_playbook(GOOD_TAGS)),
+            engine.structure_hash(engine.parse_playbook(swapped)),
+        )
+
+    def test_contract_carries_modes_and_acceptance_checks(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD_TAGS), "good-tags", "good-tags.md"
+        )
+        self.assertEqual(
+            contract["tags"]["applies"], ["ZHC-appointment-booked"]
+        )
+        self.assertEqual(contract["tags"]["reads"], ["webinar-registered"])
+        self.assertIn("tags_exist", contract["acceptance"]["must_pass"])
+        self.assertIn(
+            "applies_tags_present_as_nodes", contract["acceptance"]["must_pass"]
+        )
+
+    def test_reads_only_contract_does_not_demand_applied_nodes(self):
+        text = GOOD_TAGS.replace(
+            "ZHC-appointment-booked (applies), webinar-registered (reads)",
+            "webinar-registered (reads)",
+        )
+        contract = engine.write_build_contract(
+            engine.parse_playbook(text), "reads-only", "reads-only.md"
+        )
+        self.assertEqual(contract["tags"]["applies"], [])
+        self.assertIn("tags_exist", contract["acceptance"]["must_pass"])
+        self.assertNotIn(
+            "applies_tags_present_as_nodes", contract["acceptance"]["must_pass"]
+        )
 
 
 if __name__ == "__main__":
