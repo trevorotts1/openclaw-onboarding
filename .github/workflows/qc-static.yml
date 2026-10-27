@@ -182,6 +182,20 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-trinity-registry.test.sh
           echo "✓ qc-trinity-registry reconciliation fixtures pass"
 
+      - name: Skill 38 launch Conversation-AI completion gate (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 38-conversational-ai-system/launch/qc-launch-conversation-ai.sh --bundle 38-conversational-ai-system/launch/fixtures/pass-full.json
+          echo "✓ launch Conversation-AI gate PASSes the pass-full fixture"
+
+      - name: Skill 38 launch Conversation-AI completion gate (regression tests)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 38-conversational-ai-system/launch/tests/qc-launch-conversation-ai.test.sh
+          echo "✓ launch Conversation-AI gate regression suite passes"
+
       - name: Skill 38 mandatory GHL send-directive
         shell: bash
         run: |
