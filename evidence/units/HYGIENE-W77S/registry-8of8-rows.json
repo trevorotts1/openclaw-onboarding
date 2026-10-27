@@ -1,0 +1,119 @@
+{
+  "unit": "HYGIENE-W77S",
+  "captured_at": "2026-10-25T21:41:11-04:00",
+  "what_this_is": "the eight REMOVED rows from control/registry.jsonl that this unit claims, followed by a live re-measurement of every recorded path at assembly time.",
+  "registry": {
+    "path": "<operator>/loop-control/w77s/registry.jsonl",
+    "sha256": "b281f75685d848b176038d11bc968e4f8563b735d2fc7d5a3e226e57821c84ef",
+    "count": 8
+  },
+  "rows_verbatim": [
+    {
+      "unit": "CLEAN-1058",
+      "owner": "wf_cde4c943-f71",
+      "path": "/Volumes/mac mini m4/swarm-contract/w77s/lanes/BATCH1058",
+      "state": "REMOVED",
+      "at": "2026-10-25T15:56:00-04:00",
+      "verified": "test -e rc=1"
+    },
+    {
+      "unit": "CLEAN-1058",
+      "owner": "wf_cde4c943-f71",
+      "path": "/Volumes/mac mini m4/swarm-contract/w77s/lanes/TREEGATE",
+      "state": "REMOVED",
+      "at": "2026-10-25T15:56:00-04:00",
+      "verified": "test -e rc=1"
+    },
+    {
+      "unit": "CLEAN-VENDOR",
+      "owner": "wf_19b16412-7eb",
+      "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/999-vendor-1058",
+      "state": "REMOVED",
+      "at": "2026-10-25T16:03:00-04:00",
+      "verified": "unlock rc0, remove rc0, test -e rc1"
+    },
+    {
+      "unit": "CLEAN-VENDOR",
+      "owner": "wf_19b16412-7eb",
+      "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/onb-council-1058",
+      "state": "REMOVED",
+      "at": "2026-10-25T16:03:00-04:00",
+      "verified": "unlock rc0, remove rc0, test -e rc1"
+    },
+    {
+      "unit": "CLEAN-FINAL",
+      "owner": "wf_82e61934-285",
+      "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/VENDOR-FIX-1059",
+      "state": "REMOVED",
+      "at": "2026-10-25T17:36:00-04:00",
+      "verified": "unlock rc0 remove rc0 test -e gone"
+    },
+    {
+      "unit": "CLEAN-FINAL",
+      "owner": "wf_82e61934-285",
+      "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/VERIFY-1059-MAIN",
+      "state": "REMOVED",
+      "at": "2026-10-25T17:36:00-04:00",
+      "verified": "unlock rc0 remove rc0 test -e gone"
+    },
+    {
+      "unit": "CLEAN-FINAL",
+      "owner": "wf_82e61934-285",
+      "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/ONB-CANON-1059",
+      "state": "REMOVED",
+      "at": "2026-10-25T17:36:00-04:00",
+      "verified": "rescued runtime/dist 336 files 5.1M then unlock rc0 remove rc0 test -e gone"
+    },
+    {
+      "unit": "CLEAN-VERIFY1058",
+      "owner": "wf_600d6c27-747",
+      "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/VERIFY1058",
+      "state": "REMOVED",
+      "at": "2026-10-25T17:50:00-04:00",
+      "verified": "unlock rc0 remove rc0 registration gone"
+    }
+  ],
+  "live_reverification": {
+    "control": {
+      "instrument": "test -d on the worktrees root plus a live sibling",
+      "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees",
+      "root_rc": 0,
+      "sibling_present": true
+    },
+    "measured": [
+      {
+        "path": "/Volumes/mac mini m4/swarm-contract/w77s/lanes/BATCH1058",
+        "test_e_rc": 1
+      },
+      {
+        "path": "/Volumes/mac mini m4/swarm-contract/w77s/lanes/TREEGATE",
+        "test_e_rc": 1
+      },
+      {
+        "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/999-vendor-1058",
+        "test_e_rc": 1
+      },
+      {
+        "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/onb-council-1058",
+        "test_e_rc": 1
+      },
+      {
+        "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/VENDOR-FIX-1059",
+        "test_e_rc": 1
+      },
+      {
+        "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/VERIFY-1059-MAIN",
+        "test_e_rc": 1
+      },
+      {
+        "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/ONB-CANON-1059",
+        "test_e_rc": 1
+      },
+      {
+        "path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/worktrees/VERIFY1058",
+        "test_e_rc": 1
+      }
+    ],
+    "measured_at": "2026-10-25T21:41:11-04:00"
+  }
+}
