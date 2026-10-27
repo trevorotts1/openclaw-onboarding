@@ -54,7 +54,7 @@ COVERAGE_SHORT = "LIPSYNC_COVERAGE_SHORT"
 
 # Rule constants; acceptance-profile.json "lipsync" overrides when present.
 MIN_LINES = _LC.MIN_CLIPS_FLOOR           # always at least 3 lines (floor)
-SCALE_SHARE = _LC.TOTAL_PER_REF_S[0] / _LC.REF_LENGTH_S   # 0.5: 30 s per 60 s
+SCALE_SHARE = _LC.TOTAL_PER_REF_S[0] / _LC.REF_LENGTH_S   # 0.25: 15 s per 60 s
 
 EXIT = {"ok": 0, "error": 1, "rejected": 5}
 
