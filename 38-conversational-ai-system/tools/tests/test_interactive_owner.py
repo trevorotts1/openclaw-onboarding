@@ -35,7 +35,7 @@ REPO_ROOT = SKILL_ROOT.parent
 # work that changed nothing here. A branch is measured against this named main;
 # raise the pin when the gate should be judged against a newer one. The
 # duplicate-version bite still reads live ``origin/main``.
-MAIN_PIN_SHA = "a6bfbfb62ff7980ef6aae8ea9e2682fba98a31f8"
+MAIN_PIN_SHA = "8cb74925ad94c05ce9eb639e7554d02fcd780e20"
 SKILL_38_PATH = "38-conversational-ai-system"
 sys.path.insert(0, str(TOOLS_DIR))
 
