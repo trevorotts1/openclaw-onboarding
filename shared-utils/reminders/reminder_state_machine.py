@@ -12,6 +12,7 @@ Reuses, and never re-implements, the accepted upstream modules:
         outbound_gate.dispatch              the common fresh gate
   T-18  consent_gate.ConsentStore           STOP / opt-out / human fence
         consent_gate.make_gate_evaluator    the consent evaluator
+  T-29  handoff.HandoffStore                an open human handoff suppresses
 
 What this module adds on top of them:
 
@@ -61,6 +62,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,8 +72,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 # this directory on sys.path; the accepted upstream modules must still resolve.
 _UPSTREAM_TOOLS = (Path(__file__).resolve().parents[2]
                    / "38-conversational-ai-system" / "tools")
+# T-29 lives beside this package under shared-utils/handoff/ and must resolve
+# on the import path too, not only when this file is run directly.
+_HANDOFF_TOOLS = Path(__file__).resolve().parents[1] / "handoff"
+if str(_HANDOFF_TOOLS) not in sys.path:
+    sys.path.insert(0, str(_HANDOFF_TOOLS))
 if __package__ in (None, ""):
-    import sys
     if str(Path(__file__).resolve().parent) not in sys.path:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
     if str(_UPSTREAM_TOOLS) not in sys.path:
@@ -93,6 +99,7 @@ from durable_store import (  # noqa: E402
     DurableStore,
     DurableStoreError,
 )
+from handoff import HandoffError, HandoffStore  # noqa: E402
 from outbound_gate import (  # noqa: E402
     ST_BLOCKED,
     ST_NOT_CLAIMED,
@@ -416,7 +423,64 @@ class ReminderStateMachine:
         self.store = store
         self.consent = consent or ConsentStore(identity)
         self.lock = lock or CollectionLock(identity)
+        self._handoffs: Optional[HandoffStore] = None
         self.init_schema()
+
+    # ── the T-29 handoff fence ─────────────────────────────────────────────
+
+    @property
+    def handoffs(self) -> HandoffStore:
+        """The T-29 handoff lifecycle over the same tenant database.
+
+        Lazy: the store creates its two additive tables on first use, in the
+        identity database, so one database stays one tenant boundary.
+        """
+        if self._handoffs is None:
+            self._handoffs = HandoffStore(self.identity.db_path)
+        return self._handoffs
+
+    def _gate_evaluator(self) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+        """The consent evaluator with the T-29 human handoff fence in front.
+
+        Both must ALLOW. An open handoff suppresses the send even when the
+        consent fence flag is not set (gate_decision reads the handoff rows as
+        well as the fence), and an unverifiable contact fails closed rather
+        than sending on a guess.
+
+        consent_guard is carried through so outbound_gate re-runs this exact
+        evaluator at the point of use: a handoff opened, or a STOP recorded,
+        while the first verdict was being computed still blocks the send.
+        """
+        consent_evaluator = make_gate_evaluator(self.consent)
+
+        def evaluate(ctx: Dict[str, Any]) -> Dict[str, Any]:
+            verdict = consent_evaluator(ctx)
+            if verdict.get("verdict") != "ALLOW":
+                return verdict
+            action = ctx.get("action") or {}
+            contact = action.get("canonical_contact_id")
+            if not contact:
+                return verdict
+            # evaluate_gate floats checked_at, so it is never None here.
+            at = ctx.get("now")
+            at = time.time() if at is None else at
+            try:
+                decision = self.handoffs.gate_decision(
+                    action.get("tenant_id"), contact)
+            except HandoffError as exc:
+                return {"verdict": "SUPPRESSED", "checked_at": at,
+                        "evidence": {"reason": "handoff:unavailable",
+                                     "error": str(exc)[:200]}}
+            if decision["verdict"] == "ALLOW":
+                return verdict
+            return {"verdict": "SUPPRESSED", "checked_at": at,
+                    "evidence": {"reason": decision["reason"],
+                                 "handoff_id": decision["handoff_id"],
+                                 "bot_paused": decision["bot_paused"],
+                                 "source": "handoff"}}
+
+        evaluate.consent_guard = True
+        return evaluate
 
     # ── storage ────────────────────────────────────────────────────────────
 
@@ -956,7 +1020,7 @@ class ReminderStateMachine:
                                   action_id=aid, channel=channel,
                                   reason=blocked)
 
-            evaluator = make_gate_evaluator(self.consent)
+            evaluator = self._gate_evaluator()
             outcome = dispatch(
                 self.store, evaluator, sender, aid, worker_id,
                 now=ts, lease_seconds=lease_seconds,
@@ -1463,7 +1527,7 @@ class ReminderStateMachine:
             return self._cancel_final(key, action_id, REASON_FIELD_COMPLETION,
                                       ts)
 
-        evaluator = make_gate_evaluator(self.consent)
+        evaluator = self._gate_evaluator()
         outcome = dispatch(
             self.store, evaluator, sender, action_id, worker_id,
             now=ts, lease_seconds=lease_seconds,
