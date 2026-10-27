@@ -1,0 +1,34 @@
+{
+  "workflowData": {
+    "templates": [
+      {
+        "id": "r1",
+        "type": "tag",
+        "name": "Root",
+        "parentKey": null,
+        "next": "r2"
+      },
+      {
+        "id": "r2",
+        "type": "end",
+        "name": "End",
+        "parentKey": "r1",
+        "next": null
+      },
+      {
+        "id": "d1",
+        "type": "drip",
+        "name": "Unreachable Drip",
+        "parentKey": "r1",
+        "next": "d2"
+      },
+      {
+        "id": "d2",
+        "type": "wait",
+        "name": "Unreachable Wait",
+        "parentKey": "d1",
+        "next": "d1"
+      }
+    ]
+  }
+}
