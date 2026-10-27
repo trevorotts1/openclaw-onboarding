@@ -15,6 +15,14 @@ def _contract():
         "fields": [{"name": "email"}],
         "calendars": [{"id": "calendar-one"}],
         "pipeline": {"stages": [{"name": "Qualified"}]},
+        "acceptance": {
+            "must_pass": [
+                "tags_exist",
+                "fields_exist",
+                "calendars_exist",
+                "pipeline_stages_exist",
+            ]
+        },
     }
 
 
@@ -146,3 +154,73 @@ def test_literal_contract_path_works_like_slug(tmp_path):
     assert result.returncode == 0
     assert report["verdict"] == "PASS"
     assert report["contract_path"] == str(contract_path.resolve())
+
+
+def test_empty_must_pass_fails(tmp_path):
+    contract = _contract()
+    contract["acceptance"] = {"must_pass": []}
+    contract_path = _write_json(tmp_path / "empty-must-pass.json", contract)
+    manifest = _write_json(tmp_path / "manifest.json", _manifest())
+    result = _run([
+        "--build-contract", str(contract_path),
+        "--deps", str(manifest),
+    ])
+    report = _report(result)
+    assert result.returncode == 1
+    assert report["verdict"] == "FAIL"
+    assert "contract_must_pass_empty" in report["schema_errors"]
+    assert report["reason"] == "contract_must_pass_empty"
+
+
+def test_missing_acceptance_fails(tmp_path):
+    contract = _contract()
+    del contract["acceptance"]
+    contract_path = _write_json(tmp_path / "missing-acceptance.json", contract)
+    manifest = _write_json(tmp_path / "manifest.json", _manifest())
+    result = _run([
+        "--build-contract", str(contract_path),
+        "--deps", str(manifest),
+    ])
+    report = _report(result)
+    assert result.returncode == 1
+    assert "contract_must_pass_empty" in report["schema_errors"]
+
+
+def test_empty_must_pass_fails_without_manifest(tmp_path):
+    contract = _contract()
+    contract["acceptance"] = {"must_pass": []}
+    contract_path = _write_json(tmp_path / "empty-no-manifest.json", contract)
+    result = _run(["--build-contract", str(contract_path)])
+    report = _report(result)
+    assert result.returncode == 1
+    assert report["verdict"] == "FAIL"
+    assert report["reason"] == "contract_must_pass_empty"
+
+
+def test_unresolved_must_pass_check_fails(tmp_path):
+    contract = _contract()
+    contract["acceptance"] = {"must_pass": ["tags_exist"]}
+    contract["tags"] = {"applies": [], "reads": []}
+    contract_path = _write_json(tmp_path / "unresolved-check.json", contract)
+    manifest = _write_json(tmp_path / "manifest.json", _manifest())
+    result = _run([
+        "--build-contract", str(contract_path),
+        "--deps", str(manifest),
+    ])
+    report = _report(result)
+    assert result.returncode == 1
+    assert "must_pass_check_unresolved:tags_exist" in report["schema_errors"]
+
+
+def test_unknown_must_pass_check_fails(tmp_path):
+    contract = _contract()
+    contract["acceptance"] = {"must_pass": ["not_a_real_check"]}
+    contract_path = _write_json(tmp_path / "unknown-check.json", contract)
+    manifest = _write_json(tmp_path / "manifest.json", _manifest())
+    result = _run([
+        "--build-contract", str(contract_path),
+        "--deps", str(manifest),
+    ])
+    report = _report(result)
+    assert result.returncode == 1
+    assert "unknown_must_pass_check:not_a_real_check" in report["schema_errors"]

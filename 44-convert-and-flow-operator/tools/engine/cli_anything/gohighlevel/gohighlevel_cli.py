@@ -71,6 +71,23 @@ def _emit_build_result(ctx: click.Context, builder, stats) -> None:
         sys.exit(1)
 
 
+def _refuse_unlinked(unlinked) -> None:
+    """A non-empty unlinked list means a branch node has no authored targets.
+
+    Every link_steps caller must refuse: linking the rest of the graph and
+    writing it anyway ships a workflow whose condition can never route.
+    """
+    if unlinked:
+        click.echo(
+            'Error: branch node(s) ' + ', '.join(str(node) for node in unlinked)
+            + ' have no authored branch targets - refusing to write a graph '
+              'whose conditions cannot be wired. Author next/branches on each '
+              'branch node in the plan.',
+            err=True,
+        )
+        sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # Main CLI Group
 # ---------------------------------------------------------------------------
@@ -963,7 +980,8 @@ def workflows_create_step(ctx, step_type, name, out_file, subject, body, from_na
         steps.append(step)
 
         # Auto-link all steps
-        linked, _unlinked = wb.link_steps(steps)
+        linked, unlinked = wb.link_steps(steps)
+        _refuse_unlinked(unlinked)
         with open(out_file, "w") as f:
             json.dump(linked, f, indent=2)
 
@@ -995,7 +1013,8 @@ def workflows_create_n8n(ctx, name, webhook_url, tag, folder):
         if tag:
             steps.insert(0, wb.tag_step(f"Tag: {tag}", [tag]))
 
-        linked, _unlinked = wb.link_steps(steps)
+        linked, unlinked = wb.link_steps(steps)
+        _refuse_unlinked(unlinked)
         campaign = {
             "n8n_bridge": {
                 "name": name,
@@ -1231,6 +1250,49 @@ def workflows_update(ctx, workflow_id, json_file, allow_deletions=False):
         # 2. Load new body
         with open(json_file) as f:
             body = json.load(f)
+        # Pre-write graph identity gate: an exported body is written verbatim,
+        # so a structurally broken graph must be refused before transport.
+        from cli_anything.gohighlevel.utils.workflow_identity import _identity_fn
+        _templates = []
+        if isinstance(body, dict):
+            _wd = body.get('workflowData')
+            if isinstance(_wd, dict) and isinstance(_wd.get('templates'), list):
+                _templates = _wd['templates']
+            elif isinstance(body.get('templates'), list):
+                _templates = body['templates']
+        _branch_types = {'if_else', 'workflow_split', 'goto', 'transition'}
+        _declares_graph = any(
+            isinstance(_node, dict)
+            and (
+                _node.get('next') is not None
+                or _node.get('branches')
+                or _node.get('parentKey') is not None
+                or _node.get('type') in _branch_types
+            )
+            for _node in _templates
+        )
+        if _declares_graph:
+            _identity = _identity_fn()
+            if _identity is None:
+                click.echo(
+                    f'Error: graph validator tools/validate_graph.py is unavailable - '
+                    f'refusing to write workflow {workflow_id} whose graph cannot be '
+                    'validated. Nothing was written.',
+                    err=True,
+                )
+                sys.exit(1)
+            _failures = _identity(_templates)
+            if _failures:
+                click.echo(
+                    f'Error: refusing to write workflow {workflow_id}:', err=True
+                )
+                for _failure in _failures:
+                    _parts = [str(_failure.get('kind'))]
+                    for _key in ('node_id', 'field', 'target', 'parentKey'):
+                        if _failure.get(_key) is not None:
+                            _parts.append(f'{_key}={_failure[_key]}')
+                    click.echo('  - ' + ' '.join(_parts), err=True)
+                sys.exit(1)
         # 3. Serialized write (AC 21)
         with WriteLock(location_id):
             result = client.put_workflow(workflow_id, body)

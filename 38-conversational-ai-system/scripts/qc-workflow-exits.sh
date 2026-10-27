@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
 # qc-workflow-exits.sh (U-2) - machine-enforce tag-driven workflow exit rules.
 #
+# LEGACY CLASSIFICATION (content only; never mtime): A file is NEW when any
+# line matches PHASE_RE. A file is BROKEN when it has NO phase line BUT has a
+# bare 'declares' line (strip fences, ln.strip().lower()=='declares') OR a line
+# matching MODEL_RE. Otherwise it is LEGACY.
+#
 # Two layers of enforcement:
 #   (A) STATIC WIRING (always checked, CI-relevant): the workflow-exit-rules
 #       protocol file, the AGENTS marker, the MEMORY rule, and the JSONL sink seed
 #       must all exist in the skill repo. A missing piece is a FAIL.
 #   (B) PLAYBOOK CONTENT (checked when a conversation-workflows dir is present):
-#       every exit rule must use an action in {end, handoff, route}; a route
-#       action REQUIRES a target, and that target must be present in registry.md.
+#       every non-legacy playbook must pass canonical validation; every exit rule
+#       must use an action in {end, handoff, route}; route actions require a
+#       registered target.
 #
-# This gate does NOT parse playbook markdown itself. It shells out to the
-# canonical parser tools/playbook_engine.py (U-16) and applies the exit-rule
-# pass/fail policy to the engine's structured output.
+# This gate shells out to canonical parser tools/playbook_engine.py (U-16).
+# Canonical validation runs once per playbook before per-exit-rule checks.
 #
-# Exit codes: 0 = pass; 1 = an exit-rule violation or missing wiring; 2 = the
-#             engine is missing / python3 unavailable (cannot judge).
+# Exit codes: 0 = pass or migration needed; 1 = a violation or missing wiring;
+#             2 = cannot judge.
 #
 # Usage:
 #   bash scripts/qc-workflow-exits.sh                 # auto-locate workflows via pointer
@@ -33,7 +38,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dir) WF_DIR="$2"; shift 2 ;;
     --json) JSON_MODE=1; shift ;;
-    -h|--help) sed -n '1,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,36p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -51,7 +56,6 @@ if [ -z "$WF_DIR" ]; then
   fi
 fi
 
-# ── LIVE AGENTS.md resolver (content-version-aware gate) — see qc-segmentation.sh
 if [ -z "${AGENTS_MD:-}" ]; then
   if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
 fi
@@ -61,6 +65,7 @@ export SKILL_ROOT ENGINE WF_DIR JSON_MODE AGENTS_MD
 python3 - <<'PYEOF'
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -71,7 +76,21 @@ JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
 AGENTS_MD = os.environ.get("AGENTS_MD", "")
 
 sys.path.insert(0, str(ENGINE.parent))
-import playbook_engine as engine  # canonical parser (U-16)
+import playbook_engine as engine
+
+PHASE_RE = re.compile(r'^\s{0,3}#{2,4}\s*Phase\s*\d', re.IGNORECASE)
+MODEL_RE = re.compile(r'^\s*\*{0,2}model-tier\*{0,2}\s*:', re.IGNORECASE)
+
+def classify_playbook(text):
+    lines = engine._strip_fence(text.splitlines())
+    has_phase = any(PHASE_RE.search(line) for line in lines)
+    has_declares = any(line.strip().lower() == "declares" for line in lines)
+    has_model = any(MODEL_RE.search(line) for line in lines)
+    if has_phase:
+        return "NEW"
+    if has_declares or has_model:
+        return "BROKEN"
+    return "LEGACY"
 
 failures = []
 
@@ -80,9 +99,6 @@ def contains(path, needle):
     return p.is_file() and needle in p.read_text(encoding="utf-8", errors="ignore")
 
 def contains_live_agents(needle):
-    # None = no live AGENTS.md to check (SKIP, not a failure -- e.g. a bare CI
-    # checkout with no box). True/False = the marker is/isn't present in the
-    # box's ACTUAL AGENTS.md, not just the shipped source script.
     if not AGENTS_MD or not os.path.isfile(AGENTS_MD):
         return None
     try:
@@ -90,7 +106,6 @@ def contains_live_agents(needle):
     except OSError:
         return None
 
-# --- (A) Static wiring checks. -------------------------------------------
 if not (SKILL_ROOT / "protocols" / "workflow-exit-rules-protocol.md").is_file():
     failures.append("missing protocols/workflow-exit-rules-protocol.md")
 if not contains("scripts/05-update-agents-md.sh", "STEP_1_30_EXIT_RULES"):
@@ -107,7 +122,6 @@ if not contains("references/memory-design-rules.md", "v1.8.0-rules-workflow-exit
 if not contains("scripts/25-seed-round3-feature-files.sh", "workflow-exit-events.jsonl"):
     failures.append("missing workflow-exit-events.jsonl seed in scripts/25-seed-round3-feature-files.sh")
 
-# --- (B) Playbook content checks (when a workflows dir is present). -------
 RESERVED = ("--build-with-ai-prompt.md", "--workflow-ai-prompt.md",
             "--verification-checklist.md", "--ghl-side.md")
 
@@ -126,6 +140,7 @@ def registry_ids(reg_path):
     return ids
 
 playbooks_checked = 0
+legacy = []
 wf = Path(WF_DIR) if WF_DIR else None
 if wf and wf.is_dir():
     reg_ids = registry_ids(wf / "registry.md")
@@ -134,8 +149,15 @@ if wf and wf.is_dir():
             continue
         if f.name == "registry.md" or any(f.name.endswith(s) for s in RESERVED):
             continue
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        if classify_playbook(text) == "LEGACY":
+            legacy.append(f.name)
+            continue
         playbooks_checked += 1
-        parsed = engine.parse_playbook(f.read_text(encoding="utf-8", errors="ignore"))
+        parsed = engine.parse_playbook(text)
+        vdef = engine.validate_playbook(parsed)
+        if vdef:
+            failures.extend("%s: %s" % (f.name, d) for d in vdef)
         for idx, rule in enumerate(parsed["exit_rules"], start=1):
             label = "%s exit rule %d ('%s')" % (f.name, idx, rule.get("tag") or "?")
             action = rule.get("action")
@@ -149,7 +171,9 @@ if wf and wf.is_dir():
                 elif reg_ids and tgt not in reg_ids:
                     failures.append("%s routes to target '%s' which is absent from registry.md" % (label, tgt))
 
-verdict = "PASS" if not failures else "FAIL"
+resolved_wf = str(Path(WF_DIR).resolve()) if WF_DIR else "<ABSOLUTE_WORKFLOWS_DIR>"
+migration_command = "bash scripts/33-migrate-legacy-playbooks.sh %s --write" % resolved_wf
+verdict = "FAIL" if failures else ("NEEDS-MIGRATION" if legacy else "PASS")
 
 if JSON_MODE:
     print(json.dumps({
@@ -158,18 +182,25 @@ if JSON_MODE:
         "playbooks_checked": playbooks_checked,
         "workflows_dir": WF_DIR or None,
         "failures": failures,
+        "legacy": legacy,
+        "needs_migration": len(legacy),
     }, indent=2))
 else:
     print("=== qc-workflow-exits: tag-driven workflow exits (U-2) ===")
     print("skill root: %s" % SKILL_ROOT)
     print("workflows dir: %s" % (WF_DIR or "<none - static wiring only>"))
     print("playbooks checked: %d" % playbooks_checked)
+    for name in legacy:
+        print("[NEEDS-MIGRATION] %s — legacy playbook (no '### Phase N', no declares, no model-tier:); NOT a pass. Fix: %s" % (name, migration_command))
+    print("legacy playbooks NEEDS-MIGRATION: %d" % len(legacy))
     print("")
     if failures:
         for msg in failures:
             print("  [FAIL] %s" % msg)
         print("")
         print("RESULT: FAIL - %d workflow-exit violation(s)." % len(failures))
+    elif legacy:
+        print("RESULT: NEEDS-MIGRATION - %d legacy playbook(s) need migration; nothing else failed. They are not PASS." % len(legacy))
     else:
         print("RESULT: PASS - exit rules wired and every checked rule has a valid action and resolvable route target.")
 
