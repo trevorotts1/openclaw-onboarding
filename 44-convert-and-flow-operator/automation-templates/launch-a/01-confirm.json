@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "single_message",
   "id": "launch-a-reminder-confirm",
   "name": "Launch A — Registration Confirmation (Set the Stage)",
   "aliases": [
@@ -72,5 +74,71 @@
       "Reminder sends — separate launch-a files",
       "Replay and no-show branches — separate launch-a file"
     ]
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Form Submitted OR Tag Added webinar-registered",
+        "ref": "Form Submitted (registration page) OR Tag Added `webinar-registered`"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "update_contact_field",
+      "after": "trg",
+      "attributes": {
+        "field": "webinar_datetime",
+        "source": "session field",
+        "ref": "Set `webinar_datetime` from the session field"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "email",
+      "after": "n1",
+      "attributes": {
+        "message": "Set the Stage",
+        "timing": "Immediately",
+        "ref": "Send Email (Set the Stage)"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "if_else",
+      "after": "n2",
+      "branches": {
+        "true": "n4",
+        "false": "n5"
+      },
+      "attributes": {
+        "condition": "SMS consent present",
+        "ref": "If SMS consent"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "sms",
+      "after": "n3",
+      "attributes": {
+        "message": "confirm + calendar",
+        "timing": "Immediately",
+        "ref": "Send SMS (confirm + calendar)"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "workflow_goal",
+      "after": [
+        "n3",
+        "n4"
+      ],
+      "attributes": {
+        "goal": "confirmation chain complete",
+        "ref": "End",
+        "join": true
+      }
+    }
+  ]
 }

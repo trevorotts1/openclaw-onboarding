@@ -272,6 +272,26 @@ Operators never memorize CLI syntax. Say what you want in Telegram; the agent ro
 | "Create a new sub-account / location for <NAME>" / "spin up a client sub-account" | `caf --experimental locations create --name "<NAME>" --company-id <AGENCY_FIRESTORE_ID>` (Firebase/internal path — see Agency operations below) |
 | "Add a user to <SUBACCOUNT>" / "create a login for <PERSON>" / "give <PERSON> access" | `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user\|admin>` (agency PIT public path; omit password → invite email; defaults to a SUB-ACCOUNT user — see Agency operations below) |
 
+
+## Dependency exports for Skill 38 gates
+
+Generate the calendar and pipeline exports from live GHL data:
+
+```bash
+python3 tools/export_deps.py --workflows-dir <master-files>/conversation-workflows
+```
+
+The producer writes these files:
+
+- `<master-files>/conversation-workflows/.caf-calendars-export.json`
+- `<master-files>/conversation-workflows/.caf-pipelines-export.json`
+
+Exit codes: `0` means both exports succeeded; `2` means usage or path resolution error; `3` means caf failure or invalid response shape. The producer requires a live PIT-authenticated `caf`. No network means no export, never a fabricated one.
+
+Skill 38's `qc-playbook-declares.sh` fails with `REQUIRES_OPERATOR` when a playbook declares calendars or applied tags and the required export is absent. `qc-opportunity-sync.sh` fails with `REQUIRES_OPERATOR` when a playbook declares a pipeline or stage-map and the pipelines export is absent. Both gates fail closed; missing exports never mean skipped validation.
+
+Regenerate both exports after any calendar or pipeline change in GHL.
+
 ---
 
 ## Agency operations — create sub-account / add user
@@ -421,9 +441,9 @@ etc. are PLACEHOLDERS — substitute the live values at runtime.)
 When the operator asks to "build a workflow / playbook / funnel" AND the workflow contains
 a conversational node:
 
-1. Skill 44 builds the GHL automation structure (the HANDS)
-2. Skill 44 AUTO-INVOKES skill 38 for the brain (communications playbook + Build-with-AI prompt)
-3. All three TRINITY legs ship together, or the build is NOT registered
+1. Skill 38 authors the communications playbook, its declares block, and its build contract FIRST (Skill 44 does not begin before those exist)
+2. Skill 44 reads that build contract and declares block and builds the GHL automation structure to exactly that spec, refusing to build when the contract is missing or stale (`playbook_structure_hash` mismatch). Skill 44 never invents, alters, or reverses the order and never authors playbook content.
+3. All three TRINITY legs and the build contract ship together, or the build is NOT registered
 
 **WF-19 is a MECHANICAL HARD GATE for conversational builds (FIX-S36-27).** Run the Step-9 QC
 with `--conversational`: `./qc-built-workflow.sh <workflow-id> --conversational …`. That flag

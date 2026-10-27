@@ -182,6 +182,20 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-trinity-registry.test.sh
           echo "✓ qc-trinity-registry reconciliation fixtures pass"
 
+      - name: Skill 38 launch Conversation-AI completion gate (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 38-conversational-ai-system/launch/qc-launch-conversation-ai.sh --bundle 38-conversational-ai-system/launch/fixtures/pass-full.json
+          echo "✓ launch Conversation-AI gate PASSes the pass-full fixture"
+
+      - name: Skill 38 launch Conversation-AI completion gate (regression tests)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 38-conversational-ai-system/launch/tests/qc-launch-conversation-ai.test.sh
+          echo "✓ launch Conversation-AI gate regression suite passes"
+
       - name: Skill 38 mandatory GHL send-directive
         shell: bash
         run: |
@@ -233,6 +247,20 @@ jobs:
           # strings in .py under 22/23, so this gate is BASH (with an inline py core).
           bash 38-conversational-ai-system/scripts/qc-playbook-doc.test.sh
           echo "✓ qc-playbook-doc per-playbook human-facing doc gate fixtures pass"
+
+      - name: Skill 38 prose counts match disk (qc-doc-counts)
+        shell: bash
+        run: |
+          # SKILL.md and INSTALL.md state script/protocol/reference counts and the
+          # numbered install range. Those drifted (a claim of 92 scripts against
+          # 101 on disk, and an install range stopping at 23 when prefixes reached
+          # 33) and nothing failed: the repo-root bump-version.sh advisory prints a
+          # WARN and returns 0 unconditionally. qc-doc-counts.sh fails on a
+          # mismatch, exits 2 when it cannot verify, and is wired into the QC
+          # checklist. CI runs the gate against the real tree and its fixtures.
+          bash 38-conversational-ai-system/scripts/qc-doc-counts.sh
+          bash 38-conversational-ai-system/scripts/qc-doc-counts.test.sh
+          echo "✓ qc-doc-counts: prose counts agree with disk, fixtures pass"
 
       - name: Skill 38 reference sheet is bulletproof (Quick Start + tag-first + post-build verify)
         shell: bash
@@ -1048,6 +1076,17 @@ jobs:
           # resolving declares block.
           bash 38-conversational-ai-system/scripts/qc-playbook-declares.test.sh
           echo "✓ qc-playbook-declares negative test passes (fails on dangling declares, warns on legacy)"
+
+      - name: Skill 38 checklist status reader — UNINITIALISED vs FAIL (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove 11-run-qc-checklist.sh tells three outcomes apart: a well-formed
+          # UNINITIALISED verdict (the gates' NOTHING-TO-CHECK path) is accepted and
+          # reported as SKIP; FAIL stays red; malformed/missing status stays red;
+          # PASS stays green. Extracts the real reader + disposition blocks.
+          bash 38-conversational-ai-system/scripts/qc-read-status-uninitialised.test.sh
+          echo "✓ UNINITIALISED skips, FAIL/malformed/missing stay red, PASS stays green"
 
       - name: Skill 38 Opportunity/pipeline stage sync (U-13)
         shell: bash

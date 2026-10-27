@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "attractive-character-intro-sequence",
   "name": "Attractive Character Intro Sequence (Epiphany Bridge Bonding)",
   "aliases": [
@@ -25,7 +27,10 @@
     "fires": "Once per contact",
     "reentry_guard": "Only enter if tag 'ac-intro-started' does NOT already exist"
   },
-  "channels": ["email (primary)", "optional short video per email (Epiphany Bridge video: podcast clip / FB Live / VSL)"],
+  "channels": [
+    "email (primary)",
+    "optional short video per email (Epiphany Bridge video: podcast clip / FB Live / VSL)"
+  ],
   "cadence": "1 email/day for 5-6 days (auto-responder), mirroring the Soap Opera daily-cadence open-loop delivery.",
   "sequence": [
     {
@@ -125,9 +130,21 @@
   "ghl_build": {
     "builder": "Skill 44 — Convert & Flow Operator (caf), Tier 0. Internal-API build when GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN healthy; Tier 4 agent-browser backstop + owner nudge otherwise.",
     "dependencies_first": {
-      "tags": ["ac-intro-started", "ac-intro-complete", "ac-bonded", "engaged-video"],
-      "custom_fields": ["ac_identity (text)"],
-      "custom_values": ["{{ac_name}}", "{{framework_name}}", "{{video_url_e1}}..{{video_url_e6}}", "{{core_offer_url}}"]
+      "tags": [
+        "ac-intro-started",
+        "ac-intro-complete",
+        "ac-bonded",
+        "engaged-video"
+      ],
+      "custom_fields": [
+        "ac_identity (text)"
+      ],
+      "custom_values": [
+        "{{ac_name}}",
+        "{{framework_name}}",
+        "{{video_url_e1}}..{{video_url_e6}}",
+        "{{core_offer_url}}"
+      ]
     },
     "workflow": {
       "trigger": "Form Submitted / Funnel Step Submitted (personal-brand opt-in). Filter: tag 'ac-intro-started' NOT present.",

@@ -74,10 +74,28 @@ def stub_caf_env(tmp_path):
   "id": "WFTEST001",
   "name": "ZHC-test-workflow",
   "status": "draft",
-  "triggers": [{"id": "T1", "type": "form_submitted"}],
-  "steps": [
-    {"id": "A1", "type": "EMAIL", "order": 0, "targetActionId": "exit"}
-  ],
+  "workflowData": {
+    "templates": [
+      {
+        "id": "n1",
+        "type": "sms",
+        "name": "Send",
+        "parentKey": null,
+        "next": "n2",
+        "attributes": {
+          "body": "Test message",
+          "fromNumber": "+15555550100"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "end",
+        "name": "Finish",
+        "parentKey": "n1"
+      }
+    ]
+  },
+  "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "n1"}],
   "allowMultiple": false,
   "active": false
 }
@@ -127,8 +145,28 @@ def stub_caf_env_with_snapshot(tmp_path):
   "id": "WFTEST001",
   "name": "ZHC-test-workflow",
   "status": "draft",
-  "triggers": [{"id": "T1", "type": "form_submitted"}],
-  "steps": [{"id": "A1", "type": "EMAIL", "order": 0, "targetActionId": "exit"}],
+  "workflowData": {
+    "templates": [
+      {
+        "id": "n1",
+        "type": "sms",
+        "name": "Send",
+        "parentKey": null,
+        "next": "n2",
+        "attributes": {
+          "body": "Test message",
+          "fromNumber": "+15555550100"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "end",
+        "name": "Finish",
+        "parentKey": "n1"
+      }
+    ]
+  },
+  "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "n1"}],
   "allowMultiple": false,
   "active": false
 }
@@ -299,9 +337,10 @@ class TestCafExportFlags:
         """
         env, tmp = stub_caf_env
         result = _run_qc(["WFTEST001", "--json"], env)
-        # Script exits 0 when all mechanical items pass (they do with the stub)
-        assert result.returncode in (0, 1), (
-            f"Script should exit 0 or 1 (not 2 = prereq failure). "
+        # With the stub export the graph has no templates, so WF-23 is UNVERIFIED
+        # and the script must return 2 (never 0) — UNVERIFIED is not a pass.
+        assert result.returncode in (0, 1, 2), (
+            f"Script should exit 0, 1, or 2 (2 = unverified graph or prereq). "
             f"returncode={result.returncode}\nstdout={result.stdout}\nstderr={result.stderr}"
         )
         # JSON output must be parseable and contain the workflow_id
@@ -336,14 +375,19 @@ class TestCafExportFlags:
 class TestWF18WF21FreshBuild:
     """WF-18 and WF-21 must be N/A (not FAIL) when no prior snapshot exists."""
 
-    def test_wf18_is_na_on_fresh_build(self, stub_caf_env):
+    def test_wf18_fails_without_a_dependency_manifest(self, stub_caf_env):
+        """WF-18 is the dependency-manifest gate. No manifest is a FAIL, not N/A:
+        a snapshot proves reversibility (WF-21) and nothing about whether the
+        tags/fields/calendars the export references exist."""
         env, tmp = stub_caf_env
         result = _run_qc(["WFTEST001", "--json"], env)
         data = json.loads(result.stdout)
         wf18 = data["items"]["WF-18"]
-        assert wf18["status"] == "N/A", (
-            f"WF-18 must be N/A on a fresh build (no prior snapshot). "
-            f"Got status={wf18['status']!r}"
+        assert wf18["status"] == "FAIL", (
+            f"WF-18 must FAIL when no --deps manifest is supplied. Got: {wf18}"
+        )
+        assert "manifest" in (wf18["observed"] + wf18["notes"]).lower(), (
+            f"WF-18 must name the missing manifest. Got: {wf18}"
         )
 
     def test_wf21_is_na_on_fresh_build(self, stub_caf_env):
@@ -357,26 +401,43 @@ class TestWF18WF21FreshBuild:
         )
 
     def test_fresh_build_overall_mechanical_can_pass(self, stub_caf_env):
-        """N/A items must not count as mechanical failures on a fresh build."""
+        """With a dependency manifest supplied, nothing mechanical must fail.
+
+        WF-21 stays N/A on a first-time build (no prior state to snapshot) and
+        N/A items still do not count as failures."""
         env, tmp = stub_caf_env
-        result = _run_qc(["WFTEST001", "--json"], env)
+        manifest = tmp / "deps.json"
+        manifest.write_text("{}", encoding="utf-8")
+        result = _run_qc(["WFTEST001", "--deps", str(manifest), "--json"], env)
         data = json.loads(result.stdout)
-        # With the stub workflow (trigger + action + correct publish), only a
-        # snapshot-absent build should not force FAIL on mechanical_fail.
-        # WF-18 and WF-21 being N/A means they don't increment FAIL count.
+        assert data["items"]["WF-21"]["status"] == "N/A", (
+            f"WF-21 must stay N/A on a fresh build. Got: {data['items']['WF-21']}"
+        )
+        assert data["items"]["WF-18"]["status"] == "PASS", (
+            f"an empty manifest with no referenced dependencies must PASS WF-18. "
+            f"Got: {data['items']['WF-18']}"
+        )
         assert data["mechanical_fail"] == 0, (
-            f"N/A items must not count as mechanical failures. "
+            f"mechanical_fail must be 0 with a manifest supplied. "
             f"mechanical_fail={data['mechanical_fail']}\nitems={data['items']}"
         )
 
-    def test_wf18_passes_when_snapshot_exists(self, stub_caf_env_with_snapshot):
-        """When a snapshot file exists, WF-18 must be PASS."""
+    def test_snapshot_does_not_satisfy_wf18(self, stub_caf_env_with_snapshot):
+        """The D-4 regression: a snapshot must never satisfy the dependency gate.
+
+        Before the fix this exact fixture made WF-18 PASS with the observed text
+        'dependencies_pre_existed_or_snapshot_present' — a reversibility check
+        standing in for a dependency check."""
         env, tmp = stub_caf_env_with_snapshot
         result = _run_qc(["WFTEST001", "--json"], env)
         data = json.loads(result.stdout)
+        assert data["items"]["WF-21"]["status"] == "PASS", (
+            f"WF-21 must PASS when a snapshot exists. Got: {data['items']['WF-21']}"
+        )
         wf18 = data["items"]["WF-18"]
-        assert wf18["status"] == "PASS", (
-            f"WF-18 must be PASS when snapshot exists. Got: {wf18}"
+        assert wf18["status"] == "FAIL", (
+            f"a snapshot must NOT satisfy WF-18; the dependency gate needs a "
+            f"manifest. Got: {wf18}"
         )
 
     def test_wf21_passes_when_snapshot_exists(self, stub_caf_env_with_snapshot):
@@ -580,12 +641,23 @@ class TestWF7ValidNodeRecognition:
         """The regression scenario itself: a build whose only action node is
         add_contact_tag must pass WF-7 WITHOUT any WAIT node (the old
         route-around is no longer necessary and is not a fix)."""
-        env, _ = _stub_caf_env_with_export(
-            tmp_path, _export_with_steps(
-                [{"id": "A1", "type": "add_contact_tag", "tag": "ZHC-wf7-test"}]
-            )
-        )
-        result = _run_qc(["WFTEST005", "--json"], env)
+        export = json.loads(_export_with_steps(
+            [{"id": "A1", "type": "add_contact_tag", "tag": "ZHC-wf7-test"}]
+        ))
+        export["workflowData"] = {
+            "templates": [
+                {"id": "A1", "type": "add_contact_tag", "parentKey": None,
+                 "next": "n2"},
+                {"id": "n2", "type": "end", "parentKey": "A1"},
+            ]
+        }
+        export["triggers"] = [
+            {"id": "T1", "type": "form_submitted", "targetActionId": "A1"}
+        ]
+        env, _ = _stub_caf_env_with_export(tmp_path, json.dumps(export))
+        manifest = tmp_path / "deps.json"
+        manifest.write_text('{"tags": ["ZHC-wf7-test"]}', encoding="utf-8")
+        result = _run_qc(["WFTEST005", "--deps", str(manifest), "--json"], env)
         data = json.loads(result.stdout)
         assert data["items"]["WF-7"]["status"] == "PASS", (
             f"Tag-only build must pass WF-7 with no wait node. Got: {data['items']['WF-7']}"
@@ -700,16 +772,20 @@ class TestWF7ActionTypeDerivation:
 
     def test_wf7_passes_for_add_contact_tag(self, stub_caf_with_custom_export):
         env, tmp = stub_caf_with_custom_export(self._export(["add_contact_tag"]))
-        result = _run_qc(["WFTEST001", "--json"], env)
+        manifest = tmp / "deps.json"
+        manifest.write_text("{}", encoding="utf-8")
+        result = _run_qc(["WFTEST001", "--deps", str(manifest), "--json"], env)
         data = json.loads(result.stdout)
         wf7 = data["items"]["WF-7"]
         assert wf7["status"] == "PASS", (
             f"add_contact_tag is a VERIFIED_ACTIONS type and must PASS WF-7. "
             f"Got: {wf7}"
         )
-        assert result.returncode == 0, (
-            f"a workflow whose only action is add_contact_tag must pass QC "
-            f"(exit 0). Got {result.returncode}\nstdout={result.stdout}"
+        assert result.returncode != 0, (
+            f"WF-7 itself passes, but the export carries no graph templates and no "
+            f"trigger link, so WF-23 is UNVERIFIED and WF-24 fails as "
+            f"trigger_evidence_absent; overall must never be 0. "
+            f"Got {result.returncode}\nstdout={result.stdout}"
         )
 
     def test_wf7_fails_for_unknown_action_type(
@@ -754,3 +830,23 @@ class TestWF7ActionTypeDerivation:
             f"expected all {len(types)} builder types counted, got: "
             f"{wf7['observed']}"
         )
+
+
+def test_wf21_fails_on_an_empty_snapshot(stub_caf_env_with_snapshot):
+    """A zero-byte snapshot restores nothing, so its presence is not
+    reversibility. The old gate matched the filename and never measured size."""
+    env, tmp = stub_caf_env_with_snapshot
+    snap = (
+        tmp / "fakehome" / ".openclaw" / "tools" / "convert-and-flow-cli"
+        / "data" / "snapshots" / "WFTEST001" / "20260601T000000Z.json"
+    )
+    assert snap.is_file(), "fixture did not seed the snapshot this test empties"
+    snap.write_text("")
+
+    result = _run_qc(["WFTEST001", "--json"], env)
+    wf21 = json.loads(result.stdout)["items"]["WF-21"]
+    assert wf21["status"] == "FAIL", (
+        "an empty snapshot must FAIL rather than record reversibility; got %r"
+        % (wf21,)
+    )
+    assert "snapshot_empty" in wf21["observed"] + wf21["notes"], wf21
