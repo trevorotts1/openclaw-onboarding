@@ -15,7 +15,7 @@ pass.
 
 Run:
     python3 75-drama-song-ad-factory/tests/story_first_acceptance/run_acceptance.py \
-        --flavor both --out /tmp/s75t32
+        --flavor both --out <PATH>
 """
 from __future__ import annotations
 
