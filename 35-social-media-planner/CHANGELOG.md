@@ -1,5 +1,9 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.9.11] - 2026-10-27 - chore(batch-20261027-0623): version stamp for T-54 (onboarding half)
+
+- **Batch 20261027-0623 version stamp, Skill 35 v3.9.10 -> v3.9.11.** T-54 (`pb/PBB-917-wave1/T-54` @ `d6ecc90b`) touches skill 35 files in this batch (its command-center half already landed via command-center PR #613). No skill code changed in this commit; version stamp only.
+
 ## [3.9.9] - 2026-10-25 - T-22c repair 5: the release number is unique, and the coverage text names what it does not cover
 
 Two defects closed here. Both were found by re-measuring rather than trusting an

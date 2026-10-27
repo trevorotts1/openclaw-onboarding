@@ -1,3 +1,7 @@
+## [2.0.201] - 2026-10-27 - chore(batch-20261027-0623): version stamp for T-55 (T-38 not in this batch)
+
+- **Batch 20261027-0623 version stamp, Skill 38 v2.0.200 -> v2.0.201.** T-55 (`pb/PBB-918-wave1/T-55` @ `20b91149`) touches skill 38 files in this batch. T-38 is NOT in this batch. No skill code changed in this commit; version stamp only.
+
 ## [2.0.200] - 2026-10-27 - chore(batch-20261027-0516): version stamp for T-18 and T-15 (T-38 not in this batch)
 
 - **Batch 20261027-0516 version stamp, Skill 38 v2.0.199 -> v2.0.200.** T-18 (`pb/PBB-448/t-18-update` @ `93414a8a`) and T-15 (`pb/PBB-609/t-15-build` @ `3f3f4767`) both touch skill 38 files in this batch. T-38 is NOT in this batch. No skill code changed in this commit; version stamp only.
