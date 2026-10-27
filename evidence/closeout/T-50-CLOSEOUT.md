@@ -174,8 +174,8 @@ units' owned paths) and this lane did not touch them.
 Dirty worktrees at this head (path, porcelain line count):
 
 ```
-/Users/blackceomacmini/openclaw-onboarding                         12
-/Users/blackceomacmini/graphify-snapshots/openclaw-onboarding-...   1
+<operator-home-folder>/openclaw-onboarding                         12
+<operator-home-folder>/graphify-snapshots/openclaw-onboarding-...   1
 <run-root>/worktrees/PBB-526                                       44
 <run-root>/worktrees/PBB-535                                       88
 <run-root>/worktrees/PBB-576                                        1
