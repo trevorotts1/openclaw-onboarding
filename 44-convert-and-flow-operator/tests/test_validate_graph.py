@@ -18,7 +18,7 @@ def run_graph(name):
     )
 
 
-@pytest.mark.parametrize("fixture,code,verdict,kind", [
+GRAPH_CASES = [
     ("linear_ok.json", 0, "PASS", None),
     ("orphan_node.json", 1, "FAIL", "ORPHAN"),
     ("unwired_branch.json", 1, "FAIL", "UNWIRED_BRANCH"),
@@ -29,7 +29,10 @@ def run_graph(name):
     ("cycle_illegal.json", 1, "FAIL", "CYCLE"),
     ("loop_legal.json", 0, "PASS", None),
     ("cycle_unreached_loop.json", 1, "FAIL", "CYCLE"),
-])
+]
+
+
+@pytest.mark.parametrize("fixture,code,verdict,kind", GRAPH_CASES)
 def test_graph(fixture, code, verdict, kind):
     result = run_graph(fixture)
     report = json.loads(result.stdout)
@@ -397,3 +400,16 @@ def test_graph_reports_shared_next_and_branches_target_once(tmp_path):
     assert len(dangling) == 1, report["failures"]
     assert dangling[0]["node_id"] == "a"
     assert dangling[0]["target"] == "ghost"
+
+
+def test_every_named_fixture_exists():
+    """A missing fixture and a malformed one are not the same thing.
+
+    The validator maps both an absent export and an unparseable one to rc 2 with
+    verdict UNVERIFIED, so pointing a case at a path that does not exist would look
+    like a passing malformed-input test while proving nothing. This asserts every
+    fixture the cases name is actually present.
+    """
+    missing = [name for name, _code, _verdict, _kind in GRAPH_CASES
+               if not (FIXTURES / name).exists()]
+    assert not missing, "graph fixture(s) named by the cases are missing: %s" % missing
