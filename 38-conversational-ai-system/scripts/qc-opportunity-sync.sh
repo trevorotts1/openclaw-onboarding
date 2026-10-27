@@ -7,7 +7,10 @@
 #       repo. A missing piece is a FAIL.
 #   (B) PLAYBOOK CONTENT (checked when a conversation-workflows dir is present):
 #       every declared pipeline or stage-map requires a usable caf pipelines export.
-#       A missing or unparseable export is a FAIL, never a skipped validation.
+#       A missing, unparseable or STALE export is a FAIL, never a skipped validation.
+#       Stale means exported_at is absent, unparseable, or older than 24h (see
+#       MAX_EXPORT_AGE_SECONDS): a pipeline or stage deleted in GHL since the last
+#       successful refresh would otherwise still validate against the old file.
 #
 # This gate shells out to canonical parser tools/playbook_engine.py (U-16).
 #
@@ -38,7 +41,7 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "Missing value for --pipelines-export" >&2; exit 2; }
       PIPE_EXPORT="$2"; shift 2 ;;
     --json) JSON_MODE=1; shift ;;
-    -h|--help) sed -n '1,32p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,24p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -59,18 +62,25 @@ fi
 MFD_FROM_WF=""
 [ -n "$WF_DIR" ] && MFD_FROM_WF="$(dirname "$WF_DIR")"
 
+# PIPE_EXPORT (explicit) is honoured as given. Otherwise the two legacy locations
+# are candidates, and the judge below picks the first one that is both readable and
+# CURRENT, not merely present: a stale copy in one location must not shadow a fresh
+# copy in the other.
+PIPE_CANDIDATES=""
 if [ -z "$PIPE_EXPORT" ]; then
-  for c in "$MFD_FROM_WF/.caf-pipelines-export.json" "$WF_DIR/.caf-pipelines-export.json"; do
-    if [ -n "$c" ] && [ -f "$c" ]; then PIPE_EXPORT="$c"; break; fi
+  for base in "$MFD_FROM_WF" "$WF_DIR"; do
+    [ -n "$base" ] || continue
+    PIPE_CANDIDATES="${PIPE_CANDIDATES:+$PIPE_CANDIDATES$'\n'}$base/.caf-pipelines-export.json"
   done
 fi
 
-export SKILL_ROOT ENGINE WF_DIR JSON_MODE PIPE_EXPORT MFD_FROM_WF
+export SKILL_ROOT ENGINE WF_DIR JSON_MODE PIPE_EXPORT PIPE_CANDIDATES MFD_FROM_WF
 
 python3 - <<'PYEOF'
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 SKILL_ROOT = Path(os.environ["SKILL_ROOT"])
@@ -78,10 +88,21 @@ ENGINE = Path(os.environ["ENGINE"])
 WF_DIR = os.environ.get("WF_DIR", "")
 JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
 PIPE_EXPORT = os.environ.get("PIPE_EXPORT", "")
+PIPE_CANDIDATES = [p for p in os.environ.get("PIPE_CANDIDATES", "").split("\n") if p]
 MFD_FROM_WF = os.environ.get("MFD_FROM_WF", "")
 
 sys.path.insert(0, str(ENGINE.parent))
 import playbook_engine as engine
+
+# Freshness contract for .caf-pipelines-export.json, written by
+# 44-convert-and-flow-operator/tools/export_deps.py. An export is current
+# evidence only if exported_at is present, parses, and is at most this old.
+# "The file parses" and "the file is current" are two different questions, and
+# only the second one makes a declared pipeline/stage name meaningful.
+MAX_EXPORT_AGE_SECONDS = 24 * 60 * 60
+CLOCK_SKEW_SECONDS = 5 * 60
+NOW = datetime.now(timezone.utc)
+REFRESH = "Re-run 44-convert-and-flow-operator/tools/export_deps.py to refresh it."
 
 failures = []
 notes = []
@@ -99,9 +120,54 @@ def stage_name(entry):
     return entry.split(":", 1)[1].strip() or None
 
 
-def load_pipeline_stage_map(path):
+def human_age(seconds):
+    seconds = int(max(0, seconds))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    if days:
+        return "%dd %dh" % (days, hours)
+    if hours:
+        return "%dh %dm" % (hours, minutes)
+    return "%dm" % minutes
+
+
+def freshness_violation(path, data):
+    """None when the export is current evidence, else why it is not."""
+    stamp = data.get("exported_at") if isinstance(data, dict) else None
+    if not stamp:
+        return (
+            "EXPORT_UNDATED: %s carries no exported_at timestamp, so its age cannot be "
+            "checked and it is not current evidence. %s" % (path, REFRESH)
+        )
+    try:
+        when = datetime.fromisoformat(str(stamp).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return (
+            "EXPORT_TIMESTAMP_UNPARSEABLE: %s has exported_at %r, which is not an "
+            "ISO-8601 timestamp, so its age cannot be checked. %s" % (path, stamp, REFRESH)
+        )
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    age = (NOW - when).total_seconds()
+    if age > MAX_EXPORT_AGE_SECONDS:
+        return (
+            "EXPORT_STALE: %s was exported %s ago (exported_at %s, limit %dh), so the "
+            "pipeline ids and stage names it holds are not current evidence - a pipeline "
+            "or stage deleted since then still validates against it. %s"
+            % (path, human_age(age), stamp, MAX_EXPORT_AGE_SECONDS // 3600, REFRESH)
+        )
+    if age < -CLOCK_SKEW_SECONDS:
+        return (
+            "EXPORT_TIMESTAMP_IN_FUTURE: %s has exported_at %s, which is %s in the "
+            "future; a freshness check cannot judge it. %s"
+            % (path, stamp, human_age(-age), REFRESH)
+        )
+    return None
+
+
+def load_pipeline_stage_map(data):
     """Parse a caf pipelines export into {pipeline_id: set(stage names)}."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
     pipelines = data.get("pipelines") if isinstance(data, dict) else data
     if not isinstance(pipelines, list):
         raise ValueError("expected a list under top-level key 'pipelines'")
@@ -185,23 +251,42 @@ if wf and wf.is_dir():
         declared_playbooks.append((f, pipeline, stage_map))
 
 pipeline_stages = None
-export_error = None
-if PIPE_EXPORT and Path(PIPE_EXPORT).is_file():
+resolved_export = None
+undated_or_stale = []
+unparseable = []
+candidates = [PIPE_EXPORT] if PIPE_EXPORT else PIPE_CANDIDATES
+
+for candidate in candidates:
+    if not Path(candidate).is_file():
+        continue
     try:
-        pipeline_stages = load_pipeline_stage_map(PIPE_EXPORT)
+        data = json.loads(Path(candidate).read_text(encoding="utf-8"))
     except Exception as exc:
-        export_error = str(exc)
-else:
-    export_error = "file not found"
+        unparseable.append((candidate, str(exc)))
+        continue
+    violation = freshness_violation(candidate, data)
+    if violation:
+        undated_or_stale.append(violation)
+        continue
+    try:
+        pipeline_stages = load_pipeline_stage_map(data)
+    except Exception as exc:
+        unparseable.append((candidate, str(exc)))
+        continue
+    resolved_export = candidate
+    break
 
 if declared_playbooks and pipeline_stages is None:
-    if PIPE_EXPORT and Path(PIPE_EXPORT).is_file():
+    for message in undated_or_stale:
+        failures.append("REQUIRES_OPERATOR: " + message)
+    for candidate, exc in unparseable:
         failures.append(
             "REQUIRES_OPERATOR: caf pipelines export exists but cannot be parsed: %s: %s"
-            % (PIPE_EXPORT, export_error)
+            % (candidate, exc)
         )
-    for f, pipeline, stage_map in declared_playbooks:
-        failures.append(missing_export_message(f.name, pipeline, stage_map))
+    if not undated_or_stale and not unparseable:
+        for f, pipeline, stage_map in declared_playbooks:
+            failures.append(missing_export_message(f.name, pipeline, stage_map))
 elif not declared_playbooks:
     notes.append("no checked playbook declares a pipeline or stage-map")
 
@@ -239,7 +324,7 @@ if JSON_MODE:
         "playbooks_checked": playbooks_checked,
         "stage_maps_seen": stagemaps_seen,
         "workflows_dir": WF_DIR or None,
-        "pipelines_export": PIPE_EXPORT or None,
+        "pipelines_export": resolved_export or PIPE_EXPORT or None,
         "failures": failures,
         "notes": notes,
     }, indent=2))

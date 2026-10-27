@@ -5,6 +5,21 @@ This is the ONLY producer of .caf-calendars-export.json and
 .caf-pipelines-export.json consumed by Skill 38's qc-playbook-declares.sh
 and qc-opportunity-sync.sh. Requires live PIT-authenticated caf access.
 No network access means no export, never a fabricated one.
+
+Freshness contract (enforced by the consumers at read time)
+-----------------------------------------------------------
+Every export carries ``exported_at``, an ISO-8601 UTC timestamp. A consumer
+treats an export as current evidence ONLY when that timestamp is present, is
+parseable, and is no more than MAX_AGE_HOURS old. Anything else is rejected by
+name - EXPORT_UNDATED, EXPORT_TIMESTAMP_UNPARSEABLE, EXPORT_STALE, or
+EXPORT_TIMESTAMP_IN_FUTURE - never silently accepted. Undated evidence is not
+current evidence, and "the file parses" is not the same question as "the file
+is current".
+
+A failed run exits 3 and deliberately leaves the previous export in place, so a
+bad refresh never destroys a good file. That makes the file's age the only thing
+separating "refreshed" from "abandoned", which is why the age is machine-checked
+by the consumer rather than trusted here.
 """
 import argparse
 import json
@@ -22,6 +37,15 @@ SKILL_ROOT = SCRIPT_DIR.parent
 POINTER = Path.home() / ".openclaw" / ".skill-38-master-files-dir"
 CALENDAR_CMD = ["--json", "calendars", "list"]
 PIPELINE_CMD = ["--json", "opportunities", "pipelines"]
+# The consumers (Skill 38's qc-opportunity-sync.sh, qc-playbook-declares.sh)
+# reject an export whose exported_at is older than this. Kept here so the
+# producer's failure text states the same number the consumer enforces.
+MAX_AGE_HOURS = 24
+PIPELINE_LEFT_UNCHANGED = (
+    "pipelines export failed; previous pipeline export left unchanged. "
+    "That file is NOT refreshed: consumers reject an export whose exported_at "
+    "is older than %d hours, so re-run this tool once caf recovers." % MAX_AGE_HOURS
+)
 
 
 def resolve_workflows_dir(override):
@@ -304,12 +328,12 @@ def main():
     pipeline_payload = fetch_payload(caf, PIPELINE_CMD, args.timeout, "pipelines")
     if pipeline_payload is None:
         print("calendars export succeeded: %s" % calendar_path, file=sys.stderr)
-        print("pipelines export failed; previous pipeline export left unchanged", file=sys.stderr)
+        print(PIPELINE_LEFT_UNCHANGED, file=sys.stderr)
         return 3
     pipelines = validate_payload(pipeline_payload, "pipelines", "pipelines")
     if pipelines is None:
         print("calendars export succeeded: %s" % calendar_path, file=sys.stderr)
-        print("pipelines export failed; previous pipeline export left unchanged", file=sys.stderr)
+        print(PIPELINE_LEFT_UNCHANGED, file=sys.stderr)
         return 3
     pipelines = normalise_pipelines(pipelines)
     if not pipelines:
