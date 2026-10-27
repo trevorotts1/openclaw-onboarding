@@ -30,6 +30,31 @@ if [ ! -f "$ENGINE" ]; then
 fi
 
 # Generate contract beside playbook using canonical engine.
+# A playbook handed to `playbook_engine build-contract` has to declare its own
+# dependencies: the writer refuses to emit a contract whose acceptance.must_pass
+# would be empty, because such a contract validates nothing. A bare `# title`
+# fixture therefore cannot produce a contract at all, and the four-leg check it
+# was meant to exercise never ran.
+declared_playbook() {
+  local title="$1" path="$2"
+  cat > "$path" <<DECLARED_EOF
+# $title
+
+declares
+tools-used: update_tags
+exits-used: talk-to-human
+pipeline: sales-pipeline
+stage-map: qualified: STAGE_QUALIFIED
+
+## Phase 1 - Opening
+Say hello.
+
+## Exit rules
+
+exit-when-tag: talk-to-human, action: handoff
+DECLARED_EOF
+}
+
 write_contract() {
   local playbook="$1"
   if ! python3 "$ENGINE" build-contract "$playbook" >/dev/null; then
@@ -122,7 +147,7 @@ cat > "$B/registry.md" <<'EOF'
 <!-- ghost-workflow has no pricing-inquiry-style files -->
 EOF
 
-printf '# pricing playbook\n' > "$B/pricing-inquiry.md"
+declared_playbook "Pricing inquiry" "$B/pricing-inquiry.md"
 printf '# pricing prompt\n' > "$B/pricing-inquiry--build-with-ai-prompt.md"
 write_contract "$B/pricing-inquiry.md"
 
@@ -145,7 +170,7 @@ cat > "$A/registry.md" <<'EOF'
 | ghost-workflow | Registered, no files | new tag | Yes | ghost-workflow.md | ghost-workflow--build-with-ai-prompt.md | ghost-workflow--verification-checklist.md |
 EOF
 
-printf '# pricing playbook\n' > "$A/pricing-inquiry.md"
+declared_playbook "Pricing inquiry" "$A/pricing-inquiry.md"
 write_contract "$A/pricing-inquiry.md"
 
 printf '# rogue playbook\n' > "$A/rogue-slug.md"
@@ -165,11 +190,11 @@ cat > "$C/registry.md" <<'EOF'
 - booking: Lead wants to book a call
 EOF
 
-printf '# pricing playbook\n' > "$C/pricing-inquiry.md"
+declared_playbook "Pricing inquiry" "$C/pricing-inquiry.md"
 printf '# pricing prompt\n' > "$C/pricing-inquiry--build-with-ai-prompt.md"
 write_contract "$C/pricing-inquiry.md"
 
-printf '# booking playbook\n' > "$C/booking.md"
+declared_playbook "Booking" "$C/booking.md"
 printf '# booking prompt\n' > "$C/booking--build-with-ai-prompt.md"
 write_contract "$C/booking.md"
 
@@ -276,7 +301,7 @@ cat > "$LEGACY/registry.md" <<'EOF'
 
 - pricing-inquiry: New lead asks about pricing
 EOF
-printf '# pricing playbook\n' > "$LEGACY/pricing-inquiry.md"
+declared_playbook "Pricing inquiry" "$LEGACY/pricing-inquiry.md"
 printf '# legacy prompt\n' > "$LEGACY/pricing-inquiry--workflow-ai-prompt.md"
 write_contract "$LEGACY/pricing-inquiry.md"
 
