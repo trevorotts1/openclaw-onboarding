@@ -1420,6 +1420,30 @@ class CampaignBuilder:
         self.stats.setdefault("precheck", {})[wf_def.get("name")] = result
         return result
 
+    def _dependency_refusal(self, wf_name: Optional[str], dep_state: dict) -> Optional[str]:
+        """Refusal reason for a failed dependency pre-check, else None."""
+        missing = dep_state.get("missing") or []
+        unverified = dep_state.get("unverified") or []
+        if not (missing or unverified):
+            return None
+        sections = []
+        if missing:
+            sections.append(
+                "missing in GHL: "
+                + ", ".join(f"{item['kind']}:{item['name']}" for item in missing)
+            )
+        if unverified:
+            sections.append(
+                "could not be verified (read failed): "
+                + ", ".join(f"{item['kind']}:{item['name']}" for item in unverified)
+            )
+        return (
+            f"{wf_name}: dependency pre-check failed - "
+            + "; ".join(sections)
+            + (". Create the missing dependencies in GHL first;" if missing else "")
+            + " no workflow create was issued."
+        )
+
     def _v4_create_blocker(
         self,
         wf_def: dict,
@@ -1599,6 +1623,40 @@ class CampaignBuilder:
             return self.stats
         existing_workflow_ids, existing_folder_ids, existing_workflow_parents = existing
 
+        # Dependency gate — BEFORE the folder POST.  A folder created on a
+        # build that then refuses is a write on a path that should have
+        # refused.  Candidates are the units this build would actually write:
+        # name not already present, and no journalled prior to reconcile
+        # instead.  A partial build still needs its folder, so this aborts
+        # only when EVERY candidate refuses; the per-unit gate below stays as
+        # the authority for the rest.
+        dep_states: dict[str, dict] = {}
+        gate_refusals: dict[str, str] = {}
+        candidates: list[tuple] = []
+        for key, wf_def in campaign.items():
+            if not isinstance(wf_def, Mapping):
+                continue
+            wf_name = wf_def.get("name")
+            if wf_name and wf_name in existing_workflow_ids:
+                continue
+            unit_key = wf_def.get("unit_key")
+            prior = journal.latest(unit_key) if (journal and unit_key) else None
+            if prior and prior.get("remote_id"):
+                continue
+            candidates.append((key, wf_def))
+            if not any(collect_plan_dependencies(wf_def).values()):
+                continue
+            dep_states[key] = self.precheck(self.loc, wf_def)
+            reason = self._dependency_refusal(wf_name, dep_states[key])
+            if reason:
+                gate_refusals[key] = reason
+        if candidates and len(gate_refusals) == len(candidates):
+            self.stats["errors"].extend(
+                gate_refusals[key] for key, _ in candidates
+            )
+            self.stats["end_time"] = time.time()
+            return self.stats  # Nothing to build — refuse before any write.
+
         # Resolve folder: reuse existing if folder_id given, else look up by
         # name and reuse it, else create.  Reuse is the safe default for a
         # folder — it's a pure organizational container, so silently reusing
@@ -1763,32 +1821,10 @@ class CampaignBuilder:
             # without re-authoring plan JSON.
             declared_deps = collect_plan_dependencies(wf_def)
             if any(declared_deps.values()):
-                dep_state = self.precheck(self.loc, wf_def)
-                missing = dep_state.get("missing") or []
-                unverified = dep_state.get("unverified") or []
-                refuse_now = list(unverified) + list(missing)
-                if refuse_now:
-                    sections = []
-                    if missing:
-                        sections.append(
-                            "missing in GHL: "
-                            + ", ".join(
-                                f"{item['kind']}:{item['name']}" for item in missing
-                            )
-                        )
-                    if unverified:
-                        sections.append(
-                            "could not be verified (read failed): "
-                            + ", ".join(
-                                f"{item['kind']}:{item['name']}" for item in unverified
-                            )
-                        )
-                    return (key, None, False, False, None,
-                            f"{wf_name}: dependency pre-check failed - "
-                            + "; ".join(sections)
-                            + (". Create the missing dependencies in GHL first;"
-                               if missing else "")
-                            + " no workflow create was issued.")
+                dep_state = dep_states.get(key) or self.precheck(self.loc, wf_def)
+                reason = self._dependency_refusal(wf_name, dep_state)
+                if reason:
+                    return (key, None, False, False, None, reason)
 
             templates, unlinked = link_steps(wf_def.get("templates", []))
             if unlinked:
