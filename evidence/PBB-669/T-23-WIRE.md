@@ -1,6 +1,6 @@
 # T-23 WIRE — `monthly_manifest.py`
 
-Lane `PBB-669` (BUILD, role `deepseek-chain`). Repo `/Users/blackceomacmini/openclaw-onboarding`.
+Lane `PBB-669` (BUILD, role `deepseek-chain`). Repo `<operator-home>/openclaw-onboarding`.
 Worktree `/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/worktrees/PBB-669`.
 
 | | |
@@ -41,8 +41,8 @@ Logs: `scratch/lanes/PBB-669/logs/`.
 Tree built from the sha, not from the working copy:
 
 ```
-BASE=$(git -C /Users/blackceomacmini/openclaw-onboarding rev-parse origin/main)   # c994359d...
-git -C /Users/blackceomacmini/openclaw-onboarding archive "$BASE" | tar -x -C scratch/lanes/PBB-669/base-tree
+BASE=$(git -C <operator-home>/openclaw-onboarding rev-parse origin/main)   # c994359d...
+git -C <operator-home>/openclaw-onboarding archive "$BASE" | tar -x -C scratch/lanes/PBB-669/base-tree
 python3 -I scratch/lanes/PBB-669/scan_refs.py scratch/lanes/PBB-669/base-tree monthly_manifest --self-dir shared-utils/manifest --verbose
 ```
 
@@ -218,7 +218,7 @@ rewriting, was the gap), any other unit's files. No merge, no push to main, no s
 ## 10. Reproduce
 
 ```bash
-source "/Users/blackceomacmini/loop-control/Purple-Billboard-Client-System-Build/env.sh"
+source "<operator-home>/loop-control/Purple-Billboard-Client-System-Build/env.sh"
 L="$LOOP_ROOT/scratch/lanes/PBB-669"
 python3 -I "$L/scan_refs.py" "$LOOP_ROOT/worktrees/PBB-669" monthly_manifest --self-dir shared-utils/manifest --verbose
 python3 -I "$L/probe_validate.py" "$LOOP_ROOT/worktrees/PBB-669" "$LOOP_ROOT/tmp/pbb669/cases-wired"
