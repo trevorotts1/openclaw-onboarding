@@ -32,6 +32,7 @@ otherwise.  It prints the full table either way.
 from __future__ import annotations
 
 import argparse
+import ast
 import importlib.util
 import json
 import os
@@ -116,6 +117,47 @@ def load_proposed():
         sys.path.insert(0, _HERE)
     import real_content
     return real_content
+
+
+# ---------------------------------------------------------------------------
+# fixture references -- one control list, not a drifting copy of it
+# ---------------------------------------------------------------------------
+
+def _fixture_list(repo, ref):
+    """Read one module-level list constant out of ``rev:path``, without importing.
+
+    The T06 over-refusal controls are the real-people list main's own T06 suite
+    already pins as ``CONTROL_NAMES``.  Restating that list here would be a
+    second copy that drifts, so the fixture points at the constant and this
+    resolves it from the same read-only git blob machinery the production
+    modules come from.  ``ast`` only -- the file is parsed, never executed.
+    """
+    try:
+        src = _git(repo, "show", "%s:%s" % (ref["rev"], ref["path"]))
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit("fixture reference unavailable: %s:%s (%s)"
+                         % (ref["rev"], ref["path"], exc))
+    for node in ast.parse(src).body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if any(isinstance(target, ast.Name) and target.id == ref["constant"]
+               for target in node.targets):
+            values = ast.literal_eval(node.value)
+            if not (isinstance(values, list)
+                    and all(isinstance(v, str) for v in values)):
+                raise SystemExit("fixture reference %s is not a list of strings"
+                                 % (ref["constant"],))
+            return values
+    raise SystemExit("fixture reference not found: %s in %s"
+                     % (ref["constant"], ref["path"]))
+
+
+def _resolve_fixture_refs(repo, data):
+    """Replace every reference row with the value it names.  Fail closed."""
+    ref = data["t06"].pop("false_positive_controls_ref", None)
+    if ref is not None:
+        data["t06"]["false_positive_controls"] = _fixture_list(repo, ref)
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +289,7 @@ _T07_ACCEPT_TEXTS = (
 # ---------------------------------------------------------------------------
 
 def replay(repo):
-    data = json.load(open(_REPLAY, encoding="utf-8"))
+    data = _resolve_fixture_refs(repo, json.load(open(_REPLAY, encoding="utf-8")))
     prov = data["provenance"]
     proposed = Proposed(load_proposed())
     writer, validation, tmp = load_production(

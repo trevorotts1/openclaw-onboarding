@@ -408,22 +408,11 @@
    "spot": 11,
    "distinct": 378
   },
-  "false_positive_controls": [
-   "Dana Woman",
-   "Theresa Manager",
-   "Wanda Manager",
-   "Aisha Womack",
-   "Manny Persons",
-   "Erik Narratorsson",
-   "Mara Bell",
-   "Dr. Amina Osei",
-   "Siobhan O'Keefe",
-   "Officer Dan Whitfield",
-   "The Reverend Thomas Hale",
-   "A. J. Marchetti",
-   "Renata Cruz-Whitfield",
-   "Ms. Elena Vasquez"
-  ],
+  "false_positive_controls_ref": {
+   "rev": "origin/main",
+   "path": "75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py",
+   "constant": "CONTROL_NAMES"
+  },
   "positions": [
    "display_name",
    "character_id"
