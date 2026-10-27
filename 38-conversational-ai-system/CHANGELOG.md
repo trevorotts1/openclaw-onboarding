@@ -1,3 +1,7 @@
+## [2.0.205] - 2026-10-27 - chore(batch-20261027-1652): Skill 38 to v2.0.205 for the s38-44 7-unit batch
+
+- **Batch 20261027-1652 version stamp, Skill 38 v2.0.204 -> v2.0.205.** The s38-44 units (`fix/s38-44-rebased` @ `e4ec31162`) touch skill 38 scripts, tools and CI. No skill code changed in this commit; version stamp only.
+
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
 - **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.

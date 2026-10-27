@@ -1,3 +1,7 @@
+## [v2.1.29] - 2026-10-27 - chore(batch-20261027-1652): bump skill 44 to v2.1.29 for the s38-44 batch
+
+- **Batch 20261027-1652 version stamp, skill 44 v2.1.28 -> v2.1.29.** The s38-44 units touch skill 44 automation templates, engine and QC scripts. No skill code changed in this commit; version stamp only.
+
 ## [v2.1.28] - 2026-10-27 - chore(batch-20261027-0702): bump skill 44 to v2.1.28 for T-53
 
 - **Batch 20261027-0702 version stamp, skill 44 v2.1.27 -> v2.1.28.** T-53 (`pb/PBB-916-wave1/T-53` @ `92a7c7f`) touches 44-convert-and-flow-operator outbound sender and readback (3 files). No skill code changed in this commit; version stamp only.
