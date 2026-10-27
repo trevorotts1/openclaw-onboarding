@@ -508,18 +508,31 @@
   "state_db": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
   "plist": "<PATH>",
   "corpus_status": {
-   "observed_at": "2026-10-26T16:16Z",
-   "observer": "T-05 QC+FIX lane PBB-780, existence check of the exact cited path strings (positive control: the two cited /Volumes paths that do exist return TRUE on the same instrument)",
-   "cited_paths": 20,
-   "missing_paths": 18,
-   "surviving_paths": 2,
+   "observed_at": "2026-10-27T15:41Z",
+   "observer": "lane PBB-1710 rebuild, os.path.exists over every path-valued field beginning /Volumes/ plus proof_artifacts.files joined to proof_artifacts.root (positive control: the two cited source files return TRUE on the same instrument)",
+   "counting_method": "distinct de-duplicated path strings counted once each; /Volumes substrings embedded inside longer prose or shell-command strings are not counted as separate cited paths",
+   "proof_artifacts_scope": {
+    "cited_paths": 21,
+    "missing_paths": 21,
+    "surviving_paths": 0
+   },
+   "document_scope": {
+    "cited_paths": 27,
+    "missing_paths": 25,
+    "surviving_paths": 2,
+    "surviving": [
+     "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/control/eng_loop.py",
+     "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/control/owner_handler.py"
+    ]
+   },
+   "prior_observation": "lane PBB-780 recorded 20 cited / 18 missing / 2 surviving at 2026-10-26T16:16Z on a narrower counting basis. Every observation agrees that the two source files are the only survivors.",
    "missing_examples": [
     "scratch/pb-skill38-20261024/T-05/PROOF.md (generations 1 and 2 of the production label)",
     "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof (the whole corpus directory)",
     "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
     "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist"
    ],
-   "consequence": "The PBB-220 proof corpus cited above no longer exists on this host; those citations are historical authoring evidence, not live proof. The acceptance rows were re-earned at unit head 3ea3c0f19dd04373871d8cf973a01a5c4a02f756 by an isolated launchd proof run (lane PBB-696, 2026-10-26T02:47Z) and re-run by lane PBB-780 on 2026-10-26; both receipts live outside this repository."
+   "consequence": "The PBB-220 proof corpus cited above no longer exists on this host, so those citations are historical authoring evidence, not live proof. Lane PBB-780 recorded that the acceptance rows were re-earned at unit head 3ea3c0f19dd04373871d8cf973a01a5c4a02f756 by an isolated launchd run (lane PBB-696, 2026-10-26T02:47Z) and re-run by lane PBB-780 on 2026-10-26, with both receipts outside this repository; lane PBB-1710 verified only the path-existence facts above and does not restate that re-earn claim as its own proof."
   }
  },
  "unknowns": [
