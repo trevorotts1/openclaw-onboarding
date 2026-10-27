@@ -248,6 +248,20 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-playbook-doc.test.sh
           echo "✓ qc-playbook-doc per-playbook human-facing doc gate fixtures pass"
 
+      - name: Skill 38 prose counts match disk (qc-doc-counts)
+        shell: bash
+        run: |
+          # SKILL.md and INSTALL.md state script/protocol/reference counts and the
+          # numbered install range. Those drifted (a claim of 92 scripts against
+          # 101 on disk, and an install range stopping at 23 when prefixes reached
+          # 33) and nothing failed: the repo-root bump-version.sh advisory prints a
+          # WARN and returns 0 unconditionally. qc-doc-counts.sh fails on a
+          # mismatch, exits 2 when it cannot verify, and is wired into the QC
+          # checklist. CI runs the gate against the real tree and its fixtures.
+          bash 38-conversational-ai-system/scripts/qc-doc-counts.sh
+          bash 38-conversational-ai-system/scripts/qc-doc-counts.test.sh
+          echo "✓ qc-doc-counts: prose counts agree with disk, fixtures pass"
+
       - name: Skill 38 reference sheet is bulletproof (Quick Start + tag-first + post-build verify)
         shell: bash
         run: |

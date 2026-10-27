@@ -163,6 +163,7 @@ SCRIPT_FILES=(
   "scripts/qc-send-directive.sh"
   "scripts/qc-conversation-memory.sh"
   "scripts/qc-playbook-doc.sh"
+  "scripts/qc-doc-counts.sh"
   "scripts/qc-reference-sheet.sh"
   "scripts/22-notify-client-doc.sh"
   "scripts/qc-notify-client-doc.sh"
@@ -355,6 +356,28 @@ if [ -f "$QC_MEM" ]; then
   fi
 else
   report_fail "qc-conversation-memory.sh not found (looked in scripts/)"
+fi
+
+# -------- Prose counts vs disk (machine-enforced) --------
+# SKILL.md and INSTALL.md state numbers (scripts, protocols, references, the
+# numbered install range). Those numbers drift, and the old advisory in the
+# repo-root bump-version.sh printed a WARN and returned 0 unconditionally, so
+# drift could ship. This gate fails on a mismatch. Without this call the gate
+# exists and nothing runs it.
+section "Prose asset counts vs disk (qc-doc-counts.sh)"
+QC_COUNTS="$SCRIPT_DIR/qc-doc-counts.sh"
+[ -f "$QC_COUNTS" ] || QC_COUNTS="$SKILL38_ROOT/scripts/qc-doc-counts.sh"
+if [ -f "$QC_COUNTS" ]; then
+  COUNTS_RC=0
+  bash "$QC_COUNTS" >/dev/null 2>&1 || COUNTS_RC=$?
+  case "$COUNTS_RC" in
+    0) report_pass "qc-doc-counts: every stated count agrees with disk" ;;
+    1) report_fail "qc-doc-counts: a stated count disagrees with disk — run qc-doc-counts.sh for the file, the claim and the real number" ;;
+    2) report_fail "qc-doc-counts could not verify the counts (exit 2). Unverified is never a pass." ;;
+    *) report_fail "qc-doc-counts returned unexpected exit $COUNTS_RC" ;;
+  esac
+else
+  report_fail "qc-doc-counts.sh not found (looked in scripts/) — the prose-count gate cannot silently disappear"
 fi
 
 # -------- Per-playbook human-facing doc gate (machine-enforced) --------
