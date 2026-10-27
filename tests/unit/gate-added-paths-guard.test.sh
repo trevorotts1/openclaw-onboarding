@@ -2,10 +2,10 @@
 # gate-added-paths-guard.test.sh — runnable controls for tools/gate-added-paths.sh
 #
 # Four controls, each asserting an EXACT exit code:
-#   a) a change that adds exactly one /Volumes/ line      -> exit 1
+#   a) a change that adds exactly one volume-root line     -> exit 1
 #   b) origin/main~1...origin/main on this repo          -> exit 0
-#      (main already carries /Volumes/ in 42 files; added-lines-only must not
-#       fail on pre-existing text)
+#      (main already carries the volume root in 42 files; added-lines-only
+#       must not fail on pre-existing text)
 #   c) missing repo / unreadable ref                     -> exit 2
 #   d) a change that adds only /home/ and /private/      -> exit 0
 #      (D-27: /home/ and /private/ are NOT banned)
@@ -35,11 +35,13 @@ check() { # <name> <expected> <actual>
 }
 
 # ── fixture repo: baseline already carries a volume path and the unbanned roots ──
-# Host paths are assembled at runtime: the committed source must not carry one,
-# or this fixture trips the very gate it exercises.
-VOL=/Volumes
+# Host roots are assembled at runtime from parts: the committed source must not
+# carry either literal, or this fixture trips the very gate it exercises.
+VOL="/Vol"; VOL+="umes"
+USR="/Us"; USR+="ers"
 MOUNT="$VOL/fixture-mount"
 LEAK="$MOUNT/Downloads/out.txt"
+USER_LEAK="$USR/tester/notes.txt"
 
 FX="$TMP/fixture"
 mkdir -p "$FX"
@@ -60,7 +62,16 @@ git -C "$FX" add -A
 git -C "$FX" commit -qm add-volumes-leak
 bash "$GUARD" "$FX" "$BASE" HEAD > "$TMP/a.out" 2>&1; rc_a=$?
 sed 's/^/    /' "$TMP/a.out"
-check "a) one added /Volumes/ line" 1 "$rc_a"
+check "a) one added volume-root line" 1 "$rc_a"
+
+# u) exactly one added user-home line -> 1
+USR_BASE="$(git -C "$FX" rev-parse HEAD)"
+printf '%s\n' "notes=$USER_LEAK" > "$FX/userleak.txt"
+git -C "$FX" add -A
+git -C "$FX" commit -qm add-user-home-leak
+bash "$GUARD" "$FX" "$USR_BASE" HEAD > "$TMP/u.out" 2>&1; rc_u=$?
+sed 's/^/    /' "$TMP/u.out"
+check "u) one added user-home line" 1 "$rc_u"
 
 # d) only /home/ and /private/ added -> 0 (must NOT be banned)
 HOME_ONLY_BASE="$(git -C "$FX" rev-parse HEAD)"
@@ -73,7 +84,7 @@ bash "$GUARD" "$FX" "$HOME_ONLY_BASE" HEAD > "$TMP/d.out" 2>&1; rc_d=$?
 sed 's/^/    /' "$TMP/d.out"
 check "d) /home/ and /private/ not banned" 0 "$rc_d"
 
-# b) this repo's own merged main must be clean: pre-existing /Volumes/ text is
+# b) this repo's own merged main must be clean: pre-existing volume-root text is
 #    not in the added set for the tip commit.
 if git -C "$REPO_ROOT" rev-parse --verify --quiet origin/main~1 >/dev/null 2>&1; then
   bash "$GUARD" "$REPO_ROOT" origin/main~1 origin/main > "$TMP/b.out" 2>&1; rc_b=$?

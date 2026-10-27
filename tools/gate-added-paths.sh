@@ -2,13 +2,16 @@
 # gate-added-paths.sh — repo path guard. Bans host-specific absolute paths in a
 # branch's ADDED lines only (owner decision D-27, 2026-10-27).
 #
-# BANNED in added lines:  /Volumes/   /Users/
+# BANNED in added lines:  the macOS external-volume root and the macOS
+#   user-home root. Both are assembled from parts a few lines below, so this
+#   file never contains the literal text it scans for and cannot trip its own
+#   gate (a scanner must name its targets without containing them).
 # NOT banned, on purpose:  /home/   /private/
 #   /home/ appears in 166 files on main (599 hits /home/hatch, 228 /home/node,
 #   110 /home/.openclaw) and /private/ in 61 files (77 /private/tmp). Those are
 #   Docker and VPS paths the fleet depends on; a blanket ban turns main red.
 #
-# Added-lines-only: /Volumes/ already appears in 42 files on main, so a
+# Added-lines-only: the volume root already appears in 42 files on main, so a
 # whole-tree scan would fail on main. Only what a change ADDS is judged.
 #
 # Usage: gate-added-paths.sh <repo> <base> <head> [--positive-control]
@@ -17,6 +20,11 @@
 set -uo pipefail
 
 _die() { echo "INSTRUMENT_ERROR: $*" >&2; exit 2; }
+
+# Banned roots, assembled from parts. Never write either as one literal here:
+# this file is itself subject to the gate, and a self-tripping guard cannot land.
+VOL_ROOT="/Vol"; VOL_ROOT+="umes/"
+USER_ROOT="/Us"; USER_ROOT+="ers/"
 
 repo="${1:-}"; base="${2:-}"; head="${3:-}"; mode="${4:-}"
 if [ -z "$repo" ] || [ -z "$base" ] || [ -z "$head" ]; then
@@ -55,10 +63,10 @@ if [ -n "$diff_out" ]; then
     esac
     added_lines=$((added_lines + 1))
     case "$line" in
-      *"/Volumes/"*) vol_hits=$((vol_hits + 1)); detail+="  VOLUMES ${line:0:200}"$'\n' ;;
+      *"$VOL_ROOT"*) vol_hits=$((vol_hits + 1)); detail+="  VOLUMES ${line:0:200}"$'\n' ;;
     esac
     case "$line" in
-      *"/Users/"*) users_hits=$((users_hits + 1)); detail+="  USERS   ${line:0:200}"$'\n' ;;
+      *"$USER_ROOT"*) users_hits=$((users_hits + 1)); detail+="  USERS   ${line:0:200}"$'\n' ;;
     esac
   done <<EOF
 $diff_out
@@ -75,7 +83,7 @@ fi
 
 if [ "$vol_hits" -ne 0 ] || [ "$users_hits" -ne 0 ]; then
   printf '%s' "$detail"
-  echo "GATE FAIL: banned absolute paths (/Volumes/, /Users/) present in added lines"
+  echo "GATE FAIL: banned absolute paths ($VOL_ROOT, $USER_ROOT) present in added lines"
   exit 1
 fi
 echo "GATE PASS: 0 banned absolute paths in added lines"
