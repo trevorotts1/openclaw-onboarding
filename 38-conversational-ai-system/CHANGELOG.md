@@ -177,6 +177,34 @@ Task T-18 acceptance, verbatim: "Field vs channel/global/sequence/handoff preced
 **Proof — two real processes, not a sleep.** `test_two_real_processes_cannot_send_after_a_suppression_commits` starts a second interpreter whose gate decides ALLOW, waits on a file barrier until that decision exists, commits the stop from the test process, then releases it: zero sends, action `suppressed`, empty send log. Six further rounds alternate who moves first on a fresh contact each round (an earlier round's stop is permanent, so reusing one contact would make later rounds vacuous) and check every send's attempt start against the suppression's commit time: zero violations, at least one round sends, and a same-harness control round on an unsuppressed contact sends exactly once.
 
 **Scope note.** R-19 also covers escalation and handoff acceptance, which T-29/T-33/T-34 own; this task implements the handoff half of the precedence ladder (a named owner fences the bot, an explicit release lifts it) and does not build escalation, so nothing here claims R-19 complete.
+## [2.0.197] - 2026-10-25 - chore(t-08): merge origin/main into the T-08 repair-5 candidate and renumber past the live maximum (T-08 merge, PBB-440)
+
+Bookkeeping-only commit. `origin/main` was merged into the reviewed T-08 repair-5 commit `2f3b07e3c` by merge, not rebase, so that reviewed commit stays an ancestor of this candidate. The substantive reviewed content is byte-identical to what PBB-415 passed: `tools/tests/test_pb_contracts.py`, `evidence/W05/T-08-f5-proof.md` and `evidence/W05/f5_proof.py` are untouched by this commit. Only this entry and `skill-version.txt` move.
+
+- **Version re-cut at merge time (PBB-866).** The heading above was `2.0.128` as pushed; `origin/main` moved to `v2.0.196` in the interim, so this lane re-cut it to `2.0.197`, the next patch above main's marker, measured not remembered. Content of this entry is otherwise unchanged.
+- **What the merge forced.** Two conflicts, both release ceremony: `38-conversational-ai-system/CHANGELOG.md` and `38-conversational-ai-system/skill-version.txt`. Both resolved as a union - this entry added, the reviewed `[2.0.120]` entry kept verbatim, and `origin/main`'s own entries (`[2.0.105]` down to `[2.0.90]`) kept verbatim above the shared `[2.0.35]` tail. No other file conflicted. No product or test file changed.
+- **Version.** `skill-version.txt` was read for all **2003** refs under `refs/remotes/origin`, enumerated with a bare `git for-each-ref refs/remotes/origin` prefix and no `/*` glob - the glob sees only 113 - and compared numerically as `major*1000000+minor*1000+patch`: 2003 parsed, 0 missing, 0 unparseable, and `origin/main` itself parsed as `(2, 0, 105)` in the same harness as the known-present control. True numeric maximum **v2.0.123**, on `pb/PBB-420/t-28-repair5`. This commit takes **v2.0.128**, the maximum plus 5 headroom, deliberately not max+1. The number is **PROVISIONAL**: one merge-time writer renumbers all landing candidates in sequence.
+- **Absence readings on `origin/main`, both token forms, each printing its own exit code:**
+
+```
+$ git grep --fixed-strings -l -e '[2.0.128]' origin/main; echo rc=$?
+rc=1
+$ git grep --fixed-strings -l -e 'v2.0.128' origin/main; echo rc=$?
+rc=1
+
+--- controls, same instrument, must hit ---
+$ git grep --fixed-strings -l -e '[2.0.35]' origin/main; echo rc=$?
+origin/main:38-conversational-ai-system/CHANGELOG.md
+rc=0
+$ git grep --fixed-strings -l -e 'v2.0.105' origin/main; echo rc=$?
+origin/main:38-conversational-ai-system/CHANGELOG.md
+origin/main:38-conversational-ai-system/skill-version.txt
+rc=0
+```
+
+Brackets mandatory: a bare `2.0.3` false-matches inside `v22.0.34` in the presentations skill.
+
+- **What this candidate actually adds - the prior claim tested, not assumed.** The claim was that T-08 base work had already landed on `origin/main`. It is half true, and the split is the finding. `origin/main` already refuses a gate that omits the key as `INVALID_GATE` naming the field (`$gate: missing required property 'trusted_contact_mapping_evidence_id'`), already refuses a present-but-empty mapping as `SUPPRESSED` / `NO_TRUSTED_CONTACT_MAPPING` with `errors == []`, and already pins the blank, invisible-mark and non-string cases. The behaviour the F5 decision records is enforced and named on main today. What `origin/main` does **not** carry is the pin that keeps it there: `test_a_missing_mapping_key_is_malformed_not_a_named_refusal` is absent from main's `test_pb_contracts.py` (that file's diff from `origin/main` to `2f3b07e3c` is +19 lines and no deletions), and `evidence/W05/T-08-f5-proof.md` / `evidence/W05/f5_proof.py` do not exist on `origin/main` at all. This commit lands the pin and the evidence. It is not a behaviour change, and it is not a number moved for its own sake.
 
 ## [2.0.179] - 2026-10-26 - feat(fulfillment): the T-13 direct original fulfillment module gets a real production call site and its suite step (PBB-647)
 
@@ -522,6 +550,64 @@ Blocker B-24: the `hooks.mappings` model-key contradiction is decided AGAINST T-
 
 Tests: `tests/qc-checklist-backend-predicate.test.sh` (new, 6 cases, pins the shipped predicate to the decision; mutation control — restoring `no-model` in a throwaway copy fails 3 of 6) exit 0; `tests/hook-mapping-contract.test.sh` 11 rows, both gates agree, exit 0; `scripts/lib-docker-tenant.test.sh` 12/12 `ALL PASS`, exit 0; `tests/repair-inbound-hooks.test.sh` exit 0; `repair-inbound-hooks.py --selftest` `selftest ok`, exit 0; `bash -n` clean on both changed/added shell files.
 
+## [2.0.120] - 2026-10-25 - test(T-08/F5): pin the trusted-contact-mapping decision that made F5 unreachable (T-08 repair 4, PBB-349; renumbered in T-08 repair 5, PBB-378)
+
+Repair of the two defects the PBB-321 verifier failed on `9b73fabd6`: a version collision and an overstated coverage claim in the F5 evidence. This commit adds no product behaviour - the F5 gate bytes were already on main, no file carrying guard logic is touched, and the guard failure set is unchanged from `origin/main`.
+
+- **Version collision (fatal) - this entry is a RENUMBERING, and every collision is reported rather than asserted away.** `9b73fabd6` claimed Skill 38 **v2.0.33**, but `origin/main` had already assigned v2.0.33 to different content at `53de3d0b5`. The merge into main kept main's `CHANGELOG.md` and `skill-version.txt` verbatim; this entry re-adds this task's bookkeeping. The first renumber then repeated the same fault one number up. **The sentence this entry replaces read, verbatim:** "this entry re-adds this task's bookkeeping under **v2.0.94**, a number no ref has ever held - strictly above main (v2.0.35) and above every published branch allocation found by sweeping every local and remote ref: v2.0.36, v2.0.37, v2.0.90, v2.0.93. Absence proven with `git grep --fixed-strings \"[2.0.94]\"` and `git grep --fixed-strings \"v2.0.94\"` over every ref, both returning no match (rc 1)." **That sentence was false when written**, on two counts. (a) The enumeration was incomplete - it omitted v2.0.38 (`pb/PBB-343/t-21-repair4`, `87ce3e14`) and v2.0.94 itself (`pb/PBB-350/t-20-repair3`, `40d4c15d`). (b) `v2.0.94` was already held by **two** unlanded heads, `pb/PBB-349/t-08-repair4` (`3dd19e27`, this task's own parent) and `pb/PBB-350/t-20-repair3` (`40d4c15d`), so both greps returned hits (rc 0), not rc 1. The false absence claim is corrected here rather than deleted, because an absence claim asserted instead of measured is the defect, not the number.
+- **What was actually measured, and the number this entry takes.** `38-conversational-ai-system/skill-version.txt` was read for all **1978** heads on `origin` (1924 unique ref objects) and the values compared numerically, not lexically. Every published allocation at or above v2.0.36 at that reading: v2.0.36 (`pb/PBB-250/t-21-rebase` `884495b9`, `pb/PBB-318/t-04-repair3` `f0542970`, `pb/PBB-325/t-05-repair2` `66818475`), v2.0.37 (`pb/PBB-319/t-21-repair3` `bacfabb1`), v2.0.38 (`pb/PBB-343/t-21-repair4` `87ce3e14`), v2.0.90 (`pb/PBB-315/t-09-repair` `9b40d6e9`, `pb/PBB-361/t-09-repair2` `d8586e9d`), v2.0.93 (`pb/PBB-271/t-19-repair2` `67b892ed`), v2.0.94 (`pb/PBB-349/t-08-repair4` `3dd19e27`, `pb/PBB-350/t-20-repair3` `40d4c15d`), v2.0.95 (`origin/main` `006fc426`, plus `pb/PBB-356/t-14-repair3` `dc5c25aa`, `pb/PBB-357/t-04-repair4` `ecfa37fc`, `pb/PBB-360/t-18-build` `979eb559`, `pb/PBB-365/t-19-batch` `61a60e9a`), v2.0.96 (`pb/PBB-370/t-28-repair3` `c5bf30e9`), v2.0.97 (`batch/PBB-380/t05-merge` `d5d039b8`, `pb/PBB-369/t-43-repair2` `56f817dc`, `pb/PBB-379/t-09-repair3` `063eb363`), v2.0.98 (`pb/PBB-376/t-28-repair4` `35d6789b`). The true numeric maximum on any head is **v2.0.98**; `origin/main` is **v2.0.95**.
+- **Why v2.0.120 rather than the next digit.** The allocation rule is "strictly above the true maximum", and this number satisfies it. Taking exactly max+1 was tried twice during this repair and lost both times to a concurrent lane landing the same digit between the sweep and the commit: the first attempt measured a maximum of v2.0.96 and allocated v2.0.97, and before the commit was pushed `pb/PBB-369/t-43-repair2`, `pb/PBB-379/t-09-repair3` and `batch/PBB-380/t05-merge` all took v2.0.97 (three claimants on one number); the second attempt saw v2.0.97 taken and measured v2.0.98 free, and `pb/PBB-376/t-28-repair4` took v2.0.98 before the reading was written down. The measured evidence for that: v2.0.94 already has two claimants, v2.0.95 has five, v2.0.97 has three. Max+1 in this fan-out is a coin flip, and a second collision would be the fourth instance of this defect class on this task. A number well above the observed maximum leaves a margin that outlives the sweep-to-commit window. If a verifier requires max+1 exactly rather than strictly-above-maximum, that is a one-line change to `skill-version.txt` and the heading above, and nothing else in this entry depends on the choice.
+- **The absence readings, with output pasted.** Bracketed-token form only - a bare `2.0.120` false-matches nothing here but a bare `2.0.9x` false-matches the presentations skill's `v22.0.3x..v22.0.8x` as a substring, so the token is always bracketed or `v`-prefixed. Read on `origin/main` and across all 1924 ref objects, with the same commands run against the disputed old number as the control that proves the instrument discriminates:
+
+```
+$ git show origin/main:38-conversational-ai-system/skill-version.txt
+v2.0.95
+
+$ git for-each-ref --format='%(objectname)' refs/remotes/origin/ | sort -u | wc -l
+1924
+
+--- the new number, main only ---
+$ git grep --fixed-strings -l -e '[2.0.120]' origin/main; echo "rc=$?"
+rc=1
+$ git grep --fixed-strings -l -e 'v2.0.120' origin/main; echo "rc=$?"
+rc=1
+
+--- the new number, all 1924 ref objects on origin ---
+$ git grep --fixed-strings --full-name -l -e '[2.0.120]' <all 1924 ref objects>; echo "rc=$?"
+rc=1
+$ git grep --fixed-strings --full-name -l -e 'v2.0.120' <all 1924 ref objects>; echo "rc=$?"
+rc=1
+
+--- control: the instrument discriminates on origin/main ---
+$ git grep --fixed-strings -l -e '[2.0.95]' origin/main -- '38-conversational-ai-system/*'; echo "rc=$?"
+origin/main:38-conversational-ai-system/CHANGELOG.md
+rc=0
+$ git grep --fixed-strings -l -e 'v2.0.95' origin/main -- '38-conversational-ai-system/*'; echo "rc=$?"
+origin/main:38-conversational-ai-system/CHANGELOG.md
+origin/main:38-conversational-ai-system/skill-version.txt
+rc=0
+
+--- control over all ref objects: the disputed old number, same two commands ---
+$ git grep --fixed-strings --full-name -l -e '[2.0.94]' <all 1924 ref objects>; echo "rc=$?"
+3dd19e2796dc7ff7a38877e0b7d4baefa653340d:38-conversational-ai-system/CHANGELOG.md
+40d4c15da71cc7d998115fccc455ec2d24f26717:38-conversational-ai-system/CHANGELOG.md
+rc=0
+$ git grep --fixed-strings --full-name -l -e 'v2.0.94' <all 1924 ref objects>; echo "rc=$?"
+3dd19e2796dc7ff7a38877e0b7d4baefa653340d:38-conversational-ai-system/CHANGELOG.md
+3dd19e2796dc7ff7a38877e0b7d4baefa653340d:38-conversational-ai-system/skill-version.txt
+40d4c15da71cc7d998115fccc455ec2d24f26717:38-conversational-ai-system/CHANGELOG.md
+40d4c15da71cc7d998115fccc455ec2d24f26717:38-conversational-ai-system/skill-version.txt
+c5bf30e927e63b7fe3f9748ee910c40791253044:38-conversational-ai-system/CHANGELOG.md
+dc5c25aa598d8386f88c0737a8bef3c3d6eb1ff1:38-conversational-ai-system/CHANGELOG.md
+rc=0
+```
+
+The two trailing hits on `c5bf30e9` and `dc5c25aa` are prose mentions of the old number inside their own CHANGELOG entries, not further allocations - which is why the allocation is read from `skill-version.txt` by numeric value and the prose sweep is reported separately as prose. These are pre-commit readings by construction: a CHANGELOG cannot cite a sweep run after the commit containing it exists. The sweep repeated immediately before push is recorded in the lane receipt, `.../lanes/PBB-378/REPAIR.md`, including what changed between the two readings. Nothing above is claimed from memory; every line is the output of the command shown above it.
+- **Overstated coverage claim.** The evidence reported 1/8 -> 4/8 -> 8/8 across `053c4fee` -> `8e98f155e` -> the repaired tree, and glossed the single pre-fix case as a hold. It was not a hold: under that case list the one case that "held" is the non-string case, and it held only because the pre-fix error text `$gate: unexpected property 'trusted_contact_mapping_evidence_id'` contains the key name, so an `any(<key> in e)` assertion is satisfied by the rejection message itself. Under the independent case list the same three trees give **0/8 -> 3/8 -> 8/8**. The end state is 8/8 under both lists; only the middle number was an artefact of the case list. `evidence/W05/T-08-f5-proof.md` now states the case list explicitly and drops the false gloss, and the instrument that produces every number in it, `evidence/W05/f5_proof.py`, is committed beside it - a saved number whose instrument is absent is not evidence. Set B is kept in the instrument only so the historical table can be reproduced.
+
+Proof, one instrument, three `git archive` trees: set A `053c4fee` **0/8** rc 1 -> `8e98f155e` **3/8** rc 1 -> this tree **8/8** rc 0; set B, kept for the record, **1/8** -> **4/8** -> **8/8**. The two suite tests that carry the decision and its control run **FAILED (failures=2, errors=1)** on `053c4fee` with this test file copied in, and **OK** here; real ids still dispatch on both, so the refusals are not a blanket refusal.
+
+Tests: `tools/tests/test_pb_contracts.py` 43 (42 previous + 1; the diff to `origin/main` is +19 lines and no deletions, so no existing assertion was edited, loosened or removed); `python3 -I -m unittest discover -s 38-conversational-ai-system/tools/tests` 324 OK, 1 skip (detached `origin/main`: 323 OK, 1 skip); `scripts/qc-pb-contracts.sh` 43 OK (detached `origin/main`: 42 OK).
 ## [2.0.105] - 2026-10-25 - chore(t05-hygiene): redact the operator home path from the T-05 registration evidence (T-05 hygiene, PBB-413)
 
 The recorded `launchctl print` capture in `evidence/engineering-loop-registration.json` embedded the real operator home directory in its `raw` field — an `ALWAYS_ON_TOKEN` banned by `scripts/qc-assert-no-client-names.sh`, which failed PR #2555's `QC static invariants` check with exactly 1 hit at that file's line 96. One substitution and one disclosure, nothing else: the home-directory component of the plist path is rendered as the placeholder `{{operatorHome}}` (the `{{...}}` placeholder shape named in that script's remedy text; `{{operatorHome}}` is not in `ALWAYS_ON_TOKENS`), and a new sibling `raw_redaction` field discloses exactly that substitution. The launchd attributes that make the T-05 acceptance proof real are byte-identical in that `raw` field — user domain `gui/501`, the job label exactly as launchd reported it, `active count = 1`, `type = LaunchAgent`, `state = running`, and the arguments tail `tick --run-id pb-eng-loop-20261024T0807Z-g2` with its run id and generation suffix. No record is deleted or hollowed out. (The label literal itself is quoted only in `evidence/`, outside this skill tree: this tree's own `qc-no-personal-data.sh` bans the operating brand token that label carries, so restating it here would red-block a gate whose whole purpose is that no identifier ships in skill content.)
