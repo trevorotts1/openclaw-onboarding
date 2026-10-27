@@ -4,6 +4,14 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.129 - 2026-10-27 - chore(batch-20261027-2050): update stamp onto 7f9eb460
+
+- **Batch 20261027-2050 update stamp, skill 75 v2.9.128 -> v2.9.129.** The branch was merged with main `7f9eb460adc6fa0778a304bf3959923217c5096f` (PR #2648 merge train, which set skill 75 to v2.9.128). Main therefore already reads v2.9.128, so this batch takes main+1. No skill code changed in this commit; version stamp and this entry only. The Skill 38 stamp is unchanged from main.
+
+## v2.9.128 - 2026-10-27 - chore(batch-20261027-2050): version stamp for S75-T02 and S75-T15
+
+- **Batch 20261027-2050 version stamp, skill 75 v2.9.127 -> v2.9.128.** S75-T02 (`s75/S75-T02-r1` @ `89a7ffc03`) and S75-T15 (`s75/S75-T15-r6` @ `a6400314f`) are the two units in this batch. T15 carried its own bump to v2.9.128 on its branch; merge commit `0eb33a361` took that higher value under the room's take-the-higher rule, so the batch's net effect on skill 75 is exactly one bump, v2.9.127 -> v2.9.128. This changelog commit changes no version file and no skill code.
+
 ## v2.9.128 - 2026-10-27 - chore(batch-20261027-2022): version stamp
 
 - **Batch 20261027-2022 version stamp, skill 75 v2.9.127 -> v2.9.128.** Eleven units composed onto 6b9ed732 (`cc273cc1`, `f589ff0f`, `16c0946a`, `d3bf0bf3`, `11c27b48`, `72e99726`, `885d55f5`, `e910f203`, `f4b6fa2c`, `674ee09a`, `0708e87b`). No skill code changed in this commit; version stamp and this entry only.

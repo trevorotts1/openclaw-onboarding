@@ -8,7 +8,7 @@
   "arbiter_role": "independent evidence arbiter; authored no part of the candidate repair, performed no candidate-2 verification, wrote no product code",
   "arbiter_status": "RECEIPT_ONLY_NO_ACCEPTANCE",
   "observed_at": "2026-10-26T21:54:52Z",
-  "authority_root": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024",
+  "authority_root": "<AUTHORITY_ROOT>",
   "repo_under_test": {
     "path": "<OPERATOR_HOME>/openclaw-onboarding",
     "origin_main_tip_at_build": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7",
