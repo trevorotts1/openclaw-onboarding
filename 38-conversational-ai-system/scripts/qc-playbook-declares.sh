@@ -372,8 +372,14 @@ if wf and wf.is_dir() and not WF_FAULT:
         if applies_tags:
             declares_applied_tags = True
             if known_tag_ids is None:
+                # Deliberately does NOT name export_deps.py: that producer emits
+                # the calendar and pipeline exports only, so telling the operator
+                # to run it for tags sends them to a command that cannot produce
+                # this file. No caf subcommand writes a tags export today either,
+                # so the message names the endpoint the data actually comes from
+                # rather than a command that does not exist.
                 failures.append(
-                    "REQUIRES_OPERATOR: %s: declares tags-used (applies) but the caf tags export is missing; cannot verify %s. Export it to %s (or %s). Produce it with 44-convert-and-flow-operator/tools/export_deps.py (caf tags export)."
+                    "REQUIRES_OPERATOR: %s: declares tags-used (applies) but the caf tags export is missing; cannot verify %s. Export it to %s (or %s). The data is GET /workflow/<locationId>/tags on the internal API; no caf subcommand writes this file yet, so capture that response's tags array into the file named above."
                     % (
                         f.name,
                         ", ".join(sorted(applies_tags)),

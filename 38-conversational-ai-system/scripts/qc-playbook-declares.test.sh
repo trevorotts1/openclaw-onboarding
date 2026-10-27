@@ -220,6 +220,17 @@ printf '%s' "$TMJSON" | python3 -c "import json,sys; print(json.load(sys.stdin)[
 printf '%s' "$TMJSON" | grep -q "caf tags export is missing" && ok "tags-used missing export: names the missing export" || bad "tags-used missing export: did not name it"
 printf '%s' "$TMJSON" | grep -q "cannot verify VIP" && ok "tags-used missing export: names the unverified tag" || bad "tags-used missing export: did not name the unverified tag"
 
+# The remediation text must not send the operator to a producer that cannot
+# produce this file. export_deps.py emits the calendars and pipelines exports
+# only, and no caf subcommand writes a tags export either — so naming either one
+# as the way to get it is an instruction that cannot be followed.
+printf '%s' "$TMJSON" | grep -q "export_deps.py" \
+  && bad "tags-used missing export: points at export_deps.py, which produces no tags export" \
+  || ok "tags-used missing export: does not point at a producer that cannot produce it"
+printf '%s' "$TMJSON" | grep -q "/workflow/" \
+  && ok "tags-used missing export: names the endpoint the data comes from" \
+  || bad "tags-used missing export: does not name the endpoint the data comes from"
+
 # --- TAGS-USED: an entry with no mode is a defect naming the entry. ----------
 TN="$TMP/tagsnomode/conversation-workflows"
 mkdir -p "$TN"
