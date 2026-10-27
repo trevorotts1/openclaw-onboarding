@@ -23,7 +23,7 @@
     "sha": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
     "subject": "Merge pull request #2596 from trevorotts1/s75/T08-r7",
     "resolved_from_origin": true,
-    "how": "git worktree add /Users/blackceomacmini/skill75-repair/lanes/S75-T37-ahead-lane -b s75/S75-T37-r1 origin/main; git rev-parse origin/main == 5a54ddd7f8171ea7e3608cc1d508b06e82077d9e"
+    "how": "git worktree add <operator-home>/skill75-repair/lanes/S75-T37-ahead-lane -b s75/S75-T37-r1 origin/main; git rev-parse origin/main == 5a54ddd7f8171ea7e3608cc1d508b06e82077d9e"
   },
 
   "files_changed": [
@@ -41,7 +41,7 @@
 
   "tests_run": [
     {
-      "cmd": "cd /Users/blackceomacmini/skill75-repair/lanes/S75-T37-ahead-lane/CONTROL/tests && python3 -I test_correct_target_s75_t37.py",
+      "cmd": "cd <operator-home>/skill75-repair/lanes/S75-T37-ahead-lane/CONTROL/tests && python3 -I test_correct_target_s75_t37.py",
       "exit": 0,
       "result": "Ran 31 tests ... OK"
     },
