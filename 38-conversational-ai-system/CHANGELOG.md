@@ -1,3 +1,7 @@
+## [2.0.205] - 2026-10-27 - chore(batch-20261027-1310): Skill 38 to v2.0.205 for s38-44, T-40, T-23-WIRE
+
+- **Batch 20261027-1310 version stamp, Skill 38 v2.0.203 -> v2.0.205.** s38-44 (`fix/s38-44-rebased` @ `c83427d0`), T-40 (`pb/PBB-561/t-40-build` @ `afe8cbfd`), and T-23-WIRE (`pb/PBB-967/t-23-wire` @ `7ade5339`) touch skill 38 files in this batch. No skill code changed in this commit; version stamp only.
+
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
 - **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.

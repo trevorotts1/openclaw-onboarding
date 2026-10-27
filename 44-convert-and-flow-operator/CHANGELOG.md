@@ -1,3 +1,7 @@
+## [v2.1.30] - 2026-10-27 - chore(batch-20261027-1310): bump skill 44 to v2.1.30 for s38-44, T-40
+
+- **Batch 20261027-1310 version stamp, skill 44 v2.1.28 -> v2.1.30.** s38-44 (`fix/s38-44-rebased` @ `c83427d0`) and T-40 (`pb/PBB-561/t-40-build` @ `afe8cbfd`) touch 44-convert-and-flow-operator files in this batch. No skill code changed in this commit; version stamp only.
+
 ## [v2.1.28] - 2026-10-27 - chore(batch-20261027-0702): bump skill 44 to v2.1.28 for T-53
 
 - **Batch 20261027-0702 version stamp, skill 44 v2.1.27 -> v2.1.28.** T-53 (`pb/PBB-916-wave1/T-53` @ `92a7c7f`) touches 44-convert-and-flow-operator outbound sender and readback (3 files). No skill code changed in this commit; version stamp only.
