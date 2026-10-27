@@ -115,7 +115,7 @@ def test_human_fence_makes_zero_transport_calls():
     contact = _bind(ws)
     store = consent_gate.ConsentStore(
         tenant_identity.TenantIdentity(ws["identity"]))
-    store.human_takeover(TENANT, contact, actor="trevor", reason="proof")
+    store.human_takeover(TENANT, contact, actor="proof", reason="proof")
     _admit(ws, contact)
     rc, out = _reply(ws, contact)
     assert rc == 4, (rc, out)
