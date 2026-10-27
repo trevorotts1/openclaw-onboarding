@@ -5,7 +5,9 @@
 #   2. start pm2 resurrect and the GHL MCP autostart only after the gateway answers /healthz 200,
 #      and never run the openclaw CLI before that (2026.10.1 offline-maintenance lock race),
 #   3. (Contabo) relink 999-setup, .claude, .local into <root>/persist-home, idempotently,
-#   4. (Hostinger) call hostinger-wrapper-patch.py if present, fail-soft.
+#   4. (Hostinger) call hostinger-wrapper-patch.py if present, FAIL CLOSED: a patcher that
+#      cannot prove a safe result must stop the boot, never start the gateway unpatched
+#      (Trevor 2026-10-19; docker-persistence.md D4).
 # Hermetic: fake node/pm2/openclaw on PATH, a fake gateway on a free loopback port, temp dirs.
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 9
@@ -161,12 +163,21 @@ run_ct "$B"
 [ -L "$H/999-setup" ] && ok "contabo: an entry absent from the live layer is linked from the persistent copy" || bad "contabo: absent live entry not linked"
 
 # ---------------------------------------------------------------- Hostinger
+# FAIL CLOSED: a patcher that cannot prove a safe result stops the boot.
 mk_box hg1; D="$B/data"; mkdir -p "$D/.openclaw/scripts"
 printf '#!/usr/bin/env python3\nopen("%s","a").write("patcher\\n")\nraise SystemExit(1)\n' "$EV" > "$D/.openclaw/scripts/hostinger-wrapper-patch.py"
+HOME="$D" OPENCLAW_DATA="$D" PATH="$B/bin:/usr/bin:/bin" GW_READY_CAP=0 GW_WAIT_SCRIPT="$B/wait.sh" bash "$HG" >/dev/null 2>&1
+rc=$?
+[ "$rc" != 0 ] && ok "hostinger: a failed patcher STOPS the boot (fail closed)" || bad "hostinger: boot continued after a failed patcher (rc=$rc)"
+grep -q -x exec-node "$EV" && bad "hostinger: server.mjs started with an unverified wrapper" || ok "hostinger: server.mjs is never started when the patcher fails"
+
+# A proved result: the boot continues, and the ordering rules still hold.
+mk_box hg1b; D="$B/data"; mkdir -p "$D/.openclaw/scripts"
+printf '#!/usr/bin/env python3\nopen("%s","a").write("patcher\\n")\n' "$EV" > "$D/.openclaw/scripts/hostinger-wrapper-patch.py"
 PORT=$(free_port); fake_gateway "$EV" 3 "$PORT"
 HOME="$D" OPENCLAW_DATA="$D" PATH="$B/bin:/usr/bin:/bin" OPENCLAW_GATEWAY_PORT="$PORT" GW_READY_CAP=30 GW_WAIT_SCRIPT="$B/wait.sh" bash "$HG" >/dev/null 2>&1
 rc=$?
-[ "$rc" = 0 ] && ok "hostinger: template exits 0 even when the patcher fails (fail-soft)" || bad "hostinger: rc=$rc"
+[ "$rc" = 0 ] && ok "hostinger: template exits 0 when the patcher proves a safe result" || bad "hostinger: rc=$rc"
 p=$(line_of patcher); w=$(line_of wait-script); x=$(line_of exec-node)
 [ -n "$p" ] && [ -n "$w" ] && [ -n "$x" ] && [ "$p" -lt "$x" ] && [ "$w" -lt "$x" ] && ok "hostinger: patcher and wait-gateway-owner-stale both run before the final exec" || bad "hostinger: order ($(tr '\n' ' ' < "$EV"))"
 wait_for "pm2 resurrect"; sleep 0.3
@@ -178,12 +189,23 @@ mk_box hg2; D="$B/data"; mkdir -p "$D"
 HOME="$D" OPENCLAW_DATA="$D" PATH="$B/bin:/usr/bin:/bin" GW_READY_CAP=0 GW_WAIT_SCRIPT="$B/wait.sh" bash "$HG" >/dev/null 2>&1
 [ "$?" = 0 ] && grep -q -x exec-node "$EV" && ok "hostinger: no patcher present is fine" || bad "hostinger: failed without a patcher"
 
-# installer copies the wait script and the patcher beside container-startup.sh
+# installer copies the wait script, the patcher and the apt reassert beside container-startup.sh
 mk_box hg3; P="$B/openclaw-x"; mkdir -p "$P"
-printf 'services:\n  openclaw:\n    image: ghcr.io/hostinger/hvps-openclaw:latest\n    volumes:\n      - ./data:/data\n' > "$P/docker-compose.yml"
+printf 'services:\n  openclaw:\n    image: ghcr.io/hostinger/hvps-openclaw@sha256:%s\n    volumes:\n      - ./data:/data\n' "$(printf '0%.0s' $(seq 1 64))" > "$P/docker-compose.yml"
 PATH="$B/bin:/usr/bin:/bin" bash "$REPO/platform/vps/hostinger/install-startup-hook.sh" "$P" >/dev/null 2>&1
 S="$P/data/.openclaw/scripts"
-[ -x "$S/wait-gateway-owner-stale.sh" ] && [ -x "$S/hostinger-wrapper-patch.py" ] && [ -f "$S/container-startup.sh" ] && ok "hostinger: install-startup-hook copies the wait script and the patcher" || bad "hostinger: installer did not copy ($(ls "$S" 2>&1 | tr '\n' ' '))"
+[ -x "$S/wait-gateway-owner-stale.sh" ] && [ -x "$S/hostinger-wrapper-patch.py" ] && [ -x "$S/reassert-apt-deps.sh" ] && [ -f "$S/container-startup.sh" ] && ok "hostinger: install-startup-hook copies the wait script, the patcher and the apt reassert" || bad "hostinger: installer did not copy ($(ls "$S" 2>&1 | tr '\n' ' '))"
+
+# --check verifies EVERY watch hardening marker, not just "pm2 resurrect"
+chk="$(PATH="$B/bin:/usr/bin:/bin" bash "$REPO/platform/vps/hostinger/install-startup-hook.sh" "$P" --check 2>&1)"; crc=$?
+n=0; for k in H_IMG_DIGEST H_WRAPPER H_HEARTBEAT H_NPM_PREFIX H_REASSERT H_CODEX_ABSENT H_PERSIST_ENTRYPOINT H_OWNER_NODE; do
+  printf '%s\n' "$chk" | grep -q "^$k=" && n=$((n+1))
+done
+[ "$n" = 8 ] && ok "hostinger: --check reports all 8 watch hardening markers" || bad "hostinger: --check reported $n of 8 markers"
+printf '%s\n' "$chk" | grep -q "^H_IMG_DIGEST=1$" && printf '%s\n' "$chk" | grep -q "^H_WRAPPER=1$" && \
+  printf '%s\n' "$chk" | grep -q "^H_HEARTBEAT=1$" && printf '%s\n' "$chk" | grep -q "^H_NPM_PREFIX=1$" && \
+  printf '%s\n' "$chk" | grep -q "^H_REASSERT=1$" && ok "hostinger: --check reads the five static markers green after install" || bad "hostinger: static markers not green ($chk)"
+[ "$crc" != 0 ] && ok "hostinger: --check exits non-zero while a marker is red (unknown is never a pass)" || bad "hostinger: --check passed on a box with unwired container markers"
 
 # ---------------------------------------------------------------- wait script
 mk_box w1; LK="$B/locks"; mkdir -p "$LK"; export OPENCLAW_ROOT="$B/oc"
@@ -203,10 +225,16 @@ if grep -v '^[[:space:]]*#' "$WAIT" | grep -Eq '(^|[^-/[:alnum:]_.])openclaw[[:s
 if command -v node >/dev/null 2>&1; then
   F="$TMP/server.mjs"
   printf 'const d=require("fs"),q="%s/auth-profiles.json",t={};\nd.writeFileSync(q,JSON.stringify(t,null,2));\n' "$TMP" > "$F"
-  HWP_TARGET="$F" HWP_LOG="$TMP/hwp.log" python3 -I "$HWP" >/dev/null 2>&1; rc=$?
+  # The fixture is not a real wrapper, so it has no approved size: the per-box approved
+  # profile is declared explicitly. Counts are never assumed (fail-closed).
+  HWP_TARGET="$F" HWP_LOG="$TMP/hwp.log" PATCH_STATE="$TMP/hwp.state" PATCH_PROFILE='{"5":1}' python3 -I "$HWP" >/dev/null 2>&1; rc=$?
   if [ "$rc" = 0 ] && ! grep -q 'writeFileSync(q' "$F" && grep -q 'void 0' "$F"; then ok "patcher: the auth-profiles.json re-create is neutralised"; else bad "patcher: fragment not applied (rc=$rc)"; fi
-  HWP_TARGET="$F" HWP_LOG="$TMP/hwp.log" python3 -I "$HWP" >/dev/null 2>&1
+  HWP_TARGET="$F" HWP_LOG="$TMP/hwp.log" PATCH_STATE="$TMP/hwp.state" PATCH_PROFILE='{"5":1}' python3 -I "$HWP" >/dev/null 2>&1
   grep -q 'already patched' "$TMP/hwp.log" && ok "patcher: second run is idempotent" || bad "patcher: not idempotent"
+  # An unknown wrapper with no approved profile is UNKNOWN, never "already patched".
+  G="$TMP/unknown.mjs"; printf 'const x=1;\n' > "$G"
+  HWP_TARGET="$G" HWP_LOG="$TMP/hwp.log" PATCH_STATE="$TMP/hwp.state" python3 -I "$HWP" >/dev/null 2>&1
+  [ "$?" != 0 ] && grep -q 'unknown wrapper profile' "$TMP/hwp.log" && ok "patcher: an unapproved wrapper fails closed" || bad "patcher: an unapproved wrapper did not fail closed"
 else
   ok "patcher: node not installed here, fragment test skipped"
 fi
