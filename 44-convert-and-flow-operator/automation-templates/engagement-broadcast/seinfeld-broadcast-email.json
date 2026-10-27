@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "single_message",
   "id": "seinfeld-broadcast-email",
   "name": "Seinfeld Broadcast Email — Single Email-About-Nothing Copy Framework",
   "aliases": [
