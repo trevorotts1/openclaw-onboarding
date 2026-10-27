@@ -6,7 +6,7 @@
   "attempt": 1,
   "mode": "verify-only",
   "status": "landed-already",
-  "repository": "/Users/blackceomacmini/openclaw-onboarding",
+  "repository": "<PATH>/openclaw-onboarding",
   "head": "2bc48ff43ff8d16d69f8495aeb00f3aca95e06a2",
   "candidate_head": "2bc48ff43ff8d16d69f8495aeb00f3aca95e06a2",
   "candidate_subject": "S75-T39: one hygiene facet per repository event, never a global sweep",
@@ -75,12 +75,12 @@
     "No independent verification. I am the author of this receipt; a different agent must judge row S75-A39. The prior round-1 verdict (PASS, row_fully_met true, head 2bc48ff4) was read as context and is not re-issued here.",
     "The whole-tree python3 -I unittest discover run is NOT green (11 failures, 12 errors). I do not claim a green surrounding suite; I claim the red set is pre-existing and T39-independent, and I show the base control that proves it.",
     "No live caller of dispatch_event exists in the repository yet. The module is landed and tested but not wired into any runtime path.",
-    "The verifier's original independent probe (probe_t39_independent.py, 77 checks) and its mutation battery are not re-run: the directory /Users/blackceomacmini/loop-control/s75/t39verify no longer exists, so those instruments were not available to this attempt. Only the author's own test file and the repository suite were executed.",
+    "The verifier's original independent probe (probe_t39_independent.py, 77 checks) and its mutation battery are not re-run: the directory <PATH>/loop-control/s75/t39verify no longer exists, so those instruments were not available to this attempt. Only the author's own test file and the repository suite were executed.",
     "The repository CI fast-guard scripts/ci/fast-guards.d/rescue-rangers-rr015-gates.sh was invoked and aborted with 'cd: null directory' because it requires caller-supplied arguments; it is not a T39 gate and is reported as not-run, not as passing.",
     "No memory-tier or long-running gates were run. No mutation battery was repeated. No change was made to any loop-control state file."
   ],
   "receipt_path_in_repo": "evidence/units/S75-T39/attempt-1.json",
   "authored_at": "2026-10-26",
   "branch": "s75/S75-T39-r1",
-  "lane": "/Users/blackceomacmini/skill75-repair/lanes/S75-T39-build-lane"
+  "lane": "<PATH>/skill75-repair/lanes/S75-T39-build-lane"
 }
