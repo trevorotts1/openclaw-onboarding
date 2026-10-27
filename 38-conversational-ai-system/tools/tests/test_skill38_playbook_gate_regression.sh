@@ -40,7 +40,8 @@ assert_result "template validates" "$([ "$CAPTURE_RC" -eq 0 ] && echo 1 || echo 
 run_capture python3 -I "$ENGINE" lint "$TEMPLATE"
 assert_result "template lints clean" "$([ "$CAPTURE_RC" -eq 0 ] && echo 1 || echo 0)"
 
-# 3. A zero-phase on-disk playbook must not produce vacuous gate passes.
+# 3. Content-identical zero-phase files are legacy by rule and are surfaced
+# as NEEDS-MIGRATION, never PASS. Craft gate independently rejects vacuous content.
 VACUOUS_DIR="$TMP_DIR/vacuous"
 cat >"$VACUOUS_DIR/zero-phase.md" <<'PLAYBOOK'
 # Conversation Playbook: X
@@ -65,18 +66,27 @@ for GATE in \
   "$SKILL_ROOT/scripts/qc-tool-gating.sh" \
   "$SKILL_ROOT/scripts/qc-workflow-exits.sh" \
   "$SKILL_ROOT/scripts/qc-playbook-declares.sh" \
-  "$SKILL_ROOT/scripts/qc-playbook-doc.sh" \
-  "$SKILL_ROOT/scripts/qc-playbook-craft.sh"
+  "$SKILL_ROOT/scripts/qc-playbook-doc.sh"
 do
   if [ ! -f "$GATE" ]; then
     VACUOUS_OK=0
     continue
   fi
   run_capture bash "$GATE" --dir "$VACUOUS_DIR"
-  if [ "$CAPTURE_RC" -eq 0 ]; then
+  if [ "$CAPTURE_RC" -ne 0 ] || ! grep -q "NEEDS-MIGRATION" "$CAPTURE_OUT" || grep -q "RESULT: PASS" "$CAPTURE_OUT"; then
     VACUOUS_OK=0
   fi
 done
+
+CRAFT_GATE="$SKILL_ROOT/scripts/qc-playbook-craft.sh"
+if [ ! -f "$CRAFT_GATE" ]; then
+  VACUOUS_OK=0
+else
+  run_capture bash "$CRAFT_GATE" --dir "$VACUOUS_DIR"
+  if [ "$CAPTURE_RC" -eq 0 ]; then
+    VACUOUS_OK=0
+  fi
+fi
 assert_result "vacuous gate regression" "$VACUOUS_OK"
 
 # 4. Duplicate phase numbers must be rejected.

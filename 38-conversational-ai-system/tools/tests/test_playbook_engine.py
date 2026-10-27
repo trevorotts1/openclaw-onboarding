@@ -467,10 +467,14 @@ class TestBuildContract(unittest.TestCase):
         self.assertEqual(contract["trigger"], {"kind": None, "tag": None})
         self.assertEqual(contract["custom_values"], [])
         self.assertEqual(contract["channels"], [])
-        self.assertEqual(contract["acceptance"], {"must_pass": []})
+        self.assertEqual(
+            contract["acceptance"]["must_pass"],
+            ["fields_exist", "calendars_exist", "pipeline_stages_exist"],
+        )
+        self.assertTrue(contract["acceptance"]["must_pass"])
         self.assertTrue(all(value is None for value in contract["workflow"].values()))
         warnings = "\n".join(contract["warnings"])
-        for section in ("trigger", "custom_values", "channels", "workflow", "acceptance"):
+        for section in ("trigger", "custom_values", "channels", "workflow"):
             self.assertIn(section, warnings)
 
     def test_cli_writes_file(self):
@@ -499,6 +503,66 @@ class TestBuildContract(unittest.TestCase):
                 expected_hash,
             )
 
+    def test_contract_must_pass_is_never_empty(self):
+        contract = engine.write_build_contract(
+            engine.parse_playbook(GOOD), "good-playbook", "good-playbook.md"
+        )
+        must_pass = contract["acceptance"]["must_pass"]
+        self.assertIsInstance(must_pass, list)
+        self.assertGreater(len(must_pass), 0)
+        self.assertNotIn("tags_exist", must_pass)
+
+    def test_refuses_vacuous_contract_cli(self):
+        pb_text = (
+            "# Empty playbook\n"
+            "Created: 2026-10-27\n\n"
+            "### Phase 1 - Say hello\n"
+            "Say hello.\n"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pb = Path(tmpdir) / "empty-playbook.md"
+            out = Path(tmpdir) / "contract.json"
+            pb.write_text(pb_text, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(TOOLS_DIR / "playbook_engine.py"),
+                    "build-contract",
+                    str(pb),
+                    "--out",
+                    str(out),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("vacuous build contract", result.stderr)
+            self.assertFalse(out.exists())
+
+    def test_cli_emits_non_empty_must_pass(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "contract.json"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(TOOLS_DIR / "playbook_engine.py"),
+                    "build-contract",
+                    str(FIXTURES / "good-playbook.md"),
+                    "--out",
+                    str(output),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            contract = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                contract["acceptance"]["must_pass"],
+                ["fields_exist", "calendars_exist", "pipeline_stages_exist"],
+            )
+
 
 class TestFormattingLaws(unittest.TestCase):
     """The engine and its fixtures must obey the operator formatting laws."""
@@ -516,3 +580,4 @@ class TestFormattingLaws(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
