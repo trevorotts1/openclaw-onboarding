@@ -1,40 +1,114 @@
 {
- "unit": "S75-T04",
- "acceptance_row": "S75-A04",
- "round": 8,
- "role": "REPAIR AUTHOR (did not author rounds 1-7; does not judge this delta)",
- "branch": "s75/S75-T04-r8",
- "base_sha": "513ea53144dc97d31812e50b150c28e41abf7ce8",
- "base_note": "origin/s75/S75-T04-r7 head (git ls-remote --heads origin => 513ea53144dc97d31812e50b150c28e41abf7ce8 refs/heads/s75/S75-T04-r7), the tree the round-7 verdict graded. Not main, not eedf54d0 (round-6 head).",
- "lease": [
-  "75-drama-song-ad-factory/scripts/core/research_engine/claims.py",
-  "75-drama-song-ad-factory/scripts/core/research_engine/test_claim_grounding.py"
- ],
- "index_note": "evidence/units/S75-T04/ did not exist at 513ea531 and no ref under refs/heads/s75/* or any local ref carries it; the task statement records that attempt-3 exists, so this file takes the next free index, 4, rather than overwriting an unseen attempt-3.",
- "head_sha": "d680b0989b0017ee508e0c34a537bf395cd3bf14",
- "head_sha_note": "Amended after the code/test commit is pushed, to carry the resolved 40-hex sha of that commit. A file cannot carry the sha of the commit that contains it; the metadata amend that carries this value is a later commit on the same branch and is named in the final report.",
- "written_at": "2026-10-25T17:21:07Z",
- "defect": "claims.CLAUSE_ENDERS omits clause-separating punctuation and the tokeniser drops punctuation entirely, so _comparison_classes runs the exempt range from the relative pronoun to the end of the sentence; _check_topic then skips both the term-run test and the effect-predicate test over that span. Fix must keep the round-7 acceptances (A3-A9) intact.",
- "base_measurements_taken_before_this_write": {
-  "harness": "python3 -I probes.py <base research_engine> base_probes.json; measures claims.validate_bundle AND research.run_stage on the owner record {offer: 'A 12-week sleep coaching program for shift workers', audience: 'nurses on rotating night shifts who cannot fall asleep after work', action: 'book a free 20 minute call'}",
-  "required_refusals_at_base": "R1 comma ACCEPT/0, R2 semicolon ACCEPT/0, R3 comma sale claim ACCEPT/0, and-joined REFUSE/4, full-stop REFUSE/4, standalone sale REFUSE/4",
-  "required_acceptances_at_base": "A3..A8 ACCEPT/0 (6/6), accept_similar_vocabulary on the clean owner record ACCEPT/0",
-  "grid_refusals_at_base": "aside-before-comparative, two-comparatives-first-clean, accept-comma-after-full-clause, and the and/full-stop/standalone controls"
- },
- "plan": [
-  "give the comparison-class scan the sentence's own punctuation positions, so the exempt span ends at the next clause boundary, keeping CLAUSE_ENDERS and adding no domain vocabulary",
-  "prove the six scored refusals refuse through both validate_bundle and run_stage, at head, against base where they were accepted",
-  "prove A3-A9 still accept at head exactly as at base",
-  "add the regression to test_claim_grounding.py; fixture files untouched"
- ],
- "amended_at": "2026-10-25T17:22:46Z",
- "head_measurements": {
-  "harness": "python3 -I probes.py <head research_engine> head_probes.json; claims.validate_bundle AND research.run_stage, clean owner record",
-  "required_refusals_at_head": "R1 comma REFUSE/4, R2 semicolon REFUSE/4, R3 comma sale REFUSE/4, and-joined REFUSE/4, full-stop REFUSE/4, standalone sale REFUSE/4",
-  "required_acceptances_at_head": "A3..A8 ACCEPT/0 (6/6), accept_similar_vocabulary on the clean owner record ACCEPT/0",
-  "tests_before_base": "82 passed, 1 skipped (pytest -q, research_engine at 513ea531)",
-  "tests_after_head": "84 passed, 1 skipped (same command at this head)",
-  "collected_ids": "83 before, 85 after; diff = exactly the two added test_claim_grounding tests",
-  "fixtures_untouched": true
- }
+  "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+  "schema_note": "This file records the round-8 repair attempt for S75-T04 and its measurements. It approves nothing and it is NOT a verdict: the repair author wrote the code under test and cannot clear it. Only the unit owner accepts. This is the historical round-8 receipt, restored to branch s75/S75-T04-r8 in the receipt schema current on origin/main; the round-8 content is carried unchanged and nothing newer on main is contradicted.",
+  "unit": "S75-T04",
+  "acceptance_row": "S75-A04",
+  "acceptance_row_verbatim": "Empty research, irrelevant keyword stuffing and unsupported business claims fail",
+  "acceptance_row_source": "the row text carried on origin/main in evidence/units/S75-T04/attempt-r10-candidate.json, which records it as supplied by the workflow harness; this receipt does not quote the ACCEPTANCE-MATRIX row body because that file was not read in this lane",
+  "round": 8,
+  "attempt": 4,
+  "attempt_file": "evidence/units/S75-T04/attempt-4.json",
+  "index_note": "evidence/units/S75-T04/ did not exist at 513ea531 and no ref under refs/heads/s75/* or any local ref carries it; the task statement records that attempt-3 exists, so this file takes the next free index, 4, rather than overwriting an unseen attempt-3.",
+  "lane": "S75-T04-r8",
+  "lane_path": null,
+  "lane_path_note": "the round-8 receipt recorded no lane path; none is invented here",
+  "written_at": "2026-10-25T17:21:07Z",
+  "amended_at": "2026-10-25T17:22:46Z",
+  "written_at_mode": "WRITTEN BEFORE THE CODE COMMIT, THEN AMENDED AFTER PUSH to carry the resolved head sha; the amendment is the branch commit named in candidate.amended_by",
+  "role": "REPAIR AUTHOR (did not author rounds 1-7; does not judge this delta)",
+
+  "candidate": {
+    "branch": "s75/S75-T04-r8",
+    "head_sha": "d680b0989b0017ee508e0c34a537bf395cd3bf14",
+    "head_note": "Amended after the code/test commit is pushed, to carry the resolved 40-hex sha of that commit. A file cannot carry the sha of the commit that contains it; the metadata amend that carries this value is a later commit on the same branch and is named in candidate.amended_by.",
+    "amended_by": "e9a007a2456dd897ede44da2a2a52e4e87bcb188",
+    "amended_by_subject": "S75-T04 r8: amend attempt-4 with resolved head sha",
+    "amended_by_committed": "2026-10-25T13:22:49-04:00",
+    "pushed": "branch only; no commit or push to main or master"
+  },
+
+  "base": {
+    "sha": "513ea53144dc97d31812e50b150c28e41abf7ce8",
+    "subject": "S75-T04 r7: accept a compared-against cohort without loosening the grounding rule",
+    "committed": "2026-10-25T12:38:41-04:00",
+    "resolved_from_origin": true,
+    "note": "origin/s75/S75-T04-r7 head (git ls-remote --heads origin => 513ea53144dc97d31812e50b150c28e41abf7ce8 refs/heads/s75/S75-T04-r7), the tree the round-7 verdict graded. Not main, not eedf54d0 (round-6 head)."
+  },
+
+  "lease": [
+    "75-drama-song-ad-factory/scripts/core/research_engine/claims.py",
+    "75-drama-song-ad-factory/scripts/core/research_engine/test_claim_grounding.py"
+  ],
+
+  "defect": "claims.CLAUSE_ENDERS omits clause-separating punctuation and the tokeniser drops punctuation entirely, so _comparison_classes runs the exempt range from the relative pronoun to the end of the sentence; _check_topic then skips both the term-run test and the effect-predicate test over that span. Fix must keep the round-7 acceptances (A3-A9) intact.",
+
+  "plan": [
+    "give the comparison-class scan the sentence's own punctuation positions, so the exempt span ends at the next clause boundary, keeping CLAUSE_ENDERS and adding no domain vocabulary",
+    "prove the six scored refusals refuse through both validate_bundle and run_stage, at head, against base where they were accepted",
+    "prove A3-A9 still accept at head exactly as at base",
+    "add the regression to test_claim_grounding.py; fixture files untouched"
+  ],
+
+  "files_changed": [
+    {
+      "path": "75-drama-song-ad-factory/scripts/core/research_engine/claims.py",
+      "additions": 41,
+      "deletions": 7
+    },
+    {
+      "path": "75-drama-song-ad-factory/scripts/core/research_engine/test_claim_grounding.py",
+      "additions": 46,
+      "deletions": 0
+    },
+    {
+      "path": "evidence/units/S75-T04/attempt-4.json",
+      "additions": 30,
+      "deletions": 0
+    }
+  ],
+
+  "diff_vs_branch_base": {
+    "command": "git diff --numstat 513ea5314 d680b0989",
+    "files": 3,
+    "insertions": 117,
+    "deletions": 7,
+    "note": "claims.py and the regression test carry the repair; the evidence file is this receipt. Fixture files were untouched.",
+    "amendment_diff": "git diff --numstat d680b0989 e9a007a24 => evidence/units/S75-T04/attempt-4.json +12 -2 (records only)"
+  },
+
+  "base_measurements_taken_before_this_write": {
+    "harness": "python3 -I probes.py <base research_engine> base_probes.json; measures claims.validate_bundle AND research.run_stage on the owner record {offer: 'A 12-week sleep coaching program for shift workers', audience: 'nurses on rotating night shifts who cannot fall asleep after work', action: 'book a free 20 minute call'}",
+    "required_refusals_at_base": "R1 comma ACCEPT/0, R2 semicolon ACCEPT/0, R3 comma sale claim ACCEPT/0, and-joined REFUSE/4, full-stop REFUSE/4, standalone sale REFUSE/4",
+    "required_acceptances_at_base": "A3..A8 ACCEPT/0 (6/6), accept_similar_vocabulary on the clean owner record ACCEPT/0",
+    "grid_refusals_at_base": "aside-before-comparative, two-comparatives-first-clean, accept-comma-after-full-clause, and the and/full-stop/standalone controls"
+  },
+
+  "head_measurements": {
+    "harness": "python3 -I probes.py <head research_engine> head_probes.json; claims.validate_bundle AND research.run_stage, clean owner record",
+    "required_refusals_at_head": "R1 comma REFUSE/4, R2 semicolon REFUSE/4, R3 comma sale REFUSE/4, and-joined REFUSE/4, full-stop REFUSE/4, standalone sale REFUSE/4",
+    "required_acceptances_at_head": "A3..A8 ACCEPT/0 (6/6), accept_similar_vocabulary on the clean owner record ACCEPT/0",
+    "tests_before_base": "82 passed, 1 skipped (pytest -q, research_engine at 513ea531)",
+    "tests_after_head": "84 passed, 1 skipped (same command at this head)",
+    "collected_ids": "83 before, 85 after; diff = exactly the two added test_claim_grounding tests",
+    "fixtures_untouched": true
+  },
+
+  "restoration": {
+    "why_this_file_exists_again": "origin/main carries evidence/units/S75-T04/attempt-r10-candidate.json but not this path. The r10 receipt records that this r8 receipt was deliberately left off r10 because it is a historical receipt for the r8 branch and not part of the graded package, and that its content stays readable on the r8/r9 refs. It is restored here on the r8 branch only, so the round-8 record travels with the branch it describes.",
+    "rebase_context": "branch s75/S75-T04-r8 is rebased onto the current origin/main. The round-4..round-7 code commits resolve to the main-side evolution of the same files; the net diff of this branch against origin/main is this evidence file alone.",
+    "content_preserved": "defect, plan, base_measurements_taken_before_this_write, head_measurements, base_note, index_note and head_sha_note are the round-8 text unchanged. Only the envelope is expressed in the receipt schema main uses for other units, and the diffstat is added because the round-8 receipt did not carry one.",
+    "redaction": "no absolute operator home path and no client name appears in this file; operator locations, where the original named any, are written as <operator-home>."
+  },
+
+  "not_claimed": [
+    "No acceptance. S75-A04 stays with the unit owner. No verdict is written by this lane and the repair author cannot clear its own work.",
+    "No claim about the r10 candidate receipt on main. This restoration neither supersedes nor re-grades it.",
+    "No code change is claimed by this file. The round-8 code content on this branch resolves to the main-side evolution, not to the round-8 bytes.",
+    "No ledger write, no merge and no push to main or master. The branch is the only carrier.",
+    "No re-run of the round-8 probes. The measurements above are the round-8 measurements as recorded, not re-measured in this lane."
+  ],
+
+  "shape_statement": "One evidence file added to the branch. Additive only; reversible by deleting this path from the branch.",
+
+  "reversibility": "git rm evidence/units/S75-T04/attempt-4.json on branch s75/S75-T04-r8 restores the previous branch tree for this path."
 }
