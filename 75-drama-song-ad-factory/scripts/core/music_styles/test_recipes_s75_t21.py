@@ -137,6 +137,19 @@ class RegistryScopeTests(unittest.TestCase):
                              tuple(menu["client_references"]), sid)
 
 
+class DescriptionTests(unittest.TestCase):
+    """The owner-supplied descriptions are byte-exact, never merely similar.
+
+    ``DESCRIPTIONS`` is the approved copy (MUSIC-AND-VIDEO-UX 4.18 for Country
+    Rap); this pins the records to it so a silent reword fails here.
+    """
+
+    def test_each_description_is_the_approved_string(self):
+        for sid in T21_IDS:
+            self.assertEqual(R.load_recipe(sid)["description"],
+                             DESCRIPTIONS[sid], sid)
+
+
 class ComposeTests(unittest.TestCase):
     def test_every_recipe_compiles_provider_ready_within_the_cap(self):
         for sid in R.recipe_ids():
