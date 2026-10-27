@@ -8,7 +8,7 @@
   "status": "clean",
   "repo": "trevorotts1/openclaw-onboarding",
   "branch": "s75x/verdicts-S75X-W3",
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W3-U1-qc",
+  "lane": "<portable-drive>/Downloads/git trees and automations/s75/worktrees/S75X-W3-U1-qc",
   "base_sha": "96559ab1b531570534316d856006867606afd4e2",
   "commit_checked": "7368b7a8299cc591b37b22a6ff6050a8c08be52b",
   "verified_at": "2026-10-26",
@@ -32,8 +32,8 @@
     "summary": "12/12 pass (builder probes re-run against QC lane root)",
     "probe.py": {"checks": 7, "pass": 7, "fail": 0, "rc": 0},
     "probe2.py": {"checks": 5, "pass": 5, "fail": 0, "rc": 0},
-    "probe_scripts": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/s75x-w3-u1-probe/",
-    "probe_target_root": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W3-U1-qc"
+    "probe_scripts": "<portable-drive>/Downloads/git trees and automations/s75/scratch/s75x-w3-u1-probe/",
+    "probe_target_root": "<portable-drive>/Downloads/git trees and automations/s75/worktrees/S75X-W3-U1-qc"
   },
   "code_fact_checks": [
     "stage.py:89 — SARC.validate_story(story, purpose=_purpose(run_dir, SARC)); confirmed at scripts/core/script_approval/stage.py",

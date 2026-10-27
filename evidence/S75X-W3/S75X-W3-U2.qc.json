@@ -11,7 +11,7 @@
   "base_ref": "origin/main",
   "base_sha": "96559ab1b531570534316d856006867606afd4e2",
   "branch": "s75x/verdicts-S75X-W3",
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W3-U2-qc",
+  "lane": "<portable-drive>/Downloads/git trees and automations/s75/worktrees/S75X-W3-U2-qc",
   "pre_fix_head": "f399e76de04d24f65fe141166bf28c1c29af7890",
   "builder_verdict": "FAIL (E1c finding F1)",
   "acceptance_verbatim": "A new run through each supported launcher produces the method record and enters the upgraded strategy; a resumed run is untouched; factory tests pass.",
@@ -139,7 +139,7 @@
     "Builder's C3 discriminating control (test vs pre-fix factory.py) was not re-run; QC established binding differently (fix discriminator in X1)."
   ],
   "commands_run": [
-    "git worktree add -f '<qc-lane>' s75x/verdicts-S75X-W3 (from /Users/blackceomacmini/openclaw-onboarding)",
+    "git worktree add -f '<qc-lane>' s75x/verdicts-S75X-W3 (from <operator>/openclaw-onboarding)",
     "git fetch origin; verified origin/main 96559ab1b531570534316d856006867606afd4e2 and origin/s75x/verdicts-S75X-W3 f399e76de04d24f65fe141166bf28c1c29af7890",
     "cd '<qc-lane>/75-drama-song-ad-factory' && for f in scripts/core/intake_preflight/test_*.py scripts/core/choice_card/intake_card/test_*.py; do python3 -I \"$f\"; done  (pre-fix, then post-fix)",
     "python3 -I '<scratch>/w3u2-qc/probe_f1.py'  (independent F1 reproduction + delivery-shape controls)",
@@ -147,9 +147,9 @@
     "python3 -I scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py  (verbatim: 39 checks, 0 failures, PASS)"
   ],
   "notes": [
-    "SWARM-PLAN-V2.json was NOT locatable in the searched trees (recursive find over /Users/blackceomacmini/loop-control/s75 and /Volumes/mac mini m4/Downloads/git trees and automations/s75, plus the QC lane repo root; not searched: the whole home directory and other loop-control subtrees). QC worked from acceptance_verbatim and the element list carried in the builder's verdict, which state the acceptance contract in full.",
+    "SWARM-PLAN-V2.json was NOT locatable in the searched trees (recursive find over <operator>/loop-control/s75 and <portable-drive>/Downloads/git trees and automations/s75, plus the QC lane repo root; not searched: the whole home directory and other loop-control subtrees). QC worked from acceptance_verbatim and the element list carried in the builder's verdict, which state the acceptance contract in full.",
     "Builder line citations checked and still accurate at this base except drift: _question_mismatch's purpose_flow=True call is at shared-bridge/studio_bridge.py:1099 (builder cited :1090); _replay bulk argv was at :1138-1141 pre-fix. factory.py _purpose_flow_for at :2930 confirmed.",
-    "Writes in this QC: shared-bridge/studio_bridge.py (fix X1), scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py (block [3] realignment + docstring bullet), evidence/S75X-W3/S75X-W3-U2.qc.json (this file). Scratch probes live outside the repo at /Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/w3u2-qc/ and are not committed.",
-    "No writes to main; no writes to /Users/blackceomacmini/loop-control/s75/ledger.json; no secret access."
+    "Writes in this QC: shared-bridge/studio_bridge.py (fix X1), scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py (block [3] realignment + docstring bullet), evidence/S75X-W3/S75X-W3-U2.qc.json (this file). Scratch probes live outside the repo at <portable-drive>/Downloads/git trees and automations/s75/scratch/w3u2-qc/ and are not committed.",
+    "No writes to main; no writes to <operator>/loop-control/s75/ledger.json; no secret access."
   ]
 }

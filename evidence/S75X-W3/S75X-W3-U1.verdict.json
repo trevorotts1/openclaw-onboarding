@@ -6,9 +6,9 @@
   "role": "builder",
   "verdict": "PASS",
   "verified_at": "2026-10-26",
-  "plan_of_record": "/Users/blackceomacmini/skill75-repair/SWARM-PLAN-V2.json",
+  "plan_of_record": "<operator>/skill75-repair/SWARM-PLAN-V2.json",
   "repo": "https://github.com/trevorotts1/openclaw-onboarding.git",
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W3-U1-build",
+  "lane": "<portable-drive>/Downloads/git trees and automations/s75/worktrees/S75X-W3-U1-build",
   "base_sha": "96559ab1b531570534316d856006867606afd4e2",
   "base_ref": "origin/main",
   "base_note": "lane HEAD was detached at origin/main and the working tree was clean (git status --porcelain empty) for every check below",
@@ -80,8 +80,8 @@
     },
     "independent_builder_probes": {
       "files": [
-        "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/s75x-w3-u1-probe/probe.py",
-        "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/s75x-w3-u1-probe/probe2.py"
+        "<portable-drive>/Downloads/git trees and automations/s75/scratch/s75x-w3-u1-probe/probe.py",
+        "<portable-drive>/Downloads/git trees and automations/s75/scratch/s75x-w3-u1-probe/probe2.py"
       ],
       "runs": 2,
       "checks": 12,

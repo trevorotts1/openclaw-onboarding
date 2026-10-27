@@ -11,7 +11,7 @@
   "base_sha": "96559ab1b531570534316d856006867606afd4e2",
   "head_sha_verified": "96559ab1b531570534316d856006867606afd4e2",
   "branch": "s75x/verdicts-S75X-W3",
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W3-U2-build",
+  "lane": "<portable-drive>/Downloads/git trees and automations/s75/worktrees/S75X-W3-U2-build",
   "owned_output": "75-drama-song-ad-factory/scripts/core/intake_preflight/",
   "acceptance_verbatim": "A new run through each supported launcher produces the method record and enters the upgraded strategy; a resumed run is untouched; factory tests pass.",
   "elements": [
@@ -148,7 +148,7 @@
     "No fix was attempted and no file was modified, so the FAIL is reported as found."
   ],
   "commands_run": [
-    "git -C /Users/blackceomacmini/openclaw-onboarding fetch origin --prune",
+    "git -C <operator>/openclaw-onboarding fetch origin --prune",
     "git worktree add '<lane>' -b s75x/verdicts-S75X-W3 96559ab1b531570534316d856006867606afd4e2",
     "cd '<lane>/75-drama-song-ad-factory' && for f in scripts/core/intake_preflight/test_*.py; do python3 -I \"$f\"; done",
     "cd '<lane>/75-drama-song-ad-factory' && for f in scripts/core/choice_card/intake_card/test_*.py; do python3 -I \"$f\"; done",
@@ -158,6 +158,6 @@
   "notes": [
     "Plan text cites intake_preflight/factory.py:1367 for _method_record; at this base the function is factory.py:1509 (_method_record) with _method_record_from_answers at :1478. Line drift only, not a discrepancy in behaviour.",
     "Base and verified head are the same commit; this verdict commit adds only evidence/S75X-W3/S75X-W3-U2.verdict.json.",
-    "No file outside evidence/S75X-W3/ was written in the lane. Scratch control copy lives at /Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/w3u2-control."
+    "No file outside evidence/S75X-W3/ was written in the lane. Scratch control copy lives at <portable-drive>/Downloads/git trees and automations/s75/scratch/w3u2-control."
   ]
 }
