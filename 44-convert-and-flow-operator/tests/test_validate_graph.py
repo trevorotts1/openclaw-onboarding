@@ -294,3 +294,106 @@ def test_join_seals_branches_above_it(tmp_path):
     assert result.returncode == 0, report["failures"]
     assert report["verdict"] == "PASS"
     assert report["failures"] == []
+
+
+def test_graph_emits_each_identity_problem_once(tmp_path):
+    """graph() must not report the same problem twice.
+
+    graph() seeds its failures from identity_failures(), which emits DANGLING
+    (next and branches) and ROOT. Its own body used to append both again, so
+    one missing target read as two DANGLINGs and two roots as two ROOTs —
+    inflating any count derived from the failures list (e.g. WF-15 orphans).
+    """
+    from collections import Counter
+    export = _write_export(tmp_path, "dup_emit.json", [
+        {"id": "a", "type": "sms", "name": "A",
+         "parentKey": None, "next": "ghost"},
+        {"id": "b", "type": "end", "name": "B", "parentKey": ""},
+    ])
+    result = _run_export(export)
+    report = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert report["verdict"] == "FAIL"
+    counts = Counter(
+        (failure["kind"], failure.get("field"), failure.get("target"))
+        for failure in report["failures"]
+    )
+    assert counts[("DANGLING", "next", "ghost")] == 1, report["failures"]
+    assert sum(1 for f in report["failures"] if f["kind"] == "ROOT") == 1, (
+        report["failures"]
+    )
+    assert sum(1 for f in report["failures"] if f["kind"] == "DANGLING") == 1, (
+        report["failures"]
+    )
+
+
+def test_graph_flags_dangling_branches_dict_value(tmp_path):
+    """A ghost reachable only via branches-as-dict must still fail.
+
+    identity_failures() must cover the branches field, not just next: if
+    branches handling were removed, nothing else in graph() reports this
+    and the gate would PASS a graph pointing at a missing node. Uses a
+    non-branch node type so no MALFORMED_BRANCH/UNWIRED_BRANCH noise.
+    """
+    export = _write_export(tmp_path, "branches_dict.json", [
+        {"id": "a", "type": "sms", "name": "A",
+         "parentKey": None, "branches": {"true": "ghost"}},
+        {"id": "z", "type": "end", "name": "Z", "parentKey": "a"},
+    ])
+    result = _run_export(export)
+    report = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert report["verdict"] == "FAIL"
+    dangling = [f for f in report["failures"] if f["kind"] == "DANGLING"]
+    assert len(dangling) == 1, report["failures"]
+    assert dangling[0]["node_id"] == "a"
+    assert dangling[0]["field"] == "branches"
+    assert dangling[0]["target"] == "ghost"
+
+
+def test_graph_flags_dangling_branches_list_value(tmp_path):
+    """A ghost reachable only via a branches list value must still fail.
+
+    authored_targets() recurses into dict values AND list items: a
+    {"true": ["ghost"]} shape must emit exactly one branches DANGLING. If
+    branches coverage regressed to str-only dict values, this goes red
+    while the dict-str case above stays green.
+    """
+    export = _write_export(tmp_path, "branches_list.json", [
+        {"id": "a", "type": "sms", "name": "A",
+         "parentKey": None, "branches": {"true": ["ghost"]}},
+        {"id": "z", "type": "end", "name": "Z", "parentKey": "a"},
+    ])
+    result = _run_export(export)
+    report = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert report["verdict"] == "FAIL"
+    dangling = [f for f in report["failures"] if f["kind"] == "DANGLING"]
+    assert len(dangling) == 1, report["failures"]
+    assert dangling[0]["node_id"] == "a"
+    assert dangling[0]["field"] == "branches"
+    assert dangling[0]["target"] == "ghost"
+
+
+def test_graph_reports_shared_next_and_branches_target_once(tmp_path):
+    """One missing id via both next and branches is one report, not two.
+
+    identity_failures() dedupes on (node_id, target): the same ghost
+    authored in two fields must not read as two DANGLINGs. This is the
+    double-emit defect Step B removes — it must not return through the
+    new branches coverage.
+    """
+    export = _write_export(tmp_path, "branches_both.json", [
+        {"id": "a", "type": "sms", "name": "A",
+         "parentKey": None, "next": "ghost",
+         "branches": {"true": "ghost"}},
+        {"id": "z", "type": "end", "name": "Z", "parentKey": "a"},
+    ])
+    result = _run_export(export)
+    report = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert report["verdict"] == "FAIL"
+    dangling = [f for f in report["failures"] if f["kind"] == "DANGLING"]
+    assert len(dangling) == 1, report["failures"]
+    assert dangling[0]["node_id"] == "a"
+    assert dangling[0]["target"] == "ghost"

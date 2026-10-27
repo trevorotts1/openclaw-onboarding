@@ -218,27 +218,29 @@ def identity_failures(nodes):
     def authored_targets(value):
         if isinstance(value, str):
             return [value] if value else []
-        if isinstance(value, list):
-            return [item for item in value if isinstance(item, str) and item]
-        if isinstance(value, dict):
+        if isinstance(value, (dict, list)):
             return [
-                item for item in value.values()
-                if isinstance(item, str) and item
+                item
+                for v in (value.values() if isinstance(value, dict) else value)
+                for item in authored_targets(v)
             ]
         return []
 
+    seen_targets = set()
     for node in nodes:
         node_id = node.get("id")
         for field in ("next", "branches"):
             value = node.get(field)
             for target in authored_targets(value):
-                if target not in existing:
-                    failures.append({
-                        "kind": "DANGLING",
-                        "node_id": node_id,
-                        "field": field,
-                        "target": target,
-                    })
+                if target in existing or (node_id, target) in seen_targets:
+                    continue
+                seen_targets.add((node_id, target))
+                failures.append({
+                    "kind": "DANGLING",
+                    "node_id": node_id,
+                    "field": field,
+                    "target": target,
+                })
 
         if node.get("type") == "if_else":
             branches = node.get("branches")
@@ -322,11 +324,7 @@ def graph(data, nodes, trigger):
     roots = [n for n in nodes if n.get("parentKey") in (None, "")]
     root = roots[0].get("id") if len(roots) == 1 else None
     if len(roots) != 1:
-        failures.append({
-            "kind": "ROOT",
-            "roots": [n.get("id") for n in roots],
-            "reason": "expected_exactly_one_root",
-        })
+        pass  # ROOT already emitted by identity_failures() above; do not re-emit.
     elif trigger and trigger != root:
         failures.append({
             "kind": "ROOT",
@@ -346,17 +344,10 @@ def graph(data, nodes, trigger):
         for source, targets in edges.items()
         for target in targets if target in existing
     })
-    for n in nodes:
-        source = n.get("id")
-        for target in edges[source]:
-            if target not in existing:
-                failures.append({
-                    "kind": "DANGLING",
-                    "node_id": source,
-                    "field": "next" if target in strings(n.get("next"))
-                    else "branches",
-                    "target": target,
-                })
+    # No DANGLING re-emit here: identity_failures() above already emits one
+    # DANGLING per missing authored target for both the next and branches
+    # fields in every shape (str, list, dict). Re-emitting would report the
+    # same missing target twice and inflate any count derived from failures.
     reached = set()
     if root is not None:
         queue = [root]
