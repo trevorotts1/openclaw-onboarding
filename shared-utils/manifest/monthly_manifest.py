@@ -67,6 +67,13 @@ else:
 
 import pb_contracts as contracts  # noqa: E402
 
+# C5/H8: one normaliser, one link builder. The page routes own both.
+_ROUTES_PAGE = str(_REPO_ROOT / "shared-utils" / "routes" / "page")
+if _ROUTES_PAGE not in sys.path:
+    sys.path.insert(0, _ROUTES_PAGE)
+import messenger_link  # noqa: E402
+from facebook_routes import normalise_keyword  # noqa: E402
+
 # The terms one client approval covers: placement identity plus the section 3
 # placement fields, read from the accepted guard rather than copied.
 APPROVAL_TERMS = ("account_id", "account_binding_revision") + tuple(contracts.PLACEMENT_BOUND_FIELDS)
@@ -206,9 +213,17 @@ def _window(doc):
         return None, [str(exc)]
 
 
+MESSENGER_TERMS = ("messenger_page_id", "messenger_ref", "messenger_link")
+
+
 def _term_errors(placement, path):
     errs = []
     for field in APPROVAL_TERMS:
+        if field in MESSENGER_TERMS and placement.get(field) is None:
+            # C5: conditionally required. A placement that carries a DM door must
+            # carry all three; _keyword_and_link_errors proves that, so an absent
+            # door is not a missing term here.
+            continue
         value = placement.get(field)
         if isinstance(value, list):
             if any(_missing(item) for item in value):
@@ -277,11 +292,14 @@ def check_revision(previous, revision):
     return []
 
 
-def terms_errors(doc):
+def terms_errors(doc, page_binding=None):
     """Every bound term on every placement is present, informative and in window.
 
     A schedule cannot be proven inside a window that cannot be read, so a
-    wrong-shaped document, window or placement list is an error here too.
+    wrong-shaped document, window or placement list is an error here too. The
+    C5/H8 pass adds two refusals the review found missing: a keyword that maps
+    one word to two promised items, and a DM link that does not equal the link
+    rebuilt from the tenant's recorded Page binding and the placement's own date.
     """
     errs = _document_errors(doc)
     if errs:
@@ -305,6 +323,76 @@ def terms_errors(doc):
                     "%s.scheduled_at: %r is outside the joined campaign window %s..%s"
                     % (path, slot, doc["campaign_window"]["starts_on"], doc["campaign_window"]["ends_on"])
                 )
+    errs.extend(_keyword_and_link_errors(doc, page_binding))
+    return errs
+
+
+def _keyword_and_link_errors(doc, page_binding=None):
+    """H8 keyword uniqueness and C5 DM-door binding, one pass over the placements."""
+    errs = []
+    seen = {}
+    for placement in _placements(doc):
+        placement_id = placement.get("placement_id")
+        path = "$.placements[%s]" % (placement_id,)
+        keyword = placement.get("keyword")
+        item = placement.get("promised_item_version")
+        if isinstance(keyword, str) and keyword.strip():
+            norm = normalise_keyword(keyword)
+            if norm in seen and seen[norm][1] != item:
+                errs.append(
+                    "%s.keyword: %r collides with placement %s; one keyword maps to one"
+                    " promised item (%r vs %r), so the door would misroute"
+                    % (path, keyword, seen[norm][0], seen[norm][1], item))
+            elif norm:
+                seen.setdefault(norm, (placement_id, item))
+        fields = ("messenger_page_id", "messenger_ref", "messenger_link")
+        present = [name for name in fields if placement.get(name) is not None]
+        if not present:
+            continue
+        if len(present) != len(fields):
+            errs.append("%s: a DM door carries all of messenger_page_id, messenger_ref"
+                        " and messenger_link; missing %s"
+                        % (path, ", ".join(n for n in fields if n not in present)))
+            continue
+        try:
+            parsed = messenger_link.parse_messenger_link(placement["messenger_link"])
+        except messenger_link.MessengerLinkError as exc:
+            errs.append("%s.messenger_link: %s" % (path, exc))
+            continue
+        if parsed.ref != placement["messenger_ref"]:
+            errs.append("%s.messenger_ref: %r is not the ref inside the link (%r)"
+                        % (path, placement["messenger_ref"], parsed.ref))
+        if str(placement["messenger_page_id"]) != parsed.page_id:
+            errs.append("%s.messenger_page_id: %r is not the Page in the link (%r)"
+                        % (path, placement["messenger_page_id"], parsed.page_id))
+        if page_binding is None:
+            errs.append("%s.messenger_page_id: no Page binding is recorded for this tenant;"
+                        " a Page id is never guessed" % path)
+        else:
+            if parsed.page_id != page_binding.page_id:
+                errs.append("%s.messenger_page_id: %r is not the tenant's recorded binding %r"
+                            % (path, parsed.page_id, page_binding.page_id))
+            try:
+                rebuilt = messenger_link.build_messenger_link(page_binding, placement["messenger_ref"])
+            except messenger_link.MessengerLinkError as exc:
+                errs.append("%s.messenger_link: %s" % (path, exc))
+            else:
+                if placement["messenger_link"] != rebuilt:
+                    errs.append("%s.messenger_link: does not equal the rebuilt link %r"
+                                % (path, rebuilt))
+        slot = placement.get("scheduled_at")
+        if isinstance(slot, str):
+            try:
+                when = contracts.parse_ts(slot, "%s.scheduled_at" % path)
+            except contracts.UsageError:
+                when = None
+            if when is not None and hasattr(when, "date") and when.date() != parsed.local_date:
+                errs.append("%s.messenger_ref: ref date %s is not the placement's local date %s"
+                            % (path, parsed.local_date.isoformat(), when.date().isoformat()))
+        cta = placement.get("cta_text")
+        if isinstance(cta, str) and placement["messenger_link"] not in cta:
+            errs.append("%s.cta_text: the approved link %r does not appear verbatim"
+                        % (path, placement["messenger_link"]))
     return errs
 
 
@@ -341,7 +429,32 @@ def _window_errors(doc, starts_on, ends_on):
 # --------------------------------------------------------------------------
 
 
-def approve(doc, approver, approved_at, revision, expected_revision):
+def _registry_errors(doc, registry):
+    """H8 step 3: record the keyword on first use; refuse an item the keyword never held.
+
+    The registry row is a tombstone, so a keyword that leaves service keeps its
+    promise and a later pack cannot reuse it for different promised content.
+    """
+    errs = []
+    tenant = doc.get("tenant_id")
+    cycle = doc.get("campaign_cycle_id")
+    for placement in _placements(doc):
+        keyword = placement.get("keyword")
+        if not isinstance(keyword, str) or not keyword.strip():
+            continue
+        item = placement.get("promised_item_version")
+        held = registry.register_keyword(
+            tenant_id=str(tenant), keyword_norm=normalise_keyword(keyword),
+            promised_item_version=str(item), first_cycle_id=str(cycle))
+        if not held:
+            errs.append(
+                "$.placements[%s].keyword: %r is already mapped to a different promised"
+                " item and is never recycled" % (placement.get("placement_id"), keyword))
+    return errs
+
+
+def approve(doc, approver, approved_at, revision, expected_revision, *,
+            page_binding=None, keyword_registry=None):
     """Join a DRAFT campaign into one approved revision covering every placement."""
     errs = _document_errors(doc)
     if errs:
@@ -365,7 +478,9 @@ def approve(doc, approver, approved_at, revision, expected_revision):
                 "$.placements[%s]: approval is %r; re-approve that placement on its own"
                 % (placement.get("placement_id"), state)
             )
-    errs.extend(terms_errors(doc))
+    errs.extend(terms_errors(doc, page_binding))
+    if keyword_registry is not None:
+        errs.extend(_registry_errors(doc, keyword_registry))
     if errs:
         return _refuse(doc, errs)
 
@@ -381,7 +496,7 @@ def approve(doc, approver, approved_at, revision, expected_revision):
     return _checked(doc, new)
 
 
-def amend(doc, placement_id, changes, reason, at, expected_revision):
+def amend(doc, placement_id, changes, reason, at, expected_revision, *, page_binding=None):
     """Change one approved placement and invalidate that placement only.
 
     The manifest revision is deliberately left alone. It is the campaign
@@ -390,6 +505,12 @@ def amend(doc, placement_id, changes, reason, at, expected_revision):
     placement, which section 10 and this task's acceptance both forbid. The
     changed placement stops dispatching because its approval_status is
     INVALIDATED and because its new terms no longer match any queued action.
+
+    The DM door is ONE approved unit: an amendment that changes one of
+    messenger_page_id / messenger_ref / messenger_link without the other two is
+    refused here, naming the missing fields. A door being added or replaced is
+    validated against the tenant's recorded Page, so ``page_binding`` is
+    required for any amendment that carries one.
     """
     errs = _document_errors(doc)
     if errs:
@@ -413,6 +534,16 @@ def amend(doc, placement_id, changes, reason, at, expected_revision):
         errs.append(
             "$.placements[%s]: %s is not an approved term"
             % (placement_id, ",".join(unknown))
+        )
+    # C5: the DM door is ONE approved unit. Amending one of the three fields on
+    # its own leaves a partial door, which terms_errors refuses anyway; refusing
+    # it HERE names the missing fields instead of the second-order symptom.
+    changed_door = sorted(set(changes) & set(MESSENGER_TERMS)) if isinstance(changes, dict) else []
+    if changed_door and len(changed_door) != len(MESSENGER_TERMS):
+        errs.append(
+            "$.placements[%s]: the DM door is one approved unit; an amendment carries all"
+            " of messenger_page_id, messenger_ref and messenger_link (missing %s)"
+            % (placement_id, ", ".join(n for n in MESSENGER_TERMS if n not in changed_door))
         )
     if _missing(reason):
         errs.append(
@@ -443,7 +574,8 @@ def amend(doc, placement_id, changes, reason, at, expected_revision):
     target["invalidated_at"] = at
     target["invalidated_reason"] = reason
     new["status"] = "PARTIAL_INVALIDATED"
-    errs = terms_errors({"campaign_window": new.get("campaign_window"), "placements": [target]})
+    errs = terms_errors({"campaign_window": new.get("campaign_window"), "placements": [target]},
+                        page_binding)
     if errs:
         return _refuse(doc, errs)
     return _checked(doc, new)
@@ -599,8 +731,18 @@ def main(argv=None):
     return 0
 
 
-def next_cycle(doc, campaign_cycle_id, starts_on, ends_on, revision, expected_revision):
-    """Open the next 30-day cycle as a fresh DRAFT at a new approval revision."""
+def next_cycle(doc, campaign_cycle_id, starts_on, ends_on, revision, expected_revision, *,
+               page_binding=None, category=None):
+    """Open the next 30-day cycle as a fresh DRAFT at a new approval revision.
+
+    ``page_binding`` plus ``category`` are the pack writer's call site (C5 step 6
+    / H8 step 4): when both are supplied, every placement of the new cycle is
+    written with the DM door built HERE — ``keyword_for()`` derives the
+    category-plus-promised-item keyword and ``build_bonus_placement()`` builds
+    the ref and the m.me link from the tenant's recorded Page. A hand-typed door
+    that disagrees is refused, never silently replaced. Without both, no door is
+    built and nothing is guessed.
+    """
     errs = _document_errors(doc)
     if errs:
         return _refuse(doc, errs)
@@ -628,6 +770,26 @@ def next_cycle(doc, campaign_cycle_id, starts_on, ends_on, revision, expected_re
         placement["approval_status"] = "DRAFT"
         placement["invalidated_at"] = None
         placement["invalidated_reason"] = None
+    if page_binding is not None and category is not None:
+        # C5 step 6 / H8 step 4 — the pack writer's call site. keyword_for() is
+        # reached through build_bonus_placement(), which refuses a bare category
+        # reused for a different promised item.
+        for placement in _placements(new):
+            try:
+                built = messenger_link.build_bonus_placement(
+                    placement, page_binding,
+                    category=category,
+                    item_word=placement.get("promised_item_version"),
+                )
+            except messenger_link.MessengerLinkError as exc:
+                errs.append(
+                    "$.placements[%s].messenger_link: %s"
+                    % (placement.get("placement_id"), exc)
+                )
+                continue
+            placement.update(built)
+        if errs:
+            return _refuse(doc, errs)
     return _checked(doc, new)
 
 

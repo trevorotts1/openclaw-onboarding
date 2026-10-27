@@ -27,6 +27,8 @@ still stands — invalidation is SHOWN, never assumed.
 from __future__ import annotations
 
 import hashlib
+import sys
+from pathlib import Path
 
 SCHEMA = 'shared-readiness-projection.v1'
 
@@ -81,6 +83,45 @@ def project(surface, binding, version, installed, running, live, prior=None):
         'events': list(events),
         'states': states,
     }
+
+
+def _messenger_link():
+    """The one DM-door module, imported by path so this stays the shared root."""
+    page_routes = Path(__file__).resolve().parent / 'routes' / 'page'
+    if str(page_routes) not in sys.path:
+        sys.path.insert(0, str(page_routes))
+    import messenger_link  # noqa: E402
+    return messenger_link
+
+
+def record_page_binding(readiness_record, page_binding):
+    """C5 step 2 — the tenant's one Messenger Page, on the readiness record.
+
+    The Page id is a readiness FACT like any other: it is recorded once per
+    tenant and account, and it is only accepted while the record still names the
+    ``account_binding_revision`` that owns it. ``messenger_link`` owns that rule
+    (a rebind invalidates the Page with the rest of the readiness proof; a
+    different Page id is refused, never overwritten) — this function is the
+    wiring point, so no reporter re-implements it.
+
+    Returns (record, errors). A readiness reporter projects a receipt and never
+    raises at a client, so a refusal comes back as its named reason and the
+    record comes back unchanged — never a silent empty Page.
+    """
+    module = _messenger_link()
+    try:
+        return module.record_page_binding(readiness_record, page_binding), []
+    except module.MessengerLinkError as exc:
+        return dict(readiness_record), [str(exc)]
+
+
+def page_binding_from_record(readiness_record):
+    """The recorded Page binding, or (None, [reason]) — never a guessed Page."""
+    module = _messenger_link()
+    try:
+        return module.PageBinding.from_record(readiness_record), []
+    except module.MessengerLinkError as exc:
+        return None, [str(exc)]
 
 
 def proof_valid(proof, projection):
