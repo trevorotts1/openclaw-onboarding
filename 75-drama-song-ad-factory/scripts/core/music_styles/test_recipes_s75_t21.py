@@ -46,6 +46,7 @@ from music_styles import recipes as T19        # noqa: E402  S75-T19's five
 from music_styles import recipes_s75_t21 as R  # noqa: E402  module under test
 from suno_recipe import duration_registry as DR                        # noqa: E402
 import suno_recipe.suno_recipe as SR           # noqa: E402  the ONE composer
+from words_fit import words_fit as WF          # noqa: E402  the word-fit gate
 
 T21_IDS = ("pop-rock", "reggaeton", "country-rap")
 T19_IDS = ("acoustic-pop", "folk-storytelling", "country-pop",
@@ -135,6 +136,19 @@ class RegistryScopeTests(unittest.TestCase):
                              tuple(menu["deliveries"]), sid)
             self.assertEqual(tuple(mine["client_references"]["artists"]),
                              tuple(menu["client_references"]), sid)
+
+
+class DescriptionTests(unittest.TestCase):
+    """The owner-supplied descriptions are byte-exact, never merely similar.
+
+    ``DESCRIPTIONS`` is the approved copy (MUSIC-AND-VIDEO-UX 4.18 for Country
+    Rap); this pins the records to it so a silent reword fails here.
+    """
+
+    def test_each_description_is_the_approved_string(self):
+        for sid in T21_IDS:
+            self.assertEqual(R.load_recipe(sid)["description"],
+                             DESCRIPTIONS[sid], sid)
 
 
 class ComposeTests(unittest.TestCase):
@@ -364,6 +378,99 @@ class WordFitTests(unittest.TestCase):
             "cut the CTA when the line runs long; fit syllables to the groove.")
         self.assertTrue(any("cut" in f
                             for f in R.word_fit_findings(record)))
+
+
+class WordFitLyricFixtureTests(unittest.TestCase):
+    """Word fit priced on REAL lyric words through core/words_fit.
+
+    Each fixture is a tagged Suno sheet of actual lyric lines, run through the
+    gate that decides whether words fit the length (``parse_sheet_words`` +
+    ``preflight_sheet``). None of the three recipes is in ``STYLE_RATES``, so
+    every one prices fail-closed at the calm-ballad rates -- sung 1.0 w/s,
+    spoken 1.85 w/s, rap 2.0 w/s -- with 8 s of intro/outro. The expected
+    numbers are hand-computed from the words on the page, so a gate that
+    stopped counting words, stopped pricing rap, or stopped refusing a sheet
+    that cannot fit fails here instead of passing quietly.
+    """
+
+    POP_ROCK_SHEET = (
+        "[Spoken - lead, plain natural speech over the music]\n"
+        "We kept counting every quiet hour in this house.\n"
+        "[Sung - lead, long held notes]\n"
+        "So take the long way home with me tonight.\n"
+        "We are still here and the light is on our side.\n")
+
+    COUNTRY_RAP_SHEET = (
+        "[Spoken - lead, plain natural speech over the music]\n"
+        "Mama kept the porch light on all night.\n"
+        "[Rap - lead, confident metered flow]\n"
+        "One check, one shot, we rise from dirt.\n"
+        "[Sung - lead, long held notes]\n"
+        "So we carry every promise over the county line.\n"
+        "And the morning finds us standing where we fell.\n"
+        "Still we rise with the light upon our side.\n")
+
+    OVER_LONG_SHEET = (
+        "[Sung - lead, long held notes]\n"
+        "We drive all night to meet the morning on the road.\n"
+        "Every window down and every voice is singing now.\n"
+        "Hold the line and keep the rhythm moving through the dark.\n"
+        "Take my hand and let the beat carry us home.\n"
+        "We are louder than the fear that kept us quiet.\n"
+        "Rise up now and let the whole room hear it.\n"
+        "Nothing left to lose and everything to claim tonight.\n"
+        "Sing it back to me until the daylight finds us.\n"
+        "[Rap - lead, confident metered flow]\n"
+        "We move fast and we never drop the beat.\n"
+        "Hands up high when the bass is in the floor.\n"
+        "Say the word and I meet you at the door.\n")
+
+    def test_the_fixtures_are_real_counted_lyric_words(self):
+        self.assertEqual(WF.parse_sheet_words(self.POP_ROCK_SHEET), (20, 9, 0))
+        self.assertEqual(WF.parse_sheet_words(self.COUNTRY_RAP_SHEET),
+                         (27, 8, 8))
+        self.assertEqual(WF.parse_sheet_words(self.OVER_LONG_SHEET),
+                         (80, 0, 29))
+
+    def test_recipes_price_word_fit_fail_closed(self):
+        for sid in R.recipe_ids():
+            self.assertEqual(WF.rates_for(sid), WF.DEFAULT_RATES, sid)
+
+    def test_word_fit_passes_the_card_on_the_hand_computed_plan(self):
+        # The carded length decides the sung target (it is length-derived, not
+        # one flat 77.5%): country-rap holds a 76.4% sung share, which is 5.4
+        # points short of the 90 s target and inside the band at 180 s. The
+        # words themselves price the same at every length.
+        for sid, sheet, length_s, plan_s, dur_s in (
+                ("pop-rock", self.POP_ROCK_SHEET, 90, 32.865, 37.795),
+                ("country-rap", self.COUNTRY_RAP_SHEET, 180, 43.324, 49.823)):
+            verdict = WF.preflight_sheet(length_s, sheet, style=sid)
+            self.assertEqual(verdict["outcome"], "ok", sid)
+            self.assertEqual(verdict["reason_code"], "WORDS_FIT_OK", sid)
+            self.assertEqual(verdict["length_s"], float(length_s), sid)
+            self.assertEqual(verdict["plan_s"], plan_s, sid)
+            self.assertEqual(verdict["suno_duration_s"], dur_s, sid)
+            self.assertLessEqual(verdict["gap_pts"], WF.BAND_PTS, sid)
+            self.assertGreaterEqual(verdict["sung_share_pct"],
+                                    verdict["sung_target_pct"] - WF.BAND_PTS,
+                                    sid)
+            sung, spoken, rap = WF.parse_sheet_words(sheet)
+            self.assertEqual((verdict["sung_words"], verdict["spoken_words"],
+                              verdict["rap_words"]),
+                             (float(sung), float(spoken), float(rap)), sid)
+
+    def test_word_fit_refuses_a_sheet_whose_words_cannot_fit_the_card(self):
+        # 80 sung + 29 rap words need 80 + 14.5 + 8 = 102.5 s: no 90 s card.
+        verdict = WF.preflight_sheet(90, self.OVER_LONG_SHEET, style="reggaeton")
+        self.assertEqual(verdict["outcome"], "waiting")
+        self.assertEqual(verdict["reason_code"], "WORDS_DO_NOT_FIT")
+        self.assertEqual(verdict["plan_s"], 102.5)
+        options = verdict["options"]
+        self.assertEqual(set(options),
+                         {"longer_ad", "lower_sung_target", "fewer_words"})
+        self.assertEqual(options["longer_ad"]["length_s"], 120)
+        self.assertLess(options["fewer_words"]["max_total_words"], 109.0)
+        self.assertGreater(options["fewer_words"]["cut_words"], 0.0)
 
 
 class InstrumentControlTests(unittest.TestCase):

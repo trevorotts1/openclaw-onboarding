@@ -1,0 +1,115 @@
+{
+  "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+  "schema_note": "CANDIDATE build-ahead record. It approves nothing and it is NOT a verdict: the builder wrote the code under test and cannot clear it. Only the unit owner (Trevor) accepts, and only an independent verifier may write a verdict.",
+  "unit_id": "S75-T37",
+  "acceptance_id": "S75-A37",
+  "attempt": "candidate-1",
+  "round": 1,
+  "lane": "ahead-lane",
+  "written_at": "2026-10-26",
+  "role": "CANDIDATE BUILDER under D-13 (decision text unrecoverable). Built the proof-machinery candidate receipt-shaped and reversible; no acceptance claimed.",
+
+  "acceptance_row_verbatim": "S75-A37 / S75-T37 | Correct-target incorporation is proven; uncertain merge/ack reconciles once without duplicate landing; N999 need not wait for ONB fixture facets. | evidence/units/S75-T37/attempt-<verified-generation>.json; exact candidate/base/dependencies and independent checker; repository required gates when applicable. | UNVERIFIED |",
+  "acceptance_row_note": "quoted verbatim except the template token in the evidence path is rendered as the literal angle-bracket form; the row is UNVERIFIED and stays so.",
+  "acceptance_row_source": "<operator-volume>/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/ACCEPTANCE-MATRIX.md",
+
+  "candidate": {
+    "branch": "s75/S75-T37-r1",
+    "head_sha": "33fa16d0b20d47c6780e4a648545b9275052d36d",
+    "head_note": "head names the commit carrying the candidate code and tests. The receipt commit follows it on the same branch, so the branch tip is one receipt-only commit later; the receipt describes the code commit, not itself.",
+    "cut_from": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e"
+  },
+  "base": {
+    "sha": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+    "subject": "Merge pull request #2596 from trevorotts1/s75/T08-r7",
+    "resolved_from_origin": true,
+    "how": "git worktree add <operator-home>/skill75-repair/lanes/S75-T37-ahead-lane -b s75/S75-T37-r1 origin/main; git rev-parse origin/main == 5a54ddd7f8171ea7e3608cc1d508b06e82077d9e"
+  },
+
+  "files_changed": [
+    "CONTROL/correct_target.py",
+    "CONTROL/tests/test_correct_target_s75_t37.py",
+    "evidence/units/S75-T37/attempt-candidate-1.json"
+  ],
+
+  "dependencies": {
+    "runtime": "python3 standard library only (hashlib, json, os, re)",
+    "interpreter_recorded": "3.14.7 (main, Aug  5 2026, 10:29:49) [Clang 21.0.0 (clang-2100.1.1.101)]",
+    "new_third_party": "none",
+    "t36_modules_edited": "none (CONTROL/incorporation_proof.py and CONTROL/queue_ack.py are untouched; this candidate imports nothing from them)"
+  },
+
+  "tests_run": [
+    {
+      "cmd": "cd <operator-home>/skill75-repair/lanes/S75-T37-ahead-lane/CONTROL/tests && python3 -I test_correct_target_s75_t37.py",
+      "exit": 0,
+      "result": "Ran 31 tests ... OK"
+    },
+    {
+      "cmd": "python3 -I test_incorporation_proof_s75_t36.py",
+      "exit": 0,
+      "result": "Ran 21 tests ... OK (pre-existing suite, unchanged)"
+    },
+    {
+      "cmd": "python3 -I test_queue_ack_s75_t36.py",
+      "exit": 0,
+      "result": "Ran 25 tests ... OK (pre-existing suite, unchanged)"
+    },
+    {
+      "cmd": "python3 -I test_eng_loop_guards.py",
+      "exit": 0,
+      "result": "Ran 8 tests in 1.490s ... OK (pre-existing suite, unchanged)"
+    },
+    {
+      "cmd": "python3 -I s75_t36_r2_repair_demo.py",
+      "exit": 0,
+      "result": "checks=26 pass=26 fail=0"
+    },
+    {
+      "cmd": "python3 -I s75_t36_r3_side_branch_demo.py",
+      "exit": 0,
+      "result": "mode=new checks=5 pass=5 fail=0"
+    }
+  ],
+
+  "claims": [
+    {
+      "clause": "correct target is proven from the intended repository, not from a name string",
+      "evidence": "CONTROL/correct_target.py bind_target() + normalise_remote_url(); tests RemoteUrlIdentity.test_one_repository_has_one_identity_across_spellings, WrongTarget.test_the_repository_name_cannot_override_the_observed_url, WrongTarget.test_a_foreign_remote_url_is_refused_as_wrong_target. IntendedTarget refuses construction without an accepted remote URL, so a bare repository name can never be the witness."
+    },
+    {
+      "clause": "landing is proven on REMOTE main, not local main",
+      "evidence": "prove_landing() reads git.remote_head(remote, branch) and tests merge_commit ancestry against it; LocalOnlyMerge.test_a_merge_in_local_history_but_not_remote_main_is_local_only, LocalOnlyMerge.test_an_absent_remote_branch_is_local_only."
+    },
+    {
+      "clause": "wrong-target and local-only are distinguishable refusals",
+      "evidence": "REASONS carries both; probe returns reason 'wrong-target' for a foreign remote URL and reason 'local-only' for a merge held only in local history; LocalOnlyMerge.test_local_only_and_wrong_target_are_distinguishable asserts the reasons and strings differ; WrongTarget.test_wrong_target_is_refused_before_any_ancestry_is_examined asserts ordering."
+    },
+    {
+      "clause": "uncertain merge/ack reconciles once without duplicate landing",
+      "evidence": "reconcile_once() appends one landing record on first reconcile, returns ALREADY_RECONCILED with zero writes on repeat (byte-identical journal asserted), and raises landing-conflict for a second different landing while leaving the journal untouched: ReconcileOnce.test_first_reconcile_writes_exactly_one_landing, .test_repeated_reconcile_of_the_same_uncertain_merge_writes_nothing (3 retries), .test_a_different_landing_for_the_same_unit_is_refused_not_appended, .test_two_units_accumulate_two_distinct_landings, .test_a_malformed_journal_is_refused_rather_than_overwritten."
+    },
+    {
+      "clause": "N999 need not wait for ONB fixture facets",
+      "evidence": "N999NeedsNoOnbFacet.test_n999_proves_on_its_own_transport_and_urls proves a 999-setup landing using only 999 URL identities; there is no ONB module import and no ONB fixture read. Cross-flavor isolation is also asserted in both directions."
+    },
+    {
+      "clause": "the proof carries its own target identity so it cannot float to another repository",
+      "evidence": "LandingProof.as_dict() embeds target {repository, remote, branch, accepted_remotes} plus the observed remote_url; CorrectTarget.test_proof_names_the_full_target_so_it_cannot_float_to_another_repo. A foreign-target proof offered to a journal already holding this unit is refused as landing-conflict (ReconcileOnce.test_a_landing_for_a_foreign_target_is_refused_into_this_journal)."
+    }
+  ],
+
+  "not_claimed": [
+    "No acceptance. S75-A37 stays UNVERIFIED; the owner (Trevor) decides and no verdict file is written here.",
+    "No landing in the 999-setup repository: the row's N999 deliverables (evidence/merge/999.json, evidence/queue-ack/999.json) are not produced by this lane. This candidate is the ONB-side proof machinery the N999 integrator consumes; its own landing belongs to the N999 target lane.",
+    "No Command Center change: the CC repo is S75-T38's lane and is untouched.",
+    "No live remote read: prove_landing() takes an injected transport, exactly like the T36 modules. Reading the real origin/main through a subprocess transport is wiring outside this candidate and is not proven here.",
+    "No edit to CONTROL/incorporation_proof.py or CONTROL/queue_ack.py. The T36 arbiter's stated seam (a caller-supplied lying transport) is not closed by this candidate and is not claimed to be: what is added is that the target must now answer from an accepted remote URL, so a transport that lies about its URL is refused.",
+    "No D-13 decision text is reconstructed or paraphrased; the unit remains decision-locked.",
+    "Pre-existing failures elsewhere in the repository were not surveyed; only the CONTROL suites and demos listed above were run."
+  ],
+
+  "shape_statement": "Two new files under CONTROL plus this receipt. Additive and reversible: deleting CONTROL/correct_target.py and its test leaves the repository exactly as base, because nothing else imports them. No existing file is edited, no test weakened, no ledger or TODO touched.",
+
+  "reversibility": "git revert 33fa16d0b20d47c6780e4a648545b9275052d36d restores the base tree for these paths; the branch is the only carrier and nothing was pushed to main."
+}

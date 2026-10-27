@@ -150,6 +150,13 @@ def test_legacy_record_readable_and_compatibility_limited():
     assert legacy == before
 
 
+def test_legacy_unresolved_list_names_every_written_field():
+    verdict = V.validate_script(_load("legacy_scene_migration.json"), origin=V.ORIGIN_LEGACY)
+    assert verdict["compatibility_limited"] is True
+    for field in ("subtext_and_behavior", "causal_outcome", "timing_basis"):
+        assert field in verdict["unresolved"], (field, verdict["unresolved"])
+
+
 def test_legacy_record_cannot_satisfy_new_generation():
     legacy = _load("legacy_scene_migration.json")
     verdict = V.validate_script(legacy, origin=V.ORIGIN_NEW)
