@@ -11,7 +11,7 @@
 
   "acceptance_row_verbatim": "S75-A37 / S75-T37 | Correct-target incorporation is proven; uncertain merge/ack reconciles once without duplicate landing; N999 need not wait for ONB fixture facets. | evidence/units/S75-T37/attempt-<verified-generation>.json; exact candidate/base/dependencies and independent checker; repository required gates when applicable. | UNVERIFIED |",
   "acceptance_row_note": "quoted verbatim except the template token in the evidence path is rendered as the literal angle-bracket form; the row is UNVERIFIED and stays so.",
-  "acceptance_row_source": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/ACCEPTANCE-MATRIX.md",
+  "acceptance_row_source": "<operator-volume>/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/ACCEPTANCE-MATRIX.md",
 
   "candidate": {
     "branch": "s75/S75-T37-r1",
