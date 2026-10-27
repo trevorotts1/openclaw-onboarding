@@ -143,7 +143,7 @@ The 10 reds, classified:
 |---|---|
 | 50 Skill 38 workflow visual (U-11) | repo: `video-edit-door.md` has no `visual.json` |
 | 93 retired `deepseek-v4-flash` ids | repo: retired ids still found in shipped files |
-| 114 fleet-refresh roll safety | mixed: 133 tests, 8 failures 2 errors; one assertion compares `/Volumes/mac` to `/Volumes/mac` — **this volume's space-truncated path**, CI's checkout has no space |
+| 114 fleet-refresh roll safety | mixed: 133 tests, 8 failures 2 errors; one assertion compares `<PATH>` to `<PATH>` — **this volume's space-truncated path**, CI's checkout has no space |
 | 115 VPS container-startup templates | environment: `contabo` cases need a container |
 | 122 Skill 37 PRD-2.8 org-chart | environment: `mktemp` on `/tmp` refused |
 | 130 AF3 local-candidate-loop guard | repo: local path list in `32-command-center-setup` |
@@ -181,8 +181,8 @@ Dirty worktrees at this head (path, porcelain line count):
 <run-root>/worktrees/PBB-576                                        1
 <run-root>/worktrees/PBB-608                                       45
 <run-root>/worktrees/PBB-649                                        1
-/Volumes/.../w77s/worktrees/int-baseline-10863185                   3
-/Volumes/.../worktrees/PBB-480/cand                                 1
+<run-root>/w77s/worktrees/int-baseline-10863185                         3
+<run-root>/worktrees/PBB-480/cand                                      1
 ```
 
 Honest reading, and the one claim in this document that is NOT proven: "no worktree/tmp/
