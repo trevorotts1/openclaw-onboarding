@@ -28,11 +28,11 @@
       "id": "R2",
       "defect": "The candidate-1 receipt narrative (evidence/units/S75-T02/attempt-candidate-1.json, not_claimed[3] and shape_statement) claimed the authority-root artefacts were absent, on the strength of a search rooted only at $HOME. That search could not see another volume.",
       "before": "\"...an authority-root-only evidence artefact (those artefacts are absent from disk now: find <OPERATOR_HOME> -name 'prebuilder*' returned nothing)\" and \"No claim about the authority-root T02 artefacts (state/prebuilder-loop-prompt.txt, storage-profile, supported-controls): they are absent on disk now...\"",
-      "after": "Corrected in this receipt: the artefacts EXIST at the authority root /Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024/. Exact paths, byte sizes and SHA-256 digests are recorded under authority_root_artefacts below. candidate-1.json is left unedited in substance because a receipt is a historical record, not a mutable document; this receipt supersedes its absence claim. The one exception, applied to BOTH receipts at the r1 rebuild: the banned operator-home absolute path (an always-on token in scripts/qc-assert-no-client-names.sh) was redacted to the placeholders <OPERATOR_HOME> / <REPO_ROOT> / <REPO_PARENT>; no technical content changed.",
+      "after": "Corrected in this receipt: the artefacts EXIST at the authority root <AUTHORITY_ROOT>/. Exact paths, byte sizes and SHA-256 digests are recorded under authority_root_artefacts below. candidate-1.json is left unedited in substance because a receipt is a historical record, not a mutable document; this receipt supersedes its absence claim. The one exception, applied to BOTH receipts at the r1 rebuild: the banned operator-home absolute path (an always-on token in scripts/qc-assert-no-client-names.sh) was redacted to the placeholders <OPERATOR_HOME> / <REPO_ROOT> / <REPO_PARENT>; no technical content changed.",
       "changed_file": "evidence/units/S75-T02/attempt-candidate-2.json"
     }
   ],
-  "authority_root": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024",
+  "authority_root": "<AUTHORITY_ROOT>",
   "authority_root_artefacts": {
     "state/": {
       "kind": "directory",
