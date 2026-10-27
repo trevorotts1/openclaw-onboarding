@@ -199,12 +199,42 @@ def startability(before,env,args):
     stale=[]
     if prior_proof is not None and not shared_readiness.proof_valid(prior_proof,projection):
         stale=['previous proof invalidated: '+','.join(projection['events'] or ['identity'])]
+    # C5 step 2: the tenant's Messenger Page is a readiness FACT, recorded on the
+    # readiness record under the account binding revision that owns it. The Page
+    # id and revision are supplied to the installer (never guessed); a Page id
+    # that was recorded under a different revision, or a different Page id, is
+    # REFUSED here and reported — the door never outlives the binding that made
+    # it. No supplied Page id records nothing and invents nothing.
+    prior_page=prior_proof.get('pageBinding') if isinstance(prior_proof,dict) else None
+    page_record=dict(prior_page) if isinstance(prior_page,dict) else {}
+    page_id=str(env.get('MC_MESSENGER_PAGE_ID') or '').strip()
+    page_revision=str(env.get('MC_ACCOUNT_BINDING_REVISION') or '').strip()
+    page_binding,page_errors=None,[]
+    if page_id and page_revision:
+        identity_record={'tenant_id':str(before.get('tenantId') or env.get('MC_TENANT_ID') or ''),
+                         'account_id':str(before.get('companyId') or env.get('MC_COMPANY_ID') or ''),
+                         'messenger_page_id':page_id,
+                         'account_binding_revision':page_revision}
+        page_binding,page_errors=shared_readiness.page_binding_from_record(identity_record)
+        if page_binding is not None:
+            if not page_record:
+                page_record={'binding':page_revision,
+                             'tenant_id':page_binding.tenant_id,
+                             'account_id':page_binding.account_id}
+            page_record,page_errors=shared_readiness.record_page_binding(page_record,page_binding)
+    if page_errors:
+        failed.append('page_binding')
+        checks['page_binding']={'ok':False,'detail':page_errors}
+    elif page_binding is not None:
+        checks['page_binding']={'ok':True,
+                                'detail':'Page '+page_binding.page_id+' recorded at '+page_revision}
     proof={'protocol':'interview-startability.v1','stage':'startability','ready':not failed,'missing':failed,
            'checks':checks,'host':receipt.get('host'),'companyId':before.get('companyId'),
            'tenantId':before.get('tenantId'),'installationId':before.get('installationId'),
            'buildId':before.get('buildId'),'checkedAt':datetime.now(timezone.utc).isoformat(),
            'ownerHash':hashlib.sha256(chat.encode()).hexdigest() if isinstance(chat,str) and chat else None,
-           'readinessProjection':projection,'invalidatedPriorProofs':stale,
+           'readinessProjection':projection,'pageBinding':page_record,
+           'invalidatedPriorProofs':stale,
            'ticket':'discarded','delivery':'not-attempted'}
     # Scoped, sanitized proof only: no secrets, no ticket, no recipient value.
     proof_path=Path(args.state).parent/'company-discovery'/STARTABILITY_PROOF_NAME

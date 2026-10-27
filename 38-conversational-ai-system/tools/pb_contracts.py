@@ -111,6 +111,13 @@ NEVER_ROLLED_BACK = [
     "unknown_send_reconciliation",
 ]
 DM_CHANNELS = {"FB_DM", "IG_DM"}
+# C5: the DM door is an OPTIONAL approved term. A placement that approves no door
+# is not a divergence from an action that carries none, and a placement/action
+# pair that disagrees on whether a door exists is a divergence that names the
+# field. Reading the three fields unconditionally raised KeyError on every
+# placement approved before the door existed (PBB-919 blocked item 1).
+DM_DOOR_FIELDS = ("messenger_page_id", "messenger_ref", "messenger_link")
+_ABSENT = object()
 
 READINESS_KEYS = ["installed", "configured", "running", "replied", "fulfilled"]
 TERMINAL_COLLECTION = {
@@ -1184,8 +1191,16 @@ def approval_errors(action, manifest_path):
             if placement["content_revision"] != action["content_revision"]:
                 problems.append("$.content_revision: placement approved %r" % placement["content_revision"])
             for field in PLACEMENT_BOUND_FIELDS:
-                approved = placement[field]
-                attempted = action[field]
+                approved = placement.get(field, _ABSENT)
+                attempted = action.get(field, _ABSENT)
+                if approved is _ABSENT or attempted is _ABSENT:
+                    if field in DM_DOOR_FIELDS and approved is _ABSENT and attempted is _ABSENT:
+                        continue  # neither side approves a door: not a divergence
+                    problems.append(
+                        "$.%s: %s carries no value for an approved term"
+                        % (field, "the placement" if approved is _ABSENT else "the action")
+                    )
+                    continue
                 if isinstance(approved, list):
                     approved, attempted = sorted(approved), sorted(attempted or [])
                 if approved != attempted:
