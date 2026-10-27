@@ -35,6 +35,12 @@ the two classes), plus the two claims that must be DERIVED rather than asserted:
 ``execution`` from the transport kind that minted the handle, and
 ``attempt.binding_id`` recomputed from the admitted binding so a hand-forged
 model-bindings.json can never have its chosen id echoed into a sealed record.
+Round four's location half is also proven here: a location record must CARRY
+era, social rules, lighting, layout and continuity boundaries as content --
+placeholder text, a value that repeats its own field name and a repeated entry
+are refused as loudly as an absent field -- while every legitimate world,
+setting change and dispatch is still accepted (see Round4LocationSubstanceTests
+and Round4OverRefusalTests).
 """
 import copy
 import hashlib
@@ -89,8 +95,26 @@ def fixture_body():
              "access": "the two partners only",
              "entrances": ["south glass door"],
              "geography": "north tool bench, centre ledger table, east counter, west corridor",
+             "era": {"period": "contemporary", "time_of_day": "one continuous evening"},
+             "social_rules": [
+                 {"rule": "no one signs the ledger on the other partner's behalf",
+                  "consequence": "a line signed for another is crossed out and the count restarts"},
+                 {"rule": "the sealed envelope stays shut until both are at the table",
+                  "consequence": "opening it early ends the evening with nothing agreed"},
+             ],
+             "lighting": {"source": "overhead work lights above the ledger table",
+                          "direction": "downward, warm and even",
+                          "motivated_change": "the lights go off when the shop closes"},
              "layout": {"features": ["south glass door", "north tool bench",
-                                     "centre ledger table", "east counter", "west corridor"]}},
+                                     "centre ledger table", "east counter", "west corridor"],
+                        "boundaries": "brick on three sides, the glazed shop front on the south",
+                        "sightlines": "the ledger table is seen from the tool bench; the west "
+                                      "corridor hides the south door"},
+             "continuity_boundaries": {
+                 "must_persist": ["the sealed envelope stays on the ledger table",
+                                  "the tool bench keeps its shadow board"],
+                 "may_change": ["the door sign after the scene earns it"],
+             }},
         ],
         "light": {
             "doctrine": "warm overhead work lights against cool fading light from the south door; "
@@ -118,6 +142,40 @@ def fixture_body():
                     "uses": ["south glass door", "centre ledger table"],
                     "minutes_from_start": 0}],
     }
+
+
+def place(location_id="loc_other_001", name="Other room", function="alternate setting",
+          features=None, **overrides):
+    """A complete location record: era, social rules, lighting, layout and
+    continuity boundaries carried as content, never as shape alone. Stricter
+    validation must still accept a real place (see Round4OverRefusalTests)."""
+    features = list(features or ["a window"])
+    built = {
+        "location_id": location_id,
+        "name": name,
+        "function": function,
+        "interior": True,
+        "reality": "fiction",
+        "access": "the two partners only",
+        "entrances": [features[0]],
+        "geography": "%s centre, the rest of the room around it" % features[0],
+        "era": {"period": "contemporary", "time_of_day": "one continuous evening"},
+        "social_rules": [
+            {"rule": "only the people in the room may move what is on the table",
+             "consequence": "anything moved without agreement is put back and said aloud"},
+        ],
+        "lighting": {"source": "the room's own overhead light",
+                     "direction": "downward, warm and even"},
+        "layout": {"features": features,
+                   "boundaries": "walls on three sides and one door in the fourth",
+                   "sightlines": "the table is seen from the door; the far corner hides it"},
+        "continuity_boundaries": {
+            "must_persist": ["what is on the table stays on the table"],
+            "may_change": ["which chair is pulled out"],
+        },
+    }
+    built.update(overrides)
+    return built
 
 
 def fixture_runner(body, requests):
@@ -388,11 +446,12 @@ class SemanticRefusalTests(unittest.TestCase):
 
     def test_impossible_timeline_refused_by_name(self):
         body = fixture_body()
-        body["locations"].append({
-            "location_id": "loc_back_bay_001", "name": "Repair bay, west corridor end",
-            "function": "the second room of the same evening", "interior": True,
-            "reality": "fiction", "access": "the two partners only",
-            "layout": {"features": ["west corridor door", "repair bench"]}})
+        body["locations"].append(place(
+            "loc_back_bay_001", "Repair bay, west corridor end",
+            "the second room of the same evening",
+            ["west corridor door", "repair bench"],
+            access="the two partners only",
+            era={"period": "contemporary", "time_of_day": "one continuous evening"}))
         # two different locations in the same minute, no explicit transition
         body["scenes"].append({"scene_id": "scene_002", "location_id": "loc_back_bay_001",
                                "action": "Levi steps into the bay", "uses": ["repair bench"],
@@ -420,11 +479,12 @@ class SemanticRefusalTests(unittest.TestCase):
         body["locations"][0]["reality"] = "real"
         body["locations"][0]["claim_source"] = "owner_answer_001: the client named this address"
         # travel between two locations at increasing time is allowed
-        body["locations"].append({
-            "location_id": "loc_back_bay_001", "name": "Repair bay, west corridor end",
-            "function": "the second room of the same evening", "interior": True,
-            "reality": "fiction", "access": "the two partners only",
-            "layout": {"features": ["west corridor door", "repair bench"]}})
+        body["locations"].append(place(
+            "loc_back_bay_001", "Repair bay, west corridor end",
+            "the second room of the same evening",
+            ["west corridor door", "repair bench"],
+            access="the two partners only",
+            era={"period": "contemporary", "time_of_day": "one continuous evening"}))
         body["scenes"].append({"scene_id": "scene_002", "location_id": "loc_back_bay_001",
                                "action": "Levi carries the ledger to the bay bench",
                                "uses": ["repair bench"], "minutes_from_start": 15})
@@ -600,17 +660,19 @@ class AntiForgeryTests(unittest.TestCase):
 class SettingChangeTests(unittest.TestCase):
     def test_character_identity_survives_a_new_setting(self):
         original = author()
-        new_locations = [{
-            "location_id": "loc_formal_hall_001",
-            "name": "Formal civic hall, east room",
-            "function": "the meeting where the shortfall is disclosed",
-            "interior": True,
-            "reality": "fiction",
-            "access": "invited guests only",
-            "entrances": ["east corridor door"],
-            "geography": "long table centre, dais north, doors east and south",
-            "layout": {"features": ["long table", "dais", "east corridor door", "south door"]},
-        }]
+        new_locations = [place(
+            "loc_formal_hall_001",
+            "Formal civic hall, east room",
+            "the meeting where the shortfall is disclosed",
+            ["long table", "dais", "east corridor door", "south door"],
+            access="invited guests only",
+            entrances=["east corridor door", "south door"],
+            geography="long table centre, dais north, doors east and south",
+            era={"period": "contemporary", "time_of_day": "the evening of the meeting"},
+            continuity_boundaries={
+                "must_persist": ["the dais stays where the hall built it"],
+                "may_change": ["how many chairs are set out"],
+            })]
         result = WW.change_setting(
             original,
             locations=new_locations,
@@ -632,10 +694,7 @@ class SettingChangeTests(unittest.TestCase):
     def test_only_dependent_outputs_are_invalidated(self):
         result = WW.change_setting(
             author(),
-            locations=[{"location_id": "loc_other_001", "name": "Other room",
-                        "function": "alternate setting", "interior": True,
-                        "reality": "fiction",
-                        "layout": {"features": ["a window"]}}],
+            locations=[place()],
             reason="alternate setting for the same story",
         )
         self.assertEqual(result["invalidated"], ["scene_plan", "script", "visual_outputs"])
@@ -645,9 +704,7 @@ class SettingChangeTests(unittest.TestCase):
     def test_setting_change_without_reason_refused(self):
         with self.assertRaises(WW.WorldError):
             WW.change_setting(author(), locations=[
-                {"location_id": "loc_other_001", "name": "Other", "function": "x",
-                 "interior": True, "reality": "fiction",
-                 "layout": {"features": ["a window"]}}], reason="")
+                place("loc_other_001", "Other room", "the alternate setting")], reason="")
 
     def test_setting_change_to_no_locations_refused(self):
         with self.assertRaises(WW.WorldError) as caught:
@@ -658,9 +715,7 @@ class SettingChangeTests(unittest.TestCase):
         original = author()
         snapshot = copy.deepcopy(original)
         WW.change_setting(original, locations=[
-            {"location_id": "loc_other_001", "name": "Other", "function": "x",
-             "interior": True, "reality": "fiction",
-             "layout": {"features": ["a window"]}}], reason="alternate")
+            place("loc_other_001", "Other room", "the alternate setting")], reason="alternate")
         self.assertEqual(original, snapshot)
 
 
@@ -784,9 +839,7 @@ class ValidateRecomputesContentDigestTests(unittest.TestCase):
         record = author()
         with self.assertRaises(WW.WorldError) as caught:
             WW.change_setting(edited_record(record), locations=[
-                {"location_id": "loc_other_001", "name": "Other", "function": "x",
-                 "interior": True, "reality": "fiction",
-                 "layout": {"features": ["a window"]}}], reason="derived from an edited parent")
+                place("loc_other_001", "Other room", "the alternate setting")], reason="derived from an edited parent")
         named = [e for e in caught.exception.errors if WW.CODE_CONTENT_DIGEST in e]
         self.assertTrue(named, caught.exception.errors)
 
@@ -1496,9 +1549,7 @@ def tampered_record(record):
 def change_setting_outcome(record):
     try:
         WW.change_setting(record, locations=[
-            {"location_id": "loc_other_001", "name": "Other", "function": "x",
-             "interior": True, "reality": "fiction",
-             "layout": {"features": ["a window"]}}], reason="derived from a fabricated parent")
+            place("loc_other_001", "Other room", "the alternate setting")], reason="derived from a fabricated parent")
     except WW.WorldError as caught:
         return "REFUSED BY NAME: %s" % " | ".join(caught.errors)
     except BaseException as caught:  # noqa: BLE001
@@ -1662,7 +1713,8 @@ class HandleReachabilityTests(unittest.TestCase):
             "CODE_TRANSPORT_MINT", "DISPATCH_HANDLER", "DISPATCH_OPERATION", "DispatchHandle",
             "DispatchHandleMintRefused", "DispatchTransport", "DispatchTransportMintRefused",
             "EXECUTION_VALUES", "IDENTITY_FIELDS", "LOCATION_ID_RE",
-            "MODELS_LAYER", "PROMPT_TEMPLATE_REVISION", "REQUIRED_SECTIONS", "SCHEMA_VERSION",
+            "MODELS_LAYER", "PLACEHOLDER_TEXT", "PLACE_CARRIERS",
+            "PROMPT_TEMPLATE_REVISION", "REQUIRED_SECTIONS", "SCHEMA_VERSION",
             "SESSION", "SETTING_DEPENDENTS", "WORLD_KIND", "WorldError", "annotations",
             "argparse", "author_world", "build_author_request", "canonical_digest",
             "change_setting", "copy", "dispatch_author", "hashlib", "json", "live_transport",
@@ -1673,11 +1725,15 @@ class HandleReachabilityTests(unittest.TestCase):
         underscore = sorted(name for name in dir(WW) if name.startswith("_")
                             and not name.startswith("__"))
         self.assertEqual(underscore, sorted([
-            "_binding_identity", "_dispatch_proof_errors", "_json_digest",
-            "_live_dispatch_reason", "_load", "_nonempty", "_nonempty_list",
-            "_parent_seal_reason", "_seal", "_seal_proof_errors", "_validate_atmosphere",
-            "_validate_cast", "_validate_era", "_validate_light", "_validate_locations",
-            "_validate_never_list", "_validate_scenes", "_validate_sound",
+            "_binding_identity", "_content", "_content_list",
+            "_dispatch_proof_errors", "_json_digest", "_live_dispatch_reason",
+            "_load", "_nonempty", "_nonempty_list", "_norm_word",
+            "_parent_seal_reason", "_seal", "_seal_proof_errors",
+            "_validate_atmosphere", "_validate_cast", "_validate_era", "_validate_light",
+            "_validate_locations", "_validate_never_list",
+            "_validate_place_continuity", "_validate_place_era",
+            "_validate_place_layout", "_validate_place_lighting",
+            "_validate_place_social_rules", "_validate_scenes", "_validate_sound",
         ]))
         # no name on the module -- public or underscore -- IS the registry, the
         # sealed map, the guard or the mint
@@ -1891,6 +1947,312 @@ class PositiveControlTests(unittest.TestCase):
         print("\nPOSITIVE CONTROL: sealed %s on handle %s (%s, binding %s)"
               % (record["content_digest"][:16], seal["dispatch_handle"][:16],
                  record["provenance"]["execution"], record["provenance"]["attempt"]["binding_id"]))
+
+
+#: Round 4 uses a catalog pair no earlier round touched.
+R4_BUILD_MODEL = "ollama/deepseek-v4.1-flash"
+R4_CHECK_MODEL = "ollama/agnes"
+R4_NOW = "2026-10-24T06:00:00+00:00"
+R4_INPUTS = {
+    "research_revision": "research_claims@7",
+    "premise_revision": "premise@4",
+    "cast_interface": ["char_okonkwo_011@4", "char_bauer_023@2"],
+    "route_style_constraints": "realistic community drama",
+    "known_locations": ["loc_depot_hall_014", "loc_yard_gate_021"],
+    "owner_answer_refs": ["owner_answer_014"],
+}
+
+
+def depot_place(location_id, name, function, entrances, geography, features,
+                boundaries, sightlines, time_of_day, rules, must_persist, may_change,
+                source, direction, motivated_change=None, interior=True):
+    """One location record carrying the five carriers the validator must read:
+    era, social rules, lighting, layout and continuity boundaries."""
+    place = {
+        "location_id": location_id, "name": name, "function": function,
+        "interior": interior, "reality": "fiction",
+        "access": "the four volunteers on the inventory rota",
+        "entrances": entrances, "geography": geography,
+        "era": {"period": "contemporary", "time_of_day": time_of_day},
+        "social_rules": [{"rule": rule, "consequence": consequence}
+                         for rule, consequence in rules],
+        "lighting": {"source": source, "direction": direction},
+        "layout": {"features": features, "boundaries": boundaries,
+                   "sightlines": sightlines},
+        "continuity_boundaries": {"must_persist": must_persist,
+                                  "may_change": may_change},
+    }
+    if motivated_change:
+        place["lighting"]["motivated_change"] = motivated_change
+    return place
+
+
+def depot_hall():
+    return depot_place(
+        "loc_depot_hall_014", "Tram depot, main hall",
+        "where the volunteers count the tools they may have to give back",
+        ["north roller door", "staff door to the yard"],
+        "north roller door, west tool wall, centre inventory table, "
+        "east parts counter, south staff door",
+        ["north roller door", "west tool wall", "centre inventory table",
+         "east parts counter", "south staff door"],
+        "brick on three sides under a glazed roof, roller door closes the north end",
+        "the inventory table is seen from the tool wall; the parts counter hides the staff door",
+        "late afternoon into evening",
+        [("a tool leaves the depot only against a signed inventory line",
+          "an unsigned loan is repaid by the volunteer who let it go"),
+         ("the lease papers stay in the office safe until the meeting",
+          "reading them early turns the count into a blame meeting")],
+        ["the signed inventory sheet stays open on the table",
+         "the tool wall keeps its full shadow board"],
+        ["the roller door position once the rain starts"],
+        "sodium work lamps on the depot beams", "downward, warm and uneven",
+        "yard lamps come on when the roller door closes")
+
+
+def depot_gate():
+    return depot_place(
+        "loc_yard_gate_021", "Depot yard, gate end",
+        "where the tools are loaded out and the leaving is watched",
+        ["yard gate", "south staff door"],
+        "yard gate west, loading strip centre, rain shelter east",
+        ["yard gate", "loading strip", "rain shelter"],
+        "chain-link fence on three sides, the depot wall behind the shelter",
+        "the loading strip is seen from the gate; the rain shelter hides the wall door",
+        "evening, after the rain",
+        [("nothing leaves the yard without a second volunteer watching",
+          "a lone load-out is logged as a loss and the depot closes early")],
+        ["the loading strip stays clear of parked vans"],
+        ["the gate padlock state after the last load"],
+        "yard lamps on the fence posts", "low, cold and flat")
+
+
+def depot_body():
+    return {
+        "premise": ("A volunteer tool library inside a disused tram depot faces the loss of its "
+                    "lease. Realistic community drama; an inventory night forces the volunteers "
+                    "to decide what they can replace."),
+        "fiction_classification": "proposed_fiction",
+        "era": {"period": "contemporary", "time_of_day": "one late afternoon into evening",
+                "season_weather": "autumn, wet", "time_jumps": [], "span_minutes": 90},
+        "locations": [depot_hall(), depot_gate()],
+        "light": {
+            "doctrine": "warm work light over the count against cold yard light at the edges; "
+                        "no unexplained change of hour",
+            "sources": [
+                {"source": "sodium work lamps", "direction": "downward, warm and uneven",
+                 "motivated_change": "half of them go out when the count ends"},
+                {"source": "yard lamps", "direction": "low and cold across the gate"},
+            ],
+        },
+        "palette": ["sodium amber", "wet grey concrete", "faded depot green"],
+        "texture": ["pitted concrete", "chipped enamel", "oiled tool steel"],
+        "sound": {"ambience": "rain on the glazed roof, a distant tram bell",
+                  "off_screen": ["the gate being chained"], "silence": ["the last count line"]},
+        "never_list": ["no miracle new lease", "no unnamed donor", "no real depot document"],
+        "cast_refs": [{"character_id": "char_okonkwo_011", "identity_revision": 4},
+                      {"character_id": "char_bauer_023", "identity_revision": 2}],
+        "continuity": {"must_persist": ["the signed inventory sheet stays open",
+                                        "the gate padlock stays on the post"],
+                       "may_change": ["the roller door after the rain"],
+                       "exceptions": []},
+        "scenes": [{"scene_id": "scene_001", "location_id": "loc_depot_hall_014",
+                    "action": "Okonkwo carries the inventory sheet from the roller door to the table",
+                    "uses": ["north roller door", "centre inventory table"],
+                    "minutes_from_start": 0}],
+    }
+def r4_runner(body, requests):
+    """Deterministic no-spend runner on the R4 catalog pair: the response model
+    is the bound build id and the resolved model is its provider request id."""
+    def runner(request):
+        requests.append(copy.deepcopy(request))
+        return {"raw": copy.deepcopy(body),
+                "response_model": R4_BUILD_MODEL,
+                "resolved_provider_model": "deepseek-v4.1-flash",
+                "provider_job_id": "r4-job-001"}
+    return runner
+
+
+def r4_dispatch(body, run_dir=None, attempt_id="attempt_r4_001", requests=None,
+                runner_factory=None):
+    """One no-spend dispatch on its own run dir, through the R4 catalog pair."""
+    run_dir = run_dir or tempfile.mkdtemp(prefix="world_r4_")
+    if AM.load_bindings(run_dir) is None:
+        bound = AM.bind_roles(run_dir, R4_BUILD_MODEL, R4_CHECK_MODEL,
+                              runtime="claude-nine", now=R4_NOW)
+        assert bound.get("ok"), bound
+    requests = [] if requests is None else requests
+    runner = runner_factory(body, requests) if runner_factory else r4_runner(body, requests)
+    runner = runner if isinstance(runner, WW.DispatchTransport) else WW.no_spend_transport(runner)
+    record = WW.dispatch_author(run_dir=run_dir, attempt_id=attempt_id, inputs=R4_INPUTS,
+                                runner=runner, now=R4_NOW)
+    return record, requests, run_dir
+
+
+def r4_author(body=None, artifact_id="world_depot_014", run_id="run_r4_001", **kw):
+    body = depot_body() if body is None else body
+    record, _, _ = r4_dispatch(body, **kw)
+    return WW.author_world(body, artifact_id=artifact_id, run_id=run_id, dispatch=record)
+
+
+def stub_place(location_id="loc_stub_001"):
+    """The shape-only location a caller writes when presence is mistaken for
+    validity: an id, a name, one feature and nothing that constrains anything."""
+    return {"location_id": location_id, "name": "A room", "function": "a room",
+            "interior": True, "reality": "fiction",
+            "layout": {"features": ["a window"]}}
+
+
+class Round4LocationSubstanceTests(unittest.TestCase):
+    """The world validator's own proxy-for-validity disease: a location record
+    must actually carry era, social rules, lighting, layout and continuity
+    boundaries -- presence of a shape is not validity."""
+
+    def assert_refused(self, body, needle):
+        with self.assertRaises(WW.WorldError) as caught:
+            r4_author(body)
+        self.assertIn(needle, " | ".join(caught.exception.errors))
+
+    def test_shape_only_location_refused(self):
+        body = depot_body()
+        body["locations"] = [stub_place()]
+        body["scenes"] = [{"scene_id": "scene_001", "location_id": "loc_stub_001",
+                           "action": "a beat plays", "uses": ["a window"],
+                           "minutes_from_start": 0}]
+        joined = ""
+        for carrier in ("era", "social_rules", "lighting", "continuity_boundaries"):
+            with self.assertRaises(WW.WorldError) as caught:
+                r4_author(body)
+            joined = " | ".join(caught.exception.errors)
+            self.assertIn(carrier, joined)
+
+    def test_empty_social_rules_refused(self):
+        body = depot_body()
+        body["locations"][0]["social_rules"] = []
+        self.assert_refused(body, "locations[0].social_rules")
+
+    def test_social_rule_without_consequence_refused(self):
+        body = depot_body()
+        del body["locations"][0]["social_rules"][0]["consequence"]
+        self.assert_refused(body, "social_rules[0].consequence")
+
+    def test_lighting_without_direction_refused(self):
+        body = depot_body()
+        del body["locations"][0]["lighting"]["direction"]
+        self.assert_refused(body, "lighting.direction")
+
+    def test_layout_without_boundaries_refused(self):
+        body = depot_body()
+        del body["locations"][0]["layout"]["boundaries"]
+        self.assert_refused(body, "layout.boundaries")
+
+    def test_continuity_boundaries_without_must_persist_refused(self):
+        body = depot_body()
+        body["locations"][0]["continuity_boundaries"] = {"must_persist": []}
+        self.assert_refused(body, "continuity_boundaries")
+
+    def test_era_carriers_refused_when_absent(self):
+        body = depot_body()
+        del body["locations"][1]["era"]
+        self.assert_refused(body, "locations[1].era")
+
+    def test_placeholder_text_is_not_world_content(self):
+        body = depot_body()
+        body["locations"][0]["social_rules"][0]["rule"] = "tbd"
+        self.assert_refused(body, "locations[0].social_rules[0].rule")
+
+    def test_field_name_echo_is_not_world_content(self):
+        body = depot_body()
+        body["locations"][0]["layout"]["sightlines"] = "sightlines"
+        self.assert_refused(body, "locations[0].layout.sightlines")
+
+    def test_repeated_entries_are_not_content(self):
+        body = depot_body()
+        body["locations"][0]["social_rules"] = [
+            {"rule": "a tool leaves the depot only against a signed inventory line",
+             "consequence": "an unsigned loan is repaid by the volunteer who let it go"},
+            {"rule": "a tool leaves the depot only against a signed inventory line",
+             "consequence": "an unsigned loan is repaid by the volunteer who let it go"}]
+        self.assert_refused(body, "social_rules")
+
+    def test_repeated_entrances_are_not_content(self):
+        body = depot_body()
+        body["locations"][1]["entrances"] = ["yard gate", "yard gate"]
+        self.assert_refused(body, "entrances")
+
+
+class Round4OverRefusalTests(unittest.TestCase):
+    """Every legitimate shape must still be accepted: a stricter validator must
+    not refuse a real world, a real setting change or a real dispatch."""
+
+    def test_full_world_still_authors_and_validates(self):
+        record = r4_author()
+        self.assertEqual(WW.validate(record), [])
+        self.assertEqual(WW.validate(json.loads(json.dumps(record))), [])
+
+    def test_cli_validate_still_judgement_only(self):
+        record = r4_author()
+        run_dir = tempfile.mkdtemp(prefix="world_r4_cli_")
+        path = os.path.join(run_dir, "world.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(record, handle)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = WW.main(["--validate", path])
+        self.assertEqual(code, 0)
+
+    def test_real_location_with_claim_source_accepted(self):
+        body = depot_body()
+        body["locations"][0]["reality"] = "real"
+        body["locations"][0]["claim_source"] = "owner_answer_014: the client named this address"
+        self.assertEqual(WW.validate(r4_author(body)), [])
+
+    def test_nothing_may_change_is_a_real_answer(self):
+        body = depot_body()
+        body["locations"][0]["continuity_boundaries"]["may_change"] = []
+        self.assertEqual(WW.validate(r4_author(body)), [])
+
+    def test_two_places_may_share_a_house_rule(self):
+        # a stricter validator must not refuse a world where two places of the
+        # same house genuinely carry the same rule
+        body = depot_body()
+        body["locations"][1]["social_rules"] = copy.deepcopy(body["locations"][0]["social_rules"])
+        self.assertEqual(WW.validate(r4_author(body)), [])
+
+    def test_travel_and_motivated_flashback_accepted(self):
+        body = depot_body()
+        body["scenes"].append({"scene_id": "scene_002", "location_id": "loc_yard_gate_021",
+                               "action": "Bauer carries the sheet to the gate",
+                               "uses": ["yard gate"], "minutes_from_start": 20})
+        body["scenes"].append({"scene_id": "scene_003", "location_id": "loc_depot_hall_014",
+                               "action": "a flash back to the first count line",
+                               "uses": ["centre inventory table"], "minutes_from_start": 0,
+                               "transition": "deliberate flashback, motivated by the sheet"})
+        self.assertEqual(WW.validate(r4_author(body)), [])
+
+    def test_setting_change_to_a_full_new_place_accepted(self):
+        original = r4_author()
+        new_place = depot_place(
+            "loc_hall_annex_030", "Borrowed annexe, upstairs room",
+            "where the count is finished after the depot is given back",
+            ["stair door"], "stair door north, trestle tables centre, window wall south",
+            ["stair door", "trestle tables", "window wall"],
+            "plaster walls, sash window wall on the south side",
+            "the trestle tables are seen from the stair door; the window wall hides the corner",
+            "late evening",
+            [("the count sheet is read aloud before any tool is moved",
+              "moving a tool first makes the reading worthless")],
+            ["the count sheet keeps its running total"],
+            ["which table holds the finished boxes"],
+            "one ceiling pendant", "downward, warm and single")
+        result = WW.change_setting(original, locations=[new_place], reason="the depot is given back")
+        world = result["world"]
+        self.assertEqual(WW.validate(world), [])
+        self.assertEqual(world["cast_refs"], original["cast_refs"])
+        self.assertEqual(result["invalidated"], ["scene_plan", "script", "visual_outputs"])
+
+    def test_round3_workshop_world_still_authors(self):
+        self.assertEqual(WW.validate(author()), [])
 
 
 if __name__ == "__main__":

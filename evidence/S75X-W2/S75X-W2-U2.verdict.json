@@ -1,0 +1,156 @@
+{
+  "schema": "blackceo.s75.unit-verdict/v1",
+  "program": "s75",
+  "plan_of_record": "<PATH>/skill75-repair/SWARM-PLAN-V2.json",
+  "workflow_id": "S75X-W2",
+  "unit_id": "S75X-W2-U2",
+  "agent_role": "builder",
+  "plane": "verify",
+  "date": "2026-10-26",
+  "repo": "https://github.com/trevorotts1/openclaw-onboarding.git",
+  "lane": "<PATH>/s75/worktrees/S75X-W2-U2-build",
+  "verdict_branch": "s75x/verdicts-S75X-W2",
+  "base_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "head_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "head_subject": "Merge pull request #2604 from trevorotts1/batch/s75x-frontier-land",
+  "code_changes_made_by_this_lane": 0,
+  "owned_output": "75-drama-song-ad-factory/scripts/core/method_plan/",
+  "verdict": "FAIL",
+  "verdict_reason": "Acceptance element 1 fails: of the three downstream inputs the work item names (shot-planner, storyboard, music-request), two have zero production consumers at head_sha, and the third carries only pace_order + true_at_beat. method_plan.shot_seeds, method_plan.storyboard_input, method_plan.music_request_input and method_plan.production_map are unreferenced by any stage; their only non-own reference is a callable()-name probe in package/999_adapter.py.",
+  "acceptance_results": [
+    {
+      "element": "Blueprint fields populate actual downstream inputs",
+      "result": "FAIL",
+      "evidence": [
+        "shot_seeds: 0 production consumers. Full-tree walk of 75-drama-song-ad-factory (*.py, owner module + its own tests excluded) finds only package/999_adapter.py:578-579, which builds the tuple (\"validate\", ..., \"shot_seeds\", \"storyboard_input\", \"music_request_input\", \"production_map\", ...) and checks callable(getattr(plan, s, None)) at line 580. It never calls them.",
+        "shot-planner input is unwired: scripts/core/shot_planner/shot_planner.py does not import method_plan, and its real entry is bind_plan(shots, timing, contracts=None, chosen_length_s=None) over SHOT_FIELDS (shot_planner.py:24-44, 191).",
+        "storyboard_input: 0 production consumers. The storyboard review reads its own artifacts: storyboard_director/approval_runner.py:222-227 loads storyboard/shot-list.json + storyboard/contracts.json + storyboard/stills.json and does not import method_plan.",
+        "storyboard/shot-list.json is a declared artifact path only (production_process.py:438, factory.py:1834); no code writes it from creative/blueprint.json.",
+        "music_request_input: 0 consumers. The real music path is music_director.blueprint_request_inputs -> _blueprint_turns, which re-derives the four turns independently of method_plan.musical_turns.",
+        "What IS wired: factory._pace_into_music (intake_preflight/factory.py:1635-1668) calls method_plan.pace_order and writes pace_order + true_at_beat into $RUN/music/req.json; music_director reads both (music_director/__init__.py:512, 538). music_qc.pace_change.check_pace_plan accepts the order with 0 errors.",
+        "SKILL.md:1560-1561 states 'shot_seeds emits shot_planner's own field names and storyboard_input feeds the storyboard review'. The first half is a field-name claim; the second half is false at head_sha."
+      ]
+    },
+    {
+      "element": "Every required musical turn carries a recorded reason plus intended audible change",
+      "result": "PASS",
+      "caveat": "Holds in the owned projection and in the recorded stage block, NOT in the provider music request (see finding F3).",
+      "evidence": [
+        "method_plan.musical_turns (method_plan.py:227) returns 4 turns; 4 of 4 carry a non-empty reason, 4 of 4 carry a non-empty audible_change (checks C2).",
+        "validate() embeds the turns in its report (method_plan.py:646) and factory._method_plan_block stores that report as blueprint_check in the stage data (factory.py:1628, 2693, 2850).",
+        "Enforced, not decorative: tampering SOLUTION_HOOK.trigger + SB-07.why_it_belongs raises TURN_REASON_MISSING; blanking ERM_DROP pace_after/rhythmic_change/emotional_direction raises TURN_AUDIBLE_CHANGE_MISSING; blanking BASELINE.lyric_or_dialogue raises ATTENTION_HOOK_NOT_SPOKEN (checks C3).",
+        "Caveat measured: music_director.blueprint_request_inputs(bp) returns 4 turns with reason present on 0 of 4 and audible-change fields on 1 of 4 (hero_shift only)."
+      ]
+    },
+    {
+      "element": "No competing beat engine exists",
+      "result": "PASS",
+      "evidence": [
+        "teaching_map returns 12 rows and [r['production_beat'] for r in rows] == list(story_arc.BEATS) with len(story_arc.BEATS) == 12 (checks C1).",
+        "method_plan imports BEATS from story_arc (method_plan.py:66) and indexes product_intro from it (method_plan.py:159); it defines no beat list of its own.",
+        "Pattern search for five-beat / 5-act schemes across *.py *.md *.json *.sh in the skill: 1 hit, which is method_plan.py:38 stating no five-beat scheme competes. No second engine."
+      ]
+    },
+    {
+      "element": "Existing method_plan tests pass",
+      "result": "PASS",
+      "evidence": [
+        "python3 -m pytest -q scripts/core/method_plan -> 37 passed in 0.07s (rc=0).",
+        "python3 -I scripts/core/method_plan/test_method_plan.py -> 37 ok, 0 FAIL, rc=0."
+      ]
+    }
+  ],
+  "checks": [
+    {"id": "C1_teaching_rows", "value": 12, "expect": "== len(story_arc.BEATS)", "result": "pass"},
+    {"id": "C1_story_arc_beats", "value": 12, "expect": 12, "result": "pass"},
+    {"id": "C1_rows_equal_beats", "value": true, "result": "pass"},
+    {"id": "C2_turn_count", "value": 4, "expect": 4, "result": "pass"},
+    {"id": "C2_turns_with_reason", "value": 4, "expect": 4, "result": "pass"},
+    {"id": "C2_turns_with_audible", "value": 4, "expect": 4, "result": "pass"},
+    {"id": "C3_reason_gate", "value": true, "expect": "TURN_REASON_MISSING raised", "result": "pass"},
+    {"id": "C3_audible_gate", "value": true, "expect": "TURN_AUDIBLE_CHANGE_MISSING raised", "result": "pass"},
+    {"id": "C3_spoken_gate", "value": true, "expect": "ATTENTION_HOOK_NOT_SPOKEN raised", "result": "pass"},
+    {"id": "C4_request_turn_count", "value": 4, "result": "info"},
+    {"id": "C4_request_turns_with_reason", "value": 0, "expect": 4, "result": "fail", "owner": "music_director._blueprint_turns"},
+    {"id": "C4_request_turns_with_audible", "value": 1, "expect": 4, "result": "fail", "owner": "music_director._blueprint_turns"},
+    {"id": "C5_pace_seam_errors", "value": 0, "expect": 0, "result": "pass"},
+    {"id": "C5_pace_boundary_s", "value": 22.0, "result": "info"},
+    {"id": "C5_pace_return_s", "value": 38.0, "result": "info"},
+    {"id": "C6_consumers.shot_seeds", "value": 0, "expect": ">0 production consumers", "result": "fail"},
+    {"id": "C6_consumers.storyboard_input", "value": 0, "expect": ">0 production consumers", "result": "fail"},
+    {"id": "C6_consumers.music_request_input", "value": 0, "expect": ">0 production consumers", "result": "fail"},
+    {"id": "C6_consumers.production_map", "value": 0, "expect": ">0 production consumers", "result": "fail"},
+    {"id": "C6_consumers.teaching_map", "value": 2, "note": "package/999_adapter.py (callable probe) + package/999_entrypoint.py:104 (real call, row count)", "result": "info"},
+    {"id": "C6_consumers.musical_turns", "value": 1, "note": "package/999_adapter.py callable probe only; otherwise reached only through validate()'s own report", "result": "info"},
+    {"id": "C7_storyboard_reads_shot_list", "value": true, "result": "info"},
+    {"id": "C7_storyboard_reads_contracts", "value": true, "result": "info"},
+    {"id": "C7_storyboard_imports_method_plan", "value": false, "result": "fail-adjacent"},
+    {"id": "C8_shot_planner_imports_method_plan", "value": false, "result": "fail-adjacent"},
+    {"id": "C9_factory_writes_pace_order", "value": true, "result": "pass"},
+    {"id": "C9_factory_writes_true_at_beat", "value": true, "result": "pass"},
+    {"id": "C9_factory_writes_turns", "value": false, "result": "fail-adjacent"},
+    {"id": "C9_factory_calls_shot_seeds", "value": false, "result": "fail-adjacent"},
+    {"id": "C9_factory_calls_storyboard_input", "value": false, "result": "fail-adjacent"},
+    {"id": "C10_tests_passed", "value": 37, "expect": 37, "result": "pass"}
+  ],
+  "negative_result_controls": [
+    {"control": "consumer instrument on pace_order", "consumers_found": 8, "verdict": "instrument discriminates"},
+    {"control": "consumer instrument on true_at_beat", "consumers_found": 36, "verdict": "instrument discriminates"},
+    {"control": "consumer instrument on '.validate('", "consumers_found": 7, "verdict": "instrument discriminates"},
+    {"control": "consumer instrument on 'gates('", "consumers_found": 12, "verdict": "instrument discriminates"},
+    {"note": "The same walk that returns 0 for shot_seeds / storyboard_input / music_request_input / production_map returns 8 and 36 for pace_order and true_at_beat, so the zeros are a property of the projection functions, not a broken check."}
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "blocking",
+      "title": "shot_seeds has no production consumer; nothing builds the shot plan from the blueprint",
+      "where": "75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py:278",
+      "detail": "0 production callers. The shot list is the artifact storyboard/shot-list.json (declared at scripts/core/production_process.py:438, required at scripts/core/intake_preflight/factory.py:1834) read by storyboard_director/approval_runner.py:222. No module writes it from creative/blueprint.json, and shot_planner/shot_planner.py does not import method_plan.",
+      "acceptance_element": 1
+    },
+    {
+      "id": "F2",
+      "severity": "blocking",
+      "title": "storyboard_input has no production consumer; SKILL.md claims it feeds the storyboard review",
+      "where": "75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py:324",
+      "detail": "0 production callers. The review's inputs are storyboard/shot-list.json and storyboard/contracts.json (approval_runner.py:222-227); approval_runner.py does not import method_plan. SKILL.md:1560-1561 asserts 'storyboard_input feeds the storyboard review' — false at 96559ab.",
+      "acceptance_element": 1
+    },
+    {
+      "id": "F3",
+      "severity": "blocking",
+      "title": "music_request_input has no consumer, and the turns that DO reach the provider carry no reason",
+      "where": "75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py:339; 75-drama-song-ad-factory/scripts/core/music_director/__init__.py (blueprint_request_inputs / _blueprint_turns)",
+      "detail": "0 production callers of music_request_input. The shipped request builds its own turn dict: 0 of 4 turns carry 'reason', 1 of 4 (hero_shift) carries pace_after/rhythmic_change/emotional_direction. factory._pace_into_music copies pace_order and true_at_beat into $RUN/music/req.json but never 'turns'.",
+      "acceptance_element": 1
+    },
+    {
+      "id": "F4",
+      "severity": "blocking",
+      "title": "production_map has no consumer",
+      "where": "75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py:354",
+      "detail": "The bundled receipt (teaching functions, turns, seeds, storyboard, music request) is referenced only by its own test and by the adapter's callable-name probe.",
+      "acceptance_element": 1
+    }
+  ],
+  "receipts": [
+    "git -C <lane> rev-parse HEAD -> 96559ab1b531570534316d856006867606afd4e2",
+    "python3 -m pytest -q scripts/core/method_plan -> 37 passed in 0.07s",
+    "python3 -I scripts/core/method_plan/test_method_plan.py -> 37 ok, rc=0",
+    "python3 -I <PATH>/s75/scratch/s75x-w2-u2-checks.py -> C1..C9 table above",
+    "python3 -I consumer walk (owner module + own tests excluded): shot_seeds 0, storyboard_input 0, music_request_input 0, production_map 0, teaching_map 2, musical_turns 1",
+    "consumer-instrument controls: pace_order 8, true_at_beat 36, '.validate(' 7, 'gates(' 12",
+    "python3 -I music_director.blueprint_request_inputs(blueprint-90s.json) -> turns keys: spoken_attention_hook['at_s','cue_id','source','vocal_status'], erm_first_singing['at_s','cue_id','vocal_status'], hero_shift['at_s','cue_id','distinct_from_erm','emotional_direction','pace_after','rhythmic_change'], solution_signature_hook['at_s','cue_id','earned_after','earned_from_s','lyric']"
+  ],
+  "not_verified": [
+    "The full repository test suite was not run; only the method_plan module tests and the targeted checks above.",
+    "No live factory stage or run directory was executed: no $RUN/creative/blueprint.json, no $RUN/music/req.json written, no spend, no provider call.",
+    "No rendered storyboard review or provider music request was inspected at runtime; findings are static plus offline function calls.",
+    "Only origin/main at 96559ab1b531570534316d856006867606afd4e2 was examined. No other branch, no unmerged work, was checked.",
+    "Agent-instruction surfaces outside this repository (external SOPs, department workspaces) were not searched; if a stage outside the repo is told to call method_plan.shot_seeds, that was not visible here.",
+    "Whether an LLM storyboard-artist stage is expected to read the seeds by hand was not determined; the repo contains no such instruction (SKILL.md names the field mapping, not a call site)."
+  ],
+  "no_fix_applied": true,
+  "note": "Builder verdict only. Findings are recorded, not repaired, per the workflow instruction."
+}

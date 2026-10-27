@@ -1,0 +1,161 @@
+{
+ "unit": "S75X-W1-U2",
+ "role": "qc-fixer",
+ "verdict": "PASS",
+ "status": "clean",
+ "verdict_on_builder": "Builder verdict PASS confirmed by a second, independent QC re-run. Every acceptance count reproduces exactly; no defect in the unit content; no fix applied.",
+ "workflow": "S75X-W1",
+ "program": "s75",
+ "provenance": {
+  "lane": "<PATH>/worktrees/S75X-W1-U2-qc",
+  "lane_branch": "s75x/verdicts-S75X-W1",
+  "head_tested": "847e2dfaff4943cbdf93d515cf6b7044ba0089c1",
+  "base_tested": "96559ab1b531570534316d856006867606afd4e2",
+  "origin_main_at_qc": "1d1b8d2c8d85395f119c37f7c046597ea4b94199 (base 96559ab1b is its ancestor; the three U2 reference files are byte-identical between base and current origin/main: git diff --stat empty)",
+  "branch_delta_vs_base": "evidence/S75X-W1/ only: S75X-W1-U1.qc.json, S75X-W1-U1.verdict.json, S75X-W1-U2.qc.json, S75X-W1-U2.verdict.json. 75-drama-song-ad-factory tree byte-identical to base (git diff --quiet rc=0).",
+  "unit_content_delta": "f9efd754022af19bc2249ec95ab729a94ea1e6d0 (2026-10-23 15:49:45 -0400), 5 files +784/-13, verified ancestor of base",
+  "builder_lane_state": "builder lane S75X-W1-U2-build no longer exists on disk (worktree removed after commit); QC lane created fresh with git worktree add from origin/s75x/verdicts-S75X-W1",
+  "prior_qc_commit_on_branch": "53e23f7a430b8d393400552dd85a1e6b581c9f03 (earlier QC lane, status clean); preserved below under prior_qc_run and in git history",
+  "ledger": "<PATH>/loop-control/s75/ledger.json not opened, not written",
+  "scratch": "<PATH>/scratch/s75x-w1-u2-qc2/ (verify.py, verify.out, nonmd-hits.txt, full-suite.out, full-suite-fails.txt, write_qc.py, cacheprobe/)"
+ },
+ "artifacts_rehashed": {
+  "75-drama-song-ad-factory/references/sensational-openings.md": "sha256 914ba03e59d27002627e4372d8fd2d75f0b8e88006ee5b74d68bfcc751245260, 198 lines, 10911 bytes - matches builder",
+  "75-drama-song-ad-factory/references/opening-proposals.md": "sha256 04d24cd60fcb664b8e91d1f95d0097e580baaf9d044769834080215a01c3f5e3, 218 lines, 12779 bytes - matches builder",
+  "75-drama-song-ad-factory/references/stage-runbook.md": "sha256 1faf5c93165a15c8a01584b4a5247cab0c3980bb16dffd5d71567196da6025aa, 203 lines, 34613 bytes - matches builder"
+ },
+ "acceptance_results": [
+  {
+   "element": "Three differentiated candidates with all six required elements",
+   "result": "MET",
+   "counts": "12 candidates (4 sets x 3); 72/72 six-field slots non-empty; 12/12 candidates carry the fields in exact plan order (opening_line, headline, first_action, question, why_this_audience, offer_link); crisis type distinct in 4/4 sets: A revelation/humiliation/confrontation, B catastrophe/humiliation/discovery, C confrontation/humiliation/catastrophe, D discovery/catastrophe/reversal. Full read of both files confirms distinct scenes and questions per candidate.",
+   "method": "python3 -I verify.py regex parse of candidate blocks + full-file read"
+  },
+  {
+   "element": "Recommend the strongest for shock, curiosity and relevance; never default to the mildest",
+   "result": "MET",
+   "counts": "12/12 score rows arithmetic-correct; 4/4 recommendations equal the set maximum total (A3=15, B1=14, C1=15, D2=14); 4/4 recommended candidates carry the set-maximum shock score 5, mildest per set (lowest shock, then total) = A1, B2, C2, D1, none recommended. Set D is a 14/14/14 tie broken by a written image rationale. Doctrine sentence present verbatim: 'Recommend the strongest candidate. Never default to the mildest.'",
+   "method": "python3 -I arithmetic over parsed score tables"
+  },
+  {
+   "element": "Invented-event prohibition removed for fiction, retained for factual claims",
+   "result": "MET",
+   "counts": "12/12 verbatim markers present (sensational-openings.md 7.1 heading and 'no blanket rule' sentence, 7.2 heading and verified-fact ban, invented review/testimonial/statistic ban, FICTIONAL_PLOT_EVENT / COMPOSITE / CLIENT_SUPPLIED_TRUE labels, reviewer check 6; stage-runbook.md 'Clarification (S75X-W1-U2)' at line 179, 5 lines under 'compelling true stories' at line 174). The claim-scoped prohibition 7.1 cites exists verbatim in drama-to-demand-method.md:201.",
+   "markdown_sweep": "58 git-tracked .md files, 58 on disk, 1,091,559 bytes. Broader pattern than builder's (adds don't, made-up, only true stor, must be real/factual) gives 30 hits; read all 30: every one is claim-scoped (receipts, headers, numbers, thresholds, frames, captions, testimonials, menus, source IDs, tempo, proof, cover aspect) or the doctrine's own lifting/verified-fact text, or non-prohibitive ('Three things must be true before the fourth second ends'). 0 blanket bans on invented plot catastrophe.",
+   "non_markdown_sweep_new": "Builder and prior QC swept .md only. This lane also swept 874 git-tracked non-.md files (.py/.json/.yaml/.txt/.toml/.j2/.tmpl/.sh) for true/real-story mandates, invent/fabricate bans scoped to event/catastrophe/plot/crisis/story, 'too severe/extreme/dark/graphic', 'keep it light/tasteful', 'avoid violence/tragedy', 'must be real/factual/true', 'based on a real'. 13 hits, all read: 11 are unrelated boolean-validation strings or 'real storyboard'/'real story word' identifiers; intake_book/test_never_invent_f6.py is about invented menu fields and gates (claim-scoped); length_formula/length_formula.py:114 is a source comment repeating 'compelling true stories', not a prompt string - the same phrase stage-runbook.md now clarifies as 'emotionally true, not factually verified'. 0 runtime blanket bans."
+  },
+  {
+   "element": "Counterexample set shows tame openings rejected",
+   "result": "MET",
+   "counts": "sensational-openings.md section 8: 8 rows, 24/24 cells non-empty; 4/4 'Rejected tame version' notes close the worked sets."
+  },
+  {
+   "element": "Wiring (supporting)",
+   "result": "MET",
+   "counts": "4 .md files reference the new material: SKILL.md:1544, opening-proposals.md:4, sensational-openings.md:7, stage-runbook.md:188. 0 of 700 git-tracked .py files read either new reference. Only one copy of each new file exists in the repository (no drifted twin)."
+  }
+ ],
+ "tests": {
+  "named_command": "cd 75-drama-song-ad-factory/scripts/core && python3 -I -m pytest shot_planner/test_opening_scene_w4.py story_coverage/test_story_opening_media_zero.py choice_card/intake_card/test_opening_flow_default_s75x.py -q -p no:cacheprovider",
+  "named_result": "37 passed in 4.44s (builder 37 passed; prior QC 37 passed)",
+  "full_suite_command": "cd 75-drama-song-ad-factory/scripts/core && python3 -I -m pytest -q -p no:cacheprovider --continue-on-collection-errors",
+  "full_suite_result": "3425 passed, 20 failed, 4 skipped, 7 errors, 183 subtests passed in 468.74s (rc=1); custom harness 'checks: 404 ok, 0 failed'. Identical counts to the prior QC lane.",
+  "full_suite_failures_scope": "Pre-existing, out of unit scope: skill tree byte-identical to base 96559ab1b; failing modules are kie_dispatch/test_provider_frame_binding.py (3), kie_dispatch/test_production_process_gate.py (8), delivery_checklist/test_video_model_delivery_f16.py (8), catalog_calculator/test_card_render.py (1), errors in smp/spoken_share, smp/no_echo, music_styles/test_delivery_map.py, load_governor/test_load_governor.py, final_assembler/test_frame_text_f9.py (3). All 9 files: 0 references to sensational-openings, opening-proposals, stage-runbook or evidence/S75X (known-good control on the same files and same grep: 8-12 import lines each, non-zero). No test weakened or edited."
+ },
+ "findings": [],
+ "observations": [
+  "Root cause of the builder's 59-file / 1,091,861-byte sweep count vs the verbatim 58 / 1,091,559: the difference is exactly 302 bytes, and a fresh pytest run in a probe dir creates .pytest_cache/README.md of exactly 302 bytes. The builder ran pytest without -p no:cacheprovider before an on-disk .md sweep, so the cache README was counted. Inferred from the exact byte match; acceptance outcome unaffected.",
+  "Builder observation re-confirmed: drama-to-demand-method.md does not link back to sensational-openings.md. Outside the acceptance text; no fix applied.",
+  "Removal mechanism is in-place supersession (7.1 + runbook clarification), not deletion; no blanket ban survives in .md or non-.md surfaces."
+ ],
+ "not_verified": [
+  "No runtime or agent run consumed the doctrine; documentation-only delta.",
+  "No live 999 installation inspected (installed path declared UNPROVEN in package/999-manifest.json per prior QC)."
+ ],
+ "fixes_applied": [],
+ "blockers": [],
+ "prior_qc_run": {
+  "commit": "53e23f7a430b8d393400552dd85a1e6b581c9f03",
+  "record": {
+   "unit": "S75X-W1-U2",
+   "role": "qc-fixer",
+   "verdict": "PASS",
+   "status": "clean",
+   "verdict_on_builder": "Builder verdict (PASS) confirmed. Independent re-run of every acceptance check matches the builder's counts; no defect found in the unit content; no fix applied.",
+   "workflow": "S75X-W1",
+   "program": "s75",
+   "provenance": {
+    "lane": "<PATH>/worktrees/S75X-W1-U2-qc",
+    "lane_branch": "s75x/verdicts-S75X-W1",
+    "head_tested": "4fe5687b0cceb366cb63e15e61425b589cf5b07b",
+    "base_tested": "96559ab1b531570534316d856006867606afd4e2",
+    "base_equals_origin_main": "origin/main = 96559ab1b531570534316d856006867606afd4e2 (ls-remote verified); nothing committed to main by builder or QC",
+    "delta_base_to_head": "git diff --name-only 96559ab1b..4fe5687b0 = evidence/S75X-W1/S75X-W1-U2.verdict.json only (165 lines, 1 file)",
+    "unit_content_delta": "f9efd754022af19bc2249ec95ab729a94ea1e6d0 (2026-10-23T15:49:45-04:00, 'S75X-W1-U1 + S75X-W1-U2: opening flow default and doctrine references', 5 files +784/-13), verified ancestor of base, reached main via merge 01aa07960 (PR #2493 merge train) - earlier than cohort PR #2604",
+    "u2_artifacts_rehashed_in_qc_lane": {
+     "75-drama-song-ad-factory/references/sensational-openings.md": "sha256 914ba03e59d27002627e4372d8fd2d75f0b8e88006ee5b74d68bfcc751245260, 198 lines - matches builder receipt",
+     "75-drama-song-ad-factory/references/opening-proposals.md": "sha256 04d24cd60fcb664b8e91d1f95d0097e580baaf9d044769834080215a01c3f5e3, 218 lines - matches builder receipt",
+     "75-drama-song-ad-factory/references/stage-runbook.md": "sha256 1faf5c93165a15c8a01584b4a5247cab0c3980bb16dffd5d71567196da6025aa, 203 lines - matches builder receipt"
+    },
+    "ledger": "<PATH>/loop-control/s75/ledger.json not written by builder or QC (stat only, never opened for write)",
+    "scratch": "<PATH>/scratch/s75x-w1-u2-qc/ (verify.py, full-suite.out, full-suite2.out)"
+   },
+   "acceptance_results": [
+    {
+     "element": "Reference material shows three differentiated candidates with all six required elements",
+     "result": "MET (independently verified)",
+     "qc_counts": "4 worked sets (A,B,C,D) x 3 candidates = 12 candidates; 72/72 six-field slots present (opening_line, headline, first_action, question, why_this_audience, offer_link); 0 missing. Crisis types distinct 4/4 sets: A revelation/humiliation/confrontation, B catastrophe/humiliation/discovery, C confrontation/humiliation/catastrophe, D discovery/catastrophe/reversal - all drawn from the six-type table in sensational-openings.md section 2. Scenes distinct per candidate (bank desk/driveway/phone; payroll app/client dinner/kitchen table; dental chair/visor mirror/emergency room; truck at window/nursery/permit counter), so no set is one line in three costumes. 4 sets exceed the 3-set minimum (not a defect).",
+     "method": "python3 -I mechanical parse of opening-proposals.md (regex over candidate blocks and field bullets) plus full-file read of both new files"
+    },
+    {
+     "element": "Recommend the strongest for shock, curiosity and relevance; never default to the mildest",
+     "result": "MET (independently verified)",
+     "qc_counts": "12/12 score rows arithmetic-correct (shock+curiosity+relevance==total). 4/4 recommendations at the set maximum total: A3=15 (max 15), B1=14 (max 14), C1=15 (max 15), D2=14 (max 14). Set D is a three-way tie at 14 resolved by a written image tie-break (ceiling over a crib cannot be explained away as a misunderstanding), not by softening. 4/4 recommended candidates carry the maximum shock score of their set (5), so none is the mildest. Doctrine sentence present in sensational-openings.md section 7: 'Recommend the strongest candidate. Never default to the mildest.' with the slide-to-soft clause named as non-compliance.",
+     "method": "python3 -I arithmetic check of every score row and recommendation-vs-max comparison"
+    },
+    {
+     "element": "The invented-event prohibition is removed for fiction and retained for factual claims",
+     "result": "MET (independently verified)",
+     "qc_counts": "11/11 markers present: sensational-openings.md section 7.1 heading and 'no blanket rule ... prohibiting invented catastrophic events in fictional or composite drama'; section 7.2 heading with the factual-claim ban (no invented event as verified fact about a real person or product, no real named villain, no verified/real customer/actual results label, no invented review/testimonial/statistic/award/licence); section 7 veto list naming verified-fact presentation as a score override; section 10 reviewer check 6; FICTIONAL_PLOT_EVENT / COMPOSITE / CLIENT_SUPPLIED_TRUE labels all three specified. Prior-site neutralisation confirmed at stage-runbook.md lines 179-188: 'Clarification (S75X-W1-U2)' inserted directly under the 'compelling true stories' sentence (line 174), restating 'true means emotionally true ... not factually verified', lifting the blanket ban for fictional/composite drama and restating the factual-claim ban in the same paragraph, with labels and a pointer to sensational-openings.md section 7.",
+     "prohibition_sweep": "Independent sweep of the whole skill .md surface at HEAD: 58 .md files, 1,091,559 raw bytes (git-tracked count 58, on-disk count 58, byte sums agree). Broader pattern set than the builder's (never/must-not/do-not/no + invent|fabricate|make up, cannot invent, must be true, based on a real, too severe|extreme|dark|exaggerat, real|true story required) yields 29 hits; every one is either a claim-scoped prohibition (business facts, customer results, prices, credentials, deadlines, testimonials, menus, source IDs, timestamps, tempo, proof, cover aspect, receipts, captions) or the doctrine's own lifting text ('None of that is off-limits for being too severe') or a non-prohibitive phrase ('Three things must be true before the fourth second ends'). 0 blanket bans on invented plot catastrophe survive anywhere in the skill. Builder reported 12 claim-scoped matches under a narrower pattern and 59 files / 1,091,861 bytes; QC's verbatim count of the surface is 58 / 1,091,559 - a builder count imprecision of one phantom 302-byte file, immaterial to the acceptance, recorded here for the ledger.",
+     "method": "python3 -I regex sweep over all .md under 75-drama-song-ad-factory plus direct read of sensational-openings.md and stage-runbook.md"
+    },
+    {
+     "element": "A counterexample set shows tame openings rejected",
+     "result": "MET (independently verified)",
+     "qc_counts": "sensational-openings.md section 8: 8 counterexample rows, 24/24 cells non-empty (rejected opening, why it fails, repair direction), covering biography+logo, generic question, statistic billboard, scenery, biography-before-crisis, business introduction, three rewrites of one tame line, and strong-event-in-past-tense. 4/4 worked sets carry a 'Rejected tame version' note closing the set.",
+     "method": "python3 -I table parse"
+    },
+    {
+     "element": "Teaching / reference wiring (supporting)",
+     "result": "MET (independently verified)",
+     "qc_counts": "4 files reference the new material: SKILL.md lines 1543-1552 (item 2: worked examples, six fields, strongest recommended, counterexample table, fiction/fact split), stage-runbook.md line 188 (pointer to sensational-openings.md section 7 inside the clarification block), opening-proposals.md line 4 (rule source: sensational-openings.md), sensational-openings.md line 7 (companion: opening-proposals.md). Placeholder/truncation sweep on both new files: 0 TODO/TBD/FIXME/placeholder/lorem hits, both end with newline, 198 and 218 lines.",
+     "method": "direct read with line numbers"
+    }
+   ],
+   "tests": {
+    "named_command": "cd 75-drama-song-ad-factory/scripts/core && python3 -I -m pytest shot_planner/test_opening_scene_w4.py story_coverage/test_story_opening_media_zero.py choice_card/intake_card/test_opening_flow_default_s75x.py -q",
+    "named_result": "37 passed in 2.74s - matches builder (37 passed in 2.89s)",
+    "full_suite_command": "cd 75-drama-song-ad-factory/scripts/core && python3 -I -m pytest -q --continue-on-collection-errors",
+    "full_suite_result": "3425 passed, 20 failed, 4 skipped, 7 errors, 183 subtests passed, 23 warnings in 313.46s (exit 1). Custom harness line: checks: 404 ok, 0 failed. Builder ran only the 3 named files (documented in the builder verdict); QC ran the full 335-file suite, which the builder left unrun.",
+    "full_suite_failures_scope": "All 20 failures and all 7 errors are PRE-EXISTING at origin/main base and out of this unit's scope. Proof: (1) base..head differs only by evidence/S75X-W1/S75X-W1-U2.verdict.json, so test behaviour at head is byte-identical to base; (2) the unit content delta f9efd7540 is documentation-only in its U2-owned paths and 0 of 700 .py files in the skill read references/sensational-openings.md or references/opening-proposals.md (mechanical check); (3) the failing modules (catalog_calculator/test_card_render.py, delivery_checklist/test_video_model_delivery_f16.py x9, kie_dispatch/test_production_process_gate.py x8, kie_dispatch/test_provider_frame_binding.py x3, final_assembler/test_frame_text_f9.py x3 errors) contain no reference to references/, evidence/, sensational-openings, opening-proposals or stage-runbook - test_card_render.py mentions INSTRUCTIONS.md in a comment only. The 4 collection errors are environment/infrastructure: load_governor/test_load_governor.py module-level guard 'real Skill 74 runner disabled in tests', music_styles/test_delivery_map.py AttributeError 'module no_echo has no attribute CONTRADICTING_NEGATIVE_TAGS', and smp/no_echo + smp/spoken_share duplicate-package import collisions (same package name exists at scripts/core/<name> and scripts/core/smp/<name>). No test was weakened; nothing was changed to make a test pass.",
+    "delta_coverage_note": "The unit delta is documentation only; no executable assertion reads the two new reference files (0/700 .py), so the content verdict rests on direct reading plus the mechanical counts above, matching the builder's stated limitation."
+   },
+   "findings": [],
+   "observations": [
+    "Builder sweep-count imprecision: builder reported 59 .md files / 1,091,861 bytes; QC verbatim count is 58 files / 1,091,559 bytes (git ls-files, on-disk find and raw byte sums all agree). Acceptance outcome identical (0 blanket bans either way).",
+    "Builder's '999 twin distribution copy not inspected' resolved with sources: there is no separate checked-in twin copy to inspect. The 999 distribution is assembled from this tree via package/999_entrypoint.py + scripts/core/package_flavor_adapter.py + scripts/core/contracts/flavor-999.json; package/999-manifest.json itself declares in not_claimed that the 999 layout path (.claude/skills/drama-song-ad-factory) does not exist in this repository and the installed path is UNPROVEN. The two new files are marked 'both distributions (Skill 75 / 999 twin)' in their Status lines. Searched ~/999-setup, ~/work-999-setup, ~/work-999-setup-fix, ~/work-999-recovery-launcher and the command-center tree: no copy of sensational-openings.md, opening-proposals.md or a drama-song-ad-factory folder found (find, maxdepth 8). No live 999 installation exists to check at this commit.",
+    "Set D three-way score tie (D1=D2=D3=14) confirmed; the written image tie-break is present and the recommended D2 carries the set-maximum shock (5), so the recommendation is not the mild resolution.",
+    "Builder observation confirmed: drama-to-demand-method.md does not link back to sensational-openings.md although the doctrine header claims use at stage 2 and the BASELINE row; doctrine remains reachable via SKILL.md and stage-runbook.md. Non-blocking, not in the acceptance text, no fix applied (fixing it would exceed the named acceptance and the post-criticism restraint rule; recorded for the owner).",
+    "The blanket-prohibition removal is in-place supersession (section 7.1 plus the stage-runbook clarification), not line deletion - no deletions in U2-owned paths. The acceptance asks that no blanket ban survive; the sweep shows none does."
+   ],
+   "not_verified": [
+    "No runtime or agent behaviour was exercised; nothing proven about a live intake run consuming the doctrine (documentation-only delta).",
+    "No live 999 installation was inspected; the installed path is UNPROVEN per package/999-manifest.json itself.",
+    "Whether an external judge accepts in-place supersession as the removal mechanism."
+   ],
+   "fixes_applied": [],
+   "blockers": []
+  }
+ }
+}
