@@ -250,3 +250,59 @@ def test_wf18_pass_label_cannot_clear_a_measured_missing_list(tmp_path):
         "verdict=PASS with a non-empty missing list must FAIL; got %r" % (wf18,)
     )
     assert "ZHC-lie" in wf18["observed"] + wf18["notes"], wf18
+
+
+def test_wf18_fails_when_report_omits_its_own_fields(tmp_path):
+    """A dependency report that omits `referenced` must not default to zero.
+
+    Absent field -> 0 used to read as "nothing referenced, everything present",
+    which is a pass granted for proving nothing.
+    """
+    graph = {
+        "wf": "WF-23", "verdict": "PASS", "failures": [],
+        "nodes": 2, "edges": 1, "root": "n1", "orphans": 0, "branches": 0,
+        "unverified": [],
+    }
+    deps = {"verdict": "PASS", "missing": []}          # no `referenced`
+    env = _setup(tmp_path, _linear_export())
+    env["QC_GRAPH_VALIDATOR"] = _dispatch_validator(tmp_path, graph, deps)
+    manifest = _manifest(tmp_path, {})
+    result = subprocess.run(
+        ["bash", str(QC_SCRIPT), "WFTEST009", "--deps", manifest, "--json"],
+        env=env, capture_output=True, text=True, timeout=30, check=False,
+    )
+    wf18 = _items(result)["WF-18"]
+    assert wf18["status"] == "FAIL", (
+        "a report with no `referenced` field must fail, not default to a pass; "
+        "got %r" % (wf18,)
+    )
+    assert "malformed" in (wf18["observed"] + wf18["notes"]).lower(), wf18
+
+
+def test_wf24_fails_when_validator_and_local_root_disagree(tmp_path):
+    """WF-24 must not certify a trigger against a root the validator rejected."""
+    graph = {
+        "wf": "WF-23", "verdict": "PASS", "failures": [],
+        "nodes": 2, "edges": 1, "root": "somewhere-else", "orphans": 0,
+        "branches": 0, "unverified": [],
+    }
+    deps = {"wf": "WF-18", "verdict": "PASS", "referenced": 0, "missing": []}
+    export = _linear_export()          # local root is n1
+    export["triggers"] = [
+        {"id": "T1", "type": "form_submitted", "targetActionId": "n1"}
+    ]
+    env = _setup(tmp_path, export)
+    env["QC_GRAPH_VALIDATOR"] = _dispatch_validator(tmp_path, graph, deps)
+    manifest = _manifest(tmp_path, {})
+    result = subprocess.run(
+        ["bash", str(QC_SCRIPT), "WFTEST009", "--deps", manifest, "--json"],
+        env=env, capture_output=True, text=True, timeout=30, check=False,
+    )
+    wf24 = _items(result)["WF-24"]
+    assert wf24["status"] == "FAIL", (
+        "a trigger matching only the locally inferred root must not pass when "
+        "the validator names a different root; got %r" % (wf24,)
+    )
+    assert "root_disagrees_with_validator" in (
+        wf24["observed"] + wf24["notes"]
+    ), wf24

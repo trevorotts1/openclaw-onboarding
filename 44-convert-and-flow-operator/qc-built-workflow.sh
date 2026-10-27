@@ -641,10 +641,25 @@ import json,sys
 try:
   d=json.load(sys.stdin)
 except Exception:
-  print('UNVERIFIED 0 none'); raise SystemExit
-missing=d.get('missing') or []
-print('%s %s %s' % (d.get('verdict','UNVERIFIED'), d.get('referenced',0), ','.join('%s:%s' % (m.get('kind'),m.get('name')) for m in missing) or 'none'))
-" 2>/dev/null || echo "UNVERIFIED 0 none")
+  print('MALFORMED 0 unreport_unparseable'); raise SystemExit
+if not isinstance(d,dict):
+  print('MALFORMED 0 report_not_an_object'); raise SystemExit
+# A field that is absent must never default to the passing value: `referenced`
+# silently becoming 0 is how a report that proved nothing reads as a clean pass.
+ref=d.get('referenced')
+if isinstance(ref,bool) or not isinstance(ref,int) or ref<0:
+  print('MALFORMED 0 referenced_missing_or_invalid'); raise SystemExit
+if 'missing' not in d or not isinstance(d['missing'],list):
+  print('MALFORMED %s missing_missing_or_not_a_list' % ref); raise SystemExit
+if 'verdict' not in d or d['verdict'] not in ('PASS','FAIL','UNVERIFIED'):
+  print('MALFORMED %s verdict_missing_or_unknown' % ref); raise SystemExit
+entries=[]
+for m in d['missing']:
+  if not isinstance(m,dict) or not isinstance(m.get('kind'),str) or not isinstance(m.get('name'),str):
+    print('MALFORMED %s missing_entry_malformed' % ref); raise SystemExit
+  entries.append('%s:%s' % (m['kind'],m['name']))
+print('%s %s %s' % (d['verdict'], ref, ','.join(entries) or 'none'))
+" 2>/dev/null || echo "MALFORMED 0 field_extraction_failed")
   read -r DEPS_VERDICT DEPS_REFERENCED DEPS_MISSING <<< "$DEPS_FIELDS"
   # A verdict of PASS alongside a non-empty missing list is a contradiction:
   # the measured value governs, never the label. Printing a literal "0 missing"
@@ -653,6 +668,8 @@ print('%s %s %s' % (d.get('verdict','UNVERIFIED'), d.get('referenced',0), ','.jo
     record_pass "WF-18" "$DEPS_REFERENCED referenced / missing=$DEPS_MISSING" "every referenced dependency present in the manifest" "Dependency manifest covers every referenced object (measured missing=$DEPS_MISSING)."
   elif [ "$DEPS_RC" -eq 0 ] && [ "$DEPS_VERDICT" = "PASS" ]; then
     record_fail "WF-18" "verdict_present_but_missing=$DEPS_MISSING" "every referenced dependency present in the manifest" "Dependency report contradicts itself: verdict=PASS with missing=$DEPS_MISSING. The measured list governs; a PASS label cannot clear it."
+  elif [ "$DEPS_VERDICT" = "MALFORMED" ]; then
+    record_fail "WF-18" "malformed_dependency_report $DEPS_MISSING" "a schema-valid dependency report" "Dependency report is malformed ($DEPS_MISSING). A report that omits or mistypes its own fields proves nothing, so it fails rather than defaulting to zero."
   else
     record_fail "WF-18" "referenced=$DEPS_REFERENCED missing=$DEPS_MISSING" "every referenced dependency present in the manifest" "Dependency manifest gate FAILED (exit $DEPS_RC): $DEPS_MISSING. Create these objects in GHL (or record approval) before shipping."
   fi
@@ -711,6 +728,18 @@ root = roots[0][1].get('id') if len(roots) == 1 else None
 root = str(root).strip() if root is not None else None
 if not root:
     root = None
+
+# The graph validator already decided which node is the root. Re-deriving it
+# here meant WF-24 could pass against a root the validator never endorsed —
+# two opinions, and the weaker one winning. The validator's root governs.
+validator_root = (sys.argv[1] if len(sys.argv) > 1 else '').strip()
+if validator_root in ('', 'none'):
+    print('UNVERIFIED none %s none root_not_established' % (root or 'none'))
+    sys.exit(0)
+if root is None or root != validator_root:
+    print('ROOT_DISAGREE none %s %s root_disagrees_with_validator'
+          % (root or 'none', validator_root))
+    sys.exit(0)
 
 triggers = []
 def add_trigger(node, path):
@@ -772,7 +801,7 @@ else:
     state = 'LINKED' if target == root else 'MISMATCH'
     reason = 'none' if state == 'LINKED' else 'trigger_target_mismatch'
     print('%s %s %s %s %s' % (state, target, root, path, reason))
-" 2>/dev/null || echo "UNVERIFIED none none none trigger_evidence_unparseable")
+" "$GRAPH_ROOT" 2>/dev/null || echo "UNVERIFIED none none none trigger_evidence_unparseable")
 read -r TRIGGER_STATE TRIGGER_TARGET TRIGGER_ROOT TRIGGER_PATH TRIGGER_REASON <<< "$TRIGGER_LINK"
 if [ "$TRIGGER_STATE" = "LINKED" ] && [ "$TRIGGER_ROOT" != "none" ] && [ "$TRIGGER_TARGET" = "$TRIGGER_ROOT" ]; then
   record_pass "WF-24" "targetActionId=$TRIGGER_TARGET root=$TRIGGER_ROOT trigger=$TRIGGER_PATH" "trigger link equals root node id" "Trigger entrance linked to the root node."
@@ -780,6 +809,7 @@ else
   case "$TRIGGER_STATE" in
     MISMATCH) TRIGGER_REASON="trigger_target_mismatch" ;;
     AMBIGUOUS) TRIGGER_REASON="trigger_target_conflict" ;;
+    ROOT_DISAGREE) TRIGGER_REASON="root_disagrees_with_validator" ;;
     UNVERIFIED) TRIGGER_REASON="trigger_evidence_unparseable" ;;
     *) TRIGGER_REASON="trigger_evidence_absent" ;;
   esac
