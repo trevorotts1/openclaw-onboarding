@@ -6,8 +6,8 @@
  "verdict_reason": "All four acceptance elements reproduce, but the presentation check had three defects that let a record pass or fail wrongly: a lesson record could not present its own beat-8 id and passed only by relabelling it to product_intro; a malformed presentation declaration (string, or a bare list) slipped past as an undeclared canonical record; a flat presentation_order disagreeing with presentation.order was silently ignored. All three fixed on the branch with four discriminating tests; no existing test removed or relaxed.",
  "generated_utc": "2026-10-27T10:31:05Z",
  "supersedes": "the prior QC verdict 'clean' at 7ce435824 (its findings F1 and F2 are the defects fixed here; its scratch evidence directory qc-u1-20261026 and the builder's u1-verify-20261026 are no longer on disk)",
- "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W2-U1-qc",
- "baseline_lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W2-U1-qc-base",
+ "lane": "<PATH>/s75/worktrees/S75X-W2-U1-qc",
+ "baseline_lane": "<PATH>/s75/worktrees/S75X-W2-U1-qc-base",
  "repository": "https://github.com/trevorotts1/openclaw-onboarding.git",
  "branch": "s75x/verdicts-S75X-W2",
  "branch_tip_before_qc": "63fde447396746c06a6b3f7603fd8fc88ebd4c9a",
@@ -46,13 +46,13 @@
   "weakening_audit": "0 deletions in any test file by the unit commit or by this QC fix"
  },
  "checks": {
-  "independent_script": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/qc2-u1-20261027/acceptance.py",
+  "independent_script": "<PATH>/s75/scratch/qc2-u1-20261027/acceptance.py",
   "fixed_module": "u1 qc acceptance: PASS (17 checks, 0 failed) -> run-fixed.json",
   "control_pristine": "same 17 checks on story_arc.py from 96559ab1b -> FAIL (17 checks, 4 failed: Q11, Q12, Q13, Q14) -> run-pristine.json; the new pytest tests on the pristine module -> 4 failed, 18 passed",
   "control_mutant": "fixed module with canonical beat-order and view-mismatch enforcement neutralised -> FAIL (17 checks, 3 failed: Q4, Q5, Q9) -> run-mutant.json",
   "control_note": "The instrument discriminates in both directions: it catches the pre-fix defects and it catches a weakened validator.",
-  "probe": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/qc2-u1-20261027/probe.py (probe-pristine.txt vs probe-fixed.txt)",
-  "full_suite_logs": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/qc2-u1-20261027/full-fixed.out, full-base.out, failed-fixed.txt, failed-base.txt"
+  "probe": "<PATH>/s75/scratch/qc2-u1-20261027/probe.py (probe-pristine.txt vs probe-fixed.txt)",
+  "full_suite_logs": "<PATH>/s75/scratch/qc2-u1-20261027/full-fixed.out, full-base.out, failed-fixed.txt, failed-base.txt"
  },
  "not_verified": [
   "No end-to-end pipeline run (storyboard, shot planner, music, render); verification is unit, module, consumer and full-suite level.",
@@ -62,7 +62,7 @@
  ],
  "receipts": {
   "push": "git push origin HEAD:refs/heads/s75x/verdicts-S75X-W2 from the QC lane; main never pushed",
-  "ledger": "/Users/blackceomacmini/loop-control/s75/ledger.json never written",
+  "ledger": "<PATH>/loop-control/s75/ledger.json never written",
   "writes": "story_arc.py, test_presentation_order_u1.py, this evidence file (branch only); scratch files under s75/scratch/qc2-u1-20261027; worktrees S75X-W2-U1-qc and S75X-W2-U1-qc-base"
  }
 }

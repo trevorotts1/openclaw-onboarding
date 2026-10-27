@@ -4,9 +4,9 @@
   "role": "builder",
   "verdict": "PASS",
   "verdict_reason": "All four acceptance elements reproduce at origin/main from an isolated lane; the unit's own tests, the module selftest and an independent builder check all pass, and the independent check was proven to discriminate against a deliberately weakened mutant.",
-  "plan_of_record": "/Users/blackceomacmini/skill75-repair/SWARM-PLAN-V2.json",
+  "plan_of_record": "<PATH>/skill75-repair/SWARM-PLAN-V2.json",
   "generated_utc": "2026-10-26T15:25:42Z",
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W2-U1-build",
+  "lane": "<PATH>/s75/worktrees/S75X-W2-U1-build",
   "repository": "https://github.com/trevorotts1/openclaw-onboarding.git",
   "base": {
     "sha": "4b48ce34775b78afd55abfcd52fa85c8efc3c271",
@@ -72,29 +72,29 @@
     },
     "commands": [
       {
-        "cwd": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W2-U1-build",
+        "cwd": "<PATH>/s75/worktrees/S75X-W2-U1-build",
         "cmd": "python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/story_arc/",
         "output": "34 passed in 0.36s"
       },
       {
-        "cwd": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W2-U1-build",
+        "cwd": "<PATH>/s75/worktrees/S75X-W2-U1-build",
         "cmd": "python3 -I 75-drama-song-ad-factory/scripts/core/story_arc/story_arc.py --selftest",
         "output": "story_arc selftest: PASS (24 checks, 0 failures)"
       },
       {
-        "cwd": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/u1-verify-20261026",
+        "cwd": "<PATH>/s75/scratch/u1-verify-20261026",
         "cmd": "python3 -I u1_acceptance.py <lane>",
         "output": "u1 acceptance: PASS (11 checks, 0 failed)"
       },
       {
-        "cwd": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/u1-verify-20261026",
+        "cwd": "<PATH>/s75/scratch/u1-verify-20261026",
         "cmd": "python3 -I u1_acceptance.py <mutant with beat-order check and view-mismatch check neutralized>",
         "output": "u1 acceptance: FAIL (11 checks, 3 failed); failed ids: C2, C5, C5b"
       }
     ],
-    "independent_check_script": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/u1-verify-20261026/u1_acceptance.py",
-    "independent_check_results": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/u1-verify-20261026/run1.json",
-    "control_results": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/u1-verify-20261026/control.json",
+    "independent_check_script": "<PATH>/s75/scratch/u1-verify-20261026/u1_acceptance.py",
+    "independent_check_results": "<PATH>/s75/scratch/u1-verify-20261026/run1.json",
+    "control_results": "<PATH>/s75/scratch/u1-verify-20261026/control.json",
     "control_note": "Known-good control on the instrument, not just the target: the same 11 checks run against a copy of story_arc.py whose canonical beat-order enforcement and view-mismatch enforcement were neutralized return 3 failures (C2, C5, C5b). The checks therefore discriminate; a green run is not a rubber stamp."
   },
   "work_spec_coverage": {

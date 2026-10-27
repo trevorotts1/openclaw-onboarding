@@ -7,7 +7,7 @@
  "plane": "verify-fix",
  "date": "2026-10-26",
  "repo": "https://github.com/trevorotts1/openclaw-onboarding.git",
- "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W2-U2-qc",
+ "lane": "<PATH>/s75/worktrees/S75X-W2-U2-qc",
  "verdict_branch": "s75x/verdicts-S75X-W2",
  "base_sha": "96559ab1b531570534316d856006867606afd4e2",
  "builder_verdict_sha": "acfb10db7c48862efd25b78f8586636c2fb92ec4",
@@ -243,7 +243,7 @@
  ],
  "receipts": [
   "git rev-parse origin/s75x/verdicts-S75X-W2 at QC start -> 246a9666d881725f1c7b3a08d99d982f5f4bdd66 (verdict commits only; git diff 96559ab..246a966 = 2 evidence JSON files, 0 code)",
-  "python3 -I /Volumes/mac mini m4/Downloads/git trees and automations/s75/scratch/s75x-w2-u2-qc-checks.py -> before/after table above",
+  "python3 -I <PATH>/s75/scratch/s75x-w2-u2-qc-checks.py -> before/after table above",
   "python3 -m pytest -q scripts/core/method_plan scripts/core/intake_preflight -> 131 passed, 23 subtests (rc=0)",
   "python3 -I scripts/core/method_plan/test_wiring_w2u2.py -> test_factory_wires_seeds_turns_and_receipt / test_request_turns_carry_reason_and_audible / test_shot_planner_input_from_blueprint / test_storyboard_review_input_from_blueprint all ok",
   "code changes confined to 75-drama-song-ad-factory/scripts/core/{method_plan,music_director,intake_preflight,storyboard_director,shot_planner}; main never touched"
@@ -258,7 +258,7 @@
  "qc_pass_2": {
   "date": "2026-10-27",
   "agent_role": "qc-fixer (second pass, independent lane)",
-  "lane": "/Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W2-U2-qc",
+  "lane": "<PATH>/s75/worktrees/S75X-W2-U2-qc",
   "head_before": "63fde447396746c06a6b3f7603fd8fc88ebd4c9a",
   "builder_verdict": "acfb10db7c48862efd25b78f8586636c2fb92ec4 FAIL at 96559ab1b -- CONFIRMED (element 1 failed at main; elements 2-4 passed).",
   "first_qc_fix_verdict": "PARTIAL. Turns reason/audible on the music_director receipt (X1), shot_planner.shots_from_blueprint (X2), storyboard/shot-seeds.json writer and production_map receipt (X4) verified. Two of the claimed downstream feeds did not reach their real consumer:",
