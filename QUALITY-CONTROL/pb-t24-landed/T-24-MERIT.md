@@ -1,7 +1,7 @@
 # T-24 — a landing check that can fail
 
 Unit: **PBB-1707** (BUILD, rebuild lane). Ownership: this directory only.
-Repo: `/Users/blackceomacmini/openclaw-onboarding`. Branch: `pb/PBB-1707/t-24-checks`.
+Repo: `<PATH>`. Branch: `pb/PBB-1707/t-24-checks`.
 Target: `origin/main` at `8cb74925ad94c05ce9eb639e7554d02fcd780e20`.
 Base used: `git merge-base origin/main db7d809ab23c361187eef488c81d563c21730e5b`
 = `5b3e8005ab2a6526bfe19f7d3bad4f2dbd744a76`.
