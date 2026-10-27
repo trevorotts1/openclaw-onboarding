@@ -165,6 +165,16 @@ CREATE TABLE IF NOT EXISTS gate_checks (
     PRIMARY KEY (action_id, attempt_no)
 );
 
+CREATE TABLE IF NOT EXISTS keyword_mappings (
+    tenant_id               TEXT NOT NULL,
+    keyword_norm            TEXT NOT NULL,
+    promised_item_version   TEXT NOT NULL,
+    first_cycle_id          TEXT NOT NULL,
+    first_seen_ts           REAL NOT NULL,
+    retired_at              REAL,
+    PRIMARY KEY (tenant_id, keyword_norm)
+);
+
 CREATE TABLE IF NOT EXISTS reconciliation_runs (
     action_id       TEXT NOT NULL,
     run_no          INTEGER NOT NULL,
@@ -945,6 +955,58 @@ class DurableStore:
                 " ORDER BY run_no", (action_id,)).fetchall()]
 
     # ── observation helpers ─────────────────────────────────────────────────
+
+    # -- H8: the permanent per-tenant keyword registry ---------------------
+    def register_keyword(self, *, tenant_id: str, keyword_norm: str,
+                         promised_item_version: str, first_cycle_id: str,
+                         now: Optional[float] = None) -> bool:
+        """First use records the mapping; a repeat against another item is refused.
+
+        The row is a tombstone: ``retired_at`` is set when a keyword leaves service,
+        and it is never deleted, so an old keyword can never be recycled onto a
+        different promised item. Returns True when the mapping holds (fresh or the
+        same item), False when it names a different item.
+        """
+        ts = _ts(now)
+
+        def fn() -> bool:
+            cur = self._db.execute(
+                "SELECT promised_item_version, retired_at FROM keyword_mappings"
+                " WHERE tenant_id = ? AND keyword_norm = ?", (tenant_id, keyword_norm))
+            row = cur.fetchone()
+            if row is None:
+                self._db.execute(
+                    "INSERT INTO keyword_mappings (tenant_id, keyword_norm,"
+                    " promised_item_version, first_cycle_id, first_seen_ts, retired_at)"
+                    " VALUES (?, ?, ?, ?, ?, NULL)",
+                    (tenant_id, keyword_norm, promised_item_version, first_cycle_id, ts))
+                self._db.commit()
+                return True
+            version, retired_at = row[0], row[1]
+            if retired_at is None and version != promised_item_version:
+                return False
+            return True
+
+        return self._retry(fn, what="register_keyword")
+
+    def keyword_item(self, tenant_id: str, keyword_norm: str) -> Optional[Dict[str, Any]]:
+        cur = self._db.execute(
+            "SELECT tenant_id, keyword_norm, promised_item_version, first_cycle_id,"
+            " first_seen_ts, retired_at FROM keyword_mappings"
+            " WHERE tenant_id = ? AND keyword_norm = ?", (tenant_id, keyword_norm))
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {"tenant_id": row[0], "keyword_norm": row[1],
+                "promised_item_version": row[2], "first_cycle_id": row[3],
+                "first_seen_ts": row[4], "retired_at": row[5]}
+
+    def keyword_rows(self, tenant_id: str) -> List[Dict[str, Any]]:
+        cur = self._db.execute(
+            "SELECT keyword_norm, promised_item_version, first_cycle_id, retired_at"
+            " FROM keyword_mappings WHERE tenant_id = ? ORDER BY keyword_norm", (tenant_id,))
+        return [{"keyword_norm": r[0], "promised_item_version": r[1],
+                 "first_cycle_id": r[2], "retired_at": r[3]} for r in cur.fetchall()]
 
     def counts(self) -> Dict[str, int]:
         with _Tx(self._db) as cur:

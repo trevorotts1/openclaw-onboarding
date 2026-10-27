@@ -88,6 +88,10 @@ PLACEMENT_BOUND_FIELDS = [
     "bonus_asset_versions",
     "conversation_policy_version",
     "allowed_spare_ids",
+    # C5: the DM door is approved byte for byte, not typed at posting time.
+    "messenger_page_id",
+    "messenger_ref",
+    "messenger_link",
 ]
 LIFECYCLE_LADDER = ["NOT_INSTALLED", "ADOPTING", "RUNNING", "PAUSED_RESUMABLE", "CLOSING", "CLOSED"]
 LIFECYCLE_EDGES = {
