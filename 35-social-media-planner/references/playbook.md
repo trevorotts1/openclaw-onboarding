@@ -1045,15 +1045,33 @@ Every single social media post gets a comment below it. The post itself contains
 
 Social media platforms (especially Facebook) suppress posts that contain external links. By keeping the link in the comments instead of the post body, the post gets better organic reach. The post stays focused on value. The comment carries the conversion action.
 
-### The Action Link
+### The Action Link — SCOPED
 
-This is the ONLY link to be used in every comment, every time, across all platforms and all days:
+`[ACTION LINK - confirmed weekly with client]` is a TEMPLATE TOKEN, not a universal rule. It is
+scoped to exactly one thing: the weekly **offer** link, confirmed with the client during each
+weekly heartbeat, used in the comment of a **weekly-offer placement** (the evergreen "book a
+conversation" CTA). It may change week to week with the client's current campaign or offer.
 
 ```
 [ACTION LINK - confirmed weekly with client]
 ```
 
-This link is confirmed with the client during each weekly heartbeat. It may change week to week depending on the client's current campaign or offer.
+**Where the token MUST NOT be used (BINDING):** a **Bonus** placement (a promised item — guide,
+gift, community access, appointment) does not carry a typed link at all. Its comment carries the
+DM door the pack writer built from the tenant's recorded Page — `messenger_page_id`,
+`messenger_ref` and `messenger_link` — and nothing else. Writing `[ACTION LINK - ...]` (or any
+hand-typed `m.me` link) into a Bonus comment is the C5 defect: the door is approved byte for byte
+and is never typed at posting time. If a Bonus placement reaches you without a built door, STOP
+and have the pack writer build it; never substitute the weekly action link.
+
+Two consequences worth stating plainly:
+
+- The token is **not** "the ONLY link to be used in every comment, every time, across all
+  platforms and all days". That old wording was the defect. A Bonus comment's link is per
+  placement, per day, and per keyword.
+- Attribution of a Bonus door is **NOT_PROVEN** until a raw Messenger referral event is captured
+  (`messenger_link.REF_ATTRIBUTION`, mirrored by `facebook_routes.capability_status()`). Never
+  describe a Bonus click as tracked. See §12b.
 
 ### Comment Writing Rules
 
@@ -1093,6 +1111,50 @@ Schedule your conversation with [Brand Name] right here:
 ### How Comments Are Posted
 
 Comments are posted programmatically after the main post is published. See the GoHighLevel Social Planner API section for technical details. The comment is posted within 1-2 minutes of the main post going live.
+
+### Bonus Comments — the DM door is BUILT at pack-write time (BINDING)
+
+A **Bonus** comment is the comment that opens a DM door for one promised item (a guide, a gift, a
+community, an appointment). It is not the weekly-offer comment, and it never carries
+`[ACTION LINK - confirmed weekly with client]`.
+
+**The one rule.** The pack writer builds the door when it writes the pack, never at posting time.
+The producing module is `shared-utils/routes/page/messenger_link.py`; the write-time call site is
+`shared-utils/manifest/monthly_manifest.py` (`next_cycle(..., page_binding=..., category=...)`,
+which is the producer of the next cycle's placements). A bonus placement is only written through
+`build_bonus_placement()`, which:
+
+1. takes the tenant's recorded `PageBinding` (Page id recorded once per tenant and account on the
+   readiness record — `record_page_binding()`, never guessed);
+2. derives the keyword with `keyword_for(category, item_word)` — **category plus a distinct item
+   word** (`GIFT` + `guide` → `GIFTGUIDE`). The bare category is REFUSED for a different promised
+   item: thirty packs reusing `GIFT` is exactly the misroute H8 names;
+3. builds `pb-<MON><DD>-<YYYY>-<CATEGORY>` for the placement's **own local date** and the link
+   `https://m.me/<page_id>?ref=<quoted ref>`;
+4. writes `messenger_page_id`, `messenger_ref`, `messenger_link`, the derived `keyword` and the
+   canonical Bonus CTA onto the placement, and REFUSES a hand-typed Page id, ref, link, keyword or
+   CTA that disagrees. A typed door can never be laundered into an approved one.
+
+**What the comment must say.** Use the canonical sentence from `bonus_cta(link, keyword)`:
+
+```
+Comment "<KEYWORD>" and the door opens: message the Page at <link> and ask for <KEYWORD> item.
+```
+
+The approved link must appear in the CTA **verbatim**, the ref inside the link must equal the
+placement's approved `messenger_ref`, the Page in the link must equal the approved
+`messenger_page_id`, the ref date must be the placement's own local date, and the ref must equal
+the ref rebuilt from the tenant's recorded binding. `monthly_manifest.terms_errors()` proves all of
+that; an approval or an amendment that fails any one of them is refused, naming the field.
+
+**Approving and amending a door.** The three door fields are ONE approved unit. An amendment that
+changes `messenger_page_id`, `messenger_ref` or `messenger_link` must carry all three (plus the
+matching `keyword`/`cta_text`); carrying one or two is refused and the missing fields are named.
+This is why the door is never patched field by field in production.
+
+**Attribution.** `REF_ATTRIBUTION = "NOT_PROVEN"`. Refs are generated and readable, but GHL's
+normalized body carries no ref key, so a Bonus door click is **not** tracked until a raw Messenger
+referral event is captured (DISCOVERIES D-05). Never report a Bonus click as attributed.
 
 ---
 

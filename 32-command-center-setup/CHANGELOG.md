@@ -1,5 +1,9 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.64 - 2026-10-27 - chore(batch-20261027-0754): version stamp for T-56 (scope includes T-57)
+
+Batch 20261027-0754 version stamp, Skill 32 v13.1.63 -> v13.1.64. T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 32 files in this batch (`32-command-center-setup/scripts/verify-tenant-readiness.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
+
 ## v13.1.60 - 2026-10-14 - model doctrine cleanup: client choice or configured default
 
 `register-routing-dept.py` no longer writes a hardcoded model chain for a newly registered department: the entry takes the client's explicit `--model-primary` / `--model-fallbacks` choice, or inherits the client's configured default model (`agents.defaults.model` in openclaw.json), and stops with an ask-the-client error when neither exists. `run-full-install.sh` no longer rewrites a retired model id to a named successor: a retired id resolves to the box's own configured default model, and is left untouched with a `retired-unresolved` note when the box has no usable default. Anthropic/Claude exclusions unchanged. skill-version v13.1.59 -> v13.1.60.
