@@ -230,3 +230,67 @@ def test_graph_command_actually_runs_the_identity_checks(tmp_path):
     )
     assert report["verdict"] == "FAIL"
     assert "DUPLICATE_ID" in kinds, kinds
+
+
+def _write_export(tmp_path, name, templates):
+    export = tmp_path / name
+    export.write_text(json.dumps({"workflowData": {"templates": templates}}))
+    return export
+
+
+def _run_export(export):
+    return subprocess.run(
+        [sys.executable, str(VALIDATOR), "graph", "--export", str(export)],
+        capture_output=True, text=True,
+    )
+
+
+def test_declared_join_convergence_is_not_cross_branch(tmp_path):
+    """A declared join is the confluence, not a member of either arm.
+
+    04-reminder-1d shape: the join is the false-arm target AND the true
+    arm's body feeds it. Classifying the join by parentKey arm read that
+    legitimate edge as true-arm-into-false-arm and failed every real
+    shipped join. A node with attributes.join true belongs to NO branch.
+    """
+    export = _write_export(tmp_path, "join.json", [
+        {"id": "root", "type": "sms", "name": "Root",
+         "parentKey": None, "next": "if1"},
+        {"id": "if1", "type": "if_else", "name": "Cond", "parentKey": "root",
+         "branches": {"true": "then1", "false": "join1"}},
+        {"id": "then1", "type": "sms", "name": "Then",
+         "parentKey": "if1", "next": "join1"},
+        {"id": "join1", "type": "workflow_goal", "name": "Join",
+         "parentKey": "if1", "attributes": {"join": True}},
+    ])
+    result = _run_export(export)
+    report = json.loads(result.stdout)
+    assert result.returncode == 0, report["failures"]
+    assert report["verdict"] == "PASS"
+    assert report["failures"] == []
+
+
+def test_join_seals_branches_above_it(tmp_path):
+    """A confluence seals every branch above it: the join's own
+    continuation is post-confluence for all higher arms, so it belongs
+    to no branch. Without the seal, join -> next reads as
+    None-into-arm and every shipped join with a successor fails.
+    """
+    export = _write_export(tmp_path, "join_next.json", [
+        {"id": "root", "type": "sms", "name": "Root",
+         "parentKey": None, "next": "if1"},
+        {"id": "if1", "type": "if_else", "name": "Cond", "parentKey": "root",
+         "branches": {"true": "then1", "false": "join1"}},
+        {"id": "then1", "type": "sms", "name": "Then",
+         "parentKey": "if1", "next": "join1"},
+        {"id": "join1", "type": "workflow_goal", "name": "Join",
+         "parentKey": "if1", "next": "after1",
+         "attributes": {"join": True}},
+        {"id": "after1", "type": "end", "name": "After",
+         "parentKey": "join1"},
+    ])
+    result = _run_export(export)
+    report = json.loads(result.stdout)
+    assert result.returncode == 0, report["failures"]
+    assert report["verdict"] == "PASS"
+    assert report["failures"] == []

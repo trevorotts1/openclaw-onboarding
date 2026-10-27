@@ -412,7 +412,23 @@ def graph(data, nodes, trigger):
         and n["branches"]
     }
 
+    def _is_declared_join(node):
+        # check_joins.py's EXACT predicate: attributes.join is True, nothing
+        # else. A multi-parent without that attribute is an ERROR there, not
+        # a join — so it must not exempt here either.
+        return (
+            isinstance(node.get("attributes"), dict)
+            and node["attributes"].get("join") is True
+        )
+
     def membership(node_id):
+        # A declared join is the confluence, not a member of either arm: it
+        # belongs to NO branch, whatever else is true of it (type, direction,
+        # parent count). Without this, a join that is also a branch target
+        # (e.g. the false-arm target that the true arm's body feeds) reads as
+        # true-arm-into-false-arm and every real shipped join fails the gate.
+        if _is_declared_join(by_id.get(node_id) or {}):
+            return None
         path = []
         seen = set()
         current = node_id
@@ -422,6 +438,15 @@ def graph(data, nodes, trigger):
             current = parent_map.get(current)
 
         for branch_id in path[1:]:
+            if _is_declared_join(by_id.get(branch_id) or {}):
+                # A confluence seals every branch above it: the downward path
+                # from any higher arm target to this node passes through this
+                # join, so the node is post-confluence for all of them — it
+                # belongs to no branch. This is exactly check_joins' model,
+                # whose arm scopes stop expanding at joins. Without it, a
+                # join's own continuation (join -> next) reads as
+                # None-into-arm and every shipped join with a successor fails.
+                return None
             if branch_id not in branch_members:
                 continue
             branch = branch_members[branch_id]
