@@ -193,7 +193,7 @@ class AnyRouteTests(unittest.TestCase):
             command['route'] = route
         row = execute(self.database, command)
         original = workflow_slots.served_route
-        workflow_slots.served_route = lambda aid: served
+        workflow_slots.served_route = lambda aid, wf=None: served
         try:
             return self.call('start', reservation_id=agent, fence=row['fence'],
                              session_ref='session-' + agent, agent_id=agent)
@@ -257,7 +257,7 @@ class RouteBindingTests(unittest.TestCase):
         row = self.call('reserve', workflow_id='w', reservation_id=agent, role=role, route=route,
                         parent='coordinator', unit=unit, lease_seconds=3600)
         original = workflow_slots.served_route
-        workflow_slots.served_route = lambda aid: served
+        workflow_slots.served_route = lambda aid, wf=None: served
         try:
             return self.call('start', reservation_id=agent, fence=row['fence'],
                              session_ref='session-' + agent, agent_id=agent)
@@ -305,6 +305,111 @@ class RouteBindingTests(unittest.TestCase):
         snapshot = self.call('snapshot')
         self.assertEqual(snapshot['route_substitution_count'], 1)
         self.assertIn('ROUTE SUBSTITUTION ALERT', snapshot['route_alarm'])
+
+
+class MetaWitnessTests(unittest.TestCase):
+    """The actually-run route comes from the harness binding record, and only from
+    a record filed under the same harness workflow. Layout here is the one
+    observed on the operator box on 2026-10-25:
+      <root>/<slug>/<session-uuid>/subagents/workflows/<wf-id>/agent-<agent_id>.meta.json
+      <root>/<slug>/<session-uuid>/subagents/agent-<agent_id>.meta.json
+    """
+
+    WF = 'wf_59f9ce0c-417'
+    SLUG, SESSION = 'proj-slug', '9be9c09e-9efd-437f-876f-b553517b60b8'
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.database = str(self.root / 'slots.sqlite')
+        original = workflow_slots.META_ROOTS
+        workflow_slots.META_ROOTS = (self.root,)
+        self.addCleanup(setattr, workflow_slots, 'META_ROOTS', original)
+        execute(self.database, dict(action='init', coordinator='coordinator'))
+        self.call('open', workflow_id='w')
+
+    def call(self, action, **kwargs):
+        return execute(self.database, dict(action=action, coordinator='coordinator', **kwargs))
+
+    def write_meta(self, agent_id, model, wf_id=WF, transcript_model=None):
+        folder = self.root / self.SLUG / self.SESSION / 'subagents'
+        if wf_id:
+            folder = folder / 'workflows' / wf_id
+        folder.mkdir(parents=True, exist_ok=True)
+        record = {'agentType': 'workflow-subagent', 'description': 'build:U',
+                  'workflowPhase': 'Build', 'spawnDepth': 1, 'requestShape': 'foreground',
+                  'requestNonInteractive': False, 'model': model}
+        (folder / f'agent-{agent_id}.meta.json').write_text(json.dumps(record))
+        if transcript_model is not None:
+            (folder / f'agent-{agent_id}.jsonl').write_text(
+                json.dumps({'type': 'assistant', 'message': {'model': transcript_model}}) + '\n')
+        return folder / f'agent-{agent_id}.meta.json'
+
+    def bind(self, agent_id, role, requested, session_ref):
+        row = self.call('reserve', workflow_id='w', reservation_id=agent_id, role=role,
+                        route=requested, parent='coordinator', unit='U', lease_seconds=3600)
+        return self.call('start', reservation_id=agent_id, fence=row['fence'],
+                         session_ref=session_ref, agent_id=agent_id)
+
+    def test_binding_proof_records_requested_and_actually_run(self):
+        # Narrowed row: this proves the instrument resolves and persists BOTH
+        # facts per reservation, not which chain any role rides. Chain names
+        # here are deliberately neutral.
+        for agent_id, role, requested, served in (
+                ('afb296f55d4c3ec10', 'builder', 'chain-x', 'chain-y'),
+                ('ac054a2653dafae59', 'reviewer', 'chain-x', 'chain-x')):
+            self.write_meta(agent_id, served)
+            bound = self.bind(agent_id, role, requested, f'{self.WF}#{agent_id}')
+            self.assertEqual(bound['route'], requested, 'requested route not persisted')
+            self.assertEqual(bound['served_route'], served, 'actually-run route not read')
+            self.assertEqual(bound['route_binding'], 'match' if requested == served else 'substitution')
+
+    def test_known_good_control_route_confirmed_by_the_transcript(self):
+        # Independent means: the same-named .jsonl transcript names the resolved
+        # model id, which is a different file and a different field from the
+        # meta record's model. Both must agree on the model family.
+        path = self.write_meta('a-known-good', 'chain-x', transcript_model='chain-x-resolved')
+        meta_model = json.loads(path.read_text())['model']
+        transcript = Path(str(path)[:-len('.meta.json')] + '.jsonl')
+        transcript_model = json.loads(transcript.read_text().splitlines()[0])['message']['model']
+        self.assertIn(meta_model.split('-')[0], transcript_model)
+        bound = self.bind('a-known-good', 'reviewer', 'chain-x', f'{self.WF}#a-known-good')
+        self.assertEqual(bound['served_route'], meta_model)
+        self.assertEqual(bound['route_binding'], 'match')
+
+    def test_negative_control_fabricated_workflow_id_fails_closed(self):
+        # The record exists and names chain-y -- but it is filed under a
+        # different harness workflow. A fabricated workflow id must resolve to
+        # nothing and report UNVERIFIED, never borrow that route and never match.
+        self.write_meta('a-borrowed', 'chain-y', wf_id=self.WF)
+        # Fabricated workflow id: the record is not under that workflow.
+        self.assertIsNone(workflow_slots.served_route('a-borrowed', workflow_slots.workflow_of('wf_00000000-000#a-borrowed')))
+        # Right workflow, unknown agent: no record names it.
+        self.assertIsNone(workflow_slots.served_route('someone-else', self.WF))
+        # Session scope must not borrow a workflow-scoped record either.
+        self.assertIsNone(workflow_slots.served_route('a-borrowed'))
+        bound = self.bind('a-borrowed', 'builder', 'chain-x', 'wf_00000000-000#a-borrowed')
+        self.assertIsNone(bound['served_route'])
+        self.assertEqual(bound['route_binding'], 'unverified_no_binding_record')
+
+    def test_proof_discriminates_substitution_is_never_green(self):
+        # Same reservation, only the actually-run route differs. The instrument
+        # must say substitution and raise the alarm, not report a clean binding.
+        self.write_meta('a-subs', 'chain-y')
+        bound = self.bind('a-subs', 'builder', 'chain-x', f'{self.WF}#a-subs')
+        self.assertEqual(bound['route_binding'], 'substitution')
+        self.assertEqual(bound['served_route'], 'chain-y')
+        snapshot = self.call('snapshot')
+        self.assertEqual(snapshot['route_substitution_count'], 1)
+        self.assertIn('requested=chain-x served=chain-y', snapshot['route_alarm'])
+        self.assertEqual(workflow_slots.route_binding('chain-x', 'chain-x'), 'match')
+        self.assertEqual(workflow_slots.route_binding('chain-x', None), 'unverified_no_binding_record')
+
+    def test_workflow_of_extracts_the_harness_workflow_id(self):
+        self.assertEqual(workflow_slots.workflow_of('wf_82c245a1-e8c#a192ae911ccb519ab'), 'wf_82c245a1-e8c')
+        self.assertIsNone(workflow_slots.workflow_of('9be9c09e-9efd-437f-876f-b553517b60b8:ac054a2653dafae59'))
+        self.assertIsNone(workflow_slots.workflow_of(None))
 
 
 if __name__ == '__main__':
