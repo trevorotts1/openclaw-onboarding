@@ -1,0 +1,126 @@
+{
+  "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+  "schema_note": "This file records one BUILD attempt and its measurements. It approves nothing and it is NOT a verdict: the builder wrote the code under test and cannot clear it. Only an independent verifier may write a verdict.",
+  "unit": "S75-T35",
+  "unit_id": "S75-T35",
+  "acceptance_row": "S75-A35",
+  "acceptance_id": "S75-A35",
+  "title": "Immediate unit QC and durable exact-head receipts; the role-to-chain binding proves fail-closed resolution, not which chain a role rides",
+  "attempt": 1,
+  "round": 1,
+  "written_at": "2026-10-27",
+  "written_at_mode": "This receipt is written against the LANDED narrowed build (git generation 1 of that build). The unit's original branch receipt described the round-1 head, which the D7 arbiter rejected; that head is recorded under superseded_round_1 and is not the candidate here.",
+  "role": "BUILDER (evidence record for the landed narrowed build)",
+  "role_statement": "The build under this receipt was written by the unit's builder lane. This evidence file records the landed candidate and its measurements; it clears nothing. The restoration lane that wrote THIS file wrote no product code.",
+  "status": "COMPLETE_PENDING_INDEPENDENT_VERIFICATION",
+  "mode": "narrowed build landed on main without its evidence file; the missing evidence path is restored here",
+  "repository": "openclaw-onboarding",
+  "base": {
+    "ref": "parent of the landed candidate",
+    "sha": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7",
+    "resolved_from_origin": true,
+    "ancestry": "git merge-base --is-ancestor 5e8074cae0ad7d0d257ff8b5621e00670987d7b7 origin/main -> rc=0"
+  },
+  "head": {
+    "sha": "de4a9a1d5d36989eedd8e4e7fd4ceb428f367c40",
+    "subject": "feat(75): S75-T35 narrowed build - QC receipt adapter + binding instrument",
+    "branch": "s75/S75-T35",
+    "landed_via": {
+      "merge_commit": "a424e53e050a6a2471ffc65bbc3504c61f38ea38",
+      "merge_subject": "Merge pull request #2626 from trevorotts1/batch/openclaw-onboarding/20261027-0211",
+      "ancestry": "git merge-base --is-ancestor de4a9a1d5d36989eedd8e4e7fd4ceb428f367c40 origin/main -> rc=0; the same check on a424e53e050a6a2471ffc65bbc3504c61f38ea38 -> rc=0"
+    }
+  },
+  "files_changed": [
+    "CONTROL/qc_receipt_adapter.py",
+    "evidence/qc-receipt-contract.json",
+    "shared-utils/workflow_slots.py",
+    "tests/unit/s75-t35-qc-receipt-adapter.test.py",
+    "tests/unit/test_workflow_slots.py"
+  ],
+  "file_digests_sha256": {
+    "CONTROL/qc_receipt_adapter.py": "2712d55de55d2a9d2a8827ec383a1a647a711001f8647948b53499cb2db848e3",
+    "evidence/qc-receipt-contract.json": "989aa67b6cf48bd24910c9d6db45af91b0b99fceedde86d31f7d9043e038df33",
+    "shared-utils/workflow_slots.py": "2ee8d4a94e789690d7a462234b06deb851a74ca335dcecfbf16978e8fbcdfb69",
+    "tests/unit/s75-t35-qc-receipt-adapter.test.py": "2f42b2ecb90014290d7e0d2ba362b99dcc7de7371ad386c83b8e8539a021540d",
+    "tests/unit/test_workflow_slots.py": "49585420dab411b2e416e948f2176079154b434c3417173115e632abf054b683"
+  },
+  "digest_basis": "sha256 of each file as it stands on origin/main and as it stands at the landed candidate; for all five paths the two blobs are identical (git rev-parse <ref>:<path> compared), so the measured tree is the landed tree.",
+  "change_summary": "Adds the fail-closed QC receipt adapter: a receipt confirms a unit only when it is a structured claim, names a full 40-hex head_tested equal to the candidate head, and its approver differs from the author on identity AND lineage (and, for kind=repair, its verifier differs from repair_author on both). Every refusal is a durable, acknowledged ledger row (wrong_head, head_not_full_sha, unstructured_stdout, missing_structured_claim, self_approved, repair_author_not_independent, no_checks_recorded, identity_or_lineage_missing, wrong_unit, verdict_not_confirmable) rather than an exception. Duplicate verdicts are byte-identical no-ops; a different verdict at the same unit+head is a conflict that the first verdict survives, resolvable only by a distinct third authority through one adjudication event. The narrowing also instruments the role-to-chain binding: workflow_of -> _meta_index -> served_route -> route_binding, persisted at start(), returning match / substitution / unverified_no_binding_record, fail-closed at head and fail-open at base.",
+  "narrowing": {
+    "arbiter_outcome": "REJECT_AND_NARROW",
+    "arbiter_record": "<OPERATOR_HOME>/loop-control/s75/qc/S75-T35-ARBITER.md",
+    "kept": "Clauses 1, 2 and 4: the wrong-head / abbreviated-head / stdout-only / self-approved / repair-author-not-independent refusals, the idempotent duplicate handling, and the evidence-channel cell this file satisfies.",
+    "left_the_row": "Clause 3's binding-VALUE assertion (which chain builders, QC and repair ride). The arbiter ruled it contradicted by measured runs and by the repository's own role-to-chain default map, and its only source was the unit's own self-declaration.",
+    "replacement_claim": "The role-to-chain binding is instrumented and resolvable fail-closed from harness-written agent-*.meta.json records. The narrowed build asserts instrumentation and fail-closed resolution only, and does not assert which chain any role rides. evidence/qc-receipt-contract.json carries this as binding_instrument.narrowing and binding_instrument.explicitly_not_asserted."
+  },
+  "tests_run": [
+    {
+      "command": "python3 -I tests/unit/s75-t35-qc-receipt-adapter.test.py",
+      "cwd": "<PATH>/s75/worktrees/s75-S75-T35",
+      "exit_code": 0,
+      "result": "PASS",
+      "summary": "checks run: 104; PASS: S75-T35 qc receipt adapter"
+    },
+    {
+      "command": "python3 -I tests/unit/test_workflow_slots.py",
+      "cwd": "<PATH>/s75/worktrees/s75-S75-T35",
+      "exit_code": 0,
+      "result": "PASS",
+      "summary": "Ran 20 tests in 2.705s; OK. Includes the binding-instrument witnesses that grade the instrument on neutral chain names."
+    }
+  ],
+  "known_good_control": {
+    "statement": "The adapter suite is a positive/negative pair, not a one-sided refusal: the same structured receipt that is refused for a wrong head, an abbreviated head, an unstructured payload, a self-approved approver or a repair-author verifier is CONFIRMED when head_tested is changed to the candidate head and the parties are genuinely distinct.",
+    "instrument_control": "tests/unit/test_workflow_slots.py runs the binding instrument against neutral chain labels on purpose, so a green result grades fail-closed resolution and never restates a doctrine about who rides what; the negative direction (a fabricated workflow id) resolves to unverified_no_binding_record at head and to somebody else's route at base."
+  },
+  "open_residuals_carried_not_closed": [
+    {
+      "id": "REJECTION-ROW-DEDUPE",
+      "status": "OPEN, measured once by round 2 (probe X5), not re-measured here",
+      "detail": "Rejection rows carry no author/approver, so two different parties submitting the same rejection collapse to one row and the second returns outcome=duplicate. Site: CONTROL/qc_receipt_adapter.py _entry_key plus the rejections append at lines 404-420. This receipt does not claim it closed."
+    },
+    {
+      "id": "NO-LIVE-CALLER",
+      "status": "UNDETERMINED, structural",
+      "detail": "Nothing in the repository calls commit_verdict or the start() binding path in a production supervisor. Every clause-1 and clause-2 measurement, here and in the three rounds, is made at the adapter API."
+    },
+    {
+      "id": "PRE-FIX-HISTORY",
+      "status": "UNDETERMINED, permanent",
+      "detail": "The unit lands as one squashed commit per round, so no pre-fix version of either test file exists in the repository and earlier disclosed failures cannot be shown fixed rather than routed around."
+    }
+  ],
+  "closed_since_round_3": {
+    "id": "ADJUDICATION-THIRD-AUTHORITY-HOLE",
+    "arbiter_status": "OPEN and standing at round-3 head 3d9969fcdb5ebabece0c323847698bbc2ba5e8aa; round 2 measured that an adjudicator recorded in an entry beyond the first was admitted against a conflict involving its own entry",
+    "at_landed_candidate": "CLOSED by this build: _apply_adjudication now merges parties from the recorded verdict, the conflict AND every recorded entry before the distinctness check, so a party present in any entry is refused. Diff 3d9969fcd..de4a9a1d5 on CONTROL/qc_receipt_adapter.py is +3/-1 at exactly that merge.",
+    "not_reverified_independently": "The lane reports the diff it read; an independent verifier should re-measure the probe."
+  },
+  "scope_proof": {
+    "command": "git diff --name-only origin/main..HEAD",
+    "result": [
+      "evidence/units/S75-T35/attempt-1.json"
+    ],
+    "note": "The rebuilt branch carries origin/main plus this evidence path only. It adds no product code and deletes nothing; no CHANGELOG and no skill-version file is touched."
+  },
+  "superseded_round_1": {
+    "head": "41062a02c1cbd591331c7ea8c96baf38d2d1fe2c",
+    "verdict": "FAIL (round 1), then REJECT_AND_NARROW from the D7 arbiter",
+    "why_not_carried": "Its clause-3 binding-value claim and its pre-fix adapter defects were rejected; the landed narrowed build supersedes it. The branch that carries the item is rebased onto origin/main with the landed blobs taken for the three shared paths, so none of the rejected content is carried forward."
+  },
+  "could_not_determine": [
+    "whether a live supervisor will call commit_verdict or the start() binding path in production: no caller exists in the repository",
+    "the full tests/unit suite state (two conventions, no single runner); only the two unit files this build owns were run",
+    "which chain any role actually rides: the narrowed row makes no such assertion, and per-request chain tagging is not persisted",
+    "whether two different parties submitting the same rejection can still collapse to one row: carried open, not re-measured"
+  ],
+  "not_searched": [
+    "other units' branches, worktrees or evidence files",
+    "any credential store or router database; nothing was read or written",
+    "client boxes, fleet hosts or network deployment",
+    "git history for deleted variants of the files this build added"
+  ],
+  "negative_result_note": "The claim that the repository has no live caller of commit_verdict was checked by reading every reference to the module name across tracked Python and Markdown sources; the same scan finds the test file and the contract that do reference it, so the instrument is not silently empty. Not searched: history, other branches, and non-Python callers.",
+  "most_important_sentence": "A wrong-head, abbreviated-head, stdout-only or self-approved receipt never reaches QC_CONFIRMED, a duplicate verdict leaves the ledger byte-identical, and the binding instrument refuses to answer for a record that belongs to another workflow."
+}

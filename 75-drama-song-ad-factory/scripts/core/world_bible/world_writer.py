@@ -92,7 +92,6 @@ more than that. Closing it needs an external trust anchor -- a transport-side
 signing key or a separate process; see the ``ponytail:`` note in
 :func:`_parent_seal_reason`.
 
-
 Two further claims are DERIVED, never asserted:
 
   * ``provenance.execution`` is stamped from the transport kind that minted the
@@ -193,6 +192,157 @@ def seal_digest(seal, content_digest):
                       sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
+#: Every location record carries the five carriers the world contract names:
+#: era, social rules, lighting, layout and continuity boundaries. A record that
+#: carries the SHAPE of those and none of their content is refused -- presence is
+#: not validity (WORLD-AND-CONTINUITY.md rows "Locations", "Layout and geography",
+#: "Social rules", "Light, colour and atmosphere", "Continuity rules").
+PLACE_CARRIERS = ("era", "social_rules", "lighting", "layout", "continuity_boundaries")
+
+#: Text that stands in for world content. A field holding one of these says
+#: nothing about the place, so it is refused exactly like an empty field.
+PLACEHOLDER_TEXT = frozenset((
+    "", "x", "n/a", "na", "n/a.", "none", "tbd", "todo", "unknown", "?", "??",
+    "placeholder", "filler", "same", "as above", "etc", "etc.", "...", "-", "--",
+    "lorem ipsum", "stuff", "things", "misc", "other", "generic", "default",
+    "here", "there", "details", "n/a",
+))
+def _norm_word(text):
+    return re.sub(r"[^a-z]", "", str(text).lower())
+
+def _content(value, key, pointer, errors, why=None):
+    """One required piece of world content: present, and saying something.
+
+    Presence alone is not validity. A blank, a placeholder and a value that just
+    repeats its own field name all claim a constraint while stating none."""
+    label = "%s.%s" % (pointer, key)
+    if not _nonempty(value):
+        errors.append("%s is required%s" % (label, "" if why is None else ": " + why))
+        return False
+    text = value.strip().lower()
+    if text in PLACEHOLDER_TEXT:
+        errors.append("%s is placeholder text, not world content: %r" % (label, value))
+        return False
+    own = _norm_word(key.split(".")[-1])
+    if _norm_word(value) == own:
+        errors.append("%s repeats its own field name; a label is not content" % label)
+        return False
+    return True
+
+def _content_list(values, key, pointer, errors, why=None, allow_empty=False):
+    """A required list of world content: each entry says something and no entry
+    repeats another -- repetition is not a constraint. ``allow_empty`` is for a
+    field where "nothing" is itself a real answer (nothing may change here)."""
+    label = "%s.%s" % (pointer, key)
+    if values is None or not isinstance(values, list) or (not values and not allow_empty):
+        errors.append("%s must be %s%s" % (label, "a list" if allow_empty else
+                                           "a non-empty list",
+                                           "" if why is None else ": " + why))
+        return False
+    ok = True
+    seen = []
+    for index, value in enumerate(values):
+        entry = "%s[%d]" % (label, index)
+        if not _nonempty(value):
+            errors.append("%s must be a non-empty string" % entry)
+            ok = False
+            continue
+        text = value.strip().lower()
+        if text in PLACEHOLDER_TEXT:
+            errors.append("%s is placeholder text, not world content: %r" % (entry, value))
+            ok = False
+            continue
+        if text in seen:
+            errors.append("%s repeats %s; repetition cannot stand in for content" % (entry, key))
+            ok = False
+            continue
+        seen.append(text)
+    return ok
+
+def _validate_place_era(loc, pointer, errors):
+    """The slice of the story's era this place holds: a location that says when
+    it plays constrains the timeline; one that says nothing cannot."""
+    era = loc.get("era")
+    if not isinstance(era, dict):
+        errors.append("%s.era is required: the slice of the story's era this place holds"
+                      % pointer)
+        return
+    for key in ("period", "time_of_day"):
+        _content(era.get(key), "era.%s" % key, pointer, errors)
+
+def _validate_place_social_rules(loc, pointer, errors):
+    """Who may do what here and what it costs to break it. A rule with no
+    consequence is a wish, not a social rule."""
+    rules = loc.get("social_rules")
+    if not _nonempty_list(rules):
+        errors.append("%s.social_rules is required: the authority, etiquette and consequence "
+                      "that govern who may do what in this place" % pointer)
+        return
+    seen = []
+    for index, rule in enumerate(rules):
+        where = "%s.social_rules[%d]" % (pointer, index)
+        if not isinstance(rule, dict):
+            errors.append("%s must be an object with a rule and a consequence" % where)
+            continue
+        stated = _content(rule.get("rule"), "rule", where, errors,
+                          "what this place expects of the people in it")
+        stated = _content(rule.get("consequence"), "consequence", where, errors,
+                          "what breaking the rule costs") and stated
+        if stated:
+            pair = (rule["rule"].strip().lower(), rule["consequence"].strip().lower())
+            if pair in seen:
+                errors.append("%s repeats social_rules content already given; repetition is "
+                              "not a rule" % where)
+            seen.append(pair)
+
+def _validate_place_lighting(loc, pointer, errors):
+    """The motivated light this place actually has, not a mood word."""
+    light = loc.get("lighting")
+    if not isinstance(light, dict):
+        errors.append("%s.lighting is required: the motivated light this place actually has"
+                      % pointer)
+        return
+    for key in ("source", "direction"):
+        _content(light.get(key), "lighting.%s" % key, pointer, errors)
+    if "motivated_change" in light:
+        _content(light.get("motivated_change"), "lighting.motivated_change", pointer, errors,
+                 "the change of light and what motivates it")
+
+def _validate_place_layout(loc, pointer, errors):
+    """The floor plan the written action must fit, and what encloses it."""
+    layout = loc.get("layout")
+    if not isinstance(layout, dict):
+        errors.append("%s.layout is required: the floor plan the written action must fit"
+                      % pointer)
+        return
+    features = layout.get("features")
+    if not _nonempty_list(features):
+        errors.append("%s.layout.features is required: the floor plan the written action "
+                      "must fit" % pointer)
+    elif not all(_nonempty(f) for f in features):
+        errors.append("%s.layout.features entries must be non-empty strings" % pointer)
+    elif len({f.strip().lower() for f in features}) != len(features):
+        errors.append("%s.layout.features repeats a value" % pointer)
+    _content(layout.get("boundaries"), "layout.boundaries", pointer, errors,
+             "what encloses the floor plan")
+    if "sightlines" in layout:
+        _content(layout.get("sightlines"), "layout.sightlines", pointer, errors,
+                 "who sees what from where")
+
+def _validate_place_continuity(loc, pointer, errors):
+    """What must not change inside this place. Without it the place is a
+    backdrop and continuity has nothing to hold."""
+    boundaries = loc.get("continuity_boundaries")
+    if not isinstance(boundaries, dict):
+        errors.append("%s.continuity_boundaries is required: what must not change inside "
+                      "this place and what may" % pointer)
+        return
+    _content_list(boundaries.get("must_persist"), "continuity_boundaries.must_persist",
+                  pointer, errors, "what must not change inside this place")
+    if "may_change" in boundaries:
+        _content_list(boundaries.get("may_change"), "continuity_boundaries.may_change",
+                      pointer, errors, "what may change here", allow_empty=True)
+
 def _validate_locations(record, errors):
     locations = record.get("locations")
     if not _nonempty_list(locations):
@@ -213,20 +363,22 @@ def _validate_locations(record, errors):
             errors.append("%s.location_id %r is duplicated" % (pointer, loc_id))
         else:
             seen.add(loc_id)
-        if not _nonempty(loc.get("name")):
-            errors.append("%s.name is required" % pointer)
-        if not _nonempty(loc.get("function")):
-            errors.append("%s.function is required (what the place does in the story)" % pointer)
+        _content(loc.get("name"), "name", pointer, errors, "what the place is called")
+        _content(loc.get("function"), "function", pointer, errors,
+                 "what the place does in the story")
         if not isinstance(loc.get("interior"), bool):
             errors.append("%s.interior must be true or false" % pointer)
-        layout = loc.get("layout")
-        features = layout.get("features") if isinstance(layout, dict) else None
-        if not _nonempty_list(features):
-            errors.append("%s.layout.features is required: the floor plan the written action must fit" % pointer)
-        elif not all(_nonempty(f) for f in features):
-            errors.append("%s.layout.features entries must be non-empty strings" % pointer)
-        elif len({f.strip().lower() for f in features}) != len(features):
-            errors.append("%s.layout.features repeats a value" % pointer)
+        _content(loc.get("access"), "access", pointer, errors,
+                 "who owns it and who may enter")
+        _content_list(loc.get("entrances"), "entrances", pointer, errors,
+                      "the ways in and out of it")
+        _content(loc.get("geography"), "geography", pointer, errors,
+                 "the visible geography of the place")
+        _validate_place_era(loc, pointer, errors)
+        _validate_place_social_rules(loc, pointer, errors)
+        _validate_place_lighting(loc, pointer, errors)
+        _validate_place_layout(loc, pointer, errors)
+        _validate_place_continuity(loc, pointer, errors)
         reality = loc.get("reality")
         if reality not in ("fiction", "real"):
             errors.append("%s.reality must be 'fiction' or 'real'" % pointer)
@@ -445,7 +597,6 @@ def _seal(record):
     seal["seal_digest"] = seal_digest(seal, record["content_digest"])
     record["seal"] = seal
     return record
-
 
 # ---------------------------------------------------------------------------
 # real authoring dispatch through the existing supported model layer
@@ -1033,7 +1184,6 @@ def _dispatch_machinery():
     return (guard, no_spend_transport, live_transport, dispatch_author,
             is_handle, enforcement_guard)
 
-
 _GUARD, no_spend_transport, live_transport, dispatch_author, \
     _is_handle, _enforcement_guard = _dispatch_machinery()
 
@@ -1336,7 +1486,6 @@ def main(argv=None):
           "tests, live_transport in production)." % CODE_DISPATCH_UNPROVEN, file=sys.stderr)
     return 1
 
-
 def _freeze_enforcement():
     """Re-bind the enforcement code to a PRIVATE execution scope, then drop the
     machinery names from the module namespace.
@@ -1413,9 +1562,7 @@ def _freeze_enforcement():
                  "_enforcement_guard", "_is_handle"):
         globals().pop(name, None)
 
-
 _freeze_enforcement()
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

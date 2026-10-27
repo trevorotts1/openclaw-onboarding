@@ -1669,28 +1669,52 @@ def _method_plan_block(run_dir, method):
         except Exception as exc:                  # noqa: BLE001
             out["blueprint_check"] = {"status": "UNDETERMINED",
                                       "detail": str(exc)[:200]}
+        # The blueprint's own projections ride the stage record with it: the
+        # shot seeds and storyboard cards the storyboard stages consume and
+        # the production receipt. One try each -- a projection that cannot
+        # run reports UNDETERMINED beside the check, never hides it.
+        try:
+            out["shot_seeds"] = mp.shot_seeds(blueprint, method)
+        except Exception as exc:                  # noqa: BLE001
+            out["shot_seeds"] = {"status": "UNDETERMINED", "detail": str(exc)[:200]}
+        try:
+            out["storyboard_input"] = mp.storyboard_input(blueprint, method)
+        except Exception as exc:                  # noqa: BLE001
+            out["storyboard_input"] = {"status": "UNDETERMINED", "detail": str(exc)[:200]}
+        try:
+            out["production_map"] = mp.production_map(blueprint, method)
+        except Exception as exc:                  # noqa: BLE001
+            out["production_map"] = {"status": "UNDETERMINED", "detail": str(exc)[:200]}
     return out
 
 def _pace_into_music(run_dir, method):
-    """method_plan.pace_order + true_at_beat into the music request (F17).
+    """method_plan.music_request_input into the music request (F17).
 
-    The request builder reads both keys, so they are written into
-    $RUN/music/req.json when that file already exists and are always returned
-    for whoever builds it. No blueprint means no seam is ever invented (the
-    rule pace_order itself keeps), so the request is left alone.
+    pace_order + true_at_beat AND the four turns with their recorded reason
+    and audible change are written into $RUN/music/req.json when that file
+    already exists and are always returned for whoever builds it. No blueprint
+    means no seam is ever invented (the rule pace_order itself keeps), so the
+    request is left alone.
+
+    S75X-W2-U2 QC: the music command (song_choices._load_request) reads the
+    order ONLY as ``pace_plan`` and the hook plan ONLY as ``hook_plan``, so the
+    blueprint order and hook seed are also filled under those two keys --
+    fill-only: a pace_plan / hook_plan the request already carries is kept.
     """
     blueprint = _read_json(Path(run_dir) / "creative" / "blueprint.json")
     mp = _core_mod("method_plan")
     if mp is None or not isinstance(method, dict) or not blueprint:
         return {"available": False}
     try:
-        order = mp.pace_order(blueprint) or {}
+        mi = mp.music_request_input(blueprint, method) or {}
     except Exception as exc:                      # noqa: BLE001
         return {"available": False, "detail": str(exc)[:200]}
+    order = mi.get("pace_order") or {}
     if not order:
         return {"available": False}
     out = {"available": True, "pace_order": order,
-           "true_at_beat": order.get("true_at_beat")}
+           "true_at_beat": order.get("true_at_beat"),
+           "turns": mi.get("turns")}
     req = Path(run_dir) / "music" / "req.json"
     doc = _read_json(req)
     if isinstance(doc, dict):
@@ -1698,11 +1722,45 @@ def _pace_into_music(run_dir, method):
         merged["pace_order"] = order
         if out["true_at_beat"]:
             merged["true_at_beat"] = out["true_at_beat"]
+        if out["turns"]:
+            merged["turns"] = out["turns"]
+        if not (merged.get("pace_plan") or merged.get("_pace_plan")):
+            merged["pace_plan"] = order
+        seed = mi.get("hook_plan_seed")
+        if seed and not (merged.get("hook_plan") or merged.get("_hook_plan")):
+            merged["hook_plan"] = seed
         try:
             _write_json(req, merged)
             out["written_into_request"] = True
         except OSError:
             out["written_into_request"] = False
+    return out
+
+def _seeds_into_storyboard(run_dir, method):
+    """method_plan.shot_seeds into the storyboard stage's planner input.
+
+    One seed per story beat, in shot_planner's own field names, is written to
+    $RUN/storyboard/shot-seeds.json beside shot-list.json -- the storyboard
+    artist authors the shot list FROM the blueprint's resolved fields, and
+    each seed's ``unresolved`` list names exactly what is still added by hand.
+    No blueprint means nothing is written and nothing is invented.
+    """
+    blueprint = _read_json(Path(run_dir) / "creative" / "blueprint.json")
+    mp = _core_mod("method_plan")
+    if mp is None or not isinstance(method, dict) or not blueprint:
+        return {"available": False}
+    try:
+        seeds = mp.shot_seeds(blueprint, method)
+    except Exception as exc:                      # noqa: BLE001
+        return {"available": False, "detail": str(exc)[:200]}
+    path = Path(run_dir) / "storyboard" / "shot-seeds.json"
+    out = {"available": True, "seeds": len(seeds)}
+    try:
+        _write_json(path, {"seeds": seeds,
+                           "source": "method_plan.shot_seeds"})
+        out["written"] = True
+    except OSError:
+        out["written"] = False
     return out
 
 def _agnes_segment_total(run_dir, method, prog):
@@ -2849,6 +2907,8 @@ def _next_stage(a, *, boot_snapshot=None):
             "produces": pfrow["produces"]}
     music_request = (_pace_into_music(run_dir, method)
                      if method is not None and next_stage == "music" else None)
+    shot_seeds = (_seeds_into_storyboard(run_dir, method)
+                  if method is not None and next_stage == "storyboard" else None)
     sa = None
     if next_stage == "music":
         sa = _script_gate(run_dir, a, reply=None)
@@ -2892,6 +2952,8 @@ def _next_stage(a, *, boot_snapshot=None):
         nxt["platform_fit"] = platform_fit
     if music_request is not None:
         nxt["music_request"] = music_request
+    if shot_seeds is not None:
+        nxt["shot_seeds"] = shot_seeds
     if next_stage == "music":
         nxt["lifecycle"] = _music_lifecycle()
         # L4.5: the SONG PICK / next paid step is a cost fork. Record the

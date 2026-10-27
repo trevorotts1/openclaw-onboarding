@@ -1,0 +1,90 @@
+{
+  "unit": "S75X-W1-U1",
+  "role": "qc-fixer",
+  "verdict": "PASS",
+  "status": "clean",
+  "workflow": "opus-chain qc-fixer",
+  "verified_at": "2026-10-26",
+  "builder_verdict_file": "evidence/S75X-W1/S75X-W1-U1.verdict.json",
+  "builder_verdict_agrees": true,
+  "code_changes_made": [],
+  "fixes": [],
+  "provenance": {
+    "lane": "<PATH>/worktrees/S75X-W1-U1-qc",
+    "lane_mode": "git worktree, detached HEAD at 24366d8f5c649cb01afa183c2d7bf39fd6420a20 (the unit head; the shared local branch s75x/verdicts-S75X-W1 stays where the S75X-W1-U2 lanes hold it, so the push refspec targets refs/heads/s75x/verdicts-S75X-W1 directly)",
+    "scratch": "<PATH>/scratch/w1u1-qc/",
+    "base_tested": "96559ab1b531570534316d856006867606afd4e2",
+    "head_tested": "24366d8f5c649cb01afa183c2d7bf39fd6420a20",
+    "code_identity_vs_base": "git diff 96559ab1b..24366d8f5 = exactly two evidence files (S75X-W1-U1.verdict.json, S75X-W1-U2.verdict.json), 0 non-evidence paths; the code under QC is origin/main@96559ab1b",
+    "unit_code_commits": "f9efd7540 (references docs + intake_card run_state_file + test file) then cd73b140e (conversation() delegates the default to new_run_flow; two more tests); both confirmed ancestors of origin/main (landed via PR #2604 / 96559ab1b)",
+    "branch_tip_at_qc": "origin/s75x/verdicts-S75X-W1 moved 24366d8f5 -> 53e23f7a4 ('S75X-W1-U2 QC: builder PASS confirmed') between the builder push and this QC; this QC commit is rebased on 53e23f7a4",
+    "origin_main_at_qc": "0c93f458770c222defde6154503ac4d969048dd3 (advanced from 96559ab1b by the merge train after the builder's receipt; builder's 'main untouched at 96559ab1b' was accurate at builder time)"
+  },
+  "acceptance_re_runs": [
+    {
+      "element": "A new run reaches the opening-coaching flow through the supported launcher",
+      "result": "MET (independently reproduced)",
+      "evidence": "factory.py card --step --run-dir <empty scratch run> -> rc 0, first line 'Question 1 of 15 - PURPOSE', body contains 'What is this video for?'. intake_card.py CLI on a fresh run dir + run-state file: call1 = one-time intro ('Turn your offer into a video dramatization...'), call2 and call3 = 'Question 1 of 15 - PURPOSE'. Shaped lists: legacy/OFFER 14 ids (offer..script), purpose 15 ids (purpose first). Distinguishable by printed total alone.",
+      "counts": "purpose card 15 questions; legacy card 14 questions; 2/2 entry points open on PURPOSE"
+    },
+    {
+      "element": "A resumed run is untouched",
+      "result": "MET (independently reproduced)",
+      "evidence": "Legacy run fixture (control/state.sqlite3 + card-answers.json + control/card-receipt.json) through factory.py card --step: rc 0, 'Question 1 of 14 - OFFER', zero 'PURPOSE' occurrences in output; sha256 of all 3 pre-existing files identical before/after; control/method.json NOT created; only control/intake-session.json and its .lock added (intake_session.py writes, outside this unit's delta). Purpose-flow run (control/method.json present) resumes 'Question 1 of 15 - PURPOSE' with method.json byte-identical after the turn.",
+      "counts": "3/3 pre-existing files sha256-identical; 0 migration writes; method.json not created on either resume"
+    },
+    {
+      "element": "No method jargon in client-facing text",
+      "result": "MET (independently reproduced)",
+      "evidence": "Independent scan over the 7 purpose/where paths [(1,None),(2,None),(3,None),(4,1),(4,2),(4,3),(4,4)] driven end to end: 1031 question strings (label/ask/why/reason/closing/preface/rec_mark + 2 per option pair) and 127 rendered messages (120 turn messages + 7 recaps) scanned, 0 hits against METHOD_JARGON (MOS, ERM, ERM drop, beat sheet, screenwriting, inciting incident, story arc, master scene, turning point). Controls: jargon_hits('the ERM drop') == ['ERM', 'ERM drop']; jargon_hits('terms and conditions') == []. Counts match the builder's verbatim (1031 / 127).",
+      "counts": "1031 question strings, 127 rendered messages, 0 jargon hits, 2/2 controls pass"
+    },
+    {
+      "element": "Existing intake tests pass",
+      "result": "MET (independently reproduced, verbatim counts)",
+      "evidence": "python3 -I -m pytest, separate invocations from 75-drama-song-ad-factory (combined invocation is a known harness collection artifact): scripts/core/choice_card/intake_card/ -> 249 passed, 27 subtests passed, 0 failed, 0 skipped, exit 0 (25 test files); scripts/core/choice_card/ -> 282 passed, 27 subtests passed, exit 0; scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py -> 1 passed, exit 0; scripts/core/choice_card/intake_card/test_opening_flow_default_s75x.py -> 15 passed, exit 0. Total 547 passed, 0 failed, 0 skipped, 0 xfail. Lane tree byte-clean vs 24366d8f5 after all runs (git status --porcelain empty): no test edited, weakened or deselected; 0 skip/xfail/pytest.mark tokens in the unit file.",
+      "counts": "249 + 282 + 1 + 15 = 547 passed, 0 failed, 0 skipped, 27 subtests"
+    }
+  ],
+  "extra_evidence": {
+    "E2E_method_json_via_launcher": "Closed the builder's top not_verified gap: the whole purpose card driven turn by turn through factory.py card (--format session-json, --question-id/--question-digest/--reply protocol) on a fresh run -> 17 answered turns, recap reached with answered_count == total_count == 17, method.json absent before the final confirmation (intake preferences are not approval), 'yes' -> done True and control/method.json written with purpose == 'campaign', chosen_length_s == 180. PASS. Scratch: w1u1-qc/qc_e2e_method.py, run dir w1u1-qc/a5-e2e-method.",
+    "F2_cross_entry_point_probe": "factory.py card vs IC.conversation first-line agreement on four run states: fresh run PURPOSE/PURPOSE agree; legacy answers OFFER/OFFER agree; method.json marker PURPOSE/PURPOSE agree; intro_shown-only state PURPOSE('Question 1 of 15')/OFFER('Question 1 of 14') DISAGREE -- exactly the F1 state and nothing else. The unit's test_the_api_and_the_launcher_agree_on_the_default indeed drives intake_card.main only (never factory.py card), as F2 states; the launcher-side agreement for the three reachable states is now evidenced by this probe plus the acceptance re-runs."
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "low",
+      "blocks_acceptance": false,
+      "qc_status": "CONFIRMED with a reachability refinement",
+      "detail": "The divergence reproduces exactly: run state {intro_shown: true} with no intake_purpose_flow, no flow markers and no answers -> factory.py _purpose_flow_for/_run_is_new classifies PURPOSE ('Question 1 of 15') while intake_card.new_run_flow classifies OFFER ('Question 1 of 14'). Reachability refined against the whole repo: the only intro_shown writers are card_session_cli._intro (which always writes intake_purpose_flow in the same atomic replace) and intro.take() (which writes intro_shown alone). intro.take()'s sole caller, intake_card.py main line 1653, is unreachable in the shipped CLI: every run-bound invocation (run_dir or run_state_file or session-json or seed) diverts to card_session_cli.run at lines 1646-1649 before the a.step branch, and inside that branch a.run_state_file is always empty so the _intro_take call can never fire. So no current writer of THIS tree produces the state; the builder's 'only reachable from pre-upgrade run states, nothing to migrate' stands for the canonical tree, with the caveat that the single-field writer still exists (dead branch here, live if an out-of-tree adapter calls intro.take -- adapter-repo parity was not checked by builder or QC). The unit docstring claim 'the API and the launcher can never disagree' is therefore true for every state current code writes, not literally true for all states."
+    },
+    {
+      "id": "F2",
+      "severity": "low",
+      "blocks_acceptance": false,
+      "qc_status": "CONFIRMED",
+      "detail": "test_the_api_and_the_launcher_agree_on_the_default compares IC.main against IC.conversation only; factory.py card is not driven by any single test at that assertion level. Confirmed in the test source (lines 195-213). Evidence gap partially closed by this lane: the launcher (factory.py card) was driven directly in every acceptance scenario (fresh/resumed/purpose-marker) and in the E2E method.json run, agreeing with the API default in all states current code writes; the only disagreement remains the F1 dead-state (see F2_cross_entry_point_probe)."
+    }
+  ],
+  "checks": {
+    "C1_lane_discipline": "all lanes/worktrees/scratch under <PATH>; no writes outside",
+    "C2_branch_only": "no commit or push to main; work lands on s75x/verdicts-S75X-W1 via refspec from a detached lane HEAD",
+    "C3_ledger_untouched": "no access to <PATH>/loop-control/s75/ledger.json",
+    "C4_no_secrets": "no secret files read or printed",
+    "C5_verdict_file_integrity": "builder verdict JSON re-read in lane: 14491 bytes, verdict PASS, checks C1-C12 present, acceptance_results 4/4 MET, findings F1+F2, blockers [], row_fully_met true, base_tested == head_tested == 96559ab1b",
+    "C6_counts_verbatim": "all pytest and scan counts recorded exactly as printed",
+    "C7_tests_unweakened": "lane tree clean vs 24366d8f5 after runs; 0 skip/xfail/pytest.mark in unit file; 25 test files confirmed",
+    "C8_push_receipt": "builder push 4fe5687b0..24366d8f5 consistent with origin ref state observed (24366d8f5 confirmed as origin tip before U2-QC's 53e23f7a4 landed)"
+  },
+  "tests": "python3 -I -m pytest (4 separate invocations from <PATH>/worktrees/S75X-W1-U1-qc/75-drama-song-ad-factory): intake_card/ 249 passed + 27 subtests, exit 0, 21.81s; choice_card/ 282 passed + 27 subtests (11 doc warnings), exit 0, 30.21s; test_factory_card_purpose_w3u2.py 1 passed, exit 0, 11.56s; test_opening_flow_default_s75x.py 15 passed, exit 0, 3.77s. Total 547 passed, 0 failed, 0 skipped, 0 xfail.",
+  "not_verified": [
+    "The full 335-file skill suite was not run; adjacent surfaces (dispatch, media, delivery) untouched by this unit were not re-run.",
+    "Adapter-repo parity (.claude/skills/drama-song-ad-factory twin, OpenClaw distribution) was not checked -- the unit's owned_output is the canonical tree only. This also bounds the F1 refinement: an out-of-tree adapter that calls intro.take() directly could still produce the divergent state.",
+    "Client-facing delivery (Telegram / openclaw send argv) was not exercised against a live channel; text and session-json launcher formats only.",
+    "origin/main advanced to 0c93f4587 during QC (merge-train motion after the builder's receipt); behavior was verified against the unit head 24366d8f5, whose code is byte-identical to main@96559ab1b."
+  ],
+  "observations": [
+    "The branch s75x/verdicts-S75X-W1 is shared across S75X-W1 units: U2's builder commit 4fe5687b0, U1's verdict commit 24366d8f5, U2's QC commit 53e23f7a4. Concurrent QC lanes must rebase onto the moving ref rather than blind-push.",
+    "The two files a card turn adds (control/intake-session.json, control/intake-session.json.lock) come from intake_session.py and are the only writes seen on a resumed legacy run; the three pre-existing files stayed sha256-identical."
+  ]
+}

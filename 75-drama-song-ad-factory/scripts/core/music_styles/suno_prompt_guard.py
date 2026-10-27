@@ -100,6 +100,12 @@ _DISPLAY_QUALIFIER = frozenset({
     "reference", "references", "ref", "refs", "name", "names",
     "metadata", "value", "values", "notes", "text", "texts",
 })
+#: A token that is BOTH halves is the container WORD itself: ``reference``,
+#: ``references``, ``ref`` and ``refs`` name a display collection with no
+#: second token beside them, so a key spelled exactly that IS the namespace,
+#: never a scalar beside it.  (S75-T41 r10: the two-token rule below let these
+#: four ride out, where r8 had refused them.)
+_CONTAINER_WORDS = _DISPLAY_SUBJECT & _DISPLAY_QUALIFIER
 
 #: A field that may not become empty: an empty style field is not a payload.
 REQUIRED_NONEMPTY_PATHS = ("input.style",)
@@ -383,6 +389,10 @@ def is_client_metadata_key(key):
     if str(key) in CLIENT_METADATA_KEYS:
         return True
     tokens = _key_tokens(key)
+    if tokens and tokens <= _CONTAINER_WORDS:
+        # The key IS a container word ("references"), so there is no scalar
+        # beside a container here: this is the display namespace itself.
+        return True
     subjects = tokens & _DISPLAY_SUBJECT
     qualifiers = tokens & _DISPLAY_QUALIFIER
     # The two halves must be TWO tokens: ``reference`` is both a subject and a
@@ -484,13 +494,20 @@ def _digest(value):
 
 
 # ------------------------------------------------------------------ guard ---
-def guard(payload, catalog, protected=DEFAULT_PROTECTED_PATHS):
+def guard(payload, catalog=None, protected=DEFAULT_PROTECTED_PATHS,
+          approved_lyrics=None, approved_character_names=None):
     """Inspect, then either return a sendable payload or block the submission.
 
     Returns a receipt dict.  ``receipt["sendable"]`` is True only for PASS and
     SANITIZED.  On BLOCKED the payload is never returned for sending, the
     approved creative bytes are untouched, and ``provider_calls`` is 0.
+
+    Called WITHOUT a ``catalog`` the fixed-table verdict layer runs instead
+    (``verdict_guard``): same payload, PASS/BLOCKED receipt, no rewrite.
     """
+    if catalog is None:
+        return verdict_guard(payload, approved_lyrics,
+                             approved_character_names)
     if not isinstance(payload, dict):
         raise PromptGuardError("PAYLOAD_NOT_AN_OBJECT",
                                "the guarded payload must be an object")
@@ -707,3 +724,283 @@ def guarded_send(payload, catalog, send, protected=DEFAULT_PROTECTED_PATHS):
     result = send(receipt["payload"])
     receipt["submitted_payload_digest"] = receipt["payload_digest"]
     return result, receipt
+
+
+# ------------------------------------------------- verdict layer (S75-T41) ---
+# The fixed-table verdict layer: the same outgoing payload, checked against
+# the catalog's display references plus the aliases recorded below, with NO
+# rewrite.  ``guard(payload)`` (no catalog) runs this.  Every limitation is
+# reported in the receipt, never assumed away.
+ALIASES = {
+    "Luther Vandross": ("Luther",),
+    "Whitney Houston": ("Nippy",),
+    "Lauryn Hill": ("L-Boogie", "L Boogie"),
+    "Missy Elliott": ("Misdemeanor", "Missy"),
+    "Andra Day": ("Andra",),
+    "Bill Withers": ("Bill Withers",),
+    "Ed Sheeran": ("Sheeran",),
+    "Jason Mraz": ("Mraz",),
+    "Tracy Chapman": ("Chapman",),
+    "Bob Dylan": ("Robert Zimmerman", "Zimmerman"),
+    "Shania Twain": ("Twain",),
+    "Carrie Underwood": ("Underwood",),
+    "Drake": ("Drizzy", "Aubrey Graham", "Champagne Papi"),
+    "Rod Wave": ("Rodarius Green",),
+    "Cardi B": ("Belcalis Almanzar", "Cardi"),
+    "Future": ("Nayvadius Wilburn",),
+    "Nelly": ("Cornell Haynes", "Cornell Iral Haynes"),
+    "Flo Rida": ("Tramar Dillard",),
+    "Puff Daddy": ("P. Diddy", "P Diddy", "Diddy", "Sean Combs"),
+    "Maroon 5": ("Maroon Five",),
+    "Paramore": ("Hayley Williams",),
+    "Daddy Yankee": ("Ramón Ayala", "Ramon Ayala"),
+    "Bad Bunny": ("Benito Martínez", "Benito Martinez"),
+    "Adele - Skyfall": ("Adele", "Skyfall"),
+    "Celine Dion - My Heart Will Go On": (
+        "Céline Dion", "Celine Dion", "My Heart Will Go On"),
+    "Idina Menzel": ("Idina",),
+    "Cynthia Erivo": ("Cynthia",),
+    "Kirk Franklin": ("Kirk",),
+    "Tems": ("Temilade Openiyi",),
+    "Jelly Roll": ("Jason DeFord",),
+}
+
+#: Approved creative channels: never scanned, never rewritten.
+PROTECTED_KEYS = frozenset({"lyrics", "character_names"})
+
+#: Honest limits, printed by the self-check and returned in every receipt.
+KNOWN_LIMITS = (
+    "token scope is the 18-style catalog's own display references plus the "
+    "explicit alias table, not a global artist blacklist",
+    "an alias absent from the table is not caught (e.g. an unrecorded "
+    "nickname)",
+    "artist names inside approved lyrics are allowed by design: lyrics are "
+    "protected creative bytes, never scanned and never rewritten",
+    "a character name equal to an artist name is protected inside lyrics and "
+    "character_names, and blocked if it appears in an instruction field",
+    "homoglyphs (for example Cyrillic lookalikes) are not caught",
+    "binary or non-text payload values are not scanned",
+    "a reference that is also an ordinary word (the artist 'Future') "
+    "over-blocks a legitimate use such as 'future bass'; fail-closed, not "
+    "silently dropped",
+)
+
+_METADATA_KEYS_NORM = frozenset(
+    re.sub(r"[\W_]+", "", key.casefold()) for key in CLIENT_METADATA_KEYS)
+
+
+def _is_metadata_key(text):
+    return re.sub(r"[\W_]+", "", str(text).casefold()) in _METADATA_KEYS_NORM
+
+
+def _catalog_module():
+    try:                                # imported as music_styles.suno_prompt_guard
+        from . import catalog as module
+    except ImportError:                 # script/top-level import
+        import catalog as module
+    return module
+
+
+def catalog_references():
+    """Every display reference in the eighteen-style catalog, catalog order."""
+    module = _catalog_module()
+    refs = []
+    for sid in module.style_ids():
+        refs.extend(module.client_references(sid))
+    seen, ordered = set(), []
+    for ref in refs:
+        if ref not in seen:
+            seen.add(ref)
+            ordered.append(ref)
+    return tuple(ordered)
+
+
+def _forms(token):
+    """Every comparable spelling: spaced and squashed."""
+    base = normalize(token)
+    if not base:
+        return ()
+    forms = {base}
+    if " " in base:
+        forms.add(base.replace(" ", ""))
+    return tuple(sorted(forms))
+
+
+def forbidden_tokens():
+    """``(token, form)`` pairs: display references, recorded aliases, forms."""
+    pairs = []
+    for ref in catalog_references():
+        for form in _forms(ref):
+            pairs.append((ref, form))
+        for alias in ALIASES.get(ref, ()):
+            for form in _forms(alias):
+                pairs.append((alias, form))
+    seen, unique = set(), []
+    for token, form in pairs:
+        key = (form, token)
+        if key not in seen:
+            seen.add(key)
+            unique.append((token, form))
+    return tuple(unique)
+
+
+_PATTERNS = None
+
+
+def _patterns():
+    global _PATTERNS
+    if _PATTERNS is None:
+        compiled = {}
+        for _token, form in forbidden_tokens():
+            compiled.setdefault(
+                form, re.compile(r"(?<!\w)%s(?!\w)" % re.escape(form)))
+        _PATTERNS = tuple((token, form, compiled[form])
+                          for token, form in forbidden_tokens())
+    return _PATTERNS
+
+
+def find_references(text):
+    """Every ``(token, form)`` matched in one string, table order."""
+    norm = normalize(text)
+    if not norm:
+        return ()
+    return tuple((token, form) for token, form, pattern in _patterns()
+                 if pattern.search(norm))
+
+
+def _last_key(path):
+    return re.sub(r"\[\d+\]$", "", path.rsplit(".", 1)[-1])
+
+
+def _is_protected_path(path):
+    return any(re.sub(r"\[\d+\]$", "", seg) in PROTECTED_KEYS
+               for seg in path.split("."))
+
+
+def walk(payload):
+    """Every ``(path, kind, value)`` in the payload, object keys included."""
+    yield from _walk(payload, "")
+
+
+def _walk(value, path):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            child = "%s.%s" % (path, key) if path else str(key)
+            yield child, "key", str(key)
+            yield from _walk(item, child)
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            yield from _walk(item, "%s[%d]" % (path, index))
+    else:
+        yield path, "value", value
+
+
+def _protected_values(payload):
+    """``{path: value}`` for every protected creative field present."""
+    found = {}
+
+    def rec(value, path):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                child = "%s.%s" % (path, key) if path else str(key)
+                if key in PROTECTED_KEYS:
+                    found[child] = item
+                rec(item, child)
+        elif isinstance(value, (list, tuple)):
+            for index, item in enumerate(value):
+                rec(item, "%s[%d]" % (path, index))
+
+    rec(payload, "")
+    return found
+
+
+def _sha(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def verdict_guard(payload, approved_lyrics=None,
+                  approved_character_names=None):
+    """Inspect a finished outgoing payload. Returns a receipt; never mutates."""
+    matches = []
+    scanned, protected = [], []
+    for path, kind, text in walk(payload):
+        if _is_protected_path(path):
+            protected.append(path)
+            continue
+        if not isinstance(text, str):
+            continue
+        if kind == "key" and _is_metadata_key(text):
+            matches.append({"field": path, "token": text,
+                            "kind": "display-metadata-key"})
+            continue
+        scanned.append(path)
+        for token, form in find_references(text):
+            matches.append({"field": path, "token": token, "kind": kind,
+                            "matched": form})
+
+    values = _protected_values(payload)
+    lyrics_paths = [p for p in values if _last_key(p) == "lyrics"]
+    name_paths = [p for p in values if _last_key(p) == "character_names"]
+    lyrics_sha = name_sha = None
+    if approved_lyrics is not None:
+        if not lyrics_paths:
+            matches.append({"field": "lyrics", "token": "<missing>",
+                            "kind": "approved-lyrics-missing"})
+        for path in lyrics_paths:
+            got = values[path]
+            if not isinstance(got, str):
+                matches.append({"field": path, "token": "<not-text>",
+                                "kind": "approved-lyrics-mutated"})
+                continue
+            lyrics_sha = _sha(got)
+            if got != approved_lyrics:
+                matches.append({"field": path, "token": "<mutated>",
+                                "kind": "approved-lyrics-mutated"})
+    if approved_character_names is not None:
+        approved = tuple(approved_character_names)
+        for path in name_paths:
+            got = values[path]
+            try:
+                got_tuple = tuple(got or ())
+            except TypeError:
+                got_tuple = None
+            name_sha = _sha(repr(got))
+            if got_tuple != approved:
+                matches.append({"field": path, "token": "<mutated>",
+                                "kind": "approved-characters-mutated"})
+
+    if isinstance(payload, dict):
+        stamped = payload.get("_lyrics_sha256")
+        first = values.get(lyrics_paths[0]) if lyrics_paths else None
+        if (stamped is not None and isinstance(first, str)
+                and stamped != _sha(first)):
+            matches.append({"field": "lyrics", "token": "<digest-mismatch>",
+                            "kind": "lyrics-digest-mismatch"})
+
+    return {
+        "schema": SCHEMA_VERSION,
+        "verdict": "BLOCKED" if matches else "PASS",
+        "sendable": not matches,
+        "scanned_fields": tuple(dict.fromkeys(scanned)),
+        "protected_fields": tuple(dict.fromkeys(protected)),
+        "matches": tuple(matches),
+        "lyrics_sha256": lyrics_sha,
+        "character_names_sha256": name_sha,
+        "reference_count": len(catalog_references()),
+        "alias_token_count": len({form for _t, form in forbidden_tokens()}),
+        "known_limits": KNOWN_LIMITS,
+    }
+
+
+def assert_clean(payload, approved_lyrics=None,
+                 approved_character_names=None):
+    """Raise on BLOCKED; return the PASS receipt otherwise."""
+    receipt = verdict_guard(payload, approved_lyrics, approved_character_names)
+    if receipt["verdict"] != "PASS":
+        first = receipt["matches"][0]
+        raise PromptGuardError(
+            "OUTGOING_REFERENCE_LEAK",
+            "%d leak(s); first at %r: %r (%s)"
+            % (len(receipt["matches"]), first["field"], first["token"],
+               first["kind"]))
+    return receipt

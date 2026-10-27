@@ -654,6 +654,22 @@ class DisplayMetadataBoundary(unittest.TestCase):
                              [b["reason"] for b in receipt["blocked"]], key)
             self.assertEqual(receipt["decision"], "PASS", key)
 
+    def test_a_bare_container_word_is_the_namespace_not_a_scalar(self):
+        # S75-T41 r10: the r9 two-token rule ("the halves must be TWO tokens")
+        # reads a key that is BOTH halves on its own as one scalar, so
+        # ``references`` and its three spellings rode out where r8 refused
+        # them.  A lone container word is the display namespace itself.
+        for key in ("reference", "references", "ref", "refs"):
+            payload = envelope(self.catalog, "soul-ballad")
+            payload["input"][key] = ["Whitney Houston"]
+            receipt = G.guard(payload, self.catalog)
+            self.assertEqual(receipt["decision"], "BLOCKED", key)
+            self.assertIsNone(receipt["payload"], key)
+            self.assertEqual(receipt["provider_calls"], 0, key)
+            self.assertIn("CLIENT_METADATA_SERIALIZED",
+                          [b["reason"] for b in receipt["blocked"]
+                           if b["field"] == "input." + key], key)
+
     def test_the_envelope_refuses_an_input_key_it_never_named(self):
         # S75-T41 r9 defect D-5: check_envelope allowlists the input keys, so a
         # spelling the shape rule never learned cannot legally ride out.

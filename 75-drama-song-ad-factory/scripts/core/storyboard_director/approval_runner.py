@@ -227,6 +227,65 @@ def _load(run_dir):
     return shots or [], contracts, stills
 
 
+def _method_contracts(run_dir, contracts, shots=None):
+    """method_plan.storyboard_input feeds the storyboard review: the blueprint
+    answers the 14.3 contract questions beside every shot card, and they are
+    merged into the review's contract view.
+
+    Each REAL shot takes the card whose story-beat window holds the shot's
+    ``song_start`` (start <= t < end; the last beat also holds its end), or the
+    card whose id equals the shot's own. Cards are keyed by blueprint
+    story-beat id, which a shot list never has to reuse, so matching by id
+    alone filled nothing. A card no real shot lands on is never added.
+
+    Fill-only: a question the run's own contracts.json already answers keeps
+    its answer, and nothing here touches shots, contracts.json or the
+    approval record. No blueprint, no method_plan box: the review sees the
+    run's contracts unchanged."""
+    blueprint = _read(_p(run_dir, "creative", "blueprint.json"))
+    if not blueprint:
+        return contracts
+    method = _read(_p(run_dir, "control", "method.json")) or {}
+    try:
+        import method_plan.method_plan as MP   # noqa: PLC0415  the owner module
+        seeds = MP.shot_seeds(blueprint, method)
+        cards = MP.storyboard_input(blueprint, method).get("cards") or []
+    except Exception:                          # noqa: BLE001 - review stands alone
+        return contracts
+    by_id = {c.get("shot_id"): c for c in cards if isinstance(c, dict)}
+    windows = [(s.get("song_start"), s.get("song_end"), by_id.get(s.get("shot_id")))
+               for s in seeds
+               if s.get("song_start") is not None and s.get("song_end") is not None]
+    last_end = max((w[1] for w in windows), default=None)
+
+    def card_for(shot):
+        sid = shot.get("shot_id")
+        if sid in by_id:
+            return by_id[sid]
+        try:
+            t = float(shot.get("song_start"))
+        except (TypeError, ValueError):
+            return None
+        for start, end, card in windows:
+            if start <= t < end or (t == end == last_end):
+                return card
+        return None
+
+    merged = {sid: dict(c or {}) for sid, c in (contracts or {}).items()}
+    for shot in shots or []:
+        sid = shot.get("shot_id") if isinstance(shot, dict) else None
+        card = card_for(shot) if sid else None
+        if not card:
+            continue
+        cur = merged.get(sid) or {}
+        for key, val in (card.get("contract") or {}).items():
+            if val and not cur.get(key):
+                cur[key] = val
+        if cur:
+            merged[sid] = cur
+    return merged
+
+
 def _ordered(shots):
     return sorted(shots or [], key=lambda s: (s["song_start"], s["song_end"]))
 
@@ -311,7 +370,8 @@ def _approve(run_dir, shots, contracts, stills, choice, st=None, reply=None):
     review = None
     try:
         import storyboard_director.storyboard_director as SD
-        review = SD.adversarial_review(approved, contracts)
+        review = SD.adversarial_review(approved,
+                                       _method_contracts(run_dir, contracts, approved))
     except Exception:   # noqa: BLE001 - review is its own stage; gate.json just omits it
         pass
     _write(_p(run_dir, "storyboard", "gate.json"), {"shots": approved, "review": review})

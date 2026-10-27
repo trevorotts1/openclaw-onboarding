@@ -1,0 +1,115 @@
+{
+  "unit_id": "S75X-W2-U1",
+  "workflow_id": "S75X-W2",
+  "role": "builder",
+  "verdict": "PASS",
+  "verdict_reason": "All four acceptance elements reproduce at origin/main from an isolated lane; the unit's own tests, the module selftest and an independent builder check all pass, and the independent check was proven to discriminate against a deliberately weakened mutant.",
+  "plan_of_record": "<PATH>/skill75-repair/SWARM-PLAN-V2.json",
+  "generated_utc": "2026-10-26T15:25:42Z",
+  "lane": "<PATH>/s75/worktrees/S75X-W2-U1-build",
+  "repository": "https://github.com/trevorotts1/openclaw-onboarding.git",
+  "base": {
+    "sha": "4b48ce34775b78afd55abfcd52fa85c8efc3c271",
+    "note": "parent of the unit commit 4097da395 (pre-unit state)"
+  },
+  "head": {
+    "sha": "96559ab1b531570534316d856006867606afd4e2",
+    "note": "current origin/main, merge commit of PR #2604 from batch/s75x-frontier-land (cohort landing)"
+  },
+  "unit_commit": {
+    "sha": "4097da39502b8f1dcaa4aad813da54a5a67be4ea",
+    "subject": "S75X-W2-U1 + S75X-W2-U2: story presentation order and method plan",
+    "numstat": [
+      "338\t7\t75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py",
+      "154\t0\t75-drama-song-ad-factory/scripts/core/method_plan/test_method_plan.py",
+      "252\t3\t75-drama-song-ad-factory/scripts/core/story_arc/story_arc.py",
+      "229\t0\t75-drama-song-ad-factory/scripts/core/story_arc/test_presentation_order_u1.py"
+    ],
+    "deletions_in_story_arc": 3,
+    "deletions_are": "build_manifest signature line, its docstring line, and the closing dict line, all replaced by the extended presentation-aware versions. No validator line and no existing test line was removed or relaxed (0 deletions in any test file)."
+  },
+  "acceptance_elements": [
+    {
+      "id": "A1",
+      "statement": "A consequence-first story validates.",
+      "result": "PASS",
+      "checks": ["C3", "C4", "suite:test_presentation_order_u1.py"],
+      "evidence": "Record with presentation.order beginning at 'vindication', explicit opening, rewind_to='ordinary_world', three agreeing views (script/performed/shots) and twelve five-part statements returns outcome=ok, reason_code=story-valid, beat_count=12 (check C3). The same record is refused with reason_code=presentation-missing / presentation-duplicate / presentation-unknown when a beat is dropped, duplicated or invented (checks C5d:dropped, C5d:duplicated, C5d:invented), and refused with beat-statement-missing when any beat cannot state its five parts (check C5c)."
+    },
+    {
+      "id": "A2",
+      "statement": "Causal order and all twelve beat IDs survive.",
+      "result": "PASS",
+      "checks": ["C1", "C2", "C6", "selftest:story_arc --selftest"],
+      "evidence": "BEATS is exactly the twelve directive 11.1 ids in canonical order (C1); the causal order check is still live at story_arc.py:138-141 and rejects a consequence-first beats array that declares no presentation with reason_code=beat-order (C2); the performed-beat manifest emits the presented sequence while every row keeps its stable canonical id and its causal_position, e.g. causal_position [11,1,2,3,4,5,6,7,8,9,10,12] against presentation_position [1..12] (C6). Module selftest covers twelve per-beat-missing fixtures plus reordered/duplicate/reveal cases: PASS (24 checks, 0 failures)."
+    },
+    {
+      "id": "A3",
+      "statement": "Reordering is explicit data, not relabelling.",
+      "result": "PASS",
+      "checks": ["C4", "C5", "C5b"],
+      "evidence": "Presentation lives in a declared 'presentation' block (PRESENTATION_SCHEMA='blackceo.presentation-order/v1'); declares_presentation() is false for a record without one (C5), and validate_story dispatches to check_presentation_order only when it is declared, on top of the canonical contract rather than instead of it (story_arc.py:185-193). The presented order is a permutation of the same twelve ids with unknown=[] duplicate=[] missing=[] (C4). No beat id is renamed: unknown-beat detection is by canonical id set. A shot sequence that disagrees with the declared order is refused with presentation-view-mismatch (C5b), and build_manifest raises StoryArcError rather than emitting a manifest in a wrong order."
+    },
+    {
+      "id": "A4",
+      "statement": "Existing story_arc tests pass.",
+      "result": "PASS",
+      "checks": ["suite:story_arc total"],
+      "evidence": "python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/story_arc/ => 34 passed in 0.36s. Per file: test_method_anchors.py 10 passed, test_presentation_order_u1.py 18 passed, test_villain_doctrine_u16.py 6 passed. test_method_anchors.py and test_villain_doctrine_u16.py are untouched by the unit commit (0 deletions anywhere in test files)."
+    }
+  ],
+  "checks": {
+    "counts": {
+      "pytest_tests_collected_story_arc": 34,
+      "pytest_tests_passed_story_arc": 34,
+      "pytest_tests_failed_story_arc": 0,
+      "module_selftest_checks": 24,
+      "module_selftest_failures": 0,
+      "independent_builder_checks": 11,
+      "independent_builder_failures": 0,
+      "control_mutant_checks": 11,
+      "control_mutant_failures": 3
+    },
+    "commands": [
+      {
+        "cwd": "<PATH>/s75/worktrees/S75X-W2-U1-build",
+        "cmd": "python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/story_arc/",
+        "output": "34 passed in 0.36s"
+      },
+      {
+        "cwd": "<PATH>/s75/worktrees/S75X-W2-U1-build",
+        "cmd": "python3 -I 75-drama-song-ad-factory/scripts/core/story_arc/story_arc.py --selftest",
+        "output": "story_arc selftest: PASS (24 checks, 0 failures)"
+      },
+      {
+        "cwd": "<PATH>/s75/scratch/u1-verify-20261026",
+        "cmd": "python3 -I u1_acceptance.py <lane>",
+        "output": "u1 acceptance: PASS (11 checks, 0 failed)"
+      },
+      {
+        "cwd": "<PATH>/s75/scratch/u1-verify-20261026",
+        "cmd": "python3 -I u1_acceptance.py <mutant with beat-order check and view-mismatch check neutralized>",
+        "output": "u1 acceptance: FAIL (11 checks, 3 failed); failed ids: C2, C5, C5b"
+      }
+    ],
+    "independent_check_script": "<PATH>/s75/scratch/u1-verify-20261026/u1_acceptance.py",
+    "independent_check_results": "<PATH>/s75/scratch/u1-verify-20261026/run1.json",
+    "control_results": "<PATH>/s75/scratch/u1-verify-20261026/control.json",
+    "control_note": "Known-good control on the instrument, not just the target: the same 11 checks run against a copy of story_arc.py whose canonical beat-order enforcement and view-mismatch enforcement were neutralized return 3 failures (C2, C5, C5b). The checks therefore discriminate; a green run is not a rubber stamp."
+  },
+  "work_spec_coverage": {
+    "five_part_statement_per_major_beat": "PASS - BEAT_STATEMENT_FIELDS (action, change, understood, question, carrier) enforced for all twelve beats; 12/12 statements recorded in check C4, refusal proven in C5c.",
+    "script_performed_shots_reconciled": "PASS - PRESENTATION_VIEWS = (script, performed, shots), each compared to the one declared order (C5b plus the manifest check C6).",
+    "validators_not_disabled": "PASS - no validation branch removed; unit commit deletes 3 lines in story_arc.py, all replaced signature/docstring/dict lines, and the added presentation check is additive at story_arc.py:185-193. Proven functionally by C2 (causal order still rejects) and C5b (view mismatch still rejects).",
+    "no_relabelling": "PASS - presentation carries the same twelve canonical ids; unknown/duplicate/missing detection is by id."
+  },
+  "not_verified": [
+    "The full 75-drama-song-ad-factory test suite was not completed: pytest over the whole skill directory had not produced output within the 120s window and was stopped. Only the story_arc directory (34 tests), which the acceptance names, was run to completion.",
+    "No end-to-end run through the ad pipeline (storyboard, shot planner, music requests, render) was exercised; verification is unit and module level only.",
+    "S75X-W2-U2 (method_plan blueprint and cue contracts) is out of scope for this verdict and was not judged, although it landed in the same commit 4097da395.",
+    "Downstream consumers outside 75-drama-song-ad-factory that may read build_manifest output were not swept for the added presentation_position / causal_position keys.",
+    "No live client box, no network call and no spend was used; the verdict is repo-state only."
+  ],
+  "findings": [],
+  "branch": "s75x/verdicts-S75X-W2"
+}
