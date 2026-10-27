@@ -41,7 +41,7 @@
     "extensions/price_extension.py:6-8,141-153": "25-30% target, 35% HARD MAXIMUM from lipsync_clips; _lip_sync_duration_guard refuses above MAX_SHARE*length",
     "references/price-menu.md:248-249": "cap math text is the new check_budget policy; old 30-40 s text absent",
     "QC.md:275-277": "25-30% share text present, names the supersession of the 2026-10-08 order",
-    "installed adapter": "/Users/blackceomacmini/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/lipsync_clips.py byte-identical to skill copy (blob 08e38340), constants at :45-47 match"
+    "installed adapter": "<PATH>/999-setup/.claude/skills/drama-song-ad-factory/scripts/core/lipsync_clips.py byte-identical to skill copy (blob 08e38340), constants at :45-47 match"
   },
 
   "tests": {
@@ -59,8 +59,8 @@
     "failed_check": "no-operator-path-in-candidates",
     "check_body": "all(\"Downloads\" not in p for p in base_bridge.candidate_paths())",
     "lane_result": "1 of the file's checks fails: all 10 candidate_paths() derive from the lane root /Volumes/mac mini m4/Downloads/git trees and automations/s75/worktrees/S75X-W4-U3-qc/... which contains the literal string 'Downloads'; first-candidate-is-shipped and bridge-finds-shipped both PASS in the lane",
-    "blob_identity": "test_card_render.py blob 734ae28c84555295bcff58f3396177468dee582e and base_bridge.py blob fcdb24ab5083c6e2e64d818e6d2f027573c14bac identical between QC lane and /Users/blackceomacmini/openclaw-onboarding (git hash-object both sides)",
-    "control": "same test, same instrument (python3 -I) in /Users/blackceomacmini/openclaw-onboarding/75-drama-song-ad-factory (outside Downloads): rc=0, PASS no-operator-path-in-candidates, ALL CHECKS PASS",
+    "blob_identity": "test_card_render.py blob 734ae28c84555295bcff58f3396177468dee582e and base_bridge.py blob fcdb24ab5083c6e2e64d818e6d2f027573c14bac identical between QC lane and <PATH>/openclaw-onboarding (git hash-object both sides)",
+    "control": "same test, same instrument (python3 -I) in <PATH>/openclaw-onboarding/75-drama-song-ad-factory (outside Downloads): rc=0, PASS no-operator-path-in-candidates, ALL CHECKS PASS",
     "verdict": "lane-path artifact, not a code defect — the pass/fail split lands exactly on the path boundary the check tests; builder adjudication CONFIRMED; no test weakened"
   },
 
