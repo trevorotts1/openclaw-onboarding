@@ -25,13 +25,17 @@ def run_graph(name):
     ("dangling_next.json", 1, "FAIL", "DANGLING"),
     ("unparseable.json", 2, "UNVERIFIED", None),
     ("cross_branch.json", 1, "FAIL", "CROSS_BRANCH"),
+    ("unterminated.json", 1, "FAIL", "UNTERMINATED"),
+    ("cycle_illegal.json", 1, "FAIL", "CYCLE"),
+    ("loop_legal.json", 0, "PASS", None),
+    ("cycle_unreached_loop.json", 1, "FAIL", "CYCLE"),
 ])
 def test_graph(fixture, code, verdict, kind):
     result = run_graph(fixture)
     report = json.loads(result.stdout)
     assert result.returncode == code
     assert report["verdict"] == verdict
-    if fixture in ("linear_ok.json", "unparseable.json"):
+    if fixture in ("linear_ok.json", "unparseable.json", "loop_legal.json"):
         assert report["failures"] == []
     if kind:
         failures = [f for f in report["failures"] if f["kind"] == kind]
@@ -43,6 +47,14 @@ def test_graph(fixture, code, verdict, kind):
         if kind == "CROSS_BRANCH":
             assert failures[0]["node_id"] == "then1"
             assert failures[0]["target"] == "else1"
+        if fixture == "unterminated.json":
+            assert failures[0]["node_id"] == "u3"
+        if fixture == "cycle_illegal.json":
+            assert failures[0]["cycle"]
+        if fixture == "cycle_unreached_loop.json":
+            kinds = {failure["kind"] for failure in report["failures"]}
+            assert "CYCLE" in kinds
+            assert "ORPHAN" in kinds
 
 
 def test_unverified_is_never_pass():

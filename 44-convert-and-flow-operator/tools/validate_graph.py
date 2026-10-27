@@ -1,3 +1,20 @@
+"""Graph validation for workflow exports (WF-23).
+
+Termination: starting at the single root, every path must either reach a
+terminal node (type in TERMINAL_TYPES) or enter a declared loop. A path
+that ends at a node with no successor whose type is not terminal is
+UNTERMINATED; a node with no successor never counts as an end by itself.
+
+Loop semantics: a cycle is legal only when both conditions hold:
+1. at least one node on the cycle has a type in LOOP_TYPES (the loop/goal
+   allow-list), and
+2. that loop node is reachable from the root (the existing BFS 'reached'
+   set), i.e. entered by a non-cyclic root-to-node path before the cycle
+   repeats.
+Every other cycle is CYCLE. A designated loop type never exempts a cycle
+on its own: an unreachable drip/goto/transition cycle is still CYCLE.
+"""
+
 import argparse
 import json
 import os
@@ -443,6 +460,7 @@ def graph(data, nodes, trigger):
             })
 
     colors, cycles = {}, set()
+    loop_covered = set()
 
     def visit(node_id, stack):
         colors[node_id] = 1
@@ -451,16 +469,24 @@ def graph(data, nodes, trigger):
             if target not in existing:
                 continue
             if colors.get(target) == 1:
-                a, b = by_id[node_id].get("type"), by_id[target].get("type")
-                if a not in LOOP_TYPES and b not in LOOP_TYPES:
-                    cycle = tuple(stack[stack.index(target):] + [target])
-                    if cycle not in cycles:
-                        cycles.add(cycle)
-                        failures.append({
-                            "kind": "CYCLE",
-                            "node_id": node_id,
-                            "cycle": list(cycle),
-                        })
+                cycle = tuple(stack[stack.index(target):] + [target])
+                if cycle in cycles:
+                    continue
+                cycles.add(cycle)
+                cycle_nodes = cycle[:-1]
+                legal_loop_nodes = {
+                    cycle_id for cycle_id in cycle_nodes
+                    if by_id[cycle_id].get("type") in LOOP_TYPES
+                    and cycle_id in reached
+                }
+                if legal_loop_nodes:
+                    loop_covered.update(cycle_nodes)
+                else:
+                    failures.append({
+                        "kind": "CYCLE",
+                        "node_id": node_id,
+                        "cycle": list(cycle),
+                    })
             elif colors.get(target, 0) == 0:
                 visit(target, stack)
         stack.pop()
@@ -469,6 +495,39 @@ def graph(data, nodes, trigger):
     for node_id in ids:
         if node_id is not None and not colors.get(node_id):
             visit(node_id, [])
+
+    # Reachable paths must terminate or enter a legal loop.
+    if root is not None:
+        worklist = [root]
+        seen = set()
+        unverified_ids = {
+            item.get("node_id") for item in unverified
+        }
+        while worklist:
+            node_id = worklist.pop()
+            if node_id in seen or node_id not in existing:
+                continue
+            seen.add(node_id)
+            node = by_id[node_id]
+            node_type = node.get("type")
+            if node_type in TERMINAL_TYPES or node_id in loop_covered:
+                continue
+            successors = [
+                target for target in edges.get(node_id, [])
+                if target in existing
+            ]
+            if not successors:
+                if node_id not in unverified_ids:
+                    failures.append({
+                        "kind": "UNTERMINATED",
+                        "node_id": node_id,
+                        "name": node.get("name"),
+                        "type": node_type,
+                        "reason": "no_terminal_successor",
+                    })
+                continue
+            worklist.extend(successors)
+
     verdict = "FAIL" if failures else ("UNVERIFIED" if unverified else "PASS")
     return {
         "wf": "WF-23",
