@@ -6,12 +6,30 @@ per tenant, the ``pb-<MON><DD>-<YYYY>-<CATEGORY>`` ref, the ``m.me`` link, its
 inverse parser, the canonical Bonus sentence, and the only producer of the
 resolver's keyword and ref tables.
 
-Rules enforced here (review C5 Exactly-how steps 1 and H8 step 5):
+Rules enforced here (review C5 Exactly-how steps 1, 2, 6 and H8 steps 4 and 5):
   * a Page id is 5 to 20 digits, never a username or a URL;
   * a ref is dated in the placement's own local date and categorised;
   * a link is ``https://m.me/<page_id>?ref=<quoted ref>`` and nothing else;
   * a link longer than Meta's 2,083-character cap is refused;
   * the keyword table reads APPROVED placements only.
+
+Write-time entry points, so no caller has to re-derive the door:
+
+  ``record_page_binding(readiness_record, binding)``
+      C5 step 2 rule: the one Page id per tenant and account, accepted only while
+      the readiness record still names this ``account_binding_revision``. A rebind
+      invalidates it with the rest of the readiness proof; a different Page id is
+      refused, never overwritten.
+  ``build_bonus_placement(placement, binding, ...)``
+      C5 step 6 / H8 step 4: the pack writer's single call. It runs ``build_ref``,
+      ``build_messenger_link`` and ``bonus_cta`` at write time and returns the
+      placement carrying the three bound fields, the ``GIFTGUIDE``-style keyword
+      (category plus a distinct item word) and the canonical CTA. A hand-typed
+      link, ref or Page id that disagrees is refused, never replaced silently.
+  ``REF_ATTRIBUTION``
+      C5 step 8: the honest capability value, mirrored by
+      ``facebook_routes.capability_status()`` and kept until a real Messenger
+      referral event is captured. Nothing may promote it here.
 
 Run
   python3 messenger_link.py        # assert self-check, exit 0 on success
@@ -35,6 +53,11 @@ REF_RE = re.compile(r"^pb-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)"
                     r"(0[1-9]|[12][0-9]|3[01])-(20[0-9]{2})-([A-Z0-9]{1,32})$")
 HOST = "m.me"
 MAX_LINK = 2083
+# C5 step 8: refs are generated here, but GHL's normalized body carries no ref key
+# (DISCOVERIES D-05), so attribution stays unproven until a raw Messenger referral
+# event is captured. facebook_routes.capability_status() must keep this same value.
+REF_ATTRIBUTION = "NOT_PROVEN"
+BONUS_FIELDS = ("messenger_page_id", "messenger_ref", "messenger_link")
 
 
 class MessengerLinkError(ValueError):
@@ -169,6 +192,122 @@ def bonus_cta(link: str, keyword: str) -> str:
             % (word, link, word))
 
 
+def keyword_for(category: str, item_word: str) -> str:
+    """H8 step 4 — the pack writer's one keyword rule: category + a distinct item word.
+
+    Thirty daily packs reusing the bare category for different promised items is
+    exactly the misroute H8 names, so ``item_word`` is required and must carry at
+    least one letter or digit: ``keyword_for("GIFT", "guide")`` returns
+    ``GIFTGUIDE`` while ``keyword_for("GIFT", "")`` refuses. The result is the
+    same shape the resolver matches as one exact token.
+    """
+    prefix = _check_category(category)
+    if not isinstance(item_word, str):
+        raise MessengerLinkError("item_word must be a string")
+    word = re.sub(r"[^A-Z0-9]", "", item_word.strip().upper())
+    if not word:
+        raise MessengerLinkError(
+            "item_word must carry at least one letter or digit; the bare category %r "
+            "is never reused for a different promised item" % (prefix,))
+    keyword = prefix + word
+    if not CATEGORY_RE.match(keyword):
+        raise MessengerLinkError(
+            "keyword %r is not ^[A-Z0-9]{1,32}$ (category plus item word)" % (keyword,))
+    return keyword
+
+
+def _local_date(scheduled_at: str) -> datetime.date:
+    """The placement's own local date, read from its ISO timestamp."""
+    if not isinstance(scheduled_at, str) or not scheduled_at.strip():
+        raise MessengerLinkError("scheduled_at is required for the pack writer's ref date")
+    text = scheduled_at.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.datetime.fromisoformat(text).date()
+    except ValueError:
+        raise MessengerLinkError(
+            "scheduled_at %r is not an ISO timestamp" % (scheduled_at,)) from None
+
+
+def record_page_binding(readiness_record: Mapping[str, Any], binding: PageBinding) -> Dict[str, Any]:
+    """C5 step 2 rule — one Page id per tenant and account, keyed by the binding revision.
+
+    ``shared_readiness.project()`` records the live binding under ``binding``. The
+    Page id is accepted only while that revision is still the recorded one, so a
+    rebind invalidates the Page id with the rest of the readiness proof. A record
+    that already carries a different Page id is refused, never overwritten.
+    """
+    if not isinstance(readiness_record, dict):
+        raise MessengerLinkError("readiness_record must be an object")
+    if not isinstance(binding, PageBinding):
+        raise MessengerLinkError("binding must be a PageBinding")
+    recorded = readiness_record.get("binding")
+    if recorded is not None and str(recorded) != binding.binding_revision:
+        raise MessengerLinkError(
+            "readiness record is bound to revision %r; Page id %r belongs to %r — a "
+            "rebind invalidates the recorded Page (never guess one)"
+            % (recorded, binding.page_id, binding.binding_revision))
+    existing = readiness_record.get("messenger_page_id")
+    if existing is not None and str(existing) != binding.page_id:
+        raise MessengerLinkError(
+            "readiness record already names Page id %r; %r is a different Page — "
+            "refusing to overwrite a recorded binding" % (existing, binding.page_id))
+    out = dict(readiness_record)
+    out.update(binding.as_record())
+    return out
+
+
+def build_bonus_placement(
+    placement: Mapping[str, Any],
+    binding: PageBinding,
+    *,
+    category: Optional[str] = None,
+    item_word: Optional[str] = None,
+    local_date: Optional[datetime.date] = None,
+) -> Dict[str, Any]:
+    """C5 step 6 — the pack writer builds the door now, never at posting time.
+
+    Returns a copy of ``placement`` carrying ``messenger_page_id``,
+    ``messenger_ref``, ``messenger_link``, the category-plus-item-word ``keyword``
+    and the canonical ``cta_text``. A placement that already carries a different
+    Page id, ref, link or CTA is refused rather than silently replaced, so a
+    hand-typed door can never be laundered into an approved one.
+    """
+    if not isinstance(placement, dict):
+        raise MessengerLinkError("placement must be an object")
+    category_value = category or placement.get("category")
+    if not category_value:
+        raise MessengerLinkError("category is required; the pack writer never guesses one")
+    prefix = _check_category(category_value)
+    word = item_word or placement.get("promised_item_word")
+    existing_keyword = placement.get("keyword")
+    if not word and isinstance(existing_keyword, str):
+        upper = re.sub(r"[^A-Z0-9]", "", existing_keyword.strip().upper())
+        if upper.startswith(prefix) and len(upper) > len(prefix):
+            word = upper[len(prefix):]
+    keyword = keyword_for(prefix, word or "")
+    day = local_date or _local_date(placement.get("scheduled_at"))
+    ref = build_ref(day, prefix)
+    link = build_messenger_link(binding, ref)
+    door = {
+        "messenger_page_id": binding.page_id,
+        "messenger_ref": ref,
+        "messenger_link": link,
+        "keyword": keyword,
+        "cta_text": bonus_cta(link, keyword),
+    }
+    out = dict(placement)
+    for name, value in door.items():
+        existing = out.get(name)
+        if existing is not None and existing != value:
+            raise MessengerLinkError(
+                "%s already carries %r; the pack writer builds %r at write time and "
+                "never accepts a hand-typed value" % (name, existing, value))
+        out[name] = value
+    return out
+
+
 def keyword_table_from_manifest(manifest: Mapping[str, Any]) -> Tuple[Dict[str, str], Dict[str, str]]:
     """The resolver's two tables, from APPROVED placements only.
 
@@ -270,7 +409,73 @@ def _selfcheck() -> None:
         pass
     else:
         raise AssertionError("accepted a keyword collision across items")
-    print("messenger_link self-check: OK (round-trip, six refusals, table, collision)")
+    # H8 step 4: the writer's keyword is category + a distinct item word.
+    assert keyword_for("gift", " guide ") == "GIFTGUIDE", keyword_for("gift", "guide")
+    assert keyword_for("GIFT", "CHECKLIST") == "GIFTCHECKLIST"
+    for bad_word in ("", "   ", "!!!"):
+        try:
+            keyword_for("GIFT", bad_word)
+        except MessengerLinkError:
+            pass
+        else:
+            raise AssertionError("accepted bare category as a keyword (%r)" % (bad_word,))
+
+    # C5 step 2: the Page id is recorded on the readiness record, keyed by revision.
+    readiness = {"schema": "shared-readiness-projection.v1",
+                 "surface": "facebook.page", "binding": "rev-7", "epoch": 0,
+                 "states": {"installed": "installed", "running": "running", "live": "live"}}
+    recorded = record_page_binding(readiness, binding)
+    assert recorded["messenger_page_id"] == "101575980173901", recorded
+    assert recorded["account_binding_revision"] == "rev-7"
+    assert recorded["binding"] == "rev-7", recorded
+    assert PageBinding.from_record(recorded) == binding, PageBinding.from_record(recorded)
+    try:
+        record_page_binding(recorded, PageBinding("t1", "acct-1", "101575980173902", "rev-7"))
+    except MessengerLinkError:
+        pass
+    else:
+        raise AssertionError("overwrote a recorded Page id")
+    try:
+        record_page_binding(readiness, PageBinding("t1", "acct-1", "101575980173901", "rev-8"))
+    except MessengerLinkError:
+        pass
+    else:
+        raise AssertionError("accepted a Page id for a revision the record does not name")
+
+    # C5 step 6: the pack writer builds ref + link + CTA at write time, idempotently.
+    draft = {"placement_id": "p9", "category": "GIFT", "promised_item_word": "GUIDE",
+             "scheduled_at": "2026-11-01T19:30:00-04:00"}
+    packed = build_bonus_placement(draft, binding)
+    assert packed["messenger_ref"] == "pb-NOV01-2026-GIFT", packed
+    assert packed["messenger_link"] == "https://m.me/101575980173901?ref=pb-NOV01-2026-GIFT", packed
+    assert packed["keyword"] == "GIFTGUIDE", packed
+    assert packed["cta_text"] == bonus_cta(packed["messenger_link"], "GIFTGUIDE")
+    assert packed["messenger_link"] in packed["cta_text"]
+    assert build_bonus_placement(packed, binding) == packed, "writer is not idempotent"
+    for field, hand_typed in (("messenger_page_id", "101575980173902"),
+                              ("messenger_ref", "pb-NOV02-2026-GIFT"),
+                              ("messenger_link", "https://m.me/101575980173901?ref=pb-NOV02-2026-GIFT"),
+                              ("keyword", "GIFT"),
+                              ("cta_text", "message the Page")):
+        dirty = dict(draft, **{field: hand_typed})
+        try:
+            build_bonus_placement(dirty, binding)
+        except MessengerLinkError:
+            pass
+        else:
+            raise AssertionError("accepted a hand-typed %s" % field)
+    try:
+        build_bonus_placement({"placement_id": "p10"}, binding)
+    except MessengerLinkError:
+        pass
+    else:
+        raise AssertionError("built a door with no category")
+
+    # C5 step 8: attribution stays unproven here.
+    assert REF_ATTRIBUTION == "NOT_PROVEN"
+
+    print("messenger_link self-check: OK (round-trip, six refusals, table, collision,"
+          " writer keyword, readiness binding, write-time door, attribution)")
 
 
 if __name__ == "__main__":
