@@ -3089,22 +3089,29 @@ jobs:
       # external-storage contract, restart persistence) shipped with the unit and
       # nothing ran it. It is named here by explicit file path. The suite refuses
       # an internal TMPDIR by design — it proves propagation onto a device that is
-      # not the root disk — so /dev/shm (a real tmpfs mount) is the temp root; a
-      # same-device /dev/shm fails the step red instead of proving the wrong thing.
+      # not the root disk — and shared-utils/runtime/external.py refuses by name
+      # every root in INTERNAL_ROOTS (/tmp, /private/tmp, /var/tmp,
+      # /private/var/tmp, /dev/shm). /dev/shm can therefore never be this step's
+      # temp root, even though it is a real tmpfs: the module rejects the path
+      # textually before any device check. The runner mounts its own tmpfs at a
+      # path the contract does not name, and the device check below keeps that
+      # honest — a same-device mount fails the step red instead of proving the
+      # wrong thing.
       - name: T-38 shared runtime adapter suite (shared-utils/runtime/tests/test_runtime_adapters.py)
         shell: bash
         run: |
           set -uo pipefail
-          if [ "$(stat -c %d /dev/shm)" = "$(stat -c %d /)" ]; then
-            echo "::error::/dev/shm is on the root device; the suite needs a real second device"
+          tmpdir_root=/mnt/pbb-t38-tmp
+          sudo mkdir -p "$tmpdir_root"
+          sudo mount -t tmpfs -o size=512m,mode=1777 pbb-t38-tmp "$tmpdir_root"
+          trap 'sudo umount "$tmpdir_root" 2>/dev/null || true' EXIT
+          if [ "$(stat -c %d "$tmpdir_root")" = "$(stat -c %d /)" ]; then
+            echo "::error::$tmpdir_root is on the root device; the suite needs a real second device"
             exit 1
           fi
-          tmpdir="$(mktemp -d /dev/shm/pbb-runtime-tests-XXXXXX)"
-          TMPDIR="$tmpdir" TMP="$tmpdir" TEMP="$tmpdir" \
+          TMPDIR="$tmpdir_root" TMP="$tmpdir_root" TEMP="$tmpdir_root" \
             python3 shared-utils/runtime/tests/test_runtime_adapters.py
-          rc=$?
-          rmdir "$tmpdir" 2>/dev/null || true
-          exit $rc
+          exit $?
       - name: Skill 75 empty-home test suite (manual 02 B6)
         shell: bash
         run: |
