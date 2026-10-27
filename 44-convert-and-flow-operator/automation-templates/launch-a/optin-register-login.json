@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "launch-optin-register-login",
   "name": "Launch Opt-In / Register / Log-In — Tag, Confirmation, Access, Nurture Start",
   "aliases": [
@@ -187,7 +189,11 @@
     ]
   },
   "quality": {
-    "checklist_lines": ["A1", "A2", "X1"],
+    "checklist_lines": [
+      "A1",
+      "A2",
+      "X1"
+    ],
     "wf_checks": "WF-1..21 and FAB-QC >= 8.5 apply to the built workflow",
     "assertions": [
       "Each variant resolves to one approved form binding; no guessed page or product",
@@ -198,5 +204,111 @@
       "Exactly one nurture enrollment per contact and variant",
       "Everything is draft_only; no live switch-on; no client account touched during the build"
     ]
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Form Submitted / Funnel Step Submitted",
+        "variants": [
+          "form-optin",
+          "registration",
+          "access-login"
+        ],
+        "ref": "The three `trigger.variants` are trigger configurations"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "add_contact_tag",
+      "after": "trg",
+      "attributes": {
+        "tags": [
+          "variant entry tag",
+          "matching *-started guard"
+        ],
+        "ref": "Add the variant tag plus the matching `*-started` guard"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "update_custom_value",
+      "after": "n1",
+      "attributes": {
+        "field": "launch_optin_date",
+        "value": "now",
+        "ref": "Set `launch_optin_date` to now"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "if_else",
+      "after": "n2",
+      "branches": {
+        "true": "n8",
+        "false": "n4"
+      },
+      "attributes": {
+        "condition": "purchased-[offer-id] present",
+        "ref": "IF tag `purchased-[offer-id]` is present"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "email",
+      "after": "n3",
+      "attributes": {
+        "message": "variant confirmation",
+        "timing": "immediate",
+        "ref": "Immediate confirmation"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "sms",
+      "after": "n4",
+      "attributes": {
+        "condition": "email + text launch AND A2P approved",
+        "ref": "Confirmation text"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "email",
+      "after": "n5",
+      "attributes": {
+        "condition": "registration or access-login variant",
+        "message": "access / log-in delivery",
+        "ref": "Access / log-in delivery"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "add_to_workflow",
+      "after": "n6",
+      "attributes": {
+        "workflow": "variant-appropriate nurture",
+        "ref": "Enroll in exactly one variant-appropriate workflow"
+      }
+    },
+    {
+      "id": "n8",
+      "type": "workflow_goal",
+      "after": "n3",
+      "attributes": {
+        "goal": "purchase guard exits to post-sale workflow",
+        "ref": "exit to the post-sale purchase workflow"
+      }
+    },
+    {
+      "id": "n9",
+      "type": "workflow_goal",
+      "after": "n7",
+      "attributes": {
+        "goal": "entry handler complete",
+        "ref": "Close the entry handler"
+      }
+    }
+  ]
 }

@@ -31,6 +31,7 @@ import sys
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import flex  # shared intent-mode + decision core
+import buildable
 
 # --------------------------------------------------------------------------- #
 # Config (mirrors funnel_matcher weights so behaviour is consistent fleet-wide)
@@ -262,6 +263,7 @@ class Catalog:
                     continue
                 templates.append(normalise_template(doc, group=group, path=path))
         templates.sort(key=lambda t: (t["group"], t["id"]))
+        buildable.annotate(templates)
         return cls(root, templates)
 
     def to_index(self) -> dict:
@@ -284,6 +286,7 @@ class Catalog:
     def from_index(cls, index_path: str) -> "Catalog":
         idx = json.load(open(index_path, encoding="utf-8"))
         _absolutise_index(idx, os.path.dirname(os.path.abspath(index_path)))
+        buildable.annotate(idx.get("templates", []))
         return cls(idx.get("root", ""), idx["templates"])
 
 
@@ -408,6 +411,7 @@ def match_automation(request: dict | str, catalog: Catalog, *,
         "override_allowed": flex_dec["override_allowed"], # always True
         "await_confirm": flex_dec["await_confirm"],
         "build_from_template": flex_dec["build_from_template"],
+        "buildable": bool((pages or {}).get("buildable")) if isinstance(pages, dict) else False,
         "template_role": flex_dec["template_role"],
         "matched_template": matched_id,
         "matched_template_key": matched_key,   # qualified 'group/id' (collision-safe)
@@ -418,7 +422,8 @@ def match_automation(request: dict | str, catalog: Catalog, *,
         "score_parts": best["parts"] if best else {},
         "workflow_plan": pages,
         "ranked": [{"id": r["id"], "name": r["name"], "group": r["group"],
-                    "confidence": r["confidence"], "raw": r["raw"], "parts": r["parts"]}
+                    "confidence": r["confidence"], "raw": r["raw"], "parts": r["parts"],
+                        "buildable": bool((catalog.get(r["id"], group=r["group"]) or {}).get("buildable"))}
                    for r in ranked],
         "rationale": _rationale(mode, decision, best, threshold, flex_dec),
         "flex_note": flex_dec["note"],
@@ -464,6 +469,7 @@ def instantiate_workflow(tmpl: dict) -> dict:
         "wait_steps": gb.get("wait_steps") or (gb.get("workflow", {}) or {}).get("wait_steps", []),
         "tags_used": gb.get("tags_used", []),
         "source_ref": tmpl["sourcePath"],
+        **buildable.describe(tmpl),
     }
 
 
@@ -570,6 +576,7 @@ def expand_funnel_to_automations(funnel_id: str, *, link_map_path: str,
                 if catalog else None)
         if tmpl and not dropped:
             item["workflow_plan"] = instantiate_workflow(tmpl)
+            item["buildable"] = bool((item.get("workflow_plan") or {}).get("buildable"))
         automations.append(item)
 
     return {

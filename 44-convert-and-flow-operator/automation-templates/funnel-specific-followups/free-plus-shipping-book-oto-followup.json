@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "free-plus-shipping-book-oto-followup",
   "name": "Free-Plus-Shipping / Book Post-Purchase + OTO Recovery Follow-Up",
   "aliases": [
@@ -28,7 +30,10 @@
       "Engaged with bonus content vs not (trigger-link clicks)"
     ]
   },
-  "channels": ["Email", "SMS"],
+  "channels": [
+    "Email",
+    "SMS"
+  ],
   "sequence": [
     {
       "phase": "A. Confirmation + delivery",
@@ -103,7 +108,11 @@
       "10. Refund/cancel at any point -> route to retention/cancellation-save workflow"
     ],
     "goal_event": "Ascension purchase / next-funnel entry -> exit this sequence into the next funnel's follow-up.",
-    "wait_steps": ["2 hr (OTO recover)", "1 day x4 (bonding)", "1 day (ascend)"],
+    "wait_steps": [
+      "2 hr (OTO recover)",
+      "1 day x4 (bonding)",
+      "1 day (ascend)"
+    ],
     "if_else_branches": [
       "oto-accepted vs oto-declined (no-upsell recovery)",
       "physical vs digital fulfillment",
@@ -111,7 +120,14 @@
       "ascended -> exit to next funnel",
       "SMS vs email on DND"
     ],
-    "tags_used": ["fe-purchased", "oto-accepted", "oto-declined", "oto-recovered", "ready-to-ascend", "refund-requested"],
+    "tags_used": [
+      "fe-purchased",
+      "oto-accepted",
+      "oto-declined",
+      "oto-recovered",
+      "ready-to-ascend",
+      "refund-requested"
+    ],
     "notes": "Honor the 'one-time' OTO claim — if the second-chance link stays open forever the urgency is fake (Edwards/Soap Opera rule). The ascension step is a HAND-OFF: it should enroll the buyer into the Webinar or Application follow-up template, not duplicate that logic here."
   },
   "source": {
