@@ -12,7 +12,7 @@ Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, temp
 
 ### Version lockstep
 
-`skill-version.txt` moves v2.1.35 -> v2.1.36 and the `SKILL.md` frontmatter follows. No other file in the skill changed in the batch.
+`skill-version.txt` moves v2.1.35 -> v2.1.36 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
 
 ## [v2.1.35] - 2026-10-27 - batch 20261027-1826: five units (schema graph, portable mktemp, malformed-JSON fixture, UNINITIALISED skip, status field shift)
 
