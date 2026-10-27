@@ -1,0 +1,78 @@
+{
+  "schema": "blackceo.s75.qc/v1",
+  "unit": "S75-T01",
+  "acceptance_id": "S75-A01",
+  "role": "qc-fixer",
+  "branch": "s75x/t01-evidence",
+  "reviewed_commit": "d32e71a2f10f81f54b3b29464312ecc0415acac5",
+  "qc_lane": "worktrees/S75-T01-evidence-qc under the S75 scratch root (git worktree, detached at reviewed_commit; branch checked out in the builder lane, so fixes would push as HEAD:s75x/t01-evidence)",
+  "verdict": "clean",
+  "summary": "Independent QC re-verified the builder's evidence branch end to end. All four mandated checks pass. No defect found on the branch; nothing fixed. Findings below are evidence, not a row determination.",
+
+  "check_a_file_sizes_and_original_digests": {
+    "result": "PASS",
+    "method": "Independent recomputation (scratch script qc_verify.py) against the QC worktree and the on-disk original artifacts at the arbiter authority root; cross-checked against the independent arbiter receipt.",
+    "committed_digest_match_manifest": "10/10 files: committed bytes + sha256 recomputed from the worktree equal digest-manifest.json committed{} values",
+    "original_digest_correct_in_manifest": "9/9 artifacts: manifest original{bytes,sha256} equal the digest recomputed from the ORIGINAL artifact on disk AND the digest recorded independently in the arbiter receipt (three-way agreement)",
+    "size_arithmetic": "9/9: committed.bytes == original.bytes - 16 * substitution.applied (each counted OPERATOR_HOME_PATH -> <PATH> swap is exactly 16 bytes)",
+    "spec_size_reconciliation": "The manifest is the size bridge: it records the ORIGINAL artifact digest (the spec figure) and the COMMITTED digest side by side, and the counted substitution is reversible, so the committed file re-derives the exact original bytes. This is the CRITICAL-1 sanctioned form (guard header: operator paths must never appear in committed files; use <PATH> placeholders).",
+    "manifest_self_consistency": "digest-manifest.json itself carries no banned literal; 10 manifest records cover the 10 committed files (9 artifacts + the manifest)"
+  },
+
+  "check_b_substitution_scope": {
+    "result": "PASS",
+    "method": "Two independent proofs: byte-exact remainder comparison and git word-diff review.",
+    "only_path_strings_changed": "original bytes with all OPERATOR_HOME_PATH occurrences removed == committed bytes with all <PATH> occurrences removed, byte-identical, 9/9 files. Any altered number, verdict or claim would break this equality.",
+    "word_diff_review": "git diff --word-diff (path tokens atomic) per file: removed words 40/0/5/5/6/2/10/15/56 and added words identical per file, every removed word contains the operator home path, every added word is/contains <PATH>, off-pattern words TOTAL: 0",
+    "counts_consistent": "token count in original == <PATH> count in committed == manifest substitution.applied, 9/9 (40, 0, 5, 5, 6, 2, 10, 15, 56 = 139 total)",
+    "reversal_restores_originals": "9/9: committed with <PATH> -> OPERATOR_HOME_PATH reproduces each original sha256 exactly",
+    "json_parses_after_substitution": "9/9",
+    "independent_token_scan": "0 always-on-token hits (both slash and dash spellings, plus the four example placeholder names) across all 10 committed files; positive control on the un-substituted original artifact: 40 hits -> the instrument discriminates"
+  },
+
+  "check_c_verdict_chain_append_only": {
+    "result": "PASS",
+    "all_four_present": [
+      "evidence/S75-T01.verdict.json = PASS",
+      "evidence/S75-T01.verdict.readonly.1.json = FAIL",
+      "evidence/S75-T01.verdict.t01repair.2.json = FAIL",
+      "evidence/S75-T01.verdict.readonly.3.json = PASS (receipt of record)"
+    ],
+    "labels_agree_three_ways": "verdict value inside each file == digest-manifest.json label == arbiter receipt label, 4/4",
+    "none_edited": "4/4 verdict files reverse byte-exact to their original artifact digests (see check_b), so no verdict body was altered in the branch",
+    "none_superseded_or_deleted": "git show --name-status HEAD: all four verdict files added (A) in the single branch commit; zero deletions or modifications of any pre-existing file anywhere in the commit",
+    "receipt_of_record": "evidence/S75-T01.verdict.readonly.3.json PASS, original sha256 ec68409218bf9ca010da7c72205b0832400be55398b439375cd4a7a82d01ebbc, matches manifest receipt_of_record and the arbiter receipt"
+  },
+
+  "check_d_critical1_guard": {
+    "result": "PASS",
+    "guard": "scripts/qc-assert-no-client-names.sh v2.5.0 (body of required check 'QC static invariants / CRITICAL-1')",
+    "ci_parity_run": "env stripped (HOME pointed at an empty directory, no OPENCLAW_CLIENT_ROSTER, no OPENCLAW_ACCOUNTS_MD, CI=true) = exactly what the bare ubuntu-latest runner does: structural mode, exit 0, roster-specific check reported as NOT RUN via a loud ::warning:: annotation, always-on tokens checked and clean",
+    "local_full_mode_run": "roster derived from accounts.md: 88 roster-pattern hits in 27 files, ALL in files byte-identical to the branch base and NONE in the 10 new evidence files (0 intersection). This is the pre-existing base-branch condition the builder reported; it is not a claim this branch makes clean and is not introduced by this diff.",
+    "note_on_my_first_run": "A first run with HOME merely unset (env -u HOME) still resolved the operator home via the passwd database and loaded the derived roster, i.e. it ran FULL mode (exit 1, the same 88 pre-existing hits). The CI-parity claim holds only with HOME pointed at an empty directory, which is what the run above does; the builder's structural result is confirmed on those semantics."
+  },
+
+  "branch_scope_verified": {
+    "commit_scope": "git show --name-status d32e71a2f: exactly 10 added files, all under evidence/, zero product code, zero modifications/deletions of pre-existing files",
+    "lines": "+2403 total, all additions",
+    "base_at_build_time": "96559ab1b531570534316d856006867606afd4e2 (merge-base with origin/main still equals this)",
+    "main_drift_observed_during_qc": "origin/main advanced 96559ab1b -> 0c93f4587 (PR #2602 S75-T06-repair-stage, 15 commits) while QC ran. The branch itself is unchanged (1 commit ahead of its base). Path set of the branch is disjoint from the new main changes and git merge-tree origin/main HEAD is clean, so the merge writer sees no conflict.",
+    "remote_proof": "git ls-remote: refs/heads/s75x/t01-evidence = d32e71a2f10f81f54b3b29464312ecc0415acac5 at review time; main observed 0c93f4587 after drift"
+  },
+
+  "observations_not_verdicts": [
+    "Two tracked files already on the base carry the operator home path literal and sit OUTSIDE the guard's scanned extension set: ledgers/evidence/U91/verification-run.out and run/w4/data-lane/rr024/QC-BATTERY.out. Pre-existing, not in this diff, builder's observation confirmed independently (git grep over HEAD: 7 files contain the literal).",
+    "Five of those 7 files contain the literal BY DESIGN as a detection pattern (scripts/qc-assert-no-client-names.sh and the qc-no-personal-data.sh / test_ghl_secret_hygiene.py leak scanners). Not leaks; do not 'fix' them.",
+    "No ledger written (loop-control s75 ledger untouched). No commit or push to main. Acceptance/row determination not made here: it belongs to the owner (Trevor)."
+  ],
+
+  "fixes_applied": [],
+  "receipts": {
+    "qc_verify_report": "scratch/s75t01-qc/qc-verify.out (per-file check matrix, exit 0, zero failures)",
+    "word_diff_review": "scratch/s75t01-qc/word-diff-review.out (0 off-pattern words)",
+    "guard_ci_parity": "scratch/s75t01-qc/guard-structural.out + .err (exit 0, report-only warning)",
+    "guard_full_mode": "scratch/s75t01-qc/guard-ci-parity.out + .err (exit 1, 88 pre-existing hits, 0 in the 10 new files)",
+    "all_paths_relative_to": "the S75 scratch root (/Volumes/.../git trees and automations/s75/)"
+  },
+  "row_determination": "NOT MADE HERE. Acceptance belongs to the owner; this QC writes findings only and no ledger."
+}

@@ -1,0 +1,74 @@
+{
+  "schema": "blackceo.s75.emergency-owner-handoff/v1",
+  "unit": "S75-T01",
+  "generated_at": "2026-10-24T21:05:00+00:00",
+  "acceptance_gate": {
+    "source_task": "01a16e50-177f-7476-8bf1-dbd252a75030",
+    "gate": "Exact file-by-file emergency-owner handoff required before S75-T13 may edit factory/approval wiring",
+    "cited_in": [
+      "DEPENDENCIES-AND-OWNERSHIP.md:59",
+      "DECISIONS.md:DEC-19"
+    ],
+    "state": "NOT_HANDED_OFF"
+  },
+  "held_files": [
+    {
+      "path": "factory.py",
+      "repo": "ONB + N999",
+      "held": true,
+      "current_lease": "NONE (no branch, receipt or commit attributes an active lease)",
+      "changed_by_active_branch": true
+    },
+    {
+      "path": "lyric_writer.py",
+      "repo": "ONB + N999",
+      "held": true,
+      "current_lease": "NONE (no branch, receipt or commit attributes an active lease)",
+      "changed_by_active_branch": false
+    },
+    {
+      "path": "character_approval.py",
+      "repo": "ONB + N999",
+      "held": true,
+      "current_lease": "NONE (no branch, receipt or commit attributes an active lease)",
+      "changed_by_active_branch": false
+    },
+    {
+      "path": "registry.json",
+      "repo": "ONB + N999",
+      "held": true,
+      "current_lease": "NONE (no branch, receipt or commit attributes an active lease)",
+      "changed_by_active_branch": false
+    },
+    {
+      "path": "method_plan.py",
+      "repo": "ONB + N999",
+      "held": true,
+      "current_lease": "NONE (no branch, receipt or commit attributes an active lease)",
+      "changed_by_active_branch": false
+    }
+  ],
+  "holding_party": {
+    "owner": "UNKNOWN",
+    "reason": "No artifact on disk names a human or unit owner for task 01a16e50-177f-7476-8bf1-dbd252a75030. DEC-19 records only that the emergency task itself retains overlapping factory/approval ownership until exact handoff; it names no person or unit. Searched: DEPENDENCIES-AND-OWNERSHIP.md, DECISIONS.md, task-ledger.json and evidence/ under the authority root.",
+    "not_guessed": true
+  },
+  "receiving_owner": {
+    "role": "S75-T13 / FACTORY-GATE-OWNER",
+    "person": "UNKNOWN",
+    "role_cited_in": "DEPENDENCIES-AND-OWNERSHIP.md:25 (factory.py; lyric_writer.py; character_bible/character_approval.py; registry.json; method_plan.py)"
+  },
+  "why_held": "T13 is the sole logical owner of factory/lyric gate/shared approval wiring and must wait for exact file-by-file emergency-owner handoff from task 01a16e50-177f-7476-8bf1-dbd252a75030, preserving that owner's accepted fixes (DEC-19).",
+  "unrelated_units_proceed": true,
+  "unrelated_units_proceed_note": "DEC-19: nonoverlapping cast/Notion/world work may proceed once accepted interfaces are ready. The hold is scoped to the five named factory/approval files only.",
+  "exception_observed": {
+    "branch": "batch/s75-b5-prep",
+    "head": "dd3881cff1c917e604385f03fe85ebf0a32cbd9d",
+    "path": "75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py",
+    "note": "Only active branch naming a held file. Recorded as a lease conflict against the hold, not resolved here."
+  },
+  "does_not_establish": [
+    "That the 01a16e50 handoff ever happened anywhere not searched (client boxes, other remote branches).",
+    "Any write, merge or push authority."
+  ]
+}
