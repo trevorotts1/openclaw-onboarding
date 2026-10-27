@@ -23,6 +23,7 @@ from cli_anything.gohighlevel.utils.ghl_internal_client import InternalGHLClient
 from cli_anything.gohighlevel.utils.safety_gate import draft_only_active_flag
 from cli_anything.gohighlevel.utils.write_lock import WriteLock
 from cli_anything.gohighlevel.utils.workflow_timing import plan_timing
+from cli_anything.gohighlevel.utils.workflow_identity import plan_identity_refusals
 
 # ── Parallel-build worker cap ────────────────────────────────────────────────
 # Lowered from the original hard-coded 10 to reduce burst pressure on the shared
@@ -477,17 +478,197 @@ def normalize_action_ids(templates: list[dict], location_id: str) -> list[dict]:
 
 # ── Step Linker ───────────────────────────────────────────────────────────
 
-def link_steps(steps: list[dict]) -> list[dict]:
-    """Auto-link steps with next/parentKey and set order."""
-    linked = []
-    for i, step in enumerate(steps):
-        step = {**step}
+BRANCH_TYPES = frozenset({"if_else", "workflow_split", "goto", "transition"})
+
+
+def link_steps(steps: list[dict]) -> tuple[list[dict], list[str]]:
+    """Link steps without chaining sibling branch bodies together.
+
+    Returns (linked_steps, unlinked_branch_node_ids).
+    """
+    linked, unlinked = [], []
+
+    # Pass 1: preserve input order and existing parentKey inference rules.
+    for i, raw in enumerate(steps):
+        step = {**raw}
         step["order"] = i
-        step["parentKey"] = linked[i - 1]["id"] if i > 0 else None
-        if i < len(steps) - 1:
-            step["next"] = steps[i + 1]["id"]
+        authored_next = raw.get("next")
+        authored_branches = raw.get("branches")
+
+        if raw.get("type") in BRANCH_TYPES:
+            step["parentKey"] = raw.get("parentKey")
+            if authored_next or authored_branches:
+                step["next"] = authored_next
+                if authored_branches:
+                    step["branches"] = authored_branches
+            else:
+                unlinked.append(step["id"])
+                step.pop("next", None)
+                step.pop("branches", None)
+            linked.append(step)
+            continue
+
+        step["parentKey"] = raw.get(
+            "parentKey", linked[i - 1]["id"] if i > 0 else None
+        )
+        # Authored next is handled in pass 2; inferred next must respect
+        # branch membership before it can be assigned.
+        step.pop("next", None)
         linked.append(step)
-    return linked
+
+    # Pass 2: determine each node's enclosing branch body.
+    parent_map = {step.get("id"): step.get("parentKey") for step in linked}
+    branch_members = {
+        step.get("id"): step["branches"]
+        for step in linked
+        if step.get("type") in BRANCH_TYPES
+        and isinstance(step.get("branches"), dict)
+        and step["branches"]
+    }
+    by_id = {step.get("id"): step for step in linked}
+
+    def membership(node_id):
+        path = []
+        seen = set()
+        current = node_id
+
+        while current is not None and current not in seen:
+            seen.add(current)
+            path.append(current)
+            current = parent_map.get(current)
+
+        for branch_id in path[1:]:
+            if branch_id not in branch_members:
+                continue
+
+            branch = branch_members[branch_id]
+            branch_index = path.index(branch_id)
+            for path_node in path[:branch_index]:
+                for branch_key, target_id in branch.items():
+                    if target_id == path_node:
+                        return branch_id, branch_key
+
+            # Nearest branch ancestor is malformed for this path.
+            return None
+
+        return None
+
+    memberships = {step.get("id"): membership(step.get("id")) for step in linked}
+
+    for i, (raw, step) in enumerate(zip(steps, linked)):
+        if raw.get("type") in BRANCH_TYPES:
+            # Branch nodes keep authored links only; never infer next.
+            if raw.get("next"):
+                step["next"] = raw.get("next")
+            else:
+                step.pop("next", None)
+            continue
+
+        if raw.get("next"):
+            # Authored joins always win.
+            step["next"] = raw.get("next")
+            continue
+
+        candidate = steps[i + 1].get("id") if i < len(steps) - 1 else None
+        if candidate is not None and memberships.get(step.get("id")) == memberships.get(candidate):
+            step["next"] = candidate
+        else:
+            step["next"] = None
+
+    return linked, unlinked
+
+
+DEPENDENCY_KINDS = (
+    "tags", "custom_fields", "custom_values", "calendars", "pipelines"
+)
+
+
+def collect_plan_dependencies(wf_def: dict) -> dict:
+    """Explicitly declared dependencies only; never inferred from step attributes.
+
+    Reads wf_def["dependencies"] (kind -> list). The workflow's trigger tag is
+    excluded because the build creates it.
+    """
+    deps = {kind: [] for kind in DEPENDENCY_KINDS}
+    declared = wf_def.get("dependencies") if isinstance(wf_def, dict) else None
+    if isinstance(declared, dict):
+        for kind in DEPENDENCY_KINDS:
+            values = declared.get(kind) or []
+            if isinstance(values, str):
+                values = [values]
+            for value in values:
+                if isinstance(value, str) and value.strip():
+                    name = value.strip()
+                    if name not in deps[kind]:
+                        deps[kind].append(name)
+    # The trigger tag is NOT a prerequisite: _create_workflow creates it with
+    # create_location_tag() before the trigger POST, so demanding it here would
+    # refuse every first-time tagged build. Only explicitly declared
+    # dependencies are pre-checked.
+    return deps
+
+
+DEPENDENCY_ENDPOINTS = {
+    "tags": "/workflow/{loc}/tags",
+    "custom_fields": "/workflow/{loc}/custom-fields",
+    "custom_values": "/workflow/{loc}/custom-values",
+    "calendars": "/workflow/{loc}/calendars",
+    "pipelines": "/workflow/{loc}/pipelines",
+}
+
+
+def precheck_dependencies(client, location_id: str, wf_def: dict) -> dict:
+    """GET-verify explicitly declared dependencies; never write or raise.
+
+    Only a positive existence read authorises a build. A failed or
+    unrecognisable GET is unverified, never treated as present, and always
+    refuses the build. There is deliberately no bypass flag: a bypass the plan
+    JSON could set is not an approval, it is the gated thing unlocking itself.
+    ponytail: no create-missing rail yet; if one is added it must take an
+    operator flag threaded from the CLI, never a key inside the plan.
+    """
+    present, missing, unverified = [], [], []
+
+    def collect_names(value, names):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in ("name", "id", "title", "key") and isinstance(item, str):
+                    names.add(item)
+                collect_names(item, names)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                collect_names(item, names)
+
+    for kind, declared_names in collect_plan_dependencies(wf_def).items():
+        if not declared_names:
+            continue
+        try:
+            response = client.request(
+                "GET", DEPENDENCY_ENDPOINTS[kind].format(loc=location_id)
+            )
+        except Exception:
+            response = None
+
+        if not response or (
+            isinstance(response, dict) and response.get("_error")
+        ):
+            unverified.extend(
+                {"kind": kind, "name": name} for name in declared_names
+            )
+            continue
+
+        names = set()
+        collect_names(response, names)
+        for name in declared_names:
+            item = {"kind": kind, "name": name}
+            (present if name in names else missing).append(item)
+
+    return {
+        "present": present,
+        "missing": missing,
+        "unverified": unverified,
+        "refused": list(unverified) + list(missing),
+    }
 
 
 # ── Validation ────────────────────────────────────────────────────────────
@@ -582,8 +763,14 @@ def _sha256(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
-def _graph_projection(templates: list) -> list:
-    """Identity-bearing projection of a step graph (layout/meta excluded)."""
+def _graph_projection(templates: list, trigger_target: str = None) -> list:
+    """Identity-bearing projection of a step graph (layout/meta excluded).
+
+    Includes branch edges, and - only when a trigger target is supplied -
+    the trigger entrance, so a hash can detect an unwired conditional or a
+    dropped trigger link. Callers that do not read the trigger back pass
+    nothing and keep the historical hash.
+    """
     projection = []
     for step in templates or []:
         if not isinstance(step, dict):
@@ -596,14 +783,17 @@ def _graph_projection(templates: list) -> list:
             "order": step.get("order"),
             "parentKey": step.get("parentKey"),
             "next": step.get("next"),
+            "branches": step.get("branches"),
             "attributes": step.get("attributes"),
         })
+    if trigger_target is not None:
+        projection.append({"__trigger__": {"targetActionId": trigger_target}})
     return projection
 
 
-def graph_hash(templates: list) -> str:
+def graph_hash(templates: list, trigger_target: str = None) -> str:
     """Deterministic hash of the saved execution graph."""
-    return _sha256(_graph_projection(templates))
+    return _sha256(_graph_projection(templates, trigger_target))
 
 
 def _rule_names(lifecycle: Mapping[str, Any], key: str) -> set:
@@ -1224,6 +1414,36 @@ class CampaignBuilder:
         self.stats.setdefault("route", {})[operation] = route.as_evidence()
         return route
 
+    def precheck(self, location_id: str, wf_def: dict) -> dict:
+        """Declared-dependency pre-check for one workflow definition."""
+        result = precheck_dependencies(self.client, location_id, wf_def)
+        self.stats.setdefault("precheck", {})[wf_def.get("name")] = result
+        return result
+
+    def _dependency_refusal(self, wf_name: Optional[str], dep_state: dict) -> Optional[str]:
+        """Refusal reason for a failed dependency pre-check, else None."""
+        missing = dep_state.get("missing") or []
+        unverified = dep_state.get("unverified") or []
+        if not (missing or unverified):
+            return None
+        sections = []
+        if missing:
+            sections.append(
+                "missing in GHL: "
+                + ", ".join(f"{item['kind']}:{item['name']}" for item in missing)
+            )
+        if unverified:
+            sections.append(
+                "could not be verified (read failed): "
+                + ", ".join(f"{item['kind']}:{item['name']}" for item in unverified)
+            )
+        return (
+            f"{wf_name}: dependency pre-check failed - "
+            + "; ".join(sections)
+            + (". Create the missing dependencies in GHL first;" if missing else "")
+            + " no workflow create was issued."
+        )
+
     def _v4_create_blocker(
         self,
         wf_def: dict,
@@ -1374,6 +1594,15 @@ class CampaignBuilder:
             self.stats["end_time"] = time.time()
             return self.stats  # Invalid timing/steps must never reach GET/POST.
 
+        identity_refusals = plan_identity_refusals(campaign)
+        if identity_refusals:
+            # Pre-write identity gate: duplicate ids, dangling authored targets,
+            # malformed if_else branches, ambiguous roots and invalid/cyclic
+            # parent links abort here, before the first HTTP call.
+            self.stats["errors"].extend(refusal[5] for refusal in identity_refusals)
+            self.stats["end_time"] = time.time()
+            return self.stats
+
         # Idempotency pre-check — fetch the location's existing workflow/folder
         # listing ONCE per build() call (not once per workflow, to avoid N extra
         # API calls), before any create POST fires.  A repeated build with no
@@ -1393,6 +1622,40 @@ class CampaignBuilder:
             self.stats["end_time"] = time.time()
             return self.stats
         existing_workflow_ids, existing_folder_ids, existing_workflow_parents = existing
+
+        # Dependency gate — BEFORE the folder POST.  A folder created on a
+        # build that then refuses is a write on a path that should have
+        # refused.  Candidates are the units this build would actually write:
+        # name not already present, and no journalled prior to reconcile
+        # instead.  A partial build still needs its folder, so this aborts
+        # only when EVERY candidate refuses; the per-unit gate below stays as
+        # the authority for the rest.
+        dep_states: dict[str, dict] = {}
+        gate_refusals: dict[str, str] = {}
+        candidates: list[tuple] = []
+        for key, wf_def in campaign.items():
+            if not isinstance(wf_def, Mapping):
+                continue
+            wf_name = wf_def.get("name")
+            if wf_name and wf_name in existing_workflow_ids:
+                continue
+            unit_key = wf_def.get("unit_key")
+            prior = journal.latest(unit_key) if (journal and unit_key) else None
+            if prior and prior.get("remote_id"):
+                continue
+            candidates.append((key, wf_def))
+            if not any(collect_plan_dependencies(wf_def).values()):
+                continue
+            dep_states[key] = self.precheck(self.loc, wf_def)
+            reason = self._dependency_refusal(wf_name, dep_states[key])
+            if reason:
+                gate_refusals[key] = reason
+        if candidates and len(gate_refusals) == len(candidates):
+            self.stats["errors"].extend(
+                gate_refusals[key] for key, _ in candidates
+            )
+            self.stats["end_time"] = time.time()
+            return self.stats  # Nothing to build — refuse before any write.
 
         # Resolve folder: reuse existing if folder_id given, else look up by
         # name and reuse it, else create.  Reuse is the safe default for a
@@ -1556,7 +1819,19 @@ class CampaignBuilder:
             # canonical linker already used by the legacy create-step path; we
             # run it inside the builder so all installed boxes get the fix
             # without re-authoring plan JSON.
-            templates = link_steps(wf_def.get("templates", []))
+            declared_deps = collect_plan_dependencies(wf_def)
+            if any(declared_deps.values()):
+                dep_state = dep_states.get(key) or self.precheck(self.loc, wf_def)
+                reason = self._dependency_refusal(wf_name, dep_state)
+                if reason:
+                    return (key, None, False, False, None, reason)
+
+            templates, unlinked = link_steps(wf_def.get("templates", []))
+            if unlinked:
+                return (key, None, False, False, None,
+                        f"{wf_name}: branch node(s) {', '.join(unlinked)} have no authored "
+                        "branch targets - refusing to build a graph whose conditions cannot "
+                        "be wired. Author next/branches on each branch node in the plan.")
 
             # A16 layer-7: the step-save backend validates action ids as
             # UUIDs; plan-supplied slug ids are rejected ("Invalid uuid").
@@ -1700,13 +1975,17 @@ class CampaignBuilder:
                     trigger_id = tr["id"]
                     trigger_data = {**trigger_body, "id": trigger_id}
 
-                    # Link trigger to first step
+                    # Link trigger to first step. Preserve link in trigger_data
+                    # because step 4 re-sends this object through newTriggers.
                     first_step_id = templates[0]["id"] if templates else None
                     if first_step_id:
+                        trigger_data["targetActionId"] = first_step_id
+                        trigger_data["advanceCanvasMeta"] = {
+                            "position": {"x": 57.5, "y": -73}
+                        }
                         self.client.request(
                             "PUT", f"/workflow/{self.loc}/trigger/{trigger_id}",
-                            {**trigger_body, "targetActionId": first_step_id,
-                             "advanceCanvasMeta": {"position": {"x": 57.5, "y": -73}}},
+                            dict(trigger_data),
                             workflow_name=wf_name,
                         )
                 if journal and unit_key:
@@ -1867,7 +2146,22 @@ class CampaignBuilder:
                     if trigger_ok:
                         self.stats["triggers_created"] += 1
                 else:
-                    self.stats["errors"].append(f"Failed: {campaign[key]['name']}")
+                    # An early refusal returns its reason as the 6th tuple
+                    # element (branch node with no targets, missing declared
+                    # dependency, unreadable prior attempt). Surface the
+                    # reason verbatim: a bare "Failed: <name>" hides the one
+                    # fact the operator needs to fix the plan.
+                    # An early refusal puts its reason in the LAST tuple slot
+                    # (the readback position) with wf_id None and step_err
+                    # None; a save/readback failure puts it in step_err.
+                    # Surface whichever slot carries the string: a bare
+                    # "Failed: <name>" hides the one fact the operator needs.
+                    reason = next(
+                        (r for r in (step_err, readback_ok)
+                         if isinstance(r, str) and r),
+                        f"Failed: {campaign[key]['name']}",
+                    )
+                    self.stats["errors"].append(reason)
 
         # Every declared dependency and required output is enforced after the
         # build: a workflow that was skipped/blocked cannot satisfy a dependent.

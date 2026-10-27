@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "launch-a-prelaunch-window",
   "name": "Launch A — Pre-Launch Window (Calendar, Tags, Schedule, Switches)",
   "aliases": [
@@ -145,7 +147,11 @@
     {
       "beat": "INDOC-01 — Origin / Backstory",
       "at": "{{indoc_1_at}}",
-      "channels": ["email", "messenger", "retargeting_ad"],
+      "channels": [
+        "email",
+        "messenger",
+        "retargeting_ad"
+      ],
       "actions": [
         "Send email INDOC-01 (story only, no pitch, no buy CTA)",
         "If messenger-subscribed → Messenger INDOC-M01 mirror",
@@ -156,7 +162,11 @@
     {
       "beat": "INDOC-02 — Obsession / Expertise",
       "at": "{{indoc_2_at}}",
-      "channels": ["email", "messenger", "sms"],
+      "channels": [
+        "email",
+        "messenger",
+        "sms"
+      ],
       "actions": [
         "Send email INDOC-02 (story only, no pitch)",
         "If email not opened in 24h AND sms-subscribed → SMS INDOC-S01 nudge with story link",
@@ -168,7 +178,11 @@
     {
       "beat": "INDOC-03 — Teaching / Method",
       "at": "{{indoc_3_at}}",
-      "channels": ["email", "messenger", "retargeting_ad"],
+      "channels": [
+        "email",
+        "messenger",
+        "retargeting_ad"
+      ],
       "actions": [
         "Send email INDOC-03 (teaching, first stay-tuned CTA, no buy CTA)",
         "If messenger-subscribed → Messenger INDOC-M03 mirror",
@@ -179,7 +193,10 @@
     {
       "beat": "INDOC-04 — Values / Mission (optional)",
       "at": "{{indoc_4_at}}",
-      "channels": ["email", "messenger"],
+      "channels": [
+        "email",
+        "messenger"
+      ],
       "actions": [
         "Send email INDOC-04 only when a genuine values story is approved",
         "If messenger-subscribed → Messenger INDOC-M04 mirror",
@@ -191,7 +208,10 @@
     {
       "beat": "PRE-CART — Last reminder before doors open",
       "at": "{{precart_reminder_at}}",
-      "channels": ["email", "sms"],
+      "channels": [
+        "email",
+        "sms"
+      ],
       "actions": [
         "Send email PRE-CART last reminder: what opens tomorrow, who it is for, exact doors_open_at time, why it closes",
         "Add tag doors-soon",
@@ -256,7 +276,10 @@
     },
     "purchase_interrupt": {
       "state": "always_on",
-      "events": ["purchased-[offer-id] tag added", "buyer-[offer] tag added"],
+      "events": [
+        "purchased-[offer-id] tag added",
+        "buyer-[offer] tag added"
+      ],
       "effect": "exit immediately, stop every remaining beat, never re-enter this launch"
     }
   },
@@ -280,7 +303,14 @@
       "caf workflows export --workflow-id <id> --experimental",
       "caf workflows get --workflow-id <id> --experimental"
     ],
-    "verified_actions_used": ["email", "sms", "wait", "if_else", "update_custom_value", "workflow_goal"],
+    "verified_actions_used": [
+      "email",
+      "sms",
+      "wait",
+      "if_else",
+      "update_custom_value",
+      "workflow_goal"
+    ],
     "tier4_required": [
       "every Wait Until calendar date node",
       "every Messenger action node"
@@ -322,5 +352,414 @@
       "the SMS/Messenger subscription gates",
       "the draft-only default and closed switches"
     ]
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Tag Added pre-launch-list",
+        "ref": "Tag Added: pre-launch-list"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "add_contact_tag",
+      "after": "trg",
+      "attributes": {
+        "tag": "indoc-started",
+        "ref": "Add tag indoc-started"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "if_else",
+      "after": "n1",
+      "branches": {
+        "true": "n3",
+        "false": "n4"
+      },
+      "attributes": {
+        "condition": "purchased-[offer-id] OR buyer-[offer] present",
+        "ref": "purchased-[offer-id] or buyer-[offer] present → end"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "workflow_goal",
+      "after": "n2",
+      "attributes": {
+        "goal": "purchase guard exits",
+        "ref": "end"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "wait",
+      "after": "n2",
+      "attributes": {
+        "until": "{{indoc_1_at}}",
+        "kind": "until",
+        "ref": "Arm the D-5 Wait Until"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "email",
+      "after": "n4",
+      "attributes": {
+        "message": "INDOC-01 origin/backstory",
+        "ref": "Send email INDOC-01"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "if_else",
+      "after": "n5",
+      "branches": {
+        "true": "n7",
+        "false": "n8"
+      },
+      "attributes": {
+        "condition": "messenger-subscribed present",
+        "ref": "If messenger-subscribed"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "messenger",
+      "after": "n6",
+      "attributes": {
+        "message": "INDOC-M01 mirror",
+        "ref": "Messenger INDOC-M01 mirror"
+      }
+    },
+    {
+      "id": "n8",
+      "type": "add_contact_tag",
+      "after": [
+        "n6",
+        "n7"
+      ],
+      "attributes": {
+        "tag": "indoc-1-sent",
+        "ref": "Add tag indoc-1-sent",
+        "join": true
+      }
+    },
+    {
+      "id": "n9",
+      "type": "wait",
+      "after": "n8",
+      "attributes": {
+        "until": "{{indoc_2_at}}",
+        "kind": "until",
+        "ref": "{{indoc_2_at}}"
+      }
+    },
+    {
+      "id": "n10",
+      "type": "email",
+      "after": "n9",
+      "attributes": {
+        "message": "INDOC-02 obsession/expertise",
+        "ref": "Send email INDOC-02"
+      }
+    },
+    {
+      "id": "n11",
+      "type": "if_else",
+      "after": "n10",
+      "branches": {
+        "true": "n12",
+        "false": "n13"
+      },
+      "attributes": {
+        "condition": "email not opened in 24h AND sms-subscribed present",
+        "ref": "If email not opened in 24h AND sms-subscribed"
+      }
+    },
+    {
+      "id": "n12",
+      "type": "sms",
+      "after": "n11",
+      "attributes": {
+        "message": "INDOC-S01 story-link nudge",
+        "ref": "SMS INDOC-S01 nudge with story link"
+      }
+    },
+    {
+      "id": "n13",
+      "type": "if_else",
+      "after": "n11",
+      "branches": {
+        "true": "n14",
+        "false": "n15"
+      },
+      "attributes": {
+        "condition": "messenger-subscribed present",
+        "ref": "If messenger-subscribed"
+      }
+    },
+    {
+      "id": "n14",
+      "type": "messenger",
+      "after": "n13",
+      "attributes": {
+        "message": "INDOC-M02 mirror",
+        "ref": "Messenger INDOC-M02 mirror"
+      }
+    },
+    {
+      "id": "n15",
+      "type": "add_contact_tag",
+      "after": [
+        "n12",
+        "n13",
+        "n14"
+      ],
+      "attributes": {
+        "tag": "indoc-2-sent",
+        "ref": "Add tag indoc-2-sent",
+        "join": true
+      }
+    },
+    {
+      "id": "n16",
+      "type": "wait",
+      "after": "n15",
+      "attributes": {
+        "until": "{{indoc_3_at}}",
+        "kind": "until",
+        "ref": "{{indoc_3_at}}"
+      }
+    },
+    {
+      "id": "n17",
+      "type": "email",
+      "after": "n16",
+      "attributes": {
+        "message": "INDOC-03 teaching/method",
+        "ref": "Send email INDOC-03"
+      }
+    },
+    {
+      "id": "n18",
+      "type": "if_else",
+      "after": "n17",
+      "branches": {
+        "true": "n19",
+        "false": "n20"
+      },
+      "attributes": {
+        "condition": "messenger-subscribed present",
+        "ref": "If messenger-subscribed"
+      }
+    },
+    {
+      "id": "n19",
+      "type": "messenger",
+      "after": "n18",
+      "attributes": {
+        "message": "INDOC-M03 mirror",
+        "ref": "Messenger INDOC-M03 mirror"
+      }
+    },
+    {
+      "id": "n20",
+      "type": "add_contact_tag",
+      "after": [
+        "n18",
+        "n19"
+      ],
+      "attributes": {
+        "tag": "indoc-3-sent",
+        "ref": "Add tag indoc-3-sent",
+        "join": true
+      }
+    },
+    {
+      "id": "n21",
+      "type": "wait",
+      "after": "n20",
+      "attributes": {
+        "until": "{{indoc_4_at}}",
+        "kind": "until",
+        "optional": true,
+        "ref": "{{indoc_4_at}}"
+      }
+    },
+    {
+      "id": "n22",
+      "type": "if_else",
+      "after": "n21",
+      "branches": {
+        "true": "n23",
+        "false": "n26"
+      },
+      "attributes": {
+        "condition": "genuine values story approved",
+        "ref": "INDOC-04 only when a genuine values story is approved"
+      }
+    },
+    {
+      "id": "n23",
+      "type": "email",
+      "after": "n22",
+      "attributes": {
+        "message": "INDOC-04 values/mission",
+        "ref": "Send email INDOC-04"
+      }
+    },
+    {
+      "id": "n24",
+      "type": "if_else",
+      "after": "n23",
+      "branches": {
+        "true": "n25",
+        "false": "n26"
+      },
+      "attributes": {
+        "condition": "messenger-subscribed present",
+        "ref": "If messenger-subscribed"
+      }
+    },
+    {
+      "id": "n25",
+      "type": "messenger",
+      "after": "n24",
+      "attributes": {
+        "message": "INDOC-M04 mirror",
+        "ref": "Messenger INDOC-M04 mirror"
+      }
+    },
+    {
+      "id": "n26",
+      "type": "wait",
+      "after": [
+        "n22",
+        "n24",
+        "n25"
+      ],
+      "attributes": {
+        "until": "{{precart_reminder_at}}",
+        "kind": "until",
+        "ref": "{{precart_reminder_at}}",
+        "join": true
+      }
+    },
+    {
+      "id": "n27",
+      "type": "email",
+      "after": "n26",
+      "attributes": {
+        "message": "PRE-CART last reminder",
+        "ref": "Send email PRE-CART last reminder"
+      }
+    },
+    {
+      "id": "n28",
+      "type": "add_contact_tag",
+      "after": "n27",
+      "attributes": {
+        "tag": "doors-soon",
+        "ref": "Add tag doors-soon"
+      }
+    },
+    {
+      "id": "n29",
+      "type": "wait",
+      "after": "n28",
+      "attributes": {
+        "until": "{{precart_sms_at}}",
+        "kind": "until",
+        "ref": "Wait Until {{precart_sms_at}}"
+      }
+    },
+    {
+      "id": "n30",
+      "type": "if_else",
+      "after": "n29",
+      "branches": {
+        "true": "n31",
+        "false": "n32"
+      },
+      "attributes": {
+        "condition": "sms-subscribed present",
+        "ref": "If sms-subscribed"
+      }
+    },
+    {
+      "id": "n31",
+      "type": "sms",
+      "after": "n30",
+      "attributes": {
+        "message": "PRE-CART reminder",
+        "ref": "SMS PRE-CART reminder"
+      }
+    },
+    {
+      "id": "n32",
+      "type": "wait",
+      "after": [
+        "n30",
+        "n31"
+      ],
+      "attributes": {
+        "until": "{{doors_open_at}}",
+        "kind": "until",
+        "ref": "Wait Until {{doors_open_at}}",
+        "join": true
+      }
+    },
+    {
+      "id": "n33",
+      "type": "if_else",
+      "after": "n32",
+      "branches": {
+        "true": "n34",
+        "false": "n35"
+      },
+      "attributes": {
+        "condition": "purchased-[offer-id] present",
+        "ref": "purchased-[offer-id] present → end"
+      }
+    },
+    {
+      "id": "n34",
+      "type": "workflow_goal",
+      "after": "n33",
+      "attributes": {
+        "goal": "purchase guard exits at handoff",
+        "ref": "end"
+      }
+    },
+    {
+      "id": "n35",
+      "type": "add_contact_tag",
+      "after": "n33",
+      "attributes": {
+        "tag": "cart-open-ready",
+        "ref": "Add tag cart-open-ready"
+      }
+    },
+    {
+      "id": "n36",
+      "type": "add_contact_tag",
+      "after": "n35",
+      "attributes": {
+        "tag": "prelaunch-complete",
+        "ref": "Add tag prelaunch-complete"
+      }
+    },
+    {
+      "id": "n37",
+      "type": "workflow_goal",
+      "after": "n36",
+      "attributes": {
+        "goal": "handoff complete",
+        "ref": "End this workflow"
+      }
+    }
+  ]
 }
