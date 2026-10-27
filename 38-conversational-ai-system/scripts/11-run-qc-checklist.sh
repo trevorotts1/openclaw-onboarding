@@ -55,7 +55,8 @@ QC_MIGRATION_DIR=""
 qc_read_status() {
   local path="$1" line
   [ -f "$path" ] || return 1
-  line="$(python3 -I - "$path" <<'PY_QC_STATUS'
+  local _qc_status_py
+  IFS= read -r -d '' _qc_status_py <<'PY_QC_STATUS' || true
 import json, sys
 try:
     with open(sys.argv[1], encoding="utf-8") as f:
@@ -83,7 +84,7 @@ try:
 except Exception:
     raise SystemExit(1)
 PY_QC_STATUS
-)" || return 1
+  line="$(printf '%s' "$_qc_status_py" | python3 -I - "$path")" || return 1
   IFS=$'\t' read -r QC_ST_LEGACY QC_ST_FAILS QC_ST_VERDICT QC_ST_FILES QC_ST_DIR <<< "$line"
   [[ "$QC_ST_LEGACY" =~ ^[0-9]+$ && "$QC_ST_FAILS" =~ ^[0-9]+$ ]] || return 1
   case "$QC_ST_VERDICT" in PASS|NEEDS-MIGRATION|FAIL|UNINITIALISED) return 0 ;; esac
