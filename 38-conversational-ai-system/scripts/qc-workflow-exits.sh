@@ -177,8 +177,41 @@ if not contains("scripts/25-seed-round3-feature-files.sh", "workflow-exit-events
 RESERVED = ("--build-with-ai-prompt.md", "--workflow-ai-prompt.md",
             "--verification-checklist.md", "--ghl-side.md")
 
+def registry_suspect_rows(reg_path):
+    """Rows that look like registry entries but yielded no usable id.
+
+    A table row with a single cell, or a first cell containing whitespace, is a
+    broken row rather than an id: `| support-intake Support intake sup.md |`
+    parses to one cell whose text is a whole sentence. Reporting these lets the
+    operator fix the registry instead of hunting a playbook that exists.
+    """
+    suspects = []
+    try:
+        for line in reg_path.read_text(encoding="utf-8").splitlines():
+            s = line.strip()
+            if not s.startswith("|"):
+                continue
+            cells = [c.strip().strip("`").strip() for c in s.strip("|").split("|")]
+            first = cells[0] if cells else ""
+            if (len(cells) < 2 or " " in first) and first.lower() != "id" \
+                    and not (set(first) <= set("-: ")):
+                suspects.append(s)
+    except OSError:
+        return suspects
+    return suspects
+
 def registry_ids(reg_path):
+    """IDs from a registry in EITHER documented shape.
+
+    The registry has two shapes (protocol §F table form, and the bullet form
+    `- <id>: <desc>` that 09-install-conversation-workflows.sh documents).
+    qc-playbook-doc.sh reads both and its tests exercise both. This function
+    used to read only table rows, so a perfectly valid bullet-form registry
+    resolved to zero ids and every route target in it was reported absent —
+    a false FAIL that would block an install the doc gate accepts.
+    """
     ids = set()
+    bullet = re.compile(r"^\s*[-*]\s+([^\s:][^:]*?)\s*:\s")
     try:
         for line in reg_path.read_text(encoding="utf-8").splitlines():
             s = line.strip()
@@ -188,6 +221,12 @@ def registry_ids(reg_path):
                     rid = cells[0]
                     if rid and rid.lower() != "id" and not (set(rid) <= set("-: ")):
                         ids.add(rid)
+                continue
+            m = bullet.match(line)
+            if m:
+                rid = m.group(1).strip().strip("`").strip()
+                if rid and rid.lower() != "id":
+                    ids.add(rid)
     except OSError:
         raise
     return ids
@@ -202,6 +241,7 @@ if wf and wf.is_dir() and not WF_FAULT:
         candidates = []
     reg_path = wf / "registry.md"
     reg_ids = None
+    reg_suspects = None
     for f in candidates:
         try:
             if not f.is_file() or not f.name.endswith(".md"):
@@ -243,7 +283,15 @@ if wf and wf.is_dir() and not WF_FAULT:
                 if not reg_ids:
                     failures.append("registry.md at %s is malformed: no parseable id rows; cannot resolve route target '%s'" % (reg_path, tgt))
                 elif tgt not in reg_ids:
-                    failures.append("%s routes to target '%s' which is absent from registry.md" % (label, tgt))
+                    if reg_suspects is None:
+                        reg_suspects = registry_suspect_rows(reg_path)
+                    detail = ""
+                    if reg_suspects:
+                        detail = (" — note: %d registry row(s) are malformed and were "
+                                  "not parsed: %s"
+                                  % (len(reg_suspects), " | ".join(reg_suspects[:3])))
+                    failures.append("%s routes to target '%s' which is absent from "
+                                    "registry.md%s" % (label, tgt, detail))
 
 if WF_FAULT:
     DISCOVERY = "FAULT"
