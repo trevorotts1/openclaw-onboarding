@@ -747,7 +747,8 @@ def main():
             else:
                 base = args.master_files or os.environ.get("MASTER_FILES_DIR")
                 if not base:
-                    pointer = "/Users/blackceomacmini/.openclaw/.skill-38-master-files-dir"
+                    pointer = os.path.expanduser(
+                        "~/.openclaw/.skill-38-master-files-dir")
                     if os.path.isfile(pointer):
                         try:
                             with open(pointer, encoding="utf-8") as handle:
