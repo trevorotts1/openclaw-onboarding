@@ -531,6 +531,7 @@ if verdict not in ("PASS","FAIL","UNVERIFIED"): contradiction="unknown_verdict"
 elif len(failures)>0 and verdict=="PASS": contradiction="pass_with_failures"
 elif len(failures)==0 and verdict=="FAIL": contradiction="fail_without_failure"
 elif len(failures)>0 and verdict=="UNVERIFIED": contradiction="unverified_with_failures"
+elif len(failures)==0 and verdict=="PASS" and isinstance(unverified,int) and not isinstance(unverified,bool) and unverified>0: contradiction="pass_with_unverified"
 elif isinstance(orphans,int) and not isinstance(orphans,bool) and orphans>=0 and orphans!=count_kind("ORPHAN"): contradiction="orphans_mismatch"
 values={"parse":"ok","verdict":verdict,"nodes":nodes,"edges":edges,"root":root,"failures":len(failures),"orphans":orphans,"branches":branches,"dangling":count_kind("DANGLING"),"unwired":count_kind("UNWIRED_BRANCH"),"cross":count_kind("CROSS_BRANCH"),"cycle":count_kind("CYCLE"),"unverified":unverified,"kinds":",".join(kinds) or "none","missing":",".join(missing) or "none","contradiction":contradiction}
 print(" ".join("%s=%s"%(k,values[k]) for k in ("parse","verdict","nodes","edges","root","failures","orphans","branches","dangling","unwired","cross","cycle","unverified","kinds","missing","contradiction")))') || GRAPH_META_RC=$?

@@ -306,3 +306,34 @@ def test_wf24_fails_when_validator_and_local_root_disagree(tmp_path):
     assert "root_disagrees_with_validator" in (
         wf24["observed"] + wf24["notes"]
     ), wf24
+
+
+def test_wf23_fails_when_pass_report_carries_unverified_entries(tmp_path):
+    """"Could not verify" must never be recorded as a pass.
+
+    The verdict expression in the validator makes PASS imply no unverified
+    nodes, but the shell trusts the report it is handed. A report claiming PASS
+    while listing an unverified node was recorded as PASS/PASS with rc 0.
+    """
+    graph = {
+        "wf": "WF-23", "verdict": "PASS", "failures": [],
+        "nodes": 2, "edges": 1, "root": "n1", "orphans": 0, "branches": 0,
+        "unverified": [{"node_id": "b1", "reason": "branch_targets_not_exposed"}],
+    }
+    deps = {"wf": "WF-18", "verdict": "PASS", "referenced": 0, "missing": []}
+    export = _linear_export()
+    export["triggers"] = [
+        {"id": "T1", "type": "form_submitted", "targetActionId": "n1"}
+    ]
+    env = _setup(tmp_path, export)
+    env["QC_GRAPH_VALIDATOR"] = _dispatch_validator(tmp_path, graph, deps)
+    manifest = _manifest(tmp_path, {})
+    result = subprocess.run(
+        ["bash", str(QC_SCRIPT), "WFTEST009", "--deps", manifest, "--json"],
+        env=env, capture_output=True, text=True, timeout=30, check=False,
+    )
+    items = _items(result)
+    assert items["WF-23"]["status"] == "FAIL", (
+        "verdict=PASS with an unverified entry must fail; got %r" % (items["WF-23"],)
+    )
+    assert "pass_with_unverified" in items["WF-23"]["observed"], items["WF-23"]
