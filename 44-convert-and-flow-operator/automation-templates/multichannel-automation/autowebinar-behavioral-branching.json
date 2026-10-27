@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "autowebinar-behavioral-branching",
   "name": "AutoWebinar Behavioral Branching Sequence (4-Path Watch-Duration Segmentation)",
   "aliases": [
@@ -56,7 +58,10 @@
           "step": "A2",
           "beat": "SMS / Messenger Replay Nudge (+1h if replay not visited)",
           "delay": "+1 hour after A1 email, if replay page not yet visited",
-          "channels_active": ["SMS", "Messenger (if subscribed)"],
+          "channels_active": [
+            "SMS",
+            "Messenger (if subscribed)"
+          ],
           "sms_body": "Hey [name] — [AC name] here. Missed seeing you on the webinar! I put the replay up here: [short link]. Only up for [X hours]."
         },
         {
@@ -105,7 +110,10 @@
           "step": "B2",
           "beat": "SMS / Messenger: 'You Left Before the Best Part'",
           "delay": "+2 hours if B1 email not opened",
-          "channels_active": ["SMS", "Messenger (if subscribed)"],
+          "channels_active": [
+            "SMS",
+            "Messenger (if subscribed)"
+          ],
           "sms_body": "Hey [name] — you dropped off the webinar right before [key moment / offer reveal]. Quick replay link to catch what you missed: [link]"
         },
         {
@@ -153,7 +161,10 @@
           "step": "C2",
           "beat": "SMS / Messenger Objection Handle",
           "delay": "+30–60 min after C1 if not clicked",
-          "channels_active": ["SMS", "Messenger"],
+          "channels_active": [
+            "SMS",
+            "Messenger"
+          ],
           "sms_body": "Hey [name] — just sent you a quick note about [offer]. Did you have a question? Reply here and I'll answer directly. Or grab it here: [link]"
         },
         {
