@@ -27,15 +27,16 @@ Design rules this module holds itself to:
   decorative: anchor, root source, declared package differences and the
   shared-core digest are all facts in the cell's binding and in the receipt.
 
-Two integration protocols are declared here because T32 is the cross-flavor QC
-owner and has to state what it will exercise. They are the smallest shape the
-rows require; the owning units may implement them however they like.
+The migration check is no longer a declared protocol. S75-T17's module landed on
+main as ``character_library/migration_plan.py`` with a real contract -- records
+are proved from their own bytes, dry run is the default, ``apply`` and
+``reverse`` require ``confirm=True``, and a second apply is a NOOP. The cell
+drives that contract directly and proves it failable by removing a reference
+image, so a record whose identity cannot be proved blocks the whole plan.
 
-  migration protocol (S75-T17, ``character_library/migration_plan.py``):
-      migrate(library, *, dry_run=False, rollback=False) -> dict
-      returns {"library": <library record>, "applied": <bool>}
-      Repeated apply is idempotent; dry_run leaves the input untouched;
-      rollback returns the pre-migration library; no character is duplicated.
+One integration protocol is still declared here, for the module that has not
+landed. It is the smallest shape the row requires; the owning unit may implement
+it however it likes.
 
   compatibility protocol (S75-T28, ``compatibility.py``):
       classify(record) -> dict
@@ -104,10 +105,10 @@ FOUNDATIONS = ("research_bundle", "episode_cast_manifest", "episode_world",
 
 #: Paths each flavor resolves the *same* shared core through. The ONB layout
 #: carries the character approval module; the 999 layout deliberately has none.
-NOTION_MIGRATION_PATHS = (
-    "character_library/migration_plan.py",
-    "character_library/migration.py",
-)
+#: S75-T17 landed ``character_library/migration_plan.py`` on main, so the
+#: migration cell now drives that module's real contract (discover / build_plan /
+#: apply / reverse / verify) instead of an injected stand-in.
+NOTION_MIGRATION_PATHS = ("character_library/migration_plan.py",)
 PAID_COMPATIBILITY_PATH = "compatibility.py"
 
 
@@ -297,7 +298,7 @@ def cell_scene_richness(facet, broken=False, provider=None):
                     "rich_scene_defects": clean})
 
 
-# --- 4. Notion migration (dependency) -------------------------------------
+# --- 4. Notion migration --------------------------------------------------
 
 def _load_provider(facet, paths, attribute):
     for relative in paths:
@@ -309,40 +310,97 @@ def _load_provider(facet, paths, attribute):
     return None, None
 
 
+def _call(fn, *args, **kwargs):
+    """(value, exception name) for one production call. Real errors are observed,
+    never swallowed: the caller turns them into the cell's ``observed`` facts."""
+    try:
+        return fn(*args, **kwargs), None
+    except Exception as exc:  # noqa: BLE001 - the exception name is the observation
+        return None, getattr(exc, "code", type(exc).__name__)
+
+
+def _tree_snapshot(root):
+    """Every file under root, path -> sha256. The byte baseline for a round trip."""
+    out = {}
+    for current, dirs, files in os.walk(root):
+        dirs.sort()
+        for name in sorted(files):
+            path = os.path.join(current, name)
+            with open(path, "rb") as handle:
+                out[os.path.relpath(path, root)] = hashlib.sha256(
+                    handle.read()).hexdigest()
+    return out
+
+
+def _migration_client(facet, tmp):
+    """A client store written by the REAL local writers, never a hand-made shape."""
+    CL = facet.load("character_library/character_library.py")
+    client = os.path.join(tmp, "client-a")
+    images = []
+    for name, payload in (("maya.png", b"\x89PNG-maya"),
+                          ("dre.png", b"\x89PNG-dre")):
+        path = os.path.join(tmp, name)
+        with open(path, "wb") as handle:
+            handle.write(payload)
+        images.append(path)
+    CL.save_character(client, "Maya Lee", "Warm, 40s, silver braids.", [images[0]],
+                      "Low, calm alto", background="Ohio", ethnicity="Black")
+    CL.save_character(client, "Dre", "Sharp suit, calm voice.", [images[1]],
+                      "Mid baritone")
+    return client
+
+
 def cell_notion_migration(facet, broken=False, provider=None):
-    fn, source = (provider, "injected")
-    if fn is None:
-        fn, source = _load_provider(facet, NOTION_MIGRATION_PATHS, "migrate")
-    expected = ("repeated migration is idempotent, dry_run leaves the library "
-                "untouched, rollback restores it, and no character is duplicated")
-    if fn is None:
+    expected = ("every record is proved from its own bytes, a dry run writes "
+                "nothing, a second apply maps nothing new, and reverse restores "
+                "the tree byte for byte")
+    if not facet.has(NOTION_MIGRATION_PATHS[0]):
         return _result(
             "notion_migration", BLOCKED, expected,
             {"reason": "no migration module at this head", "owned_by": "S75-T17"},
             missing=[facet.path(p) for p in NOTION_MIGRATION_PATHS])
+    MIG = facet.load(NOTION_MIGRATION_PATHS[0])
 
-    library = {"characters": [
-        {"character_id": "char_mara_001", "revision": 3,
-         "content_digest": "digest-mara-3", "images": ["img_1"]},
-        {"character_id": "char_levi_002", "revision": 2,
-         "content_digest": "digest-levi-2", "images": []},
-    ]}
-    first = fn(library, dry_run=False)
-    second = fn(library, dry_run=False)
-    dry = fn(library, dry_run=True)
-    rolled = fn(library, rollback=True)
-    ids = [c.get("character_id") for c in first["library"]["characters"]]
-    duplicates = sorted({i for i in ids if ids.count(i) > 1})
-    ok = (first["library"] == second["library"]
-          and not duplicates
-          and dry["library"] == library and dry["applied"] is False
-          and rolled["library"] == library)
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _migration_client(facet, tmp)
+        if broken:
+            # Break: remove one reference image, so the record's identity can no
+            # longer be proved from its own files. That is the condition this
+            # cell exists to detect, not a different code path.
+            os.unlink(os.path.join(client, "character-library", "dre",
+                                   "references", "1-dre.png"))
+        before = _tree_snapshot(client)
+        plan = MIG.build_plan(client)
+        dry_run_untouched = _tree_snapshot(client) == before
+        stable = plan["plan_digest"] == MIG.build_plan(client)["plan_digest"]
+        mapped = [r["new_id"] for r in plan["records"] if r["status"] == "MAPPED"]
+
+        first, first_code = _call(MIG.apply, plan, confirm=True)
+        after_first = _tree_snapshot(client)
+        second, second_code = _call(MIG.apply, MIG.build_plan(client), confirm=True)
+        after_second = _tree_snapshot(client)
+        verification, verify_code = _call(MIG.verify, client)
+        reversed_run, reverse_code = _call(MIG.reverse, client, confirm=True)
+        restored = _tree_snapshot(client) == before
+
+    ok = (len(mapped) == 2 and len(set(mapped)) == 2
+          and dry_run_untouched and stable
+          and first_code is None and first.get("status") == "APPLIED"
+          and second_code is None and second.get("status") == "NOOP"
+          and after_second == after_first
+          and verify_code is None and verification.get("ok") is True
+          and reverse_code is None and reversed_run.get("status") == "REVERSED"
+          and restored)
     return _result("notion_migration", PASS if ok else FAIL, expected,
-                   {"source": source,
-                    "idempotent": first["library"] == second["library"],
-                    "duplicate_ids": duplicates,
-                    "dry_run_untouched": dry["library"] == library,
-                    "rollback_restored": rolled["library"] == library})
+                   {"source": NOTION_MIGRATION_PATHS[0],
+                    "mapped": len(mapped), "unique_ids": len(set(mapped)),
+                    "dry_run_untouched": dry_run_untouched,
+                    "plan_digest_stable": stable,
+                    "apply": first_code or first.get("status"),
+                    "second_apply": second_code or second.get("status"),
+                    "verify": verify_code or verification.get("ok"),
+                    "reverse": reverse_code or reversed_run.get("status"),
+                    "restored_byte_for_byte": restored})
 
 
 # --- 5. identity setting changes -----------------------------------------
@@ -552,11 +610,30 @@ CELLS = (
 )
 
 #: Cells that accept an injected provider because the production module is owed
-#: by another unit. Their falsifiability is proved at the provider boundary.
-PROVIDER_CELLS = ("notion_migration", "paid_compatibility")
+#: by another unit. S75-T17's migration module landed on main, so only the paid
+#: compatibility module (S75-T28) is still owed; the migration cell drives real
+#: production code and proves falsifiability by `broken=True`, like the rest.
+PROVIDER_CELLS = ("paid_compatibility",)
+
+#: The production module each provider cell is waiting for.
+OWED_PATHS = {
+    "paid_compatibility": (PAID_COMPATIBILITY_PATH,),
+}
 
 #: Cells that run against production code at any head.
 RUNNABLE_CELLS = tuple(name for name, _ in CELLS if name not in PROVIDER_CELLS)
+
+
+def blocked_cells(facet):
+    """The provider cells whose owed module is genuinely absent for this facet.
+
+    Presence on disk is an independent fact, so the test can assert the cell's
+    BLOCKED status against it instead of assuming every provider cell is blocked
+    forever. A cell whose dependency landed runs, and this returns it as absent
+    from the blocked set.
+    """
+    return tuple(name for name in PROVIDER_CELLS
+                 if not any(facet.has(p) for p in OWED_PATHS[name]))
 
 
 def cell_ids():
