@@ -1,3 +1,7 @@
+## [2.0.200] - 2026-10-27 - chore(batch-20261027-0516): version stamp for T-18 and T-15 (T-38 not in this batch)
+
+- **Batch 20261027-0516 version stamp, Skill 38 v2.0.199 -> v2.0.200.** T-18 (`pb/PBB-448/t-18-update` @ `93414a8a`) and T-15 (`pb/PBB-609/t-15-build` @ `3f3f4767`) both touch skill 38 files in this batch. T-38 is NOT in this batch. No skill code changed in this commit; version stamp only.
+
 ## [2.0.199] - 2026-10-27 - chore(batch-20261027-0211): version stamp for T-08
 
 - **Batch 20261027-0211 version stamp, Skill 38 v2.0.198 -> v2.0.199.** T-08 (`pb/PBB-440/t-08-update` @ `bfca7724`) is the only unit in this batch touching skill 38. No skill code changed in this commit; version stamp only.
