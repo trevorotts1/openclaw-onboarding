@@ -1,0 +1,48 @@
+{
+  "unit_id": "S75-T01",
+  "acceptance_id": "S75-A01",
+  "verdict": "FAIL",
+  "branch": "none-read-only (no worktrees/S75-T01 exists; worktrees/ holds S75-T03..S75-T41 only; no s75/S75-T01 branch in openclaw-onboarding; deliverable is an evidence artifact, no candidate commit)",
+  "head": "569eee7a79397d34275b0bb0da22a6349bd47f2d",
+  "criteria_checked": [
+    {
+      "criterion": "Read-only census resolves BOTH flavors (ONB onboarding and N999 999)",
+      "result": "PASS",
+      "evidence": "Taken by me, not builder claim: ONB skill root <PATH>/openclaw-onboarding/75-drama-song-ad-factory and N999 skill root .claude/skills/drama-song-ad-factory both exist; git fetch + rev-parse gives ONB origin/main 569eee7a79397d34275b0bb0da22a6349bd47f2d (matches artifact), CC origin/main a3b43318944132f0847f33f395dcb0ea38ba30a7 (matches). N999 origin/main now 317bb24172b3d4327c1fabaeebc68e797c32730e, past the artifact's 65b8b484a034e615cd98d5ebccb61524058c9e43 (normal head drift, artifact warns heads move)."
+    },
+    {
+      "criterion": "Sampled findings map to current source",
+      "result": "PASS",
+      "evidence": "git grep -c PROVIDER_LOOKUP_REQUIRED origin/main -- '*spend_ledger*' = 1 on ONB and 1 on N999 (rc=0 both). SFR-002 (0f71a3f8) added lines re-extracted by me and matched against git show origin/main:.../batch_mode/batch.py: both lines present, exact count 1 each. Markers land in current source."
+    },
+    {
+      "criterion": "Accepted emergency repair preserved without duplication",
+      "result": "PARTIAL",
+      "evidence": "At origin/main the repair content is preserved exactly once (counts above; PROVIDER_LOOKUP_REQUIRED not doubled in either flavor), so no duplication in committed source. NOT established over the shared checkout working tree: <PATH>/openclaw-onboarding is dirty (M scripts/core/spend_ledger.py, M intake_card/ai_models.json, ?? 75-drama-song-ad-factory/evidence/), the spend_ledger.py hunk adds a new resolve_not_submitted() with no receipt or evidence provenance (grep -rl resolve_not_submitted over skill75-repair, drama-song-factory-build and package evidence = 0 hits, control grep -rl SFR-001/SFR-003 returns real files), and the census artifact records zero occurrences of dirty/untracked/lease despite exact_deliverable requiring dirty state and affected-file leases. mtimes 10:54/14:56 EDT precede the artifact (written 16:11 EDT), so the edit is not attributable to S75-T01, but the census never recorded it."
+    },
+    {
+      "criterion": "Exact factory/approval handoff explicit, OR those files explicitly held while unrelated units proceed",
+      "result": "PASS via the second disjunct (held), with the named artifact still missing",
+      "evidence": "Handoff NOT explicit: grep -rl 01a16e50 over skill75-repair, drama-song-factory-build and package evidence returns only this unit's own two artifacts (control SFR-001/SFR-003 greps return real files, so the instrument discriminates). Hold observed: per-worktree git diff --name-only origin/main...HEAD across all 20 worktrees hits only S75-T12, and only its new isolated approval_bindings.py + test (the helper DEPENDENCIES-AND-OWNERSHIP.md assigns to T12); zero branches edit factory.py or existing approval modules; the artifact withholds the gate ('does_not_establish: That T13 may proceed... ownership gate for 01a16e50 is still UNVERIFIED') while unrelated units proceed."
+    },
+    {
+      "criterion": "Required owned outputs exist at the exact ledger paths",
+      "result": "FAIL",
+      "evidence": "find over the whole authority root (control: same find locates evidence/S75-T01-reconciliation.json and the evidence/ dir) returns 0 matches for evidence/source-reconciliation.json and evidence/emergency-owner-handoff.json. Census content exists only under a different name (evidence/S75-T01-reconciliation.json); the handoff artifact exists nowhere. Acceptance-row receipt evidence/units/S75-T01/attempt-<verified-generation>.json is also absent (evidence/units does not exist)."
+    },
+    {
+      "criterion": "No shared checkout mutated by this unit",
+      "result": "PASS with attribution caveat",
+      "evidence": "No worktrees/S75-T01, no S75-T01 branch, no commit by this unit (task-ledger S75-T01 attempt.state NOT_STARTED, actual_evidence []); census artifacts live outside every repo. Shared ONB checkout is dirty as described above (resolve_not_submitted edit, unattributed, no evidence provenance) and N999/CC checkouts carry pre-existing dirt (10, 19, 3563, 1 porcelain lines); none of it traced to S75-T01."
+    }
+  ],
+  "test_command": "find <root> -name 'source-reconciliation.json' -o -name 'emergency-owner-handoff.json' (control: find for S75-T01-reconciliation.json and evidence dir); grep -rl 01a16e50 and grep -rl resolve_not_submitted over skill75-repair, drama-song-factory-build, package evidence with grep -rl SFR-001/SFR-003 controls; git fetch + git rev-parse origin/main in openclaw-onboarding, drama-song-factory-build/999-setup, blackceo-command-center; git grep -c PROVIDER_LOOKUP_REQUIRED origin/main -- '*spend_ledger*' in ONB and N999; git show 0f71a3f8 -- .../batch.py plus-line extraction matched with grep -Fxc against git show origin/main:.../batch.py; per-worktree git diff --name-only origin/main...HEAD | grep -Ei 'factory\\.py|approval' over worktrees/S75-T*; git status --porcelain on all shared clones; python3 -I json.load of evidence/S75-T01-reconciliation.json",
+  "test_result": "All instrument controls pass. Both flavors resolve; sampled findings map to current source exactly once; factory/approval files held while unrelated units proceed (only T12's new isolated helper active). FAIL: both ledger-named owned outputs (evidence/source-reconciliation.json, evidence/emergency-owner-handoff.json) are absent, the acceptance-row receipt evidence/units/S75-T01/attempt-<verified-generation>.json is absent, and the census records no dirty/untracked/lease state although the shared ONB checkout carries an unattributed live edit in spend_ledger.py. Artifact evidence/S75-T01-reconciliation.json parses clean (18717 bytes).",
+  "reasons": [
+    "UNMET CONJUNCT (decisive): the ledger's required owned outputs do not exist at the exact paths it names. evidence/source-reconciliation.json and evidence/emergency-owner-handoff.json return 0 matches across the whole authority root (find instrument proven with known-good controls). Missing required owned outputs are a FAIL conjunct, not a naming preference. The census content survives only at a different path (evidence/S75-T01-reconciliation.json), and the handoff artifact does not exist in any form.",
+    "UNMET: acceptance-row evidence receipt evidence/units/S75-T01/attempt-<verified-generation>.json is absent; evidence/units/ does not exist at all.",
+    "UNMET (scope gap): the census omits the dirty/untracked state and affected-file leases its exact_deliverable requires (zero occurrences of dirty/untracked/lease in the artifact), while the shared ONB checkout holds an unattributed un-receipted resolve_not_submitted edit in spend_ledger.py. Preservation of the emergency repair is therefore proven only at origin/main, not over the shared checkout state the census was chartered to record.",
+    "Substance otherwise holds: both flavors resolve to heads I took myself (ONB 569eee7a79397d34275b0bb0da22a6349bd47f2d, CC a3b43318944132f0847f33f395dcb0ea38ba30a7, N999 317bb24172b3d4327c1fabaeebc68e797c32730e, N999 drifted past the recorded 65b8b484a034e615cd98d5ebccb61524058c9e43), sampled findings map to current source with exact-once counts and no duplicated repair, and the factory/approval files are genuinely held (only T12's newly-owned isolated helper active) while unrelated units proceed — the second disjunct of S75-A01, since the handoff itself is provably absent.",
+    "No shared checkout mutation traced to this unit (no worktree, no branch, no commit; ledger attempt.state NOT_STARTED), but the unattributed dirty ONB edit remains undetermined provenance — named sources searched: skill75-repair, drama-song-factory-build, package evidence; not checked: client boxes, Contabo/VPS hosts, remote branches outside trevorotts1/openclaw-onboarding, trevorotts1/999-setup, trevorotts1/blackceo-command-center."
+  ]
+}

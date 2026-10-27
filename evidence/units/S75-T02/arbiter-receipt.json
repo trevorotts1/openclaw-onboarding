@@ -1,0 +1,272 @@
+{
+  "schema": "blackceo.evidence.arbiter-receipt/v1",
+  "unit": "S75-T02",
+  "acceptance_id": "S75-A02",
+  "mode": "empty-needs-evidence",
+  "question": "Does any commit on origin/main carry S75-T02's product change, so that the row's merge_sha can be set from a real main commit?",
+  "answer": "No. origin/main at its live tip carries neither scripts/lib/job_uuid_gate.py nor tests/unit/job-uuid-gate.test.py nor any evidence/units/S75-T02/ path, and the candidate branch s75/S75-T02-r1 at 6b031ab16a076969a2527b70cfa3c8edb35b4915 is not an ancestor of origin/main. merge_sha cannot be set and no commit on main may be cited as carrying the change. The row's accepted artefacts are authority-root files outside the repository, not a repository delta.",
+  "arbiter_role": "independent evidence arbiter; authored no part of the candidate repair, performed no candidate-2 verification, wrote no product code",
+  "arbiter_status": "RECEIPT_ONLY_NO_ACCEPTANCE",
+  "observed_at": "2026-10-26T21:54:52Z",
+  "authority_root": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024",
+  "repo_under_test": {
+    "path": "<OPERATOR_HOME>/openclaw-onboarding",
+    "origin_main_tip_at_build": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7",
+    "origin_main_tip_date": "2026-10-26 16:41:35 -0400",
+    "origin_main_tip_subject": "Merge pull request #2618 from trevorotts1/batch/openclaw-onboarding/20261026-1955",
+    "fetch_command": "git fetch origin",
+    "fetch_rc": 0
+  },
+  "receipt_of_record": {
+    "primary": {
+      "path": "<AUTHORITY_ROOT>/evidence/S75-T02.verdict.20261024.2.json",
+      "bytes": 11909,
+      "sha256": "f0a7adc64a344a54eb443339df627f1ce9ef695e797045442318b1d91b6a0f62",
+      "verdict": "PASS",
+      "head_named_in_receipt": "dccd6811719e4212a8efa36674ffe00f1d243c53",
+      "scope_note": "PASS covers the authority-root artefacts and the scheduler single-owner/immediate-tick clauses; loop liveness ACROSS RESTART is recorded UNVERIFIED inside the same receipt and is not a passed clause"
+    },
+    "candidate_2": {
+      "path": "<OPERATOR_HOME>/skill75-repair/lanes/S75-T02-repair-verify-lane/evidence/units/S75-T02/verdict-candidate-2.json",
+      "bytes": 8085,
+      "sha256": "e0f9f39e1e668d2eb793d87fa913edea67ea0505adb3c0a4b55c4fac3596f975",
+      "verdict": "PASS",
+      "commit_verified": "6b031ab16a076969a2527b70cfa3c8edb35b4915",
+      "acceptance_granted": false,
+      "ledger_written": false,
+      "scope_note": "candidate quality only, per the verdict's own verdict_scope field"
+    },
+    "reverify_1": {
+      "path": "<AUTHORITY_ROOT>/evidence/S75-T02.verdict.reverify1.json",
+      "bytes": 20614,
+      "sha256": "ac62294fcff15571c49b3d7917fb9ad4da0420dbd2260e8ca5b37b5395c234a7",
+      "verdict": "UNDETERMINED",
+      "row_fully_met": false,
+      "head_tested": "dccd6811719e4212a8efa36674ffe00f1d243c53",
+      "scope_note": "eight items could_not_determine under a LIGHT lane plus the decisive finding that the tested commit implements none of the row; forces row_fully_met false"
+    },
+    "readonly_1": {
+      "path": "<AUTHORITY_ROOT>/evidence/S75-T02.verdict.readonly.1.json",
+      "bytes": 6725,
+      "sha256": "c325d635477a0fea068c543e6bcec53a0c43581c78d93c03543af51ca7b5fb30",
+      "verdict": "FAIL",
+      "head_named_in_receipt": "dccd6811719e4212a8efa36674ffe00f1d243c53",
+      "scope_note": "superseded in time by the 20261024.2 PASS after attempt-1.json landed; left append-only and unedited"
+    },
+    "qc_ledger_view": {
+      "path": "<OPERATOR_HOME>/loop-control/s75/qc/S75-T02.dccd6811719e4212a8efa36674ffe00f1d243c53.json",
+      "bytes": 8857,
+      "verdict": "PASS",
+      "digest": "UNOBTAINABLE",
+      "scope_note": "the QC receipt records digest UNOBTAINABLE on the stated ground that the unit has no repository delta; it certifies ancestry and authority-root digest recomputation only"
+    },
+    "record_consistency": "Three receipts name the shared head dccd6811719e (FAIL, then PASS, then UNDETERMINED); the candidate-2 verdict names a different head on a different, unmerged branch. None of the five is a repository-attribution receipt for a main commit."
+  },
+  "repo_delta_status": {
+    "product_files_unmerged": [
+      "scripts/lib/job_uuid_gate.py",
+      "tests/unit/job-uuid-gate.test.py"
+    ],
+    "candidate_branch": "s75/S75-T02-r1",
+    "candidate_head": "6b031ab16a076969a2527b70cfa3c8edb35b4915",
+    "candidate_head_date": "2026-10-26 09:47:39 -0400",
+    "candidate_is_ancestor_of_origin_main": false,
+    "ancestor_check_command": "git merge-base --is-ancestor 6b031ab16a076969a2527b70cfa3c8edb35b4915 origin/main",
+    "ancestor_check_rc": 1,
+    "merge_base": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+    "merge_base_subject": "Merge pull request #2596 from trevorotts1/s75/T08-r7",
+    "cherry_command": "git cherry origin/main 6b031ab16a076969a2527b70cfa3c8edb35b4915",
+    "cherry_result": "4 commits, all prefixed '+' (none patch-equivalent on main)",
+    "diffstat_vs_merge_base": "4 files changed, 419 insertions(+)",
+    "product_paths_on_origin_main": {
+      "command": "git ls-tree -r --name-only origin/main -- scripts/lib/job_uuid_gate.py tests/unit/job-uuid-gate.test.py",
+      "line_count": 0
+    },
+    "status": "UNMERGED_AND_NOT_ON_MAIN",
+    "merge_sha": null,
+    "merge_sha_reason": "no origin/main commit carries the change; writing a merge_sha here would assert an ancestry that the instrument denies (rc=1)"
+  },
+  "row_fully_met": false,
+  "row_fully_met_reason": "The authority-root artefacts are met and digest-verified, and the candidate repair passed an independent candidate-quality verdict, but the row's repository-side clauses are unproven because no main commit implements any of them, the nextRun sub-clause is not exposed by the scheduler facility, and live local testing of the repaired gate was not performed in this lane. row_fully_met therefore stays false.",
+  "checks_run_today": [
+    {
+      "id": "C1",
+      "check": "origin/main live tip",
+      "command": "git fetch origin; git rev-parse origin/main",
+      "rc": 0,
+      "result": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7"
+    },
+    {
+      "id": "C2",
+      "check": "candidate is not an ancestor of main",
+      "command": "git merge-base --is-ancestor 6b031ab16a076969a2527b70cfa3c8edb35b4915 origin/main",
+      "rc": 1,
+      "result": "not an ancestor"
+    },
+    {
+      "id": "C3",
+      "check": "product paths absent from main",
+      "command": "git ls-tree -r --name-only origin/main -- scripts/lib/job_uuid_gate.py tests/unit/job-uuid-gate.test.py | wc -l",
+      "rc": 0,
+      "result": "0 lines"
+    },
+    {
+      "id": "C4",
+      "check": "same instrument returns non-empty for a path known present (instrument control)",
+      "command": "git ls-tree -r --name-only origin/main -- scripts/qc-assert-no-client-names.sh",
+      "rc": 0,
+      "result": "scripts/qc-assert-no-client-names.sh -- the zero in C3 is real absence, not a broken scan"
+    },
+    {
+      "id": "C5",
+      "check": "no main commit is patch-equivalent to any candidate commit",
+      "command": "git cherry origin/main 6b031ab16a076969a2527b70cfa3c8edb35b4915",
+      "rc": 0,
+      "result": "four lines, all '+': 74ac39260, cf73408bb, bce10946, 6b031ab16"
+    },
+    {
+      "id": "C6",
+      "check": "merge base and diff volume",
+      "command": "git merge-base 6b031ab16a076969a2527b70cfa3c8edb35b4915 origin/main; git diff --stat 5a54ddd7f8171ea7e3608cc1d508b06e82077d9e 6b031ab16a076969a2527b70cfa3c8edb35b4915",
+      "rc": 0,
+      "result": "base 5a54ddd7f; 4 files changed, 419 insertions(+)"
+    },
+    {
+      "id": "C7",
+      "check": "candidate branch reflog chronology",
+      "command": "git reflog show s75/S75-T02-r1",
+      "rc": 0,
+      "result": "5 entries: branch created from origin/main at 5a54ddd7f, then 74ac39260, cf73408bb, bce10946, 6b031ab16 in that order; no rebase, no force, no reset recorded"
+    },
+    {
+      "id": "C8",
+      "check": "authority-root digests recomputed today",
+      "command": "shasum -a 256 and wc -c over the eleven named authority-root files",
+      "rc": 0,
+      "result": "all eleven digests and byte lengths match the values recorded in attempt-1, attempt-candidate-2 and the verdict of record"
+    },
+    {
+      "id": "C9",
+      "check": "candidate branch blobs recomputed today",
+      "command": "git cat-file blob <blob> | shasum -a 256 for the four candidate-branch files",
+      "rc": 0,
+      "result": "four sha256 values recorded under artifact_inventory_verified_today; byte sizes via git cat-file -s"
+    },
+    {
+      "id": "C10",
+      "check": "ledger row read by named field",
+      "command": "python3 -I json load of <OPERATOR_HOME>/loop-control/s75/ledger.json, selecting the S75-T02 row",
+      "rc": 0,
+      "result": "status ACCEPTED, phase BLOCKED_ON, prior_phase MERGED, verdict PASS, head null, merge_sha null, owned_paths [], latest_receipt evidence/S75-T02.verdict.20261024.2.json; no write was made to the ledger by this lane"
+    },
+    {
+      "id": "C11",
+      "check": "candidate-2 verdict file exists and is unmodified",
+      "command": "wc -c and shasum -a 256 on the candidate-2 verdict path",
+      "rc": 0,
+      "result": "8085 bytes, e0f9f39e1e668d2eb793d87fa913edea67ea0505adb3c0a4b55c4fac3596f975"
+    },
+    {
+      "id": "C12",
+      "check": "home-path gate, branch tree versus its own base",
+      "command": "scripts/qc-assert-no-client-names.sh --repo-root <branch worktree>; same script at the base tree; offending lines compared path:line:text",
+      "rc": 1,
+      "result": "see home_path_gate; added hits attributable to this branch = 0"
+    }
+  ],
+  "artifact_inventory_verified_today": [
+    {"path": "<AUTHORITY_ROOT>/state/prebuilder-loop-prompt.txt", "bytes": 2667, "sha256": "324c0edc65dac011dabaaa311bbd514eaeb736698cd4118ba2515d9df0318744"},
+    {"path": "<AUTHORITY_ROOT>/state/storage-profile.json", "bytes": 1966, "sha256": "72045a19a816c40be41c92bbd023e5a038c685e2df12382fd93cbdd0eb1a4923"},
+    {"path": "<AUTHORITY_ROOT>/state/supported-controls.json", "bytes": 1259, "sha256": "40a46ff0e14b2f54a09a43c1a6efba54004ed6835e6710505f1fc51103fa5fb5"},
+    {"path": "<AUTHORITY_ROOT>/state/native-census.json", "bytes": 1733, "sha256": "8f1de06bb834fd7d5365e2edc444ce622576d84b64e9b620ac6cd462ba8b9f86"},
+    {"path": "<AUTHORITY_ROOT>/evidence/prebuilder-recurring-loop.json", "bytes": 3186, "sha256": "622e9086d51609c056f07503191173d81d9f78e26cab066e93366f7f9e6a5500"},
+    {"path": "<AUTHORITY_ROOT>/evidence/units/S75-T02/attempt-1.json", "bytes": 4073, "sha256": "5a28970d36c31b8066b9f13f75fa51ae84539f3901d46c92915168f701ce54d2"},
+    {"path": "<AUTHORITY_ROOT>/evidence/units/S75-T02/attest-1.json", "bytes": 10340, "sha256": "12e69fa169d40a0d825ff857c03d4d58aa5c72ec1de42c2d92dfa90ecc7bfb26"},
+    {"path": "<AUTHORITY_ROOT>/evidence/S75-T02-startup-receipt.json", "bytes": 3252, "sha256": "27b24e0d883c7caa0750724641c557eba644ac5d360dd079597dc2c833652be5"},
+    {"path": "<AUTHORITY_ROOT>/evidence/S75-T02.verdict.20261024.2.json", "bytes": 11909, "sha256": "f0a7adc64a344a54eb443339df627f1ce9ef695e797045442318b1d91b6a0f62"},
+    {"path": "<AUTHORITY_ROOT>/evidence/S75-T02.verdict.reverify1.json", "bytes": 20614, "sha256": "ac62294fcff15571c49b3d7917fb9ad4da0420dbd2260e8ca5b37b5395c234a7"},
+    {"path": "<AUTHORITY_ROOT>/evidence/S75-T02.verdict.readonly.1.json", "bytes": 6725, "sha256": "c325d635477a0fea068c543e6bcec53a0c43581c78d93c03543af51ca7b5fb30"},
+    {"path": "candidate branch s75/S75-T02-r1:evidence/units/S75-T02/attempt-candidate-1.json", "blob": "30fecfd4534db69979de289519dd054cb12cbfb3", "bytes": 4954, "sha256": "79caebb6ea538593ce7816a6bf94a38a9d34b368f8ae0564ef8c62f9fd8fc151", "gate_note": "contains operator home paths; deliberately NOT copied onto this branch"},
+    {"path": "candidate branch s75/S75-T02-r1:evidence/units/S75-T02/attempt-candidate-2.json", "blob": "9cdb248d07abef1eb5ea97e9cb65f706b44b5bdd", "bytes": 9178, "sha256": "773b0c423e03c546bad5209a3cdcc8e727006cd78a4be7379b78572e1dc6fd51", "gate_note": "contains operator home paths; deliberately NOT copied onto this branch"},
+    {"path": "candidate branch s75/S75-T02-r1:scripts/lib/job_uuid_gate.py", "blob": "cbbcec0c57db1006bc23f899a7e70b5fef019bf2", "bytes": 4420, "sha256": "4b9ef0943a2ec34d54daeb47368639b641f603d0353b5a1599c7336737f565d5", "gate_note": "product code; not included on an evidence branch"},
+    {"path": "candidate branch s75/S75-T02-r1:tests/unit/job-uuid-gate.test.py", "blob": "7adb96e58999156cb916e0ff938d2830dd81b021", "bytes": 6150, "sha256": "b67992999206138f8493c132775a33a3f07c42539750f2f945a3e21bbed0e951", "gate_note": "product test code; not included on an evidence branch"}
+  ],
+  "chronology_from_mtimes_and_reflogs": {
+    "candidate_commits_in_reflog_order": [
+      {"sha": "74ac3926038d81083cab15c4994bcd0214ac583c", "committer_date": "2026-10-26 09:23:05 -0400", "subject": "feat(S75-T02): refuse UUID-gated writes with no fallback + prebuilder receipt"},
+      {"sha": "cf73408bbd591da3677b3a0ff955a8470705cde0", "committer_date": "2026-10-26 09:23:17 -0400", "subject": "evidence(S75-T02): candidate attempt receipt for D-8 shape"},
+      {"sha": "bce10946f2acadf2ec3c65807d50e349935923e7", "committer_date": "2026-10-26 09:47:14 -0400", "subject": "fix(S75-T02): explicit recurring:false refuses even with non-empty schedule"},
+      {"sha": "6b031ab16a076969a2527b70cfa3c8edb35b4915", "committer_date": "2026-10-26 09:47:39 -0400", "subject": "evidence(S75-T02): candidate-2 receipt -- recurring:false refusal + authority-root correction"}
+    ],
+    "branch_creation": "reflog entry @{4}: created from origin/main, landing at 5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+    "candidate_2_verdict_mtime": "2026-10-26 09:52, five minutes after the candidate-2 receipt commit, consistent with verification following the commit rather than preceding it",
+    "verdict_file_order_from_content_not_mtime": "readonly.1 FAIL, then 20261024.2 PASS (records that readonly.1 was left untouched), then reverify1 UNDETERMINED at 2026-10-25; the candidate-2 verdict is the last of the five by date",
+    "no_rewrite_observed": true,
+    "no_force_push_observed": true,
+    "copy_note": "mtime is not authorship; this chronology is corroboration for, not proof of, the recorded order"
+  },
+  "per_verdict_reproducibility": [
+    {
+      "verdict": "S75-T02.verdict.20261024.2.json PASS",
+      "reproducible": true,
+      "how": "the eleven authority-root digests and byte lengths recompute today from the mounted authority root, and the head it names is still resolvable and still an ancestor of origin/main",
+      "not_reproducible_parts": "its live spot-checks (CronList of session job a8a8ad74, tick counts) depended on a session-scoped scheduler job and cannot be re-read from this lane"
+    },
+    {
+      "verdict": "verdict-candidate-2.json PASS",
+      "reproducible": true,
+      "how": "check out 6b031ab16 and run python3 -I tests/unit/job-uuid-gate.test.py (11 tests) plus the named-shape probe; the parent cf73408bb reproduces the defect as the verdict states",
+      "not_reproducible_parts": "none claimed; this lane did not re-run it and does not restate its per-item results as its own"
+    },
+    {
+      "verdict": "verdict.reverify1.json UNDETERMINED",
+      "reproducible": true,
+      "how": "the decisive finding (the tested commit implements none of the row) recomputes from git: the two product paths are absent from origin/main and the candidate branch is unmerged"
+    },
+    {
+      "verdict": "verdict.readonly.1.json FAIL",
+      "reproducible": true,
+      "how": "its two red conjuncts were cleared in time by attempt-1.json; the file itself is append-only and hash-stable"
+    },
+    {
+      "verdict": "qc S75-T02.dccd681....json PASS with digest UNOBTAINABLE",
+      "reproducible": true,
+      "how": "digest UNOBTAINABLE is itself recomputable: with no repository delta there is no patch-id to compute"
+    }
+  ],
+  "reproducibility_summary_yes_no": "yes",
+  "reproducibility_caveat": "yes covers the static claims: every digest, byte length, ancestry result and absence claim in this receipt recomputes from the named commands against the pinned tips. It does not cover the session-scoped scheduler readbacks inside the older verdicts, which expired with their sessions.",
+  "home_path_gate": {
+    "script": "scripts/qc-assert-no-client-names.sh",
+    "mode_used": "branch-only: the script run against this branch's own worktree, with the base tree scanned the same way and the offending lines compared",
+    "branch_head": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7 (branch creation point)",
+    "added_hits_including_operator_home_spellings": 0,
+    "baseline_note": "the repository baseline is already red on pre-existing hits; only the DELTA attributable to this branch is asserted, and that delta is zero",
+    "sanitisation_policy": "operator home paths appear in this receipt only as <OPERATOR_HOME> and <AUTHORITY_ROOT> tokens; no absolute operator path literal is stored"
+  },
+  "mergeable_evidence_branch_requirements": [
+    "branch from the live origin/main tip, never from a stale local main",
+    "carry evidence only: no product code, no test code, no modification of existing tracked files",
+    "contain zero operator home path literals in either spelling, proven by the home-path gate as a delta against the branch's base",
+    "cite every external artefact by path plus byte length plus sha256, and record the digest of the branch blobs it points at",
+    "record the full forty-character head sha, never an abbreviation",
+    "state merge_sha as null when no main commit carries the change; never write an ancestry a merge-base check denies",
+    "never merge, never push to main, never touch another lane's branch"
+  ],
+  "binding_rules_honored": [
+    "no merge performed and no batch PR opened by this lane",
+    "no push to main; the only push is this evidence branch",
+    "no other lane's branch read into or written by this lane",
+    "ledger row left unmodified: no merge_sha, no head, no acceptance written",
+    "paths and digests reported, file contents not pasted into the reply",
+    "no home path literal committed, and the two candidate receipts that do carry home paths were kept off this branch"
+  ],
+  "residual_observations_not_verdicts": [
+    "The ledger row reads status ACCEPTED with head null and merge_sha null while its note says the unit was 'classified MERGED, not receipted as a QC pass'; acceptance and merge evidence are not the same field and the row currently holds one without the other.",
+    "The row's merge_proof names an origin/main commit that is an ancestor of main but carries no T02 change and whose named evidence file is absent from main; the string is not attribution evidence.",
+    "The candidate-2 verdict records that non-boolean recurring values (0, 1, 'false', null) still fall through to the schedule branch; consistent with the module's documented explicit-boolean contract, but uncovered by any written spec clause.",
+    "The gate module has zero production callers at the candidate head; the fail-closed behaviour is proven at library plus test level only.",
+    "The scheduler facility exposes no absolute next-run timestamp, so the row's nextRun clause has no value to prove; the receipts disclose this rather than invent one.",
+    "Live local testing of the repaired gate in this lane: NOT_TESTED. This receipt recomputes evidence; it does not re-run the candidate probes."
+  ]
+}

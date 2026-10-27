@@ -1,0 +1,72 @@
+{
+  "schema": "s75/attest-receipt/v1",
+  "unit": "S75-T01",
+  "acceptance_id": "S75-A01",
+  "attest_generation": 1,
+  "attest_file": "evidence/units/S75-T01/attest-1.json",
+  "recorded_at": "2026-10-24T22:00:50Z",
+  "checker_identity": "independent attestor group A (opus-chain); did not author this unit; ran the focused check in its own read-only worktree",
+  "checker_identity_note": "No workflow run label was given to this attestation; none invented. No name, handle or session id claimed beyond the literal identity string above.",
+  "author_separation": {
+    "author_of_record": "REPAIR AUTHOR (evidence-only), per evidence/units/S75-T01/attempt-1.json -> repair_author",
+    "checker_is_author": false,
+    "note": "This attestor wrote only this file. No prior receipt for this unit names a checker identity; the boolean flag verifier_distinct:true at evidence/S75-T01.verdict.readonly.3.json is a flag, not an identity, and this receipt supplies the identity."
+  },
+  "head_tested": "artifact-digest sha256:e45d2f30cb5ec150a735c42fe0a0fb83e20df42e146117cdf8330c9852a27d4f (evidence/source-reconciliation.json, 75754 bytes); NO git commit head exists for this unit",
+  "head_source": "evidence/S75-T01.verdict.readonly.3.json -> digest_recomputed[0] (newest verdict receipt), matching evidence/units/S75-T01/attempt-1.json -> produces[0]",
+  "head_selection": {
+    "newest_verdict_receipt": "evidence/S75-T01.verdict.readonly.3.json (mtime 2026-10-24 17:03:09 -0400; name ordinal .3; verdict PASS)",
+    "why_chosen": "Two independent orderings agree it is newest: file mtime and the .1/.2/.3 name ordinal. No receipt records a git commit head for this unit: no s75/T01 branch or worktree exists and the repair created no commit (confirmed by evidence/S75-T01.verdict.readonly.3.json -> product_code_branch_worktree_check and by my own git worktree list). The newest verdict carries no head field; its digest_recomputed block is the unit's identity, so the attested head is the candidate artifact digest.",
+    "discrepancy_carried": "The verdict chain holds two FAIL (S75-T01.verdict.json predecessors: S75-T01.verdict.readonly.1.json, S75-T01.verdict.t01repair.2.json) and two PASS (S75-T01.verdict.json, S75-T01.verdict.readonly.3.json). S75-T01.verdict.t01repair.2.json carries an internal generated_at of 2026-10-24T21:30:00Z, later than readonly.3's observed_at 21:15:00Z, but its file mtime is 2026-10-24T20:43:15Z (47 minutes BEFORE its own claimed stamp) and its evidence quotes attempt-1.json at 1768 bytes / mtime 16:36:27 while the current attempt-1.json is 3095 bytes written 20:51:04Z. That FAIL was therefore issued against the PRE-repair artifacts and its internal stamp is unreliable; the mtime + name-ordinal ordering is the sound one and was used.",
+    "contradiction_not_dropped": "The FAIL verdict S75-T01.verdict.t01repair.2.json is left in place and is not resolved away by this attestation. It was issued against an earlier artifact state (source-reconciliation.json then e44a768b... 69370 bytes, now e45d2f30... 75754 bytes)."
+  },
+  "base_used": "Three flavor origin/main snapshots the census was read against at read_at 2026-10-24T20:50:17Z: ONB f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b, N999 6e9d69def27dd4adfffbe7a03ccf0e47d871f03b, CC 7816a3c560ff2c50126e38b139ad644c472b99ac",
+  "base_source_or_derivation": "TRANSCRIBED from evidence/S75-T01.verdict.readonly.3.json -> corroboration_per_flavor[].recorded_head (same three values appear in evidence/units/S75-T01/attempt-1.json -> verification.commands). NOT DERIVED: this unit has no commit, so the recorded-head/first-parent derivation is not applicable and was not used. My own reflog read independently corroborates that all three were the live origin/main at 2026-10-24T20:50:17Z (= 16:50:17 -0400).",
+  "base_provenance_distinction": "Explicit: the base above is a TRANSCRIPTION of what the receipts recorded, not a parent-derived derivation. The usual derivation rule (take the recorded head, resolve its first parent with git, label it derived) cannot apply because there is no recorded commit head for S75-T01.",
+  "worktree": {
+    "path": "<PATH>/.claude-nine/scratchpad/s75-attest-A/S75-T01",
+    "creation": "git -C <PATH>/openclaw-onboarding worktree add --detach <path> f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b",
+    "note": "Environment only. f0a9c80e0 is the ONB flavor snapshot head the artifact recorded, NOT a unit head (the unit has none). Detached, read-only: no commit, no branch, no tracked-file edit. No existing worktree was used."
+  },
+  "focused_check_discovered": "From evidence/S75-T01.verdict.readonly.3.json -> commands_run (no unit test file exists for S75-T01; the unit is evidence-only): shasum -a 256 evidence/source-reconciliation.json | evidence/units/S75-T01/attempt-1.json | evidence/emergency-owner-handoff.json; wc -c on the same three; git -C <flavor repo> rev-parse origin/main for openclaw-onboarding, .openclaw/persist-home/999-setup, blackceo-command-center",
+  "focused_check_source": "evidence/S75-T01.verdict.readonly.3.json -> commands_run (the command actually run by the prior verifier)",
+  "commands_executed": [
+    "shasum -a 256 source-reconciliation.json units/S75-T01/attempt-1.json emergency-owner-handoff.json  (cwd: <authority-root>/evidence)",
+    "wc -c source-reconciliation.json units/S75-T01/attempt-1.json emergency-owner-handoff.json  (cwd: <authority-root>/evidence)",
+    "python3 -I -c <json.load each of the three artifacts; control: json.load on definitely-not-here-zzz.json must raise FileNotFoundError>",
+    "git -C <PATH>/openclaw-onboarding rev-parse origin/main",
+    "git -C <PATH>/.openclaw/persist-home/999-setup rev-parse origin/main",
+    "git -C <PATH>/blackceo-command-center rev-parse origin/main",
+    "git -C <each flavor repo> reflog show origin/main --date=iso"
+  ],
+  "exit_code": 0,
+  "output_tail": "e45d2f30cb5ec150a735c42fe0a0fb83e20df42e146117cdf8330c9852a27d4f  source-reconciliation.json\n6f4602b53f6fc84e64d019a0afb9ea272380826bc15deac8567434a4a83233aa  units/S75-T01/attempt-1.json\n9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e  emergency-owner-handoff.json\n   75754 source-reconciliation.json\n    3095 units/S75-T01/attempt-1.json\n    3270 emergency-owner-handoff.json\nPARSE_OK x3\nCONTROL_ABSENT_OK definitely-not-here-zzz.json\nflavor heads now: ONB 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865, N999 6e9d69def27dd4adfffbe7a03ccf0e47d871f03b, CC 39622becb9023c0bff03ca4d360617290db2c12e",
+  "digest_recomputed": [
+    {"path": "evidence/source-reconciliation.json", "sha256": "e45d2f30cb5ec150a735c42fe0a0fb83e20df42e146117cdf8330c9852a27d4f", "bytes": 75754, "matches_recorded": true},
+    {"path": "evidence/units/S75-T01/attempt-1.json", "sha256": "6f4602b53f6fc84e64d019a0afb9ea272380826bc15deac8567434a4a83233aa", "bytes": 3095, "matches_recorded": true},
+    {"path": "evidence/emergency-owner-handoff.json", "sha256": "9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e", "bytes": 3270, "matches_recorded": true}
+  ],
+  "point_in_time_corroboration": [
+    "ONB reflog show origin/main --date=iso: f0a9c80e0 became origin/main 2026-10-24 16:29:15 -0400, superseded by 144ec5450 at 16:50:55 -0400. read_at 20:50:17Z = 16:50:17 -0400 falls inside that window, so the recorded head WAS live at read_at. Independently re-derived by me; matches the newest verdict's strongest_reason.",
+    "CC reflog: 7816a3c560 became origin/main 2026-10-24 16:32:20 -0400 and held until 39622becb9 at 17:58:52 -0400. read_at inside the window. Also confirms the earlier FAIL's finding: a3b4331894 was superseded at 13:21:11 -0400, before the failed census write at 16:36:27 -0400.",
+    "N999 reflog: 6e9d69def became origin/main 2026-10-24 16:29:27 -0400 and is still live. read_at inside the window.",
+    "Drift since read_at (ONB now 9488ccbc, CC now 39622bec, N999 unchanged) is point-in-time drift the census explicitly anticipates, not staleness and not a failure."
+  ],
+  "controls_run": [
+    "json.load on a deliberately absent path (definitely-not-here-zzz.json) raised FileNotFoundError -> the parse check discriminates absence",
+    "shasum -a 256 of a different input returns a different digest -> the hash instrument is not returning a constant"
+  ],
+  "check_result": "PASS",
+  "attestation": "PASS",
+  "result_basis": "All three artifact digests and byte counts recomputed by me match the recorded values exactly; all three artifacts parse as clean JSON; the three recorded flavor heads are each provably the live origin/main at the recorded read_at 2026-10-24T20:50:17Z per my own reflog read.",
+  "timestamp_basis": "Ordering of verdict receipts resolved by file mtime (ls -lT) and the .1/.2/.3 name ordinal; receipt-internal stamps (observed_at/generated_at) cross-checked against those mtimes and found forward-dated in two files, so they were not used for ordering. Flavour-head liveness anchored to git reflog timestamps (local -0400). Commands run by this attestor at 2026-10-24T22:00:50Z.",
+  "limitations_not_claimed": [
+    "This attestation covers the evidence artifacts of S75-T01 as they stand now. It does not re-derive the 75754-byte census body field by field; it verifies the artifact identity, its parseability and the three head observations behind it.",
+    "Owner 01a16e50 remains UNKNOWN. Nothing here invents an owner.",
+    "The lease conflict recorded in the census (batch/s75-b5-prep @ dd3881cff1c917e604385f03fe85ebf0a32cbd9d naming intake_preflight/factory.py) is carried, not resolved.",
+    "The pre-existing unattributed dirty state in the shared ONB checkout (2 modified + 1 untracked, listed in the census) predates this attestation and is not owned by it."
+  ],
+  "writes_by_this_attestor": ["evidence/units/S75-T01/attest-1.json"],
+  "existing_evidence_modified": [],
+  "repo_touched": false
+}
