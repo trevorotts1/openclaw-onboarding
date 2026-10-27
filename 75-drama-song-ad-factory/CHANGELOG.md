@@ -6,7 +6,7 @@ frontmatter `version:` field).
 
 ## v2.9.128 - 2026-10-27 - chore(batch-20261027-2050): version stamp for S75-T02 and S75-T15
 
-- **Batch 20261027-2050 version stamp, skill 75 v2.9.127 -> v2.9.128.** S75-T02 (`s75/S75-T02-r1` @ `89a7ffc03`) and S75-T15 (`s75/S75-T15-r6` @ `a6400314f`) are the two units in this batch. T15 carried its own bump to v2.9.128 on its branch; those two stamp lines were resolved back to main's v2.9.127 at merge time so the batch carries exactly one stamp, applied here. No skill code changed in this commit; version stamp only.
+- **Batch 20261027-2050 version stamp, skill 75 v2.9.127 -> v2.9.128.** S75-T02 (`s75/S75-T02-r1` @ `89a7ffc03`) and S75-T15 (`s75/S75-T15-r6` @ `a6400314f`) are the two units in this batch. T15 carried its own bump to v2.9.128 on its branch; merge commit `0eb33a361` took that higher value under the room's take-the-higher rule, so the batch's net effect on skill 75 is exactly one bump, v2.9.127 -> v2.9.128. This changelog commit changes no version file and no skill code.
 
 ## v2.9.126 - 2026-10-27 - chore(batch-20261027-0211): version stamp for S75-T04
 
