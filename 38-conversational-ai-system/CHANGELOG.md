@@ -1,3 +1,7 @@
+## [2.0.202] - 2026-10-27 - chore(batch-20261027-0702): Skill 38 to v2.0.202 for T-53
+
+- **Batch 20261027-0702 version stamp, Skill 38 v2.0.201 -> v2.0.202.** T-53 (`pb/PBB-916-wave1/T-53` @ `92a7c7f`) replaces personal-data actor literal with neutral fixture (38-conversational-ai-system, 22 files). No skill code changed in this commit; version stamp only.
+
 ## [2.0.201] - 2026-10-27 - chore(batch-20261027-0623): version stamp for T-55 (T-38 not in this batch)
 
 - **Batch 20261027-0623 version stamp, Skill 38 v2.0.200 -> v2.0.201.** T-55 (`pb/PBB-918-wave1/T-55` @ `20b91149`) touches skill 38 files in this batch. T-38 is NOT in this batch. No skill code changed in this commit; version stamp only.
