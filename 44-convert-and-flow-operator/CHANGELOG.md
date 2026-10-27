@@ -1,3 +1,19 @@
+## [v2.1.36] - 2026-10-27 - batch 20261027-2022: two test-only units (portable mktemp template pinned, graph fixture presence asserted)
+
+Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, template or QC script behaviour changed in this batch; the only non-test files touched are the two version markers.
+
+### The portable mktemp template is pinned by a test
+
+`qc-built-workflow.sh` writes its export through `mktemp "${TMPDIR:-/tmp}/qc-wf-export-XXXXXX"`. BSD `mktemp` requires the Xs to be the last characters of the template, so the earlier `...-XXXXXX.json` form created that literal path: the first call in a run succeeded and the second died with `mktemp: mkstemp failed on <path>: File exists`, rc 1. The suite was therefore red on macOS and green on Linux, and the same tree could be reported green or red depending on whether the literal file happened to exist. `tests/test_qc_built_workflow.py::test_export_temp_template_is_portable` (f589ff0f) now reads the quoted template out of the script with a regex rather than restating it, points `TMPDIR` at `tmp_path`, runs `mktemp` twice and requires two distinct paths, so a future edit that puts a suffix after the Xs fails the suite instead of failing only on macOS.
+
+### A missing graph fixture is not a malformed one
+
+`validate_graph` maps both an absent export and an unparseable one to rc 2 with verdict UNVERIFIED. A case pointed at a path that does not exist would therefore look like a passing malformed-input test while proving nothing. cc273cc1 hoists the parametrize list in `tests/test_validate_graph.py` into a module-level `GRAPH_CASES` and adds `test_every_named_fixture_exists`, which asserts every fixture the cases name is actually present. `unparseable.badjson` is still exercised by the existing cases and still returns rc 2 with verdict UNVERIFIED.
+
+### Version lockstep
+
+`skill-version.txt` moves v2.1.35 -> v2.1.36 and the `SKILL.md` frontmatter follows. No other file in the skill changed in the batch.
+
 ## [v2.1.35] - 2026-10-27 - batch 20261027-1826: five units (schema graph, portable mktemp, malformed-JSON fixture, UNINITIALISED skip, status field shift)
 
 Five units shipped between v2.1.28 and this stamp. The merge room assigns the version; the entries below are carried verbatim from the batch's pending changelog.
