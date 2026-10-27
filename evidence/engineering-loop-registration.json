@@ -57,7 +57,9 @@
   "source_owner_handler": "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/control/owner_handler.py",
   "source_owner_handler_sha256": "bcd065bf314ae693970e516c58910db6f60db3f4520d65ba0f2c5e0e3693c06f",
   "committed_adapter": "CONTROL/eng_loop.py",
-  "committed_adapter_sha256": "8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc",
+  "committed_adapter_sha256": "d8062c0ea39dc9e19cfae76583f6cfb015cfbffc45209cce0fc8d15a8cc40a6a",
+  "committed_adapter_sha256_at_authoring": "8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc",
+  "committed_adapter_sha256_correction": "Recomputed 2026-10-27 by lane PBB-1710 on origin/main 8cb74925ad94c05ce9eb639e7554d02fcd780e20 (base 3ea3c0f19dd04373871d8cf973a01a5c4a02f756). Chain: the authoring value 8659ba5b6c977ac3127b0d1bf7087c49ffe89437d7aa788661f5cf927b6cb4dc held at commits 27b5f15fb4c86a7e2773c73364c1554762fa997d and e7f5d98a7f586de249789047ebcd1ae6b3f0ba6f; repair commit 6681847567fa2af53080f389e66536981ab97725 (PBB-279, PB_* configuration read at use time) changed CONTROL/eng_loop.py to d0460514e966827a200291d0895d935d70c3cbe15a7dee5de5f54e617e195b78 without refreshing this artifact; commit b9b6f6097 (T-38 shared runtime adapters, external-storage admission, restart persistence) changed it again to the value above, also without refreshing this artifact. The value above is the sha256 of CONTROL/eng_loop.py at this artifact's own commit.",
   "committed_owner_handler": "CONTROL/owner_handler.py",
   "committed_owner_handler_sha256": "bcd065bf314ae693970e516c58910db6f60db3f4520d65ba0f2c5e0e3693c06f",
   "not_replaced": "The owner handler is byte-identical to the existing one. The adapter differs only by the environment-override extension recorded below; every existing command, state machine, table, receipt marker, lease and ready-queue path is unchanged.",
@@ -504,7 +506,34 @@
    "ai.blackceo.pb-eng-loop-pbb220.plist"
   ],
   "state_db": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
-  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist"
+  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
+  "corpus_status": {
+   "observed_at": "2026-10-27T15:41Z",
+   "observer": "lane PBB-1710 rebuild, os.path.exists over every path-valued field beginning /Volumes/ plus proof_artifacts.files joined to proof_artifacts.root (positive control: the two cited source files return TRUE on the same instrument)",
+   "counting_method": "distinct de-duplicated path strings counted once each; /Volumes substrings embedded inside longer prose or shell-command strings are not counted as separate cited paths",
+   "proof_artifacts_scope": {
+    "cited_paths": 21,
+    "missing_paths": 21,
+    "surviving_paths": 0
+   },
+   "document_scope": {
+    "cited_paths": 27,
+    "missing_paths": 25,
+    "surviving_paths": 2,
+    "surviving": [
+     "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/control/eng_loop.py",
+     "/Volumes/mac mini m4/Downloads/git trees and automations/Purple-Billboard-Client-System-Build/control/owner_handler.py"
+    ]
+   },
+   "prior_observation": "lane PBB-780 recorded 20 cited / 18 missing / 2 surviving at 2026-10-26T16:16Z on a narrower counting basis. Every observation agrees that the two source files are the only survivors.",
+   "missing_examples": [
+    "scratch/pb-skill38-20261024/T-05/PROOF.md (generations 1 and 2 of the production label)",
+    "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof (the whole corpus directory)",
+    "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
+    "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist"
+   ],
+   "consequence": "The PBB-220 proof corpus cited above no longer exists on this host, so those citations are historical authoring evidence, not live proof. Lane PBB-780 recorded that the acceptance rows were re-earned at unit head 3ea3c0f19dd04373871d8cf973a01a5c4a02f756 by an isolated launchd run (lane PBB-696, 2026-10-26T02:47Z) and re-run by lane PBB-780 on 2026-10-26, with both receipts outside this repository; lane PBB-1710 verified only the path-existence facts above and does not restate that re-earn claim as its own proof."
+  }
  },
  "unknowns": [
   {
