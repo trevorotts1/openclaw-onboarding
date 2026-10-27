@@ -134,16 +134,24 @@ corresponding communication playbook in `<MASTER_FILES_DIR>/communication-playbo
 Read the matching playbook before drafting your reply. It contains the
 tone, signature, escalation triggers, and brand voice for that channel.
 
-### Step 3 — Send the reply via the GHL skill (SENDING IS MANDATORY)
+### Step 3 — Send the reply through `pb_send.py` (SENDING IS MANDATORY)
 
-Use the installed GHL skill (`openclaw skills | grep ghl`) to send the
-reply back on the same channel. Do NOT post directly to the GHL API
-yourself — the skill handles auth, rate limits, and retries.
+Every inbound turn starts with `python3 tools/pb_send.py admit --tenant <location_id>
+--message-id <message_id> --contact <contact_id>`. **Exit code 3 means the provider event
+was already admitted: a duplicate delivery. END THE TURN with no reply.** Exit 0 means this
+turn owns the event.
 
-SENDING is mandatory. Composing or drafting a reply is NOT sending — the
-customer receives nothing unless you actually call the GHL Conversations
-API. Do NOT end your turn until the send call returns a
-messageId/conversationId. A drafted-but-unsent reply is a FAILURE.
+Send only with `python3 tools/pb_send.py reply --tenant <location_id> --contact
+<contact_id> --inbound-message-id <message_id> --channel <mirrored inbound channel> --text
+"<your reply>"`. Do NOT post directly to the GHL Conversations API — that bypasses the
+common dispatch gate and the durable inbox. The tool composes consent, the human-handoff
+fence and the answer-duty gate and sends through the GHL Conversations sender built on the
+Skill 44 public adapter (same auth, rate limits and retries as `caf`).
+
+SENDING is mandatory. Composing or drafting a reply is NOT sending — the customer receives
+nothing unless `pb_send.py reply` returns a messageId. A `SUPPRESSED`, `QUARANTINED` or
+`WAIT_UNTIL` answer means DO NOT SEND and never work around it. Do NOT end your turn until
+`pb_send.py reply` returns a messageId. A drafted-but-unsent reply is a FAILURE.
 
 ### Pointers (always-read references)
 
@@ -163,10 +171,12 @@ messageId/conversationId. A drafted-but-unsent reply is a FAILURE.
 
 ## GHL inbound — SENDING the reply is MANDATORY (base rule)
 
-For ANY GHL inbound hook, SENDING the reply via the GHL Conversations API
-is MANDATORY — a drafted-but-unsent reply is a failure. Always make the
-send call and confirm a messageId/conversationId before ending the turn.
-(See Step 7C "Send the reply" + the hook's own messageTemplate send-directive.)
+For ANY GHL inbound hook, SENDING is MANDATORY — a drafted-but-unsent reply is a failure.
+`python3 tools/pb_send.py admit …` first (exit code 3 = duplicate, END THE TURN), then
+`python3 tools/pb_send.py reply …`; that one tool composes the gates and owns the transport.
+Do NOT call `POST conversations/messages` yourself, and do not end the turn until
+`pb_send.py reply` returns a messageId.
+(See Step 3 "Send the reply" + the hook's own messageTemplate send-directive.)
 
 ---
 

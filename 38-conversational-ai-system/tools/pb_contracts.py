@@ -1268,15 +1268,47 @@ def _outcome_record(outcome):
     }
 
 
+def _ghl_transport(df, tenant_id):
+    """Build the real GHL Conversations sender for this tenant.
+
+    The adapter is the frozen Skill 44 public adapter; nothing here invents an
+    HTTP client. The PIT is read from the environment and never printed.
+    """
+    repo = Path(__file__).resolve().parents[2]
+    for extra in (repo / "44-convert-and-flow-operator" / "tools" / "engine",
+                  repo / "06-ghl-install-pages" / "tools"):
+        if str(extra) not in sys.path:
+            sys.path.insert(0, str(extra))
+    import ghl_public_client  # noqa: E402  (late: only for --transport ghl)
+    from cli_anything.gohighlevel.public.auth import TenantBinding  # noqa: E402
+    from cli_anything.gohighlevel.public.outbound_sender import make_sender  # noqa: E402
+
+    env_name = "GHL_LOCATION_PIT"
+    pit = os.environ.get(env_name, "")
+    if not pit:
+        raise df.FulfillmentError(
+            f"transport_unavailable: {env_name} is not set (value never printed)")
+    adapter, wire = ghl_public_client.make_adapter(str(tenant_id), pit)
+    return make_sender(adapter, TenantBinding(location_id=str(tenant_id),
+                                              source="pb_contracts"),
+                       transport=wire, sent_index_path=None)
+
+
 def _run_fulfillment(args, run):
-    """Open the durable store, ledger and journal transport, run, close."""
+    """Open the durable store, ledger and transport, run, close."""
     df = _fulfillment_module()
     store = df.DurableStore(args.outbox)
     ledger = df.FulfillmentLedger(args.fulfillment_ledger)
-    transport = df.JournalTransport(args.journal)
     try:
         item = df.PromisedItem(**load_json(args.item))
         basis = df.DeliveryBasis(**load_json(args.basis))
+        if getattr(args, "transport", "journal") == "ghl":
+            transport = _ghl_transport(df, basis.tenant_id)
+        else:
+            if not args.journal:
+                raise df.FulfillmentError("bad_input: --journal is required"
+                                          " with --transport journal")
+            transport = df.JournalTransport(args.journal)
         outcome = run(df, store, ledger, transport, item, basis)
     except df.FulfillmentError as exc:
         return emit({"ok": False, "command": args.command, "reason": str(exc),
@@ -1396,8 +1428,13 @@ def build_parser():
         parser.add_argument("--outbox", required=True, help="T-12 durable store (sqlite)")
         parser.add_argument("--fulfillment-ledger", required=True,
                             help="T-13 fulfillment ledger (sqlite)")
-        parser.add_argument("--journal", required=True,
-                            help="append-only transport journal (jsonl)")
+        parser.add_argument("--journal", default=None,
+                            help="append-only transport journal (jsonl); required"
+                                 " with --transport journal")
+        parser.add_argument("--transport", choices=["journal", "ghl"],
+                            default="journal",
+                            help="journal (offline, default) or ghl (real"
+                                 " Conversations sender)")
         parser.add_argument("--item", required=True, help="promised item JSON")
         parser.add_argument("--basis", required=True, help="delivery basis JSON")
 

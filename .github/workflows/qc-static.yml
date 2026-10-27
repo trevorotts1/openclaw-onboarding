@@ -3400,3 +3400,58 @@ jobs:
           python3 -I "$t"
           python3 -I 38-conversational-ai-system/tools/direct_fulfillment.py
           echo "✓ T-13 direct original fulfillment suite ran and passed"
+
+      - name: T-53 pb_send chokepoint suite (duplicate admit / suppressed / human fence) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_pb_send.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-53 pb_send suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 -I "$t"
+          echo "✓ T-53 pb_send chokepoint suite ran and passed"
+
+      - name: T-53 human-fenced contact reaches NO transport (fence proof, explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_pb_send.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-53 human-fence proof SKIPPED::$t is absent — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          python3 -I - "$t" <<'PY'
+          import importlib.util, sys
+          spec = importlib.util.spec_from_file_location("proof", sys.argv[1])
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          mod.test_human_fence_makes_zero_transport_calls()
+          print("PASS human fence: zero transport calls")
+          PY
+          echo "✓ T-53 human-fenced contact produced zero transport calls"
+
+      - name: T-53 GHL Conversations sender suite (HTTP 200 / 5xx unknown / duplicate key) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="44-convert-and-flow-operator/tools/engine/tests/test_outbound_sender.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-53 sender suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 -I "$t"
+          echo "✓ T-53 GHL Conversations sender suite ran and passed"
