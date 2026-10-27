@@ -7,6 +7,15 @@
   "base_sha": "b731551e38f8868b283a0d067af9a5ecfa9b279a",
   "head_sha": "18280f93c16cc38007d85d8193ad66cf770b05ec",
   "written_at_utc": "2026-10-25T17:24:55Z",
+  "head_sha_resolved_at_utc": "2026-10-25T17:29:00Z",
+  "head_sha_resolution": {
+    "remote": "origin (trevorotts1/openclaw-onboarding)",
+    "ref": "refs/heads/s75/S75-T06-r11",
+    "ls_remote_sha": "18280f93c16cc38007d85d8193ad66cf770b05ec",
+    "local_head_at_resolution": "18280f93c16cc38007d85d8193ad66cf770b05ec",
+    "proved": true,
+    "resolution_note": "Recorded, not inferred: ls_remote_sha and local_head_at_resolution are the same 40-hex, both read at head_sha_resolved_at_utc. The remote read and the local read agree, so the push is proved against the one ref named here and nothing is claimed about any other ref. Kept beside head_sha so the resolution carries its own evidence instead of resting on the prose note below; it approves nothing."
+  },
   "note": "The literal placeholder PENDING_AT_WRITE_TIME was written before the repair commit existed. Per this round's artefact contract it was to be replaced with the resolved 40-hex in a follow-up commit after the push. That follow-up never landed in round 11: git log --all -- evidence/units/S75-T06/ returned one commit only (18280f93c), and it still carried the placeholder. Repaired here: head_sha now records the resolved 40-hex of the round-11 repair commit, and the follow-up commit carrying this correction is the commit the promise named. head_sha is the candidate code commit, not this bookkeeping commit.",
   "independent_checker": {
     "checker": "qc-conform-S75-T06",
@@ -69,7 +78,7 @@
     "measured": "curated-prefix x role-head channel: 120/288 accepted at base, 168/288 at head, +48 = 'Le' and 'Le-with-circumflex' x 12 role heads x 2 positions. 'Le Woman', 'Le Manager', 'Le Driver', 'Le-with-circumflex Woman' reach state COMPLETE at head and are refused INCOMPLETE_CAST at base. Round-11 verdict of record measured the same family ('Le <role noun>' 82/90 at head vs 0/90 at base) and classified it 'residual, not a row failure on the measured text'.",
     "why_no_production_code_change": "The row's own committed control pins the identical shape: CONTROL_NAMES and REAL_NAMES_RESTORED in test_cast_writer_s75_t06.py require '<curated name> <descriptor word as surname>' accepted ('Dana Woman', 'Theresa Manager', 'Wanda Manager'), and the round-11 verdict records the same channel already open at base for 'Nguyen', 'Pham', 'Dana' and 'Mary' (82/90 accepted at base). Any shape rule that refuses 'Le Woman' refuses 'Dana Woman' (pinned must-accept); removing 'le' / 'Le-with-circumflex' from NAME_LEXICON refuses the real people those entries restore (pinned must-accept, REAL_NAMES_RESTORED). The only remaining cure is a given-name/surname vocabulary, which this module deliberately does not carry ('a vocabulary, deliberately not added here').",
     "decision_status": "Owner decision pending. Round-11 verdict of record post_pass_observations: 'the next round should decide whether a surname-position token may be decisive when the following token is a role noun.' The FAIL receipts record the row text alone does not settle it ('the row and its own control disagree').",
-    "pinned_not_hidden": "Declared residual, NOT pinned at this head. The four shapes sit in KNOWN_STILL_ACCEPTED_DESCRIPTORS only in 7a5429ef0, which also edits test_cast_writer_s75_t06.py; this land is evidence-only by scope, so that test edit was not applied. At product head 18280f93c KNOWN_STILL_ACCEPTED_DESCRIPTORS is ['Senorita Gomez', 'Fräulein Schmidt'] and no committed test asserts the Le / Lê shapes either way, so the suite would not fail if their verdict changed. The residual is declared here; the pin is unapplied."
+    "pinned_not_hidden": "Declared residual, and pinned at this head through the production gate. The pin location is CONTROL_NAMES in test_cast_writer_s75_t06.py, applied by beaabbe7a6ee62cd8014325d2ad90a9600cfb204 ('test(75): pin the four contested cast names through the production gate'): CONTROL_NAMES carries 'Le Woman', 'Le Manager', 'Le Driver' and 'Lê Woman' as must-accept rows, so the suite DOES fail if their verdict changes. The pin is applied, not pending. KNOWN_STILL_ACCEPTED_DESCRIPTORS is deliberately not extended: it stays ['Senorita Gomez', 'Fräulein Schmidt'], because adding the same four names there would duplicate the CONTROL_NAMES declaration and contradict it (CONTROL_NAMES asserts must-accept, this list records must-accept residuals). For that reason the 7a5429ef0 form, which appended the four names to KNOWN_STILL_ACCEPTED_DESCRIPTORS instead of touching CONTROL_NAMES, was dropped rather than replayed."
   },
   "files_changed": [
     "75-drama-song-ad-factory/scripts/core/real_content_names.txt.gz",
@@ -78,5 +87,18 @@
   ],
   "lexicon": {"before": 1328, "added": 49, "after": 1377},
   "dependencies": ["openclaw-onboarding:75-drama-song-ad-factory/scripts/core/character_bible/cast_writer.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/real_content.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/real_content_names.txt.gz", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py", "openclaw-onboarding:75-drama-song-ad-factory/scripts/core/story_first_contracts.py"],
-  "dependencies_source": "Import graph of the head's own changed files, read from git show at 89f1d616227eff8b09f4c01bcb585bec12f14325 and graded head 18280f93c16cc38007d85d8193ad66cf770b05ec: cast_writer.py imports story_first_contracts and real_content; real_content.py imports only stdlib (gzip, os, re, unicodedata) and opens real_content_names.txt.gz; test_cast_writer_s75_t06.py imports cast_writer and reads cast_writer.py/real_content.py. Verdict of record S75-T06.verdict.round11.json changed_files_vs_base names the same four files. Ledger S75-T06 needs=[] and owned_paths=[] ('not recorded') established none. No external/service dependency: dispatch is injected (attempt-4 'dispatch_contract': 'dispatch(prompt: dict) -> dict; injected only, no provider transport in the module')."
+  "dependencies_source": "Import graph of the head's own changed files, read from git show at 89f1d616227eff8b09f4c01bcb585bec12f14325 and graded head 18280f93c16cc38007d85d8193ad66cf770b05ec: cast_writer.py imports story_first_contracts and real_content; real_content.py imports only stdlib (gzip, os, re, unicodedata) and opens real_content_names.txt.gz; test_cast_writer_s75_t06.py imports cast_writer and reads cast_writer.py/real_content.py. Verdict of record S75-T06.verdict.round11.json changed_files_vs_base names the same four files. Ledger S75-T06 needs=[] and owned_paths=[] ('not recorded') established none. No external/service dependency: dispatch is injected (attempt-4 'dispatch_contract': 'dispatch(prompt: dict) -> dict; injected only, no provider transport in the module').",
+  "prior_attempts": {
+    "expected_by_contract": "attempt-1..attempt-3 present in evidence/units/S75-T06/",
+    "actually_found": [],
+    "sources_listed": [
+      "git clone of origin at base b731551e3: evidence/units/ does not exist",
+      "shared working tree <PATH>/openclaw-onboarding: evidence/units/ does not exist (evidence/ has only unit-agnostic log files and S75X-W*/D02/W* dirs)",
+      "all 40+ remote branches of origin: no branch contains any path under evidence/units/",
+      "repo-wide search for a directory named S75-T06 on disk: only <PATH>/scratchpads/S75-T06-r8 (a checkout, no evidence dir)",
+      "repo-wide search for attempt-*.json under any S75 path: only evidence/units/S75-T11/attempt-2.json in an unrelated lane"
+    ],
+    "sources_note": "A miss is stated against the source it was searched in, never as one bare negative, so a reader can re-run any single line above. Operator home paths are redacted to <PATH> as they are elsewhere in this file.",
+    "digests_unchanged": "not applicable: attempt-1, attempt-2 and attempt-3 are absent in every source above, so there are no bytes to change. Nothing was overwritten. Index 4 was used to match the orchestrator's stated prior state; index 1 was the next genuinely free index by listing."
+  }
 }
