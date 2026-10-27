@@ -1,0 +1,85 @@
+{
+  "fixture": "synthetic acquisition client",
+  "synthetic": true,
+  "note": "Entirely fictional. example.test addresses only. Never a real client.",
+  "tenant_id": "tenant-synthetic-001",
+  "discovered_facts": {
+    "business.legal_name": {
+      "value": "Synthetic Sample Studio",
+      "provenance": "discovered",
+      "source": "install identity collector"
+    },
+    "business.what_you_do": {
+      "value": "We sell hand-thrown pottery to independent restaurants",
+      "provenance": "discovered",
+      "source": "install identity collector"
+    },
+    "business.differentiator": {
+      "value": "Only studio in the county with a wood-fired kiln",
+      "provenance": "discovered",
+      "source": "public website audit"
+    },
+    "audience.primary_audience": {
+      "value": "Independent restaurant owners within 30 miles",
+      "provenance": "discovered",
+      "source": "public profile audit"
+    },
+    "channels.owned_channels": {
+      "value": "Instagram and an email list",
+      "provenance": "discovered",
+      "source": "public profile audit"
+    }
+  },
+  "client_answers": {
+    "offers.primary_offer": "A starter tableware set for a new restaurant",
+    "offers.price_range": "$40 to $120 per piece",
+    "audience.audience_pain": "Opening a restaurant with tableware that looks like every other room",
+    "proof.proof_assets": "Four restaurant references and one local press feature",
+    "constraints.budget": "$2,500 per month",
+    "channels.channel_access": "The owner holds admin access to both accounts",
+    "geography.service_area": "50 miles around Austin, Texas",
+    "seasonality.upcoming_season": "November restaurant openings"
+  },
+  "expected_questions_after_discovery": [
+    "offers.primary_offer",
+    "offers.price_range",
+    "audience.audience_pain",
+    "proof.proof_assets",
+    "constraints.budget",
+    "channels.channel_access",
+    "geography.service_area",
+    "seasonality.upcoming_season"
+  ],
+  "owner": {
+    "owner_id": "owner-synthetic-001",
+    "name": "Sample Owner",
+    "email": "owner@example.test",
+    "role": "owner",
+    "tenant_id": "tenant-synthetic-001"
+  },
+  "impostor_owner": {
+    "owner_id": "owner-other-tenant",
+    "name": "Other Tenant Owner",
+    "email": "other@example.test",
+    "role": "owner",
+    "tenant_id": "tenant-synthetic-999"
+  },
+  "approval": {
+    "scope": "30-day acquisition campaign, paid and organic"
+  },
+  "capacity": {
+    "monthly_new_customers": 12,
+    "fulfilment_lead_days": 21,
+    "notes": "two kiln firings per month"
+  },
+  "claims": [
+    {
+      "text": "Hand-thrown in Austin",
+      "substantiation": "studio address and process photographs"
+    },
+    {
+      "text": "Food-safe glazes",
+      "substantiation": "supplier certification on file"
+    }
+  ]
+}

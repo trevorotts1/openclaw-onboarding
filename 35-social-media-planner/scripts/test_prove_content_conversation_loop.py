@@ -201,7 +201,7 @@ def test_leg4_unsupported_channel_is_ledgered_not_fabricated(tmp_path):
     summary = comment_reader.run(
         [{"channel": "tiktok", "author_id": "x", "text": "hi",
           "post_id": "p1", "comment_id": "c1"}],
-        str(tmp_path), dry_run=True)
+        str(tmp_path), dry_run=True, own_author_ids=["fixture-page-own"])
     assert summary["handed_off"] == []
     assert len(summary["skipped"]) == 1
     assert summary["skipped"][0]["reason"].startswith("no comment-read API surface")

@@ -999,6 +999,46 @@ def cmd_production_go(a):
                     "the video stage." % out["recap_digest"][:12],
                     data={"path": fr.go_path(str(run_dir)), "go": out})
 
+def cmd_owner(a):
+    """owner: resolve THIS INSTALL's emergency owner (S75-T13 / S75-A13).
+
+    Per-install, never a hard-coded name (D-9/D-10): a value recorded as
+    ``onCallOperator`` in the install's own config wins; an operator-box install
+    with no value defaults to ``Trevor``; a client install with no value REFUSES
+    (EMERGENCY_OWNER_UNCONFIGURED) and, when ``--run-dir`` is named, records the
+    refusal in ``control/emergency-owner-refusal.json``. The full wiring this
+    unit's deliverable gates on stays closed until this command answers ok.
+    """
+    mod = _core_mod("emergency_owner")
+    if mod is None:
+        return envelope("owner", "install", "error",
+                        "EMERGENCY_OWNER_MODULE_MISSING",
+                        "emergency_owner.py is not on this box; the owner gate "
+                        "stays closed.")
+    run_dir = None
+    if getattr(a, "run_dir", None):
+        run_dir = Path(a.run_dir).expanduser().resolve()
+    sid = run_dir.name if run_dir is not None else "install"
+    res = mod.resolve(getattr(a, "install_home", None),
+                      getattr(a, "config", None))
+    data = dict(res)
+    if res["outcome"] != "ok":
+        if run_dir is not None:
+            record = mod.refusal_record(res)
+            path = run_dir / "control" / "emergency-owner-refusal.json"
+            _write_json(str(path), record)
+            data["refusal_record"] = str(path)
+        return envelope("owner", str(sid), "rejected", res["reason_code"],
+                        "Refusing to proceed: %s. Record the client's own "
+                        "on-call operator as %s in %s; never default to Trevor "
+                        "and never invent a name." % (
+                            res["detail"], mod.CONFIG_KEY, res["config_path"]),
+                        data=data)
+    return envelope("owner", str(sid), "ok", res["reason_code"],
+                    "Emergency owner for this install: %s (source: %s)." % (
+                        res["owner"], res["source"]),
+                    data=data)
+
 # ── W2-wiring-U1: purpose routing, method gates, Agnes routing ──────────────
 #
 # Inert until the run carries control/method.json (purpose routing) or the
@@ -3072,6 +3112,17 @@ def main(argv=None):
                     help="Go JSON: {schema, decision: GO, operator, at_utc, "
                          "recap_digest}. A digest that does not match the recap on "
                          "disk is refused and nothing is written.")
+    ow = sub.add_parser("owner", help="Resolve this INSTALL's emergency owner "
+                        "(S75-T13): install config, operator-box default, or a "
+                        "fail-closed refusal on a client install with none.")
+    ow.add_argument("--run-dir", default=None,
+                    help="Run dir; a refusal is recorded in "
+                         "control/emergency-owner-refusal.json when named.")
+    ow.add_argument("--install-home", default=None,
+                    help="Install config root; default $OPENCLAW_HOME or ~/.openclaw.")
+    ow.add_argument("--config", default=None,
+                    help="Exact install config JSON (default "
+                         "<install-home>/onboarding-identity.json).")
     c = sub.add_parser("card", help=_card_help())
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json", "studio-json", "session-json"),
@@ -3187,6 +3238,8 @@ def main(argv=None):
         env = cmd_final_recap(a)
     elif a.cmd == "production-go":
         env = cmd_production_go(a)
+    elif a.cmd == "owner":
+        env = cmd_owner(a)
     elif a.cmd == "event":
         env = cmd_event(a)
     else:

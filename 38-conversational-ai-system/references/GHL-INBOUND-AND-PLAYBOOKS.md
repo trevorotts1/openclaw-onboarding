@@ -585,7 +585,9 @@ complete and the client is **NOT** told to test until the self-test passes. This
 readiness gate in `scripts/11-run-qc-checklist.sh` (which asserts `selfTestPassed=true`).
 
 **(a) Readiness** — the backend must be prepared to RECEIVE: `hooks.enabled` true; a live `hooks.mappings`
-entry for `HOOK_NAME` with `action:agent`, `deliver:false`, and a working `model`; GHL creds in
+entry for `HOOK_NAME` with `action:agent`, `deliver:false`, and an `agentId` naming a configured agent
+(a `model` override on the mapping is OPTIONAL — PBB-017: absent means the agent's own configured model
+runs the mapping, and only a present-but-blank override is refused); GHL creds in
 `secrets/.env` (`GHL_PRIVATE_INTEGRATION_TOKEN` + `GHL_LOCATION_ID` — the location IS set); the
 `conversational-logs/` dir present + writable (node-owned); `/healthz` 200.
 

@@ -351,28 +351,124 @@ def spoken_section_findings(sheet, policy=None):
 #: cast), never on the legacy ``characters`` name list alone: a brief whose
 #: ``characters`` are there for protected-name checks (H7) is judged exactly as
 #: before, so this unit changes nothing for an existing caller.
+#:
+#: S75-T13: that legacy surface is now the ONLY open one. An ABSENT cast
+#: foundation is missing input, never an opt-out, so every script-authoring
+#: entry goes through ``require_cast_manifest`` / ``validate_authored_lyrics``,
+#: which never return None and have no argument that turns them off. A brief
+#: carrying the Skill 75 foundation envelope (``episode_cast_manifest``) always
+#: runs the required gate, even through the legacy ``validate_lyrics`` surface,
+#: so omitting a cast field can no longer skip it by shape.
 _CAST_MOD = None
 _CAST_KEYS = ("cast_mode", "cast_decision", "cast")
+CAST_MANIFEST_KEY = "episode_cast_manifest"
+CAST_GATE_SCHEMA = "s75.cast_gate.v1"
+CODE_CAST_FOUNDATION_MISSING = "CAST_FOUNDATION_MISSING"
+CODE_CAST_FOUNDATION_INVALID = "CAST_FOUNDATION_INVALID"
 
 
-def _cast_gate(brief):
-    """WW-27: the cast decision, taken BEFORE the lines are judged.
-
-    None when the brief declares no cast at all -- the check is then off,
-    exactly as today. With a declared cast, ``check_cast`` refuses an incomplete
-    character, a cast under the ensemble default, a villain/foil that never
-    speaks or is never answered, or a shared Suno voice direction -- so the
-    script's drafting never begins on a broken cast. PRE-GENERATION: audio gate
-    D5 alone confirms the delivered voices.
-    """
+def _cast_mod():
+    """``character_bible``, imported lazily (a cast-less legacy brief never loads it)."""
     global _CAST_MOD
-    b = brief if isinstance(brief, dict) else {}
-    if not any(b.get(k) for k in _CAST_KEYS):
-        return None
     if _CAST_MOD is None:
         from character_bible import character_bible as _cb   # noqa: PLC0415
         _CAST_MOD = getattr(_cb, "character_bible", _cb)
-    return _CAST_MOD.check_cast(b)
+    return _CAST_MOD
+
+
+def _cast_declared(b):
+    """A WW-27 cast declaration is present (the legacy gate's own trigger)."""
+    return any(b.get(k) for k in _CAST_KEYS)
+
+
+def _has_foundation_manifest(b):
+    """The Skill 75 foundation envelope names its cast artifact explicitly."""
+    return CAST_MANIFEST_KEY in b
+
+
+def _foundation_receipt(code, reason):
+    """S75-T13: the FAIL receipt for an absent or invalid cast foundation."""
+    return {"tool": "character_bible", "schema": CAST_GATE_SCHEMA,
+            "verdict": "FAIL", "reason_code": code, "reasons": [reason],
+            "blocked": True, "purchases": 0, "measures_no_audio": True,
+            "decision": "absent" if code == CODE_CAST_FOUNDATION_MISSING else "invalid",
+            "mode": "absent", "mode_declared": None,
+            "characters": [], "characters_n": 0, "detail": reason}
+
+
+def _manifest_defects(manifest):
+    """Defects of a T03 ``episode_cast_manifest`` payload (same contract)."""
+    try:
+        import story_first_contracts as C     # sibling module in core/
+    except ImportError:
+        from .. import story_first_contracts as C  # imported as core.*
+    return C.validate_cast_manifest(manifest)
+
+
+def require_cast_manifest(brief):
+    """S75-T13: THE cast gate for a script-authoring path. NEVER returns None.
+
+    An absent cast declaration, an absent/empty ``episode_cast_manifest`` and an
+    invalid manifest each return a FAIL receipt naming exactly what is missing,
+    so no authoring call can skip the gate by omitting cast fields. A declared
+    WW-27 cast is judged by ``check_cast`` and a T03 manifest by the shared
+    contract, so the two shapes stay one decision with two readers.
+    """
+    b = brief if isinstance(brief, dict) else {}
+    if _has_foundation_manifest(b):
+        manifest = b.get(CAST_MANIFEST_KEY)
+        if not isinstance(manifest, dict) or not manifest:
+            return _foundation_receipt(
+                CODE_CAST_FOUNDATION_MISSING,
+                "%s: the %s foundation is absent; an absent field is missing "
+                "input, never an opt-out" % (CODE_CAST_FOUNDATION_MISSING,
+                                             CAST_MANIFEST_KEY))
+        defects = _manifest_defects(manifest)
+        if defects:
+            return _foundation_receipt(
+                CODE_CAST_FOUNDATION_INVALID,
+                "%s: the %s does not satisfy the cast contract (%s)"
+                % (CODE_CAST_FOUNDATION_INVALID, CAST_MANIFEST_KEY,
+                   "; ".join("%s %s" % (d.get("field"), d.get("issue"))
+                             for d in defects)))
+        return {"tool": "character_bible", "schema": CAST_GATE_SCHEMA,
+                "verdict": "PASS", "reason_code": "ENSEMBLE_CAST_OK",
+                "reasons": [], "blocked": False, "purchases": 0,
+                "measures_no_audio": True, "decision": "declared",
+                "mode": "manifest", "mode_declared": True,
+                "characters": [c.get("character_id") for c in manifest.get("cast") or []
+                               if isinstance(c, dict)],
+                "characters_n": len(manifest.get("cast") or []),
+                "detail": "the episode cast manifest satisfies the cast contract"}
+    if not _cast_declared(b):
+        return _foundation_receipt(
+            CODE_CAST_FOUNDATION_MISSING,
+            "%s: the cast foundation is absent (no cast_mode / cast_decision / "
+            "cast and no %s); a missing cast is missing input, never an opt-out"
+            % (CODE_CAST_FOUNDATION_MISSING, CAST_MANIFEST_KEY))
+    return _cast_mod().check_cast(b)
+
+
+def _cast_gate(brief, required=False):
+    """WW-27 + S75-T13: the cast decision, taken BEFORE the lines are judged.
+
+    With a declared cast, ``check_cast`` refuses an incomplete character, a cast
+    under the ensemble default, a villain/foil that never speaks or is never
+    answered, or a shared Suno voice direction -- so the script's drafting never
+    begins on a broken cast. PRE-GENERATION: audio gate D5 alone confirms the
+    delivered voices.
+
+    ``required`` (or a foundation-envelope brief) FAILS CLOSED: an absent cast
+    is a named missing-input refusal, never a silent None, so there is no skip
+    path through this function for an authoring caller. Only the documented
+    legacy validation surface may still read a cast-less brief as before.
+    """
+    b = brief if isinstance(brief, dict) else {}
+    if required or _has_foundation_manifest(b):
+        return require_cast_manifest(b)
+    if not _cast_declared(b):
+        return None
+    return _cast_mod().check_cast(b)
 
 
 def _with_cast(res, cast_rcpt):
@@ -651,12 +747,18 @@ def _from_findings(errors, warnings, decisions, lines, coverage, policy):
                 warnings, decisions, policy)
 
 
-def validate_lyrics(lines, brief=None, policy=None):
+def validate_lyrics(lines, brief=None, policy=None, require_cast=False):
     """Validate sung lines against the brief. Returns outcome/reason/coverage.
 
     WW-27: the CAST DECISION is taken FIRST. A declared cast that is not a
     complete ensemble refuses here, before one line is judged, so drafting never
     begins on a broken cast; with no declared cast nothing changes.
+
+    S75-T13: ``require_cast`` fails closed on an absent cast, and a brief that
+    carries the foundation envelope (``episode_cast_manifest``) always does --
+    so the new authoring shape cannot bypass the gate by omitting cast fields.
+    New script-authoring callers use ``validate_authored_lyrics``, which sets
+    it and offers no way to turn it off.
 
     D09: the resolved ``constraint_policy`` (mode + duration) is passed down
     verbatim and echoed in the result, so the writer receives exactly the
@@ -665,7 +767,7 @@ def validate_lyrics(lines, brief=None, policy=None):
     """
     brief = brief or {}
     pol = policy or _policy_from_brief(brief)
-    cast_rcpt = _cast_gate(brief)
+    cast_rcpt = _cast_gate(brief, required=require_cast)
     if cast_rcpt is not None and cast_rcpt["reasons"]:
         return _with_cast(
             _res("rejected", cast_rcpt["reason_code"],
@@ -810,6 +912,18 @@ def steer_opening(blocks, length_s=None, basis="planned"):
     if length_s is not None:
         res["plan_target_s"] = ss.seconds_for(length_s)["first_sung_target_s"]
     return res
+
+
+def validate_authored_lyrics(lines, brief=None, policy=None):
+    """S75-T13: THE lyric entry for a new script-authoring path.
+
+    The cast foundation is required, unconditionally: an absent ``cast`` /
+    ``cast_mode`` / ``cast_decision`` or an absent/empty/invalid
+    ``episode_cast_manifest`` refuses with a named missing-input code before a
+    single line is judged. There is no argument that turns it off, so an
+    authoring caller cannot bypass ``_cast_gate`` by omitting cast fields.
+    """
+    return validate_lyrics(lines, brief, policy=policy, require_cast=True)
 
 
 def validate_campaign(campaign):
