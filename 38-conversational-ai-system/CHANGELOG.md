@@ -1,3 +1,7 @@
+## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
+
+- **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
+
 ## [2.0.202] - 2026-10-27 - chore(batch-20261027-0702): Skill 38 to v2.0.202 for T-53
 
 - **Batch 20261027-0702 version stamp, Skill 38 v2.0.201 -> v2.0.202.** T-53 (`pb/PBB-916-wave1/T-53` @ `92a7c7f`) replaces personal-data actor literal with neutral fixture (38-conversational-ai-system, 22 files). No skill code changed in this commit; version stamp only.

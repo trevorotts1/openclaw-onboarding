@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import datetime
 import io
 import json
 import sys
@@ -34,6 +35,9 @@ sys.path.insert(0, str(CONTRACTS_TOOLS))
 
 import monthly_manifest as mm  # noqa: E402
 import pb_contracts as contracts  # noqa: E402
+
+sys.path.insert(0, str(REPO_ROOT / "shared-utils" / "routes" / "page"))
+import messenger_link  # noqa: E402
 
 FIXTURES = MODULE_DIR / "fixtures"
 AT = "2026-10-20T18:00:00Z"
@@ -92,6 +96,25 @@ def divergent(field):
     if field == "account_binding_revision":
         return "binding-9"
     return "divergent"
+
+
+DOOR_CATEGORY = "GIFT"
+DOOR_ITEM_WORD = "guide"
+
+
+def door_binding():
+    """The tenant's recorded Page: one Page id, one account binding revision."""
+    return messenger_link.PageBinding("tenant-alpha", "acct-1", "123456789012345", "binding-7")
+
+
+def door_terms(binding, day, category=DOOR_CATEGORY, item_word=DOOR_ITEM_WORD):
+    """The five write-time terms the pack writer produces for one placement."""
+    ref = messenger_link.build_ref(day, category)
+    link = messenger_link.build_messenger_link(binding, ref)
+    keyword = messenger_link.keyword_for(category, item_word)
+    return {"messenger_page_id": binding.page_id, "messenger_ref": ref,
+            "messenger_link": link, "keyword": keyword,
+            "cta_text": messenger_link.bonus_cta(link, keyword)}
 
 
 def run(*argv):
@@ -171,6 +194,8 @@ class JoinedApprovalTests(ManifestCase):
             with self.subTest(field):
                 doc = draft()
                 target = placement(doc, "P-2")
+                if field not in target:
+                    continue  # an optional DM door is not a required term
                 target[field] = ["  "] if isinstance(target[field], list) else "   "
                 _, errs = mm.approve(doc, "client-owner-1", AT, "rev-3", "rev-2")
                 self.assertRefused(doc, errs, field)
@@ -274,11 +299,40 @@ class AmendmentTests(ManifestCase):
 
     def test_each_approved_term_can_be_amended_without_touching_the_other_unit(self):
         for field in mm.APPROVAL_TERMS:
+            if field in mm.MESSENGER_TERMS:
+                continue  # the DM door is ONE unit; proven by the two tests below
             with self.subTest(field):
                 doc, errs = mm.amend(signed(), "P-2", {field: divergent(field)}, "client edit", AT, "rev-3")
                 self.assertEqual([], errs)
                 self.assertEqual("APPROVED", placement(doc, "P-1")["approval_status"])
                 self.assertEqual(divergent(field), placement(doc, "P-2")[field])
+
+    def test_the_dm_door_is_amended_as_one_unit(self):
+        binding = door_binding()
+        changes = door_terms(binding, datetime.date(2026, 11, 8))
+        doc, errs = mm.amend(
+            signed(), "P-2", changes, "client edit", AT, "rev-3", page_binding=binding
+        )
+        self.assertEqual([], errs)
+        self.assertEqual("APPROVED", placement(doc, "P-1")["approval_status"])
+        for field, value in changes.items():
+            self.assertEqual(value, placement(doc, "P-2")[field])
+
+    def test_a_partial_dm_door_amendment_is_refused_and_names_the_missing_fields(self):
+        _, errs = mm.amend(
+            signed(), "P-2", {"messenger_page_id": door_binding().page_id}, "r", AT, "rev-3"
+        )
+        self.assertTrue(any("one approved unit" in err for err in errs), errs)
+        self.assertTrue(
+            any("messenger_ref" in err and "messenger_link" in err for err in errs), errs
+        )
+
+    def test_a_door_without_the_tenant_binding_is_refused(self):
+        binding = door_binding()
+        _, errs = mm.amend(
+            signed(), "P-2", door_terms(binding, datetime.date(2026, 11, 8)), "r", AT, "rev-3"
+        )
+        self.assertTrue(any("no Page binding is recorded" in err for err in errs), errs)
 
     def test_a_term_outside_the_approval_is_not_amendable(self):
         _, errs = mm.amend(signed(), "P-1", {"asset_version_id": "asset-9"}, "r", AT, "rev-3")
@@ -404,6 +458,66 @@ class NextCycleTests(ManifestCase):
         self.assertTrue(any("outside the joined campaign window" in err for err in errs), errs)
 
 
+class PackWriterDoorTests(ManifestCase):
+    """C5 step 6 / H8 step 4: the door is built when the pack is written.
+
+    next_cycle() is the write-time producer of the next cycle's placements, so it
+    is the pack writer's call site: keyword_for() (through build_bonus_placement)
+    derives the category-plus-promised-item keyword and the ref/link are built
+    from the tenant's recorded Page. Nothing is typed at posting time.
+    """
+
+    def _writer_output_cycle(self):
+        """A cycle whose keyword and CTA are the writer's own (category + item word)."""
+        doc = signed()
+        binding = door_binding()
+        for placement_id, day, item in (
+            ("P-1", datetime.date(2026, 11, 1), "v3"),
+            ("P-2", datetime.date(2026, 11, 8), "v2"),
+        ):
+            terms = door_terms(binding, day, item_word=item)
+            target = placement(doc, placement_id)
+            target["keyword"] = terms["keyword"]
+            target["cta_text"] = terms["cta_text"]
+        return doc
+
+    def test_the_pack_writer_builds_the_door_with_the_category_plus_item_keyword(self):
+        doc, errs = mm.next_cycle(
+            self._writer_output_cycle(), "cycle-2026-12", "2026-12-01", "2026-12-30", "rev-4", "rev-3",
+            page_binding=door_binding(), category=DOOR_CATEGORY,
+        )
+        self.assertEqual([], errs)
+        binding = door_binding()
+        for placement_id, item in (("P-1", "v3"), ("P-2", "v2")):
+            written = placement(doc, placement_id)
+            self.assertEqual(binding.page_id, written["messenger_page_id"])
+            self.assertEqual(messenger_link.keyword_for(DOOR_CATEGORY, item), written["keyword"])
+            parsed = messenger_link.parse_messenger_link(written["messenger_link"])
+            self.assertEqual(written["messenger_ref"], parsed.ref)
+            self.assertEqual(binding.page_id, parsed.page_id)
+            self.assertIn(written["messenger_link"], written["cta_text"])
+        self.assertNotEqual(placement(doc, "P-1")["keyword"], placement(doc, "P-2")["keyword"])
+
+    def test_a_hand_typed_door_that_disagrees_is_refused(self):
+        before = self._writer_output_cycle()
+        placement(before, "P-1")["messenger_link"] = "https://m.me/999999999999999?ref=pb-NOV01-2026-GIFT"
+        doc, errs = mm.next_cycle(
+            before, "cycle-2026-12", "2026-12-01", "2026-12-30", "rev-4", "rev-3",
+            page_binding=door_binding(), category=DOOR_CATEGORY,
+        )
+        self.assertTrue(any("never accepts a hand-typed value" in err for err in errs), errs)
+        self.assertEqual(before, doc)
+
+    def test_no_door_is_built_without_a_binding_or_a_category(self):
+        for kwargs in ({}, {"page_binding": door_binding()}, {"category": DOOR_CATEGORY}):
+            with self.subTest(kwargs=sorted(kwargs)):
+                doc, errs = mm.next_cycle(
+                    signed(), "cycle-2026-12", "2026-12-01", "2026-12-30", "rev-4", "rev-3",
+                    **kwargs)
+                self.assertEqual([], errs)
+                self.assertNotIn("messenger_page_id", placement(doc, "P-1"))
+
+
 class DispatchBindingTests(unittest.TestCase):
     """R5: public dispatch binds the approved manifest; unrelated units continue.
 
@@ -435,6 +549,11 @@ class DispatchBindingTests(unittest.TestCase):
         doc["logical_intent_key"] = "%s/%s/SCHEDULED_POST" % (self.current["campaign_cycle_id"], placement_id)
         doc["placement_id"] = placement_id
         for field in mm.APPROVAL_TERMS:
+            # An approved placement that carries no DM door carries no such term:
+            # the door is optional on both sides and only a disagreement on it is
+            # a divergence (pb_contracts.approval_errors, same rule).
+            if field not in approved_placement:
+                continue
             doc[field] = copy.deepcopy(approved_placement[field])
         return doc
 
