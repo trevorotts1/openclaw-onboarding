@@ -85,7 +85,8 @@
   "scheduler_type": "macOS launchd LaunchAgent, user domain gui/501 (choice A in SCHEDULER-ADAPTER.md:21)",
   "native_job_id": "gui/501/ai.blackceo.pb-eng-loop-pbb220",
   "label": "ai.blackceo.pb-eng-loop-pbb220",
-  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
+  "plist": "<PATH>/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
+  "plist_path_placeholder": "<PATH> stands for the operator portable root, recorded as a placeholder because the merge room rejects operator absolute paths; the remainder after <PATH> is the exact cited path.",
   "plist_outside_launchagents": "The proof plist is inside the mandated lane; launchctl bootstrap gui/501 <path> accepts it. The production plist at ~/Library/LaunchAgents/ai.blackceo.pb-eng-loop.plist was not read-modified or rewritten.",
   "durable_store": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
   "owner_handler": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/repo/CONTROL/owner_handler.py",
@@ -506,7 +507,7 @@
    "ai.blackceo.pb-eng-loop-pbb220.plist"
   ],
   "state_db": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/state/engine.db",
-  "plist": "/Volumes/mac mini m4/Downloads/git trees and automations/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
+  "plist": "<PATH>/scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof/ai.blackceo.pb-eng-loop-pbb220.plist",
   "corpus_status": {
    "observed_at": "2026-10-26T16:16Z",
    "observer": "T-05 QC+FIX lane PBB-780, existence check of the exact cited path strings (positive control: the two cited /Volumes paths that do exist return TRUE on the same instrument)",
