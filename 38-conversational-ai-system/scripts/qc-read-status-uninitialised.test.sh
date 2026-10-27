@@ -194,6 +194,23 @@ fi
 
 # ===========================================================================
 echo ""
+# ===========================================================================
+echo ""
+echo "=== (i) an empty legacy_files field does not shift the following fields ==="
+reset_state
+EMPTY_DIR="$(mktemp -d)"
+printf '{"verdict":"PASS","legacy_needs_migration":0,"new_style_failures":0,"legacy_files":[],"workflows_dir":"%s/wf"}' "$EMPTY_DIR" > "$EMPTY_DIR/status.json"
+if qc_read_status "$EMPTY_DIR/status.json"; then
+  if [ -z "$QC_ST_FILES" ] && [ "$QC_ST_DIR" = "$EMPTY_DIR/wf" ]; then
+    ok "empty legacy_files keeps QC_ST_FILES empty and QC_ST_DIR intact"
+  else
+    bad "field shift: QC_ST_FILES='$QC_ST_FILES' QC_ST_DIR='$QC_ST_DIR' (want '' and '$EMPTY_DIR/wf')"
+  fi
+else
+  bad "clean PASS status file with an empty legacy_files list was rejected"
+fi
+rm -rf "$EMPTY_DIR"
+
 echo "  PASS: $PASS"
 echo "  FAIL: $FAIL"
 if [ "$FAIL" -gt 0 ]; then

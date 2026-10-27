@@ -80,12 +80,12 @@ try:
         raise ValueError("invalid legacy_files")
     if not isinstance(directory, str):
         raise ValueError("invalid workflows_dir")
-    print("%d\t%d\t%s\t%s\t%s" % (legacy, failures, verdict, ",".join(files), directory))
+    print("%d\x1f%d\x1f%s\x1f%s\x1f%s" % (legacy, failures, verdict, ",".join(files), directory))
 except Exception:
     raise SystemExit(1)
 PY_QC_STATUS
   line="$(printf '%s' "$_qc_status_py" | python3 -I - "$path")" || return 1
-  IFS=$'\t' read -r QC_ST_LEGACY QC_ST_FAILS QC_ST_VERDICT QC_ST_FILES QC_ST_DIR <<< "$line"
+  IFS=$'\x1f' read -r QC_ST_LEGACY QC_ST_FAILS QC_ST_VERDICT QC_ST_FILES QC_ST_DIR <<< "$line"
   [[ "$QC_ST_LEGACY" =~ ^[0-9]+$ && "$QC_ST_FAILS" =~ ^[0-9]+$ ]] || return 1
   case "$QC_ST_VERDICT" in PASS|NEEDS-MIGRATION|FAIL|UNINITIALISED) return 0 ;; esac
   return 1
