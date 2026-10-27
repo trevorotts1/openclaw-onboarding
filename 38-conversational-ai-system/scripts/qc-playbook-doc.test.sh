@@ -153,7 +153,9 @@ assert_verdict "$C" "PASS" "clean-table"
 assert_exit    "$C" "0"    "clean-table"
 
 # ---------------------------------------------------------------------------
-# Fixture (D): empty registry (no playbooks) → NO_PLAYBOOKS, exit 2 (never blind PASS).
+# Fixture (D): empty registry (no playbooks) → UNINITIALISED, exit 2 (never blind PASS).
+# The verdict must match the other three gates and the status file; NO_PLAYBOOKS was
+# a fourth name for one state, and it disagreed with both.
 # ---------------------------------------------------------------------------
 D="$TMP/empty/conversation-workflows"
 mkdir -p "$D"
@@ -168,7 +170,7 @@ cat > "$D/registry.md" <<'EOF'
 <!-- workflows: none yet -->
 EOF
 
-assert_verdict "$D" "NO_PLAYBOOKS" "empty-registry"
+assert_verdict "$D" "UNINITIALISED" "empty-registry"
 assert_exit    "$D" "2"            "empty-registry"
 
 # ---------------------------------------------------------------------------

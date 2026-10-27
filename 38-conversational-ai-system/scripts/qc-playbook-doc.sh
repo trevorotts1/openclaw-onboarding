@@ -293,9 +293,24 @@ if not reg.is_file():
         except OSError as exc:
             failures.append("%s: unreadable (%s)" % (f, exc.strerror or str(exc)))
     all_legacy = bool(legacy) and not has_non_legacy and not failures
-    verdict = "FAIL" if failures else ("NEEDS-MIGRATION" if all_legacy else "FAIL")
+    # An empty directory has nothing to check: that is UNINITIALISED with zero
+    # failures, the same state the other three gates report. It is not a FAIL —
+    # inventing a failure count of 1 for "no playbooks exist yet" made a fresh
+    # box look broken and made the status file disagree with the exit code.
+    if failures:
+        verdict = "FAIL"
+        new_failures = len(failures)
+    elif not legacy and not has_non_legacy:
+        verdict = "UNINITIALISED"
+        new_failures = 0
+    elif all_legacy:
+        verdict = "NEEDS-MIGRATION"
+        new_failures = 0
+    else:
+        verdict = "FAIL"
+        new_failures = 1
     if STATUS_FILE:
-        status = {"gate":"qc-playbook-doc","legacy_needs_migration":len(legacy) if all_legacy else 0,"new_style_failures":len(failures) if failures else (0 if all_legacy else 1),"verdict":verdict,"legacy_files":sorted(legacy) if all_legacy else [],"workflows_dir":str(WF_DIR.resolve())}
+        status = {"gate":"qc-playbook-doc","legacy_needs_migration":len(legacy) if all_legacy else 0,"new_style_failures":new_failures,"verdict":verdict,"legacy_files":sorted(legacy) if all_legacy else [],"workflows_dir":str(WF_DIR.resolve())}
         try:
             with open(STATUS_FILE + ".doc", "w", encoding="utf-8") as f:
                 f.write(json.dumps(status, separators=(",",":")) + "\n")
@@ -304,7 +319,10 @@ if not reg.is_file():
     if JSON_MODE:
         print(json.dumps({
             "dir": str(WF_DIR),
-            "verdict": "NEEDS-MIGRATION" if all_legacy else "NO_PLAYBOOKS",
+            # Report the verdict actually computed, not a label of its own: a
+            # consumer reading this JSON and a consumer reading the status file
+            # must not be told two different things about the same run.
+            "verdict": verdict,
             "reason": "no registry.md",
             "legacy": legacy,
             "needs_migration": len(legacy),
@@ -320,9 +338,13 @@ if not reg.is_file():
             for msg in failures:
                 print("  [FAIL] %s" % msg)
             print("RESULT: FAIL - unreadable playbook content.")
+        elif verdict == "UNINITIALISED":
+            print("RESULT: UNINITIALISED — registry.md absent and no playbooks on disk; 0 playbooks examined; this is NOT a PASS.")
         else:
-            print("RESULT: NO PLAYBOOKS — registry.md absent; nothing to check (exit 2, not a blind PASS).")
-    sys.exit(1 if failures else (0 if all_legacy else 2))
+            print("RESULT: FAIL - playbooks exist but registry.md is absent, so their human-facing docs cannot be recorded or checked.")
+    # The exit code follows the verdict, so a FAIL can never leave as 2 and an
+    # UNINITIALISED can never leave as 1.
+    sys.exit(1 if verdict == "FAIL" else (0 if verdict in ("PASS", "NEEDS-MIGRATION") else 2))
 
 try:
     registry_text = reg.read_text(encoding="utf-8", errors="ignore")
@@ -394,16 +416,22 @@ disk_slugs = set(disk_files)
 all_slugs = set(registry_rows.keys()) | disk_slugs
 
 if not all_slugs:
+    # Nothing on disk and nothing registered is UNINITIALISED, not FAIL, and it
+    # carries zero failures — the same state the other three gates report. This
+    # used to write verdict FAIL with a fabricated failure count of 1 while
+    # exiting 2, so the status file, the exit code and the printed text each
+    # told the caller something different about the same run.
     if STATUS_FILE:
         try:
             with open(STATUS_FILE + ".doc", "w", encoding="utf-8") as f:
-                f.write(json.dumps({"gate":"qc-playbook-doc","legacy_needs_migration":0,"new_style_failures":1,"verdict":"FAIL","legacy_files":[],"workflows_dir":str(WF_DIR.resolve())}, separators=(",",":")) + "\n")
+                f.write(json.dumps({"gate":"qc-playbook-doc","legacy_needs_migration":0,"new_style_failures":0,"verdict":"UNINITIALISED","legacy_files":[],"workflows_dir":str(WF_DIR.resolve())}, separators=(",",":")) + "\n")
         except OSError:
             pass
     if JSON_MODE:
         print(json.dumps({
             "dir": str(WF_DIR),
-            "verdict": "NO_PLAYBOOKS",
+            "verdict": "UNINITIALISED",
+            "reason": "no playbooks registered and none on disk",
             "legacy": [],
             "needs_migration": 0,
         }, indent=2))
@@ -412,7 +440,7 @@ if not all_slugs:
         print(f"dir: {WF_DIR}")
         print("")
         print("legacy playbooks NEEDS-MIGRATION: 0")
-        print("RESULT: NO PLAYBOOKS — none registered or on disk; nothing to check (exit 2, not a blind PASS).")
+        print("RESULT: UNINITIALISED — none registered or on disk; 0 playbooks examined; this is NOT a PASS.")
     sys.exit(1 if failures else 2)
 
 non_legacy_on_disk = False
