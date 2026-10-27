@@ -1,7 +1,7 @@
 ---
 name: convert-and-flow-operator
 description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflow/ghl) gives the agent direct CRM access for contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, and workflow builds via internal API (no MCP overhead). Standard ops run on the PIT alone. Workflow writes additionally require the Firebase refresh token; when absent, falls through to Tier 4 agent-browser as the backstop. Write-safe by default (dry-run, draft-only, location whitelist, approval gate).
-version: v2.1.28
+version: v2.1.35
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
@@ -234,7 +234,26 @@ This section states, for each consumer, what that consumer actually does today, 
 
 ### Skill 38: 38-conversational-ai-system (TRINITY counterparty)
 
-- Not a request consumer. For conversational workflow builds the TRINITY ships together: this skill builds the workflow structure and Skill 38 authors the playbook and the Build-with-AI prompt (see the TRINITY rule below). The coupling is enforced mechanically on this side: qc-built-workflow.sh --conversational executes Skill 38's scripts/qc-trinity-registry.sh, and the WF-19 gate fails the build on any non-zero exit. Without the flag, WF-19 stays a human-review item.
+- Skill 38 authors the communications playbook, its declares block, and its build contract (`<slug>--build-contract.json`) FIRST. Skill 44 then reads that build contract and declares block and builds the GHL automation to exactly that spec. Skill 44 never invents, alters, or reverses this order and never authors playbook content. This skill CONSUMES Skill 38's output and is not the entry point for a conversational build. The fourth TRINITY leg is the build contract, whose `playbook_structure_hash` must equal the freshly computed structure hash of the playbook. The coupling is enforced mechanically on this side: `qc-built-workflow.sh --conversational` executes Skill 38's `scripts/qc-trinity-registry.sh`, and the WF-19 gate fails the build on any non-zero exit. Without the flag, WF-19 stays a human-review item.
+### Dependency export for Skill 38 gates
+
+Skill 44 is the sole producer of `.caf-calendars-export.json` and `.caf-pipelines-export.json` in the client's `conversation-workflows` folder, via `tools/export_deps.py`.
+
+Run:
+
+```bash
+python3 tools/export_deps.py --workflows-dir <master-files>/conversation-workflows
+```
+
+The producer runs `caf --json calendars list` and `caf --json opportunities pipelines` through a PIT-authenticated `caf`, validates each response shape, and writes both export files atomically. No network means no export, never a fabricated one.
+
+- Exit 0: both exports written successfully.
+- Exit 2: usage or path resolution error.
+- Exit 3: caf failure or invalid response shape.
+
+Skill 38's `qc-playbook-declares.sh` FAILs with `REQUIRES_OPERATOR` when a playbook declares calendars or applied tags and the required export is absent. `qc-opportunity-sync.sh` FAILs with `REQUIRES_OPERATOR` when a playbook declares a pipeline or stage-map and the pipelines export is absent. Both gates fail closed, never skip required validation.
+
+Regenerate both exports after any calendar or pipeline change in GHL.
 
 ### Skill 50: 50-email-engine (deploy rail)
 

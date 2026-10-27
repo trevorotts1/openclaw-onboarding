@@ -1,3 +1,72 @@
+## [v2.1.35] - 2026-10-27 - batch 20261027-1826: five units (schema graph, portable mktemp, malformed-JSON fixture, UNINITIALISED skip, status field shift)
+
+Five units shipped between v2.1.28 and this stamp. The merge room assigns the version; the entries below are carried verbatim from the batch's pending changelog.
+
+### Machine-readable template schema and generated counts
+
+The template library gained a machine-readable layer. Every template now declares a
+`schema_version` and a `kind`, the buildable set is expressed as graphs rather than
+prose where the prose genuinely states the whole graph, and the remaining templates
+are recorded as prose-only with a reason that names a fact the prose never gives.
+The conversion was not taken on trust: three templates were converted, then withdrawn
+again when two independent lanes disagreed on whether their prose could carry the
+graph, and the census settled at sixteen buildable and thirty-three prose-only of
+forty-nine. The three withdrawal reasons were themselves narrowed twice after review
+showed the first drafts claimed gaps the markdown actually states. `catalog-index.json`
+also carried two non-template data files and reported fifty-one entries; it now reports
+forty-nine, matching what `apply_template_schema.py` and `test_template_graphs.py`
+already excluded.
+
+### Portable temp-file template in the build gate
+
+`qc-built-workflow.sh` created its export file with `mktemp /tmp/qc-wf-export-XXXXXX.json`.
+BSD `mktemp` requires the Xs to be the last characters of the template; with a suffix
+after them it creates that literal path instead of a unique one, so the first invocation
+in a run succeeded and later ones died with `File exists`. The suite was therefore red on
+macOS and green on Linux, and the same tree could be reported green or red depending on
+whether the literal file happened to exist. The template is now
+`${TMPDIR:-/tmp}/qc-wf-export.XXXXXX`, and a test extracts that template from the script
+and runs it twice, requiring two distinct paths, so the behaviour is pinned rather than
+the symptom.
+
+### Malformed-JSON fixture kept out of the tracked `.json` set
+
+A graph-integrity test needs a deliberately unparseable fixture, and
+`tests/fixtures/graph/unparseable.json` was exactly that. The repo's static-invariants
+step parses every tracked `.json` file and fails closed on any non-empty one that will
+not parse, so a fixture doing its job turned the whole batch red. The fixture is
+unchanged in content and renamed to `unparseable.badjson`, outside the glob, with the
+three references in `test_validate_graph.py` following it. Nothing globs the graph
+fixtures directory, so coverage is unchanged, and the fixture still bites: the validator
+still returns rc 2 with verdict UNVERIFIED, and replacing the fixture with valid JSON
+turns the test red.
+
+### Checklist status reader: UNINITIALISED is a skip, not a failure
+
+The checklist's status reader accepted only PASS, NEEDS-MIGRATION and FAIL, so the
+UNINITIALISED status file written by the gates read as "exited 0 but wrote no readable
+status file" and a bare box reported red. The reader now accepts UNINITIALISED only when
+both counts are zero and reports it as SKIP, explicitly neither a pass nor a failure,
+while UNINITIALISED carrying failures or legacy playbooks stays red and unknown,
+malformed, missing or non-integer input stays red. On a bare box the run moved from
+twelve failures to nine with exactly three FAIL-to-SKIP lines and nothing else changed;
+a broken or configured-empty box is unchanged. The same script also failed to parse at
+all under macOS bash 3.2, because it placed a here-document inside a command
+substitution: the python program now feeds `read -r -d ''` and the substitution pipes
+`printf` into the interpreter, with the program text unchanged. Every tracked shell file
+in the repo now parses under bash 3.2.
+
+### Status-reader field shift on an empty list
+
+`qc_read_status` split its five fields on tab with `IFS=$'\t'`. Tab is IFS whitespace,
+so an empty `legacy_files` field collapsed and every field after it shifted left: on a
+clean PASS status file with no legacy playbooks the workflows directory landed in
+`QC_ST_FILES` and `QC_ST_DIR` was empty, which also stripped the basename off the
+directory before recording it. The separator is now U+001F, which is not IFS whitespace,
+in both the producer and the reader. A test case covers a status file whose
+`legacy_files` is empty and asserts the directory field survives intact; it fails against
+the previous tree and passes on this one.
+
 ## [v2.1.28] - 2026-10-27 - chore(batch-20261027-0702): bump skill 44 to v2.1.28 for T-53
 
 - **Batch 20261027-0702 version stamp, skill 44 v2.1.27 -> v2.1.28.** T-53 (`pb/PBB-916-wave1/T-53` @ `92a7c7f`) touches 44-convert-and-flow-operator outbound sender and readback (3 files). No skill code changed in this commit; version stamp only.
