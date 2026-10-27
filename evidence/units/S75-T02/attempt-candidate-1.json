@@ -11,7 +11,7 @@
   "head_note": "head_sha is the code commit; this receipt is committed as the next commit on the same branch because a receipt cannot contain its own commit sha.",
   "written_at": "2026-10-26",
   "decision_context": "D-8 open: the unit shape was never fixed by the owner. This receipt states the exact shape implemented so the owner can accept or redirect cheaply.",
-  "shape_statement": "LITERAL READING IMPLEMENTED: a new stdlib-only write gate (scripts/lib/job_uuid_gate.py) plus its owned test battery (tests/unit/job-uuid-gate.test.py). It refuses a gated write when the expected recurring job UUID is wrong, missing, ambiguous, or not provably recurring, with no fallback of any kind (no first-match, no case folding, no whitespace trimming, no default job, no writing before refusal), and it emits a prebuilder receipt whose actual_recurring_job_id is derived exclusively from the observed scheduler listing, never from the expected value. NOT the shape implemented: wiring the gate into a live orchestrator caller, and NOT an authority-root-only evidence artefact (those artefacts are absent from disk now: find /Users/blackceomacmini -name 'prebuilder*' returned nothing).",
+  "shape_statement": "LITERAL READING IMPLEMENTED: a new stdlib-only write gate (scripts/lib/job_uuid_gate.py) plus its owned test battery (tests/unit/job-uuid-gate.test.py). It refuses a gated write when the expected recurring job UUID is wrong, missing, ambiguous, or not provably recurring, with no fallback of any kind (no first-match, no case folding, no whitespace trimming, no default job, no writing before refusal), and it emits a prebuilder receipt whose actual_recurring_job_id is derived exclusively from the observed scheduler listing, never from the expected value. NOT the shape implemented: wiring the gate into a live orchestrator caller, and NOT an authority-root-only evidence artefact (those artefacts are absent from disk now: find <OPERATOR_HOME> -name 'prebuilder*' returned nothing).",
   "files_changed": [
     "scripts/lib/job_uuid_gate.py",
     "tests/unit/job-uuid-gate.test.py",
@@ -42,7 +42,7 @@
     "No cross-restart liveness claim; no nextRun claim."
   ],
   "checks": {
-    "worktree": "git -C /Users/blackceomacmini/openclaw-onboarding worktree add /Users/blackceomacmini/skill75-repair/lanes/S75-T02-ahead-lane -b s75/S75-T02-r1 origin/main",
+    "worktree": "git -C <REPO_ROOT> worktree add <REPO_PARENT>/skill75-repair/lanes/S75-T02-ahead-lane -b s75/S75-T02-r1 origin/main",
     "branch_pre_existing": "git ls-remote origin refs/heads/s75/S75-T02-r1 returned empty before creation, so no competing branch was created.",
     "main_untouched": true
   }
