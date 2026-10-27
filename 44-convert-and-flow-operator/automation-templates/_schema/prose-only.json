@@ -17,7 +17,7 @@
     },
     {
       "path": "automation-templates/engagement-broadcast/re-engagement-winback-broadcast.json",
-      "missing": "the third goal check states only the no-open/no-click arm (add tag `sunset`); the engaged arm's target is not stated, and the final SMS carries no subscription condition"
+      "missing": "the final takeaway SMS is placed at the third message but carries no stated subscription, consent or DND condition, so the build cannot know whether an SMS is permitted to that contact"
     },
     {
       "path": "automation-templates/engagement-broadcast/seinfeld-broadcast-email.json",
@@ -37,7 +37,7 @@
     },
     {
       "path": "automation-templates/funnel-specific-followups/autowebinar-watch-segmented-followup.json",
-      "missing": "waits are anchored to the registrant's chosen slot with no datetime field declared, the post-event wait is given as '~2h', and the four watch-segment branch targets are not mapped to actions"
+      "missing": "the post-event wait is '~2h', the sequence promises reminders at 1 day/1 hour/start while the build actions omit the 1-day reminder, the 'watch now' skip is an unplaced conditional, and the four watch-segment branch targets are not mapped to actions"
     },
     {
       "path": "automation-templates/funnel-specific-followups/cart-abandon-recovery.json",
@@ -49,11 +49,11 @@
     },
     {
       "path": "automation-templates/funnel-specific-followups/membership-stick-retention.json",
-      "missing": "four phases with no per-step delays, ordered actions or branch conditions stated"
+      "missing": "the A4 'Wait until 48h before trial end' and Workflow 3 'At offer-close date' waits name no anchor datetime field, custom value, or date source from which the wait could be built"
     },
     {
       "path": "automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json",
-      "missing": "the final cart-close wait has no declared anchor field, the post-event wait is given as '~2h', and the three indoctrination sends are timed only by '[Wait 1 day between each]' inside a bullet"
+      "missing": "the post-event wait is '~2h', the cart-close wait is 'final cart-close day' with no declared datetime field, the indoctrination cadence is 'one per day ... compress to 1-2' against a fixed 'Wait 1 day between each', and the clicked-buy-link and DND branches have no node position"
     },
     {
       "path": "automation-templates/launch-b/abandoned-checkout-recovery.json",
@@ -61,7 +61,7 @@
     },
     {
       "path": "automation-templates/launch-b/retarget-visited-sales-no-checkout.json",
-      "missing": "sequence entries are Setup / Beat 1-4 / Guard with no delays, per-beat channels or branch conditions; the ad-audience sync runs on an external schedule the template does not state"
+      "missing": "the nudge runs from three separate triggers (page visit, tag added retarget-b-visited-sales, second page visit), and Beat 2 says 'T+2h' while the workflow structure sends Email #1 immediately on a tag that is itself added 60 minutes after the visit"
     },
     {
       "path": "automation-templates/launch-c/onboarding-first-hour-day-week.json",
@@ -73,7 +73,7 @@
     },
     {
       "path": "automation-templates/launch-text/keyword-opt-in.json",
-      "missing": "the 11 sequence entries carry no delays, channel-branch conditions or ordered action types, and the YES-reply branch is described as a second trigger with no position in the graph"
+      "missing": "the markdown declares a second Customer Replied trigger (YES, filtered to text-optin-pending) whose position in the 11-step order is not stated, and a build_graph allows exactly one trigger"
     },
     {
       "path": "automation-templates/multichannel-automation/abandoned-cart-multichannel-recovery.json",
@@ -97,31 +97,31 @@
     },
     {
       "path": "automation-templates/sales-close-sequences/abandoned-cart-recovery.json",
-      "missing": "the first wait is a range (15-60 minutes), and Day 2 is conditional ('optional, only if cart still open') with no stated branch targets"
+      "missing": "two items exist only in the template JSON: the cart-recovery-sent tag, declared in tags_custom_fields, and this step, quoted from the JSON: \"Technical bounce on checkout link → alert operator/support queue to follow up manually (high-value contact).\" The prose names neither, so a graph built from the prose alone drops both"
     },
     {
       "path": "automation-templates/sales-close-sequences/cart-open-cart-close-launch-sequence.json",
-      "missing": "the 10 steps are labelled by phase only (PRE-CART, T-48h, T-24h ...); no cart-open or cart-close datetime field is declared"
+      "missing": "the prose names a channel the schema cannot express (desktop push at cart-open and T-24h) and gives a second trigger plus an abandoned-cart interrupt that fires 'immediately' rather than after saw-cart-open; the ordering of the D+4 guarantee beat against the T-48h/T-24h beats is not resolvable from the prose"
     },
     {
       "path": "automation-templates/sales-close-sequences/perfect-webinar-stack-close.json",
-      "missing": "no delays, waits or branch conditions are stated for the 7 sequence entries"
+      "missing": "the PRE block is 2-4 emails in the sequence but confirm + 24h + 1h in the build actions, SMS is listed at 24h/1h/live-now in the sequence but only at 1h/live in the build actions, and the attendance and watch-percent branches have no node position"
     },
     {
       "path": "automation-templates/sales-close-sequences/scarcity-deadline-close.json",
-      "missing": "the 6 steps are labelled by phase only (DEADLINE ANNOUNCE, T-48h ...); no deadline datetime field is declared and the send channel per step is not stated"
+      "missing": "the deadline-announce channel is stated two ways - sequence step 1 (T-72h) is email only while build step 3 sends Email + SMS immediately on trigger - the CHANNELS line adds Facebook/Instagram and desktop-push beats that no build step implements, and the tag cleanup is timed only as 'after the deadline passes' with no position against the +1h If/Else"
     },
     {
       "path": "automation-templates/sales-close-sequences/seinfeld-daily-sequence.json",
-      "missing": "cadence is 'daily or near-daily, ongoing'; the 6 sequence entries are email anatomy and no per-step interval is given"
+      "missing": "the prose mandates two execution modes - a tag-triggered evergreen drip and daily live broadcasts to the Engaged 30-day smart list - under an indefinite rotation, and none of the click-2+-times, 30-45-day no-open, or purchase branches state their node position"
     },
     {
       "path": "automation-templates/sales-close-sequences/soap-opera-sequence.json",
-      "missing": "cadence gives one email per day for 5 days, but the purchase exit is a sequence-level condition with no node position, so branch placement is not stated"
+      "missing": "two prose routes conflict: finishing Email 5 graduates to Seinfeld unconditionally, while Email 5 clicked without purchase enrolls scarcity-deadline-close first, and the prose gives no node order between them, so the graph cannot be built without inventing an order"
     },
     {
       "path": "automation-templates/sales-close-sequences/three-closes-master-followup.json",
-      "missing": "cadence spans 30-60 days by phase (days 0-5, days 6-12, final 24-72h); no per-step delay or channel is stated"
+      "missing": "phase 1 is the range 'Day 0-4' delegated as 'call/embed the Soap Opera Sequence' without choosing call or embed, and the logic-phase and fear-phase engagement branches have no node position"
     },
     {
       "path": "automation-templates/welcome-indoctrination/attractive-character-intro-sequence.json",
