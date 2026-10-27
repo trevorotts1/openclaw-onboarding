@@ -764,9 +764,35 @@ def emit(payload):
     return 0 if payload.get("ok") else 1
 
 
+def _approval_terms_errors(doc):
+    """T-23 approval terms, owned by shared-utils/manifest/monthly_manifest.py.
+
+    The lifecycle module owns what one client approval must carry: every bound
+    term present and informative, and the scheduled slot inside the joined
+    30-day window (DATA-CONTRACTS section 10). Vetting here is what keeps a thin
+    manifest away from the dispatch guard, which binds approved fields but never
+    authors them.
+
+    Imported at call time, not at module scope: monthly_manifest imports THIS
+    module to read PLACEMENT_BOUND_FIELDS, so a top-level import would be a
+    cycle for every caller that never sees a manifest. A checkout without the
+    module refuses the manifest rather than validating past the check.
+    """
+    module_dir = SKILL_ROOT.parent / "shared-utils" / "manifest"
+    if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
+    try:
+        import monthly_manifest
+    except (ImportError, RuntimeError) as exc:
+        return ["$.: approval terms check unavailable (%s)" % exc]
+    return list(monthly_manifest.terms_errors(doc))
+
+
 def cmd_validate(args):
     doc = load_json(args.file)
     errs = check_document(args.kind, doc)
+    if not errs and args.kind == "approval":
+        errs = _approval_terms_errors(doc)
     result = {"ok": not errs, "command": "validate", "kind": args.kind, "file": args.file, "errors": errs}
 
     if not errs and args.kind == "outbound" and args.manifest:
