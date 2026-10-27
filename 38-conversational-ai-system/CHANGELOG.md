@@ -1,3 +1,7 @@
+## [2.0.199] - 2026-10-27 - chore(batch-20261027-0211): version stamp for T-08
+
+- **Batch 20261027-0211 version stamp, Skill 38 v2.0.198 -> v2.0.199.** T-08 (`pb/PBB-440/t-08-update` @ `bfca7724`) is the only unit in this batch touching skill 38. No skill code changed in this commit; version stamp only.
+
 ## [2.0.197] - 2026-10-25 - fix(integration): a proof id, a path, a state and a target position are observed or they are UNKNOWN (T-43 repair rounds 3-5, PBB-369 -> PBB-452)
 
 - **Merge-time re-cut (PBB-867, 2026-10-26): `v2.0.128` -> `v2.0.197`.** The `v2.0.128` allocation below was measured when this branch's ladder topped out at `v2.0.123`; `origin/main` has since reached `v2.0.196` (`38-conversational-ai-system/skill-version.txt` at `bd2216185d11db8e9f4118d34d8babbd7b05c7b8`), so the number is re-cut one patch above it. Measured, not assumed: `2.0.197` is held by **0** remote refs as a marker and **0** as a heading, and both token forms are absent on `origin/main` (`scratch/lanes/PBB-867/version-measure.json`, 2192 refs enumerated, 0 missing in both roles, known-present control `origin/main` = `v2.0.196`, known-absent control absent). The BOOKKEEPING section below is the round-5 measurement as it stood and is kept verbatim; only the number this entry allocates is re-cut.
