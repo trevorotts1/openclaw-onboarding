@@ -984,6 +984,50 @@ class OutOfProcessMintTest(unittest.TestCase):
         self.assertEqual(store.get_identity(CHAR)["draft_state"], "DRAFT_COMPLETE")
         self.assertEqual(store.get_identity(CHAR)["approval_bindings"], [])
 
+    def test_the_module_namespace_carries_no_mint_request(self):
+        # Round 5's probe A1c, kept under its round-6 name. The request shape is
+        # what is pinned here beyond the allowlist test above: a caller's own
+        # payload must come back untouched (no copy is handed to the signer in
+        # its place and no field is written into it), and a ``capability`` field
+        # typed by hand must not be a way around the allowlist. Rounds 6 to 8
+        # moved the transport off this namespace and behind a per-promotion
+        # authority; the module request still answers ``verify`` and nothing else.
+        store = self.store()
+        store.put_identity(for_client(NS_A))          # holds DRAFT_INCOMPLETE
+        store.promote(CHAR, "DRAFT_COMPLETE")         # holds DRAFT_COMPLETE
+        fields = receipt({"receipt_id": "rcp-round6-a1c-request"})
+        fields.pop(identity.MINT_FIELD, None)
+        scope = store.approval_scope()
+
+        asked = (
+            {"op": "mint", "scope": scope[1], "client": scope[0],
+             "claim": dict(fields, to_state="APPROVED")},
+            {"op": "hold", "scope": scope[1], "client": scope[0],
+             "character_id": CHAR, "state": "APPROVED"},
+            {"op": "mint", "scope": scope[1], "client": scope[0],
+             "claim": dict(fields, to_state="APPROVED"),
+             "capability": "typed-by-hand"},
+        )
+        for payload in asked:
+            with self.subTest(op=payload["op"],
+                              typed="capability" in payload):
+                before = json.loads(json.dumps(payload))
+                reply = identity._signer_request(payload)
+                self.assertFalse(reply.get("ok"))
+                self.assertIsNone(reply.get("receipt"))
+                self.assertEqual(payload, before)   # never mutated in place
+                self.assertIn("verify", reply.get("reason") or "")
+
+        # and the same hand-typed receipt is refused on the Notion side, with
+        # nothing written: the record stays exactly where the last explicit
+        # promotion step left it
+        with self.assertRaises(store_mod.StoreError):
+            store.restore_from_notion(
+                [with_bindings([dict(fields, to_state="APPROVED")])])
+        self.assertEqual(store.get_identity(CHAR)["draft_state"],
+                         "DRAFT_COMPLETE")
+        self.assertEqual(store.get_identity(CHAR)["approval_bindings"], [])
+
     def test_the_signer_refuses_a_claim_the_store_does_not_hold(self):
         # Round 5 deleted the caller-writable CHARS table and took the signer's
         # only precondition with it: it then minted for any claim a caller built.
