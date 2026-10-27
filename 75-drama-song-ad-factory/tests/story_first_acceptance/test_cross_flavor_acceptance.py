@@ -11,7 +11,6 @@ Run:
 """
 from __future__ import annotations
 
-import copy
 import json
 import os
 import sys
@@ -40,40 +39,24 @@ ROW_CHECKS = (
     "paid_compatibility",
 )
 
-#: What one production facet reports on its own, with no injected provider:
-#: the seven checks whose modules exist run, and the two whose owning modules
-#: do not exist at this head are named as blocked dependencies -- never skipped.
-EXPECTED_STATUS = dict(
-    {name: M.PASS for name in M.RUNNABLE_CELLS},
-    **{name: M.BLOCKED for name in M.PROVIDER_CELLS}
-)
+def expected_status(facet):
+    """What one production facet reports with no injected provider.
+
+    A cell whose production module is on disk runs, so it must PASS; a cell whose
+    owed module is genuinely absent is a named blocked dependency, never skipped.
+    Presence is read from the filesystem, so this expectation cannot drift with
+    the cell's own verdict.
+    """
+    blocked = set(M.blocked_cells(facet))
+    return {name: (M.BLOCKED if name in blocked else M.PASS)
+            for name in ROW_CHECKS}
 
 
-# --- reference and broken providers for the two owed modules --------------
+# --- reference and broken providers for the owed compatibility module -----
 # These live in the test module only. They are not production modules and they
 # are not pretended to be: the production facet reports the real absence.
-
-def reference_migrate(library, dry_run=False, rollback=False):
-    """A conforming implementation of the declared migration protocol."""
-    if dry_run:
-        return {"library": copy.deepcopy(library), "applied": False}
-    if rollback:
-        return {"library": copy.deepcopy(library), "applied": False}
-    best = {}
-    for character in library["characters"]:
-        cid = character["character_id"]
-        if cid not in best or character["revision"] > best[cid]["revision"]:
-            best[cid] = copy.deepcopy(character)
-    return {"library": {"characters": [best[k] for k in sorted(best)]},
-            "applied": True}
-
-
-def broken_migrate(library, dry_run=False, rollback=False):
-    """Non-idempotent: every call duplicates the first character."""
-    out = copy.deepcopy(library)
-    out["characters"].append(copy.deepcopy(out["characters"][0]))
-    return {"library": out, "applied": not dry_run}
-
+# The migration cell no longer needs one -- S75-T17's module landed and that
+# cell drives its real contract, so `broken=True` is its falsification.
 
 def reference_classify(record):
     """A conforming implementation of the declared compatibility protocol."""
@@ -91,8 +74,6 @@ def broken_classify(record):
 
 
 PROVIDERS = {
-    ("notion_migration", "good"): reference_migrate,
-    ("notion_migration", "bad"): broken_migrate,
     ("paid_compatibility", "good"): reference_classify,
     ("paid_compatibility", "bad"): broken_classify,
 }
@@ -132,7 +113,7 @@ def test_cell_runs_for_every_facet(flavor, cell):
     facet = M.Facet(flavor)
     result = M.run_cell(cell, facet)
     assert result["cell"] == cell
-    assert result["status"] == EXPECTED_STATUS[cell], result
+    assert result["status"] == expected_status(facet)[cell], result
     assert result["expected"], "a check with no stated expectation is not a check"
     if result["status"] == M.PASS:
         assert result["observed"], "a pass with no observation is not a pass"
@@ -167,16 +148,21 @@ def test_dependency_cell_fails_with_a_broken_provider(flavor, cell):
 
 
 @pytest.mark.parametrize("flavor", FLAVORS)
-@pytest.mark.parametrize("cell", M.PROVIDER_CELLS)
-def test_blocked_cell_names_owner_and_exact_missing_path(flavor, cell):
+def test_blocked_cell_names_owner_and_exact_missing_path(flavor):
     facet = M.Facet(flavor)
-    result = M.run_cell(cell, facet)
-    assert result["status"] == M.BLOCKED
-    assert result["missing"], "a blocked cell must name the path it is waiting for"
-    for path in result["missing"]:
-        assert path.startswith(facet.core_dir)
-        assert not os.path.exists(path)
-    assert result["observed"]["owned_by"] in ("S75-T17", "S75-T28")
+    blocked = M.blocked_cells(facet)
+    for cell in blocked:
+        result = M.run_cell(cell, facet)
+        assert result["status"] == M.BLOCKED, result
+        assert result["missing"], "a blocked cell must name the path it is waiting for"
+        for path in result["missing"]:
+            assert path.startswith(facet.core_dir)
+            assert not os.path.exists(path)
+        assert result["observed"]["owned_by"] in ("S75-T17", "S75-T28")
+    # A cell is only ever in the blocked set when its owed module is absent.
+    for cell in set(M.PROVIDER_CELLS) - set(blocked):
+        assert M.run_cell(cell, facet)["status"] != M.BLOCKED, (
+            "%s reports BLOCKED but its owed module is on disk" % cell)
 
 
 def test_style18_restores_the_production_catalog_after_a_break():
