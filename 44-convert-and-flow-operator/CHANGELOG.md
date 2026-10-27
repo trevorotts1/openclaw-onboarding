@@ -1,3 +1,7 @@
+## [v2.1.27] - 2026-10-27 - chore(batch-20261027-0516): version stamp for T-15 bonus access adapter call site
+
+- **Batch 20261027-0516 version stamp, skill 44 v2.1.26 -> v2.1.27.** T-15 adds the bonus access adapter production call site in 44-convert-and-flow-operator/tools/bonus_access_decision.py. No skill code changed in this commit; version stamp only.
+
 ## [v2.1.26] - 2026-10-26 - version bump above main-carried v2.1.25 (PBB-833R COMBINE7)
 
 Main now carries v2.1.25, so this combine re-bumps one patch above it
