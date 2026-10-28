@@ -161,7 +161,7 @@ done
 if [ -f "$SKILL38_ROOT/../QC-PROTOCOL.md" ]; then
   report_pass "../QC-PROTOCOL.md (repo-root governing Sub-Agent Handoff + Mandatory QC Protocol)"
 else
-  echo "  [SKIP] ../QC-PROTOCOL.md not found relative to the skill root (expected when the skill is installed standalone, outside the onboarding repo)"
+  report_skip "../QC-PROTOCOL.md not found relative to the skill root (expected when the skill is installed standalone, outside the onboarding repo)"
 fi
 
 section "File existence — templates/ (journey + channel)"
@@ -280,7 +280,7 @@ if [ -n "${PUBLIC_HOSTNAME:-}" ] && [ -n "${ROUTE_ID:-}" ]; then
       ;;
   esac
 else
-  echo "  [SKIP] PUBLIC_HOSTNAME or ROUTE_ID not set; cannot probe tunnel"
+  report_skip "PUBLIC_HOSTNAME or ROUTE_ID not set; cannot probe tunnel"
 fi
 
 # -------- AGENTS.md marker blocks --------
@@ -349,7 +349,7 @@ if [ -f "$QC_TRINITY" ]; then
       TRINITY_JSON="$(bash "$QC_TRINITY" --json 2>/dev/null || true)"
       TRINITY_VERDICT="$(printf '%s\n' "$TRINITY_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("verdict", ""))' 2>/dev/null || true)"
       case "$TRINITY_VERDICT" in
-        NO_FOLDER) echo "  [SKIP] no conversation-workflows folder yet (nothing to check)" ;;
+        NO_FOLDER) report_skip "no conversation-workflows folder yet (nothing to check)" ;;
         EMPTY_REGISTRY) report_fail "conversation-workflows folder has zero registered playbooks; the Trinity cannot be proven vacuously" ;;
         *) report_fail "qc-trinity-registry.sh returned rc 3 but its JSON verdict was missing or unreadable; run it directly for detail" ;;
       esac
@@ -446,12 +446,12 @@ if [ -f "$QC_PBDOC" ]; then
         done
       fi
       if [ "$PBDOC_COUNT" -eq 0 ]; then
-        echo "  [SKIP] no conversation playbooks registered yet (nothing to check) — gate fires once the first playbook is built"
+        report_skip "no conversation playbooks registered yet (nothing to check) — gate fires once the first playbook is built"
       else
         report_fail "qc-playbook-doc.sh returned NO_PLAYBOOKS while $PBDOC_COUNT playbook file(s) ARE on disk; gate is blind, not that there is nothing to check"
       fi
       ;;
-    3) echo "  [SKIP] no conversation-workflows folder yet (run 09-install-conversation-workflows.sh)" ;;
+    3) report_skip "no conversation-workflows folder yet (run 09-install-conversation-workflows.sh)" ;;
     *) report_fail "qc-playbook-doc.sh found a registered playbook with NO recorded human-facing doc (the Notion→Docs→text deliverable was skipped) — run it directly for detail" ;;
   esac
 else
@@ -506,7 +506,7 @@ if [ -n "$STATE_FOUND" ]; then
     report_fail "clientDocDelivered is NOT true in $STATE_FOUND — the client was never sent their doc link via Telegram (run scripts/22-notify-client-doc.sh; the install is not complete)"
   fi
 else
-  echo "  [SKIP] run-state file not found; cannot assert clientDocDelivered (run scripts/22-notify-client-doc.sh during the live install)"
+  report_skip "run-state file not found; cannot assert clientDocDelivered (run scripts/22-notify-client-doc.sh during the live install)"
 fi
 
 # -------- Backend-ready gate: the agent is ready to RECEIVE --------
@@ -571,7 +571,7 @@ PY_BACKEND_EOF
     *) report_fail "could not evaluate hooks.mappings readiness from $OC_CONFIG" ;;
   esac
 else
-  echo "  [SKIP] openclaw.json not found (or python3 missing); cannot assert hooks.mappings readiness"
+  report_skip "openclaw.json not found (or python3 missing); cannot assert hooks.mappings readiness"
 fi
 
 # /healthz 200 — the gateway is up and ready to receive.
@@ -588,10 +588,10 @@ elif command -v openclaw >/dev/null 2>&1; then
   if [ "$LOCAL_HZ" = "200" ]; then
     report_pass "/healthz returns 200 (localhost) — gateway is up and ready to receive"
   else
-    echo "  [SKIP] PUBLIC_HOSTNAME unset and localhost /healthz not 200 (HTTP $LOCAL_HZ); cannot assert gateway readiness here"
+    report_skip "PUBLIC_HOSTNAME unset and localhost /healthz not 200 (HTTP $LOCAL_HZ); cannot assert gateway readiness here"
   fi
 else
-  echo "  [SKIP] PUBLIC_HOSTNAME unset and openclaw CLI not on PATH; cannot probe /healthz"
+  report_skip "PUBLIC_HOSTNAME unset and openclaw CLI not on PATH; cannot probe /healthz"
 fi
 
 # -------- Backend ready to RECEIVE (live gate; SKIPs with no install) --------
@@ -606,7 +606,7 @@ if [ -f "$QC_BACKEND" ]; then
   bash "$QC_BACKEND" >/dev/null 2>&1 || BACKEND_RC=$?
   case "$BACKEND_RC" in
     0) report_pass "backend ready to receive: hooks.mappings live + deliver:false + no blank model override + healthz 200 (testing may proceed once the client doc gate also passes)" ;;
-    3) echo "  [SKIP] no openclaw.json on this box — cannot verify backend readiness here" ;;
+    3) report_skip "no openclaw.json on this box — cannot verify backend readiness here" ;;
     *) report_fail "qc-backend-ready.sh: backend NOT ready to receive (hooks.mappings / deliver:false / blank model override / healthz) — do NOT test, do NOT hand off; run it directly for detail" ;;
   esac
 else
@@ -685,7 +685,7 @@ if [ -f "$TOOLS_MD_CHECK" ]; then
     report_fail "client TOOLS.md is MISSING the GHL API quick-reference block ($TOOLS_MD_CHECK) — run scripts/24-update-tools-md.sh"
   fi
 else
-  echo "  [SKIP] client TOOLS.md not found at $TOOLS_MD_CHECK; cannot assert the GHL quick-reference block (run scripts/24-update-tools-md.sh during the live install)"
+  report_skip "client TOOLS.md not found at $TOOLS_MD_CHECK; cannot assert the GHL quick-reference block (run scripts/24-update-tools-md.sh during the live install)"
 fi
 
 # -------- conversational-logs dir presence + writability --------
@@ -702,7 +702,7 @@ if [ -n "${MASTER_FILES_DIR:-}" ]; then
     report_fail "conversational-logs dir MISSING: $LOGS_DIR — run 09-install-conversation-workflows.sh"
   fi
 else
-  echo "  [SKIP] MASTER_FILES_DIR not resolved; cannot check conversational-logs dir"
+  report_skip "MASTER_FILES_DIR not resolved; cannot check conversational-logs dir"
 fi
 
 
@@ -778,7 +778,7 @@ if [ -n "$ST_STATE_FOUND" ]; then
     report_fail "selfTestPassed is NOT true in $ST_STATE_FOUND — run scripts/24-self-test-hook.sh until it passes; do NOT mark complete or tell the client to test"
   fi
 else
-  echo "  [SKIP] run-state file not found; cannot assert selfTestPassed (run scripts/24-self-test-hook.sh during the live install)"
+  report_skip "run-state file not found; cannot assert selfTestPassed (run scripts/24-self-test-hook.sh during the live install)"
 fi
 
 # -------- Communication Playbook Standard gate (machine-enforced) --------
@@ -1025,7 +1025,7 @@ if [ -f "$QC_CRAFT" ]; then
   bash "$QC_CRAFT" >/dev/null 2>&1 || CRAFT_RC=$?
   case "$CRAFT_RC" in
     0) report_pass "all six craft contracts hold: objection library, turn discipline, ambiguity and multi-intent, stall recovery, golden transcript, conversational KPIs" ;;
-    2) echo "  [SKIP] no conversation-workflows folder yet" ;;
+    2) report_skip "no conversation-workflows folder yet" ;;
     3)
       CRAFT_WF_DIR=""
       CRAFT_POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
@@ -1045,7 +1045,7 @@ if [ -f "$QC_CRAFT" ]; then
         done
       fi
       if [ "$CRAFT_COUNT" -eq 0 ]; then
-        echo "  [SKIP] no conversation playbook files yet (nothing to check)"
+        report_skip "no conversation playbook files yet (nothing to check)"
       else
         report_fail "qc-playbook-craft.sh returned NO_PLAYBOOKS while playbook file(s) exist on disk (blind gate, not an empty folder)"
       fi
