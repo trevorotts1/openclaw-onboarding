@@ -1,5 +1,9 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.67: version stamp for the consolidated fanout batch
+
+- **Consolidation 20261028-0700 version stamp, skill 77 v1.0.66 -> v1.0.67.** Skill content changed by units merged into batch/consolidate-20261028-0700. Version stamp, SKILL.md frontmatter and `version` and this entry only.
+
 ## v1.0.66: the front door serves the landing routes, and the model probe covers the CLI path (batch lane 9 version stamp)
 
 In plain English: the council's front-door service now handles the landing routes it advertises, and the CLI model probe is covered by its own test, so a broken probe fails the suite instead of the door.
