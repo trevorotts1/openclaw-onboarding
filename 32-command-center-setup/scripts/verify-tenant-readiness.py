@@ -12,7 +12,39 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'23-ai-workforce-bluep
 from workforce_state import read,update
 from datetime import datetime,timezone
 
-def verify(state,env,fetch=None):
+class AccessRedirect(Exception):
+    """The public host answered with a redirect to its own Cloudflare Access login."""
+
+class ReceiverRefused(Exception):
+    """The Command Center answered 403/503 with a JSON body naming why (its `missing[]` or `error`)."""
+    def __init__(self,status,names):super().__init__('HTTP '+str(status));self.status,self.names=status,names
+
+def _probe(url,headers,timeout=15):
+    """GET one readiness receipt without ever following a redirect (the bearer token must not leave this origin).
+
+    A redirect to *.cloudflareaccess.com raises AccessRedirect; a 403/503 with a JSON body raises ReceiverRefused
+    carrying the receiver's own reason names; any other failure is the plain urllib error."""
+    import re,urllib.error,urllib.request
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self,*args,**kwargs):return None
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(Request(url,headers=headers),timeout=timeout) as response:
+            if response.status!=200:raise ValueError('readiness status is not 200')
+            return json.loads(response.read(65537))
+    except urllib.error.HTTPError as exc:
+        if exc.code in (301,302,303,307,308):
+            login=urlsplit(exc.headers.get('Location') or '')
+            if login.scheme=='https' and (login.hostname or '').lower().endswith('.cloudflareaccess.com'):exc.close();raise AccessRedirect() from None
+        if exc.code in (403,503):
+            try:body=json.loads(exc.read(65537))
+            except (ValueError,OSError):body=None
+            if isinstance(body,dict):
+                names=body.get('missing') if isinstance(body.get('missing'),list) and body.get('missing') else [body.get('error')]
+                names=[n for n in names if isinstance(n,str) and re.fullmatch(r'[A-Za-z0-9_.:-]{1,80}',n)][:20]
+                exc.close();raise ReceiverRefused(exc.code,names or ['no reason given']) from None
+        raise
+
+def verify(state,env,fetch=None,local_fetch=None):
     expected={'tenantId':env.get('MC_TENANT_ID'),'companyId':state.get('companyId') or env.get('MC_COMPANY_ID'),
               'installationId':env.get('MC_INSTALLATION_ID')}
     url=env.get('MC_TENANT_PUBLIC_URL') or state.get('commandCenterUrl') or ''
@@ -22,23 +54,28 @@ def verify(state,env,fetch=None):
     if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password:missing.append('client HTTPS origin')
     if state.get('companyId') and env.get('MC_COMPANY_ID') and state['companyId']!=env['MC_COMPANY_ID']:missing.append('company identity conflict')
     if missing:return {'ready':False,'missing':missing}
-    host=parsed.hostname.lower();endpoint='https://'+parsed.netloc+'/api/auth/tenant-ready'
-    if env.get('MC_REQUIRE_REMOTE_RECEIVER')=='1':endpoint+='?requireRemoteReceiver=1'
-    def network():
-        # Do not follow redirects carrying bearer credentials to another origin.
-        import urllib.request
-        class NoRedirect(urllib.request.HTTPRedirectHandler):
-            def redirect_request(self,*args,**kwargs):return None
-        request=Request(endpoint,headers={'Authorization':'Bearer '+env['MC_API_TOKEN']})
-        with urllib.request.build_opener(NoRedirect()).open(request,timeout=15) as response:
-            if response.status!=200:raise ValueError('readiness status is not 200')
-            return json.loads(response.read(65537))
-    try:receipt=fetch() if fetch else network()
-    except Exception as exc:return {'ready':False,'missing':['authenticated readiness probe failed: '+type(exc).__name__]}
+    host=parsed.hostname.lower();path='/api/auth/tenant-ready'+('?requireRemoteReceiver=1' if env.get('MC_REQUIRE_REMOTE_RECEIVER')=='1' else '')
+    auth={'Authorization':'Bearer '+env['MC_API_TOKEN']}
+    def network():return _probe('https://'+parsed.netloc+path,auth)
+    def loopback():
+        # The Command Center resolves its tenant from the Host header plus the bearer token, so the on-box request
+        # carries the public Host. Same endpoint, same receipt, same identity checks below.
+        port=str(env.get('DASHBOARD_PORT') or env.get('CC_PORT') or 4000)
+        if not port.isdigit() or not 0<int(port)<65536:raise ValueError('invalid Command Center port')
+        return _probe('http://127.0.0.1:'+port+path,dict(auth,Host=parsed.netloc))
+    via='public'
+    try:
+        try:receipt=fetch() if fetch else network()
+        except AccessRedirect:
+            # Cloudflare Access fronts the public host and answers every unauthenticated request with a 302 to its
+            # login: that says nothing about readiness. Ask the Command Center itself, on this box.
+            via='loopback';receipt=(local_fetch or loopback)()
+    except ReceiverRefused as exc:return {'ready':False,'missing':['receiver refused readiness (HTTP '+str(exc.status)+'): '+', '.join(exc.names)]}
+    except Exception as exc:return {'ready':False,'missing':['authenticated readiness probe failed'+(' (loopback, public host is behind Cloudflare Access)' if via=='loopback' else '')+': '+type(exc).__name__]}
     for key,value in dict(expected,host=host,kind='self',protocol='interview.v1').items():
         if receipt.get(key)!=value:missing.append(key+' mismatch')
     if receipt.get('ready') is not True or receipt.get('missing')!=[]:missing.append('receiver readiness')
-    return dict(expected,host=host,ready=not missing,missing=missing,protocol='interview.v1')
+    return dict(expected,host=host,ready=not missing,missing=missing,protocol='interview.v1',probe=via)
 
 # ==============================================================================
 # Startability gate (item 04): "can this box actually start the interview?"
@@ -247,8 +284,11 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('state');parser.add_argument('--interview',action='store_true');parser.add_argument('--env-file',type=Path)
     parser.add_argument('--startability',action='store_true');parser.add_argument('--no-send',action='store_true')
-    parser.add_argument('--app-dir');parser.add_argument('--pm2-app',default='blackceo-command-center');parser.add_argument('--port',type=int,default=4000)
+    parser.add_argument('--app-dir');parser.add_argument('--pm2-app',default='blackceo-command-center');parser.add_argument('--port',type=int,default=None)
     args=parser.parse_args();path=args.state;before=read(path);env=dict(os.environ)
+    # The on-box Command Center port: --port, else the installer's DASHBOARD_PORT / CC_PORT, else the CC default.
+    ambient=env.get('DASHBOARD_PORT') or env.get('CC_PORT') or ''
+    args.port=args.port or (int(ambient) if ambient.isdigit() else 4000);env['DASHBOARD_PORT']=str(args.port)
     if args.env_file:
         import importlib.util
         spec=importlib.util.spec_from_file_location('launch',Path(__file__).with_name('interview-launch.py'))
