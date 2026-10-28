@@ -1,0 +1,120 @@
+{
+  "schema": "blackceo.unit-verdict/v1",
+  "program": "s75",
+  "workflow_id": "S75X-W3",
+  "unit_id": "S75X-W3-U1",
+  "role": "builder",
+  "verdict": "PASS",
+  "verified_at": "2026-10-26",
+  "plan_of_record": "<operator>/skill75-repair/SWARM-PLAN-V2.json",
+  "repo": "https://github.com/trevorotts1/openclaw-onboarding.git",
+  "lane": "<portable-drive>/Downloads/git trees and automations/s75/worktrees/S75X-W3-U1-build",
+  "base_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "base_ref": "origin/main",
+  "base_note": "lane HEAD was detached at origin/main and the working tree was clean (git status --porcelain empty) for every check below",
+  "owned_output": "75-drama-song-ad-factory/scripts/core/script_approval/",
+  "acceptance_results": [
+    {
+      "element": "Purpose reaches validate_story in the reviewed path",
+      "result": "PASS",
+      "evidence": [
+        "75-drama-song-ad-factory/scripts/core/script_approval/stage.py:89 -> SARC.validate_story(story, purpose=_purpose(run_dir, SARC))",
+        "stage.py:58 _purpose() reads $RUN/control/method.json purpose only, lowercases/strips it, and returns None unless the value is in story_arc.METHOD_PURPOSES",
+        "story_arc/story_arc.py:64 def validate_story(story, purpose=None); :344 METHOD_PURPOSES = ('campaign', 'testimonial', 'lesson', 'paid_ad', 'short_post')",
+        "probe check 'stage.py calls validate_story with purpose, no bare call' PASS (purpose kwarg present, bare validate_story(story) absent)",
+        "probe check 'stage._problems carries recorded purpose (control/method.json) to validate_story' PASS"
+      ]
+    },
+    {
+      "element": "lesson/testimonial variants get correct rules; purpose never guessed",
+      "result": "PASS",
+      "evidence": [
+        "story_arc.py:111-115 maps a lesson_intro id onto beat 8 only when purpose == 'lesson'",
+        "story_arc.py:143-154 refuses an unsourced product-beat claim only when purpose == 'testimonial'",
+        "probe 'lesson_intro accepted under purpose=lesson' PASS (no-purpose rejected, purpose=lesson ok)",
+        "probe 'lesson_intro off beat 8 still refused under purpose=lesson' PASS (beat-duplicate)",
+        "probe 'testimonial unsourced claim refused only under purpose=testimonial' PASS (claim-source-missing vs ok)",
+        "probe 'stage._problems carries recorded purpose' PASS: purpose=lesson -> no story problems; purpose=sales -> ['story: beat-unknown']; no method record -> ['story: beat-unknown']"
+      ]
+    },
+    {
+      "element": "ONE complete script package presented with ONE whole-package approval action; no scene-by-scene approvals",
+      "result": "PASS",
+      "evidence": [
+        "probe 'one whole-package presentation carries every scene, hook, CTA' PASS (665 chars, every scene line, hook line and CTA present in one message set)",
+        "probe 'record opens exactly one ask covering script+lyrics' PASS (asks=1, kinds=['script','lyrics'])",
+        "probe2 'ONE whole-package approval action approves script+lyrics together' PASS (status=approved, kinds=['lyrics','script'], decisions=1)",
+        "production ask call sites: the only non-test caller is stage.py -> script_approval.request_approval with default kinds=('script','lyrics'); no per-scene or per-act ask exists in scripts/"
+      ]
+    },
+    {
+      "element": "Revision binding and stale-response rejection still hold",
+      "result": "PASS",
+      "evidence": [
+        "probe2 'stale reply (payload differs from presented revision) refused' PASS (status=pending, approval_state=unknown, reason=ARTIFACT_REPLY_ARTIFACT_CHANGED)",
+        "probe2 'stale reply wrote no approval event' PASS (approvals=0)",
+        "probe2 'revision binding: gate passes at approved revision, refuses a changed one' PASS (same-rev=None, changed-rev=SCRIPT_NOT_APPROVED)",
+        "probe2 'approval events are active, revision-stamped and client-sourced' PASS (n=2)",
+        "test_reply_provenance.py:10/10 ok, including test_current_presentation_identity_changes_with_revisions (ARTIFACT_REPLY_PRESENTATION_MISMATCH) and test_on_disk_script_change_requires_a_new_presentation_before_any_decision"
+      ]
+    },
+    {
+      "element": "Existing approval tests pass",
+      "result": "PASS",
+      "evidence": [
+        "test_approval_events.py 9 PASS / 0 FAIL (ALL PASS)",
+        "test_script_approval.py 7 PASS / 0 FAIL (ALL PASS)",
+        "test_script_wiring.py 10 PASS / 0 FAIL (ALL PASS) - end-to-end card answer -> next -> paused -> reply -> music, mocked sink, no network",
+        "test_stage_purpose.py 6 PASS / 0 FAIL (ALL PASS)",
+        "test_reply_provenance.py 10 tests OK (unittest)"
+      ]
+    }
+  ],
+  "checks": {
+    "repo_test_suites": {
+      "runs": 5,
+      "tests": 42,
+      "passed": 42,
+      "failed": 0,
+      "command": "python3 -I <script>.py for the four standalone suites; python3 -I -m unittest discover -s scripts/core/script_approval -t scripts/core/script_approval -p 'test_reply_provenance.py' for the unittest suite"
+    },
+    "independent_builder_probes": {
+      "files": [
+        "<portable-drive>/Downloads/git trees and automations/s75/scratch/s75x-w3-u1-probe/probe.py",
+        "<portable-drive>/Downloads/git trees and automations/s75/scratch/s75x-w3-u1-probe/probe2.py"
+      ],
+      "runs": 2,
+      "checks": 12,
+      "passed": 12,
+      "failed": 0,
+      "note": "probe.py covers purpose plumbing, lesson/testimonial rules and the single whole-package ask; probe2.py covers the modern reply surface (stale-response rejection, one decision for script+lyrics, revision binding) via the real request_approval/mark_sent/handle_reply/check_script_approval API. Two first-draft probe checks were mis-built (synthetic approval records without state/decision id, and no mark_sent/creative/script.json); they were rebuilt against the real API, not weakened, and the class control is the repo's own passing test_reply_provenance suite."
+    },
+    "scope_discipline": {
+      "files_changed_by_builder": 0,
+      "note": "no unit code was edited, no test was weakened; only this verdict file is added"
+    }
+  },
+  "owned_output_digests": {
+    "__init__.py": "ee06cfa5dc9bffa0cf099548305a75efdabff87906f559421c2f6633532843e7",
+    "approval_events.py": "cc6c9e72f4cd915bf4449fd4488c3c21ee0026254b59a1641914ef9d5a1a7c03",
+    "card_answers.py": "6e421fcbcb110c7561ca708912372ff3d9d1dad64969a0bf845c777eee779f06",
+    "script_approval.py": "4cf1bead54f97f924ae2ebe6a75f2ac9d5c35de9edd46635e601542e19093758",
+    "stage.py": "556be8fe605dda80c863163f8feb61664cb00ec9fefba5602afcc802666ee56a",
+    "test_approval_events.py": "971dea581ba3aef979563d144b0b41a0fa7faf52a7239a88979f0a8d17b50855",
+    "test_reply_provenance.py": "aa6b55c88f5515eb38e9372c640cc091098dc9012abc1bc16b1b86d4085b4449",
+    "test_script_approval.py": "b1d27f47a5511a30af2c05a5448d4adc244ae0536b19031f794656c2dca1e3d6",
+    "test_script_wiring.py": "64f9df7241638cabbad208b023c89eebb108f72cb77294a3b6918c943d82efa7",
+    "test_stage_purpose.py": "639d2430ff0b0e9ab15ed1ac511274610722005e7559990f544661272d50cb18"
+  },
+  "not_verified": [
+    "No live client channel was exercised: every delivery sink was mocked or a fake openclaw; no real Telegram or GHL send was observed.",
+    "No paid provider call was made; the music submit path was faked (Skill 74 kie_dispatch fake), so no real generation request was proven.",
+    "Purpose plumbing was proven for lesson, testimonial, sales and no-record runs only; campaign, paid_ad and short_post purposes keep the base rules by construction and were not each exercised end to end.",
+    "The intake card that writes control/method.json was not run; method.json files were written directly by the probe, so the writer side of the purpose record is out of scope of this verdict.",
+    "No cross-unit regression (full repo test sweep) was run; only the script_approval suites plus the two builder probes.",
+    "Concurrency/racing between two simultaneous replies on the same run was not tested."
+  ],
+  "findings": [],
+  "branch": "s75x/verdicts-S75X-W3",
+  "commit": null
+}

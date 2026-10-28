@@ -1127,27 +1127,73 @@ def _refuse_mismatch(base, key, order_id, mismatch):
     return EXIT["refused"]
 
 
+def _journaled_turns(session_path):
+    """How many card turns the run's intake session has already journaled.
+
+    0 when the session does not exist yet (a fresh run). A session that exists
+    but cannot be read answers None: an unknown history must never restart a
+    replay at the wrong turn, so the replay fails closed instead.
+    """
+    try:
+        state = json.loads(session_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return 0
+    except (OSError, ValueError) as exc:
+        _emit({"code": "REPLAY_SESSION_UNREADABLE", "message": str(exc)[:300]})
+        return None
+    events = state.get("events") if isinstance(state, dict) else None
+    return len(events) if isinstance(events, list) else 0
+
+
 def _replay(skill_root, run_dir, replies):
-    """Hand every reply back to the card, in order. argv list, never a shell."""
+    """Hand every reply back to the card, one turn per answer, in order.
+
+    The card takes at most ONE new reply per turn: a fresh session refuses any
+    reply before its question is presented (QUESTION_NOT_PRESENTED), and a turn
+    carrying more than one new reply is refused (ONE_REPLY_AT_A_TIME). So the
+    bridge primes the pending question with a no-reply turn, then plays the
+    answers back as GROWING REPLAY PREFIXES: turn i carries replies[:i+1], and
+    the session's own replay absorption (an already-journaled prefix replays as
+    INTAKE_REPLAYED, a divergent one as INTAKE_REPLAY_MISMATCH) reduces each
+    turn to its one new answer. Starting past the turns the session already
+    journaled resumes an interrupted order without re-answering, and a shifted
+    list still fails closed at the session's own prefix check. argv lists, never
+    a shell; any refused turn fails the replay before the run line is printed.
+    """
     factory = (pathlib.Path(skill_root).expanduser() / "scripts" / "core"
                / "intake_preflight" / "factory.py")
     if not factory.is_file():
         _emit({"code": "NO_FACTORY",
                "message": "factory.py not found under %s" % skill_root})
         return EXIT["refused"], factory
-    argv = [sys.executable, str(factory), "card", "--step", "--format", "text",
+    base = [sys.executable, str(factory), "card", "--step", "--format", "text",
             "--run-dir", str(run_dir)]
-    for reply in replies:
-        argv.extend(["--reply", str(reply)])
-    try:
-        proc = subprocess.run(argv, capture_output=True, text=True,
+
+    def _turn(extra):
+        argv = list(base)
+        for reply in extra:
+            argv.extend(["--reply", str(reply)])
+        return subprocess.run(argv, capture_output=True, text=True,
                               timeout=600, cwd=str(skill_root))
+
+    try:
+        done = _turn(())                 # prime: the first question is presented
+        if done.returncode != 0:
+            tail = (done.stderr or done.stdout or "").strip()[-300:]
+            _emit({"code": "REPLAY_FAILED", "message": tail})
+            return EXIT["error"], factory
+        start = _journaled_turns(pathlib.Path(run_dir) / "control"
+                                 / "intake-session.json")
+        if start is None:
+            return EXIT["error"], factory
+        for i in range(start, len(replies)):
+            done = _turn(replies[:i + 1])
+            if done.returncode != 0:
+                tail = (done.stderr or done.stdout or "").strip()[-300:]
+                _emit({"code": "REPLAY_FAILED", "message": tail})
+                return EXIT["error"], factory
     except (OSError, subprocess.SubprocessError) as exc:
         _emit({"code": "REPLAY_FAILED", "message": str(exc)[:300]})
-        return EXIT["error"], factory
-    if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout or "").strip()[-300:]
-        _emit({"code": "REPLAY_FAILED", "message": tail})
         return EXIT["error"], factory
     return EXIT["ok"], factory
 
