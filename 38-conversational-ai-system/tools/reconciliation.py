@@ -343,6 +343,70 @@ def _selfcheck() -> int:
     ok(store.claim_for_dispatch(aid3, "w9", now=900.0) is None,
        "unresolved action can never be claimed")
 
+    # ── the publication true-receipt rule, reached from THIS module ──────
+    # The rule at the top of the file is only load-bearing if a publication
+    # action's evidence is actually judged by it here. These four cases are
+    # the proof: two false receipts refused, one true receipt accepted, and
+    # one non-publication purpose left outside the rule.
+
+    def publication_action(key: str, purpose: str, at: float) -> str:
+        row, _ = store.create_intent(logical_intent_key=key, idempotency_key="K" + key,
+                                     tenant_id="t", scope="public_placement",
+                                     content_sha256="h", purpose=purpose)
+        aid = row["action_id"]
+        store.queue(aid)
+        claim = store.claim_for_dispatch(aid, "w1", now=at, lease_seconds=1)
+        store.begin_attempt(aid, claim["fence"], "w1", now=at + 1)
+        return aid
+
+    # 1. A publication "receipt" with no provider object id is a claim.
+    p1 = publication_action("P1", "SCHEDULED_POST", 1000.0)
+    out = resolve_unknown(store, p1, lambda ctx: {
+        "outcome": "applied",
+        "receipt": {"provider": "ghl", "kind": "post",
+                    "supported_status": "accepted"}}, now=1100.0)
+    ok(out.status == R_UNKNOWN, "a post receipt with no provider object is not evidence")
+    ok(store.get_action(p1)["state"] == STATE_UNKNOWN, "the refused action stays unknown")
+    ok(store.get_action(p1)["unknown_reason"]
+       == "resolver_applied_without_true_provider_receipt",
+       "the refusal is named, not silently downgraded")
+    ok(store.claim_for_dispatch(p1, "w2", now=1101.0) is None,
+       "a refused publication can never be re-claimed and resent")
+
+    # 2. A local id echoed back as the provider's object is not the provider's.
+    p2 = publication_action("P2", "REVEAL_COMMENT", 1200.0)
+    out = resolve_unknown(store, p2, lambda ctx: {
+        "outcome": "applied",
+        "receipt": {"provider": "ghl", "provider_object_id": ctx["action_id"],
+                    "kind": "comment", "supported_status": "accepted",
+                    "parent_provider_object_id": "ghl_post_1"}}, now=1300.0)
+    ok(out.status == R_UNKNOWN, "a local id echoed back is not a true receipt")
+    ok(store.get_action(p2)["unknown_reason"]
+       == "resolver_applied_without_true_provider_receipt",
+       "the echo refusal takes the same fail-closed path")
+
+    # 3. The provider's own post object resolves, and completion is NOT claimed.
+    p3 = publication_action("P3", "SCHEDULED_POST", 1400.0)
+    out = resolve_unknown(store, p3, lambda ctx: {
+        "outcome": "applied",
+        "receipt": {"provider": "ghl", "provider_object_id": "ghl_post_778",
+                    "kind": "post", "supported_status": "accepted"}}, now=1500.0)
+    ok(out.status == R_APPLIED and out.state_after == "acknowledged",
+       "a true post receipt resolves to acknowledged")
+    ok(set(store.receipts(p3)) == {"dispatch", "ack"},
+       "the post receipt is persisted; completion is still not claimed")
+
+    # 4. A non-publication purpose is outside the post/comment rule, so the
+    #    same weak receipt still resolves. This is the polarity control: the
+    #    purpose, not the receipt shape, decides whether the rule applies.
+    p4 = publication_action("P4", "original_gift", 1600.0)
+    out = resolve_unknown(store, p4, lambda ctx: {
+        "outcome": "applied",
+        "receipt": {"provider": "ghl", "provider_receipt_id": "r9"}}, now=1700.0)
+    ok(out.status == R_APPLIED,
+       "a non-publication purpose is not judged by the post/comment rule")
+    ok(out.state_after == "acknowledged", "the non-publication resolution still acks")
+
     store.close()
     print(f"OK {passed} PASS")
     return 0
