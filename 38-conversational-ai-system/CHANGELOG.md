@@ -1,3 +1,7 @@
+## [2.0.210] - 2026-10-28 - chore(fanout-0250-lane5): Skill 38 to v2.0.210 (G3 bump)
+
+- **Batch fanout lane 5 version stamp, 38-conversational-ai-system v2.0.209 -> v2.0.210.** Lane units merged here: PBB-686 PBB-780 carry-3ee2a64 carry-proof-receipt PBB-2178 carry-1064-t36 carry-t16 pbb1203-fixture-cleanup-carry . No skill code changed in this commit; version stamp only.
+
 ## [2.0.209] - 2026-10-28 - chore(batch-fanout-0250-lane4): version stamp for 8 units
 
 - **Batch fanout-0250-lane4 version stamp, Skill 38 v2.0.208 -> v2.0.209.** Units in this lane touching skill 38: T-25-WIRE-RECARRY (`67d28bdcd`), PBB-351 (`a13d866f4`), PBB-410 (`783bc6fb0`), PBB-751 (`649423e2d`), PBB-790 (`33247e6fa`), T-25-ENFORCE-PROOF (`194f5aa6d`), carry-t29 (`22d1415c1`), PBB-669 (`b20c8a4e3`). v2.0.207 skipped (claimed by the unmerged branch of PBB-825) and v2.0.208 taken by batch-20261028-0250. No new skill code in this commit; version stamp only.
