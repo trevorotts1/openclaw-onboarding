@@ -1600,6 +1600,8 @@ jobs:
           bash tests/unit/frontdoor-999-clone-9router.test.sh
           bash tests/unit/box-fixes-gates.test.sh
           python3 tests/unit/ensure-persona-contexts.test.py
+          python3 tests/unit/ensure-cc-interview-flag.test.py
+          python3 tests/unit/ensure-cc-tenant-env.test.py
           bash tests/unit/prune-openclaw-json-backups.test.sh
           bash tests/unit/qc-env-stores.test.sh
 

@@ -38,6 +38,9 @@
 #       the standard-first lane
 #   R7  mutation proof: reverting update-interview-state.sh's evidence gate
 #       makes R2 go RED (the incident fixture marks complete again)
+#   R8  a completed interview is mirrored into the Command Center database
+#       (clients.interview_complete on the is_self=1 row, which task ingest
+#       reads) -- and a REFUSED completion leaves that flag at 0
 #
 # Self-contained: builds its own HOME/workspace, never touches a real box,
 # never touches client data.
@@ -244,7 +247,10 @@ run_complete() {
   local sandbox="$1"
   local shim_dir
   shim_dir="$(make_openclaw_shim "$sandbox")"
-  ( HOME="$sandbox" SHIM_LOG="$sandbox/.shim.log" PATH="$shim_dir:$PATH" bash "$UPD" --complete ) 2>&1
+  # DASHBOARD_DB_PATH / DATABASE_PATH are cleared so a host-exported Command
+  # Center database can never be written by a test run (the post-completion
+  # flag mirror honours them).
+  ( unset DASHBOARD_DB_PATH DATABASE_PATH; HOME="$sandbox" SHIM_LOG="$sandbox/.shim.log" PATH="$shim_dir:$PATH" bash "$UPD" --complete ) 2>&1
 }
 
 # ── R2: incident fixture (19 Q, 5 missing fields, frozen counter) REFUSES ────
@@ -457,6 +463,62 @@ PYSTAMP
   else
     fail "R6: expected exit=0 + interviewComplete=true + qcStatus=pass + editModeExemption.granted=true" \
       "got rc=$RC interviewComplete=$COMPLETE_AFTER qcStatus=$QC_STATUS_AFTER editGranted=$EDIT_GRANTED; output tail: $(echo "$OUT" | tail -8)"
+  fi
+)
+
+# ── R8: completion is mirrored into the Command Center database ─────────────
+# Task ingest reads clients.interview_complete (is_self=1), never the build-state
+# file; before this mirror an interview finished through this script left the
+# flag at 0 and every task parked in General Task. The sandbox HOME carries a
+# Command Center database at the default install path.
+make_cc_db() {
+  python3 - "$1" <<'PYDB'
+import sqlite3, sys, pathlib
+p = pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True)
+con = sqlite3.connect(p)
+con.execute("create table workspaces(id text primary key)")
+con.execute("create table clients(id text primary key, interview_complete integer not null default 0, is_self integer not null default 0, updated_at text)")
+con.execute("insert into clients(id, is_self) values('self', 1)")
+con.execute("insert into clients(id, is_self) values('remote', 0)")
+con.commit(); con.close()
+PYDB
+}
+cc_flags() {
+  python3 - "$1" <<'PYFLAGS' 2>/dev/null || echo "unreadable"
+import sqlite3, sys
+print(",".join("%s=%s" % r for r in sqlite3.connect(sys.argv[1]).execute("select id, interview_complete from clients order by id")))
+PYFLAGS
+}
+(
+  SANDBOX="$(mktemp -d -t evidence-gate-r8.XXXXXX)"
+  trap 'rm -rf "$SANDBOX"' EXIT
+  make_sandbox "$SANDBOX" >/dev/null
+  CC_DB="$SANDBOX/projects/command-center/mission-control.db"
+  make_cc_db "$CC_DB"
+  make_full_transcript "$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
+  make_full_state "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
+  OUT=$(run_complete "$SANDBOX"); RC=$?
+  AFTER="$(cc_flags "$CC_DB")"
+  if [ "$RC" -eq 0 ] && [ "$AFTER" = "remote=0,self=1" ]; then
+    pass "R8a: genuine completion → Command Center clients.interview_complete=1 for the is_self=1 row only (remote client untouched)"
+  else
+    fail "R8a: expected exit=0 + flags remote=0,self=1" "got rc=$RC flags=$AFTER; output tail: $(echo "$OUT" | tail -5)"
+  fi
+)
+(
+  SANDBOX="$(mktemp -d -t evidence-gate-r8b.XXXXXX)"
+  trap 'rm -rf "$SANDBOX"' EXIT
+  make_sandbox "$SANDBOX" >/dev/null
+  CC_DB="$SANDBOX/projects/command-center/mission-control.db"
+  make_cc_db "$CC_DB"
+  make_incident_transcript "$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
+  make_incident_state "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 11
+  OUT=$(run_complete "$SANDBOX"); RC=$?
+  AFTER="$(cc_flags "$CC_DB")"
+  if [ "$RC" -eq 87 ] && [ "$AFTER" = "remote=0,self=0" ]; then
+    pass "R8b: REFUSED completion (exit 87) leaves the Command Center flag at 0 (never set when build-state is not true)"
+  else
+    fail "R8b: expected exit=87 + flags remote=0,self=0" "got rc=$RC flags=$AFTER; output tail: $(echo "$OUT" | tail -5)"
   fi
 )
 
