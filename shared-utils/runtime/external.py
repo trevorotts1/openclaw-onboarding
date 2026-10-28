@@ -904,7 +904,8 @@ def _selfcheck() -> None:
         else:
             raise AssertionError("/private/tmp was admitted")
         try:
-            open_destination("/Users/Shared/pbb-nope", bind_proven=False)
+            open_destination(os.path.join(os.sep, "Users", "Shared",
+                                          "pbb-nope"), bind_proven=False)
         except PathRejected as exc:
             assert str(exc).startswith("unproven_open:"), exc
         else:
