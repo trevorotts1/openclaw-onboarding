@@ -4,6 +4,10 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.131 - 2026-10-28 - chore(batch-consolidate-20261028-0700): version stamp for the consolidated fanout batch
+
+- **Consolidation 20261028-0700 version stamp, skill 75 v2.9.130 -> v2.9.131.** Skill content changed by units merged into batch/consolidate-20261028-0700. Version stamp, SKILL.md frontmatter and this entry only.
+
 ## v2.9.130 - 2026-10-27 - chore(batch-20261027-2326): version stamp for S75X-W3
 
 - **Batch 20261027-2326 version stamp, skill 75 v2.9.129 -> v2.9.130.** S75X-W3 (`s75/verdicts-S75X-W3` @ `5fc917d2`) is the only unit in this batch touching skill 75. Main already reads v2.9.129, so the batch takes main+1 and G3 sees a real bump against the merge base. The unit's Studio replay now sends ONE reply per turn — a growing replay prefix per answer — so a refused turn fails closed before the run line is printed, with the named refusal codes `QUESTION_NOT_PRESENTED`, `ONE_REPLY_AT_A_TIME`, `INTAKE_REPLAY_MISMATCH`, `REPLAY_SESSION_UNREADABLE` and `REPLAY_FAILED`. No skill code changed in this commit; version stamp and this entry only.
