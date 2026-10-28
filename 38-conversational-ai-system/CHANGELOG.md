@@ -1,3 +1,7 @@
+## [2.0.216] - 2026-10-28 - chore(train7): version stamp and the changelog blocks train6 dropped
+
+- **Train7 version stamp, Skill 38 v2.0.215 -> v2.0.216.** Train6 (#2706) deduped changelog blocks by version NUMBER, so blocks sharing a version with an earlier stamp were silently skipped; train7 carries them by exact text. Blocks carried here belong to PBB-458 t-15 build, PBB-2330 carry and PBB-2338 t-04 renumber. PBB-2331 is NOT in this train: its block embeds a real launchd job label, which the skill-38 personal-data gate rejects, so it is answered separately rather than redacted into a false record. T-50 content-1 reconciled also lands here. Version stamp only, no skill code changed.
+
 ## [2.0.215] - 2026-10-28 - chore(train6): version stamp for four changelog units
 
 - **Train6 version stamp, skill 38 v2.0.214 -> v2.0.215.** Units in this train add changelog entries only: PBB-458 t-15 build, PBB-2330 carry, PBB-2331 carry, PBB-2338 t-04 renumber. PBB-2333 was dropped from the batch after QC static invariants failed on the skill-38 personal-data gate: its changelog entry embeds two real launchd labels (two real launchd job labels, redacted here). No skill code changed by the stamp; version stamp only.
@@ -5,6 +9,14 @@
 ## [2.0.214] - 2026-10-28 - chore(train4): version stamp for the squashed unit train
 
 - **Train4 version stamp, skill 38 v2.0.213 -> v2.0.214.** Units touching skill 38: `s38-44-skipcount` and `pb/PBB-2361/repair` @ `0934c8036` (`tools/interactive_owner.py` plus two test files). Skill 44 moves v2.1.38 -> v2.1.39 for `s38-44-changelog-v6`. `S75-T03` is evidence only. Version stamp only.
+
+## [2.0.214] - 2026-10-28 - chore(rebase-lane-2): rebase pb/PBB-1016/PBB-458-t-15-build onto main, keep the T-15 deletion record
+
+- **Rebase resolution, version stamp only.** Conflict lane 2 rebuilt `pb/PBB-1016/PBB-458-t-15-build` (@ `ab3f4123ed18`) on `origin/main` @ `da41be56f427`. Only two paths conflicted and both are allowed classes: this CHANGELOG and `skill-version.txt`. No product, CI or test file was touched. The branch's `[2.0.138]` entry (the T-15 bonus-access deletion record, 114 lines) is kept in full and placed in descending order between `[2.0.143]` and `[2.0.134]`; heading count 353 -> 355 = main 353 + `[2.0.138]` + this entry, zero lines deleted (`diff` main vs resolved: 114 insertions, 0 deletions, block byte-identical). The branch stamped `v2.0.138`; the higher stamp is main's `v2.0.213`, so this commit stamps `v2.0.214` in `skill-version.txt` and in the `SKILL.md` frontmatter.
+
+## [2.0.214] - 2026-10-28 - chore(conflict-lane-6): carried merge of pb/PBB-2330/carry; record-only merge, no product change
+
+## [2.0.214] - 2026-10-28 - chore(conflict-lane-6): carried merge of pb/PBB-2338-carry-t-04-renumber; record-only merge, no product change
 
 ## [2.0.213] - 2026-10-28 - chore(lane-7): version stamp for the lane 7 four-unit batch
 
@@ -68,6 +80,34 @@ Version 2.0.205 allocated at carry onto main. The branch originally allocated 2.
 
 ## [2.0.197] - 2026-10-25 - fix(integration): a proof id, a path, a state and a target position are observed or they are UNKNOWN (T-43 repair rounds 3-5, PBB-369 -> PBB-452)
 
+## [2.0.197] - 2026-10-25 - chore(t-08): merge origin/main into the T-08 repair-5 candidate and renumber past the live maximum (T-08 merge, PBB-440)
+
+Bookkeeping-only commit. `origin/main` was merged into the reviewed T-08 repair-5 commit `2f3b07e3c` by merge, not rebase, so that reviewed commit stays an ancestor of this candidate. The substantive reviewed content is byte-identical to what PBB-415 passed: `tools/tests/test_pb_contracts.py`, `evidence/W05/T-08-f5-proof.md` and `evidence/W05/f5_proof.py` are untouched by this commit. Only this entry and `skill-version.txt` move.
+
+- **Version re-cut at merge time (PBB-866).** The heading above was `2.0.128` as pushed; `origin/main` moved to `v2.0.196` in the interim, so this lane re-cut it to `2.0.197`, the next patch above main's marker, measured not remembered. Content of this entry is otherwise unchanged.
+- **What the merge forced.** Two conflicts, both release ceremony: `38-conversational-ai-system/CHANGELOG.md` and `38-conversational-ai-system/skill-version.txt`. Both resolved as a union - this entry added, the reviewed `[2.0.120]` entry kept verbatim, and `origin/main`'s own entries (`[2.0.105]` down to `[2.0.90]`) kept verbatim above the shared `[2.0.35]` tail. No other file conflicted. No product or test file changed.
+- **Version.** `skill-version.txt` was read for all **2003** refs under `refs/remotes/origin`, enumerated with a bare `git for-each-ref refs/remotes/origin` prefix and no `/*` glob - the glob sees only 113 - and compared numerically as `major*1000000+minor*1000+patch`: 2003 parsed, 0 missing, 0 unparseable, and `origin/main` itself parsed as `(2, 0, 105)` in the same harness as the known-present control. True numeric maximum **v2.0.123**, on `pb/PBB-420/t-28-repair5`. This commit takes **v2.0.128**, the maximum plus 5 headroom, deliberately not max+1. The number is **PROVISIONAL**: one merge-time writer renumbers all landing candidates in sequence.
+- **Absence readings on `origin/main`, both token forms, each printing its own exit code:**
+
+```
+$ git grep --fixed-strings -l -e '[2.0.128]' origin/main; echo rc=$?
+rc=1
+$ git grep --fixed-strings -l -e 'v2.0.128' origin/main; echo rc=$?
+rc=1
+
+--- controls, same instrument, must hit ---
+$ git grep --fixed-strings -l -e '[2.0.35]' origin/main; echo rc=$?
+origin/main:38-conversational-ai-system/CHANGELOG.md
+rc=0
+$ git grep --fixed-strings -l -e 'v2.0.105' origin/main; echo rc=$?
+origin/main:38-conversational-ai-system/CHANGELOG.md
+origin/main:38-conversational-ai-system/skill-version.txt
+rc=0
+```
+
+Brackets mandatory: a bare `2.0.3` false-matches inside `v22.0.34` in the presentations skill.
+
+- **What this candidate actually adds - the prior claim tested, not assumed.** The claim was that T-08 base work had already landed on `origin/main`. It is half true, and the split is the finding. `origin/main` already refuses a gate that omits the key as `INVALID_GATE` naming the field (`$gate: missing required property 'trusted_contact_mapping_evidence_id'`), already refuses a present-but-empty mapping as `SUPPRESSED` / `NO_TRUSTED_CONTACT_MAPPING` with `errors == []`, and already pins the blank, invisible-mark and non-string cases. The behaviour the F5 decision records is enforced and named on main today. What `origin/main` does **not** carry is the pin that keeps it there: `test_a_missing_mapping_key_is_malformed_not_a_named_refusal` is absent from main's `test_pb_contracts.py` (that file's diff from `origin/main` to `2f3b07e3c` is +19 lines and no deletions), and `evidence/W05/T-08-f5-proof.md` / `evidence/W05/f5_proof.py` do not exist on `origin/main` at all. This commit lands the pin and the evidence. It is not a behaviour change, and it is not a number moved for its own sake.
 ## [2.0.195] - 2026-10-26 - feat(consent): sequence scope, gated re-entry, served original on partial capture, and a suppression fence the send cannot outrun (T-18, PBB-360)
 
 Task T-18 acceptance, verbatim: "Field vs channel/global/sequence/handoff precedence; serve original/help to partial capture, no rejected ask restart." Four of those five were already carried by `tools/consent_gate.py` (landed at 2.0.26); the work here is the part that was missing and the part that could be outrun.
