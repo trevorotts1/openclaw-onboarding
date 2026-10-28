@@ -1,3 +1,7 @@
+## [2.0.211] - 2026-10-28 - chore(batch-fanout-0250-lane7): Skill 38 to v2.0.211
+
+- **Batch fanout lane 7 version stamp, Skill 38 v2.0.210 -> v2.0.211.** Landed lane-7 units touching skill 38: t01-h1-citations-carry (`4c567690`), T-22-REPAIR4-CLEAN (`585fc0d8`), T-04 (`c54a3cfb`), carry-f03-f12-traces (`e77b334e`). Version stamp only.
+
 ## [2.0.210] - 2026-10-28 - chore(batch-fanout-0250-lane6c): version stamp for lane 6
 
 - **Batch fanout 0250 lane 6 version stamp, Skill 38 v2.0.209 -> v2.0.210.** Lane 6 landed t25-carry (`2a96c296`), carry-t36-wire-rebuild (`da9d5d90`) and PBB-177 (`bce6c14c`), all touching skill 38 files. PBB-2314 was dropped: `tools/tests/test_interactive_owner.py` conflicts with the version already on main. No skill code changed in this commit; version stamp only.
