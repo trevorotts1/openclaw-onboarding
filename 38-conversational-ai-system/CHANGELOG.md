@@ -1,6 +1,10 @@
-## [2.0.210] - 2026-10-28 - chore(batch-fanout-0250-lane8): Skill 38 to v2.0.210
+## [2.0.211] - 2026-10-28 - chore(batch-fanout-0250-lane8): Skill 38 to v2.0.211
 
-- **Batch fanout lane 8 version stamp, Skill 38 v2.0.209 -> v2.0.210.** PBB-698 (`pb/PBB-2349/carry-PBB-698-t25-wire` @ `dec36926`), carry-t12-qc-fix (`pb/PBB-2352/carry-t12-qc-fix` @ `9c1df17c`) and carry-t25-enforce-proof (`pb/PBB-2353/carry-t25-enforce-proof` @ `cdc260da`) touch skill 38 files in this batched branch (`tools/interactive_owner.py`, `tools/reconciliation.py`, `tools/tests/test_durable_processing.py`). v2.0.209 taken by batch fanout lane 4. Version stamp only.
+- **Batch fanout lane 8 version stamp, Skill 38 v2.0.210 -> v2.0.211.** carry-t12-qc-fix (`pb/PBB-2352/carry-t12-qc-fix` @ `9c1df17c`) and carry-t25-enforce-proof (`pb/PBB-2353/carry-t25-enforce-proof` @ `cdc260da`) touch skill 38 files in this batched branch (`tools/reconciliation.py`, `tools/tests/test_durable_processing.py`). v2.0.209 taken by batch fanout lane 4 and v2.0.210 by lane 6; PBB-698 dropped from this lane. Version stamp only.
+
+## [2.0.210] - 2026-10-28 - chore(batch-fanout-0250-lane6c): version stamp for lane 6
+
+- **Batch fanout 0250 lane 6 version stamp, Skill 38 v2.0.209 -> v2.0.210.** Lane 6 landed t25-carry (`2a96c296`), carry-t36-wire-rebuild (`da9d5d90`) and PBB-177 (`bce6c14c`), all touching skill 38 files. PBB-2314 was dropped: `tools/tests/test_interactive_owner.py` conflicts with the version already on main. No skill code changed in this commit; version stamp only.
 
 ## [2.0.209] - 2026-10-28 - chore(batch-fanout-0250-lane4): version stamp for 8 units
 
@@ -743,6 +747,21 @@ One defect from the PBB-163 / qc2-t-23 verdict on the joined monthly approval ma
 - **Defect — the documented return contract did not cover `campaign_window`.** `terms_errors` and `_window_errors` read the window as `doc.get("campaign_window") or {}` and called `.get` on it, so a string, integer, list, boolean or float window raised `AttributeError` from `approve`, `amend`, `reapprove`, `next_cycle` and `terms_errors`; `terms_errors` on a non-object document raised too. A right-typed but unreadable window day passed the schema and raised `UsageError` out of the contract's semantic check from every call and from `validate`. `next_cycle` skipped the no-overlap check when the previous window's last day was unreadable. One window reader now refuses each of these with the field named; `terms_errors` refuses a non-object document; `validate` returns the contract's `UsageError` as an error; an unreadable previous window refuses the next cycle instead of skipping the overlap check.
 - **Proof — before -> after.** A sweep of 1,914 wrong shapes through every public call: **42 raised -> 0 raised**, valid-fixture control clean both times. Four tests added (`WindowShapeTests`): against the pre-fix module **3 failures and 36 errors**, all in the new class, every pre-existing case passing; after the fix `shared-utils/manifest/tests/test_monthly_manifest.py` **56 tests OK** (52 -> 56, no existing assertion changed). Each refusal is paired with the same call on the real window succeeding. `python3 -m pytest 38-conversational-ai-system/tools/tests/ -q` **247 passed, 90 subtests passed**.
 
+## [2.0.34] - 2026-10-24 - evidence(T-04): verified external storage binding, child temp propagation and measured global capacity (PBB-177)
+
+Evidence only. No runtime, installer, schema or provider behaviour changes; the artifact is a receipt, not enforcement.
+
+- `evidence/storage-and-resource-receipt.json` (new, repo root): 11 clauses and 8 explicit unknowns, each clause carrying the exact command, exit code and raw output that produced it.
+- Mount identity: `<PATH>` is a live external APFS USB mount on `/dev/disk7s1`, `st_dev 16777244`, and its IOMedia UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA` equals the pinned value.
+- Recorded device pin is stale: `config/storage.json` still says `/dev/disk5s1` / `16777240`, and `tools/control.py` never reads either key (0 matches, control `minimum_free_bytes` = 1). Identity is anchored by UUID, so this is a stale record, not a wrong volume.
+- Destinations: all configured worktree, scratch, temp, cache and output parents resolve with no symlink component on the mount device.
+- Child propagation: `TMPDIR`/`TMP`/`TEMP` reach a distinct child shell (PID 86707), a Python child and its grandchild, and Node; the real temp file's parent and device match the mount.
+- Tool paths, measured gaps: npm and pip default to the internal disk and are external only with their documented overrides; macOS `mktemp` ignores `TMPDIR` and writes to the internal disk (`dev 16777232`); `PYTHONPYCACHEPREFIX` is ignored by the `-I` interpreter the engineering loop runs.
+- Run-root audit: 4 `node_modules` links under worktrees and 5 under scratch resolve off-volume to the internal disk; 24 PATH-shim links under the temp root point at system executables.
+- Capacity: filesystem total 4000770232320 bytes / avail 2524230701056 bytes at the sample; memory 24 GiB with 5254676480 bytes reclaimable; platform ceilings 10 agents per workflow / 50 workflows / 500 agents read live and mirrored in the package. Provider quota, memory admission and non-probed tool caches stay UNKNOWN.
+- Deliberately not done: no storage guard was added to `tools/control.py` and no config value was changed. Fixing the stale pin or enforcing a reserve floor is separate work against the package's own control code.
+- Risk level: LOW (evidence artifact and bookkeeping only).
+
 ## [2.0.34] - 2026-10-24 - fix(manifest): revision ordering reads the whole number run; a malformed manifest is refused, never raised (T-23 repair)
 
 Three defects in the joined monthly approval manifest (`shared-utils/manifest/monthly_manifest.py`, added by the T-23 task), each reproduced on the committed T-23 bytes (`129bbf6b8`) before any edit and repaired under the task's own acceptance. Nothing inside `38-conversational-ai-system/` changes: no schema, no guard, no dispatch behaviour. The skill version rolls because this is the release bookkeeping every task commit carries; the module's own version is `shared-utils/manifest/VERSION`, now 1.0.1.
@@ -1121,6 +1140,21 @@ Safety on both paths: the pre-change mapping body is backed up next to the confi
 **T-10 contract note:** this writer emits no model key. The mapping body carries `agentId` only, and that id is now always a configured agent, so nothing here needs to agree with 24-self-test-hook.sh, qc-backend-ready.sh or install.sh about a model.
 
 Tests: `scripts/lib-docker-tenant.test.sh`, `tests/repair-inbound-hooks.test.sh` (selftest extended with the body-migration and stale-agentId-rebind cases).
+
+## [2.0.32] - 2026-10-24 - evidence(T-04): verified external storage binding, child temp propagation and measured global capacity (PBB-177)
+
+Evidence only. No runtime, installer, schema or provider behaviour changes; the artifact is a receipt, not enforcement.
+
+- `evidence/storage-and-resource-receipt.json` (new, repo root): 11 clauses and 8 explicit unknowns, each clause carrying the exact command, exit code and raw output that produced it.
+- Mount identity: `<PATH>` is a live external APFS USB mount on `/dev/disk7s1`, `st_dev 16777244`, and its IOMedia UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA` equals the pinned value.
+- Recorded device pin is stale: `config/storage.json` still says `/dev/disk5s1` / `16777240`, and `tools/control.py` never reads either key (0 matches, control `minimum_free_bytes` = 1). Identity is anchored by UUID, so this is a stale record, not a wrong volume.
+- Destinations: all configured worktree, scratch, temp, cache and output parents resolve with no symlink component on the mount device.
+- Child propagation: `TMPDIR`/`TMP`/`TEMP` reach a distinct child shell (PID 86707), a Python child and its grandchild, and Node; the real temp file's parent and device match the mount.
+- Tool paths, measured gaps: npm and pip default to the internal disk and are external only with their documented overrides; macOS `mktemp` ignores `TMPDIR` and writes to the internal disk (`dev 16777232`); `PYTHONPYCACHEPREFIX` is ignored by the `-I` interpreter the engineering loop runs.
+- Run-root audit: 4 `node_modules` links under worktrees and 5 under scratch resolve off-volume to the internal disk; 24 PATH-shim links under the temp root point at system executables.
+- Capacity: filesystem total 4000770232320 bytes / avail 2524230701056 bytes at the sample; memory 24 GiB with 5254676480 bytes reclaimable; platform ceilings 10 agents per workflow / 50 workflows / 500 agents read live and mirrored in the package. Provider quota, memory admission and non-probed tool caches stay UNKNOWN.
+- Deliberately not done: no storage guard was added to `tools/control.py` and no config value was changed. Fixing the stale pin or enforcing a reserve floor is separate work against the package's own control code.
+- Risk level: LOW (evidence artifact and bookkeeping only).
 
 ## [2.0.19] - 2026-10-13 - refactor(models): client-choice model selection, no prescribed models
 
