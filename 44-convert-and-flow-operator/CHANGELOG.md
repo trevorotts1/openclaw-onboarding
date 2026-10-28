@@ -1,3 +1,7 @@
+## [v2.1.38] - 2026-10-28 - documentation release: ships the v2.1.36 and v2.1.37 entries that were missing from this file
+
+No engine, CLI, template, guard or QC script behaviour changes in this release. The only content is the two changelog entries below, plus the version markers that record this release. Both entries were written and measured earlier; they had no version of their own to land under, which is why this release exists rather than a quiet edit.
+
 ## [v2.1.37] - 2026-10-27 - batch 20261027-2242: the automation-template schema lane rebuilt on main, plus a real template-count pin
 
 The schema lane landed once before on a base that could not merge, so it was rebuilt on current main and paired with the count pin the guard was missing. Two commits, not one: the rebuild is `33825d414be3faec7eb2fbf261aaa07712afedb5` and the count pin is `049dd8a3962c8a8977027c4d2642fdbf565f85db`. Both landed on main in `135cf961114db06097fa3ad8222dd44be1ddf9e0`.
