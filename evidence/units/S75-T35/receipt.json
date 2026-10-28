@@ -1,1 +1,11 @@
-{"acceptance_row":"S75-A35","honesty_note":"interim: proof pending in this lane","unit":"S75-T35","unproven_clauses":["Wrong-head/stdout-only/self-approved receipts stay QC_UNCONFIRMED; duplicate verdict handling is idempotent; real native bindings prove buildersdeepseek-chain and QC/repairopus-chain."],"verdict":"FAIL"}
+{
+  "record_kind": "supersession-notice",
+  "verdict": null,
+  "is_unit_verdict": false,
+  "unit": "S75-T35",
+  "acceptance_row": "S75-A35",
+  "statement": "This path is retained deliberately. It previously held an interim FAIL record that could be read as this unit's verdict. It now holds a supersession notice, so that the merge into main replaces the earlier bytes with a record that cannot be mistaken for an acceptance decision.",
+  "the_unit_verdict_is_here": "evidence/units/S75-T35/attempt-3.json",
+  "the_interim_record_is_preserved_here": "evidence/units/S75-T35/receipt.interim-fail-superseded.json",
+  "verdict_authority": "the batch merger room"
+}

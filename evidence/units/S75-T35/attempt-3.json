@@ -1,0 +1,81 @@
+{
+  "dependencies": {
+    "base_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "base_ref": "origin/main",
+    "unit_head_sha": "de4a9a1d5d36989eedd8e4e7fd4ceb428f367c40",
+    "unit_merge_sha": "8479f5840b28e69ded56691b68dc25237367b36b",
+    "unit_receipt": "<CONTROL>/qc/S75-T35.1fdf4e79390f784173389066409ee955526960ba.json",
+    "unit_receipt_location_note": "out-of-repo control-disk reference: this QC receipt is not tracked in this repository, and no loop-control/ path exists in the repository tree.",
+    "unit_merge_evidence": {
+      "pull_request": 2626,
+      "product_paths": [
+        "CONTROL/qc_receipt_adapter.py",
+        "evidence/qc-receipt-contract.json",
+        "shared-utils/workflow_slots.py",
+        "tests/unit/s75-t35-qc-receipt-adapter.test.py",
+        "tests/unit/test_workflow_slots.py"
+      ],
+      "blob_identity_proof": {
+        "method": "git rev-parse <sha>:<path> — shallow-proof, no ancestry needed",
+        "CONTROL/qc_receipt_adapter.py": {
+          "de4a9a1d5": "a842b40463b93d636f442439ccdc4a7cc3798986",
+          "8479f5840": "a842b40463b93d636f442439ccdc4a7cc3798986"
+        },
+        "tests/unit/s75-t35-qc-receipt-adapter.test.py": {
+          "de4a9a1d5": "76fa2c5ae832e9d70e0e7a83611ac07657b74b83",
+          "8479f5840": "76fa2c5ae832e9d70e0e7a83611ac07657b74b83"
+        },
+        "reading": "blobs are byte-identical, so 8479f5840 carries the product content"
+      },
+      "ancestry_limitation": "whether 8479f5840 is an ancestor of main cannot be tested from this shallow clone; the statement that the code reached main via 8479f5840 is the room’s measurement on a full clone and is not claimed as ours."
+    }
+  },
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-T35",
+    "checker_model": "route=opus-chain; served=not observed by the lane",
+    "receipt": "<CONTROL>/qc/S75-T35.1fdf4e79390f784173389066409ee955526960ba.json",
+    "receipt_location_note": "out-of-repo control-disk reference; this receipt is not tracked in the repository."
+  },
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "workflow_ref": "origin/main",
+    "workflow_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "applies_to_unit_paths": true,
+    "steps": [
+      {
+        "name": "Operator personal chat id must not reach agent-facing files (scrub-operator-chat-id)",
+        "pathscope": "indirect",
+        "applies_to_unit_paths": true,
+        "reason": "step body runs `python3 scripts/scrub-operator-chat-id.py --check`; that script enumerates every tracked file with `git ls-files -z` (scripts/scrub-operator-chat-id.py line 166) and walks the working tree with os.walk (line 170), so it reads evidence/units/S75-T35/*.json even though no pathspec names that directory"
+      }
+    ],
+    "non_reading_steps": "Of 168 steps, 'Checkout repo' and 'Set up Python' are infrastructure and the remaining 165 are path-scoped to explicit targets (shared-utils/, 22-book-to-persona-coaching-leadership-system/, 23-ai-workforce-blueprint/, 38-conversational-ai-system/, tests/unit/<named file>, scripts/ci/<named script>) that cannot reach evidence/units/S75-T35/.",
+    "scope_note": "Step bodies were parsed from the workflow at origin/main in a detached worktree; pathscope was classified from each step's own path arguments plus an enumeration check of the invoked scripts that plausibly span the tree. Scripts called by path-scoped steps were not exhaustively audited."
+  },
+  "candidate": {
+    "branch": "s75x/receipt-S75-T35",
+    "head": "63eff1daa46045bbe55a124e781581bfa414568f",
+    "changed_files": [
+      "evidence/units/S75-T35/attempt-2.json",
+      "evidence/units/S75-T35/receipt.json"
+    ],
+    "superseded_by_note": "This artefact certifies the tree at 63eff1daa46045bbe55a124e781581bfa414568f (the filed tip). A commit cannot name itself, so candidate.head and head_sha name that certified tree; the commit carrying this correction sits after it on the same branch and changes no evidence content other than this note and the record fields listed here.",
+    "self_reference_note": "A commit cannot name the commit that carries it; this artefact certifies the tree 63eff1da and the commit carrying this correction sits after it on the same branch."
+  },
+  "base": {
+    "sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "ref": "origin/main",
+    "merge_tree_status": "merge-tree is not measurable from this shallow clone; that is a limitation of the clone, not a fact about main."
+  },
+  "head_sha": "63eff1daa46045bbe55a124e781581bfa414568f",
+  "unit": "S75-T35",
+  "generation": "attempt-3",
+  "retractions": [
+    "R1 merge_sha a433b55d — false: a433b55d is not an ancestor of origin/main; it is an evidence-only commit. Written by the orchestrator without verification.",
+    "R2 ‘the product landed in 4aac8bb6’ — false: 4aac8bb6 is a batch fanout commit, not the product landing. Written by the orchestrator without verification.",
+    "R3 dependencies.unit_merge_sha ‘unit is not merged; no merge commit exists yet’ — false: the unit is merged at 8479f5840 (PR #2626). Written by the orchestrator without verification.",
+    "R4 ‘the landing commit is b37010c6a’ — withdrawn: b37010c6a is one of the two shallow boundary commits in this clone’s .git/shallow, so --diff-filter=A reports every file in its tree as added there. That measurement was an artifact of shallowness. Written by the orchestrator, then retracted."
+  ],
+  "interim_receipt_handling": "evidence/units/S75-T35/receipt.json was renamed to receipt.interim-fail-superseded.json in this same commit, contents unchanged, so the interim FAIL record survives but cannot be read as the unit’s verdict.",
+  "generation_provenance": "supersedes attempt-2; attempt-1, attempt-2 and attempt-r3 are left untouched."
+}
