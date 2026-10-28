@@ -12,6 +12,19 @@
 - In plain English: running the loop's own self-test against an isolated store now actually stays isolated, and bad input gets a refusal with a reason instead of a Python traceback.
 - Adds `CONTROL/tests/test_eng_loop_guards.py` (8 tests; 4 failures and 1 error on the reviewed bytes, 8 OK after). Skill 38 version `v2.0.97`.
 - Risk level: MEDIUM — runtime behaviour changes only for the malformed and boundary inputs named, and every inverse control is pinned in the new tests.
+## [Unreleased]  -  2026-10-25  -  PBB-357 / T-04 repair round 2: record and proof repaired, verified external storage binding, child temp propagation and measured global capacity
+
+- Bumps Skill 38 to v2.0.151 with its own changelog entry, and re-lands `evidence/storage-and-resource-receipt.json` byte-identical (blob `e8cfbbad1f54d20233c60996bc155504d817885b`).
+- Repairs PBB-339 D1: the gate's rule 4 scanned the whole root CHANGELOG for the first "bumps Skill 38 to" line, so it refused a wholly true record. Repaired to read only the newest entry. A true fixture exits 1 on the old gate (`VIOLATION ... first 'bumps Skill 38 to' line is v2.0.8 but ... is v2.0.9`) and 0 on the repaired gate; reverting the fix makes `--self-test` exit 1 with `SELF-TEST FAIL — 1 fixture(s) behaved wrongly`.
+- Repairs PBB-339 D2: the previous message claimed "no control code ... changed" while the same commit added this gate and extended `skill-version-newline-guard.sh`. This record states what the diff does instead.
+- Adds the class-wide gate `scripts/qc-assert-commit-version-claim.py`, run from `skill-version-newline-guard` on every `skill-version.txt` change. Embedded self-test: 12 fixtures, wrong records fail, right records pass.
+- Measured facts in the receipt, each with the command and exit code that produced it: mount `/dev/disk7s1`, `st_dev 16777244`, UUID `9584F366-F6FB-4A40-AA75-DB2EA0FA01EA`; filesystem 4000770232320 bytes total; 24 GiB RAM; limits 10 agents per workflow / 50 workflows / 500 agents.
+- Recorded gaps, not papered over: the `config/storage.json` device pin is stale (`disk5s1` / `16777240`) and is never read by `tools/control.py`; macOS `mktemp` ignores `TMPDIR`; `PYTHONPYCACHEPREFIX` is ignored under `-I`; 9 `node_modules` symlinks under the run roots resolve off-volume. Provider quota, memory admission and unprobed tool caches remain UNKNOWN.
+- In plain English: the proof of where the work lives and where temporary files actually go is back, and the check that reads a commit's record of itself no longer accuses a true record — while still refusing a false one.
+- A read-only CI gate is added and the existing newline guard now runs it. No Purple-Billboard control-plane code, config, ledger, provider, limit or credential changed. The abandoned repair commit `702d6e4cdb` is not an ancestor of this branch.
+- Risk level: LOW (evidence artifact, bookkeeping and one read-only CI gate).
+
+
 ## [v27.1.67]  -  2026-10-24  -  Cleanup (PBB-131 T-46): typed disposal decisions for scratch, merged, dirty and shared-consumer resources, with immediate eligible removal, preserved content and proven absence
 
 - In plain English: a new `shared-utils/cleanup/` module decides what may be deleted and then deletes it straight away, but only when it can prove the resource is owned, outside-only, on the expected drive, free of live consumers and already preserved. Anything it cannot determine comes back as UNKNOWN with a reason, never as success, and nothing is ever force-deleted.
