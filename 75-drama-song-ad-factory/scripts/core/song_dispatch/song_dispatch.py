@@ -67,6 +67,102 @@ import music_qc.rap_check as _RC     # noqa: E402
 import timing_guard as _TG     # noqa: E402  WW-24: measured-only evidence provenance
 #: S75-T41: the FINAL outgoing artist/alias guard, run at the dispatch seam.
 from music_styles import suno_prompt_guard as _PG   # noqa: E402
+try:                                                # noqa: E402
+    from music_styles import catalog as _SHIPPED_CATALOG  # noqa: E402
+except ImportError:                             # script/top-level import
+    import catalog as _SHIPPED_CATALOG          # noqa: E402
+
+
+def _shipped_alias_catalog():
+    """The shipped 18-style catalog in guard-catalog shape, or {} when unreadable.
+
+    S75-A41 fail-closed (S75-T41-alias): ``run_takes`` must never guard with an
+    empty alias set -- with no aliases the matcher can never hit and a raw
+    artist name sails through with a PASS.  The shipped catalog (display refs
+    per style plus the guard's recorded-alias table) is ALWAYS in force, so a
+    caller that omits ``alias_catalog`` is still swept.  A caller-supplied
+    catalog can only ADD references, never remove these.
+    """
+    try:
+        styles = {}
+        for sid in _SHIPPED_CATALOG.style_ids():
+            refs = list(_SHIPPED_CATALOG.client_references(sid) or ())
+            extra = []
+            for ref in refs:
+                extra.extend(_PG.ALIASES.get(ref) or ())
+            styles[sid] = {"style_id": sid,
+                           "client_references": {"artists": refs,
+                                                 "aliases": extra,
+                                                 "reference_songs": []}}
+    except Exception:
+        return {}
+    return {"styles": styles}
+
+
+def _with_shipped_aliases(supplied):
+    """Guard catalog that always contains the shipped 18-style references.
+
+    ``supplied`` (the ``alias_catalog`` argument or request["_alias_catalog"])
+    may be a full catalog (``{"styles": ...}``) or one flat display-references
+    mapping (``{"artists": [...], ...}``) -- the shape a single run declares at
+    the dispatch seam.  Either way its references are UNIONED with the shipped
+    set; when it is empty or missing the shipped set stands alone, never an
+    empty matcher.  Returns {} only when the shipped catalog itself is
+    unreadable, which the caller refuses loudly.
+    """
+    shipped = _shipped_alias_catalog()
+    if not supplied:
+        return shipped
+    merged = dict((shipped.get("styles") or {}))
+    records = []
+    if isinstance(supplied, dict) and any(
+            key in supplied for key in ("artists", "aliases", "reference_songs")):
+        records = [{"style_id": "<run>", "client_references": supplied}]
+    else:
+        try:
+            records = list(_PG._records(supplied))
+        except Exception:
+            records = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        refs = rec.get("client_references")
+        if not isinstance(refs, dict):
+            continue
+        sid = rec.get("style_id") or rec.get("id") or "<run>"
+        prior = ((merged.get(sid) or {}).get("client_references") or {})
+        def _as_list(value):
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, (list, tuple)):
+                return [v for v in value if isinstance(v, str)]
+            if isinstance(value, dict):
+                out = []
+                for artist, extra in value.items():
+                    if isinstance(artist, str):
+                        out.append(artist)
+                    out.extend(_as_list(extra))
+                return out
+            return []
+        def _union(old, new):
+            seen, out = set(), []
+            for value in list(old or []) + list(new or []):
+                if value not in seen:
+                    seen.add(value)
+                    out.append(value)
+            return out
+        merged[sid] = {"style_id": sid,
+                       "client_references": {
+                           "artists": _union(prior.get("artists"),
+                                             _as_list(refs.get("artists"))),
+                           "aliases": _union(prior.get("aliases"),
+                                             _as_list(refs.get("aliases"))),
+                           "reference_songs": _union(
+                               prior.get("reference_songs"),
+                               _as_list(refs.get("reference_songs")))}}
+    if not merged:
+        return dict(shipped)
+    return {"styles": merged}
 
 TOOL_NAME = "song_dispatch"
 TOOL_VERSION = "1.2.0"
@@ -1499,10 +1595,19 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # traits behind, and one the rewrite cannot clear REFUSES this submission
     # (zero provider calls).  The run's display references are declared as
     # ``alias_catalog`` (or request["_alias_catalog"], moved off the payload
-    # like the other internal metadata).
+    # like the other internal metadata) -- and the SHIPPED 18-style catalog is
+    # ALWAYS in force beneath them (``_with_shipped_aliases``), so omitting the
+    # catalog can never silently skip the sweep: a caller that supplies nothing
+    # is still guarded by every shipped reference and recorded alias.  Only a
+    # shipped catalog that is itself unreadable refuses here, by name.
     view = _outbound_view(request)
-    catalog = (alias_catalog if alias_catalog is not None
-               else request.get("_alias_catalog") or {})
+    catalog = _with_shipped_aliases(
+        alias_catalog if alias_catalog is not None
+        else request.get("_alias_catalog"))
+    if not catalog:
+        raise DispatchError("MISSING_ALIAS_CATALOG: the shipped 18-style "
+                            "catalog is unreadable, so the outbound sweep "
+                            "cannot run; refusing rather than sending unswept")
     try:
         receipt = _PG.guard_or_raise(view, catalog)
     except _PG.PromptGuardError as exc:
