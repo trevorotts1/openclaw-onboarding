@@ -1,3 +1,7 @@
+## [2.0.209] - 2026-10-28 - chore(batch-fanout-0250-lane6b): version stamp for lane 6
+
+- **Batch fanout 0250 lane 6 version stamp, Skill 38 v2.0.208 -> v2.0.209.** Lane 6 landed t25-carry (`2a96c296`), carry-t36-wire-rebuild (`da9d5d90`) and PBB-177 (`bce6c14c`), all touching skill 38 files. PBB-2314 was dropped: `tools/tests/test_interactive_owner.py` conflicts with the version already on main (c158132f). No skill code changed in this commit; version stamp only.
+
 ## [2.0.208] - 2026-10-28 - chore(batch-20261028-0250): version stamp for T-25 and T-04
 
 - **Batch 20261028-0250 version stamp, Skill 38 v2.0.206 -> v2.0.208.** T-25 (`pb/PBB-1029/PBB-809-t-25-enforce-proof` @ `09b4260e`) adds `tools/reconciliation.py` and T-04 (`pb/PBB-1034/PBB-831-t-04-candidate` @ `72e2abde`) updates `tools/tests/test_interactive_owner.py`. v2.0.207 skipped: claimed by unmerged branches. No skill code changed in this commit; version stamp only.
