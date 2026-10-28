@@ -9,16 +9,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CHECK = os.path.join(HERE, "check_t24_landed.py")
 T24_HEAD = "dc3a1503c0819cc1a7fcf05faba34e752ae50bb3"
 
-
 def run(repo, *args):
     return subprocess.run([sys.executable, CHECK, "--repo", repo, *args],
                           capture_output=True, text=True)
 
-
 def git(repo, *args, stdin=None):
     return subprocess.run(["git", "-C", repo, *args], input=stdin,
                           capture_output=True, text=True, errors="replace")
-
 
 def dangling_commit(repo, marker):
     """A real commit object whose content is NOT on any branch."""
@@ -26,14 +23,12 @@ def dangling_commit(repo, marker):
     tree = git(repo, "mktree", stdin="100644 blob %s\tnot-on-main.txt\n" % blob).stdout.strip()
     return git(repo, "commit-tree", tree, "-m", "negative control " + marker).stdout.strip()
 
-
 def reshaped_copy(repo, rev):
     """Same tree and parent as rev, different sha: a squash of the same change."""
     tree = git(repo, "rev-parse", rev + "^{tree}").stdout.strip()
     parent = git(repo, "rev-parse", rev + "^").stdout.strip()
     return git(repo, "commit-tree", tree, "-p", parent,
                "-m", "reshaped copy of " + rev[:8]).stdout.strip()
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -81,7 +76,6 @@ def main():
 
     print("RESULT:", "PASS" if not failures else "FAIL: " + "; ".join(failures))
     return 0 if not failures else 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

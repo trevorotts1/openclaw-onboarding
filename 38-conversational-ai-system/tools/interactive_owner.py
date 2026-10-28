@@ -30,6 +30,12 @@ tap, an unknown control or a contract naming two responders is refused before
 any outbox row, journal line or transport call exists. The durable delivery
 basis is written by its own explicit ``record-basis`` command and is never
 minted by the send.
+
+SECOND call site, not the first. ``pb_contracts.py`` already drives
+``direct_fulfillment`` through its ``fulfill-*`` commands (T-13), and those
+commands answer no interactive step. What is new here is the step-resolving
+call site: the same module reached only after a control press, callback or free
+text has been resolved to exactly one responder.
 """
 from __future__ import annotations
 

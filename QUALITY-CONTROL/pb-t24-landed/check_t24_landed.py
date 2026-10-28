@@ -15,11 +15,9 @@ T24_PATHS = [
     "38-conversational-ai-system/tools/pb_contracts.py",
 ]
 
-
 def git(repo, *args, stdin=None):
     return subprocess.run(["git", "-C", repo, *args], input=stdin,
                           capture_output=True, text=True, errors="replace")
-
 
 def patch_id(repo, rev):
     parents = git(repo, "rev-list", "--parents", "-n", "1", rev).stdout.split()
@@ -30,7 +28,6 @@ def patch_id(repo, rev):
     out = git(repo, "patch-id", "--stable", stdin=d.stdout)
     line = out.stdout.strip().split()
     return line[0] if line else None
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -62,7 +59,6 @@ def main():
     print("NOT LANDED: no commit on %s carries %s's content fingerprint %s"
           % (a.target, a.head[:8], wanted[:12]))
     return 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

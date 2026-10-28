@@ -30,7 +30,7 @@ mkdir -p "$DST"
 ENGINE="$SKILL_DIR/tools/bootstrap_engine.py"
 [ -f "$ENGINE" ] || { echo "[skill 38] ERR: $ENGINE not found"; exit 1; }
 
-SKILL38_SKILL_DIR="$SKILL_DIR" SKILL38_SRC="$SRC" SKILL38_DST="$DST" python3 - <<'PY'
+SKILL38_SKILL_DIR="$SKILL_DIR" SKILL38_SRC="$SRC" SKILL38_DST="$DST" python3 -I - <<'PY'
 import os
 import sys
 from pathlib import Path
