@@ -1,3 +1,7 @@
+## [2.0.207] - 2026-10-28 - chore(batch-fanout-0250-lane8): Skill 38 to v2.0.207
+
+- **Batch fanout lane 8 version stamp, Skill 38 v2.0.206 -> v2.0.207.** PBB-698 (`pb/PBB-2349/carry-PBB-698-t25-wire` @ `dec36926`), carry-t12-qc-fix (`pb/PBB-2352/carry-t12-qc-fix` @ `9c1df17c`) and carry-t25-enforce-proof (`pb/PBB-2353/carry-t25-enforce-proof` @ `cdc260da`) touch skill 38 files in this batched branch (`tools/interactive_owner.py`, `tools/reconciliation.py`, `tools/tests/test_durable_processing.py`). Version stamp only.
+
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
 - **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
