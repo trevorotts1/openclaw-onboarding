@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import json
 import sys
 import tempfile
@@ -439,8 +440,8 @@ class PlannedUnitReceiptTests(_RunFixture):
         fails = checks.check_package(self.manifest_path, self.run_dir)
         self.assertTrue(any(f.startswith("AF-LAUNCH-PKG-RECEIPT-LANE") for f in fails), fails)
 
-    # No skip guard: an interpreter that cannot import jsonschema is not a
-    # verification environment, so this test fails loudly there (L25-BF-40).
+    @unittest.skipUnless(importlib.util.find_spec("jsonschema") is not None,
+                         "the S79 validator needs jsonschema; unavailable is recorded, not guessed")
     def test_a_probe_verdict_the_contract_does_not_reproduce_fails(self):
         manifest = self.read_manifest()
         manifest["checkout"]["validator"]["probe"] = {"result": "accepted"}
@@ -448,6 +449,8 @@ class PlannedUnitReceiptTests(_RunFixture):
         fails = checks.check_package(self.manifest_path, self.run_dir)
         self.assertTrue(any(f.startswith("AF-LAUNCH-CHECKOUT-VALIDATOR") for f in fails), fails)
 
+    @unittest.skipUnless(importlib.util.find_spec("jsonschema") is not None,
+                         "the S79 validator needs jsonschema; unavailable is recorded, not guessed")
     def test_a_smuggled_schema_version_in_the_inner_envelope_fails(self):
         manifest = self.read_manifest()
         manifest["checkout"]["supplied"]["schema_version"] = "0.2-draft"

@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "customer-replied-conversation-ai",
   "name": "Launch Customer Replied → Conversation AI (SMS + Chat)",
   "aliases": [
@@ -17,7 +15,7 @@
   "source": {
     "primary": "launch-automations.spec.md §3.4 (Conversation AI, optional)",
     "supporting": [
-      "GoHighLevel help — Customer Replied trigger (filters by channel, message direction (inbound), phrase, tag, intent)",
+      "GoHighLevel help — Customer Replied trigger (filters by reply channel, phrase, tag or intent)",
       "GoHighLevel help — Conversation AI workflow action (talks, waits for replies, branches booked / answered / timed out)",
       "GoHighLevel help — Update Conversation AI Bot and Status (keyword wake-up)",
       "38-conversational-ai-system/protocols/conversation-workflows-protocol.md — THE TRINITY",
@@ -36,36 +34,24 @@
       "skill_44": "This workflow: trigger, Conversation AI action, branches, keyword wake-up, tags.",
       "skill_38": "The playbook text, the Build-with-AI prompt, the visual, and the registry row in the client's `conversation-workflows/registry.md`."
     },
-    "checkers_each_runs": [
-      "Skill 44 side: `qc-built-workflow.sh <workflow-id> --conversational` runs Skill 38's `qc-trinity-registry.sh` as a HARD gate. WF-19 fails mechanically on a non-zero trinity exit.",
-      "Skill 38 side: `scripts/11-run-qc-checklist.sh` re-runs `qc-trinity-registry.sh` over the registry.",
-      "A registry row whose Layer 1 is 'No (uses existing inbound routing)' is legitimately prompt-free and passes."
-    ],
+    "checkers_each_runs":
+      [
+        "Skill 44 side: `qc-built-workflow.sh <workflow-id> --conversational` runs Skill 38's `qc-trinity-registry.sh` as a HARD gate. WF-19 fails mechanically on a non-zero trinity exit.",
+        "Skill 38 side: `scripts/11-run-qc-checklist.sh` re-runs `qc-trinity-registry.sh` over the registry.",
+        "A registry row whose Layer 1 is 'No (uses existing inbound routing)' is legitimately prompt-free and passes."
+      ],
     "fail_closed": "No playbook registered → no Build-with-AI prompt → WF-19 fails → the workflow is NOT done, even if the GHL build succeeded."
   },
-  "channels": [
-    "SMS",
-    "Chat (web chat / live chat)"
-  ],
+  "channels": ["SMS", "Chat (web chat / live chat)"],
   "trigger": {
     "name": "Customer Replied",
     "what_starts_it": "An inbound message from the contact on a watched channel during the launch window.",
-    "channels": [
-      "SMS",
-      "Chat (web chat / live chat)"
-    ],
-    "filters_supported_by_ghl": [
-      "channel",
-      "message_direction",
-      "phrase",
-      "tag",
-      "intent"
-    ],
+    "channels": ["SMS", "Chat (web chat / live chat)"],
+    "filters_supported_by_ghl": ["reply channel", "phrase", "tag", "intent"],
     "default_config": {
       "channels": "SMS + Chat only. Email replies are out of scope for this template.",
-      "message_direction": "Inbound",
-      "filter": "Apply Channel first, then Message Direction = Inbound. Without the inbound-direction guard, the workflow can re-trigger on the bot's own outbound message, creating a runaway loop. No further filter narrows replies by default; the bot answers every launch reply. Narrow it only when the owner asks (for example, tag `launch-2026` so unrelated threads never enter).",
-      "reentry": "Once per contact per launch unless the owner asks for separate instances; re-entry guarded by tag `ZHC-launch-ai-replied`."
+      "filter": "None beyond channel — the bot answers every launch reply. Narrow it only when the owner asks (for example, tag `launch-2026` so unrelated threads never enter).",
+      "reentry": "Once per contact per launch unless the owner asks for separate instances; re-entry guarded by tag `launch-ai-replied`."
     },
     "engine_note": "CampaignBuilder auto-creates ONLY a Tag Added trigger. Customer Replied must be installed with `caf workflows patch-trigger --workflow-id <id> --trigger-json <file>` (internal API, pre-write snapshot captured automatically), or through the Tier-4 managed browser when no verified trigger payload exists. The exact internal `type` string for Customer Replied is NOT verified in the engine source — read the live definition with `caf workflows get` / a snapshot first and reuse the observed shape. Never invent the enum."
   },
@@ -90,7 +76,7 @@
     {
       "step": 1,
       "beat": "Trigger — Customer Replied (SMS or Chat)",
-      "detail": "Contact replies during the launch. Re-entry guard: tag `ZHC-launch-ai-replied` absent.",
+      "detail": "Contact replies during the launch. Re-entry guard: tag `launch-ai-replied` absent.",
       "parallel": "Underlying send workflow (texts/emails) keeps running — this workflow does not stop promotional sends."
     },
     {
@@ -101,7 +87,7 @@
         "Question about the offer → answer from offer facts, then re-invite the next step",
         "Wants to talk → offer the booking link and hold the thread open",
         "Ready to buy → send the checkout link",
-        "Not interested / stop → honor it, tag `ZHC-launch-ai-optout`, end"
+        "Not interested / stop → honor it, tag `launch-ai-optout`, end"
       ]
     },
     {
@@ -120,7 +106,7 @@
     "booked": {
       "signal": "Conversation AI outcome = Appointment booked (or the booking tag/pipeline stage the owner uses)",
       "actions": [
-        "Add tag `ZHC-launch-ai-booked`",
+        "Add tag `launch-ai-booked`",
         "Remove from the launch AI re-invite path",
         "Create/update opportunity at the booked stage (if the launch pipeline exists)",
         "Send the approved confirmation message with date, time and timezone",
@@ -131,7 +117,7 @@
     "answered": {
       "signal": "Conversation AI outcome = question answered, no booking and no purchase",
       "actions": [
-        "Add tag `ZHC-launch-ai-answered`",
+        "Add tag `launch-ai-answered`",
         "Leave the contact in the promotional launch sequence (do not exit it)",
         "Resume the next scheduled promo touch; the bot stays available for further replies"
       ],
@@ -140,11 +126,11 @@
     "timed_out": {
       "signal": "Conversation AI outcome = timed out (contact went quiet before the exchange finished)",
       "actions": [
-        "Add tag `ZHC-launch-ai-timed-out`",
+        "Add tag `launch-ai-timed-out`",
         "Wait the owner-approved duration (default 1 day; duration Wait, never an event Wait)",
         "Send ONE short approved nudge with the booking link and/or checkout link",
         "Wait 1 day",
-        "If still no reply → tag `ZHC-launch-ai-dormant` and stop; the keyword wake-up remains the only re-entry"
+        "If still no reply → tag `launch-ai-dormant` and stop; the keyword wake-up remains the only re-entry"
       ],
       "rules": "One nudge. Never a drip. Launch promo sends are capped at 3–5 per launch and this nudge counts toward that cap."
     }
@@ -153,7 +139,7 @@
     "action": "Update Conversation AI Bot and Status",
     "default_keyword": "CALL",
     "owner_configurable": true,
-    "behavior": "Keyword arrival re-opens (or keeps open) the bot on that conversation and sets status active, so the playbook answers again — this is the only path back for a `ZHC-launch-ai-dormant` contact.",
+    "behavior": "Keyword arrival re-opens (or keeps open) the bot on that conversation and sets status active, so the playbook answers again — this is the only path back for a `launch-ai-dormant` contact.",
     "cap": "Once per contact per day; ignore repeats beyond that.",
     "stop_words": "STOP/UNSUBSCRIBE and any owner-defined opt-out always win over the keyword wake-up."
   },
@@ -162,42 +148,29 @@
     "dependencies_first": {
       "note": "caf refuses/loses work if these do not exist. Create BEFORE the workflow, and read backs are required.",
       "conversation_ai_agent": "Create with the official Conversation AI API — `POST /conversation-ai/agents` and `POST /conversation-ai/agents/{agentId}/actions` (Version 2021-04-15, scope conversation-ai.write). This is the one launch family with a public write path for the bot itself.",
-      "tags": [
-        "ZHC-launch-ai-replied",
-        "ZHC-launch-ai-booked",
-        "ZHC-launch-ai-answered",
-        "ZHC-launch-ai-timed-out",
-        "ZHC-launch-ai-dormant",
-        "ZHC-launch-ai-optout"
-      ],
-      "custom_values": [
-        "{{booking_link}}",
-        "{{checkout_link}}",
-        "{{offer_name}}",
-        "{{doors_close_at}}",
-        "{{wake_keyword}}"
-      ],
+      "tags": ["launch-ai-replied", "launch-ai-booked", "launch-ai-answered", "launch-ai-timed-out", "launch-ai-dormant", "launch-ai-optout"],
+      "custom_values": ["{{booking_link}}", "{{checkout_link}}", "{{offer_name}}", "{{doors_close_at}}", "{{wake_keyword}}"],
       "calendar": "The booking calendar must already exist (public API can create one: `POST /calendars/`).",
       "a2p": "If A2P 10DLC is not approved, the SMS channel is draft-only. Build it, and the launch package carries the warning: texts cannot send until A2P is approved."
     },
     "workflow": {
-      "trigger": "Customer Replied — channels SMS + Chat, Message Direction = Inbound, re-entry guarded by tag `ZHC-launch-ai-replied`. Install via `caf workflows patch-trigger` after reading the live trigger shape.",
+      "trigger": "Customer Replied — channels SMS + Chat, re-entry guarded by tag `launch-ai-replied`. Install via `caf workflows patch-trigger` after reading the live trigger shape.",
       "build_path": "`caf --experimental workflows create --name '<Launch> Customer Replied AI' --folder '<Launch>' --from-json <campaign.json>`. `create-step` covers only email / sms / wait / tag / webhook / ai — the Conversation AI node and Update Conversation AI Bot and Status node are written as raw step objects in the campaign JSON.",
       "nodes": [
-        "Trigger: Customer Replied (SMS + Chat; Message Direction = Inbound)",
-        "If/Else: tag `ZHC-launch-ai-optout` present? Yes → Stop. No → continue",
+        "Trigger: Customer Replied (SMS + Chat)",
+        "If/Else: tag `launch-ai-optout` present? Yes → Stop. No → continue",
         "Action: Conversation AI (agent = the launch agent; playbook = Skill 38's registered playbook) — waits for the contact's reply",
-        "Branch: outcome booked → tag `ZHC-launch-ai-booked`; confirmation message; opportunity stage update; internal notification → Stop",
-        "Branch: outcome answered → tag `ZHC-launch-ai-answered` → Stop (promo sequence continues outside this workflow)",
-        "Branch: outcome timed out → tag `ZHC-launch-ai-timed-out` → Wait 1 day (duration) → SMS nudge with `{{booking_link}}` / `{{checkout_link}}` → Wait 1 day → tag `ZHC-launch-ai-dormant` → Stop",
+        "Branch: outcome booked → tag `launch-ai-booked`; confirmation message; opportunity stage update; internal notification → Stop",
+        "Branch: outcome answered → tag `launch-ai-answered` → Stop (promo sequence continues outside this workflow)",
+        "Branch: outcome timed out → tag `launch-ai-timed-out` → Wait 1 day (duration) → SMS nudge with `{{booking_link}}` / `{{checkout_link}}` → Wait 1 day → tag `launch-ai-dormant` → Stop",
         "Action: Update Conversation AI Bot and Status (keyword `{{wake_keyword}}`, default CALL) — re-activates the bot and sets status active",
-        "Action: Add Tag `ZHC-launch-ai-replied` (re-entry guard)"
+        "Action: Add Tag `launch-ai-replied` (re-entry guard)"
       ],
       "if_else_branches": [
-        "Opt-out guard first: `ZHC-launch-ai-optout` present → Stop, never answer",
+        "Opt-out guard first: `launch-ai-optout` present → Stop, never answer",
         "Outcome switch on the Conversation AI action: booked / answered / timed out",
         "Wake keyword guard: keyword present and contact not opted out and last wake > 24h → re-activate",
-        "A2P guard on the timed-out nudge: SMS only when A2P is approved; otherwise the nudge is recorded as a draft and the branch tags `ZHC-launch-ai-nudge-blocked`"
+        "A2P guard on the timed-out nudge: SMS only when A2P is approved; otherwise the nudge is recorded as a draft and the branch tags `launch-ai-nudge-blocked`"
       ],
       "skill44_notes": [
         "Set every node's `order` and `parentKey` BEFORE the first save (Skill 44 reliability rule).",
@@ -209,11 +182,7 @@
     },
     "qc": {
       "command": "`caf workflows get <id> --json` then `qc-built-workflow.sh <workflow-id> --conversational [--fab]`",
-      "gates": [
-        "WF-1..21",
-        "WF-19 TRINITY (hard, via Skill 38 qc-trinity-registry.sh)",
-        "FAB-QC ≥ 8.5 when --fab"
-      ],
+      "gates": ["WF-1..21", "WF-19 TRINITY (hard, via Skill 38 qc-trinity-registry.sh)", "FAB-QC ≥ 8.5 when --fab"],
       "must_show": "Every branch present by read-back, the Conversation AI node's agent id correct, the keyword node present, and the Skill 38 registry row complete."
     }
   },
@@ -227,221 +196,5 @@
       "Whether the bot books, sends checkout, or only answers questions"
     ],
     "never": "Never build this workflow when the intake said no. Never ship the workflow without the Skill 38 playbook. Never answer from facts the owner did not approve."
-  },
-  "build_graph": [
-    {
-      "id": "trg",
-      "type": "trigger",
-      "attributes": {
-        "event": "Customer Replied",
-        "channels": [
-          "SMS",
-          "Chat"
-        ],
-        "message_direction": "Inbound",
-        "ref": "Trigger: Customer Replied (SMS + Chat; Message Direction = Inbound)"
-      }
-    },
-    {
-      "id": "n1",
-      "type": "if_else",
-      "after": "trg",
-      "branches": {
-        "true": "n2",
-        "false": "n3"
-      },
-      "attributes": {
-        "condition": "ZHC-launch-ai-optout tag present",
-        "ref": "`ZHC-launch-ai-optout` present → Stop. No → continue"
-      }
-    },
-    {
-      "id": "n2",
-      "type": "workflow_goal",
-      "after": "n1",
-      "attributes": {
-        "goal": "opt-out exits without answering",
-        "ref": "Stop, never answer"
-      }
-    },
-    {
-      "id": "n3",
-      "type": "conversation_ai",
-      "after": "n1",
-      "attributes": {
-        "agent": "launch agent",
-        "playbook": "Skill 38 registered playbook",
-        "ref": "Action: Conversation AI"
-      }
-    },
-    {
-      "id": "n4",
-      "type": "if_else",
-      "after": "n3",
-      "branches": {
-        "booked": "n5",
-        "answered": "n10",
-        "timed_out": "n12"
-      },
-      "attributes": {
-        "condition": "Conversation AI outcome",
-        "outcomes": [
-          "booked",
-          "answered",
-          "timed_out"
-        ],
-        "ref": "Branch: outcome booked / answered / timed out"
-      }
-    },
-    {
-      "id": "n5",
-      "type": "add_contact_tag",
-      "after": "n4",
-      "attributes": {
-        "tag": "ZHC-launch-ai-booked",
-        "ref": "Add tag `ZHC-launch-ai-booked`"
-      }
-    },
-    {
-      "id": "n6",
-      "type": "remove_from_workflow",
-      "after": "n5",
-      "attributes": {
-        "target": "launch AI re-invite path",
-        "ref": "Remove from the launch AI re-invite path"
-      }
-    },
-    {
-      "id": "n7",
-      "type": "create_opportunity",
-      "after": "n6",
-      "attributes": {
-        "stage": "booked",
-        "condition": "if launch pipeline exists",
-        "ref": "Create/update opportunity at the booked stage"
-      }
-    },
-    {
-      "id": "n8",
-      "type": "email",
-      "after": "n7",
-      "attributes": {
-        "message": "approved booking confirmation",
-        "ref": "Send the approved confirmation message"
-      }
-    },
-    {
-      "id": "n9",
-      "type": "internal_notification",
-      "after": "n8",
-      "attributes": {
-        "recipient": "owner",
-        "detail": "contact name and booking time",
-        "ref": "Notify the owner"
-      }
-    },
-    {
-      "id": "n10",
-      "type": "add_contact_tag",
-      "after": "n4",
-      "attributes": {
-        "tag": "ZHC-launch-ai-answered",
-        "ref": "Add tag `ZHC-launch-ai-answered`"
-      }
-    },
-    {
-      "id": "n11",
-      "type": "add_contact_tag",
-      "after": "n4",
-      "attributes": {
-        "tag": "ZHC-launch-ai-timed-out",
-        "ref": "Add tag `ZHC-launch-ai-timed-out`"
-      }
-    },
-    {
-      "id": "n12",
-      "type": "wait",
-      "after": "n11",
-      "attributes": {
-        "duration": "1 day",
-        "kind": "duration",
-        "ref": "Wait 1 day (duration)"
-      }
-    },
-    {
-      "id": "n13",
-      "type": "sms",
-      "after": "n12",
-      "attributes": {
-        "message": "approved booking and/or checkout link nudge",
-        "ref": "SMS nudge with `{{booking_link}}` / `{{checkout_link}}`"
-      }
-    },
-    {
-      "id": "n14",
-      "type": "wait",
-      "after": "n13",
-      "attributes": {
-        "duration": "1 day",
-        "kind": "duration",
-        "ref": "Wait 1 day"
-      }
-    },
-    {
-      "id": "n15",
-      "type": "add_contact_tag",
-      "after": "n14",
-      "attributes": {
-        "tag": "ZHC-launch-ai-dormant",
-        "ref": "tag `ZHC-launch-ai-dormant`"
-      }
-    },
-    {
-      "id": "n16",
-      "type": "conversation_ai",
-      "after": "n15",
-      "attributes": {
-        "action": "update_bot_and_status",
-        "keyword": "CALL",
-        "vocabulary_status": "unverified type string",
-        "ref": "Update Conversation AI Bot and Status"
-      }
-    },
-    {
-      "id": "n17",
-      "type": "add_contact_tag",
-      "after": "n16",
-      "attributes": {
-        "tag": "ZHC-launch-ai-replied",
-        "ref": "Action: Add Tag `ZHC-launch-ai-replied`"
-      }
-    },
-    {
-      "id": "n18",
-      "type": "workflow_goal",
-      "after": "n9",
-      "attributes": {
-        "goal": "booked branch exits",
-        "ref": "Stop"
-      }
-    },
-    {
-      "id": "n19",
-      "type": "workflow_goal",
-      "after": "n10",
-      "attributes": {
-        "goal": "answered branch remains listening",
-        "ref": "Stop (promo sequence continues outside this workflow)"
-      }
-    },
-    {
-      "id": "n20",
-      "type": "workflow_goal",
-      "after": "n17",
-      "attributes": {
-        "goal": "keyword wake-up and re-entry guard complete",
-        "ref": "re-activates the bot and sets status active"
-      }
-    }
-  ]
+  }
 }

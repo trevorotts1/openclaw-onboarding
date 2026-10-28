@@ -27,11 +27,6 @@ From this skill directory:
 bash verify.sh
 ```
 
-This checks package integrity, required references/assets, Python syntax, the
-three version stamps (`VERSION`, `skill-version.txt`, `SKILL.md`), and a small
-deterministic validator sanity fixture.
+This checks package integrity, required references/assets, Python syntax, and a small deterministic validator sanity fixture.
 
-Run it after an install or update, and at any time you want to know this copy is
-intact. It is a health check, not a runtime step: it never builds a page, so a
-normal page run does not begin by running it — begin with the three commands in
-`START-HERE.md` instead.
+This command is for install/update maintenance only. Normal runtime use does not begin by rerunning it.

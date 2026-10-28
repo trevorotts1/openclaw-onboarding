@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "membership-stick-retention",
   "name": "Membership / Continuity Stick + Retention Sequence",
   "aliases": [
@@ -36,10 +34,7 @@
       "Cancellation request (exit -> Cancellation Funnel intercept)"
     ]
   },
-  "channels": [
-    "Email",
-    "SMS"
-  ],
+  "channels": ["Email", "SMS"],
   "sequence": [
     {
       "phase": "A. Rapid onboarding — days 1-7",
@@ -227,19 +222,10 @@
       "`cancel-rescinded` — save successful -> remove cancel-intent, resume normal engagement"
     ],
     "tags_used": [
-      "member-active",
-      "member-annual",
-      "member-cancelled",
-      "trial-converted",
-      "member-lesson-started",
-      "annual-offer-sent",
-      "annual-offer-closed",
-      "cancel-intent",
-      "cancel-reason-price",
-      "cancel-reason-time",
-      "cancel-reason-expectation",
-      "cancel-reason-done",
-      "cancel-reason-tech",
+      "member-active", "member-annual", "member-cancelled", "trial-converted",
+      "member-lesson-started", "annual-offer-sent", "annual-offer-closed",
+      "cancel-intent", "cancel-reason-price", "cancel-reason-time",
+      "cancel-reason-expectation", "cancel-reason-done", "cancel-reason-tech",
       "cancel-rescinded"
     ],
     "notes": "Lesson-started / login signals come from the membership platform webhook (or a GHL trigger link inside the member area). The Cancellation Funnel survey (Phase D) is a 2-page ClickFunnels/GHL funnel — Survey Page -> Article Page — not just an email; the email in D1 routes the member to that page. The GHL 'pause' feature on workflows prevents the monthly engagement sequence from firing while a cancel-save is in progress. Annual upgrade offer must have a real close date honored; do not reopen without a legitimate reason (new content release, price change, etc.)."

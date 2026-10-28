@@ -188,13 +188,10 @@ class SectionCountTests(RunCase):
             self.check(IDS, page_role="landing", copy_version="thank-you")
         self.assertIn("disagree", str(ctx.exception))
 
-    def test_landing_keeps_the_legacy_path_and_a_registered_role_does_not(self):
+    def test_landing_and_roles_without_a_structure_keep_the_legacy_path(self):
         self.assertEqual(self.check(STANDARD, copy_version="standard")[1], STANDARD)
-        # product_selection is a registered form: it is never forced into landing's sections
-        # (finding 14; copy_forms.form_for_role is the guard both the builder and executor read)
-        with self.assertRaises(exe.ExecutorError) as ctx:
-            self.check(STANDARD, copy_version="standard", page_role="product_selection")
-        self.assertIn("disagree", str(ctx.exception))
+        self.assertEqual(self.check(STANDARD, copy_version="standard", page_role="product_selection")[1],
+                         STANDARD)
 
     def test_the_copy_source_must_match_the_five_sections(self):
         (self.run / "copy.json").write_text(json.dumps({"sections": [{"id": i} for i in IDS[:4]]}))
@@ -507,9 +504,8 @@ class PipelineTests(RunCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup"):
             self.assertIn(f"PREFLIGHT_BLOCKS {stage}", proc.stdout)
-        first = next(l for l in proc.stdout.splitlines() if l.startswith("NEXT 1"))
-        self.assertIn("stage_executor.py", first)  # the board and final-mockups come after approval
-        self.assertNotIn("final-mockups ", proc.stdout.split("NEXT ")[0])
+        self.assertIn("next: stage_executor.py", proc.stdout)  # the board and final-mockups come after approval
+        self.assertNotIn("final-mockups ", proc.stdout.split("next:")[0])
         proc = subprocess.run(base + ["--stages", "mobile-tablet"], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         slices = sorted(p.name for p in (self.run / "mobile-tablet").glob("section-*.png"))

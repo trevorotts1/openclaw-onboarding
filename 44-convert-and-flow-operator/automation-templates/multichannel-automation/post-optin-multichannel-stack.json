@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "post-optin-multichannel-stack",
   "name": "Post-Opt-In Multichannel Stack (Email + Messenger + Desktop Push + SMS + Retargeting + Direct Mail)",
   "aliases": [
@@ -45,9 +43,7 @@
       "step": 1,
       "beat": "Immediate — Deliver the Lead Magnet + Layer Channel 1 (Email)",
       "delay": "0 min (immediate on opt-in)",
-      "channels_active": [
-        "Email"
-      ],
+      "channels_active": ["Email"],
       "purpose": "Deliver what was promised instantly. The first email is the trust deposit. Include the download link. Set expectations for what comes next. This also initiates the Soap Opera Sequence (if deployed — see soap-opera-sequence template).",
       "subject_angle": "Here's your [lead magnet name] — plus what's coming next",
       "body_framework": [
@@ -62,10 +58,7 @@
       "step": 2,
       "beat": "Thank-You Page — Layer Channel 2 (Messenger) + Channel 3 (Desktop Push)",
       "delay": "Simultaneous with Step 1 — fires on the thank-you page itself, not after a wait",
-      "channels_active": [
-        "Facebook Messenger opt-in checkbox",
-        "Desktop Push permission request"
-      ],
+      "channels_active": ["Facebook Messenger opt-in checkbox", "Desktop Push permission request"],
       "purpose": "Stack two more channels the moment the opt-in confirmation page loads. The Messenger checkbox (shown below the email field or on the thank-you page) gets clicked by ~34% of opt-ins per Brunson. The browser push notification permission dialog gets allowed by ~20% of thank-you page visitors per Brunson.",
       "implementation_notes": [
         "Messenger checkbox: add the 'Send to Messenger' widget below the email opt-in form or on the thank-you page CTA. When clicked, contact subscribes to both email and Messenger simultaneously.",
@@ -77,9 +70,7 @@
       "step": 3,
       "beat": "+5 min — Messenger Delivery (if subscribed)",
       "delay": "+5 min after opt-in",
-      "channels_active": [
-        "Facebook Messenger"
-      ],
+      "channels_active": ["Facebook Messenger"],
       "purpose": "Deliver the lead magnet link via Messenger as a direct message. Even if the email goes to spam, this buzzes on their phone. Messenger open rates are 3–5x email. This is the first message in the Messenger channel — it must deliver real value instantly or the subscriber will block.",
       "body_framework": [
         "Short personal tone: 'Hey [first name] — [AC name] here. Here's the [lead magnet] you just grabbed:'",
@@ -92,11 +83,7 @@
       "step": 4,
       "beat": "+2 days — Behavioral Branch: Email Open/Click",
       "delay": "+2 days",
-      "channels_active": [
-        "Email (primary)",
-        "SMS (if email not opened)",
-        "Messenger (if email not opened and Messenger subscribed)"
-      ],
+      "channels_active": ["Email (primary)", "SMS (if email not opened)", "Messenger (if email not opened and Messenger subscribed)"],
       "purpose": "Follow-up content email / soft offer. Apply the first behavioral branch: IF email was opened and clicked → continue email sequence normally. IF email was NOT opened within 48h → switch channel to SMS or Messenger nudge. This is the 'If they give you their email address but don't buy, contact them with an email or text or messenger sequence' principle from Marketing Secrets Blackbook Secret #49.",
       "subject_angle": "[Content topic] — what most people miss about [lead magnet topic]",
       "body_framework": [
@@ -114,10 +101,7 @@
       "step": 5,
       "beat": "+4 days — Desktop Push (if allowed) + Email",
       "delay": "+4 days",
-      "channels_active": [
-        "Desktop Push Notification (if subscribed)",
-        "Email"
-      ],
+      "channels_active": ["Desktop Push Notification (if subscribed)", "Email"],
       "purpose": "Push a notification to their desktop browser AND send an email. Desktop push appears even when their browser is closed (on most systems), creating an interrupt when they open their browser. Brunson's use case: push fires on the thank-you page follow-up sequence to re-engage contacts who haven't clicked.",
       "push_notification_framework": [
         "Title: '[AC name]:' — establishes identity",
@@ -133,10 +117,7 @@
       "step": 6,
       "beat": "+7 days — Retargeting Ad Fire + Email Offer",
       "delay": "+7 days (or on specific page-visit trigger)",
-      "channels_active": [
-        "Email (offer)",
-        "Retargeting Ads (Facebook/Instagram — running in background)"
-      ],
+      "channels_active": ["Email (offer)", "Retargeting Ads (Facebook/Instagram — running in background)"],
       "purpose": "By Day 7, email has done several touches. Now layer in retargeting ads to chase the prospect across the web. The retargeting pixel was fired when they visited the funnel page at opt-in. If they have not yet purchased, they remain in the retargeting audience and see ads. The email is a direct offer. The ads reinforce the same message in social feeds.",
       "retargeting_logic": [
         "Pixel fires on: landing page visit (add to retargeting audience A), thank-you page visit (move to audience B), offer/sales page visit (move to audience C), checkout step (move to audience D), purchase confirmation page (REMOVE from all retargeting audiences and stop ads — never retarget a buyer with the same product)",
@@ -155,11 +136,7 @@
       "step": 7,
       "beat": "+14–30 days — Purchase Behavioral Fork",
       "delay": "+14–30 days (varies by funnel)",
-      "channels_active": [
-        "Email",
-        "SMS (for high-value prospects)",
-        "Direct Mail (optional for premium leads)"
-      ],
+      "channels_active": ["Email", "SMS (for high-value prospects)", "Direct Mail (optional for premium leads)"],
       "purpose": "By Day 14–30, apply the main purchase behavioral fork: IF purchased → route to buyer onboarding; IF not purchased → continue value-ladder ascension sequence with the 30–60 day follow-up pattern Brunson describes in the BRUNSON-FUNNEL-LIBRARY Follow-Up Funnel entry.",
       "the_3_closes_framework": {
         "description": "Over the 30–60 day follow-up window, the email sequence moves through three closing 'temperatures' derived from Brunson's copy principles (people buy with emotion, justify with logic, and need urgency/fear to act now):",
@@ -173,11 +150,7 @@
       "step": 8,
       "beat": "Purchase Event — Channel Cleanup + Buyer Onboarding",
       "delay": "Fires immediately on purchase event",
-      "channels_active": [
-        "Email (buyer onboarding)",
-        "SMS (purchase confirmation)",
-        "Retargeting (remove from all non-buyer audiences)"
-      ],
+      "channels_active": ["Email (buyer onboarding)", "SMS (purchase confirmation)", "Retargeting (remove from all non-buyer audiences)"],
       "purpose": "The moment a purchase fires, the automation must stop all non-buyer follow-up across every active channel. Remove from retargeting audiences. Stop SMS and Messenger sales sequences. Switch to buyer onboarding. This protects the buyer relationship and avoids the embarrassing experience of being sold something you just bought.",
       "actions": [
         "Add tag 'purchased-[offer-id]'",

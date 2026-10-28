@@ -512,13 +512,12 @@ test('settings: scoped, validated, nonsecret by contract (Section 17.2)', () => 
   assert.equal(updated.max_session_provider_requests, 25);
   assert.equal(service.getSettings(scopeA).max_session_provider_requests, 25);
   assert.equal(service.getSettings(scopeB).max_session_provider_requests, 50);
-  // The schema ceiling binds: 101 is not a legal setting (100 is the
-  // heavy-mode cap, W77S-MODES).
+  // The schema ceiling binds: 51 is not a legal setting.
   assert.throws(
     () =>
       service.updateSettings(scopeA, {
         ...service.getSettings(scopeA),
-        max_session_provider_requests: 101,
+        max_session_provider_requests: 51,
       }),
     (error: unknown) =>
       error instanceof ProtocolError && error.code === 'SETTINGS_INVALID',

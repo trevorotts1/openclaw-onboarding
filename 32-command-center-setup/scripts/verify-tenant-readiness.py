@@ -176,35 +176,11 @@ def startability(before,env,args):
     ok,detail=_mint_only_proof(sender,args.state,chat)
     checks['invitation_mint']={'ok':ok,'detail':detail}
     if not ok:failed.append('invitation_mint')
-    # T-40 shared readiness projection: installed/running/live are three
-    # distinct states, and the stored proof is checked for invalidation —
-    # a rebind, disconnect or upgrade must make a stale proof read invalid.
-    sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'shared-utils'))
-    import shared_readiness
-    prior_proof=None
-    prior_path=Path(args.state).parent/'company-discovery'/STARTABILITY_PROOF_NAME
-    if prior_path.exists():
-        try:candidate=json.loads(prior_path.read_text())
-        except ValueError:candidate=None
-        if isinstance(candidate,dict) and isinstance(candidate.get('readinessProjection'),dict):
-            prior_proof=candidate['readinessProjection']
-    projection=shared_readiness.project(
-        surface='command-center.startability',
-        binding=str(expected_identity.get('host') or ''),
-        version=str(before.get('buildId') or ''),
-        installed=checks['canonical_process']['ok'],
-        running=checks['local_health']['ok'],
-        live=checks['public_readiness']['ok'],
-        prior=prior_proof)
-    stale=[]
-    if prior_proof is not None and not shared_readiness.proof_valid(prior_proof,projection):
-        stale=['previous proof invalidated: '+','.join(projection['events'] or ['identity'])]
     proof={'protocol':'interview-startability.v1','stage':'startability','ready':not failed,'missing':failed,
            'checks':checks,'host':receipt.get('host'),'companyId':before.get('companyId'),
            'tenantId':before.get('tenantId'),'installationId':before.get('installationId'),
            'buildId':before.get('buildId'),'checkedAt':datetime.now(timezone.utc).isoformat(),
            'ownerHash':hashlib.sha256(chat.encode()).hexdigest() if isinstance(chat,str) and chat else None,
-           'readinessProjection':projection,'invalidatedPriorProofs':stale,
            'ticket':'discarded','delivery':'not-attempted'}
     # Scoped, sanitized proof only: no secrets, no ticket, no recipient value.
     proof_path=Path(args.state).parent/'company-discovery'/STARTABILITY_PROOF_NAME

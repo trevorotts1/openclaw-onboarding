@@ -1,7 +1,0 @@
-# search: O2.booking-protocol
-# command: git ls-tree -r --name-only 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 38-conversational-ai-system/protocols/smart-booking-protocol.md
-# scope: 38-conversational-ai-system/protocols
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 1  verdict: present
-# --- stdout ---
-38-conversational-ai-system/protocols/smart-booking-protocol.md

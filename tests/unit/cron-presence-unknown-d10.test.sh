@@ -33,9 +33,6 @@ cp "$REPO_ROOT/shared-utils/"*.sh "$SK/shared-utils/"
 cp "$REPO_ROOT/scripts/ensure-pipeline-crons.sh" "$SK/scripts/"
 mkdir -p "$SK/06-ghl-install-pages/scripts"
 cp "$REPO_ROOT/06-ghl-install-pages/scripts/install-routing-drift-check-cron.sh" "$SK/06-ghl-install-pages/scripts/"
-# The installer's idempotency guard now lives in this shared helper (full
-# visibility via --all + tri-state presence); copy it beside the installer.
-cp "$REPO_ROOT/06-ghl-install-pages/scripts/lib-cron-presence.sh" "$SK/06-ghl-install-pages/scripts/"
 cp -r "$REPO_ROOT/06-ghl-install-pages/schedule" "$SK/06-ghl-install-pages/"
 
 HOME_D="$SANDBOX/home"; mkdir -p "$HOME_D/.openclaw/workspace"

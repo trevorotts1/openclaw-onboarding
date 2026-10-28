@@ -1,7 +1,0 @@
-# search: J5.immutable-item
-# command: git grep -nF IMMUTABLE. 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/direct_fulfillment.py
-# scope: direct_fulfillment.py
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 1  verdict: present
-# --- stdout ---
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/direct_fulfillment.py:9:IMMUTABLE.  A promised item is (item_id, version, content_sha256). A hosting

@@ -37,12 +37,6 @@
 # skills via scripts/dispatch_launch.py. New launch requests must name their
 # mode explicitly: a run dir carrying a signature_launch launch-request.json
 # is REFUSED by the legacy path, never silently run through the old pipeline.
-#
-# EXECUTION vs EMISSION: the approved consumer-adapter configuration travels in
-# launch-request.json ("adapters": {<page_role or extra-page key>: {"command": [...], "timeout_s": n}}),
-# and the dispatcher executes through it. This shell forwards the run dir only —
-# never a --simulate-executor flag — so a launch through the canonical entry can
-# execute the owning skills' real entrypoints but can never fabricate results.
 # ==============================================================================
 set -euo pipefail
 
@@ -215,8 +209,6 @@ run_launch_pipeline() {
   step_hashpin
   step_bypass_scan "$rd"
   echo "== signature-funnel-entry :: launch mode front door cleared (deps/version/hash-pin/bypass) =="
-  # The approved adapters ride in launch-request.json (read by the dispatcher);
-  # --simulate-executor is deliberately NOT forwardable from this guarded door.
   "$PY" "$SCRIPTS_DIR/dispatch_launch.py" --run-dir "$rd"
 }
 

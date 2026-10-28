@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "single_message",
   "id": "launch-a-reminder-1h",
   "name": "Launch A — Reminder: 1 Hour Before",
   "aliases": [
@@ -72,78 +70,5 @@
       "Replay branch",
       "Indoctrination"
     ]
-  },
-  "build_graph": [
-    {
-      "id": "trg",
-      "type": "trigger",
-      "attributes": {
-        "event": "Tag Added webinar-registered",
-        "ref": "Tag Added `webinar-registered`"
-      }
-    },
-    {
-      "id": "n1",
-      "type": "wait",
-      "after": "trg",
-      "attributes": {
-        "until": "webinar_datetime - 1 hour",
-        "kind": "until",
-        "ref": "Wait until `webinar_datetime` - 1h"
-      }
-    },
-    {
-      "id": "n2",
-      "type": "if_else",
-      "after": "n1",
-      "branches": {
-        "true": "n3",
-        "false": "n6"
-      },
-      "attributes": {
-        "condition": "not purchased AND datetime in future",
-        "ref": "If not purchased and future"
-      }
-    },
-    {
-      "id": "n3",
-      "type": "if_else",
-      "after": "n2",
-      "branches": {
-        "true": "n4",
-        "false": "n5"
-      },
-      "attributes": {
-        "condition": "SMS consent present",
-        "ref": "If SMS consent"
-      }
-    },
-    {
-      "id": "n4",
-      "type": "sms",
-      "after": "n3",
-      "attributes": {
-        "message": "one-hour reminder",
-        "ref": "Send SMS"
-      }
-    },
-    {
-      "id": "n5",
-      "type": "email",
-      "after": "n3",
-      "attributes": {
-        "message": "one-hour fallback",
-        "ref": "Send Email"
-      }
-    },
-    {
-      "id": "n6",
-      "type": "workflow_goal",
-      "after": "n2",
-      "attributes": {
-        "goal": "reminder path complete",
-        "ref": "End"
-      }
-    }
-  ]
+  }
 }

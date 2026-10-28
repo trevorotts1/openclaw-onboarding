@@ -88,18 +88,10 @@ class StyleHelpTest(unittest.TestCase):
         self.assertTrue(got["is_suggestion"])
         self.assertTrue(got["reason"])
         self.assertIn("suggestion only", got["note"])
-        # An empty story suggests nothing.
+        # The real three-style catalog has no folk option, so nothing is invented.
+        self.assertEqual(style_help.recommend(story="an intimate memory"), None)
         self.assertEqual(style_help.recommend(story=""), None)
-        # S75-CATALOG: both the real catalog of record and the eighteen-style
-        # FAKE carry folk-storytelling, so these words legitimately suggest it.
-        for cat in (None, FAKE_CATALOG):
-            got = style_help.recommend(story="an intimate memory", catalog=cat)
-            self.assertEqual(got["style_id"], "folk-storytelling")
-            self.assertTrue(got["is_suggestion"])
-        # Words no signal matches suggest nothing.
-        self.assertEqual(
-            style_help.recommend(story="something unmatched",
-                                 catalog=FAKE_CATALOG), None)
+        self.assertEqual(style_help.recommend(story="something unmatched"), None)
         risen = style_help.recommend(story="the story lifts at the turn")
         self.assertEqual(risen["style_id"], "soul-rise")
 

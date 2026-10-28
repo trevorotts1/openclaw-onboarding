@@ -1,7 +1,0 @@
-# search: G1.trigger-count
-# command: git grep -nF 8 different ways to do it 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- ONBOARDING-TRIGGERS.md
-# scope: ONBOARDING-TRIGGERS.md
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 1  verdict: present
-# --- stdout ---
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:ONBOARDING-TRIGGERS.md:3:This document shows you exactly how to start a fresh OpenClaw install or run an update on an existing install. There are **8 different ways to do it**, depending on (1) what kind of machine you have, (2) whether this is your first install or an update, and (3) whether you'd rather use Terminal or your Telegram agent.

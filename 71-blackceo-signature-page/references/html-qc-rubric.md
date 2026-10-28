@@ -106,35 +106,6 @@ agent invented.
     both light and textured. 10 = every declared treatment measures as declared;
     below 8 = a declared mask is a rectangle, an overlay measures as a split, or
     any guardrail fails.
-13. **Accessibility** — a person who cannot use a mouse, or who cannot see the
-    page, can still use it. Check all five, and record each as its own line in
-    the reviewer receipt before scoring:
-    - **Heading order.** Headings go down in steps from one `<h1>`; no level is
-      skipped on the way down (an `<h3>` never follows an `<h1>`). Headings mark
-      real sections; nothing is styled to look like a heading while being a
-      `<div>`.
-    - **Descriptive links.** Every link and button says where it goes or what it
-      does from its own words. No "click here", "read more", "learn more",
-      "submit" alone, and no bare URL as the label.
-    - **Meaningful alternative text.** Every `<img>` carries `alt` text that says
-      what the image shows and why it matters here; decorative images carry
-      `alt=""` instead of filler; text baked into an image is repeated in the
-      `alt`. The founder photo's `alt` names the founder.
-    - **Keyboard operation.** Every interactive element (link, button, form
-      field, custom control) is reachable with Tab in reading order, shows a
-      visible focus outline, and works with Enter/Space. No control is a click-only
-      `<div>`/`<span>`. Nothing traps focus and no content is reachable only by
-      hover.
-    - **Form-error messaging.** Every required field is marked as required in
-      text or `aria-required`, an invalid field is named by a message tied to it
-      (`aria-describedby` or an adjacent live message) that says what to fix, the
-      message is not carried by color alone, and focus moves to the first invalid
-      field on submit.
-    10 = all five hold at 1440, 768 and 390, and keyboard-only operation reaches
-    the primary CTA and the form; below 8 = any of the five fails at any width.
-    Judge from the rendered page and the DOM; `scripts/validate_page.py` does not
-    measure accessibility, so this criterion is never scored from a validator
-    report.
 
 ## Auto-fails (any one = stage FAIL regardless of scores)
 

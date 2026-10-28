@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "failed-payment-recovery",
   "name": "Failed Payment Recovery (payment plans only)",
   "aliases": [
@@ -43,10 +41,7 @@
       "Amount due and next retry date as reported by the processor"
     ]
   },
-  "channels": [
-    "Email",
-    "SMS"
-  ],
+  "channels": ["Email", "SMS"],
   "sequence": [
     {
       "step": "1 — Immediate recovery email",
@@ -111,12 +106,7 @@
       "10. Add tag `payment-recovery-exhausted`; remove tag `payment-failed-active`"
     ],
     "goal_event": "Successful payment → `payment-recovered` tag; wired as a workflow GOAL so a recovered buyer exits immediately.",
-    "tags_used": [
-      "payment-failed-active",
-      "payment-recovered",
-      "payment-recovery-exhausted",
-      "payment-plan-cancelled"
-    ],
+    "tags_used": ["payment-failed-active", "payment-recovered", "payment-recovery-exhausted", "payment-plan-cancelled"],
     "notes": "Duration waits only in the API builder; any calendar-date wait needs the managed browser. Every step stays inactive until a separate client approval switches it live."
   },
   "source": {

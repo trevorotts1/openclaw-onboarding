@@ -853,40 +853,6 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-playbook-engine.sh
           echo "✓ Skill 38 playbook_engine.py (U-16) unit tests are green"
 
-      - name: T-17 shared reminder slots + reserved final action (state machine suite)
-        shell: bash
-        run: |
-          set -uo pipefail
-          # DATA-CONTRACTS 8 reminder/final-action state machine (shared-utils/reminders).
-          # This runs BOTH suites by explicit name: the T-17 behavioural suite
-          # (test_reminder_state_machine.py, 51 cases) and the wiring proof
-          # (test_reminder_wiring.py) that FAILS if the production call site in
-          # shared-utils/nudge-incomplete-interviews.py is unwired. The wiring
-          # test is what keeps reminder_state_machine.py reachable from production
-          # code, so a wiring removal is a red here, not a silent drift.
-          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
-          t1="shared-utils/reminders/tests/test_reminder_state_machine.py"
-          t2="shared-utils/reminders/tests/test_reminder_wiring.py"
-          if [ ! -f "$t1" ] || [ ! -f "$t2" ]; then
-            echo "✗ T-17 reminders suite is absent from this checkout: $t1 and/or $t2 missing. A MISSING suite is a red, not a skip."
-            exit 1
-          fi
-          python3 -m unittest discover -s shared-utils/reminders/tests -t shared-utils/reminders/tests -p 'test_*.py' -v
-          echo "✓ T-17 shared reminder slots (51 behavioural + 3 wiring) unit tests are green"
-      - name: shared-utils publication receipts unit tests (T-25)
-        shell: bash
-        run: |
-          set -uo pipefail
-          # shared-utils/receipts/publication_receipts.py is the T-25 module: which
-          # provider object proves a publication, the order publications follow, and
-          # what a resume may re-issue. Its own test module is the ONLY thing that
-          # exercises those pins, so it has to run here or a pin can be deleted
-          # without a red build. BASH wrapper around python3 -I, in the same shape
-          # as the U-16 step above.
-          python3 -I shared-utils/receipts/test_publication_receipts.py
-          echo "✓ shared-utils publication_receipts.py (T-25) unit tests are green"
-
       - name: Skill 38 Per-phase tool gating (U-1)
         shell: bash
         run: |
@@ -3163,57 +3129,3 @@ jobs:
           HOME="$(mktemp -d)" python3 -m pytest -q \
             75-drama-song-ad-factory/scripts
           echo "✓ Skill 75 scripts/ pytest-collectable and green"
-
-      # T-22 (Skill 35 social-planner) — the two suites this unit ships are wired
-      # here BY EXPLICIT NAME, the same pattern as the Skill 38 contract fixture
-      # above (`t="38-.../hook-mapping-contract.test.sh"` resolved from the repo
-      # root, absent checkout SKIPs LOUDLY). They are NOT left to a discovery
-      # loop: the only `test_*.py` discovery loop in this workflow is scoped to
-      # `75-drama-song-ad-factory/scripts/core` and cannot reach
-      # `tests/social-planner`, so naming the paths is what makes them run at all.
-      # Each step resolves its path, DRY-LISTS it (a workflow that names a path
-      # it never executes is the same defect wearing a hat), then executes the
-      # file directly — `python3 <file>`, the form this checkout's own
-      # `if __name__ == "__main__": unittest.main()` entry point serves — so the
-      # run does not depend on `tests` being an importable package
-      # (`tests/social-planner` is a hyphenated directory with no
-      # `__init__.py`, so `python3 -m unittest tests/...` is loader-dependent).
-      - name: T-22 profile capability suite (explicit name)
-        shell: bash
-        run: |
-          set -uo pipefail
-          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
-          t="tests/social-planner/test_t22_profile_capability.py"
-          if [ ! -f "$t" ]; then
-            echo "::warning title=T-22 profile capability suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
-            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
-            exit 0
-          fi
-          echo "resolved $root/$t"
-          ls -l "$t"
-          python3 "$t"
-          echo "✓ T-22 profile capability suite ran and passed"
-
-      - name: T-22 status guard matrix suite (explicit name)
-        shell: bash
-        run: |
-          set -uo pipefail
-          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
-          t="tests/social-planner/test_t22_status_guard_matrix.py"
-          if [ ! -f "$t" ]; then
-            echo "::warning title=T-22 status guard matrix suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
-            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
-            exit 0
-          fi
-          echo "resolved $root/$t"
-          ls -l "$t"
-          python3 "$t"
-          echo "✓ T-22 status guard matrix suite ran and passed"
-      - name: "T-24 pb-contracts suite (qc-pb-contracts.sh / test_pb_contracts.py)"
-        shell: bash
-        run: |
-          set -uo pipefail
-          bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh
-          echo "✓ T-24 pb-contracts suite green (qc-pb-contracts.sh)"

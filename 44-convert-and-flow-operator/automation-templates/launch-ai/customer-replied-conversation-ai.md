@@ -19,9 +19,8 @@ Do nothing — build nothing. The launch package records the literal line `Conve
 ## TRIGGER
 - **What starts it:** an inbound reply from the contact on a watched channel during the launch window.
 - **Channels:** SMS and Chat (web chat / live chat). Email replies are out of scope.
-- **GHL filters available:** channel, message direction (inbound), phrase, tag, intent. Apply Channel first, then Message Direction = Inbound to prevent the workflow from re-triggering on the bot's own outbound message and creating a runaway loop. No further filter narrows replies by default; narrow with a launch tag only when the owner asks (for example, `launch-2026` (operator-created; the agent never mints it)).
-- **Default config:** SMS + Chat only, with Message Direction = Inbound. The inbound-direction guard prevents the bot's own outbound message from re-triggering the workflow and causing a runaway loop. No further filter narrows replies by default.
-- **Re-entry:** once per contact per launch, guarded by tag `ZHC-launch-ai-replied`.
+- **GHL filters available:** reply channel · phrase · tag · intent. Default template uses channel only; narrow with a launch tag only when the owner asks.
+- **Re-entry:** once per contact per launch, guarded by tag `launch-ai-replied`.
 - **Engine note:** CampaignBuilder auto-creates only a Tag Added trigger. Customer Replied goes on with `caf --experimental workflows patch-trigger --workflow-id <id> --trigger-json <file>` (snapshot captured automatically) or through the Tier-4 managed browser. The internal trigger `type` string is **not verified** in engine source — read a live definition first, never invent it.
 
 ## CHANNELS
@@ -33,7 +32,7 @@ SMS · Chat (web chat / live chat). Email is not part of this workflow.
 **Signal:** Conversation AI outcome = appointment booked.
 | Action | Detail |
 |---|---|
-| Tag | `ZHC-launch-ai-booked` |
+| Tag | `launch-ai-booked` |
 | Message | Approved confirmation: date, time, timezone |
 | Opportunity | Booked stage, when the launch pipeline exists |
 | Notify | Internal notification to the owner |
@@ -43,7 +42,7 @@ SMS · Chat (web chat / live chat). Email is not part of this workflow.
 **Signal:** the bot answered the question; no booking, no purchase.
 | Action | Detail |
 |---|---|
-| Tag | `ZHC-launch-ai-answered` |
+| Tag | `launch-ai-answered` |
 | Sequence | Contact stays in the promotional launch sequence — the reply does not remove them |
 | Exit | Workflow keeps listening; a later booking moves the contact to BOOKED on the same thread |
 
@@ -51,18 +50,18 @@ SMS · Chat (web chat / live chat). Email is not part of this workflow.
 **Signal:** contact went quiet before the exchange finished.
 | Action | Detail |
 |---|---|
-| Tag | `ZHC-launch-ai-timed-out` |
+| Tag | `launch-ai-timed-out` |
 | Wait | 1 day (duration Wait — never an event Wait) |
 | Nudge | ONE approved message with `{{booking_link}}` and/or `{{checkout_link}}` |
 | Wait | 1 day |
-| Close | Tag `ZHC-launch-ai-dormant`, stop. The keyword is the only way back. |
+| Close | Tag `launch-ai-dormant`, stop. The keyword is the only way back. |
 
 One nudge, never a drip. The nudge counts toward the launch's 3–5 promotional text cap.
 
 ## KEYWORD WAKE-UP
 - **Action:** Update Conversation AI Bot and Status.
 - **Default keyword:** `CALL` — owner-configurable.
-- **Behavior:** the keyword re-activates the bot on that conversation and sets status active, so the playbook answers again. This is the only re-entry path for a `ZHC-launch-ai-dormant` contact.
+- **Behavior:** the keyword re-activates the bot on that conversation and sets status active, so the playbook answers again. This is the only re-entry path for a `launch-ai-dormant` contact.
 - **Cap:** once per contact per day.
 - **Opt-out wins:** STOP / UNSUBSCRIBE and any owner-defined opt-out always beat the keyword.
 
@@ -75,7 +74,7 @@ Never invented: discounts, bonuses, dates, guarantees, or outcomes the offer doe
 1. **Dependencies first** — Conversation AI agent (`POST /conversation-ai/agents`, `POST /conversation-ai/agents/{agentId}/actions`, Version `2021-04-15`, scope `conversation-ai.write`), booking calendar, the six tags, the custom values.
 2. **Workflow** — `caf --experimental workflows create --name '<Launch> Customer Replied AI' --folder '<Launch>' --from-json <campaign.json>`.
    `create-step` supports only email / sms / wait / tag / webhook / ai, so the Conversation AI node and the keyword node are written as raw step objects.
-3. **Trigger** — `patch-trigger` from the observed live shape. Configure Channel first, then Message Direction = Inbound.
+3. **Trigger** — `patch-trigger` from the observed live shape.
 4. **Read back** — `caf workflows export <id>` and confirm every branch, the agent id and the keyword node.
 
 ### Engine truth (do not paper over)

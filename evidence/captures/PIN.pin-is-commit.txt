@@ -1,7 +1,0 @@
-# search: PIN.pin-is-commit
-# command: git cat-file -t 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# scope: object store
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 1  verdict: present
-# --- stdout ---
-commit

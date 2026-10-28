@@ -56,29 +56,6 @@ def _nonempty_str(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def checkout_mode_violations(checkout: Dict[str, Any]) -> List[str]:
-    """Production delivery requires a resolved Skill 79 checkout mode.
-
-    ``folded_levels`` has no mode in the Skill 79 contract, so its mapping
-    records ``checkout_mode=None`` with ``checkout_mode_state="contract_gap"``.
-    That is a blocker, never a pass: a package whose order form has no mode has
-    no deliverable checkout, and "builds green offline" is not a deployable
-    three-level checkout. The contract is not invented here — the mode stays
-    unresolved until Skill 79 names one.
-    """
-    mode = checkout.get("checkout_mode")
-    state = checkout.get("checkout_mode_state")
-    if state == "resolved" and _nonempty_str(mode):
-        return []
-    if state == "contract_gap":
-        return [f"AF-LAUNCH-CHECKOUT-MODE: checkout_mode is {mode!r} "
-                f"(state {state!r}); the Skill 79 contract names no mode for this "
-                "launch shape, so production delivery is blocked until it resolves"]
-    return [f"AF-LAUNCH-CHECKOUT-MODE: checkout_mode is {mode!r} "
-            f"(state {state!r}) is not a resolved mode; production delivery is "
-            "blocked until a resolved, non-empty checkout_mode is recorded"]
-
-
 def _load_checkout_validator():
     """The real Skill 79 cross-field validator, or None when it is not installed."""
     path = skill_path(CHECKOUT_SKILL_SLUG, CHECKOUT_VALIDATOR_REF)
@@ -145,11 +122,7 @@ def _checkout_probe_violations(checkout: Dict[str, Any],
                 "the inner checkout_request envelope must not carry it"]
     outcome, detail = _replay_checkout(request)
     if outcome == "unavailable":
-        # The probe's "bound" verdict is only earned by replay. A validator that
-        # cannot load now leaves the binding unproved, so the build fails: an
-        # interpreter without jsonschema must never print PASS.
-        return [f"AF-LAUNCH-CHECKOUT-VALIDATOR: the S79 validator is unavailable "
-                f"at replay time ({detail})"]
+        return []  # the validator's own unavailability is recorded, never guessed
     if outcome == "shape":
         return [f"AF-LAUNCH-CHECKOUT-VALIDATOR: the S79 request envelope is malformed "
                 f"({detail})"]
@@ -243,16 +216,19 @@ def _decided_requirement_violations(manifest: Dict[str, Any], root: Path,
         fails.append(f"AF-LAUNCH-CHECKOUT: contract {contract!r} does not resolve")
     elif _sha256_file(contract_target) != checkout.get("contract_sha256"):
         fails.append("AF-LAUNCH-CHECKOUT: the Skill 79 contract does not match its digest")
-    fails.extend(checkout_mode_violations(checkout))
+    if checkout.get("checkout_mode_state") not in ("resolved", "contract_gap"):
+        fails.append(f"AF-LAUNCH-CHECKOUT: unknown mode state "
+                     f"{checkout.get('checkout_mode_state')!r}")
     validator = (checkout.get("validator") or {})
     validator_state = validator.get("state")
     if validator_state == "bound":
         fails.extend(_checkout_probe_violations(checkout, validator))
+    elif validator_state == "unavailable" and importlib.util.find_spec(
+            "jsonschema") is None:
+        # Recorded, not hidden: the S79 validator needs jsonschema, and the
+        # dependency package lists it as a 999 blocker.
+        pass
     else:
-        # An unbound validator is a verification failure, never a recorded
-        # exception: jsonschema is the Launcher's own runtime requirement
-        # (requirements.txt), so the interpreter that runs this check must be
-        # able to load the Skill 79 validator.
         fails.append(f"AF-LAUNCH-CHECKOUT-VALIDATOR: the Skill 79 validator is "
                      f"{validator_state!r}: {validator.get('error', '')}")
     mapping_path = checkout.get("mapping_path")

@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "single_message",
   "id": "daily-seinfeld-sequence",
   "name": "Daily Seinfeld Sequence — Ongoing Entertainment Broadcast Engine",
   "aliases": [

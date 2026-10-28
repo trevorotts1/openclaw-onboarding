@@ -474,168 +474,30 @@ so every fresh install ships one working end-to-end conversation (inbound SMS �
 Save as `<MASTER_FILES_DIR>/conversation-workflows/appointment-booking.md`:
 
 ```markdown
-# Conversation Workflow: Appointment Booking
+# Conversation Playbook: Appointment Booking
 
-**Created:** 2026-10-27
-**Trigger:** Customer requests scheduling, a consultation, demo, or appointment.
-**Goal:** Convert qualified intent into a verified appointment.
-**Customer profile:** Inbound lead or existing customer.
-**Desired customer outcome:** Choose a suitable time and receive confirmation.
-model-tier: realtime-standard
+## When to invoke
+Customer asks to book / schedule / set up a meeting, demo, consultation, or appointment.
 
-declares
-tools-used: check_availability, book_appointment, update_tags, update_contact, reference_documents
-exits-used: appointment-booked, already-booked, talk-to-human
-fields-used: contact.email, contact.phone
-tags-used: ZHC-appointment-booked (applies), webinar-registered (reads)
-calendars: default: CAL_ID_A
-pipeline: PIPELINE_ID
-stage-map: win: Appointment Booked, exit talk-to-human: Needs Human
+## Behavior (Layer 2)
+1. Identify the service + preferred time window. If unspecified, ask which service; if one calendar exists, default to it.
+2. Check availability:
+   GET /calendars/{BOOKING_CALENDAR_ID}/free-slots?startDate={nowMillis}&endDate={nowPlus7dMillis}
+   (epoch MILLISECONDS). Prioritize slots in the first 72 hours.
+3. Offer the customer 2–3 specific times in the reply (date + time + timezone).
+4. When the customer picks one, book it:
+   POST /calendars/events/appointments
+   { "calendarId": "{BOOKING_CALENDAR_ID}", "locationId": "{LOCATION_ID}",
+     "contactId": "{contactId}", "startTime": "<chosen ISO time>" }
+   Capture the returned appointment `id`.
+5. Confirm back to the customer: time, date, timezone, any prep info.
+6. On a later reschedule request → PUT /calendars/events/appointments/{eventId}.
+   On a cancel request → DELETE /calendars/events/{eventId}.
 
-Operator requirement: Replace CAL_ID_A and PIPELINE_ID with real operator IDs before registering.
-
-## When to invoke this workflow
-
-- Customer asks to schedule, book, or arrange a meeting.
-- Customer asks for available times or selects an offered slot.
-- Existing appointment requires verification, rescheduling, or cancellation.
-
-## What the agent does
-
-### Phase 1 - Acknowledge and book intent
-
-tools: reference_documents, update_contact
-max-attempts: 2
-gate-if-not-met: intent unclear, closing: Ask one concise qualifying question.
-- Identify service and appointment type.
-- Check relevant requirements and existing booking context.
-- Request only missing required contact details.
-example: "Absolutely. Which service would you like to book?"
-
-### Phase 2 - Offer specific times
-
-tools: check_availability, reference_documents, update_contact
-max-attempts: 2
-gate-if-not-met: no suitable slots, closing: Explain limitation and offer operator assistance.
-- Query GET /calendars/{calendarId}/free-slots?startDate={epochMillis}&endDate={epochMillis}.
-- Use epoch milliseconds, operator timezone, approved booking window, and minimum lead time.
-- Offer two or three verified options with dates and timezone.
-example: "I have Tuesday at 10 AM or Wednesday at 2 PM Eastern. Which works better?"
-
-### Phase 3 - Book and confirm
-
-tools: check_availability, book_appointment, update_contact, reference_documents
-max-attempts: 2
-gate-if-not-met: slot unavailable or API failure, closing: Recheck availability; escalate if unresolved.
-- Revalidate selected slot through free-slots before booking.
-- Then POST /calendars/events/appointments with calendarId, locationId, contactId, and ISO 8601 startTime.
-- Capture returned appointment ID; verify success before claiming booking.
-- Check existing appointments before retrying after timeouts.
-example: "I'll verify that slot and book it now."
-
-### Phase 4 - Close and tag
-
-tools: update_tags, update_contact, reference_documents
-gate-if-not-met: confirmation unverified, closing: Do not mark booked; verify or escalate.
-- Send confirmation with date, time, timezone, and relevant preparation instructions.
-- Apply ZHC-appointment-booked after verified booking.
-- Write verified appointment details and pipeline stage Appointment Booked.
-example: "You're booked for Tuesday at 10 AM Eastern. I'll send your confirmation details now."
-
-## Objection library
-
-| Objection as the customer says it | Approved response | Never say |
-|---|---|---|
-| Too expensive | "I understand budget matters; I can explain what the appointment covers before you decide." | "Price should not matter." |
-| Need to think about it | "Of course; would a quick overview help you decide?" | "You must decide now." |
-| Talk to my spouse or partner | "Absolutely; I can share the details so you can discuss them together." | "You do not need their input." |
-| I already have a coach | "I can explain how this appointment differs so you can decide whether it adds value." | "Your coach is not good enough." |
-| Just looking right now | "No problem; I can answer questions whenever you're ready." | "You should book anyway." |
-
-## Turn discipline
-
-- At most one qualifying question per reply.
-- Never send consecutive agent messages without a customer reply, except stall cadence.
-- SMS maximum 320 characters (two segments); FB/IG maximum three sentences; email maximum four short paragraphs.
-- Never repeat a value proposition already sent in this conversation.
-- Verify availability and booking status before stating facts.
-
-## Ambiguity and multi-intent
-
-- Bare acknowledgement ("ok", "sure", thumbs up, "k"): interpret in context; clarify if no slot was selected.
-- Price probe: answer using approved pricing before requesting a booking decision.
-- Two questions at once: answer the commercial question first; park the logistical question with "then I will come back to" and resolve it next.
-- Revalidate a selected time before booking.
-
-## Stall recovery
-
-- Touch 1 — Day 1, SMS: offer a useful choice between verified slots.
-- Touch 2 — Day 3, email: address a relevant unresolved concern.
-- Touch 3 — Day 7, permitted preferred channel: offer a low-pressure next step.
-- After touch 3, tag ZHC-appointment-booking-stalled and hand to the follow-up campaign; no fourth message.
-- Stop after booking, opt-out, refusal, or human handoff.
-
-## Golden transcript
-
-> Customer: I'd like a consultation, but cost concerns me.
-> Agent: I understand; I can explain what the appointment covers before you decide.
-> Customer: Okay. What times are available?
-> Agent: Tuesday at 10 AM or Wednesday at 2 PM Eastern. Which works better?
-> Customer: Tuesday at 10.
-> Agent: I'll recheck availability and book that slot.
-
-## Conversational KPIs
-
-- Median SMS reply at most 320 characters.
-- At most one question per turn after qualification.
-- Booking target: six or fewer customer-agent exchanges after qualification.
-- Escalation rate ceiling: 15% of qualified booking conversations.
-- Repeated value propositions: zero.
-- Claimed bookings with verified appointment ID: 100%.
-
-## Never say
-
-- "Just checking in"
-- "Per my last email"
-- "As an AI language model"
-- "Trust me, you will love it"
-- "Limited time only"
-
-## Edge cases
-
-- Frustration: acknowledge concern and offer a clear next step.
-- Refund request: consult approved policy; never promise unauthorized refunds.
-- Legal threat: preserve context and escalate immediately.
-- Out-of-area: verify eligibility and explain approved alternatives.
-- API timeout: check booking records before retrying.
-
-## On success
-
-- Apply ZHC-appointment-booked after verification.
-- Write stage Appointment Booked.
-- Send confirmation with verified details.
-
-## On escalation
-
-- Notify operator through the notification protocol.
-- Include contact ID, phase, reason, and last three messages.
-- Include appointment IDs, relevant API errors, and recovery attempts.
-
-## Tone
-
-Warm, concise, respectful, practical. Use specific times and customer's timezone. Never fabricate availability or pressure the customer.
-
-## Trigger keywords / intent signals
-
-- "Book an appointment", "schedule a call", "consultation", "demo".
-- "Available times", "what slots do you have", "meet this week".
-- Selection of a previously offered date or time.
-- Reschedule and cancellation requests route to their corresponding procedures.
-
-## Exit rules
-exit-when-tag: appointment-booked, action: end, closing: You are all set. I will send the details now.
-exit-when-tag: already-booked, action: end, closing: You already have an appointment booked, so nothing else is needed.
-exit-when-tag: talk-to-human, action: handoff
+## Guardrails
+- Never offer a slot outside the operator's booking window (default 7 days) or inside min lead time (default 2h).
+- After 3 declined offers, escalate to the operator.
+- Reply on the same channel the customer used (per the inbound hook's {{channel}}).
 ```
 
 Register it in `conversation-workflows/registry.md` and add its hook-path entry to the Reusable Tunnel

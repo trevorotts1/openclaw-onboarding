@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.67"
+ONBOARDING_VERSION="v27.1.66"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2060,7 +2060,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.67 - safe_json_edit
+# v27.1.66 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -8843,35 +8843,14 @@ PYEOF
     # cron registration permanent -- see the note at the sentinel write for
     # the full story).
     _INSTALLER_FAILED=0
-    # Skill 06 ships FOUR maintenance-cron installers under scripts/. The
-    # first-match loop below stopped at the alphabetically-first one
-    # (install-github-archive-reconcile-cron.sh), so the inventory,
-    # routing-drift and selector-drift jobs were never registered on any box.
-    # Its aggregate installer names all four explicitly and then reports which
-    # jobs are registered; it goes first so the glob below cannot shadow it.
-    # NO FALLBACK for skill 06: if the aggregate is missing or not executable,
-    # the first-match loop would silently install ONE of the four jobs again —
-    # the exact defect this fixes, with "Installer OK" printed on top. Refuse
-    # loudly and leave the skill retryable instead.
-    if [ "$SKILL_NAME" = "06-ghl-install-pages" ]; then
-      if [ -x "$SKILL_DIR/scripts/install-skill6-maintenance-crons.sh" ]; then
-        SKILL_INSTALLER="$SKILL_DIR/scripts/install-skill6-maintenance-crons.sh"
-      else
-        echo "    Installer FAILED for $SKILL_NAME: scripts/install-skill6-maintenance-crons.sh missing or not executable -- refusing the first-match fallback (it installs only 1 of the 4 maintenance jobs); .wired sentinel withheld, will retry next roll"
-        _INSTALLER_FAILED=1
+    for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh" "$SKILL_DIR"/scripts/install-*.sh; do
+      if [ -x "$_candidate" ]; then
+        SKILL_INSTALLER="$_candidate"
+        break
       fi
-    fi
-    if [ -z "$SKILL_INSTALLER" ] && [ "$SKILL_NAME" != "06-ghl-install-pages" ]; then
-      for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh" "$SKILL_DIR"/scripts/install-*.sh; do
-        if [ -x "$_candidate" ]; then
-          SKILL_INSTALLER="$_candidate"
-          break
-        fi
-      done
-    fi
-    # Also check for setup-*.sh pattern (skill 06 excluded — see above: its
-    # only installer is the aggregate, and any fallback hides its absence)
-    if [ -z "$SKILL_INSTALLER" ] && [ "$SKILL_NAME" != "06-ghl-install-pages" ]; then
+    done
+    # Also check for setup-*.sh pattern
+    if [ -z "$SKILL_INSTALLER" ]; then
       for _candidate in "$SKILL_DIR"/setup-*.sh "$SKILL_DIR"/scripts/setup-*.sh; do
         if [ -x "$_candidate" ]; then
           SKILL_INSTALLER="$_candidate"

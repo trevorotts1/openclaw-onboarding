@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "abandoned-cart-multichannel-recovery",
   "name": "Abandoned Cart Multichannel Recovery (2-Step Order Form Drop-Off)",
   "aliases": [
@@ -38,9 +36,7 @@
       "step": 1,
       "beat": "Immediate — 'You left something behind' Email",
       "delay": "30–60 min after Step 1 submit with no Step 2 completion",
-      "channels_active": [
-        "Email"
-      ],
+      "channels_active": ["Email"],
       "purpose": "First recovery touch. Soft, helpful tone — not a hard sell. Remind them what they were about to get. Reduce friction by making it easy to return to the checkout page. Include a direct link back to Step 2 of the order form (or the full order page). This is the 'warm' recovery email.",
       "subject_angle": "Did something come up? Your [offer name] is waiting for you",
       "body_framework": [
@@ -56,10 +52,7 @@
       "step": 2,
       "beat": "+2 hours — Email Open Branch → SMS Nudge (if not opened)",
       "delay": "+2 hours after Step 1",
-      "channels_active": [
-        "SMS (if email not opened)",
-        "Messenger (if email not opened and subscribed)"
-      ],
+      "channels_active": ["SMS (if email not opened)", "Messenger (if email not opened and subscribed)"],
       "purpose": "If the recovery email was not opened within 2 hours, switch channels. SMS has near-instant open rates. Messenger pings the phone. Short, direct, low-pressure. No walls of text.",
       "behavioral_branch": {
         "email_opened": "No SMS/Messenger nudge — let the email work; skip this step",
@@ -72,9 +65,7 @@
       "step": 3,
       "beat": "+24 hours — Story Email with Objection Handle",
       "delay": "+24 hours after cart abandon",
-      "channels_active": [
-        "Email"
-      ],
+      "channels_active": ["Email"],
       "purpose": "Day 2 recovery email. The first email was soft. This one digs into WHY they might have hesitated. Use a short story or case study that addresses the most common objection or fear for this offer. End with the direct checkout link again.",
       "subject_angle": "The #1 thing people worry about with [offer] (and what actually happens)",
       "body_framework": [
@@ -89,10 +80,7 @@
       "step": 4,
       "beat": "+48 hours — SMS/Messenger Urgency Touch (if still not purchased)",
       "delay": "+48 hours after cart abandon",
-      "channels_active": [
-        "SMS",
-        "Messenger (if subscribed)"
-      ],
+      "channels_active": ["SMS", "Messenger (if subscribed)"],
       "purpose": "At the 48-hour mark, add a light urgency trigger via SMS and Messenger. If there is real scarcity (limited stock, closing cohort, discount expiry), state it plainly. If no real scarcity, use genuine reason for follow-up instead. Fake urgency destroys trust (Brunson rule).",
       "purchase_check": "Check tag 'purchased-[offer-id]' before sending. If purchased, skip this step entirely.",
       "sms_body": "Hey [name] — just a quick heads-up: [genuine reason — 'the [discount / access / spot] I held for you expires tomorrow / we only have X of these left / the [cohort/event] kicks off [date]']. Here's your link: [short link]. No worries if the timing isn't right.",
@@ -102,9 +90,7 @@
       "step": 5,
       "beat": "+72 hours — Final Email: Last Call",
       "delay": "+72 hours after cart abandon",
-      "channels_active": [
-        "Email"
-      ],
+      "channels_active": ["Email"],
       "purpose": "Final recovery touch. State that this is the last message about this specific offer. Real deadline if it exists. Short and direct. Leave the door open without pressure.",
       "subject_angle": "Last note about [offer name]",
       "body_framework": [
@@ -119,10 +105,7 @@
       "step": 6,
       "beat": "Purchase Event — Stop All and Route to Onboarding",
       "delay": "Fires immediately on purchase at any point in the sequence",
-      "channels_active": [
-        "Email (buyer confirmation)",
-        "SMS (confirmation if active)"
-      ],
+      "channels_active": ["Email (buyer confirmation)", "SMS (confirmation if active)"],
       "actions": [
         "Add tag 'purchased-[offer-id]'",
         "Remove tag 'cart-abandon-started'",

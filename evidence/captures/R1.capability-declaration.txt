@@ -1,7 +1,0 @@
-# search: R1.capability-declaration
-# command: git grep -nF personal_profile_rule 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 35-social-media-planner/config/profile-capabilities.json
-# scope: profile-capabilities.json
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 1  verdict: present
-# --- stdout ---
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:35-social-media-planner/config/profile-capabilities.json:8:    "personal_profile_rule": "Any account type with personal_profile=true declares mode assisted (or unavailable) and MUST NOT list any action under unattended. Unattended personal-profile posting or commenting is never supported.",

@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "behavioral-retargeting-page-visit-fire",
   "name": "Behavioral Retargeting — Page-Visit Pixel Fire + List Membership Update",
   "aliases": [

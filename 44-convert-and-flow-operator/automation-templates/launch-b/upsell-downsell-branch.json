@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "upsell-downsell-branch",
   "name": "Upsell / Downsell Bought-or-Declined Branch",
   "aliases": [
@@ -18,11 +16,7 @@
   },
   "purpose": "One small branch per offer option page. When a contact reaches an upsell or downsell page, wait for the verified purchase event, then send exactly one matching follow-up: bought → the upsell follow-up that moves the buyer to the next offer; declined (explicit No-thanks or no verified purchase by the wait deadline) → the downsell follow-up for that downsell page. Never both. Everything is built as a draft and never sends to a real contact.",
   "applies_to": {
-    "offer_slots": [
-      "upsell_1",
-      "downsell_1",
-      "upsell_2"
-    ],
+    "offer_slots": ["upsell_1", "downsell_1", "upsell_2"],
     "one_workflow_per": "option page (one per upsell page and one per downsell page)"
   },
   "trigger": {
@@ -43,17 +37,13 @@
     "bought": {
       "condition": "Tag `purchased-<offer_id>` present",
       "follow_up": "Skill 50 sequence kind `upsell_followup` for this upsell page — moves the buyer to the next offer",
-      "channels": [
-        "Email"
-      ],
+      "channels": ["Email"],
       "draft_only": true
     },
     "declined": {
       "condition": "Tag `declined-<offer_id>` present, or no `purchased-<offer_id>` tag after the wait deadline",
       "follow_up": "Skill 50 sequence kind `downsell_followup` for this option's downsell page — the smaller option",
-      "channels": [
-        "Email"
-      ],
+      "channels": ["Email"],
       "draft_only": true
     },
     "exclusivity": "One branch only. The bought branch removes `declined-<offer_id>`; the declined branch never fires when `purchased-<offer_id>` is present."

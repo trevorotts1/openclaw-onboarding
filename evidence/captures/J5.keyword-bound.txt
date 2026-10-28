@@ -1,8 +1,0 @@
-# search: J5.keyword-bound
-# command: git grep -nF keyword 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/pb_contracts.py
-# scope: pb_contracts.py
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 2  verdict: present
-# --- stdout ---
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:60:# keyword/assets/spares. The approved manifest is the authority, so any divergence
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/pb_contracts.py:68:    "keyword",

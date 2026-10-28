@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "abandoned-cart-recovery",
   "name": "Abandoned Cart Recovery Sequence",
   "aliases": [

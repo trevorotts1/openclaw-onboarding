@@ -1,8 +1,0 @@
-# search: C4.capture-budget
-# command: git grep -nF capture_budget 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/schemas/collection-state.schema.json
-# scope: collection-state.schema.json
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 2  verdict: present
-# --- stdout ---
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/schemas/collection-state.schema.json:72:    "capture_budget": {
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/schemas/collection-state.schema.json:335:    "capture_budget",

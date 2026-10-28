@@ -17,29 +17,7 @@ import json, os, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 AT_ROOT = os.path.dirname(HERE)                     # automation-templates/
-
-_ft_candidates = [
-    os.environ.get("GHL_FUNNEL_TEMPLATES_DIR", ""),
-    os.path.join(
-        os.path.dirname(os.path.dirname(AT_ROOT)),
-        "06-ghl-install-pages",
-        "funnel-templates",
-    ),
-    os.path.join(os.path.dirname(AT_ROOT), "funnel-templates"),
-]
-FT_ROOT = next(
-    (path for path in _ft_candidates if path and os.path.isdir(path)),
-    None,
-)
-if FT_ROOT is None:
-    raise SystemExit(
-        "Funnel templates directory not found. Tried:\n"
-        f"  GHL_FUNNEL_TEMPLATES_DIR: "
-        f"{os.environ.get('GHL_FUNNEL_TEMPLATES_DIR', '<unset>')}\n"
-        f"  sibling Skill-6 layout: {_ft_candidates[1]}\n"
-        f"  legacy in-tree layout: {_ft_candidates[2]}\n"
-        "Set GHL_FUNNEL_TEMPLATES_DIR to the funnel-templates directory."
-    )
+FT_ROOT = os.path.join(os.path.dirname(AT_ROOT), "funnel-templates")
 
 # group -> short why the whole group routes where it does (RECOMMENDED, not mandatory)
 GROUP_DOCTRINE = {
@@ -324,53 +302,22 @@ def _funnel_groups():
                 groups[tid] = g
     return groups
 
-def _automation_index(counts):
-    """category/id -> {name, path} for every valid automation template on disk."""
+def _automation_index():
+    """category/id -> {name, path} for every automation on disk."""
     idx = {}
-
     for c in sorted(os.listdir(AT_ROOT)):
         cd = os.path.join(AT_ROOT, c)
         if not os.path.isdir(cd) or c.startswith("_"):
             continue
         for fn in os.listdir(cd):
-            if not fn.endswith(".json") or fn.startswith("_"):
-                continue
-            path = os.path.join(cd, fn)
-            try:
-                with open(path, encoding="utf-8") as f:
-                    doc = json.load(f)
-            except Exception:
-                continue
-
-            if not isinstance(doc, dict):
-                continue
-
-            # Non-template JSON, including schemas and text sets, has no id/name.
-            if not doc.get("id") and not doc.get("name"):
-                continue
-
-            if "schema_version" not in doc or "kind" not in doc:
-                raise SystemExit(
-                    f"INVALID TEMPLATE: {os.path.relpath(path, AT_ROOT)} "
-                    "missing schema_version or kind"
-                )
-
-            counts["automation_template_count"] += 1
-            if doc["kind"] == "single_message":
-                counts["automation_single_message_count"] += 1
-            elif doc["kind"] == "sequence_stack":
-                counts["automation_sequence_stack_count"] += 1
-
-            graph = doc.get("build_graph")
-            if isinstance(graph, list) and graph:
-                counts["automation_buildable_count"] += 1
-
-            aid = doc.get("id") or os.path.splitext(fn)[0]
-            idx[f"{c}/{aid}"] = {
-                "name": doc.get("name", aid),
-                "path": os.path.join("automation-templates", c, fn),
-            }
-
+            if fn.endswith(".json") and not fn.startswith("_"):
+                try:
+                    doc = json.load(open(os.path.join(cd, fn), encoding="utf-8"))
+                except Exception:
+                    continue
+                aid = doc.get("id") or os.path.splitext(fn)[0]
+                idx[f"{c}/{aid}"] = {"name": doc.get("name", aid),
+                                     "path": os.path.join("automation-templates", c, fn)}
     return idx
 
 def _ref(key, aidx, role, why=""):
@@ -383,13 +330,7 @@ def _ref(key, aidx, role, why=""):
 
 def main():
     fgroups = _funnel_groups()
-    counts = {
-        "automation_template_count": 0,
-        "automation_single_message_count": 0,
-        "automation_sequence_stack_count": 0,
-        "automation_buildable_count": 0,
-    }
-    aidx = _automation_index(counts)
+    aidx = _automation_index()
     missing = set(fgroups) - set(LINKS)
     extra = set(LINKS) - set(fgroups)
     if missing:
@@ -447,14 +388,7 @@ def main():
                                        "(minus any the user overrode)."
             },
             "funnel_template_count": len(links),
-            "automation_template_count": counts["automation_template_count"],
-            "automation_single_message_count": counts["automation_single_message_count"],
-            "automation_sequence_stack_count": counts["automation_sequence_stack_count"],
-            "automation_buildable_count": counts["automation_buildable_count"],
-            "automation_template_count_note": "Generated from disk on every run of _build_link_map.py. "
-                "Counts template-shaped JSON in automation-templates/<group>/ excluding "
-                "_-prefixed infrastructure dirs and the non-template "
-                "launch-c/automation-build.schema.json and launch-text/text-sets.json.",
+            "automation_template_count": len(aidx),
             "consumed_by": [
                 "44-convert-and-flow-operator automation_matcher.step0 (intent-mode routing)",
                 "06-ghl-install-pages funnel_matcher.step0_match -> emits linked_automations for "
@@ -464,26 +398,14 @@ def main():
         "links": links,
     }
     out_path = os.path.join(HERE, "funnel-to-automation.json")
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=2)
-
+    json.dump(out, open(out_path, "w", encoding="utf-8"), indent=2)
     # coverage assertions
     assert len(links) == 38, f"expected 38 funnel links, got {len(links)}"
-    prim = {
-        l["primary_followup"]["category"] + "/" + l["primary_followup"]["automation_id"]
-        for l in links
-    }
+    prim = {l["primary_followup"]["category"] + "/" + l["primary_followup"]["automation_id"] for l in links}
     print(f"wrote {out_path}")
     print(f"funnel links: {len(links)} (expected 38)")
     print(f"distinct automations referenced as primary: {len(prim)}")
     print(f"automations on disk: {len(aidx)}")
-    print(
-        "templates: "
-        f"{counts['automation_template_count']} "
-        f"(single_message {counts['automation_single_message_count']}, "
-        f"sequence_stack {counts['automation_sequence_stack_count']}, "
-        f"buildable {counts['automation_buildable_count']})"
-    )
     print("VALID: every referenced automation id exists on disk")
 
 if __name__ == "__main__":

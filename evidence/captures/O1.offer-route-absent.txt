@@ -1,6 +1,0 @@
-# search: O1.offer-route-absent
-# command: git grep -niE select_offer|offer_route|pick_offer|choose_offer|offer_select 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system 35-social-media-planner 57-social-media-in-a-box
-# scope: 38- / 35- / 57- skill directories
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 1  count: 0  verdict: absent
-# --- stdout ---

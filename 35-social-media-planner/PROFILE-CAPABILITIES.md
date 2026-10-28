@@ -10,7 +10,7 @@ is declared in exactly one of three honest modes:
 
 | Mode | Meaning |
 |---|---|
-| `unattended` | The declaration says the platform supports the action through the named path. **This contract does not monitor or verify that path yet** — unattended coverage is `unproved`, so no unattended publication is ever reported (see [Coverage honesty](#coverage-honesty-b-04)). |
+| `unattended` | The system performs the action without a human step, through the named path. |
 | `assisted` | The system prepares the exact placement and hands it to the operator for one manual step. The operator's confirmation is the receipt. |
 | `unavailable` | The system cannot do it and offers no assisted route. |
 
@@ -68,83 +68,11 @@ source changes; never guess a capability into existence.
    is not an ISO-8601 timestamp, and a package that already claims publication —
    a claim is never laundered into a receipt. The record it returns must pass its
    own truth check before it is handed back.
-   Authority is **provenance, not shape** (B-27): `prepare_assisted_placement` stamps
-   the package with an HMAC-SHA256 provenance marker over its **whole** record, keyed
-   by an installation signing key generated with `os.urandom()` and stored outside the
-   repository in a `0600` file at
-   `<account home>/.openclaw/state/personal-profile-capability/seal.key`, where
-   `<account home>` comes from the operating system's account database and is never
-   taken from `$HOME`. There is no second source and no override: the two environment
-   hooks this module used to read — an inline hex key in
-   `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY`, and a caller-chosen key file in
-   `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE` — are **removed**, because a caller who
-   can set the process environment is a caller of exactly the class this contract
-   defends against, and either hook let that caller pick the key and then mint a
-   fitting marker with stdlib `hashlib` + `hmac` while reading no repository byte and
-   no key file. Redirecting `$HOME` reached the same forgery through the key file's
-   own path, so it is closed too.
-   `record_operator_confirmation` refuses any package that does not carry a marker
-   that fits its own bytes. A hand-built dict or a hand-edited file cannot mint a
-   placement id, an operator receipt or a status claim — **unless its author can read
-   the installation key file, or run code inside this process, which are the only two
-   signing paths**. That holds because the key is **not** derived from the declaration
-   or from any other shipped byte **and** is not selectable by anything a caller hands
-   in or this process inherits, so the marker cannot be recomputed from the checkout;
-   and because the MAC covers every field — placement id, channel and account labels,
-   route, status, action, placement, the operator instruction, the capability
-   reference, the receipt body and the publication flags — a marker copied from a
-   sanctioned record does not fit an edited, extended or truncated one. Editing a
-   sealed record invalidates the marker. The marker is not a substitute for the
-   operator: the key file is `0600` and outside the checkout, which is what makes
-   "can read the installation key file" the whole of the first signing path, and the
-   second is running code inside this process — rewriting the module from in there,
-   which no Python module can prevent. The upgrade is an operator-held signer outside
-   this process when unattended coverage is proved.
 5. **Never claim system publication.** `published-by-system` and bare `published` are
    forbidden statuses for an assisted placement.
 
 The system never confirms on the operator's behalf, and an empty operator name is
 refused.
-
-## Coverage honesty (B-04)
-
-The test behind this contract is **narrow**: it reads the declaration and
-exercises the assisted prepare / confirm / status / guard paths in-process and
-through the CLI. There is no browser test. **This contract claims no public
-monitoring, and performs none.**
-No channel or account is
-polled, observed or watched by this contract, and no platform publication is read
-back from a platform API. Skill 35 does ship a separate Phase-4/Phase-5
-Engagement Monitor that polls provider metrics after a publish
-(`SKILL.md` §Phase 4, `INSTRUCTIONS.md` §Phase 5). It is not this contract, it is
-not read by `_truth_of()`, and it is **not** the public-monitor evidence
-`policy.unattended_coverage.required_proof` demands — so its existence does not
-lift this contract's coverage off `unproved`, and nothing here may be read as
-claiming that it does. Consequently:
-
-- unattended coverage is `unproved`, and `_truth_of()` **refuses every unattended
-  publication record** instead of rendering `published-by-system`;
-- `unattended_coverage()` returns `status: unproved`, `monitoring: false`,
-  `claim: coverage-unproved`, the proof that would be required, and the owner who
-  must decide it — never a coverage claim.
-
-Before an unattended publication may be reported, all of the following must exist
-(declared in `policy.unattended_coverage.required_proof`):
-
-1. a named, running public monitor for the exact channel and account type, with its
-   own allow-listed credentials;
-2. an observed publication whose platform-side identifier is recorded and
-   independently read back from the platform API;
-3. a monitor run log showing that readback within the declared window;
-4. a re-run of the readback after a restart, proving the coverage survives a
-   process death.
-
-**Owner decision (pending):** the operator who owns this fleet installation
-(Trevor Otts) must decide whether to fund and build that per-channel monitor
-coverage, and what evidence is accepted as proof. Until that decision is recorded
-and the proof exists, `published-by-system` stays unreportable. The declaration's
-own flag alone cannot mint coverage: the read path refuses the claim regardless of
-what the flag says.
 
 ## Refusal path
 
@@ -176,8 +104,8 @@ with no Business Profile) refuses with `capability_unavailable` and `offer: null
 | Route | Allowed status | Claim |
 |---|---|---|
 | assisted | `awaiting-operator` | nothing-posted |
-| assisted | `operator-confirmed` | operator-confirmed (requires the sanctioned provenance marker **and** a valid receipt) |
-| unattended | — | **none.** No unattended publication is rendered; coverage is unproved |
+| assisted | `operator-confirmed` | operator-confirmed |
+| unattended | `published-by-system` | published-by-system |
 
 Any assisted record that reports `published-by-system`, `published`, or
 `operator-confirmed` without a valid receipt raises `UntruthfulPublication`. A
@@ -190,14 +118,9 @@ surface never renders that claim.
 
 - an assisted or personal record claims `published-by-system`, `published`, or
   `published_by_system: true`;
-- `operator-confirmed` has no sanctioned provenance marker or no valid receipt bound
-  to that placement;
+- `operator-confirmed` has no valid receipt bound to that placement;
 - `awaiting-operator` carries a receipt;
-- the record's channel or account type is not declared, or the route it claims is not
-  the route the declaration grants that account type;
-- the record's action is not declared for that channel and account type;
-- a personal profile record uses the unattended route at all;
-- any record claims an unattended publication (coverage is unproved — see above).
+- a personal profile record uses the unattended route at all.
 
 The status surface and the truth guard are ONE code path: both call
 `_truth_of()`, and the personal-profile/unattended rule lives in one place
@@ -239,26 +162,10 @@ python3 scripts/profile_capability.py guard --record record.json
 ## Tests
 
 ```bash
-python3 tests/social-planner/test_t22_profile_capability.py
-python3 tests/social-planner/test_t22_status_guard_matrix.py
+python3 -m unittest tests/social-planner/test_t22_profile_capability.py -v
 ```
 
-Each file runs to completion (exit 0) this way: `test_t22_profile_capability.py`
-reports `Ran 16 tests ... OK`, `test_t22_status_guard_matrix.py` reports
-`Ran 33 tests ... OK`. Run the file directly, not `python3 -m unittest
-tests/social-planner/...` — `tests/social-planner` is a hyphenated directory
-with no `__init__.py`, so the `-m unittest <package>` form is loader-dependent
-and can fail with `ModuleNotFoundError: No module named 'tests'` /
-`ImportError: Start directory is not importable`.
-
-The suites prove: unattended personal-profile requests are refused with a clear
+The suite proves: unattended personal-profile requests are refused with a clear
 reason; a receipt exists only after operator confirmation; a system-claimed
-publication without a receipt fails the guard; a hand-built dict cannot mint a
-placement id, an operator receipt or a status claim (B-27) — except through the
-two signing paths named above, reading the installation key file and running code
-inside this process, neither of which a caller with the checkout and a dict has;
-no environment variable, `$HOME` redirect or other inherited value can select or
-relocate that key; and no unattended publication is claimed while its coverage is
-unproved (B-04). The tests are narrow
-by design: they exercise the declaration and the assisted code paths only. They do
-not assert anything about public monitoring, because this contract performs none.
+publication without a receipt fails the guard; and the capability data round-trips
+as the single source consumed by the status surface.

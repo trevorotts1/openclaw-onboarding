@@ -1,7 +1,0 @@
-# search: G3.intake-engine
-# command: git grep -nF def next_question 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- shared-utils/client_intake/engine.py
-# scope: shared-utils/client_intake/engine.py
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 1  verdict: present
-# --- stdout ---
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/client_intake/engine.py:333:def next_question(doc, bank=None):

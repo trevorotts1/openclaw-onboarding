@@ -32,27 +32,22 @@ _SIGNALS = (
 
 
 def _catalog(catalog=None):
-    """The one catalog of record: ``{style_id: record}``.
-
-    S75-CATALOG: the record is every offered style -- the three D18
-    originals from ``STYLES`` plus every registered addition, resolved
-    through ``music_styles.style()`` so the leaf's own recipe records and
-    the registered extras answer the same way. Nothing is copied here.
-    """
+    """The one catalog of record: ``{style_id: record}``."""
     if catalog is not None:
         return catalog
     from music_styles import music_styles as MS
-    out = dict(MS.STYLES)
-    for sid in MS.recipe_ids() + MS.extra_style_ids():
-        out[sid] = MS.style(sid)
-    return out
+    return MS.STYLES
 
 
 def style_ids(catalog=None):
     """Catalog order, never a second list."""
     if catalog is not None:
         return tuple(catalog)
-    return tuple(_catalog())
+    try:
+        from music_styles import music_styles as MS
+        return tuple(MS.style_ids())
+    except (ImportError, AttributeError):
+        return tuple(_catalog())
 
 
 def _card_sentence(style_id):

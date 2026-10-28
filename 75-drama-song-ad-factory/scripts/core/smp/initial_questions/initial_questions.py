@@ -102,27 +102,10 @@ LOOKS = (
     ("canvas-to-life", "Canvas to Life"),
     ("canvas-to-3d", "Canvas to 3D"),
 )
-#: S75-CATALOG: the full eighteen-style menu of record (same labels the
-#: card and style_help render); the first three stay the pre-2026 menu.
 MUSICS = (
     ("soul-ballad", "Soul Ballad"),
     ("rnb-flow", "R&B Flow"),
     ("soul-rise", "Soul Rise"),
-    ("melodic-rap", "Melodic Rap"),
-    ("trap-rap", "Trap Rap"),
-    ("pop-rap", "Pop Rap"),
-    ("acoustic-pop", "Acoustic Pop"),
-    ("folk-storytelling", "Folk Storytelling"),
-    ("country-pop", "Country Pop"),
-    ("pop-rock", "Pop Rock"),
-    ("reggaeton", "Reggaeton"),
-    ("cinematic-orchestral-song", "Cinematic Orchestral Song"),
-    ("musical-theater", "Musical Theater"),
-    ("contemporary-gospel", "Contemporary Gospel"),
-    ("urban-gospel", "Urban Gospel"),
-    ("alternative-rnb", "Alternative R&B"),
-    ("afro-soul", "Afro-Soul"),
-    ("country-rap", "Country Rap"),
 )
 VOICES = (
     ("all_suno", "All Suno"),

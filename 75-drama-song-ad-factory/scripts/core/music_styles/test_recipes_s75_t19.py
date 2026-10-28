@@ -86,15 +86,9 @@ class OwnedScopeTests(unittest.TestCase):
             self.assertEqual(R.catalog_entry(sid)["description"], want, sid)
 
     def test_scope_is_disjoint_from_the_original_three(self):
-        # S75-CATALOG: the five T19 recipes are now REGISTERED offered
-        # styles (the catalog of record is eighteen), so the disjointness
-        # this test once proved is against the leaf's own recipe registry,
-        # and the D18 three remain the only records in the STYLES table.
-        self.assertEqual(set(R.recipe_ids()) & set(MS.STYLES), set())
-        self.assertEqual(tuple(MS.STYLES),
-                         ("soul-ballad", "rnb-flow", "soul-rise"))
-        for sid in R.recipe_ids():
-            self.assertIn(sid, MS.style_ids())
+        self.assertEqual(set(R.recipe_ids()) & set(MS.style_ids()), set())
+        self.assertEqual(set(MS.style_ids()),
+                         {"soul-ballad", "rnb-flow", "soul-rise"})
 
     def test_original_three_prompts_stay_byte_for_byte(self):
         # The three originals as shipped on main: a drift is a regression.

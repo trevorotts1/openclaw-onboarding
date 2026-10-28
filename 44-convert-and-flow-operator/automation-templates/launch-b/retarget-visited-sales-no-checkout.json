@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "launch-b-retarget-visited-sales-no-checkout",
   "name": "Launch B — Retarget: Visited Sales Page, No Checkout (Nudge)",
   "aliases": [

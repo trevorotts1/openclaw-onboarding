@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "single_message",
   "id": "launch-a-reminder-15m",
   "name": "Launch A — Reminder: 15 Minutes Before",
   "aliases": [
@@ -65,56 +63,5 @@
       "Live reminder",
       "Replay branch"
     ]
-  },
-  "build_graph": [
-    {
-      "id": "trg",
-      "type": "trigger",
-      "attributes": {
-        "event": "Tag Added webinar-registered",
-        "ref": "Tag Added `webinar-registered`"
-      }
-    },
-    {
-      "id": "n1",
-      "type": "wait",
-      "after": "trg",
-      "attributes": {
-        "until": "webinar_datetime - 15 minutes",
-        "kind": "until",
-        "ref": "Wait until `webinar_datetime` - 15 minutes"
-      }
-    },
-    {
-      "id": "n2",
-      "type": "if_else",
-      "after": "n1",
-      "branches": {
-        "true": "n3",
-        "false": "n4"
-      },
-      "attributes": {
-        "condition": "not purchased AND future AND SMS consent",
-        "ref": "If not purchased, future, and SMS consent"
-      }
-    },
-    {
-      "id": "n3",
-      "type": "sms",
-      "after": "n2",
-      "attributes": {
-        "message": "15-minute reminder",
-        "ref": "Send SMS"
-      }
-    },
-    {
-      "id": "n4",
-      "type": "workflow_goal",
-      "after": "n2",
-      "attributes": {
-        "goal": "reminder path complete",
-        "ref": "End"
-      }
-    }
-  ]
+  }
 }

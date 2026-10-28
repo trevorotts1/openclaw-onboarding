@@ -1,9 +1,0 @@
-{
-  "workflowData": {
-    "templates": [
-      {"id": "n1", "type": "tag", "name": "Start", "parentKey": null, "next": "n2"},
-      {"id": "n2", "type": "end", "name": "End", "parentKey": "n1"},
-      {"id": "n3", "type": "wait", "name": "Orphan", "parentKey": "n1"}
-    ]
-  }
-}

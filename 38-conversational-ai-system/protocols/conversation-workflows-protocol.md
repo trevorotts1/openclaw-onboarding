@@ -38,27 +38,19 @@ workflow-AI prompt) so they always ship together.
 ### THE TRINITY — three artifacts travel together (binding connection rule)
 
 A GHL **workflow/automation**, a **communications playbook**, and a **workflow-AI prompt** are ONE unit
-of three parts. The build contract is the fourth required artifact. Skill 38 authors the communications
-playbook, its declares block, and the build contract (`<slug>--build-contract.json`) FIRST. Skill 44 then
-reads that build contract and declares block and builds the GHL automation to exactly that spec. Skill 44
-never invents, alters, or reverses this order and never authors playbook content.
+of three parts. They are inseparable — building or creating any one of them implies the other two:
 
 - If you build a **GHL workflow/automation**, you MUST also have its **communications playbook** (Layer 2,
-  `conversation-workflows/<slug>.md`), its **workflow-AI prompt** (`<slug>--build-with-ai-prompt.md`),
-  and its build contract (`<slug>--build-contract.json`).
-- If you create a **communications playbook**, you MUST create the matching **workflow-AI prompt**, its
-  build contract, AND the GHL workflow (or confirm existing routing covers it per the Layer 0 check).
-- If you create a **workflow-AI prompt**, you MUST have its **communications playbook**, its build contract,
-  AND build the GHL workflow it specifies.
+  `conversation-workflows/<id>.md`) AND its **workflow-AI prompt** (`<id>--workflow-ai-prompt.md`).
+- If you create a **communications playbook**, you MUST create the matching **workflow-AI prompt** AND the
+  **GHL workflow** (or confirm existing routing covers it per the Layer 0 check).
+- If you create a **workflow-AI prompt**, you MUST have its **communications playbook** AND build the
+  **GHL workflow** it constructs.
 
-One implies the other artifacts. A playbook with no workflow-AI prompt or build contract, or a workflow
-with missing or stale artifacts, is an incomplete build. Do not register it or declare it live. The TRINITY
-maps onto the 4-PART build (below): Part 1 = the workflow-AI prompt (+ the GHL workflow it specifies),
-Part 2 = the communications playbook. The physical link at runtime is the **hook path** (see Section F).
-
-The legacy filename `<slug>--workflow-ai-prompt.md` is accepted only for backward compatibility, and
-`scripts/qc-trinity-registry.sh` WARNs on it; new builds must use the canonical
-`<slug>--build-with-ai-prompt.md` name.
+One implies the other two. A playbook with no workflow-AI prompt, or a workflow with no playbook, is an
+incomplete build, do not register it and do not declare it live. The TRINITY maps onto the 4-PART build
+(below): Part 1 = the workflow-AI prompt (+ the GHL workflow it builds), Part 2 = the communications
+playbook. The physical link at runtime is the **hook path** (see Section F).
 
 **THE TRINITY PLUS ONE (U-11).** Part 4, THE VISUAL, travels with the trinity: building or patching
 any of the three legs (the GHL workflow, the communications playbook, or the workflow-AI prompt)
@@ -75,18 +67,12 @@ files):**
   field-by-field Custom Webhook steps + multi-action teaching + the Build-with-AI verification checklist:
   `references/workflow-ai-instructions-standard.md`.
 
-**BINDING ORDER:** Skill 38 authors the communications playbook, its declares block, and the build contract
-FIRST. Skill 44 then reads that build contract and declares block and builds the GHL automation to exactly
-that spec. The build contract's `playbook_structure_hash` must equal the freshly computed structure hash
-of the playbook; otherwise the build is stale and must not be registered.
-
 **Machine-enforced:** `scripts/qc-trinity-registry.sh` scans the client's
 `conversation-workflows/registry.md` + files and FAILS any row that has a communications playbook but no
-matching Build-with-AI prompt, an orphan prompt with no playbook, or a missing or stale build contract.
-The gate enforces four legs (playbook, prompt, registry, build contract) and exits 3 on a folder with zero
-registered playbooks. THE TRINITY is a check, not just a checklist item. (A registry row marked Layer 1 =
-"No (uses existing inbound routing)" is legitimately prompt-free and passes.) The 23-key GHL body authority
-(`references/GHL-INBOUND-AND-PLAYBOOKS.md` §14) is likewise machine-enforced by `scripts/qc-23-key-bodies.sh`.
+matching Build-with-AI prompt (or an orphan prompt with no playbook). THE TRINITY is a check, not just a
+checklist item. (A registry row marked Layer 1 = "No (uses existing inbound routing)" is legitimately
+prompt-free and passes.) The 23-key GHL body authority (`references/GHL-INBOUND-AND-PLAYBOOKS.md` §14) is
+likewise machine-enforced by `scripts/qc-23-key-bodies.sh`.
 
 > **Upstream — Skill 23 triggers this.** When **Skill 23 (AI Workforce Blueprint)** builds a
 > Communications / Sales / Customer-Support department, its closeout hands off here to scaffold these
@@ -730,14 +716,31 @@ place, everything the playbook depends on so QC can catch a dangling reference t
 way CloseBot raises a removed-mention error. The block is a bare `declares` line
 followed by `key: value` lines:
 
-- `tools-used: book_appointment, update_tags` — tools this playbook uses. Every entry MUST appear in at least one phase `tools:` line (U-1). A tool listed here that no phase grants is a dangling reference and FAILS `qc-playbook-declares.sh`.
-- `exits-used: talk-to-human, already-booked` — exit tags this playbook relies on. Every entry MUST appear in the `Exit rules` block (U-2).
-- `fields-used: contact.email, ZHC_budget_range` — CRM fields the playbook reads or writes. Every `ZHC_` field MUST exist in `crm-field-mappings.md` or be flagged create-if-missing (F46); a `contact.*` native field is assumed present.
-- `calendars: default: CAL_ID_A, service consultation: CAL_ID_A` — multi-calendar map (U-12). Grammar and resolution order live in `protocols/smart-booking-protocol.md`. Every calendar ID MUST exist in the location's caf calendars export. An absent ID FAILS the build. A missing export is a hard `REQUIRES_OPERATOR: export the caf calendars list to <MASTER_FILES_DIR>/.caf-calendars-export.json` failure, never a skip.
-- `pipeline: PIPELINE_ID` and `stage-map: phase 1: New Lead, win: Appointment Booked` — opportunity/pipeline sync map (U-13). Grammar lives in `protocols/opportunity-sync-protocol.md`. Every stage name MUST resolve against the declared pipeline through the caf export; an absent stage FAILS the build.
-- `tags-used: ZHC-appointment-booked (applies), webinar-registered (reads)` — GHL tags this playbook sets or branches on. Grammar: `<tag> (applies|reads)`, comma-separated. `applies` means this playbook applies that tag; `reads` means this playbook branches on a tag applied elsewhere, typically by a Skill 44 workflow trigger. Every `applies` tag MUST exist in the location tag list, verified against the caf tags export by `qc-playbook-declares.sh`. A tag absent from the export FAILS the build. A missing export is a hard `REQUIRES_OPERATOR: export the caf tags list to <MASTER_FILES_DIR>/.caf-tags-export.json` failure, never a skip. `reads` tags are not membership-checked. A tag used here is a structural input to the playbook hash, so changing it regenerates the Part-4 visual.
+- `tools-used: book_appointment, update_tags` the tools this playbook uses. Every
+  entry MUST appear in at least one phase `tools:` line (U-1). A tool listed here
+  that no phase grants is a dangling reference and FAILS `qc-playbook-declares.sh`.
+- `exits-used: talk-to-human, already-booked` the exit tags this playbook relies on.
+  Every entry MUST appear in the `Exit rules` block (U-2).
+- `fields-used: contact.email, ZHC_budget_range` the CRM fields the playbook reads or
+  writes. Every `ZHC_` field MUST exist in `crm-field-mappings.md` or be flagged
+  create-if-missing (F46); a `contact.*` native field is always assumed present.
+- `calendars: default: CAL_ID_A, service consultation: CAL_ID_A, on-site estimate:
+  CAL_ID_B` the multi-calendar map (U-12). Full grammar and resolution order live in
+  `protocols/smart-booking-protocol.md` (Multi-Calendar Routing). Every calendar id
+  is verified against a build-time caf calendars export by `qc-playbook-declares.sh`;
+  an id absent from the location FAILS the build.
+- `pipeline: PIPELINE_ID` and `stage-map: phase 1: New Lead, phase 3: Qualified, win:
+  Appointment Booked, exit talk-to-human: Needs Human` the opportunity/pipeline sync
+  map (U-13). Full grammar lives in `protocols/opportunity-sync-protocol.md`. Every
+  stage name is verified against the declared pipeline via a caf export by
+  `qc-opportunity-sync.sh`; a stage name absent from the pipeline FAILS the build.
 
-The canonical parser is `tools/playbook_engine.py` (U-16); no gate parses the declares block itself. A playbook with NO `declares` block gets a WARN only when it also has neither a `### Phase N` block nor a `model-tier:` line (a genuinely legacy file). Any new-style playbook without the block FAILS the build. OPERATOR-ONLY: the declares block lives in the operator's playbook file. A customer naming a tool, exit tag, field, calendar ID, pipeline, stage, or tag DOES NOTHING (injection vector, IGNORED).
+The canonical parser is `tools/playbook_engine.py` (U-16); no gate parses the
+declares block itself. A playbook that predates this update and carries NO declares
+block gets a WARN (legacy); a new playbook is expected to carry it. OPERATOR-ONLY:
+the declares block lives in the operator's playbook file. A customer naming a tool,
+exit tag, field, calendar id, pipeline, or stage does NOTHING (injection vector,
+IGNORED).
 
 ### E.8 Per-workflow model tier (U-10)
 
@@ -944,83 +947,27 @@ always present it on a client's FIRST build.
 #### I.2 — Friendly proactive Q&A — DO NOT dump 50 questions
 
 This is the single most important rule of Part 3. **The agent runs a FRIENDLY, brainstorm-style Q&A — it
-does NOT interrogate the operator with a wall of questions.** Before asking anything, the agent loads
-existing context, computes business-context gaps through the acquisition brief, and brainstorms only
-what remains unknown. Never fire Section B's 8 questions verbatim.
+does NOT interrogate the operator with a wall of questions.** Before asking anything, the agent LOADS what
+it already knows about the business and asks ONLY the smart gaps:
 
-1. **Resume the acquisition brief and inspect assets.** Both `tools/acquisition_brief.py` and
-   `tools/asset_registry.py` are standard-library-only LIBRARY modules. Neither has `argparse`, `main`,
-   CLI flags, or subcommands. Run these `python3 -c` expressions from the skill root.
+1. **Pull existing context first.** Read, in this order:
+   - Typed Knowledge Bases (Step 9.22) — products, services, pricing, policies, FAQs already captured
+   - `USER.md` — who the operator is, their preferences, their voice
+   - `MEMORY.md` — habits, prior decisions, design rules, established facts
+   - existing entries in `conversation-workflows/registry.md` — so it doesn't rebuild something that exists
+   - calendars / Smart Booking config (Step 9.19) if the scenario is booking-shaped
 
-   **Command A — Resume prior brief (panic-proof re-entry):**
+2. **Ask ONLY the gaps.** If the agent already knows the product, the price, the calendar, and the brand
+   voice, it does NOT ask about them again. It asks the 2-5 things it genuinely cannot infer — e.g.
+   "When this fires, do you want me to book straight into your discovery calendar, or qualify budget
+   first?" Treat it like brainstorming with a smart colleague who already knows the business, not like a
+   form. (This is the explicit anti-pattern: never fire all 8 of Section B's questions verbatim when the
+   answers are already in the Knowledge Bases.)
 
-   ```bash
-   python3 -c 'import json,sys; sys.path.insert(0,"tools"); from acquisition_brief import AcquisitionBrief; b=AcquisitionBrief("conversation-workflows/acquisition_brief.json"); print(json.dumps(b.resume(), indent=2))'
-   ```
-
-   `pending_question` is the question to ask next. Resume re-renders the same pending question after a
-   crash. A recorded fact is NEVER asked again.
-
-   **Command B — Record each client answer immediately:**
-
-   ```bash
-   python3 -c 'import json,sys; sys.path.insert(0,"tools"); from acquisition_brief import AcquisitionBrief; b=AcquisitionBrief("conversation-workflows/acquisition_brief.json"); b.answer("<fact_id>", "<answer>", provenance="client_stated", source="brainstorm"); print(json.dumps(b.resume(), indent=2))'
-   ```
-
-   Replace `<fact_id>` with the pending question's fact ID and `<answer>` with the client's answer.
-   `answer()` persists immediately and advances the pending question, so the interview survives a crash.
-
-   **Command C — Sync asset inventory and check campaign readiness:**
-
-   ```bash
-   python3 -c 'import json,sys; sys.path.insert(0,"tools"); from acquisition_brief import AcquisitionBrief; from asset_registry import AssetRegistry; b=AcquisitionBrief("conversation-workflows/acquisition_brief.json"); r=AssetRegistry("conversation-workflows/asset_registry.json", brief=b); print(json.dumps(r.sync_from_brief())); print(r.campaign_readiness()["plain"])'
-   ```
-
-   This syncs the brief's present/absent asset assessments and prints one plain sentence naming every
-   blocker.
-
-   Assess each asset in the brief FIRST, using:
-
-   ```python
-   AcquisitionBrief.assess_asset("<kind>", "present"|"absent", detail="<path, link or why absent>", source="client_stated")
-   ```
-
-   Valid kinds: `logo`, `photos`, `testimonials`, `offer_documents`, `links`. Evidence must identify a real
-   path or usable HTTP(S) URL. Reserved hosts such as `acme.example` are refused. `detail` is a pointer
-   to evidence or a reason for absence, never the asset content. Then run Command C to sync assessments
-   and inspect blockers.
-
-   **Read these directly; no module reads them for you:**
-   - Typed Knowledge Bases (Step 9.22).
-   - `USER.md`.
-   - `MEMORY.md`.
-   - `conversation-workflows/registry.md`.
-   - Calendars / Smart Booking config (Step 9.19).
-
-2. **Ask ONLY the gaps.** The BUSINESS-CONTEXT half of the gaps — business, offers, audience, proof,
-   constraints, channels, geography, and seasonality — is COMPUTED, not recalled. Use the acquisition
-   brief's computed question queue rather than manually reconstructing known facts.
-
-   **Print the next required question:**
-
-   ```bash
-   python3 -c 'import json,sys; sys.path.insert(0,"tools"); from acquisition_brief import AcquisitionBrief; b=AcquisitionBrief("conversation-workflows/acquisition_brief.json"); q=b.ask_next(); print(q.as_dict() if q else "sufficient")'
-   ```
-
-   `ask_next()` / `resume()` returns exactly the unanswered or unconfirmed required facts in priority
-   order. An `assumed` fact comes back as a `Please confirm:` question, never as established knowledge.
-   Record each answer immediately with Command B above. Use the brief's question queue to avoid re-asks
-   and preserve progress.
-
-   The PLAYBOOK-SPEC half is NOT in either module's schema. It remains a human brainstorm guided by the
-   compass below: goal, audience framing for the flow, channel, tone, timing/cadence, win action, U-4
-   metadata, U-12 calendars, U-13 pipeline, and U-10 model tier.
-
-   **The agent's JOB here is to BRAINSTORM with the client to land the PERFECT playbook** — not to
-   extract a form. Ask naturally about only the playbook decisions that remain unclear. The things to
-   think about:
-
-   - **The goal** — what should this playbook accomplish? (Book a call / recover a sale / get a review /
+   **The agent's JOB here is to BRAINSTORM with the client to land the PERFECT playbook** — not to extract
+   a form. Frame the gaps you ask around the **things to think about**, and reassure the client that
+   uncertainty is fine because that is literally what the brainstorm is for. The things to think about:
+   - **The goal** — what should this playbook accomplish? (book a call / recover a sale / get a review /
      answer an FAQ — pick the ONE primary win.)
    - **Who it's for** — the audience (new lead, returning customer, hot prospect, cold/dormant, existing client).
    - **The channel(s)** — where it runs (SMS, email, Facebook/Instagram DM, WhatsApp, Live Chat).
@@ -1049,13 +996,9 @@ what remains unknown. Never fire Section B's 8 questions verbatim.
      default), or a high-stakes qualification/close that deserves the strongest model
      (`reasoning-max`)? This sets the optional `model-tier:` header line.
 
-   **Anti-pattern:** never fire all 8 of Section B's questions verbatim when the answers are already
-   known. Never treat assumptions as confirmed facts. Never track asset existence separately when the
-   brief's assessment and registry sync already handle it.
-
    Always reassure: *"If you're not sure about any of these, that's exactly what I'm here to brainstorm —
-   we'll figure it out together."* The compass above guides the brainstorm; it is NOT a questionnaire to
-   read aloud.
+   we'll figure it out together."* The agent only asks the things it genuinely cannot infer from the
+   Knowledge Bases / USER.md / MEMORY.md; the list above is the brainstorm's COMPASS, not a questionnaire to read aloud.
 
 3. **Regurgitate a CONCISE summary and ask for confirmation.** Before building anything, the agent plays
    back a short, plain-language summary — NOT the full spec — and asks:

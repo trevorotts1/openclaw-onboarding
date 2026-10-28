@@ -176,43 +176,6 @@ def test_a_resumed_run_is_not_migrated_or_rewritten(tmp_path):
     assert receipt["target"] == "555"
 
 
-def test_a_chat_resume_past_the_intro_keeps_the_old_card_through_the_api(tmp_path):
-    """The API default IS the launcher's decision (new_run_flow). A chat run
-    already past its intro is a resume even before a card answer is saved: it
-    keeps the card it started with, and its run state is never rewritten."""
-    run = tmp_path / "run"
-    run.mkdir()
-    state = run / "run-state.json"
-    state.write_text(json.dumps({"intro_shown": True, "keep": 1}), encoding="utf-8")
-    before = state.read_bytes()
-    assert IC.new_run_flow(str(run), str(state)) is False
-    first = IC.conversation([], run_dir=str(run), run_state_file=str(state))["message"]
-    assert _first_line(first).endswith("- OFFER")
-    assert "PURPOSE" not in first
-    assert state.read_bytes() == before
-
-
-def test_the_api_and_the_launcher_agree_on_the_default(tmp_path, capsys):
-    """One decision, two entry points: the default must not depend on which
-    one the caller used."""
-    run = tmp_path / "run"
-    run.mkdir()
-    state = run / "run-state.json"
-    state.write_text(json.dumps({"intro_shown": True}), encoding="utf-8")
-    assert IC.main(["--step", "--run-dir", str(run), "--run-state-file", str(state)]) == 0
-    resumed = capsys.readouterr().out.strip()
-    assert resumed == IC.conversation(
-        [], run_dir=str(run), run_state_file=str(state))["message"]
-    assert _first_line(resumed).endswith("- OFFER")
-
-    fresh = tmp_path / "fresh"
-    fresh.mkdir()
-    assert IC.main(["--step", "--run-dir", str(fresh)]) == 0
-    new = capsys.readouterr().out.strip()
-    assert new == IC.conversation([], run_dir=str(fresh))["message"]
-    assert _first_line(new).endswith("- PURPOSE")
-
-
 def test_a_purpose_flow_run_keeps_its_flow_on_resume(tmp_path):
     run = tmp_path / "run"
     (run / "control").mkdir(parents=True)

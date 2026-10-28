@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generated_at": "2026-10-27T02:16:11Z",
+    "generated_at": "2026-06-27T07:54:41Z",
     "description": "Funnel <-> Automation recommended-followup link map. Maps each Skill-6 funnel template to its recommended Skill-44 follow-up automation(s).",
     "core_principle": "Every link is a RECOMMENDED DEFAULT and a RESOURCE \u2014 never a rule or a requirement. The template/sequence assists; it never dominates the user's stated desire. Always overridable, mixable, customizable, ignorable.",
     "intent_modes": {
@@ -9,11 +9,7 @@
       "HANDS_OFF_DO_IT_ALL": "User said 'just do it' -> auto-build the linked automations (minus any the user overrode)."
     },
     "funnel_template_count": 38,
-    "automation_template_count": 49,
-    "automation_single_message_count": 17,
-    "automation_sequence_stack_count": 32,
-    "automation_buildable_count": 12,
-    "automation_template_count_note": "Generated from disk on every run of _build_link_map.py. Counts template-shaped JSON in automation-templates/<group>/ excluding _-prefixed infrastructure dirs and the non-template launch-c/automation-build.schema.json and launch-text/text-sets.json.",
+    "automation_template_count": 28,
     "consumed_by": [
       "44-convert-and-flow-operator automation_matcher.step0 (intent-mode routing)",
       "06-ghl-install-pages funnel_matcher.step0_match -> emits linked_automations for Skill 44 to build the complete funnel (minus user overrides)"

@@ -11,12 +11,6 @@
       "default_copy_version": "standard",
       "action": "checkout",
       "action_line": "every call-to-action button leads to the client's checkout page or payment link",
-      "handoff": {
-        "primary_handoff_type": "external_link",
-        "behavior": null,
-        "step_order": null,
-        "note": "The handoff the sales page's built page must prove (scripts/validate_handoff.py, the responsive-html stage): its primary CTA is an anchor to an absolute http(s) checkout page or payment link, compared with the destination intake records when it records one. No form identity is required and no product-selection/order-form sequence applies, because the button leaves the page for the client's checkout."
-      },
       "wireframe_head": "PAGE KIND — SIGNATURE SALES PAGE (page role landing, {form_label}, {total} sections). This page persuades toward a purchase: it reads as one long top-to-bottom persuasion stack, every call-to-action button is a checkout action, and the page closes on a checkout call-to-action panel. Layout family: the style reference attached to this request (structure only).",
       "closing_band": "CLOSING BAND — this is the last section of a sales page: under the section's content draw one full-width closing checkout panel on the dark brand ground, carrying one filled primary-colour button reading exactly \"{label}\". Draw no price, no card fields and no order form: the button leads to the client's checkout.",
       "closing_mockup": "CLOSING PANEL — this slice ends on one full-width closing checkout panel carrying one solid button reading exactly \"{label}\". The panel is the only button on this slice.",
@@ -38,12 +32,6 @@
       "default_copy_version": "long-form",
       "action": "form",
       "action_line": "every call-to-action button opens the client's registration form",
-      "handoff": {
-        "primary_handoff_type": "form_pop",
-        "behavior": "form_pop",
-        "step_order": ["signature_page", "product_selection_page", "order_form_page"],
-        "note": "The handoff the opt-in page's built page must prove (scripts/validate_handoff.py, the responsive-html stage): its primary CTA pops the registration form intake names (name AND object id), and the recorded step order is the signature page, then the product selection page, then the order form page."
-      },
       "wireframe_head": "PAGE KIND — SIGNATURE LANDING (OPT-IN) PAGE (page role landing, {form_label}, {total} sections). This page earns a sign-up, not a purchase: it reads as one long top-to-bottom promise stack, every call-to-action button opens the registration form, and the page closes on a registration call-to-action strip. Layout family: the style reference attached to this request (structure only).",
       "closing_band": "CLOSING BAND — this is the last section of an opt-in page: under the section's content draw one full-width registration strip on the dark brand ground, carrying one filled primary-colour button reading exactly \"{label}\". Draw no form fields and no price: the button opens the client's form.",
       "closing_mockup": "CLOSING PANEL — this slice ends on one full-width registration strip carrying one solid button reading exactly \"{label}\". The strip is the only button on this slice.",

@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "launch-c-review-referral-ask",
   "name": "Launch C — Review Ask, Then Referral Ask",
   "aliases": [

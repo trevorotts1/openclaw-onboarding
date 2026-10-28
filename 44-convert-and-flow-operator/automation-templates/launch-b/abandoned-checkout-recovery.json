@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "abandoned-checkout-recovery",
   "lane": "launch-b",
   "name": "Abandoned Checkout Recovery (Started, Unpaid)",
@@ -46,9 +44,7 @@
       "beat": "'You left something behind' email",
       "delay_minutes": 30,
       "delay_note": "Measured from checkout start. Runs only when still unpaid at the gate.",
-      "channels_active": [
-        "Email"
-      ],
+      "channels_active": ["Email"],
       "gate": {
         "type": "purchase_check",
         "when": "before_send",
@@ -70,10 +66,7 @@
       "beat": "Email open branch -> SMS nudge (if not opened)",
       "delay_minutes": 120,
       "delay_note": "+2 hours after step 1 email",
-      "channels_active": [
-        "SMS",
-        "Messenger"
-      ],
+      "channels_active": ["SMS", "Messenger"],
       "gate": {
         "type": "purchase_check",
         "when": "before_send",
@@ -83,19 +76,14 @@
       "purpose": "Switch channel only when the email went unopened. Short, direct, no pitch.",
       "sms": "Hey [name] - [AC name] here. You started grabbing [offer] a bit ago. Here is the link to finish: {{checkout_url}}. No pressure at all.",
       "messenger": "Hey [name] - you were grabbing [offer] earlier! Here is the link to finish up if you want: {{checkout_url}}. Happy to help if you have any questions.",
-      "conditions": [
-        "sms-subscribed for SMS",
-        "messenger-subscribed for Messenger"
-      ]
+      "conditions": ["sms-subscribed for SMS", "messenger-subscribed for Messenger"]
     },
     {
       "step": 3,
       "beat": "Story / objection handle email",
       "delay_minutes": 1440,
       "delay_note": "+24 hours after checkout abandon",
-      "channels_active": [
-        "Email"
-      ],
+      "channels_active": ["Email"],
       "gate": {
         "type": "purchase_check",
         "when": "before_send",
@@ -115,10 +103,7 @@
       "beat": "SMS / Messenger urgency touch",
       "delay_minutes": 2880,
       "delay_note": "+48 hours after checkout abandon",
-      "channels_active": [
-        "SMS",
-        "Messenger"
-      ],
+      "channels_active": ["SMS", "Messenger"],
       "gate": {
         "type": "purchase_check",
         "when": "before_send",
@@ -128,19 +113,14 @@
       "sms": "Hey [name] - quick heads-up: {{urgency_reason}}. Link: {{checkout_url}}. No worries if the timing is not right.",
       "messenger": "Hey [name] - quick heads-up: {{urgency_reason}}. Here is the link: {{checkout_url}}. No worries if the timing is not right.",
       "urgency_rule": "Send only with a genuine reason. If none exists, use {{urgency_reason}} as a plain check-in, never a fake deadline.",
-      "conditions": [
-        "sms-subscribed for SMS",
-        "messenger-subscribed for Messenger"
-      ]
+      "conditions": ["sms-subscribed for SMS", "messenger-subscribed for Messenger"]
     },
     {
       "step": 5,
       "beat": "Last call email",
       "delay_minutes": 4320,
       "delay_note": "+72 hours after checkout abandon",
-      "channels_active": [
-        "Email"
-      ],
+      "channels_active": ["Email"],
       "gate": {
         "type": "purchase_check",
         "when": "before_send",
@@ -160,9 +140,7 @@
       "beat": "Purchase event - stop all and route",
       "delay_minutes": 0,
       "delay_note": "Fires immediately on purchase at any point in the sequence",
-      "channels_active": [
-        "System"
-      ],
+      "channels_active": ["System"],
       "gate": {
         "type": "purchase_event",
         "when": "on_purchase",

@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "webinar-registration-reminder-replay-stack",
   "name": "Webinar Registration → Indoctrination → Reminders → Live → Replay → Stack Close",
   "aliases": [
@@ -29,10 +27,7 @@
       "Clicked the offer/buy link but did not purchase"
     ]
   },
-  "channels": [
-    "Email",
-    "SMS"
-  ],
+  "channels": ["Email", "SMS"],
   "sequence": [
     {
       "phase": "A. Confirmation",
@@ -122,29 +117,14 @@
       "16. At cart-close datetime: end; tag `webinar-sequence-complete`"
     ],
     "goal_event": "`webinar-purchased` -> exit all selling steps; route contact to the post-purchase onboarding workflow.",
-    "wait_steps": [
-      "per-day indoctrination",
-      "until 24h-before",
-      "until 1h-before",
-      "until start",
-      "post-event delay",
-      "1 day",
-      "until cart-close"
-    ],
+    "wait_steps": ["per-day indoctrination", "until 24h-before", "until 1h-before", "until start", "post-event delay", "1 day", "until cart-close"],
     "if_else_branches": [
       "no-show vs attended (replay copy + subject)",
       "clicked-buy-link-no-purchase -> a tighter 'you were so close' nudge",
       "purchased at any point -> Goal exit",
       "SMS vs email on DND"
     ],
-    "tags_used": [
-      "webinar-registered",
-      "webinar-attended",
-      "webinar-noshow",
-      "webinar-buy-link-clicked",
-      "webinar-purchased",
-      "webinar-sequence-complete"
-    ],
+    "tags_used": ["webinar-registered", "webinar-attended", "webinar-noshow", "webinar-buy-link-clicked", "webinar-purchased", "webinar-sequence-complete"],
     "notes": "Attendance tags come from the webinar platform webhook or a 'click to join' trigger-link click. The cart-close countdown on the replay page must reflect the SAME deadline the Fear close cites — keep them in sync so urgency is real."
   },
   "source": {

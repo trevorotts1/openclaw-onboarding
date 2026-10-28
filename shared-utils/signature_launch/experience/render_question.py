@@ -35,23 +35,6 @@ _HELP_WORDS = {"help", "?", "not sure", "im not sure", "i'm not sure", "idk", "i
 _HELP_PHRASES = re.compile(r"\b(?:not sure|no idea|no clue|don'?t know|help)\b")
 _MAX_HELP_WORDS = 6  # longer replies are real answers that merely mention a phrase
 _DEFAULT_WORDS = {"default", "use default", "skip", "you choose", "you pick"}
-_URL = re.compile(r"https?://")
-_NO_EXAMPLE = re.compile(r"\bexample:\s*none\b", re.I)
-
-
-def _style_examples(n):
-    """The style block for design_style only: image links and the honest "no example" lines.
-    Rendered BEFORE the question so the client sees what they are choosing between; the feel
-    examples ("Warm and friendly: B") stay below it. Any other question keeps its examples
-    below the question and never gets a "Style examples" label."""
-    if n["id"] != "design_style":
-        return []
-    out = []
-    for e in n["examples"]:
-        s = str(e)  # a foreign bank may put non-strings here; they must never crash the ask
-        if _URL.search(s) or _NO_EXAMPLE.search(s):
-            out.append(s)
-    return out
 
 
 def _engine():
@@ -134,33 +117,20 @@ def _tool_question(n):
     if can_default(n):
         tail += ", or use a safe default you confirm later"
     opts.append({"label": HELP_LABEL, "description": tail})
-    style = _style_examples(n)
-    text = "" if not style else "Style examples:\n" + "\n".join(style) + "\n\n"
-    text += n["text"] + (f"\n{n['why']}" if n["why"] else "")
-    if n["example"]:
-        text += f"\nExample: {n['example']}"
-    for ex in n["examples"]:  # every example reaches the client, never dropped in structured
-        if ex not in style:
-            text += f"\nExample: {ex}"
+    text = n["text"] + (f"\n{n['why']}" if n["why"] else "")
     return {"question": text, "header": n["header"], "multiSelect": False, "options": opts}
 
 
 def chat(q, index=None, total=None, estimate_note=None):
     n = normalize(q)
     head = f"Question {index} of {total}: " if index and total else ""
-    style = _style_examples(n)
-    lines = []
-    if style:  # the promised examples come BEFORE the question (finding 20)
-        lines.append("Style examples - open the picture links before you answer:")
-        lines.extend(f"- {ex}" for ex in style)
-    lines.append(head + n["text"])
+    lines = [head + n["text"]]
     if n["why"]:
         lines.append(f"Why we ask: {n['why']}")
     if n["example"]:
         lines.append(f"Example: {n['example']}")
-    for ex in n["examples"]:  # every example, never a silent two-item cap
-        if ex not in style:
-            lines.append(f"Example: {ex}")
+    for ex in n["examples"][:2]:  # nested help.examples reach the client
+        lines.append(f"Example: {ex}")
     if n["choices"]:
         lines.append("Reply with a number, or type your own answer:")
         for i, c in enumerate(n["choices"], 1):

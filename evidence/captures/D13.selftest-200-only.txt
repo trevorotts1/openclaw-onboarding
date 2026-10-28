@@ -1,7 +1,0 @@
-# search: D13.selftest-200-only
-# command: git grep -nF hook returned HTTP 200 + {ok:true} 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/scripts/24-self-test-hook.sh
-# scope: 24-self-test-hook.sh
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 1  verdict: present
-# --- stdout ---
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/scripts/24-self-test-hook.sh:335:  ok "hook returned HTTP 200 + {ok:true}"

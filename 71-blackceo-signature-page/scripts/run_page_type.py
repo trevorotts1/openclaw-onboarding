@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shlex
 import shutil
 import subprocess
 import sys
@@ -97,7 +96,6 @@ def main(argv=None) -> int:
     for stage in STAGES:
         name = f"production-request-{stage}.json"
         build = [HERE / "build_production_request.py", "--copy-version", a.copy_version,
-                 "--page-role", role,  # the role this run verified above, never the builder's default
                  "--copy-json", a.copy_json, "--bundle", a.bundle, "--stage", stage,
                  "--out", a.run_dir / name, "--run-dir", a.run_dir, *model]
         for flag, value in (("--design-prose", a.design_prose), ("--slots", a.slots)):
@@ -111,38 +109,10 @@ def main(argv=None) -> int:
         if run(build) or run(execute):
             print(f"FAIL: {stage} did not complete; nothing after it ran")
             return 1
-    run_dir = a.run_dir.resolve()
-    request = run_dir / "production-request-visual-mockup.json"
-    final = run_dir / "production-request-final-mockups.json"
-    executor = HERE / "stage_executor.py"
-
-    def fmt(cmd):  # one copy-pasteable shell command: the run dir may contain spaces
-        return " ".join(shlex.quote(str(x)) for x in cmd)
-
-    if a.preflight:  # prompts only: no provider call, no image, nothing is complete
-        print(f"PREVIEW {role}: desktop and mobile wireframe and mockup prompts composed and "
-              "validated; no provider was called, no image exists and no stage completed. "
-              "Nothing after this ran. Re-run without --preflight to generate.")
-    elif a.provider == "stub":  # placeholder PNGs only: never a completion
-        print(f"PREVIEW {role}: the stub provider wrote placeholder PNGs for the wireframe and "
-              "mockup stages; no real image exists and nothing is ready for a client. Re-run with "
-              "--provider kie --allow-paid to generate.")
-    else:
-        print(f"DONE {role}: desktop and mobile wireframes and mockups ({a.provider} provider).")
-    if a.preflight or a.provider == "stub":
-        print("NOTE: nothing is complete yet; NEXT 1 and NEXT 2 are the commands for a run that "
-              "generated real images.")
-    print(f"NEXT 1, Design Board for this page role (client approval), on its own: "
-          f"{fmt([sys.executable, executor, run_dir, '--stages', 'design-board', '--request', request.name])}")
-    build_final = [sys.executable, HERE / "build_production_request.py", "--copy-version", a.copy_version,
-                   "--page-role", role, "--copy-json", a.copy_json, "--bundle", a.bundle,
-                   "--stage", "final-mockups", "--out", final, "--run-dir", run_dir, *model]
-    for flag, value in (("--design-prose", a.design_prose), ("--slots", a.slots)):
-        build_final += [flag, value] if value else []
-    print(f"NEXT 2, final-mockups, only after the client's approval is recorded, in a run of its "
-          f"own (the executor refuses the two stages together): build its request first, then "
-          f"run it: {fmt(build_final)} && "
-          f"{fmt([sys.executable, executor, run_dir, '--stages', 'final-mockups', '--request', final.name])}")
+    print(f"DONE {role}: desktop and mobile wireframes and mockups "
+          f"({'composed, no provider call' if a.preflight else a.provider + ' provider'}). "
+          "NEXT: the image chain, then the Design Board for this page role (client approval), "
+          "then final-mockups (scripts/stage_executor.py --stages design-board, final-mockups).")
     return 0
 
 

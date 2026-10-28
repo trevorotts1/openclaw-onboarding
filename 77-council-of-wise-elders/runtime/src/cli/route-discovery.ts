@@ -89,7 +89,6 @@ import {
   resolve,
 } from 'node:path';
 import type { CredentialSourceName } from '../providers/selection.js';
-import { ollamaCompatibleBaseUrl } from '../providers/ollama.js';
 import {
   freezeRouteSnapshot,
   UNKNOWN_ROUTE_IDENTITY,
@@ -213,14 +212,6 @@ export interface RouteDiscoveryInfo {
   identity_level: 'configured';
   composed: boolean;
   not_composed_reason: string | null;
-  /**
-   * True when the route's only blocker is the choice of model: it
-   * becomes usable the moment the caller names one of
-   * `model_candidates`. The council never picks that model itself.
-   */
-  usable_with_model: boolean;
-  /** Every configured candidate model id (never a secret). */
-  model_candidates: string[];
 }
 
 export function routeDiscoveryInfo(route: DiscoveredRoute, composed: boolean): RouteDiscoveryInfo {
@@ -231,35 +222,7 @@ export function routeDiscoveryInfo(route: DiscoveredRoute, composed: boolean): R
     identity_level: route.identityLevel,
     composed,
     not_composed_reason: composed ? null : route.notComposableReason,
-    usable_with_model: !composed && routeUsableWithModel(route),
-    model_candidates: [...(route.compatible?.modelCandidates ?? [])],
   };
-}
-
-/**
- * True when the ONLY thing between this route and dispatch is which of
- * its configured candidate models to use: endpoint present, API family
- * composed by this runtime, credential present, and the single failure
- * is ROUTE_MODEL_AMBIGUOUS. Naming a candidate makes it usable.
- */
-export function routeUsableWithModel(route: DiscoveredRoute): boolean {
-  const compatible = route.compatible;
-  return (
-    route.failure?.code === 'ROUTE_MODEL_AMBIGUOUS' &&
-    compatible !== undefined &&
-    compatible.baseUrl.length > 0 &&
-    (compatible.apiFamily === 'openai_compatible' || compatible.apiFamily === 'ollama_chat') &&
-    compatible.credential.state !== 'absent' &&
-    compatible.modelCandidates.length > 0
-  );
-}
-
-/** True when `model` is one of the route's configured candidate models. */
-export function routeOffersModel(route: DiscoveredRoute, model: string | null): boolean {
-  if (model === null) return false;
-  const trimmed = model.trim();
-  if (trimmed.length === 0) return false;
-  return route.compatible?.modelCandidates.includes(trimmed) ?? false;
 }
 
 /** The WER-005 receipt bridge's answer about the installed runtime. */
@@ -345,12 +308,6 @@ export interface RouteSnapshotOptions {
   scope: TrustedScope;
   capabilityVersion: string;
   routeRevision?: number;
-  /**
-   * The model the CALLER chose, for a route whose only failure is
-   * ROUTE_MODEL_AMBIGUOUS. Ignored for combinations (their alias wins)
-   * and for a model the route does not list.
-   */
-  model?: string | null;
   /** Absent means UNKNOWN/not_probed. Never inferred from configuration. */
   transportReported?: TransportReportedRouteIdentity;
   /** Optional combination pin; each unreported member freezes as UNKNOWN. */
@@ -1395,17 +1352,9 @@ function discoverProviderRoutes(
   for (const [providerId, rawProvider] of Object.entries(providers)) {
     const provider = asRecord(rawProvider);
     if (!provider) continue;
-    const configuredBaseUrl = typeof provider.baseUrl === 'string' ? provider.baseUrl.trim() : '';
+    const baseUrl = typeof provider.baseUrl === 'string' ? provider.baseUrl.trim() : '';
     const declaredApi = typeof provider.api === 'string' ? provider.api : null;
     const apiFamily = apiFamilyOf(declaredApi);
-    // An Ollama route composes through the existing OpenAI-compatible
-    // Ollama profile: the daemon (and Ollama Cloud) serve the same
-    // /v1 surface, so the endpoint is the configured base URL with
-    // /v1 appended when the configuration does not already carry it.
-    const baseUrl =
-      apiFamily === 'ollama_chat' && configuredBaseUrl.length > 0
-        ? ollamaCompatibleBaseUrl(configuredBaseUrl)
-        : configuredBaseUrl;
     const model = resolveConfiguredModel(providerId, provider, config);
     const credential =
       baseUrl.length > 0
@@ -1427,11 +1376,10 @@ function discoverProviderRoutes(
       };
       reasons.push(failure.detail);
     }
-    const composedFamily = apiFamily === 'openai_compatible' || apiFamily === 'ollama_chat';
-    if (!composedFamily) {
+    if (apiFamily !== 'openai_compatible') {
       const detail = `provider ${providerId} declares API family ${JSON.stringify(
         declaredApi,
-      )} (${apiFamily}); this runtime composes only an OpenAI-compatible wire protocol here (including Ollama's /v1 surface) and will not reinterpret another API family as compatible`;
+      )} (${apiFamily}); this runtime composes only an OpenAI-compatible wire protocol here and will not reinterpret another API family as compatible`;
       if (failure === null) failure = { code: 'ROUTE_API_FAMILY_UNSUPPORTED', detail };
       reasons.push(detail);
     }
@@ -1450,7 +1398,7 @@ function discoverProviderRoutes(
     routes.push({
       routeId: `${providerId}-configured`,
       providerSlug: providerId,
-      kind: composedFamily ? 'compatible' : 'unsupported',
+      kind: apiFamily === 'openai_compatible' ? 'compatible' : 'unsupported',
       identityLevel: 'configured',
       composable: reasons.length === 0,
       notComposableReason: reasons.length > 0 ? reasons.join('; ') : null,
@@ -1520,15 +1468,10 @@ export function discoverConfiguredRoutes(
  * Strict route resolution for dispatch. Every failure is explicit and
  * secret-free: missing config, unknown route id, unsupported API family,
  * ambiguous model, or an unresolved named secret reference.
- *
- * `explicitModel` is the model the CALLER chose. A route whose only
- * failure is ROUTE_MODEL_AMBIGUOUS resolves when that model is one of
- * its configured candidates; discovery itself never picks a model.
  */
 export function resolveRouteForDispatch(
   routeId: string,
   options: RouteDiscoveryOptions = {},
-  explicitModel: string | null = null,
 ): ResolvedRoute {
   const { layout, routes } = discoverHostRoutes(options);
   const route = routes.find((candidate) => candidate.routeId === routeId);
@@ -1549,13 +1492,9 @@ export function resolveRouteForDispatch(
     );
   }
   if (!route.composable && route.failure) {
-    const usableWithModel =
-      routeUsableWithModel(route) && routeOffersModel(route, explicitModel);
-    if (!usableWithModel) {
-      throw new RouteDiscoveryError(route.failure.code, `${route.routeId}: ${route.failure.detail}`, [
-        layout.configPath,
-      ]);
-    }
+    throw new RouteDiscoveryError(route.failure.code, `${route.routeId}: ${route.failure.detail}`, [
+      layout.configPath,
+    ]);
   }
   return { route, layout };
 }
@@ -1589,12 +1528,7 @@ export function buildRouteSnapshot(
   route: DiscoveredRoute,
   options: RouteSnapshotOptions,
 ): CouncilRouteSnapshot {
-  const chosenModel = options.combination ? null : (options.model ?? null);
-  const usableWithModel =
-    !route.composable &&
-    routeUsableWithModel(route) &&
-    routeOffersModel(route, chosenModel);
-  if (!route.composable && route.failure && !usableWithModel) {
+  if (!route.composable && route.failure) {
     throw new RouteDiscoveryError(route.failure.code, `${route.routeId}: ${route.failure.detail}`, [
       route.host.configRoot,
     ]);
@@ -1631,7 +1565,7 @@ export function buildRouteSnapshot(
       requestedRoute: route.routeId,
       requestedModelOrAlias: combination
         ? combination.alias
-        : (chosenModel ?? route.compatible?.modelId ?? null),
+        : (route.compatible?.modelId ?? null),
       combinationMembers: combination ? [...combination.members] : null,
       reasoning: {
         requested: null,
@@ -1704,11 +1638,7 @@ export function discoverRouteSnapshot(
   snapshotOptions: RouteSnapshotOptions,
   discoveryOptions: RouteDiscoveryOptions = {},
 ): { route: DiscoveredRoute; layout: HostLayout; snapshot: CouncilRouteSnapshot } {
-  const { route, layout } = resolveRouteForDispatch(
-    routeId,
-    discoveryOptions,
-    snapshotOptions.model ?? null,
-  );
+  const { route, layout } = resolveRouteForDispatch(routeId, discoveryOptions);
   return { route, layout, snapshot: buildRouteSnapshot(route, snapshotOptions) };
 }
 

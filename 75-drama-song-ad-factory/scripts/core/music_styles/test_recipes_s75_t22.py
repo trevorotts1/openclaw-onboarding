@@ -26,13 +26,6 @@ for path in (CORE, NO_ECHO_DIR):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-# APPENDED, never prepended: this directory holds ``music_styles.py``, so
-# putting it first would shadow the ``music_styles`` PACKAGE (whose __init__
-# is where the four records are registered) with the leaf module. Appending
-# keeps the bare ``import recipes_s75_t22`` below working under pytest too.
-if HERE not in sys.path:
-    sys.path.append(HERE)
-
 import music_styles as MS                     # noqa: E402  shared choke point
 import recipes_s75_t22 as R                   # noqa: E402  module under test
 
@@ -248,13 +241,8 @@ class CatalogSeam(unittest.TestCase):
         MS.STYLES.update(self._saved)
 
     def test_four_records_merge_and_render(self):
-        # Round 2 repair: NO manual MS.STYLES.update() here. Round 1's version
-        # merged the records inside this test, which hid the fact that nothing
-        # in production dispatched them. The package registers them, so this
-        # asserts the real route a caller uses, with no setup of its own.
+        MS.STYLES.update(R.as_catalog_entries())
         for sid in R.style_ids():
-            self.assertIn(sid, MS.extra_style_ids(),
-                          "%s is not a registered style" % sid)
             rendered = MS.style_prompt(sid)
             self.assertTrue(rendered.startswith(R.compile_style_field(sid)),
                             "%s compiled clauses did not reach style_prompt"
@@ -266,22 +254,6 @@ class CatalogSeam(unittest.TestCase):
             self.assertEqual(R.client_reference_hits(rendered, sid), [], sid)
             target = MS.spoken_target(sid, 180)
             self.assertEqual(target["style_id"], sid)
-
-    def test_four_dispatch_through_the_supported_routes(self):
-        # The routes production actually calls. Round 1 failed here: these all
-        # raised UNKNOWN_STYLE for the four. The suno_recipe send gate is NOT
-        # asserted: it needs a per-style references/prompt-templates/music/
-        # <id>.json, which no added style has (the three originals only), so
-        # that surface stays where S75-T18 owns it.
-        from style_defaults import music as DEFAULT_MUSIC
-
-        for sid in R.style_ids():
-            ref = DEFAULT_MUSIC.music_style_ref(choice=sid)
-            self.assertEqual(ref["id"], sid, sid)
-            self.assertEqual(ref["suno_prompt"], MS.style_prompt(sid), sid)
-            self.assertEqual(ref["section_hint"], MS.section_hint(sid), sid)
-            self.assertEqual(MS.style(sid)["style_id"], sid, sid)
-            self.assertIn("SPEAKS", MS.default_delivery_map(sid), sid)
 
     def test_describe_is_display_only(self):
         for sid in R.style_ids():

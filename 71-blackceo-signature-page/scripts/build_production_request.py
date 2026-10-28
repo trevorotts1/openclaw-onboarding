@@ -35,14 +35,12 @@ page_plan carries the exact amount-and-terms line and the order-confirmed lines)
 place of --manuscript.
 
 Usage:
-  build_production_request.py --copy-version upsell --page-role upsell_1 --copy-json copy-upsell_1.json \
+  build_production_request.py --copy-version upsell --copy-json copy-upsell_1.json \
       --bundle bundle-upsell_1.json --stage visual-mockup --out <run_dir>/production-request.json
-  build_production_request.py [--page-role checkout] --copy-version standard|long-form \
+  build_production_request.py [--page-role checkout] --copy-version standard|long-form|product-selection|thank-you \
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
       --out <run_dir>/production-request.json [--page-kind sales|opt_in] [--slots slots.json] \\
       [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT]
-  build_production_request.py --copy-version product-selection|thank-you [--page-role that role] \
-      --manuscript ... --stage ... --out ...   (omitted --page-role stamps the form's own role)
 
   slots.json:  {"<canonical section id>": [{"slot_id", "aspect_ratio", "art_direction"}]}
   prose.json:  {"notes": str, "traits": str, "rules_md": str, "rules_json": str}
@@ -77,7 +75,6 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import copy_forms  # noqa: E402
 import stage_executor as exe  # noqa: E402
-import page_role  # noqa: E402  the one allowed-sequence resolver
 import role_spec  # noqa: E402
 import wireframe_spec  # noqa: E402
 import page_kinds  # noqa: E402
@@ -308,17 +305,8 @@ def section_fragments(stage, section, index, sections, spec, table, kind=None):
     forbidden = {exe.canon_section_id(x) for x in (spec.get("cta_map", {}).get("forbidden_in_sections") or [])}
     closing = page_kinds.closing_label(kind, section, sections, index, n)  # SPF030
     if len(many) > 1:
-        if section.get("cta_layout") == "utility":
-            note = str(section.get("cta_note") or "").strip().rstrip(".")
-            if not note:  # the spec states the treatment; a guessed one is a defect
-                raise BuildError(f"section {section.get('section_id')}: the utility actions carry "
-                                 "no declared treatment (cta_note); rebuild the request from the "
-                                 "spec, never a guessed treatment")
-            place = note[0].lower() + note[1:]
-        else:
-            place = "one inside each package card in card order"
-        out.append(f"BUTTON: this section carries exactly {len(many)} buttons, {place}, "
-                   "labelled " + ", ".join(f'"{x}"' for x in many) +
+        out.append(f"BUTTON: this section carries exactly {len(many)} buttons, one inside each package card in card "
+                   "order, labelled " + ", ".join(f'"{x}"' for x in many) +
                    "; no other button, link row or sticky bar.")
     elif cta:
         # a label of 8 words or more is named by pointing at the CTA LABEL line: quoting it again would
@@ -479,63 +467,30 @@ def spec_slots(entry: dict, style_id) -> list:
 def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None) -> list:
     names = spec.get("role_names") or {}
     units, order, _notes = parse_manuscript(text)
-    allowed = page_role.allowed_sequences(spec)  # the same resolver the executor's check reads
-    if order not in allowed:
-        want = allowed[0]
+    sequence = list(spec["sequence"])
+    if order != sequence:
         raise BuildError(
             f"section count: the manuscript has {len(order)} sections {order} but the "
-            f"{spec_label(spec)} has {len(want)} canonical sections {want}; "
-            f"missing {[i for i in want if i not in order]}, unexpected "
-            f"{[i for i in order if i not in want]}")
-    sequence = order  # the matched sequence, so an optional 5A/5B/5C expansion builds one section per child
+            f"{spec_label(spec)} has {len(sequence)} canonical sections {sequence}; "
+            f"missing {[i for i in sequence if i not in order]}, unexpected "
+            f"{[i for i in order if i not in sequence]}")
     role_page = bool(spec.get("page_role"))
     entries = {e["id"]: e for e in spec["sections"]}
-    kids = page_role.child_names(spec)
-    # A page type whose spec forbids offer buttons carries utility actions only (support,
-    # access, manage purchase): its `rules.offer_buttons` says so.
-    rules = spec.get("rules") if isinstance(spec.get("rules"), dict) else {}
-    utility_page = rules.get("offer_buttons") == "forbidden"
     out = []
     for sid in sequence:
         copy, buttons = section_copy([u for u in units if u.section == sid])
-        spec_section = entries.get(sid, {})
-        # The spec's own multiplicity, from its `cta.standalone` declaration: "forbidden" allows
-        # no button at all, "per_card" one button per package card (the spec's `min` is the
-        # floor), and "optional" on a utility page carries its utility actions side by side.
-        # Everything else is landing's one button.
-        cta_rule = spec_section.get("cta") if isinstance(spec_section.get("cta"), dict) else {}
-        standalone = cta_rule.get("standalone")
-        per_card = standalone == "per_card"
-        utility = standalone == "optional" and utility_page
-        if buttons and standalone == "forbidden":
-            raise BuildError(f"section {sid}: {len(buttons)} CTA buttons {buttons}; the "
-                             f"{spec_label(spec)} forbids a button in this section")
-        if per_card and cta_rule.get("min") and len(buttons) < int(cta_rule["min"]):
-            raise BuildError(f"section {sid}: the {spec_label(spec)} needs at least {cta_rule['min']} "
-                             f"package buttons, one per card; the manuscript carries {len(buttons)}")
-        if len(buttons) > 1 and not (per_card or utility):
+        spec_section = next((x for x in spec["sections"] if x["id"] == sid), {})
+        per_card = spec_section.get("cta", {}).get("standalone") == "per_card"
+        if len(buttons) > 1 and not per_card:
             raise BuildError(f"section {sid}: {len(buttons)} CTA buttons {buttons}; "
                              "one button per section")
         entry = {"section_id": sid,
-                 "section_name": (names.get(sid) or kids.get(sid)
-                                  or (spec_section.get("name") if role_page else None)
+                 "section_name": (names.get(sid) or (entries[sid].get("name") if role_page else None)
                                   or ROLE_NAMES.get(sid)),
-                 "copy": copy,
-                 "cta": None if (per_card or len(buttons) > 1) else (buttons[0] if buttons else None),
-                 "slots": slots.get(sid) or (spec_slots(spec_section, style_id) if role_page else [])}
-        if per_card or len(buttons) > 1:  # one per package card, or the page type's own utility actions
+                 "copy": copy, "cta": None if per_card else (buttons[0] if buttons else None),
+                 "slots": slots.get(sid) or (spec_slots(entries[sid], style_id) if role_page else [])}
+        if per_card:  # one button per package card
             entry["cta_labels"] = buttons
-            if utility:
-                # Keep the treatment: the spec's own note says which action is filled and which
-                # are outlined (section 5) or that each access card carries its own (section 3).
-                # Never the landing/product-selection package-card rule, and never a guess.
-                note = str(cta_rule.get("note") or "").strip()
-                if not note:
-                    raise BuildError(f"section {sid}: the {spec_label(spec)} carries its utility "
-                                     "actions side by side but its cta block declares no note; the "
-                                     "treatment must come from the spec, never a guess")
-                entry["cta_layout"] = "utility"
-                entry["cta_note"] = note
         # a non-landing form's spec pins each section's composition role, ground and behaviour note
         for key, field in (("composition_role", "composition_role"), ("ground", "ground")):
             if spec_section.get(field):
@@ -548,7 +503,7 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None) 
         # Part 6): a name, not a sentence. It is a verbatim label of its own so the
         # executor's truncated-copy guard keeps reading prose only.
         rows = copy.splitlines()
-        if (sid == "12" or spec_section.get("signature_label")) and len(rows) > 1 and rows[-1][-1] not in exe.TERMINAL and len(rows[-1].split()) <= 8:
+        if (sid == "12" or entries[sid].get("signature_label")) and len(rows) > 1 and rows[-1][-1] not in exe.TERMINAL and len(rows[-1].split()) <= 8:
             entry["copy"], entry["labels"] = "\n".join(rows[:-1]), [rows[-1]]
         out.append(entry)
     return out
@@ -705,24 +660,11 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         version, spec = structure["copy_version"], structure
         sections = sections_from_page(page_doc, structure, slots, notes)
     else:
-        role_form = copy_forms.form_for_role(page_role)  # the one registry: it reads plural page_roles too
         spec = role_spec.load(page_role)
         if spec:
-            # the executor's own rule for a role spec (check_section_count): that role is built
-            # from a landing form's style reference, never from a page type's own form
-            if version and version not in role_spec.FORMS:
-                raise BuildError(
-                    f"--copy-version {version!r} does not fit page role {page_role!r}: that role "
-                    f"is drawn from the {', '.join(role_spec.FORMS)} form (a page type is never "
-                    "forced into another's sections)")
             version = version or spec["form"]
         else:
-            if role_form and version and version != role_form:
-                raise BuildError(
-                    f"--copy-version {version!r} does not fit page role {page_role!r}: that role "
-                    f"is drawn from the {role_form!r} form (a page type is never forced into "
-                    "another's sections)")
-            version = version or role_form
+            version = version or copy_forms.form_for_role(page_role)
             if not version:
                 raise BuildError("--copy-version is required for a landing page (standard, long-form, product-selection or upsell)")
             if version not in copy_forms.SPEC_FILES:
@@ -744,31 +686,12 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
                 page_kinds.check(kind, version)
         except page_kinds.KindError as exc:
             raise BuildError(f"page kind: {exc}")
-    # The page role the request IS. A spec names one role in `page_role`, or several in
-    # `page_roles` (the upsell form serves upsell_1 and upsell_2): the runner's verified role
-    # is stamped, and a role the form does not serve is refused rather than silently landing.
-    built_role = spec.get("page_role")
-    if not built_role and spec.get("page_roles"):
-        served = list(spec["page_roles"])
-        if page_role not in served:
-            raise BuildError(
-                f"page role {page_role!r} is not one of {served} for the {spec['copy_version']} "
-                "form; pass --page-role with the role this page runs as (the runner verifies it "
-                "against the bundle)")
-        built_role = page_role
-    elif built_role and page_role not in (built_role, "landing"):
-        # "landing" is the documented default (the form's own role is stamped); any other role
-        # must be the form's, never silently overridden by the spec
-        raise BuildError(
-            f"page role {page_role!r} does not serve the {spec['copy_version']} form: that form "
-            f"is the {built_role} page's own (a page type is never forced into another's "
-            "sections)")
     prose = json.loads(neutral(json.dumps(prose)))  # a reference's "Pain 01" band label is a framework name too
     request = {"model": model, "style": style, "copy_version": version,
                "references": references, "sections": sections,
                "stage_prompts": {stage: template_for(stage, {})}}
-    if built_role:
-        request["page_role"] = built_role
+    if spec.get("page_role"):
+        request["page_role"] = spec["page_role"]
     if spec.get("form"):
         request["_role_spec"] = spec  # the wireframe block reads it; never written out
     if structure:
@@ -819,7 +742,7 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
             raise BuildError(f"{exc} (supply --design-prose with the run's measured design system)")
         raise
     request["metadata"] = {
-        "stage": stage, "copy_version": version, "page_role": built_role or "landing",
+        "stage": stage, "copy_version": version, "page_role": spec.get("page_role", "landing"),
         "page_kind": kind, "section_count": len(sections),
         "canonical_ids": [s["section_id"] for s in sections], "provider_calls": 0,
         **({"page_role": structure["role"], **notes} if structure else {}),

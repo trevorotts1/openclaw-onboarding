@@ -1,13 +1,3 @@
-## [v2.1.25] - 2026-10-24 - build-only, never a responder (PBB-115 T-19 / C-19)
-
-Adds the missing half of the D-15 ownership conflict: this skill built native GHL workflows that could answer, while Skill 38 declares it owns every inbound conversation. The rule is now stated where the build happens.
-
-- **SKILL.md** gains one closing pointer: this skill builds and QC's the GHL workflow that renders interactive controls, and **never answers a conversation or an interactive step**. A native GHL workflow node is a build artifact, not a responder. The single-owner contract — OpenClaw inbound by default, with rendered controls, provider callbacks, free text and stale taps all resolving to one owner, and any contract naming two responders refused — lives at `38-conversational-ai-system/launch/interactive-owner-contract.md`.
-- **No code change.** No engine, CLI, template or QC script behaviour changes; the pointer is a documentation boundary, and the machine proof lives in Skill 38 (`scripts/qc-interactive-owner.sh`, 40 tests) which asserts this line is present and that this skill points at the contract.
-- **Version lockstep.** `skill-version.txt` and the SKILL.md frontmatter both move v2.1.24 -> v2.1.25. Existing suites unchanged: `pytest tests` 84 passed.
-
-
-
 ## [v2.1.20] - 2026-10-19 - capability-gate breadth suite
 
 - adds tests/test_capability_breadth.py exercising the capability gate across 140 operations

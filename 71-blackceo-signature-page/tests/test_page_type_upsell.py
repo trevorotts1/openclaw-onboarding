@@ -59,11 +59,10 @@ def cli(script, *args):
                           capture_output=True, text=True)
 
 
-def upsell_request(stage, run, copy=COPY_1, bundle=BUNDLE_1, role="upsell_1"):
+def upsell_request(stage, run, copy=COPY_1, bundle=BUNDLE_1):
     spec = load(exe.SPEC_DIR / "upsell-v6.json")
     sections = builder.sections_from_copy_json(load(copy), load(bundle), spec, {})
-    return builder.build(stage, "upsell", "", {}, {}, [], "STUB-NO-MODEL", "", run, role,
-                         sections=sections)
+    return builder.build(stage, "upsell", "", {}, {}, [], "STUB-NO-MODEL", "", run, sections=sections)
 
 
 class SpecTests(unittest.TestCase):
@@ -76,9 +75,7 @@ class SpecTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def check(self, ids):
-        # the role is declared, as every upsell run declares it: landing + upsell is the
-        # disagreement finding 14 refuses
-        request = {"copy_version": "upsell", "page_role": "upsell_1", "sections": tsc.sections(ids)}
+        request = {"copy_version": "upsell", "sections": tsc.sections(ids)}
         return exe.check_section_count(self.run, request, True)
 
     def test_eight_sections_pass_and_other_counts_are_refused(self):
@@ -143,7 +140,7 @@ class BuilderTests(unittest.TestCase):
     def test_upsell_2_builds_the_same_shape_with_its_own_terms(self):
         if not (COPY_2.is_file() and BUNDLE_2.is_file()):
             self.skipTest("upsell 2 fixtures absent")
-        request = upsell_request("desktop-wireframe", self.run, COPY_2, BUNDLE_2, role="upsell_2")
+        request = upsell_request("desktop-wireframe", self.run, COPY_2, BUNDLE_2)
         self.assertEqual(len(request["sections"]), 8)
         self.assertIn("USD 47.00 today", request["sections"][0]["terms"])
         self.assertEqual(len(request["sections"][0]["ack"]), 2, "both entry-path acknowledgements")
@@ -214,7 +211,7 @@ class BuilderTests(unittest.TestCase):
         for stage in ("desktop-wireframe", "visual-mockup"):
             sections = builder.sections_from_copy_json(load(COPY_1), load(BUNDLE_1), spec, {})
             request = builder.build(stage, "upsell", "", {}, tsc.design_prose(), [],
-                                    tsc.REAL_MODEL, "", self.run, "upsell_1", sections=sections)
+                                    tsc.REAL_MODEL, "", self.run, sections=sections)
             budget = request["metadata"]["char_budget"]
             self.assertGreaterEqual(budget["min_seen"], budget["target"], stage)
             self.assertLessEqual(budget["max_seen"], budget["max"], stage)
@@ -238,8 +235,8 @@ class RunTests(unittest.TestCase):
 
     def build_all(self):
         for stage in STAGES:
-            proc = cli("build_production_request.py", "--copy-version", "upsell", "--page-role", "upsell_1",
-                       "--copy-json", COPY_1, "--bundle", BUNDLE_1, "--stage", stage, "--out",
+            proc = cli("build_production_request.py", "--copy-version", "upsell", "--copy-json",
+                       COPY_1, "--bundle", BUNDLE_1, "--stage", stage, "--out",
                        self.run / f"production-request-{stage}.json", "--run-dir", self.run,
                        "--model", "STUB-NO-MODEL")
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)

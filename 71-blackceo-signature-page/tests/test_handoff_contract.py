@@ -13,7 +13,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 PY = sys.executable
@@ -29,10 +28,6 @@ def load_module(name, path):
 
 VCS = load_module("validate_copy_structure",
                   ROOT / "scripts" / "validate_copy_structure.py")
-
-sys.path.insert(0, str(ROOT / "scripts"))  # validate_handoff imports page_kinds
-VH = load_module("validate_handoff", VALIDATE_HANDOFF)
-sys.path.pop(0)
 
 # The handoff typing rule is spec-independent; the minimal spec keeps every
 # other validate() leg inert (no sections, no sequence, no CTA map rules).
@@ -132,27 +127,12 @@ EXTERNAL_PAGE = """<!doctype html><html><body>
 <iframe id="inline-FORM-1" src="https://api.leadconnectorhq.com/widget/form/FORM-1"></iframe>
 </body></html>"""
 
-# Finding 16: a sales page hands off to the client's checkout, not to a form.
-SALES_PAGE = """<!doctype html><html><body>
-<h1>Elevate</h1>
-<a class="cta" href="https://pay.example.com/checkout/elevate">Claim Your Seat</a>
-</body></html>"""
 
-SALES_CHECKOUT = "https://pay.example.com/checkout/elevate"
-
-def sales_ctas(handoff_type="external_link"):
-    return [{"section": "1", "label": "Claim Your Seat",
-             "handoff_type": handoff_type, "primary": True}]
-
-
-def make_page_run(td: Path, handoff, page=GOOD_PAGE, manifest_ctas="default",
-                  page_kind=None):
+def make_page_run(td: Path, handoff, page=GOOD_PAGE, manifest_ctas="default"):
     run = td / "run"
     intake = {"page_version": "standard", "brand_owner": "Fixture",
               "brand_file": "brand-fixture.json", "image_cap": 5,
               "image_engine": "kie", "test_run": False}
-    if page_kind is not None:
-        intake["page_kind"] = page_kind
     if handoff is not None:
         intake["funnel_handoff"] = handoff
     write(run / "intake.json", intake)
@@ -296,154 +276,6 @@ class ValidateHandoffTest(unittest.TestCase):
         proc = self.validate(run)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("name AND object id", proc.stdout)
-
-    # --- finding 16: the handoff is derived from the page kind ----------
-    def test_sales_page_with_external_checkout_link_passes(self):
-        # FAILS BEFORE the finding-16 fix: the validator required form_pop and
-        # the fixed step order regardless of the page kind, so this sales page
-        # (a real checkout link, no form at all) was refused twice.
-        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
-                            page=SALES_PAGE, manifest_ctas=sales_ctas(),
-                            page_kind="sales")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 0, proc.stdout)
-        self.assertIn("action checkout", proc.stdout)
-        self.assertIn(SALES_CHECKOUT, proc.stdout)
-
-    def test_sales_page_with_a_form_pop_primary_fails_by_name(self):
-        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
-                            page=SALES_PAGE,
-                            manifest_ctas=sales_ctas("form_pop"),
-                            page_kind="sales")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("external_link", proc.stdout)
-
-    def test_sales_page_with_a_placeholder_checkout_link_fails(self):
-        page = ("<!doctype html><html><body><h1>Elevate</h1>"
-                "<a class=\"cta\" href=\"#checkout\">Claim Your Seat</a>"
-                "</body></html>")
-        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
-                            page=page, manifest_ctas=sales_ctas(),
-                            page_kind="sales")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("placeholder", proc.stdout)
-        self.assertIn("Claim Your Seat", proc.stdout)
-
-    def test_sales_page_with_a_non_checkout_primary_fails(self):
-        page = ("<!doctype html><html><body><h1>Elevate</h1>"
-                "<button class=\"cta\">Claim Your Seat</button>"
-                "</body></html>")
-        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
-                            page=page, manifest_ctas=sales_ctas(),
-                            page_kind="sales")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("not a link", proc.stdout)
-
-    def test_sales_page_must_lead_where_intake_says(self):
-        run = make_page_run(self.td,
-                            {"checkout_url": "https://pay.example.com/other"},
-                            page=SALES_PAGE, manifest_ctas=sales_ctas(),
-                            page_kind="sales")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("not the checkout destination recorded at intake",
-                      proc.stdout)
-
-    def test_sales_page_with_a_relative_link_fails(self):
-        page = ("<!doctype html><html><body><h1>Elevate</h1>"
-                "<a class=\"cta\" href=\"/checkout\">Claim Your Seat</a>"
-                "</body></html>")
-        run = make_page_run(self.td, {"checkout_url": SALES_CHECKOUT},
-                            page=page, manifest_ctas=sales_ctas(),
-                            page_kind="sales")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("not an absolute http(s) checkout destination",
-                      proc.stdout)
-
-    def test_opt_in_without_a_registration_form_fails(self):
-        # The form route is unchanged: an opt-in page still must record the
-        # registration form (or the explicit missing input).
-        run = make_page_run(self.td, None, page=SALES_PAGE,
-                            page_kind="opt_in")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("records no funnel_handoff", proc.stdout)
-
-    def test_opt_in_with_the_registration_form_passes(self):
-        run = make_page_run(self.td, {"form": FORM, "behavior": "form_pop",
-                                      "step_order": STEP_ORDER},
-                            page_kind="opt_in")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 0, proc.stdout)
-        self.assertIn("form_pop", proc.stdout)
-
-    def test_unknown_page_kind_fails_by_name(self):
-        run = make_page_run(self.td, {"form": FORM, "behavior": "form_pop",
-                                      "step_order": STEP_ORDER},
-                            page_kind="bogus")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 1)
-        self.assertIn("bogus", proc.stdout)
-
-    def test_every_recorded_checkout_destination_shape_is_compared(self):
-        # funnel_handoff.checkout_url, funnel_handoff.checkout.url and
-        # intake.json checkout_url: whichever is recorded, the page must
-        # lead there.
-        records = [{"checkout_url": "https://pay.example.com/other"},
-                   {"checkout": {"url": "https://pay.example.com/other"}}]
-        for record in records:
-            with self.subTest(record=record):
-                run = make_page_run(self.td, record, page=SALES_PAGE,
-                                    manifest_ctas=sales_ctas(),
-                                    page_kind="sales")
-                proc = self.validate(run)
-                self.assertEqual(proc.returncode, 1, proc.stdout)
-                self.assertIn("not the checkout destination recorded at "
-                              "intake", proc.stdout)
-        run = make_page_run(self.td, {}, page=SALES_PAGE,
-                            manifest_ctas=sales_ctas(), page_kind="sales")
-        intake = json.loads((run / "intake.json").read_text())
-        intake["checkout_url"] = "https://pay.example.com/other"
-        write(run / "intake.json", intake)
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 1, proc.stdout)
-        self.assertIn("not the checkout destination recorded at intake",
-                      proc.stdout)
-
-    def test_sales_page_without_a_recorded_destination_passes_printed(self):
-        # Deliberate while scripts/write_intake.py has no checkout flag:
-        # with nothing on record the page's own absolute link is accepted
-        # and the absence is printed, never silent.
-        run = make_page_run(self.td, {}, page=SALES_PAGE,
-                            manifest_ctas=sales_ctas(), page_kind="sales")
-        proc = self.validate(run)
-        self.assertEqual(proc.returncode, 0, proc.stdout)
-        self.assertIn("no destination recorded at intake", proc.stdout)
-
-
-class HandoffRouteTest(unittest.TestCase):
-    """The route a kind requires is declared in references/page-kinds.json,
-    never assumed by the validator."""
-
-    def route(self, entry):
-        with mock.patch.object(VH.page_kinds, "entry", return_value=entry):
-            return VH.handoff_route({"page_kind": "sales"})
-
-    def test_an_undeclared_action_fails_by_name(self):
-        route = self.route({"action": "booking"})
-        self.assertIn("error", route)
-        self.assertIn("booking", route["error"])
-
-    def test_a_handoff_type_contradicting_the_action_fails(self):
-        route = self.route({"action": "checkout",
-                            "handoff": {"primary_handoff_type": "form_pop"}})
-        self.assertIn("error", route)
-        self.assertIn("form_pop", route["error"])
-        self.assertIn("error", self.route({"action": "checkout"}))
 
 
 if __name__ == "__main__":

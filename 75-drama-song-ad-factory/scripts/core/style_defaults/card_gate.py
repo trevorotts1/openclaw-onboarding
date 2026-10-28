@@ -254,7 +254,7 @@ def audio_style_picks():
     e.g. Soul Rise = starts slow and soulful through the pain, lifts into
     an upbeat groove at the turning point."""
     lines = []
-    for sid in D.MUSIC_STYLES.STYLES:      # the D18 three the card offers
+    for sid in D.MUSIC_STYLES.style_ids():
         style = D.MUSIC_STYLES.style(sid)
         label = style["label"]
         desc = style.get("sound") or style.get("notes") or ""

@@ -48,14 +48,6 @@ if [[ ! -f "$ENTRY_FILE" ]]; then
   exit 2
 fi
 
-# Shared idempotency + silent-delivery helpers (full-visibility presence
-# check, disabled-job tombstones, delivery validation). Sourced after the
-# entry-file check so a tampered/relocated tree still reports its own defect.
-CRON_LIB="$ROOT/scripts/lib-cron-presence.sh"
-[[ -f "$CRON_LIB" ]] || { _log "FAIL shared cron helper missing: $CRON_LIB (repo defect)"; exit 2; }
-# shellcheck source=./lib-cron-presence.sh
-source "$CRON_LIB"
-
 command -v python3 >/dev/null 2>&1 || { _log "FAIL python3 not available to parse the schedule entry"; exit 2; }
 
 # Parse the entry file (name/schedule/tz/command) via python3 — no jq
@@ -90,32 +82,41 @@ if ! command -v openclaw >/dev/null 2>&1; then
   exit 3
 fi
 
-# Idempotency: exact-name match against `openclaw cron list --all --json`
-# (full visibility — the default listing hides deliberately disabled jobs;
-# see lib-cron-presence.sh). A disabled match is a TOMBSTONE: never
-# resurrected. An enabled match gets its delivery mode validated.
-_cron_state "$CRON_NAME"; _cp_rc=$?
-case "$_cp_rc" in
-  0)
-    if _cron_ensure_silent "$CRON_NAME"; then
-      _log "OK  '$CRON_NAME' cron already present (delivery silent) — nothing to do"
-      exit 0
-    fi
-    _log "FAIL '$CRON_NAME' cron already present but its delivery announces into client chat (job '${OC_CRON_JOB_ID:-?}') and the in-place repair failed. Non-fatal — fix: openclaw cron edit ${OC_CRON_JOB_ID:-<id>} --no-deliver"
-    exit 3
-    ;;
-  1)
-    : # absent — fall through and register
-    ;;
-  3)
-    _log "OK  '$CRON_NAME' cron present but DISABLED (tombstone: deliberately disabled or auto-disabled after failures) — leaving it disabled, NOT resurrecting"
-    exit 0
-    ;;
-  *)
-    _log "FAIL could not determine a single '$CRON_NAME' job from 'openclaw cron list --all --json' (listing unreadable, or duplicate names an operator must dedupe) — NOT registering (would risk a duplicate). Non-fatal — re-run to backfill."
-    exit 3
-    ;;
-esac
+# Idempotency: exact-name match against `openclaw cron list --json`
+# (jq -> python3, never text-table grep — same truncation-safety discipline
+# as scripts/ensure-pipeline-crons.sh::_cron_present).
+_cron_present() {
+  local raw
+  raw=$(openclaw cron list --json 2>/dev/null) || return 2
+  [[ -n "$raw" ]] || return 2
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$raw" | jq -e --arg n "$CRON_NAME" \
+      '(if type=="array" then . else .jobs // [] end) | map(select(.name == $n)) | length > 0' \
+      >/dev/null 2>&1
+    case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
+  fi
+  OC_CRON_RAW="$raw" python3 - "$CRON_NAME" <<'PYEOF' 2>/dev/null
+import json, os, sys
+name = sys.argv[1]
+try:
+    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+except Exception:
+    sys.exit(2)
+jobs = data if isinstance(data, list) else data.get("jobs", [])
+sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
+PYEOF
+}
+
+# D10: a failed/unparseable `cron list` is UNKNOWN, not "absent" — adding on it creates duplicates.
+_cron_present && _cp_rc=0 || _cp_rc=$?
+if [[ "$_cp_rc" -eq 2 ]]; then
+  _log "FAIL could not read 'openclaw cron list --json' — presence of '$CRON_NAME' unknown, NOT registering (would risk a duplicate). Non-fatal — re-run to backfill."
+  exit 3
+fi
+if [[ "$_cp_rc" -eq 0 ]]; then
+  _log "OK  '$CRON_NAME' cron already present — nothing to do"
+  exit 0
+fi
 
 # --no-deliver: a maintenance-window sweep is an operator-internal tick, not
 # a client-facing announcement — without this flag `openclaw cron add`
@@ -126,17 +127,9 @@ esac
 # without it.
 if openclaw cron add --name "$CRON_NAME" --cron "$CRON_SCHEDULE" --tz "$CRON_TZ" \
      --command "$CRON_COMMAND" --no-deliver >/dev/null 2>&1 \
-   && _cron_state "$CRON_NAME"; then
-  # PROVE the --no-deliver above took before calling it DONE: a CLI that
-  # accepts and silently ignores the flag would otherwise get a green
-  # install while the fresh job announces into client chat (finding 29's
-  # exact harm).
-  if _cron_ensure_silent "$CRON_NAME"; then
-    _log "DONE '$CRON_NAME' cron registered ($CRON_SCHEDULE $CRON_TZ)"
-    exit 0
-  fi
-  _log "FAIL '$CRON_NAME' was registered but its delivery announces into client chat (job '${OC_CRON_JOB_ID:-?}') and the in-place repair failed — this CLI may be ignoring --no-deliver. Non-fatal — fix: openclaw cron edit ${OC_CRON_JOB_ID:-<id>} --no-deliver"
-  exit 3
+   && _cron_present; then
+  _log "DONE '$CRON_NAME' cron registered ($CRON_SCHEDULE $CRON_TZ)"
+  exit 0
 fi
 
 _log "FAIL could not register '$CRON_NAME' (openclaw cron add rc!=0, or --command/--no-deliver unsupported on this CLI build). Non-fatal — re-run to backfill."

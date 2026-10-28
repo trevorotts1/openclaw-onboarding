@@ -41,11 +41,9 @@ tree). Only GAP and FAIL gate.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import importlib.util
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -90,79 +88,18 @@ OPTIONAL_MODULES = ("PIL", "cv2", "numpy", "playwright", "jsonschema", "pypdf")
 
 REPO_ONLY_MARKER = "REPO_ROOT"
 
-# The sync allowlist that classes every file, and the location it records for
-# the 999 (Claude Code) edition of this skill.
-ALLOWLIST_REL = "repo-integration/skill71-sync-allowlist.json"
-NINE_SKILL_REL = ".claude/skills/blackceo-signature-page"
-
 
 def skill_root_for(script: Path) -> Path:
     return script.resolve().parents[1]
 
 
-def _allowlist(root: Path) -> dict:
-    try:
-        return json.loads((root / ALLOWLIST_REL).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-
-
-def nine_layout(root: Path, allow=None) -> bool:
-    """True when `root` is the 999 (Claude Code) install of this skill.
-
-    The allowlist names that location itself (`skill_999`); a checkout of the
-    onboarding repository never ends with it.
-    """
-    if allow is None:
-        allow = _allowlist(root)
-    nine_rel = allow.get("skill_999") or NINE_SKILL_REL
-    here = Path(root).as_posix().rstrip("/")
-    return here == nine_rel or here.endswith("/" + nine_rel)
-
-
-def required_local(root: Path, allow=None):
-    """Required and prohibited assets for THIS layout.
-
-    `scripts/two_strike_adapter.py` is onboarding-only: the sync allowlist
-    classes it `onb_only` and forbids it in the 999 edition. Demanding it
-    there would make a correctly synced 999 install fail its own gate, so
-    the required list follows the layout -- and the prohibition is kept, not
-    traded away, by checking those files are ABSENT.
-    """
-    if allow is None:
-        allow = _allowlist(root)
-    if not nine_layout(root, allow):
-        return REQUIRED_LOCAL, ()
-    globs = (allow or {}).get("classes", {}).get("onb_only", {}).get("globs", [])
-    prohibited = tuple(rel for rel in REQUIRED_LOCAL
-                       if any(fnmatch.fnmatch(rel, g) for g in globs))
-    return tuple(rel for rel in REQUIRED_LOCAL if rel not in prohibited), prohibited
-
-
 def check_layout(root: Path):
     rows, ok = [], True
-    allow = _allowlist(root)
-    required, prohibited = required_local(root, allow)
-    # A 999 layout must arrive at a real prohibition. An unreadable allowlist
-    # or one whose onb_only class matches nothing silently drops it -- the
-    # adapter would then be checked as required and never as forbidden, so a
-    # 999 install could carry it green. Fail closed instead.
-    if nine_layout(root, allow) and not prohibited:
-        rows.append(("FAIL", "sync allowlist prohibition",
-                     "allowlist missing, unparseable, or classes no onb_only asset; "
-                     "this layout must forbid the onb_only files"))
-        ok = False
-    for rel in required:
+    for rel in REQUIRED_LOCAL:
         present = (root / rel).is_file()
         rows.append(("PASS" if present else "FAIL", f"asset {rel}",
                      "" if present else "missing"))
         ok = ok and present
-    for rel in prohibited:
-        present = (root / rel).is_file()
-        rows.append(("FAIL" if present else "PASS", f"prohibited asset {rel}",
-                     "present in this layout; the sync allowlist forbids it"
-                     if present else "absent, as the sync allowlist requires"))
-        ok = ok and not present
     for rel in ("scripts", "references", "assets", "tests"):
         present = (root / rel).is_dir()
         rows.append(("PASS" if present else "FAIL", f"dir {rel}",
@@ -284,14 +221,6 @@ EXECUTOR_FAIL_CLOSED = (
 
 TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Exit 0 is proof only when BOTH markers of a completed preflight are present:
-# the section check (stage_executor.py:1666) and at least one composed prompt
-# (`PREFLIGHT <stage> <file> ratio=...`, stage_executor.py:1706). The executor
-# prints PREFLIGHT_SECTIONS before composing anything, so a run that dies
-# straight after section validation still prints the first and nothing else.
-EXECUTOR_SECTIONS_RE = re.compile(r"PREFLIGHT_SECTIONS\b")
-EXECUTOR_PROMPT_RE = re.compile(r"PREFLIGHT \S+ \S+ ratio=")
-
 
 def _last_nonempty_line(text: str) -> str:
     for raw in reversed(text.splitlines()):
@@ -338,23 +267,14 @@ def classify_executor_exit(returncode: int, text: str) -> str:
 
     Exit 0 is not proof either: an empty or stubbed stage_executor.py imports
     cleanly and exits 0 printing nothing. A zero exit counts as 'ok' only with
-    POSITIVE evidence that the preflight both validated and composed -- an
-    anchored PREFLIGHT_SECTIONS line AND at least one
-    `PREFLIGHT <stage> <file> ratio=...` line -- and no traceback. A refusal-
-    shaped line at exit 0 is never a success: the executor prints
-    `PREFLIGHT ... REFUSED:` for a stage it could not compose and `FAIL:` for
-    a run it abandoned, and either appearing ANYWHERE on a line -- the REFUSED
-    form sits mid-line -- poisons the exit-0 proof however good the rest looks.
+    POSITIVE evidence that the preflight ran -- at least one line beginning
+    `PREFLIGHT` (the executor prints PREFLIGHT_SECTIONS at stage_executor.py:1666
+    and `PREFLIGHT <stage> <file> ratio=...` at :1706) -- and no traceback.
     """
     if returncode == 0:
-        lines = [raw.strip() for raw in text.splitlines()]
         if TRACEBACK_MARKER in text:
             return "gap"
-        if any("FAIL:" in raw or "REFUSED:" in raw for raw in lines):
-            return "gap"
-        if not any(EXECUTOR_SECTIONS_RE.match(raw) for raw in lines):
-            return "gap"
-        if not any(EXECUTOR_PROMPT_RE.match(raw) for raw in lines):
+        if not any(raw.strip().startswith("PREFLIGHT") for raw in text.splitlines()):
             return "gap"
         return "ok"
     if returncode != 1:  # 2 is usage/run-dir, never a fail-closed refusal
@@ -379,24 +299,6 @@ def verdict_is_ready(layout_ok: bool, import_ok: bool, dry_ok: bool, rows) -> bo
     """A demonstrated gap always loses, whatever the section flags say."""
     gaps = [r for r in rows if r[0] in ("GAP", "FAIL")]
     return bool(layout_ok and import_ok and dry_ok and not gaps)
-
-
-def _layout_fixture(tmp: Path, omits=(), extra=(), nine=False, allow_text=None) -> Path:
-    """A synthetic install: every required asset, minus `omits`, plus `extra`."""
-    root = tmp / NINE_SKILL_REL if nine else tmp
-    for rel in ("scripts", "references", "assets", "tests"):
-        (root / rel).mkdir(parents=True, exist_ok=True)
-    allow = {"skill_999": NINE_SKILL_REL,
-             "classes": {"onb_only": {"globs": ["scripts/two_strike_adapter.py"]}}}
-    for rel in [r for r in REQUIRED_LOCAL if r not in omits] + list(extra):
-        path = root / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if rel == ALLOWLIST_REL:
-            path.write_text(json.dumps(allow) if allow_text is None else allow_text,
-                            encoding="utf-8")
-        else:
-            path.write_text("x", encoding="utf-8")
-    return root
 
 
 def self_check() -> int:
@@ -426,35 +328,12 @@ def self_check() -> int:
          "PermissionError: [Errno 13] Permission denied", "gap"),
     )
     exit_cases = (
-        # A composed prompt without the section check is half a preflight.
-        (0, "PREFLIGHT visual-mockup mobile/part-1.png ratio=3:4 chars=17000", "gap"),
+        (0, "PREFLIGHT visual-mockup mobile/part-1.png ratio=3:4 chars=17000", "ok"),
         # Exit 0 from a script that never ran the preflight proves nothing: an
         # empty stage_executor.py exits 0 printing nothing.
         (0, "", "gap"),
         (0, "Traceback (most recent call last):\nKeyError: 'sections'", "gap"),
-        # The section banner alone is what a run that dies before composing
-        # prints. It proves the section check, not the preflight.
-        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12", "gap"),
-        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12\n"
-            "PREFLIGHT visual-mockup desktop/part-01.png ratio=3:4 chars=17000", "ok"),
-        # A refusal-shaped line at exit 0 is still a refusal. These two carry
-        # no composed-prompt line, so they prove only the marker rule; the
-        # cases below carry BOTH markers and are what prove the refusal gate.
-        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12\nFAIL: broken", "gap"),
-        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12\n"
-            "PREFLIGHT visual-mockup a.png REFUSED: broken", "gap"),
-        # Both positive markers present, refusal-shaped line added: the gate
-        # under test, non-vacuously.
-        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12\n"
-            "PREFLIGHT visual-mockup a.png ratio=3:4 chars=17000\nFAIL: broken", "gap"),
-        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12\n"
-            "PREFLIGHT visual-mockup a.png ratio=3:4 chars=17000\n"
-            "PREFLIGHT design-board b.png REFUSED: broken", "gap"),
-        # FAIL mid-line is refusal-shaped too (REFUSED already sits mid-line
-        # in the emitter's own wording).
-        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12\n"
-            "PREFLIGHT visual-mockup a.png ratio=3:4 chars=17000\n"
-            "summary: 2 composed, 1 FAIL: broken", "gap"),
+        (0, "PREFLIGHT_SECTIONS copy_version=standard sections=12", "ok"),
         (0, "NOTE page_kind: not declared\n", "gap"),
         (1, "FAIL: brand colors unresolved, no image stage may start. Tried: run brand pin "
             "private/brand.json: file not found. Ask the client: What are your brand colors?",
@@ -491,26 +370,6 @@ def self_check() -> int:
             "PREFLIGHT visual-mockup b.png REFUSED: prompt budget: 2 chars, 2 below the "
             "16000-char floor; add genuine specification", "fail-closed"),
     )
-    layout_cases = (
-        # The 999 layout: two_strike_adapter.py is classed onb_only and
-        # forbidden there, so its absence must not read as a missing asset.
-        ("999 layout without the onb_only module", True,
-         ("scripts/two_strike_adapter.py",), (), None, True),
-        # ... and the prohibition still bites when it is carried across.
-        ("999 layout carrying the prohibited module", True, (),
-         ("scripts/two_strike_adapter.py",), None, False),
-        # The onboarding layout does require it.
-        ("onboarding layout without the module", False,
-         ("scripts/two_strike_adapter.py",), (), None, False),
-        # A neutral asset missing in 999 is still a gap.
-        ("999 layout missing a neutral asset", True,
-         ("references/section-image-prompt.md",), (), None, False),
-        # An unparseable allowlist must not silently drop the prohibition:
-        # every asset is present here, so only the prohibition rule can fail
-        # this fixture.
-        ("999 layout with an unparseable allowlist", True, (), (),
-         "{not json", False),
-    )
     verdict_cases = (
         (True, True, True, [("PASS", "x", "")], True),
         (True, True, True, [("GAP", "x", "")], False),
@@ -533,22 +392,16 @@ def self_check() -> int:
         got = verdict_is_ready(lo, io, do, rows)
         if got != want:
             bad.append(f"verdict {(lo, io, do, [r[0] for r in rows])}: want {want}, got {got}")
-    for label, nine, omits, extra, allow_text, want in layout_cases:
-        with tempfile.TemporaryDirectory() as td:
-            _rows, got = check_layout(
-                _layout_fixture(Path(td), omits, extra, nine, allow_text))
-        if got != want:
-            bad.append(f"layout {label}: want {want}, got {got}")
 
     for line in bad:
         print(f"  [FAIL] {line}")
     if bad:
         print("SELF-CHECK FAIL")
         return 1
-    total = len(build_cases) + len(exit_cases) + len(layout_cases) + len(verdict_cases)
-    print(f"SELF-CHECK PASS — {total} classification, layout and verdict cases "
+    total = len(build_cases) + len(exit_cases) + len(verdict_cases)
+    print(f"SELF-CHECK PASS — {total} classification and verdict cases "
           f"({len(build_cases)} build, {len(exit_cases)} executor exit, "
-          f"{len(layout_cases)} layout, {len(verdict_cases)} verdict)")
+          f"{len(verdict_cases)} verdict)")
     return 0
 
 

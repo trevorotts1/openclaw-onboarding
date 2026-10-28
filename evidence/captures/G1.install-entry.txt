@@ -1,7 +1,0 @@
-# search: G1.install-entry
-# command: git grep -nF Run via: curl -fSL 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- install.sh
-# scope: install.sh
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 1  verdict: present
-# --- stdout ---
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:install.sh:8:#  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash

@@ -1,8 +1,0 @@
-{
-  "workflowData": {
-    "templates": [
-      {"id": "b1", "type": "if_else", "name": "Condition", "parentKey": null, "branches": {"true": "n2"}},
-      {"id": "n2", "type": "end", "name": "End", "parentKey": "b1"}
-    ]
-  }
-}

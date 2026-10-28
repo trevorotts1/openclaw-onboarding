@@ -21,7 +21,7 @@ Facebook (feed posts + carousels + Stories/Reels), Instagram (feed posts + Reels
 
 The exact enabled platform set is determined at runtime by a live GHL connected-accounts query — never assumed from a fixed list.
 
-**Account-type capability is declared, never inferred.** `config/profile-capabilities.json` is the single source of truth for what the declaration grants unattended, what needs one operator step, and what it cannot do at all. Unattended coverage is **unproved**: nothing here monitors a public channel or account, so no unattended publication is reported (`unattended_coverage()` reports the proof required and the owner who must decide it). Personal profiles are always assisted: the system prepares the exact placement and the operator performs the manual post, which is recorded as a receipt. A personal-profile post is never reported as published by the system. See `PROFILE-CAPABILITIES.md`, `shared-utils/personal_profile_capability.py`, and `scripts/profile_capability.py`.
+**Account-type capability is declared, never inferred.** `config/profile-capabilities.json` is the single source of truth for what the system can do unattended, what needs one operator step, and what it cannot do at all. Personal profiles are always assisted: the system prepares the exact placement and the operator performs the manual post, which is recorded as a receipt. A personal-profile post is never reported as published by the system. See `PROFILE-CAPABILITIES.md`, `shared-utils/personal_profile_capability.py`, and `scripts/profile_capability.py`.
 
 The skill is **variable-driven** — every credential, URL, brand voice, and image-model setting is pulled from existing files. **Never hardcode a brand name, a domain, or a credential.**
 

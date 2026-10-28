@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "launch-text-keyword-opt-in",
   "name": "Launch Text Keyword Opt-In — Text EARLY, Double Confirmation, Consent Tags",
   "aliases": [

@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "new-subscriber-indoctrination",
   "name": "New-Subscriber Indoctrination Sequence",
   "aliases": [
@@ -27,10 +25,7 @@
     "fires": "Once per contact",
     "reentry_guard": "Only enter if tag 'indoctrinated' does NOT already exist"
   },
-  "channels": [
-    "email (primary)",
-    "optional SMS for delivery confirmation + whitelist nudge"
-  ],
+  "channels": ["email (primary)", "optional SMS for delivery confirmation + whitelist nudge"],
   "cadence": "Email 0 immediate (delivery), then 1 email/day for the first 48-72 hours (3 follow-up emails). Can hand off to the 5-email Soap Opera Sequence for the deep bond.",
   "distinct_from_soap_opera": "Indoctrination's job = DELIVER the asset + set expectations + whitelist + install the worldview. Soap Opera's job = narrative BONDING + selling the core offer. Use indoctrination as the universal welcome; chain the Soap Opera Sequence after it (or use the SOS as the indoctrination body for product-led lists).",
   "sequence": [
@@ -109,22 +104,9 @@
   "ghl_build": {
     "builder": "Skill 44 — Convert & Flow Operator (caf), Tier 0. Internal-API build when GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN healthy; Tier 4 agent-browser backstop + owner nudge otherwise.",
     "dependencies_first": {
-      "tags": [
-        "lead-new",
-        "indoctrinated",
-        "delivered-asset",
-        "warm"
-      ],
-      "custom_fields": [
-        "optin_source (text)",
-        "asset_delivered (date)"
-      ],
-      "custom_values": [
-        "{{lead_magnet_url}}",
-        "{{ac_name}}",
-        "{{next_step_url}}",
-        "{{brand_name}}"
-      ]
+      "tags": ["lead-new", "indoctrinated", "delivered-asset", "warm"],
+      "custom_fields": ["optin_source (text)", "asset_delivered (date)"],
+      "custom_values": ["{{lead_magnet_url}}", "{{ac_name}}", "{{next_step_url}}", "{{brand_name}}"]
     },
     "workflow": {
       "trigger": "Form Submitted / Funnel Step Submitted (opt-in). Filter: tag 'indoctrinated' NOT present.",

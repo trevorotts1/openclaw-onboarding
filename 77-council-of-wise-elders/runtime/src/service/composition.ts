@@ -57,12 +57,10 @@ import {
 import type { ModelTransport } from '../cli/host-ports.js';
 import {
   discoverConfiguredRoutes,
-  routeUsableWithModel,
   type DiscoveredRoute,
   type RouteDiscoveryOptions,
 } from '../cli/route-discovery.js';
 import type { Clock, IdSource } from '../contracts/index.js';
-import { DEFAULT_COUNCIL_SETTINGS, type CouncilSettings } from '../contracts/schemas.js';
 import { SEAT_IDS } from '../contracts/enums.js';
 import type { MaterialCatalog } from '../context/types.js';
 import type { StoredSession } from '../cli/host-ports.js';
@@ -160,22 +158,6 @@ const WORKER_ID = 'council-service-worker';
 type CouncilDriverHandle = ReturnType<typeof createCouncilDriver>;
 
 const DEFAULT_CONVENE_DRAIN_TIMEOUT_MS = 25_000;
-
-/**
- * Budget service ceilings for a convened session. The grant issued at
- * convene is the authority: the four older modes carry 50/9/8 (exactly
- * what they are documented and printed as), a light or medium session
- * 50/50/50, a heavy session 100/100/100 (see service/driver.ts
- * ceilingsForMode). The service settings must therefore admit those
- * totals — this is the protocol's runaway guard, never a money ceiling
- * (money and tokens stay null on every grant).
- */
-export const CONVENING_SETTINGS: CouncilSettings = {
-  ...DEFAULT_COUNCIL_SETTINGS,
-  max_session_provider_requests: 100,
-  max_output_repair_requests: 100,
-  max_transport_retries_total: 100,
-};
 
 export interface CouncilServiceCompositionOptions {
   /** Owner tenant served at the identity endpoint. */
@@ -522,15 +504,7 @@ function routeProbe(options: RouteProbeOptions): ReadinessProbe {
       );
     }
     const composable = discovered.filter((route) => route.composable);
-    // A route whose ONLY blocker is which of its configured models to use
-    // is usable the moment the caller names one, and convene works with it
-    // (GET /api/council/routes advertises it as usable_with_model). It is
-    // ready; the note below says a model must be named.
-    const usableWithModel = discovered.filter(
-      (route) => !route.composable && routeUsableWithModel(route),
-    );
-    const usable = [...composable, ...usableWithModel];
-    if (usable.length === 0) {
+    if (composable.length === 0) {
       const first = discovered[0];
       return blocked(
         first.failure?.code ?? 'ROUTE_NOT_COMPOSABLE',
@@ -545,20 +519,10 @@ function routeProbe(options: RouteProbeOptions): ReadinessProbe {
       })
       .join(', ');
     const notes = [
-      `${composable.length}/${discovered.length} route(s) composable${described ? `: ${described}` : ''}`,
+      `${composable.length}/${discovered.length} route(s) composable: ${described}`,
       'the route is chosen per session (the client picks, or the convening harness default applies)',
     ];
-    if (usableWithModel.length > 0) {
-      notes.push(
-        `usable once a model is named: ${usableWithModel
-          .map(
-            (route) =>
-              `${route.routeId} (${(route.compatible?.modelCandidates ?? []).join(' | ') || 'no candidates listed'})`,
-          )
-          .join(', ')}; convene with --model`,
-      );
-    }
-    if (options.routeId && !usable.some((route) => route.routeId === options.routeId)) {
+    if (options.routeId && !composable.some((route) => route.routeId === options.routeId)) {
       notes.push(`hinted route ${options.routeId} is not composable`);
     }
     if (typeof options.providerDispatch === 'function') notes.push('dispatch port bound');
@@ -573,10 +537,8 @@ function routeProbe(options: RouteProbeOptions): ReadinessProbe {
  */
 function routeCallableProbe(options: RouteProbeOptions): ReadinessProbe {
   return async (context) => {
-    const usable = discoverRoutes(options).filter(
-      (route) => route.composable || routeUsableWithModel(route),
-    );
-    if (usable.length === 0) {
+    const composable = discoverRoutes(options).filter((route) => route.composable);
+    if (composable.length === 0) {
       return blocked(
         'ROUTE_NOT_CONFIGURED',
         'No composable route resolved.',
@@ -594,7 +556,7 @@ function routeCallableProbe(options: RouteProbeOptions): ReadinessProbe {
       await context.dispatchProvider();
       return {
         state: 'ready',
-        artifact: `${usable.length} usable route(s); dispatch port answered`,
+        artifact: `${composable.length} composable route(s); dispatch port answered`,
       };
     } catch (error) {
       return blocked(
@@ -656,7 +618,7 @@ function workerProbe(
     } catch (error) {
       return blocked(
         'WORKER_LEDGER_UNREADABLE',
-        `The worker is running but the durable usage ledger could not be read (${error instanceof Error ? error.name : 'unknown error'}).`,
+        `The worker is running but the durable spend ledger could not be read (${error instanceof Error ? error.name : 'unknown error'}).`,
         'Check the council database handle, then re-run service-readiness; the supervisor keeps durable work intact.',
       );
     }
@@ -891,7 +853,6 @@ function composeBackend(input: {
     routeBudget: routeBudgetResolver({ configPath: input.route.budgets.configPath }),
     loadSeatBriefing: elderKnowledge.loadSeatBriefing,
     workerId: WORKER_ID,
-    settings: CONVENING_SETTINGS,
     // A fenced settle is reported like any worker failure (declared below).
     onFencedSettle: (error, context) => recordWorkerError(error, context),
   });
@@ -965,7 +926,6 @@ function composeBackend(input: {
     principal: standalonePrincipal(installation),
     clock: input.clock,
     ids: input.ids,
-    dataDir: input.dataDir,
     resolveRoute: async (request) => {
       const resolved = await resolveSessionRoute(request, {
         homeDir: input.route.routeHomeDir,

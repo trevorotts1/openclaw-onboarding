@@ -35,116 +35,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from detect_platform import get_openclaw_paths
 from interview_completion import prompt_status
 
-# ── §8 shared reminder slots + reserved final action (T-17 wiring) ──────────
-# shared-utils/reminders/reminder_state_machine.py is the DATA-CONTRACTS §8
-# governor: a separate initial invitation, at most three shared escalating
-# reminders, one reserved final action, and a real terminal stop. This cron
-# script is its PRODUCTION owner/dispatch call site: every reminder below is
-# decided AND sent through ReminderStateMachine, so the three-slot budget, the
-# no-reset rule, the reserved final action and terminal stop are enforced by
-# the machine, never assumed by ad-hoc bookkeeping. The transport is unchanged
-# -- send_telegram_nudge (below) is the machine's sender callback. Removing
-# this wiring un-governs the budget, which is what test_reminder_wiring pins.
-_REM_TOOLS = str(Path(__file__).resolve().parents[1] / "38-conversational-ai-system" / "tools")
-if _REM_TOOLS not in sys.path:
-    sys.path.insert(0, _REM_TOOLS)
-from reminders.reminder_state_machine import (  # noqa: E402
-    ReminderStateMachine,
-    ReminderPolicy,
-    SlotDecision,
-    SendResult,
-    FinalReservation,
-    FinalOutcome,
-)
-from durable_store import DurableStore  # noqa: E402
-from tenant_identity import TenantIdentity  # noqa: E402
-
-REMINDER_SEQ = "interview-nudge"
-REMINDER_POLICY_VERSION = "nudge/v1"
-# Exactly the three shared slots of NUDGE_CONFIG (24h/72h/168h), one policy.
-REMINDER_SLOT_OFFSETS_S = (24 * 3600.0, 72 * 3600.0, 168 * 3600.0)
-NUDGE_KEY_TO_SLOT = {"nudge_24h": 0, "nudge_72h": 1, "nudge_168h": 2}
-
-
-def build_reminder_machine(company_dir, tenant_id, chat_id, t0):
-    """Open the one §8 sequence for a company and seed its ledger.
-
-    t0 is the first actionable invitation time (the interview invite, sent
-    separately). Seeding replays already-sent nudges at their historical slot
-    times so a redeploy never resets the budget or re-sends (DATA-CONTRACTS 8:
-    "a reply changes eligibility, not t0 or budget"; no catch-up burst).
-    Returns (machine, contact). Contact is bound on the owner's chat id, the
-    person-unique identity root this nudge is addressed to.
-    """
-    d = Path(company_dir) / ".reminder_machine"
-    d.mkdir(parents=True, exist_ok=True)
-    identity = TenantIdentity(str(d / "identity.sqlite"))
-    identity.register_tenant(tenant_id, tenant_id)
-    contact = identity.bind(tenant_id, [("login_id", chat_id, True)], source="nudge")
-    store = DurableStore(str(d / "outbox.sqlite"))
-    machine = ReminderStateMachine(identity, store)
-    machine.open_sequence(tenant_id, contact, REMINDER_SEQ, now=t0)
-    machine.adopt_policy(tenant_id, contact, REMINDER_SEQ, ReminderPolicy(
-        version=REMINDER_POLICY_VERSION,
-        slot_offsets_seconds=REMINDER_SLOT_OFFSETS_S,
-        quiet_interval_seconds=1800.0,
-        final_slot_seconds=168 * 3600.0,
-    ), now=t0)
-    machine.record_initial_invitation(
-        tenant_id, contact, REMINDER_SEQ, invitation_id="interview-invite", now=t0)
-    return machine, contact
-
-
-def seed_reminder_ledger(machine, tenant_id, contact, nudges_sent, t0):
-    """Replay prior sends into the machine so the budget is never reset."""
-    def _historical(_ctx):
-        return {"provider": "seed", "message_id": "seed"}
-
-    for key in sorted(nudges_sent, key=lambda k: NUDGE_KEY_TO_SLOT.get(k, 99)):
-        slot = NUDGE_KEY_TO_SLOT.get(key)
-        if slot is None:
-            continue
-        # Idempotent: a slot already recorded in the machine is not pending,
-        # so this is a no-op on every run after the first.
-        machine.send_reminder(tenant_id, contact, REMINDER_SEQ, _historical,
-                              channel="telegram", now=t0 + REMINDER_SLOT_OFFSETS_S[slot],
-                              worker_id="reminder-seed")
-
-
-def decide_reminder(machine, tenant_id, contact, now):
-    """Return the machine's §8 slot decision for this scan (a SlotDecision)."""
-    return machine.due_slot(tenant_id, contact, REMINDER_SEQ, now=now)
-
-
-def dispatch_reminder(machine, tenant_id, contact, sender, channel="telegram",
-                      now=None):
-    """Send ONE due reminder through the machine (a SendResult)."""
-    return machine.send_reminder(tenant_id, contact, REMINDER_SEQ, sender,
-                                 channel=channel, now=now, worker_id="reminder-worker")
-
-
-def reserve_final_action(machine, tenant_id, contact, channel="telegram", now=None):
-    """Reserve the ONE reserved final action (a FinalReservation).
-
-    Idempotent: a second call returns the SAME reservation and never mints a
-    second final (DATA-CONTRACTS 8 step 1). Used at the interview-nudge
-    dead-end, where the escalation is the reserved final action.
-    """
-    return machine.reserve_final(tenant_id, contact, REMINDER_SEQ,
-                                 channel=channel, content_sha256="interview-stalled",
-                                 now=now, worker_id="final-worker")
-
-
-def expire_final_action(machine, tenant_id, contact, now=None):
-    """Expire the reserved final action WITHOUT claiming it was sent.
-
-    Returns a FinalOutcome. DATA-CONTRACTS 8 step 4: "permanent nonexecution
-    or expired slot closes stopped_ineligible without ever claiming sent" --
-    exactly the nudge dead-end, where the operator escalation is reserved and
-    recorded but no new owner message goes out.
-    """
-    return machine.expire_final(tenant_id, contact, REMINDER_SEQ, now=now)
-
 
 # OPERATOR chat IDs — MUST match install.sh OPERATOR_CHAT_IDS exactly.
 # (v12.3.8/fix/v12.3.8-cron-resolver-parity)
@@ -674,81 +564,37 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
         hours_idle = (now - meta["last_activity"]).total_seconds() / 3600
         nudges_sent = meta.get("nudges_sent", [])
 
-        # ── §8 governor decides the slot; this loop only dispatches it ──
-        # The shared reminder machine owns the budget (three shared slots,
-        # no reset, reserved final action, terminal stop). t0 is the interview
-        # invitation anchor (last_activity), so slot i fires at t0 + offset_i
-        # -- exactly the 24h/72h/168h cadence NUDGE_CONFIG encodes. due_slot()
-        # returns the lowest pending overdue slot, matching the old
-        # "first applicable not sent" scan. Removing the machine call drops
-        # the budget governance, which test_reminder_wiring pins.
-        try:
-            t0 = meta["last_activity"].replace(tzinfo=None).timestamp()
-            machine, contact = build_reminder_machine(
-                company, state.get("companySlug") or company.name,
-                str(meta.get("owner_chat") or meta.get("chat_id") or ""), t0)
-            seed_reminder_ledger(machine,
-                                 state.get("companySlug") or company.name,
-                                 contact, nudges_sent, t0)
-            decision = decide_reminder(machine,
-                                       state.get("companySlug") or company.name,
-                                       contact, now=now.replace(tzinfo=None).timestamp())
-        except Exception as exc:
-            print(f"  [SKIP] reminder machine unavailable for {company.name}: {exc}")
-            counts["skipped_recent"] += 1
-            continue
-
-        if decision.due:
-            slot_index = int(decision.slot_index)
-            cfg = NUDGE_CONFIG[slot_index] if slot_index < len(NUDGE_CONFIG) else None
-            if cfg is None:
-                counts["skipped_recent"] += 1
-                continue
-            print(f"  Company {company.name}: idle {hours_idle:.1f}h, sending {cfg['key']}")
-            # Skip-with-reason BEFORE any chat/gateway work: without a
-            # configured public origin there is no truthful link to send.
-            link, link_reason = resolve_interview_link(state if isinstance(state, dict) else {})
-            if link is None:
-                print(f"  [SKIP] No interview link for {company.name} ({cfg['key']}): {link_reason}.")
-                counts["skipped_no_link"] += 1
-                continue  # one nudge slot per scan per company
-
-            if dry_run:
-                # Report only. Never dispatch and never send on a dry run.
-                print(f"  [DRY-RUN] Would send Telegram nudge ({cfg['key']}) for {company.name}")
-                counts["nudged"] += 1
-                continue
-
-            def _sender(ctx, _meta=meta, _cfg=cfg, _slug=company.name, _state=state):
-                # The machine's sender callback; the transport is unchanged.
-                ok = send_telegram_nudge(_meta, _cfg, _slug, dry_run=False, _state=_state)
-                return {"provider": "openclaw-telegram", "message_id": ctx["action_id"]} if ok else None
-
-            result = dispatch_reminder(machine,
-                                       state.get("companySlug") or company.name,
-                                       contact, _sender, channel="telegram",
-                                       now=now.replace(tzinfo=None).timestamp())
-            if result.sent:
-                # Record in state (primary) and handoff (legacy compat)
-                record_nudge_sent_state(state_path, cfg["key"])
-                if handoff.exists():
-                    record_nudge_sent(handoff, cfg["key"])
-                counts["nudged"] += 1
-            else:
-                # Receipt captured, delivery unverified: do NOT record the
-                # nudge as sent (retry stays eligible), but do NOT retry
-                # in this scan either — reconcile before retry.
-                counts["send_failed"] += 1
+        # Find the largest applicable nudge that hasn't been sent
+        for cfg in NUDGE_CONFIG:
+            if hours_idle >= cfg["hours_idle"] and cfg["key"] not in nudges_sent:
+                print(f"  Company {company.name}: idle {hours_idle:.1f}h, sending {cfg['key']}")
+                # Skip-with-reason BEFORE any chat/gateway work: without a
+                # configured public origin there is no truthful link to send.
+                link, link_reason = resolve_interview_link(state if isinstance(state, dict) else {})
+                if link is None:
+                    print(f"  [SKIP] No interview link for {company.name} ({cfg['key']}): {link_reason}.")
+                    counts["skipped_no_link"] += 1
+                    break  # one nudge slot per scan per company
+                ok = send_telegram_nudge(meta, cfg, company.name, dry_run=dry_run, _state=state)
+                if ok and not dry_run:
+                    # Record in state (primary) and handoff (legacy compat)
+                    record_nudge_sent_state(state_path, cfg["key"])
+                    if handoff.exists():
+                        record_nudge_sent(handoff, cfg["key"])
+                    counts["nudged"] += 1
+                elif not ok and not dry_run:
+                    # Receipt captured, delivery unverified: do NOT record the
+                    # nudge as sent (retry stays eligible), but do NOT retry
+                    # in this scan either — reconcile before retry.
+                    counts["send_failed"] += 1
+                else:
+                    counts["nudged"] += 1
+                break  # one nudge per scan per company
         else:
             # PRD-2.15 (v12.3.12): no applicable nudge AND interview is incomplete.
             # If idle >= 168h, this is the dead-end: all nudges exhausted + owner silent.
             # Mark the interview as STALLED (first-class state, per INSTRUCTIONS.md:796).
             # NO new owner message — watchdog reads this flag for STUCK_MID_INTERVIEW.
-            # §8 governance: this dead-end is the reserved final action. The
-            # machine reserves ONE final and expires it WITHOUT claiming sent
-            # (DATA-CONTRACTS 8 step 4), so FinalReservation/FinalOutcome are
-            # reached from this production path and the "never a second final"
-            # + "no false sent" rules are enforced, not assumed.
             if hours_idle >= 168 and not meta.get("complete"):
                 if state_path.exists() and not dry_run:
                     try:
@@ -763,26 +609,10 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
                             state_path.write_text(_json.dumps(_s, indent=2))
                             print(
                                 f"  Company {company.name}: nudges exhausted at {hours_idle:.1f}h idle — "
-                                "marked interviewStalled=true (watchdog will escalate operator)"
+                                f"marked interviewStalled=true (watchdog will escalate operator)"
                             )
-                        # Reserve + expire the final action through the machine.
-                        # The reserved final is the operator escalation: it is
-                        # reserved at the dead-end and expired at its OWN
-                        # recorded deadline (slot_expires_at), closing
-                        # stopped_ineligible without ever claiming "sent".
-                        _t = state.get("companySlug") or company.name
-                        _res = reserve_final_action(machine, _t, contact,
-                                                    now=now.replace(tzinfo=None).timestamp())
-                        if isinstance(_res, FinalReservation):
-                            _out = expire_final_action(
-                                machine, _t, contact, now=_res.slot_expires_at)
-                            if isinstance(_out, FinalOutcome):
-                                print(
-                                    f"  Company {company.name}: reserved final action "
-                                    f"{_res.action_id} expired ({_out.status}) without claiming sent"
-                                )
                     except Exception as e:
-                        print(f"  WARN: could not record final action for {company.name}: {e}")
+                        print(f"  WARN: could not write interviewStalled for {company.name}: {e}")
             counts["skipped_recent"] += 1
 
     return counts

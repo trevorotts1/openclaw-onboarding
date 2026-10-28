@@ -65,8 +65,6 @@ import words_fit as _WF      # noqa: E402
 import music_qc.pace_change as _PC   # noqa: E402
 import music_qc.rap_check as _RC     # noqa: E402
 import timing_guard as _TG     # noqa: E402  WW-24: measured-only evidence provenance
-#: S75-T41: the FINAL outgoing artist/alias guard, run at the dispatch seam.
-from music_styles import suno_prompt_guard as _PG   # noqa: E402
 
 TOOL_NAME = "song_dispatch"
 TOOL_VERSION = "1.2.0"
@@ -234,20 +232,6 @@ def _lyrics_of(req):
     lyrics source can never reach the judge or the provider.
     """
     return (_R.envelope_input(req) or {}).get("lyrics") or ""
-
-
-#: S75-T41: internal judging / gate metadata that rides a request but is never
-#: provider text (same class as ``_hook_plan`` / ``_pace_plan``).  Everything
-#: else in a request IS outbound and passes the guard before dispatch.
-_INTERNAL_KEYS = ("card_receipt", "run_dir", "id")
-
-
-def _outbound_view(req):
-    """The EXACT provider payload inside a request: every key that is not
-    internal judging/gate metadata.  This is what the guard inspects and what
-    the transport dispatches -- one view, so nothing can ride out beside it."""
-    return {k: v for k, v in (req or {}).items()
-            if k not in _INTERNAL_KEYS and not str(k).startswith("_")}
 
 
 def _input_of(req):
@@ -1466,8 +1450,7 @@ def constituent_ok(rec):
 
 def run_takes(request, plan, generate, measure, save, script_words, hook_text,
               spoken_range_pct=None, cap_cents=SPEND_CAP_CENTS, cost_cents=GEN_COST_CENTS,
-              kie=_LG.kie_request, style_id=None, script_approval=None, run_dir=None,
-              alias_catalog=None):
+              kie=_LG.kie_request, style_id=None, script_approval=None, run_dir=None):
     """Generate until a take passes or the cap is spent.
 
     generate(request) -> list of takes (2 per generation, each with audio ids);
@@ -1492,23 +1475,6 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     if envelope_errs:
         raise DispatchError("REQUEST_ENVELOPE_REJECTED: %s"
                             % "; ".join(envelope_errs))
-    # S75-T41: THE outbound artist/alias guard, at the real send seam -- on the
-    # EXACT provider payload the transport would serialize, BEFORE any spend
-    # and before the transport is ever reached.  Every payload passes it here;
-    # a catalog reference in an instruction field leaves only approved musical
-    # traits behind, and one the rewrite cannot clear REFUSES this submission
-    # (zero provider calls).  The run's display references are declared as
-    # ``alias_catalog`` (or request["_alias_catalog"], moved off the payload
-    # like the other internal metadata).
-    view = _outbound_view(request)
-    catalog = (alias_catalog if alias_catalog is not None
-               else request.get("_alias_catalog") or {})
-    try:
-        receipt = _PG.guard_or_raise(view, catalog)
-    except _PG.PromptGuardError as exc:
-        raise DispatchError("OUTGOING_REFERENCE_BLOCKED: %s" % exc) from exc
-    request = dict(receipt["payload"],
-                   **{k: v for k, v in request.items() if k not in view})
     inp = _input_of(request)
     # SCRIPT APPROVAL: a client who asked to approve the script first gets no generation until they do.
     if script_approval is None:       # found in the run folder; nobody passes it by hand

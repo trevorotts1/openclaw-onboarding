@@ -136,7 +136,6 @@ RECIPES = {
                       "arrangement sequence"),
             clauses=(
                 "orchestral film-style song",
-                "dry close upfront vocal",
                 "60-88 bpm",
                 "expressive lead vocal with clear diction",
                 "piano and low cello foundation",
@@ -145,7 +144,6 @@ RECIPES = {
                 "controlled film-score percussion",
                 "wide dynamic swells",
                 "powerful earned sung refrain",
-                "dry close upfront vocal",
                 "no distortion",
             ),
         ),
@@ -194,7 +192,6 @@ RECIPES = {
                       "ensemble", "no automatic reprise"),
             clauses=(
                 "theatrical stage song",
-                "dry close upfront vocal",
                 "piano-led orchestra",
                 "woodwind answers",
                 "selective brass",
@@ -203,7 +200,6 @@ RECIPES = {
                 "character-driven articulate lead vocal",
                 "spoken dialogue into a sung payoff",
                 "big earned final refrain",
-                "dry close upfront vocal",
                 "clear diction",
                 "no distortion",
             ),
@@ -253,7 +249,6 @@ RECIPES = {
             negative=("no invented client faith fact", "no extra character"),
             clauses=(
                 "faith-centered sung arrangement",
-                "dry close upfront vocal",
                 "warm piano and hammond organ foundation",
                 "live bass and live drums",
                 "expressive backing vocal ensemble answering the lead",
@@ -261,7 +256,6 @@ RECIPES = {
                 "testimony building from a restrained verse to an uplifting "
                 "sung chorus",
                 "rich chord movement",
-                "dry close upfront vocal",
                 "clear diction",
                 "no distortion",
             ),
@@ -309,14 +303,12 @@ RECIPES = {
             negative=("no invented client belief or testimony", "no stereotype"),
             clauses=(
                 "faith-centered sung arrangement over an r&b and hip-hop groove",
-                "dry close upfront vocal",
                 "78-110 bpm",
                 "deep controlled bass",
                 "rhodes and piano",
                 "selective organ texture",
                 "responsive backing vocal replies",
                 "rhythmic rap verses into a sung faith hook",
-                "dry close upfront vocal",
                 "clear diction",
                 "no distortion",
             ),
@@ -327,34 +319,6 @@ RECIPES = {
 }
 
 STYLE_IDS = tuple(RECIPES)
-
-#: Advisory Suno section tags for the four, same shape as
-#: ``music_styles.SECTION_HINTS``. Kept here, not merged into that table, so
-#: the three D18 hints stay exactly as the owner wrote them. F13-clean: no
-#: string/gospel/choir/harmony/cinematic vocabulary, because the same words
-#: are banned from song style text.
-SECTION_HINTS = {
-    "cinematic-orchestral-song":
-        "[Verse] close and restrained, [Pre-Chorus] rising film-scale build, "
-        "[Chorus] full earned refrain, [Bridge] brief reduction, "
-        "[Final Chorus] widest",
-    "musical-theater":
-        "[Verse] character entrance, [Pre-Chorus] spoken aside, "
-        "[Chorus] stage-style payoff, [Bridge] key lift, "
-        "[Final Chorus] biggest",
-    "contemporary-gospel":
-        "[Verse] restrained testimony, [Chorus] uplifting sung chorus, "
-        "[Vamp] backing vocal answers, [Final Chorus] biggest",
-    "urban-gospel":
-        "[Verse] rhythmic rap testimony, [Hook] sung faith hook, "
-        "[Verse] response, [Hook] final lift",
-}
-
-
-def as_section_hints():
-    """The four advisory section-tag strings, in ``SECTION_HINTS`` shape."""
-    return dict(SECTION_HINTS)
-
 
 _NORMALIZE_KEEP = re.compile(r"[^0-9a-z ]+")
 
@@ -478,13 +442,11 @@ __all__ = [
     "RECIPES",
     "RECIPE_REVISION",
     "SCHEMA_VERSION",
-    "SECTION_HINTS",
     "SHARED_RULES",
     "STYLE_IDS",
     "TOOL_NAME",
     "TOOL_VERSION",
     "as_catalog_entries",
-    "as_section_hints",
     "assert_no_client_reference",
     "client_reference_hits",
     "compile_style_field",

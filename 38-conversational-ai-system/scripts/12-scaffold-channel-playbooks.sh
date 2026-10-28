@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
 # 12-scaffold-channel-playbooks.sh — Skill 38 Step 8
-# Scaffolds eight canonical channel playbooks from templates/channel-playbook-template.md.
-# Markdown files use $MASTER_FILES_DIR/communication-playbooks/<channel>-communication.md.
-# Canonical channels: sms, email, facebook-messenger, facebook-comments,
-# instagram-dm, linkedin, live-chat, all-in-one-chat.
-# Legacy channel-playbooks/ files are copied forward without moving, deleting,
-# or overwriting existing destinations.
+# Scaffolds the 8 channel communication playbooks (SMS, Email, FB Messenger,
+# FB Comments, IG DM, LinkedIn, Live Chat, All-in-One Chat) from the template
+# in templates/channel-playbook-template.md.
 #
 # Layer 1 (preferred): if $NOTION_API_KEY is set, create a Notion page per
 #   channel under the existing "zhc" parent page (or a new "Channel Playbooks"
 #   parent if zhc is not found), and save the page id to
-#   $MASTER_FILES_DIR/communication-playbooks/<channel>--notion-id.txt
+#   $MASTER_FILES_DIR/channel-playbooks/<channel>--notion-id.txt
 # Layer 2 (fallback): write markdown to
-#   $MASTER_FILES_DIR/communication-playbooks/<channel>-communication.md
+#   $MASTER_FILES_DIR/channel-playbooks/<channel>.md
 #
 # Idempotent: existing files / notion-id files are preserved.
 
@@ -47,41 +44,6 @@ CLIENT_BUSINESS_NAME="${CLIENT_BUSINESS_NAME:-<CLIENT_BUSINESS_NAME>}"
 ESCALATION_TARGET="${ESCALATION_TARGET:-<ESCALATION_TARGET>}"
 
 CHANNELS=(
-  "sms"
-  "email"
-  "facebook-messenger"
-  "facebook-comments"
-  "instagram-dm"
-  "linkedin"
-  "live-chat"
-  "all-in-one-chat"
-)
-
-OUT_DIR="$MASTER_FILES_DIR/communication-playbooks"
-mkdir -p "$OUT_DIR"
-
-if [ ! -f "$TEMPLATE_PATH" ]; then
-  echo "[ERROR] template not found: $TEMPLATE_PATH" >&2
-  exit 1
-fi
-
-channel_label() {
-  case "$1" in
-    sms)                 printf '%s' "SMS" ;;
-    email)               printf '%s' "Email" ;;
-    facebook-messenger)  printf '%s' "Facebook Messenger" ;;
-    facebook-comments)   printf '%s' "Facebook Comments" ;;
-    instagram-dm)        printf '%s' "Instagram DM" ;;
-    linkedin)            printf '%s' "LinkedIn" ;;
-    live-chat)           printf '%s' "Live Chat" ;;
-    all-in-one-chat)     printf '%s' "All-in-One Chat" ;;
-    *) return 1 ;;
-  esac
-}
-
-# -------- Copy legacy playbooks forward; never move or overwrite --------
-LEGACY_DIR="$MASTER_FILES_DIR/channel-playbooks"
-LEGACY_NAMES=(
   "SMS"
   "Email"
   "FB-Messenger"
@@ -91,44 +53,13 @@ LEGACY_NAMES=(
   "Live-Chat"
   "All-in-One-Chat"
 )
-LEGACY_SLUGS=(
-  "sms"
-  "email"
-  "facebook-messenger"
-  "facebook-comments"
-  "instagram-dm"
-  "linkedin"
-  "live-chat"
-  "all-in-one-chat"
-)
 
-if [ -d "$LEGACY_DIR" ]; then
-  for i in "${!LEGACY_NAMES[@]}"; do
-    legacy_name="${LEGACY_NAMES[$i]}"
-    slug="${LEGACY_SLUGS[$i]}"
+OUT_DIR="$MASTER_FILES_DIR/channel-playbooks"
+mkdir -p "$OUT_DIR"
 
-    legacy_file="$LEGACY_DIR/$legacy_name.md"
-    new_file="$OUT_DIR/$slug-communication.md"
-    if [ -f "$legacy_file" ]; then
-      if [ ! -e "$new_file" ]; then
-        cp "$legacy_file" "$new_file"
-        printf '[MIGRATE] %s -> %s\n' "$legacy_file" "$new_file"
-      else
-        printf '[SKIP] legacy %s (destination exists)\n' "$legacy_name.md"
-      fi
-    fi
-
-    legacy_id="$LEGACY_DIR/$legacy_name--notion-id.txt"
-    new_id="$OUT_DIR/$slug--notion-id.txt"
-    if [ -f "$legacy_id" ]; then
-      if [ ! -e "$new_id" ]; then
-        cp "$legacy_id" "$new_id"
-        printf '[MIGRATE] %s -> %s\n' "$legacy_id" "$new_id"
-      else
-        printf '[SKIP] legacy %s (destination exists)\n' "$legacy_name--notion-id.txt"
-      fi
-    fi
-  done
+if [ ! -f "$TEMPLATE_PATH" ]; then
+  echo "[ERROR] template not found: $TEMPLATE_PATH" >&2
+  exit 1
 fi
 
 # -------- Persona registry (U-5) --------
@@ -209,11 +140,9 @@ notion_create_page() {
 # -------- Substitute placeholders into template --------
 render_template() {
   local channel="$1"
-  local label
-  label="$(channel_label "$channel")"
   sed \
-    -e "s|<Channel>|$label|g" \
-    -e "s|<CHANNEL_NAME>|$label|g" \
+    -e "s|<Channel>|$channel|g" \
+    -e "s|<CHANNEL_NAME>|$channel|g" \
     -e "s|<Client Name>|$CLIENT_BUSINESS_NAME|g" \
     -e "s|<CLIENT_BUSINESS_NAME>|$CLIENT_BUSINESS_NAME|g" \
     -e "s|<ESCALATION_TARGET>|$ESCALATION_TARGET|g" \
@@ -230,8 +159,8 @@ if notion_available; then
 fi
 
 for ch in "${CHANNELS[@]}"; do
-  md_path="$OUT_DIR/${ch}-communication.md"
-  id_path="$OUT_DIR/${ch}--notion-id.txt"
+  md_path="$OUT_DIR/$ch.md"
+  id_path="$OUT_DIR/$ch--notion-id.txt"
 
   if [ -s "$id_path" ] || [ -s "$md_path" ]; then
     echo "[SKIP] $ch (already scaffolded)"
@@ -243,8 +172,7 @@ for ch in "${CHANNELS[@]}"; do
   body="$(add_persona_line "$body")"
 
   if [ -n "$PARENT_ID" ]; then
-    label="$(channel_label "$ch")"
-    new_id="$(notion_create_page "$PARENT_ID" "$label Communication Playbook — $CLIENT_BUSINESS_NAME" "$body" || true)"
+    new_id="$(notion_create_page "$PARENT_ID" "$ch Communication Playbook — $CLIENT_BUSINESS_NAME" "$body" || true)"
     if [ -n "$new_id" ]; then
       printf '%s\n' "$new_id" > "$id_path"
       echo "[OK] $ch → Notion page $new_id"

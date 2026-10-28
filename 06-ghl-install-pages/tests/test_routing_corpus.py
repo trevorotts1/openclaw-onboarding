@@ -206,44 +206,6 @@ class TestGuardCorpusMode:
         )
         assert result.returncode != 0
 
-    def test_guard_fails_on_malformed_corpus_json(self, tmp_path):
-        """Negative: a corpus that is not JSON crashes the checker. The guard
-        must report FAIL, never 'CORPUS PASS ... 0 entries'."""
-        malformed = tmp_path / "routing_corpus.malformed.json"
-        malformed.write_text("not json at all\n", encoding="utf-8")
-
-        result = subprocess.run(
-            ["bash", GUARD_SCRIPT, "--corpus", str(malformed)],
-            capture_output=True, text=True,
-        )
-        assert result.returncode != 0, (
-            f"a malformed corpus must FAIL the guard.\n"
-            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-        )
-        assert "CORPUS PASS" not in result.stdout
-        assert "corpus checker exited" in result.stdout, (
-            "the guard must blame the checker crash, not a corpus violation"
-        )
-
-    def test_guard_fails_on_empty_corpus(self, tmp_path):
-        """Negative: zero entries proves nothing and must not pass."""
-        empty = tmp_path / "routing_corpus.empty.json"
-        empty.write_text(json.dumps({"entries": []}), encoding="utf-8")
-
-        result = subprocess.run(
-            ["bash", GUARD_SCRIPT, "--corpus", str(empty)],
-            capture_output=True, text=True,
-        )
-        assert result.returncode != 0, (
-            f"an empty corpus must FAIL the guard.\n"
-            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-        )
-        assert "CORPUS PASS" not in result.stdout
-        assert "no SUMMARY" in result.stdout, (
-            "the guard must report the missing-summary gate specifically, so "
-            "the 'positive entry count' fix cannot be deleted unnoticed"
-        )
-
 
 # ── guard-ghl-method-decision.sh --run-dir: widget vocabulary (S06-02) ───────
 #

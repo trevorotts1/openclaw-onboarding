@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "single_message",
   "id": "launch-a-reminder-morning",
   "name": "Launch A — Reminder: Morning of the Event",
   "aliases": [
@@ -72,79 +70,5 @@
       "Replay branch",
       "Indoctrination"
     ]
-  },
-  "build_graph": [
-    {
-      "id": "trg",
-      "type": "trigger",
-      "attributes": {
-        "event": "Tag Added webinar-registered",
-        "ref": "Tag Added `webinar-registered`"
-      }
-    },
-    {
-      "id": "n1",
-      "type": "wait",
-      "after": "trg",
-      "attributes": {
-        "until": "webinar_morning_send",
-        "kind": "until",
-        "default": "09:00 local event day; clamp to webinar_datetime - 2h",
-        "ref": "Wait until `webinar_morning_send`"
-      }
-    },
-    {
-      "id": "n2",
-      "type": "if_else",
-      "after": "n1",
-      "branches": {
-        "true": "n3",
-        "false": "n6"
-      },
-      "attributes": {
-        "condition": "not purchased AND datetime in future",
-        "ref": "If not purchased and future"
-      }
-    },
-    {
-      "id": "n3",
-      "type": "email",
-      "after": "n2",
-      "attributes": {
-        "message": "morning reminder",
-        "ref": "Send Email"
-      }
-    },
-    {
-      "id": "n4",
-      "type": "if_else",
-      "after": "n3",
-      "branches": {
-        "true": "n5",
-        "false": "n6"
-      },
-      "attributes": {
-        "condition": "SMS consent present",
-        "ref": "If SMS consent"
-      }
-    },
-    {
-      "id": "n5",
-      "type": "sms",
-      "after": "n4",
-      "attributes": {
-        "message": "morning reminder",
-        "ref": "Send SMS"
-      }
-    },
-    {
-      "id": "n6",
-      "type": "workflow_goal",
-      "after": "n4",
-      "attributes": {
-        "goal": "reminder path complete",
-        "ref": "End"
-      }
-    }
-  ]
+  }
 }

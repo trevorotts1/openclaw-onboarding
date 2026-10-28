@@ -419,8 +419,7 @@ def _cta_label(value) -> str:
 
 def cta_labels(section: dict) -> list:
     """Every button label a section carries: one `cta`, or `cta_labels` (one button per package
-    card on product-selection; the utility actions side by side on the thank-you page, whose
-    `cta_layout` is "utility")."""
+    card on the product-selection page's Section 3)."""
     many = [str(x).strip().rstrip(".") for x in section.get("cta_labels") or [] if str(x).strip()]
     return many or ([_cta_label(section.get("cta"))] if _cta_label(section.get("cta")) else [])
 
@@ -516,21 +515,8 @@ def copy_contract(section: dict, closing: str = "") -> str:
                      " | ".join(f'"{x}"' for x in labels))
     many = cta_labels(section)
     if len(many) > 1:
-        # The treatment belongs to the page type: a package page repeats one button per card,
-        # a utility page (thank-you) keeps its actions side by side or one per access card, as
-        # the spec's own `cta.note` states (the first action filled, the rest outlined).
-        if section.get("cta_layout") == "utility":
-            note = str(section.get("cta_note") or "").strip().rstrip(".")
-            if not note:  # the spec states the treatment; a guessed one is a defect
-                raise ExecutorError(
-                    f"section {label}: the utility actions carry no declared treatment "
-                    "(cta_note); rebuild the request from the spec, never a guessed treatment")
-            treatment = note[0].lower() + note[1:] + "; "
-            lead = ("CTA LABELS — utility actions on this page, each its own button, "
-                    + treatment + "each printed exactly: ")
-        else:
-            lead = "CTA LABELS — one button per package card, in card order, each printed exactly: "
-        lines.append(lead + " | ".join(f'"{x}"' for x in many))
+        lines.append("CTA LABELS — one button per package card, in card order, each printed exactly: "
+                     + " | ".join(f'"{x}"' for x in many))
     elif cta:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
     elif closing:
@@ -624,10 +610,14 @@ def declared_copy_version(run_dir: Path, request: dict):
 
 
 def allowed_section_sequences(spec: dict) -> list:
-    """The sequence the spec accepts: its own, plus each optional-children expansion
-    (5 -> 5A,5B,5C). page_role.allowed_sequences is the one resolver; the request
-    builder reads the same function, so the two never disagree."""
-    return page_role.allowed_sequences(spec)
+    """The spec sequence, plus each optional-children expansion (5 -> 5A,5B,5C)."""
+    base = list(spec["sequence"])
+    out = [base]
+    for parent, child in (spec.get("containment", {}).get("child_sections") or {}).items():
+        if parent in base and child.get("ids"):
+            i = base.index(parent)
+            out.append(base[:i] + list(child["ids"]) + base[i + 1:])
+    return out
 
 
 STRUCTURES_FILE = SKILL_ROOT / "references" / "page-structures.json"
@@ -685,14 +675,8 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
         spec, label = rspec, f"{rspec['page_role']} page"
     else:
         pspec = page_role.spec_for_role(role)
-        # copy_forms.form_for_role is the one registry of page role -> form (it reads a form's
-        # plural `page_roles` too), so this guard sees every page type, not only the specs
-        # page_role.spec_for_role knows (it needs wireframe.form_label).
-        want_form = copy_forms.form_for_role(role) if role != page_role.LANDING_ROLE else None
         if pspec and not version:
             version = pspec["copy_version"]  # a role page needs no landing copy_version
-        if not version and want_form:
-            version = want_form  # a registered page type is checked from its own role, paid or not
         if not version:
             if paid:
                 raise ExecutorError(
@@ -707,17 +691,13 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
                 f"copy_version {version!r} is not one of {', '.join(copy_forms.FORMS)} "
                 "(no copy spec for it in references/copy-specs/)")
         spec = json.loads(copy_forms.spec_path(version).read_text(encoding="utf-8"))
-        if want_form and want_form != version:
+        spec_role = spec.get("page_role")
+        if (pspec or spec_role) and (spec_role or page_role.LANDING_ROLE) != role:
             raise ExecutorError(
-                f"page role {role!r} and copy_version {version!r} disagree: {version!r} is "
-                f"another page type's canonical form and {role!r} is built from the "
-                f"{want_form!r} form; declare the page's own form (a page type is never "
-                "forced into another's sections)")
-        if not want_form and version not in copy_forms.LANDING_FORMS:
-            raise ExecutorError(
-                f"page role {role!r} and copy_version {version!r} disagree: {version!r} is a "
-                f"page type's own form and {role!r} is a landing page, which takes standard "
-                "or long-form (a page type is never forced into another's sections)")
+                f"page role {role!r} and copy_version {version!r} disagree: copy_version "
+                f"{version!r} is the {spec_role or 'landing'} page's canonical form, and "
+                f"{role!r} has its own ({pspec['copy_version'] if pspec else 'landing'}); "
+                "declare the page's own form (a page type is never forced into another's sections)")
         try:  # SPF030: a declared page kind may only use the copy forms it allows (a landing-role page)
             kind = page_kinds.declared(run_dir, request)
             if kind:

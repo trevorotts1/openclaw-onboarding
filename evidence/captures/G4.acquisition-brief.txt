@@ -1,7 +1,0 @@
-# search: G4.acquisition-brief
-# command: git grep -nF class AcquisitionBrief 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- 38-conversational-ai-system/tools/acquisition_brief.py
-# scope: 38-conversational-ai-system/tools/acquisition_brief.py
-# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
-# rc: 0  count: 1  verdict: present
-# --- stdout ---
-9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:38-conversational-ai-system/tools/acquisition_brief.py:310:class AcquisitionBrief:

@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "indoctrination-multichannel-preframe",
   "name": "Indoctrination Pre-Sell Sequence (Multichannel Story Series Before Cart Opens)",
   "aliases": [
@@ -42,11 +40,7 @@
       "step": 1,
       "beat": "Story Episode 1 — Origin / Backstory",
       "timing": "Day 1 of pre-launch window",
-      "channels_active": [
-        "Email",
-        "Messenger (mirror)",
-        "Retargeting Ad (video)"
-      ],
+      "channels_active": ["Email", "Messenger (mirror)", "Retargeting Ad (video)"],
       "purpose": "Brunson's first List Hacking indoctrination video was 'about how I started my business in my duplex and got in trouble so many times for doing things ALL wrong.' The origin story establishes the AC as a real person who struggled before succeeding. It creates identification — the reader sees themselves in the backstory. NO PITCH. Only story.",
       "subject_angle": "How I [did the embarrassing/wrong/humble thing] and what it cost me",
       "body_framework": [
@@ -63,11 +57,7 @@
       "step": 2,
       "beat": "Story Episode 2 — Obsession / Expertise Discovery",
       "timing": "Day 2–3 of pre-launch window",
-      "channels_active": [
-        "Email",
-        "Messenger (mirror)",
-        "SMS (nudge if email not opened)"
-      ],
+      "channels_active": ["Email", "Messenger (mirror)", "SMS (nudge if email not opened)"],
       "purpose": "Brunson's second List Hacking video was 'about me and my obsession with junk mail and how it taught me so much about marketing.' The obsession story reveals the AC's expertise origin — not as a credential, but as a passion. It answers: 'Why should I trust this person?' without ever asking that question directly.",
       "subject_angle": "The weird obsession that taught me everything I know about [result]",
       "body_framework": [
@@ -83,11 +73,7 @@
       "step": 3,
       "beat": "Story Episode 3 — Teaching / The Method (light version)",
       "timing": "Day 3–4 of pre-launch window",
-      "channels_active": [
-        "Email",
-        "Messenger (mirror)",
-        "Retargeting Ad"
-      ],
+      "channels_active": ["Email", "Messenger (mirror)", "Retargeting Ad"],
       "purpose": "Brunson's third List Hacking video: 'In the next video, I talk about list building and do a bit more teaching.' This is the first episode where a hint of the methodology surfaces — but still as story and teaching, not a product pitch. The prospect is being educated in a way that makes the solution feel inevitable. By the time the offer is revealed, they understand WHY they need it.",
       "subject_angle": "The [simple principle / counterintuitive truth] that changed everything about [topic]",
       "body_framework": [
@@ -102,10 +88,7 @@
       "step": 4,
       "beat": "Story Episode 4 — Values / Mission (optional; used in Brunson's List Hacking launch)",
       "timing": "Day 4–5 of pre-launch window (optional — can go straight to cart open after Episode 3)",
-      "channels_active": [
-        "Email",
-        "Messenger (mirror)"
-      ],
+      "channels_active": ["Email", "Messenger (mirror)"],
       "purpose": "Brunson's fourth List Hacking video: 'The fourth video is one of me in Kenya helping build orphanages and showing that a percentage of my money goes to this mission each year.' This values episode humanizes the AC at the deepest level — it shows what the business is FOR beyond profit. It is NOT a manipulation technique; it must be authentic. This is the Brunson's Attractive Character 'Polarity' element — the AC takes a stand for something that draws in raving fans.",
       "subject_angle": "Why I really do this (it's not what you think)",
       "body_framework": [
@@ -120,11 +103,7 @@
       "step": 5,
       "beat": "Cart Open Email + Multichannel Announcement",
       "timing": "After all story episodes; when cart opens",
-      "channels_active": [
-        "Email (full offer presentation)",
-        "SMS (short announcement)",
-        "Messenger (announcement)"
-      ],
+      "channels_active": ["Email (full offer presentation)", "SMS (short announcement)", "Messenger (announcement)"],
       "purpose": "Per Brunson: 'By the time they get to the actual sales video, the series has already done the selling.' The cart-open email is NOT a cold pitch — it's the payoff of a sequence the prospect has been primed for. By now they know the AC, trust them, understand the problem, and have been educated on the solution. The offer itself is the cherry on top.",
       "subject_angle": "It's live — [offer name] is now available",
       "body_framework": [

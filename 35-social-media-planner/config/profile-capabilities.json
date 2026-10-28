@@ -7,22 +7,6 @@
     "single_source_of_truth": "35-social-media-planner/config/profile-capabilities.json",
     "personal_profile_rule": "Any account type with personal_profile=true declares mode assisted (or unavailable) and MUST NOT list any action under unattended. Unattended personal-profile posting or commenting is never supported.",
     "no_system_publication_without_receipt": true,
-    "unattended_coverage": {
-      "status": "unproved",
-      "monitoring": false,
-      "test_scope": "NARROW: the declaration is read and the assisted prepare/confirm/status/guard paths are exercised in-process and through the CLI. No public channel or account is monitored, polled or observed by this contract.",
-      "required_proof": [
-        "a named, running public monitor for the exact channel and account type, with its own allow-listed credentials",
-        "an observed publication whose platform-side identifier is recorded and independently read back from the platform API",
-        "a monitor run log showing the readback for that platform-side identifier within the declared window",
-        "a re-run of the readback after a restart, proving the coverage survives a process death"
-      ],
-      "owner_decision": {
-        "owner": "the operator who owns this fleet installation (Trevor Otts)",
-        "decision": "whether to fund and build unattended public-monitor coverage per channel, and what evidence is accepted as proof before published-by-system may be reported",
-        "status": "pending"
-      }
-    },
     "assisted_placement_route": "assisted",
     "assisted_statuses": {
       "awaiting-operator": "Placement prepared and handed to the operator. Nothing has been posted.",

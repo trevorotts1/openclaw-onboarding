@@ -1,6 +1,4 @@
 {
-  "schema_version": "2.0.0",
-  "kind": "sequence_stack",
   "id": "launch-win-back-closed-no-purchase",
   "name": "Launch Win-Back — Closed, No Purchase → Next Offer Re-Engagement",
   "aliases": [
@@ -55,10 +53,7 @@
       "Cold vs previously engaged (engagement only decides channel mix, never eligibility)"
     ]
   },
-  "channels": [
-    "Email",
-    "SMS"
-  ],
+  "channels": ["Email", "SMS"],
   "sequence": [
     {
       "step": "0 — Buyer check (before every send)",
@@ -162,11 +157,7 @@
     "fidelity_note": "The 30-day-cold trigger and sunset suppression come from the existing broadcast template. This launch variant changes the audience to 'launch closed, no purchase' and the offer to the approved next offer; it does not invent prices, deadlines or discounts."
   },
   "quality": {
-    "checklist_lines": [
-      "A1",
-      "A2",
-      "X1"
-    ],
+    "checklist_lines": ["A1", "A2", "X1"],
     "wf_checks": "WF-1..21 and FAB-QC >= 8.5 apply to the built workflow",
     "assertions": [
       "Template starts from re-engagement-winback-broadcast (family win_back)",

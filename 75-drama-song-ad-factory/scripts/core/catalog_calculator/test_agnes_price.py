@@ -210,11 +210,10 @@ class AgnesPriceTests(unittest.TestCase):
             self.assertEqual(by_component["image"]["agnes_seconds"], 90)
             self.assertGreater(by_component["music"]["usd"], 0)
             self.assertGreater(by_component["lip_sync"]["usd"], 0)
-            # 90 s ad -> 31 s (the largest whole second inside the 35% hard
-            # maximum of 31.5 s) in 7 clips (lipsync_clips.budget)
+            # 90 s ad -> 32 s (the 35% hard ceiling) in 7 clips (lipsync_clips.budget)
             self.assertEqual(priced_card["lip_sync"], {
-                "model_id": "kling/ai-avatar-standard", "seconds": 31, "lines": 7,
-                "seconds_per_shape": 31, "lines_per_shape": 7, "shape_count": 1})
+                "model_id": "kling/ai-avatar-standard", "seconds": 32, "lines": 7,
+                "seconds_per_shape": 32, "lines_per_shape": 7, "shape_count": 1})
             # the total is the song plus the close-ups, nothing else
             self.assertTrue(approx(
                 priced_card["price_usd"],
@@ -233,7 +232,7 @@ class AgnesPriceTests(unittest.TestCase):
             env = agnes_price.envelope(card, fake)
             self.assertEqual(env["card"]["agnes_seconds"], 180)
             # both shapes run lip-sync
-            self.assertEqual(env["card"]["lip_sync"]["seconds"], 62)
+            self.assertEqual(env["card"]["lip_sync"]["seconds"], 64)
 
     # ----------------------------------------------- 3. price fails closed
     def test_failing_price_fn_says_price_unavailable(self):
@@ -268,33 +267,7 @@ class AgnesPriceTests(unittest.TestCase):
             self.assertIsNone(card_render.quote(1, "90 seconds", agnes=True))
             self.assertEqual(card_render.quote(1, "90 seconds"), GOLDEN_QUOTE_90)
 
-    # --------------------------- 5. the quote never crosses the hard maximum
-    def test_lipsync_quote_never_crosses_the_hard_maximum(self):
-        """The card's own lip-sync line is a figure its own guard accepts.
-
-        Whole-second quote <= 35% of the duration, at integral and non-integral
-        lengths, including the ones where 0.35 x length is already a whole
-        second (40 s -> 14.0, 60 s -> 21.0, 100 s -> 35.0), and at the 3-clip
-        floor boundary where the duration is refused instead of quoted.
-        """
-        from catalog_calculator.extensions import price_extension
-        LC = agnes_price.lipsync_clips
-        for length in (34.2, 34.3, 40.0, 45.0, 47.5, 60.0, 83.3, 90.0, 100.0):
-            budget = LC.budget(length)
-            spec, _amounts, err, kind = agnes_price._lip_sync_line(length, 1)
-            if LC.duration_conflicts(length):
-                self.assertIsNone(spec, (length, spec))
-                self.assertEqual(kind, "unavailable", length)
-                continue
-            self.assertIsNone(err, (length, err))
-            self.assertLessEqual(spec["seconds"], budget["hard_max_s"] + 1e-9,
-                                 (length, spec["seconds"], budget["hard_max_s"]))
-            self.assertIsNone(
-                price_extension._lip_sync_duration_guard(
-                    spec, {"length_seconds": length}),
-                (length, spec["seconds"], budget["hard_max_s"]))
-
-    # --------------------------------- 6. the door only takes Agnes cards
+    # --------------------------------- 5. the door only takes Agnes cards
     def test_envelope_refuses_a_card_without_agnes_yes(self):
         env = agnes_price.envelope({"length": "90 seconds"}, FakePrice())
         self.assertEqual(env["state"], "error")

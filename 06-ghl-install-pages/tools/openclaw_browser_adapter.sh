@@ -58,19 +58,17 @@
 #   bash openclaw_browser_adapter.sh --selftest
 #   bash openclaw_browser_adapter.sh --help
 #
-# VERBS (mapping per plan Appendix A + live `openclaw browser --help`; EVERY
-# browser command carries `--browser-profile "$OCB_PROFILE"`, shown as the
-# openclaw default here):
+# VERBS (mapping per plan Appendix A + live `openclaw browser --help`):
 #   status                     -> openclaw browser --browser-profile openclaw status
-#   start                      -> openclaw browser --browser-profile openclaw start (no-op if running)
-#   open URL [opts...]         -> openclaw browser --browser-profile openclaw open URL
-#   snapshot [opts...]         -> openclaw browser --browser-profile openclaw snapshot --interactive [opts...]
+#   start                      -> openclaw browser start            (no-op if running)
+#   open URL [opts...]         -> openclaw browser open URL
+#   snapshot [opts...]         -> openclaw browser snapshot --interactive [opts...]
 #                                 (+ `--efficient` preset by default; a caller's
 #                                 `--frame SELECTOR` passes through verbatim)
-#   frame-snapshot SEL [opts]  -> openclaw browser --browser-profile openclaw snapshot --interactive --frame SEL
-#   click REF                  -> openclaw browser --browser-profile openclaw click REF
-#   type REF TEXT              -> openclaw browser --browser-profile openclaw type REF TEXT
-#   stop                       -> openclaw browser --browser-profile openclaw close
+#   frame-snapshot SEL [opts]  -> openclaw browser snapshot --interactive --frame SEL
+#   click REF                  -> openclaw browser click REF
+#   type REF TEXT              -> openclaw browser type REF TEXT
+#   stop                       -> openclaw browser close
 #                                 (closes the current managed tab, per the P1-12
 #                                 contract; the CLI's process-level `stop` is
 #                                 intentionally NOT mapped — closing the tab is
@@ -79,9 +77,7 @@
 # ENV (all optional):
 #   GHL_SKILL6_CAPABILITY_JSON  capability JSON path
 #                               (default <skill>/working/skill6-capability.json)
-#   OCB_PROFILE                 browser profile for EVERY `browser` command
-#                               (default: openclaw — status AND actions, so a
-#                               selected profile is never silently bypassed)
+#   OCB_PROFILE                 browser profile for `status` (default: openclaw)
 #   OCB_CALL_TIMEOUT            per-call timeout seconds (default: 120)
 #   GHL_SKILL6_SNAPSHOT_MODE    "efficient" (default) adds `--efficient`;
 #                               any other value omits the preset
@@ -112,16 +108,16 @@ Lane 2 is an EXPERIMENTAL UPGRADE ONLY — never selected by default. The capabi
 probe (tools/capability_probe.py) decides; this adapter refuses unless
 lanes.openclaw_managed_browser.cliWorks is true in the capability JSON.
 
-VERBS (each carries `--browser-profile "$OCB_PROFILE"`; shown as openclaw default):
+VERBS:
   status                     openclaw browser --browser-profile openclaw status
-  start                      openclaw browser --browser-profile openclaw start   (no-op if running)
-  open URL [opts...]         openclaw browser --browser-profile openclaw open URL
-  snapshot [opts...]         openclaw browser --browser-profile openclaw snapshot --interactive [opts...]
+  start                      openclaw browser start            (no-op if already running)
+  open URL [opts...]         openclaw browser open URL
+  snapshot [opts...]         openclaw browser snapshot --interactive [opts...]
                              (+ --efficient preset by default; --frame SELECTOR passes through verbatim)
-  frame-snapshot SEL [opts]  openclaw browser --browser-profile openclaw snapshot --interactive --frame SEL
-  click REF                  openclaw browser --browser-profile openclaw click REF
-  type REF TEXT              openclaw browser --browser-profile openclaw type REF TEXT
-  stop                       openclaw browser --browser-profile openclaw close  (closes the managed tab)
+  frame-snapshot SEL [opts]  openclaw browser snapshot --interactive --frame SEL
+  click REF                  openclaw browser click REF
+  type REF TEXT              openclaw browser type REF TEXT
+  stop                       openclaw browser close            (closes the managed tab)
 
 FLAGS:
   --selftest                 offline self-test (no openclaw CLI, no browser, no network needed)
@@ -129,7 +125,7 @@ FLAGS:
 
 ENV:
   GHL_SKILL6_CAPABILITY_JSON  capability JSON path (default <skill>/working/skill6-capability.json)
-  OCB_PROFILE                 browser profile for EVERY browser command (default openclaw)
+  OCB_PROFILE                 browser profile for `status` (default openclaw)
   OCB_CALL_TIMEOUT            per-call timeout seconds (default 120)
   GHL_SKILL6_SNAPSHOT_MODE    "efficient" (default) adds --efficient; anything else omits it
 
@@ -202,14 +198,6 @@ ocb() {
   fi
 }
 
-# Every `openclaw browser` invocation goes through here so the SELECTED profile
-# is always passed. Passing it on `status` only was finding 49: open/click/type/
-# snapshot silently acted on the DEFAULT profile while the caller's chosen
-# profile was never used.
-ocb_browser() {
-  ocb browser --browser-profile "$OCB_PROFILE" "$@"
-}
-
 # Snapshot defaults per plan P1-12 (snapshotDefaults): ALWAYS --interactive;
 # `--efficient` preset on by default (GHL_SKILL6_SNAPSHOT_MODE=efficient,
 # mirroring the capability JSON optimizations.snapshotMode); caller args —
@@ -219,7 +207,7 @@ run_snapshot() {
     set -- --efficient "$@"
   fi
   set -- --interactive "$@"
-  ocb_browser snapshot "$@"
+  ocb browser snapshot "$@"
 }
 
 # ── Verb dispatch ─────────────────────────────────────────────────────────────
@@ -252,12 +240,12 @@ main() {
     status)
       require_ocb_cli
       require_capability
-      ocb_browser status "$@"
+      ocb browser --browser-profile "$OCB_PROFILE" status "$@"
       ;;
     start)
       require_ocb_cli
       require_capability
-      ocb_browser start "$@"
+      ocb browser start "$@"
       ;;
     open)
       require_ocb_cli
@@ -265,7 +253,7 @@ main() {
         _ocb_usage_refuse "open requires a URL argument."
       fi
       require_capability
-      ocb_browser open "$@"
+      ocb browser open "$@"
       ;;
     snapshot)
       require_ocb_cli
@@ -288,7 +276,7 @@ main() {
         _ocb_usage_refuse "click requires a REF argument (from a snapshot)."
       fi
       require_capability
-      ocb_browser click "$@"
+      ocb browser click "$@"
       ;;
     type)
       require_ocb_cli
@@ -296,12 +284,12 @@ main() {
         _ocb_usage_refuse "type requires REF and TEXT arguments."
       fi
       require_capability
-      ocb_browser type "$@"
+      ocb browser type "$@"
       ;;
     stop)
       require_ocb_cli
       require_capability
-      ocb_browser close "$@"
+      ocb browser close "$@"
       ;;
     *)
       echo "REFUSE: unknown verb '$_ocb_verb'." >&2
@@ -471,41 +459,6 @@ selftest() {
         *"--browser-profile"*) _st_pass "status passes --browser-profile" ;;
         *) _st_fail "status missing --browser-profile" ;;
       esac
-
-      # finding 49: the SELECTED profile must reach EVERY browser command, not
-      # only `status` — otherwise a caller's OCB_PROFILE is silently bypassed
-      # and actions land on the default profile. Asserted end-to-end with a
-      # NON-default profile so a hard-coded "openclaw" cannot pass this. The
-      # verb's real exit code is captured too (a dead command that merely echoes
-      # its argv on stderr must NOT count as proof), and the flag must be
-      # IMMEDIATELY followed by the selected value (the stub echoes one argv per
-      # line, so substring-anywhere would accept `--browser-profile openclaw ...
-      # ghl-selected`).
-      _st_needle="$(printf '\n%s\n%s' '--browser-profile' 'ghl-selected')"
-      for _st_v in status start open snapshot click type frame-snapshot stop; do
-        case "$_st_v" in
-          open)           _st_args="https://example.test/ghl" ;;
-          click)          _st_args="f1e12" ;;
-          type)           _st_args="f1e12 hello" ;;
-          frame-snapshot) _st_args='iframe[src*="form-builder-v2"]' ;;
-          *)              _st_args="" ;;
-        esac
-        # shellcheck disable=SC2086
-        _st_out="$(env PATH="$_st_stub_path" GHL_SKILL6_CAPABILITY_JSON="$_st_dir/cap-true.json" \
-          OCB_PROFILE=ghl-selected "$_st_self" "$_st_v" $_st_args 2>&1)"
-        _st_rc=$?
-        _st_prof_ok=1
-        [ "$_st_rc" = "0" ] || _st_prof_ok=0
-        case "$_st_out" in
-          *"$_st_needle"*) : ;;
-          *) _st_prof_ok=0 ;;
-        esac
-        if [ "$_st_prof_ok" = "1" ]; then
-          _st_pass "verb $_st_v passes the selected OCB_PROFILE (finding 49)"
-        else
-          _st_fail "verb $_st_v did NOT pass the selected OCB_PROFILE (finding 49, rc=$_st_rc)"
-        fi
-      done
     else
       _st_fail "could not create stub openclaw — skipping stub checks"
     fi

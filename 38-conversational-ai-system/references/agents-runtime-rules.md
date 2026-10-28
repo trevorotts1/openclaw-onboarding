@@ -118,21 +118,18 @@ Use these signals when deciding the category:
 ### Step 2 — If REPLY: choose the channel-specific communication playbook
 
 The webhook payload tells you which channel the inbound came in on:
-SMS, Email, Facebook Messenger, Facebook comments, Instagram DM, LinkedIn,
-Live Chat, or the All-in-One / Chat Widget. Match the channel to the
-corresponding communication playbook in `<MASTER_FILES_DIR>/communication-playbooks/`.
-An inbound on a channel with no dedicated playbook file (WhatsApp, GMB/GBP
-chat, a generic Conversations event) uses the all-in-one-chat playbook as
-its baseline.
+SMS, Email, FB Messenger, Instagram DM, GMB chat, GBP chat, WhatsApp,
+or a generic "Conversations" inbound. Match the channel to the
+corresponding communication playbook in `<MASTER_FILES_DIR>/communication-playbooks/`:
 
 - `<MASTER_FILES_DIR>/communication-playbooks/sms-communication.md`
 - `<MASTER_FILES_DIR>/communication-playbooks/email-communication.md`
 - `<MASTER_FILES_DIR>/communication-playbooks/facebook-messenger-communication.md`
 - `<MASTER_FILES_DIR>/communication-playbooks/instagram-dm-communication.md`
-- `<MASTER_FILES_DIR>/communication-playbooks/facebook-comments-communication.md`
-- `<MASTER_FILES_DIR>/communication-playbooks/linkedin-communication.md`
-- `<MASTER_FILES_DIR>/communication-playbooks/live-chat-communication.md`
-- `<MASTER_FILES_DIR>/communication-playbooks/all-in-one-chat-communication.md`
+- `<MASTER_FILES_DIR>/communication-playbooks/gmb-chat-communication.md`
+- `<MASTER_FILES_DIR>/communication-playbooks/gbp-chat-communication.md`
+- `<MASTER_FILES_DIR>/communication-playbooks/whatsapp-communication.md`
+- `<MASTER_FILES_DIR>/communication-playbooks/conversations-communication.md`
 
 Read the matching playbook before drafting your reply. It contains the
 tone, signature, escalation triggers, and brand voice for that channel.

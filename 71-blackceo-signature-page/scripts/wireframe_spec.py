@@ -45,14 +45,6 @@ WIREFRAME_STAGES = ("desktop-wireframe", "mobile-tablet")
 FORMS = copy_forms.FORMS
 FORM_LABEL = {"standard": "Standard", "long-form": "Long-Form", "product-selection": "Product Selection",
               "upsell": "Upsell"}
-# The utility page's multi-button line (finding 15): separate actions keep their own labels and
-# treatments instead of borrowing the package-card grammar. The treatment sentence is the spec's
-# own `cta.note` (one per access card; support filled with manage purchase outlined). Same
-# white-capitals treatment the other CTA blocks use, so the client's brand colours still come
-# only from the BRAND COLORS line.
-UTILITY_CTA_BLOCK = ("4. CTA — utility actions only on this page, one button per action; {treatment} "
-                     "Each reads exactly one of these labels in white capitals: {labels}. No offer button, "
-                     "no link row and no sticky bar.")
 
 
 class SpecError(Exception):
@@ -338,25 +330,11 @@ def prompt_block(stage: str, section: dict, index: int, total: int, width: int,
     lines.append(blocks["plates_some"].format(plates=plates, ratio_list=", ".join(s["ratio_labels"]))
                  if plates else blocks["plates_none"])
     many = [str(x).strip().rstrip(".") for x in section.get("cta_labels") or [] if str(x).strip()]
-    if len(many) > 1:
-        if section.get("cta_layout") == "utility":
-            # A utility page (thank-you) keeps its actions side by side or one per access card,
-            # exactly as its spec's `cta.note` declares. The package-card grammar below belongs
-            # to product-selection only.
-            note = str(section.get("cta_note") or "").strip().rstrip(".")
-            if not note:  # the spec states the treatment; a guessed one is a defect
-                raise SpecError(
-                    f"section {section.get('section_id')}: the utility actions carry no declared "
-                    "treatment (cta_note); the spec states it, never a guess")
-            treatment = note[0].lower() + note[1:] + "."
-            lines.append(UTILITY_CTA_BLOCK.format(
-                treatment=treatment, labels=" | ".join(f'"{x}"' for x in many)))
-            cta = "utility actions"
-        else:  # one button per package card (product-selection Section 3)
-            shape = blocks["cta_shape_mobile" if mobile else "cta_shape_desktop"]
-            lines.append(blocks["cta_cards"].format(
-                cta_shape=shape, labels=" | ".join(f'"{x}"' for x in many)))
-            cta = "per card"
+    if len(many) > 1:  # one button per package card (product-selection Section 3)
+        shape = blocks["cta_shape_mobile" if mobile else "cta_shape_desktop"]
+        lines.append(blocks["cta_cards"].format(
+            cta_shape=shape, labels=" | ".join(f'"{x}"' for x in many)))
+        cta = "per card"
     elif cta:
         shape = blocks["cta_shape_mobile" if mobile else "cta_shape_desktop"]
         solution = long_form and re.fullmatch(r"\d+[A-Z]", tag) is not None

@@ -110,8 +110,7 @@ def _branch_templates(records: list, trigger_tag: str) -> list:
 
     raw_steps.append(tag_step(f"Remove {trigger_tag}", [trigger_tag], remove=True))
     raw_steps.append(goal_step("Purchase Complete", [GOAL_TAG]))
-    steps, _unlinked = link_steps(raw_steps)
-    return steps
+    return link_steps(raw_steps)
 
 
 # === Build pipeline ==========================================================

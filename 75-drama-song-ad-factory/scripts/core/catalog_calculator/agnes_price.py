@@ -99,12 +99,11 @@ def _lip_sync_line(length_s, shape_count):
 
     Seconds and clip count come from the one lip-sync rule
     (``lipsync_clips.budget``: 25-30% of the ad as the target, 35% as the hard
-    maximum, 4-6 s per clip and never fewer than 3 clips). The quoted seconds
-    are the largest WHOLE second that still fits inside the hard maximum, so
-    the card's own line is never a figure its own guard has to refuse;
-    ``_lip_sync_spec`` then enforces the roster and the 6 s cap. A duration
-    whose bounds collide is EXPOSED as ``LIPSYNC_DURATION_CONFLICT`` -- the
-    card goes "Price unavailable" rather than silently changing the policy.
+    maximum, 4-6 s per clip and never fewer than 3 clips) at its HARD ceiling,
+    so the card never under-quotes; ``_lip_sync_spec`` then enforces the
+    roster and the 6 s cap. A duration whose bounds collide is EXPOSED as
+    ``LIPSYNC_DURATION_CONFLICT`` -- the card goes "Price unavailable" rather
+    than silently changing the policy.
     """
     conflicts = lipsync_clips.duration_conflicts(length_s)
     if conflicts:
@@ -113,9 +112,7 @@ def _lip_sync_line(length_s, shape_count):
     budget = lipsync_clips.budget(length_s)
     spec, err, kind = _lip_sync_spec({
         "lip_sync": {"model": LIPSYNC_ROSTER[0],
-                     # whole seconds only, never past the hard maximum: floor
-                     # with the guard's own 1e-9 slack, never ceil.
-                     "seconds": int(math.floor(budget["hard_max_s"] + 1e-9)),
+                     "seconds": int(math.ceil(budget["hard_max_s"])),
                      "lines": int(budget["max_clips"])}})
     if err:
         return None, None, err, kind
