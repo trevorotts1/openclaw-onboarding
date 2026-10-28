@@ -513,6 +513,22 @@
    "cited_paths": 20,
    "missing_paths": 18,
    "surviving_paths": 2,
+   "counting_method": "distinct de-duplicated path strings counted once each; host-prefix substrings embedded inside longer prose or shell-command strings are not counted as separate cited paths",
+   "proof_artifacts_scope": {
+    "cited_paths": 21,
+    "missing_paths": 21,
+    "surviving_paths": 0
+   },
+   "document_scope": {
+    "cited_paths": 27,
+    "missing_paths": 25,
+    "surviving_paths": 2,
+    "surviving": [
+     "CONTROL/eng_loop.py",
+     "CONTROL/owner_handler.py"
+    ]
+   },
+   "prior_observation": "lane PBB-780 recorded 20 cited / 18 missing / 2 surviving at 2026-10-26T16:16Z on a narrower counting basis. Every observation agrees that the two source files are the only survivors.",
    "missing_examples": [
     "scratch/pb-skill38-20261024/T-05/PROOF.md (generations 1 and 2 of the production label)",
     "scratch/pb-skill38-20261024/lanes/PBB-220-lane/proof (the whole corpus directory)",
