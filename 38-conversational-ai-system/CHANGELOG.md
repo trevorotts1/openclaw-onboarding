@@ -1,3 +1,7 @@
+## [2.0.207] - 2026-10-28 - chore(batch-fanout-0250-lane6): version stamp for lane 6
+
+- **Batch fanout 0250 lane 6 version stamp, Skill 38 v2.0.206 -> v2.0.207.** Lane 6 merged PBB-2314 (`88e9684a`), t25-carry (`2a96c296`), carry-t36-wire-rebuild (`da9d5d90`), carry (`00750bca`) and PBB-177 (`bce6c14c`) onto main, all touching skill 38 files. Lane 6 also stamps this bump rather than bouncing a unit for a missing skill-version.txt change.
+
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
 - **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
