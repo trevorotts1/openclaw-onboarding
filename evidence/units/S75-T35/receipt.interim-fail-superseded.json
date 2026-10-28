@@ -1,0 +1,11 @@
+{
+  "acceptance_row": "S75-A35",
+  "honesty_note": "interim: proof pending in this lane",
+  "unit": "S75-T35",
+  "unproven_clauses": [
+    "Wrong-head/stdout-only/self-approved receipts stay QC_UNCONFIRMED; duplicate verdict handling is idempotent; real native bindings prove buildersdeepseek-chain and QC/repairopus-chain."
+  ],
+  "verdict": "FAIL",
+  "superseded_by": "evidence/units/S75-T35/attempt-2.json",
+  "superseded_note": "this interim FAIL record predates the completed proof; attempt-2.json is the graded artefact and it passes. This file is kept for the audit trail, not as a current verdict."
+}
