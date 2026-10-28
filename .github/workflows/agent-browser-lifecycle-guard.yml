@@ -93,3 +93,9 @@ jobs:
           set -euo pipefail
           pytest 06-ghl-install-pages/tests/test_browser_manager_singleton.py \
                  06-ghl-install-pages/tests/test_iframe_failure_taxonomy.py -q
+
+      - name: Reaper behaviour against a faked ps (profile scope, macOS ages, orphaned daemons, kill order)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/unit/agent-browser-reaper.test.py
