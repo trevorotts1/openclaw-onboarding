@@ -1,3 +1,7 @@
+## [2.0.207] - 2026-10-28 - chore(batch-fanout-0250-lane4): version stamp for 9 units
+
+- **Batch fanout-0250-lane4 version stamp, Skill 38 v2.0.206 -> v2.0.207.** Units in this lane touching skill 38: T-25-WIRE-RECARRY (`67d28bdcd`), PBB-351 (`a13d866f4`), PBB-410 (`783bc6fb0`), PBB-751 (`649423e2d`), PBB-790 (`33247e6fa`), T-25-ENFORCE-PROOF (`194f5aa6d`), PBB-825 (`f1062ebc4`), carry-t29 (`22d1415c1`), PBB-669 (`b20c8a4e3`). No new skill code in this commit; version stamp only.
+
 ## [2.0.203] - 2026-10-27 - chore(batch-20261027-0754): Skill 38 to v2.0.203 for T-56 (scope includes T-57)
 
 - **Batch 20261027-0754 version stamp, Skill 38 v2.0.202 -> v2.0.203.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 38 files in this batch (`schemas/approval-manifest.schema.json`, `schemas/outbound-action.schema.json`, `tools/durable_store.py`, `tools/pb_contracts.py`; scope includes T-57). No skill code changed in this commit; version stamp only.
