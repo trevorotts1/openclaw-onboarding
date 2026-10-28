@@ -1,3 +1,7 @@
+## [2.0.209] - 2026-10-28 - chore(batch-fanout-0250-lane4): version stamp for 8 units
+
+- **Batch fanout-0250-lane4 version stamp, Skill 38 v2.0.208 -> v2.0.209.** Units in this lane touching skill 38: T-25-WIRE-RECARRY (`67d28bdcd`), PBB-351 (`a13d866f4`), PBB-410 (`783bc6fb0`), PBB-751 (`649423e2d`), PBB-790 (`33247e6fa`), T-25-ENFORCE-PROOF (`194f5aa6d`), carry-t29 (`22d1415c1`), PBB-669 (`b20c8a4e3`). v2.0.207 skipped (claimed by the unmerged branch of PBB-825) and v2.0.208 taken by batch-20261028-0250. No new skill code in this commit; version stamp only.
+
 ## [2.0.208] - 2026-10-28 - chore(batch-20261028-0250): version stamp for T-25 and T-04
 
 - **Batch 20261028-0250 version stamp, Skill 38 v2.0.206 -> v2.0.208.** T-25 (`pb/PBB-1029/PBB-809-t-25-enforce-proof` @ `09b4260e`) adds `tools/reconciliation.py` and T-04 (`pb/PBB-1034/PBB-831-t-04-candidate` @ `72e2abde`) updates `tools/tests/test_interactive_owner.py`. v2.0.207 skipped: claimed by unmerged branches. No skill code changed in this commit; version stamp only.
