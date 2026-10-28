@@ -55,6 +55,7 @@ from reminders.reminder_state_machine import (  # noqa: E402
     SendResult,
     FinalReservation,
     FinalOutcome,
+    KnownFields,
 )
 from durable_store import DurableStore  # noqa: E402
 from tenant_identity import TenantIdentity  # noqa: E402
@@ -105,10 +106,13 @@ def seed_reminder_ledger(machine, tenant_id, contact, nudges_sent, t0):
         if slot is None:
             continue
         # Idempotent: a slot already recorded in the machine is not pending,
-        # so this is a no-op on every run after the first.
+        # so this is a no-op on every run after the first. known=KnownFields()
+        # keeps the T-16 capture gate consulted on the replay path too; an
+        # empty context permits the mobile ask, so replay behavior is unchanged.
         machine.send_reminder(tenant_id, contact, REMINDER_SEQ, _historical,
                               channel="telegram", now=t0 + REMINDER_SLOT_OFFSETS_S[slot],
-                              worker_id="reminder-seed")
+                              worker_id="reminder-seed",
+                              known=KnownFields())
 
 
 def decide_reminder(machine, tenant_id, contact, now):
@@ -117,10 +121,20 @@ def decide_reminder(machine, tenant_id, contact, now):
 
 
 def dispatch_reminder(machine, tenant_id, contact, sender, channel="telegram",
-                      now=None):
-    """Send ONE due reminder through the machine (a SendResult)."""
+                      now=None, known=None):
+    """Send ONE due reminder through the machine (a SendResult).
+
+    known is the T-16 KnownFields capture context for this scan: which fields
+    are already known, so plan_capture permits exactly one ask per slot. The
+    scan passes KnownFields() (nothing known from build state); the machine
+    default is the same empty context. Either way the gate runs — it is never
+    bypassed by omitting the argument.
+    """
+    if known is None:
+        known = KnownFields()
     return machine.send_reminder(tenant_id, contact, REMINDER_SEQ, sender,
-                                 channel=channel, now=now, worker_id="reminder-worker")
+                                 channel=channel, now=now,
+                                 worker_id="reminder-worker", known=known)
 
 
 def reserve_final_action(machine, tenant_id, contact, channel="telegram", now=None):
@@ -727,7 +741,8 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
             result = dispatch_reminder(machine,
                                        state.get("companySlug") or company.name,
                                        contact, _sender, channel="telegram",
-                                       now=now.replace(tzinfo=None).timestamp())
+                                       now=now.replace(tzinfo=None).timestamp(),
+                                       known=KnownFields())
             if result.sent:
                 # Record in state (primary) and handoff (legacy compat)
                 record_nudge_sent_state(state_path, cfg["key"])
