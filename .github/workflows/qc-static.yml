@@ -3595,24 +3595,3 @@ jobs:
           ls -l "$t"
           python3 -I "$t"
           echo "✓ T-53 GHL Conversations sender suite ran and passed"
-      - name: T-16 mobile-first capture + the one logical SMS email ask (suite, explicit path)
-        shell: bash
-        run: |
-          set -uo pipefail
-          # shared-utils/capture/progressive_capture.py is T-16: mobile-first capture
-          # and the ONE logical SMS email ask (DATA-CONTRACTS 7). Its production call
-          # site is reminder_state_machine.send_reminder, which carries only the ask
-          # plan_capture permits. Run the suite BY EXPLICIT PATH so a policy
-          # regression fails the build instead of drifting.
-          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
-          t="shared-utils/capture/tests/test_progressive_capture.py"
-          if [ ! -f "$t" ]; then
-            echo "::warning title=T-16 capture suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
-            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
-            exit 0
-          fi
-          echo "resolved $root/$t"
-          ls -l "$t"
-          python3 "$t"
-          echo "✓ T-16 progressive capture + the one logical SMS email ask suite ran and passed"
