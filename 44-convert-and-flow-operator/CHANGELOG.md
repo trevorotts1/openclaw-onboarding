@@ -1,3 +1,7 @@
+## [v2.1.38] - 2026-10-28 - chore(batch-consolidate-20261028-0700): version stamp for the consolidated fanout batch
+
+- **Consolidation 20261028-0700 version stamp, skill 44 v2.1.37 -> v2.1.38.** Skill content changed by units merged into batch/consolidate-20261028-0700; version stamp, SKILL.md frontmatter and this entry only. No product code changed in this commit.
+
 ## [v2.1.36] - 2026-10-27 - batch 20261027-2022: two test-only units (portable mktemp template pinned, graph fixture presence asserted)
 
 Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, template or QC script behaviour changed in this batch; the only non-test files touched are the two version markers.
